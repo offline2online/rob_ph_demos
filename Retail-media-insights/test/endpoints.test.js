@@ -103,3 +103,11 @@ test('yield rejects unknown or multiple deal types', async () => {
     assert.equal((await fetch(`${base}/revenue?dealTypes=Nope`)).status, 400);
   } finally { server.close(); }
 });
+
+test('summary previous period: equal-length period before the range, same filters', () => withServer(async (get) => {
+  const s = await get(`/summary?${Q}`);
+  const len = Math.round((Date.parse(s.previous.dateTo) - Date.parse(s.previous.dateFrom)) / 86400000) + 1;
+  const r = await get(`/revenue?dateFrom=${s.previous.dateFrom}&dateTo=${s.previous.dateTo}&granularity=day`);
+  assert.ok(len >= 1);
+  assert.ok(Math.abs(s.previous.earnedRevenue - sum(r.rows, 'earned')) <= 0.01 * Math.max(1, r.rows.length));
+}));

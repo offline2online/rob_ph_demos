@@ -26,7 +26,7 @@
     progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
     variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertiser targeting & scheduling table. ' +
       'Daypart is not a targeting variable: it is a campaign scheduling feature, shown in Scheduling.',
-    table: 'Who is most sophisticated: sorted by maturity level (Personalised first), then revenue. Scheduling = campaigns using dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. ' +
+    table: 'Who is most sophisticated: sorted by Revenue, highest first; click any heading to sort by it. Scheduling = campaigns using dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. ' +
       'Targeted versions = targeted versions submitted in the date range, beyond the default.'
   };
 
@@ -53,6 +53,17 @@
     var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
     if (!m) return '';
     return granularity === 'week' ? fmtDay(iso) : MONTHS[+m[2] - 1];
+  }
+
+  // "Jun 2026 – Oct 2026 · by month" — the span the Progress over time chart covers, so it is clear what period it shows.
+  function progressPeriodText(rows, granularity) {
+    if (!rows || !rows.length) return '';
+    var fmt = function (iso) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+      return !m ? '' : granularity === 'week' ? (+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1] : MONTHS[+m[2] - 1] + ' ' + m[1];
+    };
+    var a = fmt(rows[0].period), b = fmt(rows[rows.length - 1].period);
+    return (a === b ? a : a + ' – ' + b) + ' · by ' + (granularity === 'week' ? 'week' : 'month') + (granularity === 'week' ? ' (week starting)' : '') + ' · whole history';
   }
 
   // ---------- models ----------
@@ -83,6 +94,29 @@
         src: a
       };
     });
+  }
+
+  // Advertisers table columns: header text, the raw value each sorts by, and the direction a first click uses.
+  var ADV_COLS = [
+    { key: 'name', label: 'Advertiser', first: 'asc', value: function (r) { return r.name; } },
+    { key: 'revenue', label: 'Revenue', first: 'desc', value: function (r) { return r.src.revenue; } },
+    { key: 'share', label: 'Share of total revenue', first: 'desc', value: function (r) { return r.src.share; } },
+    { key: 'dealsOn', label: 'Deals on', first: 'desc', value: function (r) { return r.dealsOn; } },
+    { key: 'slotsCovered', label: 'Slots covered', first: 'desc', value: function (r) { return r.src.slotsCovered; } },
+    { key: 'slotsWon', label: 'Slots won', first: 'desc', value: function (r) { return r.src.slotsWonPercent; } },
+    { key: 'effectiveCpm', label: 'Effective CPM', first: 'desc', value: function (r) { return r.src.effectiveCpm; } }
+  ];
+  // Rows ordered by one column ('asc' = A–Z / lowest first); no key keeps the back end's order. Blank values always sit last.
+  function sortAdvertiserRows(rows, key, dir, cols) {
+    var col = (cols || ADV_COLS).filter(function (c) { return c.key === key; })[0];
+    if (!col) return rows;
+    var sign = dir === 'asc' ? 1 : -1;
+    return rows.map(function (r, i) { return { r: r, i: i, v: col.value(r) }; }).sort(function (a, b) {
+      var an = !has(a.v), bn = !has(b.v);
+      if (an || bn) return an && bn ? a.i - b.i : an ? 1 : -1;
+      var c = typeof a.v === 'string' ? a.v.localeCompare(b.v) : a.v - b.v;
+      return c ? c * sign : a.i - b.i;
+    }).map(function (x) { return x.r; });
   }
 
   // Hover headed "Blackmores (DV360): deals on", listing each deal with its type.
@@ -134,6 +168,15 @@
     return v.label;
   }
   var NOT_USED = 'Not used';
+  // Targeting & scheduling table columns, sorted the same way as the Advertisers table.
+  var MAT_COLS = [
+    { key: 'name', label: 'Advertiser', first: 'asc', value: function (r) { return r.name; } },
+    { key: 'level', label: 'Maturity level', first: 'desc', value: function (r) { return LEVELS.indexOf(r.level); } },
+    { key: 'variables', label: 'Variables used', first: 'desc', value: function (r) { return r.chips.length; } },
+    { key: 'scheduling', label: 'Scheduling', first: 'desc', value: function (r) { return r.scheduledCampaigns; } },
+    { key: 'versions', label: 'Targeted versions', first: 'desc', value: function (r) { return r.versionsRaw; } },
+    { key: 'revenue', label: 'Revenue', first: 'desc', value: function (r) { return r.revenueRaw; } }
+  ];
   function schedulingText(s) {
     if (!s || !s.uses) return NOT_USED;
     return 'Dayparted · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign');
@@ -144,6 +187,8 @@
         advertiserId: r.advertiserId, label: advName(r), name: r.name, level: r.level,
         chips: targetingVars(r.variables).map(function (v) { return { text: chipText(v), kind: v.kind }; }),
         scheduling: schedulingText(r.scheduling), versions: has(r.targetedVersions) ? fmtInt(r.targetedVersions) : '–',
+        scheduledCampaigns: r.scheduling && r.scheduling.uses ? r.scheduling.scheduledCampaigns : 0,
+        versionsRaw: has(r.targetedVersions) ? r.targetedVersions : null, revenueRaw: r.revenue || 0,
         revenue: fmtMoney(r.revenue || 0)
       };
     });
@@ -164,9 +209,9 @@
   var pure = {
     LEVELS: LEVELS, TOP_N: TOP_N, TIPS: TIPS, advName: advName, isDaypart: isDaypart, targetingVars: targetingVars,
     advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
-    schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, chipText: chipText,
+    schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
-    activeFilters: activeFilters, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
+    activeFilters: activeFilters, ADV_COLS: ADV_COLS, MAT_COLS: MAT_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
 
   // ---------- DOM ----------
@@ -174,7 +219,7 @@
     if (typeof document === 'undefined') throw new Error('DemandCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { showAll: false, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
+    var state = { showAll: false, advSort: { key: '', dir: 'desc' }, matSort: { key: 'revenue', dir: 'desc' }, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
     var gen = { adv: 0, mat: 0 };
     var advData = null, matData = null, knownVars = [], resizeTimer = null;
     var alive = true;
@@ -357,14 +402,24 @@
     }
     function drawAdvertisers() {
       var d = advData;
-      var rows = advertiserRows(d, state.showAll);
+      var rows = sortAdvertiserRows(advertiserRows(d, state.showAll), state.advSort.key, state.advSort.dir);
       var more = (d.all || []).length > TOP_N;
       showBtn.hidden = !more;
       showBtn.textContent = state.showAll ? 'Show top ' + TOP_N : 'Show all ' + fmtInt((d.all || []).length) + ' advertisers';
       showBtn.setAttribute('aria-pressed', String(state.showAll));
-      var cols = ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM'];
+      function sortHead(c) {
+        var on = state.advSort.key === c.key, dir = state.advSort.dir;
+        var btn = h('button', { type: 'button', class: 'dc-sort' + (on ? ' on' : ''), title: 'Sort by ' + c.label }, [
+          h('span', { text: c.label }), icon(on ? (dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more')
+        ]);
+        btn.addEventListener('click', function () {
+          state.advSort = on ? { key: c.key, dir: dir === 'asc' ? 'desc' : 'asc' } : { key: c.key, dir: c.first };
+          drawAdvertisers();
+        });
+        return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, [btn]);
+      }
       var table = h('table', { class: 'dc-table dc-adv' }, [
-        h('thead', {}, [h('tr', {}, cols.map(function (c) { return h('th', { scope: 'col', text: c }); }))]),
+        h('thead', {}, [h('tr', {}, ADV_COLS.map(sortHead))]),
         h('tbody', {}, rows.map(function (r) {
           var a = r.src;
           var dealsTd = h('td', { class: 'dc-num', text: r.dealsText });
@@ -413,8 +468,8 @@
     var LEVEL_CLS = { 'Default only': 'dc-l0', Localised: 'dc-l1', Personalised: 'dc-l2' };
 
     function drawLadder(d) {
-      // Default only on top, Personalised at the bottom.
-      var entries = (d.ladder || []).slice().sort(function (a, b) { return LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level); });
+      // Personalised on top, Default only at the bottom (the ladder reads upwards).
+      var entries = (d.ladder || []).slice().sort(function (a, b) { return LEVELS.indexOf(b.level) - LEVELS.indexOf(a.level); });
       barRows(pLad, entries, {
         filter: 'level', key: function (e) { return e.level; }, cls: function (e) { return LEVEL_CLS[e.level]; },
         label: function (e) { return e.level; }, value: function (e) { return plural(e.advertisers, 'advertiser'); }, hover: ladderHover
@@ -483,21 +538,32 @@
         hits.appendChild(hit);
       });
       var legend = h('div', { class: 'dc-legend' }, LEVELS.map(function (l) { return h('span', { class: 'dc-legend-item' }, [h('i', { class: 'dc-swatch ' + LEVEL_CLS[l] }), l]); }));
+      pPro.body.appendChild(h('div', { class: 'dc-period', text: 'Showing ' + progressPeriodText(rows, d.granularity || state.granularity) }));
       pPro.body.appendChild(legend);
       pPro.body.appendChild(h('div', { class: 'dc-chart' }, [svg, hits]));
     }
 
     // ----- Advertiser targeting & scheduling table -----
     function drawTable(d) {
-      var rows = tableRows(d);
+      var rows = sortAdvertiserRows(tableRows(d), state.matSort.key, state.matSort.dir, MAT_COLS);
       pTab.body.removeAttribute('aria-busy');
       pTab.body.innerHTML = '';
       if (!rows.length) {
         return emptyState(pTab, 'table_rows', activeFilters(state.table) ? 'No advertisers match this filter.' : 'No data for the selected filters');
       }
-      var cols = ['Advertiser', 'Maturity level', 'Variables used', 'Scheduling', 'Targeted versions', 'Revenue'];
+      function sortHead(c) {
+        var on = state.matSort.key === c.key, dir = state.matSort.dir;
+        var btn = h('button', { type: 'button', class: 'dc-sort' + (on ? ' on' : ''), title: 'Sort by ' + c.label }, [
+          h('span', { text: c.label }), icon(on ? (dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more')
+        ]);
+        btn.addEventListener('click', function () {
+          state.matSort = on ? { key: c.key, dir: dir === 'asc' ? 'desc' : 'asc' } : { key: c.key, dir: c.first };
+          drawTable(d);
+        });
+        return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, [btn]);
+      }
       var table = h('table', { class: 'dc-table dc-mat' }, [
-        h('thead', {}, [h('tr', {}, cols.map(function (c) { return h('th', { scope: 'col', text: c }); }))]),
+        h('thead', {}, [h('tr', {}, MAT_COLS.map(sortHead))]),
         h('tbody', {}, rows.map(function (r) {
           return h('tr', {}, [
             h('th', { scope: 'row', class: 'dc-name', text: r.name }),

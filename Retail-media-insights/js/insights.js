@@ -264,11 +264,28 @@
     host.appendChild(head); host.appendChild(grid);
     return grid;
   }
-  function tile(key, label, value, sub, tipText) {
+  // Up/down against the previous period: green up, red down, grey when unchanged or there is nothing to compare with.
+  // `unit` 'pct' compares as a % change; 'pts' (inventory sold) as percentage points.
+  function delta(now, before, unit, versus) {
+    if (now == null || before == null || (unit === 'pct' && before === 0 && now === 0)) {
+      return h('div', { class: 'delta flat', 'data-delta': 'none' }, [h('span', { text: 'No data ' + versus })]);
+    }
+    var diff = now - before, dir = Math.abs(diff) < 0.005 ? 'flat' : diff > 0 ? 'up' : 'down', text;
+    if (unit === 'pts') text = (diff > 0 ? '+' : diff < 0 ? '−' : '') + Math.abs(Math.round(diff)) + ' pts';
+    else if (before === 0) text = 'new';
+    else text = (diff > 0 ? '+' : diff < 0 ? '−' : '') + (Math.abs(diff / before) * 100).toFixed(1) + '%';
+    if (dir === 'flat') text = 'No change';
+    return h('div', { class: 'delta ' + dir, 'data-delta': dir }, [
+      dir === 'flat' ? null : icon(dir === 'up' ? 'arrow_upward' : 'arrow_downward'),
+      h('span', { text: text + ' ' + versus })
+    ]);
+  }
+  function tile(key, label, value, sub, tipText, change) {
     return h('div', { class: 'tile', 'data-tile': key }, [
       h('div', { class: 'val', 'data-value': String(value.raw) }, [h('span', { text: value.text })]),
       h('div', { class: 'lbl' }, [h('span', { text: label }), tipText ? info(tipText, label + ': ' + tipText) : null]),
-      sub ? h('div', { class: 'sub', text: sub }) : null
+      sub ? h('div', { class: 'sub', text: sub }) : null,
+      change || null
     ]);
   }
   function skeletons(grid, n) { for (var i = 0; i < n; i++) grid.appendChild(h('div', { class: 'skel' })); }
@@ -288,10 +305,12 @@
       var w = d.estimatedWindow || {};
       var days = w.dateFrom && w.dateTo ? dayCount(w.dateFrom, w.dateTo) : 30;
       var dsps = d.connectedDsps;
-      grid.appendChild(tile('earned', 'Earned revenue', { raw: d.earnedRevenue, text: fmtMoneyK(d.earnedRevenue) }, 'via ' + dsps + ' connected DSP' + (dsps === 1 ? '' : 's')));
-      grid.appendChild(tile('estimated', 'Estimated revenue', { raw: d.estimatedRevenue, text: fmtMoneyK(d.estimatedRevenue) }, 'booked for the next ' + days + ' days'));
-      grid.appendChild(tile('cpm', 'Effective CPM', { raw: d.effectiveCpm, text: d.effectiveCpm == null ? '–' : '$' + d.effectiveCpm.toFixed(2) }, d.effectiveCpm == null ? 'No delivery' : 'per 1,000 assumed views (VAC-d)'));
-      grid.appendChild(tile('sold', 'Inventory sold', { raw: s.percent, text: s.percent + '%' }, fmtInt(s.slotsSold) + ' sold · ' + fmtInt(s.slotsAvailable) + ' available', SOLD_TIP));
+      var p = d.previous || {};
+      var vsPeriod = 'vs previous period';
+      grid.appendChild(tile('earned', 'Earned revenue', { raw: d.earnedRevenue, text: fmtMoneyK(d.earnedRevenue) }, 'via ' + dsps + ' connected DSP' + (dsps === 1 ? '' : 's'), null, delta(d.earnedRevenue, p.earnedRevenue, 'pct', vsPeriod)));
+      grid.appendChild(tile('estimated', 'Estimated revenue', { raw: d.estimatedRevenue, text: fmtMoneyK(d.estimatedRevenue) }, 'booked for the next ' + days + ' days', null, delta(d.estimatedRevenue, p.estimatedRevenue, 'pct', 'vs previous ' + days + ' days')));
+      grid.appendChild(tile('cpm', 'Effective CPM', { raw: d.effectiveCpm, text: d.effectiveCpm == null ? '–' : '$' + d.effectiveCpm.toFixed(2) }, d.effectiveCpm == null ? 'No delivery' : 'per 1,000 assumed views (VAC-d)', null, delta(d.effectiveCpm, p.effectiveCpm, 'pct', vsPeriod)));
+      grid.appendChild(tile('sold', 'Inventory sold', { raw: s.percent, text: s.percent + '%' }, fmtInt(s.slotsSold) + ' sold · ' + fmtInt(s.slotsAvailable) + ' available', SOLD_TIP, delta(s.percent, p.inventorySoldPercent, 'pts', vsPeriod)));
     }, function () {
       if (my !== summarySeq) return;
       clear(grid);

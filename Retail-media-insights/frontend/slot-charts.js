@@ -81,6 +81,20 @@
       .sort(function (a, b) { return a.z - b.z || a.i - b.i; })
       .map(function (x) { return x.r; });
   }
+  // Slot value order: the selected metric, highest first; a missing value goes last; ties keep journey order.
+  function metricOrder(rows, mode) {
+    var key = mode === 'per' ? 'perSlotPerDay' : 'effectiveCpm';
+    function v(r) { return has(r[key]) ? r[key] : -Infinity; }
+    return journeyOrder(rows, function (r) { return r; }).map(function (r, i) { return { r: r, i: i }; })
+      .sort(function (a, b) { return v(b.r) - v(a.r) || a.i - b.i; }).map(function (x) { return x.r; });
+  }
+  // Slot allocation follows the Slot value order so the two charts compare row for row; types the value chart lacks go last in journey order.
+  function followOrder(rows, leaders, typeOf) {
+    var rank = {};
+    (leaders || []).forEach(function (r, i) { rank[r.id] = i; });
+    return journeyOrder(rows, typeOf).map(function (r, i) { return { r: r, i: i, k: rank[r.id] === undefined ? Infinity : rank[r.id] }; })
+      .sort(function (a, b) { return a.k === b.k ? a.i - b.i : a.k < b.k ? -1 : 1; }).map(function (x) { return x.r; });
+  }
   function dspOrder(rows) {
     function rank(r) { var i = DSP_ORDER.indexOf(r.dsp); return i < 0 ? DSP_ORDER.length : i; }
     return rows.map(function (r, i) { return { r: r, i: i }; })
@@ -183,10 +197,10 @@
     return { title: title, desc: null, sections: [{ rows: rows }] };
   }
 
-  // Display type rows by total missed revenue, highest first; ties keep input order.
+  // Display type rows by unsold value (unsold slots at floor CPM), highest first; ties by total missed, then input order.
   function missedOrder(rows) {
     return rows.map(function (r, i) { return { r: r, i: i }; })
-      .sort(function (a, b) { return missedParts(b.r).total - missedParts(a.r).total || a.i - b.i; }).map(function (x) { return x.r; });
+      .sort(function (a, b) { var pa = missedParts(a.r), pb = missedParts(b.r); return pb.unsold - pa.unsold || pb.total - pa.total || a.i - b.i; }).map(function (x) { return x.r; });
   }
   // One 100%-wide stack: sold, unsold and offline shares of all advertiser slots, from the back end's counts.
   function missedShares(r) {
@@ -250,7 +264,7 @@
   var pure = {
     ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, AMBER_AT: AMBER_AT, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
     fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct, orientationText: orientationText,
-    journeyOrder: journeyOrder, dspOrder: dspOrder, yieldRows: yieldRows, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
+    journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, yieldRows: yieldRows, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
     DSP_COLOURS: DSP_COLOURS, ALL_DEAL_TYPES: ALL_DEAL_TYPES, typesById: typesById, missedParts: missedParts,
     displayTypeCard: displayTypeCard, slotValueHover: slotValueHover, allocationHover: allocationHover,
     missedHover: missedHover, yieldHover: yieldHover
@@ -351,7 +365,7 @@
     var seg = h('div', { class: 'sc-seg', role: 'radiogroup', 'aria-label': 'Slot value metric' });
     [['cpm', 'Effective CPM'], ['per', 'Per slot per day']].forEach(function (o) {
       var b = h('button', { type: 'button', class: 'sc-seg-btn', role: 'radio', 'data-mode': o[0], text: o[1] });
-      b.addEventListener('click', function () { state.mode = o[0]; syncSeg(); if (svData) drawSlotValue(); });
+      b.addEventListener('click', function () { state.mode = o[0]; syncSeg(); if (svData) drawSlotValue(); if (saData) drawAllocation(saData); });
       segBtns[o[0]] = b; seg.appendChild(b);
     });
     function syncSeg() {
@@ -399,7 +413,7 @@
     var svData = null;
     function drawSlotValue() {
       var d = svData;
-      var rows = journeyOrder(d.rows, function (r) { return r; });
+      var rows = metricOrder(d.rows, state.mode);
       var cpm = state.mode === 'cpm';
       var vals = rows.map(function (r) { return cpm ? r.effectiveCpm : r.perSlotPerDay; });
       var max = Math.max.apply(null, vals.concat(cpm ? rows.map(function (r) { return r.floorCpm || 0; }) : [0])) * 1.08 || 1;
@@ -420,8 +434,10 @@
     }
 
     // ----- slot allocation -----
+    var saData = null;
     function drawAllocation(d) {
-      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.id]; });
+      saData = d;
+      var rows = followOrder(d.rows, svData && metricOrder(svData.rows, state.mode), function (r) { return cache.typeMap[r.id]; });
       var heads = ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots', 'Advertiser slots sold'];
       var thead = h('thead', {}, [h('tr', {}, heads.map(function (t) { return h('th', { scope: 'col' }, [h('span', { text: t }), info(COLUMN_TIPS[t])]); }))]);
       var tbody = h('tbody');
@@ -515,7 +531,7 @@
     function loadAll() {
       var g = ++gen.all;
       [pSV, pSA, pMR].forEach(function (p) { setState(p, 'loading'); });
-      svData = null;
+      svData = null; saData = null;
       var current = function () { return alive && g === gen.all; };
       var typesP = fetchJson('display-types', filters).then(function (t) {
         cache.types = t; cache.typeMap = typesById(t); return t;
@@ -529,7 +545,7 @@
           draw(d);
         }, function () { if (current()) setState(p, 'error', loadAll); });
       }
-      run(pSV, 'slot-value', function () { drawSlotValue(); }, function (d) { svData = d; });
+      run(pSV, 'slot-value', function () { drawSlotValue(); if (saData) drawAllocation(saData); }, function (d) { svData = d; });
       run(pSA, 'slot-allocation', drawAllocation);
       run(pMR, 'missed-revenue', drawMissed);
       loadYield();

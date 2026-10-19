@@ -107,6 +107,11 @@ test('progress over time: three bands that add to 100 per period, week and month
   assert.deepStrictEqual(m.sections[0].rows.map((r) => r[0]), DC.LEVELS);
   assert.ok(m.sections[0].rows.every((r) => /^\d+%$/.test(r[1])), 'the period, then each level’s %');
   assert.strictEqual(m.title, 'Jun 2026');
+  const ot = (await get('/maturity')).overTime;
+  const txt = DC.progressPeriodText(ot, 'month');
+  assert.ok(/^Jun 2026 – \w{3} 2026 · by month · whole history$/.test(txt), txt);
+  assert.ok(/by week \(week starting\)/.test(DC.progressPeriodText(ot, 'week')));
+  assert.strictEqual(DC.progressPeriodText([], 'month'), '');
 });
 
 test('table filters: level, variable, scheduling combine; Personalised first, then revenue', async () => {
@@ -137,4 +142,36 @@ test('ladder, scheduling and variable counts are consistent with the table', asy
   assert.strictEqual(mat.ladder.reduce((a, l) => a + l.advertisers, 0), mat.table.length);
   const seg = mat.variablesInUse.find((v) => v.variable === 'Fixed Store Segments');
   assert.strictEqual(seg.advertisers, (await get('/maturity', { variable: 'Fixed Store Segments' })).table.length);
+});
+
+test('advertiser table: every column sorts both ways, blanks last, no key keeps the back end order', async () => {
+  const rows = DC.advertiserRows(await get('/advertisers'), true);
+  const names = (rs) => rs.map((r) => r.name);
+  assert.deepStrictEqual(names(DC.sortAdvertiserRows(rows, '', 'asc')), names(rows));
+  for (const c of DC.ADV_COLS) {
+    for (const dir of ['asc', 'desc']) {
+      const out = DC.sortAdvertiserRows(rows, c.key, dir);
+      assert.strictEqual(out.length, rows.length);
+      const vals = out.map(c.value).filter((v) => v !== null && v !== undefined);
+      for (let i = 1; i < vals.length; i++) {
+        const cmp = typeof vals[i] === 'string' ? vals[i - 1].localeCompare(vals[i]) : vals[i - 1] - vals[i];
+        assert.ok(dir === 'asc' ? cmp <= 0 : cmp >= 0, c.key + ' ' + dir);
+      }
+      const blanks = out.map(c.value).map((v) => v === null || v === undefined);
+      assert.deepStrictEqual(blanks, blanks.slice().sort((a, b) => a - b), c.key + ': blanks last');
+    }
+  }
+});
+
+test('targeting table: sorts by Revenue by default and every column sorts both ways', async () => {
+  const rows = DC.tableRows(await get('/maturity'));
+  const rev = (key, dir) => DC.sortAdvertiserRows(rows, key, dir, DC.MAT_COLS).map((r) => r.revenueRaw);
+  const desc = rev('revenue', 'desc');
+  assert.deepStrictEqual(desc, desc.slice().sort((a, b) => b - a));
+  assert.deepStrictEqual(rev('revenue', 'asc'), desc.slice().reverse());
+  DC.MAT_COLS.forEach((c) => {
+    ['asc', 'desc'].forEach((dir) => assert.strictEqual(DC.sortAdvertiserRows(rows, c.key, dir, DC.MAT_COLS).length, rows.length));
+  });
+  const names = DC.sortAdvertiserRows(rows, 'name', 'asc', DC.MAT_COLS).map((r) => r.name);
+  assert.deepStrictEqual(names, names.slice().sort((a, b) => a.localeCompare(b)));
 });

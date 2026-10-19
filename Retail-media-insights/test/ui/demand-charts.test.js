@@ -52,7 +52,7 @@ test('Demand health: section header, names only, "n deals" hover, Show all N adv
     await head.locator('.dc-info').hover();
     assert.match(await page.textContent('.dc-tip'), /^Which advertisers are on which deals/);
 
-    assert.deepEqual(await texts(page, '.dc-adv thead th'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM']);
+    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM']);
     const names = await texts(page, '.dc-adv tbody th');
     assert.equal(names.length, 10);
     assert.ok(names.every((n) => !/\(/.test(n)), `no DSP in the cell: ${names}`);
@@ -86,11 +86,11 @@ test('Maturity: order, ladder, Variables in use, table cells, Progress over time
     for (const b of [vars, tab, pro]) assert.ok(b.width > 1000, `full width: ${b.width}`);
 
     const ladder = page.locator('.dc-panel:has(h3:text-is("Maturity ladder"))');
-    assert.deepEqual(await texts(page, '.dc-panel:has(h3:text-is("Maturity ladder")) .dc-label'), ['Default only', 'Localised', 'Personalised']);
+    assert.deepEqual(await texts(page, '.dc-panel:has(h3:text-is("Maturity ladder")) .dc-label'), ['Personalised', 'Localised', 'Default only']);
     assert.deepEqual(await ladder.locator('.dc-bar').evaluateAll((b) => b.map((x) => getComputedStyle(x).backgroundColor)),
-      ['rgb(217, 217, 217)', 'rgb(106, 167, 224)', 'rgb(23, 74, 140)']);
-    assert.match(await ladder.locator('.dc-value').last().innerHTML(), /^<b>5<\/b> advertisers$/);
-    await ladder.locator('.dc-row').last().hover();
+      ['rgb(23, 74, 140)', 'rgb(106, 167, 224)', 'rgb(217, 217, 217)']);
+    assert.match(await ladder.locator('.dc-value').first().innerHTML(), /^<b>5<\/b> advertisers$/);
+    await ladder.locator('.dc-row').first().hover();
     assert.ok((await page.textContent('.dc-tip')).includes('Blackmores (DV360) · '));
 
     const seg = page.locator('.dc-panel:has(h3:text-is("Variables in use")) .dc-seg-btn');

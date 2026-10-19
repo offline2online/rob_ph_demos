@@ -67,7 +67,7 @@
       var b = by[r.period];
       if (!b) { b = by[r.period] = { period: r.period, stacks: [], earned: 0, estimated: 0, ahead: false }; order.push(r.period); }
       if (r.ahead) b.ahead = true;
-      if (r.earned) b.stacks.push({ dsp: r.dsp, dealType: typeName(r.dealType), amount: r.earned });
+      if (r.earned) b.stacks.push({ dsp: r.dsp, dealType: typeName(r.dealType), amount: r.earned, advertisers: r.advertisers });
       b.earned += r.earned; b.estimated += r.estimated;
     });
     var lastYear = data && data.lastDataDay ? data.lastDataDay.slice(0, 4) : null;
@@ -88,11 +88,13 @@
     var fit = Math.max(1, Math.floor((width || 600) / perLabel));
     return Math.max(1, Math.ceil(bars / fit));
   }
-  // Tooltip per bar: total for the period, then each DSP × deal type amount.
+  // Tooltip per bar: total for the period, then each DSP × deal type amount with its number of advertisers in brackets.
   function barTooltip(bar, granularity) {
     if (bar.ahead) return { title: 'Estimated (booked ahead)', rows: [[periodLabel(bar.period, granularity), fmtMoney(bar.estimated)]] };
     var lines = [[periodLabel(bar.period, granularity), fmtMoney(bar.earned)]];
-    bar.stacks.forEach(function (s) { lines.push([s.dsp + ' · ' + s.dealType, fmtMoney(s.amount)]); });
+    bar.stacks.forEach(function (s) {
+      lines.push([s.dsp + ' · ' + s.dealType, fmtMoney(s.amount) + (s.advertisers != null ? ' (' + fmtInt(s.advertisers) + ')' : '')]);
+    });
     if (bar.estimated) lines.push(['Estimated (booked ahead)', fmtMoney(bar.estimated)]);
     return { title: 'Earned revenue', rows: lines };
   }
@@ -165,6 +167,37 @@
   function advertisersLabel(deal) { return plural((deal.advertisers || []).length, 'advertiser'); }
   function cpmTooltip(c) { return c && c.value != null ? { title: 'CPM', rows: [[c.kind === 'floor' ? 'Floor CPM' : 'Fixed CPM', fmtMoney(c.value, 2)]] } : null; }
 
+  // ---------- Deals sorting ----------
+  // Every column sorts. The default view is Revenue, highest first; a column cycles highest → lowest, lowest → highest, default.
+  var DEAL_COLS = [
+    { key: 'name', label: 'Deal', value: function (d) { return d.name == null ? null : String(d.name).toLowerCase(); } },
+    { key: 'dealType', label: 'Deal type', value: function (d) { return typeRank(d.dealType); } },
+    { key: 'slots', label: 'Slots', value: function (d) { return (d.slots || []).length; } },
+    { key: 'advertisers', label: 'Advertisers on deal', value: function (d) { return (d.advertisers || []).length; } },
+    { key: 'fill', label: 'Fill', value: function (d) { return d.fill && d.fill.percent != null ? d.fill.percent : null; } },
+    { key: 'pacing', label: 'Pacing', value: function (d) { return isPg(d.dealType) && d.pacing && d.pacing.percent != null ? d.pacing.percent : null; } },
+    { key: 'revenue', label: 'Revenue', num: true, value: function (d) { return d.revenue == null ? null : d.revenue; } },
+    { key: 'cpm', label: 'CPM', num: true, value: function (d) { return d.cpm && d.cpm.value != null ? d.cpm.value : null; } }
+  ];
+  var DEFAULT_DEAL_SORT = { key: 'revenue', dir: 'desc' };
+  // sort: null = default, else { key, dir: 'asc' | 'desc' }. Rows with no value in that column always sit last.
+  function sortDeals(rows, sort) {
+    var s = sort || DEFAULT_DEAL_SORT;
+    var col = DEAL_COLS.filter(function (c) { return c.key === s.key; })[0] || DEAL_COLS[6];
+    var sign = s.dir === 'asc' ? 1 : -1;
+    return rows.map(function (r, i) { return { r: r, i: i, v: col.value(r) }; }).sort(function (a, b) {
+      if (a.v == null || b.v == null) return a.v == null && b.v == null ? a.i - b.i : a.v == null ? 1 : -1;
+      return (a.v < b.v ? -1 : a.v > b.v ? 1 : 0) * sign || a.i - b.i;
+    }).map(function (x) { return x.r; });
+  }
+  // The next sort when a column header is clicked. The default is Revenue highest first, so Revenue goes lowest first, then back.
+  function nextDealSort(sort, key) {
+    var isDefaultCol = key === DEFAULT_DEAL_SORT.key;
+    var cur = sort && sort.key === key ? sort.dir : isDefaultCol && !sort ? 'desc' : null;
+    if (isDefaultCol) return cur === 'asc' ? null : { key: key, dir: 'asc' };
+    return cur === null ? { key: key, dir: 'desc' } : cur === 'desc' ? { key: key, dir: 'asc' } : null;
+  }
+
   // ---------- DOM ----------
   function h(tag, attrs, kids) {
     var el = document.createElement(tag);
@@ -180,7 +213,8 @@
     if (typeof document === 'undefined') throw new Error('RevenueDeals.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = {};
-    var sel = { dsps: ['DV360'], dealType: '', granularity: 'day', dealsType: '' };
+    var sel = { dsps: ['DV360'], dealType: '', granularity: 'day', dealsType: '', dealsSort: null };
+    var lastDeals = null;
     var seq = { revenue: 0, deals: 0 };
 
     var root = h('div', { class: 'rd-root' });
@@ -345,12 +379,19 @@
     }
     function drawDeals(data) {
       deals.body.textContent = '';
-      var rows = (data && data.rows) || [];
+      lastDeals = data;
+      var rows = sortDeals((data && data.rows) || [], sel.dealsSort);
       if (!rows.length) return deals.body.appendChild(stateBox('empty', 'No deals match this filter.'));
-      var cols = ['Deal', 'Deal type', 'Slots', 'Advertisers on deal', 'Fill', 'Pacing', 'Revenue', 'CPM'];
-      var thead = h('thead', {}, [h('tr', {}, cols.map(function (c) {
-        var th = h('th', { scope: 'col', class: c === 'Revenue' || c === 'CPM' ? 'rd-num' : '' }, [document.createTextNode(c)]);
-        if (c === 'Pacing') th.appendChild(info(TIPS.pacing));
+      var eff = sel.dealsSort || DEFAULT_DEAL_SORT;
+      var thead = h('thead', {}, [h('tr', {}, DEAL_COLS.map(function (c) {
+        var active = eff.key === c.key;
+        var th = h('th', { scope: 'col', class: c.num ? 'rd-num' : '', 'aria-sort': active ? (eff.dir === 'asc' ? 'ascending' : 'descending') : 'none' });
+        var btn = h('button', { type: 'button', class: 'rd-sort' + (active ? ' rd-sort-on' : ''),
+          'aria-label': 'Sort by ' + c.label + (active ? ', currently ' + (eff.dir === 'asc' ? 'lowest' : 'highest') + ' first' : '') }, [
+          document.createTextNode(c.label), icon(active ? (eff.dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more')]);
+        btn.onclick = function () { sel.dealsSort = nextDealSort(sel.dealsSort, c.key); hideTip(); drawDeals(lastDeals); };
+        th.appendChild(btn);
+        if (c.key === 'pacing') th.appendChild(info(TIPS.pacing));
         return th;
       }))]);
       var tbody = h('tbody');
@@ -418,6 +459,7 @@
     mount: mount, DSP_ORDER: DSP_ORDER, DEAL_TYPES: DEAL_TYPES,
     revenueBars: revenueBars, revenueTotals: revenueTotals, labelStep: labelStep, barTooltip: barTooltip, shadeColour: shadeColour, periodLabel: periodLabel, typeName: typeName, legendEntries: legendEntries, aheadDaysFor: aheadDaysFor, advertisersLabel: advertisersLabel, cpmNote: cpmNote, DSP_SHADES: DSP_SHADES,
     nameTooltip: nameTooltip, slotsTooltip: slotsTooltip, slotsLabel: slotsLabel, advertisersTooltip: advertisersTooltip,
+    sortDeals: sortDeals, nextDealSort: nextDealSort, DEAL_COLS: DEAL_COLS,
     pacingTooltip: pacingTooltip, cpmTooltip: cpmTooltip, fmtMoney: fmtMoney
   };
 });

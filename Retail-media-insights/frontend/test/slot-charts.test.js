@@ -118,9 +118,9 @@ test('missed hover shows every value as the back end returned it, with the store
   assert.strictEqual(m.sections.flatMap((s) => s.rows).filter((r) => r[0] === 'Connected displays').length, 1, 'shown once, not repeated under the card');
 });
 
-test('missed revenue & fill: rows sort by total missed, highest first; the stack is the back end’s counts and adds to 100%', async () => {
+test('missed revenue & fill: rows sort by unsold value, highest first; the stack is the back end’s counts and adds to 100%', async () => {
   const d = await get('/missed-revenue');
-  const totals = SC.missedOrder(d.rows.slice().reverse()).map((r) => r.totalMissed);
+  const totals = SC.missedOrder(d.rows.slice().reverse()).map((r) => r.unsoldValueAtFloor);
   assert.deepStrictEqual(totals, totals.slice().sort((a, b) => b - a));
   d.rows.concat([d.total]).forEach((r) => {
     const s = SC.missedShares(r);
@@ -189,4 +189,16 @@ test('no hover names a specific opening time', async () => {
 test('formatting helpers', () => {
   assert.strictEqual(SC.fmtCompact(812600), '812.6k');
   assert.strictEqual(SC.dateRange(RANGE), '12 Sep – 11 Oct');
+});
+
+test('slot value sorts by the selected metric and slot allocation follows it', async () => {
+  const sv = (await get('/slot-value')).rows;
+  const sa = (await get('/slot-allocation')).rows;
+  for (const mode of ['cpm', 'per']) {
+    const key = mode === 'cpm' ? 'effectiveCpm' : 'perSlotPerDay';
+    const order = SC.metricOrder(sv, mode);
+    for (let i = 1; i < order.length; i++) assert.ok(order[i - 1][key] >= order[i][key]);
+    const types = await typesP;
+    assert.deepStrictEqual(SC.followOrder(sa.slice().reverse(), order, (r) => types[r.id]).map((r) => r.id), order.map((r) => r.id).filter((id) => sa.some((a) => a.id === id)));
+  }
 });
