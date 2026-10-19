@@ -13,6 +13,8 @@
 "use strict";
 const assert = require("assert");
 const Module = require("module");
+// The real spacing between fires is for the live endpoint; the stub needs none.
+process.env.FIRE_SPACING_MS = "0";
 
 function makeFakeDb(seed) {
   const state = JSON.parse(JSON.stringify(seed));
@@ -174,6 +176,68 @@ async function click(db, mod, extra = {}) {
     assert.strictEqual(r.status, "in-progress", "two of three started");
     assert.match(r.errorMessage, /1 of 3 sessions failed to start/);
     assert.strictEqual(r.sessions.find((x) => x.itemId === "b").error.includes("429"), true);
+  });
+
+  await test("each card records its own fire outcome: the session, or the error and when it will be retried", async () => {
+    const db = makeFakeDb(seed());
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub({ failFor: ["b"] }); global.fetch = stub;
+    try { await click(db, mod); } finally { global.fetch = realFetch; }
+    const a = db.__state.backlogItems.a.lastFire;
+    assert.strictEqual(a.status, "started");
+    assert.ok(a.sessionId && !a.error);
+    const b = db.__state.backlogItems.b.lastFire;
+    assert.strictEqual(b.status, "retrying", "a 429 is tried again");
+    assert.match(b.error, /429/);
+    assert.strictEqual(b.attempts, 1);
+    assert.ok(b.nextAttemptAt.getTime() > Date.now() + 4 * 60 * 1000, "about five minutes out");
+    assert.ok(b.requestedAt, "tied to the request that caused it");
+  });
+
+  await test("after a 429 the rest of the batch is deferred, not fired into the same wall", async () => {
+    const s = seed();
+    for (let i = 0; i < 6; i++) s.backlogItems[`x${i}`] = { projectId: PID, status: "backlog", type: "feature", title: `X${i}`, desc: "d" };
+    const db = makeFakeDb(s);
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub({ failFor: ["a"] }); global.fetch = stub;
+    try { await click(db, mod, { notifyItemIds: ["a", "x0", "x1", "x2", "x3", "x4", "x5"] }); } finally { global.fetch = realFetch; }
+    assert.ok(stub.calls.length < 7, `stopped firing once throttled (fired ${stub.calls.length})`);
+    const deferred = Object.values(db.__state.backlogItems).filter((i) => i.lastFire && i.lastFire.status === "retrying" && i.lastFire.attempts === 0);
+    assert.ok(deferred.length >= 1, "deferred cards wait without using an attempt");
+  });
+
+  await test("a retry that succeeds replaces the retrying record with the session", async () => {
+    const s = seed();
+    s.backlogItems.b.lastFire = { status: "retrying", attempts: 1, error: "429", nextAttemptAt: new Date(0) };
+    const db = makeFakeDb(s);
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub(); global.fetch = stub;
+    try { await click(db, mod, { notifyItemIds: ["b"] }); } finally { global.fetch = realFetch; }
+    const b = db.__state.backlogItems.b.lastFire;
+    assert.strictEqual(b.status, "started");
+    assert.strictEqual(b.attempts, 2);
+    assert.strictEqual(b.error, null);
+  });
+
+  await test("retry policy: 429, 5xx and no answer retry; other 4xx do not; three attempts over about 15 minutes", async () => {
+    const mod = loadIndex(makeFakeDb(seed()), secrets);
+    const plan = mod.__test.fireRetryPlan;
+    const now = 1_000_000;
+    for (const status of [429, 500, 502, 503, null]) assert.strictEqual(plan({ status, attempts: 1, now }).retry, true, String(status));
+    for (const status of [400, 401, 403, 404, 422]) assert.strictEqual(plan({ status, attempts: 1, now }).retry, false, String(status));
+    assert.strictEqual(plan({ status: 429, attempts: 1, now }).nextAttemptAt.getTime(), now + 5 * 60 * 1000);
+    assert.strictEqual(plan({ status: 429, attempts: 2, now }).nextAttemptAt.getTime(), now + 10 * 60 * 1000);
+    assert.strictEqual(plan({ status: 429, attempts: 3, now }).retry, false, "the third attempt is the last");
+    assert.strictEqual(plan({ status: 429, attempts: 0, deferred: true, deferrals: 0, now }).retry, true);
+    assert.strictEqual(plan({ status: 429, attempts: 0, deferred: true, deferrals: 6, now }).retry, false, "deferral is bounded");
+  });
+
+  await test("a 4xx that shouldn't be retried is recorded as failed, with no next attempt", async () => {
+    const mod = loadIndex(makeFakeDb(seed()), secrets);
+    const r = mod.__test.lastFireRecord({ result: { error: "Routine fire endpoint responded with status 401", status: 401 }, prior: {}, requestedAt: null });
+    assert.strictEqual(r.status, "failed");
+    assert.strictEqual(r.nextAttemptAt, null);
+    assert.match(r.error, /401/);
   });
 
   await test("itemNotesBlock keeps the newest comments and truncates long ones", async () => {

@@ -161,6 +161,8 @@ deleted by hand).
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
+  rebuildRequestedAt?: timestamp | null, // 19 Oct 2026 — when the automation last requested an automatic rebuild of this card; cleared once the request is answered (session started, card moved on) or reported as never started. Automation only
+  lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
   previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
   previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
   previewBuiltFrom?: string | null,     // build-info.json "commit" once ready: the source commit the bundle was built from
@@ -437,6 +439,27 @@ sat four commits behind main, the ticket's full-file patch landed on the
 stale base, and Deploy to Main stopped on a conflict in
 `backlog-tracker/MCP.md` that a person had to merge by hand. Tests:
 `test/train-sync.test.js`.
+
+**Automatic rebuilds after a refused patch are requested, not started**
+(19 Oct 2026, ticket mLCZgemj4wQEW6PTQru1; evidence: OanRebXyEryAXBQrBsVe,
+whose rebuild after a migration-number clash never ran because the Routine
+fire endpoint answered 429, and `autoRebuilds` of 1 meant nothing retried).
+A refusal that rebuilds (migration clash, same-lines conflict, unfilled
+intake section, unmet docsImpact; also a released dependant) writes a note
+saying the rebuild was *requested*, and `flushBuildRequests` stamps
+`rebuildRequestedAt` on the card before the project write. The function
+records each fire's result on the card as `lastFire` (surviving the next
+request overwriting `projects/{id}.notifyRoutine`). A 429, a 5xx or no
+answer is `retrying`: the sweep (`sweepRebuildRequests`) re-requests it once
+`nextAttemptAt` passes — 3 attempts, 5 then 10 minutes apart; other 4xx are
+`failed` immediately. Fires are spaced 1.5 s apart and, after a 429, the rest
+of the batch is deferred (up to 6 deferrals) rather than fired into it. Each
+sweep, a Backlog card whose `rebuildRequestedAt` is over 30 minutes old with
+no session started since and no patch handed over gets one note — "The
+automatic rebuild requested at <time> never started (<error>). Click Ready
+for Dev to build it again." — and `rebuildRequestedAt` is cleared, so it is
+posted once. Tests: `test/rebuild-requests.test.js` (which cards are
+noted, the wording), `test/notify-fanout.test.js` (retry policy, `lastFire`).
 
 **Every ticket a project builds is one commit on that project's single
 long-lived integration branch, `deploy/<project-slug>`** (on the project

@@ -213,6 +213,17 @@ safe and moving:
   file from it onto the train as it is when the patch lands, so a ticket
   that landed in between is never overwritten. A same-lines clash notes the
   card and rebuilds it once automatically (`autoRebuilds`).
+- **An automatic rebuild is "requested", then confirmed or reported**
+  (19 Oct 2026). The card note says a rebuild was *requested* and stamps
+  `rebuildRequestedAt`. The notify function records the outcome of every
+  fire on the card as `lastFire` (session id, or the error); a 429 or 5xx
+  (or no answer) is marked `retrying` and the automation's sweep
+  re-requests it — three attempts over about 15 minutes, fires spaced
+  1.5 s apart, and the rest of a batch deferred once the endpoint says 429.
+  A request older than 30 minutes with no session since gets one note —
+  "The automatic rebuild requested at … never started (…). Click Ready for
+  Dev to build it again." — and `rebuildRequestedAt` is cleared. Tests:
+  `test/rebuild-requests.test.js`, `test/notify-fanout.test.js`.
 - **`dependsOnItemIds` + `blocked`** — a ticket that needs another's code
   waits flagged, and `releaseDependents` clears the flag and starts its
   build when everything it waits for reaches Ready for Testing.

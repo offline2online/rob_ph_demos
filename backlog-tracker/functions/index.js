@@ -234,7 +234,7 @@ async function fireRoutine(fireUrl, token, text, fetchImpl = fetch) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "<unreadable>");
-    return { error: `Routine fire endpoint responded with status ${res.status}`, body };
+    return { error: `Routine fire endpoint responded with status ${res.status}`, body, status: res.status };
   }
   // `claude_code_session_id` is the field name confirmed by a live curl
   // test against the real fire endpoint (see README.md).
@@ -246,22 +246,73 @@ async function fireRoutine(fireUrl, token, text, fetchImpl = fetch) {
 // A few at a time rather than all at once: a click can carry a whole
 // column, and the fire endpoint is a research preview with its own limits.
 const FANOUT_CONCURRENCY = 4;
-async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, projectName, prefix, suffix, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY }) {
+// The endpoint answered 429 to a burst on 19 Oct 2026 (about 10 fires per 13
+// minutes), so fires are also spaced, and once it says 429 the rest of the
+// batch is deferred rather than fired into the same wall.
+const FIRE_SPACING_MS = 1500;
+const FIRE_MAX_ATTEMPTS = 3;
+const FIRE_RETRY_DELAYS_MS = [5 * 60 * 1000, 10 * 60 * 1000]; // attempts 1→2, 2→3: about 15 minutes in all
+const FIRE_MAX_DEFERRALS = 6;
+
+// Pure: what to do after a fire. 429 and 5xx (and a request that never got an
+// answer, status null) are the endpoint's trouble and worth trying again; any
+// other 4xx (bad token, bad URL) will fail the same way every time. A fire
+// that was never attempted because an earlier one in the batch hit 429
+// (`deferred`) waits without using up an attempt, but only so many times.
+function fireRetryPlan({ status = null, attempts = 1, deferred = false, deferrals = 0, now = Date.now() }) {
+  const transient = status == null || status === 429 || status >= 500;
+  if (!transient) return { retry: false, reason: "not-retryable" };
+  if (deferred) {
+    if (deferrals >= FIRE_MAX_DEFERRALS) return { retry: false, reason: "out-of-attempts" };
+    return { retry: true, nextAttemptAt: new Date(now + FIRE_RETRY_DELAYS_MS[0]) };
+  }
+  if (attempts >= FIRE_MAX_ATTEMPTS) return { retry: false, reason: "out-of-attempts" };
+  return { retry: true, nextAttemptAt: new Date(now + FIRE_RETRY_DELAYS_MS[Math.min(attempts, FIRE_RETRY_DELAYS_MS.length) - 1]) };
+}
+
+// Pure: the record stamped on a card for one fire, so the outcome survives the
+// next request overwriting projects/{id}.notifyRoutine.
+function lastFireRecord({ result, prior, requestedAt, requestedByEmail, now = Date.now() }) {
+  const base = { at: new Date(now), requestedAt: requestedAt || null, requestedByEmail: requestedByEmail || null };
+  if (result.sessionId) {
+    return { ...base, status: "started", sessionId: result.sessionId, sessionUrl: result.sessionUrl || null, error: null, attempts: (prior.attempts || 0) + 1, deferrals: prior.deferrals || 0, nextAttemptAt: null };
+  }
+  const deferred = !!result.deferred;
+  const attempts = (prior.attempts || 0) + (deferred ? 0 : 1);
+  const deferrals = (prior.deferrals || 0) + (deferred ? 1 : 0);
+  const plan = fireRetryPlan({ status: result.status ?? null, attempts, deferred, deferrals, now });
+  return {
+    ...base, status: plan.retry ? "retrying" : "failed", sessionId: null, sessionUrl: null,
+    error: result.error || "the Routine fire did not start a session",
+    attempts, deferrals, nextAttemptAt: plan.retry ? plan.nextAttemptAt : null,
+  };
+}
+
+async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, projectName, prefix, suffix, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY, spacingMs = Number(process.env.FIRE_SPACING_MS ?? FIRE_SPACING_MS) }) {
   const results = new Array(items.length);
   let next = 0;
+  let throttled = false;
+  let nextStartAt = 0;
   async function worker() {
     while (next < items.length) {
       const idx = next++;
       const item = items[idx];
+      const deferNow = () => { results[idx] = { itemId: item.id, sessionId: null, sessionUrl: null, status: 429, deferred: true, error: "Routine fire endpoint responded with status 429 (rate limited earlier in this batch)" }; };
+      if (throttled) { deferNow(); continue; }
+      const wait = Math.max(0, nextStartAt - Date.now());
+      nextStartAt = Math.max(nextStartAt, Date.now()) + spacingMs;
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      if (throttled) { deferNow(); continue; }
       const text = perItemFireText({ item, siblings: items, projectId, projectName, prefix, suffix });
       try {
         const r = await fireRoutine(fireUrl, token, text, fetchImpl);
         if (r.error) logger.error("Routine fire failed for one ticket", { projectId, itemId: item.id, error: r.error, body: r.body });
-        results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null };
+        if (r.status === 429) throttled = true;
+        results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null, status: r.status ?? null };
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         logger.error("Routine fire threw for one ticket", { projectId, itemId: item.id, error });
-        results[idx] = { itemId: item.id, sessionId: null, sessionUrl: null, error };
+        results[idx] = { itemId: item.id, sessionId: null, sessionUrl: null, error, status: null };
       }
     }
   }
@@ -362,6 +413,20 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
         prefix: `${projectPromptBlock}${skillsBlock}`, suffix: boardAccessBlock(),
       });
       const sessions = fired.map((f) => ({ itemId: f.itemId, sessionId: f.sessionId, sessionUrl: f.sessionUrl, error: f.error }));
+      // Each card records its own outcome (and, for a 429 or 5xx, when it will
+      // be tried again — the automation's sweep re-requests it). A later
+      // request overwrites notifyRoutine above; this survives it.
+      for (const f of fired) {
+        try {
+          const item = items.find((i) => i.id === f.itemId);
+          const lastFire = lastFireRecord({
+            result: f, prior: (item && item.lastFire) || {}, requestedAt: after.notifyRequestedAt, requestedByEmail: after.notifyRequestedByEmail,
+          });
+          await db.collection("backlogItems").doc(f.itemId).set({ lastFire }, { merge: true });
+        } catch (err) {
+          logger.error("Couldn't record the fire outcome on the card", { projectId: event.params.projectId, itemId: f.itemId, error: err instanceof Error ? err.message : String(err) });
+        }
+      }
       const firstOk = fired.find((f) => f.sessionId);
       sessionId = firstOk ? firstOk.sessionId : null;
       sessionUrl = firstOk ? firstOk.sessionUrl : null;
@@ -389,7 +454,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           sessions,
           itemCount: items.length,
           sentItemIds,
-          errorMessage: fireError || (failed.length ? `${failed.length} of ${fired.length} sessions failed to start: ${failed[0].error}` : null),
+          errorMessage: fireError || (failed.length ? `${failed.length} of ${fired.length} sessions failed to start: ${failed[0].error}${fired.some((f) => !f.sessionId && fireRetryPlan({ status: f.status ?? null, attempts: 1, deferred: !!f.deferred }).retry) ? " (will retry automatically)" : ""}` : null),
           firedVia: routineCredVia,
         },
       }, { merge: true });
@@ -2178,4 +2243,4 @@ exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem };
+exports.__test = { buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord };

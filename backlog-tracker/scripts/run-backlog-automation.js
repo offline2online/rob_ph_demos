@@ -769,10 +769,13 @@ function commitResolvable(sha) {
 // one project write each (a second write in the same second could be folded
 // into the first by the trigger).
 const pendingBuildRequests = new Map();
-function queueBuildRequest(project, itemId) {
+// `retry` marks a re-request of a fire that failed to start (see
+// fireRetryDue): it must not restart the card's "requested at" clock.
+function queueBuildRequest(project, itemId, { retry = false } = {}) {
   if (!project || !project.id || !itemId) return;
-  const entry = pendingBuildRequests.get(project.id) || { project, ids: new Set() };
+  const entry = pendingBuildRequests.get(project.id) || { project, ids: new Set(), fresh: new Set() };
   entry.ids.add(itemId);
+  if (!retry) entry.fresh.add(itemId);
   pendingBuildRequests.set(project.id, entry);
 }
 function buildRequestFields(project, ids) {
@@ -783,7 +786,17 @@ function buildRequestFields(project, ids) {
   };
 }
 async function flushBuildRequests() {
-  for (const [projectId, { project, ids }] of pendingBuildRequests) {
+  for (const [projectId, { project, ids, fresh }] of pendingBuildRequests) {
+    // Stamped before the project write that makes the function fire, so the
+    // session (or error) it records on the card is always newer than this.
+    const requestedAt = new Date();
+    for (const id of fresh || []) {
+      try {
+        await patchItem(id, { rebuildRequestedAt: requestedAt });
+      } catch (err) {
+        console.error(`[parallel] ${id}: couldn't record the rebuild request: ${err.message}`);
+      }
+    }
     try {
       await patchProject(projectId, buildRequestFields(project, [...ids]));
       console.log(`[parallel] ${projectId}: requested builds for ${[...ids].join(", ")}`);
@@ -792,6 +805,76 @@ async function flushBuildRequests() {
     }
   }
   pendingBuildRequests.clear();
+}
+
+// ── Automatic rebuilds that never started ─────────────────────────────────
+// "A rebuild was requested" is only a request: the project write fires a
+// Routine session from a Cloud Function (notifyOnProjectReadyForReview), and
+// that fire can be refused. On 19 Oct 2026 a burst of fires was answered 429,
+// ticket OanRebXyEryAXBQrBsVe was left in Backlog believing a rebuild was
+// coming, and autoRebuilds being 1 meant nothing would ever try again.
+// The function stamps the card's `lastFire` with the session or the error;
+// the sweep below turns what it finds into either a retry or one honest note.
+const REBUILD_NEVER_STARTED_MS = 30 * 60 * 1000;
+function timeMs(v) {
+  if (v == null) return NaN;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v.toMillis === "function") return v.toMillis();
+  return Date.parse(v);
+}
+// "note" — requested over 30 minutes ago, still in Backlog, no session since,
+// nothing handed over: say so once. "clear" — the request has been answered
+// (session started, card moved on): just drop the marker. "wait" — otherwise.
+function rebuildRequestOutcome(item, now = Date.now()) {
+  const requested = timeMs(item && item.rebuildRequestedAt);
+  if (Number.isNaN(requested)) return "wait";
+  const fire = item.lastFire;
+  const started = !!(fire && fire.sessionId && timeMs(fire.at) >= requested);
+  if (item.status !== "backlog" || item.patchReady || started) return "clear";
+  return now - requested >= REBUILD_NEVER_STARTED_MS ? "note" : "wait";
+}
+function rebuildNeverStartedNote(item) {
+  const err = item.lastFire && item.lastFire.error;
+  return `The automatic rebuild requested at ${new Date(timeMs(item.rebuildRequestedAt)).toISOString()} never started` +
+    `${err ? ` (${err})` : ""}. Click Ready for Dev to build it again.`;
+}
+// A fire the function could not make (429 or 5xx) is marked "retrying" with
+// the time to try again; the sweep re-requests it once that time has passed.
+function fireRetryDue(item, now = Date.now()) {
+  const f = item && item.lastFire;
+  return !!f && f.status === "retrying" && item.status === "backlog" && !item.patchReady &&
+    !(item.blocked && item.blocked.reason) && timeMs(f.nextAttemptAt) <= now;
+}
+async function sweepRebuildRequests() {
+  const marked = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "rebuildRequestedAt" }, op: "GREATER_THAN", value: { timestampValue: "2000-01-01T00:00:00Z" } } },
+  });
+  for (const item of marked) {
+    const outcome = rebuildRequestOutcome(item);
+    if (outcome === "wait") continue;
+    try {
+      if (outcome === "note") {
+        const notes = await appendNote(item, rebuildNeverStartedNote(item));
+        await patchItem(item.id, { rebuildRequestedAt: null, notes, updatedAt: new Date().toISOString() });
+        console.log(`[rebuild] ${item.id}: requested rebuild never started — noted`);
+      } else {
+        await patchItem(item.id, { rebuildRequestedAt: null });
+      }
+    } catch (err) {
+      console.error(`[rebuild] ${item.id}: ${err.message}`);
+    }
+  }
+  const retrying = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "lastFire.status" }, op: "EQUAL", value: { stringValue: "retrying" } } },
+  });
+  for (const item of retrying.filter((i) => fireRetryDue(i))) {
+    const project = await getProject(item.projectId).catch(() => null);
+    if (!project || project.trainLocked) continue;
+    queueBuildRequest(project, item.id, { retry: true });
+    console.log(`[rebuild] ${item.id}: retrying a build session that could not be started`);
+  }
 }
 
 async function getItem(itemId) {
@@ -836,7 +919,7 @@ async function releaseDependents(landed) {
           `Released: ${deps.join(", ")} ${deps.length === 1 ? "has" : "have"} reached Ready for Testing, so this ticket is no longer blocked. ` +
           (locked
             ? `This project's train is closing (an approval locked it), so the build was NOT started — click Ready for Dev once the train has merged.`
-            : `A build was started for it automatically.`));
+            : `A build was requested for it automatically; this card will say when it starts.`));
         await patchItem(w.id, { blocked: null, notes, updatedAt: new Date().toISOString() });
         if (!locked) queueBuildRequest(project, w.id);
         console.log(`[parallel] ${w.id}: released (waited on ${deps.join(", ")})${locked ? " — train locked, not rebuilt" : ""}`);
@@ -3029,7 +3112,7 @@ async function processApplyPatch(item) {
     const notes = await appendNote(item,
       `Not built: this ticket's description still has an unfilled intake section (Test steps, Dependencies or Spec reference). ` +
       `The build session has to complete them from the code and the spec in the same PATCH as its patch (ROUTINE_INSTRUCTIONS.md → "Complete the intake sections first"). ` +
-      (autoRebuild ? `A rebuild was started automatically.` : `Fill them in (or click Ready for Dev again) to rebuild.`));
+      (autoRebuild ? `A rebuild was requested automatically; this card will say when it starts.` : `Fill them in (or click Ready for Dev again) to rebuild.`));
     await patchItem(item.id, {
       patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
       ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
@@ -3192,7 +3275,7 @@ async function processApplyPatch(item) {
           `Not built: since this patch was written, ${deployBranch} changed ${rebase.conflicts.join(", ")} in the same places it does ` +
           `(another ticket landed first, or main was merged in), so its edits could not be carried onto the current file automatically. ` +
           (autoRebuild
-            ? `A rebuild against the current files was started automatically.`
+            ? `A rebuild against the current files was requested automatically; this card will say when it starts.`
             : `Click Ready for Dev again so the fix is rebuilt against the current files.`)
         );
         await patchItem(item.id, {
@@ -3225,7 +3308,7 @@ async function processApplyPatch(item) {
         `Not built: this patch adds a migration whose number another ticket on ${deployBranch} already uses — ${what}. ` +
         `Built in parallel, both picked the same "next" number, and the migration runner keys on it, so one of the two would never run. ` +
         (autoRebuild
-          ? `A rebuild against the current branch (which will pick the next free number) was started automatically.`
+          ? `A rebuild against the current branch (which will pick the next free number) was requested automatically; this card will say when it starts.`
           : `Click Ready for Dev again so it is rebuilt with the next free number.`));
       await patchItem(item.id, {
         patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
@@ -3250,7 +3333,7 @@ async function processApplyPatch(item) {
       console.log(`[apply-patch] ${item.id}: docsImpact — ${docsUnmet.length} unmet rule(s)`);
       const notes = await appendNote(item,
         docsUnmet.map(docsImpactRefusalNote).join(" ") + " " +
-        (autoRebuild ? `A rebuild was started automatically.` : `Click Ready for Dev again so it is rebuilt.`));
+        (autoRebuild ? `A rebuild was requested automatically; this card will say when it starts.` : `Click Ready for Dev again so it is rebuilt.`));
       await patchItem(item.id, {
         patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
         ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
@@ -5355,6 +5438,11 @@ async function main() {
   } catch (err) {
     console.error(`[parallel] releasing dependants failed: ${err.message}`);
   }
+  try {
+    await sweepRebuildRequests();
+  } catch (err) {
+    console.error(`[rebuild] sweep failed: ${err.message}`);
+  }
   await flushBuildRequests();
   await requestReadyForTestingNotify();
   for (const item of mergeReadyItems) {
@@ -5535,6 +5623,8 @@ module.exports = {
   TRAIN_TEST_START_GRACE_MS, worstTrainTestState, trainTestRunState, landingTrainTest, nextCardTrainTest, memoByKey, recordCardTrainTests,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
+  // test/rebuild-requests.test.js — a requested rebuild either starts or the card says it didn't
+  rebuildRequestOutcome, rebuildNeverStartedNote, fireRetryDue, REBUILD_NEVER_STARTED_MS,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
   followUpDue, FOLLOW_UP_MAX_WAIT_MS, dispatchFollowUpRun, followUpReasons,
   // test/preview-build-state.test.js — "Rebuilding test link…" until the bundle includes the ticket
