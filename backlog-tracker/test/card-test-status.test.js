@@ -79,6 +79,13 @@ assert.strictEqual(nextCardTrainTest({ id: "c5" }, {}, T0), undefined, "a card w
 // the memo fetches once per (workflow, sha)
 let calls = 0;
 const memo = memoByKey((w, s) => { calls += 1; return Promise.resolve([w, s]); });
+// a stale own-commit failure plus a fresh running run on the revert: running
+const { cardEvidenceRun } = require("../scripts/run-backlog-automation.js");
+const train = [{ sha: "a1b2c3d4", message: "p", generatedOnly: false }, { sha: "k2", message: "k", generatedOnly: false }, { sha: "v3", message: "Revert\n\nThis reverts commit a1b2c3d4.", generatedOnly: false }];
+const fresh = cardEvidenceRun(train, "k2", { k2: [run("completed", "failure")], v3: [run("in_progress", null)] });
+const staleCard = { id: "c3", deployCommit: "k2", trainTest: { sha: "k2", state: "failed", workflows: [{ workflow: CONSOLE, label: "console tests", state: "failed", runUrl: "https://github.com/x/actions/runs/1", since: iso(T0) }], since: iso(T0) } };
+assert.strictEqual(nextCardTrainTest(staleCard, { [CONSOLE]: fresh ? [fresh] : [] }, T0 + 60e3, []).state, "running");
+
 (async () => {
   await memo(CONSOLE, SHA); await memo(CONSOLE, SHA); await memo(DSP, SHA); await memo(CONSOLE, NEW);
   assert.strictEqual(calls, 3);

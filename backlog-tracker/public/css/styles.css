@@ -843,6 +843,7 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .deploy-badge-pending, .deploy-badge-unknown { color: var(--warning); background: rgba(201, 138, 10, .12); }
 .deploy-badge-success { color: var(--success); background: rgba(82, 196, 26, .12); }
+.deploy-badge-none { color: var(--text-muted); background: var(--surface-2); }
 .deploy-badge-failure, .deploy-badge-cancelled, .deploy-badge-timed_out, .deploy-badge-startup_failure {
   color: var(--danger); background: var(--danger-tint);
 }
@@ -1579,3 +1580,25 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .rs-msg { max-width: 85%; padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; }
 .rs-msg-agent { align-self: flex-start; background: rgba(22,155,194,0.10); color: #333; }
 .rs-msg-user { align-self: flex-end; background: #169bc2; color: #fff; }
+
+/* Docs page: repo mirrors are read-only (js/docs-view.js). Same pill family
+   as .docs-behind-chip; neutral for a mirror, red when its last sync failed. */
+.docs-row-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.docs-row-chips:empty { display: none; }
+.docs-row-chips[hidden] { display: none; }
+.mirror-chip, .docs-start-chip, .docs-status-chip {
+  display: inline-flex; align-items: center; gap: 4px; box-sizing: border-box; max-width: 100%;
+  border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 500;
+  background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border);
+}
+.docs-start-chip { background: var(--primary-tint); color: var(--primary); border-color: var(--primary); }
+.mirror-chip-error { background: var(--danger-tint); color: var(--danger); border-color: var(--danger); }
+.mirror-chip-icon { font-size: 15px; flex-shrink: 0; }
+.mirror-sync-error { font-size: 12px; color: var(--danger); }
+.mirror-open-link { display: inline-flex; align-items: center; text-decoration: none; }
+.mirror-open-link .material-symbols-outlined { font-size: 18px; }
+.docs-start-icon { font-size: 16px; color: var(--primary); margin-right: 4px; }
+.docs-status-note { margin: 6px 0 0; font-size: 12px; color: var(--text-muted); }
+.docs-superseded { margin-top: 14px; }
+.docs-superseded > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); color: var(--text-muted); cursor: default; }

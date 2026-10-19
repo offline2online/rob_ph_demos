@@ -1259,6 +1259,29 @@ async function fireRoutineSession(fireUrl, token, text, logContext) {
   }
 }
 
+// What a landed card is still waiting on, read from the fields the automation
+// keeps on it: trainTest (the card's own test run) and previewState (whether
+// its test link has been rebuilt to include it). Used by the Ready for Testing
+// fire text and Slack post (19 Oct 2026).
+function handOffTestsState(i) {
+  const tt = i.trainTest;
+  if (!tt || (i.deployCommit && tt.sha !== i.deployCommit)) return { key: "not-run", long: "Tests: not run", short: "tests not run" };
+  if (tt.state === "passed") return { key: "passed", long: "Tests: passed", short: "tests passed" };
+  if (tt.state === "failed") {
+    const w = (Array.isArray(tt.workflows) ? tt.workflows : []).find((x) => x && x.state === "failed" && x.runUrl);
+    return { key: "failed", long: `Tests: failed${w ? ` — ${w.runUrl}` : ""}`, short: "tests failed" };
+  }
+  if (tt.state === "running" || tt.state === "starting") return { key: "running", long: "Tests: still running", short: "tests still running" };
+  if (tt.state === "not-applicable") return { key: "none", long: "Tests: none needed for these files", short: "no tests needed" };
+  return { key: "not-run", long: "Tests: not run", short: "tests not run" };
+}
+function handOffLinkState(i) {
+  if (i.previewState === "rebuilding") return { key: "rebuilding", long: "Test link: still rebuilding — don't test it yet", short: "link still rebuilding" };
+  const built = String(i.previewBuiltFrom || i.previewSha || "").slice(0, 7);
+  if (i.previewState === "stale") return { key: "stale", long: "Test link: rebuild is overdue — it may show the previous build", short: "link may be stale" };
+  return { key: "ready", long: `Test link: ready${built ? ` (build of ${built})` : ""}`, short: "link ready" };
+}
+
 exports.notifyOnItemsReadyForTesting = onDocumentUpdated(
   { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
   async (event) => {
@@ -1304,6 +1327,8 @@ exports.notifyOnItemsReadyForTesting = onDocumentUpdated(
         const summary = String(i.testSummary || i.desc || "").replace(/\s+/g, " ").trim();
         return `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title || "(untitled)"}` +
           `\n   Test link: ${i.previewUrl || "(none yet)"}` +
+          `\n   ${handOffTestsState(i).long}` +
+          `\n   ${handOffLinkState(i).long}` +
           (i.testVersion ? `\n   Test version: v${i.testVersion}` : "") +
           `\n   Ticket: ${origin}/#item-${i.id}` +
           `\n   ${summary.slice(0, 600)}${summary.length > 600 ? "…" : ""}`;
@@ -1340,7 +1365,7 @@ exports.notifyOnItemsReadyForTesting = onDocumentUpdated(
 
     const webhookUrl = NOTIFY_WEBHOOK_URL.value();
     if (webhookUrl) {
-      const lines = items.map((i) => `• ${i.title || i.id}${i.previewUrl ? ` — ${i.previewUrl}` : ""}`).join("\n");
+      const lines = items.map((i) => `• ${i.title || i.id}${i.previewUrl ? ` — ${i.previewUrl}` : ""} — ${handOffTestsState(i).short}, ${handOffLinkState(i).short}`).join("\n");
       try {
         const res = await fetch(webhookUrl, {
           method: "POST",

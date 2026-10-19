@@ -67,8 +67,16 @@ function test(name, fn) {
   catch (err) { failures.push([name, err]); console.log(`FAIL  ${name}\n      ${err && err.stack ? err.stack : err}`); }
 }
 
+// reconcileLockedTrains() talks to Firestore, so the script needs a (generated,
+// never-used) service-account key before it is required.
+const crypto = require("crypto");
+const keyDir = fs.mkdtempSync(path.join(os.tmpdir(), "train-sweep-key-"));
+const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+fs.writeFileSync(path.join(keyDir, "sa.json"), JSON.stringify({ client_email: "t@example.com", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) }));
+process.env.GOOGLE_APPLICATION_CREDENTIALS = path.join(keyDir, "sa.json");
+
 const scriptPath = require.resolve("../scripts/run-backlog-automation.js");
-const { archiveAndResetOrphanedBranch, dateStamp } = require(scriptPath);
+const { archiveAndResetOrphanedBranch, dateStamp, trainSweepPlan, trainCommitsAheadOfMain, reconcileLockedTrains } = require(scriptPath);
 
 test("dateStamp() is a plain YYYY-MM-DD", () => {
   assert.match(dateStamp(), /^\d{4}-\d{2}-\d{2}$/);
@@ -191,8 +199,200 @@ test("a second orphaned train the same day gets a distinctly-suffixed tag rather
   }
 });
 
-console.log(`\n${passed} passed, ${failures.length} failed\n`);
-if (failures.length) {
-  for (const [name, err] of failures) console.error(`--- ${name}\n${err && err.stack ? err.stack : err}\n`);
-  process.exit(1);
+// ── adopting hand-pushed `Backlog item:` commits ─────────────────────────
+const card = (id, status, extra = {}) => ({ id, status, ...extra });
+const live = (sha, itemId) => ({ sha, itemId });
+
+test("trainSweepPlan adopts an unstamped Ready for Testing card, newest sha as deployCommit, oldest first", () => {
+  const plan = trainSweepPlan([card("A", "ready-for-testing")], [live("s1", "A"), live("s2", null), live("s3", "A")]);
+  assert.deepStrictEqual(plan.adopt, [{ itemId: "A", deployCommit: "s3", deployCommits: ["s1", "s3"] }]);
+  assert.deepStrictEqual(plan.tell, []);
+});
+
+test("trainSweepPlan adopts an Approved for Deployment card too", () => {
+  const plan = trainSweepPlan([card("A", "ready-to-publish")], [live("s1", "A")]);
+  assert.strictEqual(plan.adopt.length, 1);
+});
+
+test("trainSweepPlan never adopts Backlog / Archived / Live, reverting or no-deploy cards, or other projects' ids", () => {
+  const items = [
+    card("B", "backlog"), card("C", "archived"), card("D", "published-live"),
+    card("E", "ready-for-testing", { revertRequested: true }),
+    card("F", "ready-for-testing", { noDeploymentRequired: true }),
+    card("G", "ready-for-testing", { deployCommit: "x" }),
+  ];
+  const commits = ["B", "C", "D", "E", "F", "G", "OTHER"].map((id, i) => live(`s${i}`, id));
+  assert.deepStrictEqual(trainSweepPlan(items, commits).adopt, []);
+});
+
+test("trainSweepPlan: a Ticket: commit adopts nothing, but its unstamped card is told; archived trailer cards are told too", () => {
+  const items = [card("A", "ready-to-publish"), card("Z", "archived")];
+  const plan = trainSweepPlan(items, [live("s1", null), live("s2", "Z")]);
+  assert.deepStrictEqual(plan.adopt, []);
+  assert.deepStrictEqual(plan.tell.sort(), ["A", "Z"]);
+});
+
+function commitOn(work, file, message) {
+  fs.writeFileSync(path.join(work, file), `${file}\n`);
+  sh(work, "git", ["add", "-A"]);
+  sh(work, "git", ["commit", "-m", message, "--quiet"]);
+  return sh(work, "git", ["rev-parse", "HEAD"]);
 }
+
+test("trainCommitsAheadOfMain lists only live commits ahead of main with trailer ids; a main merge adopts nothing", () => {
+  const { root, work } = makeDisposableRepoPair();
+  const originalCwd = process.cwd();
+  const branch = "deploy/helper";
+  try {
+    sh(work, "git", ["checkout", "-b", branch, "--quiet"]);
+    const a = commitOn(work, "a.txt", "ticket A\n\nBacklog item: AAA");
+    const b = commitOn(work, "b.txt", "ticket B\n\nBacklog item: BBB");
+    sh(work, "git", ["revert", "--no-edit", b]);
+    const c = commitOn(work, "c.txt", "ticket C\n\nBacklog item: CCC");
+    sh(work, "git", ["push", "-u", "origin", branch, "--quiet"]);
+    // main moves on, then is merged into the branch
+    sh(work, "git", ["checkout", "main", "--quiet"]);
+    commitOn(work, "m.txt", "main work\n\nBacklog item: MMM");
+    sh(work, "git", ["push", "origin", "main", "--quiet"]);
+    sh(work, "git", ["checkout", branch, "--quiet"]);
+    sh(work, "git", ["merge", "main", "--no-edit", "--quiet"]);
+    sh(work, "git", ["push", "origin", branch, "--quiet"]);
+    sh(work, "git", ["checkout", "main", "--quiet"]);
+
+    process.chdir(work);
+    const got = trainCommitsAheadOfMain(branch);
+    const withIds = got.filter((x) => x.itemId);
+    assert.deepStrictEqual(withIds, [{ sha: a, itemId: "AAA" }, { sha: c, itemId: "CCC" }]);
+    assert.ok(!got.some((x) => x.itemId === "MMM" || x.itemId === "BBB"));
+    assert.deepStrictEqual(trainCommitsAheadOfMain("deploy/none"), []);
+  } finally {
+    process.chdir(originalCwd);
+    cleanup(root);
+  }
+});
+
+// In-memory Firestore behind a stubbed fetch.
+let projects = {};
+let cards = {};
+const noteLog = [];
+function enc(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (typeof v === "number") return { integerValue: String(v) };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(enc) } };
+  return { stringValue: String(v) };
+}
+function dec(v) {
+  if ("nullValue" in v) return null;
+  if ("booleanValue" in v) return v.booleanValue;
+  if ("integerValue" in v) return Number(v.integerValue);
+  if ("arrayValue" in v) return (v.arrayValue.values || []).map(dec);
+  if ("mapValue" in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, dec(x)]));
+  return v.stringValue;
+}
+global.fetch = async (url, opts = {}) => {
+  const ok = (body) => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
+  url = String(url);
+  if (url.startsWith("https://oauth2.googleapis.com/token")) return ok({ access_token: "t", expires_in: 3600 });
+  if (url.endsWith(":runQuery")) {
+    const q = JSON.parse(opts.body).structuredQuery;
+    const coll = q.from[0].collectionId;
+    const f = q.where.fieldFilter;
+    const want = dec(f.value);
+    const src = coll === "projects" ? projects : cards;
+    return ok(Object.entries(src).filter(([, d]) => d[f.field.fieldPath] === want)
+      .map(([id, d]) => ({ document: { name: `x/${coll}/${id}`, fields: Object.fromEntries(Object.entries(d).map(([k, v]) => [k, enc(v)])) } })));
+  }
+  if (url.endsWith(":commit")) {
+    for (const w of JSON.parse(opts.body).writes) {
+      const name = (w.update ? w.update.name : w.transform.document);
+      const id = name.split("/").pop();
+      if (w.update) Object.assign(cards[id], Object.fromEntries(Object.entries(w.update.fields).map(([k, v]) => [k, dec(v)])));
+      const t = (w.updateTransforms || w.transform.fieldTransforms)[0];
+      cards[id].notes = (cards[id].notes || []).concat(t.appendMissingElements.values.map(dec));
+      noteLog.push(id);
+    }
+    return ok({});
+  }
+  const m = url.match(/\/(projects|backlogItems)\/([^?/]+)\?/);
+  if (m && opts.method === "PATCH") {
+    const fields = Object.fromEntries(Object.entries(JSON.parse(opts.body).fields).map(([k, v]) => [k, dec(v)]));
+    Object.assign((m[1] === "projects" ? projects : cards)[m[2]], fields);
+    return ok({});
+  }
+  throw new Error(`unexpected fetch ${url}`);
+};
+
+async function sweepCase(seed, setup, fn) {
+  const { root, work } = makeDisposableRepoPair();
+  const originalCwd = process.cwd();
+  const branch = "deploy/sweep";
+  projects = { P: { name: "Sweep", deployBranch: branch, trainLocked: true, trainStatus: "idle", trainNote: "old" } };
+  cards = JSON.parse(JSON.stringify(seed)); noteLog.length = 0;
+  try {
+    sh(work, "git", ["checkout", "-b", branch, "--quiet"]);
+    const shas = setup(work);
+    sh(work, "git", ["push", "-u", "origin", branch, "--quiet"]);
+    sh(work, "git", ["checkout", "main", "--quiet"]);
+    process.chdir(work);
+    const before = remoteBranchSha(work, branch);
+    await reconcileLockedTrains();
+    await fn({ work, branch, before, shas });
+  } finally {
+    process.chdir(originalCwd);
+    cleanup(root);
+  }
+}
+
+const asyncTests = [];
+function atest(name, fn) { asyncTests.push([name, fn]); }
+
+atest("sweep (a): an unstamped card with its trailer commit is adopted; branch not reset, still locked", () =>
+  sweepCase({ AAA: { projectId: "P", status: "ready-for-testing" } },
+    (w) => commitOn(w, "a.txt", "fix\n\nBacklog item: AAA"),
+    async ({ work, branch, before, shas }) => {
+      assert.strictEqual(cards.AAA.deployCommit, shas);
+      assert.deepStrictEqual(cards.AAA.deployCommits, [shas]);
+      assert.strictEqual(cards.AAA.deployBranch, branch);
+      assert.strictEqual(cards.AAA.notes.filter((n) => /^Adopted hand-pushed commit/.test(n.text)).length, 1);
+      assert.strictEqual(remoteBranchSha(work, branch), before);
+      assert.deepStrictEqual(remoteTags(work), []);
+      assert.strictEqual(projects.P.trainLocked, true);
+      assert.strictEqual(projects.P.trainNote, "old");
+    }));
+
+atest("sweep (b): the trailer belongs to an archived card — tagged, reset, unlocked, nothing stamped", () =>
+  sweepCase({ ZZZ: { projectId: "P", status: "archived" } },
+    (w) => commitOn(w, "z.txt", "old\n\nBacklog item: ZZZ"),
+    async ({ work, branch, before }) => {
+      assert.strictEqual(remoteBranchSha(work, branch), sh(work, "git", ["rev-parse", "origin/main"]));
+      assert.strictEqual(remoteTags(work).length, 1);
+      assert.strictEqual(projects.P.trainLocked, false);
+      assert.strictEqual(cards.ZZZ.deployCommit, undefined);
+    }));
+
+atest("sweep (c): an Approved card whose commit says Ticket: — tagged, reset, the card is told, trainNote null", () =>
+  sweepCase({ TTT: { projectId: "P", status: "ready-to-publish" } },
+    (w) => commitOn(w, "t.txt", "hand fix\n\nTicket: TTT"),
+    async ({ work }) => {
+      const [tag] = remoteTags(work);
+      assert.ok(tag && tag.startsWith("archive/deploy/sweep-"));
+      assert.strictEqual(cards.TTT.deployCommit, undefined);
+      assert.strictEqual(cards.TTT.notes.length, 1);
+      assert.ok(cards.TTT.notes[0].text.includes(tag));
+      assert.strictEqual(projects.P.trainNote, null);
+      assert.strictEqual(projects.P.trainLocked, false);
+    }));
+
+(async () => {
+  for (const [name, fn] of asyncTests) {
+    try { await fn(); passed += 1; console.log(`  ok  ${name}`); }
+    catch (err) { failures.push([name, err]); console.log(`FAIL  ${name}\n      ${err && err.stack ? err.stack : err}`); }
+  }
+  fs.rmSync(keyDir, { recursive: true, force: true });
+  console.log(`\n${passed} passed, ${failures.length} failed\n`);
+  if (failures.length) {
+    for (const [name, err] of failures) console.error(`--- ${name}\n${err && err.stack ? err.stack : err}\n`);
+    process.exit(1);
+  }
+})();

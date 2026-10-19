@@ -1,1 +1,4 @@
 backups/
+
+# Click-through test failure screenshots (test/ui/console-click.test.mjs)
+test/ui/out/

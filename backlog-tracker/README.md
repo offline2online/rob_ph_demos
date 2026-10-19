@@ -316,8 +316,35 @@ What the train changes:
   of the approved train ships with no second click (18 Oct 2026, PR #412).
   It is only ejected with a green commit before it, so a check that is red
   on main itself never sends the train's first ticket back.
-  Tests: `test/train-tests.test.js`.
-- **Reject** (`processRevertFromTrain`) — Failed testing on a card writes
+  **A failed train test is re-run once before anyone acts on it** (19 Oct
+  2026): `trainRunVerdict` reads GitHub's attempt number — red on attempt 1
+  is `rerun`, red on attempt 2 is `failed` — so a flaky test no longer sends
+  a ticket back (`culpritAction`, `rerunTrainRun`). The card that owns the
+  re-run run's commit (its own, or a generated-only commit after it) gets one
+  note ("Re-running it once…") and a per-run `:rerun:<runId>` key, whether it
+  is the culprit or an approved card whose run only the head check re-ran; the send-back note says it failed again when
+  re-run, or that the re-run could not start. A pass on re-run is shown on
+  the card ("Passed on re-run…", it may have made the test flaky) and
+  nothing is sent back. `reportTrainTestResults` treats a re-running head run
+  as still running (only a run that still speaks for the head is re-run), and `trainFailureNotes` says whose commit failed: the
+  owner is told it is theirs, every other card that the train is red from
+  another ticket's commit, a ticket already sent back gets nothing, and a
+  merge or revert is named as such. `trainTestReruns` on the card only stops
+  those notes repeating, once per run (older cards carry the bare
+  `:rerun` key, which is still read).
+  **A revert re-tests the train, and a ticket is judged only on a run that
+  did not contain a reverted ticket** (19 Oct 2026): `processRevertFromTrain`
+  starts the train tests on the new head (`afterRevertDispatches`), and
+  `cardEvidenceRun` judges each card on its own commit plus the reverts and
+  generated-only commits right after it, skipping a run that predates a
+  revert of something at or before it. The ticket above an ejected one is no
+  longer sent back for the ejected change's failure; it waits for the fresh
+  run, and so does its "Tests" chip.
+  Tests: `test/train-tests.test.js`, `test/train-eject-after-revert.test.js`.
+- **Reject** (`processRevertFromTrain`) — only the Failed testing choice
+  "Something's wrong — send it back" reverts; "It works, but I want something
+  more" keeps the card and its commit on the train and files a linked
+  follow-up ticket in Backlog (`public/js/follow-up.js`). Sending it back on a card writes
   `revertRequested`, and the automation reverts that card's commits back
   off the branch. **A card in Backlog must never have live commits on a
   train**, or a "rejected" ticket would still ship in the next deploy. If
@@ -434,7 +461,7 @@ it's plain-`node`-testable, see `test/train-lock.test.js`):
   reverted — `archiveAndResetOrphanedBranch()` tags the branch's tip
   `archive/<branch>-<date>` and pushes the tag before resetting the branch
   to `main`, so nothing is silently lost even though no ticket on the
-  board points at it any more. Covers the "reverted-then-net-zero" case
+  board points at it any more. As a safety net the sweep now adopts a hand-pushed commit that carries an unstamped card's `Backlog item:` trailer (stamping `deployCommit`) instead of resetting; otherwise it archives the branch and notes the affected cards. Covers the "reverted-then-net-zero" case
   too (real history, kept, even though the diff is empty). See
   `test/train-lock-branch-archive.test.js`, which drives this against a
   disposable local git repo pair — never the real `origin`.
@@ -539,7 +566,18 @@ one whose source the merged train changed, saying so on the cards. Added
 never reached the hosted API while the GitHub Pages client was rebuilt
 from every one of them — saves were rejected by a server two days behind
 the client, and deploying the API by hand then ran a migration against
-live data. If a future edit to this script or workflow ever
+live data. `finishTrain`'s own two dispatches
+(`deploy-backlog-tracker.yml`, `faq-content.yml`) come from one list,
+`TRAIN_MERGE_DISPATCHES`, so the deploy runs for a train touching only
+`faq/` too. A push-triggered workflow deliberately left undispatched is
+named in `NOT_DISPATCHED_AFTER_TRAIN` with a one-line reason.
+`test/push-workflow-guard.test.js` reads every `.github/workflows/*.yml`
+and fails when a push trigger is not covered by `HOSTED_DEPLOYS`,
+`GENERATED_BUILDS`, `TRAIN_MERGE_DISPATCHES`, `TRAIN_TEST_WORKFLOWS` (the
+suite ran on the train), a `.github/workflows/` path (a person merges
+those), or an excuse, or when an excuse no longer matches a workflow. When
+it fails, add a dispatch entry in `run-backlog-automation.js`, or add an
+excuse with a reason. If a future edit to this script or workflow ever
 looks like it doesn't need that explicit trigger, it's wrong — this is
 the whole reason it exists.
 
@@ -720,6 +758,28 @@ belongs at the repo root (this project's own tickets, an item on a project
 that correctly has no single folder) always has at least one path whose
 top segment already exists there, so it's never caught by this check — see
 `test/patch-paths.test.js` for the exact cases.
+
+**A change to an API or schema without its spec is refused too**
+(`docsImpact`). A project's `board-docs.json` may carry
+`"docsImpact": [{"when": ["<glob>"], "require": ["<repo path>"], "why": "<optional, max 200 chars>"}]`.
+Globs and paths are repo-root-relative (`*` stays inside one path segment,
+`**` spans any number, including none); a rule fires when a changed path
+matches a `when` glob and is met when at least one `require` file also
+changed in the same commit. Rules apply by path, from every
+`board-docs.json` in the tree, whatever project the card is in. After the
+migration-number check, `processApplyPatch` tests the real staged diff (an
+unchanged copy of the document in `patchFiles` doesn't count) against the
+rules read from the patched tree. An unmet rule discards the working tree,
+clears `patchReady`, notes "Not built: this patch changes … but not …" and
+starts one automatic rebuild (otherwise "click Ready for Dev again"). It is
+not a hard block: if the card carries `patchDocsImpact` (one sentence on why
+the spec genuinely doesn't change) the patch lands, the landing note says
+"Spec not updated: … The build says: …" (reason cut at 500 chars), and the
+landing write clears `patchDocsImpact`, so a re-patch needs its own reason.
+`scripts/docs-impact.js` is the pure module and a CLI
+(`node backlog-tracker/scripts/docs-impact.js [--base <sha>]`, exit 1 on an
+unmet rule); `test/docs-impact.test.js` covers it. No project declares rules
+yet.
 
 ## Retiring a project — archive keeps it, delete does not
 
@@ -985,7 +1045,7 @@ Desktop; not Claude Code yet — renders inline as ticket cards, fed by the
 tool result's `structuredContent`; every host also gets the same data as
 plain text — reviewing there changes nothing either. **The Ready for
 Testing column is also presented without being asked for**: when the
-pipeline lands a build, `run-backlog-automation.js` stamps the project and
+pipeline lands a build and its tests and test link have finished (40-minute limit), `run-backlog-automation.js` stamps the project and
 `functions/notifyOnItemsReadyForTesting` fires a Routine session whose only
 job is to show that column (`ROUTINE_INSTRUCTIONS.md` → "The 'Ready for
 Testing' flow"), via the MCP App where the Routine has the PH Agent Console
@@ -1247,6 +1307,43 @@ on a Merged to Main (Live) card — the commit's short sha, and a link to the
 deploy run colored by its outcome. Before this, confirming a batch of cards
 were genuinely live meant fetching the deployed `app.js` and comparing its
 hash against `main` by hand.
+
+**Every deploy a train merge starts is tracked (`deployRuns`, 19 Oct 2026).**
+`finishTrain` starts up to four follow-ups on `main`: the console deploy
+(`deploy-backlog-tracker.yml`), the prototype rebuild (`dsp-prototype.yml`),
+the hosted DSP API (`dsp-api-deploy.yml`) and the help-centre sync
+(`faq-content.yml`). A card used to follow only the first, and because every
+train bumps `backlog-tracker/public/js/version.js`, a Display Types card
+turned green on the console's deploy while the API deploy had failed (it was
+cancelled by `cancel-in-progress`) or the prototype was never rebuilt. Now
+each card it ships carries `deployRuns`, one `{workflow, dispatchedAt, runUrl,
+conclusion}` per follow-up *this merge needs*:
+
+- `deploy-backlog-tracker.yml` only when the merge changed `backlog-tracker/`
+  or `faq/` beyond `version.js` (it is still dispatched every time);
+- `dsp-prototype.yml` when `rebuildWorkflowsFor` names it, checked as a
+  build, not a run: it succeeds when `sourceStamp` in
+  `dsp-integration/prototype/build-info.json` on `origin/main` equals
+  `origin/main`'s own source stamp (`source_stamp()` in
+  `rebuild-prototype.sh`, reproduced by `prototypeSourceStamp()`);
+- `dsp-api-deploy.yml` when `deployWorkflowsFor` names it; `faq-content.yml`
+  when the `faq/data` sync was dispatched (never adopted from a newer run:
+  scheduled runs are exports, not syncs).
+
+`deployConclusion` is the roll-up (`rollUpDeployRuns`): `pending` while any
+entry is, `failure` if any failed or was never dispatched, `success` when all
+succeeded, `not-applicable` for an empty list; `deployRunUrl` is the failing
+run, else the first pending one. The status stays Merged to Main — the merge
+happened. `reconcileDeployStatuses()` resolves entries each tick (one lookup
+per run, shared by a train's cards; a failed `deploy-backlog-tracker.yml` or
+`dsp-api-deploy.yml` goes through `healFailedDeploy(runId, cache, gh,
+workflow)`), re-checks failures for 7 days, and adds one note naming the
+workflow and run the first time a card turns to failure. The card's badge
+(`deployBadgeHTML`) reads "Deploying… (1 of 2 done)", "Live", "Deploy failed:
+<workflow> ↗" or "Merged · no deploy tracked"; `get_backlog_item`'s `train`
+block returns `deployConclusion` and `deployRuns`. Cards shipped before this
+have no `deployRuns` and keep the single-run badge. Tests:
+`test/deploy-tracking.test.js`, `test/deploy-badge.test.mjs`.
 
 **A transient deploy failure heals itself (10 Oct 2026).** PR #359's
 deploy (run 38087481082) failed on a one-off "Failed to make request to
@@ -2161,3 +2258,15 @@ never updates ones that already exist. Safe to delete
 `scripts/artifact-export.json` and this step once you're confident the
 migration has landed and won't need re-running (e.g. against a fresh
 Firebase project).
+
+## Docs page: repo mirrors are read-only
+
+A project document, interface, README or Requirements record with a
+`sourcePath` is a copy that a docs sync rewrites from that repo file after
+each merge to `main`, so the Docs page shows it read-only: a "Mirror of
+<path>" chip, an "Open in GitHub" link in place of Edit, and no Save on a
+synced README/Requirements box. Edit the repo file instead; an edit saved on
+the page would be overwritten by the next sync. Documents are listed with
+the project's `startHereDocId` first, the rest by name, and `superseded`
+documents folded into "Superseded (N)". The logic is the pure module
+`public/js/docs-view.js` (tests: `test/docs-view.test.mjs`).

@@ -106,6 +106,7 @@ function ask(id, method, params) {
     send({ jsonrpc: "2.0", id, method, params });
   });
 }
+window.__push = (result) => send({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: result });
 window.__teardown = () => ask(9001, "ui/resource-teardown", { reason: "test" });
 window.__unknown = () => ask(9002, "ui/no-such-method", {});
 </script></body></html>`;
@@ -228,6 +229,23 @@ await test("the view answers ui/resource-teardown, and an unknown request with -
   assert.deepStrictEqual(torn.result, {});
   const unknown = await ready.page.evaluate(() => window.__unknown());
   assert.strictEqual(unknown.error.code, -32601);
+});
+
+await test("the test link's rebuild state shows as a pill, and 'Test this' says when it is the previous build", async () => {
+  const url = "https://rawcdn.githack.com/offline2online/rob_ph_demos/abc123/index.html";
+  const mk = (id, previewState, previewSha) => ({ id, project: "Deploy Playground", title: id, type: "feature", category: "HQ Admin", desc: "x", previewUrl: url, previewState, previewSha, board: "https://backlog-tracker-e4ed2.web.app/#item-" + id });
+  const items = [mk("a", "rebuilding", "1111111aaaa"), mk("b", "ready", "abc1234567890"), mk("c", "stale", null), mk("d", null, null)];
+  await ready.page.evaluate((r) => window.__push(r), { content: [], structuredContent: { kind: "ready-for-testing", projectLabel: "Deploy Playground", count: 4, items } });
+  await until(async () => (await ready.frame.locator("article.card").count()) === 4, "four cards");
+  const cards = ready.frame.locator("article.card");
+  const pillsOf = async (i) => cards.nth(i).locator(".pill").allTextContents();
+  assert.ok((await pillsOf(0)).includes("Test link rebuilding \u2014 don't test yet"));
+  assert.strictEqual(await cards.nth(0).locator(".pill.warn").count(), 1);
+  assert.strictEqual((await cards.nth(0).locator("a.primary").textContent()).trim(), "Test this (previous build)");
+  assert.ok((await pillsOf(1)).includes("Test link ready \u00b7 build abc1234"));
+  assert.strictEqual((await cards.nth(1).locator("a.primary").textContent()).trim(), "Test this");
+  assert.ok((await pillsOf(2)).includes("Test link may be out of date"));
+  assert.ok(!(await pillsOf(3)).some((t) => /Test link/.test(t)));
 });
 
 await test("no script error in the view or the host", async () => {

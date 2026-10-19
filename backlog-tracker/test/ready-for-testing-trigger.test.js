@@ -115,6 +115,8 @@ const ITEMS = {
   t1: { projectId: "p1", status: "ready-for-testing", type: "feature", title: "Try-it example for the in-agent views", desc: "Add a Try it example to MCP.md.", testSummary: "Added a Try it block under What the agent can and can't do.", previewUrl: "https://rawcdn.githack.com/offline2online/rob_ph_demos/abc1234/backlog-tracker/MCP.md", testVersion: "1.5.129", deployCommit: "abc1234" },
   t2: { projectId: "p1", status: "ready-for-testing", type: "bug", title: "Second ticket", desc: "Fix the thing.", deployCommit: "def5678" },
   gone: { projectId: "p1", status: "backlog", type: "bug", title: "Failed testing already", desc: "x" },
+  rich: { projectId: "p1", status: "ready-for-testing", type: "bug", title: "State example", desc: "x", deployCommit: "aaa1111", previewSha: "bbb2222", previewState: "ready", previewBuiltFrom: "ccc3333ddd", trainTest: { sha: "aaa1111", state: "passed", workflows: [] } },
+  red: { projectId: "p1", status: "ready-for-testing", type: "bug", title: "Red example", desc: "x", deployCommit: "eee5555", previewState: "rebuilding", trainTest: { sha: "eee5555", state: "failed", workflows: [{ workflow: "e2e-quick.yml", state: "failed", runUrl: "https://github.com/o/r/actions/runs/9" }] } },
   other: { projectId: "p2", status: "ready-for-testing", type: "bug", title: "Someone else's project", desc: "x" },
 };
 
@@ -226,6 +228,22 @@ const ITEMS = {
     } finally { global.fetch = realFetch; }
   });
 
+  await test("the fire text and the Slack body say each ticket's test and test-link state", async () => {
+    calls.length = 0;
+    const db = makeFakeDb({ projects: { p1: { name: "P" } }, backlogItems: ITEMS });
+    const mod = loadIndexFresh(db);
+    await mod.notifyOnItemsReadyForTesting(projectEvent("p1", { name: "P" }, { name: "P", readyForTestingNotifyRequestedAt: stamp(6000), readyForTestingNotifyItemIds: ["rich", "red", "t2"] }));
+    const text = JSON.parse(fireCalls()[0].opts.body).text;
+    assert.match(text, /Tests: passed/);
+    assert.match(text, /Test link: ready \(build of ccc3333\)/);
+    assert.match(text, /Tests: failed — https:\/\/github\.com\/o\/r\/actions\/runs\/9/);
+    assert.match(text, /Test link: still rebuilding — don't test it yet/);
+    assert.match(text, /Tests: not run/, "a card with no trainTest record");
+    const slack = JSON.parse(slackCalls()[0].opts.body).text;
+    assert.match(slack, /State example.* — tests passed, link ready/);
+    assert.match(slack, /Red example.* — tests failed, link still rebuilding/);
+  });
+
   // ── The automation's half: the stamp it writes ──────────────────────────
   const { readyForTestingNotifyFields, tv } = require("../scripts/run-backlog-automation.js");
   await test("run-backlog-automation.js stamps the project with a real timestamp, the landed ids and the build's requester", () => {
@@ -253,4 +271,67 @@ const ITEMS = {
   const stale = { notifyRoutine: { ...project.notifyRoutine, firedAt: new Date(now - 4 * 3600e3).toISOString() } };
   assert.deepStrictEqual(batchStillBuilding(stale, { a: { status: "backlog" } }, now), []);
   console.log("ok - batchStillBuilding holds the notification until the click has landed");
+}
+
+// The hand-off waits for each ticket's tests and test-link rebuild.
+{
+  const { handOffWaitingOn, nextHandOff } = require("../scripts/run-backlog-automation.js");
+  const now = Date.parse("2026-10-19T12:00:00Z");
+  const ago = (min) => new Date(now - min * 60000).toISOString();
+  const card = (state, extra = {}) => ({ status: "ready-for-testing", deployCommit: "abc", trainTest: { sha: "abc", state, since: ago(2) }, ...extra });
+
+  assert.deepStrictEqual(handOffWaitingOn(card("running"), now), ["tests"]);
+  assert.deepStrictEqual(handOffWaitingOn(card("starting"), now), ["tests"]);
+  assert.deepStrictEqual(handOffWaitingOn({ status: "ready-for-testing", deployCommit: "abc", trainTest: { sha: "old", state: "passed" } }, now), ["tests"]);
+  assert.deepStrictEqual(handOffWaitingOn({ status: "ready-for-testing", deployCommit: "abc" }, now), ["tests"]);
+  for (const s of ["passed", "failed", "not-applicable"]) assert.deepStrictEqual(handOffWaitingOn(card(s), now), [], s);
+  assert.deepStrictEqual(handOffWaitingOn(card("not-run"), now), ["tests"], "2 minutes old");
+  assert.deepStrictEqual(handOffWaitingOn({ ...card("not-run"), trainTest: { sha: "abc", state: "not-run", since: ago(15) } }, now), []);
+  assert.deepStrictEqual(handOffWaitingOn(card("passed", { previewState: "rebuilding" }), now), ["link"]);
+  assert.deepStrictEqual(handOffWaitingOn(card("running", { previewState: "rebuilding" }), now), ["tests", "link"]);
+  for (const s of ["ready", "stale", undefined]) assert.deepStrictEqual(handOffWaitingOn(card("passed", { previewState: s }), now), [], String(s));
+  console.log("ok - handOffWaitingOn names what a landed card is waiting on");
+
+  // A failure the automation is still re-running is not a result yet.
+  {
+    const wf = (state, attempt) => ({ sha: "abc", state, since: ago(2), workflows: [{ workflow: "firestore-rules-test.yml", label: "Console tests", state, attempt }] });
+    const failedCard = (attempt, keys) => ({ status: "ready-for-testing", deployCommit: "abc", trainTest: wf("failed", attempt), trainTestReruns: keys });
+    const perRun = ["firestore-rules-test.yml@abc:rerun:123"];
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(1, perRun), now), ["tests"], "(a) pending re-run");
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(1, ["firestore-rules-test.yml@abc:rerun"]), now), ["tests"], "(a) old key form");
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(1, undefined), now), [], "no re-run key: failed is settled");
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(1, ["firestore-rules-test.yml@old:rerun:9"]), now), [], "key for another commit");
+    const passed = { ...failedCard(2, [...perRun, "firestore-rules-test.yml@abc:flaky:123"]), trainTest: wf("passed", 2) };
+    assert.deepStrictEqual(handOffWaitingOn(passed, now), [], "(b) passed on re-run is settled");
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(2, perRun), now), [], "(c) failed again on attempt 2 is settled");
+    const r2 = nextHandOff({ readyForTestingPendingItemIds: ["a"], readyForTestingPendingSince: ago(5) }, { a: failedCard(1, perRun) }, now);
+    assert.strictEqual(r2.action, "hold");
+    const r3 = nextHandOff({ readyForTestingPendingItemIds: ["a"], readyForTestingPendingSince: ago(45) }, { a: failedCard(1, perRun) }, now);
+    assert.strictEqual(r3.action, "stamp", "the 40 minute cap still applies");
+    console.log("ok - handOffWaitingOn waits for a pending automatic re-run");
+  }
+
+  const proj = (ageMin, ids = ["a", "b"], extra = {}) => ({ readyForTestingPendingItemIds: ids, readyForTestingPendingSince: ago(ageMin), ...extra });
+  let r = nextHandOff(proj(5), { a: card("running"), b: card("passed") }, now);
+  assert.strictEqual(r.action, "hold");
+  assert.deepStrictEqual(r.waitingOn, [{ id: "a", waitingOn: ["tests"] }]);
+  assert.strictEqual(r.followUp, true);
+  r = nextHandOff(proj(5), { a: card("passed"), b: card("failed") }, now);
+  assert.strictEqual(r.action, "stamp");
+  assert.deepStrictEqual(r.ids, ["a", "b"]);
+  r = nextHandOff(proj(41), { a: card("running"), b: card("passed") }, now);
+  assert.strictEqual(r.action, "stamp");
+  assert.deepStrictEqual(r.waitingOn, [{ id: "a", waitingOn: ["tests"] }], "lists what it gave up waiting on");
+  r = nextHandOff(proj(5), { a: card("passed"), b: { status: "backlog" } }, now);
+  assert.deepStrictEqual(r.ids, ["a"], "a card that left Ready for Testing is dropped");
+  r = nextHandOff(proj(5), { a: { status: "published-live" }, b: { status: "backlog" } }, now);
+  assert.strictEqual(r.action, "clear");
+  assert.deepStrictEqual(r.ids, []);
+  const building = { notifyRoutine: { status: "in-progress", firedAt: new Date(now - 60000).toISOString(), sentItemIds: ["a", "b", "c"] } };
+  r = nextHandOff(proj(5, ["a", "b"], building), { a: card("passed"), b: card("passed"), c: { status: "backlog" } }, now);
+  assert.strictEqual(r.action, "hold", "the click is still building");
+  assert.strictEqual(nextHandOff(proj(39), { a: card("running"), b: card("passed") }, now).followUp, true);
+  assert.strictEqual(nextHandOff(proj(41), { a: card("running"), b: card("passed") }, now).followUp, false);
+  assert.strictEqual(nextHandOff({ readyForTestingPendingItemIds: ["a"] }, { a: card("running") }, now).setSince, true, "parked by an older run: the clock starts now");
+  console.log("ok - nextHandOff holds, stamps or clears");
 }
