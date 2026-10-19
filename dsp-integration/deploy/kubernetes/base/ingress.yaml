@@ -68,9 +68,12 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internal
     alb.ingress.kubernetes.io/target-type: ip
     # Internal is reachable from the whole VPC and anything peered or on a
-    # VPN into it. Narrow to the subnets HQ Admin calls from (pre-handover
-    # review, 18 Oct 2026); this default matches networkpolicy.yaml.
-    alb.ingress.kubernetes.io/inbound-cidrs: 10.0.0.0/8
+    # VPN into it. Set this to the ranges HQ Admin's callers actually come
+    # from — the VPC, and any VPN or office CIDRs — and uncomment it (README,
+    # Deploy step 1; pre-handover review, 18 Oct 2026). Left out, the AWS
+    # Load Balancer Controller admits 0.0.0.0/0 on the internal scheme, as
+    # before; a guessed range here would lock HQ Admin out.
+    # alb.ingress.kubernetes.io/inbound-cidrs: 10.0.0.0/8
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:REGION:ACCOUNT:certificate/REPLACE_ME
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06

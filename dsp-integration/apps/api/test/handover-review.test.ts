@@ -19,7 +19,8 @@ import { tokenBucket } from '../src/http/rateLimit'
 import type { Context } from '../src/context'
 import { expectMatchesContract } from './contract'
 import { testContext } from './helpers'
-import { png } from './media'
+import { multipart, png } from './media'
+import { seedsOnStart } from '../src/seed/seed'
 
 const GOOGLE = { authorization: 'Bearer poc-token-google-dv360' }
 const PLAYER = { authorization: 'Bearer poc-token-player' }
@@ -91,10 +92,10 @@ describe('outbound requests stay where the guard put them', () => {
   })
 
   it('refuses IPv6 forms that carry a private IPv4 address', () => {
-    for (const u of ['https://[64:ff9b::a00:5]/', 'https://[64:ff9b::10.0.0.5]/', 'https://[64:ff9b:1::1]/', 'https://[::ffff:0:a00:5]/', 'https://[::a00:1]/', 'https://[::169.254.169.254]/', 'https://[ff02::1]/']) {
+    for (const u of ['https://[64:ff9b::a00:5]/', 'https://[64:ff9b::10.0.0.5]/', 'https://[64:ff9b:1::1]/', 'https://[::ffff:0:a00:5]/', 'https://[::a00:1]/', 'https://[::169.254.169.254]/', 'https://[ff02::1]/', 'https://[2002:a00:1::]/', 'https://[2002:a9fe:a9fe::1]/', 'https://[2001:0:4136:e378:8000:63bf:f5ff:fffe]/']) {
       expect(isPublicHttpsUrl(u), u).toBe(false)
     }
-    for (const u of ['https://[64:ff9b::808:808]/', 'https://[2001:4860:4860::8888]/', 'https://bidder.example.com/openrtb2/bid']) expect(isPublicHttpsUrl(u), u).toBe(true)
+    for (const u of ['https://[64:ff9b::808:808]/', 'https://[2002:808:808::1]/', 'https://[2001:4860:4860::8888]/', 'https://bidder.example.com/openrtb2/bid']) expect(isPublicHttpsUrl(u), u).toBe(true)
   })
 })
 
@@ -143,6 +144,16 @@ describe('the database connection survives a failed COMMIT', () => {
   })
 })
 
+describe('a production instance starts empty', () => {
+  it('seeds the demo estate only outside production, or when PH_SEED_DEMO=true asks for it', () => {
+    expect(seedsOnStart({})).toBe(true)
+    expect(seedsOnStart({ NODE_ENV: 'test' })).toBe(true)
+    expect(seedsOnStart({ NODE_ENV: 'production' })).toBe(false)
+    expect(seedsOnStart({ NODE_ENV: 'production', PH_SEED_DEMO: 'false' })).toBe(false)
+    expect(seedsOnStart({ NODE_ENV: 'production', PH_SEED_DEMO: 'true' })).toBe(true)
+  })
+})
+
 describe('configuration that would switch a limit off', () => {
   it('a rate setting that is not a positive number falls back to the default', () => {
     for (const v of ['fifty', '0', '-5', '', ' ']) {
@@ -156,6 +167,40 @@ describe('configuration that would switch a limit off', () => {
       expect(() => loadConfig({ PARTNER_TOKENS: v }), v).toThrow(/^PARTNER_TOKENS must be a JSON object/)
     }
     expect(loadConfig({ PARTNER_TOKENS: '{"a-real-secret":"p_google"}' }).partnerTokens).toEqual({ 'a-real-secret': 'p_google' })
+  })
+
+  it('a PARTNER_TOKENS that is not JSON at all fails with the same message, quoting none of it', () => {
+    const secret = 'Zk3q9XbT2mLp8RvW4sYc1NdH'
+    for (const v of [secret, `{"${secret}": p_google}`, `{"${secret}":"p_google"`]) {
+      let err: Error | undefined
+      try { loadConfig({ PARTNER_TOKENS: v }) } catch (e) { err = e as Error }
+      expect(err?.message, v).toMatch(/^PARTNER_TOKENS must be a JSON object/)
+      expect(`${err?.message}\n${err?.stack}\n${String((err as { cause?: unknown })?.cause ?? '')}`, v).not.toContain(secret.slice(0, 8))
+    }
+  })
+
+  it('each DSP’s creative host can be set, and stays the mock service’s when unset', () => {
+    const c = loadConfig({ DSP_MOCKS_URL: 'http://mocks.test', DV360_CREATIVE_BASE: 'https://dv360.example/creatives/', AMAZON_CREATIVE_BASE: 'https://amzn.example/c/', TTD_CREATIVE_BASE: 'https://ttd.example/c/' })
+    expect([c.bidders.google_dv360.creativeBase, c.bidders.amazon_dsp.creativeBase, c.bidders.the_trade_desk.creativeBase]).toEqual(['https://dv360.example/creatives/', 'https://amzn.example/c/', 'https://ttd.example/c/'])
+    expect(loadConfig({ DSP_MOCKS_URL: 'http://mocks.test' }).bidders.google_dv360.creativeBase).toBe('http://mocks.test/dv360/creatives/')
+  })
+})
+
+describe('slow or padded uploads', () => {
+  it('a whole request must arrive within 15 minutes', async () => {
+    expect(buildApp(await testContext()).server.requestTimeout).toBe(15 * 60_000)
+  })
+
+  it('an upload padded with fields is refused, and a normal one is not', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const id = (await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: GOOGLE, payload: { advertiserId: 'swisse', name: 'Swisse — Sleep', displayTypeId: 'landscape', default: { pricingType: 'localised' } } })).json().campaignId
+    const padding = Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`x${i}`, 'y']))
+    const padded = multipart({ ...padding, version: 'default' }, { name: 'a.png', bytes: png(1920, 1080) })
+    const refused = await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/assets`, headers: { ...GOOGLE, ...padded.headers }, payload: padded.payload })
+    expect(refused.statusCode).toBe(413)
+    const normal = multipart({ version: 'default' }, { name: 'a.png', bytes: png(1920, 1080) })
+    expect((await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/assets`, headers: { ...GOOGLE, ...normal.headers }, payload: normal.payload })).statusCode).toBe(201)
   })
 })
 

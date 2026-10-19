@@ -109,15 +109,25 @@ const DEFAULT_PARTNER_TOKENS = { 'poc-token-google-dv360': 'p_google', 'poc-toke
 /* The POC's well-known tokens are published in the README, so they must
    never be live on a real deployment: with NODE_ENV=production the API
    refuses to start unless PARTNER_TOKENS is set (and doesn't reuse them). */
+const PARTNER_TOKENS_SHAPE = 'PARTNER_TOKENS must be a JSON object of bearer token → partner id, both non-empty strings.'
 function partnerTokensFrom(env: NodeJS.ProcessEnv): Record<string, string> {
-  const tokens = env.PARTNER_TOKENS ? (JSON.parse(env.PARTNER_TOKENS) as unknown) : null
   /* A JSON object of token → partner id, both non-empty strings. Anything else
      (an array, a bare string, a number for a partner id) used to load and then
      match nothing, or the wrong thing; it now stops the process at start with
      a message that names the variable and never echoes a token (pre-handover
-     review, 18 Oct 2026). */
+     review, 18 Oct 2026). That includes a value that isn't JSON at all: JSON's
+     own SyntaxError quotes the input, and an uncaught one prints the whole
+     line to the pod's log, so it is replaced, not wrapped (pre-merge review). */
+  let tokens: unknown = null
+  if (env.PARTNER_TOKENS) {
+    try {
+      tokens = JSON.parse(env.PARTNER_TOKENS)
+    } catch {
+      throw new Error(PARTNER_TOKENS_SHAPE)
+    }
+  }
   if (tokens !== null && (typeof tokens !== 'object' || Array.isArray(tokens) || Object.entries(tokens).some(([k, v]) => !k.trim() || typeof v !== 'string' || !v.trim()))) {
-    throw new Error('PARTNER_TOKENS must be a JSON object of bearer token → partner id, both non-empty strings.')
+    throw new Error(PARTNER_TOKENS_SHAPE)
   }
   if (env.NODE_ENV === 'production') {
     if (!tokens) throw new Error('PARTNER_TOKENS must be set in production: the default POC tokens are public.')

@@ -3,7 +3,7 @@
 import { createContext } from './context'
 import { loadEnv } from './env'
 import { buildApp } from './http/app'
-import { seed } from './seed/seed'
+import { seed, seedsOnStart } from './seed/seed'
 import { startAuctionScheduler, startCampaignRetentionScheduler } from './exchange/scheduler'
 
 loadEnv()
@@ -15,12 +15,11 @@ const ctx = createContext()
    runs and a demo cluster want; it is never what a client's real instance
    wants (pre-handover review, 18 Oct 2026: a production pod on a fresh volume
    published "Demo Retail Group" as its seller and served a real partner token
-   the demo DSP and its inventory). So
-   with NODE_ENV=production nothing is seeded unless PH_SEED_DEMO=true asks
-   for it; a real instance starts empty and switched off (migration 0023).
-   The hosted demo seeds through its own host (deploy/firebase/), not here. */
-const seedDemo = process.env.NODE_ENV !== 'production' || process.env.PH_SEED_DEMO === 'true'
-if (seedDemo && (await seed(ctx))) console.log('Seeded an empty database with the prototype sample data.')
+   the demo DSP and its inventory). So with NODE_ENV=production nothing is
+   seeded unless PH_SEED_DEMO=true asks for it (seedsOnStart); a real instance
+   starts empty and switched off (migration 0023). The hosted demo seeds
+   through its own host (deploy/firebase/), not here. */
+if (seedsOnStart(process.env) && (await seed(ctx))) console.log('Seeded an empty database with the prototype sample data.')
 const app = buildApp(ctx, { logger: true })
 const stops: (() => void | Promise<void>)[] = []
 if (ctx.config.scheduler === 'in-process') {

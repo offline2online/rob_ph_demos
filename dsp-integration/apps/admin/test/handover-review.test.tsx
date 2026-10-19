@@ -4,9 +4,10 @@
 import { render, screen } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Providers } from '../src/App'
+import { Providers, appRoutes } from '../src/App'
 import { ApiRequestError, api } from '../src/api/client'
 import { RouteError } from '../src/shared/RouteError'
+import { envFlags } from '../src/flags'
 
 const respond = (status: number, body: string, type = 'text/html') => vi.stubGlobal('fetch', vi.fn(async () => new Response(body === '' ? null : body, { status, headers: { 'content-type': type } })))
 const failure = async (p: Promise<unknown>) => {
@@ -72,5 +73,24 @@ describe('a page that throws while rendering', () => {
     expect(screen.queryByText(/kaboom/)).toBeNull()
     expect(screen.queryByText(/Unexpected Application Error/)).toBeNull()
     quiet.mockRestore()
+  })
+})
+
+describe('an address no route matches', () => {
+  it('says the page doesn’t exist, with nothing to reload', () => {
+    const router = createMemoryRouter([{ path: '/', element: <div />, errorElement: <RouteError frame /> }], { initialEntries: ['/no-such-page'] })
+    const { container } = render(<Providers><RouterProvider router={router} /></Providers>)
+    expect(screen.getByText(/This page doesn’t exist/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
+    expect(container.querySelector('[data-route-error="not-found"]')).not.toBeNull()
+  })
+})
+
+describe('every route carries the error element', () => {
+  it('the root and each section, with every flag on', () => {
+    const flags = { ...envFlags(), dspIntegration: true, selfService: true, changeHistory: true }
+    const [root] = appRoutes(flags)
+    expect(root.errorElement).toBeTruthy()
+    for (const child of root.children ?? []) expect(child.errorElement, child.path ?? 'index').toBeTruthy()
   })
 })

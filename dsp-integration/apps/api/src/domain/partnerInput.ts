@@ -54,10 +54,12 @@ function ipv6Groups(v6: string): number[] | null {
 /* An IPv6 address that can only mean the machine, the cluster or the VPC:
    unspecified and loopback, unique-local (fc00::/7), link-local (fe80::/10),
    multicast, and every form that carries an IPv4 address inside it — mapped
-   (::ffff:a.b.c.d), translated (::ffff:0:a.b.c.d), compatible (::a.b.c.d) and
-   NAT64 (64:ff9b::/96, and the local-use 64:ff9b:1::/48) — when that IPv4
-   address is private (pre-handover review, 18 Oct 2026: the NAT64 and
-   translated forms reached 10.0.0.0/8). */
+   (::ffff:a.b.c.d), translated (::ffff:0:a.b.c.d), compatible (::a.b.c.d),
+   NAT64 (64:ff9b::/96, and the local-use 64:ff9b:1::/48) and 6to4
+   (2002:aabb:ccdd::/48) — when that IPv4 address is private, plus Teredo
+   (2001::/32) outright, whose client address is obfuscated and which no
+   bidder uses (pre-handover review, 18 Oct 2026: the NAT64 and translated
+   forms reached 10.0.0.0/8). */
 function privateIpv6(v6: string): boolean {
   const g = ipv6Groups(v6)
   if (!g) return true
@@ -66,6 +68,8 @@ function privateIpv6(v6: string): boolean {
   if (zeros(0, 7) && g[7] <= 1) return true
   if ((g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xff00) === 0xff00) return true
   if (g[0] === 0x64 && g[1] === 0xff9b && g[2] === 1) return true
+  if (g[0] === 0x2001 && g[1] === 0) return true
+  if (g[0] === 0x2002) return privateIpv4(ipv4(g[1], g[2]))
   if (zeros(0, 5) && g[5] === 0xffff) return privateIpv4(ipv4(g[6], g[7]))
   if (zeros(0, 4) && g[4] === 0xffff && g[5] === 0) return privateIpv4(ipv4(g[6], g[7]))
   if (zeros(0, 6)) return privateIpv4(ipv4(g[6], g[7]))

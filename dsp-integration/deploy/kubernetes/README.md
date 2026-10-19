@@ -93,9 +93,11 @@ kustomization.
 ## Deploy
 
 1. Replace in `base/`: the image (`deployment.yaml`), the certificate and
-   WAF ARNs and the hostnames (`ingress.yaml`), the storage class
-   (`pvc.yaml`), the VPC CIDR the ALBs sit in (`networkpolicy.yaml`), and
-   the DSP endpoints (`configmap.yaml`).
+   WAF ARNs and the hostnames (`ingress.yaml`), the internal ALB's
+   `inbound-cidrs` — the ranges HQ Admin's callers come from, VPC and any
+   VPN or office CIDRs; commented out until set (`ingress.yaml`), the
+   storage class (`pvc.yaml`), the VPC CIDR the ALBs sit in
+   (`networkpolicy.yaml`), and the DSP endpoints (`configmap.yaml`).
 2. Create the Secret (above).
 3. `kubectl apply -k deploy/kubernetes/base`.
 4. Wait for `/readyz`: the pod runs every migration on start and answers

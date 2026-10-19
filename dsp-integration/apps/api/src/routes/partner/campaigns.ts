@@ -57,6 +57,16 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
   }
   const targetingOf = (targeting: unknown) => (targeting ?? { default: { pricingType: 'default' } }) as StoredTargeting
 
+  /* A content package from a DSP, checked field by field so every mistake is
+     reported at once, in this order: the caller is connected; interactive is
+     refused (not in this release); the advertiser is one of the caller's own
+     seats; name and dealId (a deal it is an invited buyer on, checked only for
+     its own advertiser); the display type and slot, whose Max campaigns caps
+     the versions; the mandatory default version and the brief; each targeted
+     version (id, priority, pricing type) and its targeting rules — size limits,
+     then variables this DSP may use (422 when one isn't, 400 when malformed).
+     Then the campaign is created in Draft and the approval module's view of it
+     is returned; creative is uploaded and the campaign submitted separately. */
   app.post<{ Body: CreateBody }>('/campaigns', async (req, reply) => {
     requireConnected(req.partner)
     const b = req.body ?? {}

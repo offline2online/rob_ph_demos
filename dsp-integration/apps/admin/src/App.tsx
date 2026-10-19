@@ -1,8 +1,9 @@
-/* The admin UI's shell: the routes (one per section, each behind its flag
-   and the session's scope), the section nav, the providers (Ant Design theme,
-   React Query) and the prefetch of the sections a user is likely to open
-   next. It renders the content frame only — HQ Admin's own header, sidebar
-   and breadcrumb surround it in the iframe (ph-designer, prototyping.md). */
+/* The admin UI's shell: the routes (one per section, each behind its feature
+   flag), the section nav (it shows only what the session's role may open; the
+   API is what enforces the role), the providers (Ant Design theme, React
+   Query) and the prefetch of the sections a user is likely to open next. It
+   renders the content frame only — HQ Admin's own header, sidebar and
+   breadcrumb surround it in the iframe (ph-designer, prototyping.md). */
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App as AntApp, ConfigProvider } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -191,7 +192,9 @@ function Home({ flags }: { flags: Flags }) {
 
 /* A page that throws while rendering is replaced by RouteError inside the
    shell (each child below), and a failing shell by the same message in a
-   plain frame (the root) — never by React Router's default stack-trace page. */
+   plain frame (the root) — never by React Router's default stack-trace page.
+   An address no route matches reaches the root's element too, as a 404, and
+   RouteError says the page doesn't exist. */
 export const appRoutes = (flags: Flags): RouteObject[] => [
   {
     path: '/', element: <Root flags={flags} />, errorElement: <RouteError frame />,

@@ -31,20 +31,43 @@ screen, copy, endpoint or response shape changed. The exceptions:
 - **Refusals that only an abusive or misconfigured caller meets.** For
   example, a display id over 200 characters is now refused, and malformed
   `PARTNER_TOKENS` now stops start-up.
-- **Two crash-path fallbacks in the admin UI** (below).
+- **Two fallbacks in the admin UI** (below): what a page that crashes, or
+  an address that doesn't exist, now shows instead of React Router's
+  default page.
 - **One contract correction.** `openapi.yaml` documented the "add a direct
   advertiser" call at a path the API has never served.
 
-Every code fix has a regression test in `apps/api/test/handover-review.test.ts`
-or `apps/admin/test/handover-review.test.tsx`. The API tests were run
-against the code before this review, and each one fails there, apart from
-the rate-limiter test, which pins the answers the fix must not change.
+Every code fix but four has a regression test in
+`apps/api/test/handover-review.test.ts` or
+`apps/admin/test/handover-review.test.tsx`. The first round of API tests was
+run against the code before this review and each one fails there, apart
+from the rate-limiter test, which pins the answers the fix must not change.
+The tests added after the pre-merge review (seed gate, creative hosts,
+request timeout, upload limits, non-JSON `PARTNER_TOKENS`) each check
+behaviour the old code did not have.
 
-Three fixes are verified another way:
+The four without a test:
 
-- the shutdown drain: SIGTERM on the container bundle;
-- the content-hash index: `EXPLAIN QUERY PLAN` shows the lookup using it;
-- the audit-log `LIMIT`: the existing audit-log tests.
+- **the shutdown drain**: verified with SIGTERM on the container bundle;
+- **the content-hash index**: `EXPLAIN QUERY PLAN` shows the lookup using it;
+- **the audit-log `LIMIT`**: covered by the existing audit-log tests, since
+  answers are unchanged;
+- **the tolerant `ROLLBACK`** for a transaction SQLite has already ended:
+  SQLite does that only on a full disk or an I/O error, which a test can't
+  cheaply produce.
+
+**A pre-merge review** (19 Oct 2026) checked this whole change before it
+reached `main`. Five reviewers each covered one dimension, and three
+independent skeptics checked every finding. It confirmed 16 findings, all
+fixed before merge:
+
+- a regression in the hour-groups cache on estates with many display types
+  (§2, Performance; measured in §3);
+- a token echoed by malformed `PARTNER_TOKENS` JSON;
+- the layout gate going blind to crashed pages;
+- a 404 that read as a crash;
+- an internal-ALB default that could lock HQ Admin out;
+- the rest: documentation and comment inaccuracies (several raised twice).
 
 ## 1. How the build separates
 
@@ -106,13 +129,13 @@ checklist (§5).
 | **A production pod on an empty volume came up as the demo retailer.** It was seeded with "Demo Retail Group", two DSPs with placeholder credentials, campaigns and bookings, and **DSP integration switched on**. So `sellers.json` published a false seller on the client's domain, and a real `PARTNER_TOKENS` entry for `p_google` resolved to the demo DSP and its inventory. The K8s README said the opposite. | With `NODE_ENV=production`, nothing is seeded unless `PH_SEED_DEMO=true` (`apps/api/src/index.ts`). A real instance starts empty and switched off. The hosted demo seeds through its own host, so it is unaffected. Verified on the container bundle (§3). |
 | **A percent-encoded admin path skipped the session and scope check and the SSP audit log.** With the help-desk role, `GET /api/%61dmin/v1/display-types` answered 200 where the plain path answered 403. `PUT /api/admin/v1/%65xchange` changed the exchange settings and wrote nothing to the audit log. Today that means unaudited changes; on integration it would have been unauthenticated access. | The hooks decide on the route the router matched (`routePathOf` in `http/app.ts`): the session check, `isAuditedWrite` and `no-store`. |
 | **Outbound fetches followed redirects past the private-address check.** A bidder answering 307 had the bid request (a POST, with its body) re-sent to wherever `Location` pointed, including loopback. A creative URL under the DSP's host could 302 anywhere. | Bidder: `redirect: 'error'`, so a redirect counts as no bid. Creative fetch: a redirect is followed only while each hop stays under that DSP's creative host, at most 3 hops, within one 10 s budget (`fetchOwnedCreative`). |
-| **IPv6 forms that wrap a private IPv4 address passed `isPublicHttpsUrl`**: NAT64 `64:ff9b::a00:5`, translated `::ffff:0:a00:5`, compatible `::a00:1`, multicast. | The address is fully parsed and every embedded-IPv4 form is checked (`privateIpv6` in `domain/partnerInput.ts`). |
+| **IPv6 forms that wrap a private IPv4 address passed `isPublicHttpsUrl`**: NAT64 `64:ff9b::a00:5`, translated `::ffff:0:a00:5`, compatible `::a00:1`, 6to4 `2002:a00:1::`, plus Teredo and multicast. | The address is fully parsed (`privateIpv6` in `domain/partnerInput.ts`). Mapped, translated, compatible, NAT64 and 6to4 addresses are refused when the IPv4 they carry is private. Teredo and multicast are refused outright. |
 | **`GET /assets/:file` read the whole file into memory on every download.** The route is public. 8 slow clients on a 150 MB creative added 1.1 GB to a pod limited to 2 GiB. | Streamed from disk with `Content-Length` (`AssetStore.open`, optional on the seam). |
 | **Unbounded memory from the Player API.** Its rate limiter is keyed on the caller's `displayId` before the display is looked up, and never forgot a key: 400 unknown 900 KB ids kept 381 MB. | `displayId` is capped at 200 characters. The limiter drops buckets that have refilled, which changes no answer (a full bucket behaves exactly like a new one). |
-| **Configuration that silently switched a limit off.** `PARTNER_RATE_PER_SECOND=fifty` became NaN, and a NaN bucket let every request through. `PARTNER_TOKENS` accepted an array, a bare string or numeric partner ids. | A rate setting that isn't a positive number falls back to the default. `PARTNER_TOKENS` must be an object of non-empty strings, otherwise the process stops at start; the error never echoes a token. |
+| **Configuration that silently switched a limit off.** `PARTNER_RATE_PER_SECOND=fifty` became NaN, and a NaN bucket let every request through. `PARTNER_TOKENS` accepted an array, a bare string or numeric partner ids. | A rate setting that isn't a positive number falls back to the default. `PARTNER_TOKENS` must be an object of non-empty strings, otherwise the process stops at start. That includes a value that isn't JSON at all: JSON's own error, which quotes the input into the pod log, is replaced, so the error never echoes a token. |
 | **One partner could tell whether another partner's advertiser has deals**, from which of two errors a `dealId` produced. | The deal check runs only for one of the caller's own advertisers. |
 | **A slow upload could hold an upload slot for ever.** Fastify's default `requestTimeout` is 0, and there was no multipart part or field limit. | `requestTimeout` is 15 minutes (a 200 MB creative at under 2 Mbit/s). Uploads are limited to 12 parts and 10 fields. |
-| **Network policy and the internal load balancer.** EKS custom networking's `100.64.0.0/10` was not excluded from egress. The internal ALB took any address that can reach the VPC. | `100.64.0.0/10` is added to the egress exceptions. The internal ALB gets `inbound-cidrs`. Comments say to narrow both, and to check that the cluster enforces NetworkPolicy at all. |
+| **Network policy and the internal load balancer.** EKS custom networking's `100.64.0.0/10` was not excluded from egress. The internal ALB took any address that can reach the VPC. | `100.64.0.0/10` is added to the egress exceptions. The internal ALB has an `inbound-cidrs` line to set to HQ Admin's caller ranges. It is commented out, because a guessed range would lock HQ Admin out; setting it is now a Deploy step in the K8s README. Comments say to narrow the network policy's ingress, and to check that the cluster enforces NetworkPolicy at all. |
 | **Creative hosts were the mock service's only.** Against real DSPs, no creative could ever be retrieved for review. | `DV360_CREATIVE_BASE`, `AMAZON_CREATIVE_BASE` and `TTD_CREATIVE_BASE`. Unset, the behaviour is as before. |
 
 ### Stability
@@ -126,7 +149,7 @@ checklist (§5).
 
 | Finding | Fix |
 |---|---|
-| **Regression from the operating-hours gate (16 Oct, `a562824`).** Every availability check, bid request, bid placed, auction position and real-time impression read every display of the type and every store. This undid the 24 Sep "counts, never the rows" fix. | The hour groups are cached per display type and zone for one second, the same pattern as the display counts. Displays and stores change only through the platform, and a display type saved with a new zone is seen at once (`positionHourGroups` in `domain/operatingGate.ts`). Available Inventory uses the same groups. Measured in §3. |
+| **Regression from the operating-hours gate (16 Oct, `a562824`).** Every availability check, bid request, bid placed, auction position and real-time impression read every display of the type and every store. This undid the 24 Sep "counts, never the rows" fix. | The hour groups are cached per display type and zone for one second, the same pattern as the display counts. Displays and stores change only through the platform, and a display type saved with a new zone is seen at once (`positionHourGroups` in `domain/operatingGate.ts`). The stores are read once per snapshot, shared by every type, and each type's groups expire on their own clock, so a request that walks all the types (Available Inventory) reads the stores once. The first cut re-read them per type: the pre-merge review caught it making Available Inventory slower on a 600-type estate, and it was fixed before merge. Available Inventory uses the same groups. Measured in §3. |
 | **Every real-time fill and every hand-off read the whole creative file** (videos up to 200 MB) to run the format checks again. | A stored asset never changes (`put` names each file afresh), so its media facts are read once per file. The cache is LRU and holds 2,000 files. The checks themselves still run every time (`storedMediaOf` in `domain/media.ts`). |
 | **The bidder queued real-time requests past their deadline.** A DSP slower than the impression rate built an unbounded backlog. 495 requests were sent after their impression had closed in a 5 s burst. | A real-time request whose QPS turn falls after its tmax deadline is not sent. Outcomes are identical, and the deal auction is untouched. |
 | **The rejected-creative block check scanned every campaign asset**, per bid on the real-time path (1.9 ms at 50,000 assets). | Migration `0076`: an index on `campaign_assets.content_hash`. |
@@ -137,7 +160,7 @@ checklist (§5).
 | Finding | Fix |
 |---|---|
 | **A non-JSON error response broke the API client.** An ALB 502 page, a plain-text 429, or a gateway's `{"message": …}` threw `SyntaxError`/`TypeError`, losing the HTTP status. One screen showed "Unexpected token '<'" to the user. | Anything that isn't the contract's error shape becomes an `ApiRequestError` with its status. Contract errors behave exactly as before (`src/api/client.ts`). |
-| **No error boundary.** A page that threw while rendering replaced the whole iframe, nav included, with React Router's default page and the raw stack trace, in production too. | A route error element (`src/shared/RouteError.tsx`, built to the ph-designer skill). The failing page alone is replaced inside the shell; a failing shell shows the same message in a plain frame. Only the crash path renders it. |
+| **No error boundary.** A page that threw while rendering replaced the whole iframe, nav included, with React Router's default page and the raw stack trace, in production too. | A route error element (`src/shared/RouteError.tsx`, built to the ph-designer skill). The failing page alone is replaced inside the shell; a failing shell shows the same message in a plain frame. An address no route matches (a stale bookmark, a section whose flag is off) now says "This page doesn't exist." instead of React Router's default 404 page. Nothing renders it on a working page. The visual layout check (`layout/layout.spec.ts`, in CI) now fails when the element appears, so a page that crashes on the demo snapshot still turns CI red. |
 
 ### Contract, configuration and documentation
 
@@ -159,7 +182,7 @@ checklist (§5).
   - `SCALE-15000-EKS.md` claimed routes need no change for an adapter.
 - **Comments**:
   - Header comments added where files had none.
-  - A step-by-step header added on each of the ten most complex functions: `vetBid`, `clearPosition`, `POST /v1/reservations`, the buyers-list `parse`, `applyPartnerInput`, `PUT …/extensions`, `scopeAndVolumeOf`, `validateRules`, and the approval service's `apply`.
+  - A step-by-step header added on each of the ten most complex functions: `vetBid`, `clearPosition`, `POST /v1/reservations`, `POST /v1/campaigns`, the buyers-list `parse`, `applyPartnerInput`, `PUT …/extensions`, `scopeAndVolumeOf`, `validateRules`, and the approval service's `apply`.
 
 ## 3. Measured
 
@@ -337,8 +360,11 @@ each item changes what renders or when.
 - `UnsoldSlotRepo.UNSOLD_REASONS`;
 - in `catalog.ts`: `RTB_ONLY_TOUCH_POINTS`/`isRtbOnly`, `STORE_SCOPES` and `targetingLabel`;
 - in the admin UI: `effectiveTerm.ts` `impressionsOf`, `model.ts` `effectiveLists`/`isBlocked`, `path.ts` `externalUrl` (test only), and the unrouted `BookingSchedulePage.tsx` (kept on purpose);
-- the `exchange/billing.ts` re-export shim;
 - the unused `@testing-library/user-event` dev dependency.
+
+Not dead, but removable: the `exchange/billing.ts` re-export shim. Production
+still imports it (`exchange/scheduler.ts` and `exchange/billingCli.ts`), so
+point those two at `../billing` first, then delete it.
 
 ## 5. Porting checklist — in this order
 
