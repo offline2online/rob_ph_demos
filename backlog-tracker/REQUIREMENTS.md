@@ -2251,6 +2251,8 @@ Required properties, each covered by `test/mcp-server.test.js`:
 **Tool surface — and its hard limit.** Read: `whoami`, `list_projects`,
 `list_backlog_items`, `get_backlog_item`, `get_ready_for_testing_board`,
 `get_approved_for_deployment_board`, `get_project_docs`,
+`list_project_documents`, `get_project_document` (documents listed without text,
+searched, and read a page or section at a time — see MCP.md),
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`, `get_skill`,
 `list_skill_misses`, `get_routine_setup_instructions`, `list_concepts`,

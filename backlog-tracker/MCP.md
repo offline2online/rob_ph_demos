@@ -85,10 +85,41 @@ empty or mis-edited collection can never lock everyone out.
 **Can — read:** `whoami`, `list_projects`, `list_backlog_items`,
 `get_backlog_item`, `get_ready_for_testing_board`,
 `get_approved_for_deployment_board`, `get_project_docs`,
+`list_project_documents`, `get_project_document`,
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
 `get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
 `list_concepts`, `get_concept`.
+
+**Reading a project's documents without loading them all.**
+`get_project_docs` returns the full text of every document (600 KB for a
+project with 47), which a host cannot show. For anything large use the two
+paging tools, scope `board.read` (viewers included), which write nothing to
+`mcpAuditLog`:
+
+- `list_project_documents({projectId, query?, offset?})` lists Requirements,
+  README, every additional document and the interfaces the project shares,
+  with `chars`, `updatedAt`, and for a document `sourcePath`, `sourceCommit`
+  and `kind` (`"mirror"` = the next repo sync overwrites it, `"board"` = lives
+  only on the board) — no text. Long lists page by `nextOffset` (a row index,
+  `null` on the last page). With `query` (2–200 characters) it searches names
+  and text of all of them, case-insensitively, and returns
+  `{matchedTotal, matches:[{docId, docName, heading, offset, snippet}]}` — at
+  most 5 per document and 50 in all.
+- `get_project_document({projectId, docId, section?, offset?, maxChars?, outline?})`
+  reads one: `docId` is `"requirements"`, `"readme"`, a document id or an
+  interface id. It returns `content` a page at a time (`maxChars` default
+  40,000, max 50,000, shortened so the whole result text stays under 60,000
+  characters including JSON escaping) with `nextOffset`, plus `metadata`
+  (`sourcePath`, `sourceSlices`, `sourcePrefix`, `sourceCommit`, `updatedAt`,
+  `updatedByEmail`). The first page, or `outline: true`, also lists the
+  headings with their offsets; `section` returns one heading's part (matched
+  case-insensitively, exact then prefix) up to the next heading of the same or
+  higher level, with `offset`/`nextOffset` relative to the section and
+  `sectionOffset` giving where it starts.
+
+Lengths and offsets are JavaScript string lengths (UTF-16 code units); pages
+never end inside a surrogate pair and joined in order equal the stored text.
 
 `get_ready_for_testing_board` and `get_approved_for_deployment_board` are
 **composable — they are MCP Apps** (SEP-1865, the MCP UI extension
@@ -239,7 +270,7 @@ for.
 Three things worth knowing before pointing an agent at them:
 
 - **Writes replace the whole document.** Read it first with
-  `get_project_docs`, revise, send the complete text back. An agent that
+  `get_project_document` (or `get_project_docs`), revise, send the complete text back. An agent that
   sends a fragment overwrites the document with that fragment.
 - **Nothing is lost when that happens.** Every write records what it
   replaced, and a delete records the whole document, in `docRevisions` —

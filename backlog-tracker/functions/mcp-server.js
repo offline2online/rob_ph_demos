@@ -1276,6 +1276,132 @@ async function writeProjectDoc(projectId, kind, md, session) {
   return { chars: md.length, sha256 };
 }
 
+// ── Reading documents without loading them whole ─────────────────────────
+// get_project_docs returns every document's full text (600 KB for a project
+// with 47 of them), which no agent host can show. list_project_documents
+// lists them with no text, and get_project_document reads one a page or a
+// section at a time. Lengths and offsets are JavaScript string lengths
+// (UTF-16 code units), the same unit the stored `chars` fields use.
+const DOC_RESULT_MAX = 60000;          // no result text from either tool is longer
+const DOC_PAGE_DEFAULT = 40000;
+const DOC_PAGE_MAX = 50000;
+const DOC_OUTLINE_BUDGET = 20000;      // outline stops growing here, flagged outlineTruncated
+const DOC_HEADING_MAX = 200;
+const DOC_QUERY_PER_DOC = 5;
+const DOC_QUERY_TOTAL = 50;
+const DOC_SNIPPET_MAX = 240;
+
+// Markdown headings with their offsets. Lines inside ``` fences are not
+// headings, and neither is a "#" with no text after it.
+function outlineOf(text) {
+  const out = [];
+  let fence = false;
+  let pos = 0;
+  while (pos <= text.length) {
+    let nl = text.indexOf("\n", pos);
+    if (nl === -1) nl = text.length;
+    const line = text.slice(pos, nl);
+    if (/^ {0,3}(```|~~~)/.test(line)) {
+      fence = !fence;
+    } else if (!fence) {
+      const m = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*$/.exec(line.replace(/\r$/, ""));
+      if (m) {
+        const heading = m[2].replace(/[ \t]+#+$/, "").trim();
+        if (heading) out.push({ level: m[1].length, heading, offset: pos });
+      }
+    }
+    pos = nl + 1;
+  }
+  return out;
+}
+
+function clip(s, n) { return s.length > n ? s.slice(0, n) : s; }
+
+// Never end a page between the halves of a surrogate pair.
+function safePageEnd(text, offset, end) {
+  if (end >= text.length) return text.length;
+  const last = text.charCodeAt(end - 1);
+  const next = text.charCodeAt(end);
+  if (last >= 0xD800 && last <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF) {
+    return end - 1 > offset ? end - 1 : Math.min(end + 1, text.length);
+  }
+  return end;
+}
+
+// One document (requirements, readme, a projectDocs row or an interface)
+// as {name, kind, text, meta}, or {error}. `kind` is "mirror" for a document
+// the next repo sync overwrites and "board" for one that lives only here.
+async function loadDocumentForRead(projectId, projectData, docId) {
+  const metaOf = (v) => ({
+    updatedAt: tsToISO(v.updatedAt),
+    updatedByEmail: v.updatedByEmail || null,
+    sourcePath: v.sourcePath || null,
+    sourceSlices: v.sourceSlices === undefined ? null : v.sourceSlices,
+    sourcePrefix: v.sourcePrefix === undefined ? null : v.sourcePrefix,
+    sourceCommit: v.sourceCommit || null,
+  });
+  if (docId === "requirements" || docId === "readme") {
+    const snap = await db().collection("projects").doc(projectId).collection("docs").doc(docId).get();
+    const v = snap.exists ? (snap.data() || {}) : {};
+    const text = snap.exists ? (typeof v.contentMd === "string" ? v.contentMd : "") : await readProjectDoc(projectId, docId, projectData);
+    const meta = metaOf(v);
+    return { name: docId === "readme" ? "README" : "Requirements", kind: meta.sourcePath || meta.sourceCommit ? "mirror" : "board", text, meta };
+  }
+  const pd = await db().collection("projectDocs").doc(docId).get();
+  if (pd.exists) {
+    const v = pd.data() || {};
+    if (v.projectId !== projectId) return { error: `Document ${docId} belongs to another project. Call list_project_documents with projectId ${projectId} to see this project's documents.` };
+    return { name: v.name || "", kind: v.sourcePath ? "mirror" : "board", text: typeof v.contentMd === "string" ? v.contentMd : "", meta: metaOf(v) };
+  }
+  const itf = await db().collection("interfaces").doc(docId).get();
+  if (itf.exists) {
+    const v = itf.data() || {};
+    if (!Array.isArray(v.projectIds) || !v.projectIds.includes(projectId)) return { error: `Interface ${docId} is not shared with project ${projectId}. Call list_project_documents to see the interfaces this project has.` };
+    return { name: v.name || "", kind: "interface", text: typeof v.contentMd === "string" ? v.contentMd : "", meta: metaOf(v) };
+  }
+  return { error: `No document with id ${docId} in project ${projectId}. Call list_project_documents to see the ids ("requirements", "readme", a document id or an interface id).` };
+}
+
+// The text of the section whose heading is `name`: the heading line up to
+// the next heading of the same or higher level. Exact match first (ignoring
+// case), then prefix.
+function findSection(text, outline, name) {
+  const want = String(name).trim().toLowerCase();
+  let i = outline.findIndex((h) => h.heading.toLowerCase() === want);
+  if (i === -1) i = outline.findIndex((h) => h.heading.toLowerCase().startsWith(want));
+  if (i === -1) return null;
+  let end = text.length;
+  for (let j = i + 1; j < outline.length; j += 1) {
+    if (outline[j].level <= outline[i].level) { end = outline[j].offset; break; }
+  }
+  return { heading: outline[i].heading, start: outline[i].offset, end };
+}
+
+// Hits for `query` in `text`, as {offset, heading, snippet}: all of them
+// counted, the first `cap` returned.
+function searchText(text, outline, rx, cap) {
+  const hits = [];
+  let total = 0;
+  rx.lastIndex = 0;
+  let m;
+  while ((m = rx.exec(text)) !== null) {
+    total += 1;
+    if (hits.length < cap) {
+      let h = null;
+      for (const o of outline) { if (o.offset <= m.index) h = o.heading; else break; }
+      const room = Math.max(0, DOC_SNIPPET_MAX - m[0].length);
+      let from = Math.max(0, m.index - Math.floor(room / 2));
+      let to = Math.min(text.length, from + DOC_SNIPPET_MAX);
+      from = Math.max(0, to - DOC_SNIPPET_MAX);
+      if (from > 0 && text.charCodeAt(from) >= 0xDC00 && text.charCodeAt(from) <= 0xDFFF) from += 1;
+      if (to < text.length && text.charCodeAt(to - 1) >= 0xD800 && text.charCodeAt(to - 1) <= 0xDBFF) to -= 1;
+      hits.push({ offset: m.index, heading: h === null ? null : clip(h, DOC_HEADING_MAX), snippet: text.slice(from, to) });
+    }
+    if (m[0].length === 0) rx.lastIndex += 1;
+  }
+  return { total, hits };
+}
+
 // Every documentation write records what it replaced, so an agent that
 // truncates a 95 KB requirements doc at 3am has not destroyed it. This is
 // the whole reason delete_* tools are safe to offer at all: a delete writes
@@ -2162,7 +2288,7 @@ const TOOLS = [
   },
   {
     name: "get_project_docs",
-    description: "A project's Requirements and README markdown, its additional documents, and every interface contract it shares with another project. Also docsSync: whether the board copy of Requirements/README is in step with main after the last deploy (error is why a sync was refused).",
+    description: "A project's Requirements and README markdown, its additional documents, and every interface contract it shares with another project. Also docsSync: whether the board copy of Requirements/README is in step with main after the last deploy (error is why a sync was refused). Returns every document's FULL text, which for a project with many or large documents is hundreds of thousands of characters — for those, use list_project_documents (no text, with search) and get_project_document (one document, paged or by section) instead.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2208,7 +2334,7 @@ const TOOLS = [
         (await db().collection("projectDocs").where("projectId", "==", projectId).get())
           .forEach((d) => {
             const v = d.data() || {};
-            out.documents.push({ id: d.id, name: v.name || "", contentMd: v.contentMd || "", updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null });
+            out.documents.push({ id: d.id, name: v.name || "", contentMd: v.contentMd || "", updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null, sourcePath: v.sourcePath || null, kind: v.sourcePath ? "mirror" : "board" });
           });
         out.documents.sort((a, b) => a.name.localeCompare(b.name));
       }
@@ -2218,6 +2344,190 @@ const TOOLS = [
           .forEach((d) => { out.interfaces.push(describeInterface(d.id, d.data())); });
       }
       return textResult(out);
+    },
+  },
+  {
+    name: "list_project_documents",
+    description: "List a project's documents WITHOUT their text, or search them. Returns Requirements and README ({id, chars, sourceCommit, updatedAt}), every additional document ({id, name, chars, updatedAt, updatedByEmail, sourcePath, sourceCommit, kind} — kind \"mirror\" means the next repo sync overwrites it, \"board\" means it lives only here), and the interface contracts the project shares ({id, name, chars, updatedAt}). Long lists page: totalDocuments and nextOffset (pass it back as offset; null on the last page). With query (2-200 characters) it instead searches names and text of all of them, case-insensitively, and returns {matchedTotal, matches:[{docId, docName, heading, offset, snippet}]} — at most 5 per document and 50 in all; read a hit with get_project_document using its docId and offset (or its heading as section). Use this instead of get_project_docs for a project with many or large documents.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        query: { type: "string", description: "Search names and text. 2-200 characters." },
+        offset: { type: "integer", minimum: 0, description: "Row index to continue a long document list from (the previous result's nextOffset)." },
+      },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args) {
+      const projectId = String(args.projectId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}.`);
+      const p = snap.data() || {};
+      const compact = (o) => textResult(JSON.stringify(o));
+      const hasQuery = args.query !== undefined && args.query !== null;
+      const query = hasQuery ? String(args.query).trim() : "";
+      if (hasQuery && (query.length < 2 || query.length > 200)) return toolError("query must be 2 to 200 characters.");
+      let offset = 0;
+      if (args.offset !== undefined && args.offset !== null) {
+        offset = Number(args.offset);
+        if (!Number.isInteger(offset) || offset < 0) return toolError("offset must be a non-negative integer.");
+      }
+
+      const docs = [];
+      (await db().collection("projectDocs").where("projectId", "==", projectId).get()).forEach((d) => {
+        const v = d.data() || {};
+        docs.push({
+          id: d.id, name: v.name || "", text: typeof v.contentMd === "string" ? v.contentMd : "",
+          updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null,
+          sourcePath: v.sourcePath || null, sourceCommit: v.sourceCommit || null,
+        });
+      });
+      docs.sort((a, b) => a.name.localeCompare(b.name));
+      const ifaces = [];
+      (await db().collection("interfaces").where("projectIds", "array-contains", projectId).get()).forEach((d) => {
+        const v = d.data() || {};
+        ifaces.push({ id: d.id, name: v.name || "", text: typeof v.contentMd === "string" ? v.contentMd : "", updatedAt: tsToISO(v.updatedAt) });
+      });
+      ifaces.sort((a, b) => a.name.localeCompare(b.name));
+
+      if (hasQuery) {
+        const rx = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+        const sources = [];
+        for (const kind of ["requirements", "readme"]) {
+          const loaded = await loadDocumentForRead(projectId, p, kind);
+          sources.push({ docId: kind, docName: loaded.name, text: loaded.text });
+        }
+        for (const d of docs) sources.push({ docId: d.id, docName: d.name, text: d.text });
+        for (const i of ifaces) sources.push({ docId: i.id, docName: i.name, text: i.text });
+        let matchedTotal = 0;
+        const matches = [];
+        for (const src of sources) {
+          const cap = Math.min(DOC_QUERY_PER_DOC, DOC_QUERY_TOTAL - matches.length);
+          const named = src.docName.toLowerCase().includes(query.toLowerCase());
+          const inText = searchText(src.text, outlineOf(src.text), rx, Math.max(0, cap - (named ? 1 : 0)));
+          matchedTotal += inText.total + (named ? 1 : 0);
+          if (cap <= 0) continue;
+          if (named) matches.push({ docId: src.docId, docName: src.docName, heading: null, offset: 0, snippet: clip(src.docName, DOC_SNIPPET_MAX), in: "name" });
+          for (const h of inText.hits) matches.push({ docId: src.docId, docName: src.docName, heading: h.heading, offset: h.offset, snippet: h.snippet });
+        }
+        return compact({ projectId, query, matchedTotal, matches });
+      }
+
+      const pointers = p.docs && typeof p.docs === "object" ? p.docs : {};
+      const top = {};
+      for (const kind of ["requirements", "readme"]) {
+        const ptr = pointers[kind];
+        if (ptr && typeof ptr === "object" && typeof ptr.chars === "number") {
+          top[kind] = { id: kind, chars: ptr.chars, sourceCommit: ptr.sourceCommit || null, updatedAt: tsToISO(ptr.updatedAt) };
+        } else {
+          const loaded = await loadDocumentForRead(projectId, p, kind);
+          top[kind] = { id: kind, chars: loaded.text.length, sourceCommit: loaded.meta.sourceCommit, updatedAt: loaded.meta.updatedAt };
+        }
+      }
+      const out = {
+        projectId, requirements: top.requirements, readme: top.readme,
+        interfaces: ifaces.map((i) => ({ id: i.id, name: i.name, chars: i.text.length, updatedAt: i.updatedAt })),
+        totalDocuments: docs.length, offset, documents: [], nextOffset: null,
+      };
+      if (offset > docs.length) return toolError(`offset ${offset} is past the end: this project has ${docs.length} documents.`);
+      // Rows go on this page until the next would push the text over the limit.
+      let size = JSON.stringify(Object.assign({}, out, { nextOffset: 999999 })).length;
+      let i = offset;
+      for (; i < docs.length; i += 1) {
+        const d = docs[i];
+        const row = { id: d.id, name: d.name, chars: d.text.length, updatedAt: d.updatedAt, updatedByEmail: d.updatedByEmail, sourcePath: d.sourcePath, sourceCommit: d.sourceCommit, kind: d.sourcePath ? "mirror" : "board" };
+        const len = JSON.stringify(row).length + 1;
+        if (out.documents.length && size + len > DOC_RESULT_MAX - 1000) break;
+        out.documents.push(row);
+        size += len;
+      }
+      out.nextOffset = i < docs.length ? i : null;
+      return compact(out);
+    },
+  },
+  {
+    name: "get_project_document",
+    description: "Read ONE document of a project, a page or a section at a time. docId is \"requirements\", \"readme\", a document id or an interface id (all from list_project_documents). Returns {projectId, docId, name, kind, metadata, totalChars, offset, content, nextOffset}; metadata is updatedAt, updatedByEmail and, for a repo mirror, sourcePath, sourceSlices, sourcePrefix, sourceCommit (null when not stored — a document with a sourcePath is overwritten by the next repo sync). Pages are maxChars long (default 40000, max 50000, shortened if the outline and JSON escaping would pass 60000 characters); nextOffset is the offset of the next page, null on the last. Joined in order the pages equal the stored text. The first page (offset 0, no section), or any call with outline:true, also returns outline [{level, heading, offset}] of the whole document (offsets into the full text; # lines inside ``` fences are not headings). section reads just one heading's part, matched case-insensitively (exact, then prefix), from its heading line to the next heading of the same or higher level; offset, totalChars and nextOffset are then relative to the section and sectionOffset says where it starts in the document. Lengths and offsets are JavaScript string lengths (UTF-16 code units).",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        docId: { type: "string", description: "\"requirements\", \"readme\", or an id from list_project_documents." },
+        section: { type: "string", description: "Heading text to read just that section." },
+        offset: { type: "integer", minimum: 0, description: "Where to start reading (the previous page's nextOffset)." },
+        maxChars: { type: "integer", minimum: 1, maximum: DOC_PAGE_MAX, description: `Page length. Default ${DOC_PAGE_DEFAULT}, max ${DOC_PAGE_MAX}.` },
+        outline: { type: "boolean", description: "Include the heading outline even when not on the first page." },
+      },
+      required: ["projectId", "docId"], additionalProperties: false,
+    },
+    async run(args) {
+      const projectId = String(args.projectId);
+      const docId = String(args.docId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}.`);
+      let offset = 0;
+      if (args.offset !== undefined && args.offset !== null) {
+        offset = Number(args.offset);
+        if (!Number.isInteger(offset) || offset < 0) return toolError("offset must be a non-negative integer.");
+      }
+      let maxChars = DOC_PAGE_DEFAULT;
+      if (args.maxChars !== undefined && args.maxChars !== null) {
+        maxChars = Number(args.maxChars);
+        if (!Number.isInteger(maxChars) || maxChars < 1) return toolError("maxChars must be a positive integer.");
+        maxChars = Math.min(maxChars, DOC_PAGE_MAX);
+      }
+      const loaded = await loadDocumentForRead(projectId, snap.data() || {}, docId);
+      if (loaded.error) return toolError(loaded.error);
+      const full = loaded.text;
+      const outline = outlineOf(full);
+
+      let text = full;
+      let sectionOffset = null;
+      let sectionName = null;
+      if (args.section !== undefined && args.section !== null && String(args.section).trim() !== "") {
+        const sec = findSection(full, outline, args.section);
+        if (!sec) {
+          const list = outline.slice(0, 200).map((h) => `${"#".repeat(h.level)} ${clip(h.heading, 120)}`).join("\n");
+          return toolError(`No section matching "${clip(String(args.section), 200)}" in ${loaded.name}. Headings:\n${list || "(none — the document has no headings)"}`);
+        }
+        text = full.slice(sec.start, sec.end);
+        sectionOffset = sec.start;
+        sectionName = sec.heading;
+      }
+      if (offset > text.length || (offset === text.length && text.length > 0)) {
+        return toolError(`offset ${offset} is past the end: ${sectionName ? "the section" : "the document"} has ${text.length} characters.`);
+      }
+
+      const out = { projectId, docId, name: loaded.name, kind: loaded.kind, metadata: loaded.meta };
+      if (sectionName !== null) { out.section = sectionName; out.sectionOffset = sectionOffset; }
+      out.totalChars = text.length;
+      out.offset = offset;
+      if ((offset === 0 && sectionName === null) || args.outline === true) {
+        out.outline = [];
+        let used = 0;
+        for (const h of outline) {
+          const entry = { level: h.level, heading: clip(h.heading, DOC_HEADING_MAX), offset: h.offset };
+          const len = JSON.stringify(entry).length + 1;
+          if (used + len > DOC_OUTLINE_BUDGET) { out.outlineTruncated = true; break; }
+          out.outline.push(entry);
+          used += len;
+        }
+      }
+      const build = (end) => Object.assign({}, out, { content: text.slice(offset, end), nextOffset: end < text.length ? end : null });
+      // The longest page that is within maxChars and whose JSON stays under the limit.
+      let hi = safePageEnd(text, offset, Math.min(text.length, offset + maxChars));
+      if (JSON.stringify(build(hi)).length > DOC_RESULT_MAX) {
+        let lo = offset;   // known to fit (an empty page), hi is known not to
+        while (hi - lo > 1) {
+          const mid = lo + Math.floor((hi - lo) / 2);
+          if (JSON.stringify(build(mid)).length <= DOC_RESULT_MAX) lo = mid; else hi = mid;
+        }
+        hi = safePageEnd(text, offset, lo);
+        if (hi <= offset) hi = Math.min(text.length, offset + 2);
+      }
+      return textResult(JSON.stringify(build(hi)));
     },
   },
   // ── Documentation: full read/write ──────────────────────────────────────
@@ -2373,7 +2683,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        docId: { type: "string", description: "From get_project_docs." },
+        docId: { type: "string", description: "From list_project_documents (or get_project_docs)." },
         name: { type: "string" },
         contentMd: { type: "string", description: `The whole document. Up to ${DOC_MD_MAX} characters.` },
       },
@@ -2471,7 +2781,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        interfaceId: { type: "string", description: "From get_project_docs or get_concept." },
+        interfaceId: { type: "string", description: "From list_project_documents, get_project_docs or get_concept." },
         name: { type: "string" },
         contentMd: { type: "string", description: `The whole document. Up to ${DOC_MD_MAX} characters.` },
         endpoints: {
@@ -3661,7 +3971,7 @@ const SERVER_INSTRUCTIONS = [
   "This is the PH Agent Console — the Personalisation Hub prototype backlog board and help centre.",
   "You are connected as a specific team member; every ticket you file and comment you add is attributed to their email.",
   "Start with list_projects to get a projectId, then list_backlog_items / get_backlog_item to read work, or create_backlog_item to file new work into a project's Backlog column.",
-  "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: get_project_docs to read a project's Requirements, README, additional documents and interface contracts, then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
+  "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: list_project_documents to see a project's Requirements, README, additional documents and interface contracts (no text; it also searches them) and get_project_document to read one a page or a section at a time (get_project_docs returns all of it in one result, too large for a big project), then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
   "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
   "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — create_concept makes a new one, list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements / set_concept_artifact write to them, same read/write split as project documentation. demote_project turns a project back into a concept (carrying its docs, re-pointing its interfaces, archiving it). Interfaces (create_interface / update_interface) can join any two projects or concepts and follow them through promote and demote. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",

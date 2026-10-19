@@ -239,7 +239,7 @@ async function rpc(token, method, params, id = 1) {
   await test("lists the tools, with read-only ones annotated", async () => {
     const res = await rpc(tokens.access_token, "tools/list", {});
     const names = res.body.result.tools.map((t) => t.name);
-    for (const expected of ["whoami", "list_projects", "list_backlog_items", "get_backlog_item", "create_backlog_item", "update_backlog_item", "add_item_comment", "get_project_docs", "search_faq", "get_faq_article"]) {
+    for (const expected of ["whoami", "list_projects", "list_backlog_items", "get_backlog_item", "create_backlog_item", "update_backlog_item", "add_item_comment", "get_project_docs", "list_project_documents", "get_project_document", "search_faq", "get_faq_article"]) {
       assert.ok(names.includes(expected), `missing tool ${expected}`);
     }
     const read = res.body.result.tools.find((t) => t.name === "list_projects");
@@ -1124,9 +1124,319 @@ async function rpc(token, method, params, id = 1) {
     for (const name of writeNames) {
       assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.write", `${name} must require board.write`);
     }
-    for (const name of ["list_doc_revisions", "get_doc_revision", "get_project_docs"]) {
+    for (const name of ["list_doc_revisions", "get_doc_revision", "get_project_docs", "list_project_documents", "get_project_document"]) {
       assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.read");
     }
+  });
+
+  // ── list_project_documents / get_project_document ────────────────────────
+  // On their own project ("docsproj") and another ("otherproj") so nothing
+  // here changes what proj1's tests assert.
+  const callDocs = async (token, name, args) => {
+    const res = await rpc(token, "tools/call", { name, arguments: args });
+    const r = res.body.result;
+    return { isError: r.isError === true, raw: r.content[0].text, json: r.isError ? null : JSON.parse(r.content[0].text) };
+  };
+  const docsEnv = () => {
+    env.store.col("projects").set("docsproj", { name: "Docs project" });
+    env.store.col("projects").set("otherproj", { name: "Other project" });
+  };
+  const clearDocs = () => {
+    for (const id of [...env.store.col("projectDocs").keys()]) if (id.startsWith("dp-") || id.startsWith("od-")) env.store.col("projectDocs").delete(id);
+    for (const id of [...env.store.col("interfaces").keys()]) if (id.startsWith("di-")) env.store.col("interfaces").delete(id);
+    env.store.col("projects/docsproj/docs").delete("requirements");
+    env.store.col("projects/docsproj/docs").delete("readme");
+    env.store.col("projects").delete("docsproj");
+    env.store.col("projects").delete("otherproj");
+  };
+
+  await test("list_project_documents lists with no text, mirror vs board, and pointer-or-counted chars", async () => {
+    docsEnv();
+    try {
+      env.store.col("projects").get("docsproj").docs = { requirements: { chars: 1234, sha256: "x", sourceCommit: "abc1234", updatedAt: new Date("2026-10-01T00:00:00Z") } };
+      env.store.col("projects/docsproj/docs").set("requirements", { contentMd: "# R" });   // the pointer wins over this
+      env.store.col("projects/docsproj/docs").set("readme", { contentMd: "# Readme text" });    // no pointer: counted
+      env.store.col("projectDocs").set("dp-mirror", { projectId: "docsproj", name: "Mirror doc", contentMd: "mirrored text", sourcePath: "docs/a.md", sourceSlices: [{ from: "x" }], sourcePrefix: "pre", sourceCommit: "deadbee", updatedAt: new Date("2026-10-02T00:00:00Z") });
+      env.store.col("projectDocs").set("dp-board", { projectId: "docsproj", name: "Alpha board doc", contentMd: "board text!", updatedByEmail: "a@b.c" });
+      env.store.col("interfaces").set("di-1", { name: "Contract", projectIds: ["docsproj", "otherproj"], contentMd: "contract text" });
+      const { json: out, raw } = await callDocs(tokens.access_token, "list_project_documents", { projectId: "docsproj" });
+      assert.ok(!raw.includes("mirrored text") && !raw.includes("board text!") && !raw.includes("contract text") && !raw.includes("Readme text"), "no document text in the list");
+      assert.deepStrictEqual(out.requirements, { id: "requirements", chars: 1234, sourceCommit: "abc1234", updatedAt: "2026-10-01T00:00:00.000Z" });
+      assert.strictEqual(out.readme.chars, "# Readme text".length);
+      assert.deepStrictEqual(out.documents.map((d) => d.name), ["Alpha board doc", "Mirror doc"]);
+      const [board, mirror] = out.documents;
+      assert.strictEqual(board.kind, "board");
+      assert.strictEqual(board.chars, "board text!".length);
+      assert.strictEqual(mirror.kind, "mirror");
+      assert.strictEqual(mirror.sourcePath, "docs/a.md");
+      assert.strictEqual(mirror.sourceCommit, "deadbee");
+      assert.strictEqual(mirror.chars, "mirrored text".length);
+      assert.deepStrictEqual(out.interfaces.map((i) => [i.id, i.name, i.chars]), [["di-1", "Contract", 13]]);
+      assert.strictEqual(out.totalDocuments, 2);
+      assert.strictEqual(out.nextOffset, null);
+    } finally { clearDocs(); }
+  });
+
+  await test("list_project_documents: 50 rows fit in 25,000 characters; 200 rows page, once each, under 60,000", async () => {
+    docsEnv();
+    try {
+      const mk = (n, name) => env.store.col("projectDocs").set(`dp-${String(n).padStart(3, "0")}`, {
+        projectId: "docsproj", name, contentMd: "x".repeat(n), sourcePath: n % 2 ? `dsp-integration/docs/${n}.md` : undefined,
+        sourceCommit: "0123456789abcdef0123456789abcdef01234567", updatedAt: new Date("2026-10-02T00:00:00Z"), updatedByEmail: "someone@personalisationhub.com",
+      });
+      for (let n = 0; n < 24; n += 1) mk(n, `0${n} — Mirrored document number ${n}`);
+      for (let n = 24; n < 50; n += 1) mk(n, `${String(n).padStart(3, "0")} ` + "N".repeat(116));
+      const { raw, json } = await callDocs(tokens.access_token, "list_project_documents", { projectId: "docsproj" });
+      assert.ok(raw.length <= 25000, `50 rows gave ${raw.length} characters`);
+      assert.strictEqual(json.documents.length, 50);
+      assert.strictEqual(json.nextOffset, null);
+      for (let n = 50; n < 200; n += 1) mk(n, `${String(n).padStart(3, "0")} ` + "N".repeat(116));
+      const seen = [];
+      let offset = 0;
+      let pages = 0;
+      for (;;) {
+        const page = await callDocs(tokens.access_token, "list_project_documents", { projectId: "docsproj", offset });
+        assert.ok(page.raw.length <= 60000, `a page was ${page.raw.length} characters`);
+        assert.strictEqual(page.json.totalDocuments, 200);
+        for (const d of page.json.documents) seen.push(d.id);
+        pages += 1;
+        if (page.json.nextOffset === null) break;
+        assert.ok(page.json.nextOffset > offset);
+        offset = page.json.nextOffset;
+      }
+      assert.strictEqual(seen.length, 200);
+      assert.strictEqual(new Set(seen).size, 200, "each id once");
+      assert.ok(pages >= 1);
+      const past = await callDocs(tokens.access_token, "list_project_documents", { projectId: "docsproj", offset: 201 });
+      assert.strictEqual(past.isError, true);
+    } finally { clearDocs(); }
+  });
+
+  await test("list_project_documents query finds documents, Requirements and interfaces; caps hold", async () => {
+    docsEnv();
+    try {
+      env.store.col("projects/docsproj/docs").set("requirements", { contentMd: "# Top\n\nintro\n\n## Pricing rules\n\nThe Zebra clause applies here.\n" });
+      env.store.col("projectDocs").set("dp-1", { projectId: "docsproj", name: "Ops notes", contentMd: "# Ops\n\n## Alerts\n\n" + "zebra ".repeat(12) });
+      env.store.col("projectDocs").set("od-1", { projectId: "otherproj", name: "Zebra elsewhere", contentMd: "zebra" });
+      env.store.col("interfaces").set("di-1", { name: "Contract", projectIds: ["docsproj", "otherproj"], contentMd: "# Envelope\n\nzEbRa field" });
+      env.store.col("interfaces").set("di-2", { name: "Not ours", projectIds: ["otherproj"], contentMd: "zebra" });
+      const { json: out } = await callDocs(tokens.access_token, "list_project_documents", { projectId: "docsproj", query: "zebra" });
+      const reqHit = out.matches.find((m) => m.docId === "requirements");
+      assert.strictEqual(reqHit.heading, "Pricing rules");
+      assert.strictEqual(reqHit.offset, "# Top\n\nintro\n\n## Pricing rules\n\nThe ".length);
+      assert.ok(reqHit.snippet.includes("Zebra clause"));
+      const ifHit = out.matches.find((m) => m.docId === "di-1");
+      assert.strictEqual(ifHit.heading, "Envelope");
+      assert.strictEqual(ifHit.offset, "# Envelope\n\n".length);
+      const docHits = out.matches.filter((m) => m.docId === "dp-1");
+      assert.strictEqual(docHits.length, 5, "5 per document");
+      assert.ok(docHits.every((m) => m.heading === "Alerts" && m.snippet.length <= 240));
+      assert.strictEqual(out.matchedTotal, 1 + 12 + 1);
+      assert.ok(!out.matches.some((m) => m.docId === "od-1" || m.docId === "di-2"), "nothing from another project");
+      // names are searched too
+      const byName = (await callDocs(tokens.access_token, "list_project_documents", { projectId: "docsproj", query: "ops notes" })).json;
+      assert.strictEqual(byName.matches[0].docId, "dp-1");
+      const one = await callDocs(tokens.access_token, "list_project_documents", { projectId: "docsproj", query: "z" });
+      assert.strictEqual(one.isError, true);
+      // 50 in all
+      for (let n = 0; n < 20; n += 1) env.store.col("projectDocs").set(`dp-m${n}`, { projectId: "docsproj", name: `M${n}`, contentMd: "needle ".repeat(10) });
+      const many = (await callDocs(tokens.access_token, "list_project_documents", { projectId: "docsproj", query: "needle" })).json;
+      assert.strictEqual(many.matches.length, 50);
+      assert.strictEqual(many.matchedTotal, 200);
+    } finally { clearDocs(); }
+  });
+
+  const bigRequirements = () => {
+    // 115 headings, ~320,000 characters, quotes and newlines to escape.
+    let md = "";
+    for (let h = 0; h < 115; h += 1) {
+      md += `## ${h + 1}. Section ${h}\n\n`;
+      const body = `Line with "quotes" and a \\ backslash for section ${h}.\n`;
+      while (md.length < (h + 1) * 2780) md += body;
+    }
+    return md;
+  };
+
+  await test("get_project_document pages join back to the stored text, all under 60,000 characters", async () => {
+    docsEnv();
+    try {
+      const md = bigRequirements();
+      assert.ok(md.length > 300000);
+      env.store.col("projects/docsproj/docs").set("requirements", { contentMd: md, updatedByEmail: "a@b.c" });
+      let joined = "";
+      let offset = 0;
+      let first = null;
+      for (;;) {
+        const r = await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements", offset });
+        assert.ok(r.raw.length <= 60000, `page at ${offset} was ${r.raw.length}`);
+        assert.strictEqual(r.json.totalChars, md.length);
+        assert.strictEqual(r.json.offset, offset);
+        if (offset === 0) first = r.json; else assert.strictEqual(r.json.outline, undefined, "outline only on page one");
+        joined += r.json.content;
+        if (r.json.nextOffset === null) break;
+        offset = r.json.nextOffset;
+      }
+      assert.strictEqual(joined, md);
+      assert.strictEqual(first.outline.length, 115);
+      assert.strictEqual(first.outline[0].offset, 0);
+      assert.strictEqual(md.slice(first.outline[7].offset, first.outline[7].offset + 12), "## 8. Sectio");
+      const big = await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements", maxChars: 50000, outline: true, offset: 100000 });
+      assert.ok(big.raw.length <= 60000, `maxChars 50000 gave ${big.raw.length}`);
+      assert.strictEqual(big.json.outline.length, 115);
+      assert.ok(big.json.content.length < 50000, "shortened to fit once escaping is counted");
+      assert.strictEqual(md.startsWith(big.json.content, 100000) || md.slice(100000).startsWith(big.json.content), true);
+      assert.strictEqual(big.json.nextOffset, 100000 + big.json.content.length);
+      // Pure newlines escape to two characters each: still under the limit.
+      env.store.col("projects/docsproj/docs").set("readme", { contentMd: "\n".repeat(120000) });
+      let got = "";
+      for (let o = 0;;) {
+        const r = await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "readme", offset: o, maxChars: 50000 });
+        assert.ok(r.raw.length <= 60000);
+        got += r.json.content;
+        if (r.json.nextOffset === null) break;
+        o = r.json.nextOffset;
+      }
+      assert.strictEqual(got.length, 120000);
+    } finally { clearDocs(); }
+  });
+
+  await test("get_project_document never ends a page inside a surrogate pair", async () => {
+    docsEnv();
+    try {
+      const md = "ab" + "😀".repeat(9) + "end";
+      env.store.col("projectDocs").set("dp-emoji", { projectId: "docsproj", name: "Emoji", contentMd: md });
+      for (const maxChars of [3, 4, 5, 6, 7]) {
+        let joined = "";
+        let offset = 0;
+        for (let guard = 0; guard < 100; guard += 1) {
+          const r = await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "dp-emoji", offset, maxChars });
+          const c = r.json.content;
+          const last = c.charCodeAt(c.length - 1);
+          assert.ok(!(last >= 0xD800 && last <= 0xDBFF), `maxChars ${maxChars}: page ends in a lone high surrogate`);
+          assert.ok(c.length > 0);
+          joined += c;
+          if (r.json.nextOffset === null) break;
+          offset = r.json.nextOffset;
+        }
+        assert.strictEqual(joined, md, `maxChars ${maxChars}`);
+      }
+    } finally { clearDocs(); }
+  });
+
+  await test("get_project_document section: exactly that section, fences ignored, no match lists headings", async () => {
+    docsEnv();
+    try {
+      const md = ["# Title", "", "intro", "", "## 8. Data model", "", "model text", "", "```sh", "# not a heading", "```", "", "### Sub part", "", "sub text", "", "## 9. Next", "", "next text", ""].join("\n");
+      env.store.col("projects/docsproj/docs").set("requirements", { contentMd: md });
+      const sec = (await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements", section: "8. data model" })).json;
+      const start = md.indexOf("## 8. Data model");
+      const end = md.indexOf("## 9. Next");
+      assert.strictEqual(sec.content, md.slice(start, end));
+      assert.strictEqual(sec.sectionOffset, start);
+      assert.strictEqual(sec.totalChars, end - start);
+      assert.strictEqual(sec.offset, 0);
+      assert.strictEqual(sec.nextOffset, null);
+      assert.ok(sec.content.includes("### Sub part") && sec.content.includes("# not a heading"));
+      const prefix = (await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements", section: "9." })).json;
+      assert.strictEqual(prefix.content, md.slice(end));
+      const sub = (await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements", section: "Sub part" })).json;
+      assert.ok(sub.content.startsWith("### Sub part") && !sub.content.includes("## 9."));
+      // the fenced line is not in the outline
+      const full = (await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements" })).json;
+      assert.deepStrictEqual(full.outline.map((h) => h.heading), ["Title", "8. Data model", "Sub part", "9. Next"]);
+      // a section pages relative to itself
+      const paged = (await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements", section: "8.", maxChars: 10 })).json;
+      assert.strictEqual(paged.content, md.slice(start, start + 10));
+      assert.strictEqual(paged.nextOffset, 10);
+      const rest = (await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements", section: "8.", offset: 10, maxChars: 10000 })).json;
+      assert.strictEqual(paged.content + rest.content, md.slice(start, end));
+      const none = await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements", section: "Nonexistent" });
+      assert.strictEqual(none.isError, true);
+      assert.ok(none.raw.includes("8. Data model") && none.raw.includes("9. Next") && !none.raw.includes("not a heading"));
+    } finally { clearDocs(); }
+  });
+
+  await test("get_project_document returns metadata and refuses unknown, foreign and unshared documents", async () => {
+    docsEnv();
+    try {
+      env.store.col("projectDocs").set("dp-mirror", { projectId: "docsproj", name: "Mirror", contentMd: "hello", sourcePath: "x/y.md", sourceSlices: ["a"], sourcePrefix: "P", sourceCommit: "c0ffee1", updatedByEmail: "m@x.y" });
+      env.store.col("projectDocs").set("dp-board", { projectId: "docsproj", name: "Board", contentMd: "hi" });
+      env.store.col("projectDocs").set("od-1", { projectId: "otherproj", name: "Theirs", contentMd: "secret" });
+      env.store.col("interfaces").set("di-1", { name: "Shared", projectIds: ["docsproj", "otherproj"], contentMd: "shared text" });
+      env.store.col("interfaces").set("di-2", { name: "Private", projectIds: ["otherproj"], contentMd: "private text" });
+      const m = (await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "dp-mirror" })).json;
+      assert.strictEqual(m.kind, "mirror");
+      assert.strictEqual(m.name, "Mirror");
+      assert.strictEqual(m.content, "hello");
+      assert.deepStrictEqual(m.metadata, { updatedAt: null, updatedByEmail: "m@x.y", sourcePath: "x/y.md", sourceSlices: ["a"], sourcePrefix: "P", sourceCommit: "c0ffee1" });
+      const b = (await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "dp-board" })).json;
+      assert.strictEqual(b.kind, "board");
+      assert.strictEqual(b.metadata.sourcePath, null);
+      assert.strictEqual(b.metadata.sourceSlices, null);
+      assert.strictEqual(b.nextOffset, null);
+      const i = (await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "di-1" })).json;
+      assert.strictEqual(i.content, "shared text");
+      const unknown = await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "nope" });
+      assert.ok(unknown.isError && /list_project_documents/.test(unknown.raw));
+      const foreign = await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "od-1" });
+      assert.ok(foreign.isError && !foreign.raw.includes("secret"));
+      const unshared = await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "di-2" });
+      assert.ok(unshared.isError && !unshared.raw.includes("private text"));
+      const pastEnd = await callDocs(tokens.access_token, "get_project_document", { projectId: "docsproj", docId: "dp-board", offset: 99 });
+      assert.strictEqual(pastEnd.isError, true);
+      const noProject = await callDocs(tokens.access_token, "get_project_document", { projectId: "ghost", docId: "requirements" });
+      assert.strictEqual(noProject.isError, true);
+    } finally { clearDocs(); }
+  });
+
+  await test("get_project_docs still returns requirementsMd, readmeMd, documents[].contentMd, interfaces and docsSync, with sourcePath and kind", async () => {
+    docsEnv();
+    try {
+      env.store.col("projects/docsproj/docs").set("requirements", { contentMd: "# R" });
+      env.store.col("projects/docsproj/docs").set("readme", { contentMd: "# M" });
+      env.store.col("projectDocs").set("dp-mirror", { projectId: "docsproj", name: "Mirror", contentMd: "hello", sourcePath: "x/y.md" });
+      env.store.col("projectDocs").set("dp-board", { projectId: "docsproj", name: "Board", contentMd: "hi" });
+      env.store.col("interfaces").set("di-1", { name: "Shared", projectIds: ["docsproj"], contentMd: "shared text" });
+      const out = (await callDocs(tokens.access_token, "get_project_docs", { projectId: "docsproj" })).json;
+      assert.strictEqual(out.requirementsMd, "# R");
+      assert.strictEqual(out.readmeMd, "# M");
+      assert.ok("docsSync" in out);
+      assert.strictEqual(out.interfaces[0].contentMd, "shared text");
+      const byName = Object.fromEntries(out.documents.map((d) => [d.name, d]));
+      assert.strictEqual(byName.Mirror.contentMd, "hello");
+      assert.strictEqual(byName.Mirror.sourcePath, "x/y.md");
+      assert.strictEqual(byName.Mirror.kind, "mirror");
+      assert.strictEqual(byName.Board.sourcePath, null);
+      assert.strictEqual(byName.Board.kind, "board");
+    } finally { clearDocs(); }
+  });
+
+  await test("a viewer can call both document readers, and neither writes an audit row", async () => {
+    docsEnv();
+    try {
+      env.store.col("projects/docsproj/docs").set("requirements", { contentMd: "# R\n\ntext" });
+      const VIEWER = "docsviewer@personalisationhub.com";
+      const idToken = signIn(VIEWER);
+      addConsoleUser(VIEWER, { role: "viewer" });
+      const v = b64url(crypto.randomBytes(32));
+      const ch = b64url(crypto.createHash("sha256").update(v).digest());
+      const auth = await call({
+        method: "POST", path: "/mcp/authorize/complete",
+        body: { idToken, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256", scope: "board.read board.write" },
+      });
+      const tok = await call({
+        method: "POST", path: "/mcp/token",
+        body: { grant_type: "authorization_code", code: new URL(auth.body.redirect).searchParams.get("code"), code_verifier: v, client_id: clientId, redirect_uri: REDIRECT },
+      });
+      const rowsBefore = env.store.col("mcpAuditLog").size;
+      const list = await callDocs(tok.body.access_token, "list_project_documents", { projectId: "docsproj" });
+      assert.strictEqual(list.isError, false);
+      const doc = await callDocs(tok.body.access_token, "get_project_document", { projectId: "docsproj", docId: "requirements" });
+      assert.strictEqual(doc.isError, false);
+      const search = await callDocs(tok.body.access_token, "list_project_documents", { projectId: "docsproj", query: "text" });
+      assert.strictEqual(search.isError, false);
+      assert.strictEqual(env.store.col("mcpAuditLog").size, rowsBefore, "reads write no audit row");
+    } finally { clearDocs(); }
   });
 
   await test("only the delete tools are flagged destructive", async () => {

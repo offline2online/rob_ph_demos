@@ -161,9 +161,9 @@ await test("tools/list returns the whole surface", async () => {
     "add_concept_comment", "add_item_comment", "approve_deploy_to_main", "clear_blocked", "comment_on_faq_revision", "create_backlog_item", "create_concept",
     "create_faq_article", "create_interface", "create_project_document", "delete_interface",
     "delete_project_document", "delete_skill", "demote_project", "get_approved_for_deployment_board", "get_backlog_item",
-    "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_project_docs",
+    "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_project_docs", "get_project_document",
     "get_ready_for_testing_board", "get_routine_setup_instructions", "get_skill", "list_backlog_items",
-    "list_concepts", "list_doc_revisions", "list_pending_faq_revisions", "list_projects", "list_skill_misses",
+    "list_concepts", "list_doc_revisions", "list_pending_faq_revisions", "list_project_documents", "list_projects", "list_skill_misses",
     "list_skills", "mark_skill_reviewed", "report_skill_miss", "search_faq", "set_blocked", "set_concept_artifact", "set_concept_readme",
     "set_concept_requirements", "set_my_routine_binding", "set_phase_skill_bindings",
     "set_project_artifact", "set_project_description", "set_project_readme", "set_project_requirements", "update_backlog_item",
@@ -229,6 +229,26 @@ await test("a real client can read a project's docs and write them back", async 
 
   const after = text(await client.callTool({ name: "get_project_docs", arguments: { projectId: "proj-lvp" } }));
   assert.match(after.requirementsMd, /trust zones/);
+});
+
+await test("a real client lists, searches and pages a project's documents", async () => {
+  await client.callTool({ name: "set_project_requirements", arguments: { projectId: "proj-lvp", contentMd: "# Requirements\n\n## Trust zones\n\nAttribute envelope, deadline model, trust zones." } });
+  const list = text(await client.callTool({ name: "list_project_documents", arguments: { projectId: "proj-lvp" } }));
+  assert.strictEqual(list.requirements.id, "requirements");
+  assert.ok(list.requirements.chars > 0);
+  assert.strictEqual(list.nextOffset, null);
+  assert.strictEqual(JSON.stringify(list).includes("contentMd"), false, "no document text in the list");
+  const found = text(await client.callTool({ name: "list_project_documents", arguments: { projectId: "proj-lvp", query: "deadline model" } }));
+  assert.strictEqual(found.matches[0].docId, "requirements");
+  assert.strictEqual(found.matches[0].heading, "Trust zones");
+  const doc = text(await client.callTool({ name: "get_project_document", arguments: { projectId: "proj-lvp", docId: "requirements", maxChars: 20 } }));
+  assert.strictEqual(doc.content.length, 20);
+  assert.strictEqual(doc.nextOffset, 20);
+  assert.strictEqual(doc.outline.length, 2);
+  const sec = text(await client.callTool({ name: "get_project_document", arguments: { projectId: "proj-lvp", docId: "requirements", section: "trust" } }));
+  assert.match(sec.content, /^## Trust zones/);
+  const bad = await client.callTool({ name: "get_project_document", arguments: { projectId: "proj-lvp", docId: "nope" } });
+  assert.strictEqual(bad.isError, true);
 });
 
 await test("a replaced document is recoverable through the client", async () => {
