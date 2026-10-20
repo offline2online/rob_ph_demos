@@ -11,6 +11,7 @@ record.
 
 **Changelog**
 
+- **20 Oct 2026** — The AWS POC is scoped to **three demand paths** (ticket JNSjYNvGcgwdzFvaPHlk). See "AWS POC demand paths" below the changelog.
 - **17 Oct 2026** — Available Inventory's **Reserve price** is replaced by an
   editable per-slot **Floor CPM** (Rob; ticket EEm4tA5fSB6RKlEjNhVu). Each
   slot row shows the platform floor by default, marked inherited; the retail
@@ -209,6 +210,16 @@ resolution contract, and deciding or rendering which version plays (that is
 PH Core's). All other playlist
 capabilities (items, scenes, scheduling) are handled by the existing platform
 and are not changed by this project.
+
+### AWS POC demand paths
+
+**AWS POC — exactly three demand paths, in this demo order (Rob, 20 Oct 2026; ticket JNSjYNvGcgwdzFvaPHlk — binding):**
+
+1. **Open auction.** No targeting at all. Monster, PepsiCo and Mars Wrigley bid against each other through the DSPs on the same slot **35 seconds before it plays**; the highest bid wins and plays the creative supplied in its bid response.
+2. **Programmatic guaranteed (PG).** An advertiser books a slot for a **full day (24 hours)** up front, pays a fixed amount and gets the slot. Coca-Cola is the demo brand. The creative must be **pre-approved and is managed directly in PH** (Coca-Cola, Coke Zero, Sprite, Fanta, Schweppes and Namthip water, the Thai 7-Eleven range), with targeting and scheduling rules (hot/cold store-segment localisation) that trigger the right campaigns on the PWA player. That is handled by **PH Core**, not by a DSP bid response.
+3. **Advertiser direct.** The advertiser relationship is managed entirely within PH (no DSP). Red Bull is the demo brand: CV personalisation, several prioritised campaigns on one slot.
+
+**Out of POC scope:** private auction and preferred deal (visible but greyed out in the UI), and targeting on deals and on the open auction. Anything below that describes PG as a future release for the AWS demo, or that offers targeting on a deal or an open auction, is superseded by this paragraph.
 
 **Deferred to a later release:** managing targeting variables (this release
 uses the default platform variables only, read-only), environmental

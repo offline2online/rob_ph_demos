@@ -39,8 +39,8 @@ const ADVERTISER_PAGE = {
   },
 }
 
-const renderAt = (path: string, dspIntegration = true, selfService = false, changeHistory = true) => {
-  const router = createMemoryRouter(appRoutes({ dspIntegration, selfService, changeHistory }), { initialEntries: [path] })
+const renderAt = (path: string, dspIntegration = true, selfService = false, changeHistory = true, dealTargeting = false) => {
+  const router = createMemoryRouter(appRoutes({ dspIntegration, selfService, changeHistory, dealTargeting }), { initialEntries: [path] })
   render(<Providers><RouterProvider router={router} /></Providers>)
   return router
 }
@@ -921,7 +921,12 @@ describe('Advertisers / Inventory', () => {
     expect(id).toHaveAttribute('readonly')
     expect(within(dialog).queryByTestId('deal-type-new-deal-note')).not.toBeInTheDocument()
     fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Deal type' }))
-    fireEvent.click(await screen.findByText('Preferred deal', { selector: '.ant-select-item-option-content' }))
+    /* POC: Private auction and Preferred deal stay visible but cannot be picked. */
+    const preferred = (await screen.findByText('Preferred deal')).closest('.ant-select-item-option') as HTMLElement
+    expect(preferred).toHaveClass('ant-select-item-option-disabled')
+    fireEvent.click(preferred)
+    expect(within(dialog).queryByTestId('deal-type-new-deal-note')).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByText('Programmatic guaranteed', { selector: '.ant-select-item-option-content' }))
     expect(await within(dialog).findByTestId('deal-type-new-deal-note')).toHaveTextContent('new Deal ID')
   })
 
@@ -1077,12 +1082,23 @@ describe('Advertisers / Inventory', () => {
       { ...base, id: 'bl_2', name: 'No blurb', description: '', targeting: [{ source: 'store', variable: 'store.state', op: 'include', values: ['QLD'] }] },
     ]
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists } })))
-    renderAt('/advertisers')
+    renderAt('/advertisers', true, false, true, true)
     const table = await screen.findByLabelText('Deals and buyers lists')
     fireEvent.mouseOver(await within(table).findByText('No blurb'))
     const tip = await screen.findByTestId('targeting-tip-bl_2')
     expect(tip).toHaveTextContent('Targeting criteria')
     expect(tip).toHaveTextContent('State: includes selected QLD')
+  }, slow(45000))
+
+  /* Ticket Zxw7VRUSytMAovkbDFKt: with the dealTargeting flag off (the default) a deal's tooltip shows no targeting. */
+  it('hides a deal’s targeting criteria in its tooltip when targeting is off', async () => {
+    const lists = [{ id: 'bl_1', name: 'Eastern states', description: 'Big metros', invitedBuyers: [], invitedCategories: [], activeFrom: null, activeTo: null, dealType: 'private_auction', targeting: [{ source: 'store', variable: 'store.state', op: 'include', values: ['NSW'] }] }]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists } })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.mouseOver(await within(table).findByText('Eastern states'))
+    expect(await screen.findByText('Big metros')).toBeInTheDocument()
+    expect(screen.queryByTestId('targeting-tip-bl_1')).toBeNull()
   }, slow(45000))
 
   /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals above an explicit Open auction, the DSPs it runs across below it. */
@@ -1240,12 +1256,12 @@ describe('Advertisers / Inventory', () => {
      all, so it went green while the picker was reported broken. This test
      is that missing assertion: the option group's position, the option
      itself, and that it actually opens the modal. */
-  it('offers "+ Add new deal and buyers list…" in the Assigned to picker, and opens the modal', async () => {
+  it.each([false, true])('offers "+ Add new deal and buyers list…" in the Assigned to picker, and opens the modal (dealTargeting %s)', async (dealTargeting) => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...ADVERTISER_PAGE,
       '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Q4 FMCG Private Auction', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }] },
     })))
-    renderAt('/advertisers')
+    renderAt('/advertisers', true, false, true, dealTargeting)
     const inventory = await screen.findByLabelText('Available Inventory')
     const combo = within(within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
     fireEvent.mouseDown(combo)
@@ -1271,14 +1287,15 @@ describe('Advertisers / Inventory', () => {
     /* Invited buyers is one dropdown of synced advertisers: nothing to type, no identifier type to pick. */
     expect(within(dialog).getByRole('combobox', { name: 'Buyers' })).toBeInTheDocument()
     /* One object carries who may buy AND the targeting criteria appended to the deal. */
-    expect(within(dialog).getByRole('combobox', { name: 'Targeting criteria' })).toBeInTheDocument()
+    /* Targeting is behind the dealTargeting flag (off for the first release): no picker when off, the picker when on. */
+    if (dealTargeting) expect(within(dialog).getByRole('combobox', { name: 'Targeting criteria' })).toBeInTheDocument()
+    else expect(within(dialog).queryByRole('combobox', { name: 'Targeting criteria' })).toBeNull()
     expect(within(dialog).queryByText(/PH brand entity|identifier type/i)).toBeNull()
     expect(within(dialog).queryByRole('button', { name: /Add buyer/ })).toBeNull()
-    /* The deal type drives the fields: a new list is a private auction: no auction window any more (16 Oct 2026) and no committed plays. */
+    /* The deal type drives the fields: a new list is programmatic guaranteed (the POC's only selectable type): committed plays, no auction window. */
     expect(within(dialog).getByRole('combobox', { name: 'Deal type' })).toBeInTheDocument()
-    expect(within(dialog).getByTestId('deal-type-note')).toHaveTextContent('no volume is committed')
+    expect(within(dialog).getByTestId('deal-type-note')).toHaveTextContent('there is no bidding')
     expect(within(dialog).queryByLabelText('Auction closes')).toBeNull()
-    expect(within(dialog).queryByLabelText('Guaranteed impressions')).toBeNull()
   }, slow(30000))
 
   /* The modal used to show field errors only when the API sent `details`

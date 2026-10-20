@@ -22,7 +22,7 @@ import { buyerStatusOf, cpmKindHint, rateTypeOf, rateValue, sourceLabel } from '
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }
-type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
+type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* One line per targeting rule, in the words of the criteria picker: "State: includes selected NSW, VIC". */
@@ -44,7 +44,7 @@ const NameCell = ({ data, context }: P) => {
   ) : (
     <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
   )
-  const rules = targetingLines(data)
+  const rules = context.current.showTargeting ? targetingLines(data) : []
   return (
     <div className="min-w-0">
       {/* The description and targeting rules are not extra lines in the row: hovering the name shows them under the name. */}
@@ -151,7 +151,7 @@ const ActionsCell = ({ data, context }: P) =>
     </span>
   ) : null
 
-export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }: { lists: BuyersList[]; canEdit: boolean; capacity: Capacity; slots: Map<string, SlotInfo[]>; onChanged: () => void }) {
+export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, showTargeting = false }: { showTargeting?: boolean; lists: BuyersList[]; canEdit: boolean; capacity: Capacity; slots: Map<string, SlotInfo[]>; onChanged: () => void }) {
   const partners = useQuery(Q.partners)
   const dspName = (id: string) => (partners.data ?? []).find((p) => p.id === id)?.name ?? id
   const seatName = (pid: string, sid: string) => (partners.data ?? []).find((p) => p.id === pid)?.seats?.find((x) => x.id === sid)?.name ?? sid
@@ -180,7 +180,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }:
     ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ], [canEdit])
   const context = {
-    canEdit, capacity, slots, dspName, seatName,
+    canEdit, showTargeting, capacity, slots, dspName, seatName,
     onEdit: (l: BuyersList) => {
       setEditing(l)
       setModalOpen(true)
@@ -228,7 +228,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }:
       ) : (
         <Grid<BuyersList> label="Deals and buyers lists" rows={lists} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} stickyHeader />
       )}
-      <BuyersListModal open={modalOpen} editing={editing} onClose={() => setModalOpen(false)} onSaved={() => onChanged()} />
+      <BuyersListModal showTargeting={showTargeting} open={modalOpen} editing={editing} onClose={() => setModalOpen(false)} onSaved={() => onChanged()} />
       <DealSheetModal list={sharing} onClose={() => setSharing(null)} />
       {deleting && (
         <DeleteDialog

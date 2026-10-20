@@ -354,7 +354,7 @@ npm test
   private auction, D3 preferred deal, D4 programmatic guaranteed — in
   `apps/api/test/e2e/run7-deal-types.test.ts`. **Run 8 (10 Oct 2026) is the
   AWS demo**: the direct advertiser flow and the DSP flow through per-campaign
-  approval into creative IDs (`run8-aws-demo.test.ts`; walkthrough in
+  approval into creative IDs (`run8-aws-demo.test.ts`; the POC has exactly three demand paths in this order: open auction, 24 h programmatic guaranteed, advertiser direct, see REQUIREMENTS.md "AWS POC demand paths"; walkthrough in
   `docs/dsp-integration/AWS-DEMO-TEST-FLOW.md`);
   `npm run e2e:journey` runs Run 6 end to end against a real local instance
   it starts itself (fresh database, ephemeral ports, `PH_TEST_CLOCK`), no
