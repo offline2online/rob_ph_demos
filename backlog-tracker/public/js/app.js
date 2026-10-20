@@ -481,7 +481,10 @@ document.addEventListener("click", (e) => {
 let navShell = null;
 const navDrawer = document.getElementById("nav-drawer");
 const navDrawerBackdrop = document.getElementById("nav-drawer-backdrop");
-function openNavDrawer() { navDrawer.classList.add("open"); navDrawerBackdrop.classList.add("open"); }
+// At >=1024px the sidebar is persistent: the hamburger only re-expands it
+// (nav-shell.js), so it must not also leave the slide-over "open" state on.
+const navPersistentMq = window.matchMedia("(min-width: 1024px)");
+function openNavDrawer() { if (navPersistentMq.matches) return; navDrawer.classList.add("open"); navDrawerBackdrop.classList.add("open"); }
 function closeNavDrawer() { navDrawer.classList.remove("open"); navDrawerBackdrop.classList.remove("open"); }
 document.getElementById("nav-open-btn").addEventListener("click", openNavDrawer);
 document.getElementById("nav-close-btn").addEventListener("click", closeNavDrawer);

@@ -16,8 +16,8 @@ import { startHarness, until, outDir, SDK_MODULES } from "./harness.mjs";
 import * as stub from "./firebase-stub.mjs";
 import { publicDir } from "./harness.mjs";
 
-// 1440 desktop, 1180 tablet landscape, 820 tablet portrait, 390 phone.
-const WIDTHS = [1440, 1180, 820, 390];
+// 1440 and 1280 desktop, 1180 tablet landscape, 820 tablet portrait, 390 phone.
+const WIDTHS = [1440, 1280, 1180, 820, 390];
 const t = (ms) => ({ $ts: ms });
 const T0 = 1_760_000_000_000;
 
@@ -95,6 +95,44 @@ const scenarios = [
       } else {
         for (let i = 1; i < cols.length; i++) assert.ok(cols[i].x > cols[i - 1].x, `column ${i + 1} should sit right of column ${i} at ${c.width}px`);
       }
+    },
+  },
+  {
+    name: "board: four columns fit beside the sidebar, headers read in full",
+    seed: () => seed(),
+    async run(c) {
+      await c.boardReady();
+      if (c.width < 1024) return;
+      const measure = () => c.page.evaluate(() => {
+        const b = document.querySelector(".board");
+        const br = b.getBoundingClientRect();
+        const cols = [...document.querySelectorAll(".column[data-col]")].map((col) => {
+          const r = col.getBoundingClientRect();
+          const head = col.querySelector(".col-head");
+          const hr = head.getBoundingClientRect();
+          const label = head.querySelector(":scope > span:first-child");
+          const btns = [...head.querySelectorAll("button")].map((x) => x.getBoundingClientRect().right);
+          return { key: col.dataset.col, inside: r.left >= br.left - 1 && r.right <= br.right + 1, labelCut: label.scrollWidth > label.clientWidth + 1, btnOut: btns.some((x) => x > hr.right + 1) };
+        });
+        return { boardScroll: b.scrollWidth - b.clientWidth, cols };
+      });
+      const check = async (what) => {
+        const m = await measure();
+        assert.ok(m.boardScroll <= 1, `${what}: the board scrolls sideways at ${c.width}px (by ${m.boardScroll}px)`);
+        for (const col of m.cols) {
+          assert.ok(col.inside, `${what}: column ${col.key} is cut off at ${c.width}px`);
+          assert.ok(!col.labelCut, `${what}: column ${col.key} header label is clipped at ${c.width}px`);
+          assert.ok(!col.btnOut, `${what}: a button in column ${col.key} header is clipped at ${c.width}px`);
+        }
+      };
+      c.at("sidebar open");
+      await c.visible("#nav-drawer", "sidebar is open");
+      await c.visible(".col-head .review-batch-btn", "Review Batch shows in its header");
+      await check("sidebar open");
+      c.at("sidebar collapsed");
+      await c.click("#nav-collapse-btn");
+      await c.hidden("#nav-drawer", "sidebar hides");
+      await check("sidebar collapsed");
     },
   },
   {
