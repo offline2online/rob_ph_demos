@@ -74,4 +74,75 @@ function shouldStampReportedAt(before, after) {
   return b.status !== a.status || millis(b.finishedAt) !== millis(a.finishedAt) || (b.errorMessage || null) !== (a.errorMessage || null);
 }
 
-module.exports = { STALL_MS, notifyRoutineOutcome, stalledNoteText, shouldStampReportedAt, reportTimeMs, millis };
+// The sent tickets an in-progress click is still building right now: a session
+// actually started for the card (lastFire "started"), less than STALL_MS ago,
+// has not reported since, and the card is still waiting in Backlog. A new
+// Ready for Dev click must not start a second session for these (20 Oct 2026:
+// every ticket on both trains was built twice, by two sessions that each wrote
+// their own version of the fix). Timed per card, from its own fire, because a
+// later click carries these ids onto a newer record. A fire that never started
+// a session is not in flight — its retry must still go out — and one older
+// than STALL_MS has stalled rather than building.
+function inFlightItemIds(routine, cards, now = Date.now()) {
+  if (!routine || routine.status !== "in-progress" || !Array.isArray(routine.sentItemIds)) return [];
+  const byId = new Map((cards || []).map((c) => [c.id, c]));
+  return routine.sentItemIds.filter((id) => {
+    const card = byId.get(id);
+    if (!card || card.status !== "backlog" || card.patchReady) return false;
+    if (card.blocked && card.blocked.reason) return false;
+    const fire = card.lastFire;
+    if (!fire || fire.status !== "started") return false;
+    const firedMs = millis(fire.at);
+    if (!firedMs || now - firedMs >= STALL_MS) return false;
+    return reportTimeMs(card.buildSession) < firedMs;
+  });
+}
+
+// A session that reported "done" but left its card in Backlog with no patch
+// and no blocked flag stopped on something only a person can answer — usually
+// a question written as a comment (20 Oct 2026, ticket rx1RfF2p7tyqJABWHR0q:
+// "Which one? Answer on the card", but no flag, so no Answer button; the reply
+// went in as a plain comment, nothing rebuilt it, and the project's Ready for
+// Testing hand-off waited on it as "still building"). Returns what the sweep
+// should do, or null:
+//   { action: "rebuild", answer }  a person has already replied in a comment
+//                                  since the report: that reply is the answer
+//                                  (the build prompt carries the comments)
+//   { action: "block", blocked }   nobody has: raise waiting-on-input with the
+//                                  session's last comment, so the card shows
+//                                  the question and an Answer button
+// Waits GRACE_MS after the report so a session that writes patchReady just
+// after its buildSession is not caught mid-way.
+const UNBUILT_REPORT_GRACE_MS = 3 * 60 * 1000;
+const UNBUILT_REPORT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const UNBUILT_SETTER = "build-report";
+const isPersonNote = (n) => !!n && typeof n.author === "string" && n.author.includes("@") && typeof n.text === "string" && n.text.trim();
+function unbuiltReportAction(card, now = Date.now()) {
+  if (!card || card.status !== "backlog" || card.patchReady) return null;
+  if (card.blocked && card.blocked.reason) return null;
+  const bs = card.buildSession;
+  if (!bs || bs.status !== "done") return null;
+  const reported = reportTimeMs(bs);
+  if (!reported || now - reported < UNBUILT_REPORT_GRACE_MS) return null;
+  // Only recent reports: an old card left alone in Backlog is someone's
+  // decision, not a stuck build, and must not start building out of the blue.
+  if (now - reported > UNBUILT_REPORT_MAX_AGE_MS) return null;
+  // Something already happened since the report: a newer fire (Answer, Ready
+  // for Dev, a rebuild), a person clearing the flag by hand, or the pipeline
+  // acting on the card (its patch landed and it was sent back since).
+  if (card.lastFire && millis(card.lastFire.at) > reported) return null;
+  if (card.blockedClearedAt && millis(card.blockedClearedAt) > reported) return null;
+  const notes = Array.isArray(card.notes) ? card.notes : [];
+  if (notes.some((n) => n && n.author === "backlog-automation" && millis(n.at) > reported)) return null;
+  const reply = notes.filter((n) => isPersonNote(n) && millis(n.at) > reported).pop();
+  if (reply) return { action: "rebuild", answer: reply.text.trim() };
+  const fromSession = notes.filter((n) => n && n.author === "claude" && typeof n.text === "string" && n.text.trim());
+  const last = fromSession[fromSession.length - 1];
+  const why = last ? last.text.trim() : "The build session finished without packaging a patch and left no explanation on the card.";
+  return {
+    action: "block",
+    blocked: { reason: "waiting-on-input", note: `${why.length > 1500 ? `${why.slice(0, 1500)}…` : why}\n\nAnswer on the card (Answer button)`, setBy: UNBUILT_SETTER },
+  };
+}
+
+module.exports = { STALL_MS, notifyRoutineOutcome, stalledNoteText, shouldStampReportedAt, reportTimeMs, millis, cardSettled, inFlightItemIds, unbuiltReportAction, UNBUILT_REPORT_GRACE_MS, UNBUILT_SETTER };

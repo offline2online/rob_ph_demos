@@ -2422,3 +2422,52 @@ page stays light with the OS in dark mode. Both fail on the broken build.
 For screenshots with real icons, `test/ui/harness.mjs` serves a saved copy of
 the Material Symbols stylesheet and font from `$HARNESS_FONTS_DIR` (`ms.css` +
 `ms.woff2`) when that is set; tests never set it.
+
+## One build per ticket, and nothing left waiting silently (20 Oct 2026)
+
+On 20 Oct 2026 every ticket on both trains (Backlog Tracker & FAQs, Display
+Types) was built twice, the two sessions' competing fixes broke each other's
+tests, a send-back could not be reverted, and both projects' Ready for Testing
+hand-offs sat "still building" with nothing building. Five fixes:
+
+- **No second session for a ticket already being built.** The "Ready for Dev —
+  N new" button sent no ticket ids, so the server built the whole column again,
+  including tickets the running click was still building. The button now sends
+  the new ids only (`requestNotify`, `ticketsStillBuilding` in `app.js`), and
+  `notifyOnProjectReadyForReview` skips any ticket in flight — a session
+  started for it under 25 minutes ago that has not reported
+  (`inFlightItemIds` in `functions/notify-routine.js`) — keeping it, and its
+  session link, on the new record.
+- **A reported session is not "still building".** `batchStillBuilding` (the
+  hand-off hold) now treats a card whose session reported after the click as
+  settled, the same rule that closes the record (`cardSettled`).
+- **A build that stops without a patch or a flag is picked up.** Sessions are
+  told to set `blocked` when they ask a question; one asked in a comment
+  instead, so no Answer button appeared and the reply "A" (a plain comment)
+  started nothing. `sweepUnbuiltReports` (`run-backlog-automation.js`,
+  rules in `unbuiltReportAction`) acts 3 minutes after such a report, within
+  24 hours of it: a person's comment since the report is taken as the answer
+  and the ticket is rebuilt; otherwise the card is flagged waiting-on-input
+  with the session's own question, so the Answer button shows. Clearing a flag
+  by hand (× or `clear_blocked`) and answering stamp `blockedClearedAt`, so
+  the sweep never raises it again.
+- **"Fix the branch by hand" now works.** When a send-back's revert conflicts,
+  the card tells a person to revert it by hand; the next run used to try the
+  same `git revert` again and conflict for ever. A commit already reverted on
+  the branch ("This reverts commit <sha>") now counts as reverted
+  (`revertCommitFor`).
+
+- **A merge that breaks the code is a conflict, not a commit.** Two tickets
+  each appended a scenario before the same `];` in `console-click.test.mjs`;
+  `git merge-file` merged them "cleanly" without a `},`, every train test
+  failed, and the second ticket was sent back for a merge it never wrote.
+  `rebasePatchFilesOnto` now parses a merged `.js`/`.mjs`/`.cjs`/`.json` file
+  (`parsesAs`), and when both sides parse but the merge doesn't
+  (`mergeBrokeSyntax`) it is reported as a conflict, so the ticket is rebuilt
+  on the current file.
+
+Tests: `notify-fanout.test.js` (a second click skips the in-flight ticket),
+`notify-routine.test.js` (`inFlightItemIds`, `unbuiltReportAction`),
+`ready-for-testing-trigger.test.js` (the hold), `train-revert-by-hand.test.js`
+(a real git repo), `parallel-builds.test.js` (`parsesAs`, `mergeBrokeSyntax`)
+and the console-click scenario "Ready for Dev — N new".

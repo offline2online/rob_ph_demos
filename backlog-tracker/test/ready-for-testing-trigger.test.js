@@ -270,6 +270,13 @@ const ITEMS = {
   assert.deepStrictEqual(batchStillBuilding(project, { a: { status: "ready-for-testing" }, b: { status: "backlog", buildSession: { status: "error" } }, c: null }, now), []);
   const stale = { notifyRoutine: { ...project.notifyRoutine, firedAt: new Date(now - 4 * 3600e3).toISOString() } };
   assert.deepStrictEqual(batchStillBuilding(stale, { a: { status: "backlog" } }, now), []);
+  // A card whose session reported after the click (done, no patch) is not
+  // building: on 20 Oct 2026 one held a project's hand-off for hours.
+  const firedIso = project.notifyRoutine.firedAt;
+  const afterFire = new Date(Date.parse(String(firedIso)) + 60000).toISOString();
+  const perItem = { notifyRoutine: { ...project.notifyRoutine, mode: "per-item" } };
+  assert.deepStrictEqual(batchStillBuilding(perItem, { a: { status: "backlog", buildSession: { status: "done", reportedAt: afterFire } } }, now), []);
+  assert.deepStrictEqual(batchStillBuilding(perItem, { a: { status: "backlog" } }, now), ["a"], "an unreported card still holds");
   console.log("ok - batchStillBuilding holds the notification until the click has landed");
 }
 
