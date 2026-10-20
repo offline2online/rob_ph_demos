@@ -36,6 +36,12 @@ rewrite that stopped sign-in waiting on a Cloud Function cold start (see
 (`npm run test:routine-binding`) covers the server-only `routineBindings`
 lookup in `functions/index.js` from the same day.
 
+`ui/ticket-detail-overflow.test.mjs` (also run by `npm run test:ui`) opens a
+ticket with a very long description, 24 long-URL comments, code and
+attachments in the Edit item and Comments modals at 390, 820, 1180 and 1440 px
+and fails on any horizontal overflow (page, panel, inner lists, or an element
+past the viewport edge).
+
 `ui/console-click.test.mjs` (`npm run test:ui`, also the last step of
 `test:app-boots`, so it runs on every PR touching `backlog-tracker/public/**`
 or `backlog-tracker/test/**` and on every backlog-tracker train push) is the
