@@ -445,3 +445,26 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
   .kb-add-row .kb-input { flex: 1 1 100% !important; }
 }
 .kb-sublist .kb-type .material-symbols-outlined { color: inherit; }
+
+/* Completed / Withdrawn: two drop zones in the last column, each with a count */
+.kb-res-split { display: flex; flex-direction: column; flex: 1; }
+.kb-res-group { display: flex; flex-direction: column; border-radius: 8px; transition: background-color var(--ap-fast), box-shadow var(--ap-fast); }
+.kb-res-group + .kb-res-group { border-top: .5px dashed var(--ap-divider); }
+.kb-res-withdrawn { flex: 1; }
+.kb-col-head.kb-col-done { flex-wrap: wrap; row-gap: 4px; }
+.kb-col-head.kb-col-done .kb-col-title { overflow: visible; flex: 1 1 100%; }
+.kb-res-head { display: flex; align-items: center; gap: 6px; padding: 10px 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.kb-res-head .material-symbols-outlined { font-size: 16px; font-variation-settings: 'FILL' 1; }
+.kb-res-completed .kb-res-head .material-symbols-outlined { color: var(--success); }
+.kb-res-withdrawn .kb-res-head .material-symbols-outlined { color: var(--accent-backlog); }
+.kb-res-head .col-count { margin-left: auto; }
+.kb-res-group .kb-list { min-height: 56px; }
+.kb-res-group.kb-res-target { background: var(--primary-tint); box-shadow: inset 0 0 0 2px var(--primary); }
+.kb-res-count { display: inline-flex; align-items: center; gap: 3px; }
+.kb-res-count .material-symbols-outlined { font-size: 13px; font-variation-settings: 'FILL' 1; }
+.kb-res-count-completed .material-symbols-outlined { color: var(--success); }
+.kb-res-count-withdrawn .material-symbols-outlined { color: var(--accent-backlog); }
+.kb-card-withdrawn { background: var(--surface); }
+.kb-card-withdrawn .card-title { color: var(--text-muted); text-decoration: line-through; text-decoration-color: rgba(0, 0, 0, .25); }
+.kb-withdrawn-chip { color: var(--text-muted); font-weight: 600; }
+.kb-sp-withdrawn { background: var(--surface-2) !important; color: var(--text-muted) !important; }

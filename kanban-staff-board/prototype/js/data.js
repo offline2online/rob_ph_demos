@@ -129,5 +129,17 @@ window.KB_SEED = (function () {
     t("PH-25", "task", "Store time zone on the stores table", "ready-for-dev", "huy", "rob", "4.12", 3, 0, "medium", "s42", "", ["menu-boards", "api"], "PH-1")
   );
 
-  return { TODAY, users, releases, sprints, labels, tasks, currentRelease: "4.12", nextKey: 38 };
+  // Withdrawn: closed without being done (Completed / Withdrawn column, Withdrawn zone)
+  tasks.push(
+    t("PH-38", "task", "Import Freshdesk ticket history into the Help Centre", "done", "thao", "rob", "4.12", 6, 1.5, "low", "s41", "", ["help-centre"], "PH-3", {
+      resolution: "withdrawn",
+      description: "Bring two years of Freshdesk tickets across for search. Withdrawn: support agreed the old tickets aren't needed once the articles are rewritten.",
+    }),
+    t("PH-39", "bug", "Queue display shows the wrong store logo after midnight", "done", "linh", "linh", "4.12", 3, 0.5, "medium", "s41", "", ["retail-admin"], "PH-5", {
+      resolution: "withdrawn",
+      description: "Couldn't reproduce after the store's display was re-paired; the cached logo came from an old pairing.",
+    })
+  );
+
+  return { TODAY, users, releases, sprints, labels, tasks, currentRelease: "4.12", nextKey: 40 };
 })();

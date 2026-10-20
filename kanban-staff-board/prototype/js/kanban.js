@@ -5,7 +5,7 @@
   "use strict";
 
   const SEED = window.KB_SEED;
-  const STORE_KEY = "kb-proto-v3";
+  const STORE_KEY = "kb-proto-v4";
   const NAV_KEY = "kb-proto-nav-collapsed";
   const root = document.documentElement;
 
@@ -19,6 +19,12 @@
   ];
   const STATUS_LABEL = Object.fromEntries(STATUSES.map((s) => [s.key, s.label]));
   const OUTSTANDING = STATUSES.filter((s) => s.key !== "done").map((s) => s.key);
+  // A ticket in the last column is either completed or withdrawn (its resolution).
+  const RESOLUTIONS = [{ key: "completed", label: "Completed", icon: "check_circle" }, { key: "withdrawn", label: "Withdrawn", icon: "block" }];
+  const res = (t) => (t.status === "done" ? (t.resolution === "withdrawn" ? "withdrawn" : "completed") : null);
+  const statusLabel = (status, resolution) => (status === "done" ? (resolution === "withdrawn" ? "Withdrawn" : "Completed") : STATUS_LABEL[status]);
+  const statusShort = (t) => (t.status === "done" ? statusLabel("done", res(t)) : STATUSES.find((s) => s.key === t.status).short);
+  const statusPill = (t) => `<span class="kb-status-pill kb-sp-${t.status}${res(t) === "withdrawn" ? " kb-sp-withdrawn" : ""}">${esc(statusShort(t))}</span>`;
 
   const TYPES = [
     { key: "task", label: "Task", icon: "check_box" },
@@ -171,9 +177,11 @@
 
   // ── Status changes (the one place the testing hand-off happens) ─────────
   function setStatus(task, status, opts = {}) {
-    const from = task.status;
-    if (from === status) return null;
+    const from = task.status, fromRes = res(task);
+    const toRes = status === "done" ? opts.resolution || fromRes || "completed" : null;
+    if (from === status && fromRes === toRes) return null;
     task.status = status;
+    if (toRes) task.resolution = toRes; else delete task.resolution;
     task.activity = task.activity || [];
     let note = "";
     const tester = state.settings.tester;
@@ -185,8 +193,8 @@
       task.assignee = task.previousAssignee;
       note = `returned to ${firstName(task.previousAssignee)}`;
     }
-    task.activity.push({ at: new Date().toISOString(), who: state.me, text: `${STATUS_LABEL[from]} → ${STATUS_LABEL[status]}${note ? " · " + note : ""}` });
-    if (!opts.silent) toast(`<b>${esc(task.key)}</b> moved to ${esc(STATUS_LABEL[status])}${note ? ` · ${esc(note)}` : ""}`);
+    task.activity.push({ at: new Date().toISOString(), who: state.me, text: `${statusLabel(from, fromRes)} → ${statusLabel(status, toRes)}${note ? " · " + note : ""}` });
+    if (!opts.silent) toast(`<b>${esc(task.key)}</b> ${status === "done" ? (toRes === "withdrawn" ? "withdrawn" : "completed") : "moved to " + esc(STATUS_LABEL[status])}${note ? ` · ${esc(note)}` : ""}`);
     return note;
   }
 
@@ -200,7 +208,7 @@
     if (!quiet) { toast(`<b>${esc(task.key)}</b> ${task.flagged ? "flagged" : "flag removed"}`); render(); }
   }
 
-  function moveTask(key, status, beforeKey, lane) {
+  function moveTask(key, status, beforeKey, lane, resolution) {
     const task = taskByKey(key);
     if (!task) return;
     const list = state.tasks.filter((t) => t.status === status && t !== task).sort((a, b) => a.rank - b.rank);
@@ -217,9 +225,9 @@
       task.previousAssignee = "";
     }
     const fromStatus = task.status;
-    const note = setStatus(task, status, { silent: reassigned });
+    const note = setStatus(task, status, { silent: reassigned, resolution });
     if (reassigned) {
-      const moved = fromStatus !== status ? ` · moved to ${esc(STATUS_LABEL[status])}` : "";
+      const moved = fromStatus !== status ? ` · moved to ${esc(statusLabel(status, resolution))}` : "";
       toast(`<b>${esc(task.key)}</b> assigned to ${esc(firstName(toAssignee))}${moved}${note ? `, ${esc(note)}` : ""}`);
     }
     save();
@@ -415,9 +423,22 @@
     return [...SEED.users.map((u) => u.id), "none"].filter((id) => board.assignees.has(id));
   }
   const colMeta = (list, s) => {
+    if (s.key === "done") {
+      return `<span class="kb-col-meta">${RESOLUTIONS.map((r) => `<span class="col-count kb-res-count kb-res-count-${r.key}" title="${r.label}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${list.filter((t) => res(t) === r.key).length}</span>`).join("")}</span>`;
+    }
     const rem = list.reduce((n, t) => n + remaining(t), 0);
     return `<span class="kb-col-meta">${s.key !== "done" && rem ? `<span class="kb-col-effort" title="Remaining effort">${fmtH(rem)}</span>` : ""}<span class="col-count">${list.length}</span></span>`;
   };
+  // The cards of one column (or swimlane cell). The last column has two drop
+  // zones, Completed and Withdrawn, each with its own count.
+  function listsHTML(list, s, emptyHint) {
+    if (s.key !== "done") return `<div class="col-list kb-list">${list.map(cardHTML).join("") || emptyHint}</div>`;
+    return `<div class="kb-res-split">${RESOLUTIONS.map((r) => {
+      const items = list.filter((t) => res(t) === r.key);
+      return `<div class="kb-res-group kb-res-${r.key}"><div class="kb-res-head"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${r.label}<span class="col-count">${items.length}</span></div>
+        <div class="col-list kb-list" data-resolution="${r.key}">${items.map(cardHTML).join("") || `<p class="empty-hint kb-empty">Drop here to ${r.key === "completed" ? "complete" : "withdraw"}</p>`}</div></div>`;
+    }).join("")}</div>`;
+  }
   function renderKanbanBoard() {
     const el = $("#kb-board");
     if (!el) return;
@@ -446,7 +467,7 @@
             const list = sorted(mine, s.key);
             return `<section class="column kb-col kb-lane-cell${list.length ? "" : " kb-cell-empty"}${collapsed ? " kb-cell-hidden" : ""}" data-status="${s.key}" data-lane="${id}" aria-label="${esc((id === "none" ? "Unassigned" : firstName(id)) + " · " + s.label)}">
               <div class="kb-cell-head kb-col-${s.key}"><span>${esc(s.label)}</span><span class="col-count">${list.length}</span></div>
-              <div class="col-list kb-list">${list.map(cardHTML).join("")}</div>
+              ${listsHTML(list, s, "")}
             </section>`;
           }).join("");
         }).join("");
@@ -472,7 +493,7 @@
           <span class="kb-col-title">${esc(s.label)}</span>
           ${colMeta(list, s)}
         </div>
-        <div class="col-list kb-list">${list.map(cardHTML).join("") || '<p class="empty-hint kb-empty">No tasks</p>'}</div>
+        ${listsHTML(list, s, '<p class="empty-hint kb-empty">No tasks</p>')}
       </section>`;
     }).join("");
     $$(".kb-col-head", el).forEach((h) => h.addEventListener("click", () => {
@@ -523,9 +544,10 @@
     const over = est && log > est;
     const ep = t.type === "epic" ? null : epic(t.epic);
     const kids = t.type === "epic" ? childrenOf(t.key) : null;
-    const kidsDone = kids ? kids.filter((k) => k.status === "done").length : 0;
+    const kidsLive = kids ? kids.filter((k) => res(k) !== "withdrawn") : null;
+    const kidsDone = kids ? kids.filter((k) => res(k) === "completed").length : 0;
     const flagBtn = `<button type="button" class="kb-flag-btn${t.flagged ? " on" : ""}" data-flag="${esc(t.key)}" aria-pressed="${!!t.flagged}" title="${t.flagged ? "Remove flag" : "Flag"}" aria-label="${t.flagged ? "Remove flag" : "Flag"} ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">flag</span></button>`;
-    return `<article class="card kb-card${t.flagged ? " kb-flagged" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (t.flagged ? ", flagged" : ""))}">
+    return `<article class="card kb-card${res(t) === "withdrawn" ? " kb-card-withdrawn" : ""}${t.flagged ? " kb-flagged" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (t.flagged ? ", flagged" : ""))}">
       <div class="kb-card-top">
         <span class="kb-type kb-type-${ty.key}" title="${ty.label}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span>
         <span class="kb-key">${esc(t.key)}</span>
@@ -534,12 +556,12 @@
       </div>
       <p class="card-title">${esc(t.title)}</p>
       ${ep ? `<p class="kb-parent-epic" title="Parent epic: ${esc(ep.key + " " + ep.title)}"><span class="material-symbols-outlined" aria-hidden="true">bolt</span><span>${esc(ep.title)}</span></p>` : ""}
-      ${kids ? `<div class="kb-progress kb-epic-progress" title="${kidsDone} of ${kids.length} child tickets done"><span style="width:${kids.length ? (kidsDone / kids.length) * 100 : 0}%"></span></div>` : ""}
+      ${kids ? `<div class="kb-progress kb-epic-progress" title="${kidsDone} of ${kidsLive.length} child tickets completed"><span style="width:${kidsLive.length ? (kidsDone / kidsLive.length) * 100 : 0}%"></span></div>` : ""}
       ${t.status === "ready-for-testing" && t.previousAssignee ? `<p class="kb-handoff"><span class="material-symbols-outlined" aria-hidden="true">swap_horiz</span>From ${esc(firstName(t.previousAssignee))}</p>` : ""}
       ${est ? `<div class="kb-progress${over ? " over" : ""}" title="${fmtH(log)} logged of ${fmtH(est)}"><span style="width:${pct}%"></span></div>` : ""}
       <div class="kb-card-footer">
         <div class="kb-card-chips">
-          ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kids.length} done</span>` : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
+          ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kidsLive.length} done</span>` : res(t) === "withdrawn" ? '<span class="card-cat kb-est kb-withdrawn-chip">Withdrawn</span>' : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
           ${(t.comments || []).length ? `<span class="kb-meta-ic" title="${t.comments.length} comment${t.comments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.comments.length}</span>` : ""}
           ${(t.attachments || []).length ? `<span class="kb-meta-ic" title="${t.attachments.length} attachment${t.attachments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachments.length}</span>` : ""}
@@ -611,11 +633,16 @@
     $$(".kb-col.kb-drop-target").forEach((c) => c !== col && c.classList.remove("kb-drop-target"));
     if (!col) { drag.marker.remove(); drag.target = null; autoScroll(x, y); return; }
     col.classList.add("kb-drop-target");
-    const list = $(".kb-list", col);
+    const lists = $$(".kb-list", col);
+    // In the split last column, pick the zone under the pointer (or the nearest one).
+    const dist = (l) => { const r = (l.closest(".kb-res-group") || l).getBoundingClientRect(); return y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0; };
+    const list = lists.reduce((best, l) => (dist(l) < dist(best) ? l : best), lists[0]);
+    $$(".kb-res-group.kb-res-target").forEach((g) => g.classList.remove("kb-res-target"));
+    if (list.dataset.resolution) list.closest(".kb-res-group").classList.add("kb-res-target");
     const cards = $$(".kb-card", list).filter((c) => c !== drag.card);
     const before = cards.find((c) => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
     if (before) list.insertBefore(drag.marker, before); else list.appendChild(drag.marker);
-    drag.target = { status: col.dataset.status, lane: col.dataset.lane, before: before ? before.dataset.key : null };
+    drag.target = { status: col.dataset.status, lane: col.dataset.lane, resolution: list.dataset.resolution, before: before ? before.dataset.key : null };
     autoScroll(x, y);
   }
   function autoScroll(x, y) {
@@ -632,7 +659,8 @@
     d.card.classList.remove("kb-dragging");
     document.body.classList.remove("kb-drag-active");
     $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));
-    if (commit && d.target) moveTask(d.key, d.target.status, d.target.before, d.target.lane);
+    $$(".kb-res-group.kb-res-target").forEach((g) => g.classList.remove("kb-res-target"));
+    if (commit && d.target) moveTask(d.key, d.target.status, d.target.before, d.target.lane, d.target.resolution);
   }
 
   // ── Task create / edit modal ────────────────────────────────────────────
@@ -699,7 +727,7 @@
       case "title": return `<div class="kb-field" data-field="title">${label("title")}<input type="text" id="f-title" class="kb-input kb-title-input" maxlength="200" value="${esc(d.title)}" placeholder="What needs doing?"></div>`;
       case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap"><textarea id="f-description" class="kb-input" rows="5" placeholder="Context, steps to reproduce, acceptance criteria">${esc(d.description)}</textarea>${draftIsNew ? "" : micBtn("f-desc-mic", "Dictate into the description")}</div>
         ${draftIsNew ? '<button type="button" class="kb-agent-link" id="f-agent-fill"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span>Fill in the ticket from this description</span></button>' : '<p class="mic-error" id="f-desc-mic-error"></p>'}</div>`;
-      case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.map((s) => opt(s.key, s.label, d.status)).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
+      case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, d.status)).join("")}${RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, d.status === "done" ? "done:" + res(d) : "")).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
       case "assignee": return `<div class="kb-field" data-field="assignee">${label("assignee")}<select id="f-assignee" class="kb-input">${opt("", "Unassigned", d.assignee)}${SEED.users.map((u) => opt(u.id, u.first, d.assignee)).join("")}</select></div>`;
       case "reporter": return `<div class="kb-field" data-field="reporter">${label("reporter")}<select id="f-reporter" class="kb-input">${opt("", "—", d.reporter)}${SEED.users.map((u) => opt(u.id, u.first, d.reporter)).join("")}</select></div>`;
       case "release": return `<div class="kb-field" data-field="release">${label("release")}<select id="f-release" class="kb-input">${opt("", "No release", d.release)}${SEED.releases.map((r) => opt(r.id, r.name + (r.released ? " (released)" : ""), d.release)).join("")}</select></div>`;
@@ -722,11 +750,12 @@
       }
       case "children": {
         const kids = childrenOf(d.key);
-        const done = kids.filter((k) => k.status === "done").length;
+        const done = kids.filter((k) => res(k) === "completed").length;
+        const live = kids.filter((k) => res(k) !== "withdrawn").length;
         const linkable = state.tasks.filter((t) => t.type !== "epic" && t.epic !== d.key && t.status !== "done").sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
-        return `<div class="kb-field" data-field="children"${d.type === "epic" ? "" : " hidden"}><label class="field-label">Child tickets <span class="kb-none">${done} of ${kids.length} done</span></label>
-          ${kids.length ? `<div class="kb-logbar kb-epic-progress"><span style="width:${(done / kids.length) * 100}%"></span></div>` : ""}
-          <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}<span class="kb-status-pill kb-sp-${k.status}">${esc(STATUSES.find((x) => x.key === k.status).short)}</span>${avatar(k.assignee)}<button type="button" class="icon-btn" data-unlink-child="${esc(k.key)}" title="Remove from epic" aria-label="Remove ${esc(k.key)} from this epic">&times;</button></li>`).join("") || '<li class="kb-none">No tickets in this epic yet</li>'}</ul>
+        return `<div class="kb-field" data-field="children"${d.type === "epic" ? "" : " hidden"}><label class="field-label">Child tickets <span class="kb-none">${done} of ${live} done${kids.length > live ? ` · ${kids.length - live} withdrawn` : ""}</span></label>
+          ${live ? `<div class="kb-logbar kb-epic-progress"><span style="width:${(done / live) * 100}%"></span></div>` : ""}
+          <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}${statusPill(k)}${avatar(k.assignee)}<button type="button" class="icon-btn" data-unlink-child="${esc(k.key)}" title="Remove from epic" aria-label="Remove ${esc(k.key)} from this epic">&times;</button></li>`).join("") || '<li class="kb-none">No tickets in this epic yet</li>'}</ul>
           <div class="kb-child-actions">
             <button type="button" class="btn-ghost kb-icon-label" data-add-child="task"><span class="material-symbols-outlined kb-type-task" aria-hidden="true">check_box</span>Add task</button>
             <button type="button" class="btn-ghost kb-icon-label" data-add-child="bug"><span class="material-symbols-outlined kb-type-bug" aria-hidden="true">bug_report</span>Add bug</button>
@@ -748,7 +777,7 @@
     return "";
   }
   const labelsHTML = () => (draft.labels || []).map((l) => `<span class="kb-label-chip">${esc(l)}<button type="button" data-rm-label="${esc(l)}" aria-label="Remove ${esc(l)}">&times;</button></span>`).join("") || '<span class="kb-none">No labels</span>';
-  const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? `<span class="kb-status-pill kb-sp-${t.status}">${esc(STATUSES.find((s) => s.key === t.status).short)}</span>` : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
+  const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4)$/i.test(a.name) ? "movie" : "description"}</span><span class="kb-link-title">${esc(a.name)}</span><span class="kb-none">${esc(a.size)}</span><button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button></li>`).join("") || '<li class="kb-none">No attachments</li>';
   const commentsHTML = () => {
     const items = [...(draft.comments || []).map((c) => ({ ...c, kind: "c" })), ...(draft.activity || []).map((a) => ({ ...a, kind: "a" }))].sort((a, b) => a.at.localeCompare(b.at));
@@ -1200,7 +1229,7 @@
       return;
     }
     if (next.type === "epic") next.epic = "";
-    const newStatus = val("f-status") || draft.status;
+    const [newStatus, newRes] = (val("f-status") || draft.status).split(":");
     const wasEpic = (taskByKey(next.key) || {}).type === "epic";
     if (wasEpic && next.type !== "epic") {
       const kids = childrenOf(next.key);
@@ -1209,13 +1238,13 @@
     }
     const existing = taskByKey(next.key);
     if (existing) {
-      const prevStatus = existing.status;
+      const prevStatus = existing.status, prevRes = res(existing);
       next.status = prevStatus;
       Object.assign(existing, next);
-      if (newStatus !== prevStatus) {
+      if (newStatus !== prevStatus || (newStatus === "done" && newRes !== prevRes)) {
         const inCol = state.tasks.filter((t) => t.status === newStatus);
         existing.rank = inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10;
-        setStatus(existing, newStatus);
+        setStatus(existing, newStatus, { resolution: newRes });
       } else toast(`<b>${esc(existing.key)}</b> saved`);
     } else {
       next.status = "backlog";
@@ -1225,7 +1254,7 @@
       next.rank = inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10;
       state.tasks.push(next);
       state.nextKey++;
-      if (newStatus !== "backlog") setStatus(next, newStatus, { silent: true });
+      if (newStatus !== "backlog") setStatus(next, newStatus, { silent: true, resolution: newRes });
       next.activity = [];
       toast(`<b>${esc(next.key)}</b> created in ${esc(STATUS_LABEL[next.status])}${next.status === "ready-for-testing" ? ` · assigned to ${esc(firstName(next.assignee))}` : ""}`);
     }
@@ -1242,6 +1271,9 @@
   }
 
   // ── Release report ──────────────────────────────────────────────────────
+  // Report columns: every status, with the last one split into Completed and Withdrawn.
+  const REPORT_COLS = STATUSES.filter((s) => s.key !== "done").map((s) => ({ key: s.key, short: s.short, match: (t) => t.status === s.key }))
+    .concat(RESOLUTIONS.map((r) => ({ key: "done:" + r.key, short: r.label, match: (t) => res(t) === r.key })));
   const REPORT_KEYS = ["release", "assignee", "status", "type", "priority", "sprint", "label", "epic"];
   function renderReport(view, params) {
     const f = Object.fromEntries(REPORT_KEYS.map((k) => [k, params.get(k) || ""]));
@@ -1251,7 +1283,7 @@
 
     const inScope = state.tasks.filter((t) => t.type !== "epic" && (!f.release || f.release === "all" || t.release === f.release));
     const filtered = inScope.filter((t) => {
-      if (f.status === "outstanding" ? t.status === "done" : f.status !== "all" && t.status !== f.status) return false;
+      if (f.status === "outstanding" ? t.status === "done" : f.status.startsWith("done:") ? "done:" + res(t) !== f.status : f.status !== "all" && t.status !== f.status) return false;
       if (f.assignee && (t.assignee || "none") !== f.assignee) return false;
       if (f.type && t.type !== f.type) return false;
       if (f.priority && t.priority !== f.priority) return false;
@@ -1264,7 +1296,8 @@
     const totalRem = outstanding.reduce((n, t) => n + remaining(t), 0);
     const totalEst = filtered.reduce((n, t) => n + (+t.estimate || 0), 0);
     const totalLog = filtered.reduce((n, t) => n + (+t.logged || 0), 0);
-    const doneInRel = inScope.filter((t) => t.status === "done").length;
+    const doneInRel = inScope.filter((t) => res(t) === "completed").length;
+    const withdrawnInRel = inScope.filter((t) => res(t) === "withdrawn").length;
     const noEstimate = outstanding.filter((t) => !(+t.estimate)).length;
     const wd = rel && !rel.released ? workingDaysUntil(rel.date) : 0;
     const capPer = wd * 6;
@@ -1275,7 +1308,7 @@
       const out = mine.filter((t) => t.status !== "done");
       return {
         id, tasks: mine, out,
-        byStatus: Object.fromEntries(STATUSES.map((s) => [s.key, mine.filter((t) => t.status === s.key).length])),
+        byStatus: Object.fromEntries(REPORT_COLS.map((s) => [s.key, mine.filter(s.match).length])),
         est: mine.reduce((n, t) => n + (+t.estimate || 0), 0),
         log: mine.reduce((n, t) => n + (+t.logged || 0), 0),
         rem: out.reduce((n, t) => n + remaining(t), 0),
@@ -1284,7 +1317,8 @@
     people.sort((a, b) => b.rem - a.rem || b.out.length - a.out.length);
     const maxRem = Math.max(1, ...people.map((p) => p.rem));
     const scale = Math.max(maxRem, capPer || 0);
-    const statusCols = STATUSES.filter((s) => f.status === "all" || s.key !== "done");
+    // Completed / Withdrawn columns only when the status filter includes them.
+    const statusCols = REPORT_COLS.filter((s) => !s.key.startsWith("done:") || f.status === "all" || f.status === s.key);
 
     const sel = (k, all, items) => `<label class="kb-rfilter"><span>${esc(all[0])}</span><select data-rf="${k}">${items}</select></label>`;
     const relItems = SEED.releases.map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), f.release)).join("") + opt("all", "All releases", f.release);
@@ -1308,7 +1342,7 @@
       </div>
       <div class="kb-filters kb-report-filters">
         ${sel("release", ["Release"], relItems)}
-        ${sel("status", ["Status"], opt("outstanding", "Outstanding (not completed)", f.status) + opt("all", "All, including completed / withdrawn", f.status) + STATUSES.map((s) => opt(s.key, s.label, f.status)).join(""))}
+        ${sel("status", ["Status"], opt("outstanding", "Outstanding (not completed)", f.status) + opt("all", "All, including completed / withdrawn", f.status) + STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, f.status)).join("") + RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, f.status)).join(""))}
         ${sel("assignee", ["Staff member"], opt("", "Everyone", f.assignee) + SEED.users.map((u) => opt(u.id, u.first, f.assignee)).join("") + opt("none", "Unassigned", f.assignee))}
         ${sel("type", ["Type"], opt("", "All types", f.type) + TYPES.filter((t) => t.key !== "epic").map((t) => opt(t.key, t.label, f.type)).join(""))}
         ${sel("priority", ["Priority"], opt("", "All priorities", f.priority) + PRIORITIES.map((p) => opt(p.key, p.label, f.priority)).join(""))}
@@ -1319,7 +1353,7 @@
       </div>
 
       <div class="kb-kpis">
-        <div class="kb-kpi"><div class="kb-kpi-label">Outstanding tasks${tip("Tasks in the selected release and filters that are not in Completed / Withdrawn.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} done in release${outstanding.filter((t) => t.flagged).length ? ` · <span class="kb-kpi-flag"><span class="material-symbols-outlined" aria-hidden="true">flag</span>${outstanding.filter((t) => t.flagged).length} flagged</span>` : ""}</div></div>
+        <div class="kb-kpi"><div class="kb-kpi-label">Outstanding tasks${tip("Tasks in the selected release and filters that are not in Completed / Withdrawn.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} completed${withdrawnInRel ? ` · ${withdrawnInRel} withdrawn` : ""}${outstanding.filter((t) => t.flagged).length ? ` · <span class="kb-kpi-flag"><span class="material-symbols-outlined" aria-hidden="true">flag</span>${outstanding.filter((t) => t.flagged).length} flagged</span>` : ""}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Remaining effort${tip("Sum of estimate minus time logged on each outstanding task, never below zero. 1d = 8h.")}</div><div class="kb-kpi-value">${fmtH(totalRem)}</div><div class="kb-kpi-sub">${noEstimate ? `${noEstimate} without estimate` : "All estimated"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Time logged${tip("Time logged against the filtered tasks, as a share of their total estimate.")}</div><div class="kb-kpi-value">${fmtH(totalLog)}</div><div class="kb-kpi-sub">${totalEst ? Math.round((totalLog / totalEst) * 100) + "% of " + fmtH(totalEst) : "—"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Release date${tip("Working days (Mon–Fri) from today to the release date.")}</div><div class="kb-kpi-value">${rel ? fmtDate(rel.date) : "—"}</div><div class="kb-kpi-sub">${rel ? (rel.released ? "Released" : `${wd} working days left`) : "Pick a release"}</div></div>
@@ -1345,7 +1379,7 @@
             <tbody>
               ${people.map((p) => `<tr class="kb-click-row${f.assignee === (p.id || "none") ? " kb-row-on" : ""}" data-person="${p.id || "none"}"><td><span class="kb-person-cell">${avatar(p.id)}${esc(firstName(p.id))}</span></td><td class="num">${p.tasks.length}</td>${statusCols.map((s) => `<td class="num${p.byStatus[s.key] ? "" : " kb-zero"}">${p.byStatus[s.key] || "–"}</td>`).join("")}<td class="num">${fmtH(p.est)}</td><td class="num">${fmtH(p.log)}</td><td class="num"><b>${fmtH(p.rem)}</b></td>${capPer ? `<td>${capState(p)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${6 + statusCols.length}" class="empty-hint">No tasks match these filters</td></tr>`}
             </tbody>
-            ${people.length ? `<tfoot><tr><td><b>Total</b></td><td class="num"><b>${filtered.length}</b></td>${statusCols.map((s) => `<td class="num"><b>${filtered.filter((t) => t.status === s.key).length || "–"}</b></td>`).join("")}<td class="num"><b>${fmtH(totalEst)}</b></td><td class="num"><b>${fmtH(totalLog)}</b></td><td class="num"><b>${fmtH(totalRem)}</b></td>${capPer ? "<td></td>" : ""}</tr></tfoot>` : ""}
+            ${people.length ? `<tfoot><tr><td><b>Total</b></td><td class="num"><b>${filtered.length}</b></td>${statusCols.map((s) => `<td class="num"><b>${filtered.filter(s.match).length || "–"}</b></td>`).join("")}<td class="num"><b>${fmtH(totalEst)}</b></td><td class="num"><b>${fmtH(totalLog)}</b></td><td class="num"><b>${fmtH(totalRem)}</b></td>${capPer ? "<td></td>" : ""}</tr></tfoot>` : ""}
           </table>
         </div>
       </section>
@@ -1361,7 +1395,7 @@
                   const overdue = t.due && t.status !== "done" && daysBetween(t.due, TODAY) < 0;
                   const pr = prioOf(t.priority), ty = typeOf(t.type);
                   return `<tr class="kb-click-row" data-open="${esc(t.key)}"><td><span class="kb-task-cell"><span class="kb-type kb-type-${ty.key}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span><span class="kb-key">${esc(t.key)}</span><span class="archive-row-title">${esc(t.title)}</span>${t.flagged ? '<span class="material-symbols-outlined kb-flag-mini" title="Flagged" aria-label="Flagged">flag</span>' : ""}</span></td>
-                    <td><span class="kb-status-pill kb-sp-${t.status}">${esc(STATUSES.find((s) => s.key === t.status).short)}</span></td>
+                    <td>${statusPill(t)}</td>
                     <td><span class="kb-prio-cell kb-prio-${pr.key}"><span class="material-symbols-outlined" aria-hidden="true">${pr.icon}</span>${pr.label}</span></td>
                     <td class="archive-row-date">${esc(sprint(t.sprint) ? sprint(t.sprint).name : "—")}</td>
                     <td class="archive-row-date${overdue ? " kb-overdue" : ""}">${t.due ? fmtDate(t.due) : "—"}</td>
