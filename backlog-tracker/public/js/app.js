@@ -32,6 +32,7 @@ import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mir
 import { initNavShell } from "./nav-shell.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts, compareReleases, pinnedLayout, mapSnapshot, diffSystemMap, describeChanges } from "./system-map.js";
+import { pickRepoFolder, planPromotionTickets } from "./promote-plan.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -6093,30 +6094,30 @@ async function deleteConcept(id) {
   await deleteDoc(doc(db, "concepts", id));
 }
 
-// Carries the concept's README/requirements across onto a brand-new
-// project (so nothing is re-keyed, per the ticket that asked for this),
-// requires the same repo-folder link every new project needs (root
-// CLAUDE.md → "Linking a new project to GitHub"), and marks the concept
-// promoted. The two writes aren't in one batch — there's nothing to roll
-// back to if the second write fails, since a project with no concept
-// pointing at it yet is harmless, and a re-click of Promote would just
-// create a second project, which is why the concept's own detail page
+// One-click promote: carries the concept's README/requirements across onto a
+// brand-new project, picks and links its repo folder (root CLAUDE.md →
+// "Linking a new project to GitHub" — the folder itself is committed by the
+// first ticket that lands, since the browser can't write to GitHub), raises
+// the build / E2E / document tickets in Backlog (promote-plan.js), and marks
+// the concept promoted. The writes aren't one batch — a project with no
+// concept pointing at it yet is harmless, and a re-click of Promote would
+// just create a second project, which is why the concept's own detail page
 // hides Promote the moment `status` flips (see renderConceptDetailPage).
-async function promoteConceptToProject(conceptId, name, programId, releaseId, repoFolderInfo) {
+// Program and release are optional and settable later from the Docs page.
+// Returns { projectId, folder, tickets: [{id, title, kind}], ticketError }.
+const RESERVED_ROOT_FOLDERS = ["backlog-tracker", "faq", "docs", "shared", "scripts", "menu-board-demo", "dsp-integration", "visitor-profile", "brands-suppliers-assets", "github", "node_modules", "functions", "public"];
+async function promoteConceptToProject(conceptId, name, programId, releaseId) {
   const concept = concepts.find((c) => c.id === conceptId);
   if (!concept) return null;
+  const folder = pickRepoFolder(name, [...RESERVED_ROOT_FOLDERS, ...projects.map((p) => p.repoFolder).filter(Boolean)]);
   const data = {
     name: name.trim(),
     createdAt: serverTimestamp(),
+    repoFolder: folder,
+    deployBranch: deployBranchForFolder(folder),
   };
   if (programId) data.programId = programId;
   if (releaseId) data.releaseId = releaseId;
-  if (repoFolderInfo && repoFolderInfo.none) {
-    data.repoFolderNotApplicable = true;
-  } else if (repoFolderInfo && repoFolderInfo.folder) {
-    data.repoFolder = repoFolderInfo.folder;
-    data.deployBranch = deployBranchForFolder(repoFolderInfo.folder);
-  }
   const ref = await addDoc(projectsRef, data);
   // The concept's text becomes the new project's Requirements / README in
   // projects/{id}/docs/* (not fields on the project doc).
@@ -6135,7 +6136,20 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId, re
     promotedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
-  return ref.id;
+  // Tickets last: a failure here leaves a promoted project with fewer
+  // tickets, reported in the summary, never a half-promoted concept.
+  const tickets = [];
+  let ticketError = null;
+  try {
+    const plan = planPromotionTickets({ name: data.name, folder, readmeMd: concept.readmeMd, requirementsMd: concept.requirementsMd, documents: concept.documents });
+    for (const t of plan) {
+      const id = await addItem(ref.id, t.title, t.desc, t.type, t.category, { effort: t.effort, priority: t.priority });
+      tickets.push({ id, title: t.title, kind: t.kind });
+    }
+  } catch (err) {
+    ticketError = err && err.message ? err.message : String(err);
+  }
+  return { projectId: ref.id, folder, tickets, ticketError };
 }
 
 // Demote a project back to a concept: the concept takes the project's README,
@@ -6910,8 +6924,6 @@ document.getElementById("nc-submit").addEventListener("click", async () => {
 const pcBackdrop = document.getElementById("pc-backdrop");
 const pcProgramSelect = document.getElementById("pc-program-select");
 const pcReleaseSelect = document.getElementById("pc-release-select");
-const pcRepoFolderInput = document.getElementById("pc-repo-folder-input");
-const pcRepoFolderNone = document.getElementById("pc-repo-folder-none");
 const updatePcNameCount = wireCharCount(document.getElementById("pc-name-input"), document.getElementById("pc-name-count"));
 let pcConceptId = null;
 
@@ -6925,9 +6937,6 @@ function openPromoteConceptModal(conceptId) {
   updatePcNameCount();
   populateProgramSelect(pcProgramSelect, "");
   populateReleaseSelect(pcReleaseSelect, "");
-  pcRepoFolderInput.value = "";
-  pcRepoFolderInput.disabled = false;
-  pcRepoFolderNone.checked = false;
   nameEl.focus();
 }
 function closePromoteConceptModal() { pcBackdrop.hidden = true; pcConceptId = null; }
@@ -6960,39 +6969,31 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
 
-  const wantsNoFolder = pcRepoFolderNone.checked;
-  const folder = pcRepoFolderInput.value.trim().replace(/\/+$/, "");
-  let repoFolderInfo;
-  if (wantsNoFolder) {
-    repoFolderInfo = { none: true };
-  } else if (!folder) {
-    await showAlert('Repo folder is required — enter the new project\'s folder in rob_ph_demos, or tick "This project has no single folder yet".');
-    pcRepoFolderInput.focus();
-    return;
-  } else if (!isValidRepoFolder(folder)) {
-    await showAlert("Repo folder must be repo-root-relative, with no leading/trailing slash and no \"..\" (e.g. \"dsp-integration\").");
-    pcRepoFolderInput.focus();
-    return;
-  } else {
-    const clash = projectWithRepoFolder(folder);
-    if (clash) {
-      await showAlert(`"${folder}" is already linked to project "${clash.name}" — two projects can't share one repo folder.`);
-      pcRepoFolderInput.focus();
-      return;
-    }
-    repoFolderInfo = { folder };
-  }
-
   const programId = pcProgramSelect.value !== "__new__" ? pcProgramSelect.value : "";
   const releaseId = pcReleaseSelect.value || "";
   const conceptId = pcConceptId;
+  const submitBtn = document.getElementById("pc-submit");
+  submitBtn.disabled = true;
+  let result;
   try {
-    await promoteConceptToProject(conceptId, name, programId, releaseId, repoFolderInfo);
+    result = await promoteConceptToProject(conceptId, name, programId, releaseId);
   } catch (err) {
-    await showAlert(describeSaveError(err, [{ label: "Project name", value: name, max: 80 }, { label: "Repo folder", value: folder, max: 80 }]));
+    submitBtn.disabled = false;
+    await showAlert(describeSaveError(err, [{ label: "Project name", value: name, max: 80 }]));
     return;
   }
+  submitBtn.disabled = false;
   closePromoteConceptModal();
+  if (result) {
+    const by = (k) => result.tickets.filter((t) => t.kind === k).length;
+    await showAlert(
+      `"${name}" is now a project, with repo folder "${result.folder}/" linked (the folder itself appears in the repo when its first ticket lands).\n\n` +
+      `${result.tickets.length} ticket${result.tickets.length === 1 ? "" : "s"} raised in its Backlog, none approved: ` +
+      `${by("frontend")} front-end, ${by("backend")} back-end, ${by("e2e")} end-to-end test suite, ${by("doc")} documents.` +
+      (result.ticketError ? `\n\nSome tickets were not created (${result.ticketError}) — add the missing ones with Feed in requirements.` : "") +
+      "\n\nProgram and release can be set later from the project's Docs page.",
+      { title: "Project created" });
+  }
 });
 // The concept comment box's own mic is wired up further down, with the
 // other three dictation controllers — see the note on SpeechRecognitionCtor.

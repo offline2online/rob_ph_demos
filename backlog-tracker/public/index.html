@@ -336,21 +336,13 @@
 
         <label class="field-label" for="pc-program-select">Program / Product</label>
         <select id="pc-program-select"></select>
-        <p class="field-hint">Optional — groups this under a shared heading on the board.</p>
+        <p class="field-hint">Optional — groups this under a shared heading on the board. Can be set later.</p>
 
         <label class="field-label" for="pc-release-select">Release</label>
         <select id="pc-release-select"></select>
         <p class="field-hint">Optional — the release this project ships in. Create one on the Releases page first if it doesn't exist yet.</p>
 
-        <label class="field-label" for="pc-repo-folder-input">Repo folder</label>
-        <input type="text" id="pc-repo-folder-input" maxlength="80" placeholder="e.g. dsp-integration">
-        <p class="field-hint">Repo-root-relative, no trailing slash — see root <code>CLAUDE.md</code> → "Linking a new project to GitHub".</p>
-        <label class="np-interface-toggle">
-          <input type="checkbox" id="pc-repo-folder-none">
-          This project has no single folder yet
-        </label>
-
-        <p class="field-hint">Copies this concept's README and requirements onto the new project and marks the concept promoted — it stays on this page afterward, read-only.</p>
+        <p class="field-hint">One click: creates the project, links its repo folder, copies this concept's README and requirements, and raises front-end, back-end, end-to-end-test and document tickets in its Backlog (nothing is approved). The concept stays on this page afterward, read-only.</p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="pc-cancel">Cancel</button>

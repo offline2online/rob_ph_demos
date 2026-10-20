@@ -2272,7 +2272,7 @@ entry, directly under Agent Console.
   comment thread with the same dictation-mic composer every other comment
   box in this console has, retained across sessions so the conversation
   can be picked back up any time. A still-active concept also gets
-  **Promote to project…** and **Delete this concept**; a promoted one
+  **Promote to project…** (one click: name only, repo folder auto-picked and linked, build/E2E/document tickets raised in the new project's Backlog — see `public/js/promote-plan.js`) and **Delete this concept**; a promoted one
   shows a "Promoted to project X" line instead and everything past the
   discussion thread becomes read-only, since the project's own Docs page
   is the source of truth from that point on.

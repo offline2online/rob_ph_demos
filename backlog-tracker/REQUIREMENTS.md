@@ -2127,13 +2127,25 @@ page it's laid out like):
   (`createDictationController`), same as every other comment box in this
   console.
 - **Promote to project…** (still-active concepts only) opens a modal
-  asking for the project name (defaulted to the concept's own name),
-  program, release, and the same required repo-folder link every new
-  project needs (see "Adding a project" in README.md) — validated
-  identically to the New Project modal. Submitting calls
-  `promoteConceptToProject`, which creates the `projects` doc seeded with
-  the concept's `readmeMd`/`requirementsMd` verbatim and flips the concept
-  to `status: "promoted"`.
+  asking only for the project name (defaulted to, and kept as, the
+  concept's own name); program and release are optional and can be set
+  later from the project's Docs page. There is no repo-folder field.
+  Submitting is one click and calls `promoteConceptToProject`, which: picks
+  a free repo folder from the name (`pickRepoFolder` in
+  `public/js/promote-plan.js`: slug, then `-2`, `-3`…) and links it as
+  `repoFolder` with `deployBranch` `deploy/<folder>` (the folder itself is
+  committed by the first ticket that lands — the browser cannot write to
+  GitHub); creates the `projects` doc seeded with the concept's
+  `readmeMd`/`requirementsMd` and documents; flips the concept to
+  `status: "promoted"`; and raises Backlog tickets from the Requirements
+  (`planPromotionTickets`, using the Feed in requirements splitter): one
+  front-end and/or back-end build ticket per requirement (a requirement
+  touching both gets one of each), one end-to-end test suite ticket, a
+  README ticket, a specs/Requirements ticket and one ticket per additional
+  document. A concept with only a name still gets one front-end, one
+  back-end, the E2E and the two document tickets. Every ticket starts in
+  Backlog — nothing is approved or sent for build — and a confirmation
+  dialog summarises the project, folder and ticket counts.
 - **Delete this concept** — active concepts only; a promoted concept's
   delete control is hidden and its rules write is refused regardless, since
   it is the provenance record for the project it became.
