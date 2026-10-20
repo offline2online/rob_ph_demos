@@ -83,7 +83,9 @@ const scenarios = [
       assert.ok(heads[0].includes("backlog"), `first column is Backlog, got "${cols[0].head}"`);
       assert.ok(heads[1].includes("ready for testing"), `second column is Ready for Testing, got "${cols[1].head}"`);
       assert.ok(heads[2].includes("approved for deployment"), `third column is Approved for Deployment, got "${cols[2].head}"`);
-      assert.ok(heads[3].includes("main"), `fourth column is the Merged to Main column, got "${cols[3].head}"`);
+      assert.ok(heads[3].includes("deployed (live)"), `fourth column is Deployed (Live), got "${cols[3].head}"`);
+      const wrapped = await c.page.evaluate(() => [...document.querySelectorAll(".col-head")].filter((h) => h.scrollHeight > h.clientHeight + 2 || h.getBoundingClientRect().height > 60).length);
+      assert.strictEqual(wrapped, 0, "every column header stays on one line");
       if (c.width < 640) {
         // One column fills the strip; the rest sit to its right (swipe or the switcher).
         for (let i = 1; i < cols.length; i++) assert.ok(cols[i].x > cols[i - 1].x, `column ${i + 1} should sit right of column ${i} at ${c.width}px`);
@@ -267,6 +269,20 @@ const scenarios = [
       assert.strictEqual(w.data.revertRequested, true);
       assert.ok(w.data.lastFailureReason && /settings page/.test(w.data.lastFailureReason.text), "lastFailureReason carries the details");
       assert.ok(w.data.notes && w.data.notes.$arrayUnion && /settings page/.test(JSON.stringify(w.data.notes)), "a note carries the details");
+    },
+  },
+  {
+    name: "Approve: the CTA stays hidden while a ticked card's tests are running",
+    seed: () => {
+      const s = only("r1");
+      s.docs.backlogItems.r1.trainTest = { sha: "abc123", state: "running", workflows: [] };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click(".card-deploy-select-cb", "tick the Ready for Testing card");
+      await c.page.waitForTimeout(500);
+      assert.strictEqual(await c.page.locator(".deploy-to-feature-btn").count(), 0, "no approval CTA until tests pass");
     },
   },
   {

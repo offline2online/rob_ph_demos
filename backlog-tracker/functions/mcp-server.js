@@ -950,7 +950,7 @@ const STATUS_LABELS = {
   "backlog": "Backlog",
   "ready-for-testing": "Ready for Testing",
   "ready-to-publish": "Approved for Deployment",
-  "published-live": "Deployed / Main Branch (Live)",
+  "published-live": "Deployed (Live)",
   "archived": "Archived",
 };
 const TITLE_MAX = 70;

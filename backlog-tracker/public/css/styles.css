@@ -86,19 +86,21 @@ body {
      the logo/hamburger row's own sizing. */
 .topbar-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .topbar-left-row { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 10px; min-width: 0; }
-.topbar h1 { margin: 0; font-size: 22px; font-weight: 700; min-width: 0; max-width: 100%; overflow: hidden; }
+.topbar h1 { margin: 0; font-size: 22px; font-weight: 700; line-height: 0; display: flex; align-items: center; min-width: 0; max-width: 100%; overflow: hidden; }
 .logo-link {
   font: inherit; font-size: inherit; font-weight: inherit; color: inherit;
   background: none; border: none; padding: 0; margin: 0; cursor: pointer;
   display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0;
 }
 .logo-link:hover { opacity: .75; }
-.topbar-logo-img { height: 46px; width: auto; max-width: 100%; display: block; flex-shrink: 0; }
+.topbar-logo-img { height: 60px; width: auto; max-width: 100%; display: block; flex-shrink: 0; }
 .footer-logo-btn { vertical-align: middle; }
 .footer-logo-img { height: 42px; display: block; }
 .auth-gate-logo { height: 120px; max-width: 100%; width: auto; margin: 0 auto 4px; display: block; }
 .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--text-muted); }
-.hamburger-btn { font-size: 20px; flex-shrink: 0; }
+/* Bigger hamburger, centred on the bar's midline: a fixed square flex box
+   with line-height 1 so the glyph's line box can't push it off-centre. */
+.hamburger-btn { font-size: 32px; line-height: 1; width: 48px; height: 48px; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
 /* ── Page header — one shared format for every page's own title + summary
    (the board itself, Docs, Archive, Archived projects, FAQ Management,
@@ -242,12 +244,14 @@ body {
 .btn-danger:hover { opacity: .92; }
 .board { display: grid; grid-template-columns: repeat(4, minmax(260px, 1fr)); gap: 14px; align-items: start; overflow-x: auto; }
 .column { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; min-width: 260px; display: flex; flex-direction: column; max-height: calc(100vh - 200px); }
-.col-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 2px solid var(--border); border-radius: 8px 8px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; white-space: nowrap; padding: 12px 14px; border-bottom: 2px solid var(--border); border-radius: 8px 8px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .col-head-backlog { border-top: 3px solid var(--accent-backlog); }
 .col-head-testing { border-top: 3px solid var(--warning); }
 .col-head-publish { border-top: 3px solid var(--primary); }
 .col-head-live { border-top: 3px solid var(--success); }
-.col-count { background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
+.col-head > span:first-child { display: inline-flex; align-items: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.col-head .col-select-all { flex-shrink: 0; }
+.col-count { flex-shrink: 0; line-height: 1.5; background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
 /* Groom Backlog merged into the Backlog column's own header (originally
    mobile-only — JHY0F2AdMSjtL4WU8F2K — now the only treatment, on every
    viewport width: eST3jOS85Mtl8KMgpOH0 asked for the same "CTA replaces
@@ -923,7 +927,7 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      .topbar h1 (above) still applies if an even narrower screen needs it.
      Trimmed again, 46 -> 40px (hXR16fmKAq0f2pJAtwiq), as part of lowering
      the sticky bar's overall height on a phone screen. */
-  .topbar-logo-img { height: 40px; }
+  .topbar-logo-img { height: 48px; }
   .btn-primary, .btn-ghost { min-height: 40px; }
 
   .board { grid-template-columns: 1fr; overflow-x: visible; }
@@ -1493,9 +1497,6 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 .team-sort-row select { font-size: 12.5px; padding: 5px 8px; border: 1px solid #d9d9d9; border-radius: 7px; background: #fff; }
 .team-badge-on { background: #e6f4ea; color: #1e6b32; }
 .team-badge-off { background: #f1f2f4; color: #6b7280; }
-.team-add-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; }
-.team-add-row input { flex: 1 1 200px; padding: 9px 11px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; }
-.team-add-row select { padding: 9px 11px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; background: #fff; }
 .dictation-settings-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; }
 .dictation-settings-row select { padding: 9px 11px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; background: #fff; }
 .mcp-connect-box { margin-top: 12px; padding: 12px 14px; border: 1px solid #e3e6eb; border-radius: 9px; background: var(--surface-2, #f7f8fa); }
@@ -1806,4 +1807,33 @@ body { overflow-x: clip; }
 .nav-drawer .material-symbols-outlined, .tab .material-symbols-outlined, .profile-menu .material-symbols-outlined,
 .cmdk-search .material-symbols-outlined, .profile-btn .material-symbols-outlined, .nav-collapse-btn .material-symbols-outlined {
   display: inline-block; width: 1em; height: 1em; overflow: hidden; line-height: 1; flex: none; white-space: nowrap;
+}
+
+/* System map hover/tap tooltip: the Retail Media Insights `.pg-tip` look
+   (Retail-media-insights/css/insights.css), shown instantly by app.js. */
+.sysmap-tip { position: fixed; z-index: 1000; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 16px rgba(0, 0, 0, .12); padding: 10px 12px; font-size: 13px; pointer-events: none; max-height: calc(100vh - 16px); overflow: hidden; overflow-wrap: anywhere; }
+.sysmap-tip[hidden] { display: none; }
+.sysmap-tip p { margin: 6px 0 0; }
+.sysmap-tip-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.sysmap-tip-pill { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 10px; background: #eee; color: var(--text-muted); }
+.sysmap-tip-pill.s-live { background: #e8f6fa; color: var(--primary); }
+.sysmap-tip-pill.s-project, .sysmap-tip-pill.rel { background: #f3ebff; color: var(--violet); }
+.sysmap-tip-row { margin-top: 6px; }
+.sysmap-tip-row > span { font-weight: 700; color: var(--text-muted); }
+.sysmap-tip-row.hint { color: var(--text-muted); font-style: italic; }
+
+/* Settings → Add user: button top right on desktop, bottom on mobile; modal is a bottom sheet on mobile. */
+.team-admin-block { position: relative; }
+.team-add-open { position: absolute; top: 0; right: 0; }
+.team-admin-block .field-hint:empty { display: none; }
+.info-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; color: var(--text-muted, #6b7280); cursor: help; }
+.info-tip .material-symbols-outlined { font-size: 18px; }
+.info-tip::after { content: attr(data-tip); position: absolute; left: 0; top: 100%; z-index: 30; width: 280px; max-width: 80vw; padding: 8px 10px; border-radius: 8px; background: #1f2933; color: #fff; font-size: 12px; font-weight: 400; line-height: 1.4; text-transform: none; letter-spacing: 0; white-space: normal; box-shadow: 0 4px 16px rgba(0,0,0,.25); opacity: 0; visibility: hidden; pointer-events: none; }
+.info-tip:hover::after, .info-tip:focus::after { opacity: 1; visibility: visible; }
+.tm-error { margin: 8px 0 0; color: #c0392b; font-size: 13px; }
+.modal-panel .tm-error + .form-row { margin-top: 12px; }
+@media (max-width: 640px) {
+  .team-add-open { position: static; width: 100%; margin-top: 12px; min-height: 44px; }
+  .tm-backdrop { align-items: flex-end; padding: 0; }
+  .tm-backdrop .modal-panel { max-width: 100%; border-radius: 16px 16px 0 0; }
 }

@@ -29,7 +29,7 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
-import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, FIT_VIEWBOX } from "./system-map.js";
+import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -112,7 +112,7 @@ const COLUMNS = [
   { key: "backlog", label: "Backlog", headClass: "backlog" },
   { key: "ready-for-testing", label: "Ready for Testing", headClass: "testing" },
   { key: "ready-to-publish", label: "Approved for Deployment", headClass: "publish" },
-  { key: "published-live", label: "Deployed / Main Branch (Live)", headClass: "live" },
+  { key: "published-live", label: "Deployed (Live)", headClass: "live" },
 ];
 const COL_KEYS = COLUMNS.map((c) => c.key);
 
@@ -1149,6 +1149,14 @@ function deploySelectedCountForProject(pid) {
   ).length;
 }
 
+function selectedTrainCardsForProject(pid) {
+  const sel = getDeploySelectedSet(pid);
+  return items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" &&
+    !isNoDeployCard(i) && sel.has(i.id)
+  );
+}
+
 // Merged to Main (Live) cards the same archive rule as the per-card button
 // allows (not mid-revert) that someone has ticked — what "Archive selected"
 // acts on. Mirrors archiveBtn's own isReverting guard in cardHTML.
@@ -1933,6 +1941,9 @@ function deployToFeatureButtonHTML(project) {
   // exactly what it did before when nothing had been confirmed tested.
   const count = deploySelectedCountForProject(pid);
   if (!count) return "";
+  // Offered only once every ticked ticket's train tests are green: a ticket
+  // whose tests are still running, failed or not run keeps the CTA hidden.
+  if (approvalWarningLines(selectedTrainCardsForProject(pid)).length) return "";
   return `<button type="button" class="notify-claude-btn deploy-to-feature-btn" data-project-id="${escapeHTML(pid)}">
     <span class="material-symbols-outlined notify-claude-icon">merge_type</span>
     <span class="notify-claude-label">Approved for Deployment — ${count} selected</span>
@@ -6183,11 +6194,14 @@ let systemMapModel = null;
 // The visible window of the map. Default is the whole map, which the SVG's
 // viewBox scales to the container width on load and on every resize, so the
 // page never scrolls sideways; zoom and pan only move this window.
-let systemMapView = { ...FIT_VIEWBOX };
+// null means the whole map, whatever size the layout gave it at this width.
+let systemMapView = null;
+const systemMapFit = () => fitViewBox(systemMapModel);
 function setSystemMapView(vb) {
   systemMapView = vb;
+  const v = vb || systemMapFit();
   const svg = document.querySelector("#system-map-canvas svg");
-  if (svg) svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  if (svg) svg.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
 }
 function renderSystemMap() {
   const canvas = document.getElementById("system-map-canvas");
@@ -6200,17 +6214,36 @@ function renderSystemMap() {
   const html = opts.join("");
   if (sel.dataset.sig !== html) { sel.innerHTML = html; sel.dataset.sig = html; sel.value = chosen; }
   document.getElementById("system-map-legend").innerHTML = systemMapLegendHTML();
-  systemMapModel = buildSystemMap({ projects, concepts, interfaces, releases });
+  // The layout depends on the width available, so it is redone on resize.
+  const width = canvas.clientWidth || window.innerWidth;
+  systemMapModel = layoutSystemMap(buildSystemMap({ projects, concepts, interfaces, releases }), { width });
+  systemMapLayoutMode = systemMapModel.layout.mode;
   canvas.innerHTML = systemMapHTML(systemMapModel, { release: sel.value, viewBox: systemMapView });
+  hideSystemMapTip();
+}
+let systemMapLayoutMode = null;
+{
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const canvas = document.getElementById("system-map-canvas");
+      const page = document.getElementById("concept-incubator-page");
+      if (!canvas || !page || page.hidden || !systemMapModel) return;
+      if (systemMapModeFor(canvas.clientWidth || window.innerWidth) === systemMapLayoutMode) return;
+      systemMapView = null; // a different layout has a different size: show it whole
+      renderSystemMap();
+    }, 150);
+  });
 }
 document.getElementById("system-map-release").addEventListener("change", renderSystemMap);
 function zoomSystemMap(factor, fx = 0.5, fy = 0.5) {
-  const v = systemMapView;
-  setSystemMapView(zoomViewBox(v, factor, v.x + v.w * fx, v.y + v.h * fy));
+  const v = systemMapView || systemMapFit();
+  setSystemMapView(zoomViewBox(v, factor, v.x + v.w * fx, v.y + v.h * fy, systemMapFit()));
 }
 document.getElementById("system-map-zoom-in").addEventListener("click", () => zoomSystemMap(1.4));
 document.getElementById("system-map-zoom-out").addEventListener("click", () => zoomSystemMap(1 / 1.4));
-document.getElementById("system-map-fit").addEventListener("click", () => setSystemMapView({ ...FIT_VIEWBOX }));
+document.getElementById("system-map-fit").addEventListener("click", () => setSystemMapView(null));
 document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
   if (!e.ctrlKey && !e.metaKey) return; // plain scrolling still scrolls the page
   const svg = e.target.closest("svg");
@@ -6226,7 +6259,7 @@ document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
   canvasEl.addEventListener("pointerdown", (e) => {
     const svg = e.target.closest("svg");
     if (!svg || e.button !== 0) return;
-    drag = { sx: e.clientX, sy: e.clientY, view: systemMapView, w: svg.getBoundingClientRect().width, moved: false };
+    drag = { sx: e.clientX, sy: e.clientY, view: systemMapView || systemMapFit(), w: svg.getBoundingClientRect().width, moved: false };
   });
   window.addEventListener("pointermove", (e) => {
     if (!drag) return;
@@ -6235,16 +6268,68 @@ document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
     if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
     if (!drag.moved) return;
     const k = drag.view.w / drag.w;
-    setSystemMapView(clampViewBox({ ...drag.view, x: drag.view.x - dx * k, y: drag.view.y - dy * k }));
+    setSystemMapView(clampViewBox({ ...drag.view, x: drag.view.x - dx * k, y: drag.view.y - dy * k }, systemMapFit()));
   });
   window.addEventListener("pointerup", () => {
     if (drag && drag.moved) canvasEl.dataset.justPanned = "1";
     drag = null;
   });
 }
-function systemMapActivate(target) {
+// Instant tooltips (ticket tbaqBOALxMLRtaDtHrYs): one element shared by every
+// node and line, filled synchronously on pointer-over from the live model and
+// tickets - no timer, so no delay. Styled like Retail Media Insights' `.pg-tip`.
+const systemMapTip = document.createElement("div");
+systemMapTip.className = "sysmap-tip";
+systemMapTip.setAttribute("role", "tooltip");
+systemMapTip.hidden = true;
+document.body.appendChild(systemMapTip);
+let systemMapTipTarget = null;
+function hideSystemMapTip() { systemMapTip.hidden = true; systemMapTipTarget = null; }
+function placeSystemMapTip(x, y) {
+  const vw = document.documentElement.clientWidth;
+  const w = Math.min(320, vw - 16);
+  systemMapTip.style.width = w + "px";
+  const th = Math.min(systemMapTip.offsetHeight, window.innerHeight - 16);
+  const left = Math.max(8, Math.min(x + 14, vw - w - 8));
+  let top = y + 16;
+  if (top + th > window.innerHeight - 8) top = y - th - 12;
+  systemMapTip.style.left = left + "px";
+  systemMapTip.style.top = Math.max(8, Math.min(top, window.innerHeight - th - 8)) + "px";
+}
+function showSystemMapTip(target, x, y) {
+  if (!systemMapModel) return false;
+  const nodeEl = target.closest("[data-tip-node]");
+  const edgeEl = nodeEl ? null : target.closest("[data-tip-edge]");
+  const el = nodeEl || edgeEl;
+  if (!el) { hideSystemMapTip(); return false; }
+  if (systemMapTipTarget !== el) {
+    systemMapTip.innerHTML = nodeEl
+      ? nodeTipHTML(systemMapModel, nodeEl.dataset.tipNode, ticketCounts(items))
+      : edgeTipHTML(systemMapModel, Number(edgeEl.dataset.tipEdge));
+    systemMapTipTarget = el;
+  }
+  systemMapTip.hidden = !systemMapTip.innerHTML;
+  placeSystemMapTip(x, y);
+  return !systemMapTip.hidden;
+}
+{
+  const canvasEl = document.getElementById("system-map-canvas");
+  canvasEl.addEventListener("pointermove", (e) => { if (e.pointerType !== "touch") showSystemMapTip(e.target, e.clientX, e.clientY); });
+  canvasEl.addEventListener("pointerleave", hideSystemMapTip);
+  canvasEl.addEventListener("focusin", (e) => { const r = e.target.getBoundingClientRect(); showSystemMapTip(e.target, r.left + r.width / 2, r.bottom); });
+  canvasEl.addEventListener("focusout", hideSystemMapTip);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideSystemMapTip(); });
+  document.addEventListener("pointerdown", (e) => { if (!e.target.closest("#system-map-canvas")) hideSystemMapTip(); });
+}
+function systemMapActivate(target, touch) {
   const canvasEl = document.getElementById("system-map-canvas");
   if (canvasEl.dataset.justPanned) { delete canvasEl.dataset.justPanned; return; }
+  // Touch: the first tap shows the tooltip, a second tap on the same thing opens it.
+  if (touch) {
+    const el = target.closest("[data-tip-node],[data-tip-edge]");
+    if (el && systemMapTipTarget !== el) { const r = el.getBoundingClientRect(); showSystemMapTip(target, r.left + r.width / 2, r.top + r.height / 2); return; }
+    hideSystemMapTip();
+  }
   const edge = target.closest("[data-interface-id]");
   if (edge) { openInterfaceModal(edge.dataset.interfaceId, edge.dataset.anchorId); return; }
   const node = target.closest("[data-node-id]");
@@ -6256,7 +6341,7 @@ function systemMapActivate(target) {
   else if (n.kind === "concept" && !n.isProject) openConceptDetailPage(n.id);
   else openDocsPage(n.id);
 }
-document.getElementById("system-map-canvas").addEventListener("click", (e) => systemMapActivate(e.target));
+document.getElementById("system-map-canvas").addEventListener("click", (e) => systemMapActivate(e.target, e.pointerType === "touch"));
 document.getElementById("system-map-canvas").addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); systemMapActivate(e.target); }
 });
@@ -8498,12 +8583,33 @@ async function saveTeamMember(email, fields) {
   }), { merge: true });
 }
 
+const tmBackdrop = document.getElementById("tm-backdrop");
+const tmError = document.getElementById("tm-error");
+function showTeamAddError(msg) { tmError.textContent = msg; tmError.hidden = !msg; }
+function openTeamAddModal() {
+  document.getElementById("team-add-email").value = "";
+  document.getElementById("team-add-name").value = "";
+  document.getElementById("team-add-role").value = "editor";
+  showTeamAddError("");
+  tmBackdrop.hidden = false;
+  document.getElementById("team-add-email").focus();
+}
+function closeTeamAddModal() { tmBackdrop.hidden = true; showTeamAddError(""); }
+document.getElementById("team-add-open")?.addEventListener("click", openTeamAddModal);
+document.getElementById("tm-cancel")?.addEventListener("click", closeTeamAddModal);
+document.getElementById("tm-close")?.addEventListener("click", closeTeamAddModal);
+tmBackdrop?.addEventListener("click", (e) => { if (e.target === tmBackdrop) closeTeamAddModal(); });
+tmBackdrop?.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTeamAddModal(); });
+
 document.getElementById("team-add-btn")?.addEventListener("click", async () => {
   const emailEl = document.getElementById("team-add-email");
   const nameEl = document.getElementById("team-add-name");
   const roleEl = document.getElementById("team-add-role");
+  const addBtn = document.getElementById("team-add-btn");
   const email = (emailEl.value || "").trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { await showAlert("Enter a valid email address."); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showTeamAddError("Enter a valid email address."); emailEl.focus(); return; }
+  showTeamAddError("");
+  addBtn.disabled = true;
   try {
     await saveTeamMember(email, {
       displayName: (nameEl.value || "").trim(),
@@ -8512,12 +8618,14 @@ document.getElementById("team-add-btn")?.addEventListener("click", async () => {
       createdAt: serverTimestamp(),
       createdBy: (auth.currentUser && auth.currentUser.email) || null,
     });
-    emailEl.value = ""; nameEl.value = "";
+    closeTeamAddModal();
     await loadTeamMembers();
-    await showAlert(`${email} can now sign in with Google and connect their agent. If they don't have a Google account, use "Send sign-in setup" on their row.`);
+    await showAlert(`${email} was added. They can now sign in with Google and connect their agent.`);
   } catch (err) {
     console.error("Failed to add console user:", err);
-    await showAlert(`Couldn't add them: ${err && err.message ? err.message : err}`);
+    showTeamAddError(`Couldn't add them: ${err && err.message ? err.message : err}`);
+  } finally {
+    addBtn.disabled = false;
   }
 });
 

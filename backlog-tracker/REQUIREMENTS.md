@@ -2018,11 +2018,10 @@ not one diagram per concept or project. It is rebuilt on every change to
   Instance (`SYSTEM_MAP_CONCEPTS`; a board project/concept of the
   same name replaces the built-in one), PH Core nodes Check-in and Brand
   Guidelines, and External nodes Salesforce CRM, Amazon Connect and Advertiser (`SYSTEM_MAP_EXTERNALS`). Their labelled lines
-  are `EXTRA_LINKS`. A red dashed **PII boundary** (`PII_ZONE`) encloses
+  are `EXTRA_LINKS`. A red dashed **PII boundary** (a band along the bottom) encloses
   the identity vault, Salesforce and Amazon Connect; Live Visitor Profile,
   Agent Harness, agents and Campaigns stay outside it — agents never
-  cross it. Federation is shown only as two lines to MCP Release, top-left
-  outside the platform box: Advertiser (external) and Federated PH Instance
+  cross it. Federation is shown only as two lines to MCP Release, outside the platform box, to its left: Advertiser (external) and Federated PH Instance
   (concept). The earlier retailer / partner / advertiser PH instance boxes
   and the Data Clean Room were removed (ticket 6auvMEuRHAhgl8r8HC1x).
 - **Release filter**: picking a release dims everything except its
@@ -3054,3 +3053,18 @@ the board in one step.
   is waiting on your answer — answer it on the card", firedAt}`.
 - Build sessions end a waiting-on-input note with "Answer on the card (Answer
   button)" (`ROUTINE_INSTRUCTIONS.md`).
+- **Layout: no overlaps, platform centred** (ticket A7y6SzunFfQdmJHubw9K):
+  `layoutSystemMap()` centres the Personalisation Hub platform boundary
+  (the core nodes, in a fixed three-column cluster wide enough for line
+  labels) in the drawing and places every other node by a collision-avoiding
+  search: the free spot nearest where it belongs, with a margin so no two
+  boxes overlap. The drawing grows taller until all fit. A wide width
+  (>= 1100 px) puts projects and concepts beside the platform; a narrow one
+  stacks them above and below, and the layout is redone on resize when it
+  crosses that width. Each line then takes the bow that clears other boxes,
+  and its label sits on a clear stretch of line (or just beside it, in a
+  narrower, taller form if needed) with a background, clear of every node
+  and every other label. `test/system-map.test.mjs` asserts no node boxes
+  overlap, the platform is centred, and no label overlaps a node or another
+  label, at 390, 820, 1180, 1440 and 1920 px, for a sparse, typical and
+  full board.
