@@ -294,6 +294,13 @@ body {
   .col-head .notify-claude-label { display: none; }
   .col-groom-inline .notify-claude-btn, .col-head .review-batch-btn { padding: 3px 8px; }
 }
+/* A phone column (iPhone SE / small Android, ~310-335px) can't fit "READY FOR TESTING" beside Review Batch on one line:
+   let the label wrap to two lines rather than be cut off. */
+@media (max-width: 640px) {
+  @container pipeline-col (max-width: 335px) {
+    .col-head > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
+  }
+}
 @container pipeline-col (max-width: 250px) {
   .col-head { font-size: 11px; letter-spacing: .02em; }
   .col-head > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
@@ -987,10 +994,12 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   .project { padding: 14px 12px 16px; }
   .project-header { flex-wrap: wrap; }
   .project-title-wrap { flex-basis: 100%; }
-  .project-header-actions { flex-basis: 100%; flex-wrap: wrap; }
+  /* Desktop right-aligns the CTAs beside the title; on a phone they are full-width rows starting at the left edge,
+     so Ready for Dev / Approved / Deploy to Main line up with + New backlog item below them. */
+  .project-header-actions { flex-basis: 100%; flex-wrap: wrap; justify-content: flex-start; margin-left: 0; }
   .new-item-btn { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; white-space: normal; }
   /* The Backlog column's Groom CTA is small on desktop; on a phone it is a full 44px target. */
-  .col-groom-inline .notify-claude-btn { min-height: 44px; padding: 3px 12px; font-size: 12px; }
+  .col-groom-inline .notify-claude-btn { min-height: 44px; padding: 3px 10px; font-size: 11px; }
   .col-head:has(.col-groom-inline) { padding-top: 3px; padding-bottom: 3px; }
   /* Its own row above New backlog item + ⋮ (order in the DOM already puts
      it first) — three buttons crammed onto one row would otherwise squeeze
@@ -1000,6 +1009,9 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      below (that button is flex:1 sharing its row with the same ⋮ button) —
      a flat 100% here made the Gen AI CTA visibly wider than Add to backlog. */
   .notify-claude-btn { flex-basis: calc(100% - 54px); min-height: 46px; font-size: 14px; justify-content: center; }
+  /* At least as wide as + New backlog item; a longer label ("Approved for Deployment — 1 selected") grows the
+     button to the full row first, as it did before 20 Oct, and only wraps inside it on the narrowest phones. */
+  .project-header-actions .notify-claude-btn { flex: 0 1 auto; min-width: calc(100% - 54px); white-space: normal; }
   .project-options-btn { min-width: 46px; min-height: 46px; }
   .project-options-menu { left: auto; right: 0; max-width: calc(100vw - 24px); }
 
@@ -1611,13 +1623,20 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .approved-by { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: help; }
 .approved-by .material-symbols-outlined { font-size: 14px; }
 
-.blocked-flag { display: inline-flex; align-items: center; flex-wrap: wrap; row-gap: 4px; gap: 3px; box-sizing: border-box; max-width: 100%; white-space: nowrap; font-size: 11px; font-weight: 500; padding: 1px 4px 1px 5px; border-radius: 12px; border: 1px solid transparent; cursor: help; }
+.blocked-flag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; padding: 1px 4px 1px 5px; border-radius: 9999px; border: 1px solid transparent; cursor: help; }
 .blocked-flag .material-symbols-outlined { font-size: 14px; }
 .blocked-flag-needs-decision { color: #cf1322; background: #fff1f0; border-color: #ffa39e; }
 .blocked-flag-waiting-on-input { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
 .waiting-answer-chip { cursor: default; padding-right: 8px; }
 .needs-decision-chip { margin-right: 6px; padding-right: 8px; }
-.blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; min-height: 32px; min-width: 32px; }
+.blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; }
+/* Card chip: the status text stays on one line; Answer / Resolve / × wrap onto
+   a row under it when the card is narrow, each at least 32px tall. */
+.card .blocked-flag:has(.blocked-flag-actions) { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 6px; max-width: 100%; box-sizing: border-box; border-radius: 16px; padding: 2px 4px 2px 6px; cursor: default; }
+.blocked-flag-status { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.blocked-flag-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; max-width: 100%; }
+.blocked-flag-actions .blocked-resolve-btn { margin-left: 0; min-height: 32px; box-sizing: border-box; white-space: nowrap; }
+.blocked-flag-actions .blocked-clear-btn { min-width: 32px; min-height: 32px; font-size: 18px; }
 
 /* Run E2E: per-project status chip (green / red / grey) and mode menu. */
 .e2e-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 500; padding: 2px 9px 2px 6px; border-radius: 9999px; border: 1px solid transparent; cursor: help; text-decoration: none; white-space: nowrap; }
@@ -1629,7 +1648,7 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .e2e-mode-desc { font-size: 11px; color: #8c8c8c; }
 
 /* Resolve with agent (blocked tickets) */
-.blocked-resolve-btn { display: inline-flex; align-items: center; gap: 2px; border: 1px solid currentColor; background: #fff; color: #169bc2; cursor: pointer; font: inherit; font-size: 11px; font-weight: 500; padding: 0 8px; min-height: 32px; border-radius: 9999px; margin-left: 3px; white-space: nowrap; }
+.blocked-resolve-btn { display: inline-flex; align-items: center; gap: 2px; border: 1px solid currentColor; background: #fff; color: #169bc2; cursor: pointer; font: inherit; font-size: 11px; font-weight: 500; padding: 0 6px; border-radius: 9999px; margin-left: 3px; }
 .blocked-resolve-btn .material-symbols-outlined { font-size: 14px; }
 .rs-chat { display: flex; flex-direction: column; gap: 8px; max-height: 45vh; overflow-y: auto; margin-bottom: 12px; }
 .rs-msg { max-width: 85%; padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; }
@@ -1721,7 +1740,7 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .concept-release-num { font-size: 34px; font-weight: 700; line-height: 1; color: var(--primary); min-width: 52px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -.02em; }
 
 /* ── Navigation shell: Build / Publish sidebar, profile menu, phone tab bar,
-   Command-K palette, one-column-at-a-time board on a phone. Layout and
+   Command-K palette. Layout and
    navigation only. Breakpoints: ≥1024 persistent collapsible sidebar,
    641–1023 overlay drawer, ≤640 bottom tab bar. ─────────────────────── */
 :root { --nav-w: 248px; --tabbar-h: 56px; }
@@ -1746,7 +1765,7 @@ body { overflow-x: clip; }
 .nav-collapse-btn:hover { background: rgba(0, 0, 0, .06); }
 .nav-collapse-btn { display: none; flex: none; }
 @media (pointer: coarse) { .nav-collapse-btn, .nav-drawer .modal-close { min-width: 44px; min-height: 44px; } }
-:is(.nav-drawer-item, .profile-menu-item, .tab, .col-switch, .nav-collapse-btn, .profile-btn, .cmdk-row, .cmdk-close):focus-visible,
+:is(.nav-drawer-item, .profile-menu-item, .tab, .nav-collapse-btn, .profile-btn, .cmdk-row, .cmdk-close):focus-visible,
 #cmdk-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .profile-btn { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
@@ -1763,7 +1782,6 @@ body { overflow-x: clip; }
 .profile-menu-who .topbar-user { font-size: 13px; color: var(--text); }
 
 .tabbar { display: none; }
-.col-switcher { display: none; }
 
 @media (min-width: 1024px) {
   .nav-drawer { transform: none; visibility: visible; box-shadow: none; width: var(--nav-w); max-width: none; z-index: 17; }
@@ -1809,19 +1827,13 @@ body { overflow-x: clip; }
   .nav-drawer-backdrop { z-index: 20; }
   .btn-primary, .btn-ghost, .notify-claude-btn, .icon-btn { min-height: 44px; }
 
-  /* One pipeline column at a time: swipe the strip, or use the switcher. */
+  /* The pipeline stacks top to bottom on a phone (the Mobile block above:
+     one column per row, tap a header to collapse it). A swipe-one-column-
+     at-a-time strip was tried (20 Oct 2026) and reverted the same day: it hid
+     Ready for Testing and Approved for Deployment behind a sideways swipe, so
+     a ticked card and the Approved for Deployment CTA were never on screen
+     together. */
   .project, .project-body { min-width: 0; max-width: 100%; }
-  .col-switcher { display: flex; min-width: 0; max-width: 100%; gap: 6px; margin: 0 0 10px; overflow-x: auto; scrollbar-width: none; }
-  .col-switch {
-    flex: 1 0 auto; min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface);
-    font: inherit; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap;
-  }
-  .col-switch[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: #fff; }
-  .col-switch .col-switch-n { margin-left: 6px; opacity: .8; font-weight: 500; }
-  .board { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 100%; grid-template-columns: none; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
-  .board::-webkit-scrollbar, .col-switcher::-webkit-scrollbar { display: none; }
-  .board > .column { min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; }
-  .column-collapsed .col-list { display: block; }
 }
 
 /* Command-K palette */
@@ -1842,12 +1854,12 @@ body { overflow-x: clip; }
 
 @media (prefers-reduced-motion: reduce) {
   .nav-drawer, .nav-drawer-backdrop { transition: none; }
-  .board { scroll-behavior: auto; }
 }
 /* Icon boxes keep their size even if the icon font is slow or blocked, so a
    ligature name can never push the sidebar or tab bar wider. */
 .nav-drawer .material-symbols-outlined, .tab .material-symbols-outlined, .profile-menu .material-symbols-outlined,
-.cmdk-search .material-symbols-outlined, .profile-btn .material-symbols-outlined, .nav-collapse-btn .material-symbols-outlined {
+.cmdk-search .material-symbols-outlined, .profile-btn .material-symbols-outlined, .nav-collapse-btn .material-symbols-outlined,
+.notify-claude-btn .material-symbols-outlined {
   display: inline-block; width: 1em; height: 1em; overflow: hidden; line-height: 1; flex: none; white-space: nowrap;
 }
 
