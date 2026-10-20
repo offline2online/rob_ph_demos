@@ -1624,17 +1624,13 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .approved-by { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: help; }
 .approved-by .material-symbols-outlined { font-size: 14px; }
 
-.blocked-flag { display: inline-flex; align-items: center; gap: 3px; box-sizing: border-box; max-width: 100%; font-size: 11px; font-weight: 500; padding: 1px 4px 1px 5px; border-radius: 9999px; border: 1px solid transparent; cursor: help; }
+.blocked-flag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; padding: 1px 4px 1px 5px; border-radius: 9999px; border: 1px solid transparent; cursor: help; }
 .blocked-flag .material-symbols-outlined { font-size: 14px; }
-.card .blocked-flag { display: flex; flex-direction: column; align-items: flex-start; width: fit-content; border-radius: 12px; }
-.card .blocked-flag-status { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-.card .blocked-flag-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; max-width: 100%; }
-.card .blocked-flag-actions .blocked-resolve-btn { margin-left: 0; }
 .blocked-flag-needs-decision { color: #cf1322; background: #fff1f0; border-color: #ffa39e; }
 .blocked-flag-waiting-on-input { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
 .waiting-answer-chip { cursor: default; padding-right: 8px; }
 .needs-decision-chip { margin-right: 6px; padding-right: 8px; }
-.blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; min-height: 32px; min-width: 32px; }
+.blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; }
 
 /* Run E2E: per-project status chip (green / red / grey) and mode menu. */
 .e2e-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 500; padding: 2px 9px 2px 6px; border-radius: 9999px; border: 1px solid transparent; cursor: help; text-decoration: none; white-space: nowrap; }
@@ -1646,7 +1642,7 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .e2e-mode-desc { font-size: 11px; color: #8c8c8c; }
 
 /* Resolve with agent (blocked tickets) */
-.blocked-resolve-btn { display: inline-flex; align-items: center; gap: 2px; border: 1px solid currentColor; background: #fff; color: #169bc2; cursor: pointer; font: inherit; font-size: 11px; font-weight: 500; padding: 0 8px; min-height: 32px; border-radius: 9999px; margin-left: 3px; white-space: nowrap; }
+.blocked-resolve-btn { display: inline-flex; align-items: center; gap: 2px; border: 1px solid currentColor; background: #fff; color: #169bc2; cursor: pointer; font: inherit; font-size: 11px; font-weight: 500; padding: 0 6px; border-radius: 9999px; margin-left: 3px; }
 .blocked-resolve-btn .material-symbols-outlined { font-size: 14px; }
 .rs-chat { display: flex; flex-direction: column; gap: 8px; max-height: 45vh; overflow-y: auto; margin-bottom: 12px; }
 .rs-msg { max-width: 85%; padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; }
