@@ -29,7 +29,7 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
-import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, FIT_VIEWBOX, nodeTipHTML, edgeTipHTML, ticketCounts } from "./system-map.js";
+import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -6165,11 +6165,14 @@ let systemMapModel = null;
 // The visible window of the map. Default is the whole map, which the SVG's
 // viewBox scales to the container width on load and on every resize, so the
 // page never scrolls sideways; zoom and pan only move this window.
-let systemMapView = { ...FIT_VIEWBOX };
+// null means the whole map, whatever size the layout gave it at this width.
+let systemMapView = null;
+const systemMapFit = () => fitViewBox(systemMapModel);
 function setSystemMapView(vb) {
   systemMapView = vb;
+  const v = vb || systemMapFit();
   const svg = document.querySelector("#system-map-canvas svg");
-  if (svg) svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  if (svg) svg.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
 }
 function renderSystemMap() {
   const canvas = document.getElementById("system-map-canvas");
@@ -6182,18 +6185,36 @@ function renderSystemMap() {
   const html = opts.join("");
   if (sel.dataset.sig !== html) { sel.innerHTML = html; sel.dataset.sig = html; sel.value = chosen; }
   document.getElementById("system-map-legend").innerHTML = systemMapLegendHTML();
-  systemMapModel = buildSystemMap({ projects, concepts, interfaces, releases });
+  // The layout depends on the width available, so it is redone on resize.
+  const width = canvas.clientWidth || window.innerWidth;
+  systemMapModel = layoutSystemMap(buildSystemMap({ projects, concepts, interfaces, releases }), { width });
+  systemMapLayoutMode = systemMapModel.layout.mode;
   canvas.innerHTML = systemMapHTML(systemMapModel, { release: sel.value, viewBox: systemMapView });
   hideSystemMapTip();
 }
+let systemMapLayoutMode = null;
+{
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const canvas = document.getElementById("system-map-canvas");
+      const page = document.getElementById("concept-incubator-page");
+      if (!canvas || !page || page.hidden || !systemMapModel) return;
+      if (systemMapModeFor(canvas.clientWidth || window.innerWidth) === systemMapLayoutMode) return;
+      systemMapView = null; // a different layout has a different size: show it whole
+      renderSystemMap();
+    }, 150);
+  });
+}
 document.getElementById("system-map-release").addEventListener("change", renderSystemMap);
 function zoomSystemMap(factor, fx = 0.5, fy = 0.5) {
-  const v = systemMapView;
-  setSystemMapView(zoomViewBox(v, factor, v.x + v.w * fx, v.y + v.h * fy));
+  const v = systemMapView || systemMapFit();
+  setSystemMapView(zoomViewBox(v, factor, v.x + v.w * fx, v.y + v.h * fy, systemMapFit()));
 }
 document.getElementById("system-map-zoom-in").addEventListener("click", () => zoomSystemMap(1.4));
 document.getElementById("system-map-zoom-out").addEventListener("click", () => zoomSystemMap(1 / 1.4));
-document.getElementById("system-map-fit").addEventListener("click", () => setSystemMapView({ ...FIT_VIEWBOX }));
+document.getElementById("system-map-fit").addEventListener("click", () => setSystemMapView(null));
 document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
   if (!e.ctrlKey && !e.metaKey) return; // plain scrolling still scrolls the page
   const svg = e.target.closest("svg");
@@ -6209,7 +6230,7 @@ document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
   canvasEl.addEventListener("pointerdown", (e) => {
     const svg = e.target.closest("svg");
     if (!svg || e.button !== 0) return;
-    drag = { sx: e.clientX, sy: e.clientY, view: systemMapView, w: svg.getBoundingClientRect().width, moved: false };
+    drag = { sx: e.clientX, sy: e.clientY, view: systemMapView || systemMapFit(), w: svg.getBoundingClientRect().width, moved: false };
   });
   window.addEventListener("pointermove", (e) => {
     if (!drag) return;
@@ -6218,7 +6239,7 @@ document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
     if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
     if (!drag.moved) return;
     const k = drag.view.w / drag.w;
-    setSystemMapView(clampViewBox({ ...drag.view, x: drag.view.x - dx * k, y: drag.view.y - dy * k }));
+    setSystemMapView(clampViewBox({ ...drag.view, x: drag.view.x - dx * k, y: drag.view.y - dy * k }, systemMapFit()));
   });
   window.addEventListener("pointerup", () => {
     if (drag && drag.moved) canvasEl.dataset.justPanned = "1";

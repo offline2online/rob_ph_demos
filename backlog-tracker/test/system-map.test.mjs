@@ -1,7 +1,7 @@
 // The Concept Incubator hero map: nodes, status, release badges, the filter,
 // and "a new interface contract adds a line with no code change".
 import assert from "node:assert/strict";
-import { buildSystemMap, systemMapHTML, highlightedIds, shortDescription } from "../public/js/system-map.js";
+import { buildSystemMap, systemMapHTML, highlightedIds, shortDescription, layoutSystemMap, nodeBox, fitViewBox } from "../public/js/system-map.js";
 
 const releases = [{ id: "r5", name: "DSP Integration", version: "5.0", status: "draft" }, { id: "r4", name: "Sep", version: "4.2", status: "live" }];
 const projects = [
@@ -90,14 +90,16 @@ console.log("system-map (new concepts): ok");
   const adv = mm.nodes.find((n) => n.name === "Advertiser" && n.kind === "external");
   const fed = mm.nodes.find((n) => n.name === "Federated PH Instance");
   assert.equal(fed.status, "Concept");
-  assert.ok(adv.x < 230 && fed.x < 230 && adv.y < 300 && fed.y < 300, "top-left, outside the platform box");
+  const bd = mm.layout.boundary;
+  assert.ok(adv.x < bd.x && fed.x < bd.x, "Advertiser and Federated PH Instance sit outside the platform box, to its left");
   const h = systemMapHTML(mm);
-  assert.ok(!/min-width/.test(h) && h.includes('viewBox="0 0 1600 1040"'));
+  assert.ok(!/min-width/.test(h) && h.includes(`viewBox="0 0 ${mm.layout.w} ${mm.layout.h}"`));
   // every node inside the drawing area
-  assert.ok(mm.nodes.every((n) => n.x >= 95 && n.x <= 1505 && n.y >= 50 && n.y <= 1010), "all nodes within the viewBox");
-  const z = zoomViewBox(FIT_VIEWBOX, 2, 800, 520);
-  assert.ok(z.w === 800 && z.x >= 0 && z.x + z.w <= 1600);
-  assert.deepEqual(zoomViewBox(FIT_VIEWBOX, 0.5, 800, 520), FIT_VIEWBOX, "cannot zoom out past fit");
+  assert.ok(mm.nodes.every((n) => n.x >= 95 && n.x <= mm.layout.w - 95 && n.y >= 50 && n.y <= mm.layout.h - 10), "all nodes within the viewBox");
+  const fit = fitViewBox(mm);
+  const z = zoomViewBox(fit, 2, fit.w / 2, fit.h / 2, fit);
+  assert.ok(z.w === fit.w / 2 && z.x >= 0 && z.x + z.w <= fit.w);
+  assert.deepEqual(zoomViewBox(fit, 0.5, fit.w / 2, fit.h / 2, fit), fit, "cannot zoom out past fit");
 }
 console.log("system-map (clean-up): ok");
 
@@ -149,3 +151,77 @@ console.log("system-map descriptions: ok");
   assert.ok(h.includes(`data-tip-edge="${idx}"`) && h.includes('data-tip-node="dsp"') && !h.includes("<title>Display"));
   console.log("system-map tooltips: ok");
 }
+
+// Layout: nothing overlaps, the platform is centred, labels are clear — at every breakpoint
+{
+  const projectsMany = [
+    { id: "dsp", name: "Display Types & DSP Integration", releaseId: "r5" },
+    { id: "ret", name: "Retail Media Insights & Analytics Dashboards" },
+    { id: "pp", name: "Products and Pricing Prototype" },
+    { id: "mcpr", name: "MCP Release" },
+    { id: "rtb", name: "RTB Bidding" },
+    { id: "vp", name: "Live Visitor Profile & Personas" },
+    { id: "x1", name: "Extra project one" }, { id: "x2", name: "Extra project two" }, { id: "x3", name: "Extra project three" },
+  ];
+  const conceptsMany = [
+    { id: "et", name: "Experience Templates", status: "active" },
+    { id: "id", name: "Digital Identity Management", status: "active" },
+    { id: "ed", name: "Custom & Edge Models", status: "active" },
+    { id: "off", name: "Offsite Retail Media", status: "active" },
+    { id: "fed", name: "Federated Retail Media", status: "active" },
+    { id: "k1", name: "Idea one", status: "active" }, { id: "k2", name: "Idea two", status: "active" },
+  ];
+  const ifaces = [
+    { id: "i1", name: "VP ↔ DSP", flowLabel: "audience segments", projectIds: ["vp", "dsp"] },
+    { id: "i2", name: "Pricing ↔ Templates", projectIds: ["pp", "et"] },
+    { id: "i3", name: "Insights ↔ DSP", flowLabel: "campaign results", projectIds: ["ret", "dsp"] },
+  ];
+  const full = { projects: projectsMany, concepts: conceptsMany, interfaces: ifaces, releases };
+  const textBoxOK = (r, w, h) => r.x >= 0 && r.y >= 0 && r.x + r.w <= w && r.y + r.h <= h;
+  for (const [mode, widths] of [["narrow", [390, 820]], ["wide", [1180, 1440, 1920]]]) {
+    for (const width of widths) {
+      for (const [label, base] of [["sparse", { projects: [], concepts: [], interfaces: [], releases: [] }], ["typical", base_()], ["full", full]]) {
+        const mm = layoutSystemMap(buildSystemMap(base), { width });
+        const L = mm.layout;
+        const ctx = `${label} @${width}px (${mode})`;
+        assert.equal(L.mode, mode, ctx);
+        // fit-to-page: the drawing is one viewBox, no fixed pixel width
+        assert.ok(!/min-width|width="\d+px"/.test(systemMapHTML(mm)), ctx);
+        // nodes inside the drawing, none overlapping another (status label included)
+        mm.nodes.forEach((n) => assert.ok(textBoxOK(nodeBox(n), L.w, L.h), `${ctx}: ${n.name} inside the drawing`));
+        for (let i = 0; i < mm.nodes.length; i++) {
+          for (let j = i + 1; j < mm.nodes.length; j++) {
+            const a = nodeBox(mm.nodes[i]);
+            const b = nodeBox(mm.nodes[j]);
+            const hit = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+            assert.ok(!hit, `${ctx}: ${mm.nodes[i].name} overlaps ${mm.nodes[j].name}`);
+          }
+        }
+        // the platform boundary is centred and holds exactly the core nodes
+        assert.ok(Math.abs(L.boundary.x + L.boundary.w / 2 - L.w / 2) < 1, `${ctx}: platform centred horizontally`);
+        const nonPiiH = L.pii.y - 34;
+        assert.ok(Math.abs(L.boundary.y + L.boundary.h / 2 - nonPiiH / 2) < 1, `${ctx}: platform centred vertically`);
+        mm.nodes.forEach((n) => {
+          const inside = n.x >= L.boundary.x && n.x <= L.boundary.x + L.boundary.w && n.y >= L.boundary.y && n.y <= L.boundary.y + L.boundary.h;
+          assert.equal(inside, n.kind === "core" || !!n.coreSlot, `${ctx}: ${n.name} ${inside ? "inside" : "outside"} the platform box`);
+        });
+        // every label is on the drawing, clear of every node and of every other label
+        const rects = [];
+        mm.edges.forEach((e) => {
+          if (!e.geom || !e.geom.label) return;
+          const lb = e.geom.label;
+          assert.ok(lb.clear, `${ctx}: label "${e.label}" has a clear spot`);
+          assert.ok(textBoxOK(lb.r, L.w, L.h), `${ctx}: label "${e.label}" inside the drawing`);
+          mm.nodes.forEach((n) => {
+            const b = nodeBox(n);
+            assert.ok(!(lb.r.x < b.x + b.w && b.x < lb.r.x + lb.r.w && lb.r.y < b.y + b.h && b.y < lb.r.y + lb.r.h), `${ctx}: label "${e.label}" overlaps ${n.name}`);
+          });
+          rects.forEach(([t, r]) => assert.ok(!(lb.r.x < r.x + r.w && r.x < lb.r.x + lb.r.w && lb.r.y < r.y + r.h && r.y < lb.r.y + lb.r.h), `${ctx}: labels "${e.label}" and "${t}" overlap`));
+          rects.push([e.label, lb.r]);
+        });
+      }
+    }
+  }
+  function base_() { return { projects: projectsMany.slice(0, 4), concepts: conceptsMany.slice(0, 3), interfaces: ifaces.slice(0, 1), releases }; }
+}
+console.log("system-map (layout, 390/820/1180/1440/1920): ok");
