@@ -1809,7 +1809,7 @@ body { overflow-x: clip; }
   .nav-drawer-backdrop { z-index: 20; }
   .btn-primary, .btn-ghost, .notify-claude-btn, .icon-btn { min-height: 44px; }
 
-  /* One pipeline column at a time: swipe the strip, or use the switcher. */
+  /* Pipeline columns stack and the page scrolls up and down; never a sideways swipe. */
   .project, .project-body { min-width: 0; max-width: 100%; }
   .col-switcher { display: flex; min-width: 0; max-width: 100%; gap: 6px; margin: 0 0 10px; overflow-x: auto; scrollbar-width: none; }
   .col-switch {
@@ -1818,9 +1818,9 @@ body { overflow-x: clip; }
   }
   .col-switch[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: #fff; }
   .col-switch .col-switch-n { margin-left: 6px; opacity: .8; font-weight: 500; }
-  .board { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 100%; grid-template-columns: none; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
-  .board::-webkit-scrollbar, .col-switcher::-webkit-scrollbar { display: none; }
-  .board > .column { min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; }
+  .board { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; overflow-x: visible; }
+  .col-switcher::-webkit-scrollbar { display: none; }
+  .board > .column { min-width: 0; }
   .column-collapsed .col-list { display: block; }
 }
 
