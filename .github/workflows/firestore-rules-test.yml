@@ -38,15 +38,20 @@ on:
       - 'backlog-tracker/test/**'
       - 'backlog-tracker/scripts/run-backlog-automation.js'
       - '.github/workflows/firestore-rules-test.yml'
+  # A push straight to main (not a train merge, which ran this on its PR)
+  # runs it for everything the suite reads: the whole console, and the repo
+  # layout bt-handover-docs.test.js and docs-sync-all.test.js check — a new
+  # top-level folder (its README) and every board-docs.json. On 20 Oct 2026
+  # kanban-staff-board/ was pushed to main without a line in START-HERE.md's
+  # deploy map; this never ran, main stayed red unseen, and every ticket
+  # that landed on the console's train after it was blamed for it.
   push:
     branches: [main]
     paths:
-      - 'backlog-tracker/firestore.rules'
-      - 'backlog-tracker/functions/mcp-server.js'
-      - 'backlog-tracker/functions/index.js'
-      - 'backlog-tracker/public/**'
-      - 'backlog-tracker/test/**'
-      - '.github/workflows/firestore-rules-test.yml'
+      - 'backlog-tracker/**'
+      - '*/README.md'
+      - '**/board-docs.json'
+      - '.github/workflows/**'
   workflow_dispatch: {}
 
 permissions:

@@ -176,7 +176,7 @@ deleted by hand).
   testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
   priority?: "low" | "medium" | "high" | null,      // same ticket — real value from the Edit item modal; null/unset falls back to estimatePriority()
-  lastFailureReason?: { category: string, text: string, action: "failed-testing" | "ejected-from-train", at: timestamp }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
+  lastFailureReason?: { category: string, summary?: string, text: string, action: "failed-testing" | "ejected-from-train", at: timestamp }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
   followUpOf?: string,          // id of the Ready for Testing ticket whose tester asked for "something more" (Failed testing → "It works, but I want something more"); the original stays on its train, this new ticket waits in Backlog. Not a pipeline field
   ejectedFromTrain?: boolean,   // FVrOIVAAp46NdcgGovMW — set by ejectFromTrain(), distinguishing an explicit release-unblocking eject from an ordinary Failed testing reject in the card's history; see "The deployment train" below
 
@@ -399,6 +399,44 @@ denies every client read and write of the first three outright**, and the
 admin-readable and append-only from the server.
 
 ## The deployment train
+
+**A ticket is never sent back for a failure main already has (20 Oct
+2026).** `kanban-staff-board/` reached main with no line in START-HERE.md's
+deploy map, so `bt-handover-docs.test.js` was red on main itself, unseen
+(main's push trigger only covered console paths). The train merged that main
+in before NBQ1scD9GFEr6YbQxSYX landed, and the ticket was sent back,
+reverted and rebuilt twice for a test it never touched. Now, once a
+culprit's run has failed for good, `ejectRedCulprits` runs the same workflow
+on the main commit that run contained (`mainBaseOf`: the merge base) before
+acting — `baseCheckAction` decides: green there → sent back as before; red
+(attempt 2, or attempt 1 re-run once) → **held**: the card stays where it
+is, gets one note "Not sent back: main is broken, not this ticket" with the
+failing test, and nothing is reverted; no run yet → started on exactly that
+commit through a throwaway `train-base/<sha>` branch (no workflow runs on a
+push there; it is deleted once read), waited on, and after an hour without a
+run the card is sent back as before. Keys on `trainTestReruns`:
+`<workflow>@<base>:base:<ms>` (dispatched), `<workflow>@<base>:base-red`
+(held), `<workflow>@<mainHead>:resync`. While a card is held
+(`heldForMain`), a merge of main right after it counts as its evidence
+(`evidenceCandidates` with `mainMerges`), and once main's own run is green on
+a newer commit the automation merges main into the train
+(`syncTrainWithMain`) and re-runs the tests, so the card is re-judged with
+the fix and nobody has to click anything. `firestore-rules-test.yml` now
+also runs on a push to main for all of `backlog-tracker/**`, every
+top-level `*/README.md`, every `board-docs.json` and `.github/workflows/**`.
+
+**Every automatic send-back says why in one line (20 Oct 2026).**
+`failureSummaryOf(runId)` reads `gh run view --log-failed` and
+`failureSummaryFromLog` picks the failing test and its message (node:assert
+FAIL / not ok, vitest, Playwright ✘, else the failing step), e.g.
+"deployment train tests: START-HERE.md: the deploy map names every top-level
+folder — the deploy map in START-HERE.md does not name kanban-staff-board/".
+It is stored as `lastFailureReason.summary` and opens the send-back note as
+a `Why:` line. On the board, `public/js/rejection-summary.js` turns the
+thread into one line per rejection (automatic send-back, Failed testing,
+Eject from train, held for main), newest first, shown above the comments in
+the Edit item and Comments modals, and the latest one under the Backlog
+card's failure badge. `get_backlog_item` returns the summary too.
 
 **Revert re-tests the train; evidence excludes reverted work (19 Oct 2026).**
 After a successful revert the automation starts the train tests on the new
@@ -2584,8 +2622,8 @@ viewers too) must let an agent read every ticket and find why one failed:
   inputs are validated in code.
 - *Read limit.* If the read reaches `MAX_READ_DOCS` (1,500) the response has
   `truncated: true`; pass `projectId`.
-- `get_backlog_item` returns `lastFailureReason` `{category, text, action, at}`
-  (ISO `at`), or `null`.
+- `get_backlog_item` returns `lastFailureReason` `{category, summary, text, action, at}`
+  (ISO `at`; `summary` is the one-line why, null for a person's rejection), or `null`.
 
 No new tool and no write path. Tests: `test/mcp-server.test.js`.
 
