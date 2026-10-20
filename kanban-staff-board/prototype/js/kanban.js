@@ -5,7 +5,7 @@
   "use strict";
 
   const SEED = window.KB_SEED;
-  const STORE_KEY = "kb-proto-v2";
+  const STORE_KEY = "kb-proto-v3";
   const NAV_KEY = "kb-proto-nav-collapsed";
   const root = document.documentElement;
 
@@ -639,7 +639,7 @@
     const t = key ? taskByKey(key) : null;
     draftIsNew = !t;
     draft = t ? clone(t) : {
-      key: "KAN-" + state.nextKey, type: "task", title: "", description: "", status: "backlog",
+      key: "PH-" + state.nextKey, type: "task", title: "", description: "", status: "backlog",
       assignee: board.mine ? state.me : "", reporter: state.me, release: state.settings.currentRelease,
       estimate: "", logged: 0, priority: "medium", sprint: "", due: "", labels: [], epic: "",
       comments: [], attachments: [], links: [], previousAssignee: "", activity: [],
@@ -707,7 +707,7 @@
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
         <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${["blocks", "is blocked by", "relates to", "duplicates"].map((x) => opt(x, x, "relates to")).join("")}</select>
-          <select id="f-link-key" class="kb-input" aria-label="Ticket">${state.tasks.filter((t) => t.key !== d.key).sort((a, b) => a.key.localeCompare(b.key)).map((t) => opt(t.key, `${t.key} · ${t.title}`, "")).join("")}</select>
+          <select id="f-link-key" class="kb-input" aria-label="Ticket">${state.tasks.filter((t) => t.key !== d.key).sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true })).map((t) => opt(t.key, `${t.key} · ${t.title}`, "")).join("")}</select>
           <button type="button" class="btn-ghost" id="f-link-add">Link</button></div></div>`;
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
