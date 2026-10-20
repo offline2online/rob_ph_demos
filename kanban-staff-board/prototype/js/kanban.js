@@ -343,14 +343,7 @@
         <div class="kb-header-actions">
           <button type="button" class="btn-ghost kb-icon-label" id="kb-report-btn"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span>Release report</button>
           <button type="button" class="btn-primary" id="kb-new-btn">+ New task</button>
-          <div class="project-options">
-            <button type="button" class="btn-ghost project-options-btn" id="kb-options-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Board options">&#8942;</button>
-            <div class="project-options-menu" id="kb-options-menu" hidden>
-              <button type="button" class="options-menu-item" data-route="settings">Form fields &amp; workflow settings</button>
-              <button type="button" class="options-menu-item" id="kb-open-agent">Open Agent Board</button>
-              <button type="button" class="options-menu-item options-menu-item-danger" id="kb-reset">Reset demo data</button>
-            </div>
-          </div>
+          <button type="button" class="btn-ghost kb-settings-btn" data-route="settings" title="Kanban settings" aria-label="Kanban settings"><span class="material-symbols-outlined" aria-hidden="true">settings</span></button>
         </div>
       </div>
       <div class="kb-filters" role="search">
@@ -399,12 +392,6 @@
 
     $("#kb-new-btn").addEventListener("click", () => openTask(null));
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
-    const menu = $("#kb-options-menu");
-    $("#kb-options-btn").addEventListener("click", (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; $("#kb-options-btn").setAttribute("aria-expanded", String(!menu.hidden)); });
-    $("#kb-open-agent").addEventListener("click", () => go("agent-board"));
-    $("#kb-reset").addEventListener("click", () => {
-      const me = state.me; state = fresh(); state.me = me; save(); renderProfile(); render(); toast("Demo data reset");
-    });
     $("#kb-q").addEventListener("input", (e) => { board.q = e.target.value; renderKanbanBoard(); });
     $$(".kb-person-chip").forEach((b) => b.addEventListener("click", () => {
       const id = b.dataset.person;
@@ -1325,6 +1312,10 @@
           <div class="docs-block-header"><h3>Team${tip("Everyone added under Settings → Team & agent access appears in the assignee list by first name.")}</h3></div>
           <ul class="kb-team">${SEED.users.map((u) => `<li>${avatar(u.id)}<span><b>${esc(u.first)}</b><span class="kb-none">${esc(u.full)} · ${esc(u.location)}</span></span><span class="kb-none kb-team-email">${esc(u.email)}</span></li>`).join("")}</ul>
         </section>
+        <section class="docs-block">
+          <div class="docs-block-header"><h3>Demo data${tip("Prototype only: puts every task back to the mock data and clears your changes.")}</h3>
+            <button type="button" class="btn-ghost kb-danger-ghost" id="st-reset">Reset demo data</button></div>
+        </section>
       </div>`;
     $$("[data-show]", view).forEach((c) => c.addEventListener("change", () => {
       S.fields[c.dataset.show].show = c.checked;
@@ -1337,6 +1328,10 @@
     $("#st-tester").addEventListener("change", (e) => { S.tester = e.target.value; save(); toast(`Ready for Testing now reassigns to <b>${esc(firstName(S.tester))}</b>`); });
     $("#st-release").addEventListener("change", (e) => { S.currentRelease = e.target.value; save(); toast(`Current release is <b>${esc(releaseName(S.currentRelease))}</b>`); });
     $("#st-preview").addEventListener("click", () => openTask(null));
+    $("#st-reset").addEventListener("click", () => {
+      if (!confirm("Reset all tasks to the demo data?")) return;
+      const me = state.me; state = fresh(); state.me = me; save(); renderProfile(); render(); toast("Demo data reset");
+    });
   }
 
   // ── Agent Board (static stand-in for the existing board) ────────────────

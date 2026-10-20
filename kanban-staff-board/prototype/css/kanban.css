@@ -271,7 +271,11 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 .kb-more-body { padding: 0 14px 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
 .kb-more-body .kb-field[data-field="comments"], .kb-more-body .kb-field[data-field="links"], .kb-more-body .kb-field[data-field="attachments"] { grid-column: 1 / -1; }
 .kb-created { margin: 12px 0 0; font-size: 12px; color: var(--text-muted); }
-.kb-form-actions { margin-top: 16px; justify-content: space-between; }
+/* Delete / Cancel / Save stay pinned to the bottom of the modal while it scrolls. */
+.kb-form-actions { position: sticky; bottom: -22px; z-index: 3; justify-content: space-between; margin: 16px -24px -22px; padding: 12px 24px; background: var(--ap-card); border-top: .5px solid var(--ap-divider); box-shadow: 0 -8px 16px -12px rgba(0, 0, 0, .18); border-radius: 0 0 var(--ap-radius) var(--ap-radius); }
+.kb-settings-btn { min-width: 44px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; }
+.kb-settings-btn .material-symbols-outlined { font-size: 21px; }
+.kb-danger-ghost { color: var(--danger); font-weight: 600; }
 .kb-form-actions .fa-actions-delete { min-width: 44px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; }
 .kb-form-actions .fa-actions-delete .material-symbols-outlined { font-size: 20px; }
 
@@ -414,6 +418,7 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
   .kb-lane-cell .kb-list { min-height: 0; }
   .kb-card { touch-action: pan-y; }
   .kb-task-panel { padding: 18px 16px; }
+  .kb-form-actions { bottom: -18px; margin: 16px -16px -18px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); border-radius: 0; }
   .modal-backdrop#task-backdrop { align-items: flex-end; padding: 0; }
   .modal-backdrop#task-backdrop .modal-panel { max-width: 100%; border-radius: 16px 16px 0 0; max-height: 94vh; }
   .kb-kpi-value { font-size: 24px; }

@@ -12,7 +12,7 @@ When you change any CSS or JS file, bump the `?v=` on its link in `index.html`. 
 cache those files for 10 minutes.
 
 It is front-end only, with mock data and no backend. Changes are kept in the
-viewer's own `localStorage`, and **⋮ → Reset demo data** puts the mock data back.
+viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** puts the mock data back.
 
 ## What's in `prototype/`
 
