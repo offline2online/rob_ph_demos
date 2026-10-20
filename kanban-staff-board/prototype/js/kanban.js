@@ -458,8 +458,13 @@
       updateLanePin();
       return;
     }
-    $("#kb-lanes-sticky").hidden = true;
+    // Plain board: the page scrolls as a whole and the same pinned header
+    // row as the swimlanes stays at the top (each column's own head is for phones).
+    $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
+    $("#kb-lanes-sticky").hidden = false;
+    $("#kb-lanes-head-scroll").scrollLeft = $("#kb-board-wrap").scrollLeft;
     $("#kb-lanes-bar").hidden = true;
+    updateLanePin();
     el.innerHTML = STATUSES.map((s) => {
       const list = sorted(tasks, s.key);
       return `<section class="column kb-col${collapsedCols.has(s.key) ? " column-collapsed" : ""}" data-status="${s.key}" aria-label="${esc(s.label)}">
