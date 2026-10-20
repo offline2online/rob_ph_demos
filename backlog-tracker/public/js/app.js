@@ -29,7 +29,6 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
-import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts, compareReleases, pinnedLayout, mapSnapshot, diffSystemMap, describeChanges } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
@@ -96,7 +95,6 @@ const skillsRef = collection(db, "skills");
 // it's promoted into a real project (see promoteConceptToProject below and
 // firestore.rules `match /concepts/{conceptId}`).
 const conceptsRef = collection(db, "concepts");
-const conceptCritiquesRef = collection(db, "conceptCritiques");
 const systemMapLayoutRef = doc(db, "systemMap", "layout");
 const systemMapRevisionsRef = collection(db, "systemMapRevisions");
 // What a skill write replaced — see functions/mcp-server.js's
@@ -319,9 +317,6 @@ let releases = [];
 let projectDocs = [];
 let skills = [];
 let concepts = [];
-// Every critique of every concept (small: a handful per concept); the detail
-// page filters by conceptId, and every role ever used is offered as a suggestion.
-let conceptCritiques = [];
 // The concept whose detail page is currently open, or null when the list
 // (or neither) is showing — same role docsProjectId plays for the Docs
 // page, so a listener update knows whether to re-render the detail view.
@@ -2882,10 +2877,6 @@ lazyStarters.concepts = () => primeFromRest("concepts", (rows) => {
   resolvePendingConceptRoute();
   if (conceptDetailId) renderConceptDetailPage();
 }, byMillis("updatedAt", "desc"));
-lazyStarters.conceptCritiques = () => primeFromRest("conceptCritiques", (rows) => {
-  conceptCritiques = rows;
-  if (conceptDetailId) renderConceptCritiques();
-}, byMillis("createdAt", "asc"));
 lazyStarters.faqCategories = () => primeFromRest("faqCategories", (rows) => {
   faqCategories = rows;
   if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
@@ -2988,13 +2979,6 @@ const startConceptsListener = () => onSnapshot(query(conceptsRef, orderBy("updat
   resolvePendingConceptRoute();
   if (conceptDetailId) renderConceptDetailPage();
 }, onListenerError("concepts"));
-const startConceptCritiquesListener = () => onSnapshot(query(conceptCritiquesRef, orderBy("createdAt", "asc")), (snap) => {
-  markLive("conceptCritiques", snap);
-  conceptCritiques = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
-  if (conceptDetailId) renderConceptCritiques();
-}, onListenerError("conceptCritiques"));
-const _primeConceptCritiques = lazyStarters.conceptCritiques;
-lazyStarters.conceptCritiques = () => { _primeConceptCritiques(); startConceptCritiquesListener(); };
 const _primeProjectDocs = lazyStarters.projectDocs, _primeSkills = lazyStarters.skills, _primeConcepts = lazyStarters.concepts;
 lazyStarters.projectDocs = () => { _primeProjectDocs(); startProjectDocsListener(); };
 lazyStarters.skills = () => { _primeSkills(); startSkillsListener(); };
@@ -6197,7 +6181,7 @@ function openConceptDetailPage(id) {
   const target = `#concept-${encodeURIComponent(id)}`;
   const arrivedByLink = window.location.hash === target;
   closeAllSubPages();
-  ensureLazy("concepts", "conceptCritiques");
+  ensureLazy("concepts");
   conceptDetailId = id;
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -6585,187 +6569,11 @@ function renderConceptDetailPage() {
     <div class="interface-row"><div class="interface-row-top"><div class="interface-row-title">${escapeHTML(d.name || "")}</div></div>
     <div class="interface-row-content">${escapeHTML(d.contentMd || "")}</div></div>`).join("");
 
-  renderConceptCritiques();
   const notes = (c.comments || []).slice().reverse();
   document.getElementById("concept-notes-list").innerHTML = notes.length
     ? notes.map(eiNoteRowHTML).join("")
     : '<p class="interface-row-empty">No discussion yet.</p>';
 }
-
-// ── Concept critiques ────────────────────────────────────────────────────
-// A critique is one reviewer's structured review of a concept (see
-// concept-critiques.js for the shape and the synthesis). Accepting a
-// recommended adjustment appends it to the concept's Requirements (or README)
-// under "Critique adjustments", first recording the text it replaces in
-// docRevisions so the change can be read back and reversed.
-let critiqueSynthOpen = false;
-
-function critiquesOfConcept(id) { return conceptCritiques.filter((k) => k.conceptId === id); }
-function critiqueList(label, items) {
-  return items && items.length ? `<h4>${label}</h4><ul>${items.map((t) => `<li>${escapeHTML(t)}</li>`).join("")}</ul>` : "";
-}
-const CRITIQUE_STATE_LABEL = { pending: "Pending", accepted: "Accepted", rejected: "Rejected" };
-
-function critiqueCardHTML(k) {
-  const recs = (k.recommendations || []).map((r) => {
-    const st = r.status || "pending";
-    const buttons = st === "pending"
-      ? `<span data-editor-only><button type="button" class="btn-primary critique-decide" data-id="${k.id}" data-rec="${escapeHTML(r.id)}" data-decision="accepted">Accept</button> <button type="button" class="btn-outline critique-decide" data-id="${k.id}" data-rec="${escapeHTML(r.id)}" data-decision="rejected">Reject</button></span>`
-      : `<span class="critique-rec-state">${CRITIQUE_STATE_LABEL[st] || st}${r.decidedBy ? ` by ${escapeHTML(r.decidedBy)}` : ""}${r.target ? ` · applied to ${r.target === "readmeMd" ? "README" : "Requirements"}` : ""}</span>`;
-    return `<div class="critique-rec"><span class="critique-rec-text">${escapeHTML(r.text)}</span>${buttons}</div>`;
-  }).join("");
-  const status = k.status === "addressed" ? "Addressed" : k.status === "dismissed" ? "Dismissed" : "Open";
-  return `<div class="critique-card" data-id="${k.id}">
-    <div class="critique-card-head">
-      <b>${escapeHTML(critiqueRoleOf(k))}</b>
-      <span class="critique-verdict ${escapeHTML(k.verdict || "")}">${escapeHTML(VERDICT_LABEL[k.verdict] || k.verdict || "")}</span>
-      <span class="critique-verdict">${status}</span>
-      <span class="critique-meta">${escapeHTML(k.reviewer || "")} · ${escapeHTML(formatNoteAt(k.createdAt))}${k.reviewedRevision ? ` · reviewed text ${escapeHTML(k.reviewedRevision.fingerprint || "")}` : ""}</span>
-    </div>
-    ${k.summary ? `<p class="ei-note-text">${escapeHTML(k.summary)}</p>` : ""}
-    ${critiqueList("Strongest arguments for", k.argumentsFor)}
-    ${critiqueList("Strongest arguments against", k.argumentsAgainst)}
-    ${critiqueList("Assumptions challenged", k.assumptions)}
-    ${recs ? `<h4>Recommended changes</h4>${recs}` : ""}
-  </div>`;
-}
-
-function synthesisHTML(syn) {
-  const who = (list) => escapeHTML([...new Set(list.map((s) => s.role))].join(", "));
-  const kindLabel = { verdict: "Verdict", "argument-for": "For", "argument-against": "Against", assumption: "Assumption", recommendation: "Recommendation" };
-  const agree = syn.agreement.length
-    ? `<ul>${syn.agreement.map((a) => `<li><b>${kindLabel[a.kind] || a.kind}:</b> ${escapeHTML(a.text)} <span class="critique-meta">(${who(a.supporters)})</span></li>`).join("")}</ul>`
-    : '<p class="interface-row-empty">No point has been raised by more than one reviewer yet.</p>';
-  const disagree = syn.disagreement.length
-    ? `<ul>${syn.disagreement.map((d) => d.kind === "verdict"
-      ? `<li>${escapeHTML(d.text)} ${d.positions.map((p) => `<span class="critique-meta">${escapeHTML(VERDICT_LABEL[p.verdict])}: ${escapeHTML(p.roles.join(", "))}.</span>`).join(" ")}</li>`
-      : `<li><b>Contested:</b> ${escapeHTML(d.text)} <span class="critique-meta">(for: ${who(d.for)}; against: ${who(d.against)})</span></li>`).join("")}</ul>`
-    : '<p class="interface-row-empty">No disagreement.</p>';
-  const adj = syn.adjustments.length
-    ? `<ul>${syn.adjustments.map((a) => `<li>${escapeHTML(a.text)} <span class="critique-meta">(${who(a.supporters)}) · ${CRITIQUE_STATE_LABEL[a.state]}</span></li>`).join("")}</ul>`
-    : '<p class="interface-row-empty">No recommended adjustments.</p>';
-  const c = syn.verdictCounts;
-  const roles = syn.byRole.map((r) => `${escapeHTML(r.role)} (${r.critiques})`).join(", ");
-  return `<div><h4>Verdicts</h4><p>${syn.total} critique${syn.total === 1 ? "" : "s"}: ${c["will-work"]} will work, ${c.conditional} conditional, ${c["wont-work"]} won't work.</p>
-    <p class="critique-meta">By role: ${roles || "none"}</p>
-    <h4>Points of agreement</h4>${agree}<h4>Points of disagreement</h4>${disagree}<h4>Recommended adjustments</h4>${adj}</div>`;
-}
-
-function renderConceptCritiques() {
-  if (!conceptDetailId) return;
-  const c = concepts.find((x) => x.id === conceptDetailId);
-  if (!c) return;
-  const mine = critiquesOfConcept(conceptDetailId);
-  const filterEl = document.getElementById("critique-role-filter");
-  const current = filterEl.value;
-  const roles = [...new Map(mine.map((k) => [critiqueRoleKey(k.role), critiqueRoleOf(k)])).entries()];
-  filterEl.innerHTML = '<option value="">All roles</option>' + roles.map(([key, label]) => `<option value="${escapeHTML(key)}">${escapeHTML(label)}</option>`).join("");
-  filterEl.value = roles.some(([key]) => key === current) ? current : "";
-  document.getElementById("critique-role-options").innerHTML = roleSuggestions(conceptCritiques).map((r) => `<option value="${escapeHTML(r)}"></option>`).join("");
-  const shown = mine.filter((k) => !filterEl.value || critiqueRoleKey(k.role) === filterEl.value);
-  document.getElementById("critique-count").textContent = `${shown.length} critique${shown.length === 1 ? "" : "s"}`;
-  document.getElementById("concept-critique-add-btn").hidden = false;
-  document.getElementById("concept-critiques-list").innerHTML = shown.length
-    ? shown.map(critiqueCardHTML).join("")
-    : '<p class="interface-row-empty">No critiques yet.</p>';
-  document.getElementById("concept-synthesis").innerHTML = critiqueSynthOpen
-    ? (shown.length ? synthesisHTML(synthesiseCritiques(mine, { role: filterEl.value ? roles.find(([key]) => key === filterEl.value)[1] : null })) : "")
-    : "";
-  document.getElementById("critique-synth-btn").textContent = critiqueSynthOpen ? "Hide synthesis" : "Synthesise";
-}
-
-async function addConceptCritique(conceptId, f) {
-  const c = concepts.find((x) => x.id === conceptId);
-  const email = (auth.currentUser && auth.currentUser.email) || "viewer";
-  const recommendations = cleanCritiqueList(f.recs).map((text, i) => ({ id: `r${i + 1}`, text, status: "pending" }));
-  await addDoc(conceptCritiquesRef, {
-    conceptId,
-    role: (f.role || "").trim().slice(0, CRITIQUE_LIMITS.role),
-    reviewer: email,
-    verdict: f.verdict,
-    summary: "",
-    argumentsFor: cleanCritiqueList(f.for),
-    argumentsAgainst: cleanCritiqueList(f.against),
-    assumptions: cleanCritiqueList(f.assumptions),
-    recommendations,
-    status: critiqueStatus(recommendations),
-    reviewedRevision: { fingerprint: textFingerprint(c && c.readmeMd, c && c.requirementsMd), conceptUpdatedAt: c && c.updatedAt && c.updatedAt.toDate ? c.updatedAt.toDate().toISOString() : null },
-    via: "board",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-}
-
-// Accept applies the adjustment to the concept; reject changes nothing in the
-// concept. Either way the decision, who made it and when stay on the critique.
-async function decideCritiqueRecommendation(critiqueId, recId, decision) {
-  const k = conceptCritiques.find((x) => x.id === critiqueId);
-  if (!k) return;
-  const c = concepts.find((x) => x.id === k.conceptId);
-  const email = (auth.currentUser && auth.currentUser.email) || "viewer";
-  const rec = (k.recommendations || []).find((r) => r.id === recId);
-  if (!rec || rec.status !== "pending") return;
-  let target = null, revisionId = null;
-  if (decision === "accepted") {
-    if (!c || c.status === "promoted") { await showAlert("This concept has been promoted, so its README and Requirements are read-only here. Apply the change on the project's Docs page instead."); return; }
-    target = "requirementsMd";
-    const before = c[target] || "";
-    const source = `${critiqueRoleOf(k)} critique`;
-    if (before) {
-      const rev = await addDoc(docRevisionsRef, {
-        target: `concept.${target}`, conceptId: c.id, name: c.name || "", contentMd: before, chars: before.length,
-        replacedAt: serverTimestamp(), replacedByEmail: email.toLowerCase(), via: "board",
-      });
-      revisionId = rev.id;
-    }
-    await setDoc(doc(db, "concepts", c.id), { [target]: applyAdjustment(before, rec.text, source), updatedAt: serverTimestamp() }, { merge: true });
-  }
-  const recommendations = k.recommendations.map((r) => r.id === recId
-    ? { ...r, status: decision, decidedBy: email, decidedAt: new Date(), ...(target ? { target } : {}), ...(revisionId ? { revisionId } : {}) }
-    : r);
-  await setDoc(doc(db, "conceptCritiques", critiqueId), { recommendations, status: critiqueStatus(recommendations), updatedAt: serverTimestamp() }, { merge: true });
-}
-
-const critiqueForm = document.getElementById("concept-critique-form");
-const lines = (id) => document.getElementById(id).value.split("\n");
-document.getElementById("concept-critique-add-btn").addEventListener("click", async () => {
-  if (!(await requireConceptEditor())) return;
-  critiqueForm.hidden = !critiqueForm.hidden;
-});
-document.getElementById("critique-cancel").addEventListener("click", () => { critiqueForm.hidden = true; });
-document.getElementById("critique-submit").addEventListener("click", async () => {
-  if (!conceptDetailId) return;
-  if (!(await requireConceptEditor())) return;
-  const f = {
-    role: document.getElementById("critique-role-input").value,
-    verdict: document.getElementById("critique-verdict-select").value,
-    for: lines("critique-for-input"), against: lines("critique-against-input"),
-    assumptions: lines("critique-assumptions-input"), recs: lines("critique-recs-input"),
-  };
-  if (!f.for.concat(f.against, f.assumptions, f.recs).some((t) => t.trim())) { await showAlert("Add at least one argument, assumption or recommendation."); return; }
-  try {
-    await addConceptCritique(conceptDetailId, f);
-  } catch (err) {
-    await showAlert(describeSaveError(err, [{ label: "Role", value: f.role, max: CRITIQUE_LIMITS.role }]));
-    return;
-  }
-  for (const id of ["critique-role-input", "critique-for-input", "critique-against-input", "critique-assumptions-input", "critique-recs-input"]) document.getElementById(id).value = "";
-  critiqueForm.hidden = true;
-});
-document.getElementById("critique-role-filter").addEventListener("change", renderConceptCritiques);
-document.getElementById("critique-synth-btn").addEventListener("click", () => { critiqueSynthOpen = !critiqueSynthOpen; renderConceptCritiques(); });
-document.getElementById("concept-critiques-list").addEventListener("click", async (e) => {
-  const btn = e.target.closest(".critique-decide");
-  if (!btn) return;
-  if (!(await requireConceptEditor())) return;
-  btn.disabled = true;
-  try {
-    await decideCritiqueRecommendation(btn.dataset.id, btn.dataset.rec, btn.dataset.decision);
-  } catch (err) {
-    btn.disabled = false;
-    await showAlert(describeSaveError(err, []));
-  }
-});
 
 document.getElementById("concept-incubator-btn").addEventListener("click", () => { closeNavDrawer(); openConceptIncubatorPage(); });
 document.getElementById("concept-incubator-list").addEventListener("click", async (e) => {

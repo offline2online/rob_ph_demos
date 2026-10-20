@@ -1175,20 +1175,6 @@ editor and up (`firestore.rules`' `match /concepts/{conceptId}`). `status`
 can only move `active` → `promoted` — the rules refuse the write back the
 other way — and a `promoted` concept can't be deleted at all, since it's
 the provenance record for a real project's README/requirements. See
-**Critiques.** `conceptCritiques/{id}` holds `{conceptId, role (free text, up to
-80, may be empty = "Unspecified"), reviewer, verdict (will-work | wont-work |
-conditional), summary, argumentsFor[], argumentsAgainst[], assumptions[],
-recommendations[{id, text, status: pending|accepted|rejected, decidedBy,
-decidedAt, target, revisionId}], status (open|addressed|dismissed),
-reviewedRevision{fingerprint, conceptUpdatedAt}, via, createdAt}`. Read is any
-member; create/update/delete is editor and up (`firestore.rules`). The
-synthesis is deterministic and shared by the board and MCP
-(`public/js/concept-critiques.js`, mirrored in `functions/concept-critiques.js`).
-Accepting an adjustment writes the previous Requirements to `docRevisions`
-(`via: "board"`, the only revision a browser may create) and appends the
-change under "## Critique adjustments"; rejecting changes nothing. MCP:
-`add_concept_critique`, `list_concept_critiques`, `synthesise_concept_critiques`.
-
 `backlog-tracker/README.md` → "Concept Incubator" for the console UI and
 the promotion flow (`promoteConceptToProject` in `public/js/app.js`), which
 also writes the new `projects/{id}` doc, seeded with this concept's

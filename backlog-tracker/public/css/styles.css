@@ -1898,24 +1898,3 @@ body { overflow-x: clip; }
 .sysmap-rev-head span { color: #666; }
 .sysmap-rev-reason { margin-top: 2px; }
 .sysmap-rev ul { margin: 4px 0 0 18px; padding: 0; color: #444; }
-
-/* Concept Incubator — Critiques */
-.critique-form { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 14px; padding: 12px; border: 1px solid var(--border, #ddd); border-radius: 8px; }
-.critique-form[hidden] { display: none; }
-.critique-card { border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
-.critique-card-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.critique-card h4 { margin: 10px 0 2px; font-size: 13px; }
-.critique-card ul, .critique-synthesis ul { margin: 2px 0 0 18px; padding: 0; }
-.critique-verdict { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: #eee; }
-.critique-verdict.will-work { background: #e3f4e6; color: #1b5e20; }
-.critique-verdict.wont-work { background: #fde7e7; color: #b71c1c; }
-.critique-verdict.conditional { background: #fff3d6; color: #8a5a00; }
-.critique-meta { color: var(--text-muted, #666); font-size: 12px; }
-.critique-rec { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
-.critique-rec-text { flex: 1 1 240px; }
-.critique-rec-state { font-size: 12px; color: var(--text-muted, #666); }
-.critique-synthesis { margin: 10px 0; }
-.critique-synthesis:empty { display: none; }
-.critique-synthesis > div { border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 10px 12px; }
-.critique-synthesis h4 { margin: 10px 0 2px; font-size: 13px; }
-.critique-synthesis h4:first-child { margin-top: 0; }

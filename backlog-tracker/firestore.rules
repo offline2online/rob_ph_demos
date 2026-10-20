@@ -543,34 +543,6 @@ service cloud.firestore {
       allow delete: if isEditor() && resource.data.status != "promoted";
     }
 
-    // A critique of a Concept Incubator concept — one reviewer's structured
-    // red-team view (verdict, arguments, assumptions, recommended changes),
-    // with a free-text `role`. Agents write these over MCP (admin SDK, which
-    // bypasses these rules); people add and decide them from the concept's
-    // Critiques section. See public/js/concept-critiques.js.
-    function critiqueList(v) {
-      return v is list && v.size() <= 30;
-    }
-    function critiqueOk() {
-      return isNonEmptyBoundedString(incoming().conceptId, 100)
-        && incoming().verdict in ["will-work", "wont-work", "conditional"]
-        && incoming().role is string && incoming().role.size() <= 80
-        && incoming().reviewer is string && incoming().reviewer.size() <= 120
-        && (!("summary" in incoming()) || (incoming().summary is string && incoming().summary.size() <= 2000))
-        && critiqueList(incoming().argumentsFor)
-        && critiqueList(incoming().argumentsAgainst)
-        && critiqueList(incoming().assumptions)
-        && critiqueList(incoming().recommendations)
-        && incoming().status in ["open", "addressed", "dismissed"];
-    }
-    match /conceptCritiques/{critiqueId} {
-      allow read: if isBoardReader();
-      allow create: if isEditor() && critiqueOk();
-      allow update: if isEditor() && critiqueOk()
-        && incoming().conceptId == resource.data.conceptId;
-      allow delete: if isEditor();
-    }
-
     // ── People, and their agents ──────────────────────────────────────────
     // One doc per person on the console, id = their lowercased email:
     //   { email, displayName, role: "admin"|"editor"|"viewer",
@@ -647,16 +619,7 @@ service cloud.firestore {
 
     match /docRevisions/{revisionId} {
       allow read: if isBoardReader();
-      // Append-only. The one thing the browser may add is the previous text
-      // of a concept's README/Requirements when a person accepts a critique's
-      // recommended adjustment; every other revision is written by the server.
-      allow create: if isEditor()
-        && incoming().via == "board"
-        && incoming().target in ["concept.readmeMd", "concept.requirementsMd"]
-        && isNonEmptyBoundedString(incoming().conceptId, 100)
-        && incoming().contentMd is string && incoming().contentMd.size() <= 800000
-        && incoming().replacedByEmail == callerEmail();
-      allow update, delete: if false;
+      allow write: if false;
     }
 
     // ── MCP server state (functions/mcp-server.js) ────────────────────────
