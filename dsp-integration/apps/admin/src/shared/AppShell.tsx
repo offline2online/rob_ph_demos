@@ -2,10 +2,11 @@
    navigation beside the page (an empty `nav` skips the nav column entirely,
    for a route that stands alone in its own tab). No platform header, sidebar
    or breadcrumb — HQ Admin iframes this page (ph-designer prototyping.md). */
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import { T } from '../theme/phTheme'
 import { Icon } from './Icon'
+import { useStickyTop } from './useStickyTop'
 import { useViewportWidth } from './useViewportWidth'
 
 export interface NavItem { to: string; label: string }
@@ -26,11 +27,14 @@ const Static = ({ children }: { children: ReactNode }) => <div className="trunca
 /* Like Platform Admin: the menu runs the full height down the left and stays
    put (sticky, its own scroll if taller than the frame) while the right-hand
    pane scrolls, and the page title sits at the top of the right-hand pane with the page under it.
-   On a touch screen (iPad) it is NOT sticky and has no scroll of its own —
-   see .ph-sticky-pane in theme/index.css for why.
+   On a touch screen (iPad) it is still sticky but has no scroll of its own
+   (useStickyTop lifts it if it is taller than the screen) — see
+   .ph-sticky-pane in theme/index.css for why.
    An empty `nav` (a route that stands alone in its own tab) has no menu. */
 export function AppShell({ title, nav, children }: { title: ReactNode; nav: NavItem[]; children: ReactNode }) {
   const collapsed = useViewportWidth() < NAV_COLLAPSE_BELOW
+  const navRef = useRef<HTMLElement>(null)
+  useStickyTop(navRef)
   const header = (
     <>
       <div className="truncate text-xl font-bold">{title}</div>
@@ -43,6 +47,7 @@ export function AppShell({ title, nav, children }: { title: ReactNode; nav: NavI
   return (
     <div className="ph-min-full-height flex w-full items-stretch bg-white" style={{ color: T.text, fontSize: 14 }}>
       <nav
+        ref={navRef}
         aria-label="Display Types and DSP Integration"
         className="ph-sticky-pane ph-full-height sticky top-0 shrink-0 self-start overflow-y-auto overflow-x-hidden border-r"
         style={{ width: collapsed ? 56 : NAV_WIDTH, borderColor: T.borderSubtle, transition: 'width .15s' }}
