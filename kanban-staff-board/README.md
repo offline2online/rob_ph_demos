@@ -31,7 +31,9 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
   Ready for Testing → Approved for Deployment → Completed / Withdrawn. The last column has two drop zones, **Completed** and
   **Withdrawn**, each with its own count; the column header shows both, the Status menu lists them separately,
   withdrawn cards are greyed and struck through, and epics' progress leaves withdrawn children out. The release
-  report splits them too (filter, KPI and breakdown columns). You can drag cards
+  report splits them too (filter, KPI and breakdown columns). While a card is being dragged, that column's cards hide and two large drop targets
+  fill the screen height over it: Completed (three quarters) and Withdrawn (one quarter). On a phone they sit at the
+  bottom of the screen. You can drag cards
   with a mouse, or press and hold them on touch. Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
   Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The filter row

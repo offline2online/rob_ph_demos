@@ -623,12 +623,45 @@
     drag.marker.className = "kb-drop-marker";
     drag.card.classList.add("kb-dragging");
     document.body.classList.add("kb-drag-active");
+    showCloseZones();
     if (navigator.vibrate && drag.type !== "mouse") { try { navigator.vibrate(10); } catch { /* ignore */ } }
     moveDrag(x, y);
+  }
+  // While a card is being dragged, the Completed / Withdrawn column's cards
+  // are hidden and two big drop targets take its place: Completed (3/4 of the
+  // screen height) and Withdrawn (1/4). They are pinned over that column, so
+  // they are in view wherever the board is scrolled. On a phone they sit at
+  // the bottom of the screen, full width.
+  function showCloseZones() {
+    if (!$("#kb-board")) return;
+    const ov = document.createElement("div");
+    ov.className = "kb-close-zones";
+    ov.innerHTML = RESOLUTIONS.map((r) => {
+      const n = state.tasks.filter((t) => res(t) === r.key).length;
+      return `<div class="kb-close-zone kb-close-${r.key}" data-resolution="${r.key}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span><span class="kb-close-label">${r.label}</span><span class="kb-close-count">${n}</span></div>`;
+    }).join("");
+    if (!mqPhone.matches) {
+      const ref = $("#kb-lanes-head .kb-col-done") || $('.kb-col[data-status="done"]');
+      const head = $("#kb-lanes-sticky");
+      const r = ref.getBoundingClientRect();
+      const top = Math.max(head && !head.hidden ? head.getBoundingClientRect().bottom : 0, 0) + 8;
+      const left = Math.min(Math.max(r.left, 0), innerWidth - r.width - 8);
+      Object.assign(ov.style, { left: left + "px", width: r.width + "px", top: top + "px", bottom: "16px" });
+    }
+    document.body.appendChild(ov);
+    drag.zones = ov;
   }
   function moveDrag(x, y) {
     drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) rotate(2deg)`;
     const under = document.elementFromPoint(x, y);
+    const zone = under && under.closest(".kb-close-zone");
+    if (drag.zones) $$(".kb-close-zone", drag.zones).forEach((z) => z.classList.toggle("on", z === zone));
+    if (zone) {
+      $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));
+      drag.marker.remove();
+      drag.target = { status: "done", resolution: zone.dataset.resolution, before: null };
+      return;
+    }
     const col = under && under.closest(".kb-col");
     $$(".kb-col.kb-drop-target").forEach((c) => c !== col && c.classList.remove("kb-drop-target"));
     if (!col) { drag.marker.remove(); drag.target = null; autoScroll(x, y); return; }
@@ -656,6 +689,7 @@
     if (!d.active) return;
     suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
     d.ghost.remove(); d.marker.remove();
+    if (d.zones) d.zones.remove();
     d.card.classList.remove("kb-dragging");
     document.body.classList.remove("kb-drag-active");
     $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));

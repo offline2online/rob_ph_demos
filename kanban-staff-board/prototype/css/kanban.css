@@ -468,3 +468,21 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 .kb-card-withdrawn .card-title { color: var(--text-muted); text-decoration: line-through; text-decoration-color: rgba(0, 0, 0, .25); }
 .kb-withdrawn-chip { color: var(--text-muted); font-weight: 600; }
 .kb-sp-withdrawn { background: var(--surface-2) !important; color: var(--text-muted) !important; }
+
+/* Drop targets shown only while dragging: the last column's cards hide and
+   Completed (3/4) / Withdrawn (1/4) fill the screen height over that column. */
+body.kb-drag-active .kb-col[data-status="done"] .kb-res-split { visibility: hidden; }
+.kb-close-zones { position: fixed; z-index: 40; display: flex; flex-direction: column; gap: 10px; animation: ap-tip-in var(--ap-fast) ease-out; }
+.kb-close-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-radius: var(--ap-radius); border: 2px dashed; text-align: center; transition: background-color var(--ap-fast), transform var(--ap-fast); }
+.kb-close-completed { flex: 3; border-color: rgba(82, 196, 26, .6); background: #eef8e8; color: #2f7a0f; box-shadow: 0 8px 28px rgba(0, 0, 0, .14); }
+.kb-close-withdrawn { flex: 1; border-color: rgba(140, 145, 150, .6); background: #f1f2f3; color: #5f6469; box-shadow: 0 8px 28px rgba(0, 0, 0, .14); }
+.kb-close-zone .material-symbols-outlined { font-size: 36px; font-variation-settings: 'FILL' 1; }
+.kb-close-label { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.kb-close-count { font-size: 12px; font-weight: 600; opacity: .8; }
+.kb-close-zone.on { border-style: solid; transform: scale(1.02); }
+.kb-close-completed.on { background: #d4f0c4; }
+.kb-close-withdrawn.on { background: #dfe1e3; }
+@media (max-width: 640px) {
+  .kb-close-zones { left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom, 0px)); height: 38vh; }
+  .kb-close-withdrawn .material-symbols-outlined { font-size: 24px; }
+}
