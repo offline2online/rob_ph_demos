@@ -12,5 +12,19 @@
     "version": "5.0",
     "status": "draft",
     "order": 2
+  },
+  {
+    "id": "BiWlnpJ8BxVOAuX2a920",
+    "name": "Closing the Loop",
+    "version": "5.1",
+    "status": "draft",
+    "order": 3
+  },
+  {
+    "id": "RJMrWMIday8UC2nB6Ehj",
+    "name": "Offsite & Digital Identity",
+    "version": "6.0",
+    "status": "draft",
+    "order": 4
   }
 ]
