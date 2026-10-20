@@ -4797,6 +4797,12 @@ async function processDeployTrain(project) {
     console.log(`[deploy-train] ${project.id}: couldn't read a bumpable APP_VERSION off main — deploying without a version bump`);
   }
   pushTrain(deployBranch);
+  // The exact commit that has to pass CI and be merged. GitHub takes a few
+  // seconds to register a push on the PR; until it does, `gh pr view` still
+  // reports the previous head and that head's (green) checks. On 20 Oct 2026
+  // PR #433 was read back 6 s after the main-merge and version-bump push,
+  // looked green, and was merged before e2e-quick had run on what shipped.
+  const pushedHead = run("git", ["rev-parse", "HEAD"]);
 
   // 3. One PR for the whole train. Reused if an earlier run already opened
   //    it (this job can be interrupted between opening and merging).
@@ -4839,6 +4845,12 @@ async function processDeployTrain(project) {
   for (let poll = 0; poll < TRAIN_CI_POLLS; poll++) {
     pr = viewTrainPr(prNumber);
     if (pr.state === "MERGED") break;
+    if (pr.headRefOid !== pushedHead) {
+      // GitHub hasn't caught up with the push yet — its checks are for an
+      // older head, so they say nothing about what would be merged.
+      if (poll < TRAIN_CI_POLLS - 1) sleepSync(TRAIN_CI_POLL_MS);
+      continue;
+    }
     approveHeldRuns(pr.headRefOid);
     let checks = trainChecksState(pr.statusCheckRollup);
     if (checks === "infra") {
@@ -4919,7 +4931,7 @@ async function processDeployTrain(project) {
   // An already-MERGED PR is never waiting on anything — a check still
   // running on it must not send this back round the loop and leave the
   // train's cards un-flipped.
-  if (pr && pr.state !== "MERGED" && trainChecksState(pr.statusCheckRollup) === "pending") {
+  if (pr && pr.state !== "MERGED" && (pr.headRefOid !== pushedHead || trainChecksState(pr.statusCheckRollup) === "pending")) {
     // Leave trainReady set: the next scheduled run picks the wait back up
     // rather than needing another click.
     console.log(`[deploy-train] ${project.id}: PR #${prNumber}'s checks are still running — will retry on the next run`);
@@ -4957,7 +4969,9 @@ async function processDeployTrain(project) {
       });
       return;
     }
-    run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO]);
+    // Pinned: if anything was pushed after the checks were read, GitHub
+    // refuses the merge instead of shipping an unchecked head.
+    run("gh", ["pr", "merge", String(prNumber), "--merge", "--repo", REPO, "--match-head-commit", pushedHead]);
     console.log(`[deploy-train] ${project.id}: merged PR #${prNumber}`);
   } else {
     console.log(`[deploy-train] ${project.id}: PR #${prNumber} was already merged — recording it`);

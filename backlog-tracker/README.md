@@ -466,6 +466,12 @@ What the train changes:
     (`TRAIN_MAIN_MOVED_RETRIES`, 3), rather than parked.
 
   Tests: `test/train-resume.test.js`, `test/header-phase.test.mjs`.
+- **The train PR merges only the head its checks ran on** (20 Oct 2026).
+  `processDeployTrain` notes the commit it pushed (`pushedHead`). It treats
+  CI as pending while GitHub still reports an older head on the PR, and it
+  merges with `gh pr merge --match-head-commit`. PR #433 was read back 6 s
+  after the main-merge and version-bump push, still showed the previous
+  head's green checks, and merged before `e2e-quick` ran on what shipped.
 
 The board expresses one consequence of this in its CTAs: merging the
 branch ships *everything on it*, so **Deploy to Main is shown only when
