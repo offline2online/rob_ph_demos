@@ -112,7 +112,7 @@ const COLUMNS = [
   { key: "backlog", label: "Backlog", headClass: "backlog" },
   { key: "ready-for-testing", label: "Ready for Testing", headClass: "testing" },
   { key: "ready-to-publish", label: "Approved for Deployment", headClass: "publish" },
-  { key: "published-live", label: "Deployed / Main Branch (Live)", headClass: "live" },
+  { key: "published-live", label: "Deployed (Live)", headClass: "live" },
 ];
 const COL_KEYS = COLUMNS.map((c) => c.key);
 

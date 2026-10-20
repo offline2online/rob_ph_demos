@@ -244,12 +244,14 @@ body {
 .btn-danger:hover { opacity: .92; }
 .board { display: grid; grid-template-columns: repeat(4, minmax(260px, 1fr)); gap: 14px; align-items: start; overflow-x: auto; }
 .column { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; min-width: 260px; display: flex; flex-direction: column; max-height: calc(100vh - 200px); }
-.col-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 2px solid var(--border); border-radius: 8px 8px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; white-space: nowrap; padding: 12px 14px; border-bottom: 2px solid var(--border); border-radius: 8px 8px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .col-head-backlog { border-top: 3px solid var(--accent-backlog); }
 .col-head-testing { border-top: 3px solid var(--warning); }
 .col-head-publish { border-top: 3px solid var(--primary); }
 .col-head-live { border-top: 3px solid var(--success); }
-.col-count { background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
+.col-head > span:first-child { display: inline-flex; align-items: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.col-head .col-select-all { flex-shrink: 0; }
+.col-count { flex-shrink: 0; line-height: 1.5; background: var(--surface-2); border-radius: 9999px; padding: 1px 8px; }
 /* Groom Backlog merged into the Backlog column's own header (originally
    mobile-only — JHY0F2AdMSjtL4WU8F2K — now the only treatment, on every
    viewport width: eST3jOS85Mtl8KMgpOH0 asked for the same "CTA replaces
