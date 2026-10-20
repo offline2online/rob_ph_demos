@@ -16,7 +16,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
 const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
-const { shouldStampReportedAt } = require("./notify-routine");
+const { shouldStampReportedAt, inFlightItemIds } = require("./notify-routine");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 
 initializeApp();
@@ -366,7 +366,25 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       items = items.filter((i) => wantedIds.has(i.id));
     }
 
+    // Never a second session for a ticket an earlier click is still building
+    // (20 Oct 2026: "Ready for Dev — N new" sent the whole column, and every
+    // ticket on both trains was built twice by sessions writing competing
+    // fixes). They stay on the record below so the board keeps showing them
+    // as building.
+    const previous = after.notifyRoutine || (before && before.notifyRoutine);
+    const inFlight = inFlightItemIds(previous, allBacklog);
+    if (inFlight.length) {
+      const skip = new Set(inFlight);
+      const skipped = items.filter((i) => skip.has(i.id)).map((i) => i.id);
+      items = items.filter((i) => !skip.has(i.id));
+      if (skipped.length) logger.info("Skipped tickets an earlier click is still building", { projectId: event.params.projectId, skipped });
+    }
+
     if (items.length === 0) {
+      if (inFlight.length) {
+        logger.info("Notify requested, but every ticket in scope is already being built — nothing new to fire", { projectId: event.params.projectId, inFlight });
+        return;
+      }
       // Say why on the board rather than looking like the click did nothing.
       const wanted = Array.isArray(after.notifyItemIds) && after.notifyItemIds.length > 0 ? new Set(after.notifyItemIds) : null;
       const blockedInScope = allBacklog.filter((i) => isBlocked(i) && (!wanted || wanted.has(i.id)));
@@ -386,7 +404,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     }
 
     const projectName = after.name || "A project";
-    const sentItemIds = items.map((i) => i.id);
+    const sentItemIds = [...new Set([...inFlight, ...items.map((i) => i.id)])];
 
     // Fire the Routine BEFORE posting to Slack (reversed from the original
     // order) so a resolved session id/url can ride along in the Slack
@@ -427,7 +445,8 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
         items, fireUrl, token, projectId: event.params.projectId, projectName,
         prefix: `${projectPromptBlock}${skillsBlock}`, suffix: boardAccessBlock(),
       });
-      const sessions = fired.map((f) => ({ itemId: f.itemId, sessionId: f.sessionId, sessionUrl: f.sessionUrl, error: f.error }));
+      const carried = ((previous && previous.sessions) || []).filter((x) => x && inFlight.includes(x.itemId));
+      const sessions = [...carried, ...fired.map((f) => ({ itemId: f.itemId, sessionId: f.sessionId, sessionUrl: f.sessionUrl, error: f.error }))];
       // Each card records its own outcome (and, for a 429 or 5xx, when it will
       // be tried again — the automation's sweep re-requests it). A later
       // request overwrites notifyRoutine above; this survives it.
@@ -467,7 +486,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           sessionId,
           sessionUrl,
           sessions,
-          itemCount: items.length,
+          itemCount: sentItemIds.length,
           sentItemIds,
           errorMessage: fireError || (failed.length ? `${failed.length} of ${fired.length} sessions failed to start: ${failed[0].error}${fired.some((f) => !f.sessionId && fireRetryPlan({ status: f.status ?? null, attempts: 1, deferred: !!f.deferred }).retry) ? " (will retry automatically)" : ""}` : null),
           firedVia: routineCredVia,

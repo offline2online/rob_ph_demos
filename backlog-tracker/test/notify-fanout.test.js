@@ -162,6 +162,51 @@ async function click(db, mod, extra = {}) {
     assert.ok(r.sessions.every((s) => s.sessionId && !s.error));
   });
 
+  // 20 Oct 2026: "Ready for Dev — N new" sent the whole column while a build was
+  // running, and every ticket on both trains was built twice.
+  await test("a second click never starts another session for a ticket the first click is still building", async () => {
+    const sd = seed();
+    const firedAt = new Date(Date.now() - 4 * 60 * 1000);
+    sd.backlogItems.a.lastFire = { status: "started", at: firedAt, sessionId: "session_old" };
+    const db = makeFakeDb(sd);
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub(); global.fetch = stub;
+    const running = { status: "in-progress", mode: "per-item", firedAt, sentItemIds: ["a"], sessions: [{ itemId: "a", sessionId: "session_old", sessionUrl: "https://claude.ai/code/session_old" }] };
+    try { await click(db, mod, { notifyRoutine: running }); } finally { global.fetch = realFetch; }
+    assert.ok(!stub.calls.some((t) => t.includes("(ticket a)")), "no second session for a");
+    assert.deepStrictEqual(stub.calls.map((t) => /\(ticket (\w+)\)/.exec(t)[1]).sort(), ["b", "c"]);
+    const r = db.__state.projects[PID].notifyRoutine;
+    assert.deepStrictEqual(r.sentItemIds.sort(), ["a", "b", "c"], "a stays on the record as building");
+    assert.ok(r.sessions.some((x) => x.itemId === "a" && x.sessionId === "session_old"), "a's session link is kept");
+  });
+
+  await test("a click that only names tickets already being built fires nothing and keeps the running record", async () => {
+    const sd = seed();
+    const firedAt = new Date(Date.now() - 2 * 60 * 1000);
+    sd.backlogItems.a.lastFire = { status: "started", at: firedAt, sessionId: "session_old" };
+    const running = { status: "in-progress", mode: "per-item", firedAt, sentItemIds: ["a"] };
+    sd.projects[PID].notifyRoutine = running;
+    const db = makeFakeDb(sd);
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub(); global.fetch = stub;
+    try { await click(db, mod, { notifyRoutine: running, notifyItemIds: ["a"] }); } finally { global.fetch = realFetch; }
+    assert.strictEqual(stub.calls.length, 0);
+    assert.deepStrictEqual(db.__state.projects[PID].notifyRoutine.sentItemIds, ["a"]);
+  });
+
+  await test("a ticket whose session already reported, or whose fire never started, is built again", async () => {
+    const sd = seed();
+    const firedAt = new Date(Date.now() - 10 * 60 * 1000);
+    sd.backlogItems.a.lastFire = { status: "started", at: firedAt };
+    sd.backlogItems.a.buildSession = { status: "done", reportedAt: new Date(Date.now() - 60 * 1000) };
+    sd.backlogItems.b.lastFire = { status: "retrying", at: firedAt, error: "429" };
+    const db = makeFakeDb(sd);
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub(); global.fetch = stub;
+    try { await click(db, mod, { notifyRoutine: { status: "in-progress", mode: "per-item", firedAt, sentItemIds: ["a", "b"] }, notifyItemIds: ["a", "b"] }); } finally { global.fetch = realFetch; }
+    assert.strictEqual(stub.calls.length, 2);
+  });
+
   await test("a click clears the previous record's finishedAt, closedAt and stalledItemIds", async () => {
     const sd = seed();
     sd.projects[PID].notifyRoutine = { status: "stalled", finishedAt: "2026-10-03T10:00:00Z", closedAt: "2026-10-03T11:00:00Z", stalledItemIds: ["a"], mode: "per-item" };

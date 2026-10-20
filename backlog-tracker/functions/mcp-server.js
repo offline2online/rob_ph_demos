@@ -2319,7 +2319,7 @@ const TOOLS = [
       const ref = db().collection("backlogItems").doc(String(args.itemId));
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
-      await ref.update({ blocked: null, updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email });
+      await ref.update({ blocked: null, blockedClearedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email });
       await audit(session, "clear_blocked", { itemId: ref.id });
       return textResult({ cleared: true, itemId: ref.id });
     },
