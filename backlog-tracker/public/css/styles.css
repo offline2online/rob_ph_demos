@@ -1694,7 +1694,7 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .sysmap-key.line-loop::before { border-color: var(--primary); border-width: 4px 0 0; }
 .sysmap-scroll { overflow: hidden; }
 .sysmap-zoom { display: inline-flex; gap: 2px; }
-.sysmap-svg { display: block; width: 100%; height: auto; touch-action: pan-y; cursor: grab; font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
+.sysmap-svg { display: block; width: 100%; height: auto; min-height: 220px; touch-action: pan-y; cursor: grab; font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
 .sysmap-pii { fill: rgba(211, 47, 47, .06); stroke: #d32f2f; stroke-width: 2.5; stroke-dasharray: 10 6; }
 .sysmap-pii-label { font-size: 13px; font-weight: 700; fill: #b71c1c; text-transform: uppercase; letter-spacing: .05em; }
 .sysmap-pii-wall { font-size: 13px; font-weight: 700; fill: #b71c1c; }

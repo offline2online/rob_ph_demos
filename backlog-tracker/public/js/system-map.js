@@ -653,9 +653,12 @@ export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
   const edgeDim = (i) => (hi && !hi.edges.has(i) ? " dim" : "");
   const byId = model.byId;
   const { w: W, h: H, boundary: bd, pii } = model.layout;
-  let svg = `<svg class="sysmap-svg" viewBox="${vb ? `${vb.x} ${vb.y} ${vb.w} ${vb.h}` : `0 0 ${W} ${H}`}" role="img" aria-label="Personalisation Hub system map">
+  let svg = `<svg class="sysmap-svg" width="${vb ? vb.w : W}" height="${vb ? vb.h : H}" viewBox="${vb ? `${vb.x} ${vb.y} ${vb.w} ${vb.h}` : `0 0 ${W} ${H}`}" role="img" aria-label="Personalisation Hub system map">
     <defs>
-      <marker id="sm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker>
+      <marker id="sm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#6b7177"/></marker>
+      <marker id="sm-arrow-demand" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#e07b00"/></marker>
+      <marker id="sm-arrow-supply" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2e7d32"/></marker>
+      <marker id="sm-arrow-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#169bc2"/></marker>
     </defs>
     <rect class="sysmap-boundary" x="${bd.x}" y="${bd.y}" width="${bd.w}" height="${bd.h}" rx="8"/>
     <text class="sysmap-boundary-label" x="${bd.x + 16}" y="${bd.y + 22}">Personalisation Hub platform</text>
@@ -672,9 +675,11 @@ export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
     const d = `M${p.x} ${p.y} Q${c.x} ${c.y} ${q.x} ${q.y}`;
     const round = (v) => Math.round(v * 10) / 10;
     const lbl = label ? lines.map((t, k) => `<text class="sysmap-edge-label" x="${round(label.lx)}" y="${round(label.ly + (k - (lines.length - 1) / 2) * 12 + 4)}" text-anchor="middle">${esc(t)}</text>`).join("") : "";
+    // Safari (iPad) has no `context-stroke`, so each line colour has its own arrowhead.
+    const mk = `url(#sm-arrow${e.loop ? "-loop" : e.kind === "demand" || e.kind === "supply" ? "-" + e.kind : ""})`;
     svg += `<g class="${cls}"${attrs}>
       <path class="sysmap-hit" d="${d}"/>
-      <path class="sysmap-line" d="${d}" marker-end="url(#sm-arrow)"${e.both ? ' marker-start="url(#sm-arrow)"' : ""}/>
+      <path class="sysmap-line" d="${d}" marker-end="${mk}"${e.both ? ` marker-start="${mk}"` : ""}/>
       ${label ? `<rect class="sysmap-edge-bg" x="${round(label.r.x)}" y="${round(label.r.y)}" width="${round(label.w)}" height="${round(label.h)}" rx="3"/>${lbl}` : ""}</g>`;
   });
 
