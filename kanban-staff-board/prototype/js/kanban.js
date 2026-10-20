@@ -98,6 +98,7 @@
   const board = { q: "", mine: false, assignees: new Set(), type: "", priority: "", sprint: "", release: "", label: "" };
   const collapsedCols = new Set();
   let filtersOpen = false;
+  const collapsedLanes = new Set();
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -183,7 +184,8 @@
     return note;
   }
 
-  function moveTask(key, status, beforeKey) {
+  // lane: the swimlane a card was dropped in ("none" = Unassigned); undefined on a plain board.
+  function moveTask(key, status, beforeKey, lane) {
     const task = taskByKey(key);
     if (!task) return;
     const list = state.tasks.filter((t) => t.status === status && t !== task).sort((a, b) => a.rank - b.rank);
@@ -191,7 +193,20 @@
     if (idx < 0) idx = list.length;
     const prev = list[idx - 1], next = list[idx];
     task.rank = !prev && !next ? 10 : !prev ? next.rank - 10 : !next ? prev.rank + 10 : (prev.rank + next.rank) / 2;
-    setStatus(task, status);
+    const toAssignee = lane === undefined ? task.assignee : lane === "none" ? "" : lane;
+    const reassigned = (toAssignee || "") !== (task.assignee || "");
+    if (reassigned) {
+      task.activity = task.activity || [];
+      task.activity.push({ at: new Date().toISOString(), who: state.me, text: `reassigned ${firstName(task.assignee)} → ${firstName(toAssignee)}` });
+      task.assignee = toAssignee;
+      task.previousAssignee = "";
+    }
+    const fromStatus = task.status;
+    const note = setStatus(task, status, { silent: reassigned });
+    if (reassigned) {
+      const moved = fromStatus !== status ? ` · moved to ${esc(STATUS_LABEL[status])}` : "";
+      toast(`<b>${esc(task.key)}</b> assigned to ${esc(firstName(toAssignee))}${moved}${note ? `, ${esc(note)}` : ""}`);
+    }
     save();
     renderKanbanBoard();
   }
@@ -362,18 +377,56 @@
     renderKanbanBoard();
   }
 
+  // Swimlanes: one per selected staff member once two or more are picked.
+  function laneIds() {
+    if (board.assignees.size < 2) return null;
+    return [...SEED.users.map((u) => u.id), "none"].filter((id) => board.assignees.has(id));
+  }
+  const colMeta = (list, s) => {
+    const rem = list.reduce((n, t) => n + remaining(t), 0);
+    return `<span class="kb-col-meta">${s.key !== "done" && rem ? `<span class="kb-col-effort" title="Remaining effort">${fmtH(rem)}</span>` : ""}<span class="col-count">${list.length}</span></span>`;
+  };
   function renderKanbanBoard() {
     const el = $("#kb-board");
     if (!el) return;
     const tasks = boardTasks();
     $("#kb-count").textContent = `${tasks.length} task${tasks.length === 1 ? "" : "s"}`;
+    const lanes = laneIds();
+    el.classList.toggle("kb-board-lanes", !!lanes);
+    const sorted = (list, k) => list.filter((t) => t.status === k).sort((a, b) => a.rank - b.rank);
+    if (lanes) {
+      el.innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("") +
+        lanes.map((id) => {
+          const mine = tasks.filter((t) => (t.assignee || "none") === id);
+          const rem = mine.reduce((n, t) => n + remaining(t), 0);
+          const collapsed = collapsedLanes.has(id);
+          return `<div class="kb-lane${collapsed ? " kb-lane-collapsed" : ""}" data-lane="${id}">
+            <button type="button" class="kb-lane-head" aria-expanded="${!collapsed}">
+              <span class="material-symbols-outlined kb-lane-caret" aria-hidden="true">expand_more</span>${avatar(id === "none" ? "" : id)}
+              <span class="kb-lane-name">${esc(id === "none" ? "Unassigned" : firstName(id))}</span>
+              <span class="col-count">${mine.length}</span>${rem ? `<span class="kb-col-effort">${fmtH(rem)} remaining</span>` : ""}
+            </button>
+          </div>` + STATUSES.map((s) => {
+            const list = sorted(mine, s.key);
+            return `<section class="column kb-col kb-lane-cell${list.length ? "" : " kb-cell-empty"}${collapsed ? " kb-cell-hidden" : ""}" data-status="${s.key}" data-lane="${id}" aria-label="${esc((id === "none" ? "Unassigned" : firstName(id)) + " · " + s.label)}">
+              <div class="kb-cell-head kb-col-${s.key}"><span>${esc(s.label)}</span><span class="col-count">${list.length}</span></div>
+              <div class="col-list kb-list">${list.map(cardHTML).join("")}</div>
+            </section>`;
+          }).join("");
+        }).join("");
+      $$(".kb-lane-head", el).forEach((h) => h.addEventListener("click", () => {
+        const id = h.parentElement.dataset.lane;
+        if (collapsedLanes.has(id)) collapsedLanes.delete(id); else collapsedLanes.add(id);
+        renderKanbanBoard();
+      }));
+      return;
+    }
     el.innerHTML = STATUSES.map((s) => {
-      const list = tasks.filter((t) => t.status === s.key).sort((a, b) => a.rank - b.rank);
-      const rem = list.reduce((n, t) => n + remaining(t), 0);
+      const list = sorted(tasks, s.key);
       return `<section class="column kb-col${collapsedCols.has(s.key) ? " column-collapsed" : ""}" data-status="${s.key}" aria-label="${esc(s.label)}">
         <div class="col-head kb-col-head kb-col-${s.key}">
           <span class="kb-col-title">${esc(s.label)}</span>
-          <span class="kb-col-meta">${s.key !== "done" && rem ? `<span class="kb-col-effort" title="Remaining effort">${fmtH(rem)}</span>` : ""}<span class="col-count">${list.length}</span></span>
+          ${colMeta(list, s)}
         </div>
         <div class="col-list kb-list">${list.map(cardHTML).join("") || '<p class="empty-hint kb-empty">No tasks</p>'}</div>
       </section>`;
@@ -480,7 +533,7 @@
     const cards = $$(".kb-card", list).filter((c) => c !== drag.card);
     const before = cards.find((c) => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
     if (before) list.insertBefore(drag.marker, before); else list.appendChild(drag.marker);
-    drag.target = { status: col.dataset.status, before: before ? before.dataset.key : null };
+    drag.target = { status: col.dataset.status, lane: col.dataset.lane, before: before ? before.dataset.key : null };
     autoScroll(x, y);
   }
   function autoScroll(x, y) {
@@ -497,7 +550,7 @@
     d.card.classList.remove("kb-dragging");
     document.body.classList.remove("kb-drag-active");
     $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));
-    if (commit && d.target) moveTask(d.key, d.target.status, d.target.before);
+    if (commit && d.target) moveTask(d.key, d.target.status, d.target.before, d.target.lane);
   }
 
   // ── Task create / edit modal ────────────────────────────────────────────
