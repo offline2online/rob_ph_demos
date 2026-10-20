@@ -7,12 +7,22 @@
   --border: #d9d9d9;
   --primary: #169bc2;
   --primary-tint: rgba(22, 155, 194, .1);
+  --primary-text: #0b7090; /* brand blue darkened to >= 4.5:1 on light surfaces, for text and icons */
   --success: #52c41a;
   --danger: #d4433f;
   --danger-tint: rgba(255, 77, 79, .1);
   --warning: #c98a0a;
   --accent-backlog: #8c9196;
   --violet: #9747ff;
+  /* Theme surfaces: bars, sheets and tooltips take these, never a literal colour, so the light and dark themes (apple.css) cannot drift apart. */
+  --bar-bg: rgba(255, 255, 255, .92);
+  --bar-bg-strong: rgba(255, 255, 255, .97);
+  --sheet-bg: rgba(250, 250, 251, .97);
+  --active-bg: rgba(0, 0, 0, .08);
+  --tip-bg: #ffffff;
+  --tip-bg-muted: #eeeeee;
+  --tip-bg-live: #e8f6fa;
+  --tip-bg-project: #f3ebff;
 }
 * { box-sizing: border-box; }
 body {
@@ -57,7 +67,7 @@ body {
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
   position: sticky; top: 0; z-index: 16;
-  background: rgba(255, 255, 255, .88);
+  background: var(--bar-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   padding: 6px 10px;
@@ -125,7 +135,7 @@ body {
    docks below .topbar instead of underneath it. */
 .faq-editor-page .page-header {
   position: sticky; top: var(--sticky-topbar-h, 0px); z-index: 14;
-  background: rgba(255, 255, 255, .96);
+  background: var(--bar-bg-strong);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   padding: 10px 0; margin: 0 0 16px;
   box-shadow: 0 4px 10px -6px rgba(20, 20, 20, .35);
@@ -189,7 +199,7 @@ body {
   padding: 17px 20px; font-size: 16px; color: var(--text); cursor: pointer; font-family: inherit;
 }
 .nav-drawer-item:hover { background: var(--surface-2); }
-.nav-drawer-item-home { font-weight: 700; color: var(--primary); border-bottom: 1px solid var(--border); }
+.nav-drawer-item-home { font-weight: 700; color: var(--primary-text); border-bottom: 1px solid var(--border); }
 .nav-drawer-section {
   padding: 14px 20px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: .04em; color: var(--text-muted);
@@ -261,7 +271,8 @@ body {
    rendered — an empty Backlog has nothing to groom (groomableCountForProject
    in app.js), so its header keeps the plain "0" count. */
 .col-head:has(.col-groom-inline) .col-count { display: none; }
-.col-groom-inline { display: inline-flex; }
+.col-groom-inline { display: inline-flex; flex: none; }
+.col-groom-inline .notify-claude-btn { flex: none; white-space: nowrap; }
 .col-groom-inline .notify-claude-btn { padding: 3px 10px; font-size: 11px; min-height: 0; }
 .col-groom-inline .notify-claude-icon { font-size: 14px; }
 .deploy-notify-btn-conflict .notify-claude-icon { color: var(--warning); }
@@ -950,7 +961,10 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   .project-header { flex-wrap: wrap; }
   .project-title-wrap { flex-basis: 100%; }
   .project-header-actions { flex-basis: 100%; flex-wrap: wrap; }
-  .new-item-btn { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; }
+  .new-item-btn { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; white-space: normal; }
+  /* The Backlog column's Groom CTA is small on desktop; on a phone it is a full 44px target. */
+  .col-groom-inline .notify-claude-btn { min-height: 44px; padding: 3px 12px; font-size: 12px; }
+  .col-head:has(.col-groom-inline) { padding-top: 3px; padding-bottom: 3px; }
   /* Its own row above New backlog item + ⋮ (order in the DOM already puts
      it first) — three buttons crammed onto one row would otherwise squeeze
      each other into unreadable widths on a phone. Width is the row width
@@ -981,11 +995,11 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      a 390px screen, and the count is the part that tells you there's
      something waiting. Desktop/tablet keep the full labels (more room). */
   .mobile-action-bar .notify-claude-btn {
-    flex-basis: auto; min-height: 38px; padding: 0 10px; font-size: 13px;
+    flex-basis: auto; min-height: 44px; padding: 0 10px; font-size: 13px;
   }
   .mobile-action-bar .notify-claude-label { display: none; }
   .mobile-action-bar .new-item-btn {
-    flex: 0 0 auto; min-height: 38px; padding: 0 14px; font-size: 0;
+    flex: 0 0 auto; min-height: 44px; min-width: 44px; padding: 0 14px; font-size: 0;
   }
   .mobile-action-bar .new-item-btn::after { content: "+"; font-size: 20px; font-weight: 700; }
 }
@@ -1643,10 +1657,10 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .sysmap-key.s-pii::before { background: rgba(211, 47, 47, .08); border-color: #d32f2f; border-style: dashed; }
 .sysmap-boundary { fill: none; stroke: #9aa0a6; stroke-dasharray: 6 5; }
 .sysmap-boundary-label { font-size: 13px; fill: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
-.sysmap-node rect { fill: #fff; stroke: var(--border); stroke-width: 1.5; }
+.sysmap-node rect { fill: var(--tip-bg); stroke: var(--border); stroke-width: 1.5; }
 .sysmap-node.s-live rect { fill: #e8f6fa; stroke: var(--primary); }
 .sysmap-node.s-project rect { fill: #f3ebff; stroke: var(--violet); }
-.sysmap-node.s-concept rect { fill: #fff; stroke: var(--accent-backlog); stroke-dasharray: 5 4; }
+.sysmap-node.s-concept rect { fill: var(--tip-bg); stroke: var(--accent-backlog); stroke-dasharray: 5 4; }
 .sysmap-node.s-external rect { fill: #333; stroke: #333; }
 .sysmap-node.s-external text { fill: #fff; }
 .sysmap-node-name { font-size: 14px; font-weight: 700; fill: var(--text); }
@@ -1665,7 +1679,7 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .sysmap-edge.loop .sysmap-line { stroke: var(--primary); stroke-width: 4; }
 .sysmap-edge.clickable:hover .sysmap-line, .sysmap-edge.clickable:focus .sysmap-line { stroke-width: 4; outline: none; }
 .sysmap-hit { fill: none; stroke: transparent; stroke-width: 14; }
-.sysmap-edge-bg { fill: rgba(255, 255, 255, .92); }
+.sysmap-edge-bg { fill: var(--bar-bg); }
 .sysmap-edge-label { font-size: 11.5px; fill: var(--text); }
 .sysmap-node.dim, .sysmap-edge.dim { opacity: .18; }
 @media (max-width: 640px) { .sysmap-legend { margin-left: 0; } }
@@ -1696,8 +1710,8 @@ body { overflow-x: clip; }
 .nav-drawer-item .material-symbols-outlined, .profile-menu-item .material-symbols-outlined { font-size: 20px; color: var(--text-muted); flex: none; }
 .nav-drawer-item-home { border-bottom: none; font-weight: 500; color: var(--text); }
 .nav-drawer-item:hover, .profile-menu-item:hover { background: rgba(0, 0, 0, .05); }
-.nav-drawer-item[aria-current="page"], .profile-menu-item[aria-current="page"] { background: rgba(0, 0, 0, .08); font-weight: 600; }
-.nav-drawer-item[aria-current="page"] .material-symbols-outlined { color: var(--primary); }
+.nav-drawer-item[aria-current="page"], .profile-menu-item[aria-current="page"] { background: var(--active-bg); font-weight: 600; }
+.nav-drawer-item[aria-current="page"] .material-symbols-outlined { color: var(--primary-text); }
 .nav-drawer-section { padding: 14px 12px 4px; }
 .nav-kbd { margin-left: auto; font: inherit; font-size: 11.5px; color: var(--text-muted); }
 .nav-search-item { margin-top: auto; }
@@ -1712,7 +1726,7 @@ body { overflow-x: clip; }
 .profile-menu {
   position: fixed; top: calc(var(--sticky-topbar-h, 56px) + 4px); right: 16px; width: 264px; max-width: calc(100vw - 32px);
   z-index: 22; padding: 8px; border: 1px solid var(--border); border-radius: 12px;
-  background: rgba(255, 255, 255, .96); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  background: var(--bar-bg-strong); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
 }
 .profile-menu[hidden] { display: none; }
@@ -1741,7 +1755,7 @@ body { overflow-x: clip; }
   .tabbar {
     display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: rgba(255, 255, 255, .92); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background: var(--bar-bg); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
     border-top: 1px solid var(--border);
   }
   .tab {
@@ -1749,13 +1763,13 @@ body { overflow-x: clip; }
     background: transparent; border: none; font: inherit; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: pointer;
   }
   .tab .material-symbols-outlined { font-size: 24px; }
-  .tab.active { color: var(--primary); }
+  .tab.active { color: var(--primary-text); }
   .tab.active .material-symbols-outlined { font-variation-settings: "FILL" 1; }
   /* Build / Publish open as a stacked list sheet above the tab bar. */
   .nav-drawer {
     top: auto; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); width: 100%; max-width: none; max-height: 70vh;
     border-right: none; border-top: 1px solid var(--border); border-radius: 16px 16px 0 0;
-    transform: translateY(100%); box-shadow: 0 -8px 28px rgba(0, 0, 0, .16); background: rgba(250, 250, 251, .97);
+    transform: translateY(100%); box-shadow: 0 -8px 28px rgba(0, 0, 0, .16); background: var(--sheet-bg);
   }
   .nav-drawer.open { transform: translateY(0); }
   .nav-drawer-header, .nav-search-item { display: none; }
@@ -1811,13 +1825,13 @@ body { overflow-x: clip; }
 
 /* System map hover/tap tooltip: the Retail Media Insights `.pg-tip` look
    (Retail-media-insights/css/insights.css), shown instantly by app.js. */
-.sysmap-tip { position: fixed; z-index: 1000; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 16px rgba(0, 0, 0, .12); padding: 10px 12px; font-size: 13px; pointer-events: none; max-height: calc(100vh - 16px); overflow: hidden; overflow-wrap: anywhere; }
+.sysmap-tip { position: fixed; z-index: 1000; background: var(--tip-bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 16px rgba(0, 0, 0, .12); padding: 10px 12px; font-size: 13px; pointer-events: none; max-height: calc(100vh - 16px); overflow: hidden; overflow-wrap: anywhere; }
 .sysmap-tip[hidden] { display: none; }
 .sysmap-tip p { margin: 6px 0 0; }
 .sysmap-tip-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
-.sysmap-tip-pill { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 10px; background: #eee; color: var(--text-muted); }
-.sysmap-tip-pill.s-live { background: #e8f6fa; color: var(--primary); }
-.sysmap-tip-pill.s-project, .sysmap-tip-pill.rel { background: #f3ebff; color: var(--violet); }
+.sysmap-tip-pill { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 10px; background: var(--tip-bg-muted); color: var(--text-muted); }
+.sysmap-tip-pill.s-live { background: var(--tip-bg-live); color: var(--primary); }
+.sysmap-tip-pill.s-project, .sysmap-tip-pill.rel { background: var(--tip-bg-project); color: var(--violet); }
 .sysmap-tip-row { margin-top: 6px; }
 .sysmap-tip-row > span { font-weight: 700; color: var(--text-muted); }
 .sysmap-tip-row.hint { color: var(--text-muted); font-style: italic; }
