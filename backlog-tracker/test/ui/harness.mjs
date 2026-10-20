@@ -52,8 +52,8 @@ export async function startHarness() {
   const stubSource = fs.readFileSync(stubPath, "utf8");
 
   // seed: { docs: { collection: { id: fields } }, user: { email, role } }
-  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme } = {}) {
-    const context = await browser.newContext({ viewport: { width, height }, ...(colorScheme ? { colorScheme } : {}) });
+  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme, contextOptions = {} } = {}) {
+    const context = await browser.newContext({ viewport: { width, height }, ...(colorScheme ? { colorScheme } : {}), ...contextOptions });
     const problems = [];
     const refused = [];
     const addProblem = (p) => problems.push(p);
@@ -72,7 +72,11 @@ export async function startHarness() {
       }
       if (url.hostname === "cdnjs.cloudflare.com" && url.pathname.endsWith("/quill/1.3.7/quill.min.js")) return route.fulfill({ status: 200, contentType: "text/javascript", path: path.join(quillDist, "quill.min.js") });
       if (url.hostname === "cdnjs.cloudflare.com" && url.pathname.endsWith("/quill/1.3.7/quill.snow.min.css")) return route.fulfill({ status: 200, contentType: "text/css", path: path.join(quillDist, "quill.snow.css") });
-      if (url.hostname === "fonts.googleapis.com") return route.fulfill({ status: 200, contentType: "text/css", body: "" });
+      // HARNESS_FONTS_DIR (screenshots only): a folder holding ms.css + ms.woff2, a saved copy of the
+      // Material Symbols stylesheet and font, so icons render as glyphs instead of ligature text.
+      const fontsDir = process.env.HARNESS_FONTS_DIR;
+      if (url.hostname === "fonts.googleapis.com") return fontsDir ? route.fulfill({ status: 200, contentType: "text/css", path: path.join(fontsDir, "ms.css") }) : route.fulfill({ status: 200, contentType: "text/css", body: "" });
+      if (fontsDir && url.hostname === "fonts.gstatic.com") return route.fulfill({ status: 200, contentType: "font/woff2", path: path.join(fontsDir, "ms.woff2") });
       if (url.hostname === "firestore.googleapis.com") { refused.push(url.href); return route.abort("failed"); }
       addProblem(`request to unrouted host: ${url.href}`);
       return route.abort("failed");

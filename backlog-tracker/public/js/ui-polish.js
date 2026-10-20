@@ -4,7 +4,11 @@
 // hidden, linked by aria-describedby), so no text, field or id is removed.
 // Status/progress lines (anything with a live id, or hidden at the time) are
 // left alone — they carry state, not explanation.
-const HELPER = ".field-hint, .faq-tree-hint, .faq-cat-heading-desc, .in-development-hint, .train-locked-hint, .merge-pending-hint, .options-menu-sub, .preview-state-sub";
+// Explanatory copy only. Card and project STATE lines (Waiting for Deploy to
+// Main, Deploying — locked, Sent to Claude — locked, the train-locked notice,
+// Rebuilding test link…) and the ⋮ menu's sub-lines stay visible: on a phone
+// they were the only thing saying why a CTA was missing, and a lone (i) hid it.
+const HELPER = ".field-hint, .faq-tree-hint, .faq-cat-heading-desc";
 const STATUS_ID = /(attach-hint|readonly-hint|preview-count|count)$/;
 let seq = 0;
 

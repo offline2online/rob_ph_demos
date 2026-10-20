@@ -2372,11 +2372,53 @@ every destination already existed.
 - **Breakpoints**: 1024px and up, a persistent sidebar you can collapse (state
   in `localStorage` `bt-nav-collapsed`); 641 to 1023px, the overlay drawer;
   640px and down, a bottom tab bar (Build, Publish, Search, Profile) that opens
-  one section at a time, and the Board shows one pipeline column at a time
-  (swipe, or the column chips above the board).
+  one section at a time. The Board's columns stay stacked top to bottom on a
+  phone (tap a column header to collapse it); a swipe-one-column-at-a-time
+  strip was tried and reverted the same day (see below).
 - **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
   any ticket, concept, project or release. Archived tickets are included once
   the archive has been loaded.
 - Tests: `npm run test:ui` now runs at 1440, 1180, 820 and 390px and includes
-  nav reachability, no sideways scroll, Command-K and the phone column switcher.
+  nav reachability, no sideways scroll and Command-K.
   Pixel snapshot baselines are not part of the suite yet.
+
+### Mobile repair (20 Oct 2026)
+
+The same day's presentation layer (`css/apple.css`) and navigation shell broke
+the board on a phone. Measured before/after at 390px (the build before
+`85f6e01` against the current one, in Chromium with touch emulation):
+
+- **Header CTAs one letter wide.** A blanket `.app * { min-width: 0 }` plus
+  `overflow-wrap: anywhere` on buttons let "+ New backlog item" shrink to one
+  letter per line beside Ready for Dev, and pushed "Approved for Deployment —
+  N selected" off its button. Both removed; buttons wrap with `break-word`.
+- **No pinned project bar.** With the header that tall, it never scrolled
+  away, so the fixed `.mobile-action-bar` (Ready for Dev / Approved for
+  Deployment / Deploy to Main, icon + count) never appeared. It does again.
+- **Columns behind a swipe.** The one-column strip hid Ready for Testing and
+  Approved for Deployment sideways, so a ticked card and its approve CTA were
+  never on screen together. Columns are stacked again, as before.
+- **State lines hidden in (i) tooltips.** `ui-polish.js` turned "Waiting for
+  Deploy to Main", "Deploying — locked", "Sent to Claude — locked", the
+  train-locked notice and "Rebuilding test link…" into a bare (i). It now
+  converts explanatory copy only (`.field-hint`, `.faq-tree-hint`,
+  `.faq-cat-heading-desc`).
+- **Light by default.** The dark palette followed the OS appearance setting.
+  It is now opt-in only (`<html data-theme="dark">`, nothing sets it yet); a
+  phone in dark mode gets the light console.
+- "+ New project" is back in the page header instead of a full-width sticky
+  slab, and the phone topbar runs edge to edge.
+- After main's desktop fixes (four columns beside the sidebar, one-row project
+  title) merged in: on a phone the header CTAs start at the left edge again
+  (desktop right-aligns them), "Approved for Deployment — N selected" grows to
+  the full row before wrapping, and a column label that can't fit beside
+  Groom Backlog / Review Batch on a 360–375px phone wraps to two lines instead
+  of being cut off.
+
+`test/ui/console-click.test.mjs` now ticks a Ready for Testing card far down
+a phone-width board and approves it from the pinned bar, and checks the header
+CTAs keep their labels on one line; `test/ui/mobile-theme.test.mjs` checks the
+page stays light with the OS in dark mode. Both fail on the broken build.
+For screenshots with real icons, `test/ui/harness.mjs` serves a saved copy of
+the Material Symbols stylesheet and font from `$HARNESS_FONTS_DIR` (`ms.css` +
+`ms.woff2`) when that is set; tests never set it.

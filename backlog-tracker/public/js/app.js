@@ -2043,13 +2043,6 @@ function columnCardsHTML(listItems) {
   }).join("");
 }
 
-// Phone-only chips above a project's board (hidden by CSS elsewhere): tap one
-// to bring that pipeline column into view; the board strip scrolls to it.
-function colSwitcherHTML(cardsByCol) {
-  return `<div class="col-switcher" role="group" aria-label="Pipeline column">` + COLUMNS.map((col, i) =>
-    `<button type="button" class="col-switch" data-col="${col.key}" aria-pressed="${i === 0}">${col.label}<span class="col-switch-n">${cardsByCol[col.key].length}</span></button>`
-  ).join("") + `</div>`;
-}
 function projectSectionHTML(project) {
   const collapsed = isProjectCollapsed(project.id);
   const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -2057,7 +2050,7 @@ function projectSectionHTML(project) {
   COLUMNS.forEach((col) => { cardsByCol[col.key] = projectItems.filter((i) => i.status === col.key); });
   const total = COL_KEYS.reduce((sum, k) => sum + cardsByCol[k].length, 0);
 
-  const board = colSwitcherHTML(cardsByCol) + `<div class="board">` + COLUMNS.map((col) => {
+  const board = `<div class="board">` + COLUMNS.map((col) => {
     const listItems = cardsByCol[col.key];
     // "Select all" makes sense in two columns now: Backlog (what "Ready for
     // Dev" acts on) and Ready for Testing (what "Approved for Deployment" acts

@@ -63,7 +63,6 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
   const list = document.getElementById("cmdk-list");
   const mqPersistent = window.matchMedia("(min-width: 1024px)");
   const mqPhone = window.matchMedia("(max-width: 640px)");
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   // ── Sidebar: persistent + collapsible on wide screens ──────────────────
   function applyCollapsed(v) {
@@ -245,28 +244,6 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
       drawer.classList.remove("open"); backdrop.classList.remove("open"); delete drawer.dataset.show; syncActive();
     } else showSection(which);
   });
-
-  // ── Board: one pipeline column at a time on a phone ────────────────────
-  // The switcher chips sit above each project's .board; the board itself is a
-  // scroll-snap strip (see styles.css), so swiping and tapping both work.
-  document.addEventListener("click", (e) => {
-    const chip = e.target.closest(".col-switch");
-    if (!chip) return;
-    const board = chip.closest(".project-body")?.querySelector(".board");
-    const col = board && board.querySelector(`.column[data-col="${chip.dataset.col}"]`);
-    if (!col) return;
-    board.scrollTo({ left: col.offsetLeft - board.offsetLeft, behavior: reduceMotion.matches ? "auto" : "smooth" });
-    chip.parentElement.querySelectorAll(".col-switch").forEach((c) => c.setAttribute("aria-pressed", String(c === chip)));
-  });
-  document.addEventListener("scroll", (e) => {
-    const board = e.target;
-    if (!(board instanceof Element) || !board.classList.contains("board")) return;
-    const sw = board.closest(".project-body")?.querySelector(".col-switcher");
-    if (!sw) return;
-    const idx = Math.round(board.scrollLeft / Math.max(1, board.clientWidth));
-    const key = board.querySelectorAll(".column")[idx]?.dataset.col;
-    sw.querySelectorAll(".col-switch").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.col === key)));
-  }, true);
 
   return { syncActive, openPalette, goHome };
 }
