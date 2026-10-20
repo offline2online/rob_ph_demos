@@ -15,7 +15,7 @@
     { key: "in-progress", label: "In Progress", short: "In Progress" },
     { key: "ready-for-testing", label: "Ready for Testing", short: "Testing" },
     { key: "approved", label: "Approved for Deployment", short: "Approved" },
-    { key: "done", label: "Done", short: "Done" },
+    { key: "done", label: "Completed / Withdrawn", short: "Completed" },
   ];
   const STATUS_LABEL = Object.fromEntries(STATUSES.map((s) => [s.key, s.label]));
   const OUTSTANDING = STATUSES.filter((s) => s.key !== "done").map((s) => s.key);
@@ -1308,7 +1308,7 @@
       </div>
       <div class="kb-filters kb-report-filters">
         ${sel("release", ["Release"], relItems)}
-        ${sel("status", ["Status"], opt("outstanding", "Outstanding (not Done)", f.status) + opt("all", "All, including Done", f.status) + STATUSES.map((s) => opt(s.key, s.label, f.status)).join(""))}
+        ${sel("status", ["Status"], opt("outstanding", "Outstanding (not completed)", f.status) + opt("all", "All, including completed / withdrawn", f.status) + STATUSES.map((s) => opt(s.key, s.label, f.status)).join(""))}
         ${sel("assignee", ["Staff member"], opt("", "Everyone", f.assignee) + SEED.users.map((u) => opt(u.id, u.first, f.assignee)).join("") + opt("none", "Unassigned", f.assignee))}
         ${sel("type", ["Type"], opt("", "All types", f.type) + TYPES.filter((t) => t.key !== "epic").map((t) => opt(t.key, t.label, f.type)).join(""))}
         ${sel("priority", ["Priority"], opt("", "All priorities", f.priority) + PRIORITIES.map((p) => opt(p.key, p.label, f.priority)).join(""))}
@@ -1319,7 +1319,7 @@
       </div>
 
       <div class="kb-kpis">
-        <div class="kb-kpi"><div class="kb-kpi-label">Outstanding tasks${tip("Tasks in the selected release and filters that are not in Done.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} done in release${outstanding.filter((t) => t.flagged).length ? ` · <span class="kb-kpi-flag"><span class="material-symbols-outlined" aria-hidden="true">flag</span>${outstanding.filter((t) => t.flagged).length} flagged</span>` : ""}</div></div>
+        <div class="kb-kpi"><div class="kb-kpi-label">Outstanding tasks${tip("Tasks in the selected release and filters that are not in Completed / Withdrawn.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} done in release${outstanding.filter((t) => t.flagged).length ? ` · <span class="kb-kpi-flag"><span class="material-symbols-outlined" aria-hidden="true">flag</span>${outstanding.filter((t) => t.flagged).length} flagged</span>` : ""}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Remaining effort${tip("Sum of estimate minus time logged on each outstanding task, never below zero. 1d = 8h.")}</div><div class="kb-kpi-value">${fmtH(totalRem)}</div><div class="kb-kpi-sub">${noEstimate ? `${noEstimate} without estimate` : "All estimated"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Time logged${tip("Time logged against the filtered tasks, as a share of their total estimate.")}</div><div class="kb-kpi-value">${fmtH(totalLog)}</div><div class="kb-kpi-sub">${totalEst ? Math.round((totalLog / totalEst) * 100) + "% of " + fmtH(totalEst) : "—"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Release date${tip("Working days (Mon–Fri) from today to the release date.")}</div><div class="kb-kpi-value">${rel ? fmtDate(rel.date) : "—"}</div><div class="kb-kpi-sub">${rel ? (rel.released ? "Released" : `${wd} working days left`) : "Pick a release"}</div></div>
