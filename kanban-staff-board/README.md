@@ -49,7 +49,8 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
   `kanban.js`); the real console would send the transcript to Claude. A new task has no
   Status field, because it always starts in Backlog, and no Comments field.
   The side panel runs priority, type, assignee, reporter, release, estimate, then time logged.
-  When you edit a task, the description has a mic for dictation, and Status sits at the end of
+  When you edit a task, the description and the comment box each have a round mic for dictation
+  (it turns into a red stop button while listening), and Status sits at the end of
   the side panel.
 - **Flags**. Each card has a flag button (shown on hover, always shown once a card is flagged).
   Flagged cards turn amber. There's a **Flagged** filter with a count, a Flag toggle in the

@@ -683,6 +683,7 @@
     if (back && taskByKey(back)) openTask(back);
   }
 
+  const micBtn = (id, aria) => `<button type="button" class="mic-btn kb-mic" id="${id}" title="Dictate" aria-label="${aria}" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">mic</span></button>`;
   function label(k, forId) {
     return `<label class="field-label" for="${forId || "f-" + k}">${esc(FIELD_LABEL[k])}${fieldReq(k) ? '<span class="kb-req" aria-hidden="true">*</span>' : ""}</label>`;
   }
@@ -696,7 +697,7 @@
         <p class="mic-error" id="f-voice-error"></p>
       </div>`;
       case "title": return `<div class="kb-field" data-field="title">${label("title")}<input type="text" id="f-title" class="kb-input kb-title-input" maxlength="200" value="${esc(d.title)}" placeholder="What needs doing?"></div>`;
-      case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap"><textarea id="f-description" class="kb-input" rows="5" placeholder="Context, steps to reproduce, acceptance criteria">${esc(d.description)}</textarea>${draftIsNew ? "" : '<button type="button" class="mic-btn kb-desc-mic" id="f-desc-mic" title="Dictate" aria-label="Dictate into the description"><span class="material-symbols-outlined" aria-hidden="true">mic</span></button>'}</div>
+      case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap"><textarea id="f-description" class="kb-input" rows="5" placeholder="Context, steps to reproduce, acceptance criteria">${esc(d.description)}</textarea>${draftIsNew ? "" : micBtn("f-desc-mic", "Dictate into the description")}</div>
         ${draftIsNew ? '<button type="button" class="kb-agent-link" id="f-agent-fill"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span>Fill in the ticket from this description</span></button>' : '<p class="mic-error" id="f-desc-mic-error"></p>'}</div>`;
       case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.map((s) => opt(s.key, s.label, d.status)).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
       case "assignee": return `<div class="kb-field" data-field="assignee">${label("assignee")}<select id="f-assignee" class="kb-input">${opt("", "Unassigned", d.assignee)}${SEED.users.map((u) => opt(u.id, u.first, d.assignee)).join("")}</select></div>`;
@@ -740,7 +741,8 @@
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
       case "comments": return `<div class="kb-field" data-field="comments">${label("comments", "f-comment")}<ul class="kb-comments" id="f-comments">${commentsHTML()}</ul>
-        <textarea id="f-comment" class="kb-input" rows="2" placeholder="Add a comment"></textarea>
+        <div class="desc-wrap"><textarea id="f-comment" class="kb-input" rows="2" placeholder="Add a comment, or tap the mic and talk"></textarea>${micBtn("f-comment-mic", "Dictate a comment")}</div>
+        <p class="mic-error" id="f-comment-mic-error"></p>
         <div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" id="f-comment-add">Add comment</button></div></div>`;
     }
     return "";
@@ -947,16 +949,36 @@
       if (!t.trim()) { $("#f-description").focus(); return; }
       runAgent(t, () => {});
     });
-    const mic = $("#f-desc-mic");
-    if (mic) mic.addEventListener("click", () => {
-      const ta = $("#f-description"), err = $("#f-desc-mic-error");
-      if (rec) { stopRecorder(false); return; }
-      err.classList.remove("on");
+    bindMic("f-desc-mic", "f-description", "f-desc-mic-error");
+    bindMic("f-comment-mic", "f-comment", "f-comment-mic-error");
+  }
+
+  // A round mic inside a text box: dictates into that box, and shows a stop
+  // icon while it is listening. One recording at a time across the modal.
+  let activeMic = null;
+  function bindMic(btnId, taId, errId) {
+    const mic = $("#" + btnId);
+    if (!mic) return;
+    const show = (on) => {
+      mic.classList.toggle("listening", on);
+      mic.setAttribute("aria-pressed", String(on));
+      mic.title = on ? "Stop recording" : "Dictate";
+      mic.firstElementChild.textContent = on ? "stop" : "mic";
+    };
+    mic.addEventListener("click", () => {
+      const ta = $("#" + taId), err = $("#" + errId);
+      if (rec) {
+        const wasMe = activeMic === mic;
+        stopRecorder(false);
+        if (wasMe) return;
+      }
+      if (err) err.classList.remove("on");
       const base = ta.value.trim();
+      activeMic = mic;
       startRecorder({
-        onLive: (t) => { ta.value = (base ? base + " " : "") + t; },
-        onState: (st) => mic.classList.toggle("listening", st === "recording"),
-        onError: (m) => { err.textContent = m; err.classList.add("on"); mic.classList.remove("listening"); },
+        onLive: (t) => { const said = base ? t : t.charAt(0).toUpperCase() + t.slice(1); ta.value = (base ? base + " " : "") + said; ta.dispatchEvent(new Event("input")); },
+        onState: (st) => { show(st === "recording"); if (st !== "recording" && activeMic === mic) activeMic = null; },
+        onError: (m) => { if (err) { err.textContent = m; err.classList.add("on"); } show(false); },
         onDone: () => {},
       });
     });

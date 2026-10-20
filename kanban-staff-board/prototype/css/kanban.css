@@ -320,11 +320,13 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 @keyframes kb-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .kb-agent-filled .kb-input, .kb-agent-filled .type-toggle { box-shadow: 0 0 0 1.5px rgba(151, 71, 255, .55); }
 .kb-agent-filled .field-label::after { content: "Agent"; margin-left: 6px; font-size: 9.5px; letter-spacing: .04em; padding: 1px 6px; border-radius: 9999px; color: #fff; background: linear-gradient(135deg, var(--primary), var(--violet)); }
-.kb-desc-mic { bottom: 9px; right: 9px; }
-.kb-desc-mic .material-symbols-outlined { font-size: 18px; }
-.kb-desc-mic:hover { color: #fff; }
-.kb-desc-mic.listening .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
-#f-description { padding-right: 46px; }
+/* Round mic inside a text box; turns into a red stop button while listening. */
+.mic-btn.kb-mic { width: 36px; height: 36px; min-width: 36px; min-height: 36px; padding: 0; border-radius: 50%; bottom: 8px; right: 8px; flex: none; aspect-ratio: 1; }
+.kb-mic .material-symbols-outlined { font-size: 20px; line-height: 1; }
+.kb-mic:hover { color: #fff; }
+.kb-mic.listening { background: var(--danger); color: #fff; }
+.kb-mic.listening .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+#f-description, #f-comment { padding-right: 50px; }
 .mic-error.on { display: block; }
 
 /* Settings */
