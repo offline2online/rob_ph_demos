@@ -26,7 +26,9 @@ type Draft = { name: string; description: string; dealType: BuyersListDealType; 
 /* The full IAB Content Taxonomy 1.0, tier 1 then its subcategories. */
 const IAB_CATEGORY_OPTIONS = IAB_OPTIONS_SORTED
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
-const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'private_auction', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
+/* The AWS POC supports programmatic guaranteed (plus open auction) only: the other deal types stay visible, greyed out, for demos. */
+const COMING_SOON = 'Coming in a future release. The POC supports programmatic guaranteed deals only.'
+const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'guaranteed', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description, dealType: l.dealType,
   invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
@@ -55,7 +57,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
   const [errors, setErrors] = useState<Record<string, string>>({})
   useEffect(() => {
     if (!open) return
-    setDraft(editing ? draftOf(editing) : blankDraft())
+    setDraft(editing ? draftOf(editing) : { ...blankDraft(), committedPlays: defaultPlaysRef.current })
     setErrors({})
   }, [open, editing])
 
@@ -236,8 +238,8 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         <Select
           id="buyersListDealType" className="w-full" aria-label="Deal type" value={draft.dealType} onChange={setDealType}
           options={[
-            { value: 'private_auction', label: 'Private auction' },
-            { value: 'preferred', label: 'Preferred deal' },
+            { value: 'private_auction', label: <WithTip tip={COMING_SOON}>Private auction</WithTip>, disabled: true },
+            { value: 'preferred', label: <WithTip tip={COMING_SOON}>Preferred deal</WithTip>, disabled: true },
             { value: 'guaranteed', label: 'Programmatic guaranteed' },
           ]}
         />

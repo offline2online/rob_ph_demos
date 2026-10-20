@@ -921,7 +921,12 @@ describe('Advertisers / Inventory', () => {
     expect(id).toHaveAttribute('readonly')
     expect(within(dialog).queryByTestId('deal-type-new-deal-note')).not.toBeInTheDocument()
     fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Deal type' }))
-    fireEvent.click(await screen.findByText('Preferred deal', { selector: '.ant-select-item-option-content' }))
+    /* POC: Private auction and Preferred deal stay visible but cannot be picked. */
+    const preferred = (await screen.findByText('Preferred deal')).closest('.ant-select-item-option') as HTMLElement
+    expect(preferred).toHaveClass('ant-select-item-option-disabled')
+    fireEvent.click(preferred)
+    expect(within(dialog).queryByTestId('deal-type-new-deal-note')).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByText('Programmatic guaranteed', { selector: '.ant-select-item-option-content' }))
     expect(await within(dialog).findByTestId('deal-type-new-deal-note')).toHaveTextContent('new Deal ID')
   })
 
@@ -1287,11 +1292,10 @@ describe('Advertisers / Inventory', () => {
     else expect(within(dialog).queryByRole('combobox', { name: 'Targeting criteria' })).toBeNull()
     expect(within(dialog).queryByText(/PH brand entity|identifier type/i)).toBeNull()
     expect(within(dialog).queryByRole('button', { name: /Add buyer/ })).toBeNull()
-    /* The deal type drives the fields: a new list is a private auction: no auction window any more (16 Oct 2026) and no committed plays. */
+    /* The deal type drives the fields: a new list is programmatic guaranteed (the POC's only selectable type): committed plays, no auction window. */
     expect(within(dialog).getByRole('combobox', { name: 'Deal type' })).toBeInTheDocument()
-    expect(within(dialog).getByTestId('deal-type-note')).toHaveTextContent('no volume is committed')
+    expect(within(dialog).getByTestId('deal-type-note')).toHaveTextContent('there is no bidding')
     expect(within(dialog).queryByLabelText('Auction closes')).toBeNull()
-    expect(within(dialog).queryByLabelText('Guaranteed impressions')).toBeNull()
   }, slow(30000))
 
   /* The modal used to show field errors only when the API sent `details`
