@@ -118,6 +118,12 @@ const scenarios = [
         for (const col of cols) assert.ok(col.w >= c.width - 80 && col.x >= 0 && col.x + col.w <= c.width, `column ${col.key} should fill the screen width at ${c.width}px (x ${col.x}, width ${col.w})`);
         const { sw, cw } = await c.page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
         assert.ok(sw <= cw, `page scrolls sideways at ${c.width}px (scrollWidth ${sw} > clientWidth ${cw})`);
+      } else if (c.width < 1024) {
+        // Two wide: columns 1-2 on the top row, 3-4 beneath; the board scrolls up and down, never sideways.
+        assert.ok(cols[1].x > cols[0].x && cols[3].x > cols[2].x, `columns pair up left to right at ${c.width}px`);
+        assert.ok(cols[2].y > cols[0].y && cols[3].y > cols[1].y, `columns 3-4 wrap beneath 1-2 at ${c.width}px`);
+        const side = await c.page.evaluate(() => { const b = document.querySelector(".board"); return b.scrollWidth - b.clientWidth; });
+        assert.ok(side <= 1, `board scrolls sideways at ${c.width}px by ${side}px`);
       } else {
         for (let i = 1; i < cols.length; i++) assert.ok(cols[i].x > cols[i - 1].x, `column ${i + 1} should sit right of column ${i} at ${c.width}px`);
       }
