@@ -8209,7 +8209,42 @@ async function consoleApiHeaders() {
   return { "X-Firebase-ID-Token": await user.getIdToken(), "Content-Type": "application/json" };
 }
 
+// Relative time ("2 hours ago") for Admin > Users; the exact time goes in a tooltip.
+function tsToMs(v) { return v && typeof v.toMillis === "function" ? v.toMillis() : 0; }
+function relativeAgo(ms) {
+  if (!ms) return "Never";
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  const units = [["year", 31536000], ["month", 2592000], ["day", 86400], ["hour", 3600], ["minute", 60]];
+  for (const [name, secs] of units) {
+    if (s >= secs) { const n = Math.floor(s / secs); return `${n} ${name}${n === 1 ? "" : "s"} ago`; }
+  }
+  return "Just now";
+}
+const TEAM_INACTIVE_MS = 30 * 24 * 60 * 60 * 1000;
+function teamLastActivityMs(m) { return Math.max(tsToMs(m.lastLoginAt), tsToMs(m.lastMcpAt)); }
+let teamRowsCache = [];
+let teamSort = "email";
+function teamStampHTML(label, ms) {
+  const exact = ms ? new Date(ms).toLocaleString() : "No activity";
+  return `<span class="team-stamp" title="${escapeHTML(`${label}: ${exact}`)}"><span class="team-stamp-label">${label}</span> ${escapeHTML(relativeAgo(ms))}</span>`;
+}
+function sortedTeamRows(rows) {
+  const out = rows.slice();
+  if (teamSort === "activity") out.sort((a, b) => teamLastActivityMs(b) - teamLastActivityMs(a));
+  else out.sort((a, b) => String(a.email || a.id).localeCompare(String(b.email || b.id)));
+  return out;
+}
+function renderTeamList() {
+  const list = document.getElementById("team-list");
+  if (!list) return;
+  list.innerHTML = teamRowsCache.length
+    ? sortedTeamRows(teamRowsCache).map(teamRowHTML).join("")
+    : '<p class="interface-row-empty">Nobody added yet. The two owner accounts always have access whether or not they are listed here.</p>';
+}
+
 function teamRowHTML(member) {
+  const lastActive = teamLastActivityMs(member);
+  const active = lastActive && Date.now() - lastActive < TEAM_INACTIVE_MS;
   const email = member.email || member.id;
   const role = CONSOLE_ROLE_LABELS[member.role] ? member.role : "editor";
   const agentOn = member.mcpEnabled !== false && member.disabled !== true;
@@ -8219,6 +8254,8 @@ function teamRowHTML(member) {
       <div class="team-row-email">${escapeHTML(email)}${isSelf ? " (you)" : ""}</div>
       <div class="team-row-name">${escapeHTML(member.displayName || "")}${member.disabled === true ? " · disabled" : ""}</div>
     </div>
+    <span class="team-stamps">${teamStampHTML("Console", tsToMs(member.lastLoginAt))}${teamStampHTML("MCP", tsToMs(member.lastMcpAt))}</span>
+    <span class="team-badge ${active ? "team-badge-on" : "team-badge-off"}" title="${active ? "Active in the last 30 days" : "No activity in the last 30 days"}">${active ? "Active" : "Inactive"}</span>
     <select data-team-role aria-label="Role for ${escapeHTML(email)}">
       ${Object.entries(CONSOLE_ROLE_LABELS).map(([v, l]) => `<option value="${v}"${v === role ? " selected" : ""}>${l}</option>`).join("")}
     </select>
@@ -8238,15 +8275,30 @@ async function loadTeamMembers() {
     const snap = await getDocs(collection(db, "consoleUsers"));
     const rows = [];
     snap.forEach((d) => rows.push(Object.assign({ id: d.id }, d.data())));
-    rows.sort((a, b) => String(a.email || a.id).localeCompare(String(b.email || b.id)));
-    list.innerHTML = rows.length
-      ? rows.map(teamRowHTML).join("")
-      : '<p class="interface-row-empty">Nobody added yet. The two owner accounts always have access whether or not they are listed here.</p>';
+    teamRowsCache = rows;
+    renderTeamList();
   } catch (err) {
     console.error("Failed to load console users:", err);
     list.innerHTML = '<p class="interface-row-empty">Couldn\'t load the team list.</p>';
   }
 }
+
+document.getElementById("team-sort")?.addEventListener("change", (e) => {
+  teamSort = e.target.value === "activity" ? "activity" : "email";
+  renderTeamList();
+});
+
+// Stamp the signed-in member's own row once per browser session so Admin >
+// Users can show their last console login. Failure (no row, offline) is fine.
+onAuthStateChanged(auth, (user) => {
+  if (!user || !user.email) return;
+  const email = user.email.toLowerCase();
+  const key = `bt-login-stamped:${email}`;
+  try { if (sessionStorage.getItem(key)) return; } catch { /* storage blocked */ }
+  updateDoc(doc(db, "consoleUsers", email), { lastLoginAt: serverTimestamp() })
+    .then(() => { try { sessionStorage.setItem(key, "1"); } catch { /* ignore */ } })
+    .catch(() => { /* not a listed member, or rules said no */ });
+});
 
 async function saveTeamMember(email, fields) {
   await setDoc(doc(db, "consoleUsers", email), Object.assign({ email }, fields, {
