@@ -16,7 +16,7 @@ automated case disagree, fix whichever is stale.
 Walk the demo in this order. The full definition is in REQUIREMENTS.md → "AWS POC demand paths".
 
 1. **Open auction** (section C): no targeting; Monster, PepsiCo and Mars Wrigley bid through the DSPs on the same slot 35 seconds before play; the highest bid wins and plays the creative in its bid response.
-2. **Programmatic guaranteed**: Coca-Cola books a slot for 24 hours at a fixed price. Its pre-approved creatives (Coca-Cola, Coke Zero, Sprite, Fanta, Schweppes, Namthip water) are managed in PH with targeting and scheduling rules (hot/cold store segments) that PH Core triggers on the PWA player. Not a DSP bid response. Its automated cases arrive with ticket sGXWYJjMiQAlzXrhwQ8y.
+2. **Programmatic guaranteed**: Coca-Cola books a slot for 24 hours at a fixed price. Its pre-approved creatives (Coca-Cola, Coke Zero, Sprite, Fanta, Schweppes, Namthip water) are managed in PH with targeting and scheduling rules (hot/cold store segments) that PH Core triggers on the PWA player. Not a DSP bid response. Walk it in section E; its automated case is Run 7 D4.6.
 3. **Advertiser direct** (section B): Red Bull, managed entirely within PH, no DSP; several prioritised campaigns on one slot.
 
 Private auction and preferred deal are greyed out and not demoed; targeting on deals and open auction is out of scope.
@@ -124,10 +124,22 @@ Advertisers / Inventory → Available Inventory.
    amount and never clears below the resolved slot floor. *(`reserve-booking.test.ts`,
    `e2e/run5-reserved.test.ts`)*
 
+## E. Programmatic guaranteed — one slot for 24 hours (demo path 2)
+
+Automated twin: `cd dsp-integration/apps/api && npx vitest run test/e2e/run7-deal-types.test.ts -t D4` (D4.1–D4.6).
+
+1. Create a guaranteed deal (buyers list, deal type *Programmatic guaranteed*) for one slot and share it with the DSP (the Coca-Cola advertiser). **Expect** committed plays captured and no auction window. *(D4.1)*
+2. Book the slot for one day at the agreed fixed CPM. **Expect** the booking window is exactly 24 hours, the price is the fixed CPM, and the guaranteed impressions are floor(forecast × (1 − buffer%)); the DSP receives the same figure in its own deal shape. *(D4.2, D4.4, D4.6)*
+3. Try to sell that day again, by bid or a second reservation. **Expect** it refused (409). *(D4.5)*
+4. After the day plays, run billing. **Expect** one bill for the full day at the fixed CPM on realised views, nothing made good if under-delivered, and none the next time. *(D4.2, D4.6)*
+5. Back in section C, **expect** open auction still clears on the other slots. *(Run 7 D1, Run 8 S1–S3)*
+
+**PH Core, not tested here:** the pre-approved creative actually playing for the 24 hours and its hot/cold store-segment targeting. Check on a real screen with the playback rehearsal checklist.
+
 ## Acceptance for the demo
 
 - [ ] `CI=1 npm run e2e:quick` green (includes Run 8) and the admin suite green.
-- [ ] Sections A, B, C and D each pass once on the hosted prototype after a reset.
+- [ ] Sections A, B, C, D and E each pass once on the hosted prototype after a reset.
 - [ ] `prototype/build-info.json` names the commit under test.
 - [ ] Not covered by this build, so not demonstrable: a DSP bidding *on a
   creative ID* in the exchange, and assigning an ID from the campaign detail
