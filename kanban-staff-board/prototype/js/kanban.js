@@ -14,7 +14,7 @@
     { key: "ready-for-dev", label: "Ready for Dev", short: "Ready for Dev" },
     { key: "in-progress", label: "In Progress", short: "In Progress" },
     { key: "ready-for-testing", label: "Ready for Testing", short: "Testing" },
-    { key: "approved", label: "Approved / Ready for Deployment", short: "Approved" },
+    { key: "approved", label: "Approved for Deployment", short: "Approved" },
     { key: "done", label: "Done", short: "Done" },
   ];
   const STATUS_LABEL = Object.fromEntries(STATUSES.map((s) => [s.key, s.label]));

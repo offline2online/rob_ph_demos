@@ -108,7 +108,7 @@ window.KB_SEED = (function () {
     t("PH-17", "task", "Help Centre: redirect old Freshdesk article URLs", "ready-for-testing", "rob", "rob", "4.12", 5, 4, "medium", "s41", "", ["help-centre"], "PH-3", { previousAssignee: "thao" }),
     t("PH-18", "task", "Advertisers list: sort by spend this month", "ready-for-testing", "rob", "duc", "4.12", 4, 5, "low", "s41", "", ["dsp", "hq-admin"], "PH-2", { previousAssignee: "duc" }),
 
-    // ── Approved / Ready for Deployment
+    // ── Approved for Deployment
     t("PH-12", "task", "Local offer pill links to the per-product pricing page", "approved", "huy", "rob", "4.12", 4, 3.5, "medium", "s40", "", ["menu-boards", "hq-admin"], "PH-1"),
     t("PH-13", "task", "Upgrade Partner API to Fastify 5", "approved", "duc", "duc", "4.12", 6, 6, "low", "s40", "", ["dsp", "api"], "PH-2"),
     t("PH-14", "bug", "Visitor profile drawer clips long attribute names", "approved", "minh", "thao", "4.12", 2, 1.5, "low", "s41", "", ["visitor-profile", "accessibility"], "PH-4"),

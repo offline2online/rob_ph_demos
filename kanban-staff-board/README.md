@@ -28,7 +28,7 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
 ## Screens
 
 - **Kanban** (`#kanban`). Columns: Backlog → Ready for Dev → In Progress →
-  Ready for Testing → Approved / Ready for Deployment → Done. You can drag cards
+  Ready for Testing → Approved for Deployment → Done. You can drag cards
   with a mouse, or press and hold them on touch. Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
   Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The filter row
