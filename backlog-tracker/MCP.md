@@ -48,6 +48,45 @@ disconnect any of them.
 **If you see "isn't on the PH Agent Console user list"** you have not been
 added yet — ask an admin (Settings → Team & agent access).
 
+### Stop the approval prompts: set the tools to *Always allow*
+
+Whether a tool needs approving is decided by the **Claude client**, not by
+this server — the server can describe its tools but cannot force a client's
+setting. Do this once, straight after connecting, so voice and text
+conversations never stop to ask:
+
+1. In Claude (claude.ai or Desktop) open **Settings → Connectors**, click
+   the **PH Agent Console** connector, and open its **tool permissions**.
+2. Set the connector's tools to **Always allow** (there is a per-tool choice
+   and, on most clients, a group setting for the read-only tools and for the
+   write tools). Set both groups: ticket writes (`create_backlog_item`,
+   `add_item_comment`, the documentation tools) are what prompt in voice mode
+   otherwise.
+3. In Claude Code, add `mcp__ph-console` (the name you gave in
+   `claude mcp add`) to `permissions.allow` in `.claude/settings.json`, or
+   choose "always allow" the first time it asks.
+
+What the server does on its side so clients can be less cautious:
+
+- **Every tool carries MCP annotations** (`tools/list`): `readOnlyHint: true`
+  on read tools (`whoami`, `list_*`, `get_*`, `search_*`), `false` on writes;
+  `destructiveHint: true` only on the `delete_*` tools; `idempotentHint` on
+  reads and `set_*`; `openWorldHint: false` everywhere. Clients that
+  auto-approve read-only tools do so from these hints. The destructive ones
+  are the only tools a client should keep asking about.
+- **No repeat sign-in between conversations.** The access token lasts 1 hour
+  but the client refreshes it silently with a refresh token; each refresh
+  issues a new 60-day refresh token, so a connector in regular use stays
+  signed in indefinitely. A person is only asked to sign in again after 60
+  days unused, when an admin removes them or switches their agent off, or
+  when a refresh token is replayed (a security revoke).
+- **Connector-wide or organisation-wide default:** as far as we could
+  establish, Claude has no setting that makes *Always allow* the default for a
+  newly added custom connector — it is a per-connector choice each person makes
+  after connecting (step 2). We could not verify this from the sandbox
+  (no access to Claude's admin settings); if an organisation owner finds such a
+  default under Organization settings → Connectors, record it here.
+
 ---
 
 ## For an admin: add someone
