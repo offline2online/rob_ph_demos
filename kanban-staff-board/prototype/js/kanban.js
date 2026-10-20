@@ -161,7 +161,13 @@
     return n;
   }
   // A person's avatar: their uploaded photo, else their initial on their colour.
-  const photoOf = (id) => (state.photos || {})[id] || "";
+  // An uploaded photo wins; "" means the person removed theirs; otherwise the
+  // photo the team member already has on file (data.js), if any.
+  const photoOf = (id) => {
+    const own = state.photos || {};
+    if (Object.prototype.hasOwnProperty.call(own, id)) return own[id];
+    return (user(id) || {}).photo || "";
+  };
   function avatar(id, size = "") {
     const u = user(id);
     if (!u) return `<span class="kb-avatar kb-avatar-none ${size}" title="Unassigned"><span class="material-symbols-outlined" aria-hidden="true">person</span></span>`;
@@ -202,8 +208,9 @@
     } catch (e) { toast(esc(e.message)); }
   }
   function removePhoto(id) {
-    if (!state.photos || !state.photos[id]) return;
-    delete state.photos[id];
+    if (!photoOf(id)) return;
+    state.photos = Object.assign({}, state.photos);
+    if ((user(id) || {}).photo) state.photos[id] = ""; else delete state.photos[id];
     save(); renderProfile(); render();
     toast(id === state.me ? "Profile photo removed" : `<b>${esc(firstName(id))}</b>'s photo removed`);
   }
