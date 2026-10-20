@@ -512,6 +512,28 @@ const scenarios = [
       await c.visible(".blocked-answer-btn", "Answer is shown");
     },
   },
+  {
+    name: "Blocked: the chip keeps its status on one line and its buttons inside the card at every width",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; s.docs.backlogItems.b1.desc = "## Outcome\nx"; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.visible(".blocked-answer-btn", "Answer is shown");
+      for (const w of [1440, 1280, 1180, 1024, 820, 768, 390]) {
+        await c.page.setViewportSize({ width: w, height: 900 });
+        await c.page.waitForTimeout(100);
+        const m = await c.page.evaluate(() => {
+          const card = document.querySelector(".card").getBoundingClientRect();
+          const status = document.querySelector(".blocked-flag-status");
+          const lh = parseFloat(getComputedStyle(status).lineHeight) || 16;
+          const boxes = [".blocked-answer-btn", ".blocked-resolve-btn:not(.blocked-answer-btn)", ".blocked-clear-btn"].map((q) => { const r = document.querySelector(q).getBoundingClientRect(); return { q, h: r.height, in: r.left >= card.left - 0.5 && r.right <= card.right + 0.5 }; });
+          return { statusH: status.getBoundingClientRect().height, lh, boxes };
+        });
+        assert.ok(m.statusH < m.lh * 1.9, `${w}px: status text wrapped (${m.statusH}px tall)`);
+        for (const b of m.boxes) { assert.ok(b.h >= 32, `${w}px: ${b.q} is ${b.h}px tall`); assert.ok(b.in, `${w}px: ${b.q} is outside the card`); }
+      }
+      c.at("layout holds at every width");
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

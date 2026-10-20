@@ -1630,6 +1630,13 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .waiting-answer-chip { cursor: default; padding-right: 8px; }
 .needs-decision-chip { margin-right: 6px; padding-right: 8px; }
 .blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; }
+/* Card chip: the status text stays on one line; Answer / Resolve / × wrap onto
+   a row under it when the card is narrow, each at least 32px tall. */
+.card .blocked-flag:has(.blocked-flag-actions) { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 6px; max-width: 100%; box-sizing: border-box; border-radius: 16px; padding: 2px 4px 2px 6px; cursor: default; }
+.blocked-flag-status { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.blocked-flag-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; max-width: 100%; }
+.blocked-flag-actions .blocked-resolve-btn { margin-left: 0; min-height: 32px; box-sizing: border-box; white-space: nowrap; }
+.blocked-flag-actions .blocked-clear-btn { min-width: 32px; min-height: 32px; font-size: 18px; }
 
 /* Run E2E: per-project status chip (green / red / grey) and mode menu. */
 .e2e-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 500; padding: 2px 9px 2px 6px; border-radius: 9999px; border: 1px solid transparent; cursor: help; text-decoration: none; white-space: nowrap; }
