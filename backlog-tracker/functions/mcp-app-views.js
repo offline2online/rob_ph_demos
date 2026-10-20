@@ -86,7 +86,7 @@ const BOARD_VIEWS = {
     headline: "Ready for Testing",
     countNoun: "waiting on review",
     emptyText: "Nothing in Ready for Testing right now.",
-    footnote: "Read-only — approve or reject on the board itself.",
+    footnote: "Read-only — approve or reject on the board itself (or approve_for_deployment, admin only).",
   },
   "approved-for-deployment": {
     kind: "approved-for-deployment",
