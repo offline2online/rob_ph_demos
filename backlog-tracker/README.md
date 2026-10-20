@@ -2428,7 +2428,7 @@ the Material Symbols stylesheet and font from `$HARNESS_FONTS_DIR` (`ms.css` +
 On 20 Oct 2026 every ticket on both trains (Backlog Tracker & FAQs, Display
 Types) was built twice, the two sessions' competing fixes broke each other's
 tests, a send-back could not be reverted, and both projects' Ready for Testing
-hand-offs sat "still building" with nothing building. Four fixes:
+hand-offs sat "still building" with nothing building. Five fixes:
 
 - **No second session for a ticket already being built.** The "Ready for Dev —
   N new" button sent no ticket ids, so the server built the whole column again,
@@ -2457,7 +2457,17 @@ hand-offs sat "still building" with nothing building. Four fixes:
   the branch ("This reverts commit <sha>") now counts as reverted
   (`revertCommitFor`).
 
+- **A merge that breaks the code is a conflict, not a commit.** Two tickets
+  each appended a scenario before the same `];` in `console-click.test.mjs`;
+  `git merge-file` merged them "cleanly" without a `},`, every train test
+  failed, and the second ticket was sent back for a merge it never wrote.
+  `rebasePatchFilesOnto` now parses a merged `.js`/`.mjs`/`.cjs`/`.json` file
+  (`parsesAs`), and when both sides parse but the merge doesn't
+  (`mergeBrokeSyntax`) it is reported as a conflict, so the ticket is rebuilt
+  on the current file.
+
 Tests: `notify-fanout.test.js` (a second click skips the in-flight ticket),
 `notify-routine.test.js` (`inFlightItemIds`, `unbuiltReportAction`),
 `ready-for-testing-trigger.test.js` (the hold), `train-revert-by-hand.test.js`
-(a real git repo) and the console-click scenario "Ready for Dev — N new".
+(a real git repo), `parallel-builds.test.js` (`parsesAs`, `mergeBrokeSyntax`)
+and the console-click scenario "Ready for Dev — N new".

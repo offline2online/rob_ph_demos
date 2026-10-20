@@ -14,6 +14,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 const {
   rebasePatchFilesOnto, patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
+  parsesAs, mergeBrokeSyntax,
 } = require("../scripts/run-backlog-automation.js");
 
 let passed = 0; const failures = [];
@@ -64,6 +65,26 @@ test("the same lines changed by both is a conflict, not a silent overwrite", () 
   assert.deepStrictEqual(r.conflicts, ["REQUIREMENTS.md"]);
 });
 
+// 20 Oct 2026: a clean textual merge of two tickets' scenarios into
+// console-click.test.mjs dropped a `},` before `];`; every train test failed
+// and the ticket was blamed. A merge that parses on neither side's terms is a conflict.
+test("parsesAs: real parse of JS (script and module), JSON; other types unchecked", () => {
+  assert.strictEqual(parsesAs("a.mjs", "const s = [\n  { a: 1 },\n];\nexport default s;\n"), true);
+  assert.strictEqual(parsesAs("a.mjs", "const s = [\n  {\n    a: 1,\n];\n"), false);
+  assert.strictEqual(parsesAs("a.js", "import x from './x.js';\nexport const y = x;\n"), true);
+  assert.strictEqual(parsesAs("a.js", "module.exports = { a: 1 };\n"), true);
+  assert.strictEqual(parsesAs("a.json", '{"a":1}'), true);
+  assert.strictEqual(parsesAs("a.json", '{"a":1,}'), false);
+  assert.strictEqual(parsesAs("a.css", "nonsense {"), null);
+});
+test("mergeBrokeSyntax: only when both sides parse and the merge does not", () => {
+  const good = "const s = [\n  { a: 1 },\n];\n";
+  const broken = "const s = [\n  {\n    a: 1,\n];\n";
+  assert.strictEqual(mergeBrokeSyntax("x.mjs", good, good, broken), true);
+  assert.strictEqual(mergeBrokeSyntax("x.mjs", good, good, good), false);
+  assert.strictEqual(mergeBrokeSyntax("x.mjs", broken, good, broken), false, "already broken on the branch: not the merge's fault");
+  assert.strictEqual(mergeBrokeSyntax("x.css", "a{}", "b{}", "{"), false, "unchecked types never block");
+});
 test("patchBaseFor: a resolvable patchBaseSha wins; otherwise the pre-sync tip; otherwise none", () => {
   const sha = "a".repeat(40);
   assert.strictEqual(patchBaseFor({ patchBaseSha: sha }, { kind: "current" }, { resolvable: () => true }), sha);
