@@ -960,10 +960,12 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   .project { padding: 14px 12px 16px; }
   .project-header { flex-wrap: wrap; }
   .project-title-wrap { flex-basis: 100%; }
+  /* A long name wraps inside its own box so the rename pencil stays beside it instead of dropping to a line of its own. */
+  .project-name { max-width: calc(100% - 96px); }
   .project-header-actions { flex-basis: 100%; flex-wrap: wrap; }
   .new-item-btn { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; white-space: normal; }
   /* The Backlog column's Groom CTA is small on desktop; on a phone it is a full 44px target. */
-  .col-groom-inline .notify-claude-btn { min-height: 44px; padding: 3px 12px; font-size: 12px; }
+  .col-groom-inline .notify-claude-btn { min-height: 44px; padding: 3px 10px; font-size: 11px; }
   .col-head:has(.col-groom-inline) { padding-top: 3px; padding-bottom: 3px; }
   /* Its own row above New backlog item + ⋮ (order in the DOM already puts
      it first) — three buttons crammed onto one row would otherwise squeeze
@@ -973,6 +975,8 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      below (that button is flex:1 sharing its row with the same ⋮ button) —
      a flat 100% here made the Gen AI CTA visibly wider than Add to backlog. */
   .notify-claude-btn { flex-basis: calc(100% - 54px); min-height: 46px; font-size: 14px; justify-content: center; }
+  /* "Approved for Deployment — 12 selected" wraps inside the button rather than running past the project card. */
+  .project-header-actions .notify-claude-btn { white-space: normal; }
   .project-options-btn { min-width: 46px; min-height: 46px; }
   .project-options-menu { left: auto; right: 0; max-width: calc(100vw - 24px); }
 
@@ -1694,7 +1698,7 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .concept-release-num { font-size: 34px; font-weight: 700; line-height: 1; color: var(--primary); min-width: 52px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -.02em; }
 
 /* ── Navigation shell: Build / Publish sidebar, profile menu, phone tab bar,
-   Command-K palette, one-column-at-a-time board on a phone. Layout and
+   Command-K palette. Layout and
    navigation only. Breakpoints: ≥1024 persistent collapsible sidebar,
    641–1023 overlay drawer, ≤640 bottom tab bar. ─────────────────────── */
 :root { --nav-w: 248px; --tabbar-h: 56px; }
@@ -1718,7 +1722,7 @@ body { overflow-x: clip; }
 .nav-collapse-btn, .nav-drawer .modal-close { min-width: 36px; min-height: 36px; background: transparent; border: none; border-radius: 8px; cursor: pointer; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; }
 .nav-collapse-btn:hover { background: rgba(0, 0, 0, .06); }
 .nav-collapse-btn { display: none; }
-:is(.nav-drawer-item, .profile-menu-item, .tab, .col-switch, .nav-collapse-btn, .profile-btn, .cmdk-row, .cmdk-close):focus-visible,
+:is(.nav-drawer-item, .profile-menu-item, .tab, .nav-collapse-btn, .profile-btn, .cmdk-row, .cmdk-close):focus-visible,
 #cmdk-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .profile-btn { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
@@ -1735,7 +1739,6 @@ body { overflow-x: clip; }
 .profile-menu-who .topbar-user { font-size: 13px; color: var(--text); }
 
 .tabbar { display: none; }
-.col-switcher { display: none; }
 
 @media (min-width: 1024px) {
   .nav-drawer { transform: none; visibility: visible; box-shadow: none; width: var(--nav-w); max-width: none; z-index: 17; }
@@ -1781,19 +1784,13 @@ body { overflow-x: clip; }
   .nav-drawer-backdrop { z-index: 20; }
   .btn-primary, .btn-ghost, .notify-claude-btn, .icon-btn { min-height: 44px; }
 
-  /* One pipeline column at a time: swipe the strip, or use the switcher. */
+  /* The pipeline stacks top to bottom on a phone (the Mobile block above:
+     one column per row, tap a header to collapse it). A swipe-one-column-
+     at-a-time strip was tried (20 Oct 2026) and reverted the same day: it hid
+     Ready for Testing and Approved for Deployment behind a sideways swipe, so
+     a ticked card and the Approved for Deployment CTA were never on screen
+     together. */
   .project, .project-body { min-width: 0; max-width: 100%; }
-  .col-switcher { display: flex; min-width: 0; max-width: 100%; gap: 6px; margin: 0 0 10px; overflow-x: auto; scrollbar-width: none; }
-  .col-switch {
-    flex: 1 0 auto; min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface);
-    font: inherit; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap;
-  }
-  .col-switch[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: #fff; }
-  .col-switch .col-switch-n { margin-left: 6px; opacity: .8; font-weight: 500; }
-  .board { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 100%; grid-template-columns: none; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
-  .board::-webkit-scrollbar, .col-switcher::-webkit-scrollbar { display: none; }
-  .board > .column { min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; }
-  .column-collapsed .col-list { display: block; }
 }
 
 /* Command-K palette */
@@ -1814,12 +1811,12 @@ body { overflow-x: clip; }
 
 @media (prefers-reduced-motion: reduce) {
   .nav-drawer, .nav-drawer-backdrop { transition: none; }
-  .board { scroll-behavior: auto; }
 }
 /* Icon boxes keep their size even if the icon font is slow or blocked, so a
    ligature name can never push the sidebar or tab bar wider. */
 .nav-drawer .material-symbols-outlined, .tab .material-symbols-outlined, .profile-menu .material-symbols-outlined,
-.cmdk-search .material-symbols-outlined, .profile-btn .material-symbols-outlined, .nav-collapse-btn .material-symbols-outlined {
+.cmdk-search .material-symbols-outlined, .profile-btn .material-symbols-outlined, .nav-collapse-btn .material-symbols-outlined,
+.notify-claude-btn .material-symbols-outlined {
   display: inline-block; width: 1em; height: 1em; overflow: hidden; line-height: 1; flex: none; white-space: nowrap;
 }
 

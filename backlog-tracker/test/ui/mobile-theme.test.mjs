@@ -1,4 +1,5 @@
-// Mobile theme + CTA regression (ticket KK9rwjU1zKJ5Cfd61fcs): at 360 and 390 px, in light AND dark mode,
+// Mobile theme + CTA regression (ticket KK9rwjU1zKJ5Cfd61fcs): at 360 and 390 px, with the OS in light AND dark mode
+// (the console stays light either way; dark is opt-in via <html data-theme="dark">),
 // the tab bar, the Build sheet and the profile menu follow the same theme as the page (no light bar under a
 // dark page), their icons keep >= 3:1 contrast against the surface behind them, and CTAs are >= 44px tall,
 // unclipped and clear of the sticky header and tab bar. Screenshots go to $SHOT_DIR when set.
@@ -58,6 +59,9 @@ try {
       }, [sel, what, probe.toString()]);
       let problems = [];
       await shot("board");
+      // Light by default, whatever the phone's own appearance setting (Rob, 20 Oct 2026).
+      const pageDark = await page.evaluate((probeSrc) => new Function(`return (${probeSrc})()`)().isDark(document.body), probe.toString());
+      if (pageDark) problems.push(`page renders dark with the OS in ${scheme} mode — light is the default`);
       problems.push(...await check("tab bar", ".tab"), ...await check("header", ".topbar"));
       await page.click('.tab[data-tab="build"]'); await page.waitForTimeout(350);
       await shot("build-sheet");

@@ -72,7 +72,7 @@ function makeCtx(o, width) {
 // ── Scenarios ──────────────────────────────────────────────────────────────
 const scenarios = [
   {
-    name: "board: four columns in order, one at a time below 640 px",
+    name: "board: four columns in order, stacked top to bottom below 640 px",
     seed: () => seed(),
     async run(c) {
       await c.boardReady();
@@ -87,9 +87,9 @@ const scenarios = [
       const wrapped = await c.page.evaluate(() => [...document.querySelectorAll(".col-head")].filter((h) => h.scrollHeight > h.clientHeight + 2 || h.getBoundingClientRect().height > 60).length);
       assert.strictEqual(wrapped, 0, "every column header stays on one line");
       if (c.width < 640) {
-        // One column fills the strip; the rest sit to its right (swipe or the switcher).
-        for (let i = 1; i < cols.length; i++) assert.ok(cols[i].x > cols[i - 1].x, `column ${i + 1} should sit right of column ${i} at ${c.width}px`);
-        assert.ok(cols[0].w >= c.width - 60, `the first column should fill the screen at ${c.width}px (width ${cols[0].w})`);
+        // Stacked: each column below the previous one, full width, nothing behind a sideways swipe.
+        for (let i = 1; i < cols.length; i++) assert.ok(cols[i].y > cols[i - 1].y, `column ${i + 1} should sit below column ${i} at ${c.width}px`);
+        for (const col of cols) assert.ok(col.w >= c.width - 80 && col.x >= 0 && col.x + col.w <= c.width, `column ${col.key} should fill the screen width at ${c.width}px (x ${col.x}, width ${col.w})`);
         const { sw, cw } = await c.page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
         assert.ok(sw <= cw, `page scrolls sideways at ${c.width}px (scrollWidth ${sw} > clientWidth ${cw})`);
       } else {
@@ -175,21 +175,46 @@ const scenarios = [
     },
   },
   {
-    name: "board: phone switcher brings each pipeline column into view; actions stay reachable",
-    seed: () => seed(),
+    // 20 Oct 2026: on a phone the header CTAs were squeezed to one letter per
+    // line and Approved for Deployment could not be reached. Tick a card far
+    // down the page, then approve from the pinned project bar, by touch.
+    name: "phone: tick a Ready for Testing card, approve from the pinned project bar; header CTAs keep their labels on one line",
+    seed: () => {
+      // Enough Backlog cards that the project header is scrolled away by the time Ready for Testing is on screen.
+      const s = only("b1", "r1", "l1");
+      for (let n = 2; n <= 5; n++) s.docs.backlogItems[`b${n}`] = { ...s.docs.backlogItems.b1, title: `Backlog card ${n}`, createdAt: t(T0 + n), updatedAt: t(T0 + n) };
+      return s;
+    },
     async run(c) {
       await c.boardReady();
       if (c.width > 640) return;
-      c.at("switch to Ready for Testing");
-      await c.click('.col-switch[data-col="ready-for-testing"]');
-      await until(() => c.page.evaluate(() => {
-        const col = document.querySelector('.column[data-col="ready-for-testing"]').getBoundingClientRect();
-        return col.left >= -2 && col.left < 40;
-      }), "Ready for Testing to scroll into view");
-      const tests = await c.page.locator('.column[data-col="ready-for-testing"] a, .column[data-col="ready-for-testing"] button').first().boundingBox();
-      assert.ok(tests, "the column's card actions are on screen");
-      const small = await c.page.evaluate(() => [...document.querySelectorAll(".col-switch, #tabbar .tab")].filter((e) => { const r = e.getBoundingClientRect(); return r.height < 44; }).length);
-      assert.strictEqual(small, 0, "touch targets are at least 44px tall");
+      c.at("header CTAs are full-width rows, label on one line");
+      const ctas = await c.page.evaluate(() => [...document.querySelectorAll(".project-header-actions > button")].filter((b) => b.getClientRects().length).map((b) => {
+        const r = b.getBoundingClientRect(); return { t: b.textContent.trim().replace(/\s+/g, " "), w: r.width, h: r.height };
+      }));
+      for (const b of ctas) {
+        if (b.t === "⋮") continue;
+        assert.ok(b.w >= c.width * 0.6, `"${b.t}" is only ${b.w}px wide at ${c.width}px`);
+        assert.ok(b.h <= 60, `"${b.t}" wraps (${b.h}px tall)`);
+      }
+      c.at("tick the card after scrolling the project header away");
+      const cb = c.page.locator(".card-deploy-select-cb").first();
+      await cb.scrollIntoViewIfNeeded();
+      await c.page.evaluate(() => window.scrollBy(0, 120));
+      await cb.click();
+      await c.visible("#mobile-action-bar .deploy-to-feature-btn", "Approved for Deployment shows in the pinned bar");
+      const bar = await c.page.evaluate(() => {
+        const r = document.querySelector("#mobile-action-bar").getBoundingClientRect();
+        const top = document.querySelector(".topbar").getBoundingClientRect();
+        const btn = document.querySelector("#mobile-action-bar .deploy-to-feature-btn").getBoundingClientRect();
+        return { top: r.top, topbarBottom: top.bottom, btnH: btn.height, btnRight: btn.right };
+      });
+      assert.ok(Math.abs(bar.top - bar.topbarBottom) <= 2, `pinned bar sits directly under the header (bar ${bar.top}, header ${bar.topbarBottom})`);
+      assert.ok(bar.btnH >= 43.5 && bar.btnRight <= c.width, "the bar's approve button is a full touch target on screen");
+      await c.click("#mobile-action-bar .deploy-to-feature-btn", "approve from the pinned bar");
+      const writes = await until(async () => { const w = await c.writes(); return w.some((x) => x.path === `projects/${PID}`) ? w : null; }, "the approval writes");
+      c.at("approval writes");
+      assert.strictEqual(writes.find((x) => x.path === "backlogItems/r1").data.status, "ready-to-publish");
       const { sw, cw } = await c.page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
       assert.ok(sw <= cw, "no sideways page scroll");
     },
