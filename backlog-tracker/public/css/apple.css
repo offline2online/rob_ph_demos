@@ -35,6 +35,9 @@
 html, body { font-family: var(--ap-font); -webkit-font-smoothing: antialiased; line-height: 1.55; background: var(--ap-bg); }
 /* clip, never hidden: overflow-x:hidden on body makes iOS Safari treat it as the scroller and the sticky topbar stops sticking. */
 body { overflow-x: clip; }
+/* iPad Safari still pans the page sideways when the viewport's overflow is clipped (body's clip propagates to the viewport, which iOS lets you drag anyway). Nothing here is wider than the screen, so forbid the horizontal pan itself: vertical scroll and pinch-zoom stay, and nested scrollers (tables, tab strips, code) are their own scroll containers and keep theirs. */
+html { overflow-x: clip; overscroll-behavior-x: none; }
+html, body { touch-action: pan-y pinch-zoom; }
 code, pre, kbd, samp { font-family: var(--ap-mono); }
 /* No blanket `.app * { min-width: 0 }`: it let flex rows squeeze buttons below
    their own label (one letter per line on a phone). Sideways overflow is
