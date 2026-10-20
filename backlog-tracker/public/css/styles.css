@@ -501,8 +501,12 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .project-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .project-collapse-btn { border: none; background: transparent; cursor: pointer; font-size: 16px; color: var(--text-muted); padding: 2px 6px; flex-shrink: 0; }
 .project-collapse-btn:hover { color: var(--text); }
-.project-title-wrap { flex: 1; min-width: 180px; }
-.project-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.project-title-wrap { flex: 1 1 280px; min-width: 240px; }
+/* One tidy row: star, name (+count), pencil, badge. A long name wraps inside
+   itself; the CTAs drop below the title rather than squeezing it. */
+.project-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+.project-name-row > * { flex-shrink: 0; }
+.project-name-row > .project-name { flex-shrink: 1; min-width: 0; }
 .project-name { margin: 0; font-size: 18px; font-weight: 700; }
 .project-item-count { font-size: 13px; font-weight: 500; color: var(--text-muted); }
 /* The running backlog-tracker release (public/js/version.js APP_VERSION),
@@ -572,7 +576,7 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
    interfaces) lives behind the options menu now, on both desktop and
    mobile — this is what used to be 2-3 separate ghost buttons competing
    with the primary Add button for space, especially on a phone screen. */
-.project-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.project-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
 .new-item-btn { white-space: nowrap; }
 /* AI-driven action — same teal→violet gradient family as the platform's
    own "Launch a New Campaign" (see the ph-designer skill's "AI action
