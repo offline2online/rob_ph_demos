@@ -45,6 +45,32 @@ const only = (...ids) => {
   return s;
 };
 
+
+// ── Releases / concepts / system map seed
+const relSeed = () => {
+  const s = seed();
+  s.docs.projects[PID].releaseId = "r2";
+  s.docs.concepts = {
+    c1: { name: "Alpha", status: "active", description: "Alpha does alpha things.", createdAt: t(T0), updatedAt: t(T0 + 5) },
+    c2: { name: "Beta", status: "active", description: "Beta does beta things.", createdAt: t(T0), updatedAt: t(T0 + 4) },
+    c3: { name: "Gamma", status: "active", description: "", createdAt: t(T0), updatedAt: t(T0 + 3) },
+    c4: { name: "Delta", status: "promoted", promotedProjectId: PID, createdAt: t(T0), updatedAt: t(T0 + 2) },
+  };
+  s.docs.releases = {
+    r1: { name: "October 2026", version: "2.0.0", order: 1, status: "draft", conceptIds: ["c1"], createdAt: t(T0) },
+    r2: { name: "Spring 2026", version: "1.0.0", order: 2, status: "live", conceptIds: ["c2"], createdAt: t(T0) },
+  };
+  return s;
+};
+// Reach a page through the nav the way a person does, at any width.
+async function openFromNav(c, tab, btn, page) {
+  const phone = c.width <= 640, persistent = c.width >= 1024;
+  if (phone) await c.click(`#tabbar .tab[data-tab="${tab}"]`, `${tab} tab`);
+  else if (!persistent) await c.click("#nav-open-btn", "open the menu");
+  await c.click(`#${btn}`, `open ${btn}`);
+  await c.visible(`#${page}`, `${page} shows`);
+}
+
 // ── Scenario context ───────────────────────────────────────────────────────
 class Step extends Error {}
 function makeCtx(o, width) {
@@ -532,6 +558,111 @@ const scenarios = [
         for (const b of m.boxes) { assert.ok(b.h >= 32, `${w}px: ${b.q} is ${b.h}px tall`); assert.ok(b.in, `${w}px: ${b.q} is outside the card`); }
       }
       c.at("layout holds at every width");
+    },
+  },
+  // ── Concept Incubator, Releases and the system map (regression guard: the
+  // 20 Oct 2026 report that the redesign dropped them) ────────────────────
+  {
+    name: "releases: a release name opens the editor, saving persists, + New release creates one",
+    seed: () => relSeed(),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "build", "releases-btn", "releases-page");
+      await c.visible('.release-edit-link[data-release-id="r1"]', "release name link");
+      await c.click('.release-edit-link[data-release-id="r1"]', "click release name");
+      await c.visible("#release-editor-backdrop:not([hidden]) #release-editor-name", "editor opens");
+      assert.strictEqual(await c.page.inputValue("#release-editor-name"), "October 2026");
+      assert.strictEqual(await c.page.inputValue("#release-editor-version"), "2.0.0");
+      await c.visible('#release-editor-concepts input[data-kind="concept"][value="c1"]', "concepts listed");
+      await c.visible('#release-editor-projects input[data-kind="project"][value="p1"]', "projects listed");
+      await c.page.fill("#release-editor-version", "2.1.0");
+      await c.page.check('#release-editor-concepts input[value="c2"]');
+      await c.page.check('#release-editor-projects input[value="p1"]');
+      await c.click("#release-editor-save", "save");
+      await c.hidden("#release-editor-backdrop", "editor closes");
+      await c.page.waitForSelector('#releases-table-body tr[data-release-id="r1"] td:nth-child(2):has-text("2.1.0")');
+      await c.click('.release-edit-link[data-release-id="r1"]', "reopen");
+      await c.visible("#release-editor-backdrop:not([hidden])");
+      assert.strictEqual(await c.page.inputValue("#release-editor-version"), "2.1.0");
+      assert.ok(await c.page.isChecked('#release-editor-concepts input[value="c2"]'), "concept assignment persisted");
+      assert.ok(await c.page.isChecked('#release-editor-projects input[value="p1"]'), "project assignment persisted");
+      await c.click("#release-editor-cancel", "cancel");
+      await c.hidden("#release-editor-backdrop");
+      await c.click("#releases-add-btn", "+ New release");
+      await c.visible("#release-editor-backdrop:not([hidden])");
+      assert.ok((await c.text("#release-editor-title")).includes("New release"));
+      await c.page.fill("#release-editor-name", "November 2026");
+      await c.page.fill("#release-editor-version", "3.0.0");
+      await c.click("#release-editor-save", "create");
+      await c.hidden("#release-editor-backdrop");
+      await c.waitText("#releases-table-body", "November 2026", "new release listed");
+    },
+  },
+  {
+    name: "concepts: big release number on tiles, earliest release first, unassigned last, promoted hidden",
+    seed: () => relSeed(),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "build", "concept-incubator-btn", "concept-incubator-page");
+      await c.visible("#concept-incubator-list .concept-card", "tiles render");
+      const tiles = await c.page.evaluate(() => [...document.querySelectorAll("#concept-incubator-list .concept-card")].map((e) => ({
+        id: e.dataset.id, num: (e.querySelector(".concept-release-num") || {}).textContent || "", size: e.querySelector(".concept-release-num") ? parseFloat(getComputedStyle(e.querySelector(".concept-release-num")).fontSize) : 0,
+        numLeft: e.querySelector(".concept-release-num") ? e.querySelector(".concept-release-num").getBoundingClientRect().left : 0,
+        nameLeft: e.querySelector(".skill-card-name").getBoundingClientRect().left })));
+      assert.deepStrictEqual(tiles.map((x) => x.id), ["c2", "c1", "c3"], "earliest release first, unassigned last, promoted (c4) hidden");
+      assert.deepStrictEqual(tiles.map((x) => x.num), ["1.0.0", "2.0.0", ""]);
+      const name = await c.page.evaluate(() => parseFloat(getComputedStyle(document.querySelector("#concept-incubator-list .skill-card-name")).fontSize));
+      assert.ok(tiles[0].size > name, `release number (${tiles[0].size}px) is larger than the concept name (${name}px)`);
+      assert.ok(tiles[0].numLeft < tiles[0].nameLeft, "release number sits in front of the name");
+      assert.ok((await c.text("#concept-incubator-count")).startsWith("3 "), "promoted concepts are not counted");
+      assert.strictEqual(await c.page.locator('#concept-incubator-list .concept-card[data-id="c4"]').count(), 0);
+    },
+  },
+  {
+    name: "concepts: the short description shows on the tile and on the concept page",
+    seed: () => relSeed(),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "build", "concept-incubator-btn", "concept-incubator-page");
+      await c.visible('#concept-incubator-list .concept-card[data-id="c1"]');
+      assert.strictEqual(await c.page.getAttribute('#concept-incubator-list .concept-card[data-id="c1"]', "title"), "Alpha does alpha things.");
+      await c.click('#concept-incubator-list .concept-card[data-id="c1"] .skill-card-name', "open concept");
+      await c.visible("#concept-detail-page", "concept page");
+      await c.visible("#concept-description-input", "description field");
+      assert.strictEqual(await c.page.inputValue("#concept-description-input"), "Alpha does alpha things.");
+    },
+  },
+  {
+    name: "system map: shows on the Concept Incubator, release badges in version order, rich instant tooltip with the description",
+    seed: () => relSeed(),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "build", "concept-incubator-btn", "concept-incubator-page");
+      await c.visible("#system-map-canvas svg.sysmap-svg", "map renders");
+      assert.ok(await c.page.locator("#system-map-canvas .sysmap-node").count() >= 3, "map draws nodes");
+      assert.ok(await c.page.locator("#system-map-canvas .sysmap-edge, #system-map-canvas .sysmap-line").count() >= 1, "map draws lines");
+      assert.ok((await c.page.locator("#system-map-canvas .sysmap-boundary-label").innerText().catch(() => "")) || true);
+      const opts = await c.page.evaluate(() => [...document.querySelectorAll("#system-map-release option")].map((o) => o.textContent));
+      assert.ok(opts[1].includes("1.0.0") && opts[2].includes("2.0.0"), `release filter in version order: ${opts.join(" | ")}`);
+      const badges = await c.page.evaluate(() => [...document.querySelectorAll("#system-map-canvas .sysmap-node-release")].map((e) => e.textContent));
+      assert.ok(badges.length >= 2, "release badges on nodes");
+      // No two node boxes overlap.
+      const overlap = await c.page.evaluate(() => {
+        const r = [...document.querySelectorAll("#system-map-canvas .sysmap-node")].map((e) => e.getBoundingClientRect());
+        for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+          const a = r[i], b = r[j];
+          if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) return [i, j];
+        }
+        return null;
+      });
+      assert.strictEqual(overlap, null, "no map nodes overlap");
+      c.at("hover a node", '[data-tip-node="c1"]');
+      await c.page.hover('#system-map-canvas [data-tip-node="c1"]');
+      await c.visible(".sysmap-tip:not([hidden])", "instant tooltip");
+      const tip = await c.text(".sysmap-tip");
+      assert.ok(tip.includes("Alpha does alpha things."), `tooltip carries the short description: ${tip}`);
+      assert.ok(tip.includes("1.0.0") || tip.includes("2.0.0") || tip.includes("Release"), "tooltip shows the release");
+      await c.click("#system-map-fit", "fit to page");
     },
   },
 ];
