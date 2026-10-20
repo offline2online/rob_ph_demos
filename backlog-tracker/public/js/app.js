@@ -1689,6 +1689,19 @@ function deployNotifyButtonHTML(project) {
       <span class="notify-claude-label">Tests failing</span>
     </button>`;
     }
+    // The last Deploy to Main stopped on a merge conflict (20 Oct 2026):
+    // the button used to come straight back as an ordinary "Deploy to Main",
+    // so each click looked unheard and hit the same conflict. Say so, with
+    // the pipeline's own reason on hover — the pipeline retries by itself
+    // once the branch or main changes, and a click still retries now.
+    if (project.trainStatus === "conflict") {
+      const why = project.trainNote || "The last Deploy to Main stopped on a merge conflict.";
+      return `<button type="button" class="notify-claude-btn deploy-notify-btn deploy-notify-btn-conflict" data-project-id="${escapeHTML(pid)}" title="${escapeHTML(`${why}\n\nClick to try again.`)}">
+      <span class="material-symbols-outlined notify-claude-icon">warning</span>
+      <span class="notify-claude-label">Deploy blocked — retry</span>
+      <span class="notify-claude-count-pill">${deployCount}</span>
+    </button>`;
+    }
     return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
       <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
       <span class="notify-claude-label">Deploy to Main</span>
