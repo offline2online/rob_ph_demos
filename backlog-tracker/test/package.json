@@ -5,7 +5,7 @@
   "scripts": {
     "test": "npm run test:mcp && npm run test:client && npm run test:mcp-app && npm run test:app-boots && npm run test:auth-gate && npm run test:routine-binding && npm run test:ready-for-testing && npm run test:train-lock && npm run test:rules",
     "test:app-boots": "node app-boots.test.mjs && node dictation.test.mjs && node system-map.test.mjs && node card-test-status-ui.test.mjs && node header-phase.test.mjs && node deploy-badge.test.mjs && node preview-build-card.test.mjs && npm run test:build-batches && node follow-up.test.mjs && node docs-view.test.mjs && npm run test:ui",
-    "test:ui": "node ui/mobile-shell.test.mjs && node ui/mobile-theme.test.mjs && node ui/console-click.test.mjs && node ui/ticket-detail-overflow.test.mjs && node ui/apple-redesign.test.mjs && node ui/nav-rotation.test.mjs",
+    "test:ui": "node ui/mobile-shell.test.mjs && node ui/mobile-theme.test.mjs && node ui/console-click.test.mjs && node ui/ticket-detail-overflow.test.mjs && node ui/apple-redesign.test.mjs && node ui/nav-rotation.test.mjs && node ui/new-item-voice.test.mjs",
     "test:e2e-run": "node e2e-run.test.mjs",
     "test:generated-builds": "node generated-builds.test.js && node patch-paths.test.js",
     "test:mcp": "node mcp-server.test.js && node concept-critiques.test.mjs && node intake.test.js && node operating-docs.test.js",
