@@ -104,9 +104,6 @@
           <h1><button type="button" class="logo-link" id="topbar-logo-btn" title="Back to Agent Console home"><img src="img/ph-agent-console-logo.svg" alt="PH Agent Console" class="topbar-logo-img" width="234" height="58"></button></h1>
         </div>
       </div>
-      <div class="topbar-actions">
-        <button class="btn-primary" id="new-project-btn" type="button">+ New project</button>
-      </div>
     </header>
 
     <!-- Session-restore progress (auth-gate.js). On a reload by someone who
@@ -116,8 +113,7 @@
     <div class="boot-status" id="boot-status" role="status" aria-live="polite"></div>
 
     <!-- The board's own page header — kept out of the sticky topbar above
-         (which only ever carries global chrome: hamburger, logo, + New
-         project) so a page's own title/summary scrolls away normally
+         (which only ever carries global chrome: hamburger, logo) so a page's own title/summary scrolls away normally
          instead of competing for space in the pinned bar. Same
          `.page-header` format every other page below uses (Docs, Archive,
          FAQ Management, …), toggled alongside #projects-root by each
@@ -126,6 +122,7 @@
     <div class="page-header" id="board-page-header">
       <h2>Board</h2>
       <span class="page-header-count" id="total-summary">0 items</span>
+      <button class="btn-primary page-header-action" id="new-project-btn" type="button">+ New project</button>
     </div>
 
     <div class="nav-drawer-backdrop" id="nav-drawer-backdrop"></div>
