@@ -35,8 +35,10 @@ const draftOf = (l: BuyersList): Draft => ({
   activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays, floorCpm: l.floorCpm ?? null,
 })
 
-export function BuyersListModal({ open, editing, onClose, onSaved }: {
+export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting = false }: {
   open: boolean
+  /* The dealTargeting flag: off, the criteria picker is hidden and nothing is saved in it. */
+  showTargeting?: boolean
   /* null: creating a new buyers list. Set: editing this one. */
   editing: BuyersList | null
   onClose: () => void
@@ -145,7 +147,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
   const save = async (finalise = false) => {
     setSaving(true)
     setErrors({})
-    const payload = draft
+    const payload = showTargeting ? draft : { ...draft, targeting: [] }
     try {
       if (editing) {
         const check = await api<TermCheck>('POST', `/admin/v1/buyers-lists/${editing.id}/term-check`, payload).catch(() => null)
@@ -268,7 +270,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         {Object.entries(errors).filter(([f]) => f.startsWith('invitedCategories')).map(([f, reason]) => <div key={f} className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{reason}</div>)}
         {!draft.invitedBuyers.length && draft.invitedCategories.length > 0 && <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="category-only-note">Category-only: matching advertisers can bid, but the deal ID can’t be formally shared or authored against until you invite at least one named buyer.</div>}
       </div>}
-      <div className="mb-3.5">
+      {showTargeting && <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Only variables the retailer has enabled for the invited DSPs are offered. Store segments are variable (switched by store staff) or fixed (HQ Admin only); the deal honours whichever you choose. A personalised criterion is matched against the live visitor at bid time — buyers never see the visitor’s attributes.">Targeting criteria</WithTip></label>
         <Select
           mode="multiple" className="w-full" aria-label="Targeting criteria" showSearch optionFilterProp="label"
@@ -318,7 +320,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
             </div>
           )
         })}
-      </div>
+      </div>}
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="The span this deal is awarded for (Start date to End date) — leave either side empty for no bound. Outside it, the deal admits nobody.">Flight dates</WithTip></label>
         <DatePicker.RangePicker

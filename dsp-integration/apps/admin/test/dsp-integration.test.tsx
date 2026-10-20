@@ -39,8 +39,8 @@ const ADVERTISER_PAGE = {
   },
 }
 
-const renderAt = (path: string, dspIntegration = true, selfService = false, changeHistory = true) => {
-  const router = createMemoryRouter(appRoutes({ dspIntegration, selfService, changeHistory }), { initialEntries: [path] })
+const renderAt = (path: string, dspIntegration = true, selfService = false, changeHistory = true, dealTargeting = false) => {
+  const router = createMemoryRouter(appRoutes({ dspIntegration, selfService, changeHistory, dealTargeting }), { initialEntries: [path] })
   render(<Providers><RouterProvider router={router} /></Providers>)
   return router
 }
@@ -1077,12 +1077,23 @@ describe('Advertisers / Inventory', () => {
       { ...base, id: 'bl_2', name: 'No blurb', description: '', targeting: [{ source: 'store', variable: 'store.state', op: 'include', values: ['QLD'] }] },
     ]
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists } })))
-    renderAt('/advertisers')
+    renderAt('/advertisers', true, false, true, true)
     const table = await screen.findByLabelText('Deals and buyers lists')
     fireEvent.mouseOver(await within(table).findByText('No blurb'))
     const tip = await screen.findByTestId('targeting-tip-bl_2')
     expect(tip).toHaveTextContent('Targeting criteria')
     expect(tip).toHaveTextContent('State: includes selected QLD')
+  }, slow(45000))
+
+  /* Ticket Zxw7VRUSytMAovkbDFKt: with the dealTargeting flag off (the default) a deal's tooltip shows no targeting. */
+  it('hides a deal’s targeting criteria in its tooltip when targeting is off', async () => {
+    const lists = [{ id: 'bl_1', name: 'Eastern states', description: 'Big metros', invitedBuyers: [], invitedCategories: [], activeFrom: null, activeTo: null, dealType: 'private_auction', targeting: [{ source: 'store', variable: 'store.state', op: 'include', values: ['NSW'] }] }]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists } })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.mouseOver(await within(table).findByText('Eastern states'))
+    expect(await screen.findByText('Big metros')).toBeInTheDocument()
+    expect(screen.queryByTestId('targeting-tip-bl_1')).toBeNull()
   }, slow(45000))
 
   /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals above an explicit Open auction, the DSPs it runs across below it. */
@@ -1240,12 +1251,12 @@ describe('Advertisers / Inventory', () => {
      all, so it went green while the picker was reported broken. This test
      is that missing assertion: the option group's position, the option
      itself, and that it actually opens the modal. */
-  it('offers "+ Add new deal and buyers list…" in the Assigned to picker, and opens the modal', async () => {
+  it.each([false, true])('offers "+ Add new deal and buyers list…" in the Assigned to picker, and opens the modal (dealTargeting %s)', async (dealTargeting) => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...ADVERTISER_PAGE,
       '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Q4 FMCG Private Auction', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }] },
     })))
-    renderAt('/advertisers')
+    renderAt('/advertisers', true, false, true, dealTargeting)
     const inventory = await screen.findByLabelText('Available Inventory')
     const combo = within(within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
     fireEvent.mouseDown(combo)
@@ -1271,7 +1282,9 @@ describe('Advertisers / Inventory', () => {
     /* Invited buyers is one dropdown of synced advertisers: nothing to type, no identifier type to pick. */
     expect(within(dialog).getByRole('combobox', { name: 'Buyers' })).toBeInTheDocument()
     /* One object carries who may buy AND the targeting criteria appended to the deal. */
-    expect(within(dialog).getByRole('combobox', { name: 'Targeting criteria' })).toBeInTheDocument()
+    /* Targeting is behind the dealTargeting flag (off for the first release): no picker when off, the picker when on. */
+    if (dealTargeting) expect(within(dialog).getByRole('combobox', { name: 'Targeting criteria' })).toBeInTheDocument()
+    else expect(within(dialog).queryByRole('combobox', { name: 'Targeting criteria' })).toBeNull()
     expect(within(dialog).queryByText(/PH brand entity|identifier type/i)).toBeNull()
     expect(within(dialog).queryByRole('button', { name: /Add buyer/ })).toBeNull()
     /* The deal type drives the fields: a new list is a private auction: no auction window any more (16 Oct 2026) and no committed plays. */
