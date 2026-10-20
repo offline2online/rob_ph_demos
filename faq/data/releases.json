@@ -16,7 +16,7 @@
   {
     "id": "BiWlnpJ8BxVOAuX2a920",
     "name": "Closing the Loop",
-    "version": "5.1",
+    "version": "5.3",
     "status": "draft",
     "order": 3
   },
@@ -26,5 +26,12 @@
     "version": "6.0",
     "status": "draft",
     "order": 4
+  },
+  {
+    "id": "pvqov4nOX9SuaJdfZq6f",
+    "name": "Live Visitor Profiles",
+    "version": "5.1",
+    "status": "draft",
+    "order": 5
   }
 ]
