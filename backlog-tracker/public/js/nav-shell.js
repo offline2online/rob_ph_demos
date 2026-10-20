@@ -112,6 +112,12 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     });
   }
 
+  // The X in the slide-over's header closes it from here as well as from
+  // app.js's own handler: this one also drops the phone-sheet filter and the
+  // active tab, and it is the one that must not depend on app.js having bound
+  // first. Closing twice is harmless.
+  document.getElementById("nav-close-btn").addEventListener("click", () => resetOverlay());
+
   // Any destination click closes the phone sheet / profile menu.
   drawer.addEventListener("click", (e) => {
     if (e.target.closest(".nav-drawer-item")) { delete drawer.dataset.show; closeProfile(); }
