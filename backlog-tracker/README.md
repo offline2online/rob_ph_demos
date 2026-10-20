@@ -2236,6 +2236,7 @@ entry, directly under Agent Console.
   concept is refused too, since it's the provenance record for where a
   real project's README/requirements came from.
 - **System map hero**: the page opens with one live system map of PH core, every project and every concept (`public/js/system-map.js`; lines come from interface contracts, release filter, click-through; fits the page width with zoom/pan, internal items excluded, Advertiser and Federated PH Instance each linked to MCP Release). See `REQUIREMENTS.md` → "Concept Incubator hero".
+- **System map: pinned, incremental layout** — node positions are saved in `systemMap/layout` and only new nodes are placed; every change is a revision with a minimal diff (History, rollback of positions, Re-arrange). See `REQUIREMENTS.md` → "Concept Incubator hero".
 - **Console UI**: the Concept Incubator page lists every concept as a card
   (name, Active/Promoted status, last updated) — **+ New concept** asks
   only for a name, the same "one quick step" shape as New Project.

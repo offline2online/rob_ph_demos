@@ -1227,8 +1227,11 @@
             <button type="button" class="icon-btn" id="system-map-zoom-in" title="Zoom in (Ctrl + scroll also zooms, drag pans)" aria-label="Zoom in"><span class="material-symbols-outlined">add</span></button>
             <button type="button" class="icon-btn" id="system-map-fit" title="Fit the whole map" aria-label="Fit the whole map"><span class="material-symbols-outlined">fit_screen</span></button>
           </span>
+          <button type="button" class="restore-btn" id="system-map-rearrange" data-editor-only title="Lay the whole map out afresh (the only action that moves pinned nodes)">Re-arrange</button>
+          <button type="button" class="restore-btn" id="system-map-history-btn" title="Every change to the map, with its diff">History</button>
           <div class="sysmap-legend" id="system-map-legend"></div>
         </div>
+        <div class="sysmap-history" id="system-map-history" hidden></div>
         <div class="sysmap-scroll" id="system-map-canvas"></div>
       </section>
       <p class="field-hint">Early-stage ideas that need more shape before they become an official project on the board. Each concept keeps its own README, requirements and discussion thread — pick up the conversation any time, then promote it to a real project once its structure is agreed.</p>

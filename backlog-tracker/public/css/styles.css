@@ -1837,3 +1837,12 @@ body { overflow-x: clip; }
   .tm-backdrop { align-items: flex-end; padding: 0; }
   .tm-backdrop .modal-panel { max-width: 100%; border-radius: 16px 16px 0 0; }
 }
+
+/* System map revision history */
+.sysmap-history { max-height: 320px; overflow: auto; margin: 8px 0; padding: 8px 12px; border: 1px solid var(--border, #e0e0e0); border-radius: 8px; background: #fff; font-size: 13px; }
+.sysmap-rev { padding: 8px 0; border-bottom: 1px solid var(--border, #e0e0e0); }
+.sysmap-rev:last-child { border-bottom: 0; }
+.sysmap-rev-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sysmap-rev-head span { color: #666; }
+.sysmap-rev-reason { margin-top: 2px; }
+.sysmap-rev ul { margin: 4px 0 0 18px; padding: 0; color: #444; }

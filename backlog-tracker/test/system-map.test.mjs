@@ -1,7 +1,7 @@
 // The Concept Incubator hero map: nodes, status, release badges, the filter,
 // and "a new interface contract adds a line with no code change".
 import assert from "node:assert/strict";
-import { buildSystemMap, systemMapHTML, highlightedIds, shortDescription, layoutSystemMap, nodeBox, fitViewBox, compareReleases } from "../public/js/system-map.js";
+import { buildSystemMap, systemMapHTML, highlightedIds, shortDescription, layoutSystemMap, nodeBox, fitViewBox, compareReleases, pinnedLayout, mapSnapshot, diffSystemMap, describeChanges } from "../public/js/system-map.js";
 
 const releases = [{ id: "r5", name: "DSP Integration", version: "5.0", status: "draft" }, { id: "r4", name: "Sep", version: "4.2", status: "live" }];
 const projects = [
@@ -236,3 +236,44 @@ console.log("system-map descriptions: ok");
   assert.deepEqual(list.map((r) => r.version), ["5.0", "5.1", "5.2", "5.10", "6.0"]);
 }
 console.log("system-map (layout, 390/820/1180/1440/1920): ok");
+
+// Incremental updates (ticket tXFTzQ4wZkpCf2gvB0YP): pinned positions, minimal diffs.
+{
+  const WIDTH = 1500;
+  const first = layoutSystemMap(buildSystemMap(base), { width: WIDTH });
+  const pins = pinnedLayout(first);
+  const snap = mapSnapshot(first);
+  const pos = (m) => Object.fromEntries(m.nodes.map((n) => [n.id, [n.x, n.y]]));
+  // Re-laying out with the pins reproduces the drawing exactly.
+  const again = layoutSystemMap(buildSystemMap(base), { width: WIDTH, pinned: pins });
+  assert.deepEqual(pos(again), pos(first), "pinned layout is identical");
+  assert.equal(again.layout.h, first.layout.h);
+
+  // Add a concept and change one project's release.
+  const base2 = {
+    ...base,
+    concepts: [...concepts, { id: "c9", name: "Brand new concept", status: "active" }],
+    projects: projects.map((p) => (p.id === "dsp" ? { ...p, releaseId: "r4" } : p)),
+  };
+  const next = layoutSystemMap(buildSystemMap(base2), { width: WIDTH, pinned: pins });
+  const before = pos(first);
+  const after = pos(next);
+  const moved = Object.keys(before).filter((id) => after[id] && (before[id][0] !== after[id][0] || before[id][1] !== after[id][1]));
+  assert.deepEqual(moved, [], "no existing node moves");
+  assert.ok(after.c9, "the new concept is placed");
+  const nb = nodeBox(next.byId.c9, 0);
+  assert.ok(!next.nodes.some((n) => n !== next.byId.c9 && n.kind !== "core" && Math.abs(n.x - next.byId.c9.x) < 190 && Math.abs(n.y - next.byId.c9.y) < 40), "new node overlaps nobody");
+  assert.ok(nb.w > 0);
+  const nextPins = pinnedLayout(next);
+  const changes = diffSystemMap(snap, mapSnapshot(next), pins.nodes, nextPins.nodes);
+  const summary = changes.map((c) => `${c.op}:${c.type}:${c.id}`).sort();
+  assert.deepEqual(summary.filter((x) => x.startsWith("add:node") || x.startsWith("update:node") || x.startsWith("move") || x.startsWith("remove")), ["add:node:c9", "update:node:dsp"], summary.join(" | "));
+  assert.deepEqual(changes.find((c) => c.id === "dsp").fields, { status: ["Project", "Live"], release: ["Release 5.0", "Release 4.2"] });
+  assert.ok(describeChanges(changes).includes("Brand new concept"));
+  // Nothing changed -> an empty diff.
+  assert.deepEqual(diffSystemMap(snap, mapSnapshot(again), pins.nodes, pinnedLayout(again).nodes), []);
+  // Removing a node removes only it; a fresh (un-pinned) layout is what "Re-arrange" saves.
+  const gone = buildSystemMap({ ...base, concepts: [concepts[1]] });
+  assert.ok(diffSystemMap(snap, mapSnapshot(gone), pins.nodes, {}).some((c) => c.op === "remove" && c.id === "c1"));
+  console.log("system-map (incremental, pinned): ok");
+}
