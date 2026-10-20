@@ -18,7 +18,7 @@ import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { DealSheetModal } from './DealSheetModal'
-import { buyerStatusOf, cpmKindHint, rateTypeOf, rateValue, sourceLabel } from './effectiveTerm'
+import { buyerStatusOf, cpmKindHint, equivalentCpmText, ratePerDayText, rateTypeOf, rateValue, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }
@@ -126,10 +126,11 @@ const Sub = ({ children }: { children: string }) => <div style={{ fontSize: 11.5
 const RateCell = ({ data }: P) => {
   if (!data) return null
   if (data.lockedWin) return <Tip title="Locked: the rate this deal's auction settled at, billed for the rest of its flight."><span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span></Tip>
-  const text = rateValue(data.effectiveRateCpm)
+  const perDay = data.dealType === 'guaranteed' && data.ratePerDay != null
+  const text = perDay ? `${ratePerDayText(data.ratePerDay)}${data.equivalentCpm ? ` ≈ ${equivalentCpmText(data.equivalentCpm)} CPM` : ''}` : rateValue(data.effectiveRateCpm)
   const src = sourceLabel(data.effectiveRateCpm?.source ?? 'none')
   return text
-    ? <Tip title={`${cpmKindHint(data.dealType)}${src ? ` Source: ${src}.` : ''}`}><div><span style={{ fontSize: 12.5 }}>{text}</span> <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateTypeOf(data.dealType)}</span><Sub>{src}</Sub></div></Tip>
+    ? <Tip title={`${cpmKindHint(data.dealType, data.ratePerDay)}${src ? ` Source: ${src}.` : ''}`}><div><span style={{ fontSize: 12.5 }}>{text}</span> <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateTypeOf(data.dealType, data.ratePerDay)}</span>{!perDay && <Sub>{src}</Sub>}</div></Tip>
     : <span style={{ color: T.muted }}>Per play</span>
 }
 const DealIdCell = ({ data, context }: P) => {

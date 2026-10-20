@@ -122,7 +122,7 @@ export function ChangeHistory() {
   return (
     <>
       <SubPageHeader icon="history" title="Change history" tip={HISTORY_TIP} sub={q.data ? <><b>{rows.length}{cursor ? '+' : ''}</b> {rows.length === 1 ? 'change' : 'changes'}{filtered ? ' match' : ''}, newest first</> : undefined} />
-      <form className="mt-4 grid grid-cols-4 items-end gap-x-3 gap-y-2" onSubmit={(e) => { e.preventDefault(); apply() }} aria-label="Filter the change history">
+      <form className="mt-4 grid grid-cols-[repeat(4,minmax(0,1fr))] items-end gap-x-3 gap-y-2" onSubmit={(e) => { e.preventDefault(); apply() }} aria-label="Filter the change history">
         <Field label="Setting type" htmlFor="h-type">
           <Select id="h-type" allowClear placeholder="Any" style={{ width: '100%' }} value={draft.objectType} onChange={(v) => set('objectType', v)} options={OBJECT_TYPES} />
         </Field>
@@ -144,7 +144,7 @@ export function ChangeHistory() {
         <Field label="To" htmlFor="h-to">
           <Input id="h-to" type="datetime-local" value={draft.to} onChange={(e) => set('to', e.target.value)} />
         </Field>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button type="primary" htmlType="submit">Apply</Button>
           <Button type="text" onClick={clear} disabled={!filtered && JSON.stringify(draft) === JSON.stringify(EMPTY)}>Clear</Button>
         </div>

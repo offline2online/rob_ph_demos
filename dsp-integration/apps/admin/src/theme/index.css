@@ -91,12 +91,13 @@
    it pinned to the bottom edge of the visible viewport. */
 .ph-save-bar { -webkit-transform: translateZ(0); transform: translateZ(0); -webkit-backface-visibility: hidden; }
 .ph-list-pane { max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); }
-/* Tablet / iPad (ticket 8dozdC9kY8n6weeQex3Q, 15 Oct 2026): the 4 Oct change above
-   made both panes position: static on touch screens, which is why the navs
-   stopped sticking. They stay sticky now; what goes is only the nested scroller
-   (overflow + a height cap), which was what trapped the swipe. A pane taller
-   than the screen (a landscape iPad's nav) falls back to static below, since a
-   sticky pane that cannot scroll would hide its bottom rows. */
+/* Tablet / iPad (tickets 8dozdC9kY8n6weeQex3Q, 15 Oct, and 6DM1NG04RrUB355zT6hX,
+   20 Oct 2026): the panes stay sticky on every touch screen, portrait and
+   landscape. Only the nested scroller (overflow + a height cap) goes, since it
+   trapped the swipe. A pane taller than the screen (the nav on a landscape
+   iPad, 820px high) used to fall back to static, so the nav stopped sticking;
+   useStickyTop now lifts its `top` by the overhang instead, so it holds with its
+   bottom rows in view and the page still scrolls to its top. */
 @media (hover: none) and (pointer: coarse) {
   .ph-sticky-pane {
     position: -webkit-sticky;
@@ -105,9 +106,6 @@
     max-height: none;
     overflow: visible;
   }
-}
-@media (hover: none) and (pointer: coarse) and (max-height: 820px) {
-  .ph-sticky-pane { position: static; }
 }
 /* Keep the Save changes bar clear of the iPad home indicator. */
 .ph-save-bar {

@@ -557,11 +557,6 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     '/api/admin/v1/campaigns/c5/approval': approvalOf(resubmitted, 'awaiting_approval', 'CR-AAAA1111'),
     '/api/admin/v1/campaigns/c6/approval': { ...approvalOf(oat, 'approved'), mode: 'auto' },
     '/api/admin/v1/campaigns/c7/approval': { ...approvalOf(milk, 'approved'), mode: 'auto' },
-    '/api/admin/v1/approvals/summary': {
-      days: 30, decided: 4, rejected: 1, medianSecondsToDecision: 7200, rejectionRate: 0.25,
-      oldestWaiting: { campaignId: 'c3', campaignName: 'Nestlé winter', submittedAt: '2026-10-01T00:00:00.000Z', ageSeconds: 93600 },
-      topRejectionReasons: [{ code: 'poor_quality', label: 'Poor quality', count: 1 }],
-    },
     '/api/admin/v1/creative-ids': {
       items: [
         { creativeId: 'CR-AAAA1111', advertiserId: 'swisse', advertiserName: 'Swisse', createdAt: '2026-10-01T00:00:00.000Z', campaigns: [{ campaignId: 'c4', name: 'Swisse autumn', touchPoints: ['Digital Signage'] }, { campaignId: 'c5', name: 'Swisse summer', touchPoints: ['Mobile Site'] }] },
@@ -693,18 +688,6 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     fireEvent.click(reject)
     await waitFor(() => expect(posts).toHaveLength(1))
     expect(posts[0]).toEqual({ url: '/api/admin/v1/campaigns/c3/reject', body: { assetVersion: 'v1', reason: 'Price shown in the artwork.', reasonCode: 'price_or_offer_in_artwork' } })
-  }, slow(45000))
-
-  it('shows the approval summary above the table, and its oldest-waiting link filters to that campaign', async () => {
-    const grid = await open()
-    const summary = await screen.findByRole('region', { name: 'Approval summary' })
-    expect(within(summary).getByText('2 h')).toBeInTheDocument()
-    expect(within(summary).getByText('25%')).toBeInTheDocument()
-    expect(within(summary).getByRole('button', { name: 'Poor quality' })).toBeInTheDocument()
-    expect(within(summary).getByLabelText('About Rejection rate')).toBeInTheDocument()
-    fireEvent.click(within(summary).getByRole('link', { name: '1 d 2 h' }))
-    await waitFor(() => expect(within(grid).queryByLabelText('Select Swisse spring')).not.toBeInTheDocument())
-    expect(within(grid).getByLabelText('Select Nestlé winter')).toBeInTheDocument()
   }, slow(45000))
 })
 
@@ -967,6 +950,41 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByRole('button', { name: 'Save draft' })).toBeEnabled()
     expect(within(dialog).getByRole('button', { name: 'Finalise deal terms' })).toBeDisabled()
     expect(within(dialog).queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
+  }, slow(30000))
+
+  /* Ticket rx1RfF2p7tyqJABWHR0q (20 Oct 2026): Programmatic guaranteed books whole 24-hour days at a flat rate per day. */
+  const perDayFetch = (list: Record<string, unknown>, puts: unknown[]) => vi.fn(async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0]
+    if (init?.method === 'POST' && path.endsWith('/term-check')) return new Response(JSON.stringify({ currentVersion: 1, nextVersion: 1, changes: [], requiresReacceptance: false, affectedBuyers: [] }), { status: 200 })
+    if (init?.method === 'PUT') { puts.push(JSON.parse(String(init.body))); return new Response(JSON.stringify(list), { status: 200 }) }
+    return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [list] } })(url)
+  })
+  const PER_DAY_LIST = { ...TERMS_LIST, dealType: 'guaranteed', status: 'draft', sharedAt: null, termVersion: 1, buyerAcceptance: [], committedPlays: 1000, ratePerDay: 500, equivalentCpm: { min: 5, max: 5 } }
+
+  it('a guaranteed deal is priced per day: Rate per day, Fixed per day, a read-only equivalent CPM, and the explanation in a tooltip', async () => {
+    const puts: unknown[] = []
+    vi.stubGlobal('fetch', perDayFetch({ ...PER_DAY_LIST, assignedSlots: [{ positionId: 'menu_board.s2', label: 'Menu Board — Long Format' }] }, puts))
+    const dialog = await openTermsEditor()
+    const rate = within(dialog).getByRole('spinbutton', { name: 'Rate per day' })
+    expect(rate).toHaveValue('500.00')
+    expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveValue('5')
+    expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveAttribute('readonly')
+    expect(within(dialog).getByTestId('rate-type')).toHaveTextContent('Fixed per day')
+    expect(within(dialog).queryByText(/full 24 hours per day at a flat daily rate/)).not.toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Rate')).not.toBeInTheDocument()
+    /* The flight is picked in whole days: no time-of-day picker. */
+    expect(dialog.querySelector('.ant-picker-time-panel')).toBeNull()
+    fireEvent.change(rate, { target: { value: '1000' } })
+    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveValue('10'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save draft' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).toMatchObject({ dealType: 'guaranteed', ratePerDay: 1000 })
+  }, slow(30000))
+
+  it('a guaranteed deal with no slot yet asks for a slot to show the equivalent CPM', async () => {
+    vi.stubGlobal('fetch', perDayFetch({ ...PER_DAY_LIST, ratePerDay: null, equivalentCpm: null, assignedSlots: [] }, []))
+    const dialog = await openTermsEditor()
+    expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveAttribute('placeholder', 'Assign a slot to see the equivalent CPM')
   }, slow(30000))
 
   it('Finalise confirms the slots and terms, and Share deal shares the deal', async () => {

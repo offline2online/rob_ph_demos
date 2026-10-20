@@ -6,6 +6,7 @@ import type { BuyersList, components } from '@ph-dsp/types'
 import { api } from '../../api/client'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
+import { equivalentCpmText } from './effectiveTerm'
 import { slotLine } from './slotLine'
 
 type Sheet = components['schemas']['DealSheet']
@@ -34,7 +35,7 @@ export function dealSheetText(s: Sheet): string {
   const shared = [
     `Order: ${s.order.name} (${s.order.status})`,
     `Product: ${s.product.displayName}`, `Deal type: ${TYPE_LABEL[s.dealType]}`, `Pricing type: ${s.product.pricingType}`,
-    `Rate: ${s.rateCpm} ${s.currency}${rateType ? ` (${rateType})` : ''}`, `Flight dates: ${flight}`, `Term version: ${s.termVersion}`,
+    s.ratePerDay != null ? `Rate: ${s.ratePerDay} ${s.currency} per 24-hour day (${rateType ?? 'Fixed per day'})${s.equivalentCpm ? `, equivalent CPM ${equivalentCpmText(s.equivalentCpm)}` : ''}` : `Rate: ${s.rateCpm} ${s.currency}${rateType ? ` (${rateType})` : ''}`, `Flight dates: ${flight}`, `Term version: ${s.termVersion}`,
     ...(s.guaranteedImpressions != null ? [`Guaranteed impressions: ${num(s.guaranteedImpressions)} (${num(s.committedPlays)} plays)`] : s.committedPlays != null ? [`Guaranteed plays: ${num(s.committedPlays)}`] : []),
     ...(s.auctionCloses ? [`Auction window closes: ${when(s.auctionCloses)}`] : []),
     'Slots:', slots,
@@ -94,7 +95,9 @@ export function DealSheetModal({ list, onClose }: { list: BuyersList | null; onC
                 <dt style={dt}>Order</dt><dd className="m-0" data-testid="deal-sheet-order">{data.order.name} · {data.order.status}</dd>
                 <dt style={dt}>Product</dt><dd className="m-0">{data.product.displayName}</dd>
                 <dt style={dt}>Deal type</dt><dd className="m-0">{TYPE_LABEL[data.dealType]}</dd>
-                <dt style={dt}>Rate</dt><dd className="m-0">{data.rateCpm} {data.currency}{rateType ? ` · ${rateType}` : ''}</dd>
+                {data.ratePerDay != null
+                  ? <><dt style={dt}>Rate per day</dt><dd className="m-0" data-testid="deal-sheet-rate-per-day">{data.ratePerDay} {data.currency} per 24-hour day · {rateType ?? 'Fixed per day'}{data.equivalentCpm && <div style={{ color: T.muted, fontSize: 12.5 }}>Equivalent CPM {equivalentCpmText(data.equivalentCpm)}</div>}</dd></>
+                  : <><dt style={dt}>Rate</dt><dd className="m-0">{data.rateCpm} {data.currency}{rateType ? ` · ${rateType}` : ''}</dd></>}
                 <dt style={dt}>Flight dates</dt><dd className="m-0">{when(data.activeFrom) ?? 'No start date'} → {when(data.activeTo) ?? 'No end date'}</dd>
                 <dt style={dt}>Term version</dt><dd className="m-0">{data.termVersion}</dd>
                 {data.guaranteedImpressions != null && <><dt style={dt}>Guaranteed impressions</dt><dd className="m-0" data-testid="deal-sheet-impressions">{data.guaranteedImpressions.toLocaleString()}<div style={{ color: T.muted, fontSize: 12.5 }}>{(data.committedPlays ?? 0).toLocaleString()} plays</div></dd></>}

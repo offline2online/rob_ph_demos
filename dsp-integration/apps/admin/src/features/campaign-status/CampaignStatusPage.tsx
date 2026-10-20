@@ -51,7 +51,6 @@ import { Button, Checkbox, Dropdown, Input, Modal, Radio, Spin, Switch, Tag } fr
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalStatusBadge, RejectionCodeSelect, STATUS_LABELS, isRejectionCode, rejectionLabel, type Approval, type ApprovalStatus, type RejectionCode } from '@ph-dsp/campaign-approval/ui'
-import { ApprovalSummaryStrip } from './ApprovalSummaryStrip'
 import type { Campaign } from '@ph-dsp/types'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -382,9 +381,6 @@ export function CampaignStatusPage() {
     else next.delete('status')
     setParams(next, { replace: true })
   }
-  /* The summary's links: the oldest waiting campaign, or the campaigns rejected for a reason. Each replaces the other and the status/advertiser filters. */
-  const focusOldest = (campaignId: string) => setParams({ campaignId, status: 'awaiting_approval' }, { replace: true })
-  const focusReason = (code: RejectionCode) => setParams(reasonFilter === code ? {} : { reason: code, status: 'rejected' }, { replace: true })
   const clearFocus = () => {
     const next = new URLSearchParams(params)
     next.delete('campaignId'); next.delete('reason')
@@ -443,7 +439,6 @@ export function CampaignStatusPage() {
   if (!campaigns.data) return <Spin />
   return (
     <div>
-      <ApprovalSummaryStrip activeReason={reasonFilter} onOldest={focusOldest} onReason={focusReason} />
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2" style={{ fontSize: 13 }}>
         <span style={{ fontWeight: 700 }}>
           {all.length} campaign{all.length === 1 ? '' : 's'}
