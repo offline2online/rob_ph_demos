@@ -22,6 +22,8 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
 | `css/console.css`, `css/console-apple.css` | Verbatim copies of `backlog-tracker/public/css/styles.css` and `apple.css` (20 Oct 2026), so it looks like the console |
 | `css/kanban.css` | Only what this prototype adds: six-column board, cards, task modal, settings, release report |
 | `js/data.js` | Mock team (Rob plus five Vietnam-based engineers), releases PH 4.11–4.13, sprints, epics, 33 tasks |
+| `js/editor.js` | Rich-text editor for descriptions and comments: the FAQ article editor's Quill 1.3.7 toolbar (headings, formatting, alignment, lists, quote, code, callouts, link, image, video, tables) plus @mentions, screenshots (upload, paste or drop), screen recording and URLs that link themselves |
+| `js/vendor/` | Quill 1.3.7 and DOMPurify (the console's own vendored build), bundled so the page doesn't depend on a CDN |
 | `js/kanban.js` | Routing (`#kanban`, `#agent-board`, `#report`, `#settings`), drag and drop, modal, report, settings |
 | `img/` | Console logo and favicon |
 
@@ -67,6 +69,10 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
   Adding a child saves the epic first, creating it if it's new. The child opens with the epic,
   release, sprint and labels already filled in, and the epic reopens when the child is created
   or cancelled. The × on a child row removes it from the epic. Epics are left out of the release report's effort figures.
+- **Rich descriptions and comments**. The description uses the same editor as Help Centre articles. The
+  comment box uses a compact version. Type `@` to mention someone, and they're notified when you save or comment. Paste,
+  drop or upload screenshots; they're downscaled and stored with the ticket. The record button captures your screen as a
+  playable video (prototype only: a recording lasts for the browser session, and the real console would upload it to Storage).
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban
   settings. On an existing ticket, hidden fields stay editable under
   "N more fields". Required fields are validated.

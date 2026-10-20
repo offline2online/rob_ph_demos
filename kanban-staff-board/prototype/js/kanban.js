@@ -333,7 +333,7 @@
       if (board.priority && t.priority !== board.priority) return false;
       if (board.sprint && t.sprint !== board.sprint) return false;
       if (board.label && !(t.labels || []).includes(board.label)) return false;
-      if (q && !(`${t.key} ${t.title} ${t.description} ${(t.labels || []).join(" ")}`.toLowerCase().includes(q))) return false;
+      if (q && !(`${t.key} ${t.title} ${KBEditor.toText(t.description)} ${(t.labels || []).join(" ")}`.toLowerCase().includes(q))) return false;
       return true;
     });
   }
@@ -759,7 +759,7 @@
         <p class="mic-error" id="f-voice-error"></p>
       </div>`;
       case "title": return `<div class="kb-field" data-field="title">${label("title")}<input type="text" id="f-title" class="kb-input kb-title-input" maxlength="200" value="${esc(d.title)}" placeholder="What needs doing?"></div>`;
-      case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap"><textarea id="f-description" class="kb-input" rows="5" placeholder="Context, steps to reproduce, acceptance criteria">${esc(d.description)}</textarea>${draftIsNew ? "" : micBtn("f-desc-mic", "Dictate into the description")}</div>
+      case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap kb-ed-wrap"><div class="kb-editor" id="f-description"></div>${draftIsNew ? "" : micBtn("f-desc-mic", "Dictate into the description")}</div>
         ${draftIsNew ? '<button type="button" class="kb-agent-link" id="f-agent-fill"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span>Fill in the ticket from this description</span></button>' : '<p class="mic-error" id="f-desc-mic-error"></p>'}</div>`;
       case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, d.status)).join("")}${RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, d.status === "done" ? "done:" + res(d) : "")).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
       case "assignee": return `<div class="kb-field" data-field="assignee">${label("assignee")}<select id="f-assignee" class="kb-input">${opt("", "Unassigned", d.assignee)}${SEED.users.map((u) => opt(u.id, u.first, d.assignee)).join("")}</select></div>`;
@@ -804,7 +804,7 @@
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
       case "comments": return `<div class="kb-field" data-field="comments">${label("comments", "f-comment")}<ul class="kb-comments" id="f-comments">${commentsHTML()}</ul>
-        <div class="desc-wrap"><textarea id="f-comment" class="kb-input" rows="2" placeholder="Add a comment, or tap the mic and talk"></textarea>${micBtn("f-comment-mic", "Dictate a comment")}</div>
+        <div class="desc-wrap kb-ed-wrap"><div class="kb-editor kb-editor-compact" id="f-comment"></div>${micBtn("f-comment-mic", "Dictate a comment")}</div>
         <p class="mic-error" id="f-comment-mic-error"></p>
         <div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" id="f-comment-add">Add comment</button></div></div>`;
     }
@@ -816,7 +816,7 @@
   const commentsHTML = () => {
     const items = [...(draft.comments || []).map((c) => ({ ...c, kind: "c" })), ...(draft.activity || []).map((a) => ({ ...a, kind: "a" }))].sort((a, b) => a.at.localeCompare(b.at));
     return items.map((c) => c.kind === "c"
-      ? `<li class="kb-comment">${avatar(c.author)}<div><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div><div class="kb-comment-text">${esc(c.text)}</div></div></li>`
+      ? `<li class="kb-comment">${avatar(c.author)}<div><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div><div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div></div></li>`
       : `<li class="kb-activity"><span class="material-symbols-outlined" aria-hidden="true">history</span><span><b>${esc(firstName(c.who))}</b> ${esc(c.text)}</span></li>`).join("") || '<li class="kb-none">No comments yet</li>';
   };
 
@@ -900,12 +900,8 @@
       ff.value = ""; $("#f-attachments").innerHTML = attachmentsHTML();
     });
     const ca = $("#f-comment-add");
-    if (ca) ca.addEventListener("click", () => {
-      const ta = $("#f-comment"); const text = ta.value.trim();
-      if (!text) return;
-      draft.comments.push({ author: state.me, at: new Date().toISOString(), text });
-      ta.value = ""; $("#f-comments").innerHTML = commentsHTML();
-    });
+    if (ca) ca.addEventListener("click", () => { if (addCommentFromEditor()) $("#f-comments").innerHTML = commentsHTML(); });
+    bindEditors();
     bindVoice();
     bindChildren(form);
     $("#f-cancel").addEventListener("click", closeTask);
@@ -1008,8 +1004,8 @@
     }
     const fill = $("#f-agent-fill");
     if (fill) fill.addEventListener("click", () => {
-      const t = ($("#f-description") || {}).value || "";
-      if (!t.trim()) { $("#f-description").focus(); return; }
+      const t = descQ ? KBEditor.getText(descQ) : "";
+      if (!t.trim()) { if (descQ) descQ.focus(); return; }
       runAgent(t, () => {});
     });
     bindMic("f-desc-mic", "f-description", "f-desc-mic-error");
@@ -1019,6 +1015,48 @@
   // A round mic inside a text box: dictates into that box, and shows a stop
   // icon while it is listening. One recording at a time across the modal.
   let activeMic = null;
+  // Rich editors for the description and the comment box (js/editor.js).
+  let descQ = null, commentQ = null, descInitial = "";
+  const staff = () => SEED.users.map((u) => ({ id: u.id, first: u.first, full: u.full, color: u.color }));
+  function bindEditors() {
+    descQ = commentQ = null;
+    const d = $("#f-description"), c = $("#f-comment");
+    if (d) {
+      descQ = KBEditor.create(d, { users: staff(), placeholder: "Context, steps to reproduce, acceptance criteria. Type @ to mention someone; paste a screenshot straight in.", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you save`) });
+      KBEditor.setHtml(descQ, draft.description || "");
+      descInitial = KBEditor.getHtml(descQ);
+    }
+    if (c) {
+      commentQ = KBEditor.create(c, { compact: true, users: staff(), placeholder: "Add a comment, @mention someone, or tap the mic and talk", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you add the comment`) });
+    }
+  }
+  function addCommentFromEditor() {
+    if (!commentQ) return false;
+    const html = KBEditor.getHtml(commentQ);
+    if (!html) return false;
+    draft.comments.push({ author: state.me, at: new Date().toISOString(), html, text: KBEditor.toText(html) });
+    const who = KBEditor.mentionsIn(html).filter((id) => id !== state.me).map(firstName);
+    commentQ.setContents([]);
+    if (who.length) toast(`Comment added · ${esc(who.join(", "))} notified`);
+    return true;
+  }
+  // A text box the mic dictates into: a Quill editor or a plain field.
+  function dictationTarget(id) {
+    const q = id === "f-description" ? descQ : id === "f-comment" ? commentQ : null;
+    if (q) {
+      let start = 0;
+      return {
+        begin() { start = Math.max(0, q.getLength() - 1); if (start && !/\s$/.test(q.getText(start - 1, 1))) { q.insertText(start, " ", "user"); start++; } },
+        live(t) { const said = start ? t : t.charAt(0).toUpperCase() + t.slice(1); q.deleteText(start, q.getLength() - 1 - start, "user"); q.insertText(start, said, "user"); },
+      };
+    }
+    const ta = $("#" + id);
+    let base = "";
+    return {
+      begin() { base = ta.value.trim(); },
+      live(t) { const said = base ? t : t.charAt(0).toUpperCase() + t.slice(1); ta.value = (base ? base + " " : "") + said; ta.dispatchEvent(new Event("input")); },
+    };
+  }
   function bindMic(btnId, taId, errId) {
     const mic = $("#" + btnId);
     if (!mic) return;
@@ -1029,17 +1067,17 @@
       mic.firstElementChild.textContent = on ? "stop" : "mic";
     };
     mic.addEventListener("click", () => {
-      const ta = $("#" + taId), err = $("#" + errId);
+      const target = dictationTarget(taId), err = $("#" + errId);
       if (rec) {
         const wasMe = activeMic === mic;
         stopRecorder(false);
         if (wasMe) return;
       }
       if (err) err.classList.remove("on");
-      const base = ta.value.trim();
+      target.begin();
       activeMic = mic;
       startRecorder({
-        onLive: (t) => { const said = base ? t : t.charAt(0).toUpperCase() + t.slice(1); ta.value = (base ? base + " " : "") + said; ta.dispatchEvent(new Event("input")); },
+        onLive: (t) => target.live(t),
         onState: (st) => { show(st === "recording"); if (st !== "recording" && activeMic === mic) activeMic = null; },
         onError: (m) => { if (err) { err.textContent = m; err.classList.add("on"); } show(false); },
         onDone: () => {},
@@ -1058,7 +1096,7 @@
       const filled = [];
       const put = (id, field, v) => { const el = $("#" + id); if (el && v != null && v !== "") { el.value = v; filled.push(field); } };
       put("f-title", "title", out.title);
-      put("f-description", "description", out.description);
+      if (descQ && out.description) { KBEditor.setHtml(descQ, out.description); filled.push("description"); }
       put("f-priority", "priority", out.priority);
       put("f-assignee", "assignee", out.assignee);
       put("f-release", "release", out.release);
@@ -1217,7 +1255,7 @@
     const t = taskByKey(draft.key);
     if (!t) return true;
     const v = (id) => { const el = $("#" + id); return el ? el.value : undefined; };
-    return (v("f-title") !== undefined && v("f-title").trim() !== t.title) || (v("f-description") !== undefined && v("f-description") !== (t.description || "")) || draft.flagged !== t.flagged || draft.type !== t.type;
+    return (v("f-title") !== undefined && v("f-title").trim() !== t.title) || (descQ && KBEditor.getHtml(descQ) !== descInitial) || draft.flagged !== t.flagged || draft.type !== t.type;
   }
 
   function submitTask(opts = {}) {
@@ -1226,7 +1264,12 @@
     const next = clone(draft);
     const set = (k, v) => { if (v !== undefined) next[k] = v; };
     set("title", val("f-title") !== undefined ? val("f-title").trim() : undefined);
-    set("description", val("f-description"));
+    let notify = [];
+    if (descQ) {
+      next.description = KBEditor.getHtml(descQ);
+      const before = KBEditor.mentionsIn(draftIsNew ? "" : (taskByKey(next.key) || {}).description);
+      notify = KBEditor.mentionsIn(next.description).filter((id) => id !== state.me && !before.includes(id)).map(firstName);
+    }
     set("assignee", val("f-assignee"));
     set("reporter", val("f-reporter"));
     set("release", val("f-release"));
@@ -1243,8 +1286,7 @@
       const p = parseDur(val("f-logged"));
       if (Number.isNaN(p)) errors.push(["logged", "Time logged: use a format like 3h or 1d 2h"]); else next.logged = p || 0;
     }
-    const pendingComment = val("f-comment");
-    if (pendingComment && pendingComment.trim()) next.comments.push({ author: state.me, at: new Date().toISOString(), text: pendingComment.trim() });
+    if (commentQ && KBEditor.getHtml(commentQ)) { addCommentFromEditor(); next.comments = draft.comments.slice(); }
 
     // Required fields that are on the form
     [...CORE_FIELDS, ...OPTIONAL_FIELDS].forEach((f) => {
@@ -1293,6 +1335,7 @@
       toast(`<b>${esc(next.key)}</b> created in ${esc(STATUS_LABEL[next.status])}${next.status === "ready-for-testing" ? ` · assigned to ${esc(firstName(next.assignee))}` : ""}`);
     }
     save();
+    if (notify.length) setTimeout(() => toast(`${esc(notify.join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
     if (opts.then) { const back = returnTo; returnTo = null; closeTask(); returnTo = back; render(); opts.then(next.key); return; }
     if (returnTo && !existing) toast(`<b>${esc(next.key)}</b> created in Backlog · added to ${esc(returnTo)}`);
     closeTask(); render();

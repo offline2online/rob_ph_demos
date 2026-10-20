@@ -486,3 +486,88 @@ body.kb-drag-active .kb-col[data-status="done"] .kb-res-split { visibility: hidd
   .kb-close-zones { left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom, 0px)); height: 38vh; }
   .kb-close-withdrawn .material-symbols-outlined { font-size: 24px; }
 }
+
+/* Rich-text description and comments (js/editor.js). Callout, table and code
+   styles below are the FAQ article editor's own (backlog-tracker styles.css). */
+.fa-body-viewer .faq-table, .ql-editor .faq-table { overflow-x: auto; margin: 0 0 12px; }
+.fa-body-viewer table, .ql-editor table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.fa-body-viewer th, .fa-body-viewer td, .ql-editor th, .ql-editor td { border: 1px solid #d9d9d9; padding: 6px 8px; text-align: left; vertical-align: top; }
+.fa-body-viewer thead th, .ql-editor thead th { background: #f2f4f5; font-weight: 700; }
+/* A table's own add/remove row/column toolbar (g2Xjt3XHXy27Psbd0dF0) and
+   its directly-editable cells — see faqTableToolbarHtml/FaqTableBlot in
+   app.js. Both are stripped before saving (faqBodySourceForSave), so
+   neither this toolbar nor the cell-focus styling below ever reaches
+   .fa-body-viewer or the public site. */
+.faq-table-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.faq-table-btn {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 9px; font-size: 11.5px; cursor: pointer; font-family: inherit;
+}
+.faq-table-btn:hover { background: var(--border); }
+.faq-table-btn-danger { color: var(--danger); border-color: var(--danger); }
+.faq-table-btn-danger:hover { background: var(--danger); color: #fff; }
+.ql-editor .faq-table th[contenteditable], .ql-editor .faq-table td[contenteditable] { cursor: text; }
+.ql-editor .faq-table th[contenteditable]:focus, .ql-editor .faq-table td[contenteditable]:focus {
+  outline: 2px solid var(--primary); outline-offset: -2px; background: var(--primary-tint);
+}
+.fa-body-viewer code, .ql-editor code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: #f2f4f5; border: 1px solid rgba(5, 5, 5, .06); border-radius: 4px; padding: 1px 5px; }
+.fa-body-viewer pre, .fa-body-viewer pre.ql-syntax { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: #1f2429; color: #f2f4f5; padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 0 0 12px; white-space: pre-wrap; }
+.fa-body-viewer .callout, .ql-editor .callout { border-left: 4px solid; border-radius: 4px; padding: 8px 12px; margin: 0 0 12px; }
+.fa-body-viewer .callout::before, .ql-editor .callout::before { display: block; font-weight: 700; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 3px; }
+.fa-body-viewer .callout-note, .ql-editor .callout-note { background: rgba(22, 155, 194, .1); border-color: #169bc2; }
+.fa-body-viewer .callout-note::before, .ql-editor .callout-note::before { content: "Note"; color: #0f7ea1; }
+.fa-body-viewer .callout-important, .ql-editor .callout-important { background: #fff7e6; border-color: #faad14; }
+.fa-body-viewer .callout-important::before, .ql-editor .callout-important::before { content: "Important"; color: #a86a00; }
+.fa-body-viewer .callout-warning, .ql-editor .callout-warning { background: #fff1f0; border-color: #ff4d4f; }
+.fa-body-viewer .callout-warning::before, .ql-editor .callout-warning::before { content: "Warning"; color: #c0272a; }
+/* The callout picker is a custom format, so Quill has no label for it. */
+.ql-snow .ql-picker.ql-callout { width: 96px; }
+.ql-snow .ql-picker.ql-callout .ql-picker-label::before { content: "Callout"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-item::before { content: "None"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-item[data-value="note"]::before { content: "Note"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-item[data-value="important"]::before { content: "Important"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-item[data-value="warning"]::before { content: "Warning"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-label[data-value="note"]::before { content: "Note"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-label[data-value="important"]::before { content: "Important"; }
+.ql-snow .ql-picker.ql-callout .ql-picker-label[data-value="warning"]::before { content: "Warning"; }
+
+.kb-ed-wrap { position: relative; }
+.kb-editor { background: var(--ap-card); }
+.kb-ed-wrap .ql-toolbar.ql-snow { border: 0; box-shadow: 0 0 0 .5px var(--ap-divider); border-radius: var(--ap-radius-sm) var(--ap-radius-sm) 0 0; background: var(--surface); padding: 6px 8px; font-family: inherit; }
+.kb-ed-wrap .ql-toolbar.ql-snow button { min-height: 0; height: 28px; width: 30px; padding: 4px 5px; border-radius: 6px; }
+.kb-ed-wrap .ql-toolbar.ql-snow button:hover { background: var(--surface-2); }
+.kb-ed-wrap .ql-toolbar.ql-snow .ql-picker { height: 28px; }
+.kb-ed-wrap .ql-toolbar.ql-snow .ql-formats { margin-right: 10px; }
+.kb-ed-wrap .ql-container.ql-snow { border: 0; box-shadow: 0 0 0 .5px var(--ap-divider); border-radius: 0 0 var(--ap-radius-sm) var(--ap-radius-sm); font-family: inherit; font-size: 14px; background: var(--ap-card); }
+.kb-ed-wrap .ql-editor { min-height: 150px; max-height: 420px; overflow-y: auto; padding: 12px 52px 12px 14px; line-height: 1.55; }
+.kb-editor-compact + .kb-mic, .kb-ed-wrap .kb-editor-compact ~ .kb-mic { bottom: 8px; }
+.kb-ed-wrap .kb-editor-compact .ql-editor { min-height: 64px; max-height: 240px; }
+.kb-ed-wrap .ql-editor.ql-blank::before { color: var(--text-muted); font-style: normal; left: 14px; right: 52px; }
+.kb-ed-wrap .ql-editor img, .kb-rich img { max-width: 100%; border-radius: 6px; box-shadow: 0 0 0 .5px var(--ap-divider); }
+.kb-ed-wrap .ql-editor video, .kb-rich video { display: block; width: 100%; max-height: 320px; border-radius: 8px; background: #000; margin: 6px 0; }
+.kb-ed-wrap .ql-editor iframe.ql-video { width: 100%; aspect-ratio: 16 / 9; height: auto; }
+.kb-ed-wrap .ql-snow .ql-tooltip { z-index: 5; border-radius: var(--ap-radius-sm); box-shadow: 0 6px 20px rgba(0, 0, 0, .15); }
+.kb-mention { display: inline-block; padding: 0 6px; border-radius: 9999px; background: var(--primary-tint); color: var(--primary-text); font-weight: 600; white-space: nowrap; }
+.kb-mention-menu { position: absolute; z-index: 6; width: 220px; max-height: 240px; overflow-y: auto; padding: 4px; border-radius: var(--ap-radius-sm); background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider), 0 10px 28px rgba(0, 0, 0, .18); }
+.kb-mention-menu[hidden] { display: none; }
+.kb-mention-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: 13.5px; color: var(--text); cursor: pointer; text-align: left; }
+.kb-mention-item.on, .kb-mention-item:hover { background: var(--primary-tint); }
+.kb-mention-full { margin-left: auto; font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-mention-empty { padding: 8px; font-size: 12.5px; color: var(--text-muted); }
+.kb-ed-panel { position: absolute; z-index: 7; top: 44px; left: 8px; right: 8px; padding: 14px; border-radius: var(--ap-radius-sm); background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider), 0 12px 32px rgba(0, 0, 0, .2); }
+.kb-ed-panel-title { font-weight: 700; margin-bottom: 8px; }
+.kb-ed-panel .field-label { margin-top: 10px; }
+.kb-ed-upload { cursor: pointer; min-height: 40px; }
+.kb-ed-or { display: block; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.kb-ed-panel-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+.kb-ed-panel-actions button { min-height: 38px; }
+.ql-snow .ql-screenrec .kb-rec-dot { fill: var(--danger); }
+.ql-snow .ql-screenrec.kb-recording-on { background: var(--danger-tint) !important; animation: mic-pulse 1.4s ease-in-out infinite; }
+.kb-rich p { margin: 0 0 6px; }
+.kb-rich p:last-child { margin-bottom: 0; }
+.kb-rich a, .kb-ed-wrap .ql-editor a { color: var(--primary-text); }
+.kb-agent-filled .ql-container, .kb-field-error .ql-container { box-shadow: 0 0 0 1.5px rgba(151, 71, 255, .55) !important; }
+.kb-field-error .ql-container { box-shadow: 0 0 0 1.5px var(--danger) !important; }
+
+.faq-table-btn { min-height: 0 !important; height: auto; }
+.kb-ed-wrap .ql-snow .ql-picker.ql-header { width: 92px; }
