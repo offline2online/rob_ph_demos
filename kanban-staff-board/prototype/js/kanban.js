@@ -5,7 +5,7 @@
   "use strict";
 
   const SEED = window.KB_SEED;
-  const STORE_KEY = "kb-proto-v1";
+  const STORE_KEY = "kb-proto-v2";
   const NAV_KEY = "kb-proto-nav-collapsed";
   const root = document.documentElement;
 
@@ -23,7 +23,7 @@
   const TYPES = [
     { key: "task", label: "Task", icon: "check_box" },
     { key: "bug", label: "Bug", icon: "bug_report" },
-    { key: "story", label: "Story", icon: "bookmark" },
+    { key: "epic", label: "Epic", icon: "bolt" },
   ];
   const PRIORITIES = [
     { key: "highest", label: "Highest", icon: "keyboard_double_arrow_up" },
@@ -52,7 +52,9 @@
     { key: "labels", label: "Labels" },
     { key: "comments", label: "Comments" },
     { key: "attachments", label: "Attachments" },
-    { key: "links", label: "Parent epic / linked tickets" },
+    { key: "epic", label: "Parent epic" },
+    { key: "links", label: "Linked tickets" },
+    { key: "flag", label: "Flag" },
   ];
   const FIELD_LABEL = Object.fromEntries([...CORE_FIELDS, ...OPTIONAL_FIELDS].map((f) => [f.key, f.label]));
 
@@ -68,6 +70,7 @@
         logged: { show: true, required: false }, labels: { show: false, required: false },
         comments: { show: true, required: false }, attachments: { show: false, required: false },
         links: { show: false, required: false },
+        epic: { show: true, required: false }, flag: { show: true, required: false },
       },
       tester: "rob",
       currentRelease: SEED.currentRelease,
@@ -95,7 +98,7 @@
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* private window */ }
   }
 
-  const board = { q: "", mine: false, assignees: new Set(), type: "", priority: "", sprint: "", release: "", label: "" };
+  const board = { q: "", mine: false, flagged: false, assignees: new Set(), type: "", priority: "", sprint: "", release: "", label: "" };
   const collapsedCols = new Set();
   let filtersOpen = false;
   const collapsedLanes = new Set();
@@ -109,7 +112,10 @@
   const release = (id) => SEED.releases.find((r) => r.id === id);
   const releaseName = (id) => (release(id) || {}).name || "No release";
   const sprint = (id) => SEED.sprints.find((s) => s.id === id);
-  const epic = (key) => SEED.epics.find((e) => e.key === key);
+  // Epics are ordinary tickets of type "epic"; any task or bug can name one as its parent.
+  const epics = () => state.tasks.filter((t) => t.type === "epic").sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
+  const epic = (key) => (key ? state.tasks.find((t) => t.key === key && t.type === "epic") : null);
+  const childrenOf = (key) => state.tasks.filter((t) => t.epic === key && t.type !== "epic");
   const typeOf = (k) => TYPES.find((t) => t.key === k) || TYPES[0];
   const prioOf = (k) => PRIORITIES.find((p) => p.key === k) || PRIORITIES[2];
   const taskByKey = (k) => state.tasks.find((t) => t.key === k);
@@ -185,6 +191,15 @@
   }
 
   // lane: the swimlane a card was dropped in ("none" = Unassigned); undefined on a plain board.
+  function toggleFlag(task, quiet) {
+    if (!task) return;
+    task.flagged = !task.flagged;
+    task.activity = task.activity || [];
+    task.activity.push({ at: new Date().toISOString(), who: state.me, text: task.flagged ? "flagged this ticket" : "removed the flag" });
+    save();
+    if (!quiet) { toast(`<b>${esc(task.key)}</b> ${task.flagged ? "flagged" : "flag removed"}`); render(); }
+  }
+
   function moveTask(key, status, beforeKey, lane) {
     const task = taskByKey(key);
     if (!task) return;
@@ -303,6 +318,7 @@
     const q = board.q.trim().toLowerCase();
     return state.tasks.filter((t) => {
       if (board.mine && t.assignee !== state.me) return false;
+      if (board.flagged && !t.flagged) return false;
       if (board.assignees.size && !board.assignees.has(t.assignee || "none")) return false;
       if (board.release && t.release !== board.release) return false;
       if (board.type && t.type !== board.type) return false;
@@ -318,7 +334,7 @@
   function renderKanban(view) {
     const relOpts = opt("", "All releases", board.release) + SEED.releases.map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), board.release)).join("");
     const extraCount = [board.release, board.type, board.priority, board.sprint, board.label].filter(Boolean).length;
-    const filtersActive = board.mine || board.assignees.size || board.type || board.priority || board.sprint || board.label || board.q;
+    const filtersActive = board.flagged || board.mine || board.assignees.size || board.type || board.priority || board.sprint || board.label || board.q;
     view.innerHTML = `
       <div class="page-header">
         <h2>Kanban</h2>
@@ -343,6 +359,7 @@
           <button type="button" class="kb-person-chip${board.assignees.has("none") ? " on" : ""}" data-person="none" aria-pressed="${board.assignees.has("none")}">${avatar("")}<span>Unassigned</span></button>
         </div>
         <button type="button" class="kb-mine${board.mine ? " on" : ""}" id="kb-mine" aria-pressed="${board.mine}"><span class="material-symbols-outlined" aria-hidden="true">person</span>My tasks</button>
+        <button type="button" class="kb-mine kb-flag-filter${board.flagged ? " on" : ""}" id="kb-flagged" aria-pressed="${board.flagged}"><span class="material-symbols-outlined" aria-hidden="true">flag</span>Flagged<span class="kb-flag-count">${state.tasks.filter((t) => t.flagged && t.status !== "done").length}</span></button>
         <button type="button" class="kb-mine kb-filter-toggle${filtersOpen ? " on" : ""}" id="kb-filter-toggle" aria-expanded="${filtersOpen}"><span class="material-symbols-outlined" aria-hidden="true">tune</span>Filters${extraCount ? ` · ${extraCount}` : ""}</button>
         <div class="kb-filter-more${filtersOpen ? " open" : ""}">
         <select id="kb-release" aria-label="Release">${relOpts}</select>
@@ -396,10 +413,11 @@
     }));
     $("#kb-filter-toggle").addEventListener("click", () => { filtersOpen = !filtersOpen; renderKanban(view); });
     $("#kb-mine").addEventListener("click", () => { board.mine = !board.mine; renderKanban(view); });
+    $("#kb-flagged").addEventListener("click", () => { board.flagged = !board.flagged; renderKanban(view); });
     [["kb-release", "release"], ["kb-type", "type"], ["kb-priority", "priority"], ["kb-sprint", "sprint"], ["kb-label", "label"]].forEach(([id, k]) =>
       $("#" + id).addEventListener("change", (e) => { board[k] = e.target.value; renderKanban(view); }));
     const clear = $("#kb-clear");
-    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, type: "", priority: "", sprint: "", label: "" }); board.assignees.clear(); renderKanban(view); });
+    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, type: "", priority: "", sprint: "", label: "" }); board.assignees.clear(); renderKanban(view); });
     renderKanbanBoard();
   }
 
@@ -511,20 +529,25 @@
     const est = +t.estimate || 0, log = +t.logged || 0;
     const pct = est ? Math.min(100, Math.round((log / est) * 100)) : 0;
     const over = est && log > est;
-    const ep = epic(t.epic);
-    return `<article class="card kb-card" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title)}">
+    const ep = t.type === "epic" ? null : epic(t.epic);
+    const kids = t.type === "epic" ? childrenOf(t.key) : null;
+    const kidsDone = kids ? kids.filter((k) => k.status === "done").length : 0;
+    const flagBtn = `<button type="button" class="kb-flag-btn${t.flagged ? " on" : ""}" data-flag="${esc(t.key)}" aria-pressed="${!!t.flagged}" title="${t.flagged ? "Remove flag" : "Flag"}" aria-label="${t.flagged ? "Remove flag" : "Flag"} ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">flag</span></button>`;
+    return `<article class="card kb-card${t.flagged ? " kb-flagged" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (t.flagged ? ", flagged" : ""))}">
       <div class="kb-card-top">
         <span class="kb-type kb-type-${ty.key}" title="${ty.label}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span>
         <span class="kb-key">${esc(t.key)}</span>
-        ${ep ? `<span class="kb-epic-chip" title="${esc(ep.title)}">${esc(ep.title.split(" — ")[0])}</span>` : ""}
         <span class="kb-prio kb-prio-${pr.key}" title="${pr.label} priority"><span class="material-symbols-outlined" aria-hidden="true">${pr.icon}</span></span>
+        ${state.settings.fields.flag.show || t.flagged ? flagBtn : ""}
       </div>
       <p class="card-title">${esc(t.title)}</p>
+      ${ep ? `<p class="kb-parent-epic" title="Parent epic: ${esc(ep.key + " " + ep.title)}"><span class="material-symbols-outlined" aria-hidden="true">bolt</span><span>${esc(ep.title)}</span></p>` : ""}
+      ${kids ? `<div class="kb-progress kb-epic-progress" title="${kidsDone} of ${kids.length} child tickets done"><span style="width:${kids.length ? (kidsDone / kids.length) * 100 : 0}%"></span></div>` : ""}
       ${t.status === "ready-for-testing" && t.previousAssignee ? `<p class="kb-handoff"><span class="material-symbols-outlined" aria-hidden="true">swap_horiz</span>From ${esc(firstName(t.previousAssignee))}</p>` : ""}
       ${est ? `<div class="kb-progress${over ? " over" : ""}" title="${fmtH(log)} logged of ${fmtH(est)}"><span style="width:${pct}%"></span></div>` : ""}
       <div class="kb-card-footer">
         <div class="kb-card-chips">
-          ${est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
+          ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kids.length} done</span>` : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
           ${(t.comments || []).length ? `<span class="kb-meta-ic" title="${t.comments.length} comment${t.comments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.comments.length}</span>` : ""}
           ${(t.attachments || []).length ? `<span class="kb-meta-ic" title="${t.attachments.length} attachment${t.attachments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachments.length}</span>` : ""}
@@ -564,6 +587,8 @@
       const card = e.target.closest(".kb-card");
       if (!card) return;
       if (suppressClick) { suppressClick = false; e.preventDefault(); return; }
+      const fb = e.target.closest("[data-flag]");
+      if (fb) { toggleFlag(taskByKey(fb.dataset.flag)); return; }
       openTask(card.dataset.key);
     });
     document.addEventListener("keydown", (e) => {
@@ -633,10 +658,19 @@
       comments: [], attachments: [], links: [], previousAssignee: "", activity: [],
     };
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
+    syncModalFlag();
     renderForm();
     $("#task-backdrop").hidden = false;
     document.body.classList.add("kb-modal-open");
     setTimeout(() => { const f = $("#f-title"); if (f && draftIsNew) f.focus(); }, 30);
+  }
+  function syncModalFlag() {
+    const b = $("#task-flag");
+    b.hidden = !(fieldOn("flag") || draft.flagged);
+    b.classList.toggle("on", !!draft.flagged);
+    b.setAttribute("aria-pressed", String(!!draft.flagged));
+    $("#task-flag-label").textContent = draft.flagged ? "Flagged" : "Flag";
+    $(".kb-task-panel").classList.toggle("kb-panel-flagged", !!draft.flagged);
   }
   function closeTask() { stopRecorder(true); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null; }
 
@@ -672,8 +706,18 @@
       }
       case "labels": return `<div class="kb-field" data-field="labels">${label("labels", "f-label-input")}<div class="kb-labels" id="f-labels">${labelsHTML()}</div>
         <input type="text" id="f-label-input" class="kb-input" list="kb-label-list" placeholder="Add a label and press Enter"><datalist id="kb-label-list">${SEED.labels.map((l) => `<option value="${esc(l)}">`).join("")}</datalist></div>`;
-      case "links": return `<div class="kb-field" data-field="links">${label("links", "f-epic")}
-        <select id="f-epic" class="kb-input" aria-label="Parent epic">${opt("", "No parent epic", d.epic)}${SEED.epics.map((e) => opt(e.key, `${e.key} · ${e.title}`, d.epic)).join("")}</select>
+      case "epic": {
+        const list = epics().filter((e) => e.key !== d.key);
+        return `<div class="kb-field" data-field="epic"${d.type === "epic" ? " hidden" : ""}>${label("epic")}<select id="f-epic" class="kb-input">${opt("", list.length ? "No parent epic" : "No epics yet", d.epic)}${list.map((e) => opt(e.key, `${e.key} · ${e.title}`, d.epic)).join("")}</select></div>`;
+      }
+      case "children": {
+        const kids = childrenOf(d.key);
+        const done = kids.filter((k) => k.status === "done").length;
+        return `<div class="kb-field" data-field="children"><label class="field-label">Child tickets <span class="kb-none">${done} of ${kids.length} done</span></label>
+          ${kids.length ? `<div class="kb-logbar kb-epic-progress"><span style="width:${(done / kids.length) * 100}%"></span></div>` : ""}
+          <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}<span class="kb-status-pill kb-sp-${k.status}">${esc(STATUSES.find((x) => x.key === k.status).short)}</span>${avatar(k.assignee)}</li>`).join("") || '<li class="kb-none">No tickets in this epic yet. Pick it as the parent epic on a task or bug</li>'}</ul></div>`;
+      }
+      case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
         <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${["blocks", "is blocked by", "relates to", "duplicates"].map((x) => opt(x, x, "relates to")).join("")}</select>
           <select id="f-link-key" class="kb-input" aria-label="Ticket">${state.tasks.filter((t) => t.key !== d.key).sort((a, b) => a.key.localeCompare(b.key)).map((t) => opt(t.key, `${t.key} · ${t.title}`, "")).join("")}</select>
@@ -699,10 +743,10 @@
   function renderForm() {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
-    const main = draftIsNew ? ["voice", "title", "description", "attachments", "links"] : ["title", "description", "links", "attachments", "comments"];
-    const side = ["priority", "type", "assignee", "reporter", "release", "estimate", "logged", "sprint", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
-    const visible = (k) => k === "voice" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
-    const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => !fieldOn(k) && !(draftIsNew && k === "comments"));
+    const main = draftIsNew ? ["voice", "title", "description", "attachments", "links"] : ["title", "description"].concat(draft.type === "epic" ? ["children"] : [], ["links", "attachments", "comments"]);
+    const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
+    const visible = (k) => k === "voice" || k === "children" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
+    const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
     form.innerHTML = `
       <div class="kb-task-grid">
@@ -723,6 +767,8 @@
     $$(".kb-type-toggle .type-opt", form).forEach((b) => b.addEventListener("click", () => {
       draft.type = b.dataset.type;
       $$(".kb-type-toggle .type-opt", form).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-checked", String(x === b)); });
+      const pe = $('[data-field="epic"]', form);
+      if (pe) pe.hidden = draft.type === "epic";
     }));
     const st = $("#f-status");
     if (st) st.addEventListener("change", () => {
@@ -778,11 +824,13 @@
       ta.value = ""; $("#f-comments").innerHTML = commentsHTML();
     });
     bindVoice();
+    $$("[data-open-child]", form).forEach((li) => li.addEventListener("click", () => openTask(li.dataset.openChild)));
     $("#f-cancel").addEventListener("click", closeTask);
     const del = $("#f-delete");
     if (del) del.addEventListener("click", () => {
       if (!confirm(`Delete ${draft.key}? This can't be undone.`)) return;
       state.tasks = state.tasks.filter((t) => t.key !== draft.key);
+      state.tasks.forEach((t) => { if (t.epic === draft.key) t.epic = ""; });
       save(); toast(`<b>${esc(draft.key)}</b> deleted`); closeTask(); render();
     });
     form.onsubmit = (e) => { e.preventDefault(); submitTask(); };
@@ -914,8 +962,11 @@
       put("f-estimate", "estimate", out.estimate != null ? fmtH(out.estimate) : "");
       put("f-due", "due", out.due);
       put("f-sprint", "sprint", out.sprint);
+      put("f-epic", "epic", out.epic);
+      if (out.flagged && !draft.flagged) { draft.flagged = true; syncModalFlag(); filled.push("flag"); }
       if (out.type) {
         draft.type = out.type; filled.push("type");
+        const pe = $('[data-field="epic"]', form); if (pe) pe.hidden = out.type === "epic";
         $$(".kb-type-toggle .type-opt", form).forEach((x) => { const on = x.dataset.type === out.type; x.classList.toggle("active", on); x.setAttribute("aria-checked", String(on)); });
       }
       if (out.labels.length && $("#f-labels")) { draft.labels = Array.from(new Set([...(draft.labels || []), ...out.labels])); $("#f-labels").innerHTML = labelsHTML(); filled.push("labels"); }
@@ -948,7 +999,7 @@
     else if (/\b(low priority|nice to have|no rush|whenever|not urgent)\b/.test(low)) out.priority = "low";
     else if (/\b(medium priority|normal priority)\b/.test(low)) out.priority = "medium";
     if (/\b(bug|broken|breaks|fails?|failing|failed|error|crash(es|ing)?|doesn'?t work|isn'?t working|not working|wrong|regression|missing)\b/.test(low)) out.type = "bug";
-    else if (/\b(as an? .{2,40} i want|user story|story|so that|new feature|feature)\b/.test(low)) out.type = "story";
+    else if (/\b(epic|programme of work|umbrella)\b/.test(low)) out.type = "epic";
     else out.type = "task";
     const est = low.match(/\b(\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|half|couple)\s*(?:of\s*)?(?:an?\s*)?(hours?|hrs?|days?|minutes?|mins?)\b/);
     if (est && /(take|estimate|about|around|roughly|should be|needs?|maybe|probably|half)/.test(low.slice(Math.max(0, est.index - 30), est.index + est[0].length))) {
@@ -967,6 +1018,11 @@
       if (byDay[1] === "tomorrow") d.setDate(d.getDate() + 1);
       else { const target = byDay[1].startsWith("end") ? 5 : days.indexOf(byDay[1]); let add = (target - d.getDay() + 7) % 7; if (!add) add = 7; d.setDate(d.getDate() + add); }
       out.due = d.toISOString().slice(0, 10);
+    }
+    if (/\b(flag (it|this)|flagged|blocked)\b/.test(low)) out.flagged = true;
+    if (out.type !== "epic") {
+      const ep = epics().find((e) => { const name = fold(e.title.split(" — ")[0]); return low.includes(name) || (/\bepic\b/.test(low) && name.split(" ").filter((w) => w.length > 3).every((w) => low.includes(w))); });
+      if (ep) out.epic = ep.key;
     }
     const LABELS = [["menu-boards", /menu ?boards?|local offers?|offer/], ["dsp", /\bdsp\b|partner api|exchange|display types?|playlist|advertis/], ["help-centre", /help cent(re|er)|faq|freshdesk/], ["retail-admin", /retail admin|queue|appointment|store hours/], ["hq-admin", /hq admin|product assets|stockists|pricing page/], ["visitor-profile", /visitor profile|personali[sz]ation attribute|attribute/], ["performance", /slow|performance|latency|speed/], ["accessibility", /accessib|screen reader|wcag|contrast/], ["security", /security|permission|consent|rate.?limit/], ["api", /\bapi\b|endpoint|webhook/]];
     LABELS.forEach(([l, re]) => { if (re.test(low)) out.labels.push(l); });
@@ -1026,7 +1082,9 @@
     // Required fields that are on the form
     [...CORE_FIELDS, ...OPTIONAL_FIELDS].forEach((f) => {
       if (!fieldReq(f.key) || !$(`[data-field="${f.key}"]`, form) || $(`.kb-more [data-field="${f.key}"]`, form)) return;
-      const v = f.key === "links" ? next.epic || next.links.length : next[f.key];
+      if (f.key === "epic" && next.type === "epic") return;
+      if (f.key === "flag") return;
+      const v = f.key === "links" ? next.links.length : next[f.key];
       const empty = Array.isArray(v) ? !v.length : v === "" || v == null || (f.key === "logged" && !v);
       if (empty && !errors.some((x) => x[0] === f.key)) errors.push([f.key, `${f.label} is required`]);
     });
@@ -1037,7 +1095,14 @@
       err.hidden = false; err.textContent = errors.map((x) => x[1]).join(" · ");
       return;
     }
+    if (next.type === "epic") next.epic = "";
     const newStatus = val("f-status") || draft.status;
+    const wasEpic = (taskByKey(next.key) || {}).type === "epic";
+    if (wasEpic && next.type !== "epic") {
+      const kids = childrenOf(next.key);
+      kids.forEach((k) => { k.epic = ""; });
+      if (kids.length) setTimeout(() => toast(`${kids.length} ticket${kids.length > 1 ? "s" : ""} no longer ha${kids.length > 1 ? "ve" : "s"} a parent epic`), 3700);
+    }
     const existing = taskByKey(next.key);
     if (existing) {
       const prevStatus = existing.status;
@@ -1063,6 +1128,7 @@
     save(); closeTask(); render();
   }
   function initModal() {
+    $("#task-flag").addEventListener("click", () => { if (draft) { draft.flagged = !draft.flagged; syncModalFlag(); } });
     $("#task-close").addEventListener("click", closeTask);
     $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#task-backdrop").hidden) closeTask(); });
@@ -1076,7 +1142,7 @@
     if (!f.status) f.status = "outstanding";
     const rel = release(f.release);
 
-    const inScope = state.tasks.filter((t) => (!f.release || f.release === "all" || t.release === f.release));
+    const inScope = state.tasks.filter((t) => t.type !== "epic" && (!f.release || f.release === "all" || t.release === f.release));
     const filtered = inScope.filter((t) => {
       if (f.status === "outstanding" ? t.status === "done" : f.status !== "all" && t.status !== f.status) return false;
       if (f.assignee && (t.assignee || "none") !== f.assignee) return false;
@@ -1137,16 +1203,16 @@
         ${sel("release", ["Release"], relItems)}
         ${sel("status", ["Status"], opt("outstanding", "Outstanding (not Done)", f.status) + opt("all", "All, including Done", f.status) + STATUSES.map((s) => opt(s.key, s.label, f.status)).join(""))}
         ${sel("assignee", ["Staff member"], opt("", "Everyone", f.assignee) + SEED.users.map((u) => opt(u.id, u.first, f.assignee)).join("") + opt("none", "Unassigned", f.assignee))}
-        ${sel("type", ["Type"], opt("", "All types", f.type) + TYPES.map((t) => opt(t.key, t.label, f.type)).join(""))}
+        ${sel("type", ["Type"], opt("", "All types", f.type) + TYPES.filter((t) => t.key !== "epic").map((t) => opt(t.key, t.label, f.type)).join(""))}
         ${sel("priority", ["Priority"], opt("", "All priorities", f.priority) + PRIORITIES.map((p) => opt(p.key, p.label, f.priority)).join(""))}
         ${sel("sprint", ["Sprint"], opt("", "All sprints", f.sprint) + SEED.sprints.map((s) => opt(s.id, s.name, f.sprint)).join(""))}
         ${sel("label", ["Label"], opt("", "All labels", f.label) + SEED.labels.map((l) => opt(l, l, f.label)).join(""))}
-        ${sel("epic", ["Epic"], opt("", "All epics", f.epic) + SEED.epics.map((e) => opt(e.key, e.title, f.epic)).join(""))}
+        ${sel("epic", ["Epic"], opt("", "All epics", f.epic) + epics().map((e) => opt(e.key, e.title, f.epic)).join(""))}
         ${anyExtra ? '<button type="button" class="link-btn kb-clear" id="rp-reset">Reset to current release</button>' : ""}
       </div>
 
       <div class="kb-kpis">
-        <div class="kb-kpi"><div class="kb-kpi-label">Outstanding tasks${tip("Tasks in the selected release and filters that are not in Done.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} done in release</div></div>
+        <div class="kb-kpi"><div class="kb-kpi-label">Outstanding tasks${tip("Tasks in the selected release and filters that are not in Done.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} done in release${outstanding.filter((t) => t.flagged).length ? ` · <span class="kb-kpi-flag"><span class="material-symbols-outlined" aria-hidden="true">flag</span>${outstanding.filter((t) => t.flagged).length} flagged</span>` : ""}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Remaining effort${tip("Sum of estimate minus time logged on each outstanding task, never below zero. 1d = 8h.")}</div><div class="kb-kpi-value">${fmtH(totalRem)}</div><div class="kb-kpi-sub">${noEstimate ? `${noEstimate} without estimate` : "All estimated"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Time logged${tip("Time logged against the filtered tasks, as a share of their total estimate.")}</div><div class="kb-kpi-value">${fmtH(totalLog)}</div><div class="kb-kpi-sub">${totalEst ? Math.round((totalLog / totalEst) * 100) + "% of " + fmtH(totalEst) : "—"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Release date${tip("Working days (Mon–Fri) from today to the release date.")}</div><div class="kb-kpi-value">${rel ? fmtDate(rel.date) : "—"}</div><div class="kb-kpi-sub">${rel ? (rel.released ? "Released" : `${wd} working days left`) : "Pick a release"}</div></div>
@@ -1187,7 +1253,7 @@
                 p.tasks.slice().sort((a, b) => STATUSES.findIndex((s) => s.key === a.status) - STATUSES.findIndex((s) => s.key === b.status) || a.rank - b.rank).map((t) => {
                   const overdue = t.due && t.status !== "done" && daysBetween(t.due, TODAY) < 0;
                   const pr = prioOf(t.priority), ty = typeOf(t.type);
-                  return `<tr class="kb-click-row" data-open="${esc(t.key)}"><td><span class="kb-task-cell"><span class="kb-type kb-type-${ty.key}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span><span class="kb-key">${esc(t.key)}</span><span class="archive-row-title">${esc(t.title)}</span></span></td>
+                  return `<tr class="kb-click-row" data-open="${esc(t.key)}"><td><span class="kb-task-cell"><span class="kb-type kb-type-${ty.key}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span><span class="kb-key">${esc(t.key)}</span><span class="archive-row-title">${esc(t.title)}</span>${t.flagged ? '<span class="material-symbols-outlined kb-flag-mini" title="Flagged" aria-label="Flagged">flag</span>' : ""}</span></td>
                     <td><span class="kb-status-pill kb-sp-${t.status}">${esc(STATUSES.find((s) => s.key === t.status).short)}</span></td>
                     <td><span class="kb-prio-cell kb-prio-${pr.key}"><span class="material-symbols-outlined" aria-hidden="true">${pr.icon}</span>${pr.label}</span></td>
                     <td class="archive-row-date">${esc(sprint(t.sprint) ? sprint(t.sprint).name : "—")}</td>
@@ -1231,7 +1297,7 @@
       return `<div class="kb-set-row${core ? " kb-set-core" : ""}">
         <span class="kb-set-name">${esc(f.label)}${core && f.lockRequired ? '<span class="kb-set-tag">Always required</span>' : ""}</span>
         <label class="kb-set-toggle"><span class="kb-set-col">Show</span><input type="checkbox" data-show="${f.key}" ${c.show ? "checked" : ""} ${core ? "disabled" : ""} aria-label="Show ${esc(f.label)} on the form"></label>
-        <label class="kb-set-toggle"><span class="kb-set-col">Required</span><input type="checkbox" data-req="${f.key}" ${c.required ? "checked" : ""} ${f.lockRequired || !c.show || ["comments", "attachments"].includes(f.key) ? "disabled" : ""} aria-label="${esc(f.label)} required"></label>
+        <label class="kb-set-toggle"><span class="kb-set-col">Required</span><input type="checkbox" data-req="${f.key}" ${c.required ? "checked" : ""} ${f.lockRequired || !c.show || ["comments", "attachments", "flag"].includes(f.key) ? "disabled" : ""} aria-label="${esc(f.label)} required"></label>
       </div>`;
     };
     view.innerHTML = `

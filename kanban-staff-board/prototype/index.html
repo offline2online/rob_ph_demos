@@ -15,9 +15,9 @@
        only what the Kanban board, task modal and release report add. -->
   <!-- ?v= is bumped on every change: GitHub Pages lets browsers cache these
        files for 10 minutes, which otherwise serves the previous release. -->
-  <link rel="stylesheet" href="css/console.css?v=7">
-  <link rel="stylesheet" href="css/console-apple.css?v=7">
-  <link rel="stylesheet" href="css/kanban.css?v=7">
+  <link rel="stylesheet" href="css/console.css?v=9">
+  <link rel="stylesheet" href="css/console-apple.css?v=9">
+  <link rel="stylesheet" href="css/kanban.css?v=9">
 </head>
 <body>
   <div class="app">
@@ -78,7 +78,10 @@
     <div class="modal-panel modal-panel-wide kb-task-panel" role="dialog" aria-modal="true" aria-labelledby="task-title-h">
       <div class="modal-header">
         <h2 id="task-title-h">New task</h2>
-        <button type="button" class="modal-close" id="task-close" aria-label="Close">&times;</button>
+        <div class="kb-modal-head-actions">
+          <button type="button" class="kb-task-flag" id="task-flag" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">flag</span><span id="task-flag-label">Flag</span></button>
+          <button type="button" class="modal-close" id="task-close" aria-label="Close">&times;</button>
+        </div>
       </div>
       <form id="task-form" novalidate></form>
     </div>
@@ -87,7 +90,7 @@
   <div class="kb-toast" id="kb-toast" role="status" aria-live="polite" hidden></div>
   <div class="kb-bar-tip" id="kb-bar-tip" hidden></div>
 
-  <script src="js/data.js?v=7"></script>
-  <script src="js/kanban.js?v=7"></script>
+  <script src="js/data.js?v=9"></script>
+  <script src="js/kanban.js?v=9"></script>
 </body>
 </html>

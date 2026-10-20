@@ -49,6 +49,13 @@ viewer's own `localStorage`, and **⋮ → Reset demo data** puts the mock data 
   The side panel runs priority, type, assignee, reporter, release, estimate, then time logged.
   When you edit a task, the description has a mic for dictation, and Status sits at the end of
   the side panel.
+- **Flags**. Each card has a flag button (shown on hover, always shown once a card is flagged).
+  Flagged cards turn amber. There's a **Flagged** filter with a count, a Flag toggle in the
+  modal header, and flags also show in the release report.
+- **Types: Task, Bug, Epic**. Story has been removed. An epic is an ordinary ticket. Once
+  saved, it can be picked as the **Parent epic** of any task or bug. The child shows the epic
+  name under its title. The epic's card shows "n/m done" with a progress bar, and its modal
+  lists the child tickets. Epics are left out of the release report's effort figures.
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban
   settings. On an existing ticket, hidden fields stay editable under
   "N more fields". Required fields are validated.
