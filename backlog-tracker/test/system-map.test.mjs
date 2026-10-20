@@ -123,10 +123,29 @@ console.log("system-map (federation): ok");
   assert.equal(mm.byId.k1.desc, "First line of prose. Second line.");
   assert.equal(mm.byId.k2.desc, "Explicit.");
   const h = systemMapHTML(mm);
-  assert.ok(h.includes("Sells ad slots. Two sentences."));
-  assert.ok(/Bare[^<]*\nNo description yet/.test(h), "a project with no description is flagged");
+  const { nodeTipHTML } = await import("../public/js/system-map.js");
+  assert.ok(nodeTipHTML(mm, "p1").includes("Sells ad slots. Two sentences."));
+  assert.ok(nodeTipHTML(mm, "p2").includes("No description yet"), "a project with no description is flagged");
   assert.ok(h.includes('data-node-id="p1"'), "still click-through");
   assert.ok(shortDescription("word ".repeat(100)).length <= 221 && shortDescription("word ".repeat(100)).endsWith("…"));
   assert.equal(shortDescription("", "```\ncode\n```\n- item one"), "item one");
 }
 console.log("system-map descriptions: ok");
+
+// Hover tooltips: live details for nodes and lines
+{
+  const { nodeTipHTML, edgeTipHTML, ticketCounts } = await import("../public/js/system-map.js");
+  const mm = buildSystemMap({ ...base, concepts: [{ id: "c1", name: "Experience Templates", status: "active", description: "Builds <b>experiences</b>", updatedAt: new Date(Date.UTC(2026, 9, 20)) }],
+    interfaces: [{ id: "i1", name: "A ↔ B", flowLabel: "audience segments", contentMd: "Segments flow from A to B.", endpoints: [{ type: "project", id: "dsp" }, { type: "concept", id: "c1" }], projectIds: ["dsp", "c1"] }] });
+  const counts = ticketCounts([{ projectId: "dsp", status: "backlog" }, { projectId: "dsp", status: "backlog" }, { projectId: "dsp", status: "ready-for-testing" }]);
+  const p = nodeTipHTML(mm, "dsp", counts);
+  assert.ok(p.includes("Release 5.0") && p.includes("Project") && p.includes("Backlog 2") && p.includes("Ready for Testing 1") && p.includes("Feeds") && p.includes("Fed by"));
+  const c = nodeTipHTML(mm, "c1", counts);
+  assert.ok(c.includes("20 Oct 2026") && c.includes("Builds &lt;b&gt;experiences") && !c.includes("Tickets"));
+  const idx = mm.edges.findIndex((e) => e.interfaceId === "i1");
+  const e = edgeTipHTML(mm, idx);
+  assert.ok(e.includes("A ↔ B") && e.includes("Direction") && e.includes("→") && e.includes("Segments flow from A to B") && e.includes("open the contract"));
+  const h = systemMapHTML(mm);
+  assert.ok(h.includes(`data-tip-edge="${idx}"`) && h.includes('data-tip-node="dsp"') && !h.includes("<title>Display"));
+  console.log("system-map tooltips: ok");
+}

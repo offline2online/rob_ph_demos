@@ -157,6 +157,14 @@ export function shortDescription(description, readmeMd = "") {
   return cut.slice(0, Math.max(cut.lastIndexOf(" "), DESC_MAX / 2)).replace(/[\s,;:.-]+$/, "") + "…";
 }
 
+// A Firestore Timestamp, a Date or epoch ms -> epoch ms (0 when unknown).
+function tsMs(v) {
+  if (!v) return 0;
+  if (typeof v.toMillis === "function") return v.toMillis();
+  if (v instanceof Date) return v.getTime();
+  return Number(v) || 0;
+}
+
 export function releaseLabel(r) {
   if (!r) return "";
   return `Release ${r.version || r.name}`;
@@ -183,7 +191,7 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
     });
   });
   concepts.filter((c) => c.status !== "promoted" && !INTERNAL_RE.test(c.name || "")).forEach((c) => {
-    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "", desc: shortDescription(c.description, c.readmeMd) });
+    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "", desc: shortDescription(c.description, c.readmeMd), updatedMs: tsMs(c.updatedAt) });
   });
   // Live Visitor Profile: one node, a concept, in the PH Core slot.
   const placed = []; // [node, x, y] board nodes pinned to a fixed position
@@ -239,7 +247,7 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
       ? f.endpoints.map((e) => e.id)
       : Array.isArray(f.projectIds) ? f.projectIds : []).map((id) => alias[id] || id);
     if (eps.length !== 2 || !byId[eps[0]] || !byId[eps[1]] || eps[0] === eps[1]) return;
-    edges.push({ from: eps[0], to: eps[1], label: f.flowLabel || f.name || "Interface", interfaceId: f.id, anchorId: eps[0], source: "contract" });
+    edges.push({ from: eps[0], to: eps[1], label: f.flowLabel || f.name || "Interface", interfaceId: f.id, anchorId: eps[0], source: "contract", contractName: f.name || "Interface", summary: shortDescription(f.contentMd) });
   });
 
   layoutSatellites(nodes, anchors);
@@ -369,7 +377,7 @@ export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
     const mx = (p.x + q.x) / 2;
     const my = (p.y + q.y) / 2;
     const lines = shortLines(e.short != null ? e.short : e.label, 20, 2);
-    const attrs = e.interfaceId ? ` data-interface-id="${esc(e.interfaceId)}" data-anchor-id="${esc(e.anchorId)}" tabindex="0" role="button"` : "";
+    const attrs = ` data-tip-edge="${i}"${e.interfaceId ? ` data-interface-id="${esc(e.interfaceId)}" data-anchor-id="${esc(e.anchorId)}" tabindex="0" role="button" aria-label="${esc(e.label)} — open interface contract"` : ""}`;
     // Contract lines bow sideways so they don't run straight through other boxes.
     const bow = e.bow != null ? e.bow : e.interfaceId ? 0.18 : e.kind ? 0.14 : 0;
     const cxp = mx - (q.y - p.y) * bow;
@@ -380,7 +388,7 @@ export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
     const d = `M${p.x} ${p.y} Q${cxp} ${cyp} ${q.x} ${q.y}`;
     const lbl = lines.map((t, k) => `<text class="sysmap-edge-label" x="${lx}" y="${ly + (k - (lines.length - 1) / 2) * 12 + 4}" text-anchor="middle">${esc(t)}</text>`).join("");
     const w = Math.max(0, ...lines.map((t) => t.length)) * 6.1 + 10;
-    svg += `<g class="${cls}"${attrs}><title>${esc(e.label)}${e.interfaceId ? " — open interface contract" : ""}</title>
+    svg += `<g class="${cls}"${attrs}>
       <path class="sysmap-hit" d="${d}"/>
       <path class="sysmap-line" d="${d}" marker-end="url(#sm-arrow)"${e.both ? ' marker-start="url(#sm-arrow)"' : ""}/>
       ${lines.length ? `<rect class="sysmap-edge-bg" x="${lx - w / 2}" y="${ly - lines.length * 6 - 2}" width="${w}" height="${lines.length * 12 + 4}" rx="3"/>${lbl}` : ""}</g>`;
@@ -391,11 +399,9 @@ export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
     const y = n.y - NODE_H / 2;
     const clickable = (n.kind === "project" || n.kind === "concept") && !n.fixed;
     const cls = `sysmap-node ${n.kind} s-${String(n.status).toLowerCase()}${clickable ? " clickable" : ""}${nodeDim(n)}`;
-    const attrs = clickable ? ` data-node-id="${esc(n.id)}" data-node-kind="${n.kind}" tabindex="0" role="link"` : "";
+    const attrs = ` data-tip-node="${esc(n.id)}"${clickable ? ` data-node-id="${esc(n.id)}" data-node-kind="${n.kind}" tabindex="0" role="link" aria-label="${esc(n.full || n.name)} — ${esc(n.status)}"` : ""}`;
     const sub = shortLines(n.sub, 29, 2);
-    // Board nodes with no description say so, which is how the gap gets noticed.
-    const desc = n.desc || (clickable && n.sub == null ? "No description yet — add one on the Docs page." : "");
-    svg += `<g class="${cls}"${attrs}><title>${esc(n.full || n.name)} — ${esc(n.status)}${n.release ? ` — ${esc(n.release)}` : ""}${desc ? `\n${esc(desc)}` : ""}${n.sub ? `\n${esc(n.sub)}` : ""}</title>
+    svg += `<g class="${cls}"${attrs}>
       <rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="8"/>
       <text class="sysmap-node-name" x="${n.x}" y="${y + 19}" text-anchor="middle">${esc(n.name.length > 25 ? n.name.slice(0, 24) + "…" : n.name)}</text>
       ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${y + 32 + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
@@ -408,4 +414,67 @@ export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
 export function systemMapLegendHTML() {
   return `<span class="sysmap-key s-live">Live</span><span class="sysmap-key s-project">Project</span><span class="sysmap-key s-concept">Concept</span><span class="sysmap-key s-external">External</span><span class="sysmap-key s-pii">PII boundary</span>
     <span class="sysmap-key line-demand">Demand (advertiser)</span><span class="sysmap-key line-supply">Supply (SSP)</span><span class="sysmap-key line-loop">Insights loop</span>`;
+}
+
+// ---- Hover / tap tooltips -------------------------------------------------
+// Pure: the model and the board's tickets in, an HTML string out, so the
+// console can build it at the moment of hover from live data and the unit
+// test can drive it. The markup is styled by the Retail Media Insights
+// tooltip (`.pg-tip`, copied into styles.css as `.sysmap-tip`).
+const TIP_COLUMNS = [["backlog", "Backlog"], ["ready-for-testing", "Ready for Testing"], ["ready-to-publish", "Live on Feature Branch"], ["published-live", "Merged to Main"]];
+
+// { projectId: { backlog, "ready-for-testing", ... } } from the board's tickets.
+export function ticketCounts(items = []) {
+  const out = {};
+  items.forEach((it) => {
+    if (!it || !it.projectId) return;
+    const c = out[it.projectId] || (out[it.projectId] = {});
+    c[it.status] = (c[it.status] || 0) + 1;
+  });
+  return out;
+}
+
+export function formatUpdated(ms) {
+  if (!ms) return "";
+  return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+const TIP_LIST_MAX = 4;
+function tipNames(model, ids) {
+  const names = [...new Set(ids.map((id) => model.byId[id]).filter(Boolean).map((n) => n.full || n.name))];
+  const shown = names.slice(0, TIP_LIST_MAX).map(esc).join(", ");
+  return names.length > TIP_LIST_MAX ? `${shown} +${names.length - TIP_LIST_MAX} more` : shown;
+}
+
+export function nodeTipHTML(model, id, counts = {}) {
+  const n = model.byId[id] || model.nodes.find((x) => x.id === id);
+  if (!n) return "";
+  const feeds = model.edges.filter((e) => e.from === n.id).map((e) => e.to);
+  const fedBy = model.edges.filter((e) => e.to === n.id).map((e) => e.from);
+  const board = n.kind === "project" || n.kind === "concept";
+  const desc = n.desc || n.sub || (board && !n.fixed ? "No description yet — add one on the Docs page." : "");
+  let h = `<div class="sysmap-tip-head"><strong>${esc(n.full || n.name)}</strong><span class="sysmap-tip-pill s-${esc(String(n.status).toLowerCase())}">${esc(n.status)}</span>${n.release ? `<span class="sysmap-tip-pill rel">${esc(n.release)}</span>` : ""}</div>`;
+  if (desc) h += `<p>${esc(desc)}</p>`;
+  if (feeds.length) h += `<div class="sysmap-tip-row"><span>Feeds</span> ${tipNames(model, feeds)}</div>`;
+  if (fedBy.length) h += `<div class="sysmap-tip-row"><span>Fed by</span> ${tipNames(model, fedBy)}</div>`;
+  if (n.kind === "project") {
+    const c = counts[n.id] || {};
+    h += `<div class="sysmap-tip-row"><span>Tickets</span> ${TIP_COLUMNS.map(([k, l]) => `${l} ${c[k] || 0}`).join(" · ")}</div>`;
+  } else if (n.kind === "concept" && n.updatedMs) {
+    h += `<div class="sysmap-tip-row"><span>Last updated</span> ${esc(formatUpdated(n.updatedMs))}</div>`;
+  }
+  return h;
+}
+
+export function edgeTipHTML(model, index) {
+  const e = model.edges[index];
+  const a = e && model.byId[e.from];
+  const b = e && model.byId[e.to];
+  if (!a || !b) return "";
+  const nm = (n) => esc(n.full || n.name);
+  const flow = `${nm(a)} ${e.both ? "↔" : "→"} ${nm(b)}`;
+  const summary = e.summary || e.label;
+  return `<div class="sysmap-tip-head"><strong>${esc(e.contractName || e.label)}</strong>${e.interfaceId ? '<span class="sysmap-tip-pill rel">Interface contract</span>' : ""}</div>
+    <div class="sysmap-tip-row"><span>Direction</span> ${flow}</div>
+    <p>${esc(summary)}</p>${e.interfaceId ? '<div class="sysmap-tip-row hint">Click to open the contract</div>' : ""}`;
 }

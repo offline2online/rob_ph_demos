@@ -29,7 +29,7 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
-import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, FIT_VIEWBOX } from "./system-map.js";
+import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, FIT_VIEWBOX, nodeTipHTML, edgeTipHTML, ticketCounts } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -6184,6 +6184,7 @@ function renderSystemMap() {
   document.getElementById("system-map-legend").innerHTML = systemMapLegendHTML();
   systemMapModel = buildSystemMap({ projects, concepts, interfaces, releases });
   canvas.innerHTML = systemMapHTML(systemMapModel, { release: sel.value, viewBox: systemMapView });
+  hideSystemMapTip();
 }
 document.getElementById("system-map-release").addEventListener("change", renderSystemMap);
 function zoomSystemMap(factor, fx = 0.5, fy = 0.5) {
@@ -6224,9 +6225,61 @@ document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
     drag = null;
   });
 }
-function systemMapActivate(target) {
+// Instant tooltips (ticket tbaqBOALxMLRtaDtHrYs): one element shared by every
+// node and line, filled synchronously on pointer-over from the live model and
+// tickets - no timer, so no delay. Styled like Retail Media Insights' `.pg-tip`.
+const systemMapTip = document.createElement("div");
+systemMapTip.className = "sysmap-tip";
+systemMapTip.setAttribute("role", "tooltip");
+systemMapTip.hidden = true;
+document.body.appendChild(systemMapTip);
+let systemMapTipTarget = null;
+function hideSystemMapTip() { systemMapTip.hidden = true; systemMapTipTarget = null; }
+function placeSystemMapTip(x, y) {
+  const vw = document.documentElement.clientWidth;
+  const w = Math.min(320, vw - 16);
+  systemMapTip.style.width = w + "px";
+  const th = Math.min(systemMapTip.offsetHeight, window.innerHeight - 16);
+  const left = Math.max(8, Math.min(x + 14, vw - w - 8));
+  let top = y + 16;
+  if (top + th > window.innerHeight - 8) top = y - th - 12;
+  systemMapTip.style.left = left + "px";
+  systemMapTip.style.top = Math.max(8, Math.min(top, window.innerHeight - th - 8)) + "px";
+}
+function showSystemMapTip(target, x, y) {
+  if (!systemMapModel) return false;
+  const nodeEl = target.closest("[data-tip-node]");
+  const edgeEl = nodeEl ? null : target.closest("[data-tip-edge]");
+  const el = nodeEl || edgeEl;
+  if (!el) { hideSystemMapTip(); return false; }
+  if (systemMapTipTarget !== el) {
+    systemMapTip.innerHTML = nodeEl
+      ? nodeTipHTML(systemMapModel, nodeEl.dataset.tipNode, ticketCounts(items))
+      : edgeTipHTML(systemMapModel, Number(edgeEl.dataset.tipEdge));
+    systemMapTipTarget = el;
+  }
+  systemMapTip.hidden = !systemMapTip.innerHTML;
+  placeSystemMapTip(x, y);
+  return !systemMapTip.hidden;
+}
+{
+  const canvasEl = document.getElementById("system-map-canvas");
+  canvasEl.addEventListener("pointermove", (e) => { if (e.pointerType !== "touch") showSystemMapTip(e.target, e.clientX, e.clientY); });
+  canvasEl.addEventListener("pointerleave", hideSystemMapTip);
+  canvasEl.addEventListener("focusin", (e) => { const r = e.target.getBoundingClientRect(); showSystemMapTip(e.target, r.left + r.width / 2, r.bottom); });
+  canvasEl.addEventListener("focusout", hideSystemMapTip);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideSystemMapTip(); });
+  document.addEventListener("pointerdown", (e) => { if (!e.target.closest("#system-map-canvas")) hideSystemMapTip(); });
+}
+function systemMapActivate(target, touch) {
   const canvasEl = document.getElementById("system-map-canvas");
   if (canvasEl.dataset.justPanned) { delete canvasEl.dataset.justPanned; return; }
+  // Touch: the first tap shows the tooltip, a second tap on the same thing opens it.
+  if (touch) {
+    const el = target.closest("[data-tip-node],[data-tip-edge]");
+    if (el && systemMapTipTarget !== el) { const r = el.getBoundingClientRect(); showSystemMapTip(target, r.left + r.width / 2, r.top + r.height / 2); return; }
+    hideSystemMapTip();
+  }
   const edge = target.closest("[data-interface-id]");
   if (edge) { openInterfaceModal(edge.dataset.interfaceId, edge.dataset.anchorId); return; }
   const node = target.closest("[data-node-id]");
@@ -6238,7 +6291,7 @@ function systemMapActivate(target) {
   else if (n.kind === "concept" && !n.isProject) openConceptDetailPage(n.id);
   else openDocsPage(n.id);
 }
-document.getElementById("system-map-canvas").addEventListener("click", (e) => systemMapActivate(e.target));
+document.getElementById("system-map-canvas").addEventListener("click", (e) => systemMapActivate(e.target, e.pointerType === "touch"));
 document.getElementById("system-map-canvas").addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); systemMapActivate(e.target); }
 });

@@ -1806,3 +1806,16 @@ body { overflow-x: clip; }
 .cmdk-search .material-symbols-outlined, .profile-btn .material-symbols-outlined, .nav-collapse-btn .material-symbols-outlined {
   display: inline-block; width: 1em; height: 1em; overflow: hidden; line-height: 1; flex: none; white-space: nowrap;
 }
+
+/* System map hover/tap tooltip: the Retail Media Insights `.pg-tip` look
+   (Retail-media-insights/css/insights.css), shown instantly by app.js. */
+.sysmap-tip { position: fixed; z-index: 1000; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 16px rgba(0, 0, 0, .12); padding: 10px 12px; font-size: 13px; pointer-events: none; max-height: calc(100vh - 16px); overflow: hidden; overflow-wrap: anywhere; }
+.sysmap-tip[hidden] { display: none; }
+.sysmap-tip p { margin: 6px 0 0; }
+.sysmap-tip-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.sysmap-tip-pill { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 10px; background: #eee; color: var(--text-muted); }
+.sysmap-tip-pill.s-live { background: #e8f6fa; color: var(--primary); }
+.sysmap-tip-pill.s-project, .sysmap-tip-pill.rel { background: #f3ebff; color: var(--violet); }
+.sysmap-tip-row { margin-top: 6px; }
+.sysmap-tip-row > span { font-weight: 700; color: var(--text-muted); }
+.sysmap-tip-row.hint { color: var(--text-muted); font-style: italic; }
