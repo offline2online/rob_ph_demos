@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kanban — PH Agent Console</title>
+  <link rel="icon" type="image/svg+xml" href="img/ph-mark.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="img/ph-mark-64.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
+  <!-- console.css / console-apple.css are verbatim copies of
+       backlog-tracker/public/css/styles.css and apple.css (20 Oct 2026), so
+       this prototype renders with the console's own look. kanban.css holds
+       only what the Kanban board, task modal and release report add. -->
+  <!-- ?v= is bumped on every change: GitHub Pages lets browsers cache these
+       files for 10 minutes, which otherwise serves the previous release. -->
+  <link rel="stylesheet" href="css/console.css?v=14">
+  <link rel="stylesheet" href="css/console-apple.css?v=14">
+  <link rel="stylesheet" href="css/kanban.css?v=14">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="topbar-left-row">
+          <button type="button" class="icon-btn hamburger-btn" id="nav-open-btn" aria-label="Open menu">&#9776;</button>
+          <h1><button type="button" class="logo-link" data-route="kanban" title="Back to Kanban"><img src="img/ph-agent-console-logo.svg" alt="PH Agent Console" class="topbar-logo-img" width="234" height="58"></button></h1>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span class="kb-proto-pill" title="Front-end prototype with mock data">Prototype</span>
+        <button type="button" class="icon-btn profile-btn" id="profile-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Profile and admin"><span class="kb-avatar kb-avatar-lg" id="profile-avatar"></span></button>
+      </div>
+    </header>
+
+    <div class="nav-drawer-backdrop" id="nav-drawer-backdrop"></div>
+    <nav class="nav-drawer" id="nav-drawer" aria-label="Main navigation">
+      <div class="nav-drawer-header">
+        <span class="nav-drawer-title">Menu</span>
+        <button type="button" class="nav-collapse-btn" id="nav-collapse-btn" aria-expanded="true" aria-label="Collapse sidebar"><span class="material-symbols-outlined" aria-hidden="true">left_panel_close</span></button>
+        <button type="button" class="modal-close" id="nav-close-btn" aria-label="Close menu">&times;</button>
+      </div>
+      <div class="nav-group" data-nav-group="build" role="group" aria-labelledby="nav-build-label">
+        <div class="nav-drawer-section" id="nav-build-label">Build</div>
+        <button type="button" class="nav-drawer-item" data-route="agent-board"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>Agent Board</button>
+        <button type="button" class="nav-drawer-item" data-route="kanban"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Kanban</button>
+        <button type="button" class="nav-drawer-item" data-route="report"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span>Release report</button>
+        <button type="button" class="nav-drawer-item" data-inert><span class="material-symbols-outlined" aria-hidden="true">lightbulb</span>Concepts</button>
+        <button type="button" class="nav-drawer-item" data-inert><span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>Releases</button>
+        <button type="button" class="nav-drawer-item" data-inert><span class="material-symbols-outlined" aria-hidden="true">psychology</span>Skills</button>
+      </div>
+      <div class="nav-group" data-nav-group="publish" role="group" aria-labelledby="nav-publish-label">
+        <div class="nav-drawer-section" id="nav-publish-label">Publish</div>
+        <button type="button" class="nav-drawer-item" data-inert><span class="material-symbols-outlined" aria-hidden="true">help_center</span>Help Centre</button>
+      </div>
+    </nav>
+
+    <div class="profile-menu" id="profile-menu" role="menu" aria-label="Profile and admin" hidden>
+      <div class="profile-menu-who"><span class="kb-avatar kb-avatar-lg" id="profile-menu-avatar"></span><span class="topbar-user" id="topbar-user"></span></div>
+      <div class="nav-drawer-section">Signed in as <button type="button" class="info-tip" data-tip="Prototype only: switch who is signed in to see each person's My tasks view." aria-label="More information">i</button></div>
+      <div id="profile-switch"></div>
+      <div class="nav-drawer-section">Admin</div>
+      <button type="button" class="profile-menu-item" data-route="settings" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">settings</span>Kanban settings</button>
+    </div>
+
+    <nav class="tabbar" id="tabbar" aria-label="Primary">
+      <button type="button" class="tab" data-route="agent-board"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span><span>Agents</span></button>
+      <button type="button" class="tab" data-route="kanban"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span><span>Kanban</span></button>
+      <button type="button" class="tab" data-route="report"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span><span>Report</span></button>
+      <button type="button" class="tab" data-tab="profile"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span><span>Profile</span></button>
+    </nav>
+
+    <main id="view"></main>
+  </div>
+
+  <div class="modal-backdrop" id="task-backdrop" hidden>
+    <div class="modal-panel modal-panel-wide kb-task-panel" role="dialog" aria-modal="true" aria-labelledby="task-title-h">
+      <div class="modal-header">
+        <h2 id="task-title-h">New task</h2>
+        <div class="kb-modal-head-actions">
+          <button type="button" class="kb-task-flag" id="task-flag" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">flag</span><span id="task-flag-label">Flag</span></button>
+          <button type="button" class="modal-close" id="task-close" aria-label="Close">&times;</button>
+        </div>
+      </div>
+      <form id="task-form" novalidate></form>
+    </div>
+  </div>
+
+  <div class="kb-toast" id="kb-toast" role="status" aria-live="polite" hidden></div>
+  <div class="kb-bar-tip" id="kb-bar-tip" hidden></div>
+
+  <script src="js/data.js?v=14"></script>
+  <script src="js/kanban.js?v=14"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 132 132" width="132" height="132" role="img" aria-label="Personalisation Hub">
+  <title>Personalisation Hub</title>
+  <!-- The PH mark on its own: the four bars from ph-agent-console-logo.svg,
+       lifted out of the wordmark and normalised to a square viewBox, so it
+       can stand alone as an icon (browser tab, MCP connector listing, app
+       shortcut). Geometry and colours are taken verbatim from that file —
+       don't re-key them by eye if the logo ever changes, re-extract.
+       The centre is transparent, not white, so the mark reads correctly on
+       a dark UI as well as a light one. -->
+  <rect x="0"      y="0"       width="26.402"  height="103.914" fill="#169bc2"/>
+  <rect x="28.086" y="0"       width="103.914" height="26.402"  fill="#ef60a7"/>
+  <rect x="105.598" y="27.945" width="26.402"  height="104.055" fill="#fe9226"/>
+  <rect x="0"      y="105.598" width="103.914" height="26.402"  fill="#60d838"/>
+</svg>
