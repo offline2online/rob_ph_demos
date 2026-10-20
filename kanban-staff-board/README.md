@@ -8,6 +8,9 @@ board are the spec.
 
 Live: <https://offline2online.github.io/rob_ph_demos/kanban-staff-board/prototype/>
 
+When you change any CSS or JS file, bump the `?v=` on its link in `index.html`. GitHub Pages lets browsers
+cache those files for 10 minutes.
+
 It is front-end only, with mock data and no backend. Changes are kept in the
 viewer's own `localStorage`, and **⋮ → Reset demo data** puts the mock data back.
 
@@ -30,8 +33,9 @@ viewer's own `localStorage`, and **⋮ → Reset demo data** puts the mock data 
   Testing reassigns it to the tester (Rob by default). Moving it back to In
   Progress or Ready for Dev returns it to the developer. The filters cover My
   tasks, assignee avatars (first names), release, type, priority, sprint,
-  label and search. Select two or more people and the board splits into one
-  swimlane per person, each of which can be collapsed. The column headers stay
+  label and search. Selecting people in the assignee filter splits the board into one
+  swimlane per person. Each lane has a full-width header with the person's name, and can be
+  collapsed on its own or with Expand all / Collapse all. The column headers stay
   pinned below the topbar while you scroll the lanes. Dragging a card into another
   person's lane reassigns it to them.
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban

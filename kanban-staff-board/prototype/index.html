@@ -13,9 +13,11 @@
        backlog-tracker/public/css/styles.css and apple.css (20 Oct 2026), so
        this prototype renders with the console's own look. kanban.css holds
        only what the Kanban board, task modal and release report add. -->
-  <link rel="stylesheet" href="css/console.css">
-  <link rel="stylesheet" href="css/console-apple.css">
-  <link rel="stylesheet" href="css/kanban.css">
+  <!-- ?v= is bumped on every change: GitHub Pages lets browsers cache these
+       files for 10 minutes, which otherwise serves the previous release. -->
+  <link rel="stylesheet" href="css/console.css?v=4">
+  <link rel="stylesheet" href="css/console-apple.css?v=4">
+  <link rel="stylesheet" href="css/kanban.css?v=4">
 </head>
 <body>
   <div class="app">
@@ -85,7 +87,7 @@
   <div class="kb-toast" id="kb-toast" role="status" aria-live="polite" hidden></div>
   <div class="kb-bar-tip" id="kb-bar-tip" hidden></div>
 
-  <script src="js/data.js"></script>
-  <script src="js/kanban.js"></script>
+  <script src="js/data.js?v=4"></script>
+  <script src="js/kanban.js?v=4"></script>
 </body>
 </html>

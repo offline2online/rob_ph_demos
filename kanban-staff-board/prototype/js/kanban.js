@@ -352,12 +352,19 @@
         </div>
         ${filtersActive ? '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>' : ""}
       </div>
+      <div class="kb-lanes-bar" id="kb-lanes-bar" hidden>
+        <span class="kb-lanes-bar-label"><span class="material-symbols-outlined" aria-hidden="true">view_agenda</span>Swimlanes by staff member</span>
+        <button type="button" class="link-btn" id="kb-lanes-expand">Expand all</button>
+        <button type="button" class="link-btn" id="kb-lanes-collapse">Collapse all</button>
+      </div>
       <div class="kb-lanes-sticky" id="kb-lanes-sticky" hidden><div class="kb-board kb-lanes-head-grid" id="kb-lanes-head"></div></div>
       <div class="kb-board-wrap" id="kb-board-wrap"><div class="kb-board" id="kb-board"></div></div>`;
     // The swimlane column headers live outside the sideways-scrolling board so
     // they can stick to the page; this keeps them lined up with the columns.
     const wrap = $("#kb-board-wrap"), sticky = $("#kb-lanes-sticky");
     wrap.addEventListener("scroll", () => { sticky.scrollLeft = wrap.scrollLeft; }, { passive: true });
+    $("#kb-lanes-expand").addEventListener("click", () => { collapsedLanes.clear(); renderKanbanBoard(); });
+    $("#kb-lanes-collapse").addEventListener("click", () => { (laneIds() || []).forEach((id) => collapsedLanes.add(id)); renderKanbanBoard(); });
 
     $("#kb-new-btn").addEventListener("click", () => openTask(null));
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
@@ -382,9 +389,10 @@
     renderKanbanBoard();
   }
 
-  // Swimlanes: one per selected staff member once two or more are picked.
+  // Swimlanes: one per staff member picked in the assignee filter (Jira's
+  // swimlanes by assignee), each with its own expand / collapse header.
   function laneIds() {
-    if (board.assignees.size < 2) return null;
+    if (!board.assignees.size) return null;
     return [...SEED.users.map((u) => u.id), "none"].filter((id) => board.assignees.has(id));
   }
   const colMeta = (list, s) => {
@@ -402,12 +410,14 @@
     if (lanes) {
       $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
       $("#kb-lanes-sticky").hidden = false;
+      $("#kb-lanes-bar").hidden = false;
       $("#kb-lanes-sticky").scrollLeft = $("#kb-board-wrap").scrollLeft;
       el.innerHTML = lanes.map((id) => {
           const mine = tasks.filter((t) => (t.assignee || "none") === id);
           const rem = mine.reduce((n, t) => n + remaining(t), 0);
           const collapsed = collapsedLanes.has(id);
-          return `<div class="kb-lane${collapsed ? " kb-lane-collapsed" : ""}" data-lane="${id}">
+          const laneColor = (user(id) || {}).color || "var(--accent-backlog)";
+          return `<div class="kb-lane${collapsed ? " kb-lane-collapsed" : ""}" data-lane="${id}" style="--lane-c:${laneColor}">
             <button type="button" class="kb-lane-head" aria-expanded="${!collapsed}">
               <span class="material-symbols-outlined kb-lane-caret" aria-hidden="true">expand_more</span>${avatar(id === "none" ? "" : id)}
               <span class="kb-lane-name">${esc(id === "none" ? "Unassigned" : firstName(id))}</span>
@@ -429,6 +439,7 @@
       return;
     }
     $("#kb-lanes-sticky").hidden = true;
+    $("#kb-lanes-bar").hidden = true;
     el.innerHTML = STATUSES.map((s) => {
       const list = sorted(tasks, s.key);
       return `<section class="column kb-col${collapsedCols.has(s.key) ? " column-collapsed" : ""}" data-status="${s.key}" aria-label="${esc(s.label)}">
