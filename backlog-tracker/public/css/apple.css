@@ -30,9 +30,10 @@
 }
 
 html, body { font-family: var(--ap-font); -webkit-font-smoothing: antialiased; line-height: 1.55; background: var(--ap-bg); }
-body { overflow-x: hidden; }
+/* clip, never hidden: overflow-x:hidden on body makes iOS Safari treat it as the scroller and the sticky topbar stops sticking. */
+body { overflow-x: clip; }
 code, pre, kbd, samp { font-family: var(--ap-mono); }
-.app { max-width: 1280px; padding: var(--ap-s3) var(--ap-s2) var(--ap-s4); overflow-x: clip; }
+.app { max-width: 1280px; padding: 0 var(--ap-s2) var(--ap-s4); overflow-x: clip; }
 .app * { min-width: 0; }
 img, video, svg { max-width: 100%; }
 
@@ -115,7 +116,7 @@ input[type="checkbox"]:not(.no-switch):checked::after { transform: translateX(20
 .info-tip.edge-left::after { left: 0; transform: none; }
 .info-tip.edge-right::after { left: auto; right: 0; transform: none; }
 /* the source paragraph stays in the DOM (screen readers, tests) but is not shown */
-.tip-source { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.tip-source { position: fixed !important; top: 0; left: 0; /* fixed, not absolute: absolute with no positioned ancestor sits at its place inside a scrolled list but is not clipped by it, stretching the page far below the content and un-pinning the sticky topbar */ width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* empty states: one short line */
 .empty-hint { font-style: normal; font-size: 14px; padding: var(--ap-s3) var(--ap-s2); }
@@ -123,6 +124,20 @@ input[type="checkbox"]:not(.no-switch):checked::after { transform: translateX(20
 /* modals: sheets */
 @media (max-width: 640px) {
   .modal-card, .modal > div, dialog { border-radius: var(--ap-radius) var(--ap-radius) 0 0; max-height: 92vh; overflow-y: auto; }
-  .page-header .btn-primary { position: sticky; bottom: var(--ap-s2); z-index: 20; width: 100%; box-shadow: 0 6px 20px rgba(0, 0, 0, .2); }
+  /* sits above the phone tab bar, not under it */
+  .page-header .btn-primary { position: sticky; bottom: calc(var(--tabbar-h, 56px) + var(--ap-s2) + env(safe-area-inset-bottom, 0px)); z-index: 20; width: 100%; box-shadow: 0 6px 20px rgba(0, 0, 0, .2); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; scroll-behavior: auto !important; } }
+
+/* Phone shell: header clear of the status bar / notch, content clear of the side insets (viewport-fit=cover in index.html). */
+.topbar { padding-top: max(6px, env(safe-area-inset-top, 0px)); }
+.app { padding-left: max(var(--ap-s2), env(safe-area-inset-left, 0px)); padding-right: max(var(--ap-s2), env(safe-area-inset-right, 0px)); }
+@media (max-width: 640px) {
+  .app { padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
+  .topbar { padding-left: 0; padding-right: 0; background: rgba(255, 255, 255, .97); }
+  :root:not([data-theme="light"]) .topbar { background: rgba(28, 28, 30, .97); }
+}
+@media (prefers-color-scheme: light) { .topbar { background: rgba(255, 255, 255, .97); } }
+
+/* 44px touch targets for the header controls on tablet too */
+.hamburger-btn, .profile-btn { min-width: 44px; min-height: 44px; }
