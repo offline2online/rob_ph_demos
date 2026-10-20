@@ -1432,13 +1432,12 @@ above the Campaign Approval table, not on the retail media dashboard.
 Broadsign and Vistar report approval status, turnaround and rejection
 reasons to the seller; DSP/SSP creative audits use coded reasons.
 
-- **Four figures over the last 30 days**, each with a ⓘ tooltip:
-  *Median time to approve* (submission → decision, approved or rejected by a
-  person; automatic approvals are excluded); *Oldest waiting* (age of the
-  oldest campaign Awaiting approval, linking to it — the table filters to
-  that campaign); *Rejection rate* (rejected ÷ decisions a person made);
-  *Top rejection reasons* (the three most frequent, with counts; selecting
-  one filters the table to campaigns currently rejected for it).
+- **No summary strip (Rob, 20 Oct 2026).** The four-tile queue-health strip
+  (median time to approve, oldest waiting, rejection rate, top rejection
+  reasons) was removed from above the Campaign Approval table — it didn't fit
+  there. The table is back to its original layout. The figures remain
+  available from `GET /admin/v1/approvals/summary?days=30`; the table still
+  accepts `?reason=<code>` and `?campaignId=` filters.
 - **Rejections are coded.** The Reject dialog asks for a reason from a fixed
   pick-list — Price or offer in artwork; Wrong size or ratio; Duration too
   long; Brand or category not allowed; Poor quality; Other — **and** the

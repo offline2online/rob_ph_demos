@@ -557,11 +557,6 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     '/api/admin/v1/campaigns/c5/approval': approvalOf(resubmitted, 'awaiting_approval', 'CR-AAAA1111'),
     '/api/admin/v1/campaigns/c6/approval': { ...approvalOf(oat, 'approved'), mode: 'auto' },
     '/api/admin/v1/campaigns/c7/approval': { ...approvalOf(milk, 'approved'), mode: 'auto' },
-    '/api/admin/v1/approvals/summary': {
-      days: 30, decided: 4, rejected: 1, medianSecondsToDecision: 7200, rejectionRate: 0.25,
-      oldestWaiting: { campaignId: 'c3', campaignName: 'Nestlé winter', submittedAt: '2026-10-01T00:00:00.000Z', ageSeconds: 93600 },
-      topRejectionReasons: [{ code: 'poor_quality', label: 'Poor quality', count: 1 }],
-    },
     '/api/admin/v1/creative-ids': {
       items: [
         { creativeId: 'CR-AAAA1111', advertiserId: 'swisse', advertiserName: 'Swisse', createdAt: '2026-10-01T00:00:00.000Z', campaigns: [{ campaignId: 'c4', name: 'Swisse autumn', touchPoints: ['Digital Signage'] }, { campaignId: 'c5', name: 'Swisse summer', touchPoints: ['Mobile Site'] }] },
@@ -693,18 +688,6 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     fireEvent.click(reject)
     await waitFor(() => expect(posts).toHaveLength(1))
     expect(posts[0]).toEqual({ url: '/api/admin/v1/campaigns/c3/reject', body: { assetVersion: 'v1', reason: 'Price shown in the artwork.', reasonCode: 'price_or_offer_in_artwork' } })
-  }, slow(45000))
-
-  it('shows the approval summary above the table, and its oldest-waiting link filters to that campaign', async () => {
-    const grid = await open()
-    const summary = await screen.findByRole('region', { name: 'Approval summary' })
-    expect(within(summary).getByText('2 h')).toBeInTheDocument()
-    expect(within(summary).getByText('25%')).toBeInTheDocument()
-    expect(within(summary).getByRole('button', { name: 'Poor quality' })).toBeInTheDocument()
-    expect(within(summary).getByLabelText('About Rejection rate')).toBeInTheDocument()
-    fireEvent.click(within(summary).getByRole('link', { name: '1 d 2 h' }))
-    await waitFor(() => expect(within(grid).queryByLabelText('Select Swisse spring')).not.toBeInTheDocument())
-    expect(within(grid).getByLabelText('Select Nestlé winter')).toBeInTheDocument()
   }, slow(45000))
 })
 
