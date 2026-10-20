@@ -1932,3 +1932,63 @@ body { overflow-x: clip; }
 .critique-synthesis > div { border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 10px 12px; }
 .critique-synthesis h4 { margin: 10px 0 2px; font-size: 13px; }
 .critique-synthesis h4:first-child { margin-top: 0; }
+
+/* ── New item modal: voice-first capture (matches the Kanban prototype's
+   "+ New task"). Record button on top, agent-filled Title / Description /
+   Type / Area under it, Cancel + primary pinned to the bottom of the modal. ── */
+#ni-backdrop .modal-panel { max-width: 520px; }
+.ni-voice { margin-bottom: 6px; }
+.ni-voice-row { display: flex; align-items: center; gap: 4px; }
+.ni-record-btn { display: inline-flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 20px 6px 6px; border: 0; border-radius: 9999px; cursor: pointer; font: inherit; text-align: left; color: var(--text);
+  background: linear-gradient(135deg, rgba(22, 155, 194, .16), rgba(151, 71, 255, .16)); }
+.ni-record-btn:hover:not(:disabled) { background: linear-gradient(135deg, rgba(22, 155, 194, .26), rgba(151, 71, 255, .26)); }
+.ni-record-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ni-record-dot { width: 44px; height: 44px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex: none; color: #fff; background: linear-gradient(135deg, var(--primary), var(--violet)); }
+.ni-record-dot .material-symbols-outlined { font-size: 24px; font-variation-settings: 'FILL' 1; }
+.ni-record-text { display: flex; flex-direction: column; line-height: 1.25; }
+.ni-record-label { font-size: 15px; font-weight: 700; background: linear-gradient(135deg, var(--primary), var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ni-record-sub { font-size: 12px; color: var(--text-muted); }
+.ni-record-btn.listening { background: var(--danger-tint); }
+.ni-record-btn.listening .ni-record-dot { background: var(--danger); animation: mic-pulse 1.4s ease-in-out infinite; }
+.ni-record-btn.listening .ni-record-label { background: none; color: var(--danger); -webkit-text-fill-color: currentColor; }
+.ni-record-btn.listening .ni-record-dot .material-symbols-outlined { font-size: 0; }
+.ni-record-btn.listening .ni-record-dot::after { content: ""; width: 14px; height: 14px; border-radius: 3px; background: #fff; }
+.ni-record-btn.working { cursor: progress; pointer-events: none; }
+.ni-record-btn.working .ni-record-dot .material-symbols-outlined { animation: ni-spin 1s linear infinite; }
+@keyframes ni-spin { to { transform: rotate(360deg); } }
+.ni-voice-live { margin-top: 10px; }
+.ni-voice-live[hidden] { display: none; }
+.ni-voice-live textarea { display: block; width: 100%; box-sizing: border-box; resize: none; font: inherit; font-size: 14px; line-height: 1.5; color: var(--text); padding: 10px 14px; border: 0; border-radius: var(--ap-radius-sm, 10px); background: var(--surface); box-shadow: 0 0 0 .5px var(--ap-divider, var(--border)); max-height: 140px; }
+.ni-voice-live textarea:placeholder-shown { color: var(--text-muted); font-style: italic; }
+.ni-voice-live textarea::placeholder { color: var(--text-muted); font-style: italic; opacity: 1; }
+.ni-field { margin-top: 12px; }
+.ni-field .field-label { margin-top: 0; }
+.ni-input { display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; color: var(--text); background: var(--surface-2, var(--surface)); border: 1px solid transparent; border-radius: 10px; padding: 11px 13px; }
+.ni-input:focus { outline: none; border-color: var(--primary); background: var(--bg); }
+.ni-field textarea.ni-input { resize: vertical; }
+.ni-type-toggle { display: flex; width: 100%; }
+.ni-type-toggle .type-opt { flex: 1 1 0; padding: 10px 14px; }
+.ni-agent-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: 9999px; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600;
+  background: linear-gradient(135deg, rgba(22, 155, 194, .14), rgba(151, 71, 255, .14)); }
+.ni-agent-link span:last-child { background: linear-gradient(135deg, var(--primary), var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ni-agent-link .material-symbols-outlined { font-size: 17px; color: var(--violet); }
+.ni-agent-link:disabled { opacity: .45; cursor: not-allowed; }
+.ni-agent-working .ni-field[data-ni-field] .ni-input { background-image: linear-gradient(90deg, transparent, rgba(151, 71, 255, .1), transparent); background-size: 200% 100%; animation: ni-shimmer 1s linear infinite; }
+@keyframes ni-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.ni-field.ni-agent-filled .ni-input, .ni-field.ni-agent-filled .type-toggle { box-shadow: 0 0 0 1.5px rgba(151, 71, 255, .55); }
+.ni-field.ni-agent-filled .field-label::after { content: "Agent"; margin-left: 6px; font-size: 9.5px; letter-spacing: .04em; padding: 1px 6px; border-radius: 9999px; color: #fff; background: linear-gradient(135deg, var(--primary), var(--violet)); }
+.ni-toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 70; max-width: min(92vw, 420px); padding: 10px 16px; border-radius: 10px; background: #2c2c2e; color: #f5f5f7; font-size: 13px; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); }
+/* Pinned action bar: sticks to the bottom of the scrolling panel (the panel's
+   20px padding is cancelled with negative margins so it spans edge to edge). */
+.ni-actions { position: sticky; bottom: -20px; z-index: 3; display: flex; justify-content: flex-end; gap: 8px; margin: 16px -20px -20px; padding: 12px 20px; background: var(--ap-card, var(--bg)); border-top: .5px solid var(--ap-divider, var(--border)); box-shadow: 0 -8px 16px -12px rgba(0, 0, 0, .18); }
+@media (max-width: 640px) {
+  /* Bottom sheet: the pinned bar sits on the sheet's bottom edge, clear of the home indicator. */
+  /* Above the phone tab bar (z-index 30), which would otherwise cover the pinned bar; the confirm/alert dialog layers over it. */
+  #ni-backdrop { align-items: flex-end; padding: 0; z-index: 40; }
+  #dialog-backdrop { z-index: 41; }
+  #ni-backdrop .modal-panel { max-width: 100%; max-height: 92vh; max-height: 92dvh; border-radius: 16px 16px 0 0; }
+  .ni-actions { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ni-record-btn.listening .ni-record-dot, .ni-record-btn.working .ni-record-dot .material-symbols-outlined, .ni-agent-working .ni-field[data-ni-field] .ni-input { animation: none; }
+}
