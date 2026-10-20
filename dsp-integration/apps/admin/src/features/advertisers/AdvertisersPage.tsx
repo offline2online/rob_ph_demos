@@ -533,7 +533,7 @@ function AssignedCell({ data, context }: IP) {
       label={`${data.displayTypeName} slot ${data.zoneSlot}`}
       ids={tiersOf(a)}
       names={new Map(c.buyersLists.map((l) => [l.id, l.name]))}
-      cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
+      cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType, l.ratePerDay), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
       openAuction={a.openAuction === true}

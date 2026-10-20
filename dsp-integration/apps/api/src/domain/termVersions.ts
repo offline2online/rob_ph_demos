@@ -1,9 +1,9 @@
 /* Buyers list term versioning (ticket KcqiJpzR5RXy4TWODYlG): the deal ID and type are fixed; the mutable terms below are versioned. A change to the floor, committed plays, delivery term or auction window leaves buyers who had accepted on their older version (they must accept again); inviting or removing a buyer versions the deal without forcing it. */
 import type { InvitedBuyer, TermChange } from '@ph-dsp/types'
 
-export interface TermFields { floorCpm: number | null; committedPlays: number | null; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; invitedBuyers: InvitedBuyer[]; invitedCategories: string[] }
+export interface TermFields { floorCpm: number | null; ratePerDay?: number | null; committedPlays: number | null; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; invitedBuyers: InvitedBuyer[]; invitedCategories: string[] }
 
-const REACCEPT = new Set(['floorCpm', 'committedPlays', 'activeFrom', 'activeTo', 'auctionCloses'])
+const REACCEPT = new Set(['floorCpm', 'ratePerDay', 'committedPlays', 'activeFrom', 'activeTo', 'auctionCloses'])
 /* The same instant written two ways ("…Z" vs "….000Z") is not a change. */
 const instant = (v: string | null) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : v)
 const buyerKeys = (b: InvitedBuyer[]) => b.map((x) => `${x.partnerId}\u0000${x.seatId}`).sort()
@@ -12,6 +12,7 @@ export function termChanges(before: TermFields, after: TermFields): TermChange[]
   const out: TermChange[] = []
   const add = (field: TermChange['field'], from: unknown, to: unknown) => out.push({ field, from, to, requiresReacceptance: REACCEPT.has(field) })
   if ((before.floorCpm ?? null) !== (after.floorCpm ?? null)) add('floorCpm', before.floorCpm ?? null, after.floorCpm ?? null)
+  if ((before.ratePerDay ?? null) !== (after.ratePerDay ?? null)) add('ratePerDay', before.ratePerDay ?? null, after.ratePerDay ?? null)
   if ((before.committedPlays ?? null) !== (after.committedPlays ?? null)) add('committedPlays', before.committedPlays ?? null, after.committedPlays ?? null)
   if (instant(before.activeFrom) !== instant(after.activeFrom)) add('activeFrom', before.activeFrom, after.activeFrom)
   if (instant(before.activeTo) !== instant(after.activeTo)) add('activeTo', before.activeTo, after.activeTo)

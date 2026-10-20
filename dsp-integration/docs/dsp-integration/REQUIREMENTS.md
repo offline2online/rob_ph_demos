@@ -5077,6 +5077,37 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   and uses the inherited value as the empty field's placeholder.
   `nothing set at any level` still reads "Per play".
 
+## Programmatic guaranteed: fixed rate per day (Rob, 20 Oct 2026; ticket rx1RfF2p7tyqJABWHR0q)
+
+Programmatic guaranteed books **whole days at a flat rate per day**, in line with the DOOH full-day takeover standard
+(demand path 2 of the AWS POC, near the top of this file). Other deal types are unchanged.
+
+- **Rate.** A guaranteed deal carries `ratePerDay`, the USD rate for one 24-hour day on a slot (a new column on
+  `buyers_lists`, migration 0079). In the deal pop-up the rate field is **Rate per day** and the **Rate type** is
+  **Fixed per day** (not *CPM fixed*). The explanation, "Books the slot for a full 24 hours per day at a flat daily
+  rate", is an info tooltip on the label, not copy under the field. A guaranteed deal saved before this (no
+  `ratePerDay`) keeps *CPM fixed* and its `floorCpm`.
+- **Flight in whole days.** The flight is picked as days (first day from 00:00 UTC, last day to 23:59:59.999 UTC); each
+  day is one 24-hour window on the slot, which is the platform's billing window.
+- **Equivalent CPM.** `ratePerDay / forecast impressions per day x 1000`, shown read-only beside the rate so a DSP can
+  compare it with a CPM deal. The forecast is each assigned slot's own (VAC-d assumed views for the day), so it is derived
+  on read from the assigned slots and never stored; with several slots it is shown as a range (`equivalentCpm:
+  {min, max}`). A new deal has no slot yet, so the pop-up says "Assign a slot to see the equivalent CPM".
+- **Floor.** The rate per day must still respect each slot's floor once converted: a rate whose equivalent CPM is below
+  the resolved floor (platform, DSP, deal, display type, slot) of **any** assigned slot is refused with `400` and field
+  `ratePerDay`, naming the slot and the minimum rate. It is checked on every save once a slot is assigned, and always at
+  **Share**, which already needs a slot. (Decision A on the ticket; taking a forecast from Advertiser settings so the
+  check works at first save was the rejected option B.)
+- **Re-acceptance.** `ratePerDay` is a term: changing it versions the deal and asks accepted buyers to accept again.
+- **What a DSP and the buyer see.** The deal sheet carries `ratePerDay`, `billingPeriodHours: 24` and `equivalentCpm`,
+  and each DSP entry's `rateDetails` is `{rate: <per day>, rateType: "Fixed per day", billingPeriodHours: 24,
+  equivalentCpm}`; the CSV gains *Rate per day* and *Equivalent CPM* columns and the description reads "…, 450 USD per
+  day, a flat rate for each full 24-hour day (equivalent 6.4 CPM)". `GET /v1/deals` (Partner API) returns `rateType`,
+  `ratePerDay`, `billingPeriodHours` and `equivalentCpm` on such a deal.
+- **Not changed.** Booking a window still goes through the reservation path and its floor check on the bid; the
+  reservation response and the DSP's `dspDeal` unit count are as before (impressions). Day-boundary and store-time-zone
+  handling stay UTC, as everywhere in the POC.
+
 ## Visual layout check — tablet and desktop (Rob, 8 Oct 2026; ticket A3QkqCjHRP58R0lSAtKM)
 
 The test suite was all functional: nothing checked that fields share a row or

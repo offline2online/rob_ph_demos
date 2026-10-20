@@ -1248,6 +1248,7 @@ paths:
                     (400); leave it null.
                 dealType: {type: string, enum: [private_auction, preferred, guaranteed], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
                 committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
+                ratePerDay: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
                 floorCpm:
                   type: [number, 'null']
                   exclusiveMinimum: 0
@@ -1391,6 +1392,7 @@ paths:
                   description: 'Retired (16 Oct 2026); see POST''s description. A new value is refused (400); a deal that already has one may send it back unchanged, and it has no effect.'
                 dealType: {type: string, enum: [private_auction, preferred, guaranteed], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
                 committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
+                ratePerDay: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
                 floorCpm:
                   type: [number, 'null']
                   exclusiveMinimum: 0
@@ -3087,6 +3089,10 @@ components:
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
         rateCpm: {type: number, description: The deal's resolved base floor in USD CPM.}
+        rateType: {type: string, enum: ['Fixed per day'], description: 'Present on a Programmatic guaranteed deal priced per day: the slot is booked for each full 24-hour day at `ratePerDay`.'}
+        ratePerDay: {type: number, description: The flat USD rate for one full day on a slot.}
+        billingPeriodHours: {type: integer, enum: [24], description: The length of the priced period.}
+        equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}, description: 'The same price as a CPM over the assigned slots'' forecast, for comparison; null until a slot is assigned.'}
         creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
     DealSheet:
       type: object
@@ -3098,6 +3104,9 @@ components:
         currency: {type: string}
         rateCpm: {type: number, description: 'The rate in CPM: the deal''s locked rate once it has one, else its resolved base floor.'}
         rateKind: {type: string, enum: [floor, fixed]}
+        ratePerDay: {type: [number, 'null'], description: Fixed per day only. The flat USD rate for one 24-hour day on a slot.}
+        billingPeriodHours: {type: [integer, 'null'], description: 'Fixed per day only: 24.'}
+        equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}, description: 'Fixed per day only: the rate per day as a CPM over the assigned slots'' forecast; null until a slot is assigned.'}
         activeFrom: {type: [string, 'null']}
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
@@ -3233,7 +3242,7 @@ components:
             rateDetails:
               type: object
               required: [rate, rateType, currency]
-              properties: {rate: {type: number}, rateType: {type: string, enum: [CPM floor, CPM fixed]}, currency: {type: string}}
+              properties: {rate: {type: number, description: 'USD per CPM, or per 24-hour day when rateType is Fixed per day.'}, rateType: {type: string, enum: [CPM floor, CPM fixed, Fixed per day]}, currency: {type: string}, billingPeriodHours: {type: integer, description: 'Fixed per day: 24.'}, equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}}}
             timeRange:
               type: object
               required: [startTime, endTime]
@@ -3274,10 +3283,10 @@ components:
       type: object
       required: [field, from, to]
       properties:
-        field: {type: string, enum: [floorCpm, committedPlays, activeFrom, activeTo, auctionCloses, invitedBuyers, invitedCategories]}
+        field: {type: string, enum: [floorCpm, ratePerDay, committedPlays, activeFrom, activeTo, auctionCloses, invitedBuyers, invitedCategories]}
         from: {description: Previous value (any JSON)}
         to: {description: New value (any JSON)}
-        requiresReacceptance: {type: boolean, description: 'True for floorCpm, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance.'}
+        requiresReacceptance: {type: boolean, description: 'True for floorCpm, ratePerDay, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance.'}
     TermCheck:
       type: object
       required: [currentVersion, nextVersion, changes, requiresReacceptance, affectedBuyers]
@@ -3370,6 +3379,13 @@ components:
           items: {$ref: '#/components/schemas/BuyerAcceptance'}
         effectiveCommittedPlays: {$ref: '#/components/schemas/EffectiveTerm'}
         effectiveRateCpm: {$ref: '#/components/schemas/EffectiveTerm'}
+        ratePerDay: {type: [number, 'null'], description: 'Programmatic guaranteed priced per day: the flat USD rate for one 24-hour day on a slot; null for a deal that pre-dates per-day pricing or is not guaranteed.'}
+        equivalentCpm:
+          type: [object, 'null']
+          readOnly: true
+          required: [min, max]
+          description: 'ratePerDay / forecast impressions per day x 1000 across the assigned slots (min and max differ when slots differ). Null while the deal has no rate per day or no assigned slot to forecast from.'
+          properties: {min: {type: number}, max: {type: number}}
         id: {type: string}
         deals:
           type: array

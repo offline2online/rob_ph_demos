@@ -18,24 +18,28 @@ import { WithTip } from '../../shared/InfoTip'
 import { Tip } from '../../shared/Tip'
 import { IAB_OPTIONS_SORTED, iabFilterOption } from '../../shared/iabOptions'
 import { T } from '../../theme/phTheme'
-import { playsText, rateText, rateTypeOf, resolveTerm, sourceLabel } from './effectiveTerm'
+import { equivalentCpmText, PER_DAY_HINT, playsText, rateText, rateTypeOf, resolveTerm, sourceLabel } from './effectiveTerm'
 import { FinaliseDealModal } from './FinaliseDealModal'
 
-type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
+type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; ratePerDay: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
 /* The full IAB Content Taxonomy 1.0, tier 1 then its subcategories. */
 const IAB_CATEGORY_OPTIONS = IAB_OPTIONS_SORTED
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
 /* The AWS POC supports programmatic guaranteed (plus open auction) only: the other deal types stay visible, greyed out, for demos. */
 const COMING_SOON = 'Coming in a future release. The POC supports programmatic guaranteed deals only.'
-const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'guaranteed', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
+const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'guaranteed', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null, ratePerDay: null })
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description, dealType: l.dealType,
   invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
   invitedCategories: l.dealType === 'private_auction' ? [...(l.invitedCategories ?? [])] : [],
   targeting: (l.targeting ?? []).map((c) => ({ ...c, values: [...c.values] })),
-  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays, floorCpm: l.floorCpm ?? null,
+  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays, floorCpm: l.floorCpm ?? null, ratePerDay: l.ratePerDay ?? null,
 })
+/* A Programmatic guaranteed flight is picked in whole days (20 Oct 2026; DOOH full-day takeover): the first day from 00:00 UTC, the last day to 23:59:59.999 UTC, so every day on the slot is a full 24 hours. */
+const dayStart = (d: dayjs.Dayjs) => `${d.format('YYYY-MM-DD')}T00:00:00.000Z`
+const dayEnd = (d: dayjs.Dayjs) => `${d.format('YYYY-MM-DD')}T23:59:59.999Z`
+const dayOf = (iso: string | null) => (iso ? dayjs(iso.slice(0, 10)) : null)
 
 export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting = false }: {
   open: boolean
@@ -82,6 +86,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
     auctionCloses: dealType === d.dealType ? d.auctionCloses : null,
     invitedCategories: dealType === 'private_auction' ? d.invitedCategories : [],
     committedPlays: dealType !== 'guaranteed' ? null : d.committedPlays ?? (untouched.current ? defaultPlaysRef.current : null),
+    ratePerDay: dealType === 'guaranteed' ? d.ratePerDay : null,
   }))
   const guaranteed = draft.dealType === 'guaranteed'
   const privateAuction = draft.dealType === 'private_auction'
@@ -94,6 +99,15 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
   const platformFloor = settings.data?.floorCpm
   const volume = resolveTerm(defaultPlays, draftDsps.map((b) => b?.committedPlays), draft.committedPlays)
   const rate = resolveTerm(platformFloor, draftDsps.map((b) => b?.floorCpm), draft.floorCpm, (n) => Math.max(platformFloor ?? 0, n))
+  /* Equivalent CPM (rate per day / forecast impressions per day x 1000) needs the assigned slots' forecast. The API derives it for the saved rate; the draft's follows it linearly, so it updates as the rate is typed. */
+  const equivalent = (() => {
+    const saved = editing?.ratePerDay && editing.equivalentCpm ? editing : null
+    if (!saved || !draft.ratePerDay) return null
+    const k = draft.ratePerDay / (saved.ratePerDay as number)
+    const e = saved.equivalentCpm as { min: number; max: number }
+    return { min: Math.round(e.min * k * 100) / 100, max: Math.round(e.max * k * 100) / 100 }
+  })()
+  const equivalentNote = equivalentCpmText(equivalent) ?? (slots.length ? 'Save to see it' : 'Assign a slot to see the equivalent CPM')
   const connected = (partners.data ?? []).filter((p) => p.status === 'connected' && p.seats?.length)
   const labelOf = new Map(connected.flatMap((p) => (p.seats ?? []).map((s) => [buyerKey({ partnerId: p.id, seatId: s.id }), `${s.name} (${p.name})`] as const)))
   const options = connected.map((p) => ({
@@ -325,11 +339,17 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
       </div>}
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="The span this deal is awarded for (Start date to End date) — leave either side empty for no bound. Outside it, the deal admits nobody.">Flight dates</WithTip></label>
-        <DatePicker.RangePicker
-          allowEmpty={[true, true]} showTime style={{ width: '100%' }}
-          value={[draft.activeFrom ? dayjs(draft.activeFrom) : null, draft.activeTo ? dayjs(draft.activeTo) : null]}
-          onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v?.[0] ? v[0].toISOString() : null, activeTo: v?.[1] ? v[1].toISOString() : null }))}
-        />
+        {guaranteed
+          ? <DatePicker.RangePicker
+            allowEmpty={[true, true]} style={{ width: '100%' }} aria-label="Flight days" format="D MMM YYYY"
+            value={[dayOf(draft.activeFrom), dayOf(draft.activeTo)]}
+            onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v?.[0] ? dayStart(v[0]) : null, activeTo: v?.[1] ? dayEnd(v[1]) : null }))}
+          />
+          : <DatePicker.RangePicker
+            allowEmpty={[true, true]} showTime style={{ width: '100%' }}
+            value={[draft.activeFrom ? dayjs(draft.activeFrom) : null, draft.activeTo ? dayjs(draft.activeTo) : null]}
+            onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v?.[0] ? v[0].toISOString() : null, activeTo: v?.[1] ? v[1].toISOString() : null }))}
+          />}
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
       </div>
       {guaranteed && (
@@ -346,6 +366,25 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         </div>
       </div>
       )}
+      {guaranteed ? (
+      <div className="mb-3.5" data-testid="per-day-rate">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListRatePerDay"><WithTip tip={PER_DAY_HINT}>Rate per day</WithTip></label>
+        <div className="flex items-start gap-3">
+          <div style={{ flex: 1 }}>
+            <InputNumber
+              id="buyersListRatePerDay" min={0} precision={2} step={10} style={{ width: '100%' }} addonBefore="USD" placeholder="Flat rate for each 24-hour day"
+              status={errors.ratePerDay ? 'error' : undefined}
+              value={draft.ratePerDay} onChange={(v) => setDraft((d) => ({ ...d, ratePerDay: typeof v === 'number' && v > 0 ? v : null }))}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <Input aria-label="Equivalent CPM" readOnly addonBefore="Equivalent CPM" value={equivalentCpmText(equivalent) ?? ''} placeholder={equivalentNote} />
+          </div>
+        </div>
+        {errors.ratePerDay && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.ratePerDay}</div>}
+        <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="rate-type">Rate type: {rateTypeOf('guaranteed', 0)}</div>
+      </div>
+      ) : (
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. The rate for deals using this list, overriding the DSP's floor. It can raise the floor but never go below the platform floor. Leave empty to inherit.">{draft.dealType === 'preferred' ? 'Fixed CPM' : 'Rate'}</WithTip></label>
         <InputNumber
@@ -360,6 +399,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
           <div data-testid="rate-type">Rate type: {rateTypeOf(draft.dealType)}</div>
         </div>
       </div>
+      )}
       {editing?.lockedWin && (
         <div style={{ fontSize: 12.5, color: T.muted }}>Rate locked at {editing.lockedWin.cpm} CPM on {new Date(editing.lockedWin.lockedAt).toLocaleString()}, before private auctions stopped locking a rate: every play for the rest of the flight books at that rate.</div>
       )}

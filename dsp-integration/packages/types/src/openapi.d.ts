@@ -2413,6 +2413,23 @@ export interface components {
             auctionCloses: string | null;
             /** @description The deal's resolved base floor in USD CPM. */
             rateCpm?: number;
+            /**
+             * @description Present on a Programmatic guaranteed deal priced per day: the slot is booked for each full 24-hour day at `ratePerDay`.
+             * @enum {string}
+             */
+            rateType?: "Fixed per day";
+            /** @description The flat USD rate for one full day on a slot. */
+            ratePerDay?: number;
+            /**
+             * @description The length of the priced period.
+             * @enum {integer}
+             */
+            billingPeriodHours?: 24;
+            /** @description The same price as a CPM over the assigned slots' forecast, for comparison; null until a slot is assigned. */
+            equivalentCpm?: {
+                min: number;
+                max: number;
+            } | null;
             creativeRequirements: components["schemas"]["CreativeRequirement"][];
         };
         DealSheet: {
@@ -2425,6 +2442,15 @@ export interface components {
             rateCpm: number;
             /** @enum {string} */
             rateKind: "floor" | "fixed";
+            /** @description Fixed per day only. The flat USD rate for one 24-hour day on a slot. */
+            ratePerDay?: number | null;
+            /** @description Fixed per day only: 24. */
+            billingPeriodHours?: number | null;
+            /** @description Fixed per day only: the rate per day as a CPM over the assigned slots' forecast; null until a slot is assigned. */
+            equivalentCpm?: {
+                min: number;
+                max: number;
+            } | null;
             activeFrom: string | null;
             activeTo: string | null;
             auctionCloses: string | null;
@@ -2555,10 +2581,17 @@ export interface components {
             inventorySource: {
                 externalDealId: string;
                 rateDetails: {
+                    /** @description USD per CPM, or per 24-hour day when rateType is Fixed per day. */
                     rate: number;
                     /** @enum {string} */
-                    rateType: "CPM floor" | "CPM fixed";
+                    rateType: "CPM floor" | "CPM fixed" | "Fixed per day";
                     currency: string;
+                    /** @description Fixed per day: 24. */
+                    billingPeriodHours?: number;
+                    equivalentCpm?: {
+                        min: number;
+                        max: number;
+                    } | null;
                 };
                 timeRange: {
                     startTime: string | null;
@@ -2601,12 +2634,12 @@ export interface components {
         };
         TermChange: {
             /** @enum {string} */
-            field: "floorCpm" | "committedPlays" | "activeFrom" | "activeTo" | "auctionCloses" | "invitedBuyers" | "invitedCategories";
+            field: "floorCpm" | "ratePerDay" | "committedPlays" | "activeFrom" | "activeTo" | "auctionCloses" | "invitedBuyers" | "invitedCategories";
             /** @description Previous value (any JSON) */
             from: unknown;
             /** @description New value (any JSON) */
             to: unknown;
-            /** @description True for floorCpm, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance. */
+            /** @description True for floorCpm, ratePerDay, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance. */
             requiresReacceptance?: boolean;
         };
         TermCheck: {
@@ -2699,6 +2732,13 @@ export interface components {
             readonly buyerAcceptance: components["schemas"]["BuyerAcceptance"][];
             effectiveCommittedPlays: components["schemas"]["EffectiveTerm"];
             effectiveRateCpm: components["schemas"]["EffectiveTerm"];
+            /** @description Programmatic guaranteed priced per day: the flat USD rate for one 24-hour day on a slot; null for a deal that pre-dates per-day pricing or is not guaranteed. */
+            ratePerDay?: number | null;
+            /** @description ratePerDay / forecast impressions per day x 1000 across the assigned slots (min and max differ when slots differ). Null while the deal has no rate per day or no assigned slot to forecast from. */
+            readonly equivalentCpm?: {
+                min: number;
+                max: number;
+            } | null;
             id: string;
             /** @description One deal ID per DSP the list invites a named seat on (ticket fgBVnNItNcu7qMBUtqH7). The list is one object with shared terms (rate, delivery term, invited buyers, auction window / locked rate); only the deal identifier is per DSP, because DV360 and The Trade Desk each accept their own deal. Inviting the first named seat on a DSP mints that DSP's ID; removing its last named seat sets `retiredAt` (the ID is kept, never reused, until the term ends); re-inviting revives the same ID. Derived from `invitedBuyers`, never supplied. */
             readonly deals: components["schemas"]["ListDeal"][];
@@ -5184,6 +5224,8 @@ export interface operations {
                     dealType?: "private_auction" | "preferred" | "guaranteed";
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
+                    /** @description Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
                     floorCpm?: number | null;
                 };
@@ -5414,6 +5456,8 @@ export interface operations {
                     dealType?: "private_auction" | "preferred" | "guaranteed";
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
+                    /** @description Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
                     floorCpm?: number | null;
                 };

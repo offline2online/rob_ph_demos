@@ -13,6 +13,7 @@
 import { assignedOf } from '@ph-dsp/types'
 import type { BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
+import { equivalentCpmRange, HOURS_PER_DAY, perDaySlotsOf } from './perDayRate'
 import { allPositions, maxPlayLengthSecFor, type PositionRef } from './positions'
 
 export type CreativeType = 'image' | 'video'
@@ -79,6 +80,8 @@ export async function dealOf(ctx: Context, list: BuyersList, rateCpm?: number, p
     activeTo: list.activeTo,
     auctionCloses: list.auctionCloses,
     ...(rateCpm !== undefined ? { rateCpm } : {}),
+    /* Programmatic guaranteed priced per day (20 Oct 2026): what a DSP is told. The slot is booked for each full 24-hour day at this flat rate; the equivalent CPM is for comparison. */
+    ...(list.dealType === 'guaranteed' && list.ratePerDay != null ? { rateType: 'Fixed per day' as const, ratePerDay: list.ratePerDay, billingPeriodHours: HOURS_PER_DAY, equivalentCpm: equivalentCpmRange(await perDaySlotsOf(ctx, list)) } : {}),
     creativeRequirements: await creativeRequirementsFor(ctx, list.id),
   }
 }
