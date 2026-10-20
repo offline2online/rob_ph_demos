@@ -235,6 +235,7 @@
       if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
       if (b.classList.contains("tab")) b.classList.toggle("active", on);
     });
+    root.dataset.route = ["agent-board", "report", "settings"].includes(route) ? route : "kanban";
     document.title = ({ "agent-board": "Agent Board", report: "Release report", settings: "Kanban settings" }[route] || "Kanban") + " — PH Agent Console";
     window.scrollTo(0, 0);
   }
@@ -357,12 +358,25 @@
         <button type="button" class="link-btn" id="kb-lanes-expand">Expand all</button>
         <button type="button" class="link-btn" id="kb-lanes-collapse">Collapse all</button>
       </div>
-      <div class="kb-lanes-sticky" id="kb-lanes-sticky" hidden><div class="kb-board kb-lanes-head-grid" id="kb-lanes-head"></div></div>
+      <div class="kb-lanes-sticky" id="kb-lanes-sticky" hidden>
+        <div class="kb-lanes-head-scroll" id="kb-lanes-head-scroll"><div class="kb-board kb-lanes-head-grid" id="kb-lanes-head"></div></div>
+        <button type="button" class="kb-lane-pin" id="kb-lane-pin" hidden></button>
+      </div>
       <div class="kb-board-wrap" id="kb-board-wrap"><div class="kb-board" id="kb-board"></div></div>`;
     // The swimlane column headers live outside the sideways-scrolling board so
     // they can stick to the page; this keeps them lined up with the columns.
-    const wrap = $("#kb-board-wrap"), sticky = $("#kb-lanes-sticky");
-    wrap.addEventListener("scroll", () => { sticky.scrollLeft = wrap.scrollLeft; }, { passive: true });
+    const wrap = $("#kb-board-wrap"), headScroll = $("#kb-lanes-head-scroll");
+    wrap.addEventListener("scroll", () => { headScroll.scrollLeft = wrap.scrollLeft; }, { passive: true });
+    $("#kb-lane-pin").addEventListener("click", () => {
+      const id = $("#kb-lane-pin").dataset.lane;
+      if (!id) return;
+      if (collapsedLanes.has(id)) collapsedLanes.delete(id); else collapsedLanes.add(id);
+      renderKanbanBoard();
+      // keep that lane's own header just under the pinned column headers
+      const lane = $(`.kb-lane[data-lane="${id}"]`);
+      if (lane) window.scrollTo(0, lane.getBoundingClientRect().top + scrollY - headScroll.getBoundingClientRect().bottom);
+      updateLanePin();
+    });
     $("#kb-lanes-expand").addEventListener("click", () => { collapsedLanes.clear(); renderKanbanBoard(); });
     $("#kb-lanes-collapse").addEventListener("click", () => { (laneIds() || []).forEach((id) => collapsedLanes.add(id)); renderKanbanBoard(); });
 
@@ -411,7 +425,7 @@
       $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
       $("#kb-lanes-sticky").hidden = false;
       $("#kb-lanes-bar").hidden = false;
-      $("#kb-lanes-sticky").scrollLeft = $("#kb-board-wrap").scrollLeft;
+      $("#kb-lanes-head-scroll").scrollLeft = $("#kb-board-wrap").scrollLeft;
       el.innerHTML = lanes.map((id) => {
           const mine = tasks.filter((t) => (t.assignee || "none") === id);
           const rem = mine.reduce((n, t) => n + remaining(t), 0);
@@ -436,6 +450,7 @@
         if (collapsedLanes.has(id)) collapsedLanes.delete(id); else collapsedLanes.add(id);
         renderKanbanBoard();
       }));
+      updateLanePin();
       return;
     }
     $("#kb-lanes-sticky").hidden = true;
@@ -457,6 +472,37 @@
       h.parentElement.classList.toggle("column-collapsed");
     }));
   }
+
+  // Desktop: the board scrolls sideways in its own box, so a lane header can't
+  // CSS-stick to the page. Instead the pin under the column headers shows the
+  // header of whichever lane is being scrolled through. (On a phone the board
+  // doesn't scroll sideways and .kb-lane sticks natively.)
+  function updateLanePin() {
+    const pin = $("#kb-lane-pin"), head = $("#kb-lanes-head-scroll");
+    if (!pin || !head) return;
+    const lanes = $$(".kb-lane");
+    let current = null;
+    if (lanes.length && !mqPhone.matches && !$("#kb-lanes-sticky").hidden) {
+      const line = head.getBoundingClientRect().bottom;
+      const boardBottom = $("#kb-board").getBoundingClientRect().bottom;
+      lanes.forEach((l, i) => {
+        const top = l.getBoundingClientRect().top;
+        const end = i + 1 < lanes.length ? lanes[i + 1].getBoundingClientRect().top : boardBottom;
+        if (top < line && end > line + 48) current = l;
+      });
+    }
+    if (!current) { pin.hidden = true; pin.dataset.lane = ""; return; }
+    if (pin.dataset.lane !== current.dataset.lane || pin.dataset.sig !== current.querySelector(".kb-lane-head").innerHTML) {
+      pin.innerHTML = current.querySelector(".kb-lane-head").innerHTML;
+      pin.dataset.sig = current.querySelector(".kb-lane-head").innerHTML;
+      pin.dataset.lane = current.dataset.lane;
+      pin.style.setProperty("--lane-c", current.style.getPropertyValue("--lane-c"));
+      pin.classList.toggle("kb-lane-collapsed", current.classList.contains("kb-lane-collapsed"));
+    }
+    pin.hidden = false;
+  }
+  addEventListener("scroll", updateLanePin, { passive: true });
+  addEventListener("resize", updateLanePin);
 
   function cardHTML(t) {
     const ty = typeOf(t.type), pr = prioOf(t.priority);

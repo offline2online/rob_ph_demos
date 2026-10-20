@@ -35,8 +35,9 @@ viewer's own `localStorage`, and **⋮ → Reset demo data** puts the mock data 
   tasks, assignee avatars (first names), release, type, priority, sprint,
   label and search. Selecting people in the assignee filter splits the board into one
   swimlane per person. Each lane has a full-width header with the person's name, and can be
-  collapsed on its own or with Expand all / Collapse all. The column headers stay
-  pinned below the topbar while you scroll the lanes. Dragging a card into another
+  collapsed on its own or with Expand all / Collapse all. On this page the console topbar
+  scrolls away. Only the column headers stick to the top, and the header of the lane you're
+  scrolling through is pinned beneath them. Dragging a card into another
   person's lane reassigns it to them.
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban
   settings. On an existing ticket, hidden fields stay editable under

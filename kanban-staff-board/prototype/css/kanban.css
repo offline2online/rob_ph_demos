@@ -69,7 +69,18 @@
    lane per person spanning all six. */
 .kb-board-lanes { gap: 8px 12px; }
 .kb-lanes-head { align-self: stretch; background: var(--ap-card); border-radius: var(--ap-radius-sm); box-shadow: 0 0 0 .5px var(--ap-divider); border-bottom: 0; }
-.kb-lanes-sticky { position: sticky; top: var(--sticky-topbar-h, 0px); z-index: 6; overflow: hidden; margin: 0 -4px; padding: 6px 4px 8px; background: var(--ap-bg); }
+/* On the Kanban page the console's topbar scrolls away; only the column
+   headers (and the current staff lane's name, below them) stay at the top. */
+html[data-route="kanban"] .topbar { position: relative; }
+.kb-lanes-sticky { position: sticky; top: 0; z-index: 6; margin: 0 -4px; padding: 6px 4px 8px; background: var(--ap-bg); }
+.kb-lanes-head-scroll { overflow: hidden; margin: 0 -4px; padding: 0 4px; }
+.kb-lane-pin { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; margin-top: 8px; padding: 6px 12px 6px 8px; border: 0; border-left: 4px solid var(--lane-c); border-radius: var(--ap-radius-sm); background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider), 0 6px 14px -8px rgba(0, 0, 0, .25); cursor: pointer; font: inherit; color: var(--text); text-align: left; }
+.kb-lane-pin[hidden] { display: none; }
+.kb-lane-pin:hover { background: var(--surface-2); }
+.kb-lane-pin .kb-avatar { width: 28px; height: 28px; font-size: 13px; }
+.kb-lane-pin .kb-col-effort { font-size: 12px; color: var(--text-muted); }
+.kb-lane-pin .kb-lane-caret { font-size: 20px; color: var(--text-muted); }
+.kb-lane-pin.kb-lane-collapsed .kb-lane-caret { transform: rotate(-90deg); }
 .kb-lanes-sticky[hidden] { display: none; }
 .kb-lanes-head-grid { align-items: stretch; }
 .kb-board-lanes .kb-lane:first-child { margin-top: 0; }
@@ -301,6 +312,7 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
   .kb-board { grid-template-columns: minmax(0, 1fr); }
   .kb-col { max-height: none; }
   .kb-lanes-sticky { display: none !important; }
+  .kb-lane { position: sticky; top: 0; z-index: 4; }
   .kb-lane-cell.kb-cell-empty { display: none; }
   .kb-cell-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border-radius: 8px 8px 0 0; }
   .kb-lane-cell .kb-list { min-height: 0; }
