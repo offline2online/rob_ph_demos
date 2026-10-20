@@ -1363,6 +1363,27 @@ and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
    run **blocks**: record `blocked`, and raise one Backlog bug per distinct
    failing case (`create` a `backlogItems` doc, `status: "backlog"`, same
    `projectId`). Never set `patchReady` on a fix in the same run.
+3a. **Acceptance-test each ticket against its own Outcome and Test steps**
+   (21 Oct 2026), not only the regression suite. Read the card's `desc`
+   (Outcome, Test steps), exercise every numbered step against the branch
+   head as far as this sandbox allows (run the code, the ticket's test or a
+   scripted check) and record pass/fail per step in the review log. A ticket
+   that is green on regression but fails any of its own steps is
+   **kicked back** with the failing step as the finding. A step you cannot
+   exercise here is listed as "not verified", never as passed.
+3b. **Docs check.** Kick a ticket back when its code changed what a spec or
+   doc says and that document was not updated in the same commit, or when
+   `node backlog-tracker/scripts/docs-impact.js --base <parent of the
+   ticket's commit>` reports an unmet rule and the commit carries no "Spec
+   not updated" note explaining why nothing changes. Name the document and
+   section in the finding.
+3c. **Model.** This gate is meant to run on the most capable model (latest
+   Claude Opus); build sessions stay on Sonnet. The model belongs to the
+   Routine at claude.ai/code/routines, not to the fire request (the fire
+   endpoint takes only `text`), so it is set there. Start the review log with
+   `Model: <the model this session is running as>`; if it is not an Opus,
+   add `WARNING: reviewed on a lesser model` to that line and to every
+   `reviewReason`.
 4. **Split findings** per the skill: safe, behaviour-preserving structural
    fixes (domain naming, single responsibility, why-not-what comments) versus
    anything needing a behaviour change or judgement call, or a seam that
@@ -1379,8 +1400,26 @@ and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
    `reviewedCommit` (the ticket's current `deployCommit`, so the flag is
    discarded if it is rebuilt), plus `updatedAt`. Append the **full review
    log** to `notes` (the Setup "Append a note" call, `author: "claude"`, text starting `[ph-reviewer]`).
-   **Never write `status`**: a kicked-back or blocked ticket stays where it
-   is and a human decides; the flag says why.
+   **Never write `status` for a `passed`, `remediating` or `blocked`
+   ticket**: it stays where it is and a human decides; the flag says why.
+   **Kick-backs return to the build pipeline by themselves** and count
+   against a cap (`reviewBounceCount`, integer on the card, 0 if unset):
+   - First and second kick-back (new count 1 or 2): in the same PATCH write
+     `reviewStatus: "kicked-back"`, `reviewBounceCount` = old + 1,
+     `status: "backlog"`, `revertRequested: true`, `rebuildAfterRevert: true`
+     and `lastFailureReason: {category: "Missing a case the ticket asked
+     for", text: <the findings>, action: "review-kickback", at: <now>}`, and
+     append the findings as a `[ph-reviewer]` note. The automation reverts
+     the ticket's commits off the train and queues a rebuild
+     (`processRevertFromTrain`), which reads `lastFailureReason`.
+   - Third failure (the ticket already has `reviewBounceCount` 2): do not
+     re-queue. Write `reviewStatus: "blocked"`, `reviewBounceCount` = 3 and
+     `blocked: {reason: "waiting-on-input", note: "Failed review 3 times:
+     <reason>. For Rob to decide. Answer on the card (Answer button)"}`;
+     leave `status` alone.
+   Deploy to Main stays a clean yes/no: it does only the light
+   integration/drift check, and a ticket that breaks the combined train is
+   ejected by the automation while the rest deploy (`ejectRedCulprits`).
 6. Finish by PATCHing `projects/<id>` with `reviewRoutine.status` =
    `"done"` (or `"error"` + `errorMessage`) and `reviewRoutine.finishedAt`.
 

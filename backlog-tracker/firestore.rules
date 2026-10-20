@@ -298,7 +298,7 @@ service cloud.firestore {
       return ["patchFiles", "patchBranch", "patchReady", "mergeReady",
         "deployCommit", "deployCommits", "carriedByCommit", "carriedByItem",
         "mergeCommit", "mergedAt", "prNumber", "prUrl", "deployBranch", "testVersion",
-        "reviewStatus", "reviewReason", "reviewedAt", "reviewedCommit",
+        "reviewStatus", "reviewReason", "reviewedAt", "reviewedCommit", "reviewBounceCount",
         // Parallel builds (4 Oct 2026): the commit a patch was written
         // against (the automation merges from it) and its rebuild counter.
         "patchBaseSha", "autoRebuilds",
