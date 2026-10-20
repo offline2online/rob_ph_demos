@@ -252,9 +252,8 @@ body {
   padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
 }
 .btn-danger:hover { opacity: .92; }
-/* Below 1024px the pipeline wraps two columns wide and scrolls only up and down; four 260px columns forced a sideways scroll on tablets (A1l8wgedyShuqXX5mL3G). */
-.board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; overflow-x: visible; }
-.column { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; min-width: 0; display: flex; flex-direction: column; max-height: calc(100vh - 200px); }
+.board { display: grid; grid-template-columns: repeat(4, minmax(260px, 1fr)); gap: 14px; align-items: start; overflow-x: auto; }
+.column { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; min-width: 260px; display: flex; flex-direction: column; max-height: calc(100vh - 200px); }
 .col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; white-space: nowrap; padding: 12px 14px; border-bottom: 2px solid var(--border); border-radius: 8px 8px 0 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .col-head-backlog { border-top: 3px solid var(--accent-backlog); }
 .col-head-testing { border-top: 3px solid var(--warning); }
