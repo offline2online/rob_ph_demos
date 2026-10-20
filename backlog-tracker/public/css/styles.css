@@ -264,6 +264,7 @@ body {
 .col-groom-inline { display: inline-flex; }
 .col-groom-inline .notify-claude-btn { padding: 3px 10px; font-size: 11px; min-height: 0; }
 .col-groom-inline .notify-claude-icon { font-size: 14px; }
+.deploy-notify-btn-conflict .notify-claude-icon { color: var(--warning); }
 .col-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .empty-hint { color: var(--text-muted); font-size: 12.5px; font-style: italic; padding: 10px 6px; text-align: center; }
 /* cursor:pointer signals the whole tile opens for editing on click now

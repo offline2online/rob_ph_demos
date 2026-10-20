@@ -1697,6 +1697,19 @@ function deployNotifyButtonHTML(project) {
       <span class="notify-claude-label">Tests failing</span>
     </button>`;
     }
+    // The last Deploy to Main stopped on a merge conflict (20 Oct 2026):
+    // the button used to come straight back as an ordinary "Deploy to Main",
+    // so each click looked unheard and hit the same conflict. Say so, with
+    // the pipeline's own reason on hover — the pipeline retries by itself
+    // once the branch or main changes, and a click still retries now.
+    if (project.trainStatus === "conflict") {
+      const why = project.trainNote || "The last Deploy to Main stopped on a merge conflict.";
+      return `<button type="button" class="notify-claude-btn deploy-notify-btn deploy-notify-btn-conflict" data-project-id="${escapeHTML(pid)}" title="${escapeHTML(`${why}\n\nClick to try again.`)}">
+      <span class="material-symbols-outlined notify-claude-icon">warning</span>
+      <span class="notify-claude-label">Deploy blocked — retry</span>
+      <span class="notify-claude-count-pill">${deployCount}</span>
+    </button>`;
+    }
     return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
       <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
       <span class="notify-claude-label">Deploy to Main</span>
@@ -4959,7 +4972,9 @@ function closeForm() {
   niBackdrop.hidden = true;
   activeNewItemProjectId = null;
   niAttachments.stopRecording();
-  niDictation.stop();
+  // halt(), not stop(): a graceful stop left the session attached, so its
+  // last final result could write back into the field just cleared below.
+  niDictation.halt();
   resetFormFields();
 }
 
@@ -4982,6 +4997,9 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
   // A double-click (or Enter then click) used to create two tickets: the
   // first addDoc hadn't returned before the second click ran.
   if (niSubmitting) return;
+  // Adding the ticket ends dictation and releases the microphone; the
+  // words already in the field (interim ones too) are what gets filed.
+  niDictation.halt();
   niSubmitting = true;
   const niSubmitBtn = document.getElementById("ni-submit");
   niSubmitBtn.disabled = true;
@@ -7435,8 +7453,8 @@ function setTypeToggle(type) {
 // comment, Edit item comment) — each gets its own independent
 // recognition/listening/stopRequested/silentRestartStreak state via this
 // closure, instead of one shared set of module-level variables that only
-// one field at a time could use. Behavior/comments below are otherwise
-// unchanged from the original New-Item-only implementation.
+// one field at a time could use (and activeDictationHalt keeps it to one
+// microphone at a time).
 // Plain inline SVG rather than the 🎤/⏹ emoji this used to show — emoji
 // glyphs render as a different size/color/style per OS and font, which is
 // what made the mic button look inconsistent with everything else in the
@@ -7448,34 +7466,77 @@ function setTypeToggle(type) {
 const MIC_ICON_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 0 0-7 0v5A3.5 3.5 0 0 0 12 15z"/><path d="M18.5 11.5a1 1 0 0 0-2 0 4.5 4.5 0 0 1-9 0 1 1 0 0 0-2 0 6.5 6.5 0 0 0 5.5 6.42V20H9a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2h-2v-2.08a6.5 6.5 0 0 0 5.5-6.42z"/></svg>';
 const STOP_ICON_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>';
 
+// Timings for keeping a dictation run alive (20 Oct 2026, "it cuts off and
+// stops listening after a while"). Overridable only so
+// test/dictation.test.mjs can run them in milliseconds.
+const DICTATION_TUNING = Object.assign({
+  // Words shown as interim text that the engine then never finalizes for
+  // this long are committed by us and the session is recycled. iOS Safari
+  // is known to go quiet mid-session with no end or error event (the mic
+  // indicator stays on, nothing more is transcribed — WebAudio/web-speech-api
+  // issue 96); Chrome finalizes within a second or two of a pause, so this
+  // only ever fires on an engine that has stalled.
+  stallMs: 4000,
+  // No recognition event at all (result, sound, speech, start) for this
+  // long: the session is presumed hung and is quietly replaced. Costs
+  // nothing in real silence, which Chrome ends by itself well before this.
+  idleRecycleMs: 20000,
+  // After the user types in the field mid-dictation, listening resumes
+  // this long after the last keystroke.
+  typingResumeMs: 1200,
+  // How long a stop click waits for the engine's last final result.
+  stopGraceMs: 3000,
+  // Gap between releasing the permission-probe stream and the recogniser
+  // claiming the mic (see requestMicAndListen).
+  probeReleaseMs: 250,
+  tickMs: 1000,
+}, (typeof window !== "undefined" && window.__btDictationTuning) || {});
+
+// The most recent dictation events across every field, newest last —
+// `__btDictationLog` in the browser console shows exactly how a run ended
+// (which error code, which restart) when someone reports it stopping.
+const dictationLog = [];
+if (typeof window !== "undefined") window.__btDictationLog = dictationLog;
+function dlog(field, msg) {
+  dictationLog.push(`${new Date().toISOString().slice(11, 23)} ${field} ${msg}`);
+  if (dictationLog.length > 200) dictationLog.shift();
+}
+
+// One microphone at a time. Chrome runs a single recognition per page and
+// aborts the older one when another starts, which two fields' restart
+// loops would then fight over forever. Starting any field halts the last.
+let activeDictationHalt = null;
+
 function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop, charCountUpdate }) {
+  const field = (micBtn && micBtn.id) || "mic";
   let recognition = null;
   let listening = false;
+  // The probe stream is out and the recogniser is about to start.
+  let starting = false;
   // Distinguishes an automatic end (the browser closed the session on its
-  // own — silence timeout, cloud-session limit, a network hiccup) from one
-  // the user actually asked for (clicking the mic again, closing the form,
-  // submitting). ONLY the latter ends dictation: once the mic is on it stays
-  // on until the user says otherwise. Reported live (16 Sep 2026) after
-  // 1.5.47: dictation "keeps pausing and starting again and misses
-  // everything" — every path below that used to let the browser's own end
-  // become OUR end (the silent-restart give-up, a single network error, an
-  // untested start(MediaStreamTrack) hand-off) was exactly that bug.
+  // own — silence timeout, cloud-session limit, a network hiccup, a stall)
+  // from one the user actually asked for (clicking the mic again, closing
+  // the form, submitting). ONLY the latter ends dictation: once the mic is
+  // on it stays on until the user says otherwise. Reported live (16 Sep and
+  // again 20 Oct 2026): dictation "keeps pausing", "cuts off after a while".
   let stopRequested = false;
-  // Consecutive automatic restarts that produced not one onresult. Used
-  // ONLY to surface a soft "not hearing anything" hint below — an earlier
-  // version stopped dictation outright after four of these, which on
-  // desktop Chrome meant a ~30s pause to think silently ended the session.
+  // Consecutive automatic restarts that produced not one result. Used ONLY
+  // to surface a soft "not hearing anything" hint — never a stop.
   let silentRestartStreak = 0;
   // Consecutive "network" errors. Chrome reports a real outage and a
   // transient cloud-session hiccup with the same code, so a couple are
   // ridden out via restart before it's treated as fatal.
   let networkErrorStreak = 0;
+  // Consecutive start() calls that threw, and consecutive "not-allowed" /
+  // "audio-capture" errors on a run whose microphone had already worked.
+  // Both are retried with a fresh instance a few times before giving up.
+  let startFailStreak = 0;
+  let refusedStreak = 0;
+  let runHadAudio = false;
   let softHintOn = false;
   // Everything dictated so far in this run, carried across the automatic
-  // restarts in onend. baseline is whatever was already in the field the
-  // moment the user clicked the mic — fixed for the whole run, never
-  // re-read, so it can't pick up committed's own dictated text as if it
-  // were pre-existing content.
+  // restarts. baseline is whatever was already in the field the moment
+  // the user clicked the mic (or last typed into it mid-run).
   let baseline = "";
   let committed = "";
   // The last finalized segment committed. Android's and iOS WebKit's
@@ -7483,27 +7544,36 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   // their own internal restarts — a final that is exactly the segment just
   // committed is dropped rather than doubled.
   let lastFinalKey = "";
+  // This session's words not yet finalized, exactly as shown in the field,
+  // and when they last changed. A session that ends (or stalls) without
+  // finalizing them commits them as they are — nothing the user saw
+  // appear is ever taken back by a restart.
+  let interim = "";
+  let interimAt = 0;
+  let lastEventAt = 0;
   let sessionStartedAt = 0;
+  let heardSomething = false;
+  // What onerror asked onend to do instead of an immediate same-instance
+  // restart: { fresh: true, delay: ms }.
+  let restartPlan = null;
+  let lastRendered = null;
   let restartTimer = null;
   let stopWatchdog = null;
+  let startTimer = null;
+  let tickTimer = null;
   // Chrome 142+ rejects phrases on an engine that doesn't support them via
   // an async "phrases-not-supported" error rather than a thrown exception
-  // — once seen, stop trying so every restart doesn't repeat the same
-  // rejection.
+  // — once seen, stop trying so every restart doesn't repeat it.
   let phrasesUnsupported = false;
   // Screen Wake Lock. A phone left to idle while someone dictates turns its
   // screen off, and the moment it does the browser suspends the page and
-  // recognition dies with it ("the phone goes to sleep and it stops
-  // listening", reported live 16 Sep 2026). Holding a screen wake lock for
-  // as long as the mic is on keeps the device awake. The browser drops the
-  // lock on its own whenever the page is hidden (app switch, manual lock),
-  // so it is re-requested when the page comes back — see onVisibilityChange
-  // below. A browser without navigator.wakeLock just behaves as before.
+  // recognition dies with it. Held for as long as the mic is on; the
+  // browser drops it whenever the page is hidden, so it is re-requested
+  // when the page comes back (onVisibilityChange).
   let wakeLock = null;
   let wakeWanted = false;
   // Set when a session ended while the page was hidden: no restart is
-  // attempted against a suspended page (it would only fail the same way);
-  // the run resumes the moment the page is visible again.
+  // attempted against a suspended page; the run resumes on visibility.
   let suspendedWhileHidden = false;
 
   function showError(msg) {
@@ -7518,20 +7588,16 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   function showSoftHint(msg) { showError(msg); softHintOn = true; }
 
   function render(liveText) {
-    let next = joinDictated(joinDictated(baseline, committed), liveText || "");
-    // Native maxlength on the textarea stops typing/pasting past a
-    // field's own bound (see firestore.rules), but assigning .value
-    // straight from script — exactly what this line does — bypasses
-    // maxlength entirely. Without this, dictating a long description ran
-    // straight past 10000 characters with nothing visible until the
-    // eventual Firestore write failed with a bare 403 permission-denied.
-    // Only clamps when the field actually declares a maxlength, so this
-    // never truncates an unbounded field.
+    let next = joinDictated(joinDictated(baseline, committed), (liveText || "").trim());
+    // Assigning .value from script bypasses the textarea's maxlength, so
+    // clamp here — otherwise a long dictation ran past the field's
+    // firestore.rules bound and only failed later as a bare 403.
     if (textareaEl.maxLength > 0 && next.length > textareaEl.maxLength) {
       next = next.slice(0, textareaEl.maxLength);
       showError(`Reached the ${textareaEl.maxLength}-character limit for this field.`);
     }
     textareaEl.value = next;
+    lastRendered = next;
     autoGrow(textareaEl);
     if (charCountUpdate) charCountUpdate();
   }
@@ -7545,16 +7611,27 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     lastFinalKey = key;
     committed = joinDictated(committed, processed);
   }
+  function commitInterim() {
+    const pending = interim;
+    interim = "";
+    if (pending.trim()) commitFinal(pending);
+  }
 
-  // Detach an instance's handlers before anything else touches it. Both
-  // restart and stop end up calling .stop()/.abort() on an instance that
-  // may already have ended, and without this that second call re-fires
-  // the instance's own onend while the first is still on the stack and
-  // recurses (verified: an unguarded version spun into thousands of
-  // recognition instances off a single simulated restart in testing).
+  // Detach an instance's handlers before anything else touches it, so a
+  // stop()/abort() on it can never re-enter our own onend (an unguarded
+  // version once spun into thousands of instances off a single restart).
   function detach(instance) {
     if (!instance) return;
     instance.onend = null; instance.onerror = null; instance.onresult = null;
+    instance.onstart = null; instance.onaudiostart = null; instance.onsoundstart = null; instance.onspeechstart = null;
+  }
+  // Drop the current instance and release its microphone straight away.
+  // abort(), not stop(): with the handlers detached there is nobody left
+  // to receive a final result, and abort() frees the mic without waiting.
+  function discard() {
+    const r = recognition;
+    recognition = null;
+    if (r) { detach(r); try { r.abort(); } catch (err) {} }
   }
 
   async function acquireWakeLock() {
@@ -7566,7 +7643,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
       lock.addEventListener("release", () => { if (wakeLock === lock) wakeLock = null; });
     } catch (err) {
       // Refused — page not visible, battery saver, or a policy. Dictation
-      // still works exactly as before; the screen just isn't held on.
+      // still works; the screen just isn't held on.
     }
   }
   function releaseWakeLock() {
@@ -7575,119 +7652,119 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     if (lock) { try { lock.release(); } catch (err) {} }
   }
 
-  function startListening(isRestart) {
-    if (!SpeechRecognitionCtor) return;
-    if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
-    stopRequested = false;
-    if (!isRestart) {
-      silentRestartStreak = 0;
-      networkErrorStreak = 0;
-      baseline = textareaEl.value;
-      committed = "";
-      lastFinalKey = "";
-    }
-    const previous = recognition;
-    detach(previous);
-    if (previous) { try { previous.abort(); } catch (err) {} }
+  function createRecognition() {
     const engine = dictationEnginePref();
     const useLocal = engine === "local";
-    recognition = new SpeechRecognitionCtor();
-    // Chrome's on-device engine only ships an en-US model — asking for
-    // it in any other language just fails, so "On-device" always means
-    // en-US regardless of the language preference below (which only
-    // applies to the cloud engine). "Auto"/"cloud" use the per-viewer
-    // language, defaulting to en-GB rather than the old hard-coded en-US,
-    // since Chrome's cloud recogniser is measurably worse on British
-    // accents/spellings when told to expect US English.
-    recognition.lang = useLocal ? "en-US" : dictationLangPref();
-    if (useLocal && "processLocally" in recognition) {
-      recognition.processLocally = true;
-      if (!phrasesUnsupported && "phrases" in recognition && typeof window.SpeechRecognitionPhrase === "function") {
+    const r = new SpeechRecognitionCtor();
+    // Chrome's on-device engine only ships an en-US model, so "On-device"
+    // always means en-US; "Auto"/"cloud" use the per-viewer language,
+    // defaulting to en-GB (Chrome's cloud recogniser is measurably worse on
+    // British accents/spellings when told to expect US English).
+    r.lang = useLocal ? "en-US" : dictationLangPref();
+    if (useLocal && "processLocally" in r) {
+      r.processLocally = true;
+      if (!phrasesUnsupported && "phrases" in r && typeof window.SpeechRecognitionPhrase === "function") {
         try {
-          recognition.phrases = buildDictationPhrases().map((p) => new SpeechRecognitionPhrase(p, 4));
-        } catch (err) { /* not supported here — recognition.onerror below catches the async case too */ }
+          r.phrases = buildDictationPhrases().map((p) => new SpeechRecognitionPhrase(p, 4));
+        } catch (err) { /* not supported here — onerror catches the async case too */ }
       }
     }
-    // continuous:true is a known bad actor on Android Chrome — reported
-    // live: speech gets tripled/repeated 10x over, then it dies anyway
-    // around 10s. Android's implementation is utterance-based underneath
-    // and redelivers prior results across its own keep-alive restarts.
-    // Everywhere else continuous:false was the actual bug: it ended the
-    // session at the first pause, restarted, and lost the start of the next
-    // phrase every time. This is the same result-handling pattern as
-    // Google's own Web Speech demo (walk from e.resultIndex, commit each
-    // final once) plus an unconditional restart in onend, so a session the
-    // browser ends on its own is a stutter, never a stop.
-    recognition.continuous = !IS_ANDROID;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    let heardSomething = false;
-    recognition.onresult = (e) => {
+    // continuous:true is a known bad actor on Android Chrome (speech
+    // tripled, then dead around 10s), so Android chains one-utterance
+    // sessions; everywhere else one continuous session, restarted in onend
+    // whenever the browser ends it on its own.
+    r.continuous = !IS_ANDROID;
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    // Every handler checks it still belongs to the live instance: a
+    // replaced instance's late events are ignored, never written.
+    const mine = () => r === recognition;
+    const touch = () => { if (mine()) lastEventAt = Date.now(); };
+    r.onstart = touch;
+    r.onsoundstart = touch;
+    r.onspeechstart = touch;
+    r.onaudiostart = () => { if (!mine()) return; lastEventAt = Date.now(); runHadAudio = true; };
+    r.onresult = (e) => {
+      if (!mine()) return;
       heardSomething = true;
+      runHadAudio = true;
       silentRestartStreak = 0;
       networkErrorStreak = 0;
+      refusedStreak = 0;
+      lastEventAt = Date.now();
       if (softHintOn) showError("");
       // e.resultIndex is the first result that changed since the last
-      // event — walking from there means each finalized result is
-      // committed exactly once, on every platform, instead of re-joining
-      // the whole results array (which is what doubled text on Android).
+      // event — walking from there commits each final exactly once on
+      // every platform (Google's own Web Speech demo pattern).
       let interimText = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
         const transcript = result[0] ? result[0].transcript : "";
         if (result.isFinal) commitFinal(transcript); else interimText += transcript;
       }
-      render(interimText);
+      if (interimText !== interim) { interim = interimText; interimAt = Date.now(); }
+      render(interim);
     };
-    recognition.onerror = (e) => {
+    r.onerror = (e) => {
+      if (!mine()) return;
       const code = e && e.error;
+      dlog(field, `error ${code}`);
       const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
       if (code === "not-allowed" || code === "service-not-allowed" || code === "audio-capture") {
         if (hidden) {
-          // A hidden page (screen off, app switched) loses the mic and
-          // Chrome reports it with these same codes — not a real denial.
-          // onend below parks the run until the page is visible again.
+          // A hidden page (screen off, app switched) loses the mic and is
+          // told so with these same codes — not a real denial. onend parks
+          // the run until the page is visible again.
           suspendedWhileHidden = true;
           return;
         }
+        if (runHadAudio && refusedStreak < 3) {
+          // The mic worked earlier in this run, so this is not a denial:
+          // a restart outside the click gesture (Safari), or the device
+          // briefly busy. Try again on a fresh instance after a beat.
+          refusedStreak++;
+          restartPlan = { fresh: true, delay: 500 * refusedStreak };
+          return;
+        }
         showError(code === "audio-capture"
-          ? "No microphone could be accessed."
-          : "Microphone access is blocked for this page — check your browser's site permissions and try again.");
+          ? "No microphone could be accessed — check it isn't in use by another app, then tap the mic again."
+          : runHadAudio
+            ? "The browser paused dictation — tap the mic to carry on."
+            : "Microphone access is blocked for this page — check your browser's site permissions and try again.");
         stopRequested = true;
       } else if (code === "network") {
         networkErrorStreak++;
         if (networkErrorStreak >= 3) {
           showError("Dictation needs an internet connection to convert speech to text — check your connection and try again.");
           stopRequested = true;
+        } else {
+          restartPlan = { fresh: true, delay: 300 * networkErrorStreak };
         }
-        // Fewer than that: onend below restarts through it.
       } else if (code === "language-not-supported") {
-        showError(`Dictation isn't available for ${recognition.lang} in this browser — switch the engine in Settings.`);
+        showError(`Dictation isn't available for ${r.lang} in this browser — switch the engine in Settings.`);
         stopRequested = true;
       } else if (code === "phrases-not-supported") {
-        // Not fatal — drop phrase biasing and keep dictating without it,
-        // on this and every later restart in this run.
+        // Not fatal — drop phrase biasing for the rest of this run.
         phrasesUnsupported = true;
+        restartPlan = { fresh: true, delay: 0 };
       } else if (code === "no-speech" || code === "aborted") {
-        // Expected/transient, not a real failure: "no-speech" is the
-        // browser's own silence timeout and "aborted" fires when we stop
-        // an instance ourselves. Leave stopRequested as-is so onend below
-        // restarts and only really stops when the user (or closeForm/
-        // submit) actually asked it to.
+        // Expected/transient: "no-speech" is the browser's own silence
+        // timeout; "aborted" means something else took the recogniser.
+        // onend restarts unless the user asked to stop.
       } else if (code) {
         showError(`Dictation stopped (${code}) — you can keep typing instead.`);
         stopRequested = true;
       }
     };
-    recognition.onend = () => {
-      const finished = recognition;
-      detach(finished);
-      if (stopRequested) { stopListening(); return; }
+    r.onend = () => {
+      if (!mine()) return;
+      dlog(field, `end after ${Date.now() - sessionStartedAt}ms${heardSomething ? "" : " (nothing heard)"}`);
+      // Anything shown but never finalized is kept, not dropped.
+      if (interim) { commitInterim(); render(""); }
+      if (stopRequested || !listening) { stopListening(); return; }
       if (suspendedWhileHidden || (typeof document !== "undefined" && document.visibilityState === "hidden")) {
-        // The page is hidden — the phone's screen went off or the user
-        // switched apps — which is why the browser ended this session, and
-        // a restart now would only fail the same way. Wait for the page to
-        // come back (onVisibilityChange below) and resume then.
+        // The page is hidden — screen off or app switched — which is why
+        // the session ended; a restart now would only fail the same way.
         suspendedWhileHidden = true;
         return;
       }
@@ -7695,61 +7772,135 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
         silentRestartStreak++;
         if (silentRestartStreak >= 3) showSoftHint("Still listening, but not hearing anything yet — check the mic isn't muted or in use by another app.");
       }
+      const plan = restartPlan;
+      restartPlan = null;
+      if (plan) { scheduleRestart(plan.delay, plan.fresh); return; }
       // The browser ended this session on its own but nobody asked to stop
-      // — restart. Synchronously in the normal case: every millisecond
-      // between the browser's end and our start is speech nobody hears.
-      // Only a session that died almost instantly with nothing heard (a
-      // tight failure loop, not a pause) waits a beat first, so a broken
-      // engine can't spin flat out while the user reads the hint above.
-      // `baseline`/`committed` already hold everything transcribed so far
-      // and aren't reset on a restart, so nothing is lost.
+      // — restart the SAME instance, synchronously: every millisecond
+      // between its end and our start is speech nobody hears, and reusing
+      // one instance is what iOS Safari needs (a new instance created
+      // outside the click gesture is the one it refuses). Only a session
+      // that died almost instantly with nothing heard waits a beat first,
+      // so a broken engine can't spin flat out.
       const lived = Date.now() - sessionStartedAt;
-      if (heardSomething || lived >= 1000) {
-        try { startListening(true); } catch (err) { stopListening(); }
+      if (heardSomething || lived >= 1000) beginSession(false);
+      else scheduleRestart(600, true);
+    };
+    return r;
+  }
+
+  // Start (or restart) one recognition session within the current run.
+  // `fresh` replaces the instance; otherwise the ended one is reused.
+  function beginSession(fresh) {
+    if (!listening || stopRequested) return;
+    if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+    if (fresh || !recognition) {
+      discard();
+      recognition = createRecognition();
+    }
+    heardSomething = false;
+    interim = "";
+    sessionStartedAt = lastEventAt = Date.now();
+    try {
+      recognition.start();
+      startFailStreak = 0;
+      dlog(field, `start${fresh ? " (new instance)" : ""}`);
+    } catch (err) {
+      // InvalidStateError (the old session hadn't finished ending) or a
+      // refusal. A fresh instance after a beat usually clears it.
+      startFailStreak++;
+      dlog(field, `start threw ${err && err.name} (${startFailStreak})`);
+      if (startFailStreak >= 3) {
+        showError("Dictation didn't start — tap the mic to try again, or keep typing.");
+        stopListening();
         return;
       }
-      restartTimer = setTimeout(() => {
-        restartTimer = null;
-        if (!listening) return;
-        try { startListening(true); } catch (err) { stopListening(); }
-      }, 600);
-    };
+      scheduleRestart(400 * startFailStreak, true);
+    }
+  }
+  function scheduleRestart(delay, fresh) {
+    if (restartTimer) clearTimeout(restartTimer);
+    // Nothing should write while we wait — drop the instance now.
+    if (fresh) discard();
+    restartTimer = setTimeout(() => {
+      restartTimer = null;
+      beginSession(fresh);
+    }, delay);
+  }
+
+  // A once-a-second check that the session is still alive (see
+  // DICTATION_TUNING): stalled interim text is committed and the session
+  // replaced; a session silent of every event is replaced quietly.
+  function tick() {
+    if (!listening || stopRequested || suspendedWhileHidden || restartTimer || !recognition) return;
+    const now = Date.now();
+    if (interim && now - interimAt >= DICTATION_TUNING.stallMs) {
+      dlog(field, "stalled with unfinalized words — committing and restarting");
+      commitInterim();
+      render("");
+      beginSession(true);
+    } else if (now - lastEventAt >= DICTATION_TUNING.idleRecycleMs) {
+      dlog(field, "no events — restarting");
+      beginSession(true);
+    }
+  }
+
+  function startRun() {
+    starting = false;
+    if (listening) return;
     listening = true;
+    stopRequested = false;
+    restartPlan = null;
+    silentRestartStreak = 0;
+    networkErrorStreak = 0;
+    startFailStreak = 0;
+    refusedStreak = 0;
+    runHadAudio = false;
+    baseline = textareaEl.value;
+    committed = "";
+    lastFinalKey = "";
+    interim = "";
     micBtn.classList.add("listening");
     micBtn.innerHTML = STOP_ICON_SVG; // unambiguous "tap to stop", not just a color change
     micBtn.title = "Stop dictation";
     micBtn.setAttribute("aria-label", "Stop dictation");
+    micBtn.setAttribute("aria-pressed", "true");
     if (hintEl) hintEl.classList.add("on");
-    sessionStartedAt = Date.now();
-    // Plain start(): the browser opens and processes the microphone itself,
-    // the way every other Web Speech dictation does. 1.5.47 fed a
-    // getUserMedia track (noise suppression / echo cancellation / AGC on)
-    // via start(MediaStreamTrack) instead — an unverifiable path from this
-    // sandbox, and Google's own speech guidance is NOT to pre-process audio
-    // before its recogniser; it went live and dictation got worse, not
-    // better. Gone.
-    try { recognition.start(); } catch (err) {
-      showError("Dictation didn't start — you can keep typing instead.");
-      stopListening();
-    }
+    tickTimer = setInterval(tick, DICTATION_TUNING.tickMs);
+    // Plain start(): the browser opens and processes the microphone
+    // itself. 1.5.47 fed a getUserMedia track via start(MediaStreamTrack)
+    // instead, and dictation got worse — Google's own guidance is not to
+    // pre-process audio before its recogniser. Gone.
+    beginSession(true);
   }
 
+  // Ends the run: the instance is discarded (its microphone released
+  // there and then), every timer cleared, the button reset.
   function stopListening() {
+    const wasListening = listening;
     listening = false;
+    starting = false;
     stopRequested = false;
+    restartPlan = null;
     wakeWanted = false;
     suspendedWhileHidden = false;
+    interim = "";
     releaseWakeLock();
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
     if (stopWatchdog) { clearTimeout(stopWatchdog); stopWatchdog = null; }
+    if (startTimer) { clearTimeout(startTimer); startTimer = null; }
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    discard();
+    if (activeDictationHalt === halt) activeDictationHalt = null;
     micBtn.classList.remove("listening");
     micBtn.innerHTML = MIC_ICON_SVG;
     micBtn.title = "Dictate";
     micBtn.setAttribute("aria-label", "Dictate");
+    micBtn.setAttribute("aria-pressed", "false");
     if (hintEl) hintEl.classList.remove("on");
     if (softHintOn) showError("");
-    if (recognition) { const r = recognition; detach(r); try { r.stop(); } catch (err) {} }
-    if (onStop && textareaEl.value.trim()) onStop(textareaEl.value);
+    if (wasListening) dlog(field, "stopped");
+    if (wasListening && onStop && textareaEl.value.trim()) onStop(textareaEl.value);
   }
 
   // Chrome won't reliably prompt for microphone permission from inside
@@ -7759,32 +7910,35 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   // microphone itself.
   function requestMicAndListen() {
     showError("");
+    if (activeDictationHalt && activeDictationHalt !== halt) activeDictationHalt();
+    activeDictationHalt = halt;
+    starting = true;
     // Inside the click gesture, before anything async — the surest place
     // for a wake-lock request to be honoured.
     wakeWanted = true;
     acquireWakeLock();
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { startListening(false); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { startRun(); return; }
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       stream.getTracks().forEach((t) => t.stop());
-      // Reported live on Android Chrome: the mic visibly starts
-      // "listening" (button goes red/pulsing) but never transcribes a
-      // word — consistent with SpeechRecognition silently failing to
-      // (re-)open the microphone when it's asked to grab it again
-      // immediately after this probe stream's tracks are stopped, before
-      // the OS has actually released the hardware. A short delay here
-      // gives that teardown time to finish before recognition.start()
-      // tries to claim the mic itself.
-      // Skipped if dictation was halted (submit/close) during the delay.
-      setTimeout(() => { if (wakeWanted) startListening(false); }, 250);
+      if (!starting) return; // halted while the permission prompt was up
+      // Give the OS time to release the probe's hold on the mic before the
+      // recogniser claims it (Android Chrome otherwise "listens" in red but
+      // never transcribes a word).
+      startTimer = setTimeout(() => { startTimer = null; if (starting) startRun(); }, DICTATION_TUNING.probeReleaseMs);
     }).catch((err) => {
+      starting = false;
       wakeWanted = false;
       releaseWakeLock();
+      if (activeDictationHalt === halt) activeDictationHalt = null;
       const name = err && err.name;
+      dlog(field, `getUserMedia ${name}`);
       let msg = "Microphone access didn't start — you can still type instead.";
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
         msg = "Microphone access is blocked for this page — check your browser's site permissions, then try again.";
       } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
         msg = "No microphone was found on this device.";
+      } else if (name === "NotReadableError") {
+        msg = "The microphone is in use by another app — close it, then try again.";
       } else if (name === "SecurityError") {
         msg = "Microphone access needs a secure (https) page — it isn't available here.";
       }
@@ -7792,38 +7946,50 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     });
   }
 
-  // A handle the field's own owner (e.g. the New Item form's closeForm())
-  // can use to force dictation off and clear any error line without
-  // reaching into this closure's private state directly. Uses stop(), not
-  // abort(), so the utterance in flight is still finalized into the field.
-  // Hard stop for when the field's owner is done with it (comment
-  // submitted, modal closed): detaches the handlers first so a late final
-  // result can't write back into a field that was just cleared, then
-  // aborts so the browser releases the microphone straight away rather
-  // than after the utterance in flight is finalized.
+  // Hard stop for when the field's owner is done with it (comment or ticket
+  // submitted, modal closed): the instance is discarded with its handlers
+  // detached, so nothing can write back into a field that is about to be
+  // cleared, and the microphone is released immediately. Also cancels a
+  // start still waiting on the permission probe. The words already in the
+  // field — interim ones included — are what the owner reads and submits.
   function halt() {
+    if (starting && !listening) {
+      starting = false;
+      wakeWanted = false;
+      releaseWakeLock();
+      if (startTimer) { clearTimeout(startTimer); startTimer = null; }
+      if (activeDictationHalt === halt) activeDictationHalt = null;
+      return;
+    }
     if (!listening) return;
-    const r = recognition;
     stopListening();
-    if (r) { try { r.abort(); } catch (err) {} }
   }
+  // The user's own stop click: ask the engine to finalize what it heard,
+  // then end. Uses stop(), not abort(), so the utterance in flight lands.
   function stop() {
-    if (!listening) return;
-    if (restartTimer || suspendedWhileHidden) { stopListening(); return; } // between sessions — nothing in flight
+    if (!listening) { halt(); return; }
+    if (stopRequested) { stopListening(); return; } // second click while finishing
+    if (restartTimer || suspendedWhileHidden || !recognition) {
+      if (interim) { commitInterim(); render(""); }
+      stopListening();
+      return;
+    }
     stopRequested = true;
     try { recognition.stop(); } catch (err) { stopListening(); return; }
-    // If the browser never delivers that instance's end event, don't leave
-    // the button stuck on red.
-    stopWatchdog = setTimeout(() => { stopWatchdog = null; if (listening) stopListening(); }, 2000);
+    // If the engine never delivers that end event, keep what was shown and
+    // don't leave the button stuck on red.
+    stopWatchdog = setTimeout(() => {
+      stopWatchdog = null;
+      if (!listening) return;
+      if (interim) { commitInterim(); render(""); }
+      stopListening();
+    }, DICTATION_TUNING.stopGraceMs);
   }
 
   if (!SpeechRecognitionCtor) {
-    // OhKUnoGbpUAeJiXiLIvc: this used to fully hide the button (micBtn.hidden
-    // = true), which on a mobile browser without Web Speech support made the
-    // mic icon simply vanish with no visible explanation — the error line
-    // below was the only clue, easy to miss under the textarea. Keep the
-    // icon visible but disabled instead, so "why is the mic gone" can't
-    // happen: there's always something to see and tap for the explanation.
+    // OhKUnoGbpUAeJiXiLIvc: keep the icon visible but disabled rather than
+    // hidden, so "why is the mic gone" can't happen on a browser without
+    // Web Speech support.
     micBtn.disabled = true;
     micBtn.title = "Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.";
     showError("Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.");
@@ -7831,26 +7997,42 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   }
   micBtn.hidden = false;
   micBtn.innerHTML = MIC_ICON_SVG;
+  micBtn.setAttribute("aria-pressed", "false");
   micBtn.addEventListener("click", () => {
     if (listening) { stop(); return; }
+    if (starting) { halt(); return; } // second click while the permission prompt is up
     requestMicAndListen();
   });
+  // Typing into the field mid-dictation used to be overwritten by the next
+  // result, which re-rendered baseline + dictated text over the edit. Now
+  // the edit wins: the field as it stands becomes the new baseline, the
+  // session in flight is dropped (so its words aren't appended twice), and
+  // listening resumes once the typing pauses.
+  textareaEl.addEventListener("input", () => {
+    if (!listening || stopRequested || textareaEl.value === lastRendered) return;
+    baseline = textareaEl.value;
+    committed = "";
+    interim = "";
+    lastFinalKey = "";
+    lastRendered = textareaEl.value;
+    scheduleRestart(DICTATION_TUNING.typingResumeMs, true);
+  });
   // Page hidden → visible again while the mic is on: take the wake lock
-  // back (the browser released it when the page went away) and, if the
-  // session died while hidden, resume it — the user never asked to stop.
-  // Deliberately does nothing on the way OUT (desktop Chrome keeps
-  // recognising in a background tab; only a session that actually ended is
-  // parked, by onend above).
+  // back and, if the session died while hidden, resume it — the user never
+  // asked to stop. Does nothing on the way OUT (desktop Chrome keeps
+  // recognising in a background tab; only a session that ended is parked).
   function onVisibilityChange() {
     if (!listening || document.visibilityState !== "visible") return;
     acquireWakeLock();
     if (suspendedWhileHidden) {
       suspendedWhileHidden = false;
-      try { startListening(true); } catch (err) { stopListening(); }
+      beginSession(true);
     }
   }
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibilityChange);
-  return { stop, halt, clearError: () => showError("") };
+  // Leaving the page (reload, navigation, tab closed) releases the mic.
+  if (typeof window !== "undefined") window.addEventListener("pagehide", halt);
+  return { stop, halt, clearError: () => showError(""), isListening: () => listening || starting };
 }
 
 const niDictation = createDictationController({

@@ -40,6 +40,7 @@ const code = [
 ].map(constant).join("\n") + "\n" + [
   "tsMillis", "anyMillis", "perItemBuildFinished", "perItemRoutineFinished", "isTrainLocked",
   "projectInDeployPhase", "deployHandedOver", "stalledSentIds", "sentTicketStateLines", "notifyStalledChipHTML", "notifyClaudeButtonCore", "notifyClaudeButtonHTML",
+  "trainItemsForProject", "pendingTrainRevertsForProject", "legacyDeployItemsForProject", "deployNotifyButtonHTML",
 ].map(extract).join("\n") + "\nlet timedSpinnerShown = false;";
 
 function board(project, cards) {
@@ -56,7 +57,7 @@ function board(project, cards) {
   };
   vm.createContext(ctx);
   vm.runInContext(code, ctx);
-  return { html: () => ctx.notifyClaudeButtonHTML(project), ctx };
+  return { html: () => ctx.notifyClaudeButtonHTML(project), deploy: () => ctx.deployNotifyButtonHTML(project), ctx };
 }
 
 const ts = (ms) => ({ toMillis: () => ms });
@@ -106,6 +107,32 @@ test("a spinner marks the board for the stale-clearing tick", () => {
   const b = board(project, cards);
   b.html();
   assert.strictEqual(vm.runInContext("timedSpinnerShown", b.ctx), true);
+});
+
+// 20 Oct 2026: Deploy to Main stopped on a merge conflict and the button came
+// straight back as an ordinary "Deploy to Main" — every click looked unheard.
+test("a whole approved train offers Deploy to Main", () => {
+  const cards = [{ id: "a", projectId: P, status: "ready-to-publish", deployCommit: "abc" }];
+  const html = board({ id: P, trainLocked: true }, cards).deploy();
+  assert.match(html, /Deploy to Main/);
+  assert.doesNotMatch(html, /blocked/);
+});
+
+test("a deploy parked on a merge conflict says so, with the reason, and can still be retried", () => {
+  const cards = [{ id: "a", projectId: P, status: "ready-to-publish", deployCommit: "abc" }];
+  const project = { id: P, trainLocked: true, trainStatus: "conflict", trainReady: false, trainNote: "Merging main into deploy/x conflicted on README.md" };
+  const html = board(project, cards).deploy();
+  assert.match(html, /Deploy blocked — retry/);
+  assert.match(html, /deploy-notify-btn-conflict/);
+  assert.match(html, /conflicted on README\.md/, "the pipeline's reason is on the button");
+  assert.match(html, /data-project-id="p1"/, "still a live button, so a click retries");
+});
+
+test("a conflicted deploy the pipeline is retrying shows Deploying…, not the blocked button", () => {
+  const cards = [{ id: "a", projectId: P, status: "ready-to-publish", deployCommit: "abc" }];
+  const project = { id: P, trainLocked: true, trainStatus: "deploying", trainReady: true };
+  const html = board(project, cards).deploy();
+  assert.match(html, /Deploying/);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

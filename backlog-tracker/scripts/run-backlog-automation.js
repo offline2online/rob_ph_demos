@@ -1185,10 +1185,7 @@ function syncTrainWithMain(deployBranch) {
       "merge", "origin/main", "--no-edit", "--quiet"]);
   } catch (err) {
     const conflicted = conflictedPaths();
-    let resolution = tryAutoResolveFaqIndexConflict(conflicted);
-    if (!resolution.resolved && !conflicted.includes("faq/data/index.json")) {
-      resolution = tryAutoResolveGeneratedOutputConflict(conflicted);
-    }
+    const resolution = tryAutoResolveTrainMergeConflict(conflicted);
     if (!resolution.resolved) {
       try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
       discardWorkingTree();
@@ -2590,6 +2587,126 @@ function tryAutoResolveGeneratedOutputConflict(conflicted) {
     resolved: true,
     detail: `conflicted only on generated build output (${conflicted.join(", ")}) — kept the branch's copy, which its rebuild workflow regenerates from the merged source, and the merge completed`,
   };
+}
+
+// Mid-merge resolver for package.json, the file every ticket that adds a
+// test edits on the same few lines (20 Oct 2026). A train had added
+// `node ui/mobile-shell.test.mjs` to test:ui while a fix merged straight to
+// main added `node dictation.test.mjs` to test:app-boots, the line above.
+// Adjacent edits are a conflict to git, so Deploy to Main stopped on
+// backlog-tracker/test/package.json — and every further click stopped on it
+// again. Both sides only added a command to a script, so the right merge is
+// both commands.
+//
+// A three-way merge of the parsed JSON, key by key: a key only one side
+// changed takes that side; a key both changed identically takes either;
+// a script both changed is merged as an `&&` chain (each side's added
+// commands kept, each side's removed commands dropped). Anything else both
+// sides changed differently — a dependency version, the name — declines, so
+// a person decides; so does a file either side doesn't have as valid JSON.
+// Same { resolved, detail } contract as the resolvers below.
+const isPackageJsonPath = (p) => p === "package.json" || p.endsWith("/package.json");
+function sameJson(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+function mergeCommandChains(base, ours, theirs) {
+  const split = (s) => String(s).split(/\s+&&\s+/).map((c) => c.trim()).filter(Boolean);
+  const b = split(base || ""), o = split(ours), t = split(theirs);
+  const removedByTheirs = new Set(b.filter((c) => !t.includes(c)));
+  const merged = o.filter((c) => !removedByTheirs.has(c));
+  t.forEach((c, i) => {
+    if (b.includes(c) || merged.includes(c)) return;
+    // After the nearest command before it (in their order) that we kept.
+    let at = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const k = merged.indexOf(t[j]);
+      if (k !== -1) { at = k + 1; break; }
+    }
+    merged.splice(at, 0, c);
+  });
+  return merged.join(" && ");
+}
+function mergeJsonThreeWay(base, ours, theirs, keyPath) {
+  if (sameJson(ours, theirs)) return { ok: true, value: ours };
+  if (sameJson(base, ours)) return { ok: true, value: theirs };
+  if (sameJson(base, theirs)) return { ok: true, value: ours };
+  if (/^scripts\.[^.]+$/.test(keyPath) && typeof ours === "string" && typeof theirs === "string") {
+    return { ok: true, value: mergeCommandChains(base, ours, theirs) };
+  }
+  if (isPlainObject(ours) && isPlainObject(theirs)) {
+    const b = isPlainObject(base) ? base : {};
+    const out = {};
+    const keys = [...Object.keys(ours), ...Object.keys(theirs).filter((k) => !(k in ours))];
+    for (const k of keys) {
+      const r = mergeJsonThreeWay(b[k], ours[k], theirs[k], keyPath ? `${keyPath}.${k}` : k);
+      if (!r.ok) return r;
+      if (r.value !== undefined) out[k] = r.value;
+    }
+    return { ok: true, value: out };
+  }
+  return { ok: false, keyPath: keyPath || "(the whole file)" };
+}
+function tryAutoResolvePackageJsonConflict(conflicted) {
+  if (!conflicted.length || !conflicted.every(isPackageJsonPath)) {
+    return { resolved: false, detail: `conflicted on ${conflicted.join(", ") || "(unknown files)"}` };
+  }
+  const show = (stage, p) => {
+    try { return execFileSync("git", ["show", `:${stage}:${p}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
+    catch { return null; }
+  };
+  const merges = [];
+  for (const p of conflicted) {
+    const [baseText, oursText, theirsText] = [1, 2, 3].map((s) => show(s, p));
+    let base, ours, theirs;
+    try {
+      ours = JSON.parse(oursText);
+      theirs = JSON.parse(theirsText);
+      base = baseText === null ? {} : JSON.parse(baseText);
+    } catch (err) {
+      return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — ${p} isn't valid JSON on both sides, so it can't be merged automatically` };
+    }
+    const r = mergeJsonThreeWay(base, ours, theirs, "");
+    if (!r.ok) {
+      return { resolved: false, detail: `conflicted on ${conflicted.join(", ")} — both sides changed "${r.keyPath}" in ${p} differently, which needs a person to decide` };
+    }
+    const indent = (oursText.match(/\n([ \t]+)"/) || [])[1] || "  ";
+    let text = JSON.stringify(r.value, null, indent) + (oursText.endsWith("\n") ? "\n" : "");
+    // Keep \uXXXX escapes as the file wrote them rather than re-encoding
+    // every non-ASCII character as a raw one.
+    if (!/[^\x00-\x7f]/.test(oursText)) text = text.replace(/[^\x00-\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+    merges.push([p, text]);
+  }
+  for (const [p, text] of merges) {
+    fs.writeFileSync(path.join(process.cwd(), p), text);
+    run("git", ["add", "--", p]);
+  }
+  return {
+    resolved: true,
+    detail: `conflicted on ${conflicted.join(", ")} — both sides' changes were combined automatically (scripts merged command by command), and the merge completed`,
+  };
+}
+
+// The one entry point both places that merge main into a train use
+// (syncTrainWithMain before a ticket lands, processDeployTrain at Deploy to
+// Main): package.json first, then the FAQ index, then generated build
+// output. A merge resolves only if every conflicted path was handled.
+function tryAutoResolveTrainMergeConflict(conflicted) {
+  const notes = [];
+  const pkg = conflicted.filter(isPackageJsonPath);
+  if (pkg.length) {
+    const r = tryAutoResolvePackageJsonConflict(pkg);
+    if (!r.resolved) {
+      const others = conflicted.filter((p) => !isPackageJsonPath(p));
+      return { resolved: false, detail: others.length ? `${r.detail}; also conflicted on ${others.join(", ")}` : r.detail };
+    }
+    notes.push(r.detail);
+  }
+  const rest = conflictedPaths();
+  if (!rest.length) return { resolved: true, detail: notes.join("; ") };
+  let resolution = tryAutoResolveFaqIndexConflict(rest);
+  if (!resolution.resolved && !rest.includes("faq/data/index.json")) {
+    resolution = tryAutoResolveGeneratedOutputConflict(rest);
+  }
+  return { resolved: resolution.resolved, detail: [...notes, resolution.detail].join("; ") };
 }
 
 // Tracked files under a generated build's outputs that still carry a merge
@@ -4242,6 +4359,9 @@ function approveHeldRuns(headSha) {
 // How many times one train PR head may have its GitHub-side check failures
 // re-run before the train is parked as red after all.
 const TRAIN_CI_INFRA_RERUNS = 2;
+// How many times a train PR that turned "conflicting" only because main
+// moved under it is sent round again before it is left for a person.
+const TRAIN_MAIN_MOVED_RETRIES = 3;
 
 // Re-runs the workflow runs behind the "infra" checks in a rollup. A check
 // run's detailsUrl is .../actions/runs/<runId>/job/<jobId>. Never throws.
@@ -4621,14 +4741,12 @@ async function processDeployTrain(project) {
   if (project.trainHold) await patchProject(project.id, { trainHold: null, updatedAt: new Date().toISOString() });
 
   // 1. Bring main in. This used to be the only remaining conflict path, and
-  //    still is for anything other than faq/data/index.json — it needs
+  //    still is for anything other than the files
+  //    tryAutoResolveTrainMergeConflict knows how to combine (package.json
+  //    script lists, faq/data/index.json, generated build output) — it needs
   //    someone to have pushed to main, in this project's files, outside the
-  //    pipeline, and a conflict there is deliberately never resolved
-  //    automatically. A conflict confined to index.json alone IS resolved
-  //    automatically (see tryAutoResolveFaqIndexConflict) because that file
-  //    is fully derivable from faq/data/articles/*.json — see that
-  //    function's own comment for why this specific file is safe to do this
-  //    for and no other.
+  //    pipeline, and a conflict in real source is deliberately never
+  //    resolved automatically.
   checkoutTrain(deployBranch);
   let mergeNote = null;
   try {
@@ -4636,14 +4754,9 @@ async function processDeployTrain(project) {
       "merge", "origin/main", "--no-edit", "--quiet"]);
   } catch (err) {
     const conflicted = conflictedPaths();
-    let resolution = tryAutoResolveFaqIndexConflict(conflicted);
-    // A second derived-file case: a build output both sides rebuilt (see
-    // tryAutoResolveGeneratedOutputConflict). Tried only if the first
-    // resolver declined without touching anything, i.e. the conflict was
-    // never about index.json.
-    if (!resolution.resolved && !conflicted.includes("faq/data/index.json")) {
-      resolution = tryAutoResolveGeneratedOutputConflict(conflicted);
-    }
+    // package.json script lists, faq/data/index.json and generated build
+    // output are combined automatically (see tryAutoResolveTrainMergeConflict).
+    const resolution = tryAutoResolveTrainMergeConflict(conflicted);
     if (!resolution.resolved) {
       try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
       discardWorkingTree();
@@ -4651,6 +4764,7 @@ async function processDeployTrain(project) {
       await patchProject(project.id, {
         trainReady: false,
         trainStatus: "conflict",
+        trainConflictAt: trainConflictKey(deployBranch),
         trainNote: `Merging main into ${deployBranch} ${resolution.detail}, so nothing was merged and no card was moved. ` +
           `Resolve it by merging main into ${deployBranch} by hand, then click Deploy to Main again.\n\n${scrubSecrets(err.message)}`,
         updatedAt: new Date().toISOString(),
@@ -4763,9 +4877,36 @@ async function processDeployTrain(project) {
       return;
     }
     if (String(pr.mergeable).toUpperCase() === "CONFLICTING") {
+      // main can move between step 1's merge and GitHub's mergeability
+      // check — on 20 Oct 2026 a fix merged straight to main 30 seconds
+      // before this train's PR opened, and the train stopped as
+      // "conflicting" with nobody having touched it. When the PR's head
+      // simply doesn't contain today's main, the approval stands: the next
+      // run (dispatched now) merges main in again through step 1 and its
+      // resolvers, and carries on. Capped, so a genuine conflict still
+      // reaches a person.
+      const raceRetries = Number(project.trainMainMovedRetries) || 0;
+      let mainMoved = false;
+      try {
+        run("git", ["fetch", "origin", "main", "--quiet"]);
+        run("git", ["merge-base", "--is-ancestor", "origin/main", pr.headRefOid || "HEAD"]);
+      } catch { mainMoved = true; }
+      if (mainMoved && raceRetries < TRAIN_MAIN_MOVED_RETRIES) {
+        followUpReasons.push(`${project.id}: main moved while PR #${prNumber} was being checked`);
+        await patchProject(project.id, {
+          trainStatus: "deploying",
+          trainMainMovedRetries: raceRetries + 1,
+          trainNote: `main changed while PR #${prNumber} was being checked, so it no longer merges cleanly — bringing main into ${deployBranch} again (attempt ${raceRetries + 1} of ${TRAIN_MAIN_MOVED_RETRIES}). It merges by itself; no need to click again.`,
+          updatedAt: new Date().toISOString(),
+        });
+        console.log(`[deploy-train] ${project.id}: PR #${prNumber} is CONFLICTING because main moved — merging main in again on the next run (attempt ${raceRetries + 1}/${TRAIN_MAIN_MOVED_RETRIES})`);
+        return;
+      }
       await patchProject(project.id, {
         trainReady: false, trainStatus: "conflict",
         trainCiRedPr: null, trainCiRedSha: null, // a merge conflict needs a person, not a green check
+        trainMainMovedRetries: null,
+        trainConflictAt: trainConflictKey(deployBranch),
         trainNote: `Not merged: GitHub reports PR #${prNumber} as conflicting with main. Merge main into ${deployBranch} by hand, resolve it, then click Deploy to Main again.`,
         updatedAt: new Date().toISOString(),
       });
@@ -4857,7 +4998,7 @@ async function reconcileMergedTrains() {
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
     const onTrain = onTrainItems(await itemsForProject(project.id));
     if (!onTrain.length) {
-      await patchProject(project.id, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, trainTestsRed: null, trainHold: null, updatedAt: new Date().toISOString() });
+      await patchProject(project.id, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, trainTestsRed: null, trainHold: null, trainMainMovedRetries: null, updatedAt: new Date().toISOString() });
       continue;
     }
     console.log(`[deploy-train] ${project.id}: PR #${prNumber} was merged outside the pipeline — recording ${onTrain.length} ticket(s) as live`);
@@ -5447,6 +5588,40 @@ async function reconcileDeployRequests() {
   }
 }
 
+// "<train tip>:<main tip>" as origin has them now — what a merge conflict
+// was found against. Empty when either can't be read.
+function trainConflictKey(deployBranch) {
+  try {
+    run("git", ["fetch", "origin", "main", deployBranch, "--quiet"]);
+    return `${run("git", ["rev-parse", `origin/${deployBranch}`])}:${run("git", ["rev-parse", "origin/main"])}`;
+  } catch { return ""; }
+}
+
+// ── A train parked on a merge conflict retries once something changed ─────
+// (20 Oct 2026.) Deploy to Main stopped on a conflict, the board went back
+// to an ordinary "Deploy to Main" button, and each further click hit the
+// same conflict — the tickets never moved. The approval was already given;
+// what was missing was a merge that works. So once the branch or main has
+// moved since the conflict was found (someone merged main in by hand, a fix
+// landed, or this pipeline learned to combine the file), the approved
+// deploy is retried with no click — processDeployTrain re-verifies
+// everything first, exactly as for a click, and parks it again (with the
+// new tips) if it still conflicts. Nothing changed, nothing is retried.
+async function resumeConflictedTrain(project) {
+  const deployBranch = project.deployBranch;
+  if (!deployBranch || !project.trainLocked) return;
+  const key = trainConflictKey(deployBranch);
+  if (!key || key === project.trainConflictAt) return;
+  console.log(`[resume-train] ${project.id}: ${deployBranch} or main moved since the merge conflict — retrying the approved deploy`);
+  await patchProject(project.id, {
+    trainReady: true,
+    trainStatus: "deploying",
+    trainConflictAt: key,
+    trainNote: `${deployBranch} or main has changed since Deploy to Main stopped on a merge conflict — trying the approved deploy again. No need to click.`,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 // ── A train parked on red CI resumes by itself once it's green (5 Oct 2026) ─
 // A train stopped for red CI used to stay stopped until someone clicked
 // Deploy to Main a second time, even after the cause was gone: a test fixed
@@ -5463,7 +5638,8 @@ async function resumeRedTrains() {
   });
   for (const project of parked) {
     const prNumber = Number(project.trainCiRedPr) || null;
-    if (!prNumber || project.trainReady === true) continue;
+    if (project.trainReady === true) continue;
+    if (!prNumber) { await resumeConflictedTrain(project); continue; }
     let pr;
     try { pr = viewTrainPr(prNumber); }
     catch (err) { console.log(`[resume-train] ${project.id}: couldn't read PR #${prNumber} (${scrubSecrets(err.message)}) — trying again next run`); continue; }
@@ -5763,6 +5939,7 @@ module.exports = {
   onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
   // test/generated-builds.test.js
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict, deployWorkflowsFor,
+  tryAutoResolvePackageJsonConflict, tryAutoResolveTrainMergeConflict, mergeCommandChains, resumeConflictedTrain, trainConflictKey,
   // test/patch-paths.test.js
   normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative,
   // test/patch-offload.test.js — patchFiles read from the card or its sub-document

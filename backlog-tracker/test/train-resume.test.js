@@ -141,6 +141,73 @@ async function test(name, fn) {
     assert.strictEqual(projects.dsp.trainReady, true);
   });
 
+  // ── A train parked on a merge CONFLICT (no red PR) — 20 Oct 2026 ──────
+  // Deploy to Main stopped on a conflict and every further click hit the
+  // same one. Now: nothing moved → nothing retried; the branch or main moved
+  // → the approved deploy is retried with no click.
+  const { execFileSync } = require("child_process");
+  const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  function conflictRepo() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "train-resume-git-"));
+    const origin = path.join(root, "origin.git"), work = path.join(root, "work");
+    fs.mkdirSync(origin); fs.mkdirSync(work);
+    git(origin, "init", "--bare", "--quiet");
+    git(work, "init", "--quiet", "-b", "main");
+    git(work, "config", "user.name", "t"); git(work, "config", "user.email", "t@example.com");
+    fs.writeFileSync(path.join(work, "f.txt"), "1\n");
+    git(work, "add", "-A"); git(work, "commit", "-m", "init", "--quiet");
+    git(work, "remote", "add", "origin", origin);
+    git(work, "push", "-u", "origin", "main", "--quiet");
+    git(work, "push", "origin", "main:deploy/x", "--quiet");
+    return { root, work };
+  }
+  const { trainConflictKey } = auto;
+  const cwd = process.cwd();
+
+  await test("a conflict-parked train whose branch and main haven't moved is left alone", async () => {
+    const { root, work } = conflictRepo();
+    try {
+      process.chdir(work);
+      projects = { bt: { trainStatus: "conflict", trainReady: false, trainLocked: true, deployBranch: "deploy/x", trainConflictAt: trainConflictKey("deploy/x") } };
+      await resumeRedTrains();
+      assert.strictEqual(patches.length, 0);
+    } finally { process.chdir(cwd); fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  await test("main moving after the conflict retries the approved deploy with no click", async () => {
+    const { root, work } = conflictRepo();
+    try {
+      process.chdir(work);
+      projects = { bt: { trainStatus: "conflict", trainReady: false, trainLocked: true, deployBranch: "deploy/x", trainConflictAt: trainConflictKey("deploy/x") } };
+      fs.writeFileSync(path.join(work, "f.txt"), "2\n");
+      git(work, "commit", "-am", "fix on main", "--quiet"); git(work, "push", "origin", "main", "--quiet");
+      await resumeRedTrains();
+      assert.strictEqual(projects.bt.trainReady, true);
+      assert.strictEqual(projects.bt.trainStatus, "deploying");
+      assert.strictEqual(projects.bt.trainConflictAt, trainConflictKey("deploy/x"), "the new tips are recorded, so it isn't retried again for nothing");
+    } finally { process.chdir(cwd); fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  await test("a conflict parked before this existed (no recorded tips) is retried once", async () => {
+    const { root, work } = conflictRepo();
+    try {
+      process.chdir(work);
+      projects = { bt: { trainStatus: "conflict", trainReady: false, trainLocked: true, deployBranch: "deploy/x" } };
+      await resumeRedTrains();
+      assert.strictEqual(projects.bt.trainReady, true);
+    } finally { process.chdir(cwd); fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  await test("an unlocked project (no approved train) is never re-armed", async () => {
+    const { root, work } = conflictRepo();
+    try {
+      process.chdir(work);
+      projects = { bt: { trainStatus: "conflict", trainReady: false, trainLocked: false, deployBranch: "deploy/x" } };
+      await resumeRedTrains();
+      assert.strictEqual(patches.length, 0);
+    } finally { process.chdir(cwd); fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   fs.rmSync(tmp, { recursive: true, force: true });
   process.exit(failures.length ? 1 : 0);

@@ -438,7 +438,34 @@ What the train changes:
   hosted page blank for twelve hours — refuses if any output still carries
   a marker, and spoils the build stamp so the next scheduled rebuild
   regenerates the bundle from the merged source. `test/generated-builds.test.js`
-  reproduces the rename/rename case against a real repo.
+  reproduces the rename/rename case against a real repo. A third exception
+  (20 Oct 2026): **`package.json`** (`tryAutoResolvePackageJsonConflict`).
+  Every ticket that adds a test appends to the same few script lines, so
+  a train that added one to `test:ui` and a fix merged to `main` that added
+  one to `test:app-boots`, the line above, stopped Deploy to Main on
+  `backlog-tracker/test/package.json`. The file is merged as parsed JSON,
+  key by key, and a script both sides changed is merged as an `&&` chain
+  that keeps both sides' additions. A dependency, or any other value both
+  sides changed differently, still goes to a person. All three are tried
+  through one entry point, `tryAutoResolveTrainMergeConflict`, from both
+  `syncTrainWithMain` and `processDeployTrain`; `test/train-sync.test.js`
+  reproduces the incident.
+- **A conflict-parked deploy retries itself, and the board says it is
+  blocked** (20 Oct 2026). Before this, a conflict left the project with an
+  ordinary **Deploy to Main** button, so each click looked unheard and hit
+  the same conflict, and the tickets never moved. Now:
+  - The project header shows **Deploy blocked — retry** with a warning
+    icon and the pipeline's reason on hover. A click still retries.
+  - The conflict records the branch and `main` tips it was found against
+    (`trainConflictAt`). `resumeConflictedTrain`, called from
+    `resumeRedTrains`, re-arms `trainReady` once either has moved, for
+    example when someone has merged `main` in by hand or a fix has landed.
+    If nothing has moved, nothing is retried.
+  - A train PR that GitHub reports as conflicting only because `main` moved
+    after the pipeline merged it is sent round again by itself
+    (`TRAIN_MAIN_MOVED_RETRIES`, 3), rather than parked.
+
+  Tests: `test/train-resume.test.js`, `test/header-phase.test.mjs`.
 
 The board expresses one consequence of this in its CTAs: merging the
 branch ships *everything on it*, so **Deploy to Main is shown only when
@@ -849,7 +876,12 @@ handlers, never ran. The board still rendered, so the menu was simply dead
 on desktop, tablet and phone from the 08:04 deploy until the next one, and
 nothing in the pipeline had executed `app.js` to notice. Every dictation
 controller is now created after that declaration, and this test is the
-guard.
+guard. **`test/dictation.test.mjs`** uses the same harness with a scripted
+`SpeechRecognition` and clicks the real mic buttons: sessions the browser
+ends, stalls with no end event, network blips, a throwing `start()` and
+typing mid-dictation must all keep the run going, while the stop click,
+adding a ticket or comment, and closing the form must end it and release
+the microphone (REQUIREMENTS.md → "Dictation never cuts off by itself").
 
 `test/` holds these suites:
 

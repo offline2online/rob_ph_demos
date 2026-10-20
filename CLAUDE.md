@@ -414,10 +414,17 @@ board:
   never overwritten. Added after ticket Hdt4M6dEGe7uN8dmS8mT (30 Sep 2026)
   was built on a train four commits behind main and Deploy to Main stopped
   on a `backlog-tracker/MCP.md` conflict. A direct merge to `main` (a
-  hotfix, a PR like #271/#272) is therefore safe for every train; a
-  conflict the merge genuinely can't resolve is reported on the card and
-  the project at build time, and the item lands by itself once a person
-  merges main into the branch.
+  hotfix, a PR like #271/#272) is therefore safe for every train. The
+  merge combines `package.json` script lists, `faq/data/index.json` and
+  generated builds automatically (`tryAutoResolveTrainMergeConflict`).
+  20 Oct 2026: a dictation fix merged straight to main and a train had
+  each added a test to adjacent lines of `backlog-tracker/test/package.json`,
+  and Deploy to Main stopped at every click until this existed. A conflict
+  the merge genuinely can't resolve is reported on the card and the project.
+  The header then shows **Deploy blocked — retry**, and the approved deploy
+  retries by itself once a person merges main into the branch. Before
+  merging straight to `main`, check open `deploy/*` branches for the same
+  files anyway.
 
 New feature/bug requests land in a project's Backlog; once tested and
 approved, click that project's **"Deploy to Main"** button to have Claude
