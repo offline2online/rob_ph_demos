@@ -153,7 +153,7 @@ define(window.navigator, "mediaDevices", {
   },
 });
 // Millisecond timings, so the stall/idle watchdogs run inside the test.
-define(window, "__btDictationTuning", { stallMs: 120, idleRecycleMs: 400, typingResumeMs: 60, stopGraceMs: 150, probeReleaseMs: 5, tickMs: 10, agentMs: 5 });
+define(window, "__btDictationTuning", { stallMs: 120, idleRecycleMs: 400, typingResumeMs: 60, stopGraceMs: 150, probeReleaseMs: 5, tickMs: 10 });
 
 const appLog = [];
 for (const level of ["warn", "error", "info", "log"]) {
@@ -189,8 +189,7 @@ try {
 
 const $ = (id) => window.document.getElementById(id);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-// The New Item Record button listens into the read-only live transcript; the agent fills the fields on stop.
-const field = $("ni-transcript");
+const field = $("ni-desc-input");
 const mic = $("ni-mic-btn");
 const listening = (btn = mic) => btn.classList.contains("listening");
 const current = () => { const l = live(); assert.equal(l.length, 1, `exactly one live recognition session (found ${l.length})`); return l[0]; };

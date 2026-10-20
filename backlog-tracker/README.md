@@ -888,11 +888,6 @@ ends, stalls with no end event, network blips, a throwing `start()` and
 typing mid-dictation must all keep the run going, while the stop click,
 adding a ticket or comment, and closing the form must end it and release
 the microphone (REQUIREMENTS.md → "Dictation never cuts off by itself").
-**`test/ui/new-item-voice.test.mjs`** (20 Oct 2026) drives the New item
-modal's voice-first Record button in Chromium with a scripted
-`SpeechRecognition` and `getUserMedia`, at 1280 and 390 px: button states,
-live transcript, the agent filling Title / Description / Type / Area, the
-typed fallback, the denied-microphone error and the pinned action bar.
 
 `test/` holds these suites:
 
