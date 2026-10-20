@@ -71,7 +71,7 @@
    board scrolls sideways inside its own wrapper, never the page. */
 .kb-board-wrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px 8px; }
 .kb-board { display: grid; grid-template-columns: repeat(6, minmax(172px, 1fr)); gap: 12px; align-items: start; }
-.kb-col { background: var(--ap-card); border: 0; box-shadow: 0 0 0 .5px var(--ap-divider); max-height: calc(100vh - 230px); transition: box-shadow var(--ap-fast), background-color var(--ap-fast); }
+.kb-col { background: var(--ap-card); border: 0; box-shadow: 0 0 0 .5px var(--ap-divider); max-height: none; transition: box-shadow var(--ap-fast), background-color var(--ap-fast); }
 .kb-col.kb-drop-target { box-shadow: 0 0 0 2px var(--primary); background: var(--primary-tint); }
 .kb-col-head { padding: 11px 12px; }
 .kb-col-title { white-space: normal !important; line-height: 1.3; }
@@ -83,7 +83,13 @@
 .kb-col-ready-for-testing { border-top: 3px solid var(--warning); }
 .kb-col-approved { border-top: 3px solid var(--violet); }
 .kb-col-done { border-top: 3px solid var(--success); }
-.kb-list { min-height: 72px; padding: 8px; gap: 8px; }
+.kb-list { min-height: 72px; padding: 8px; gap: 8px; overflow: visible; }
+/* Plain board: columns run the full height of the page (no inner scrollbars)
+   and stretch to the tallest, so a card can be dropped anywhere down a
+   column. The pinned header row above replaces each column's own head. */
+.kb-board:not(.kb-board-lanes) { align-items: stretch; }
+.kb-board:not(.kb-board-lanes) .kb-list { flex: 1; }
+@media (min-width: 641px) { .kb-board:not(.kb-board-lanes) .kb-col > .kb-col-head { display: none; } }
 .kb-empty { padding: 18px 6px; font-size: 13px; }
 .kb-drop-target .kb-empty { display: none; }
 
@@ -412,6 +418,8 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
   .kb-board { grid-template-columns: minmax(0, 1fr); }
   .kb-col { max-height: none; }
   .kb-lanes-sticky { display: none !important; }
+  .kb-board:not(.kb-board-lanes) { align-items: start; }
+  .kb-board:not(.kb-board-lanes) .kb-col > .kb-col-head { position: sticky; top: 0; z-index: 4; background: var(--ap-card); }
   .kb-lane { position: sticky; top: 0; z-index: 4; }
   .kb-lane-cell.kb-cell-empty { display: none; }
   .kb-cell-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border-radius: 8px 8px 0 0; }
