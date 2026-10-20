@@ -651,6 +651,15 @@
     document.body.classList.add("kb-modal-open");
     setTimeout(() => { const f = $("#f-title"); if (f && draftIsNew) f.focus(); }, 30);
   }
+  // A new ticket's heading and primary button follow its type.
+  const CREATE_CTA = { task: "Create task", bug: "Raise bug", epic: "Create epic" };
+  const NEW_TITLE = { task: "New task", bug: "New bug", epic: "New epic" };
+  function syncCreateCta() {
+    if (!draftIsNew || !draft) return;
+    const b = $("#f-save");
+    if (b) b.textContent = CREATE_CTA[draft.type] || CREATE_CTA.task;
+    $("#task-title-h").textContent = NEW_TITLE[draft.type] || NEW_TITLE.task;
+  }
   function syncModalFlag() {
     const b = $("#task-flag");
     b.hidden = !(fieldOn("flag") || draft.flagged);
@@ -745,7 +754,7 @@
       <p class="tm-error" id="f-error" hidden></p>
       <div class="form-row kb-form-actions">
         ${draftIsNew ? "<span></span>" : '<button type="button" class="btn-ghost fa-actions-delete" id="f-delete"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>'}
-        <div class="form-actions"><button type="button" class="btn-outline" id="f-cancel">Cancel</button><button type="submit" class="btn-primary" id="f-save">${draftIsNew ? "Create task" : "Save"}</button></div>
+        <div class="form-actions"><button type="button" class="btn-outline" id="f-cancel">Cancel</button><button type="submit" class="btn-primary" id="f-save">${draftIsNew ? CREATE_CTA[draft.type] || CREATE_CTA.task : "Save"}</button></div>
       </div>`;
     bindForm();
   }
@@ -753,6 +762,7 @@
     const form = $("#task-form");
     $$(".kb-type-toggle .type-opt", form).forEach((b) => b.addEventListener("click", () => {
       draft.type = b.dataset.type;
+      syncCreateCta();
       $$(".kb-type-toggle .type-opt", form).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-checked", String(x === b)); });
       const pe = $('[data-field="epic"]', form);
       if (pe) pe.hidden = draft.type === "epic";
@@ -952,7 +962,7 @@
       put("f-epic", "epic", out.epic);
       if (out.flagged && !draft.flagged) { draft.flagged = true; syncModalFlag(); filled.push("flag"); }
       if (out.type) {
-        draft.type = out.type; filled.push("type");
+        draft.type = out.type; filled.push("type"); syncCreateCta();
         const pe = $('[data-field="epic"]', form); if (pe) pe.hidden = out.type === "epic";
         $$(".kb-type-toggle .type-opt", form).forEach((x) => { const on = x.dataset.type === out.type; x.classList.toggle("active", on); x.setAttribute("aria-checked", String(on)); });
       }
