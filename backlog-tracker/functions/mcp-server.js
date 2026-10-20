@@ -262,6 +262,9 @@ exports.syncConsoleUserClaims = onDocumentWritten("consoleUsers/{userEmail}", as
   const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
   const email = String(event.params.userEmail || "").toLowerCase();
   if (!email) return;
+  // Activity stamps (lastLoginAt / lastMcpAt) change nothing the claim reads.
+  const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+  if (before && after && before.role === after.role && before.disabled === after.disabled) return;
   const role = after && after.disabled !== true ? (ROLE_RANK[after.role] ? after.role : "editor") : null;
   try {
     const user = await adminAuth().getUserByEmail(email);
@@ -887,6 +890,17 @@ async function handleRevoke(req, res) {
 // Bearer authentication for the MCP endpoint
 // ══════════════════════════════════════════════════════════════════════════
 
+// Admin > Users shows when each member's agent last made an authenticated
+// call. update() (not set/merge) so a bootstrap admin with no row is never
+// given one by being active; throttled per instance to one write / 5 min.
+const lastMcpTouch = new Map();
+function touchLastMcpAccess(email) {
+  const now = Date.now();
+  if (now - (lastMcpTouch.get(email) || 0) < 5 * 60 * 1000) return;
+  lastMcpTouch.set(email, now);
+  db().collection("consoleUsers").doc(email).update({ lastMcpAt: FieldValue.serverTimestamp() }).catch(() => {});
+}
+
 async function authenticateBearer(req) {
   const header = String(req.get("authorization") || "").trim();
   const m = /^Bearer\s+(\S+)$/i.exec(header);
@@ -911,6 +925,7 @@ async function authenticateBearer(req) {
   if (Date.now() - last > 5 * 60 * 1000) {
     snap.ref.update({ lastUsedAt: FieldValue.serverTimestamp() }).catch(() => {});
   }
+  touchLastMcpAccess(user.email);
   return { ok: true, session: { email: user.email, displayName: user.displayName, role: user.role, scopes, clientId: d.clientId } };
 }
 

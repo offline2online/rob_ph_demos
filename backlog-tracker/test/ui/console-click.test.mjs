@@ -16,7 +16,8 @@ import { startHarness, until, outDir, SDK_MODULES } from "./harness.mjs";
 import * as stub from "./firebase-stub.mjs";
 import { publicDir } from "./harness.mjs";
 
-const WIDTHS = [1280, 390];
+// 1440 desktop, 1180 tablet landscape, 820 tablet portrait, 390 phone.
+const WIDTHS = [1440, 1180, 820, 390];
 const t = (ms) => ({ $ts: ms });
 const T0 = 1_760_000_000_000;
 
@@ -71,7 +72,7 @@ function makeCtx(o, width) {
 // ── Scenarios ──────────────────────────────────────────────────────────────
 const scenarios = [
   {
-    name: "board: four columns in order, stacked below 640 px",
+    name: "board: four columns in order, one at a time below 640 px",
     seed: () => seed(),
     async run(c) {
       await c.boardReady();
@@ -84,12 +85,111 @@ const scenarios = [
       assert.ok(heads[2].includes("approved for deployment"), `third column is Approved for Deployment, got "${cols[2].head}"`);
       assert.ok(heads[3].includes("main"), `fourth column is the Merged to Main column, got "${cols[3].head}"`);
       if (c.width < 640) {
-        for (let i = 1; i < cols.length; i++) assert.ok(cols[i].y > cols[i - 1].y, `column ${i + 1} should sit below column ${i} at ${c.width}px`);
+        // One column fills the strip; the rest sit to its right (swipe or the switcher).
+        for (let i = 1; i < cols.length; i++) assert.ok(cols[i].x > cols[i - 1].x, `column ${i + 1} should sit right of column ${i} at ${c.width}px`);
+        assert.ok(cols[0].w >= c.width - 60, `the first column should fill the screen at ${c.width}px (width ${cols[0].w})`);
         const { sw, cw } = await c.page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
         assert.ok(sw <= cw, `page scrolls sideways at ${c.width}px (scrollWidth ${sw} > clientWidth ${cw})`);
       } else {
         for (let i = 1; i < cols.length; i++) assert.ok(cols[i].x > cols[i - 1].x, `column ${i + 1} should sit right of column ${i} at ${c.width}px`);
       }
+    },
+  },
+  {
+    name: "nav: Build, Publish and Admin destinations are all reachable, with no sideways scroll",
+    seed: () => seed(),
+    async run(c) {
+      await c.boardReady();
+      const phone = c.width <= 640;
+      const persistent = c.width >= 1024;
+      const overflow = async (what) => {
+        const { sw, cw } = await c.page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+        assert.ok(sw <= cw, `${what}: page scrolls sideways at ${c.width}px (${sw} > ${cw})`);
+      };
+      const reveal = async (tab) => {
+        if (phone) await c.click(`#tabbar .tab[data-tab="${tab}"]`, `${tab} tab`);
+        else if (!persistent) await c.click("#nav-open-btn", "open the menu");
+      };
+      const go = async (tab, btn, page) => {
+        await reveal(tab);
+        await c.click(`#${btn}`, `open ${btn}`);
+        await c.visible(`#${page}`, `${page} shows`);
+        await overflow(page);
+      };
+      c.at("sections");
+      if (!phone) {
+        const labels = await c.page.evaluate(() => [...document.querySelectorAll("#nav-drawer .nav-drawer-section")].map((e) => e.textContent.trim()));
+        assert.deepStrictEqual(labels, ["Build", "Publish"]);
+      }
+      await go("build", "concept-incubator-btn", "concept-incubator-page");
+      await go("build", "releases-btn", "releases-page");
+      await go("build", "skills-btn", "skills-page");
+      await go("publish", "faq-articles-btn", "faq-articles-page");
+      // Admin is reached from the profile menu, never the main navigation.
+      assert.strictEqual(await c.page.locator("#nav-drawer #faq-settings-btn").count(), 0, "Settings is not in the main navigation");
+      if (phone) await c.click('#tabbar .tab[data-tab="profile"]', "Profile tab"); else await c.click("#profile-btn", "profile button");
+      await c.visible("#profile-menu", "profile menu shows");
+      assert.ok((await c.text("#profile-menu")).toLowerCase().includes("admin"), "profile menu has an Admin section");
+      await c.click("#faq-settings-btn", "Settings");
+      await c.visible("#faq-settings-page", "Settings shows");
+      await overflow("settings");
+      if (phone) await c.click('#tabbar .tab[data-tab="build"]', "Build tab"); else if (!persistent) await c.click("#nav-open-btn", "open the menu");
+      await c.click("#nav-ph-console-btn", "Board");
+      await c.boardReady();
+      await overflow("board");
+      if (persistent) {
+        c.at("sidebar collapses and the content reflows");
+        await c.click("#nav-collapse-btn");
+        await c.hidden("#nav-drawer", "sidebar hides");
+        await c.click("#nav-open-btn", "reopen");
+        await c.visible("#nav-drawer", "sidebar returns");
+      }
+    },
+  },
+  {
+    name: "nav: Command-K jumps to a ticket, with focus and keyboard handled",
+    seed: () => seed(),
+    async run(c) {
+      await c.boardReady();
+      c.at("open the palette");
+      if (c.width <= 640) await c.click('#tabbar .tab[data-tab="search"]'); else await c.page.keyboard.press("Control+k");
+      await c.visible("#cmdk-backdrop", "palette shows");
+      assert.strictEqual(await c.page.evaluate(() => document.activeElement && document.activeElement.id), "cmdk-input", "focus lands in the search box");
+      await c.page.keyboard.type("purple");
+      await c.waitText("#cmdk-list", "Purple widget", "ticket is listed");
+      await c.page.keyboard.press("Escape");
+      await c.hidden("#cmdk-backdrop", "Escape closes it");
+      c.at("jump to the ticket");
+      if (c.width <= 640) await c.click('#tabbar .tab[data-tab="search"]'); else await c.page.keyboard.press("Control+k");
+      await c.page.keyboard.type("Demo Proj");
+      await c.waitText("#cmdk-list", "Demo Project", "project is listed");
+      await c.page.keyboard.press("Enter");
+      await c.hidden("#cmdk-backdrop", "palette closes on choose");
+      if (c.width <= 640) await c.click('#tabbar .tab[data-tab="search"]'); else await c.page.keyboard.press("Control+k");
+      await c.page.keyboard.type("purple");
+      await c.waitText("#cmdk-list", "Purple widget");
+      await c.page.keyboard.press("Enter");
+      await c.visible("#ei-backdrop", "the ticket opens");
+    },
+  },
+  {
+    name: "board: phone switcher brings each pipeline column into view; actions stay reachable",
+    seed: () => seed(),
+    async run(c) {
+      await c.boardReady();
+      if (c.width > 640) return;
+      c.at("switch to Ready for Testing");
+      await c.click('.col-switch[data-col="ready-for-testing"]');
+      await until(() => c.page.evaluate(() => {
+        const col = document.querySelector('.column[data-col="ready-for-testing"]').getBoundingClientRect();
+        return col.left >= -2 && col.left < 40;
+      }), "Ready for Testing to scroll into view");
+      const tests = await c.page.locator('.column[data-col="ready-for-testing"] a, .column[data-col="ready-for-testing"] button').first().boundingBox();
+      assert.ok(tests, "the column's card actions are on screen");
+      const small = await c.page.evaluate(() => [...document.querySelectorAll(".col-switch, #tabbar .tab")].filter((e) => { const r = e.getBoundingClientRect(); return r.height < 44; }).length);
+      assert.strictEqual(small, 0, "touch targets are at least 44px tall");
+      const { sw, cw } = await c.page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+      assert.ok(sw <= cw, "no sideways page scroll");
     },
   },
   {

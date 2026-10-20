@@ -561,6 +561,11 @@ service cloud.firestore {
       // member's email and role.
       allow get: if isBoardReader() || (signedIn() && userEmail == callerEmail());
       allow list: if isAdmin();
+      // Anyone may stamp their OWN row's lastLoginAt (and nothing else) so
+      // Admin > Users can show when they last used the console.
+      allow update: if signedIn() && userEmail == callerEmail()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["lastLoginAt"])
+        && incoming().lastLoginAt == request.time;
       allow create, update: if isAdmin()
         && incoming().email is string
         && userEmail == incoming().email.lower()
