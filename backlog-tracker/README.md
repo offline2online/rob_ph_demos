@@ -2215,6 +2215,19 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   client-side so the full due-ness logic lives in exactly one place) and a
   **Mark reviewed** button.
 
+### Docs stay in step with code (20 Oct 2026)
+
+`skill-sources/` holds the repo copies of the skill text for this rule:
+`ph-build-agent` (update affected docs in the same change, leave a
+`[docs-impact]` note), `ph-reviewer` (fails a ticket whose docs and code
+disagree or whose note is missing) and the new `ph-spec-sync-check`
+(deploy phase: files a Backlog "Docs drift" ticket per gap, never edits a
+document). The live skills are board docs: apply these files with the Skills
+page or `update_skill`/`upload_skill`, and bind the new one with
+`settings/phaseSkillBindings.deploy`. `ROUTINE_INSTRUCTIONS.md` enforces the
+same three checks (Build, Review Batch gate, Deploy step 3c) even when a
+skill does not resolve.
+
 ## Concept Incubator
 
 A home for early-stage ideas ("spitballs") that need further shape before
@@ -2237,6 +2250,7 @@ entry, directly under Agent Console.
   real project's README/requirements came from.
 - **System map hero**: the page opens with one live system map of PH core, every project and every concept (`public/js/system-map.js`; lines come from interface contracts, release filter, click-through; fits the page width with zoom/pan, internal items excluded, Advertiser and Federated PH Instance each linked to MCP Release). See `REQUIREMENTS.md` → "Concept Incubator hero".
 - **System map: pinned, incremental layout** — node positions are saved in `systemMap/layout` and only new nodes are placed; every change is a revision with a minimal diff (History, rollback of positions, Re-arrange). See `REQUIREMENTS.md` → "Concept Incubator hero".
+- **Critiques** (`conceptCritiques` collection, `public/js/concept-critiques.js`): a concept's detail page has a Critiques block, empty by default and kept apart from the README. Each critique is one reviewer's verdict (will work / won't work / conditional), strongest arguments for and against, assumptions challenged and recommended changes, attributed to a free-text **role** (CFO, store operations manager... — not a fixed list; roles already used are offered as suggestions, and a critique without one shows as "Unspecified"), with a fingerprint of the README/Requirements text it reviewed. Agents add them over MCP (`add_concept_critique`, `list_concept_critiques`, `synthesise_concept_critiques`); people can add one with **+ Add critique**. **Synthesise** shows the verdict tally, a by-role breakdown, points of agreement and disagreement, and the recommended adjustments; the **Show role** filter narrows both list and synthesis. A person accepts or rejects each recommended change on its critique: accepting appends it under a "Critique adjustments" heading in the concept's Requirements (previous text kept in `docRevisions`, `via: "board"`), rejecting leaves the concept unchanged; the critique becomes Addressed once every change is decided and at least one was accepted. Accept/reject is deliberately not an MCP tool.
 - **Console UI**: the Concept Incubator page lists every concept as a card
   (name, Active/Promoted status, last updated) — **+ New concept** asks
   only for a name, the same "one quick step" shape as New Project.

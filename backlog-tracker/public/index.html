@@ -1294,6 +1294,45 @@
         </div>
       </div>
 
+      <div class="docs-block" id="concept-critiques-block">
+        <div class="docs-block-header">
+          <h3>Critiques</h3>
+          <button type="button" class="btn-ghost" id="concept-critique-add-btn" data-editor-only>+ Add critique</button>
+        </div>
+        <p class="field-hint">Structured reviews of this idea from different viewpoints — kept apart from the README. Agents add them over MCP (<code>add_concept_critique</code>); anyone can add one here. Each notes the role it is written from, which is free text.</p>
+        <div id="concept-critique-form" class="critique-form" hidden>
+          <label class="field-label" for="critique-role-input">Role <span class="field-hint">(optional — e.g. CFO, store operations manager, retail media buyer)</span></label>
+          <input type="text" id="critique-role-input" maxlength="80" list="critique-role-options" autocomplete="off" placeholder="Unspecified">
+          <datalist id="critique-role-options"></datalist>
+          <label class="field-label" for="critique-verdict-select">Verdict</label>
+          <select id="critique-verdict-select">
+            <option value="will-work">Will work</option>
+            <option value="conditional" selected>Conditional</option>
+            <option value="wont-work">Won't work</option>
+          </select>
+          <label class="field-label" for="critique-for-input">Strongest arguments for <span class="field-hint">(one per line)</span></label>
+          <textarea id="critique-for-input" rows="3"></textarea>
+          <label class="field-label" for="critique-against-input">Strongest arguments against <span class="field-hint">(one per line)</span></label>
+          <textarea id="critique-against-input" rows="3"></textarea>
+          <label class="field-label" for="critique-assumptions-input">Key assumptions challenged <span class="field-hint">(one per line)</span></label>
+          <textarea id="critique-assumptions-input" rows="3"></textarea>
+          <label class="field-label" for="critique-recs-input">Recommended changes <span class="field-hint">(one per line — each can be accepted or rejected below)</span></label>
+          <textarea id="critique-recs-input" rows="3"></textarea>
+          <div class="form-row" style="justify-content:flex-end;">
+            <button type="button" class="btn-outline" id="critique-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="critique-submit">Submit critique</button>
+          </div>
+        </div>
+        <div class="form-row" style="align-items:center;gap:10px;flex-wrap:wrap;">
+          <label class="field-label" for="critique-role-filter" style="margin:0;">Show role</label>
+          <select id="critique-role-filter"><option value="">All roles</option></select>
+          <button type="button" class="btn-outline" id="critique-synth-btn">Synthesise</button>
+          <span class="field-hint" id="critique-count"></span>
+        </div>
+        <div id="concept-synthesis" class="critique-synthesis"></div>
+        <div id="concept-critiques-list"></div>
+      </div>
+
       <div class="docs-block" id="concept-docs-block" hidden>
         <h3>Documents carried from the project</h3>
         <p class="field-hint">Additional documents this concept had as a project. They go back onto the project if it is promoted again.</p>

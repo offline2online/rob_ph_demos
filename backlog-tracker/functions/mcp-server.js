@@ -1149,6 +1149,26 @@ const PROJECT_MD_MAX = 800000;
 // firestore.rules (see the `concepts/{conceptId}` match block) — reuse the
 // constant rather than duplicating the number.
 const CONCEPT_MD_MAX = PROJECT_MD_MAX;
+const concepts_critiques = require("./concept-critiques");
+
+// Critiques live in one top-level collection; the list is small (a handful
+// per concept), so read it once and filter in memory.
+async function loadCritiques() {
+  const snap = await db().collection("conceptCritiques").get();
+  const out = [];
+  snap.forEach((d) => out.push({ id: d.id, ...(d.data() || {}) }));
+  out.sort((a, b) => String(tsToISO(a.createdAt) || "").localeCompare(String(tsToISO(b.createdAt) || "")));
+  return out;
+}
+function critiqueView(c) {
+  return {
+    id: c.id, conceptId: c.conceptId, role: concepts_critiques.roleOf(c), reviewer: c.reviewer || null,
+    verdict: c.verdict, summary: c.summary || "",
+    argumentsFor: c.argumentsFor || [], argumentsAgainst: c.argumentsAgainst || [], assumptions: c.assumptions || [],
+    recommendations: c.recommendations || [], status: c.status || "open",
+    reviewedRevision: c.reviewedRevision || null, createdAt: tsToISO(c.createdAt),
+  };
+}
 // projectDocs and interfaces are capped at what firestore.rules already
 // allows the BROWSER to write (20000). Going higher here would let an agent
 // author a document a person could then never save an edit to from the Docs
@@ -3406,6 +3426,109 @@ const TOOLS = [
       return textResult({ added: true, conceptId: ref.id, author: session.email });
     },
   },
+  // Critiques (ticket u6MB7ciF06bi0SdCc5eJ). Stored in the top-level
+  // `conceptCritiques` collection ({conceptId, ...}) so the board can list
+  // every role ever used for its suggestions with one plain query. Agents may
+  // add and read critiques and ask for a synthesis; accepting or rejecting a
+  // recommended adjustment (which edits the concept's README/Requirements) is
+  // a human decision on the board, so there is deliberately no tool for it.
+  {
+    name: "add_concept_critique",
+    description: "Submit a structured critique of a concept — one reviewer's red-team view (pre-mortem / devil's advocate): a verdict, the strongest arguments for and against, the assumptions you challenge, and the changes you recommend. It is stored in the concept's Critiques section, attributed to you and to the optional free-text role, with the concept text it reviewed. Role is NOT a fixed list — any viewpoint (CFO, store operations manager, retail media buyer, CTO...); call list_concept_critiques first to reuse a role already in use (its roles array). Works on a promoted concept too.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        verdict: { type: "string", enum: concepts_critiques.VERDICTS, description: "will-work, wont-work or conditional (works only if something changes)." },
+        role: { type: "string", description: `Optional free-text role the critique is written from, up to ${concepts_critiques.LIMITS.role} characters. Omit for 'Unspecified'.` },
+        summary: { type: "string", description: `Optional one-paragraph overall view, up to ${concepts_critiques.LIMITS.summary} characters.` },
+        argumentsFor: { type: "array", items: { type: "string" }, description: "Strongest arguments for the concept." },
+        argumentsAgainst: { type: "array", items: { type: "string" }, description: "Strongest arguments against it." },
+        assumptions: { type: "array", items: { type: "string" }, description: "Key assumptions you challenge." },
+        recommendations: { type: "array", items: { type: "string" }, description: "Specific changes you recommend. Each can be accepted or rejected by a person on the board." },
+      },
+      required: ["conceptId", "verdict"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const L = concepts_critiques.LIMITS;
+      if (!concepts_critiques.VERDICTS.includes(args.verdict)) return toolError(`verdict must be one of ${concepts_critiques.VERDICTS.join(", ")}.`);
+      const role = String(args.role || "").trim();
+      if (role.length > L.role) return toolError(`A role is limited to ${L.role} characters.`);
+      const summary = String(args.summary || "").trim();
+      if (summary.length > L.summary) return toolError(`A summary is limited to ${L.summary} characters.`);
+      const lists = {};
+      for (const k of ["argumentsFor", "argumentsAgainst", "assumptions", "recommendations"]) {
+        const raw = Array.isArray(args[k]) ? args[k] : [];
+        if (raw.length > L.items) return toolError(`${k} is limited to ${L.items} entries.`);
+        if (raw.some((t) => String(t || "").trim().length > L.item)) return toolError(`Each entry in ${k} is limited to ${L.item} characters.`);
+        lists[k] = concepts_critiques.cleanList(raw);
+      }
+      const csnap = await db().collection("concepts").doc(String(args.conceptId)).get();
+      if (!csnap.exists) return toolError(`No concept with id ${args.conceptId}. Call list_concepts first.`);
+      const c = csnap.data() || {};
+      const recommendations = lists.recommendations.map((text, i) => ({ id: `r${i + 1}`, text, status: "pending" }));
+      const ref = await db().collection("conceptCritiques").add({
+        conceptId: csnap.id,
+        role,
+        reviewer: session.email,
+        verdict: args.verdict,
+        summary,
+        argumentsFor: lists.argumentsFor,
+        argumentsAgainst: lists.argumentsAgainst,
+        assumptions: lists.assumptions,
+        recommendations,
+        status: concepts_critiques.critiqueStatus(recommendations),
+        reviewedRevision: { fingerprint: concepts_critiques.textFingerprint(c.readmeMd, c.requirementsMd), conceptUpdatedAt: tsToISO(c.updatedAt) },
+        via: "mcp",
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await audit(session, "add_concept_critique", { conceptId: csnap.id, critiqueId: ref.id, verdict: args.verdict, role: role || null, recommendations: recommendations.length });
+      return textResult({ added: true, critiqueId: ref.id, conceptId: csnap.id, role: concepts_critiques.roleOf({ role }), reviewer: session.email, recommendations: recommendations.length });
+    },
+  },
+  {
+    name: "list_concept_critiques",
+    description: "Every critique on a concept, oldest first, with who wrote it (reviewer and role), its verdict, arguments, recommendations and whether each recommendation is pending, accepted or rejected. Also returns `roles`: every role already used on any concept's critiques, for reuse as suggestions. Optionally limited to one role.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        role: { type: "string", description: "Only critiques written from this role (case-insensitive). Use 'Unspecified' for those without one." },
+      },
+      required: ["conceptId"], additionalProperties: false,
+    },
+    async run(args) {
+      const conceptId = String(args.conceptId);
+      const all = await loadCritiques(null);
+      const mine = all.filter((c) => c.conceptId === conceptId);
+      const wanted = args.role ? concepts_critiques.roleKey(args.role) : null;
+      const shown = mine.filter((c) => !wanted || concepts_critiques.roleKey(c.role) === wanted);
+      return textResult({ conceptId, count: shown.length, roles: concepts_critiques.roleSuggestions(all), critiques: shown.map(critiqueView) });
+    },
+  },
+  {
+    name: "synthesise_concept_critiques",
+    description: "Summarise every critique of a concept across all viewpoints: the verdict tally, points of agreement (the same point raised by more than one reviewer), points of disagreement (split verdicts, a point argued for by one and against by another), and the recommended adjustments with who proposed each and whether it is pending, accepted or rejected. Optionally limited to one role; the by-role breakdown is always included. Read-only; it never edits the concept.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        role: { type: "string", description: "Optional: synthesise only the critiques from this role." },
+      },
+      required: ["conceptId"], additionalProperties: false,
+    },
+    async run(args) {
+      const conceptId = String(args.conceptId);
+      const csnap = await db().collection("concepts").doc(conceptId).get();
+      if (!csnap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const mine = (await loadCritiques(null)).filter((c) => c.conceptId === conceptId);
+      return textResult({ conceptId, name: (csnap.data() || {}).name || "", role: args.role || null, ...concepts_critiques.synthesise(mine, { role: args.role }) });
+    },
+  },
   {
     name: "set_concept_description",
     description: `Set (or clear) a concept's short description — one or two sentences on what it is, shown in the system map's hover tooltip and on the concept's tile. Pass description: null to remove it. Up to ${PROJECT_DESCRIPTION_MAX} characters. Refused once the concept has been promoted — use set_project_description with promotedProjectId instead.`,
@@ -4375,7 +4498,7 @@ const SERVER_INSTRUCTIONS = [
   "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full, possibly hundreds of thousands of characters, so call it only with include set to the one block you need.",
   "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document, so read it first and send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
   REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
-  "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
+  "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
   "Skills library, shared by all projects: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
   "Release: moving cards, approving out of Ready for Testing, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only: approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",

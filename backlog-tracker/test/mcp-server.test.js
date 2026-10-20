@@ -900,7 +900,7 @@ async function rpc(token, method, params, id = 1) {
   // list_projects (which only ever queries `projects`).
   await test("exposes the concept tools", async () => {
     const names = mcp.__test.TOOLS.map((t) => t.name);
-    for (const expected of ["create_concept", "list_concepts", "get_concept", "add_concept_comment", "set_concept_description", "set_concept_readme", "set_concept_requirements"]) {
+    for (const expected of ["create_concept", "list_concepts", "get_concept", "add_concept_comment", "set_concept_description", "set_concept_readme", "set_concept_requirements", "add_concept_critique", "list_concept_critiques", "synthesise_concept_critiques"]) {
       assert.ok(names.includes(expected), `missing tool ${expected}`);
     }
     // No ticket-shaped tool for concepts — they have no backlogItems until promoted.
@@ -974,6 +974,37 @@ async function rpc(token, method, params, id = 1) {
 
     const revs = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_doc_revisions", arguments: { conceptId: "con1" } })).body.result.content[0].text);
     assert.ok(revs.revisions.length >= 2);
+  });
+
+  await test("concept critiques: add from three roles, list with role suggestions, synthesise", async () => {
+    const tool = async (name, args) => JSON.parse((await rpc(tokens.access_token, "tools/call", { name, arguments: args })).body.result.content[0].text);
+    const empty = await tool("list_concept_critiques", { conceptId: "con1" });
+    assert.strictEqual(empty.count, 0);
+    for (const [role, verdict, rec] of [["CFO", "conditional", "Cap upfront spend"], ["Store operations manager", "wont-work", "Cap upfront spend"], ["", "will-work", "Pilot in one store"]]) {
+      const r = await tool("add_concept_critique", { conceptId: "con1", verdict, role, argumentsFor: ["Clear need"], argumentsAgainst: ["Costly"], assumptions: ["Stores will adopt"], recommendations: [rec] });
+      assert.strictEqual(r.added, true);
+    }
+    const listed = await tool("list_concept_critiques", { conceptId: "con1" });
+    assert.strictEqual(listed.count, 3);
+    assert.deepStrictEqual(listed.roles.sort(), ["CFO", "Store operations manager"]);
+    assert.strictEqual(listed.critiques[2].role, "Unspecified");
+    assert.strictEqual(listed.critiques[0].reviewer, TEAMMATE);
+    assert.strictEqual(listed.critiques[0].recommendations[0].status, "pending");
+    assert.ok(listed.critiques[0].reviewedRevision.fingerprint);
+    assert.strictEqual((await tool("list_concept_critiques", { conceptId: "con1", role: "cfo" })).count, 1);
+    const syn = await tool("synthesise_concept_critiques", { conceptId: "con1" });
+    assert.strictEqual(syn.total, 3);
+    assert.ok(syn.agreement.some((a) => a.kind === "recommendation"), "the shared recommendation is an agreement");
+    assert.ok(syn.disagreement.some((d) => d.kind === "verdict"));
+    assert.strictEqual(syn.adjustments.length, 2);
+    assert.strictEqual((await tool("synthesise_concept_critiques", { conceptId: "con1", role: "CFO" })).total, 1);
+  });
+
+  await test("concept critiques: refuses a bad verdict, an over-long role and an unknown concept", async () => {
+    const bad = (args) => rpc(tokens.access_token, "tools/call", { name: "add_concept_critique", arguments: args });
+    assert.strictEqual((await bad({ conceptId: "con1", verdict: "maybe" })).body.result.isError, true);
+    assert.strictEqual((await bad({ conceptId: "con1", verdict: "will-work", role: "x".repeat(81) })).body.result.isError, true);
+    assert.strictEqual((await bad({ conceptId: "nope", verdict: "will-work" })).body.result.isError, true);
   });
 
   await test("refuses to edit README/Requirements on an already-promoted concept", async () => {
