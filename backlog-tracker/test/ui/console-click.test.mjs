@@ -270,6 +270,20 @@ const scenarios = [
     },
   },
   {
+    name: "Approve: the CTA stays hidden while a ticked card's tests are running",
+    seed: () => {
+      const s = only("r1");
+      s.docs.backlogItems.r1.trainTest = { sha: "abc123", state: "running", workflows: [] };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click(".card-deploy-select-cb", "tick the Ready for Testing card");
+      await c.page.waitForTimeout(500);
+      assert.strictEqual(await c.page.locator(".deploy-to-feature-btn").count(), 0, "no approval CTA until tests pass");
+    },
+  },
+  {
     name: "Approve: ticking a card then Approved for Deployment locks the train",
     seed: () => only("r1"),
     async run(c) {

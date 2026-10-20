@@ -1149,6 +1149,14 @@ function deploySelectedCountForProject(pid) {
   ).length;
 }
 
+function selectedTrainCardsForProject(pid) {
+  const sel = getDeploySelectedSet(pid);
+  return items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" &&
+    !isNoDeployCard(i) && sel.has(i.id)
+  );
+}
+
 // Merged to Main (Live) cards the same archive rule as the per-card button
 // allows (not mid-revert) that someone has ticked — what "Archive selected"
 // acts on. Mirrors archiveBtn's own isReverting guard in cardHTML.
@@ -1920,6 +1928,9 @@ function deployToFeatureButtonHTML(project) {
   // exactly what it did before when nothing had been confirmed tested.
   const count = deploySelectedCountForProject(pid);
   if (!count) return "";
+  // Offered only once every ticked ticket's train tests are green: a ticket
+  // whose tests are still running, failed or not run keeps the CTA hidden.
+  if (approvalWarningLines(selectedTrainCardsForProject(pid)).length) return "";
   return `<button type="button" class="notify-claude-btn deploy-to-feature-btn" data-project-id="${escapeHTML(pid)}">
     <span class="material-symbols-outlined notify-claude-icon">merge_type</span>
     <span class="notify-claude-label">Approved for Deployment — ${count} selected</span>
