@@ -125,7 +125,7 @@
          open/close*Page() function so only one page-header is ever on
          screen at a time. -->
     <div class="page-header" id="board-page-header">
-      <h2>Board</h2>
+      <h2>Agent Board</h2>
       <span class="page-header-count" id="total-summary">0 items</span>
       <button class="btn-primary page-header-action" id="new-project-btn" type="button">+ New project</button>
     </div>
@@ -144,7 +144,7 @@
       </div>
       <div class="nav-group" data-nav-group="build" role="group" aria-labelledby="nav-build-label">
         <div class="nav-drawer-section" id="nav-build-label">Build</div>
-        <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Board</button>
+        <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Agent Board</button>
         <button type="button" class="nav-drawer-item" id="concept-incubator-btn"><span class="material-symbols-outlined" aria-hidden="true">lightbulb</span>Concepts</button>
         <button type="button" class="nav-drawer-item" id="releases-btn"><span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>Releases</button>
         <button type="button" class="nav-drawer-item" id="skills-btn"><span class="material-symbols-outlined" aria-hidden="true">psychology</span>Skills</button>
@@ -188,27 +188,52 @@
     <div class="modal-backdrop" id="ni-backdrop" hidden>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="ni-title">
         <div class="modal-header">
-          <h2 id="ni-title">New item</h2>
+          <h2 id="ni-title">New feature</h2>
           <button type="button" class="modal-close" id="ni-close" aria-label="Close">&times;</button>
         </div>
-        <label class="field-label" for="ni-desc-input">Description</label>
-        <div class="desc-wrap">
-          <textarea id="ni-desc-input" rows="6" maxlength="10000" placeholder="Describe the feature or bug — type, or tap the mic and just talk. A title and area are set for you automatically."></textarea>
-          <button type="button" class="mic-btn" id="ni-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
+        <!-- Voice-first capture (matches the Kanban prototype's "+ New task"):
+             one Record button on top; when recording stops an agent fills
+             Title / Description / Type / Area below for the person to check.
+             #ni-mic-btn keeps its id so the shared dictation controller and
+             its tests find it; the controller writes the live words into the
+             read-only #ni-transcript instead of the Description. -->
+        <div class="ni-voice">
+          <div class="ni-voice-row">
+            <button type="button" class="ni-record-btn" id="ni-mic-btn" aria-pressed="false" hidden>
+              <span class="ni-record-dot"><span class="material-symbols-outlined" aria-hidden="true" id="ni-record-icon">mic</span></span>
+              <span class="ni-record-text">
+                <span class="ni-record-label" id="ni-record-label">Record item</span>
+                <span class="ni-record-sub" id="ni-record-sub">Say what needs doing</span>
+              </span>
+            </button>
+            <button type="button" class="info-tip" aria-label="About recording" data-tip="Talk through the item: what it is, whether it's a bug, and which area it touches. The agent writes the title and description and sets the type and area. Check them before you add it.">i</button>
+          </div>
+          <div class="ni-voice-live" id="ni-voice-live" hidden>
+            <textarea id="ni-transcript" rows="2" maxlength="10000" readonly tabindex="-1" aria-label="Live transcript" placeholder="Listening…"></textarea>
+          </div>
+          <p class="mic-error" id="ni-mic-error" role="alert"></p>
         </div>
-        <span class="char-count" id="ni-desc-count"></span>
-        <p class="listening-hint" id="ni-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
-        <p class="mic-error" id="ni-mic-error"></p>
-        <p class="field-hint">A short title and best-guess area are generated from what you write — Claude sets the final ones once this ticket is actually looked at.</p>
-        <div class="form-row">
-          <div class="type-toggle" role="radiogroup" aria-label="Item type">
+
+        <div class="ni-field" data-ni-field="title">
+          <label class="field-label" for="ni-title-input">Title</label>
+          <input type="text" id="ni-title-input" class="ni-input" maxlength="200" required autocomplete="off">
+        </div>
+        <div class="ni-field" data-ni-field="desc">
+          <label class="field-label" for="ni-desc-input">Description</label>
+          <textarea id="ni-desc-input" class="ni-input" rows="5" maxlength="10000" required></textarea>
+          <span class="char-count" id="ni-desc-count"></span>
+          <button type="button" class="ni-agent-link" id="ni-agent-btn"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span>Fill in the ticket from this description</span></button>
+        </div>
+        <div class="ni-field" data-ni-field="type">
+          <span class="field-label" id="ni-type-label">Type</span>
+          <div class="type-toggle ni-type-toggle" role="radiogroup" aria-labelledby="ni-type-label">
             <button type="button" class="type-opt active" data-type="feature">Feature</button>
             <button type="button" class="type-opt" data-type="bug">Bug</button>
           </div>
-          <div class="form-actions">
-            <button type="button" class="btn-ghost" id="ni-cancel">Cancel</button>
-            <button type="button" class="btn-primary" id="ni-submit">Add to backlog</button>
-          </div>
+        </div>
+        <div class="ni-field" data-ni-field="category">
+          <label class="field-label" for="ni-category-select">Area</label>
+          <select id="ni-category-select" class="ni-input"></select>
         </div>
 
         <!-- Attachments — same screenshot/screen-recording flow as the Edit
@@ -229,6 +254,11 @@
             <button type="button" class="btn-attach" id="ni-record-screen-btn">&#9210; Record screen</button>
           </div>
           <p class="field-hint" id="ni-attach-hint" hidden></p>
+        </div>
+
+        <div class="ni-actions">
+          <button type="button" class="btn-ghost" id="ni-cancel">Cancel</button>
+          <button type="button" class="btn-primary" id="ni-submit">Create feature</button>
         </div>
       </div>
     </div>
@@ -336,21 +366,13 @@
 
         <label class="field-label" for="pc-program-select">Program / Product</label>
         <select id="pc-program-select"></select>
-        <p class="field-hint">Optional — groups this under a shared heading on the board.</p>
+        <p class="field-hint">Optional — groups this under a shared heading on the board. Can be set later.</p>
 
         <label class="field-label" for="pc-release-select">Release</label>
         <select id="pc-release-select"></select>
         <p class="field-hint">Optional — the release this project ships in. Create one on the Releases page first if it doesn't exist yet.</p>
 
-        <label class="field-label" for="pc-repo-folder-input">Repo folder</label>
-        <input type="text" id="pc-repo-folder-input" maxlength="80" placeholder="e.g. dsp-integration">
-        <p class="field-hint">Repo-root-relative, no trailing slash — see root <code>CLAUDE.md</code> → "Linking a new project to GitHub".</p>
-        <label class="np-interface-toggle">
-          <input type="checkbox" id="pc-repo-folder-none">
-          This project has no single folder yet
-        </label>
-
-        <p class="field-hint">Copies this concept's README and requirements onto the new project and marks the concept promoted — it stays on this page afterward, read-only.</p>
+        <p class="field-hint">One click: creates the project, links its repo folder, copies this concept's README and requirements, and raises front-end, back-end, end-to-end-test and document tickets in its Backlog (nothing is approved). The concept stays on this page afterward, read-only.</p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="pc-cancel">Cancel</button>

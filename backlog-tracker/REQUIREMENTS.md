@@ -1507,11 +1507,35 @@ REST API is reachable with a plain `curl`, no service account needed.
   modal at creation time, or from an existing project's Docs page at any
   time; both offer "+ New program…" to create one inline without leaving
   the flow.
-- **New item capture is description-only.** No title or category field up
-  front — just typed or dictated text. A short title and a best-guess
-  category (`suggestCategory()`) are generated automatically; correcting
-  both to the real answer is a mandatory step of every backlog sweep
-  (manual or automated).
+- **New item capture is voice-first (20 Oct 2026, ticket NBQ1scD9GFEr6YbQxSYX),
+  matching the Kanban prototype's "+ New task".** The "+ New backlog item"
+  modal opens with one **Record item** button above every field (the
+  in-textarea mic is gone from this modal only; the Edit item and
+  quick-comment modals keep theirs). Click to record (microphone requested
+  first, via `createDictationController`, which keeps recording across the
+  browser's silence auto-stops): the button turns red with "Stop recording"
+  and a ticking "Listening · 0:12", and the words appear live in a
+  transcript box. On stop an agent ("Writing the ticket…") fills **Title**
+  (filler stripped, ≤72 chars), **Description** (tidied sentences, routing
+  talk such as "it's urgent" removed), **Type** (Feature/Bug) and **Area**
+  (`suggestCategory()`); each filled field gets a violet outline and an
+  "Agent" pill, a toast says how many, and the button reads "Record
+  again / Replaces the details below". A "Fill in the ticket from this
+  description" button runs the same agent on typed text. The agent is the
+  `niAgent.draft()` seam in `app.js` (today `localAgentDraft()`), so a
+  Claude call can replace it without touching the UI. Field order: Record,
+  Title (required), Description (required, 10000), Type (full-width
+  toggle), Area (select of `CATEGORIES`); submit uses the edited Title and
+  Area and falls back to `generateTitle()` / `suggestCategory()` only when
+  blank. The primary button and heading follow the type ("Create feature" /
+  "Raise bug", "New feature" / "New bug"). Cancel and the primary button
+  sit in a sticky bar at the bottom of the modal (a bottom sheet on a
+  phone, above the tab bar, honouring the safe-area inset). Errors (blocked
+  permission, no device, unsupported browser, network, nothing heard) show
+  inline under the button. Tests: `test/ui/new-item-voice.test.mjs` (1280
+  and 390 px) and `test/dictation.test.mjs`. Correcting title and
+  category to the real answer remains a mandatory step of every backlog
+  sweep (manual or automated).
 - **Titles must be short, specific subject lines**, not a truncated dump of
   the raw description. The client's own auto-generated title
   (`generateTitle()`) is a placeholder — first ~70 characters of the
@@ -2127,13 +2151,25 @@ page it's laid out like):
   (`createDictationController`), same as every other comment box in this
   console.
 - **Promote to project…** (still-active concepts only) opens a modal
-  asking for the project name (defaulted to the concept's own name),
-  program, release, and the same required repo-folder link every new
-  project needs (see "Adding a project" in README.md) — validated
-  identically to the New Project modal. Submitting calls
-  `promoteConceptToProject`, which creates the `projects` doc seeded with
-  the concept's `readmeMd`/`requirementsMd` verbatim and flips the concept
-  to `status: "promoted"`.
+  asking only for the project name (defaulted to, and kept as, the
+  concept's own name); program and release are optional and can be set
+  later from the project's Docs page. There is no repo-folder field.
+  Submitting is one click and calls `promoteConceptToProject`, which: picks
+  a free repo folder from the name (`pickRepoFolder` in
+  `public/js/promote-plan.js`: slug, then `-2`, `-3`…) and links it as
+  `repoFolder` with `deployBranch` `deploy/<folder>` (the folder itself is
+  committed by the first ticket that lands — the browser cannot write to
+  GitHub); creates the `projects` doc seeded with the concept's
+  `readmeMd`/`requirementsMd` and documents; flips the concept to
+  `status: "promoted"`; and raises Backlog tickets from the Requirements
+  (`planPromotionTickets`, using the Feed in requirements splitter): one
+  front-end and/or back-end build ticket per requirement (a requirement
+  touching both gets one of each), one end-to-end test suite ticket, a
+  README ticket, a specs/Requirements ticket and one ticket per additional
+  document. A concept with only a name still gets one front-end, one
+  back-end, the E2E and the two document tickets. Every ticket starts in
+  Backlog — nothing is approved or sent for build — and a confirmation
+  dialog summarises the project, folder and ticket counts.
 - **Delete this concept** — active concepts only; a promoted concept's
   delete control is hidden and its rules write is refused regardless, since
   it is the provenance record for the project it became.

@@ -896,6 +896,11 @@ ends, stalls with no end event, network blips, a throwing `start()` and
 typing mid-dictation must all keep the run going, while the stop click,
 adding a ticket or comment, and closing the form must end it and release
 the microphone (REQUIREMENTS.md → "Dictation never cuts off by itself").
+**`test/ui/new-item-voice.test.mjs`** (20 Oct 2026) drives the New item
+modal's voice-first Record button in Chromium with a scripted
+`SpeechRecognition` and `getUserMedia`, at 1280 and 390 px: button states,
+live transcript, the agent filling Title / Description / Type / Area, the
+typed fallback, the denied-microphone error and the pinned action bar.
 
 `test/` holds these suites:
 
@@ -2272,7 +2277,7 @@ entry, directly under Agent Console.
   comment thread with the same dictation-mic composer every other comment
   box in this console has, retained across sessions so the conversation
   can be picked back up any time. A still-active concept also gets
-  **Promote to project…** and **Delete this concept**; a promoted one
+  **Promote to project…** (one click: name only, repo folder auto-picked and linked, build/E2E/document tickets raised in the new project's Backlog — see `public/js/promote-plan.js`) and **Delete this concept**; a promoted one
   shows a "Promoted to project X" line instead and everything past the
   discussion thread becomes read-only, since the project's own Docs page
   is the source of truth from that point on.

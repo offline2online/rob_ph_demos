@@ -32,6 +32,7 @@ import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mir
 import { initNavShell } from "./nav-shell.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts, compareReleases, pinnedLayout, mapSnapshot, diffSystemMap, describeChanges } from "./system-map.js";
+import { pickRepoFolder, planPromotionTickets } from "./promote-plan.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -4998,18 +4999,223 @@ function generateTitle(desc) {
 
 const updateNiDescCount = wireCharCount(document.getElementById("ni-desc-input"), document.getElementById("ni-desc-count"));
 
+// ── New Item: voice-first capture (matches the Kanban prototype's "+ New
+// task") ────────────────────────────────────────────────────────────────
+// One Record button; when recording stops an agent fills Title, Description,
+// Type and Area for the person to check before adding. The agent is a seam:
+// niAgent.draft(transcript) returns (or resolves to) { title, desc, type,
+// category }. Today it is the local stand-in below; a Claude call can
+// replace niAgent.draft without touching the UI.
+const NI_TITLE_MAX = 72;
+const NI_CTA = { feature: "Create feature", bug: "Raise bug" };
+const NI_HEADING = { feature: "New feature", bug: "New bug" };
+const niEls = {
+  title: document.getElementById("ni-title-input"),
+  desc: document.getElementById("ni-desc-input"),
+  category: document.getElementById("ni-category-select"),
+  heading: document.getElementById("ni-title"),
+  submit: document.getElementById("ni-submit"),
+  record: document.getElementById("ni-mic-btn"),
+  recordIcon: document.getElementById("ni-record-icon"),
+  recordLabel: document.getElementById("ni-record-label"),
+  recordSub: document.getElementById("ni-record-sub"),
+  live: document.getElementById("ni-voice-live"),
+  transcript: document.getElementById("ni-transcript"),
+  micError: document.getElementById("ni-mic-error"),
+  agentBtn: document.getElementById("ni-agent-btn"),
+};
+niEls.category.innerHTML = CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
+niEls.category.value = "Uncategorised";
+
+function getNiType() {
+  const active = document.querySelector("#ni-backdrop .type-opt.active");
+  return active && active.dataset.type === "bug" ? "bug" : "feature";
+}
+// The primary button and the heading follow the type, instantly.
+function syncNiCta() {
+  const type = getNiType();
+  niEls.submit.textContent = NI_CTA[type];
+  niEls.heading.textContent = NI_HEADING[type];
+}
+function setNiType(type) {
+  document.querySelectorAll("#ni-backdrop .type-opt").forEach((b) => b.classList.toggle("active", b.dataset.type === (type === "bug" ? "bug" : "feature")));
+  syncNiCta();
+}
+
+function niSentenceCase(x) { return x.charAt(0).toUpperCase() + x.slice(1); }
+// Local stand-in for the agent: tidy the transcript, strip the routing talk
+// ("it's urgent", "assign it to…", "next release") and filler from the title.
+function localAgentDraft(raw) {
+  const text = String(raw || "").replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
+  const ROUTING = /\b(?:(?:it'?s |this is |make it |mark it as )?(?:(?:quite|very|really|pretty|extremely) )?(?:urgent|asap|high priority|low priority|medium priority|top priority|nice to have|no rush)|assign(?:ed)? (?:it |this )?to \w+|give (?:it|this) to \w+|(?:for |in |on )?(?:the )?(?:next|this|current) (?:release|sprint))\b[,.]?/gi;
+  const sentences = text
+    .split(/(?<=[.!?])\s+|\s+(?:and then|and also|also)\s+/i)
+    .map((x) => x.replace(ROUTING, " ").replace(/\s+/g, " ").replace(/\s+([,.])/g, "$1").replace(/^[\s,]*(?:and|so|um+|uh+|okay|ok|right)[\s,]+/i, "").replace(/^[\s,]+|[\s,]+$/g, ""))
+    .filter((x) => x.replace(/[^a-z]/gi, "").length > 3);
+  const desc = sentences.length
+    ? sentences.map((x) => niSentenceCase(x) + (/[.!?]$/.test(x) ? "" : ".")).join(" ")
+    : niSentenceCase(text);
+  let t = (sentences[0] || text)
+    .replace(/^(so |ok(ay)? |right |um+ |uh+ )+/i, "")
+    .replace(/^(we|i)('d| would)? (need|want|like|have) to (get |have )?/i, "")
+    .replace(/^(can|could) (you|we|someone) (please )?/i, "")
+    .replace(/^please /i, "")
+    .replace(/^(there'?s|there is) an? (bug|issue|problem) (where|with|in|on) /i, "")
+    .replace(/^it'?s an? (bug|issue) (where|with) /i, "")
+    .replace(/^(add|create|make|raise) (a |an )?(ticket|item|task) (to |for |about )?/i, "")
+    .replace(/^the /i, "")
+    .replace(/[.!?,]+$/, "").trim();
+  if (t.length > NI_TITLE_MAX) { t = t.slice(0, NI_TITLE_MAX); const sp = t.lastIndexOf(" "); if (sp > 0) t = t.slice(0, sp); }
+  return { title: niSentenceCase(t), desc, type: suggestType(text), category: suggestCategory(text) };
+}
+const niAgent = { draft: (transcript) => localAgentDraft(transcript) };
+
+let niAgentToken = 0;     // bumped by every reset so a late agent result never lands in a cleared form
+let niAgentRunning = false;
+let niTranscriptPending = false; // words recorded since the agent last filled the form
+let niToastTimer = null;
+function showNiToast(msg) {
+  let el = document.getElementById("ni-toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "ni-toast"; el.className = "ni-toast"; el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(niToastTimer);
+  niToastTimer = setTimeout(() => { el.hidden = true; }, 4000);
+}
+function clearNiAgentMarks(name) {
+  const sel = name ? `.ni-field[data-ni-field="${name}"]` : ".ni-field.ni-agent-filled";
+  document.querySelectorAll(sel).forEach((el) => el.classList.remove("ni-agent-filled"));
+}
+function applyNiDraft(draft) {
+  const filled = [];
+  const mark = (name, ok) => { if (!ok) return; filled.push(name); document.querySelector(`.ni-field[data-ni-field="${name}"]`).classList.add("ni-agent-filled"); };
+  clearNiAgentMarks();
+  if (draft.title) niEls.title.value = draft.title.slice(0, niEls.title.maxLength);
+  if (draft.desc) { niEls.desc.value = draft.desc.slice(0, niEls.desc.maxLength); autoGrow(niEls.desc); updateNiDescCount(); }
+  setNiType(draft.type);
+  if (draft.category && CATEGORIES.includes(draft.category)) niEls.category.value = draft.category;
+  mark("title", !!draft.title); mark("desc", !!draft.desc); mark("type", true); mark("category", !!draft.category);
+  return filled.length;
+}
+
+// The Record button's four faces.
+function setRecordState(state, seconds) {
+  const faces = {
+    idle: ["mic", "Record item", "Say what needs doing"],
+    recording: ["mic", "Stop recording", `Listening · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`],
+    working: ["progress_activity", "Writing the ticket…", "Agent"],
+    done: ["mic", "Record again", "Replaces the details below"],
+  };
+  const [icon, label, sub] = faces[state];
+  niEls.recordIcon.textContent = icon;
+  niEls.recordLabel.textContent = label;
+  niEls.recordSub.textContent = sub;
+  niEls.record.classList.toggle("working", state === "working");
+}
+let niRecordedOnce = false;
+let niTimerId = null;
+let niRecordStartedAt = 0;
+function stopNiTimer() { if (niTimerId) { clearInterval(niTimerId); niTimerId = null; } }
+function onNiRecordState(isListening, info) {
+  if (isListening) {
+    niRecordStartedAt = Date.now();
+    niEls.live.hidden = false;
+    niTranscriptPending = true;
+    setRecordState("recording", 0);
+    stopNiTimer();
+    niTimerId = setInterval(() => setRecordState("recording", Math.floor((Date.now() - niRecordStartedAt) / 1000)), 1000);
+    return;
+  }
+  stopNiTimer();
+  const halted = !!(info && info.halted);
+  if (!halted && !(info && info.text && info.text.trim()) && !niEls.micError.classList.contains("on")) {
+    // Never fail silently: a run that ends with nothing heard says so.
+    niEls.micError.textContent = "Nothing was heard — check the microphone and try again, or type the details below.";
+    niEls.micError.classList.add("on");
+  }
+  setRecordState(niRecordedOnce ? "done" : "idle");
+}
+async function runNiAgent(text, { fromRecording } = {}) {
+  const transcript = String(text || "").trim();
+  if (!transcript || niAgentRunning) return;
+  niAgentRunning = true;
+  const token = niAgentToken;
+  const panel = document.querySelector("#ni-backdrop .modal-panel");
+  panel.classList.add("ni-agent-working");
+  niEls.agentBtn.disabled = true;
+  niEls.submit.disabled = true;
+  if (fromRecording) setRecordState("working");
+  try {
+    const [draft] = await Promise.all([
+      Promise.resolve(niAgent.draft(transcript)),
+      new Promise((resolve) => setTimeout(resolve, DICTATION_TUNING.agentMs)),
+    ]);
+    if (token !== niAgentToken) return; // the form was closed or reset meanwhile
+    const n = applyNiDraft(draft);
+    niTranscriptPending = false;
+    if (fromRecording) niRecordedOnce = true;
+    showNiToast(`Agent filled in ${n} fields. Check them before creating`);
+  } catch (err) {
+    if (token === niAgentToken) {
+      niEls.micError.textContent = "The agent couldn't write the ticket — fill in the details below instead.";
+      niEls.micError.classList.add("on");
+    }
+  } finally {
+    if (token === niAgentToken) {
+      panel.classList.remove("ni-agent-working");
+      niEls.agentBtn.disabled = false;
+      if (!niSubmitting) niEls.submit.disabled = false;
+      setRecordState(niRecordedOnce ? "done" : "idle");
+    }
+    niAgentRunning = false;
+  }
+}
+// "Record again" replaces: a new run starts from an empty transcript. Registered
+// before the dictation controller's own click handler so it runs first.
+niEls.record.addEventListener("click", () => {
+  if (niDictation.isListening && niDictation.isListening()) return;
+  niEls.transcript.value = "";
+  niEls.transcript.style.height = "";
+});
+document.getElementById("ni-agent-btn").addEventListener("click", () => {
+  const typed = niEls.desc.value.trim();
+  if (!typed) { niEls.desc.focus(); return; }
+  runNiAgent(typed);
+});
+// Editing a field takes its "Agent" mark off: it is the person's text now.
+niEls.title.addEventListener("input", () => clearNiAgentMarks("title"));
+niEls.desc.addEventListener("input", () => clearNiAgentMarks("desc"));
+niEls.category.addEventListener("change", () => clearNiAgentMarks("category"));
+
 // OhKUnoGbpUAeJiXiLIvc: shared by openForm() and closeForm() so a blank
 // form is guaranteed on every OPEN too, not just after a known close path —
 // previously only closeForm() cleared these, which relied on every way of
 // dismissing the modal (including submit-success) having actually run
 // first; resetting again on open removes that assumption entirely.
 function resetFormFields() {
-  const descEl = document.getElementById("ni-desc-input");
-  descEl.value = "";
-  descEl.style.height = "";
+  niAgentToken++;
+  stopNiTimer();
+  niEls.title.value = "";
+  niEls.desc.value = "";
+  niEls.desc.style.height = "";
   updateNiDescCount();
-  document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
-  document.querySelector('.type-opt[data-type="feature"]').classList.add("active");
+  niEls.transcript.value = "";
+  niEls.transcript.style.height = "";
+  niEls.live.hidden = true;
+  niEls.category.value = "Uncategorised";
+  clearNiAgentMarks();
+  document.querySelector("#ni-backdrop .modal-panel").classList.remove("ni-agent-working");
+  niEls.agentBtn.disabled = false;
+  if (!niSubmitting) niEls.submit.disabled = false;
+  niAgentRunning = false;
+  niRecordedOnce = false;
+  niTranscriptPending = false;
+  setRecordState("idle");
+  setNiType("feature");
   niDictation.clearError();
   niPendingAttachments = [];
   renderNiPendingAttachments();
@@ -5018,7 +5224,7 @@ function openForm(projectId) {
   activeNewItemProjectId = projectId;
   resetFormFields();
   niBackdrop.hidden = false;
-  document.getElementById("ni-desc-input").focus();
+  niEls.title.focus();
 }
 function closeForm() {
   // Hidden flips first — niAttachments' onPendingFile checks it, so a
@@ -5040,10 +5246,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !niBackdrop.hidden) closeForm();
 });
 
-document.querySelectorAll(".type-opt").forEach((btn) => {
+document.querySelectorAll("#ni-backdrop .type-opt").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
+    setNiType(btn.dataset.type);
+    clearNiAgentMarks("type");
   });
 });
 
@@ -5052,9 +5258,14 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
   // A double-click (or Enter then click) used to create two tickets: the
   // first addDoc hadn't returned before the second click ran.
   if (niSubmitting) return;
-  // Adding the ticket ends dictation and releases the microphone; the
-  // words already in the field (interim ones too) are what gets filed.
+  // Adding the ticket ends recording and releases the microphone. If the
+  // agent hasn't filled in what was just said, it does so now (without the
+  // "working" pause) so those words are what gets filed.
   niDictation.halt();
+  if (niTranscriptPending && niEls.transcript.value.trim()) {
+    applyNiDraft(await Promise.resolve(niAgent.draft(niEls.transcript.value.trim())));
+    niTranscriptPending = false;
+  }
   niSubmitting = true;
   const niSubmitBtn = document.getElementById("ni-submit");
   niSubmitBtn.disabled = true;
@@ -5066,11 +5277,15 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
   }
 });
 async function submitNewItem() {
-  const desc = document.getElementById("ni-desc-input").value.trim();
-  const type = document.querySelector(".type-opt.active").dataset.type;
-  const category = suggestCategory(desc);
-  const title = generateTitle(desc);
-  if (!desc || !activeNewItemProjectId) return;
+  const desc = niEls.desc.value.trim();
+  const type = getNiType();
+  // The person's own (or the agent's) Title and Area; generated only if left blank.
+  const category = CATEGORIES.includes(niEls.category.value) && niEls.category.value !== "Uncategorised" ? niEls.category.value : suggestCategory(desc);
+  const title = niEls.title.value.trim() || generateTitle(desc);
+  if (!desc || !activeNewItemProjectId) {
+    if (!desc) { niEls.desc.focus(); }
+    return;
+  }
 
   const dup = findLikelyDuplicate(activeNewItemProjectId, desc);
   if (dup) {
@@ -6093,30 +6308,30 @@ async function deleteConcept(id) {
   await deleteDoc(doc(db, "concepts", id));
 }
 
-// Carries the concept's README/requirements across onto a brand-new
-// project (so nothing is re-keyed, per the ticket that asked for this),
-// requires the same repo-folder link every new project needs (root
-// CLAUDE.md → "Linking a new project to GitHub"), and marks the concept
-// promoted. The two writes aren't in one batch — there's nothing to roll
-// back to if the second write fails, since a project with no concept
-// pointing at it yet is harmless, and a re-click of Promote would just
-// create a second project, which is why the concept's own detail page
+// One-click promote: carries the concept's README/requirements across onto a
+// brand-new project, picks and links its repo folder (root CLAUDE.md →
+// "Linking a new project to GitHub" — the folder itself is committed by the
+// first ticket that lands, since the browser can't write to GitHub), raises
+// the build / E2E / document tickets in Backlog (promote-plan.js), and marks
+// the concept promoted. The writes aren't one batch — a project with no
+// concept pointing at it yet is harmless, and a re-click of Promote would
+// just create a second project, which is why the concept's own detail page
 // hides Promote the moment `status` flips (see renderConceptDetailPage).
-async function promoteConceptToProject(conceptId, name, programId, releaseId, repoFolderInfo) {
+// Program and release are optional and settable later from the Docs page.
+// Returns { projectId, folder, tickets: [{id, title, kind}], ticketError }.
+const RESERVED_ROOT_FOLDERS = ["backlog-tracker", "faq", "docs", "shared", "scripts", "menu-board-demo", "dsp-integration", "visitor-profile", "brands-suppliers-assets", "github", "node_modules", "functions", "public"];
+async function promoteConceptToProject(conceptId, name, programId, releaseId) {
   const concept = concepts.find((c) => c.id === conceptId);
   if (!concept) return null;
+  const folder = pickRepoFolder(name, [...RESERVED_ROOT_FOLDERS, ...projects.map((p) => p.repoFolder).filter(Boolean)]);
   const data = {
     name: name.trim(),
     createdAt: serverTimestamp(),
+    repoFolder: folder,
+    deployBranch: deployBranchForFolder(folder),
   };
   if (programId) data.programId = programId;
   if (releaseId) data.releaseId = releaseId;
-  if (repoFolderInfo && repoFolderInfo.none) {
-    data.repoFolderNotApplicable = true;
-  } else if (repoFolderInfo && repoFolderInfo.folder) {
-    data.repoFolder = repoFolderInfo.folder;
-    data.deployBranch = deployBranchForFolder(repoFolderInfo.folder);
-  }
   const ref = await addDoc(projectsRef, data);
   // The concept's text becomes the new project's Requirements / README in
   // projects/{id}/docs/* (not fields on the project doc).
@@ -6135,7 +6350,20 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId, re
     promotedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
-  return ref.id;
+  // Tickets last: a failure here leaves a promoted project with fewer
+  // tickets, reported in the summary, never a half-promoted concept.
+  const tickets = [];
+  let ticketError = null;
+  try {
+    const plan = planPromotionTickets({ name: data.name, folder, readmeMd: concept.readmeMd, requirementsMd: concept.requirementsMd, documents: concept.documents });
+    for (const t of plan) {
+      const id = await addItem(ref.id, t.title, t.desc, t.type, t.category, { effort: t.effort, priority: t.priority });
+      tickets.push({ id, title: t.title, kind: t.kind });
+    }
+  } catch (err) {
+    ticketError = err && err.message ? err.message : String(err);
+  }
+  return { projectId: ref.id, folder, tickets, ticketError };
 }
 
 // Demote a project back to a concept: the concept takes the project's README,
@@ -6910,8 +7138,6 @@ document.getElementById("nc-submit").addEventListener("click", async () => {
 const pcBackdrop = document.getElementById("pc-backdrop");
 const pcProgramSelect = document.getElementById("pc-program-select");
 const pcReleaseSelect = document.getElementById("pc-release-select");
-const pcRepoFolderInput = document.getElementById("pc-repo-folder-input");
-const pcRepoFolderNone = document.getElementById("pc-repo-folder-none");
 const updatePcNameCount = wireCharCount(document.getElementById("pc-name-input"), document.getElementById("pc-name-count"));
 let pcConceptId = null;
 
@@ -6925,9 +7151,6 @@ function openPromoteConceptModal(conceptId) {
   updatePcNameCount();
   populateProgramSelect(pcProgramSelect, "");
   populateReleaseSelect(pcReleaseSelect, "");
-  pcRepoFolderInput.value = "";
-  pcRepoFolderInput.disabled = false;
-  pcRepoFolderNone.checked = false;
   nameEl.focus();
 }
 function closePromoteConceptModal() { pcBackdrop.hidden = true; pcConceptId = null; }
@@ -6960,39 +7183,31 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
 
-  const wantsNoFolder = pcRepoFolderNone.checked;
-  const folder = pcRepoFolderInput.value.trim().replace(/\/+$/, "");
-  let repoFolderInfo;
-  if (wantsNoFolder) {
-    repoFolderInfo = { none: true };
-  } else if (!folder) {
-    await showAlert('Repo folder is required — enter the new project\'s folder in rob_ph_demos, or tick "This project has no single folder yet".');
-    pcRepoFolderInput.focus();
-    return;
-  } else if (!isValidRepoFolder(folder)) {
-    await showAlert("Repo folder must be repo-root-relative, with no leading/trailing slash and no \"..\" (e.g. \"dsp-integration\").");
-    pcRepoFolderInput.focus();
-    return;
-  } else {
-    const clash = projectWithRepoFolder(folder);
-    if (clash) {
-      await showAlert(`"${folder}" is already linked to project "${clash.name}" — two projects can't share one repo folder.`);
-      pcRepoFolderInput.focus();
-      return;
-    }
-    repoFolderInfo = { folder };
-  }
-
   const programId = pcProgramSelect.value !== "__new__" ? pcProgramSelect.value : "";
   const releaseId = pcReleaseSelect.value || "";
   const conceptId = pcConceptId;
+  const submitBtn = document.getElementById("pc-submit");
+  submitBtn.disabled = true;
+  let result;
   try {
-    await promoteConceptToProject(conceptId, name, programId, releaseId, repoFolderInfo);
+    result = await promoteConceptToProject(conceptId, name, programId, releaseId);
   } catch (err) {
-    await showAlert(describeSaveError(err, [{ label: "Project name", value: name, max: 80 }, { label: "Repo folder", value: folder, max: 80 }]));
+    submitBtn.disabled = false;
+    await showAlert(describeSaveError(err, [{ label: "Project name", value: name, max: 80 }]));
     return;
   }
+  submitBtn.disabled = false;
   closePromoteConceptModal();
+  if (result) {
+    const by = (k) => result.tickets.filter((t) => t.kind === k).length;
+    await showAlert(
+      `"${name}" is now a project, with repo folder "${result.folder}/" linked (the folder itself appears in the repo when its first ticket lands).\n\n` +
+      `${result.tickets.length} ticket${result.tickets.length === 1 ? "" : "s"} raised in its Backlog, none approved: ` +
+      `${by("frontend")} front-end, ${by("backend")} back-end, ${by("e2e")} end-to-end test suite, ${by("doc")} documents.` +
+      (result.ticketError ? `\n\nSome tickets were not created (${result.ticketError}) — add the missing ones with Feed in requirements.` : "") +
+      "\n\nProgram and release can be set later from the project's Docs page.",
+      { title: "Project created" });
+  }
 });
 // The concept comment box's own mic is wired up further down, with the
 // other three dictation controllers — see the note on SpeechRecognitionCtor.
@@ -7822,12 +8037,6 @@ function suggestCategory(text) {
   return "Uncategorised";
 }
 
-function setTypeToggle(type) {
-  document.querySelectorAll(".type-opt").forEach((b) => b.classList.remove("active"));
-  const btn = document.querySelector(`.type-opt[data-type="${type === "bug" ? "bug" : "feature"}"]`);
-  if (btn) btn.classList.add("active");
-}
-
 // One instance of this per dictated field (New Item description, quick
 // comment, Edit item comment) — each gets its own independent
 // recognition/listening/stopRequested/silentRestartStreak state via this
@@ -7869,6 +8078,8 @@ const DICTATION_TUNING = Object.assign({
   // claiming the mic (see requestMicAndListen).
   probeReleaseMs: 250,
   tickMs: 1000,
+  // How long the New Item agent shows "Writing the ticket…" before filling in.
+  agentMs: 450,
 }, (typeof window !== "undefined" && window.__btDictationTuning) || {});
 
 // The most recent dictation events across every field, newest last —
@@ -7886,7 +8097,12 @@ function dlog(field, msg) {
 // loops would then fight over forever. Starting any field halts the last.
 let activeDictationHalt = null;
 
-function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop, charCountUpdate }) {
+// `customMic`: the button draws its own states (the New Item Record button),
+// so the controller only toggles .listening / aria-pressed on it and leaves
+// its markup and title alone. `onState(listening)` fires when a run starts
+// and when it ends. `onStop(text, { halted })` — halted is true when the
+// owner ended the run (submit, close), not the person clicking stop.
+function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop, onState, customMic, charCountUpdate }) {
   const field = (micBtn && micBtn.id) || "mic";
   let recognition = null;
   let listening = false;
@@ -7954,6 +8170,9 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   // Set when a session ended while the page was hidden: no restart is
   // attempted against a suspended page; the run resumes on visibility.
   let suspendedWhileHidden = false;
+  // True while halt() is ending the run, so onStop/onState can tell the
+  // owner closing or submitting from the person's own stop click.
+  let haltingNow = false;
 
   function showError(msg) {
     softHintOn = false;
@@ -8240,10 +8459,13 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     lastFinalKey = "";
     interim = "";
     micBtn.classList.add("listening");
-    micBtn.innerHTML = STOP_ICON_SVG; // unambiguous "tap to stop", not just a color change
-    micBtn.title = "Stop dictation";
-    micBtn.setAttribute("aria-label", "Stop dictation");
+    if (!customMic) {
+      micBtn.innerHTML = STOP_ICON_SVG; // unambiguous "tap to stop", not just a color change
+      micBtn.title = "Stop dictation";
+      micBtn.setAttribute("aria-label", "Stop dictation");
+    }
     micBtn.setAttribute("aria-pressed", "true");
+    if (onState) onState(true);
     if (hintEl) hintEl.classList.add("on");
     tickTimer = setInterval(tick, DICTATION_TUNING.tickMs);
     // Plain start(): the browser opens and processes the microphone
@@ -8272,14 +8494,17 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     discard();
     if (activeDictationHalt === halt) activeDictationHalt = null;
     micBtn.classList.remove("listening");
-    micBtn.innerHTML = MIC_ICON_SVG;
-    micBtn.title = "Dictate";
-    micBtn.setAttribute("aria-label", "Dictate");
+    if (!customMic) {
+      micBtn.innerHTML = MIC_ICON_SVG;
+      micBtn.title = "Dictate";
+      micBtn.setAttribute("aria-label", "Dictate");
+    }
     micBtn.setAttribute("aria-pressed", "false");
     if (hintEl) hintEl.classList.remove("on");
     if (softHintOn) showError("");
     if (wasListening) dlog(field, "stopped");
-    if (wasListening && onStop && textareaEl.value.trim()) onStop(textareaEl.value);
+    if (wasListening && onState) onState(false, { halted: haltingNow, text: textareaEl.value });
+    if (wasListening && onStop && textareaEl.value.trim()) onStop(textareaEl.value, { halted: haltingNow });
   }
 
   // Chrome won't reliably prompt for microphone permission from inside
@@ -8341,7 +8566,8 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
       return;
     }
     if (!listening) return;
-    stopListening();
+    haltingNow = true;
+    try { stopListening(); } finally { haltingNow = false; }
   }
   // The user's own stop click: ask the engine to finalize what it heard,
   // then end. Uses stop(), not abort(), so the utterance in flight lands.
@@ -8369,13 +8595,14 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     // OhKUnoGbpUAeJiXiLIvc: keep the icon visible but disabled rather than
     // hidden, so "why is the mic gone" can't happen on a browser without
     // Web Speech support.
+    micBtn.hidden = false;
     micBtn.disabled = true;
     micBtn.title = "Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.";
     showError("Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.");
     return { stop, halt, clearError: () => showError("") };
   }
   micBtn.hidden = false;
-  micBtn.innerHTML = MIC_ICON_SVG;
+  if (!customMic) micBtn.innerHTML = MIC_ICON_SVG;
   micBtn.setAttribute("aria-pressed", "false");
   micBtn.addEventListener("click", () => {
     if (listening) { stop(); return; }
@@ -8414,13 +8641,15 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   return { stop, halt, clearError: () => showError(""), isListening: () => listening || starting };
 }
 
+// The New Item Record button. It listens into the read-only live transcript
+// (not the Description); when the person stops, the agent fills the fields.
 const niDictation = createDictationController({
-  textareaEl: document.getElementById("ni-desc-input"),
-  micBtn: document.getElementById("ni-mic-btn"),
-  hintEl: document.getElementById("ni-listening-hint"),
-  errorEl: document.getElementById("ni-mic-error"),
-  onStop: (text) => setTypeToggle(suggestType(text)),
-  charCountUpdate: updateNiDescCount,
+  textareaEl: niEls.transcript,
+  micBtn: niEls.record,
+  customMic: true,
+  errorEl: niEls.micError,
+  onState: onNiRecordState,
+  onStop: (text, info) => { if (!(info && info.halted)) runNiAgent(text, { fromRecording: true }); },
 });
 const qcDictation = createDictationController({
   textareaEl: qcCommentInput,
@@ -8455,7 +8684,7 @@ const conceptDictation = createDictationController({
   hintEl: document.getElementById("concept-listening-hint"),
   errorEl: document.getElementById("concept-mic-error"),
 });
-document.getElementById("ni-desc-input").addEventListener("input", (e) => {
+niEls.desc.addEventListener("input", (e) => {
   autoGrow(e.target);
 });
 
