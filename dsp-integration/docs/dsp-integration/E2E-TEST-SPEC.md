@@ -13,17 +13,19 @@
 **v2.9:** 12 Oct 2026 (Rob; ticket shFhoehCSY6KIkQa6Uy3) — **every element of the three AWS demo flows (10 Dec 2026) plus setup is covered by a named case.** Run 1 rewritten for real-time per-impression selling (the windowed open auction retired 8 Oct); Run 7 (deal types) and Run 8 (AWS demo) written into the spec; new Flow 0 setup, Flow 2 and Flow 3 cases (Z, Y, X, W); the advertiser-in-HQ-Admin journey (Run 9) for both a direct advertiser and a private-auction DSP advertiser; the personalised-on-deals decision recorded (Decisions); a *Demo playback — out of scope here* note.
 **Owner:** Claude Code, autonomous (Run 6: `npm run e2e:journey`).
 
-## The three demand paths and personalisation (Rob's decision, 12 Oct 2026 — binding)
+## The three AWS POC demand paths (Rob, 20 Oct 2026 — binding; supersedes the 12 Oct three-way split)
 
-These are **three distinct things; never conflate them**:
+**AWS POC — exactly three demand paths, in this demo order (Rob, 20 Oct 2026; ticket JNSjYNvGcgwdzFvaPHlk — binding):**
 
-1. **Direct advertiser relationship (AWS demo Flow 3).** A brand pays the retailer a retainer **directly, outside PH billing entirely**. The slot is **owned** by that brand/advertiser: no DSP, no bidding, **no billing through the platform**. PH assigns the slot and the advertiser runs their creative — including localised and personalised, driven by the targeting elements the retailer has enabled. Their campaigns carry **no deal ID**.
-2. **Reserve booking (Run 5).** A reservation (`type: reserve`, on a held or deal position, at the agreed rate; the per-position reserve price was removed 17 Oct 2026) that still **clears and bills through the platform**. It is **not** the direct advertiser relationship and is not renamed or removed; it stays its own mechanism.
-3. **Programmatic guaranteed and preferred deals** run through a DSP. Tested here (Run 7 D3–D5) as built, but their support in the AWS demo is **future releases**.
+1. **Open auction.** No targeting at all. Monster, PepsiCo and Mars Wrigley bid against each other through the DSPs on the same slot **35 seconds before it plays**; the highest bid wins and plays the creative supplied in its bid response.
+2. **Programmatic guaranteed (PG).** An advertiser books a slot for a **full day (24 hours)** up front, pays a fixed amount and gets the slot. Coca-Cola is the demo brand. The creative must be **pre-approved and is managed directly in PH** (Coca-Cola, Coke Zero, Sprite, Fanta, Schweppes and Namthip water, the Thai 7-Eleven range), with targeting and scheduling rules (hot/cold store-segment localisation) that trigger the right campaigns on the PWA player. That is handled by **PH Core**, not by a DSP bid response.
+3. **Advertiser direct.** The advertiser relationship is managed entirely within PH (no DSP). Red Bull is the demo brand: CV personalisation, several prioritised campaigns on one slot.
 
-**Personalised (and localised) targeting is supported on two paths:** the **private deal** (buyers list / private auction) and the **direct advertiser relationship**. It is **not** supported on **open real-time bidding** (the creative arrives with the bid, so there is nothing to personalise). Which localised/personalised targeting is available follows the **targeting elements (criteria) the retailer has enabled for advertising** — the shared targeting variables and their defined values — not a fixed capability.
+**Out of POC scope:** private auction and preferred deal (visible but greyed out in the UI), and targeting on deals and on the open auction. Anything below that describes PG as a future release for the AWS demo, or that offers targeting on a deal or an open auction, is superseded by this paragraph.
 
-**Resolution of the B5/E6 vs migration 0045 contradiction:** B5/E6 stand (personalised accepted on deal positions; refused with `targeting_not_supported` on open real-time). `personalised_eligible` is true for **private-deal and direct-advertiser windows** (and reserve-held windows), never open real-time. `exchange/handoff.ts` already implements this; migration 0045's header comment ("reserve-held only") is stale wording, not behaviour — case **B5a** asserts the behaviour so the comment cannot mislead again.
+**Reserve booking (Run 5)** is a separate mechanism, not a demand path: a reservation at the agreed rate that clears and bills through the platform. It is neither renamed nor removed.
+
+**Older cases stay as built.** Run 7 D2/D3 (private auction, preferred deal) and D5 and the personalised-on-deals cases (B5/E6) test code that exists but is **out of POC scope**: they are not part of the demo and are not demoed. Playback (localised swap, CV personalised variant, PWA campaign triggering) is **PH Core's** and is covered only by the separate rehearsal checklist.
 
 ## How to run this
 
@@ -125,7 +127,7 @@ Passes in `e2e:quick`; documented here so the spec no longer trails the build. E
 - **D4 Programmatic guaranteed.** D4.1 committed plays captured. D4.2 committed volume = floor(forecast × (1 − buffer%)), carried to DV360 as PG, billed realised (no make-good). D4.3 the buffer is the retailer's. D4.4 same figure in each DSP's own deal shape. D4.5 a reserved window cannot be sold again.
 - **D5 Computer Vision gender on a deal (personalised).** D5.1 guaranteed: Male targeting accepted, volume from the gendered forecast, personalised-eligible. D5.2 the same targeting on **open real-time** → `targeting_not_supported` (consistent with the v2.9 decision). D5.3 preferred variant personalised-eligible. D5.4 private-auction variant: gendered bid clears, first win locks the rate, later windows book at it, personalised-eligible.
 
-*In the AWS demo, PG and preferred deals are **future releases** (not demoed); they are tested here as built.*
+*In the AWS POC, PG (D4) is **demo path 2** (booked for a full 24 hours, creative managed in PH); private auction (D2) and preferred deal (D3) are out of scope and greyed out; they are tested here as built.*
 
 ## Run 8 — AWS demo: creative IDs (`e2e/run8-aws-demo.test.ts`; walkthrough `docs/dsp-integration/AWS-DEMO-TEST-FLOW.md`)
 
@@ -189,11 +191,11 @@ On-screen playback is **PH Core's** and is never covered by this suite: the crea
 | Demo step | Case ids |
 |---|---|
 | Flow 0 setup: connect DSP, create display type & slot, exchange settings | J0–J5, Z1–Z3 |
-| Flow 1 open auction (real-time): approve creative, impression → fill, floor, proof of play | A1–A8, B1–B7, C1–C3, D1–D3, Run 7 D1 |
-| Flow 2 private auction: buyers list, deal ID per DSP, deal sheet, term versions, waterfall, approval → creative ID, advertiser authors campaigns | P1–P14, Y1–Y5, W1–W3, Run 8 S1–S3, Run 11B |
-| Flow 3 direct advertiser: slot owned by a brand, no billing, authors default/scheduled/localised/personalised | Z1–Z2, X1–X5, Run 11A, Run 8 D1–D6 |
-| On-screen playback, localised swap, CV personalised variant | **PH Core — out of scope** |
-| PG / preferred deals | Run 7 D3–D5 (tested as built); **future release for the demo** |
+| Path 1 open auction (no targeting; Monster, PepsiCo, Mars Wrigley bid 35 s before play; highest bid wins, creative from the bid response): approve creative, fill, floor, proof of play | A1–A8, B1–B7, C1–C3, D1–D3, Run 7 D1, Run 8 S1–S3 |
+| Path 2 programmatic guaranteed (Coca-Cola books a slot for 24 h at a fixed price; pre-approved creatives managed in PH; targeting and scheduling rules run by PH Core) | Run 7 D4; booking and approval cases in Run 8 D1–D6; the 24 h PG cases are added by ticket sGXWYJjMiQAlzXrhwQ8y |
+| Path 3 advertiser direct (Red Bull, managed entirely in PH, no DSP): slot owned by a brand, no billing, several prioritised campaigns | Z1–Z2, X1–X5, Run 11A, Run 8 D1–D6 |
+| On-screen playback, localised swap, CV personalised variant, PWA campaign triggering | **PH Core — out of scope** |
+| Private auction, preferred deal, targeting on deals and open auction | **Out of POC scope** (greyed out); Run 2–3, Run 7 D2–D3/D5 and P/Y cases tested as built, not demoed |
 
 *Status of v2.9 cases:* Run 1 A6–A8/B6/B7, Y1–Y3, Z1–Z3 have existing unit/API tests (files named per case). **B5a, W1–W3, Y4, X1–X5 and Run 11 are specified here and are not yet automated** — they are listed in the E2E Test Results doc as *specified, not run* until the test code lands. Any failing case → a bug ticket per *Raising tickets on failure*.
 

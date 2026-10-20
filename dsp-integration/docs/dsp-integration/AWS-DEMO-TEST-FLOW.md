@@ -1,7 +1,7 @@
 # AWS demo — test flow (10 December 2026)
 
-A walkthrough a person can follow to check both ways demand reaches a
-retailer, end to end, against the current spec: REQUIREMENTS.md §3 "Retailer
+A walkthrough a person can follow to check how demand reaches a
+retailer (the three AWS POC paths below), end to end, against the current spec: REQUIREMENTS.md §3 "Retailer
 review" and "Creative IDs". Written 10 Oct 2026 (ticket ZHPV0Lj5N883RKGfYThw).
 
 **Automated twin:** every step below has a case in `apps/api/test/e2e/run8-aws-demo.test.ts`
@@ -10,6 +10,16 @@ behaviour is the "Upcoming Campaign Approval — creative IDs" suite in
 `apps/admin/test/dsp-integration.test.tsx`. Run those first; this document is
 for the person-run rehearsal on the hosted or local POC. If a step and its
 automated case disagree, fix whichever is stale.
+
+## The three demand paths, in demo order
+
+Walk the demo in this order. The full definition is in REQUIREMENTS.md → "AWS POC demand paths".
+
+1. **Open auction** (section C): no targeting; Monster, PepsiCo and Mars Wrigley bid through the DSPs on the same slot 35 seconds before play; the highest bid wins and plays the creative in its bid response.
+2. **Programmatic guaranteed**: Coca-Cola books a slot for 24 hours at a fixed price. Its pre-approved creatives (Coca-Cola, Coke Zero, Sprite, Fanta, Schweppes, Namthip water) are managed in PH with targeting and scheduling rules (hot/cold store segments) that PH Core triggers on the PWA player. Not a DSP bid response. Its automated cases arrive with ticket sGXWYJjMiQAlzXrhwQ8y.
+3. **Advertiser direct** (section B): Red Bull, managed entirely within PH, no DSP; several prioritised campaigns on one slot.
+
+Private auction and preferred deal are greyed out and not demoed; targeting on deals and open auction is out of scope.
 
 ## Before you start
 
@@ -110,8 +120,8 @@ Advertisers / Inventory → Available Inventory.
    *inherited* at the platform floor.
 5. Change the platform floor in Advertiser settings. **Expect** every slot
    without an override follows it; a slot with its own floor keeps it.
-6. A Programmatic guaranteed deal on a slot books at its own agreed rate and
-   never clears below the resolved slot floor. *(`reserve-booking.test.ts`,
+6. A Programmatic guaranteed booking (demo path 2) is paid at its own fixed
+   amount and never clears below the resolved slot floor. *(`reserve-booking.test.ts`,
    `e2e/run5-reserved.test.ts`)*
 
 ## Acceptance for the demo
