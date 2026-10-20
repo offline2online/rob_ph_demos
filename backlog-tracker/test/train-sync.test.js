@@ -19,7 +19,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { syncTrainWithMain, rebasePatchFilesOnto } = require("../scripts/run-backlog-automation.js");
+const { syncTrainWithMain, rebasePatchFilesOnto, mergeCommandChains } = require("../scripts/run-backlog-automation.js");
 
 let passed = 0;
 const failures = [];
@@ -143,6 +143,94 @@ test("a real conflict between a ticket on the train and main is reported, nothin
     assert.strictEqual(originSha(work, BRANCH), before, "a conflicted sync pushes nothing");
     assert.ok(cleanTree(work), "no merge left in progress for the next item to trip over");
   } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// ── package.json: the 20 Oct 2026 Deploy to Main block ──────────────────
+// The train added a test to test:ui while a fix merged to main added one to
+// test:app-boots, the line above. Adjacent lines are a conflict to git, so
+// Deploy to Main stopped on backlog-tracker/test/package.json at every click.
+
+const pkg = (scripts, extra = {}) => JSON.stringify({
+  name: "t", private: true,
+  description: "tests \u2014 escaped",
+  scripts, ...extra,
+}, null, 2).replace("\u2014", "\\u2014") + "\n";
+const PKG_BASE_SCRIPTS = {
+  test: "npm run test:app-boots && npm run test:ui",
+  "test:app-boots": "node app-boots.test.mjs && node system-map.test.mjs",
+  "test:ui": "node ui/console-click.test.mjs && node ui/apple-redesign.test.mjs",
+};
+function makePkgConflict(mainScripts, trainScripts, mainExtra, trainExtra) {
+  const { root, work } = makeDisposableRepoPair();
+  fs.mkdirSync(path.join(work, "test"));
+  commitFile(work, "test/package.json", pkg(PKG_BASE_SCRIPTS), "add package.json");
+  sh(work, "git", ["push", "origin", "main", "--quiet"]);
+  cutTrain(work);
+  sh(work, "git", ["checkout", BRANCH, "--quiet"]);
+  commitFile(work, "test/package.json", pkg(trainScripts, trainExtra), "Ticket\n\nBacklog item: T1");
+  sh(work, "git", ["push", "origin", BRANCH, "--quiet"]);
+  sh(work, "git", ["checkout", "main", "--quiet"]);
+  commitFile(work, "test/package.json", pkg(mainScripts, mainExtra), "fix merged straight to main");
+  sh(work, "git", ["push", "origin", "main", "--quiet"]);
+  return { root, work };
+}
+
+test("THE 20 OCT INCIDENT: two tests added on adjacent script lines are both kept, and the merge is pushed", () => {
+  const { root, work } = makePkgConflict(
+    { ...PKG_BASE_SCRIPTS, "test:app-boots": "node app-boots.test.mjs && node dictation.test.mjs && node system-map.test.mjs" },
+    { ...PKG_BASE_SCRIPTS, "test:ui": "node ui/mobile-shell.test.mjs && node ui/console-click.test.mjs && node ui/apple-redesign.test.mjs" },
+  );
+  try {
+    process.chdir(work);
+    const sync = syncTrainWithMain(BRANCH);
+    assert.strictEqual(sync.kind, "merged", JSON.stringify(sync));
+    const text = originFile(work, BRANCH, "test/package.json");
+    const merged = JSON.parse(text);
+    assert.strictEqual(merged.scripts["test:app-boots"], "node app-boots.test.mjs && node dictation.test.mjs && node system-map.test.mjs");
+    assert.strictEqual(merged.scripts["test:ui"], "node ui/mobile-shell.test.mjs && node ui/console-click.test.mjs && node ui/apple-redesign.test.mjs");
+    assert.ok(text.includes("\\u2014"), "the file's \\u escapes are written back as escapes");
+    assert.ok(text.endsWith("}\n"), "trailing newline kept");
+    assert.ok(cleanTree(work));
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("both sides adding to the SAME script keep both commands", () => {
+  const { root, work } = makePkgConflict(
+    { ...PKG_BASE_SCRIPTS, "test:ui": "node ui/console-click.test.mjs && node ui/apple-redesign.test.mjs && node ui/main-side.test.mjs" },
+    { ...PKG_BASE_SCRIPTS, "test:ui": "node ui/console-click.test.mjs && node ui/apple-redesign.test.mjs && node ui/train-side.test.mjs" },
+  );
+  try {
+    process.chdir(work);
+    const sync = syncTrainWithMain(BRANCH);
+    assert.strictEqual(sync.kind, "merged", JSON.stringify(sync));
+    const merged = JSON.parse(originFile(work, BRANCH, "test/package.json"));
+    assert.strictEqual(merged.scripts["test:ui"], "node ui/console-click.test.mjs && node ui/apple-redesign.test.mjs && node ui/main-side.test.mjs && node ui/train-side.test.mjs");
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a dependency both sides changed differently is NOT guessed: reported, nothing pushed, nothing left mid-merge", () => {
+  const { root, work } = makePkgConflict(
+    { ...PKG_BASE_SCRIPTS, "test:app-boots": "node app-boots.test.mjs && node a.test.mjs && node system-map.test.mjs" },
+    { ...PKG_BASE_SCRIPTS, "test:ui": "node ui/b.test.mjs && node ui/console-click.test.mjs && node ui/apple-redesign.test.mjs" },
+    { devDependencies: { jsdom: "^26.0.0" } },
+    { devDependencies: { jsdom: "^25.1.0" } },
+  );
+  try {
+    process.chdir(work);
+    const before = originSha(work, BRANCH);
+    const sync = syncTrainWithMain(BRANCH);
+    assert.strictEqual(sync.kind, "conflict");
+    assert.match(sync.detail, /devDependencies\.jsdom/);
+    assert.strictEqual(originSha(work, BRANCH), before);
+    assert.ok(cleanTree(work));
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("mergeCommandChains: keeps each side's additions in place and honours a removal", () => {
+  assert.strictEqual(mergeCommandChains("a && b && c", "a && x && b && c", "a && b && c && y"), "a && x && b && c && y");
+  assert.strictEqual(mergeCommandChains("a && b && c", "a && b && c && x", "a && c"), "a && c && x", "their removal of b stands");
+  assert.strictEqual(mergeCommandChains("a && b", "z && a && b", "y && a && b"), "y && z && a && b");
+  assert.strictEqual(mergeCommandChains("a", "a && b", "a && b"), "a && b", "the same addition on both sides is kept once");
 });
 
 // ── rebasePatchFilesOnto ────────────────────────────────────────────────
