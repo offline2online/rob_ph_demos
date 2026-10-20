@@ -35,6 +35,9 @@
 html, body { font-family: var(--ap-font); -webkit-font-smoothing: antialiased; line-height: 1.55; background: var(--ap-bg); }
 /* clip, never hidden: overflow-x:hidden on body makes iOS Safari treat it as the scroller and the sticky topbar stops sticking. */
 body { overflow-x: clip; }
+/* iPad Safari still pans the page sideways when the viewport's overflow is clipped (body's clip propagates to the viewport, which iOS lets you drag anyway). Nothing here is wider than the screen, so forbid the horizontal pan itself: vertical scroll and pinch-zoom stay, and nested scrollers (tables, tab strips, code) are their own scroll containers and keep theirs. */
+html { overflow-x: clip; overscroll-behavior-x: none; }
+html, body { touch-action: pan-y pinch-zoom; }
 code, pre, kbd, samp { font-family: var(--ap-mono); }
 /* No blanket `.app * { min-width: 0 }`: it let flex rows squeeze buttons below
    their own label (one letter per line on a phone). Sideways overflow is
@@ -147,3 +150,10 @@ input[type="checkbox"]:not(.no-switch):checked::after { transform: translateX(20
 
 /* 44px touch targets for the header controls on tablet too */
 .hamburger-btn, .profile-btn { min-width: 44px; min-height: 44px; }
+
+/* Round icon buttons stay round. The blanket `button { min-height: 44px }` above gave the 30px-wide dictation mic
+   a 30 x 44 oval on a tablet (and a lopsided 42 x 44 on a phone), and the red "listening" pulse followed that shape.
+   Width, height and the minimums are one size, padding is nil and the button can't be squeezed or stretched by a flex parent. */
+.mic-btn { width: 40px; height: 40px; min-width: 40px; min-height: 40px; padding: 0; flex: none; aspect-ratio: 1 / 1; border-radius: 50%; box-sizing: border-box; font-size: 18px; }
+@media (pointer: coarse), (max-width: 1023px) { .mic-btn { width: 44px; height: 44px; min-width: 44px; min-height: 44px; } }
+.btn-attach.recording::before { flex: none; }
