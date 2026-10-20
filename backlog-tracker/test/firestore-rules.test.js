@@ -259,6 +259,19 @@ async function main() {
     setDoc(doc(as(HUMAN), "docRevisions/r1"), { contentMd: "altered" }, { merge: true }));
   await check("Nobody can delete a documentation revision", "deny", () => deleteDoc(doc(as(TEAM_ADMIN), "docRevisions/r1")));
 
+  // Concept critiques + board-made revisions of a concept's documents.
+  const critique = { conceptId: "c1", role: "CFO", reviewer: "sam@personalisationhub.com", verdict: "conditional", summary: "", argumentsFor: ["a"], argumentsAgainst: [], assumptions: [], recommendations: [{ id: "r1", text: "Cap spend", status: "pending" }], status: "open" };
+  await check("An editor may add a concept critique", "allow", () => setDoc(doc(as(MEMBER), "conceptCritiques/k1"), critique));
+  await check("A viewer may read a concept critique", "allow", () => getDoc(doc(as(VIEWER), "conceptCritiques/k1")));
+  await check("A viewer cannot add a concept critique", "deny", () => setDoc(doc(as(VIEWER), "conceptCritiques/k2"), critique));
+  await check("A critique needs a valid verdict", "deny", () => setDoc(doc(as(MEMBER), "conceptCritiques/k3"), { ...critique, verdict: "maybe" }));
+  await check("A critique's role is free text up to 80 characters", "deny", () => setDoc(doc(as(MEMBER), "conceptCritiques/k4"), { ...critique, role: "x".repeat(81) }));
+  await check("A critique cannot be moved to another concept", "deny", () => setDoc(doc(as(MEMBER), "conceptCritiques/k1"), { ...critique, conceptId: "c2" }));
+  await check("An editor may append a board revision of a concept's README", "allow", () =>
+    setDoc(doc(as(MEMBER), "docRevisions/boardrev"), { target: "concept.readmeMd", conceptId: "c1", contentMd: "old", via: "board", replacedByEmail: "sam@personalisationhub.com" }));
+  await check("A board revision cannot be attributed to someone else", "deny", () =>
+    setDoc(doc(as(MEMBER), "docRevisions/boardrev2"), { target: "concept.readmeMd", conceptId: "c1", contentMd: "old", via: "board", replacedByEmail: "ada@personalisationhub.com" }));
+
   await check("An admin may read the agent audit log", "allow", () => getDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1")));
   await check("A non-admin member may NOT read the agent audit log", "deny", () => getDoc(doc(as(MEMBER), "mcpAuditLog/e1")));
   await check("Nobody can edit the agent audit log", "deny", () =>
