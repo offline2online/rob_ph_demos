@@ -31,7 +31,8 @@ viewer's own `localStorage`, and **⋮ → Reset demo data** puts the mock data 
   Progress or Ready for Dev returns it to the developer. The filters cover My
   tasks, assignee avatars (first names), release, type, priority, sprint,
   label and search. Select two or more people and the board splits into one
-  swimlane per person, each of which can be collapsed. Dragging a card into another
+  swimlane per person, each of which can be collapsed. The column headers stay
+  pinned below the topbar while you scroll the lanes. Dragging a card into another
   person's lane reassigns it to them.
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban
   settings. On an existing ticket, hidden fields stay editable under

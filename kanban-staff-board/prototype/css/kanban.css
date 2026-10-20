@@ -69,8 +69,12 @@
    lane per person spanning all six. */
 .kb-board-lanes { gap: 8px 12px; }
 .kb-lanes-head { align-self: stretch; background: var(--ap-card); border-radius: var(--ap-radius-sm); box-shadow: 0 0 0 .5px var(--ap-divider); border-bottom: 0; }
+.kb-lanes-sticky { position: sticky; top: var(--sticky-topbar-h, 0px); z-index: 6; overflow: hidden; margin: 0 -4px; padding: 6px 4px 8px; background: var(--ap-bg); }
+.kb-lanes-sticky[hidden] { display: none; }
+.kb-lanes-head-grid { align-items: stretch; }
+.kb-board-lanes .kb-lane:first-child { margin-top: 0; }
 .kb-lane { grid-column: 1 / -1; margin-top: 8px; }
-.kb-lane-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 4px 8px; border: 0; background: transparent; border-radius: var(--ap-radius-sm); cursor: pointer; font: inherit; color: var(--text); text-align: left; }
+.kb-lane-head { position: sticky; left: 0; display: inline-flex; align-items: center; gap: 8px; width: auto; max-width: 100%; min-height: 40px; padding: 4px 8px; border: 0; background: transparent; border-radius: var(--ap-radius-sm); cursor: pointer; font: inherit; color: var(--text); text-align: left; }
 .kb-lane-head:hover { background: rgba(120, 120, 128, .1); }
 .kb-lane-name { font-size: 15px; font-weight: 600; }
 .kb-lane-head .kb-col-effort { font-size: 12px; color: var(--text-muted); }
@@ -288,7 +292,7 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
   .kb-board-wrap { overflow: visible; margin: 0; padding: 0; }
   .kb-board { grid-template-columns: minmax(0, 1fr); }
   .kb-col { max-height: none; }
-  .kb-lanes-head { display: none; }
+  .kb-lanes-sticky { display: none !important; }
   .kb-lane-cell.kb-cell-empty { display: none; }
   .kb-cell-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border-radius: 8px 8px 0 0; }
   .kb-lane-cell .kb-list { min-height: 0; }

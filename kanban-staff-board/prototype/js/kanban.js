@@ -352,7 +352,12 @@
         </div>
         ${filtersActive ? '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>' : ""}
       </div>
-      <div class="kb-board-wrap"><div class="kb-board" id="kb-board"></div></div>`;
+      <div class="kb-lanes-sticky" id="kb-lanes-sticky" hidden><div class="kb-board kb-lanes-head-grid" id="kb-lanes-head"></div></div>
+      <div class="kb-board-wrap" id="kb-board-wrap"><div class="kb-board" id="kb-board"></div></div>`;
+    // The swimlane column headers live outside the sideways-scrolling board so
+    // they can stick to the page; this keeps them lined up with the columns.
+    const wrap = $("#kb-board-wrap"), sticky = $("#kb-lanes-sticky");
+    wrap.addEventListener("scroll", () => { sticky.scrollLeft = wrap.scrollLeft; }, { passive: true });
 
     $("#kb-new-btn").addEventListener("click", () => openTask(null));
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
@@ -395,8 +400,10 @@
     el.classList.toggle("kb-board-lanes", !!lanes);
     const sorted = (list, k) => list.filter((t) => t.status === k).sort((a, b) => a.rank - b.rank);
     if (lanes) {
-      el.innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("") +
-        lanes.map((id) => {
+      $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
+      $("#kb-lanes-sticky").hidden = false;
+      $("#kb-lanes-sticky").scrollLeft = $("#kb-board-wrap").scrollLeft;
+      el.innerHTML = lanes.map((id) => {
           const mine = tasks.filter((t) => (t.assignee || "none") === id);
           const rem = mine.reduce((n, t) => n + remaining(t), 0);
           const collapsed = collapsedLanes.has(id);
@@ -421,6 +428,7 @@
       }));
       return;
     }
+    $("#kb-lanes-sticky").hidden = true;
     el.innerHTML = STATUSES.map((s) => {
       const list = sorted(tasks, s.key);
       return `<section class="column kb-col${collapsedCols.has(s.key) ? " column-collapsed" : ""}" data-status="${s.key}" aria-label="${esc(s.label)}">
