@@ -52,8 +52,8 @@ export async function startHarness() {
   const stubSource = fs.readFileSync(stubPath, "utf8");
 
   // seed: { docs: { collection: { id: fields } }, user: { email, role } }
-  async function open({ seed = {}, width = 1280, height = 900, hash = "" } = {}) {
-    const context = await browser.newContext({ viewport: { width, height } });
+  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme } = {}) {
+    const context = await browser.newContext({ viewport: { width, height }, ...(colorScheme ? { colorScheme } : {}) });
     const problems = [];
     const refused = [];
     const addProblem = (p) => problems.push(p);

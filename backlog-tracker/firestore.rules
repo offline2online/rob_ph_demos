@@ -520,6 +520,7 @@ service cloud.firestore {
         (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
         (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*"))) &&
         (!("comments" in incoming()) || incoming().comments is list) &&
+        (!("description" in incoming()) || incoming().description == null || (incoming().description is string && incoming().description.size() <= 300)) &&
         conceptDemotionFieldsOk();
 
       allow update: if isEditor() &&
@@ -530,6 +531,7 @@ service cloud.firestore {
         (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
         (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*"))) &&
         (!("comments" in incoming()) || incoming().comments is list) &&
+        (!("description" in incoming()) || incoming().description == null || (incoming().description is string && incoming().description.size() <= 300)) &&
         (!("promotedProjectId" in incoming()) || incoming().promotedProjectId == null || isNonEmptyBoundedString(incoming().promotedProjectId, 100)) &&
         conceptDemotionFieldsOk();
 
@@ -601,6 +603,20 @@ service cloud.firestore {
     // rules). A browser must never be able to write — a forged or edited
     // revision would make the history worse than not having one — but any
     // member may read it, so the Docs page can show what changed.
+    // The Concept Incubator system map's saved layout (pinned positions + the
+    // snapshot the next change is diffed against) and its revision log. A
+    // revision is create-only: editors append, nobody edits or deletes one.
+    match /systemMap/{docId} {
+      allow read: if isBoardReader();
+      allow write: if isEditor() && docId == "layout";
+    }
+    match /systemMapRevisions/{revisionId} {
+      allow read: if isBoardReader();
+      allow create: if isEditor() && incoming().changes is list && incoming().changes.size() <= 100
+        && incoming().reason is string && incoming().reason.size() <= 2000;
+      allow update, delete: if false;
+    }
+
     match /docRevisions/{revisionId} {
       allow read: if isBoardReader();
       allow write: if false;

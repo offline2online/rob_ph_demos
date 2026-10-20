@@ -893,7 +893,7 @@ async function rpc(token, method, params, id = 1) {
   // list_projects (which only ever queries `projects`).
   await test("exposes the concept tools", async () => {
     const names = mcp.__test.TOOLS.map((t) => t.name);
-    for (const expected of ["create_concept", "list_concepts", "get_concept", "add_concept_comment", "set_concept_readme", "set_concept_requirements"]) {
+    for (const expected of ["create_concept", "list_concepts", "get_concept", "add_concept_comment", "set_concept_description", "set_concept_readme", "set_concept_requirements"]) {
       assert.ok(names.includes(expected), `missing tool ${expected}`);
     }
     // No ticket-shaped tool for concepts — they have no backlogItems until promoted.
@@ -1001,8 +1001,22 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(res.body.result.isError, true);
   });
 
+  await test("sets a concept's description; list_concepts and get_concept surface it", async () => {
+    const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_concept_description", arguments: Object.assign({ conceptId: "con1" }, args) });
+    await call({ description: "  Closed-loop customer support.  " });
+    assert.strictEqual(env.store.col("concepts").get("con1").description, "Closed-loop customer support.");
+    const list = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(list.concepts.find((c) => c.id === "con1").description, "Closed-loop customer support.");
+    const one = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_concept", arguments: { conceptId: "con1" } })).body.result.content[0].text);
+    assert.strictEqual(one.description, "Closed-loop customer support.");
+    assert.strictEqual((await call({ description: "x".repeat(301) })).body.result.isError, true);
+    assert.strictEqual((await call({ conceptId: "con2", description: "nope" })).body.result.isError, true, "promoted concepts are refused");
+    await call({ description: null });
+    assert.strictEqual(env.store.col("concepts").get("con1").description, null);
+  });
+
   await test("every concept write is gated on board.write; the reads aren't", async () => {
-    for (const name of ["add_concept_comment", "set_concept_readme", "set_concept_requirements"]) {
+    for (const name of ["add_concept_comment", "set_concept_description", "set_concept_readme", "set_concept_requirements"]) {
       assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.write", `${name} must require board.write`);
     }
     for (const name of ["list_concepts", "get_concept"]) {

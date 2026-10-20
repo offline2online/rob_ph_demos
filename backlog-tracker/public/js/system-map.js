@@ -138,7 +138,7 @@ const NODE_H = 52;
 // The one- or two-sentence description a hover tooltip shows. A project
 // uses its board description; a concept uses its description, else the first
 // prose lines of its README (headings, rules, code and list markers dropped).
-export const DESC_MAX = 220;
+export const DESC_MAX = 300;
 export function shortDescription(description, readmeMd = "") {
   let t = String(description || "").trim();
   if (!t) {
@@ -168,6 +168,24 @@ function tsMs(v) {
   return Number(v) || 0;
 }
 
+// Release order: by version, part by part and numerically (5.0, 5.1, 5.2 ...
+// 5.10, 6.0), never as text and never by creation date. A release without a
+// version sorts after the versioned ones, by its creation `order`.
+export function versionParts(v) {
+  const m = String(v == null ? "" : v).match(/\d+/g);
+  return m ? m.map(Number) : null;
+}
+export function compareReleases(a, b) {
+  const pa = versionParts(a && a.version), pb = versionParts(b && b.version);
+  if (pa && pb) {
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d;
+    }
+  } else if (pa || pb) return pa ? -1 : 1;
+  return (Number(a && a.order) || 0) - (Number(b && b.order) || 0);
+}
+
 export function releaseLabel(r) {
   if (!r) return "";
   return `Release ${r.version || r.name}`;
@@ -193,8 +211,13 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
       desc: shortDescription(p.description),
     });
   });
+  // A concept's release is the release whose conceptIds lists it.
+  const relOfConcept = {};
+  releases.forEach((r) => (Array.isArray(r.conceptIds) ? r.conceptIds : []).forEach((cid) => { if (!relOfConcept[cid]) relOfConcept[cid] = r; }));
   concepts.filter((c) => c.status !== "promoted" && !INTERNAL_RE.test(c.name || "")).forEach((c) => {
-    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "", desc: shortDescription(c.description, c.readmeMd), updatedMs: tsMs(c.updatedAt) });
+    const crel = relOfConcept[c.id] || null;
+    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept",
+      releaseId: crel ? crel.id : null, release: crel ? releaseLabel(crel) : "", href: c.artifactUrl || "", desc: shortDescription(c.description, c.readmeMd), updatedMs: tsMs(c.updatedAt) });
   });
   // Live Visitor Profile: one node, a concept, in the PH Core slot.
   const vp = nodes.find((n) => (n.kind === "project" || n.kind === "concept") && /live visitor profile/i.test(n.name));
@@ -298,8 +321,12 @@ export const nodeBox = (n, pad = 0) => ({ x: n.x - NODE_W / 2 - pad, y: n.y - BO
 const rectsOverlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const footprint = (x, y) => ({ x: x - FOOT_HW, y: y - FOOT_UP, w: 2 * FOOT_HW, h: FOOT_UP + FOOT_DOWN });
 
-export function layoutSystemMap(model, { width = WIDE_W } = {}) {
+export function layoutSystemMap(model, { width = WIDE_W, pinned = null } = {}) {
   const { nodes } = model;
+  // `pinned` = { nodes: { id: {x, y} }, cy, hn } saved from an earlier layout in
+  // this width mode. A pinned node keeps its place; the platform stays where it
+  // was; only a node with no pin is placed, into free space around the pinned.
+  const pins = (pinned && pinned.nodes) || {};
   const W = systemMapModeFor(width) === "wide" ? WIDE_W : NARROW_W;
   const isCore = (n) => n.kind === "core" || n.coreSlot;
   const core = nodes.filter(isCore);
@@ -317,6 +344,7 @@ export function layoutSystemMap(model, { width = WIDE_W } = {}) {
   const fixedFirst = nodes.filter((n) => !isCore(n) && !n.pii && n.pref);
   const rest = nodes.filter((n) => !isCore(n) && !n.pii && !n.pref);
   movable.push(...fixedFirst, ...rest);
+  const isPinned = (n) => !!pins[n.id] && Number.isFinite(pins[n.id].x) && Number.isFinite(pins[n.id].y);
 
   // Where a node would like to be, relative to the platform (cy is its centre y).
   const dirOf = { mcp: [0, -1], profile: [-1, 0], store: [-1, 0], campaigns: [0, 1], vector: [1, 0], devices: [1, 0] };
@@ -339,7 +367,7 @@ export function layoutSystemMap(model, { width = WIDE_W } = {}) {
   };
 
   const tryPlace = (Hn) => {
-    const cy = Hn / 2;
+    const cy = pinned && Number.isFinite(pinned.cy) ? pinned.cy : Hn / 2;
     const bx = cx - bw / 2;
     const by = cy - bh / 2;
     const wall = { x: bx - 10, y: by - 10, w: bw + 20, h: bh + 20 };
@@ -351,6 +379,12 @@ export function layoutSystemMap(model, { width = WIDE_W } = {}) {
     for (const k in used) delete used[k];
     looseN.n = 0;
     for (const n of movable) {
+      if (!isPinned(n)) continue;
+      n.x = pins[n.id].x; n.y = pins[n.id].y;
+      placed.push(footprint(n.x, n.y));
+    }
+    for (const n of movable) {
+      if (isPinned(n)) continue;
       const [px, py] = prefFor(n, cy, bx, by);
       let best = null;
       let bestD = Infinity;
@@ -370,10 +404,13 @@ export function layoutSystemMap(model, { width = WIDE_W } = {}) {
     return { cy, bx, by };
   };
 
-  let Hn = Math.round(bh + 2 * 110);
+  // A saved layout keeps its height; the drawing only grows (downwards, the
+  // platform fixed) when a new node does not fit.
+  let Hn = Math.max(Math.round(bh + 2 * 110), pinned && Number.isFinite(pinned.hn) ? pinned.hn : 0);
   let spot = tryPlace(Hn);
   for (let i = 0; !spot && i < 60; i++) { Hn += 90; spot = tryPlace(Hn); }
   if (!spot) { Hn += 90; spot = { cy: Hn / 2, bx: cx - bw / 2, by: Hn / 2 - bh / 2 }; }
+  const hn = Hn;
 
   // PII band along the bottom; salesforce/amazon stacked left, identity centred.
   const piiBox = { x: 20, y: Hn + 34, w: W - 40, h: PII_H };
@@ -383,9 +420,77 @@ export function layoutSystemMap(model, { width = WIDE_W } = {}) {
     if (n.kind === "external") { n.x = piiBox.x + 115; n.y = piiBox.y + 80 + 76 * ext++; } else { n.x = cx; n.y = piiBox.y + 110; }
   });
   const H = piiBox.y + PII_H + 10;
-  model.layout = { w: W, h: H, mode: W === WIDE_W ? "wide" : "narrow", boundary: { x: spot.bx, y: spot.by, w: bw, h: bh }, pii: piiBox };
+  model.layout = { w: W, h: H, hn, cy: spot.cy, mode: W === WIDE_W ? "wide" : "narrow", boundary: { x: spot.bx, y: spot.by, w: bw, h: bh }, pii: piiBox };
   routeEdges(model);
   return model;
+}
+
+// ---------------------------------------------------------------------------
+// The map as saved data (ticket tXFTzQ4wZkpCf2gvB0YP). The drawing is never
+// rebuilt from scratch: positions are pinned per width mode, a snapshot of
+// what each node and line says is kept beside them, and a change is a diff of
+// the new snapshot against the saved one.
+// ---------------------------------------------------------------------------
+
+// The positions worth keeping: every node the layout chose a place for. Core
+// nodes are deterministic and the PII band follows the drawing's bottom edge,
+// so neither is pinned.
+export function pinnedLayout(model) {
+  const out = {};
+  model.nodes.forEach((n) => {
+    if (n.kind === "core" || n.coreSlot || n.pii) return;
+    out[n.id] = { x: n.x, y: n.y };
+  });
+  return { nodes: out, cy: model.layout.cy, hn: model.layout.hn };
+}
+
+export const edgeKey = (e) => `${e.source || ""}:${e.interfaceId || ""}:${e.from}>${e.to}:${e.label}`;
+
+// What each node and line currently says, in the fields a person would call a change.
+export function mapSnapshot(model) {
+  const nodes = {};
+  model.nodes.forEach((n) => { nodes[n.id] = { name: n.name, kind: n.kind, status: n.status, release: n.release || "" }; });
+  const edges = {};
+  model.edges.forEach((e) => { edges[edgeKey(e)] = { from: e.from, to: e.to, label: e.label }; });
+  return { nodes, edges };
+}
+
+const sameXY = (a, b) => a && b && Math.round(a.x) === Math.round(b.x) && Math.round(a.y) === Math.round(b.y);
+
+// Minimal change list from the saved snapshot/pins to the new ones:
+//   {op: add|update|remove|move, type: node|edge, id, label, fields?, at?, from?, to?}
+// A node absent from the old pins in this mode is not a "move" (it was never placed here).
+export function diffSystemMap(prevSnap, nextSnap, prevPins = {}, nextPins = {}) {
+  const changes = [];
+  const pn = (prevSnap && prevSnap.nodes) || {};
+  const pe = (prevSnap && prevSnap.edges) || {};
+  for (const id of Object.keys(nextSnap.nodes)) {
+    const a = pn[id];
+    const b = nextSnap.nodes[id];
+    if (!a) { changes.push({ op: "add", type: "node", id, label: b.name, at: nextPins[id] || null }); continue; }
+    const fields = {};
+    for (const f of ["name", "kind", "status", "release"]) if (a[f] !== b[f]) fields[f] = [a[f], b[f]];
+    if (Object.keys(fields).length) changes.push({ op: "update", type: "node", id, label: b.name, fields });
+    if (prevPins[id] && nextPins[id] && !sameXY(prevPins[id], nextPins[id])) changes.push({ op: "move", type: "node", id, label: b.name, from: prevPins[id], to: nextPins[id] });
+  }
+  for (const id of Object.keys(pn)) if (!nextSnap.nodes[id]) changes.push({ op: "remove", type: "node", id, label: pn[id].name });
+  for (const k of Object.keys(nextSnap.edges)) {
+    const b = nextSnap.edges[k];
+    if (!pe[k]) changes.push({ op: "add", type: "edge", id: k, label: b.label, from: b.from, to: b.to });
+  }
+  for (const k of Object.keys(pe)) if (!nextSnap.edges[k]) changes.push({ op: "remove", type: "edge", id: k, label: pe[k].label, from: pe[k].from, to: pe[k].to });
+  return changes;
+}
+
+// One line a person can read: "Added concept X · Release changed on Y · …"
+export function describeChanges(changes, max = 4) {
+  const bits = changes.map((c) => {
+    if (c.op === "baseline") return c.label;
+    if (c.op === "move") return `Moved ${c.label}`;
+    if (c.op === "update") return `${c.label}: ${Object.entries(c.fields).map(([f, [a, b]]) => `${f} ${a || "—"} → ${b || "—"}`).join(", ")}`;
+    return `${c.op === "add" ? "Added" : "Removed"} ${c.type === "edge" ? "line" : "node"} ${c.label}`;
+  });
+  return bits.slice(0, max).join(" · ") + (bits.length > max ? ` · +${bits.length - max} more` : "");
 }
 
 // ---- lines and their labels ----

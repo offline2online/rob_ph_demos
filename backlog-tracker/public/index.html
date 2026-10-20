@@ -1227,8 +1227,11 @@
             <button type="button" class="icon-btn" id="system-map-zoom-in" title="Zoom in (Ctrl + scroll also zooms, drag pans)" aria-label="Zoom in"><span class="material-symbols-outlined">add</span></button>
             <button type="button" class="icon-btn" id="system-map-fit" title="Fit the whole map" aria-label="Fit the whole map"><span class="material-symbols-outlined">fit_screen</span></button>
           </span>
+          <button type="button" class="restore-btn" id="system-map-rearrange" data-editor-only title="Lay the whole map out afresh (the only action that moves pinned nodes)">Re-arrange</button>
+          <button type="button" class="restore-btn" id="system-map-history-btn" title="Every change to the map, with its diff">History</button>
           <div class="sysmap-legend" id="system-map-legend"></div>
         </div>
+        <div class="sysmap-history" id="system-map-history" hidden></div>
         <div class="sysmap-scroll" id="system-map-canvas"></div>
       </section>
       <p class="field-hint">Early-stage ideas that need more shape before they become an official project on the board. Each concept keeps its own README, requirements and discussion thread — pick up the conversation any time, then promote it to a real project once its structure is agreed.</p>
@@ -1253,6 +1256,15 @@
         <h2><span id="concept-detail-name"></span> <span class="skill-owning-team-badge" id="concept-detail-status-badge"></span></h2>
       </div>
       <p class="field-hint" id="concept-detail-promoted-hint" hidden></p>
+
+      <div class="docs-block">
+        <h3>Description</h3>
+        <p class="field-hint">One or two sentences on what this concept is. Shown in the hover tooltip on the system map and on this concept's tile in the Concept Incubator. Up to 300 characters.</p>
+        <textarea id="concept-description-input" rows="2" maxlength="300" placeholder="e.g. Real-time visitor attributes and personas that drive personalised campaigns."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="concept-description-save">Save description</button>
+        </div>
+      </div>
 
       <div class="docs-block">
         <h3>README</h3>

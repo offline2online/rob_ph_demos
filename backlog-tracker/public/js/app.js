@@ -29,7 +29,7 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
-import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts } from "./system-map.js";
+import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts, compareReleases, pinnedLayout, mapSnapshot, diffSystemMap, describeChanges } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -95,6 +95,8 @@ const skillsRef = collection(db, "skills");
 // it's promoted into a real project (see promoteConceptToProject below and
 // firestore.rules `match /concepts/{conceptId}`).
 const conceptsRef = collection(db, "concepts");
+const systemMapLayoutRef = doc(db, "systemMap", "layout");
+const systemMapRevisionsRef = collection(db, "systemMapRevisions");
 // What a skill write replaced — see functions/mcp-server.js's
 // recordDocRevision and functions/index.js's onSkillWritten. Read-only from
 // the browser (firestore.rules: `allow write: if false`); the Skills page's
@@ -2929,6 +2931,15 @@ onSnapshot(interfacesRef, (snap) => {
   renderSystemMap();
 }, onListenerError("interfaces"));
 
+// The system map's saved layout: pinned node positions per width mode plus the
+// snapshot of what each node and line said when it was saved. `undefined` until
+// the first snapshot arrives, `null` when nothing is saved yet.
+let systemMapSaved;
+onSnapshot(systemMapLayoutRef, (snap) => {
+  systemMapSaved = snap.exists() ? snap.data() : null;
+  renderSystemMap();
+}, onListenerError("systemMap"));
+
 onSnapshot(programsRef, (snap) => {
   markLive("programs", snap);
   programs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
@@ -3872,8 +3883,10 @@ function projectReleaseBadgeHTML(project) {
 // the rules refuse one from anywhere else too.
 const RELEASE_STATUS_LABELS = { draft: "Draft", live: "Live" };
 
-function releasesByOrderDesc() {
-  return releases.slice().sort((a, b) => (Number(b.order) || 0) - (Number(a.order) || 0));
+// Earliest to latest by version number (5.0, 5.1 ... 5.10, 6.0), the one
+// order every release list, picker and filter uses.
+function releasesInVersionOrder() {
+  return releases.slice().sort(compareReleases);
 }
 
 function releaseLabel(r) {
@@ -3885,7 +3898,7 @@ function releaseLabel(r) {
 // public help centre and the MCP FAQ tools default to when no specific
 // release is asked for. null when nothing is live yet.
 function currentLiveRelease() {
-  return releasesByOrderDesc().find((r) => r.status === "live") || null;
+  return releasesInVersionOrder().reverse().find((r) => r.status === "live") || null;
 }
 
 // The one canonical definition of "does this article apply to this
@@ -3953,11 +3966,11 @@ async function setProjectRelease(id, releaseId) {
 // selects. Unlike populateProgramSelect there is no inline "+ New
 // release…" option: a release carries an order and a one-way status, so
 // it's created on the Releases page (nav drawer) where both are visible,
-// not conjured from a dropdown. Newest release first. A selected id that
+// not conjured from a dropdown. Earliest version first. A selected id that
 // no longer exists is kept as its own option so the saved value isn't
 // silently dropped on the next save.
 function populateReleaseSelect(selectEl, selectedId, { emptyLabel = "No release" } = {}) {
-  const opts = releasesByOrderDesc();
+  const opts = releasesInVersionOrder();
   const missing = selectedId && !opts.some((r) => r.id === selectedId)
     ? `<option value="${escapeHTML(selectedId)}" selected>Unknown release (${escapeHTML(selectedId)})</option>`
     : "";
@@ -6001,6 +6014,15 @@ async function addConcept(name) {
 async function setConceptReadme(id, md) {
   await setDoc(doc(db, "concepts", id), { readmeMd: md, updatedAt: serverTimestamp() }, { merge: true });
 }
+// Empty input clears it. Up to 300 characters, matching firestore.rules.
+async function setConceptDescription(id, text) {
+  const t = (text || "").trim();
+  try {
+    await setDoc(doc(db, "concepts", id), { description: t || deleteField(), updatedAt: serverTimestamp() }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Description", value: t, max: 300 }]));
+  }
+}
 async function setConceptRequirements(id, md) {
   await setDoc(doc(db, "concepts", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
 }
@@ -6173,7 +6195,7 @@ function conceptCardHTML(c) {
   const rel = conceptRelease(c.id);
   const relNum = rel ? `<div class="concept-release-num" title="Release ${escapeHTML(releaseLabel(rel))}">${escapeHTML(rel.version || rel.name || "")}</div>` : "";
   return `
-    <div class="skill-card concept-card${rel ? " has-release" : ""}" data-id="${c.id}" data-artifact-href="${escapeHTML(artifactHref)}" style="cursor:pointer;">
+    <div class="skill-card concept-card${rel ? " has-release" : ""}" data-id="${c.id}" data-artifact-href="${escapeHTML(artifactHref)}"${c.description ? ` title="${escapeHTML(c.description)}"` : ""} style="cursor:pointer;">
       <div class="skill-card-top">
         ${relNum}
         <div class="concept-card-main">
@@ -6210,18 +6232,129 @@ function renderSystemMap() {
   const sel = document.getElementById("system-map-release");
   const chosen = sel.value;
   const opts = ['<option value="">All releases</option>'].concat(
-    releases.map((r) => `<option value="${escapeHTML(r.id)}">${escapeHTML(`Release ${r.version || r.name}${r.name && r.version ? ` — ${r.name}` : ""}`)}</option>`));
+    releasesInVersionOrder().map((r) => `<option value="${escapeHTML(r.id)}">${escapeHTML(`Release ${r.version || r.name}${r.name && r.version ? ` — ${r.name}` : ""}`)}</option>`));
   const html = opts.join("");
   if (sel.dataset.sig !== html) { sel.innerHTML = html; sel.dataset.sig = html; sel.value = chosen; }
   document.getElementById("system-map-legend").innerHTML = systemMapLegendHTML();
   // The layout depends on the width available, so it is redone on resize.
+  // Saved positions are pinned, so only a node with no saved place is placed.
   const width = canvas.clientWidth || window.innerWidth;
-  systemMapModel = layoutSystemMap(buildSystemMap({ projects, concepts, interfaces, releases }), { width });
+  const mode = systemMapModeFor(width);
+  const pinned = systemMapRearranging ? null : (systemMapSaved && systemMapSaved.pinned && systemMapSaved.pinned[mode]) || null;
+  systemMapModel = layoutSystemMap(buildSystemMap({ projects, concepts, interfaces, releases }), { width, pinned });
   systemMapLayoutMode = systemMapModel.layout.mode;
   canvas.innerHTML = systemMapHTML(systemMapModel, { release: sel.value, viewBox: systemMapView });
   hideSystemMapTip();
+  scheduleSystemMapSave();
 }
 let systemMapLayoutMode = null;
+let systemMapRearranging = false;
+
+// Save what the drawing now says as the new pinned layout, with a revision of
+// the minimal diff. Only an editor writes, only once the saved state has
+// loaded, and only when something actually differs - so every open tab
+// converges on one layout instead of each laying the map out for itself.
+const systemMapEditor = () => { const r = document.documentElement.dataset.consoleRole; return !!r && r !== "viewer"; };
+let systemMapSaveTimer = null;
+let systemMapSaving = false;
+function scheduleSystemMapSave() {
+  if (systemMapSaved === undefined || !systemMapEditor()) return;
+  clearTimeout(systemMapSaveTimer);
+  systemMapSaveTimer = setTimeout(() => saveSystemMapLayout(), 1200);
+}
+async function writeSystemMapState({ model, mode, pinned, reason, changes, prev }) {
+  const me = (auth.currentUser && auth.currentUser.email) || null;
+  const state = { pinned: { ...((systemMapSaved && systemMapSaved.pinned) || {}), [mode]: pinned }, snapshot: mapSnapshot(model), updatedAt: serverTimestamp(), updatedByEmail: me, rev: ((systemMapSaved && systemMapSaved.rev) || 0) + 1 };
+  const batch = writeBatch(db);
+  batch.set(systemMapLayoutRef, state);
+  if (changes.length) {
+    batch.set(doc(systemMapRevisionsRef), { at: serverTimestamp(), authorEmail: me, reason, mode, rev: state.rev, changes: changes.slice(0, 100), changeCount: changes.length, prevPinned: prev });
+  }
+  await batch.commit();
+}
+async function saveSystemMapLayout() {
+  if (systemMapSaving || !systemMapModel || !systemMapEditor() || systemMapSaved === undefined || systemMapRearranging) return;
+  const model = systemMapModel;
+  const mode = model.layout.mode;
+  const pinned = pinnedLayout(model);
+  const saved = systemMapSaved;
+  const prevPins = (saved && saved.pinned && saved.pinned[mode]) || null;
+  const snap = mapSnapshot(model);
+  const changes = saved
+    ? diffSystemMap(saved.snapshot || { nodes: {}, edges: {} }, snap, (prevPins && prevPins.nodes) || {}, pinned.nodes)
+    : [{ op: "baseline", type: "map", id: "map", label: `Baseline: ${Object.keys(snap.nodes).length} nodes, ${Object.keys(snap.edges).length} lines` }];
+  const pinsChanged = !prevPins || JSON.stringify(prevPins.nodes) !== JSON.stringify(pinned.nodes) || prevPins.cy !== pinned.cy || prevPins.hn !== pinned.hn;
+  if (!changes.length && !pinsChanged) return;
+  systemMapSaving = true;
+  try {
+    await writeSystemMapState({ model, mode, pinned, reason: describeChanges(changes), changes, prev: prevPins || null });
+  } catch (err) {
+    console.warn("system map layout not saved", err);
+  } finally { systemMapSaving = false; }
+}
+
+// Re-arrange: the one action that lays everything out afresh, and saves it.
+async function rearrangeSystemMap() {
+  if (!systemMapEditor() || !systemMapModel) return;
+  const mode = systemMapModel.layout.mode;
+  const prev = (systemMapSaved && systemMapSaved.pinned && systemMapSaved.pinned[mode]) || null;
+  const fresh = layoutSystemMap(buildSystemMap({ projects, concepts, interfaces, releases }), { width: document.getElementById("system-map-canvas").clientWidth || window.innerWidth });
+  const pinned = pinnedLayout(fresh);
+  const changes = diffSystemMap(mapSnapshot(fresh), mapSnapshot(fresh), (prev && prev.nodes) || {}, pinned.nodes);
+  systemMapSaving = true;
+  try {
+    await writeSystemMapState({ model: fresh, mode, pinned, reason: "Re-arrange", changes: changes.length ? changes : [{ op: "move", type: "map", id: "map", label: "Re-arranged the whole map" }], prev });
+  } catch (err) { console.warn("re-arrange failed", err); } finally { systemMapSaving = false; }
+  renderSystemMap();
+}
+
+// Roll the pinned positions back to what they were before a revision. Nodes
+// and lines follow the board's data, so only positions can be rolled back.
+async function rollbackSystemMap(revId) {
+  if (!systemMapEditor()) return;
+  const snap = await getDoc(doc(systemMapRevisionsRef, revId));
+  if (!snap.exists()) return;
+  const r = snap.data();
+  if (!r.prevPinned) return;
+  const mode = r.mode;
+  const cur = (systemMapSaved && systemMapSaved.pinned && systemMapSaved.pinned[mode]) || { nodes: {} };
+  const changes = diffSystemMap({ nodes: {}, edges: {} }, { nodes: {}, edges: {} }, cur.nodes, r.prevPinned.nodes);
+  const moves = Object.keys(r.prevPinned.nodes).filter((id) => cur.nodes[id] && (cur.nodes[id].x !== r.prevPinned.nodes[id].x || cur.nodes[id].y !== r.prevPinned.nodes[id].y))
+    .map((id) => ({ op: "move", type: "node", id, label: id, from: cur.nodes[id], to: r.prevPinned.nodes[id] }));
+  const me = (auth.currentUser && auth.currentUser.email) || null;
+  const rev = ((systemMapSaved && systemMapSaved.rev) || 0) + 1;
+  const batch = writeBatch(db);
+  batch.set(systemMapLayoutRef, { ...(systemMapSaved || {}), pinned: { ...((systemMapSaved && systemMapSaved.pinned) || {}), [mode]: r.prevPinned }, updatedAt: serverTimestamp(), updatedByEmail: me, rev });
+  batch.set(doc(systemMapRevisionsRef), { at: serverTimestamp(), authorEmail: me, reason: `Rolled back revision ${r.rev}`, mode, rev, changes: (moves.length ? moves : changes).slice(0, 100), changeCount: moves.length || changes.length, prevPinned: cur });
+  await batch.commit();
+  await renderSystemMapHistory();
+}
+
+async function renderSystemMapHistory() {
+  const box = document.getElementById("system-map-history");
+  if (!box || box.hidden) return;
+  const snap = await getDocs(query(systemMapRevisionsRef, orderBy("at", "desc")));
+  const rows = snap.docs.slice(0, 20).map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+  const when = (t) => (t && t.toDate ? t.toDate().toLocaleString("en-GB") : "");
+  box.innerHTML = rows.length ? rows.map((r) => `<div class="sysmap-rev">
+      <div class="sysmap-rev-head"><strong>Revision ${escapeHTML(String(r.rev || ""))}</strong> <span>${escapeHTML(when(r.at))} · ${escapeHTML(r.authorEmail || "unknown")} · ${escapeHTML(r.mode || "")}</span>
+        ${r.prevPinned ? `<button type="button" class="restore-btn sysmap-rollback" data-rev-id="${escapeHTML(r.id)}" data-editor-only>Roll back positions</button>` : ""}</div>
+      <div class="sysmap-rev-reason">${escapeHTML(r.reason || "")}</div>
+      <ul>${(r.changes || []).slice(0, 12).map((c) => `<li>${escapeHTML(describeChanges([c], 1))}</li>`).join("")}${(r.changeCount || 0) > 12 ? `<li>+${r.changeCount - 12} more</li>` : ""}</ul>
+    </div>`).join("") : '<p class="empty-hint">No revisions yet.</p>';
+}
+document.getElementById("system-map-rearrange").addEventListener("click", () => {
+  if (window.confirm("Re-arrange lays out the whole map afresh and saves it. Every node may move. Continue?")) rearrangeSystemMap();
+});
+document.getElementById("system-map-history-btn").addEventListener("click", () => {
+  const box = document.getElementById("system-map-history");
+  box.hidden = !box.hidden;
+  renderSystemMapHistory();
+});
+document.getElementById("system-map-history").addEventListener("click", (e) => {
+  const b = e.target.closest(".sysmap-rollback");
+  if (b && window.confirm("Roll the pinned positions back to before this revision?")) rollbackSystemMap(b.dataset.revId);
+});
 {
   let resizeTimer = null;
   window.addEventListener("resize", () => {
@@ -6350,7 +6483,8 @@ function renderConceptIncubatorPage() {
   renderSystemMap();
   // Earliest release first; concepts with no release come after, keeping the
   // query's updatedAt-desc order within each group (Array.sort is stable).
-  const orderOf = (c) => { const r = conceptRelease(c.id); return r ? Number(r.order) || 0 : Infinity; };
+  const rank = new Map(releasesInVersionOrder().map((r, i) => [r.id, i]));
+  const orderOf = (c) => { const r = conceptRelease(c.id); return r ? rank.get(r.id) : Infinity; };
   // Promoted concepts are kept (reachable from the project's "Origin concept"
   // link) but no longer shown as tiles, so a promoted idea isn't listed twice.
   const sorted = concepts.filter((c) => c.status !== "promoted").sort((a, b) => {
@@ -6384,6 +6518,10 @@ function renderConceptDetailPage() {
     promotedHint.hidden = true;
   }
 
+  const descInput = document.getElementById("concept-description-input");
+  if (document.activeElement !== descInput) descInput.value = c.description || "";
+  descInput.disabled = readonly;
+  document.getElementById("concept-description-save").hidden = readonly;
   const readmeInput = document.getElementById("concept-readme-input");
   if (document.activeElement !== readmeInput) readmeInput.value = c.readmeMd || "";
   readmeInput.disabled = readonly;
@@ -6450,6 +6588,11 @@ document.getElementById("concept-interfaces-list").addEventListener("click", (e)
   if (editBtn) { openInterfaceModal(editBtn.dataset.id, editBtn.dataset.anchorId); return; }
   const delBtn = e.target.closest(".interface-delete-btn");
   if (delBtn) { deleteInterface(delBtn.dataset.id); return; }
+});
+document.getElementById("concept-description-save").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  setConceptDescription(conceptDetailId, document.getElementById("concept-description-input").value);
 });
 document.getElementById("concept-readme-save").addEventListener("click", async () => {
   if (!conceptDetailId) return;
@@ -6619,7 +6762,7 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
 // other three dictation controllers — see the note on SpeechRecognitionCtor.
 
 // ── Releases page ─────────────────────────────────────────────────────────
-// Every release, newest (highest order) first, with the one thing you can
+// Every release, in version order (earliest first), with the one thing you can
 // do to one: mark a draft live. Reading needs only sign-in (firestore.rules
 // isBoardReader on `releases`); creating or marking live needs editor
 // access, same gate as the Skills page below. Marking live is one-way —
@@ -6673,7 +6816,7 @@ function releaseRowHTML(r) {
 }
 
 function renderReleasesPage() {
-  const rows = releasesByOrderDesc();
+  const rows = releasesInVersionOrder();
   document.getElementById("releases-count").textContent = `${rows.length} release${rows.length === 1 ? "" : "s"}`;
   document.getElementById("releases-table-body").innerHTML = rows.map(releaseRowHTML).join("");
   document.getElementById("releases-empty").hidden = rows.length !== 0;

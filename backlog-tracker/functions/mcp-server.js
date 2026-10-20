@@ -3273,6 +3273,7 @@ const TOOLS = [
         out.push({
           id: d.id,
           name: v.name || "",
+          description: v.description || null,
           status,
           promotedProjectId: v.promotedProjectId || null,
           hasReadme: !!(v.readmeMd && v.readmeMd.trim()),
@@ -3306,6 +3307,7 @@ const TOOLS = [
       return textResult({
         id: snap.id,
         name: v.name || "",
+        description: v.description || null,
         status: v.status || "active",
         interfaces,
         demotedFromProjectId: v.demotedFromProjectId || null,
@@ -3402,6 +3404,35 @@ const TOOLS = [
       });
       await audit(session, "add_concept_comment", { conceptId: ref.id, chars: text.length });
       return textResult({ added: true, conceptId: ref.id, author: session.email });
+    },
+  },
+  {
+    name: "set_concept_description",
+    description: `Set (or clear) a concept's short description — one or two sentences on what it is, shown in the system map's hover tooltip and on the concept's tile. Pass description: null to remove it. Up to ${PROJECT_DESCRIPTION_MAX} characters. Refused once the concept has been promoted — use set_project_description with promotedProjectId instead.`,
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        description: { type: ["string", "null"], description: `Plain text, up to ${PROJECT_DESCRIPTION_MAX} characters, or null to clear.` },
+      },
+      required: ["conceptId", "description"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const conceptId = String(args.conceptId);
+      const snap = await db().collection("concepts").doc(conceptId).get();
+      if (!snap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const c = snap.data() || {};
+      if ((c.status || "active") === "promoted") {
+        return toolError(`Concept ${conceptId} has already been promoted to project ${c.promotedProjectId || "(unknown)"}; use set_project_description on that project instead.`);
+      }
+      const text = args.description == null ? "" : String(args.description).trim();
+      if (text.length > PROJECT_DESCRIPTION_MAX) return toolError(`A concept description is limited to ${PROJECT_DESCRIPTION_MAX} characters; that was ${text.length}.`);
+      await db().collection("concepts").doc(conceptId).set(
+        { description: text || null, updatedAt: FieldValue.serverTimestamp() }, { merge: true },
+      );
+      await audit(session, "set_concept_description", { conceptId, chars: text.length });
+      return textResult({ updated: true, conceptId, description: text || null });
     },
   },
   {
@@ -4344,7 +4375,7 @@ const SERVER_INSTRUCTIONS = [
   "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full, possibly hundreds of thousands of characters, so call it only with include set to the one block you need.",
   "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document, so read it first and send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
   REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
-  "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
+  "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
   "Skills library, shared by all projects: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
   "Release: moving cards, approving out of Ready for Testing, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only: approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",

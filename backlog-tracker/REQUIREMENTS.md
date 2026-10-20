@@ -2036,6 +2036,25 @@ not one diagram per concept or project. It is rebuilt on every change to
   the full text in the tooltip; zoom (+/−, Ctrl+scroll), drag-to-pan and
   Fit are available, and the default view is the whole map.
 
+**Incremental updates, not a rebuild (ticket `tXFTzQ4wZkpCf2gvB0YP`).** The map's
+data model — `SYSTEM_MAP_CORE`/`_CONCEPTS`/`_EXTERNALS`/`_LINKS` plus the
+board's projects, concepts, releases and interface contracts — is separate
+from rendering. Positions are **pinned**: Firestore `systemMap/layout` holds
+`pinned.{wide,narrow}` (`{nodes:{id:{x,y}}, cy, hn}`), the `snapshot` of what
+each node and line said when last saved, and a `rev`. A pinned node never
+moves; the platform stays put; a new node is placed in free space around the
+pinned ones; the drawing only grows downwards. An editor's tab saves when
+something differs, and each save appends a create-only `systemMapRevisions`
+doc (author, reason, mode, minimal `changes` list — add/update/remove/move of a
+node or line — and `prevPinned`). **History** lists them; **Roll back
+positions** restores `prevPinned` (nodes and lines follow the board's data, so
+only positions roll back). **Re-arrange** is the only action that lays the whole
+map out afresh. Agents change the data (the constants above or the board), never
+the drawing code. Rules: `systemMap/layout` and `systemMapRevisions` (editors
+write; revisions are never edited). Test: `test/system-map.test.mjs`
+("incremental, pinned").
+
+
 ### Concept Incubator page
 
 Two pages, mirroring the Skills list/Docs-page split above: **Concept
@@ -2606,7 +2625,7 @@ Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `set_project_readme`, `set_project_artifact`, `create_project_document`,
 `update_project_document`, `delete_project_document`, `create_interface`,
 `update_interface`, `delete_interface`; Concept Incubator:
-`add_concept_comment`, `set_concept_readme`, `set_concept_requirements`
+`add_concept_comment`, `set_concept_description`, `set_concept_readme`, `set_concept_requirements`
 (the last two refused once a concept's `status` is `"promoted"` — see
 "Concept Incubator page" and `concepts/{conceptId}` above); help centre:
 `create_faq_article`
