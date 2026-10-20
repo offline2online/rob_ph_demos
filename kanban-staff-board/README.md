@@ -73,6 +73,18 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
   comment box uses a compact version. Type `@` to mention someone, and they're notified when you save or comment. Paste,
   drop or upload screenshots; they're downscaled and stored with the ticket. The record button captures your screen as a
   playable video (prototype only: a recording lasts for the browser session, and the real console would upload it to Storage).
+- **Task modal layout**. The panel button in the window header (or the "Details" tab) folds the details column away to
+  the right, so the description gets the full width. The choice is remembered, and it reopens by itself if a
+  required field in it is empty.
+- **Finding tickets**. "Add an existing ticket" on an epic and "Linked tickets" use a search box, not a dropdown. Type a
+  number (`36`, `PH-36`) or any words from the title or description. Description matches show a highlighted snippet.
+  Only the best 50 results are listed, so it stays quick however many tickets there are. Use the arrow keys and Enter, or click.
+- **Tooltips**. (i) tips open in one floating bubble that's always kept inside the window, so they're never cut off
+  by the modal or the screen edge. Tap to open them on touch screens.
+- **Profile photos**. Profile menu → Profile photo → Upload photo. The photo is cropped to a square and stored with
+  the prototype's data. It replaces the initial everywhere that person appears: the profile button, filter avatars, cards,
+  swimlane headers, comments, @mention suggestions and the release report. An admin can set anyone's photo from
+  Kanban settings → Team. The console itself is ticket cQZRViGdvsqJrnNk00GF on the Backlog Tracker & FAQs board.
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban
   settings. On an existing ticket, hidden fields stay editable under
   "N more fields". Required fields are validated.

@@ -160,10 +160,52 @@
     for (let d = new Date(TODAY); d < end; d.setDate(d.getDate() + 1)) { const w = d.getDay(); if (w && w !== 6) n++; }
     return n;
   }
+  // A person's avatar: their uploaded photo, else their initial on their colour.
+  const photoOf = (id) => (state.photos || {})[id] || "";
   function avatar(id, size = "") {
     const u = user(id);
     if (!u) return `<span class="kb-avatar kb-avatar-none ${size}" title="Unassigned"><span class="material-symbols-outlined" aria-hidden="true">person</span></span>`;
+    const ph = photoOf(id);
+    if (ph) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.first)}" title="${esc(u.first)}" style="background-image:url('${ph}')"></span>`;
     return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.first)}">${esc(u.first.charAt(0))}</span>`;
+  }
+
+  // Profile photos: crop to a centred square and shrink to 160px, so each is
+  // a few KB (the real console stores 256px in Storage: see its ticket).
+  function photoFileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !/^image\//.test(file.type)) { reject(new Error("Choose an image file (JPG, PNG, HEIC or WebP).")); return; }
+      if (file.size > 10 * 1024 * 1024) { reject(new Error("That image is over 10 MB. Choose a smaller one.")); return; }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("That image couldn't be read."));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("That image couldn't be read."));
+        img.onload = () => {
+          const side = Math.min(img.width, img.height), out = 160;
+          const c = document.createElement("canvas");
+          c.width = c.height = out;
+          c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, out, out);
+          resolve(c.toDataURL("image/jpeg", 0.85));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  async function setPhoto(id, file) {
+    try {
+      const url = await photoFileToDataUrl(file);
+      state.photos = Object.assign({}, state.photos, { [id]: url });
+      save(); renderProfile(); render();
+      toast(id === state.me ? "Your profile photo is updated everywhere" : `<b>${esc(firstName(id))}</b>'s photo is updated`);
+    } catch (e) { toast(esc(e.message)); }
+  }
+  function removePhoto(id) {
+    if (!state.photos || !state.photos[id]) return;
+    delete state.photos[id];
+    save(); renderProfile(); render();
+    toast(id === state.me ? "Profile photo removed" : `<b>${esc(firstName(id))}</b>'s photo removed`);
   }
 
   let toastTimer;
@@ -314,6 +356,11 @@
     $("#profile-avatar").outerHTML = `<span id="profile-avatar">${avatar(state.me, "kb-avatar-lg")}</span>`;
     $("#profile-menu-avatar").outerHTML = `<span id="profile-menu-avatar">${avatar(state.me, "kb-avatar-lg")}</span>`;
     $("#topbar-user").textContent = me.email;
+    const has = !!photoOf(state.me);
+    $("#kb-photo-row").innerHTML = `<label class="profile-menu-item kb-photo-upload"><span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span>${has ? "Change photo" : "Upload photo"}<input type="file" accept="image/*" hidden id="kb-photo-input"></label>${has ? '<button type="button" class="profile-menu-item" id="kb-photo-remove"><span class="material-symbols-outlined" aria-hidden="true">no_photography</span>Remove photo</button>' : ""}`;
+    $("#kb-photo-input").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) setPhoto(state.me, f); });
+    const rm = $("#kb-photo-remove");
+    if (rm) rm.addEventListener("click", () => removePhoto(state.me));
     $("#profile-switch").innerHTML = SEED.users.map((u) => `<button type="button" class="profile-menu-item kb-switch-user" data-user="${u.id}" role="menuitemradio" aria-checked="${u.id === state.me}">${avatar(u.id)}<span>${esc(u.first)}</span><span class="kb-switch-loc">${esc(u.location)}</span>${u.id === state.me ? '<span class="material-symbols-outlined kb-check" aria-hidden="true">check</span>' : ""}</button>`).join("");
     $$(".kb-switch-user").forEach((b) => b.addEventListener("click", () => {
       state.me = b.dataset.user; save(); renderProfile(); closeProfile(); render();
@@ -717,6 +764,7 @@
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
     syncModalFlag();
     renderForm();
+    setSideCollapsed(sideCollapsed);
     syncCreateCta();
     $("#task-backdrop").hidden = false;
     document.body.classList.add("kb-modal-open");
@@ -730,6 +778,22 @@
     const b = $("#f-save");
     if (b) b.textContent = CREATE_CTA[draft.type] || CREATE_CTA.task;
     $("#task-title-h").textContent = NEW_TITLE[draft.type] || NEW_TITLE.task;
+  }
+  // The details column (priority, type, people, release, estimate…) can be
+  // pushed off to the right so the description gets the full width.
+  const SIDE_KEY = "kb-proto-side-collapsed";
+  let sideCollapsed = (() => { try { return localStorage.getItem(SIDE_KEY) === "1"; } catch { return false; } })();
+  function setSideCollapsed(v) {
+    sideCollapsed = v;
+    try { localStorage.setItem(SIDE_KEY, v ? "1" : "0"); } catch { /* ignore */ }
+    const g = $(".kb-task-grid");
+    if (g) g.classList.toggle("kb-side-collapsed", v);
+    const b = $("#task-side-toggle");
+    b.setAttribute("aria-expanded", String(!v));
+    b.title = v ? "Show details" : "Hide details";
+    b.firstElementChild.textContent = v ? "right_panel_open" : "right_panel_close";
+    const tab = $("#kb-side-tab");
+    if (tab) tab.setAttribute("aria-expanded", String(!v));
   }
   function syncModalFlag() {
     const b = $("#task-flag");
@@ -786,21 +850,19 @@
         const kids = childrenOf(d.key);
         const done = kids.filter((k) => res(k) === "completed").length;
         const live = kids.filter((k) => res(k) !== "withdrawn").length;
-        const linkable = state.tasks.filter((t) => t.type !== "epic" && t.epic !== d.key && t.status !== "done").sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
         return `<div class="kb-field" data-field="children"${d.type === "epic" ? "" : " hidden"}><label class="field-label">Child tickets <span class="kb-none">${done} of ${live} done${kids.length > live ? ` · ${kids.length - live} withdrawn` : ""}</span></label>
           ${live ? `<div class="kb-logbar kb-epic-progress"><span style="width:${(done / live) * 100}%"></span></div>` : ""}
           <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}${statusPill(k)}${avatar(k.assignee)}<button type="button" class="icon-btn" data-unlink-child="${esc(k.key)}" title="Remove from epic" aria-label="Remove ${esc(k.key)} from this epic">&times;</button></li>`).join("") || '<li class="kb-none">No tickets in this epic yet</li>'}</ul>
           <div class="kb-child-actions">
             <button type="button" class="btn-ghost kb-icon-label" data-add-child="task"><span class="material-symbols-outlined kb-type-task" aria-hidden="true">check_box</span>Add task</button>
             <button type="button" class="btn-ghost kb-icon-label" data-add-child="bug"><span class="material-symbols-outlined kb-type-bug" aria-hidden="true">bug_report</span>Add bug</button>
-            <span class="kb-child-link"><select id="f-child-link" class="kb-input" aria-label="Existing ticket to add to this epic">${opt("", "Add an existing ticket…", "")}${linkable.map((t) => opt(t.key, `${t.key} · ${t.title}${t.epic ? " (moves from " + t.epic + ")" : ""}`, "")).join("")}</select></span>
+            <span class="kb-child-link">${pickerHTML("f-child-link", "Add an existing ticket: search by number, title or description")}</span>
           </div></div>`;
       }
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
         <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${["blocks", "is blocked by", "relates to", "duplicates"].map((x) => opt(x, x, "relates to")).join("")}</select>
-          <select id="f-link-key" class="kb-input" aria-label="Ticket">${state.tasks.filter((t) => t.key !== d.key).sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true })).map((t) => opt(t.key, `${t.key} · ${t.title}`, "")).join("")}</select>
-          <button type="button" class="btn-ghost" id="f-link-add">Link</button></div></div>`;
+          ${pickerHTML("f-link-key", "Search tickets by number, title or description")}</div></div>`;
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
       case "comments": return `<div class="kb-field" data-field="comments">${label("comments", "f-comment")}<ul class="kb-comments" id="f-comments">${commentsHTML()}</ul>
@@ -829,9 +891,10 @@
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
     form.innerHTML = `
-      <div class="kb-task-grid">
+      <div class="kb-task-grid${sideCollapsed ? " kb-side-collapsed" : ""}">
         <div class="kb-task-main">${main.filter(visible).map(fieldHTML).join("")}</div>
-        <div class="kb-task-side">${side.filter(visible).map(fieldHTML).join("")}</div>
+        <div class="kb-task-side" id="kb-task-side">${side.filter(visible).map(fieldHTML).join("")}</div>
+        <button type="button" class="kb-side-tab" id="kb-side-tab" aria-controls="kb-task-side" aria-expanded="false" title="Show details"><span class="material-symbols-outlined" aria-hidden="true">left_panel_open</span><span>Details</span></button>
       </div>
       ${!draftIsNew && hidden.length ? `<details class="kb-more"><summary>${hidden.length} more field${hidden.length > 1 ? "s" : ""}<span class="kb-more-names">${hidden.map((k) => esc(FIELD_LABEL[k])).join(", ")}</span></summary><div class="kb-more-body">${hidden.map(fieldHTML).join("")}</div></details>` : ""}
       ${draftIsNew ? "" : `<p class="kb-created">Created by ${esc(firstName(draft.reporter))} · ${fmtDate(draft.created, { day: "numeric", month: "short", year: "numeric" })}</p>`}
@@ -888,11 +951,14 @@
       const ra = e.target.closest("[data-rm-att]");
       if (ra) { draft.attachments.splice(+ra.dataset.rmAtt, 1); $("#f-attachments").innerHTML = attachmentsHTML(); }
     });
-    const la = $("#f-link-add");
-    if (la) la.addEventListener("click", () => {
-      const key = $("#f-link-key").value, type = $("#f-link-type").value;
-      if (key && !draft.links.some((l) => l.key === key && l.type === type)) draft.links.push({ type, key });
-      $("#f-links").innerHTML = linksHTML();
+    bindPicker("f-link-key", {
+      candidates: () => state.tasks.filter((t) => t.key !== draft.key && !draft.links.some((l) => l.key === t.key)),
+      onPick: (t) => {
+        const type = $("#f-link-type").value;
+        draft.links.push({ type, key: t.key });
+        $("#f-links").innerHTML = linksHTML();
+        toast(`Linked: ${esc(type)} <b>${esc(t.key)}</b>`);
+      },
     });
     const ff = $("#f-file");
     if (ff) ff.addEventListener("change", () => {
@@ -1017,7 +1083,7 @@
   let activeMic = null;
   // Rich editors for the description and the comment box (js/editor.js).
   let descQ = null, commentQ = null, descInitial = "";
-  const staff = () => SEED.users.map((u) => ({ id: u.id, first: u.first, full: u.full, color: u.color }));
+  const staff = () => SEED.users.map((u) => ({ id: u.id, first: u.first, full: u.full, color: u.color, photo: photoOf(u.id) }));
   function bindEditors() {
     descQ = commentQ = null;
     const d = $("#f-description"), c = $("#f-comment");
@@ -1123,7 +1189,7 @@
 
   // Local stand-in for the agent: reads the transcript for the details people
   // usually say out loud and writes a short title and a tidy description.
-  const fold = (x) => String(x).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase();
+  const fold = (x) => String(x == null ? "" : x).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase();
   const NUM = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, half: 0.5, couple: 2 };
   function agentDraft(raw) {
     let text = raw.replace(/\s+/g, " ").trim();
@@ -1197,6 +1263,79 @@
   // Child tickets from inside an epic. Adding one saves the epic first (a new
   // epic needs its key to exist), opens the child with the epic as its
   // parent, and comes back to the epic when the child is created or cancelled.
+  // Searchable ticket picker: type a number (12, PH-12) or any words from a
+  // ticket's title or description. Shows the best 50 matches, so it stays
+  // quick however many tickets there are; arrow keys + Enter, or click.
+  const PICK_LIMIT = 50;
+  const textCache = new Map();
+  const descText = (t) => {
+    const k = t.key + ":" + (t.description || "").length;
+    if (!textCache.has(k)) textCache.set(k, fold(KBEditor.toText(t.description)));
+    return textCache.get(k);
+  };
+  function pickerHTML(id, placeholder) {
+    return `<div class="kb-picker" id="${id}"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" class="kb-picker-input" placeholder="${esc(placeholder)}" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="${id}-list" aria-label="${esc(placeholder)}"><div class="kb-picker-list" id="${id}-list" role="listbox" hidden></div></div>`;
+  }
+  function searchTickets(list, query) {
+    const q = fold(query).trim();
+    const num = (/^(?:ph-?)?(\d+)$/.exec(q) || [])[1];
+    if (!q) return list.slice().sort((a, b) => b.key.localeCompare(a.key, undefined, { numeric: true })).map((t) => ({ t, where: "" }));
+    const words = q.split(/\s+/);
+    const out = [];
+    for (const t of list) {
+      const key = t.key.toLowerCase(), title = fold(t.title);
+      let score = -1, where = "";
+      if (num && key === "ph-" + num) score = 0;
+      else if (num && key.startsWith("ph-" + num)) score = 1;
+      else if (key === q) score = 0;
+      else if (title.startsWith(q)) score = 2;
+      else if (words.every((w) => title.includes(w))) score = 3;
+      else if (words.every((w) => title.includes(w) || descText(t).includes(w))) { score = 4; where = "desc"; }
+      if (score >= 0) out.push({ t, score, where });
+    }
+    return out.sort((a, b) => a.score - b.score || b.t.key.localeCompare(a.t.key, undefined, { numeric: true }));
+  }
+  function snippet(t, query) {
+    const text = KBEditor.toText(t.description).replace(/\s+/g, " ");
+    const w = fold(query).trim().split(/\s+/)[0];
+    const i = fold(text).indexOf(w);
+    if (i < 0) return "";
+    const from = Math.max(0, i - 30), part = text.slice(from, i + w.length + 50);
+    const j = i - from;
+    return (from ? "…" : "") + esc(part.slice(0, j)) + "<mark>" + esc(part.slice(j, j + w.length)) + "</mark>" + esc(part.slice(j + w.length)) + "…";
+  }
+  function bindPicker(id, { candidates, onPick, note }) {
+    const root = $("#" + id);
+    if (!root) return;
+    const input = $(".kb-picker-input", root), box = $(".kb-picker-list", root);
+    let results = [], active = 0;
+    const draw = () => {
+      const all = searchTickets(candidates(), input.value);
+      results = all.slice(0, PICK_LIMIT);
+      active = Math.min(active, Math.max(0, results.length - 1));
+      box.innerHTML = results.map(({ t, where }, i) => `<div class="kb-pick${i === active ? " on" : ""}" role="option" aria-selected="${i === active}" data-i="${i}">
+          <span class="kb-type kb-type-${typeOf(t.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(t.type).icon}</span></span>
+          <span class="kb-link-key">${esc(t.key)}</span><span class="kb-pick-main"><span class="kb-pick-title">${esc(t.title)}</span>${where === "desc" ? `<span class="kb-pick-snip">${snippet(t, input.value)}</span>` : ""}</span>
+          ${note && note(t) ? `<span class="kb-pick-note">${esc(note(t))}</span>` : ""}${statusPill(t)}</div>`).join("")
+        + (results.length ? `<div class="kb-pick-foot">${all.length > PICK_LIMIT ? `Showing ${PICK_LIMIT} of ${all.length} matches. Keep typing to narrow down` : `${all.length} match${all.length === 1 ? "" : "es"}`}</div>` : '<div class="kb-pick-foot">No tickets match. Try a number, or other words from the title or description</div>');
+      box.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      const on = $(".kb-pick.on", box);
+      if (on) on.scrollIntoView({ block: "nearest" });
+    };
+    const close = () => { box.hidden = true; input.setAttribute("aria-expanded", "false"); };
+    const choose = (i) => { const r = results[i]; if (!r) return; input.value = ""; close(); onPick(r.t); };
+    input.addEventListener("focus", () => { active = 0; draw(); });
+    input.addEventListener("input", () => { active = 0; draw(); });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (box.hidden) draw(); active = (active + (e.key === "ArrowDown" ? 1 : -1) + results.length) % Math.max(1, results.length); draw(); }
+      else if (e.key === "Enter") { e.preventDefault(); choose(active); }
+      else if (e.key === "Escape") { if (!box.hidden) { e.stopPropagation(); close(); } }
+    });
+    box.addEventListener("mousedown", (e) => { const it = e.target.closest("[data-i]"); if (it) { e.preventDefault(); choose(+it.dataset.i); } });
+    input.addEventListener("blur", () => setTimeout(close, 120));
+  }
+
   function bindChildren(form) {
     const field = $('[data-field="children"]', form);
     if (!field) return;
@@ -1220,10 +1359,11 @@
       const li = e.target.closest("[data-open-child]");
       if (li) openTask(li.dataset.openChild, { returnTo: draft.key });
     });
-    const sel = $("#f-child-link", form);
-    if (sel) sel.addEventListener("change", () => {
-      const key = sel.value;
-      if (!key) return;
+    bindPicker("f-child-link", {
+      candidates: () => state.tasks.filter((t) => t.type !== "epic" && t.epic !== draft.key),
+      note: (t) => (t.epic ? `in ${t.epic}` : ""),
+      onPick: (picked) => {
+      const key = picked.key;
       withEpicSaved((epicKey) => {
         const t = taskByKey(key);
         if (!t) return;
@@ -1234,6 +1374,7 @@
         if (draft && draft.key === epicKey) refreshChildren();
         toast(`<b>${esc(key)}</b> added to ${esc(epicKey)}`);
       });
+      },
     });
   }
   function refreshChildren() {
@@ -1301,6 +1442,7 @@
     const err = $("#f-error");
     if (errors.length) {
       errors.forEach(([k]) => { const f = $(`[data-field="${k}"]`, form); if (f) f.classList.add("kb-field-error"); });
+      if (sideCollapsed && errors.some(([k]) => $(`#kb-task-side [data-field="${k}"]`))) setSideCollapsed(false);
       err.hidden = false; err.textContent = errors.map((x) => x[1]).join(" · ");
       return;
     }
@@ -1341,6 +1483,8 @@
     closeTask(); render();
   }
   function initModal() {
+    $("#task-side-toggle").addEventListener("click", () => setSideCollapsed(!sideCollapsed));
+    $("#task-form").addEventListener("click", (e) => { if (e.target.closest("#kb-side-tab")) setSideCollapsed(false); });
     $("#task-flag").addEventListener("click", () => { if (draft) { draft.flagged = !draft.flagged; syncModalFlag(); } });
     $("#task-close").addEventListener("click", closeTask);
     $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
@@ -1541,7 +1685,7 @@
         </section>
         <section class="docs-block">
           <div class="docs-block-header"><h3>Team${tip("Everyone added under Settings → Team & agent access appears in the assignee list by first name.")}</h3></div>
-          <ul class="kb-team">${SEED.users.map((u) => `<li>${avatar(u.id)}<span><b>${esc(u.first)}</b><span class="kb-none">${esc(u.full)} · ${esc(u.location)}</span></span><span class="kb-none kb-team-email">${esc(u.email)}</span></li>`).join("")}</ul>
+          <ul class="kb-team">${SEED.users.map((u) => `<li>${avatar(u.id)}<span><b>${esc(u.first)}</b><span class="kb-none">${esc(u.full)} · ${esc(u.location)}</span></span><span class="kb-none kb-team-email">${esc(u.email)}</span><span class="kb-team-photo"><label class="btn-ghost kb-icon-label" title="${photoOf(u.id) ? "Change" : "Upload"} ${esc(u.first)}'s photo"><span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span><span class="kb-team-photo-label">${photoOf(u.id) ? "Change" : "Photo"}</span><input type="file" accept="image/*" hidden data-photo-for="${u.id}"></label>${photoOf(u.id) ? `<button type="button" class="icon-btn" data-photo-remove="${u.id}" title="Remove ${esc(u.first)}'s photo" aria-label="Remove ${esc(u.first)}'s photo"><span class="material-symbols-outlined" aria-hidden="true">no_photography</span></button>` : ""}</span></li>`).join("")}</ul>
         </section>
         <section class="docs-block">
           <div class="docs-block-header"><h3>Demo data${tip("Prototype only: puts every task back to the mock data and clears your changes.")}</h3>
@@ -1559,9 +1703,11 @@
     $("#st-tester").addEventListener("change", (e) => { S.tester = e.target.value; save(); toast(`Ready for Testing now reassigns to <b>${esc(firstName(S.tester))}</b>`); });
     $("#st-release").addEventListener("change", (e) => { S.currentRelease = e.target.value; save(); toast(`Current release is <b>${esc(releaseName(S.currentRelease))}</b>`); });
     $("#st-preview").addEventListener("click", () => openTask(null));
+    $$("[data-photo-for]", view).forEach((inp) => inp.addEventListener("change", () => { const f = inp.files[0]; inp.value = ""; if (f) setPhoto(inp.dataset.photoFor, f).then(() => renderSettings(view)); }));
+    $$("[data-photo-remove]", view).forEach((b) => b.addEventListener("click", () => { removePhoto(b.dataset.photoRemove); renderSettings(view); }));
     $("#st-reset").addEventListener("click", () => {
       if (!confirm("Reset all tasks to the demo data?")) return;
-      const me = state.me; state = fresh(); state.me = me; save(); renderProfile(); render(); toast("Demo data reset");
+      const me = state.me, photos = state.photos; state = fresh(); state.me = me; state.photos = photos; save(); renderProfile(); render(); toast("Demo data reset");
     });
   }
 
@@ -1593,14 +1739,40 @@
   }
 
   // (i) tips: keep the bubble on screen, and tap to open on touch (as js/ui-polish.js does in the console)
+  // (i) tips render in one floating bubble on <body>, placed above the icon
+  // (or below if there's no room) and kept inside the window, so a scrolling
+  // modal or the screen edge never cuts them off.
   function initTips() {
-    const place = (b) => { b.classList.remove("edge-left", "edge-right"); const r = b.getBoundingClientRect(); if (r.left < 150) b.classList.add("edge-left"); else if (innerWidth - r.right < 150) b.classList.add("edge-right"); };
-    document.addEventListener("pointerover", (e) => { const b = e.target.closest && e.target.closest(".info-tip"); if (b) place(b); });
+    const bubble = document.createElement("div");
+    bubble.className = "kb-tip-bubble";
+    bubble.setAttribute("role", "tooltip");
+    bubble.hidden = true;
+    document.body.appendChild(bubble);
+    let current = null, shownAt = 0;
+    const show = (b) => {
+      if (current !== b) shownAt = Date.now();
+      current = b;
+      bubble.textContent = b.dataset.tip;
+      bubble.hidden = false;
+      const r = b.getBoundingClientRect(), w = bubble.offsetWidth, h = bubble.offsetHeight, m = 8;
+      let left = r.left + r.width / 2 - w / 2;
+      left = Math.max(m, Math.min(left, innerWidth - w - m));
+      let top = r.top - h - 8;
+      if (top < m) top = r.bottom + 8;
+      top = Math.max(m, Math.min(top, innerHeight - h - m));
+      bubble.style.left = left + "px"; bubble.style.top = top + "px";
+    };
+    const hide = () => { bubble.hidden = true; current = null; };
+    document.addEventListener("pointerover", (e) => { const b = e.target.closest && e.target.closest(".info-tip"); if (b) show(b); else if (current && !e.target.closest(".kb-tip-bubble")) hide(); });
+    document.addEventListener("focusin", (e) => { const b = e.target.closest && e.target.closest(".info-tip"); if (b) show(b); });
+    document.addEventListener("focusout", (e) => { if (e.target.closest && e.target.closest(".info-tip")) hide(); });
     document.addEventListener("click", (e) => {
       const b = e.target.closest && e.target.closest(".info-tip");
-      $$(".info-tip.open").forEach((o) => { if (o !== b) o.classList.remove("open"); });
-      if (b) { e.preventDefault(); e.stopPropagation(); place(b); b.classList.toggle("open"); }
+      if (b) { e.preventDefault(); e.stopPropagation(); if (current === b && !bubble.hidden && Date.now() - shownAt > 400) hide(); else show(b); }
+      else hide();
     }, true);
+    addEventListener("scroll", hide, true);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
   }
 
   // ── Boot ────────────────────────────────────────────────────────────────
