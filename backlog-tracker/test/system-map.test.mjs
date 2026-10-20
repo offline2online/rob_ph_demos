@@ -129,7 +129,7 @@ console.log("system-map (federation): ok");
   assert.ok(nodeTipHTML(mm, "p1").includes("Sells ad slots. Two sentences."));
   assert.ok(nodeTipHTML(mm, "p2").includes("No description yet"), "a project with no description is flagged");
   assert.ok(h.includes('data-node-id="p1"'), "still click-through");
-  assert.ok(shortDescription("word ".repeat(100)).length <= 221 && shortDescription("word ".repeat(100)).endsWith("…"));
+  assert.ok(shortDescription("word ".repeat(100)).length <= 301 && shortDescription("word ".repeat(100)).endsWith("…"));
   assert.equal(shortDescription("", "```\ncode\n```\n- item one"), "item one");
 }
 console.log("system-map descriptions: ok");

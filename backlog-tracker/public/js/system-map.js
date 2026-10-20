@@ -138,7 +138,7 @@ const NODE_H = 52;
 // The one- or two-sentence description a hover tooltip shows. A project
 // uses its board description; a concept uses its description, else the first
 // prose lines of its README (headings, rules, code and list markers dropped).
-export const DESC_MAX = 220;
+export const DESC_MAX = 300;
 export function shortDescription(description, readmeMd = "") {
   let t = String(description || "").trim();
   if (!t) {

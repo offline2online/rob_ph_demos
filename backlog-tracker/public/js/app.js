@@ -6003,6 +6003,15 @@ async function addConcept(name) {
 async function setConceptReadme(id, md) {
   await setDoc(doc(db, "concepts", id), { readmeMd: md, updatedAt: serverTimestamp() }, { merge: true });
 }
+// Empty input clears it. Up to 300 characters, matching firestore.rules.
+async function setConceptDescription(id, text) {
+  const t = (text || "").trim();
+  try {
+    await setDoc(doc(db, "concepts", id), { description: t || deleteField(), updatedAt: serverTimestamp() }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Description", value: t, max: 300 }]));
+  }
+}
 async function setConceptRequirements(id, md) {
   await setDoc(doc(db, "concepts", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
 }
@@ -6175,7 +6184,7 @@ function conceptCardHTML(c) {
   const rel = conceptRelease(c.id);
   const relNum = rel ? `<div class="concept-release-num" title="Release ${escapeHTML(releaseLabel(rel))}">${escapeHTML(rel.version || rel.name || "")}</div>` : "";
   return `
-    <div class="skill-card concept-card${rel ? " has-release" : ""}" data-id="${c.id}" data-artifact-href="${escapeHTML(artifactHref)}" style="cursor:pointer;">
+    <div class="skill-card concept-card${rel ? " has-release" : ""}" data-id="${c.id}" data-artifact-href="${escapeHTML(artifactHref)}"${c.description ? ` title="${escapeHTML(c.description)}"` : ""} style="cursor:pointer;">
       <div class="skill-card-top">
         ${relNum}
         <div class="concept-card-main">
@@ -6387,6 +6396,10 @@ function renderConceptDetailPage() {
     promotedHint.hidden = true;
   }
 
+  const descInput = document.getElementById("concept-description-input");
+  if (document.activeElement !== descInput) descInput.value = c.description || "";
+  descInput.disabled = readonly;
+  document.getElementById("concept-description-save").hidden = readonly;
   const readmeInput = document.getElementById("concept-readme-input");
   if (document.activeElement !== readmeInput) readmeInput.value = c.readmeMd || "";
   readmeInput.disabled = readonly;
@@ -6453,6 +6466,11 @@ document.getElementById("concept-interfaces-list").addEventListener("click", (e)
   if (editBtn) { openInterfaceModal(editBtn.dataset.id, editBtn.dataset.anchorId); return; }
   const delBtn = e.target.closest(".interface-delete-btn");
   if (delBtn) { deleteInterface(delBtn.dataset.id); return; }
+});
+document.getElementById("concept-description-save").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  setConceptDescription(conceptDetailId, document.getElementById("concept-description-input").value);
 });
 document.getElementById("concept-readme-save").addEventListener("click", async () => {
   if (!conceptDetailId) return;

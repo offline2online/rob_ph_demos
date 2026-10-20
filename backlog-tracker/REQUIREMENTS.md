@@ -2606,7 +2606,7 @@ Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `set_project_readme`, `set_project_artifact`, `create_project_document`,
 `update_project_document`, `delete_project_document`, `create_interface`,
 `update_interface`, `delete_interface`; Concept Incubator:
-`add_concept_comment`, `set_concept_readme`, `set_concept_requirements`
+`add_concept_comment`, `set_concept_description`, `set_concept_readme`, `set_concept_requirements`
 (the last two refused once a concept's `status` is `"promoted"` — see
 "Concept Incubator page" and `concepts/{conceptId}` above); help centre:
 `create_faq_article`
