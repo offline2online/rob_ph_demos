@@ -2215,6 +2215,19 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   client-side so the full due-ness logic lives in exactly one place) and a
   **Mark reviewed** button.
 
+### Docs stay in step with code (20 Oct 2026)
+
+`skill-sources/` holds the repo copies of the skill text for this rule:
+`ph-build-agent` (update affected docs in the same change, leave a
+`[docs-impact]` note), `ph-reviewer` (fails a ticket whose docs and code
+disagree or whose note is missing) and the new `ph-spec-sync-check`
+(deploy phase: files a Backlog "Docs drift" ticket per gap, never edits a
+document). The live skills are board docs: apply these files with the Skills
+page or `update_skill`/`upload_skill`, and bind the new one with
+`settings/phaseSkillBindings.deploy`. `ROUTINE_INSTRUCTIONS.md` enforces the
+same three checks (Build, Review Batch gate, Deploy step 3c) even when a
+skill does not resolve.
+
 ## Concept Incubator
 
 A home for early-stage ideas ("spitballs") that need further shape before

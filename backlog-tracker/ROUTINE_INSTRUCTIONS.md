@@ -541,6 +541,20 @@ ticket once automatically.
      and is cleared on landing, so a re-patch needs its own.
    - `patchCommitMessage`, `patchPrTitle`, `patchPrBody`: plain text for
      the eventual commit and PR.
+   - **Docs ship with the code, and the card says so** (docs-as-code, 20 Oct
+     2026, `oYZUIc3Duva5jdBaT34P`). In the same patch as a behaviour change,
+     update every document that describes the changed behaviour: the
+     project's `REQUIREMENTS.md` and `README.md` (repo files; the board copy
+     follows on merge), any `board-docs.json` mirror source, and a
+     `shared/interface-contract.md` / `shared/board-interfaces.json` contract
+     the change touches. Board-only documents (no repo file) are changed with
+     `update_project_document` as `ph-build-agent` §1 says. Then APPEND a
+     note (Setup → "Append a note") whose text starts `[docs-impact]` and
+     says either `Updated: <repo paths / board doc names>` or
+     `No doc impact: <one-sentence reason>`. A behaviour change with neither
+     is what Review Batch fails. Apply the `ph-build-agent` skill's
+     "Docs ship with the code" section when it resolves; this paragraph
+     holds either way.
    - **Before setting `patchReady`, check docsImpact**: with your changes in
      your checkout, run `node backlog-tracker/scripts/docs-impact.js` (add
      `--base <patchBaseSha>` if you committed). Exit 1 lists the unmet rules:
@@ -964,6 +978,25 @@ own `readyToDeploy` is information, not permission.
      `reason` a reviewer can verify against the diff.
    - Then continue with step 4 as normal — a proposed revision never
      blocks the merge, and a blocked merge never cancels the proposal.
+3c. **Spec/docs drift check — every deploy, never blocks the merge.** Fetch
+   the `ph-spec-sync-check` skill (query `skills` where `slug ==
+   "ph-spec-sync-check"`; it is bound to the DEPLOY phase, and if it does not
+   resolve use this paragraph alone). Read the same combined diff as step 3b
+   (`git diff main...origin/<deployBranch>`) and compare it with the
+   project's documents: `REQUIREMENTS.md`, `README.md`, additional project
+   documents and interface contracts (`get_project_docs`, the repo files,
+   the `interfaces` query from Setup). Drift means the diff changes behaviour
+   a document still describes the old way, or adds behaviour no document
+   mentions. For each distinct gap create ONE Backlog ticket
+   (`backlogItems`, `status: "backlog"`, this `projectId`, `type: "bug"`,
+   title `Docs drift: <document> — <gap>`, `desc` with a filled
+   `## Outcome` naming the document, the diff lines and the ticket ids that
+   caused it). First list the project's open tickets and skip a gap one
+   already covers. **Never edit a document, `status` or any train field**:
+   this step only files tickets. A train whose docs match files nothing.
+   Append one `[spec-sync-check]` note to the DEPLOY REQUEST's first item
+   listing the tickets filed or `in sync`, and report the same in the final
+   summary.
 4. **If steps 1 and 2 both held, report `deployRoutine.status: "done"` —
    that report IS the hand-over.** Do not PATCH `trainReady` yourself.
    Every Deploy run on 25 Sep, 2 Oct and twice on 4 Oct 2026 had that write
@@ -1317,6 +1350,14 @@ and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
    `carriedByCommit` is read via that commit). Apply the skill's
    reviewability criteria and look for cross-ticket seams, duplicated logic
    and naming drift.
+   **Docs gate (every ticket, every project):** check each ticket's commit
+   against the project's spec and documents. Fail it (`reviewStatus:
+   "kicked-back"`, `reviewReason` starting `docs:`) when code behaviour and
+   REQUIREMENTS/README/project documents/interface contracts disagree, or
+   when the ticket has no `[docs-impact]` note (see the build step). A
+   `No doc impact: <reason>` note passes only if the diff really changes
+   no documented behaviour. Kick back, never rewrite the docs in review;
+   list the mismatching document and lines in the review log.
 3. **Run the full regression suite** the project has (for `dsp-integration/`:
    the E2E regression and the full API suite) against the branch head. A red
    run **blocks**: record `blocked`, and raise one Backlog bug per distinct
