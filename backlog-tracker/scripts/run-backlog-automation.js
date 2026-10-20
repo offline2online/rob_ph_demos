@@ -1659,6 +1659,8 @@ const TRAIN_MERGE_DISPATCHES = [
 // pattern as written in the YAML>". The reason says why that is safe.
 const NOT_DISPATCHED_AFTER_TRAIN = {
   "dsp-board.yml": "finishTrain's syncDocsAfterMerge re-syncs README/REQUIREMENTS and every board document with a sourcePath at the merge commit. A brand-new mirror still needs a dsp-board run.",
+  "firestore-rules-test.yml */README.md": "a train ran the console tests on its PR before it merged; this path is there for a push straight to main that adds or renames a top-level folder (START-HERE.md's deploy map must name it).",
+  "firestore-rules-test.yml **/board-docs.json": "a train ran the console tests on its PR before it merged; this path is there for a push straight to main that changes a project's manifest (docs-sync-all.test.js validates every one).",
   "dsp-prototype.yml dsp-integration/scripts/rebuild-prototype.sh": "the script is in the source stamp (SOURCE_PATHS in rebuild-prototype.sh), so a change to it does make the bundle stale; what keeps it safe is dsp-prototype.yml's */10 schedule, which rebuilds it within ten minutes.",
 };
 
@@ -1944,7 +1946,7 @@ async function trainCommitsFor(branch, cardShas, filesFor = memoByKey(fetchCommi
   let chained = false;
   for (const c of raw) {
     let generatedOnly = false;
-    if (cards.has(c.sha) || isRevertCommit(c)) chained = true;
+    if (cards.has(c.sha) || isRevertCommit(c) || isMainMergeCommit(c)) chained = true;
     else if (chained) {
       const files = await filesFor(c.sha);
       generatedOnly = files.length > 0 && files.every((f) => isGeneratedOutput(f));
@@ -1959,11 +1961,12 @@ async function trainCommitsFor(branch, cardShas, filesFor = memoByKey(fetchCommi
 // as a list for trainTestRunState. Falls back to the card's own commit's runs
 // when the train's commits can't be matched to it.
 async function evidenceRunsFor(workflow, card, commits, runsFor, opts = {}) {
-  const candidates = evidenceCandidates(commits, card.deployCommit);
+  const mainMerges = heldForMain(card, workflow);
+  const candidates = evidenceCandidates(commits, card.deployCommit, { mainMerges });
   if (!candidates.length) return runsFor(workflow, card.deployCommit);
   const runsBySha = {};
   for (const c of candidates) if (!c.stale) runsBySha[c.sha] = await runsFor(workflow, c.sha);
-  const run_ = cardEvidenceRun(commits, card.deployCommit, runsBySha);
+  const run_ = cardEvidenceRun(commits, card.deployCommit, runsBySha, { mainMerges });
   if (run_ || !opts.borrow || !onlyStaleEvidence(commits, card.deployCommit)) return run_ ? [run_] : [];
   // Display only (the chip): the nearest later run that held this card and no
   // reverted change. Never the culprit's evidence — a failure up there is not
@@ -1980,7 +1983,7 @@ async function evidenceRunsFor(workflow, card, commits, runsFor, opts = {}) {
 async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles)) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["deployBranch", "deployCommit", "trainTest", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
+    select: { fields: ["deployBranch", "deployCommit", "trainTest", "revertRequested", "trainTestReruns"].map((fieldPath) => ({ fieldPath })) },
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
   });
   const trainCards = (branch) => cards.filter((c) => c.deployBranch === branch && c.deployCommit && !c.revertRequested).map((c) => c.deployCommit);
@@ -2091,15 +2094,22 @@ const revertedShasOf = (message) => [...String(message || "").matchAll(/This rev
 const sameSha = (a, b) => !!a && !!b && (a.startsWith(b) || b.startsWith(a));
 const isRevertCommit = (c) => revertedShasOf(c && c.message).length > 0;
 
+// A merge of main into the train (syncTrainWithMain, or a person's).
+const isMainMergeCommit = (c) => /^Merge (remote-tracking )?branch '(origin\/)?main'/.test(String((c && c.message) || ""));
+
 // The commits whose run can speak for the card, oldest first, each
 // { sha, stale }. `commits`: the train's commits, oldest first,
-// { sha, message, generatedOnly }. Pure, for test/train-eject-after-revert.test.js.
-function evidenceCandidates(commits, cardSha) {
+// { sha, message, generatedOnly }. With opts.mainMerges (a card held for a
+// red main — heldForMain), a merge of main right after it counts too: that
+// is how the held card is re-judged once main is fixed and the train has
+// taken it (mainIsAlsoRed). Any other card is never judged on main's
+// changes. Pure, for test/train-eject-after-revert.test.js.
+function evidenceCandidates(commits, cardSha, opts = {}) {
   const list = commits || [];
   const start = list.findIndex((c) => c && c.sha === cardSha);
   if (start < 0) return [];
   let end = start;
-  while (end + 1 < list.length && (isRevertCommit(list[end + 1]) || list[end + 1].generatedOnly)) end++;
+  while (end + 1 < list.length && (isRevertCommit(list[end + 1]) || list[end + 1].generatedOnly || (opts.mainMerges && isMainMergeCommit(list[end + 1])))) end++;
   const out = [];
   for (let i = start; i <= end; i++) out.push({ sha: list[i].sha, stale: staleAt(list, i) });
   return out;
@@ -2137,8 +2147,8 @@ function borrowableShas(commits, cardSha) {
 
 // The run that judges a card: the newest real run on the newest non-stale
 // candidate that has one, or null. `runsBySha`: { [sha]: runs, newest first }.
-function cardEvidenceRun(commits, cardSha, runsBySha) {
-  const candidates = evidenceCandidates(commits, cardSha).filter((c) => !c.stale);
+function cardEvidenceRun(commits, cardSha, runsBySha, opts = {}) {
+  const candidates = evidenceCandidates(commits, cardSha, opts).filter((c) => !c.stale);
   for (let i = candidates.length - 1; i >= 0; i--) {
     const real = newestRealRun((runsBySha || {})[candidates[i].sha]);
     if (real) return real;
@@ -2381,7 +2391,190 @@ function trainFailureNotes({ workflow, label, sha, url, cards, ownerId = null, a
   });
 }
 
-async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles), gh = (args) => run("gh", args)) {
+// ── A ticket is never sent back for a failure main already has ────────────
+// 20 Oct 2026, NBQ1scD9GFEr6YbQxSYX (voice-first New item modal): the
+// Kanban prototype's kanban-staff-board/ was pushed straight to main with no
+// line in START-HERE.md's deploy map, so bt-handover-docs.test.js was red ON
+// MAIN — and nobody saw, because main's own run of the console tests only
+// started for backlog-tracker/ paths. Each time the ticket landed,
+// syncTrainWithMain merged that broken main in first, the ticket's run went
+// red, and pickRedCulprit, which only knew the card before it had passed,
+// blamed the ticket: sent back, reverted and rebuilt twice for a test it
+// never touched, while the rebuild chased the wrong failure. Now, before a
+// ticket is sent back, the same workflow is run on the main commit its run
+// contained (the merge base). Red there too: the ticket stays where it is,
+// with one note saying main is broken; once main is green again the train
+// takes main and re-tests it by itself. Green there: sent back as before.
+const BASE_CHECK_GIVE_UP_MS = 60 * 60 * 1000;
+// The card was held because `workflow` was red on main too (mainIsAlsoRed).
+const heldForMain = (card, workflow) => ((card && card.trainTestReruns) || []).some((k) => k.startsWith(`${workflow}@`) && k.endsWith(":base-red"));
+const baseCheckRef = (sha) => `train-base/${String(sha).slice(0, 12)}`;
+const baseKeyPrefix = (workflow, sha) => `${workflow}@${sha}:base:`;
+
+// What to do about a culprit whose own run failed for good, from the run on
+// the main commit it contained. Pure, for test/train-base-check.test.js.
+//   baseSha: that main commit ("" when GitHub couldn't say)
+//   baseRun: the newest real run of the workflow on baseSha, or null
+//   keys:    the culprit's trainTestReruns (a dispatch is `<wf>@<sha>:base:<ms>`)
+// Returns { act } — eject, hold (main is red too), wait, dispatch (start the
+// run on main) or rerun-base (main red on attempt 1: re-run it once) — and
+// for eject a `why`: base-green, no-base or base-never-ran.
+function baseCheckAction({ workflow, baseSha, baseRun, keys, nowMs }) {
+  if (!baseSha) return { act: "eject", why: "no-base" };
+  const v = trainRunVerdict(baseRun);
+  if (v === "passed") return { act: "eject", why: "base-green" };
+  if (v === "failed") return { act: "hold" };
+  if (v === "rerun") return { act: "rerun-base" };
+  if (v === "running") return { act: "wait" };
+  const prefix = baseKeyPrefix(workflow, baseSha);
+  const sent = (keys || []).filter((k) => k.startsWith(prefix)).map((k) => Number(k.slice(prefix.length))).filter(Number.isFinite);
+  if (!sent.length) return { act: "dispatch" };
+  return nowMs - Math.max(...sent) >= BASE_CHECK_GIVE_UP_MS ? { act: "eject", why: "base-never-ran" } : { act: "wait" };
+}
+
+// The one line a person needs: which test failed and what it said, from
+// `gh run view --log-failed` (lines are "job<TAB>step<TAB>timestamp text").
+// Knows node:assert runners (FAIL / not ok + the message under it), vitest
+// and Playwright (✘ / × + Error:), and falls back to the failing step's
+// name. Pure, for test/train-base-check.test.js. "" when nothing is found.
+function failureSummaryFromLog(log) {
+  const rows = String(log || "").split("\n").map((line) => {
+    const parts = line.split("\t");
+    const step = parts.length >= 3 ? parts[1].trim() : "";
+    const text = (parts.length >= 3 ? parts.slice(2).join("\t") : line).replace(/^\uFEFF?\d{4}-\d\d-\d\dT[\d:.]+Z ?/, "").replace(/\x1b\[[0-9;]*m/g, "");
+    return { step, text };
+  });
+  const clip = (t) => (t.length > 240 ? `${t.slice(0, 237)}…` : t);
+  const isFail = (t) => /^\s*(FAIL\b|not ok\b|✘|×|✗)/.test(t) && !/^\s*FAIL\s*$/.test(t);
+  for (let i = 0; i < rows.length; i++) {
+    if (!isFail(rows[i].text)) continue;
+    const name = rows[i].text.replace(/^\s*(FAIL|not ok( \d+)?( -)?|✘|×|✗)\s*/, "").replace(/\s+\(\d+(\.\d+)?m?s\)\s*$/, "").trim();
+    let why = "";
+    for (let j = i + 1; j < Math.min(rows.length, i + 6); j++) {
+      const t = rows[j].text.trim();
+      if (!t || /^at /.test(t) || /^-+$/.test(t)) continue;
+      if (isFail(rows[j].text)) break;
+      why = t.replace(/^(AssertionError( \[ERR_ASSERTION\])?|Error):\s*/, "");
+      break;
+    }
+    const where = rows[i].step && !/^(Set up job|Run )?$/.test(rows[i].step) ? `${rows[i].step.replace(/^Run /, "")}: ` : "";
+    return clip(`${where}${name}${why && why !== name ? ` — ${why}` : ""}`);
+  }
+  const err = rows.find((r) => /##\[error\]/.test(r.text) && r.step);
+  return err ? clip(`${err.step.replace(/^Run /, "")} failed`) : "";
+}
+
+const runFailureLogs = new Map();
+function failureSummaryOf(runId, gh = (args) => run("gh", args, { maxBuffer: 64 * 1024 * 1024 })) {
+  if (!runId) return "";
+  const id = String(runId);
+  if (!runFailureLogs.has(id)) {
+    let summary = "";
+    try { summary = failureSummaryFromLog(gh(["run", "view", id, "--repo", REPO, "--log-failed"])); } catch (err) {
+      console.log(`[train-eject] couldn't read the failed log of run ${id} (${scrubSecrets(err.message)})`);
+    }
+    runFailureLogs.set(id, summary);
+  }
+  return runFailureLogs.get(id);
+}
+
+// The main commit a train commit contains (its merge base with main). "" on
+// any error, which baseCheckAction treats as "no base check".
+const fullSha = (out) => { const v = String(out || "").trim(); return /^[0-9a-f]{40}$/.test(v) ? v : ""; };
+function mainBaseOf(sha, gh) {
+  try { return fullSha(gh(["api", `repos/${REPO}/compare/main...${sha}`, "-q", ".merge_base_commit.sha"])); } catch { return ""; }
+}
+function mainHeadSha(gh) {
+  try { return fullSha(gh(["api", `repos/${REPO}/commits/main`, "-q", ".sha"])); } catch { return ""; }
+}
+
+// Starts `workflow` on exactly `sha`: workflow_dispatch takes a ref, so a
+// throwaway train-base/<sha> branch is pointed at it (no workflow runs on a
+// push there). Never throws.
+function dispatchOnSha(workflow, sha, gh) {
+  const ref = baseCheckRef(sha);
+  try { gh(["api", "-X", "POST", `repos/${REPO}/git/refs`, "-f", `ref=refs/heads/${ref}`, "-f", `sha=${sha}`]); } catch { /* already there */ }
+  try {
+    gh(["workflow", "run", workflow, "--repo", REPO, "--ref", ref]);
+    return true;
+  } catch (err) {
+    console.log(`[train-base] couldn't start ${workflow} on ${ref} (${scrubSecrets(err.message)})`);
+    return false;
+  }
+}
+function dropBaseRef(sha, gh) {
+  try { gh(["api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${baseCheckRef(sha)}`]); } catch { /* already gone */ }
+}
+
+const baseCheckingNote = (label, sha7, base7) =>
+  `The ${label} failed twice on this ticket's commit ${sha7}. Before sending it back, running them on main as it was when this ticket landed (${base7}), without this ticket, to make sure the failure is really this ticket's. Nothing to do yet.`;
+const heldForMainNote = (label, base7, url, summary) =>
+  `Not sent back: main is broken, not this ticket. The ${label} fail the same way on main without this ticket (${base7}: ${url || "no link"})${summary ? `: ${summary}` : ""}. ` +
+  `It stays where it is. Fix main; the train then takes main and re-tests this ticket by itself.`;
+
+// The culprit was going to be sent back; this says whether main is to
+// blame instead, and acts on it. Returns { eject: true, why } when the
+// culprit must be sent back, { eject: false } when it is held or the check
+// is still going.
+async function mainIsAlsoRed(t, culprit, r, branch, runsFor, gh, ghLog) {
+  const keys = culprit.trainTestReruns || [];
+  const evidenceSha = r.headSha || culprit.deployCommit;
+  const baseSha = mainBaseOf(evidenceSha, gh);
+  const baseRun = baseSha ? newestRealRun(await runsFor(t.workflow, baseSha)) : null;
+  const step = baseCheckAction({ workflow: t.workflow, baseSha, baseRun, keys, nowMs: Date.now() });
+  const save = async (fields) => { await patchItem(culprit.id, { ...fields, updatedAt: new Date().toISOString() }); };
+  if (step.act === "eject") {
+    if (baseSha && step.why !== "no-base") dropBaseRef(baseSha, gh);
+    return { eject: true, why: step.why };
+  }
+  if (step.act === "wait") return { eject: false };
+  if (step.act === "rerun-base") {
+    rerunTrainRun(baseRun.id, gh); // a flaky red on main must not hold a ticket either
+    return { eject: false };
+  }
+  if (step.act === "dispatch") {
+    if (!dispatchOnSha(t.workflow, baseSha, gh)) return { eject: true, why: "base-never-ran" };
+    const notes = await appendNote(culprit, baseCheckingNote(t.label, evidenceSha.slice(0, 7), baseSha.slice(0, 7)));
+    culprit.trainTestReruns = withKey(keys, `${baseKeyPrefix(t.workflow, baseSha)}${Date.now()}`);
+    await save({ notes, trainTestReruns: culprit.trainTestReruns });
+    console.log(`[train-base] ${branch}: ${t.workflow} red at ${evidenceSha.slice(0, 7)} (${culprit.id}) — checking main at ${baseSha.slice(0, 7)} before sending it back`);
+    return { eject: false };
+  }
+  // hold: main is red without this ticket.
+  const heldKey = `${t.workflow}@${baseSha}:base-red`;
+  if (!keys.includes(heldKey)) {
+    const summary = failureSummaryOf(baseRun.id, ghLog);
+    const notes = await appendNote(culprit, heldForMainNote(t.label, baseSha.slice(0, 7), baseRun.url, summary));
+    culprit.trainTestReruns = withKey(culprit.trainTestReruns, heldKey);
+    await save({ notes, trainTestReruns: culprit.trainTestReruns });
+    console.log(`[train-base] ${branch}: ${t.workflow} is red on main at ${baseSha.slice(0, 7)} too — ${culprit.id} is not sent back`);
+  }
+  dropBaseRef(baseSha, gh);
+  // Main fixed since? Take it onto the train (once per main commit) and
+  // re-test, so the held ticket is judged on the train with the fix.
+  const head = mainHeadSha(gh);
+  const resyncKey = `${t.workflow}@${head}:resync`;
+  if (head && head !== baseSha && !(culprit.trainTestReruns || []).includes(resyncKey)
+    && trainRunVerdict(newestRealRun(await runsFor(t.workflow, head))) === "passed") {
+    culprit.trainTestReruns = withKey(culprit.trainTestReruns, resyncKey);
+    let text;
+    try {
+      const sync = syncTrainWithMain(branch);
+      if (sync.kind === "conflict") text = `Main is green again (${head.slice(0, 7)}), but merging it into ${branch} conflicted on ${(sync.paths || []).join(", ") || "some files"}. Merge main into the branch by hand; the tests re-run on the push.`;
+      else {
+        run("gh", ["workflow", "run", t.workflow, "--repo", REPO, "--ref", branch]);
+        text = `Main is green again (${head.slice(0, 7)}). Merged it into ${branch} and re-running the ${t.label} on the train, which re-judges this ticket.`;
+      }
+    } catch (err) {
+      text = `Main is green again (${head.slice(0, 7)}), but taking it onto ${branch} failed (${scrubSecrets(err.message)}). Merge main into the branch by hand.`;
+    }
+    const notes = await appendNote(culprit, text);
+    await save({ notes, trainTestReruns: culprit.trainTestReruns });
+  }
+  return { eject: false };
+}
+
+async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles), gh = (args) => run("gh", args), ghLog = undefined) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested", "trainTestReruns"].map((fieldPath) => ({ fieldPath })) },
@@ -2442,20 +2635,24 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         } else if (action === "wait") {
           continue;
         }
+        const base = await mainIsAlsoRed(t, culprit, r, branch, runsFor, gh, ghLog);
+        if (!base.eject) continue;
         const wasApproved = culprit.status === "ready-to-publish";
         const project = culprit.projectId === projectId ? trainProject : await getProject(culprit.projectId).catch(() => null);
         const autoRebuild = !!project && (Number(culprit.autoRebuilds) || 0) < 1;
-        const text = `${t.label} (${t.workflow}) failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} while everything before it on ${branch} passed: ${r.url || ""}${
+        const summary = failureSummaryOf(r.id, ghLog);
+        const text = `${t.label} (${t.workflow}) failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} while everything before it on ${branch} passed${
+          base.why === "base-green" ? " and main without it passes" : base.why === "base-never-ran" ? " (main without it could not be tested)" : ""}: ${r.url || ""}${
           rerunCouldNotStart ? " (the re-run could not start, so this is the first run's result)" : " (it failed again when re-run)"}`;
         const notes = await appendNote(culprit,
-          `Sent back automatically (Failed testing [tests]): ${text}. ` +
+          `Sent back automatically (Failed testing [tests]): ${summary ? `Why: ${summary}\n` : ""}${text}. ` +
           (wasApproved ? `It had been approved, but the approved Deploy to Main was parked red on it, so it is taken off rather than holding the release. ` : "") +
           `Its commits are being reverted off the train so the tickets around it can still ship. ` +
           (autoRebuild ? `A rebuild was started with this failure on its notes — the build must make that check pass before handing the patch back.` : `It was already rebuilt once automatically; a person needs to look at it.`));
         await patchItem(culprit.id, {
           status: "backlog",
           revertRequested: true,
-          lastFailureReason: { category: "tests", text, action: "failed-testing", at: new Date() },
+          lastFailureReason: { category: "tests", summary: summary || `${t.label} failed`, text, action: "failed-testing", at: new Date() },
           notes,
           updatedAt: new Date().toISOString(),
           // The rebuild must start from the train WITHOUT this ticket's
@@ -6082,6 +6279,8 @@ module.exports = {
   TRAIN_TEST_WORKFLOWS, trainTestFailureTargets, touchesConsoleTests,
   // test/train-rerun.test.js — a failed train test is re-run once before anyone acts on it
   trainRunVerdict, culpritAction, rerunTrainRun, trainFailureNotes, flakyPassKey, flakyNote, ejectRedCulprits,
+  // test/train-base-check.test.js — a ticket is never sent back for a failure main already has
+  baseCheckAction, failureSummaryFromLog, isMainMergeCommit, BASE_CHECK_GIVE_UP_MS, baseCheckRef, heldForMain,
   reportTrainTestResults, trainRunOwner, alreadyRerun, rerunRunKey, fdoc,
   trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/train-eject-after-revert.test.js — a ticket is judged on a run that did not contain a reverted ticket

@@ -1637,6 +1637,8 @@ function itemDetail(id, d, projects) {
     lastFailureReason: d.lastFailureReason && typeof d.lastFailureReason === "object"
       ? {
           category: d.lastFailureReason.category || null,
+          // One line: the failing test for an automatic send-back (failureSummaryFromLog).
+          summary: d.lastFailureReason.summary || null,
           text: d.lastFailureReason.text || "",
           action: d.lastFailureReason.action || null,
           at: tsToISO(d.lastFailureReason.at),
@@ -2149,7 +2151,7 @@ const TOOLS = [
   },
   {
     name: "get_backlog_item",
-    description: "One ticket in full — description, area, pipeline column, preview link, attachments, every comment on it, and lastFailureReason (why it last failed testing or was ejected from the train, or null).",
+    description: "One ticket in full — description, area, pipeline column, preview link, attachments, every comment on it, and lastFailureReason (why it last failed testing or was ejected from the train, or null; its summary is the one-line why, e.g. the failing test).",
     scope: "board.read",
     inputSchema: {
       type: "object",

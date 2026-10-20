@@ -2345,7 +2345,7 @@ async function rpc(token, method, params, id = 1) {
     });
     env.store.col("backlogItems").set("lf2", { projectId: "lfproj", title: "T", desc: "d", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(1) });
     const get = async (id) => JSON.parse((await rpc(token, "tools/call", { name: "get_backlog_item", arguments: { itemId: id } })).body.result.content[0].text);
-    assert.deepStrictEqual((await get("lf1")).lastFailureReason, { category: "Visual or layout issue", text: "header overlaps", action: "failed-testing", at: "2026-10-01T10:00:00.000Z" });
+    assert.deepStrictEqual((await get("lf1")).lastFailureReason, { category: "Visual or layout issue", summary: null, text: "header overlaps", action: "failed-testing", at: "2026-10-01T10:00:00.000Z" });
     assert.strictEqual((await get("lf2")).lastFailureReason, null);
   });
 

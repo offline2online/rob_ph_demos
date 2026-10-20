@@ -25,6 +25,13 @@ const notes = Array.from({ length: 24 }, (_, i) => ({
   text: `Comment ${i}: ${LONG_URL}\n${LONG_ID}\n${CODE}\n${"y".repeat(300)}`,
   at: t(T0 + i * 1000),
 }));
+// Two automatic send-backs and a held-for-main note, so the one-line
+// rejection summary above the thread (rejection-summary.js) is measured too.
+notes.push(
+  { author: "backlog-automation", text: `Sent back automatically (Failed testing [tests]): Why: deployment train tests: ${LONG_ID} — ${LONG_URL}\nconsole tests (firestore-rules-test.yml) failed on this ticket's own commit abc1234: ${LONG_URL}`, at: t(T0 + 30000) },
+  { author: "viewer", text: `Failed testing [Visual or layout issue]: ${"z".repeat(300)}`, at: t(T0 + 31000) },
+  { author: "backlog-automation", text: `Not sent back: main is broken, not this ticket. The console tests fail the same way on main without this ticket (ccccccc: ${LONG_URL}): ${CODE}. It stays where it is.`, at: t(T0 + 32000) },
+);
 const attachments = [
   { type: "image", name: "a-screenshot-with-an-extremely-long-file-name-".repeat(5) + ".png", url: PIXEL },
   { type: "image", name: "second.png", url: PIXEL },
@@ -35,7 +42,7 @@ const seed = () => ({
   docs: {
     projects: { [PID]: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
     backlogItems: {
-      b1: { projectId: PID, title: "T".repeat(150), desc: longDesc, type: "bug", category: "HQ Admin", status: "backlog", notes, attachments, createdAt: t(T0 + 1), updatedAt: t(T0 + 1) },
+      b1: { projectId: PID, title: "T".repeat(150), desc: longDesc, type: "bug", category: "HQ Admin", status: "backlog", notes, attachments, lastFailureReason: { category: "tests", summary: `deployment train tests: ${LONG_ID}`, text: LONG_URL, action: "failed-testing", at: t(T0 + 30000) }, createdAt: t(T0 + 1), updatedAt: t(T0 + 1) },
     },
   },
 });

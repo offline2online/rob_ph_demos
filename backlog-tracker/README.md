@@ -333,8 +333,16 @@ What the train changes:
   clicked and parked red on it (`trainStatus: "conflict"` with
   `trainCiRedPr`); then it is ejected and rebuilt the same way, so the rest
   of the approved train ships with no second click (18 Oct 2026, PR #412).
-  It is only ejected with a green commit before it, so a check that is red
-  on main itself never sends the train's first ticket back.
+  It is only ejected with a green commit before it.
+  **Nothing is sent back for a failure main already has** (20 Oct 2026,
+  NBQ1scD9GFEr6YbQxSYX): before a send-back the same workflow runs on the
+  main commit the failing run contained (`baseCheckAction`, via a throwaway
+  `train-base/<sha>` branch). Red there too and the ticket is held with one
+  note, "Not sent back: main is broken, not this ticket"; once main is green
+  again the train takes it and re-tests the ticket by itself. Every
+  automatic send-back now opens with a one-line `Why:` (the failing test,
+  from the run's log — `lastFailureReason.summary`), and the board shows one
+  line per rejection above a ticket's comments (`public/js/rejection-summary.js`).
   **A failed train test is re-run once before anyone acts on it** (19 Oct
   2026): `trainRunVerdict` reads GitHub's attempt number — red on attempt 1
   is `rerun`, red on attempt 2 is `failed` — so a flaky test no longer sends
