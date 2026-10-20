@@ -9,7 +9,8 @@
      D1 — open RTB (open auction, no buyers list)
      D2 — private auction (PMP / buyers list)
      D3 — preferred deal (reserve, no committed volume)
-     D4 — programmatic guaranteed (reserve with committed volume)
+     D4 — programmatic guaranteed (reserve with committed volume; D4.6 is the
+          AWS demo's 24-hour booking)
      D5 — Computer Vision gender targeting on a deal (guaranteed, with lighter
           preferred and private-auction variants); never the open real-time slot
 
@@ -306,6 +307,27 @@ describe('Run 7 — D4 programmatic guaranteed: reserve with committed volume', 
     expect(second.statusCode).toBe(409)
     expect(h.campaigns.handoffs.filter((b) => b.windowStart === day(1).toISOString())).toHaveLength(1)
     expect(h.campaigns.refusedBookings).toEqual([])
+  })
+
+  /* AWS demo path 2 (ticket sGXWYJjMiQAlzXrhwQ8y, 20 Oct 2026): one slot, one advertiser, one full day at a fixed CPM with a guaranteed impression count. Playing the creative for the 24 hours is PH Core's; this asserts what the exchange owns — the booking, its window, the price, the guarantee and the bill. */
+  it('D4.6 — 24-hour PG: one slot booked for exactly 24 h at a fixed CPM with guaranteed impressions, billed once for the full day', async () => {
+    const h = await dealHarness('guaranteed')
+    const campaignId = await h.readyApiCampaign('Swisse — D4.6')
+    const res = await reserve(h, campaignId, day(1))
+    expect(res.statusCode).toBe(201)
+    expect(res.json()).toMatchObject({ status: 'reserved', dealType: 'guaranteed', clearingCpm: RESERVE, guaranteedImpressions: COMMITTED })
+    const [b] = booked(h, day(1))
+    expect(b).toMatchObject({ campaignId, windowStart: day(1).toISOString(), windowEnd: day(2).toISOString() })
+    expect(new Date(b.windowEnd).getTime() - new Date(b.windowStart).getTime()).toBe(86_400_000)
+    /* No auction runs on a reserved window: the slot is the advertiser's for the full day. */
+    expect((await runAuction(h.ctx, day(1))).positions[0]).toMatchObject({ bidRequests: 0, winner: null })
+    /* The full day plays: billed once, at the fixed CPM, on the realised views. */
+    const items = await bill(h, campaignId, day(1), { plays: 5760, playedSec: EXPECTED_SEC })
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ cpm: RESERVE, realisedViews: ASSUMED_VIEWS, amount: 120 })
+    expect(await runBilling(h.ctx)).toEqual([])
+    /* Reserving that day does not take the slot off the market for the next one. */
+    expect(booked(h, day(2))).toEqual([])
   })
 })
 

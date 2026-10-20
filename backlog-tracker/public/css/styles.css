@@ -275,6 +275,36 @@ body {
 .col-groom-inline .notify-claude-btn { flex: none; white-space: nowrap; }
 .col-groom-inline .notify-claude-btn { padding: 3px 10px; font-size: 11px; min-height: 0; }
 .col-groom-inline .notify-claude-icon { font-size: 14px; }
+/* Four columns must fit beside the sidebar (FATVh6YWWRepyBD2VW8p, 20 Oct 2026).
+   At 1280px with the 248px sidebar open the content area is ~1030px, less than
+   4 x 260px, so Deployed (Live) sat behind an inner sideways scroll and the
+   inline Groom Backlog / Review Batch buttons squeezed the labels to
+   "BACKLO". On a persistent-sidebar desktop the columns now share the width;
+   each column is a size container, and as it narrows its header gives up
+   padding, then the button text (icon + count stay, the title says the rest),
+   then lets the label wrap, so the label is never the thing that is cut. */
+@media (min-width: 1024px) {
+  .board { grid-template-columns: repeat(4, minmax(0, 1fr)); overflow-x: visible; }
+  .column { min-width: 0; }
+}
+.column { container-type: inline-size; container-name: pipeline-col; }
+.col-head .notify-claude-icon { width: 1em; overflow: hidden; flex: none; }
+@container pipeline-col (max-width: 300px) {
+  .col-head { padding: 12px 10px; gap: 6px; }
+  .col-head .notify-claude-label { display: none; }
+  .col-groom-inline .notify-claude-btn, .col-head .review-batch-btn { padding: 3px 8px; }
+}
+/* A phone column (iPhone SE / small Android, ~310-335px) can't fit "READY FOR TESTING" beside Review Batch on one line:
+   let the label wrap to two lines rather than be cut off. */
+@media (max-width: 640px) {
+  @container pipeline-col (max-width: 335px) {
+    .col-head > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
+  }
+}
+@container pipeline-col (max-width: 250px) {
+  .col-head { font-size: 11px; letter-spacing: .02em; }
+  .col-head > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
+}
 .deploy-notify-btn-conflict .notify-claude-icon { color: var(--warning); }
 .col-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .empty-hint { color: var(--text-muted); font-size: 12.5px; font-style: italic; padding: 10px 6px; text-align: center; }
@@ -501,8 +531,12 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .project-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .project-collapse-btn { border: none; background: transparent; cursor: pointer; font-size: 16px; color: var(--text-muted); padding: 2px 6px; flex-shrink: 0; }
 .project-collapse-btn:hover { color: var(--text); }
-.project-title-wrap { flex: 1; min-width: 180px; }
-.project-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.project-title-wrap { flex: 1 1 280px; min-width: 240px; }
+/* One tidy row: star, name (+count), pencil, badge. A long name wraps inside
+   itself; the CTAs drop below the title rather than squeezing it. */
+.project-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+.project-name-row > * { flex-shrink: 0; }
+.project-name-row > .project-name { flex-shrink: 1; min-width: 0; }
 .project-name { margin: 0; font-size: 18px; font-weight: 700; }
 .project-item-count { font-size: 13px; font-weight: 500; color: var(--text-muted); }
 /* The running backlog-tracker release (public/js/version.js APP_VERSION),
@@ -572,7 +606,7 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
    interfaces) lives behind the options menu now, on both desktop and
    mobile — this is what used to be 2-3 separate ghost buttons competing
    with the primary Add button for space, especially on a phone screen. */
-.project-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.project-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
 .new-item-btn { white-space: nowrap; }
 /* AI-driven action — same teal→violet gradient family as the platform's
    own "Launch a New Campaign" (see the ph-designer skill's "AI action
@@ -960,9 +994,9 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   .project { padding: 14px 12px 16px; }
   .project-header { flex-wrap: wrap; }
   .project-title-wrap { flex-basis: 100%; }
-  /* A long name wraps inside its own box so the rename pencil stays beside it instead of dropping to a line of its own. */
-  .project-name { max-width: calc(100% - 96px); }
-  .project-header-actions { flex-basis: 100%; flex-wrap: wrap; }
+  /* Desktop right-aligns the CTAs beside the title; on a phone they are full-width rows starting at the left edge,
+     so Ready for Dev / Approved / Deploy to Main line up with + New backlog item below them. */
+  .project-header-actions { flex-basis: 100%; flex-wrap: wrap; justify-content: flex-start; margin-left: 0; }
   .new-item-btn { flex: 1; min-height: 46px; font-size: 14px; justify-content: center; white-space: normal; }
   /* The Backlog column's Groom CTA is small on desktop; on a phone it is a full 44px target. */
   .col-groom-inline .notify-claude-btn { min-height: 44px; padding: 3px 10px; font-size: 11px; }
@@ -975,8 +1009,9 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      below (that button is flex:1 sharing its row with the same ⋮ button) —
      a flat 100% here made the Gen AI CTA visibly wider than Add to backlog. */
   .notify-claude-btn { flex-basis: calc(100% - 54px); min-height: 46px; font-size: 14px; justify-content: center; }
-  /* "Approved for Deployment — 12 selected" wraps inside the button rather than running past the project card. */
-  .project-header-actions .notify-claude-btn { white-space: normal; }
+  /* At least as wide as + New backlog item; a longer label ("Approved for Deployment — 1 selected") grows the
+     button to the full row first, as it did before 20 Oct, and only wraps inside it on the narrowest phones. */
+  .project-header-actions .notify-claude-btn { flex: 0 1 auto; min-width: calc(100% - 54px); white-space: normal; }
   .project-options-btn { min-width: 46px; min-height: 46px; }
   .project-options-menu { left: auto; right: 0; max-width: calc(100vw - 24px); }
 
@@ -1721,7 +1756,8 @@ body { overflow-x: clip; }
 .nav-search-item { margin-top: auto; }
 .nav-collapse-btn, .nav-drawer .modal-close { min-width: 36px; min-height: 36px; background: transparent; border: none; border-radius: 8px; cursor: pointer; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; }
 .nav-collapse-btn:hover { background: rgba(0, 0, 0, .06); }
-.nav-collapse-btn { display: none; }
+.nav-collapse-btn { display: none; flex: none; }
+@media (pointer: coarse) { .nav-collapse-btn, .nav-drawer .modal-close { min-width: 44px; min-height: 44px; } }
 :is(.nav-drawer-item, .profile-menu-item, .tab, .nav-collapse-btn, .profile-btn, .cmdk-row, .cmdk-close):focus-visible,
 #cmdk-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 

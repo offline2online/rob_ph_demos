@@ -1096,6 +1096,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         </div>
       )}
       <BuyersListsTable
+        showTargeting={flags.dealTargeting === true}
         lists={buyersLists.data?.items ?? []}
         canEdit={canEdit}
         capacity={listCapacity}
@@ -1177,6 +1178,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         </DeleteDialog>
       )}
       <BuyersListModal
+        showTargeting={flags.dealTargeting === true}
         open={!!addingBuyersListFor}
         editing={null}
         onClose={() => setAddingBuyersListFor(null)}

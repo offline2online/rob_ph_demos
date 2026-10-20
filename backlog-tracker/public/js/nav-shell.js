@@ -85,6 +85,18 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     }
   }, true);
 
+  // Rotating a tablet (or resizing) across a breakpoint must not strand the
+  // slide-over: a drawer left "open" under the persistent sidebar, or a
+  // backdrop left up with nothing to dismiss it, made the menu controls look
+  // dead.
+  function resetOverlay() {
+    delete drawer.dataset.show;
+    drawer.classList.remove("open");
+    backdrop.classList.remove("open");
+    setTab(null);
+  }
+  [mqPersistent, mqPhone].forEach((mq) => mq.addEventListener("change", () => { resetOverlay(); syncActive(); }));
+
   // On a phone the Build / Publish tabs open the same list, filtered.
   function showSection(which) {
     drawer.dataset.show = which || "all";

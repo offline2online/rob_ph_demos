@@ -246,6 +246,13 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(read.annotations.readOnlyHint, true);
     const write = res.body.result.tools.find((t) => t.name === "create_backlog_item");
     assert.strictEqual(write.annotations.readOnlyHint, false);
+    // Every tool is annotated, and only delete_* is destructive, so a client
+    // that auto-approves everything else can be told to.
+    for (const t of res.body.result.tools) {
+      assert.strictEqual(typeof t.annotations.readOnlyHint, "boolean", `${t.name} lacks readOnlyHint`);
+      assert.strictEqual(t.annotations.destructiveHint, t.name.startsWith("delete_"), `${t.name} destructiveHint`);
+      if (/^(get|list|search)_/.test(t.name) || t.name === "whoami") assert.strictEqual(t.annotations.readOnlyHint, true, `${t.name} should be read-only`);
+    }
   });
 
   // approve_deploy_to_main (Zogk8EKjKRKsM4GZBEJZ) is a deliberate, logged,

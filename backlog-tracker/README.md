@@ -2408,6 +2408,12 @@ the board on a phone. Measured before/after at 390px (the build before
   phone in dark mode gets the light console.
 - "+ New project" is back in the page header instead of a full-width sticky
   slab, and the phone topbar runs edge to edge.
+- After main's desktop fixes (four columns beside the sidebar, one-row project
+  title) merged in: on a phone the header CTAs start at the left edge again
+  (desktop right-aligns them), "Approved for Deployment — N selected" grows to
+  the full row before wrapping, and a column label that can't fit beside
+  Groom Backlog / Review Batch on a 360–375px phone wraps to two lines instead
+  of being cut off.
 
 `test/ui/console-click.test.mjs` now ticks a Ready for Testing card far down
 a phone-width board and approves it from the pinned bar, and checks the header
