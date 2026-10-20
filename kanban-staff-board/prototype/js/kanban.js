@@ -339,6 +339,7 @@
       <div class="page-header">
         <h2>Kanban</h2>
         <span class="page-header-count" id="kb-count"></span>
+        <label class="kb-search kb-header-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
         <div class="kb-header-actions">
           <button type="button" class="btn-ghost kb-icon-label" id="kb-report-btn"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span>Release report</button>
           <button type="button" class="btn-primary" id="kb-new-btn">+ New task</button>
@@ -353,7 +354,6 @@
         </div>
       </div>
       <div class="kb-filters" role="search">
-        <label class="kb-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
         <div class="kb-people" role="group" aria-label="Filter by assignee">
           ${SEED.users.map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${u.id}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.first)}">${avatar(u.id)}<span>${esc(u.first)}</span></button>`).join("")}
           <button type="button" class="kb-person-chip${board.assignees.has("none") ? " on" : ""}" data-person="none" aria-pressed="${board.assignees.has("none")}">${avatar("")}<span>Unassigned</span></button>

@@ -31,7 +31,8 @@ viewer's own `localStorage`, and **⋮ → Reset demo data** puts the mock data 
   Ready for Testing → Approved / Ready for Deployment → Done. You can drag cards
   with a mouse, or press and hold them on touch. Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
-  Progress or Ready for Dev returns it to the developer. The filters cover My
+  Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The filter row
+  stays on one line from 1240px wide with the sidebar open; below that it wraps. The filters cover My
   tasks, assignee avatars (first names), release, type, priority, sprint,
   label and search. Selecting people in the assignee filter splits the board into one
   swimlane per person. Each lane has a full-width header with the person's name, and can be

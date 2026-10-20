@@ -40,6 +40,28 @@
 .kb-person-chip.on { background: var(--primary-tint); padding: 0 10px 0 4px; }
 .kb-person-chip.on > span:last-child { display: inline; font-weight: 600; color: var(--primary-text); }
 .kb-person-chip.on .kb-avatar { box-shadow: 0 0 0 2px var(--primary); }
+.kb-header-search { align-self: center; }
+.kb-header-search input { width: 200px; }
+/* Desktop: every filter on one line, even with the sidebar open. Avatars
+   overlap like Jira's, a picked person shows as a ring (name in the tooltip
+   and on their swimlane), and the selects shrink to their content. */
+@media (min-width: 1024px) {
+  .kb-filters { row-gap: 6px; }
+  .kb-filters > * { flex: none; }
+  .kb-people { gap: 0; }
+  .kb-people .kb-person-chip { padding: 0; min-height: 36px; position: relative; }
+  .kb-people .kb-person-chip + .kb-person-chip { margin-left: -5px; }
+  .kb-people .kb-person-chip.on { background: transparent; padding: 0; z-index: 1; }
+  .kb-people .kb-person-chip.on > span:last-child { display: none; }
+  .kb-people .kb-person-chip:hover { z-index: 2; background: transparent; }
+  .kb-people .kb-person-chip:hover .kb-avatar { transform: translateY(-2px); }
+  .kb-people .kb-avatar { transition: transform var(--ap-fast); }
+  .kb-mine { padding: 0 12px; }
+  .kb-filters select { flex: 0 1 auto; min-width: 84px; max-width: 150px; padding: 0 6px 0 10px; font-size: 13px; text-overflow: ellipsis; }
+  .kb-clear { white-space: nowrap; }
+}
+/* Wide enough for the whole row: never wrap; the selects shrink instead. */
+@media (min-width: 1240px) { .kb-filters { flex-wrap: nowrap; } }
 .kb-mine { min-height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border: 0; border-radius: 9999px; background: rgba(120, 120, 128, .12); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
 .kb-mine .material-symbols-outlined { font-size: 18px; }
 .kb-mine.on { background: var(--primary); color: #fff; }
@@ -372,7 +394,7 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
   .kb-header-actions { margin-left: 0; width: 100%; }
   .kb-header-actions .btn-primary { flex: 1; }
   .kb-filters { gap: 6px; }
-  .kb-search { flex: 1 1 100%; }
+  .kb-search { flex: 1 1 100%; order: 5; }
   .kb-search input { width: 100%; }
   .kb-people { flex: 1 1 100%; overflow-x: auto; }
   .kb-filter-toggle { display: inline-flex; }
