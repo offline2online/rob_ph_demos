@@ -201,6 +201,11 @@ html[data-page="kanban"] .topbar { position: relative; }
 .kb-parent-epic .material-symbols-outlined { font-size: 14px; flex: none; font-variation-settings: 'FILL' 1; }
 .field-label .kb-none { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 4px; }
 .kb-children li { cursor: pointer; }
+.kb-child-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.kb-child-actions .btn-ghost { min-height: 38px; padding: 0 12px; font-size: 13px; }
+.kb-child-actions .material-symbols-outlined { font-size: 18px; font-variation-settings: 'FILL' 1; }
+.kb-child-link { flex: 1 1 200px; min-width: 0; }
+.kb-child-link select { min-height: 38px; color: var(--text-muted); }
 .kb-children li:hover { background: var(--surface-2); }
 .kb-children .kb-avatar { margin-left: 4px; }
 .kb-field[hidden] { display: none; }
@@ -437,3 +442,4 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
   .kb-add-row { flex-wrap: wrap; }
   .kb-add-row .kb-input { flex: 1 1 100% !important; }
 }
+.kb-sublist .kb-type .material-symbols-outlined { color: inherit; }

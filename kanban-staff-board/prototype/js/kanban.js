@@ -640,18 +640,22 @@
   const fieldOn = (k) => (state.settings.fields[k] || {}).show;
   const fieldReq = (k) => (state.settings.fields[k] || {}).required;
 
-  function openTask(key) {
+  // returnTo: the epic to reopen when a child ticket opened from it closes.
+  let returnTo = null;
+  function openTask(key, preset) {
     const t = key ? taskByKey(key) : null;
     draftIsNew = !t;
-    draft = t ? clone(t) : {
+    returnTo = preset && preset.returnTo ? preset.returnTo : null;
+    draft = t ? clone(t) : Object.assign({
       key: "PH-" + state.nextKey, type: "task", title: "", description: "", status: "backlog",
       assignee: board.mine ? state.me : "", reporter: state.me, release: state.settings.currentRelease,
       estimate: "", logged: 0, priority: "medium", sprint: "", due: "", labels: [], epic: "",
       comments: [], attachments: [], links: [], previousAssignee: "", activity: [],
-    };
+    }, preset ? preset.fields : {});
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
     syncModalFlag();
     renderForm();
+    syncCreateCta();
     $("#task-backdrop").hidden = false;
     document.body.classList.add("kb-modal-open");
     setTimeout(() => { const f = $("#f-title"); if (f && draftIsNew) f.focus(); }, 30);
@@ -673,7 +677,11 @@
     $("#task-flag-label").textContent = draft.flagged ? "Flagged" : "Flag";
     $(".kb-task-panel").classList.toggle("kb-panel-flagged", !!draft.flagged);
   }
-  function closeTask() { stopRecorder(true); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null; }
+  function closeTask() {
+    stopRecorder(true); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
+    const back = returnTo; returnTo = null;
+    if (back && taskByKey(back)) openTask(back);
+  }
 
   function label(k, forId) {
     return `<label class="field-label" for="${forId || "f-" + k}">${esc(FIELD_LABEL[k])}${fieldReq(k) ? '<span class="kb-req" aria-hidden="true">*</span>' : ""}</label>`;
@@ -714,9 +722,15 @@
       case "children": {
         const kids = childrenOf(d.key);
         const done = kids.filter((k) => k.status === "done").length;
-        return `<div class="kb-field" data-field="children"><label class="field-label">Child tickets <span class="kb-none">${done} of ${kids.length} done</span></label>
+        const linkable = state.tasks.filter((t) => t.type !== "epic" && t.epic !== d.key && t.status !== "done").sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
+        return `<div class="kb-field" data-field="children"${d.type === "epic" ? "" : " hidden"}><label class="field-label">Child tickets <span class="kb-none">${done} of ${kids.length} done</span></label>
           ${kids.length ? `<div class="kb-logbar kb-epic-progress"><span style="width:${(done / kids.length) * 100}%"></span></div>` : ""}
-          <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}<span class="kb-status-pill kb-sp-${k.status}">${esc(STATUSES.find((x) => x.key === k.status).short)}</span>${avatar(k.assignee)}</li>`).join("") || '<li class="kb-none">No tickets in this epic yet. Pick it as the parent epic on a task or bug</li>'}</ul></div>`;
+          <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}<span class="kb-status-pill kb-sp-${k.status}">${esc(STATUSES.find((x) => x.key === k.status).short)}</span>${avatar(k.assignee)}<button type="button" class="icon-btn" data-unlink-child="${esc(k.key)}" title="Remove from epic" aria-label="Remove ${esc(k.key)} from this epic">&times;</button></li>`).join("") || '<li class="kb-none">No tickets in this epic yet</li>'}</ul>
+          <div class="kb-child-actions">
+            <button type="button" class="btn-ghost kb-icon-label" data-add-child="task"><span class="material-symbols-outlined kb-type-task" aria-hidden="true">check_box</span>Add task</button>
+            <button type="button" class="btn-ghost kb-icon-label" data-add-child="bug"><span class="material-symbols-outlined kb-type-bug" aria-hidden="true">bug_report</span>Add bug</button>
+            <span class="kb-child-link"><select id="f-child-link" class="kb-input" aria-label="Existing ticket to add to this epic">${opt("", "Add an existing ticket…", "")}${linkable.map((t) => opt(t.key, `${t.key} · ${t.title}${t.epic ? " (moves from " + t.epic + ")" : ""}`, "")).join("")}</select></span>
+          </div></div>`;
       }
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
@@ -744,7 +758,7 @@
   function renderForm() {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
-    const main = draftIsNew ? ["voice", "title", "description", "attachments", "links"] : ["title", "description"].concat(draft.type === "epic" ? ["children"] : [], ["links", "attachments", "comments"]);
+    const main = draftIsNew ? ["voice", "title", "description", "children", "attachments", "links"] : ["title", "description", "children", "links", "attachments", "comments"];
     const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
     const visible = (k) => k === "voice" || k === "children" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
@@ -771,6 +785,8 @@
       $$(".kb-type-toggle .type-opt", form).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-checked", String(x === b)); });
       const pe = $('[data-field="epic"]', form);
       if (pe) pe.hidden = draft.type === "epic";
+      const ch = $('[data-field="children"]', form);
+      if (ch) ch.hidden = draft.type !== "epic";
     }));
     const st = $("#f-status");
     if (st) st.addEventListener("change", () => {
@@ -826,7 +842,7 @@
       ta.value = ""; $("#f-comments").innerHTML = commentsHTML();
     });
     bindVoice();
-    $$("[data-open-child]", form).forEach((li) => li.addEventListener("click", () => openTask(li.dataset.openChild)));
+    bindChildren(form);
     $("#f-cancel").addEventListener("click", closeTask);
     const del = $("#f-delete");
     if (del) del.addEventListener("click", () => {
@@ -1055,7 +1071,71 @@
     return out;
   }
 
-  function submitTask() {
+  // Child tickets from inside an epic. Adding one saves the epic first (a new
+  // epic needs its key to exist), opens the child with the epic as its
+  // parent, and comes back to the epic when the child is created or cancelled.
+  function bindChildren(form) {
+    const field = $('[data-field="children"]', form);
+    if (!field) return;
+    field.addEventListener("click", (e) => {
+      const un = e.target.closest("[data-unlink-child]");
+      if (un) {
+        e.stopPropagation();
+        const t = taskByKey(un.dataset.unlinkChild);
+        if (t) { t.epic = ""; save(); refreshChildren(); toast(`<b>${esc(t.key)}</b> removed from ${esc(draft.key)}`); render(); }
+        return;
+      }
+      const add = e.target.closest("[data-add-child]");
+      if (add) {
+        const type = add.dataset.addChild;
+        withEpicSaved((epicKey) => {
+          const ep = taskByKey(epicKey);
+          openTask(null, { returnTo: epicKey, fields: { type, epic: epicKey, release: ep.release || state.settings.currentRelease, sprint: ep.sprint || "", labels: (ep.labels || []).slice() } });
+        });
+        return;
+      }
+      const li = e.target.closest("[data-open-child]");
+      if (li) openTask(li.dataset.openChild, { returnTo: draft.key });
+    });
+    const sel = $("#f-child-link", form);
+    if (sel) sel.addEventListener("change", () => {
+      const key = sel.value;
+      if (!key) return;
+      withEpicSaved((epicKey) => {
+        const t = taskByKey(key);
+        if (!t) return;
+        t.epic = epicKey;
+        t.activity = t.activity || [];
+        t.activity.push({ at: new Date().toISOString(), who: state.me, text: `added to epic ${epicKey}` });
+        save(); render();
+        if (draft && draft.key === epicKey) refreshChildren();
+        toast(`<b>${esc(key)}</b> added to ${esc(epicKey)}`);
+      });
+    });
+  }
+  function refreshChildren() {
+    const old = $('#task-form [data-field="children"]');
+    if (!old || !draft) return;
+    const tmp = document.createElement("div");
+    tmp.innerHTML = fieldHTML("children");
+    old.replaceWith(tmp.firstElementChild);
+    bindChildren($("#task-form"));
+  }
+  // A brand-new epic is created first; an existing one keeps its unsaved
+  // edits by saving them before the child opens.
+  function withEpicSaved(then) {
+    const key = draft.key;
+    if (!draftIsNew && !formDirty()) { then(key); return; }
+    submitTask({ then: (savedKey) => { openTask(savedKey); then(savedKey); } });
+  }
+  function formDirty() {
+    const t = taskByKey(draft.key);
+    if (!t) return true;
+    const v = (id) => { const el = $("#" + id); return el ? el.value : undefined; };
+    return (v("f-title") !== undefined && v("f-title").trim() !== t.title) || (v("f-description") !== undefined && v("f-description") !== (t.description || "")) || draft.flagged !== t.flagged || draft.type !== t.type;
+  }
+
+  function submitTask(opts = {}) {
     const form = $("#task-form");
     const val = (id) => { const el = $("#" + id, form); return el ? el.value : undefined; };
     const next = clone(draft);
@@ -1127,7 +1207,10 @@
       next.activity = [];
       toast(`<b>${esc(next.key)}</b> created in ${esc(STATUS_LABEL[next.status])}${next.status === "ready-for-testing" ? ` · assigned to ${esc(firstName(next.assignee))}` : ""}`);
     }
-    save(); closeTask(); render();
+    save();
+    if (opts.then) { const back = returnTo; returnTo = null; closeTask(); returnTo = back; render(); opts.then(next.key); return; }
+    if (returnTo && !existing) toast(`<b>${esc(next.key)}</b> created in Backlog · added to ${esc(returnTo)}`);
+    closeTask(); render();
   }
   function initModal() {
     $("#task-flag").addEventListener("click", () => { if (draft) { draft.flagged = !draft.flagged; syncModalFlag(); } });

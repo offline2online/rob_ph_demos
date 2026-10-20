@@ -57,7 +57,10 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
 - **Types: Task, Bug, Epic**. Story has been removed. An epic is an ordinary ticket. Once
   saved, it can be picked as the **Parent epic** of any task or bug. The child shows the epic
   name under its title. The epic's card shows "n/m done" with a progress bar, and its modal
-  lists the child tickets. Epics are left out of the release report's effort figures.
+  lists the child tickets, with **Add task** / **Add bug** buttons and an "Add an existing ticket…" picker.
+  Adding a child saves the epic first, creating it if it's new. The child opens with the epic,
+  release, sprint and labels already filled in, and the epic reopens when the child is created
+  or cancelled. The × on a child row removes it from the epic. Epics are left out of the release report's effort figures.
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban
   settings. On an existing ticket, hidden fields stay editable under
   "N more fields". Required fields are validated.
