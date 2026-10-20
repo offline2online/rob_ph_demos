@@ -2317,3 +2317,27 @@ the page would be overwritten by the next sync. Documents are listed with
 the project's `startHereDocId` first, the rest by name, and `superseded`
 documents folded into "Superseded (N)". The logic is the pure module
 `public/js/docs-view.js` (tests: `test/docs-view.test.mjs`).
+
+## Navigation shell: Build / Publish / Admin (20 Oct 2026)
+
+`public/js/nav-shell.js` (markup in `index.html`, styles at the end of
+`styles.css`) replaced the hamburger-only drawer. Navigation and layout only:
+every destination already existed.
+
+- **Build**: Board, Concepts (Concept Incubator), Releases, Skills.
+  **Publish**: Help Centre (FAQ Management). Brand Guidelines, Roadmap and a
+  Users/Roles page are not built yet, so they are not listed.
+- **Admin** (Settings, Sign out) lives in the profile menu (avatar button in the
+  topbar, the Profile tab on a phone). Settings stays reachable by every role
+  because the page already hides its admin-only blocks (`[data-admin-only]`).
+- **Breakpoints**: 1024px and up, a persistent sidebar you can collapse (state
+  in `localStorage` `bt-nav-collapsed`); 641 to 1023px, the overlay drawer;
+  640px and down, a bottom tab bar (Build, Publish, Search, Profile) that opens
+  one section at a time, and the Board shows one pipeline column at a time
+  (swipe, or the column chips above the board).
+- **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
+  any ticket, concept, project or release. Archived tickets are included once
+  the archive has been loaded.
+- Tests: `npm run test:ui` now runs at 1440, 1180, 820 and 390px and includes
+  nav reachability, no sideways scroll, Command-K and the phone column switcher.
+  Pixel snapshot baselines are not part of the suite yet.

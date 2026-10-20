@@ -28,6 +28,7 @@ import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
+import { initNavShell } from "./nav-shell.js";
 import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, FIT_VIEWBOX } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
@@ -475,6 +476,7 @@ document.addEventListener("click", (e) => {
 // same fixed three destinations. Kept in the DOM at all times (never
 // [hidden]) so the CSS transform transition on .nav-drawer actually
 // animates open/closed. ──────────────────────────────────────────────────
+let navShell = null;
 const navDrawer = document.getElementById("nav-drawer");
 const navDrawerBackdrop = document.getElementById("nav-drawer-backdrop");
 function openNavDrawer() { navDrawer.classList.add("open"); navDrawerBackdrop.classList.add("open"); }
@@ -2012,6 +2014,13 @@ function columnCardsHTML(listItems) {
   }).join("");
 }
 
+// Phone-only chips above a project's board (hidden by CSS elsewhere): tap one
+// to bring that pipeline column into view; the board strip scrolls to it.
+function colSwitcherHTML(cardsByCol) {
+  return `<div class="col-switcher" role="group" aria-label="Pipeline column">` + COLUMNS.map((col, i) =>
+    `<button type="button" class="col-switch" data-col="${col.key}" aria-pressed="${i === 0}">${col.label}<span class="col-switch-n">${cardsByCol[col.key].length}</span></button>`
+  ).join("") + `</div>`;
+}
 function projectSectionHTML(project) {
   const collapsed = isProjectCollapsed(project.id);
   const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -2019,7 +2028,7 @@ function projectSectionHTML(project) {
   COLUMNS.forEach((col) => { cardsByCol[col.key] = projectItems.filter((i) => i.status === col.key); });
   const total = COL_KEYS.reduce((sum, k) => sum + cardsByCol[k].length, 0);
 
-  const board = `<div class="board">` + COLUMNS.map((col) => {
+  const board = colSwitcherHTML(cardsByCol) + `<div class="board">` + COLUMNS.map((col) => {
     const listItems = cardsByCol[col.key];
     // "Select all" makes sense in two columns now: Backlog (what "Ready for
     // Dev" acts on) and Ready for Testing (what "Approved for Deployment" acts
@@ -9055,6 +9064,30 @@ document.getElementById("faq-articles-btn").addEventListener("click", () => { cl
 document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
 document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
 
+// Command-K: one flat list of everything a person might want to jump to.
+function navEntries() {
+  ensureLazy("concepts");
+  const out = [];
+  const pname = (id) => (projects.find((p) => p.id === id) || {}).name || "";
+  for (const i of allItems) {
+    if (i.status === "archived" && !archivedLoaded) continue;
+    out.push({ kind: "Ticket", label: i.title || "(untitled)", hint: pname(i.projectId), id: i.id });
+  }
+  for (const c of concepts) out.push({ kind: "Concept", label: c.name || "(untitled)", hint: c.status || "", id: c.id });
+  for (const p of projects) out.push({ kind: "Project", label: p.name || "(untitled)", hint: "", id: p.id });
+  for (const r of releases) out.push({ kind: "Release", label: r.version ? `${r.name} (${r.version})` : (r.name || "(untitled)"), hint: "", id: r.id });
+  return out;
+}
+function openNavEntry(e) {
+  if (e.kind === "Concept") { openConceptDetailPage(e.id); return; }
+  if (e.kind === "Release") { openReleasesPage(); return; }
+  returnToBoard();
+  if (e.kind === "Ticket") { openEditItemModal(e.id); return; }
+  const sec = document.querySelector(`.project[data-project-id="${CSS.escape(e.id)}"]`);
+  if (sec) { sec.classList.remove("collapsed"); sec.scrollIntoView({ block: "start" }); }
+}
+navShell = initNavShell({ getEntries: navEntries, openEntry: openNavEntry, goHome: returnToBoard });
+
 // ── URL routing for FAQ Management / Settings ────────────────────────────
 // These two are the only sub-pages given a real, persistent URL: reloading
 // the browser while on either one reopens the same page instead of always
@@ -9179,6 +9212,7 @@ function updateTopbarTitle() {
   // route — strip the query before the ROUTE_TITLES lookup.
   const label = ROUTE_TITLES[window.location.hash.split("?")[0]];
   document.title = label ? `${label} — PH Agent Console` : "PH Agent Console";
+  if (navShell) navShell.syncActive();
 }
 // "#faq-management?filter=<value>" is how the status filter survives a
 // reload or a shared link (see setFaqStatusFilter/openFaqArticlesPage
