@@ -160,10 +160,52 @@
     for (let d = new Date(TODAY); d < end; d.setDate(d.getDate() + 1)) { const w = d.getDay(); if (w && w !== 6) n++; }
     return n;
   }
+  // A person's avatar: their uploaded photo, else their initial on their colour.
+  const photoOf = (id) => (state.photos || {})[id] || "";
   function avatar(id, size = "") {
     const u = user(id);
     if (!u) return `<span class="kb-avatar kb-avatar-none ${size}" title="Unassigned"><span class="material-symbols-outlined" aria-hidden="true">person</span></span>`;
+    const ph = photoOf(id);
+    if (ph) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.first)}" title="${esc(u.first)}" style="background-image:url('${ph}')"></span>`;
     return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.first)}">${esc(u.first.charAt(0))}</span>`;
+  }
+
+  // Profile photos: crop to a centred square and shrink to 160px, so each is
+  // a few KB (the real console stores 256px in Storage: see its ticket).
+  function photoFileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !/^image\//.test(file.type)) { reject(new Error("Choose an image file (JPG, PNG, HEIC or WebP).")); return; }
+      if (file.size > 10 * 1024 * 1024) { reject(new Error("That image is over 10 MB. Choose a smaller one.")); return; }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("That image couldn't be read."));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("That image couldn't be read."));
+        img.onload = () => {
+          const side = Math.min(img.width, img.height), out = 160;
+          const c = document.createElement("canvas");
+          c.width = c.height = out;
+          c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, out, out);
+          resolve(c.toDataURL("image/jpeg", 0.85));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  async function setPhoto(id, file) {
+    try {
+      const url = await photoFileToDataUrl(file);
+      state.photos = Object.assign({}, state.photos, { [id]: url });
+      save(); renderProfile(); render();
+      toast(id === state.me ? "Your profile photo is updated everywhere" : `<b>${esc(firstName(id))}</b>'s photo is updated`);
+    } catch (e) { toast(esc(e.message)); }
+  }
+  function removePhoto(id) {
+    if (!state.photos || !state.photos[id]) return;
+    delete state.photos[id];
+    save(); renderProfile(); render();
+    toast(id === state.me ? "Profile photo removed" : `<b>${esc(firstName(id))}</b>'s photo removed`);
   }
 
   let toastTimer;
@@ -314,6 +356,11 @@
     $("#profile-avatar").outerHTML = `<span id="profile-avatar">${avatar(state.me, "kb-avatar-lg")}</span>`;
     $("#profile-menu-avatar").outerHTML = `<span id="profile-menu-avatar">${avatar(state.me, "kb-avatar-lg")}</span>`;
     $("#topbar-user").textContent = me.email;
+    const has = !!photoOf(state.me);
+    $("#kb-photo-row").innerHTML = `<label class="profile-menu-item kb-photo-upload"><span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span>${has ? "Change photo" : "Upload photo"}<input type="file" accept="image/*" hidden id="kb-photo-input"></label>${has ? '<button type="button" class="profile-menu-item" id="kb-photo-remove"><span class="material-symbols-outlined" aria-hidden="true">no_photography</span>Remove photo</button>' : ""}`;
+    $("#kb-photo-input").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) setPhoto(state.me, f); });
+    const rm = $("#kb-photo-remove");
+    if (rm) rm.addEventListener("click", () => removePhoto(state.me));
     $("#profile-switch").innerHTML = SEED.users.map((u) => `<button type="button" class="profile-menu-item kb-switch-user" data-user="${u.id}" role="menuitemradio" aria-checked="${u.id === state.me}">${avatar(u.id)}<span>${esc(u.first)}</span><span class="kb-switch-loc">${esc(u.location)}</span>${u.id === state.me ? '<span class="material-symbols-outlined kb-check" aria-hidden="true">check</span>' : ""}</button>`).join("");
     $$(".kb-switch-user").forEach((b) => b.addEventListener("click", () => {
       state.me = b.dataset.user; save(); renderProfile(); closeProfile(); render();
@@ -1036,7 +1083,7 @@
   let activeMic = null;
   // Rich editors for the description and the comment box (js/editor.js).
   let descQ = null, commentQ = null, descInitial = "";
-  const staff = () => SEED.users.map((u) => ({ id: u.id, first: u.first, full: u.full, color: u.color }));
+  const staff = () => SEED.users.map((u) => ({ id: u.id, first: u.first, full: u.full, color: u.color, photo: photoOf(u.id) }));
   function bindEditors() {
     descQ = commentQ = null;
     const d = $("#f-description"), c = $("#f-comment");
@@ -1638,7 +1685,7 @@
         </section>
         <section class="docs-block">
           <div class="docs-block-header"><h3>Team${tip("Everyone added under Settings → Team & agent access appears in the assignee list by first name.")}</h3></div>
-          <ul class="kb-team">${SEED.users.map((u) => `<li>${avatar(u.id)}<span><b>${esc(u.first)}</b><span class="kb-none">${esc(u.full)} · ${esc(u.location)}</span></span><span class="kb-none kb-team-email">${esc(u.email)}</span></li>`).join("")}</ul>
+          <ul class="kb-team">${SEED.users.map((u) => `<li>${avatar(u.id)}<span><b>${esc(u.first)}</b><span class="kb-none">${esc(u.full)} · ${esc(u.location)}</span></span><span class="kb-none kb-team-email">${esc(u.email)}</span><span class="kb-team-photo"><label class="btn-ghost kb-icon-label" title="${photoOf(u.id) ? "Change" : "Upload"} ${esc(u.first)}'s photo"><span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span><span class="kb-team-photo-label">${photoOf(u.id) ? "Change" : "Photo"}</span><input type="file" accept="image/*" hidden data-photo-for="${u.id}"></label>${photoOf(u.id) ? `<button type="button" class="icon-btn" data-photo-remove="${u.id}" title="Remove ${esc(u.first)}'s photo" aria-label="Remove ${esc(u.first)}'s photo"><span class="material-symbols-outlined" aria-hidden="true">no_photography</span></button>` : ""}</span></li>`).join("")}</ul>
         </section>
         <section class="docs-block">
           <div class="docs-block-header"><h3>Demo data${tip("Prototype only: puts every task back to the mock data and clears your changes.")}</h3>
@@ -1656,9 +1703,11 @@
     $("#st-tester").addEventListener("change", (e) => { S.tester = e.target.value; save(); toast(`Ready for Testing now reassigns to <b>${esc(firstName(S.tester))}</b>`); });
     $("#st-release").addEventListener("change", (e) => { S.currentRelease = e.target.value; save(); toast(`Current release is <b>${esc(releaseName(S.currentRelease))}</b>`); });
     $("#st-preview").addEventListener("click", () => openTask(null));
+    $$("[data-photo-for]", view).forEach((inp) => inp.addEventListener("change", () => { const f = inp.files[0]; inp.value = ""; if (f) setPhoto(inp.dataset.photoFor, f).then(() => renderSettings(view)); }));
+    $$("[data-photo-remove]", view).forEach((b) => b.addEventListener("click", () => { removePhoto(b.dataset.photoRemove); renderSettings(view); }));
     $("#st-reset").addEventListener("click", () => {
       if (!confirm("Reset all tasks to the demo data?")) return;
-      const me = state.me; state = fresh(); state.me = me; save(); renderProfile(); render(); toast("Demo data reset");
+      const me = state.me, photos = state.photos; state = fresh(); state.me = me; state.photos = photos; save(); renderProfile(); render(); toast("Demo data reset");
     });
   }
 

@@ -81,6 +81,10 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
   Only the best 50 results are listed, so it stays quick however many tickets there are. Use the arrow keys and Enter, or click.
 - **Tooltips**. (i) tips open in one floating bubble that's always kept inside the window, so they're never cut off
   by the modal or the screen edge. Tap to open them on touch screens.
+- **Profile photos**. Profile menu → Profile photo → Upload photo. The photo is cropped to a square and stored with
+  the prototype's data. It replaces the initial everywhere that person appears: the profile button, filter avatars, cards,
+  swimlane headers, comments, @mention suggestions and the release report. An admin can set anyone's photo from
+  Kanban settings → Team. The console itself is ticket cQZRViGdvsqJrnNk00GF on the Backlog Tracker & FAQs board.
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban
   settings. On an existing ticket, hidden fields stay editable under
   "N more fields". Required fields are validated.

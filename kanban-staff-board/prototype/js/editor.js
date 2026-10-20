@@ -289,7 +289,7 @@ window.KBEditor = (function () {
     };
     const fold = (x) => String(x).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
     const draw = () => {
-      box.innerHTML = state.items.map((u, i) => `<button type="button" class="kb-mention-item${i === state.active ? " on" : ""}" data-i="${i}"><span class="kb-avatar" style="background:${u.color}">${esc(u.first.charAt(0))}</span>${esc(u.first)}<span class="kb-mention-full">${esc(u.full || "")}</span></button>`).join("") || '<div class="kb-mention-empty">No one matches</div>';
+      box.innerHTML = state.items.map((u, i) => `<button type="button" class="kb-mention-item${i === state.active ? " on" : ""}" data-i="${i}">${u.photo ? `<span class="kb-avatar kb-avatar-img" style="background-image:url('${u.photo}')"></span>` : `<span class="kb-avatar" style="background:${u.color}">${esc(u.first.charAt(0))}</span>`}${esc(u.first)}<span class="kb-mention-full">${esc(u.full || "")}</span></button>`).join("") || '<div class="kb-mention-empty">No one matches</div>';
     };
     q.on("editor-change", () => {
       const sel = q.getSelection();

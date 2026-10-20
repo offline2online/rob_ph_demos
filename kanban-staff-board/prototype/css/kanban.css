@@ -612,3 +612,12 @@ body.kb-drag-active .kb-col[data-status="done"] .kb-res-split { visibility: hidd
 .info-tip::after { display: none !important; }
 .kb-tip-bubble { position: fixed; z-index: 200; max-width: min(300px, calc(100vw - 16px)); padding: 8px 12px; border-radius: var(--ap-radius-sm); background: #2c2c2e; color: #f5f5f7; font-size: 12.5px; line-height: 1.45; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); pointer-events: none; }
 .kb-tip-bubble[hidden] { display: none; }
+
+/* Profile photos */
+.kb-avatar-img { background-color: var(--surface-2); background-size: cover; background-position: center; color: transparent; }
+.kb-photo-upload { cursor: pointer; }
+.kb-team-photo { display: inline-flex; align-items: center; gap: 2px; margin-left: 12px; }
+.kb-team-photo .btn-ghost { min-height: 34px; padding: 0 10px; font-size: 12.5px; cursor: pointer; }
+.kb-team-photo .material-symbols-outlined { font-size: 17px; }
+.kb-team li .kb-avatar { width: 36px; height: 36px; font-size: 15px; }
+@media (max-width: 640px) { .kb-team-photo-label { display: none; } }
