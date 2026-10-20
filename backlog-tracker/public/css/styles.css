@@ -1492,9 +1492,6 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 .team-sort-row select { font-size: 12.5px; padding: 5px 8px; border: 1px solid #d9d9d9; border-radius: 7px; background: #fff; }
 .team-badge-on { background: #e6f4ea; color: #1e6b32; }
 .team-badge-off { background: #f1f2f4; color: #6b7280; }
-.team-add-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; }
-.team-add-row input { flex: 1 1 200px; padding: 9px 11px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; }
-.team-add-row select { padding: 9px 11px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; background: #fff; }
 .dictation-settings-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; }
 .dictation-settings-row select { padding: 9px 11px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; background: #fff; }
 .mcp-connect-box { margin-top: 12px; padding: 12px 14px; border: 1px solid #e3e6eb; border-radius: 9px; background: var(--surface-2, #f7f8fa); }
@@ -1819,3 +1816,19 @@ body { overflow-x: clip; }
 .sysmap-tip-row { margin-top: 6px; }
 .sysmap-tip-row > span { font-weight: 700; color: var(--text-muted); }
 .sysmap-tip-row.hint { color: var(--text-muted); font-style: italic; }
+
+/* Settings → Add user: button top right on desktop, bottom on mobile; modal is a bottom sheet on mobile. */
+.team-admin-block { position: relative; }
+.team-add-open { position: absolute; top: 0; right: 0; }
+.team-admin-block .field-hint:empty { display: none; }
+.info-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; color: var(--text-muted, #6b7280); cursor: help; }
+.info-tip .material-symbols-outlined { font-size: 18px; }
+.info-tip::after { content: attr(data-tip); position: absolute; left: 0; top: 100%; z-index: 30; width: 280px; max-width: 80vw; padding: 8px 10px; border-radius: 8px; background: #1f2933; color: #fff; font-size: 12px; font-weight: 400; line-height: 1.4; text-transform: none; letter-spacing: 0; white-space: normal; box-shadow: 0 4px 16px rgba(0,0,0,.25); opacity: 0; visibility: hidden; pointer-events: none; }
+.info-tip:hover::after, .info-tip:focus::after { opacity: 1; visibility: visible; }
+.tm-error { margin: 8px 0 0; color: #c0392b; font-size: 13px; }
+.modal-panel .tm-error + .form-row { margin-top: 12px; }
+@media (max-width: 640px) {
+  .team-add-open { position: static; width: 100%; margin-top: 12px; min-height: 44px; }
+  .tm-backdrop { align-items: flex-end; padding: 0; }
+  .tm-backdrop .modal-panel { max-width: 100%; border-radius: 16px 16px 0 0; }
+}

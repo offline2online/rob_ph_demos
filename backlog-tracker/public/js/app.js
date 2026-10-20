@@ -8369,12 +8369,33 @@ async function saveTeamMember(email, fields) {
   }), { merge: true });
 }
 
+const tmBackdrop = document.getElementById("tm-backdrop");
+const tmError = document.getElementById("tm-error");
+function showTeamAddError(msg) { tmError.textContent = msg; tmError.hidden = !msg; }
+function openTeamAddModal() {
+  document.getElementById("team-add-email").value = "";
+  document.getElementById("team-add-name").value = "";
+  document.getElementById("team-add-role").value = "editor";
+  showTeamAddError("");
+  tmBackdrop.hidden = false;
+  document.getElementById("team-add-email").focus();
+}
+function closeTeamAddModal() { tmBackdrop.hidden = true; showTeamAddError(""); }
+document.getElementById("team-add-open")?.addEventListener("click", openTeamAddModal);
+document.getElementById("tm-cancel")?.addEventListener("click", closeTeamAddModal);
+document.getElementById("tm-close")?.addEventListener("click", closeTeamAddModal);
+tmBackdrop?.addEventListener("click", (e) => { if (e.target === tmBackdrop) closeTeamAddModal(); });
+tmBackdrop?.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTeamAddModal(); });
+
 document.getElementById("team-add-btn")?.addEventListener("click", async () => {
   const emailEl = document.getElementById("team-add-email");
   const nameEl = document.getElementById("team-add-name");
   const roleEl = document.getElementById("team-add-role");
+  const addBtn = document.getElementById("team-add-btn");
   const email = (emailEl.value || "").trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { await showAlert("Enter a valid email address."); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showTeamAddError("Enter a valid email address."); emailEl.focus(); return; }
+  showTeamAddError("");
+  addBtn.disabled = true;
   try {
     await saveTeamMember(email, {
       displayName: (nameEl.value || "").trim(),
@@ -8383,12 +8404,14 @@ document.getElementById("team-add-btn")?.addEventListener("click", async () => {
       createdAt: serverTimestamp(),
       createdBy: (auth.currentUser && auth.currentUser.email) || null,
     });
-    emailEl.value = ""; nameEl.value = "";
+    closeTeamAddModal();
     await loadTeamMembers();
-    await showAlert(`${email} can now sign in with Google and connect their agent. If they don't have a Google account, use "Send sign-in setup" on their row.`);
+    await showAlert(`${email} was added. They can now sign in with Google and connect their agent.`);
   } catch (err) {
     console.error("Failed to add console user:", err);
-    await showAlert(`Couldn't add them: ${err && err.message ? err.message : err}`);
+    showTeamAddError(`Couldn't add them: ${err && err.message ? err.message : err}`);
+  } finally {
+    addBtn.disabled = false;
   }
 });
 
