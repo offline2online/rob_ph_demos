@@ -1744,7 +1744,8 @@ body { overflow-x: clip; }
 .nav-search-item { margin-top: auto; }
 .nav-collapse-btn, .nav-drawer .modal-close { min-width: 36px; min-height: 36px; background: transparent; border: none; border-radius: 8px; cursor: pointer; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; }
 .nav-collapse-btn:hover { background: rgba(0, 0, 0, .06); }
-.nav-collapse-btn { display: none; }
+.nav-collapse-btn { display: none; flex: none; }
+@media (pointer: coarse) { .nav-collapse-btn, .nav-drawer .modal-close { min-width: 44px; min-height: 44px; } }
 :is(.nav-drawer-item, .profile-menu-item, .tab, .col-switch, .nav-collapse-btn, .profile-btn, .cmdk-row, .cmdk-close):focus-visible,
 #cmdk-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
