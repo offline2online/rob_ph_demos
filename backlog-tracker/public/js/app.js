@@ -26,6 +26,7 @@ import { APP_VERSION } from "./version.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
+import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
@@ -884,8 +885,12 @@ function cardHTML(item) {
   // means it only ever renders while the card is actually sitting in
   // Backlog — once it reaches Ready for Testing again this stops showing,
   // and a later rejection simply overwrites it with the fresh reason.
+  // Plus the one-line why (lastRejectionLine: the failing test for an
+  // automatic send-back, the tester's first sentence otherwise), so a card
+  // that keeps coming back says why without opening its comments.
+  const lastWhy = isBacklog && item.lastFailureReason ? lastRejectionLine(item) : "";
   const lastFailureBadge = isBacklog && item.lastFailureReason && item.lastFailureReason.category
-    ? `<span class="last-failure-badge" title="${escapeHTML(item.lastFailureReason.text || "")}">${escapeHTML(item.lastFailureReason.category)}</span>`
+    ? `<span class="last-failure-badge" title="${escapeHTML(item.lastFailureReason.text || "")}">${escapeHTML(item.lastFailureReason.category)}</span>${lastWhy ? `<p class="last-failure-line" title="${escapeHTML(lastWhy)}"><span class="material-symbols-outlined" aria-hidden="true">undo</span>${escapeHTML(lastWhy)}</p>` : ""}`
     : "";
   // Effort/priority (cwehxSMZv8noJQv5kB22) — only a real, human-set value
   // (Edit item modal), never the silent build-batches.js guess: showing a
@@ -4320,6 +4325,10 @@ function renderEiNotes() {
   eiNotesList.innerHTML = notes.length
     ? notes.slice().reverse().map(eiNoteRowHTML).join("")
     : '<p class="interface-row-empty">No comments yet.</p>';
+  // Above the thread, outside its scroll: one line per time this ticket was
+  // sent back and why (rejection-summary.js), so nobody reads every comment
+  // to find out.
+  document.getElementById("ei-rejection-summary").innerHTML = rejectionSummaryHTML(item);
 }
 
 // Attachments (screenshots & screen recordings) — see uploadItemAttachment/
@@ -4628,6 +4637,7 @@ function renderQcNotes() {
   qcNotesList.innerHTML = notes.length
     ? notes.slice().reverse().map(eiNoteRowHTML).join("")
     : '<p class="interface-row-empty">No comments yet.</p>';
+  document.getElementById("qc-rejection-summary").innerHTML = rejectionSummaryHTML(item);
   // The count in the title is read from the same array the card's badge
   // counts, so the two can't disagree.
   qcTitle.textContent = notes.length ? `Comments (${notes.length})` : "Comments";

@@ -108,7 +108,7 @@ window.KB_SEED = (function () {
     t("PH-17", "task", "Help Centre: redirect old Freshdesk article URLs", "ready-for-testing", "rob", "rob", "4.12", 5, 4, "medium", "s41", "", ["help-centre"], "PH-3", { previousAssignee: "thao" }),
     t("PH-18", "task", "Advertisers list: sort by spend this month", "ready-for-testing", "rob", "duc", "4.12", 4, 5, "low", "s41", "", ["dsp", "hq-admin"], "PH-2", { previousAssignee: "duc" }),
 
-    // ── Approved / Ready for Deployment
+    // ── Approved for Deployment
     t("PH-12", "task", "Local offer pill links to the per-product pricing page", "approved", "huy", "rob", "4.12", 4, 3.5, "medium", "s40", "", ["menu-boards", "hq-admin"], "PH-1"),
     t("PH-13", "task", "Upgrade Partner API to Fastify 5", "approved", "duc", "duc", "4.12", 6, 6, "low", "s40", "", ["dsp", "api"], "PH-2"),
     t("PH-14", "bug", "Visitor profile drawer clips long attribute names", "approved", "minh", "thao", "4.12", 2, 1.5, "low", "s41", "", ["visitor-profile", "accessibility"], "PH-4"),
@@ -129,5 +129,17 @@ window.KB_SEED = (function () {
     t("PH-25", "task", "Store time zone on the stores table", "ready-for-dev", "huy", "rob", "4.12", 3, 0, "medium", "s42", "", ["menu-boards", "api"], "PH-1")
   );
 
-  return { TODAY, users, releases, sprints, labels, tasks, currentRelease: "4.12", nextKey: 38 };
+  // Withdrawn: closed without being done (Completed / Withdrawn column, Withdrawn zone)
+  tasks.push(
+    t("PH-38", "task", "Import Freshdesk ticket history into the Help Centre", "done", "thao", "rob", "4.12", 6, 1.5, "low", "s41", "", ["help-centre"], "PH-3", {
+      resolution: "withdrawn",
+      description: "Bring two years of Freshdesk tickets across for search. Withdrawn: support agreed the old tickets aren't needed once the articles are rewritten.",
+    }),
+    t("PH-39", "bug", "Queue display shows the wrong store logo after midnight", "done", "linh", "linh", "4.12", 3, 0.5, "medium", "s41", "", ["retail-admin"], "PH-5", {
+      resolution: "withdrawn",
+      description: "Couldn't reproduce after the store's display was re-paired; the cached logo came from an old pairing.",
+    })
+  );
+
+  return { TODAY, users, releases, sprints, labels, tasks, currentRelease: "4.12", nextKey: 40 };
 })();

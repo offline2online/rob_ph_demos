@@ -22,13 +22,20 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
 | `css/console.css`, `css/console-apple.css` | Verbatim copies of `backlog-tracker/public/css/styles.css` and `apple.css` (20 Oct 2026), so it looks like the console |
 | `css/kanban.css` | Only what this prototype adds: six-column board, cards, task modal, settings, release report |
 | `js/data.js` | Mock team (Rob plus five Vietnam-based engineers), releases PH 4.11–4.13, sprints, epics, 33 tasks |
+| `js/editor.js` | Rich-text editor for descriptions and comments: the FAQ article editor's Quill 1.3.7 toolbar (headings, formatting, alignment, lists, quote, code, callouts, link, image, video, tables) plus @mentions, screenshots (upload, paste or drop), screen recording and URLs that link themselves |
+| `js/vendor/` | Quill 1.3.7 and DOMPurify (the console's own vendored build), bundled so the page doesn't depend on a CDN |
 | `js/kanban.js` | Routing (`#kanban`, `#agent-board`, `#report`, `#settings`), drag and drop, modal, report, settings |
 | `img/` | Console logo and favicon |
 
 ## Screens
 
 - **Kanban** (`#kanban`). Columns: Backlog → Ready for Dev → In Progress →
-  Ready for Testing → Approved / Ready for Deployment → Done. You can drag cards
+  Ready for Testing → Approved for Deployment → Completed / Withdrawn. The last column has two drop zones, **Completed** and
+  **Withdrawn**, each with its own count; the column header shows both, the Status menu lists them separately,
+  withdrawn cards are greyed and struck through, and epics' progress leaves withdrawn children out. The release
+  report splits them too (filter, KPI and breakdown columns). While a card is being dragged, that column's cards hide and two large drop targets
+  fill the screen height over it: Completed (three quarters) and Withdrawn (one quarter). On a phone they sit at the
+  bottom of the screen. You can drag cards
   with a mouse, or press and hold them on touch. Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
   Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The filter row
@@ -49,7 +56,8 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
   `kanban.js`); the real console would send the transcript to Claude. A new task has no
   Status field, because it always starts in Backlog, and no Comments field.
   The side panel runs priority, type, assignee, reporter, release, estimate, then time logged.
-  When you edit a task, the description has a mic for dictation, and Status sits at the end of
+  When you edit a task, the description and the comment box each have a round mic for dictation
+  (it turns into a red stop button while listening), and Status sits at the end of
   the side panel.
 - **Flags**. Each card has a flag button (shown on hover, always shown once a card is flagged).
   Flagged cards turn amber. There's a **Flagged** filter with a count, a Flag toggle in the
@@ -57,7 +65,14 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
 - **Types: Task, Bug, Epic**. Story has been removed. An epic is an ordinary ticket. Once
   saved, it can be picked as the **Parent epic** of any task or bug. The child shows the epic
   name under its title. The epic's card shows "n/m done" with a progress bar, and its modal
-  lists the child tickets. Epics are left out of the release report's effort figures.
+  lists the child tickets, with **Add task** / **Add bug** buttons and an "Add an existing ticket…" picker.
+  Adding a child saves the epic first, creating it if it's new. The child opens with the epic,
+  release, sprint and labels already filled in, and the epic reopens when the child is created
+  or cancelled. The × on a child row removes it from the epic. Epics are left out of the release report's effort figures.
+- **Rich descriptions and comments**. The description uses the same editor as Help Centre articles. The
+  comment box uses a compact version. Type `@` to mention someone, and they're notified when you save or comment. Paste,
+  drop or upload screenshots; they're downscaled and stored with the ticket. The record button captures your screen as a
+  playable video (prototype only: a recording lasts for the browser session, and the real console would upload it to Storage).
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban
   settings. On an existing ticket, hidden fields stay editable under
   "N more fields". Required fields are validated.

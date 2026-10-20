@@ -15,9 +15,11 @@
        only what the Kanban board, task modal and release report add. -->
   <!-- ?v= is bumped on every change: GitHub Pages lets browsers cache these
        files for 10 minutes, which otherwise serves the previous release. -->
-  <link rel="stylesheet" href="css/console.css?v=15">
-  <link rel="stylesheet" href="css/console-apple.css?v=15">
-  <link rel="stylesheet" href="css/kanban.css?v=15">
+  <link rel="stylesheet" href="css/console.css?v=28">
+  <link rel="stylesheet" href="css/console-apple.css?v=28">
+  <!-- Quill 1.3.7 (the FAQ article editor's version) and DOMPurify, vendored. -->
+  <link rel="stylesheet" href="js/vendor/quill.snow.css">
+  <link rel="stylesheet" href="css/kanban.css?v=28">
 </head>
 <body>
   <div class="app">
@@ -90,7 +92,10 @@
   <div class="kb-toast" id="kb-toast" role="status" aria-live="polite" hidden></div>
   <div class="kb-bar-tip" id="kb-bar-tip" hidden></div>
 
-  <script src="js/data.js?v=15"></script>
-  <script src="js/kanban.js?v=15"></script>
+  <script src="js/vendor/quill.min.js"></script>
+  <script src="js/vendor/purify.min.js"></script>
+  <script src="js/editor.js?v=28"></script>
+  <script src="js/data.js?v=28"></script>
+  <script src="js/kanban.js?v=28"></script>
 </body>
 </html>

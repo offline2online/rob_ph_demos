@@ -425,7 +425,11 @@ ticket once automatically.
    that specific miss, not just a fresh guess at the original `desc` — the
    whole reason this field exists is so a re-fired investigation isn't
    working from the same incomplete picture that produced the first,
-   rejected attempt. The field is never cleared automatically, so treat it
+   rejected attempt. An automatic send-back also carries `summary`, the
+   failing test and its message read from the run's log: fix THAT test, and
+   if it is not one your change could plausibly touch, say so in your
+   report instead of patching around it (on 20 Oct 2026 a rebuild chased
+   the wrong failure for a ticket that main had broken). The field is never cleared automatically, so treat it
    as "what went wrong last time", not "what's wrong now" — if `notes`
    shows a later, successful pass since `lastFailureReason.at`, it's stale
    and you can note that rather than re-litigating an already-fixed issue.

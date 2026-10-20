@@ -5,7 +5,7 @@
   "use strict";
 
   const SEED = window.KB_SEED;
-  const STORE_KEY = "kb-proto-v3";
+  const STORE_KEY = "kb-proto-v4";
   const NAV_KEY = "kb-proto-nav-collapsed";
   const root = document.documentElement;
 
@@ -14,11 +14,17 @@
     { key: "ready-for-dev", label: "Ready for Dev", short: "Ready for Dev" },
     { key: "in-progress", label: "In Progress", short: "In Progress" },
     { key: "ready-for-testing", label: "Ready for Testing", short: "Testing" },
-    { key: "approved", label: "Approved / Ready for Deployment", short: "Approved" },
-    { key: "done", label: "Done", short: "Done" },
+    { key: "approved", label: "Approved for Deployment", short: "Approved" },
+    { key: "done", label: "Completed / Withdrawn", short: "Completed" },
   ];
   const STATUS_LABEL = Object.fromEntries(STATUSES.map((s) => [s.key, s.label]));
   const OUTSTANDING = STATUSES.filter((s) => s.key !== "done").map((s) => s.key);
+  // A ticket in the last column is either completed or withdrawn (its resolution).
+  const RESOLUTIONS = [{ key: "completed", label: "Completed", icon: "check_circle" }, { key: "withdrawn", label: "Withdrawn", icon: "block" }];
+  const res = (t) => (t.status === "done" ? (t.resolution === "withdrawn" ? "withdrawn" : "completed") : null);
+  const statusLabel = (status, resolution) => (status === "done" ? (resolution === "withdrawn" ? "Withdrawn" : "Completed") : STATUS_LABEL[status]);
+  const statusShort = (t) => (t.status === "done" ? statusLabel("done", res(t)) : STATUSES.find((s) => s.key === t.status).short);
+  const statusPill = (t) => `<span class="kb-status-pill kb-sp-${t.status}${res(t) === "withdrawn" ? " kb-sp-withdrawn" : ""}">${esc(statusShort(t))}</span>`;
 
   const TYPES = [
     { key: "task", label: "Task", icon: "check_box" },
@@ -171,9 +177,11 @@
 
   // ── Status changes (the one place the testing hand-off happens) ─────────
   function setStatus(task, status, opts = {}) {
-    const from = task.status;
-    if (from === status) return null;
+    const from = task.status, fromRes = res(task);
+    const toRes = status === "done" ? opts.resolution || fromRes || "completed" : null;
+    if (from === status && fromRes === toRes) return null;
     task.status = status;
+    if (toRes) task.resolution = toRes; else delete task.resolution;
     task.activity = task.activity || [];
     let note = "";
     const tester = state.settings.tester;
@@ -185,8 +193,8 @@
       task.assignee = task.previousAssignee;
       note = `returned to ${firstName(task.previousAssignee)}`;
     }
-    task.activity.push({ at: new Date().toISOString(), who: state.me, text: `${STATUS_LABEL[from]} → ${STATUS_LABEL[status]}${note ? " · " + note : ""}` });
-    if (!opts.silent) toast(`<b>${esc(task.key)}</b> moved to ${esc(STATUS_LABEL[status])}${note ? ` · ${esc(note)}` : ""}`);
+    task.activity.push({ at: new Date().toISOString(), who: state.me, text: `${statusLabel(from, fromRes)} → ${statusLabel(status, toRes)}${note ? " · " + note : ""}` });
+    if (!opts.silent) toast(`<b>${esc(task.key)}</b> ${status === "done" ? (toRes === "withdrawn" ? "withdrawn" : "completed") : "moved to " + esc(STATUS_LABEL[status])}${note ? ` · ${esc(note)}` : ""}`);
     return note;
   }
 
@@ -200,7 +208,7 @@
     if (!quiet) { toast(`<b>${esc(task.key)}</b> ${task.flagged ? "flagged" : "flag removed"}`); render(); }
   }
 
-  function moveTask(key, status, beforeKey, lane) {
+  function moveTask(key, status, beforeKey, lane, resolution) {
     const task = taskByKey(key);
     if (!task) return;
     const list = state.tasks.filter((t) => t.status === status && t !== task).sort((a, b) => a.rank - b.rank);
@@ -217,9 +225,9 @@
       task.previousAssignee = "";
     }
     const fromStatus = task.status;
-    const note = setStatus(task, status, { silent: reassigned });
+    const note = setStatus(task, status, { silent: reassigned, resolution });
     if (reassigned) {
-      const moved = fromStatus !== status ? ` · moved to ${esc(STATUS_LABEL[status])}` : "";
+      const moved = fromStatus !== status ? ` · moved to ${esc(statusLabel(status, resolution))}` : "";
       toast(`<b>${esc(task.key)}</b> assigned to ${esc(firstName(toAssignee))}${moved}${note ? `, ${esc(note)}` : ""}`);
     }
     save();
@@ -325,7 +333,7 @@
       if (board.priority && t.priority !== board.priority) return false;
       if (board.sprint && t.sprint !== board.sprint) return false;
       if (board.label && !(t.labels || []).includes(board.label)) return false;
-      if (q && !(`${t.key} ${t.title} ${t.description} ${(t.labels || []).join(" ")}`.toLowerCase().includes(q))) return false;
+      if (q && !(`${t.key} ${t.title} ${KBEditor.toText(t.description)} ${(t.labels || []).join(" ")}`.toLowerCase().includes(q))) return false;
       return true;
     });
   }
@@ -415,9 +423,22 @@
     return [...SEED.users.map((u) => u.id), "none"].filter((id) => board.assignees.has(id));
   }
   const colMeta = (list, s) => {
+    if (s.key === "done") {
+      return `<span class="kb-col-meta">${RESOLUTIONS.map((r) => `<span class="col-count kb-res-count kb-res-count-${r.key}" title="${r.label}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${list.filter((t) => res(t) === r.key).length}</span>`).join("")}</span>`;
+    }
     const rem = list.reduce((n, t) => n + remaining(t), 0);
     return `<span class="kb-col-meta">${s.key !== "done" && rem ? `<span class="kb-col-effort" title="Remaining effort">${fmtH(rem)}</span>` : ""}<span class="col-count">${list.length}</span></span>`;
   };
+  // The cards of one column (or swimlane cell). The last column has two drop
+  // zones, Completed and Withdrawn, each with its own count.
+  function listsHTML(list, s, emptyHint) {
+    if (s.key !== "done") return `<div class="col-list kb-list">${list.map(cardHTML).join("") || emptyHint}</div>`;
+    return `<div class="kb-res-split">${RESOLUTIONS.map((r) => {
+      const items = list.filter((t) => res(t) === r.key);
+      return `<div class="kb-res-group kb-res-${r.key}"><div class="kb-res-head"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${r.label}<span class="col-count">${items.length}</span></div>
+        <div class="col-list kb-list" data-resolution="${r.key}">${items.map(cardHTML).join("") || `<p class="empty-hint kb-empty">Drop here to ${r.key === "completed" ? "complete" : "withdraw"}</p>`}</div></div>`;
+    }).join("")}</div>`;
+  }
   function renderKanbanBoard() {
     const el = $("#kb-board");
     if (!el) return;
@@ -446,7 +467,7 @@
             const list = sorted(mine, s.key);
             return `<section class="column kb-col kb-lane-cell${list.length ? "" : " kb-cell-empty"}${collapsed ? " kb-cell-hidden" : ""}" data-status="${s.key}" data-lane="${id}" aria-label="${esc((id === "none" ? "Unassigned" : firstName(id)) + " · " + s.label)}">
               <div class="kb-cell-head kb-col-${s.key}"><span>${esc(s.label)}</span><span class="col-count">${list.length}</span></div>
-              <div class="col-list kb-list">${list.map(cardHTML).join("")}</div>
+              ${listsHTML(list, s, "")}
             </section>`;
           }).join("");
         }).join("");
@@ -472,7 +493,7 @@
           <span class="kb-col-title">${esc(s.label)}</span>
           ${colMeta(list, s)}
         </div>
-        <div class="col-list kb-list">${list.map(cardHTML).join("") || '<p class="empty-hint kb-empty">No tasks</p>'}</div>
+        ${listsHTML(list, s, '<p class="empty-hint kb-empty">No tasks</p>')}
       </section>`;
     }).join("");
     $$(".kb-col-head", el).forEach((h) => h.addEventListener("click", () => {
@@ -523,9 +544,10 @@
     const over = est && log > est;
     const ep = t.type === "epic" ? null : epic(t.epic);
     const kids = t.type === "epic" ? childrenOf(t.key) : null;
-    const kidsDone = kids ? kids.filter((k) => k.status === "done").length : 0;
+    const kidsLive = kids ? kids.filter((k) => res(k) !== "withdrawn") : null;
+    const kidsDone = kids ? kids.filter((k) => res(k) === "completed").length : 0;
     const flagBtn = `<button type="button" class="kb-flag-btn${t.flagged ? " on" : ""}" data-flag="${esc(t.key)}" aria-pressed="${!!t.flagged}" title="${t.flagged ? "Remove flag" : "Flag"}" aria-label="${t.flagged ? "Remove flag" : "Flag"} ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">flag</span></button>`;
-    return `<article class="card kb-card${t.flagged ? " kb-flagged" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (t.flagged ? ", flagged" : ""))}">
+    return `<article class="card kb-card${res(t) === "withdrawn" ? " kb-card-withdrawn" : ""}${t.flagged ? " kb-flagged" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (t.flagged ? ", flagged" : ""))}">
       <div class="kb-card-top">
         <span class="kb-type kb-type-${ty.key}" title="${ty.label}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span>
         <span class="kb-key">${esc(t.key)}</span>
@@ -534,12 +556,12 @@
       </div>
       <p class="card-title">${esc(t.title)}</p>
       ${ep ? `<p class="kb-parent-epic" title="Parent epic: ${esc(ep.key + " " + ep.title)}"><span class="material-symbols-outlined" aria-hidden="true">bolt</span><span>${esc(ep.title)}</span></p>` : ""}
-      ${kids ? `<div class="kb-progress kb-epic-progress" title="${kidsDone} of ${kids.length} child tickets done"><span style="width:${kids.length ? (kidsDone / kids.length) * 100 : 0}%"></span></div>` : ""}
+      ${kids ? `<div class="kb-progress kb-epic-progress" title="${kidsDone} of ${kidsLive.length} child tickets completed"><span style="width:${kidsLive.length ? (kidsDone / kidsLive.length) * 100 : 0}%"></span></div>` : ""}
       ${t.status === "ready-for-testing" && t.previousAssignee ? `<p class="kb-handoff"><span class="material-symbols-outlined" aria-hidden="true">swap_horiz</span>From ${esc(firstName(t.previousAssignee))}</p>` : ""}
       ${est ? `<div class="kb-progress${over ? " over" : ""}" title="${fmtH(log)} logged of ${fmtH(est)}"><span style="width:${pct}%"></span></div>` : ""}
       <div class="kb-card-footer">
         <div class="kb-card-chips">
-          ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kids.length} done</span>` : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
+          ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kidsLive.length} done</span>` : res(t) === "withdrawn" ? '<span class="card-cat kb-est kb-withdrawn-chip">Withdrawn</span>' : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
           ${(t.comments || []).length ? `<span class="kb-meta-ic" title="${t.comments.length} comment${t.comments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.comments.length}</span>` : ""}
           ${(t.attachments || []).length ? `<span class="kb-meta-ic" title="${t.attachments.length} attachment${t.attachments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachments.length}</span>` : ""}
@@ -601,21 +623,59 @@
     drag.marker.className = "kb-drop-marker";
     drag.card.classList.add("kb-dragging");
     document.body.classList.add("kb-drag-active");
+    showCloseZones();
     if (navigator.vibrate && drag.type !== "mouse") { try { navigator.vibrate(10); } catch { /* ignore */ } }
     moveDrag(x, y);
+  }
+  // While a card is being dragged, the Completed / Withdrawn column's cards
+  // are hidden and two big drop targets take its place: Completed (3/4 of the
+  // screen height) and Withdrawn (1/4). They are pinned over that column, so
+  // they are in view wherever the board is scrolled. On a phone they sit at
+  // the bottom of the screen, full width.
+  function showCloseZones() {
+    if (!$("#kb-board")) return;
+    const ov = document.createElement("div");
+    ov.className = "kb-close-zones";
+    ov.innerHTML = RESOLUTIONS.map((r) => {
+      const n = state.tasks.filter((t) => res(t) === r.key).length;
+      return `<div class="kb-close-zone kb-close-${r.key}" data-resolution="${r.key}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span><span class="kb-close-label">${r.label}</span><span class="kb-close-count">${n}</span></div>`;
+    }).join("");
+    if (!mqPhone.matches) {
+      const ref = $("#kb-lanes-head .kb-col-done") || $('.kb-col[data-status="done"]');
+      const head = $("#kb-lanes-sticky");
+      const r = ref.getBoundingClientRect();
+      const top = Math.max(head && !head.hidden ? head.getBoundingClientRect().bottom : 0, 0) + 8;
+      const left = Math.min(Math.max(r.left, 0), innerWidth - r.width - 8);
+      Object.assign(ov.style, { left: left + "px", width: r.width + "px", top: top + "px", bottom: "16px" });
+    }
+    document.body.appendChild(ov);
+    drag.zones = ov;
   }
   function moveDrag(x, y) {
     drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) rotate(2deg)`;
     const under = document.elementFromPoint(x, y);
+    const zone = under && under.closest(".kb-close-zone");
+    if (drag.zones) $$(".kb-close-zone", drag.zones).forEach((z) => z.classList.toggle("on", z === zone));
+    if (zone) {
+      $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));
+      drag.marker.remove();
+      drag.target = { status: "done", resolution: zone.dataset.resolution, before: null };
+      return;
+    }
     const col = under && under.closest(".kb-col");
     $$(".kb-col.kb-drop-target").forEach((c) => c !== col && c.classList.remove("kb-drop-target"));
     if (!col) { drag.marker.remove(); drag.target = null; autoScroll(x, y); return; }
     col.classList.add("kb-drop-target");
-    const list = $(".kb-list", col);
+    const lists = $$(".kb-list", col);
+    // In the split last column, pick the zone under the pointer (or the nearest one).
+    const dist = (l) => { const r = (l.closest(".kb-res-group") || l).getBoundingClientRect(); return y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0; };
+    const list = lists.reduce((best, l) => (dist(l) < dist(best) ? l : best), lists[0]);
+    $$(".kb-res-group.kb-res-target").forEach((g) => g.classList.remove("kb-res-target"));
+    if (list.dataset.resolution) list.closest(".kb-res-group").classList.add("kb-res-target");
     const cards = $$(".kb-card", list).filter((c) => c !== drag.card);
     const before = cards.find((c) => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
     if (before) list.insertBefore(drag.marker, before); else list.appendChild(drag.marker);
-    drag.target = { status: col.dataset.status, lane: col.dataset.lane, before: before ? before.dataset.key : null };
+    drag.target = { status: col.dataset.status, lane: col.dataset.lane, resolution: list.dataset.resolution, before: before ? before.dataset.key : null };
     autoScroll(x, y);
   }
   function autoScroll(x, y) {
@@ -629,10 +689,12 @@
     if (!d.active) return;
     suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
     d.ghost.remove(); d.marker.remove();
+    if (d.zones) d.zones.remove();
     d.card.classList.remove("kb-dragging");
     document.body.classList.remove("kb-drag-active");
     $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));
-    if (commit && d.target) moveTask(d.key, d.target.status, d.target.before, d.target.lane);
+    $$(".kb-res-group.kb-res-target").forEach((g) => g.classList.remove("kb-res-target"));
+    if (commit && d.target) moveTask(d.key, d.target.status, d.target.before, d.target.lane, d.target.resolution);
   }
 
   // ── Task create / edit modal ────────────────────────────────────────────
@@ -640,18 +702,22 @@
   const fieldOn = (k) => (state.settings.fields[k] || {}).show;
   const fieldReq = (k) => (state.settings.fields[k] || {}).required;
 
-  function openTask(key) {
+  // returnTo: the epic to reopen when a child ticket opened from it closes.
+  let returnTo = null;
+  function openTask(key, preset) {
     const t = key ? taskByKey(key) : null;
     draftIsNew = !t;
-    draft = t ? clone(t) : {
+    returnTo = preset && preset.returnTo ? preset.returnTo : null;
+    draft = t ? clone(t) : Object.assign({
       key: "PH-" + state.nextKey, type: "task", title: "", description: "", status: "backlog",
       assignee: board.mine ? state.me : "", reporter: state.me, release: state.settings.currentRelease,
       estimate: "", logged: 0, priority: "medium", sprint: "", due: "", labels: [], epic: "",
       comments: [], attachments: [], links: [], previousAssignee: "", activity: [],
-    };
+    }, preset ? preset.fields : {});
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
     syncModalFlag();
     renderForm();
+    syncCreateCta();
     $("#task-backdrop").hidden = false;
     document.body.classList.add("kb-modal-open");
     setTimeout(() => { const f = $("#f-title"); if (f && draftIsNew) f.focus(); }, 30);
@@ -673,8 +739,13 @@
     $("#task-flag-label").textContent = draft.flagged ? "Flagged" : "Flag";
     $(".kb-task-panel").classList.toggle("kb-panel-flagged", !!draft.flagged);
   }
-  function closeTask() { stopRecorder(true); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null; }
+  function closeTask() {
+    stopRecorder(true); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
+    const back = returnTo; returnTo = null;
+    if (back && taskByKey(back)) openTask(back);
+  }
 
+  const micBtn = (id, aria) => `<button type="button" class="mic-btn kb-mic" id="${id}" title="Dictate" aria-label="${aria}" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">mic</span></button>`;
   function label(k, forId) {
     return `<label class="field-label" for="${forId || "f-" + k}">${esc(FIELD_LABEL[k])}${fieldReq(k) ? '<span class="kb-req" aria-hidden="true">*</span>' : ""}</label>`;
   }
@@ -688,9 +759,9 @@
         <p class="mic-error" id="f-voice-error"></p>
       </div>`;
       case "title": return `<div class="kb-field" data-field="title">${label("title")}<input type="text" id="f-title" class="kb-input kb-title-input" maxlength="200" value="${esc(d.title)}" placeholder="What needs doing?"></div>`;
-      case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap"><textarea id="f-description" class="kb-input" rows="5" placeholder="Context, steps to reproduce, acceptance criteria">${esc(d.description)}</textarea>${draftIsNew ? "" : '<button type="button" class="mic-btn kb-desc-mic" id="f-desc-mic" title="Dictate" aria-label="Dictate into the description"><span class="material-symbols-outlined" aria-hidden="true">mic</span></button>'}</div>
+      case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap kb-ed-wrap"><div class="kb-editor" id="f-description"></div>${draftIsNew ? "" : micBtn("f-desc-mic", "Dictate into the description")}</div>
         ${draftIsNew ? '<button type="button" class="kb-agent-link" id="f-agent-fill"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span>Fill in the ticket from this description</span></button>' : '<p class="mic-error" id="f-desc-mic-error"></p>'}</div>`;
-      case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.map((s) => opt(s.key, s.label, d.status)).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
+      case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, d.status)).join("")}${RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, d.status === "done" ? "done:" + res(d) : "")).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
       case "assignee": return `<div class="kb-field" data-field="assignee">${label("assignee")}<select id="f-assignee" class="kb-input">${opt("", "Unassigned", d.assignee)}${SEED.users.map((u) => opt(u.id, u.first, d.assignee)).join("")}</select></div>`;
       case "reporter": return `<div class="kb-field" data-field="reporter">${label("reporter")}<select id="f-reporter" class="kb-input">${opt("", "—", d.reporter)}${SEED.users.map((u) => opt(u.id, u.first, d.reporter)).join("")}</select></div>`;
       case "release": return `<div class="kb-field" data-field="release">${label("release")}<select id="f-release" class="kb-input">${opt("", "No release", d.release)}${SEED.releases.map((r) => opt(r.id, r.name + (r.released ? " (released)" : ""), d.release)).join("")}</select></div>`;
@@ -713,10 +784,17 @@
       }
       case "children": {
         const kids = childrenOf(d.key);
-        const done = kids.filter((k) => k.status === "done").length;
-        return `<div class="kb-field" data-field="children"><label class="field-label">Child tickets <span class="kb-none">${done} of ${kids.length} done</span></label>
-          ${kids.length ? `<div class="kb-logbar kb-epic-progress"><span style="width:${(done / kids.length) * 100}%"></span></div>` : ""}
-          <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}<span class="kb-status-pill kb-sp-${k.status}">${esc(STATUSES.find((x) => x.key === k.status).short)}</span>${avatar(k.assignee)}</li>`).join("") || '<li class="kb-none">No tickets in this epic yet. Pick it as the parent epic on a task or bug</li>'}</ul></div>`;
+        const done = kids.filter((k) => res(k) === "completed").length;
+        const live = kids.filter((k) => res(k) !== "withdrawn").length;
+        const linkable = state.tasks.filter((t) => t.type !== "epic" && t.epic !== d.key && t.status !== "done").sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
+        return `<div class="kb-field" data-field="children"${d.type === "epic" ? "" : " hidden"}><label class="field-label">Child tickets <span class="kb-none">${done} of ${live} done${kids.length > live ? ` · ${kids.length - live} withdrawn` : ""}</span></label>
+          ${live ? `<div class="kb-logbar kb-epic-progress"><span style="width:${(done / live) * 100}%"></span></div>` : ""}
+          <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}${statusPill(k)}${avatar(k.assignee)}<button type="button" class="icon-btn" data-unlink-child="${esc(k.key)}" title="Remove from epic" aria-label="Remove ${esc(k.key)} from this epic">&times;</button></li>`).join("") || '<li class="kb-none">No tickets in this epic yet</li>'}</ul>
+          <div class="kb-child-actions">
+            <button type="button" class="btn-ghost kb-icon-label" data-add-child="task"><span class="material-symbols-outlined kb-type-task" aria-hidden="true">check_box</span>Add task</button>
+            <button type="button" class="btn-ghost kb-icon-label" data-add-child="bug"><span class="material-symbols-outlined kb-type-bug" aria-hidden="true">bug_report</span>Add bug</button>
+            <span class="kb-child-link"><select id="f-child-link" class="kb-input" aria-label="Existing ticket to add to this epic">${opt("", "Add an existing ticket…", "")}${linkable.map((t) => opt(t.key, `${t.key} · ${t.title}${t.epic ? " (moves from " + t.epic + ")" : ""}`, "")).join("")}</select></span>
+          </div></div>`;
       }
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
@@ -726,25 +804,26 @@
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
       case "comments": return `<div class="kb-field" data-field="comments">${label("comments", "f-comment")}<ul class="kb-comments" id="f-comments">${commentsHTML()}</ul>
-        <textarea id="f-comment" class="kb-input" rows="2" placeholder="Add a comment"></textarea>
+        <div class="desc-wrap kb-ed-wrap"><div class="kb-editor kb-editor-compact" id="f-comment"></div>${micBtn("f-comment-mic", "Dictate a comment")}</div>
+        <p class="mic-error" id="f-comment-mic-error"></p>
         <div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" id="f-comment-add">Add comment</button></div></div>`;
     }
     return "";
   }
   const labelsHTML = () => (draft.labels || []).map((l) => `<span class="kb-label-chip">${esc(l)}<button type="button" data-rm-label="${esc(l)}" aria-label="Remove ${esc(l)}">&times;</button></span>`).join("") || '<span class="kb-none">No labels</span>';
-  const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? `<span class="kb-status-pill kb-sp-${t.status}">${esc(STATUSES.find((s) => s.key === t.status).short)}</span>` : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
+  const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4)$/i.test(a.name) ? "movie" : "description"}</span><span class="kb-link-title">${esc(a.name)}</span><span class="kb-none">${esc(a.size)}</span><button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button></li>`).join("") || '<li class="kb-none">No attachments</li>';
   const commentsHTML = () => {
     const items = [...(draft.comments || []).map((c) => ({ ...c, kind: "c" })), ...(draft.activity || []).map((a) => ({ ...a, kind: "a" }))].sort((a, b) => a.at.localeCompare(b.at));
     return items.map((c) => c.kind === "c"
-      ? `<li class="kb-comment">${avatar(c.author)}<div><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div><div class="kb-comment-text">${esc(c.text)}</div></div></li>`
+      ? `<li class="kb-comment">${avatar(c.author)}<div><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div><div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div></div></li>`
       : `<li class="kb-activity"><span class="material-symbols-outlined" aria-hidden="true">history</span><span><b>${esc(firstName(c.who))}</b> ${esc(c.text)}</span></li>`).join("") || '<li class="kb-none">No comments yet</li>';
   };
 
   function renderForm() {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
-    const main = draftIsNew ? ["voice", "title", "description", "attachments", "links"] : ["title", "description"].concat(draft.type === "epic" ? ["children"] : [], ["links", "attachments", "comments"]);
+    const main = draftIsNew ? ["voice", "title", "description", "children", "attachments", "links"] : ["title", "description", "children", "links", "attachments", "comments"];
     const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
     const visible = (k) => k === "voice" || k === "children" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
@@ -771,6 +850,8 @@
       $$(".kb-type-toggle .type-opt", form).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-checked", String(x === b)); });
       const pe = $('[data-field="epic"]', form);
       if (pe) pe.hidden = draft.type === "epic";
+      const ch = $('[data-field="children"]', form);
+      if (ch) ch.hidden = draft.type !== "epic";
     }));
     const st = $("#f-status");
     if (st) st.addEventListener("change", () => {
@@ -819,14 +900,10 @@
       ff.value = ""; $("#f-attachments").innerHTML = attachmentsHTML();
     });
     const ca = $("#f-comment-add");
-    if (ca) ca.addEventListener("click", () => {
-      const ta = $("#f-comment"); const text = ta.value.trim();
-      if (!text) return;
-      draft.comments.push({ author: state.me, at: new Date().toISOString(), text });
-      ta.value = ""; $("#f-comments").innerHTML = commentsHTML();
-    });
+    if (ca) ca.addEventListener("click", () => { if (addCommentFromEditor()) $("#f-comments").innerHTML = commentsHTML(); });
+    bindEditors();
     bindVoice();
-    $$("[data-open-child]", form).forEach((li) => li.addEventListener("click", () => openTask(li.dataset.openChild)));
+    bindChildren(form);
     $("#f-cancel").addEventListener("click", closeTask);
     const del = $("#f-delete");
     if (del) del.addEventListener("click", () => {
@@ -927,20 +1004,82 @@
     }
     const fill = $("#f-agent-fill");
     if (fill) fill.addEventListener("click", () => {
-      const t = ($("#f-description") || {}).value || "";
-      if (!t.trim()) { $("#f-description").focus(); return; }
+      const t = descQ ? KBEditor.getText(descQ) : "";
+      if (!t.trim()) { if (descQ) descQ.focus(); return; }
       runAgent(t, () => {});
     });
-    const mic = $("#f-desc-mic");
-    if (mic) mic.addEventListener("click", () => {
-      const ta = $("#f-description"), err = $("#f-desc-mic-error");
-      if (rec) { stopRecorder(false); return; }
-      err.classList.remove("on");
-      const base = ta.value.trim();
+    bindMic("f-desc-mic", "f-description", "f-desc-mic-error");
+    bindMic("f-comment-mic", "f-comment", "f-comment-mic-error");
+  }
+
+  // A round mic inside a text box: dictates into that box, and shows a stop
+  // icon while it is listening. One recording at a time across the modal.
+  let activeMic = null;
+  // Rich editors for the description and the comment box (js/editor.js).
+  let descQ = null, commentQ = null, descInitial = "";
+  const staff = () => SEED.users.map((u) => ({ id: u.id, first: u.first, full: u.full, color: u.color }));
+  function bindEditors() {
+    descQ = commentQ = null;
+    const d = $("#f-description"), c = $("#f-comment");
+    if (d) {
+      descQ = KBEditor.create(d, { users: staff(), placeholder: "Context, steps to reproduce, acceptance criteria. Type @ to mention someone; paste a screenshot straight in.", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you save`) });
+      KBEditor.setHtml(descQ, draft.description || "");
+      descInitial = KBEditor.getHtml(descQ);
+    }
+    if (c) {
+      commentQ = KBEditor.create(c, { compact: true, users: staff(), placeholder: "Add a comment, @mention someone, or tap the mic and talk", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you add the comment`) });
+    }
+  }
+  function addCommentFromEditor() {
+    if (!commentQ) return false;
+    const html = KBEditor.getHtml(commentQ);
+    if (!html) return false;
+    draft.comments.push({ author: state.me, at: new Date().toISOString(), html, text: KBEditor.toText(html) });
+    const who = KBEditor.mentionsIn(html).filter((id) => id !== state.me).map(firstName);
+    commentQ.setContents([]);
+    if (who.length) toast(`Comment added · ${esc(who.join(", "))} notified`);
+    return true;
+  }
+  // A text box the mic dictates into: a Quill editor or a plain field.
+  function dictationTarget(id) {
+    const q = id === "f-description" ? descQ : id === "f-comment" ? commentQ : null;
+    if (q) {
+      let start = 0;
+      return {
+        begin() { start = Math.max(0, q.getLength() - 1); if (start && !/\s$/.test(q.getText(start - 1, 1))) { q.insertText(start, " ", "user"); start++; } },
+        live(t) { const said = start ? t : t.charAt(0).toUpperCase() + t.slice(1); q.deleteText(start, q.getLength() - 1 - start, "user"); q.insertText(start, said, "user"); },
+      };
+    }
+    const ta = $("#" + id);
+    let base = "";
+    return {
+      begin() { base = ta.value.trim(); },
+      live(t) { const said = base ? t : t.charAt(0).toUpperCase() + t.slice(1); ta.value = (base ? base + " " : "") + said; ta.dispatchEvent(new Event("input")); },
+    };
+  }
+  function bindMic(btnId, taId, errId) {
+    const mic = $("#" + btnId);
+    if (!mic) return;
+    const show = (on) => {
+      mic.classList.toggle("listening", on);
+      mic.setAttribute("aria-pressed", String(on));
+      mic.title = on ? "Stop recording" : "Dictate";
+      mic.firstElementChild.textContent = on ? "stop" : "mic";
+    };
+    mic.addEventListener("click", () => {
+      const target = dictationTarget(taId), err = $("#" + errId);
+      if (rec) {
+        const wasMe = activeMic === mic;
+        stopRecorder(false);
+        if (wasMe) return;
+      }
+      if (err) err.classList.remove("on");
+      target.begin();
+      activeMic = mic;
       startRecorder({
-        onLive: (t) => { ta.value = (base ? base + " " : "") + t; },
-        onState: (st) => mic.classList.toggle("listening", st === "recording"),
-        onError: (m) => { err.textContent = m; err.classList.add("on"); mic.classList.remove("listening"); },
+        onLive: (t) => target.live(t),
+        onState: (st) => { show(st === "recording"); if (st !== "recording" && activeMic === mic) activeMic = null; },
+        onError: (m) => { if (err) { err.textContent = m; err.classList.add("on"); } show(false); },
         onDone: () => {},
       });
     });
@@ -957,7 +1096,7 @@
       const filled = [];
       const put = (id, field, v) => { const el = $("#" + id); if (el && v != null && v !== "") { el.value = v; filled.push(field); } };
       put("f-title", "title", out.title);
-      put("f-description", "description", out.description);
+      if (descQ && out.description) { KBEditor.setHtml(descQ, out.description); filled.push("description"); }
       put("f-priority", "priority", out.priority);
       put("f-assignee", "assignee", out.assignee);
       put("f-release", "release", out.release);
@@ -1055,13 +1194,82 @@
     return out;
   }
 
-  function submitTask() {
+  // Child tickets from inside an epic. Adding one saves the epic first (a new
+  // epic needs its key to exist), opens the child with the epic as its
+  // parent, and comes back to the epic when the child is created or cancelled.
+  function bindChildren(form) {
+    const field = $('[data-field="children"]', form);
+    if (!field) return;
+    field.addEventListener("click", (e) => {
+      const un = e.target.closest("[data-unlink-child]");
+      if (un) {
+        e.stopPropagation();
+        const t = taskByKey(un.dataset.unlinkChild);
+        if (t) { t.epic = ""; save(); refreshChildren(); toast(`<b>${esc(t.key)}</b> removed from ${esc(draft.key)}`); render(); }
+        return;
+      }
+      const add = e.target.closest("[data-add-child]");
+      if (add) {
+        const type = add.dataset.addChild;
+        withEpicSaved((epicKey) => {
+          const ep = taskByKey(epicKey);
+          openTask(null, { returnTo: epicKey, fields: { type, epic: epicKey, release: ep.release || state.settings.currentRelease, sprint: ep.sprint || "", labels: (ep.labels || []).slice() } });
+        });
+        return;
+      }
+      const li = e.target.closest("[data-open-child]");
+      if (li) openTask(li.dataset.openChild, { returnTo: draft.key });
+    });
+    const sel = $("#f-child-link", form);
+    if (sel) sel.addEventListener("change", () => {
+      const key = sel.value;
+      if (!key) return;
+      withEpicSaved((epicKey) => {
+        const t = taskByKey(key);
+        if (!t) return;
+        t.epic = epicKey;
+        t.activity = t.activity || [];
+        t.activity.push({ at: new Date().toISOString(), who: state.me, text: `added to epic ${epicKey}` });
+        save(); render();
+        if (draft && draft.key === epicKey) refreshChildren();
+        toast(`<b>${esc(key)}</b> added to ${esc(epicKey)}`);
+      });
+    });
+  }
+  function refreshChildren() {
+    const old = $('#task-form [data-field="children"]');
+    if (!old || !draft) return;
+    const tmp = document.createElement("div");
+    tmp.innerHTML = fieldHTML("children");
+    old.replaceWith(tmp.firstElementChild);
+    bindChildren($("#task-form"));
+  }
+  // A brand-new epic is created first; an existing one keeps its unsaved
+  // edits by saving them before the child opens.
+  function withEpicSaved(then) {
+    const key = draft.key;
+    if (!draftIsNew && !formDirty()) { then(key); return; }
+    submitTask({ then: (savedKey) => { openTask(savedKey); then(savedKey); } });
+  }
+  function formDirty() {
+    const t = taskByKey(draft.key);
+    if (!t) return true;
+    const v = (id) => { const el = $("#" + id); return el ? el.value : undefined; };
+    return (v("f-title") !== undefined && v("f-title").trim() !== t.title) || (descQ && KBEditor.getHtml(descQ) !== descInitial) || draft.flagged !== t.flagged || draft.type !== t.type;
+  }
+
+  function submitTask(opts = {}) {
     const form = $("#task-form");
     const val = (id) => { const el = $("#" + id, form); return el ? el.value : undefined; };
     const next = clone(draft);
     const set = (k, v) => { if (v !== undefined) next[k] = v; };
     set("title", val("f-title") !== undefined ? val("f-title").trim() : undefined);
-    set("description", val("f-description"));
+    let notify = [];
+    if (descQ) {
+      next.description = KBEditor.getHtml(descQ);
+      const before = KBEditor.mentionsIn(draftIsNew ? "" : (taskByKey(next.key) || {}).description);
+      notify = KBEditor.mentionsIn(next.description).filter((id) => id !== state.me && !before.includes(id)).map(firstName);
+    }
     set("assignee", val("f-assignee"));
     set("reporter", val("f-reporter"));
     set("release", val("f-release"));
@@ -1078,8 +1286,7 @@
       const p = parseDur(val("f-logged"));
       if (Number.isNaN(p)) errors.push(["logged", "Time logged: use a format like 3h or 1d 2h"]); else next.logged = p || 0;
     }
-    const pendingComment = val("f-comment");
-    if (pendingComment && pendingComment.trim()) next.comments.push({ author: state.me, at: new Date().toISOString(), text: pendingComment.trim() });
+    if (commentQ && KBEditor.getHtml(commentQ)) { addCommentFromEditor(); next.comments = draft.comments.slice(); }
 
     // Required fields that are on the form
     [...CORE_FIELDS, ...OPTIONAL_FIELDS].forEach((f) => {
@@ -1098,7 +1305,7 @@
       return;
     }
     if (next.type === "epic") next.epic = "";
-    const newStatus = val("f-status") || draft.status;
+    const [newStatus, newRes] = (val("f-status") || draft.status).split(":");
     const wasEpic = (taskByKey(next.key) || {}).type === "epic";
     if (wasEpic && next.type !== "epic") {
       const kids = childrenOf(next.key);
@@ -1107,13 +1314,13 @@
     }
     const existing = taskByKey(next.key);
     if (existing) {
-      const prevStatus = existing.status;
+      const prevStatus = existing.status, prevRes = res(existing);
       next.status = prevStatus;
       Object.assign(existing, next);
-      if (newStatus !== prevStatus) {
+      if (newStatus !== prevStatus || (newStatus === "done" && newRes !== prevRes)) {
         const inCol = state.tasks.filter((t) => t.status === newStatus);
         existing.rank = inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10;
-        setStatus(existing, newStatus);
+        setStatus(existing, newStatus, { resolution: newRes });
       } else toast(`<b>${esc(existing.key)}</b> saved`);
     } else {
       next.status = "backlog";
@@ -1123,11 +1330,15 @@
       next.rank = inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10;
       state.tasks.push(next);
       state.nextKey++;
-      if (newStatus !== "backlog") setStatus(next, newStatus, { silent: true });
+      if (newStatus !== "backlog") setStatus(next, newStatus, { silent: true, resolution: newRes });
       next.activity = [];
       toast(`<b>${esc(next.key)}</b> created in ${esc(STATUS_LABEL[next.status])}${next.status === "ready-for-testing" ? ` · assigned to ${esc(firstName(next.assignee))}` : ""}`);
     }
-    save(); closeTask(); render();
+    save();
+    if (notify.length) setTimeout(() => toast(`${esc(notify.join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
+    if (opts.then) { const back = returnTo; returnTo = null; closeTask(); returnTo = back; render(); opts.then(next.key); return; }
+    if (returnTo && !existing) toast(`<b>${esc(next.key)}</b> created in Backlog · added to ${esc(returnTo)}`);
+    closeTask(); render();
   }
   function initModal() {
     $("#task-flag").addEventListener("click", () => { if (draft) { draft.flagged = !draft.flagged; syncModalFlag(); } });
@@ -1137,6 +1348,9 @@
   }
 
   // ── Release report ──────────────────────────────────────────────────────
+  // Report columns: every status, with the last one split into Completed and Withdrawn.
+  const REPORT_COLS = STATUSES.filter((s) => s.key !== "done").map((s) => ({ key: s.key, short: s.short, match: (t) => t.status === s.key }))
+    .concat(RESOLUTIONS.map((r) => ({ key: "done:" + r.key, short: r.label, match: (t) => res(t) === r.key })));
   const REPORT_KEYS = ["release", "assignee", "status", "type", "priority", "sprint", "label", "epic"];
   function renderReport(view, params) {
     const f = Object.fromEntries(REPORT_KEYS.map((k) => [k, params.get(k) || ""]));
@@ -1146,7 +1360,7 @@
 
     const inScope = state.tasks.filter((t) => t.type !== "epic" && (!f.release || f.release === "all" || t.release === f.release));
     const filtered = inScope.filter((t) => {
-      if (f.status === "outstanding" ? t.status === "done" : f.status !== "all" && t.status !== f.status) return false;
+      if (f.status === "outstanding" ? t.status === "done" : f.status.startsWith("done:") ? "done:" + res(t) !== f.status : f.status !== "all" && t.status !== f.status) return false;
       if (f.assignee && (t.assignee || "none") !== f.assignee) return false;
       if (f.type && t.type !== f.type) return false;
       if (f.priority && t.priority !== f.priority) return false;
@@ -1159,7 +1373,8 @@
     const totalRem = outstanding.reduce((n, t) => n + remaining(t), 0);
     const totalEst = filtered.reduce((n, t) => n + (+t.estimate || 0), 0);
     const totalLog = filtered.reduce((n, t) => n + (+t.logged || 0), 0);
-    const doneInRel = inScope.filter((t) => t.status === "done").length;
+    const doneInRel = inScope.filter((t) => res(t) === "completed").length;
+    const withdrawnInRel = inScope.filter((t) => res(t) === "withdrawn").length;
     const noEstimate = outstanding.filter((t) => !(+t.estimate)).length;
     const wd = rel && !rel.released ? workingDaysUntil(rel.date) : 0;
     const capPer = wd * 6;
@@ -1170,7 +1385,7 @@
       const out = mine.filter((t) => t.status !== "done");
       return {
         id, tasks: mine, out,
-        byStatus: Object.fromEntries(STATUSES.map((s) => [s.key, mine.filter((t) => t.status === s.key).length])),
+        byStatus: Object.fromEntries(REPORT_COLS.map((s) => [s.key, mine.filter(s.match).length])),
         est: mine.reduce((n, t) => n + (+t.estimate || 0), 0),
         log: mine.reduce((n, t) => n + (+t.logged || 0), 0),
         rem: out.reduce((n, t) => n + remaining(t), 0),
@@ -1179,7 +1394,8 @@
     people.sort((a, b) => b.rem - a.rem || b.out.length - a.out.length);
     const maxRem = Math.max(1, ...people.map((p) => p.rem));
     const scale = Math.max(maxRem, capPer || 0);
-    const statusCols = STATUSES.filter((s) => f.status === "all" || s.key !== "done");
+    // Completed / Withdrawn columns only when the status filter includes them.
+    const statusCols = REPORT_COLS.filter((s) => !s.key.startsWith("done:") || f.status === "all" || f.status === s.key);
 
     const sel = (k, all, items) => `<label class="kb-rfilter"><span>${esc(all[0])}</span><select data-rf="${k}">${items}</select></label>`;
     const relItems = SEED.releases.map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), f.release)).join("") + opt("all", "All releases", f.release);
@@ -1203,7 +1419,7 @@
       </div>
       <div class="kb-filters kb-report-filters">
         ${sel("release", ["Release"], relItems)}
-        ${sel("status", ["Status"], opt("outstanding", "Outstanding (not Done)", f.status) + opt("all", "All, including Done", f.status) + STATUSES.map((s) => opt(s.key, s.label, f.status)).join(""))}
+        ${sel("status", ["Status"], opt("outstanding", "Outstanding (not completed)", f.status) + opt("all", "All, including completed / withdrawn", f.status) + STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, f.status)).join("") + RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, f.status)).join(""))}
         ${sel("assignee", ["Staff member"], opt("", "Everyone", f.assignee) + SEED.users.map((u) => opt(u.id, u.first, f.assignee)).join("") + opt("none", "Unassigned", f.assignee))}
         ${sel("type", ["Type"], opt("", "All types", f.type) + TYPES.filter((t) => t.key !== "epic").map((t) => opt(t.key, t.label, f.type)).join(""))}
         ${sel("priority", ["Priority"], opt("", "All priorities", f.priority) + PRIORITIES.map((p) => opt(p.key, p.label, f.priority)).join(""))}
@@ -1214,7 +1430,7 @@
       </div>
 
       <div class="kb-kpis">
-        <div class="kb-kpi"><div class="kb-kpi-label">Outstanding tasks${tip("Tasks in the selected release and filters that are not in Done.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} done in release${outstanding.filter((t) => t.flagged).length ? ` · <span class="kb-kpi-flag"><span class="material-symbols-outlined" aria-hidden="true">flag</span>${outstanding.filter((t) => t.flagged).length} flagged</span>` : ""}</div></div>
+        <div class="kb-kpi"><div class="kb-kpi-label">Outstanding tasks${tip("Tasks in the selected release and filters that are not in Completed / Withdrawn.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} completed${withdrawnInRel ? ` · ${withdrawnInRel} withdrawn` : ""}${outstanding.filter((t) => t.flagged).length ? ` · <span class="kb-kpi-flag"><span class="material-symbols-outlined" aria-hidden="true">flag</span>${outstanding.filter((t) => t.flagged).length} flagged</span>` : ""}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Remaining effort${tip("Sum of estimate minus time logged on each outstanding task, never below zero. 1d = 8h.")}</div><div class="kb-kpi-value">${fmtH(totalRem)}</div><div class="kb-kpi-sub">${noEstimate ? `${noEstimate} without estimate` : "All estimated"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Time logged${tip("Time logged against the filtered tasks, as a share of their total estimate.")}</div><div class="kb-kpi-value">${fmtH(totalLog)}</div><div class="kb-kpi-sub">${totalEst ? Math.round((totalLog / totalEst) * 100) + "% of " + fmtH(totalEst) : "—"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Release date${tip("Working days (Mon–Fri) from today to the release date.")}</div><div class="kb-kpi-value">${rel ? fmtDate(rel.date) : "—"}</div><div class="kb-kpi-sub">${rel ? (rel.released ? "Released" : `${wd} working days left`) : "Pick a release"}</div></div>
@@ -1240,7 +1456,7 @@
             <tbody>
               ${people.map((p) => `<tr class="kb-click-row${f.assignee === (p.id || "none") ? " kb-row-on" : ""}" data-person="${p.id || "none"}"><td><span class="kb-person-cell">${avatar(p.id)}${esc(firstName(p.id))}</span></td><td class="num">${p.tasks.length}</td>${statusCols.map((s) => `<td class="num${p.byStatus[s.key] ? "" : " kb-zero"}">${p.byStatus[s.key] || "–"}</td>`).join("")}<td class="num">${fmtH(p.est)}</td><td class="num">${fmtH(p.log)}</td><td class="num"><b>${fmtH(p.rem)}</b></td>${capPer ? `<td>${capState(p)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${6 + statusCols.length}" class="empty-hint">No tasks match these filters</td></tr>`}
             </tbody>
-            ${people.length ? `<tfoot><tr><td><b>Total</b></td><td class="num"><b>${filtered.length}</b></td>${statusCols.map((s) => `<td class="num"><b>${filtered.filter((t) => t.status === s.key).length || "–"}</b></td>`).join("")}<td class="num"><b>${fmtH(totalEst)}</b></td><td class="num"><b>${fmtH(totalLog)}</b></td><td class="num"><b>${fmtH(totalRem)}</b></td>${capPer ? "<td></td>" : ""}</tr></tfoot>` : ""}
+            ${people.length ? `<tfoot><tr><td><b>Total</b></td><td class="num"><b>${filtered.length}</b></td>${statusCols.map((s) => `<td class="num"><b>${filtered.filter(s.match).length || "–"}</b></td>`).join("")}<td class="num"><b>${fmtH(totalEst)}</b></td><td class="num"><b>${fmtH(totalLog)}</b></td><td class="num"><b>${fmtH(totalRem)}</b></td>${capPer ? "<td></td>" : ""}</tr></tfoot>` : ""}
           </table>
         </div>
       </section>
@@ -1256,7 +1472,7 @@
                   const overdue = t.due && t.status !== "done" && daysBetween(t.due, TODAY) < 0;
                   const pr = prioOf(t.priority), ty = typeOf(t.type);
                   return `<tr class="kb-click-row" data-open="${esc(t.key)}"><td><span class="kb-task-cell"><span class="kb-type kb-type-${ty.key}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span><span class="kb-key">${esc(t.key)}</span><span class="archive-row-title">${esc(t.title)}</span>${t.flagged ? '<span class="material-symbols-outlined kb-flag-mini" title="Flagged" aria-label="Flagged">flag</span>' : ""}</span></td>
-                    <td><span class="kb-status-pill kb-sp-${t.status}">${esc(STATUSES.find((s) => s.key === t.status).short)}</span></td>
+                    <td>${statusPill(t)}</td>
                     <td><span class="kb-prio-cell kb-prio-${pr.key}"><span class="material-symbols-outlined" aria-hidden="true">${pr.icon}</span>${pr.label}</span></td>
                     <td class="archive-row-date">${esc(sprint(t.sprint) ? sprint(t.sprint).name : "—")}</td>
                     <td class="archive-row-date${overdue ? " kb-overdue" : ""}">${t.due ? fmtDate(t.due) : "—"}</td>
