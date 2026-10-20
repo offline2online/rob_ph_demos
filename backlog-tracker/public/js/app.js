@@ -1070,7 +1070,9 @@ function needsDecisionChipHTML(pid) {
 }
 
 async function clearBlocked(id) {
-  await updateDoc(doc(db, "backlogItems", id), { blocked: null, updatedAt: serverTimestamp() });
+  // blockedClearedAt: the automation's unbuilt-report sweep must not raise
+  // the flag again on a card a person has just cleared.
+  await updateDoc(doc(db, "backlogItems", id), { blocked: null, blockedClearedAt: serverTimestamp(), updatedAt: serverTimestamp() });
 }
 
 // Cards a Ready for Dev click can actually build: not blocked on a question
@@ -1376,6 +1378,15 @@ function sentTicketStateLines(routine) {
 // for Testing, been approved or been deleted is not being "deved" any more,
 // whatever the session did or didn't report (5 Oct 2026 — a record like that
 // kept "Deving…" spinning beside Deploy to Main).
+// The tickets of an in-progress, not yet stale Ready for Dev click whose
+// session has not reported — what a further click must not send again.
+function ticketsStillBuilding(project) {
+  const routine = project && project.notifyRoutine;
+  if (!routine || routine.status !== "in-progress") return [];
+  if (tsMillis(routine.firedAt) && Date.now() - tsMillis(routine.firedAt) > NOTIFY_ROUTINE_STALE_MS) return [];
+  return (routine.sentItemIds || []).filter((id) => !perItemBuildFinished(allItems.find((i) => i.id === id), routine));
+}
+
 function perItemRoutineFinished(routine) {
   if (!routine) return false;
   const sent = routine.sentItemIds || [];
@@ -3492,23 +3503,31 @@ async function requestNotify(pid) {
   // everything", the original default behavior — notifyItemIds is cleared
   // (not just left unset) so a stale array from an earlier partial send
   // can never silently narrow a later full sweep.
+  // Tickets an earlier click is still building are never sent again — the
+  // "Ready for Dev — N new" button used to send the whole column (no ids), so
+  // every one of them got a second session writing a competing fix (20 Oct 2026).
+  const building = new Set(ticketsStillBuilding(projects.find((p) => p.id === pid)));
   const backlogIds = new Set(
-    items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && isBuildableBacklogItem(i)).map((i) => i.id)
+    items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && isBuildableBacklogItem(i) && !building.has(i.id)).map((i) => i.id)
   );
   const selected = [...getSelectedSet(pid)].filter((id) => backlogIds.has(id));
-  // A selection of only blocked cards must not widen into "send everything".
+  // A selection of only blocked (or already building) cards must not widen into "send everything".
   if (getSelectedSet(pid).size && !selected.length) {
     getSelectedSet(pid).clear();
     render();
     return;
   }
+  // With a build in flight, an empty selection means "the new ones", named
+  // explicitly: an empty list would make the server take the whole column.
+  const toSend = selected.length || !building.size ? selected : [...backlogIds];
+  if (building.size && !toSend.length) return;
 
   // Show the spinning state immediately, without waiting on the
   // notifyOnProjectReadyForReview round-trip — see notifyOptimisticClicks.
   notifyOptimisticClicks[pid] = Date.now();
   render();
 
-  await writeNotifyRequest(pid, selected);
+  await writeNotifyRequest(pid, toSend);
   getSelectedSet(pid).clear();
 }
 
@@ -4717,6 +4736,7 @@ async function submitResolveAnswer() {
       await updateDoc(doc(db, "backlogItems", resolveItemId), {
         notes: arrayUnion({ author: me, text: `Answer to the build's question: ${text}`, at: new Date() }),
         blocked: null,
+        blockedClearedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
       const pid = item.projectId || GENERAL_PROJECT_ID;

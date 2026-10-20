@@ -3,7 +3,7 @@
 // Run with:  node test/notify-routine.test.js
 "use strict";
 const assert = require("assert");
-const { notifyRoutineOutcome, stalledNoteText, shouldStampReportedAt, STALL_MS } = require("../functions/notify-routine");
+const { notifyRoutineOutcome, stalledNoteText, shouldStampReportedAt, STALL_MS, inFlightItemIds, unbuiltReportAction, UNBUILT_REPORT_GRACE_MS } = require("../functions/notify-routine");
 
 let passed = 0; const failures = [];
 async function test(name, fn) {
@@ -93,6 +93,57 @@ const reported = (id, extra = {}) => backlog(id, { buildSession: { status: "done
     assert.deepStrictEqual(Object.keys(stamped[0] || {}), ["buildSession.reportedAt"]);
     assert.deepStrictEqual(await run({ title: "a", buildSession: { status: "running" } }, { title: "b", buildSession: { status: "running" } }), []);
   });
+  // ── inFlightItemIds (20 Oct 2026: duplicate builds) ──
+  const started = (id, atMs, extra = {}) => backlog(id, { lastFire: { status: "started", at: new Date(atMs) }, ...extra });
+  await test("in flight: a started, unreported session within the stall window", () => {
+    const cards = [started("a", FIRED), started("b", FIRED, { buildSession: { status: "done", reportedAt: new Date(FIRED + MIN) } })];
+    assert.deepStrictEqual(inFlightItemIds(routine(), cards, FIRED + 5 * MIN), ["a"]);
+  });
+  await test("not in flight: a fire that never started, a blocked card, a landed card, or past the stall window", () => {
+    const cards = [backlog("a", { lastFire: { status: "retrying", at: new Date(FIRED) } }), started("b", FIRED, { blocked: { reason: "waiting-on-input" } })];
+    assert.deepStrictEqual(inFlightItemIds(routine(), cards, FIRED + MIN), []);
+    assert.deepStrictEqual(inFlightItemIds(routine(), [{ ...started("a", FIRED), status: "ready-for-testing" }], FIRED + MIN), []);
+    assert.deepStrictEqual(inFlightItemIds(routine(), [started("a", FIRED)], FIRED + STALL_MS), []);
+    assert.deepStrictEqual(inFlightItemIds(routine({ status: "done" }), [started("a", FIRED)], FIRED + MIN), []);
+  });
+  await test("in flight is timed from the card's own fire, so a ticket carried onto a newer click's record still counts", () => {
+    const carried = routine({ firedAt: new Date(FIRED + 10 * MIN), sentItemIds: ["a"] });
+    assert.deepStrictEqual(inFlightItemIds(carried, [started("a", FIRED)], FIRED + 12 * MIN), ["a"]);
+  });
+
+  // ── unbuiltReportAction (20 Oct 2026: a question asked without the flag) ──
+  const REP = FIRED + 2 * MIN;
+  const stopped = (extra = {}) => backlog("x", {
+    buildSession: { status: "done", reportedAt: new Date(REP) },
+    lastFire: { status: "started", at: new Date(FIRED) },
+    notes: [{ author: "claude", text: "Decision needed: A or B? Answer on the card (Answer button)", at: new Date(REP - MIN).toISOString() }],
+    ...extra,
+  });
+  const LATER = REP + UNBUILT_REPORT_GRACE_MS + MIN;
+  await test("stopped without a patch or a flag, nobody replied -> flag it with the session's question", () => {
+    const r = unbuiltReportAction(stopped(), LATER);
+    assert.strictEqual(r.action, "block");
+    assert.strictEqual(r.blocked.reason, "waiting-on-input");
+    assert.ok(r.blocked.note.startsWith("Decision needed: A or B?"));
+    assert.ok(r.blocked.note.includes("Answer on the card (Answer button)"));
+  });
+  await test("a person replied in a comment after the report -> rebuild with that reply as the answer", () => {
+    const card = stopped();
+    card.notes.push({ author: "rob@offline2online.com", text: "A", at: new Date(REP + MIN).toISOString() });
+    assert.deepStrictEqual(unbuiltReportAction(card, LATER), { action: "rebuild", answer: "A" });
+  });
+  await test("nothing to do: within the grace period, a newer fire, a cleared flag, already flagged, patch packaged, the pipeline acted since, or a report over a day old", () => {
+    assert.strictEqual(unbuiltReportAction(stopped(), REP + MIN), null);
+    assert.strictEqual(unbuiltReportAction(stopped({ lastFire: { status: "started", at: new Date(REP + MIN) } }), LATER), null);
+    assert.strictEqual(unbuiltReportAction(stopped({ blockedClearedAt: new Date(REP + MIN) }), LATER), null);
+    assert.strictEqual(unbuiltReportAction(stopped({ blocked: { reason: "waiting-on-input", note: "q" } }), LATER), null);
+    assert.strictEqual(unbuiltReportAction(stopped({ patchReady: true }), LATER), null);
+    const sentBack = stopped(); sentBack.notes.push({ author: "backlog-automation", text: "Sent back automatically", at: new Date(REP + MIN).toISOString() });
+    assert.strictEqual(unbuiltReportAction(sentBack, LATER), null);
+    assert.strictEqual(unbuiltReportAction(stopped(), REP + 25 * 60 * MIN), null);
+    assert.strictEqual(unbuiltReportAction({ ...stopped(), buildSession: { status: "error", reportedAt: new Date(REP) } }, LATER), null);
+  });
+
   console.log(failures.length ? `\n${failures.length} failed` : `\n${passed} passed`);
   process.exit(failures.length ? 1 : 0);
 })();
