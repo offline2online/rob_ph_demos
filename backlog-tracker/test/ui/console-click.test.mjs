@@ -458,6 +458,27 @@ const scenarios = [
     },
   },
   {
+    // 20 Oct 2026: this button sent no ids, so the server built the whole
+    // column again and every ticket still building got a second session.
+    name: "Ready for Dev — N new: while a build is running, the click sends only the new tickets",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.b2 = { ...s.docs.backlogItems.b1, title: "Filed after the click", createdAt: t(T0 + 9), updatedAt: t(T0 + 9) };
+      s.docs.backlogItems.b1.lastFire = { status: "started", at: t(Date.now() - 2 * 60_000) };
+      s.docs.projects[PID].notifyRoutine = { status: "in-progress", mode: "per-item", firedAt: t(Date.now() - 2 * 60_000), sentItemIds: ["b1"], sessionUrl: "https://claude.ai/code/session_x" };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".project-header .project-notify-btn", "1 new", "the new-tickets button");
+      await c.click(".project-header .project-notify-btn", "Ready for Dev — 1 new");
+      const writes = await until(async () => { const w = await c.writes(); return w.some((x) => x.path === `projects/${PID}`) ? w : null; }, "the notify request");
+      c.at("what the click asked for");
+      const req = writes.find((x) => x.path === `projects/${PID}`);
+      assert.deepStrictEqual(req.data.notifyItemIds, ["b2"], `only the new ticket, got ${JSON.stringify(req.data.notifyItemIds)}`);
+    },
+  },
+  {
     name: "Blocked: a card waiting on an answer shows the chip, not Ready for Dev",
     seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; return s; },
     async run(c) {

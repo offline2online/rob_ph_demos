@@ -57,7 +57,7 @@ const { trainLockShouldClear, trainHandoverReason } = require("../functions/trai
 const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
-const { notifyRoutineOutcome, stalledNoteText } = require("../functions/notify-routine");
+const { notifyRoutineOutcome, stalledNoteText, cardSettled, unbuiltReportAction } = require("../functions/notify-routine");
 const { loadDocsImpactRules, docsImpactCheck, refusalNote: docsImpactRefusalNote, waiverNote: docsImpactWaiverNote } = require("./docs-impact");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
@@ -580,6 +580,10 @@ function batchStillBuilding(project, itemsById, now = Date.now()) {
     if (!it || it.status !== "backlog") return false;
     if (it.blocked) return false;
     if (it.buildSession && it.buildSession.status === "error") return false;
+    // Its session has reported since the click (done without a patch: it
+    // stopped on a question — see sweepUnbuiltReports). Nothing is building
+    // it; on 20 Oct 2026 one such card held a project's hand-off for hours.
+    if (cardSettled(it, nr)) return false;
     return true;
   });
 }
@@ -672,7 +676,7 @@ async function requestReadyForTestingNotify(nowMs = Date.now()) {
   readyForTestingLanded.clear();
 }
 
-const HAND_OFF_CARD_FIELDS = ["status", "deployBranch", "deployCommit", "deployCommits", "trainTest", "trainTestReruns", "previewState", "blocked", "buildSession"];
+const HAND_OFF_CARD_FIELDS = ["status", "deployBranch", "deployCommit", "deployCommits", "trainTest", "trainTestReruns", "previewState", "blocked", "buildSession", "patchReady"];
 const HAND_OFF_PROJECT_FIELDS = ["readyForTestingPendingItemIds", "readyForTestingPendingSince", "readyForTestingWaitingOn", "notifyRoutine", "notifyRequestedByEmail"];
 
 // For cards whose failed run may still be re-run: every commit the train
@@ -903,6 +907,41 @@ async function sweepRebuildRequests() {
     if (!project || project.trainLocked) continue;
     queueBuildRequest(project, item.id, { retry: true });
     console.log(`[rebuild] ${item.id}: retrying a build session that could not be started`);
+  }
+}
+
+// ── Builds that stopped without a patch or a flag ──────────────────────────
+// See unbuiltReportAction (functions/notify-routine.js): a person's reply in a
+// comment is taken as the answer and the ticket is rebuilt; otherwise the card
+// is flagged waiting-on-input so it shows the question and an Answer button.
+async function sweepUnbuiltReports(now = Date.now()) {
+  const done = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { compositeFilter: { op: "AND", filters: [
+      { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "backlog" } } },
+      { fieldFilter: { field: { fieldPath: "buildSession.status" }, op: "EQUAL", value: { stringValue: "done" } } },
+    ] } },
+  });
+  for (const item of done) {
+    const next = unbuiltReportAction(item, now);
+    if (!next) continue;
+    try {
+      const project = await getProject(item.projectId).catch(() => null);
+      if (next.action === "rebuild" && project && !project.trainLocked) {
+        const notes = await appendNote(item, `The last build stopped without a patch, and a reply has been left on the card since ("${next.answer.slice(0, 200)}${next.answer.length > 200 ? "…" : ""}"). Taking that reply as the answer and building the ticket again.`);
+        await patchItem(item.id, { notes, updatedAt: new Date().toISOString() });
+        queueBuildRequest(project, item.id);
+        console.log(`[unbuilt] ${item.id}: reply found after the build stopped — rebuild requested`);
+      } else {
+        const blocked = { ...next.blocked, setAt: new Date().toISOString() };
+        if (next.action === "rebuild") blocked.note = `The reply on this card will be used once this project's train has merged (a release is closing). ${blocked.note}`;
+        const notes = await appendNote(item, `The build stopped without packaging a patch and without flagging the card, so nothing would have moved it on. Flagged as waiting on your input: answer with the Answer button on the card and it rebuilds.`);
+        await patchItem(item.id, { blocked, notes, updatedAt: new Date().toISOString() });
+        console.log(`[unbuilt] ${item.id}: build stopped without a patch — flagged waiting-on-input`);
+      }
+    } catch (err) {
+      console.error(`[unbuilt] ${item.id}: ${err.message}`);
+    }
   }
 }
 
@@ -3701,6 +3740,17 @@ async function processApplyPatch(item) {
 // Distinct from processRevertPr further down, which undoes something already
 // merged to main by opening a revert PR. This one never touches main — it
 // only rewinds work that has not shipped yet.
+// The commit on HEAD's history after `sha` whose message says it reverts `sha`
+// ("This reverts commit <sha>.", what `git revert` writes), or null.
+function revertCommitFor(sha) {
+  try {
+    const out = run("git", ["log", "--format=%H", "--fixed-strings", `--grep=This reverts commit ${sha}`, `${sha}..HEAD`]);
+    return (out || "").split("\n").map((x) => x.trim()).find(Boolean) || null;
+  } catch {
+    return null;
+  }
+}
+
 async function processRevertFromTrain(item) {
   console.log(`[train-revert] ${item.id}: ${item.title || item.desc}`);
   const commits = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
@@ -3755,11 +3805,23 @@ async function processRevertFromTrain(item) {
   const ordered = commits.slice().reverse();
   const reverted = [];
   const revertedOriginals = [];
+  const revertedByHand = [];
   for (const sha of ordered) {
     let onBranch = true;
     try { run("git", ["merge-base", "--is-ancestor", sha, "HEAD"]); } catch { onBranch = false; }
     if (!onBranch) {
       console.log(`[train-revert] ${item.id}: ${sha.slice(0, 7)} isn't on ${deployBranch} any more — skipping it`);
+      continue;
+    }
+    // Already reverted on the branch — by a person resolving the conflict the
+    // note below asks for ("fix the branch by hand"). Reverting it again would
+    // conflict on every run, forever (20 Oct 2026, v8q30p66b1WaUMpD4Vuk).
+    const byHand = revertCommitFor(sha);
+    if (byHand) {
+      reverted.push(byHand);
+      revertedOriginals.push(sha);
+      revertedByHand.push(byHand);
+      console.log(`[train-revert] ${item.id}: ${sha.slice(0, 7)} was already reverted on ${deployBranch} by ${byHand.slice(0, 7)}`);
       continue;
     }
     const mainline = parentCount(sha) >= 2 ? ["-m", "1"] : [];
@@ -3818,14 +3880,16 @@ async function processRevertFromTrain(item) {
     return;
   }
 
-  pushTrain(deployBranch);
+  // Reverts made by hand were pushed (and tested) by whoever made them.
+  const madeHere = reverted.length > revertedByHand.length;
+  if (madeHere) pushTrain(deployBranch);
   // The revert changed the train's source, so any bundle built from it is
   // stale in the other direction: it would keep showing the reverted change.
-  const revertedPaths = changedPathsBetween(tipBeforeRevert, "HEAD");
+  const revertedPaths = madeHere ? changedPathsBetween(tipBeforeRevert, "HEAD") : [];
   const after = afterRevertDispatches(revertedPaths);
-  dispatchRebuilds(deployBranch, revertedPaths, "train-revert");
+  if (madeHere) dispatchRebuilds(deployBranch, revertedPaths, "train-revert");
   // ...and the train now ends on a different commit that nothing has tested.
-  const testsStarted = after.tests.length ? dispatchTrainTests(deployBranch, revertedPaths, "train-revert") : [];
+  const testsStarted = madeHere && after.tests.length ? dispatchTrainTests(deployBranch, revertedPaths, "train-revert") : [];
   // Anything riding on the commits just reverted lost its content with them.
   await detachCarriedCards(item, revertedOriginals, deployBranch);
 
@@ -5796,6 +5860,11 @@ async function main() {
   } catch (err) {
     console.error(`[rebuild] sweep failed: ${err.message}`);
   }
+  try {
+    await sweepUnbuiltReports();
+  } catch (err) {
+    console.error(`[unbuilt] sweep failed: ${err.message}`);
+  }
   await flushBuildRequests();
   await requestReadyForTestingNotify();
   try {
@@ -5961,7 +6030,7 @@ module.exports = {
   // test/preview-url-pin.test.js
   guessPreviewUrl, isAutoGeneratedPreviewUrl, repointPreviewUrlRef,
   // test/ready-for-testing-trigger.test.js
-  readyForTestingNotifyFields, batchStillBuilding, handOffWaitingOn, rerunPending, nextHandOff, attributedShasFor, tv,
+  readyForTestingNotifyFields, batchStillBuilding, handOffWaitingOn, revertCommitFor, rerunPending, nextHandOff, attributedShasFor, tv,
   // test/train-sync.test.js — the train is brought up to date with main
   // before a ticket lands, and the patch's edits are carried across
   syncTrainWithMain, rebasePatchFilesOnto,
