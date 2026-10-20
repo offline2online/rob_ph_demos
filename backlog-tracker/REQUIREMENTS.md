@@ -1535,7 +1535,33 @@ REST API is reachable with a plain `curl`, no service account needed.
   recognition/listening/error state via closure, not shared module
   globals) so the quick-comment modal and the Edit item modal's own
   comment box each get an identical mic button too — starting or stopping
-  dictation on one field never touches another's state.
+  dictation on one field never touches another's state, and starting one
+  field's mic halts any other (Chrome runs one recognition per page, so
+  two restart loops would otherwise fight over it).
+- **Dictation never cuts off by itself (1.5.267, 20 Oct 2026).** Reported
+  live: the mic "cuts off and stops listening after a certain amount of
+  time". A session the browser ends on its own restarts the *same*
+  recognition instance synchronously in `onend` (what iOS Safari needs —
+  it refuses a new instance created outside the click gesture), falling
+  back to a fresh instance after a short delay when `start()` throws or
+  the engine reports `network` / `not-allowed` / `audio-capture` on a run
+  whose microphone already worked (each retried up to three times before a
+  visible message). A once-a-second watchdog catches the stall that fires
+  no event at all (iOS Safari, WebAudio/web-speech-api#96): interim words
+  left unfinalized for 4 s are committed as shown and the session is
+  replaced, and a session with no event of any kind for 20 s is quietly
+  replaced. Words shown as interim text are never taken back by a
+  restart — a session that ends without finalizing them commits them.
+  The stop click finalizes the words in flight (`stop()`, with a 3 s grace
+  that keeps what was shown); adding a ticket, adding a comment or closing
+  the form `halt()`s instead — the instance is aborted with its handlers
+  detached, so the microphone is released at once and nothing writes into
+  a field that is being cleared. Typing into the field mid-dictation keeps
+  the edit (it becomes the new starting text) and listening resumes
+  1.2 s after the last keystroke. `window.__btDictationLog` in the browser
+  console lists the last 200 dictation events (starts, ends, error codes,
+  watchdog restarts) for diagnosing a report. Tested by
+  `test/dictation.test.mjs` against a scripted recogniser.
 - **App name and global navigation.** The app itself (browser tab, `<h1>`,
   footer) is titled **"PH Agent Console"** — distinct from any one
   project's own name on the board (e.g. the "Backlog Tracker & FAQs"

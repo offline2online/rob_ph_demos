@@ -849,7 +849,12 @@ handlers, never ran. The board still rendered, so the menu was simply dead
 on desktop, tablet and phone from the 08:04 deploy until the next one, and
 nothing in the pipeline had executed `app.js` to notice. Every dictation
 controller is now created after that declaration, and this test is the
-guard.
+guard. **`test/dictation.test.mjs`** uses the same harness with a scripted
+`SpeechRecognition` and clicks the real mic buttons: sessions the browser
+ends, stalls with no end event, network blips, a throwing `start()` and
+typing mid-dictation must all keep the run going, while the stop click,
+adding a ticket or comment, and closing the form must end it and release
+the microphone (REQUIREMENTS.md → "Dictation never cuts off by itself").
 
 `test/` holds these suites:
 
