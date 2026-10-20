@@ -1,7 +1,7 @@
 // The Concept Incubator hero map: nodes, status, release badges, the filter,
 // and "a new interface contract adds a line with no code change".
 import assert from "node:assert/strict";
-import { buildSystemMap, systemMapHTML, highlightedIds, shortDescription, layoutSystemMap, nodeBox, fitViewBox } from "../public/js/system-map.js";
+import { buildSystemMap, systemMapHTML, highlightedIds, shortDescription, layoutSystemMap, nodeBox, fitViewBox, compareReleases } from "../public/js/system-map.js";
 
 const releases = [{ id: "r5", name: "DSP Integration", version: "5.0", status: "draft" }, { id: "r4", name: "Sep", version: "4.2", status: "live" }];
 const projects = [
@@ -223,5 +223,16 @@ console.log("system-map descriptions: ok");
     }
   }
   function base_() { return { projects: projectsMany.slice(0, 4), concepts: conceptsMany.slice(0, 3), interfaces: ifaces.slice(0, 1), releases }; }
+}
+// A concept's release comes from the release's conceptIds, and releases sort
+// by version number part by part.
+{
+  const rels = [{ id: "ra", version: "5.1", name: "A", conceptIds: ["c1"] }];
+  const cn = buildSystemMap({ ...base, releases: rels }).nodes.find((n) => n.id === "c1");
+  assert.equal(cn.release, "Release 5.1");
+  assert.equal(cn.releaseId, "ra");
+  assert.equal(buildSystemMap({ ...base, releases: [] }).nodes.find((n) => n.id === "c1").release, "");
+  const list = ["6.0", "5.10", "5.1", "5.0", "5.2"].map((v, i) => ({ version: v, order: i })).sort(compareReleases);
+  assert.deepEqual(list.map((r) => r.version), ["5.0", "5.1", "5.2", "5.10", "6.0"]);
 }
 console.log("system-map (layout, 390/820/1180/1440/1920): ok");

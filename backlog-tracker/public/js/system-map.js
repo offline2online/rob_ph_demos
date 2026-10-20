@@ -168,6 +168,24 @@ function tsMs(v) {
   return Number(v) || 0;
 }
 
+// Release order: by version, part by part and numerically (5.0, 5.1, 5.2 ...
+// 5.10, 6.0), never as text and never by creation date. A release without a
+// version sorts after the versioned ones, by its creation `order`.
+export function versionParts(v) {
+  const m = String(v == null ? "" : v).match(/\d+/g);
+  return m ? m.map(Number) : null;
+}
+export function compareReleases(a, b) {
+  const pa = versionParts(a && a.version), pb = versionParts(b && b.version);
+  if (pa && pb) {
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d;
+    }
+  } else if (pa || pb) return pa ? -1 : 1;
+  return (Number(a && a.order) || 0) - (Number(b && b.order) || 0);
+}
+
 export function releaseLabel(r) {
   if (!r) return "";
   return `Release ${r.version || r.name}`;
@@ -193,8 +211,13 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
       desc: shortDescription(p.description),
     });
   });
+  // A concept's release is the release whose conceptIds lists it.
+  const relOfConcept = {};
+  releases.forEach((r) => (Array.isArray(r.conceptIds) ? r.conceptIds : []).forEach((cid) => { if (!relOfConcept[cid]) relOfConcept[cid] = r; }));
   concepts.filter((c) => c.status !== "promoted" && !INTERNAL_RE.test(c.name || "")).forEach((c) => {
-    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "", desc: shortDescription(c.description, c.readmeMd), updatedMs: tsMs(c.updatedAt) });
+    const crel = relOfConcept[c.id] || null;
+    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept",
+      releaseId: crel ? crel.id : null, release: crel ? releaseLabel(crel) : "", href: c.artifactUrl || "", desc: shortDescription(c.description, c.readmeMd), updatedMs: tsMs(c.updatedAt) });
   });
   // Live Visitor Profile: one node, a concept, in the PH Core slot.
   const vp = nodes.find((n) => (n.kind === "project" || n.kind === "concept") && /live visitor profile/i.test(n.name));

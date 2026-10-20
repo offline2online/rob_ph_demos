@@ -29,7 +29,7 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
-import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts } from "./system-map.js";
+import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts, compareReleases } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -3872,8 +3872,10 @@ function projectReleaseBadgeHTML(project) {
 // the rules refuse one from anywhere else too.
 const RELEASE_STATUS_LABELS = { draft: "Draft", live: "Live" };
 
-function releasesByOrderDesc() {
-  return releases.slice().sort((a, b) => (Number(b.order) || 0) - (Number(a.order) || 0));
+// Earliest to latest by version number (5.0, 5.1 ... 5.10, 6.0), the one
+// order every release list, picker and filter uses.
+function releasesInVersionOrder() {
+  return releases.slice().sort(compareReleases);
 }
 
 function releaseLabel(r) {
@@ -3885,7 +3887,7 @@ function releaseLabel(r) {
 // public help centre and the MCP FAQ tools default to when no specific
 // release is asked for. null when nothing is live yet.
 function currentLiveRelease() {
-  return releasesByOrderDesc().find((r) => r.status === "live") || null;
+  return releasesInVersionOrder().reverse().find((r) => r.status === "live") || null;
 }
 
 // The one canonical definition of "does this article apply to this
@@ -3953,11 +3955,11 @@ async function setProjectRelease(id, releaseId) {
 // selects. Unlike populateProgramSelect there is no inline "+ New
 // release…" option: a release carries an order and a one-way status, so
 // it's created on the Releases page (nav drawer) where both are visible,
-// not conjured from a dropdown. Newest release first. A selected id that
+// not conjured from a dropdown. Earliest version first. A selected id that
 // no longer exists is kept as its own option so the saved value isn't
 // silently dropped on the next save.
 function populateReleaseSelect(selectEl, selectedId, { emptyLabel = "No release" } = {}) {
-  const opts = releasesByOrderDesc();
+  const opts = releasesInVersionOrder();
   const missing = selectedId && !opts.some((r) => r.id === selectedId)
     ? `<option value="${escapeHTML(selectedId)}" selected>Unknown release (${escapeHTML(selectedId)})</option>`
     : "";
@@ -6210,7 +6212,7 @@ function renderSystemMap() {
   const sel = document.getElementById("system-map-release");
   const chosen = sel.value;
   const opts = ['<option value="">All releases</option>'].concat(
-    releases.map((r) => `<option value="${escapeHTML(r.id)}">${escapeHTML(`Release ${r.version || r.name}${r.name && r.version ? ` — ${r.name}` : ""}`)}</option>`));
+    releasesInVersionOrder().map((r) => `<option value="${escapeHTML(r.id)}">${escapeHTML(`Release ${r.version || r.name}${r.name && r.version ? ` — ${r.name}` : ""}`)}</option>`));
   const html = opts.join("");
   if (sel.dataset.sig !== html) { sel.innerHTML = html; sel.dataset.sig = html; sel.value = chosen; }
   document.getElementById("system-map-legend").innerHTML = systemMapLegendHTML();
@@ -6350,7 +6352,8 @@ function renderConceptIncubatorPage() {
   renderSystemMap();
   // Earliest release first; concepts with no release come after, keeping the
   // query's updatedAt-desc order within each group (Array.sort is stable).
-  const orderOf = (c) => { const r = conceptRelease(c.id); return r ? Number(r.order) || 0 : Infinity; };
+  const rank = new Map(releasesInVersionOrder().map((r, i) => [r.id, i]));
+  const orderOf = (c) => { const r = conceptRelease(c.id); return r ? rank.get(r.id) : Infinity; };
   // Promoted concepts are kept (reachable from the project's "Origin concept"
   // link) but no longer shown as tiles, so a promoted idea isn't listed twice.
   const sorted = concepts.filter((c) => c.status !== "promoted").sort((a, b) => {
@@ -6619,7 +6622,7 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
 // other three dictation controllers — see the note on SpeechRecognitionCtor.
 
 // ── Releases page ─────────────────────────────────────────────────────────
-// Every release, newest (highest order) first, with the one thing you can
+// Every release, in version order (earliest first), with the one thing you can
 // do to one: mark a draft live. Reading needs only sign-in (firestore.rules
 // isBoardReader on `releases`); creating or marking live needs editor
 // access, same gate as the Skills page below. Marking live is one-way —
@@ -6673,7 +6676,7 @@ function releaseRowHTML(r) {
 }
 
 function renderReleasesPage() {
-  const rows = releasesByOrderDesc();
+  const rows = releasesInVersionOrder();
   document.getElementById("releases-count").textContent = `${rows.length} release${rows.length === 1 ? "" : "s"}`;
   document.getElementById("releases-table-body").innerHTML = rows.map(releaseRowHTML).join("");
   document.getElementById("releases-empty").hidden = rows.length !== 0;
