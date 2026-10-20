@@ -161,7 +161,13 @@
     return n;
   }
   // A person's avatar: their uploaded photo, else their initial on their colour.
-  const photoOf = (id) => (state.photos || {})[id] || "";
+  // An uploaded photo wins; "" means the person removed theirs; otherwise the
+  // photo the team member already has on file (data.js), if any.
+  const photoOf = (id) => {
+    const own = state.photos || {};
+    if (Object.prototype.hasOwnProperty.call(own, id)) return own[id];
+    return (user(id) || {}).photo || "";
+  };
   function avatar(id, size = "") {
     const u = user(id);
     if (!u) return `<span class="kb-avatar kb-avatar-none ${size}" title="Unassigned"><span class="material-symbols-outlined" aria-hidden="true">person</span></span>`;
@@ -202,8 +208,9 @@
     } catch (e) { toast(esc(e.message)); }
   }
   function removePhoto(id) {
-    if (!state.photos || !state.photos[id]) return;
-    delete state.photos[id];
+    if (!photoOf(id)) return;
+    state.photos = Object.assign({}, state.photos);
+    if ((user(id) || {}).photo) state.photos[id] = ""; else delete state.photos[id];
     save(); renderProfile(); render();
     toast(id === state.me ? "Profile photo removed" : `<b>${esc(firstName(id))}</b>'s photo removed`);
   }
@@ -301,7 +308,7 @@
       if (b.classList.contains("tab")) b.classList.toggle("active", on);
     });
     root.dataset.page = ["agent-board", "report", "settings"].includes(route) ? route : "kanban";
-    document.title = ({ "agent-board": "Agent Board", report: "Release report", settings: "Kanban settings" }[route] || "Kanban") + " — PH Agent Console";
+    document.title = ({ "agent-board": "Agent Board", report: "Release report", settings: "Kanban settings" }[route] || "Staff Kanban") + " — PH Agent Console";
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", render);
@@ -392,7 +399,7 @@
     const filtersActive = board.flagged || board.mine || board.assignees.size || board.type || board.priority || board.sprint || board.label || board.q;
     view.innerHTML = `
       <div class="page-header">
-        <h2>Kanban</h2>
+        <h2>Staff Kanban</h2>
         <span class="page-header-count" id="kb-count"></span>
         <label class="kb-search kb-header-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
         <div class="kb-header-actions">
@@ -1558,7 +1565,7 @@
         <span class="page-header-count">${esc(f.release === "all" ? "All releases" : releaseName(f.release))}</span>
         <div class="kb-header-actions">
           <button type="button" class="btn-ghost kb-icon-label" id="rp-copy"><span class="material-symbols-outlined" aria-hidden="true">link</span>Copy link</button>
-          <button type="button" class="btn-ghost kb-icon-label" data-route="kanban"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Kanban board</button>
+          <button type="button" class="btn-ghost kb-icon-label" data-route="kanban"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Staff Kanban</button>
         </div>
       </div>
       <div class="kb-filters kb-report-filters">
@@ -1665,7 +1672,7 @@
     view.innerHTML = `
       <div class="page-header">
         <h2>Kanban settings</h2>
-        <button type="button" class="btn-ghost kb-icon-label page-header-action" data-route="kanban"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Kanban board</button>
+        <button type="button" class="btn-ghost kb-icon-label page-header-action" data-route="kanban"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Staff Kanban</button>
       </div>
       <div class="kb-settings">
         <section class="docs-block">

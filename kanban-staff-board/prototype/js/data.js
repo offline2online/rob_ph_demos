@@ -7,7 +7,7 @@ window.KB_SEED = (function () {
   // Platform users, as listed under Settings → Team & agent access. The board
   // shows each by first name only.
   const users = [
-    { id: "rob", first: "Rob", full: "Rob", email: "rob@offline2online.com", location: "London", color: "#169bc2" },
+    { id: "rob", first: "Rob", full: "Rob", email: "rob@offline2online.com", location: "London", color: "#169bc2", photo: "img/rob.jpg" },
     { id: "minh", first: "Minh", full: "Nguyễn Văn Minh", email: "minh.nguyen@personalisationhub.com", location: "Hà Nội", color: "#9747ff" },
     { id: "linh", first: "Linh", full: "Trần Thị Linh", email: "linh.tran@personalisationhub.com", location: "Hà Nội", color: "#d4433f" },
     { id: "huy", first: "Huy", full: "Lê Quang Huy", email: "huy.le@personalisationhub.com", location: "Hồ Chí Minh City", color: "#2f8f4e" },
