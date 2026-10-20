@@ -38,7 +38,7 @@ try {
   // Dictation mic stays a circle at tablet and phone widths (apple.css's blanket button min-height used to make it an oval).
   for (const [w, hgt] of [[820, 1180], [1180, 820], [390, 844]]) {
     await page.setViewportSize({ width: w, height: hgt }); await settle();
-    const box = await page.evaluate(() => { const b = document.getElementById("ni-mic-btn"); b.hidden = false; const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), radius: getComputedStyle(b).borderRadius }; });
+    const box = await page.evaluate(() => { const b = document.getElementById("qc-mic-btn"); b.hidden = false; const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), radius: getComputedStyle(b).borderRadius }; });
     assert.equal(box.w, box.h, `mic is square at ${w}px (${box.w}x${box.h})`);
     assert.equal(box.radius, "50%", `mic is round at ${w}px`);
   }
