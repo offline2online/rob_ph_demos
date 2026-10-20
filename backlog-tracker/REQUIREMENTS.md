@@ -2649,7 +2649,7 @@ review" under "Functional requirements — FAQ / Help Center" below for what
 these two collections' write tools do and don't do; skills library:
 `upload_skill`, `update_skill`, `delete_skill`, `report_skill_miss`,
 `mark_skill_reviewed`; your own routine binding: `set_my_routine_binding`;
-deploy (one deliberate exception — see below): `approve_deploy_to_main`.
+release (admin only, three deliberate exceptions — see below): `send_to_build`, `approve_for_deployment`, `approve_deploy_to_main`.
 A concept has no `list_backlog_items`-shaped tool of its own — it has no
 `backlogItems` until it's promoted to a real project (see "Concept
 Incubator page" above), which is also why there is no `create_concept` or
@@ -2836,7 +2836,17 @@ directly, publish or approve an FAQ article, or trigger a campaign — with
 one deliberate, narrowly-scoped exception each for firing and for changing
 what fires.** `set_my_routine_binding` (VNE6dxMu3h6jO3g6FNNB, see above)
 is the second: it changes which credentials a LATER click will use, but
-never fires anything itself. `approve_deploy_to_main`
+never fires anything itself. **`send_to_build` and `approve_for_deployment`
+(20 Oct 2026, ticket `Ysh0yuU9z643E0uisr51`)** are the other two, admin-only
+and each exactly the board's own click for tickets named by id: `send_to_build`
+writes `notifyRequestedAt` / `notifyItemIds` (Ready for Dev; refuses a locked
+train and blocked, packaged, already-building or non-Backlog tickets);
+`approve_for_deployment` moves Ready for Testing tickets to Approved for
+Deployment with the approver stamped and `trainLocked` set (refuses tickets
+not in Ready for Testing or marked for revert, and tickets whose train tests
+are not green unless `acknowledgeTests` is true). Both refuse the whole call
+on any failing ticket and log to `mcpAuditLog`; no MCP tool moves a card any
+other way. `approve_deploy_to_main`
 (`board.write` **and the `admin` role**, since 27 Sep 2026) fires the exact same trigger the
 console's own **Deploy to Main** button writes
 (`projects/{id}.deployNotifyRequestedAt`); it never merges anything
@@ -2871,8 +2881,9 @@ itself stays exactly as narrow as before). The test suite asserts the
 allowlist's contents, that the guard throws when handed a train field,
 that no documentation tool's schema can even express one, that a full pass
 of the documentation tools leaves a project's `deployBranch` untouched,
-and that `approve_deploy_to_main` is the one and only `board.write` tool
-whose name may contain a deploy/merge/approve/trigger verb.
+and that `approve_deploy_to_main`, `send_to_build` and `approve_for_deployment`
+are the only `board.write` tools whose names may contain a
+deploy/merge/approve/build/trigger verb, all three admin-only.
 
 **Attribution and audit.** Every write records the person's email on the
 document (`createdByEmail`, `updatedByEmail`, a comment's `author`) and

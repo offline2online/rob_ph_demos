@@ -265,13 +265,20 @@ async function rpc(token, method, params, id = 1) {
   // tool added later that shouldn't exist, so it excludes only the one
   // sanctioned name instead of dropping the check entirely.
   await test("exposes no WRITE tool that deploys, merges or triggers a campaign, except the one deliberate carve-out", async () => {
-    const CARVE_OUT = "approve_deploy_to_main";
+    // Rob's decision of 20 Oct 2026 (Ysh0yuU9z643E0uisr51): the two earlier
+    // pipeline approvals joined the third, each admin-only and each the same
+    // action as the board's own button.
+    const CARVE_OUTS = ["approve_deploy_to_main", "send_to_build", "approve_for_deployment"];
     const writeTools = mcp.__test.TOOLS.filter((t) => t.scope === "board.write");
-    assert.ok(writeTools.some((t) => t.name === CARVE_OUT), "the one deliberate deploy carve-out tool must exist and require board.write");
+    for (const name of CARVE_OUTS) {
+      const t = writeTools.find((x) => x.name === name);
+      assert.ok(t, `carve-out tool ${name} must exist and require board.write`);
+      assert.strictEqual(t.role, "admin", `${name} must be admin-only`);
+    }
     for (const t of writeTools) {
-      if (t.name === CARVE_OUT) continue;
-      for (const forbidden of ["deploy", "merge", "publish", "notify", "trigger", "campaign", "train", "approve"]) {
-        assert.ok(!t.name.includes(forbidden), `write tool "${t.name}" must not exist — only ${CARVE_OUT} may (found "${forbidden}")`);
+      if (CARVE_OUTS.includes(t.name)) continue;
+      for (const forbidden of ["deploy", "merge", "publish", "notify", "trigger", "campaign", "train", "approve", "build"]) {
+        assert.ok(!t.name.includes(forbidden), `write tool "${t.name}" must not exist — only ${CARVE_OUTS.join(", ")} may (found "${forbidden}")`);
       }
     }
   });
@@ -1968,6 +1975,103 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(res.body.result.isError, true);
     assert.match(res.body.result.content[0].text, /pending revert/);
     assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("revertproj")));
+  });
+
+  // ── send_to_build / approve_for_deployment (Ysh0yuU9z643E0uisr51) ────────
+  const adminCall = (name, args) => asAdmin(() => rpc(tokens.access_token, "tools/call", { name, arguments: args }));
+  const seedItem = (id, over) => env.store.col("backlogItems").set(id, Object.assign({
+    projectId: "voiceproj", title: `Ticket ${id}`, desc: "x", type: "feature", category: "HQ Admin", status: "backlog",
+  }, over));
+  env.store.col("projects").set("voiceproj", { name: "Voice Project", deployBranch: "deploy/voiceproj" });
+
+  await test("send_to_build and approve_for_deployment are refused to an editor", async () => {
+    for (const name of ["send_to_build", "approve_for_deployment"]) {
+      const res = await rpc(tokens.access_token, "tools/call", { name, arguments: { projectId: "voiceproj", itemIds: ["v1"] } });
+      assert.strictEqual(res.body.result.isError, true);
+      assert.match(res.body.result.content[0].text, /requires the admin role/);
+    }
+  });
+
+  await test("send_to_build writes what the Ready for Dev click writes, for the named tickets only", async () => {
+    seedItem("v1"); seedItem("v2");
+    const res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["v1"] });
+    assert.strictEqual(res.body.result.isError, undefined);
+    const project = env.store.col("projects").get("voiceproj");
+    assert.ok(project.notifyRequestedAt, "must write notifyRequestedAt");
+    assert.deepStrictEqual(project.notifyItemIds, ["v1"]);
+    assert.strictEqual(project.notifyRequestedByEmail, TEAMMATE);
+    assert.strictEqual(env.store.col("backlogItems").get("v1").status, "backlog", "must not move the card itself");
+    const row = [...env.store.col("mcpAuditLog").values()].find((r) => r.tool === "send_to_build");
+    assert.ok(row && row.email === TEAMMATE && row.projectId === "voiceproj");
+  });
+
+  await test("send_to_build refuses blocked, packaged, wrong-status, foreign and empty requests — and writes nothing", async () => {
+    env.store.col("projects").set("voiceproj", { name: "Voice Project" });
+    seedItem("vb", { blocked: { reason: "waiting-on-input" } });
+    seedItem("vp", { patchReady: true });
+    seedItem("vr", { status: "ready-for-testing" });
+    for (const [ids, re] of [[["vb"], /blocked/], [["vp"], /already packaged/], [["vr"], /not Backlog/], [["nope"], /not a ticket of this project/], [["v1", "vb"], /Nothing was sent/], [[], /at least one/]]) {
+      const res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ids });
+      assert.strictEqual(res.body.result.isError, true, JSON.stringify(ids));
+      assert.match(res.body.result.content[0].text, re);
+    }
+    assert.ok(!("notifyRequestedAt" in env.store.col("projects").get("voiceproj")), "a refused call must not write the trigger");
+  });
+
+  await test("send_to_build refuses while the train is locked and while a ticket is already being built", async () => {
+    env.store.col("projects").set("voiceproj", { name: "Voice Project", trainLocked: true });
+    let res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["v1"] });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /train is locked/);
+    env.store.col("projects").set("voiceproj", { name: "Voice Project", notifyRoutine: { status: "in-progress", sentItemIds: ["v1"] } });
+    seedItem("v1", { lastFire: { status: "started", at: new Date() } });
+    res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["v1"] });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /already being built/);
+    env.store.col("projects").set("voiceproj", { name: "Voice Project" });
+  });
+
+  await test("approve_for_deployment makes the Approve click's writes and locks the train", async () => {
+    seedItem("a1", { status: "ready-for-testing", deployCommit: "sha-a1", trainTest: { sha: "sha-a1", state: "passed" } });
+    seedItem("a2", { status: "ready-for-testing", deployCommit: "sha-a2" });
+    const res = await adminCall("approve_for_deployment", { projectId: "voiceproj", itemIds: ["a1"] });
+    assert.strictEqual(res.body.result.isError, undefined);
+    const a1 = env.store.col("backlogItems").get("a1");
+    assert.strictEqual(a1.status, "ready-to-publish");
+    assert.strictEqual(a1.approvedByEmail, TEAMMATE.toLowerCase());
+    assert.ok(a1.approvedAt);
+    assert.strictEqual(env.store.col("backlogItems").get("a2").status, "ready-for-testing", "unnamed tickets stay put");
+    assert.strictEqual(env.store.col("projects").get("voiceproj").trainLocked, true);
+    const row = [...env.store.col("mcpAuditLog").values()].find((r) => r.tool === "approve_for_deployment");
+    assert.ok(row && row.email === TEAMMATE && row.itemIds.join() === "a1");
+  });
+
+  await test("approve_for_deployment refuses non-green tests unless acknowledged", async () => {
+    seedItem("r1", { status: "ready-for-testing", deployCommit: "sha-r1", trainTest: { sha: "sha-r1", state: "failed" } });
+    let res = await adminCall("approve_for_deployment", { projectId: "voiceproj", itemIds: ["r1"] });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /tests failed/);
+    assert.strictEqual(env.store.col("backlogItems").get("r1").status, "ready-for-testing");
+    // A result for an older commit is stale and does not block.
+    seedItem("r2", { status: "ready-for-testing", deployCommit: "sha-new", trainTest: { sha: "sha-old", state: "failed" } });
+    res = await adminCall("approve_for_deployment", { projectId: "voiceproj", itemIds: ["r2"] });
+    assert.strictEqual(res.body.result.isError, undefined);
+    res = await adminCall("approve_for_deployment", { projectId: "voiceproj", itemIds: ["r1"], acknowledgeTests: true });
+    assert.strictEqual(res.body.result.isError, undefined);
+    assert.strictEqual(env.store.col("backlogItems").get("r1").status, "ready-to-publish");
+  });
+
+  await test("approve_for_deployment refuses wrong status, revert-marked, no-deploy and foreign tickets, and writes nothing", async () => {
+    seedItem("w1"); // backlog
+    seedItem("w2", { status: "ready-for-testing", deployCommit: "s", revertRequested: true });
+    seedItem("w3", { status: "ready-for-testing", noDeploymentRequired: true });
+    seedItem("w4", { status: "ready-for-testing", deployCommit: "s4" });
+    for (const [ids, re] of [[["w1"], /not Ready for Testing/], [["w2"], /marked for revert/], [["w3"], /needs no deployment/], [["ghost"], /not a ticket of this project/], [["w4", "w1"], /Nothing was approved/], [[], /at least one/]]) {
+      const res = await adminCall("approve_for_deployment", { projectId: "voiceproj", itemIds: ids });
+      assert.strictEqual(res.body.result.isError, true, JSON.stringify(ids));
+      assert.match(res.body.result.content[0].text, re);
+    }
+    assert.strictEqual(env.store.col("backlogItems").get("w4").status, "ready-for-testing");
   });
 
   await test("approve_deploy_to_main is board.write, so a viewer is refused", async () => {

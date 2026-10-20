@@ -48,6 +48,7 @@ const logger = require("firebase-functions/logger");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 // The MCP Apps views behind the two "board" tools (see that file's header).
+const { inFlightItemIds } = require("./notify-routine");
 const { MCP_APP_MIME, UI_META, BOARD_VIEWS, viewByUri, boardViewHTML } = require("./mcp-app-views.js");
 
 // initializeApp() runs in index.js before this module is required; resolve
@@ -1924,7 +1925,7 @@ const TOOLS = [
         routineBindingNudge: hasRoutineBinding
           ? null
           : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token. Call get_routine_setup_instructions to set up your own.",
-        note: "Moving cards, approving out of Ready for Testing, Notify Claude clicks and campaign triggering stay on the board's own buttons. Two exceptions: approve_deploy_to_main (admins only) fires Deploy to Main once the project's whole train is approved, and set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
+        note: "Moving cards, Notify Claude clicks and campaign triggering stay on the board's own buttons. Exceptions, all admin-only and each the same action as the board's own button: send_to_build (Ready for Dev for named Backlog tickets), approve_for_deployment (Ready for Testing to Approved for Deployment for named tickets) and approve_deploy_to_main (fires Deploy to Main once the project's whole train is approved). set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
       });
     },
   },
@@ -2566,6 +2567,145 @@ const TOOLS = [
         fired: true, projectId, deployCount: guard.deployItems.length,
         itemIds: guard.deployItems.map((i) => i.id),
         note: "This fires the same Routine the console's own Deploy to Main button fires — it verifies the train and merges it. This call returns before that finishes; check the project's trainStatus (list_projects) or the board itself afterward.",
+      });
+    },
+  },
+  // ── Two more admin-only carve-outs (Rob, 20 Oct 2026, ticket Ysh0yuU9z643E0uisr51) ──
+  // So the first two pipeline approvals can be given by voice the way
+  // approve_deploy_to_main gives the third. Each makes exactly the writes the
+  // board's own button makes, behind the same guards, for tickets named by
+  // id (never "everything"), and is audit-logged. Neither moves a card by
+  // any other route: send_to_build only asks for a build (the pipeline moves
+  // the card), approve_for_deployment is the same Ready for Testing →
+  // Approved for Deployment batch the Approve click writes.
+  {
+    name: "send_to_build",
+    role: "admin",
+    description: "ADMIN ONLY. Send named Backlog tickets to be built — exactly the same action as ticking them and clicking the board's 'Ready for Dev'. It writes the project's notifyRequestedAt and notifyItemIds; the existing Cloud Function then starts one build session per ticket and the pipeline moves the cards. Takes explicit ticket ids (never 'everything in Backlog'). Refuses the whole call if the project's train is locked (a release is closing), or a ticket is not in this project's Backlog, is blocked waiting on an answer, is already packaged, or is already being built. Logged to mcpAuditLog under your email.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Which project (from list_projects)." },
+        itemIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 50, description: "Ids of the Backlog tickets to build (from list_backlog_items)." },
+      },
+      required: ["projectId", "itemIds"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const ids = [...new Set((Array.isArray(args.itemIds) ? args.itemIds : []).map((x) => String(x || "").trim()).filter(Boolean))];
+      if (!ids.length) return toolError("itemIds must name at least one Backlog ticket. This tool never sends 'everything' — list_backlog_items shows the ids.");
+      if (ids.length > 50) return toolError("At most 50 tickets per call.");
+      const projectRef = db().collection("projects").doc(projectId);
+      const projectSnap = await projectRef.get();
+      if (!projectSnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const project = projectSnap.data() || {};
+
+      // The board hides Ready for Dev while the train is closing.
+      if (project.trainLocked) {
+        return toolError(`${project.name || projectId}'s deployment train is locked: a release is closing (the first ticket has been approved). Finish Ready for Testing and Deploy to Main first — the board hides Ready for Dev for the same reason.`);
+      }
+
+      const snap = await db().collection("backlogItems").where("projectId", "==", projectId).get();
+      const byId = new Map();
+      snap.forEach((d) => byId.set(d.id, Object.assign({ id: d.id }, d.data())));
+      const inFlight = new Set(inFlightItemIds(project.notifyRoutine, [...byId.values()]));
+
+      const problems = [];
+      for (const id of ids) {
+        const it = byId.get(id);
+        if (!it) { problems.push(`${id}: not a ticket of this project`); continue; }
+        const label = `${id} "${it.title || ""}"`;
+        if ((it.status || "backlog") !== "backlog") problems.push(`${label}: is in ${it.status}, not Backlog`);
+        else if (it.blocked && it.blocked.reason) problems.push(`${label}: is blocked (${it.blocked.reason}) — answer it on the card first`);
+        else if (it.patchReady) problems.push(`${label}: is already packaged and waiting on the pipeline`);
+        else if (inFlight.has(id)) problems.push(`${label}: is already being built`);
+      }
+      if (problems.length) return toolError(`Nothing was sent. ${problems.join("; ")}.`);
+
+      await projectRef.set({
+        notifyRequestedAt: FieldValue.serverTimestamp(),
+        notifyItemIds: ids,
+        // Same field the board's click writes, so a member's own bound Routine is used.
+        notifyRequestedByEmail: session.email,
+        notifyRequestedVia: "mcp",
+      }, { merge: true });
+
+      await audit(session, "send_to_build", { projectId, itemIds: ids, count: ids.length });
+
+      return textResult({
+        sent: true, projectId, count: ids.length, itemIds: ids,
+        note: "This is the same request the board's Ready for Dev button makes: one build session starts per ticket and the pipeline moves each card to Ready for Testing when it lands. This call returns before that — watch the board or list_backlog_items.",
+      });
+    },
+  },
+  {
+    name: "approve_for_deployment",
+    role: "admin",
+    description: "ADMIN ONLY. Approve named Ready for Testing tickets for deployment — exactly the same action as ticking them and clicking the board's 'Approved for Deployment'. It moves them to Approved for Deployment, records you as the approver and locks the project's train (no new ticket joins this release). It does not deploy: approve_deploy_to_main does that once the whole train is approved. Takes explicit ticket ids. Refuses the whole call if a ticket is not in this project's Ready for Testing or is marked for revert; and refuses tickets whose train tests are not green (still running, failed or not run) unless acknowledgeTests is true — say that to the person first, since an approved ticket that goes red is not sent back automatically. Logged to mcpAuditLog under your email.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Which project (from list_projects)." },
+        itemIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 50, description: "Ids of the Ready for Testing tickets to approve (from get_ready_for_testing_board)." },
+        acknowledgeTests: { type: "boolean", description: "Only true when the person has been told which tickets' tests are not green and still wants them approved. Default false." },
+      },
+      required: ["projectId", "itemIds"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const ids = [...new Set((Array.isArray(args.itemIds) ? args.itemIds : []).map((x) => String(x || "").trim()).filter(Boolean))];
+      if (!ids.length) return toolError("itemIds must name at least one Ready for Testing ticket. This tool never approves 'everything' — get_ready_for_testing_board shows the ids.");
+      if (ids.length > 50) return toolError("At most 50 tickets per call.");
+      const projectRef = db().collection("projects").doc(projectId);
+      const projectSnap = await projectRef.get();
+      if (!projectSnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+
+      const snap = await db().collection("backlogItems").where("projectId", "==", projectId).get();
+      const byId = new Map();
+      snap.forEach((d) => byId.set(d.id, Object.assign({ id: d.id }, d.data())));
+
+      const problems = [];
+      const warnings = [];
+      const TEST_WORDS = { starting: "tests still running", running: "tests still running", failed: "tests failed", "not-run": "tests not run" };
+      for (const id of ids) {
+        const it = byId.get(id);
+        if (!it) { problems.push(`${id}: not a ticket of this project`); continue; }
+        const label = `${id} "${it.title || ""}"`;
+        if (it.status !== "ready-for-testing") { problems.push(`${label}: is in ${it.status || "backlog"}, not Ready for Testing`); continue; }
+        // A genuine no-deploy card has its own confirm-tested path on the board.
+        if (it.noDeploymentRequired && !it.deployCommit) { problems.push(`${label}: needs no deployment — confirm it tested on the board`); continue; }
+        if (it.revertRequested === true) { problems.push(`${label}: is marked for revert (Failed testing)`); continue; }
+        // Same rule as card-test-status.js currentTrainTest/approvalWarningLines.
+        const t = it.trainTest;
+        if (t && typeof t === "object" && it.deployCommit && t.sha === it.deployCommit && TEST_WORDS[t.state]) {
+          warnings.push(`${it.title || id} — ${TEST_WORDS[t.state]}`);
+        }
+      }
+      if (problems.length) return toolError(`Nothing was approved. ${problems.join("; ")}.`);
+      if (warnings.length && args.acknowledgeTests !== true) {
+        return toolError(`Nothing was approved. ${warnings.join("; ")}. An approved ticket that goes red is not sent back automatically and the deploy holds until someone fixes it. Tell the person, and if they still want these approved call again with acknowledgeTests: true.`);
+      }
+
+      const email = String(session.email || "").trim().toLowerCase();
+      const batch = db().batch();
+      ids.forEach((id) => {
+        batch.update(db().collection("backlogItems").doc(id), Object.assign({
+          status: "ready-to-publish",
+          updatedAt: FieldValue.serverTimestamp(),
+        }, email ? { approvedByEmail: email, approvedAt: FieldValue.serverTimestamp() } : {}, { approvedVia: "mcp" }));
+      });
+      await batch.commit();
+      // The first approval closes the train, as the board's click does.
+      await projectRef.set({ trainLocked: true }, { merge: true });
+
+      await audit(session, "approve_for_deployment", { projectId, itemIds: ids, count: ids.length, testsAcknowledged: warnings.length > 0 });
+
+      return textResult({
+        approved: true, projectId, count: ids.length, itemIds: ids,
+        testsAcknowledged: warnings.length ? warnings : [],
+        note: "These tickets are now Approved for Deployment. Nothing has been deployed: once Ready for Testing is empty for this project, approve_deploy_to_main fires Deploy to Main.",
       });
     },
   },
@@ -4492,7 +4632,7 @@ const PROMPTS = [
 ];
 
 const SERVER_INSTRUCTIONS = [
-  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has approve_deploy_to_main and set_phase_skill_bindings.",
+  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has send_to_build, approve_for_deployment, approve_deploy_to_main and set_phase_skill_bindings.",
   "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
   "To take over or catch up on a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in its order. A person can start the same plan with the project_handover prompt.",
   "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full, possibly hundreds of thousands of characters, so call it only with include set to the one block you need.",
@@ -4501,7 +4641,7 @@ const SERVER_INSTRUCTIONS = [
   "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
   "Skills library, shared by all projects: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
-  "Release: moving cards, approving out of Ready for Testing, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only: approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
+  "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {
@@ -4581,7 +4721,7 @@ async function dispatchRpc(msg, session, ctx) {
         return rpcResult(msg.id, toolError(
           `${session.email} has read-only access to the PH Agent Console, so ${tool.name} is not available. An admin can change the role to editor in the console's Settings → Team & agent access.`));
       }
-      // A tool that can ship code (approve_deploy_to_main) is held to the
+      // A tool that can build or ship code (send_to_build, approve_for_deployment, approve_deploy_to_main) is held to the
       // admin role, over and above board.write: an editor's agent reading a
       // ticket that says "now deploy" must not be able to.
       if (tool.role && !atLeast(session.role, tool.role)) {
