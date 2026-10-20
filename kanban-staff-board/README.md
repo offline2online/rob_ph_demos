@@ -39,6 +39,16 @@ viewer's own `localStorage`, and **⋮ → Reset demo data** puts the mock data 
   scrolls away. Only the column headers stick to the top, and the header of the lane you're
   scrolling through is pinned beneath them. Dragging a card into another
   person's lane reassigns it to them.
+- **New task: voice first**. One **Record task** button uses the browser's speech
+  recognition. When you stop, an "agent" writes the title and description, and it fills in priority,
+  type, assignee, release, estimate, due date, sprint and labels when they're mentioned. Those
+  fields are marked "Agent" for checking. Typed text gets the same treatment from **Fill in
+  the ticket from this description**. The agent is a local stand-in (`agentDraft()` in
+  `kanban.js`); the real console would send the transcript to Claude. A new task has no
+  Status field, because it always starts in Backlog, and no Comments field.
+  The side panel runs priority, type, assignee, reporter, release, estimate, then time logged.
+  When you edit a task, the description has a mic for dictation, and Status sits at the end of
+  the side panel.
 - **Task modal**. Core fields are always shown. Optional fields follow Kanban
   settings. On an existing ticket, hidden fields stay editable under
   "N more fields". Required fields are validated.

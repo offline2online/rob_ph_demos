@@ -235,13 +235,13 @@
       if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
       if (b.classList.contains("tab")) b.classList.toggle("active", on);
     });
-    root.dataset.route = ["agent-board", "report", "settings"].includes(route) ? route : "kanban";
+    root.dataset.page = ["agent-board", "report", "settings"].includes(route) ? route : "kanban";
     document.title = ({ "agent-board": "Agent Board", report: "Release report", settings: "Kanban settings" }[route] || "Kanban") + " — PH Agent Console";
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", render);
   document.addEventListener("click", (e) => {
-    const r = e.target.closest("[data-route]");
+    const r = e.target.closest("button[data-route], a[data-route]");
     if (r) { e.preventDefault(); go(r.dataset.route, r.dataset.params ? JSON.parse(r.dataset.params) : null); return; }
     const inert = e.target.closest("[data-inert]");
     if (inert) { toast("Not part of this prototype"); }
@@ -638,7 +638,7 @@
     document.body.classList.add("kb-modal-open");
     setTimeout(() => { const f = $("#f-title"); if (f && draftIsNew) f.focus(); }, 30);
   }
-  function closeTask() { $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null; }
+  function closeTask() { stopRecorder(true); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null; }
 
   function label(k, forId) {
     return `<label class="field-label" for="${forId || "f-" + k}">${esc(FIELD_LABEL[k])}${fieldReq(k) ? '<span class="kb-req" aria-hidden="true">*</span>' : ""}</label>`;
@@ -646,8 +646,15 @@
   function fieldHTML(k) {
     const d = draft;
     switch (k) {
+      case "voice": return `<div class="kb-voice" id="f-voice">
+        <button type="button" class="kb-record-btn" id="f-record" aria-pressed="false"><span class="kb-record-dot"><span class="material-symbols-outlined" aria-hidden="true">mic</span></span><span class="kb-record-text"><span class="kb-record-label" id="f-record-label">Record task</span><span class="kb-record-sub" id="f-record-sub">Say what needs doing</span></span></button>
+        ${tip("Talk through the task: what it is, who it's for, how urgent and how long it will take. The agent writes the title and description and fills in priority, type, assignee, release and estimate when you mention them. Check and edit before creating.")}
+        <div class="kb-voice-live" id="f-voice-live" hidden></div>
+        <p class="mic-error" id="f-voice-error"></p>
+      </div>`;
       case "title": return `<div class="kb-field" data-field="title">${label("title")}<input type="text" id="f-title" class="kb-input kb-title-input" maxlength="200" value="${esc(d.title)}" placeholder="What needs doing?"></div>`;
-      case "description": return `<div class="kb-field" data-field="description">${label("description")}<textarea id="f-description" class="kb-input" rows="5" placeholder="Context, steps to reproduce, acceptance criteria">${esc(d.description)}</textarea></div>`;
+      case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap"><textarea id="f-description" class="kb-input" rows="5" placeholder="Context, steps to reproduce, acceptance criteria">${esc(d.description)}</textarea>${draftIsNew ? "" : '<button type="button" class="mic-btn kb-desc-mic" id="f-desc-mic" title="Dictate" aria-label="Dictate into the description"><span class="material-symbols-outlined" aria-hidden="true">mic</span></button>'}</div>
+        ${draftIsNew ? '<button type="button" class="kb-agent-link" id="f-agent-fill"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span>Fill in the ticket from this description</span></button>' : '<p class="mic-error" id="f-desc-mic-error"></p>'}</div>`;
       case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.map((s) => opt(s.key, s.label, d.status)).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
       case "assignee": return `<div class="kb-field" data-field="assignee">${label("assignee")}<select id="f-assignee" class="kb-input">${opt("", "Unassigned", d.assignee)}${SEED.users.map((u) => opt(u.id, u.first, d.assignee)).join("")}</select></div>`;
       case "reporter": return `<div class="kb-field" data-field="reporter">${label("reporter")}<select id="f-reporter" class="kb-input">${opt("", "—", d.reporter)}${SEED.users.map((u) => opt(u.id, u.first, d.reporter)).join("")}</select></div>`;
@@ -691,10 +698,11 @@
 
   function renderForm() {
     const form = $("#task-form");
-    const main = ["title", "description", "links", "attachments", "comments"];
-    const side = ["status", "assignee", "reporter", "release", "estimate", "logged", "type", "priority", "sprint", "due", "labels"];
-    const visible = (k) => CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
-    const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => !fieldOn(k));
+    // A new task always starts in Backlog and has nothing to comment on yet.
+    const main = draftIsNew ? ["voice", "title", "description", "attachments", "links"] : ["title", "description", "links", "attachments", "comments"];
+    const side = ["priority", "type", "assignee", "reporter", "release", "estimate", "logged", "sprint", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
+    const visible = (k) => k === "voice" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
+    const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
     form.innerHTML = `
       <div class="kb-task-grid">
@@ -769,6 +777,7 @@
       draft.comments.push({ author: state.me, at: new Date().toISOString(), text });
       ta.value = ""; $("#f-comments").innerHTML = commentsHTML();
     });
+    bindVoice();
     $("#f-cancel").addEventListener("click", closeTask);
     const del = $("#f-delete");
     if (del) del.addEventListener("click", () => {
@@ -777,6 +786,215 @@
       save(); toast(`<b>${esc(draft.key)}</b> deleted`); closeTask(); render();
     });
     form.onsubmit = (e) => { e.preventDefault(); submitTask(); };
+  }
+
+  // ── Voice capture + agent fill ──────────────────────────────────────────
+  // One Record button on a new task: Web Speech dictation, then the "agent"
+  // turns the transcript into title, description, priority, type, assignee,
+  // release, estimate, due date and labels. Front-end only, so the agent here
+  // is a local stand-in; the real console would hand the transcript to Claude.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  function stopRecorder(abort) {
+    if (!rec) return;
+    const r = rec; rec = null;
+    r.wanted = false;
+    clearInterval(r.timer);
+    try { abort ? r.inst.abort() : r.inst.stop(); } catch { /* already stopped */ }
+    if (!abort && r.onDone) setTimeout(() => r.onDone(r.text()), 250);
+    if (r.onState) r.onState("idle");
+  }
+  async function startRecorder({ onLive, onDone, onState, onError }) {
+    if (!SR) { onError("Voice capture isn't supported in this browser. Try Chrome, Edge or Safari, or type the description."); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch (e) {
+      onError(e && e.name === "NotAllowedError" ? "Microphone access is blocked. Allow it in the browser's site settings and try again."
+        : e && e.name === "NotFoundError" ? "No microphone found on this device." : "The microphone couldn't be started.");
+      return;
+    }
+    let finals = "", interim = "";
+    const r = { wanted: true, onDone, onState, started: Date.now(), text: () => (finals + " " + interim).replace(/\s+/g, " ").trim() };
+    const make = () => {
+      const inst = new SR();
+      inst.lang = "en-GB"; inst.continuous = true; inst.interimResults = true;
+      inst.onresult = (e) => {
+        interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) finals += " " + e.results[i][0].transcript; else interim += e.results[i][0].transcript;
+        }
+        onLive(r.text());
+      };
+      inst.onerror = (e) => {
+        if (e.error === "no-speech" || e.error === "aborted") return;
+        r.wanted = false;
+        onError(e.error === "not-allowed" ? "Microphone access is blocked. Allow it in the browser's site settings and try again."
+          : e.error === "network" ? "Voice capture needs a network connection." : e.error === "audio-capture" ? "No microphone found on this device." : "Voice capture stopped unexpectedly. Try again.");
+        stopRecorder(true);
+      };
+      // Browsers end a session on silence; keep listening until Stop.
+      inst.onend = () => { if (rec === r && r.wanted) { try { r.inst = make(); r.inst.start(); } catch { stopRecorder(false); } } };
+      return inst;
+    };
+    r.inst = make();
+    rec = r;
+    try { r.inst.start(); } catch { onError("Voice capture couldn't start. Try again."); rec = null; return; }
+    onState("recording");
+    r.timer = setInterval(() => onState("recording"), 1000);
+  }
+
+  function bindVoice() {
+    const btn = $("#f-record");
+    if (btn) {
+      const label = $("#f-record-label"), sub = $("#f-record-sub"), live = $("#f-voice-live"), err = $("#f-voice-error");
+      const setState = (st) => {
+        btn.classList.toggle("recording", st === "recording");
+        btn.classList.toggle("working", st === "working");
+        btn.setAttribute("aria-pressed", String(st === "recording"));
+        if (st === "recording") {
+          const secs = rec ? Math.floor((Date.now() - rec.started) / 1000) : 0;
+          label.textContent = "Stop recording"; sub.textContent = `Listening · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+        } else if (st === "working") { label.textContent = "Writing the ticket…"; sub.textContent = "Agent"; }
+        else { label.textContent = draft && draft.title ? "Record again" : "Record task"; sub.textContent = draft && draft.title ? "Replaces the details below" : "Say what needs doing"; }
+      };
+      btn.addEventListener("click", () => {
+        if (btn.classList.contains("working")) return;
+        if (rec) { stopRecorder(false); return; }
+        err.classList.remove("on");
+        live.hidden = false; live.textContent = "";
+        live.classList.add("placeholder"); live.textContent = "Listening…";
+        startRecorder({
+          onLive: (t) => { live.classList.remove("placeholder"); live.textContent = t; },
+          onState: setState,
+          onError: (m) => { err.textContent = m; err.classList.add("on"); live.hidden = true; setState("idle"); },
+          onDone: (t) => {
+            if (!t) { live.hidden = true; err.textContent = "Nothing was heard. Try again, closer to the microphone."; err.classList.add("on"); setState("idle"); return; }
+            runAgent(t, setState);
+          },
+        });
+      });
+    }
+    const fill = $("#f-agent-fill");
+    if (fill) fill.addEventListener("click", () => {
+      const t = ($("#f-description") || {}).value || "";
+      if (!t.trim()) { $("#f-description").focus(); return; }
+      runAgent(t, () => {});
+    });
+    const mic = $("#f-desc-mic");
+    if (mic) mic.addEventListener("click", () => {
+      const ta = $("#f-description"), err = $("#f-desc-mic-error");
+      if (rec) { stopRecorder(false); return; }
+      err.classList.remove("on");
+      const base = ta.value.trim();
+      startRecorder({
+        onLive: (t) => { ta.value = (base ? base + " " : "") + t; },
+        onState: (st) => mic.classList.toggle("listening", st === "recording"),
+        onError: (m) => { err.textContent = m; err.classList.add("on"); mic.classList.remove("listening"); },
+        onDone: () => {},
+      });
+    });
+  }
+
+  function runAgent(transcript, setState) {
+    setState("working");
+    const form = $("#task-form");
+    form.classList.add("kb-agent-working");
+    setTimeout(() => {
+      form.classList.remove("kb-agent-working");
+      if (!draft) return;
+      const out = agentDraft(transcript);
+      const filled = [];
+      const put = (id, field, v) => { const el = $("#" + id); if (el && v != null && v !== "") { el.value = v; filled.push(field); } };
+      put("f-title", "title", out.title);
+      put("f-description", "description", out.description);
+      put("f-priority", "priority", out.priority);
+      put("f-assignee", "assignee", out.assignee);
+      put("f-release", "release", out.release);
+      put("f-estimate", "estimate", out.estimate != null ? fmtH(out.estimate) : "");
+      put("f-due", "due", out.due);
+      put("f-sprint", "sprint", out.sprint);
+      if (out.type) {
+        draft.type = out.type; filled.push("type");
+        $$(".kb-type-toggle .type-opt", form).forEach((x) => { const on = x.dataset.type === out.type; x.classList.toggle("active", on); x.setAttribute("aria-checked", String(on)); });
+      }
+      if (out.labels.length && $("#f-labels")) { draft.labels = Array.from(new Set([...(draft.labels || []), ...out.labels])); $("#f-labels").innerHTML = labelsHTML(); filled.push("labels"); }
+      draft.title = out.title;
+      $$(".kb-agent-filled", form).forEach((x) => x.classList.remove("kb-agent-filled"));
+      filled.forEach((k) => { const f = $(`[data-field="${k}"]`, form); if (f) f.classList.add("kb-agent-filled"); });
+      const live = $("#f-voice-live"); if (live) live.hidden = true;
+      setState("idle");
+      const est = $("#f-estimate"); if (est) est.dispatchEvent(new Event("input"));
+      toast(`Agent filled in ${filled.length} field${filled.length === 1 ? "" : "s"}. Check them before creating`);
+    }, 900);
+  }
+
+  // Local stand-in for the agent: reads the transcript for the details people
+  // usually say out loud and writes a short title and a tidy description.
+  const fold = (x) => String(x).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase();
+  const NUM = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, half: 0.5, couple: 2 };
+  function agentDraft(raw) {
+    let text = raw.replace(/\s+/g, " ").trim();
+    const low = fold(text);
+    const out = { labels: [] };
+    // assignee: "assign it to Minh", "for Huy to do", "Linh should pick this up"
+    for (const u of SEED.users) {
+      const n = fold(u.first);
+      if (new RegExp(`\\b(assign(ed)?( it| this)? to|give (it|this) to|for|ask) ${n}\\b|\\b${n} (should|can|could|to) (pick|take|do|look)`).test(low)) { out.assignee = u.id; break; }
+    }
+    if (/\b(urgent|asap|as soon as possible|critical|blocker|blocking|show ?stopper|top priority|highest priority)\b/.test(low)) out.priority = "highest";
+    else if (/\b(high priority|important|quite urgent|soon as we can)\b/.test(low)) out.priority = "high";
+    else if (/\b(lowest priority)\b/.test(low)) out.priority = "lowest";
+    else if (/\b(low priority|nice to have|no rush|whenever|not urgent)\b/.test(low)) out.priority = "low";
+    else if (/\b(medium priority|normal priority)\b/.test(low)) out.priority = "medium";
+    if (/\b(bug|broken|breaks|fails?|failing|failed|error|crash(es|ing)?|doesn'?t work|isn'?t working|not working|wrong|regression|missing)\b/.test(low)) out.type = "bug";
+    else if (/\b(as an? .{2,40} i want|user story|story|so that|new feature|feature)\b/.test(low)) out.type = "story";
+    else out.type = "task";
+    const est = low.match(/\b(\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|half|couple)\s*(?:of\s*)?(?:an?\s*)?(hours?|hrs?|days?|minutes?|mins?)\b/);
+    if (est && /(take|estimate|about|around|roughly|should be|needs?|maybe|probably|half)/.test(low.slice(Math.max(0, est.index - 30), est.index + est[0].length))) {
+      const n = NUM[est[1]] != null ? NUM[est[1]] : +est[1];
+      out.estimate = /^d/.test(est[2]) ? n * 8 : /^m/.test(est[2]) ? Math.round((n / 60) * 4) / 4 : n;
+    }
+    const relM = low.match(/\b4[ .]1([123])\b/);
+    if (relM) out.release = "4.1" + relM[1];
+    else if (/\bnext release\b/.test(low)) out.release = "4.13";
+    else if (/\b(this|current) release\b/.test(low)) out.release = state.settings.currentRelease;
+    if (/\bnext sprint\b/.test(low)) out.sprint = "s42"; else if (/\bthis sprint\b/.test(low)) out.sprint = "s41";
+    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const byDay = low.match(/\bby (tomorrow|end of (the )?week|monday|tuesday|wednesday|thursday|friday)\b/);
+    if (byDay) {
+      const d = new Date(TODAY);
+      if (byDay[1] === "tomorrow") d.setDate(d.getDate() + 1);
+      else { const target = byDay[1].startsWith("end") ? 5 : days.indexOf(byDay[1]); let add = (target - d.getDay() + 7) % 7; if (!add) add = 7; d.setDate(d.getDate() + add); }
+      out.due = d.toISOString().slice(0, 10);
+    }
+    const LABELS = [["menu-boards", /menu ?boards?|local offers?|offer/], ["dsp", /\bdsp\b|partner api|exchange|display types?|playlist|advertis/], ["help-centre", /help cent(re|er)|faq|freshdesk/], ["retail-admin", /retail admin|queue|appointment|store hours/], ["hq-admin", /hq admin|product assets|stockists|pricing page/], ["visitor-profile", /visitor profile|personali[sz]ation attribute|attribute/], ["performance", /slow|performance|latency|speed/], ["accessibility", /accessib|screen reader|wcag|contrast/], ["security", /security|permission|consent|rate.?limit/], ["api", /\bapi\b|endpoint|webhook/]];
+    LABELS.forEach(([l, re]) => { if (re.test(low)) out.labels.push(l); });
+
+    // Description: the transcript, minus the routing talk, in tidy sentences.
+    const ROUTING = /\b(assign(ed)? (it |this )?to \S+|give (it|this) to \S+|(it'?s |this is |make it )?(urgent|high priority|low priority|medium priority|top priority|nice to have|no rush)|((for|in) )?(the )?(next|this|current) (release|sprint)|(it )?(should|will|might) take (about |around |roughly )?\S+ (hours?|days?|minutes?)|by (tomorrow|end of (the )?week|monday|tuesday|wednesday|thursday|friday)|(maybe|about|around|roughly|probably|approximately) (\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|half an?|a couple of) (hours?|days?|minutes?))\b[,.]?/gi;
+    const sentences = text.split(/(?<=[.!?])\s+|\s+(?:and then|also|and also)\s+/i).map((x) => x.replace(ROUTING, "").replace(/\s+([,.])/g, "$1").replace(/^[\s,]*(and|so|um+|uh+|okay|ok|right)[\s,]+/i, "").trim()).filter((x) => x.replace(/[^a-z]/gi, "").length > 3);
+    if (out.assignee) {
+      const u = user(out.assignee), names = Array.from(new Set([u.first, fold(u.first)])).join("|");
+      const re = new RegExp(`\\b((this is|it'?s) )?(for|ask) (${names})( to (do|pick up|look at|take))?\\b[,.]?|\\b(${names}) (should|can|could) (pick (it|this) up|take (it|this)|do (it|this)|look at (it|this))\\b[,.]?`, "gi");
+      for (let i = 0; i < sentences.length; i++) sentences[i] = sentences[i].replace(re, "").replace(/\s+([,.])/g, "$1").trim();
+      for (let i = sentences.length - 1; i >= 0; i--) if (sentences[i].replace(/[^a-z]/gi, "").length <= 3) sentences.splice(i, 1);
+    }
+    const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+    out.description = sentences.map((x) => cap(x).replace(/[,\s]+$/, "") + (/[.!?]$/.test(x) ? "" : ".")).join(" ");
+
+    // Title: the first sentence with the filler taken off, at most ~70 chars.
+    let t = (sentences[0] || text)
+      .replace(/^(so |ok(ay)? |right |um+ |uh+ )+/i, "")
+      .replace(/^(we|i)('d| would)? (need|want|like|have) to (get |have )?/i, "")
+      .replace(/^(can|could) (you|we|someone) (please )?/i, "")
+      .replace(/^(please |there'?s an? (bug|issue|problem) (where|with|in) |there is an? (bug|issue|problem) (where|with|in) |it'?s (a bug|an issue) (where|with) )/i, "")
+      .replace(/^(add|create|make) (a )?(ticket|task) (to |for )?/i, "")
+      .replace(/^the /i, "")
+      .replace(/[.!?,]+$/, "").trim();
+    if (t.length > 72) { t = t.slice(0, 72); t = t.slice(0, t.lastIndexOf(" ")); }
+    out.title = cap(t);
+    return out;
   }
 
   function submitTask() {
@@ -819,7 +1037,7 @@
       err.hidden = false; err.textContent = errors.map((x) => x[1]).join(" · ");
       return;
     }
-    const newStatus = val("f-status");
+    const newStatus = val("f-status") || draft.status;
     const existing = taskByKey(next.key);
     if (existing) {
       const prevStatus = existing.status;

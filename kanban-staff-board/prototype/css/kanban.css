@@ -71,7 +71,7 @@
 .kb-lanes-head { align-self: stretch; background: var(--ap-card); border-radius: var(--ap-radius-sm); box-shadow: 0 0 0 .5px var(--ap-divider); border-bottom: 0; }
 /* On the Kanban page the console's topbar scrolls away; only the column
    headers (and the current staff lane's name, below them) stay at the top. */
-html[data-route="kanban"] .topbar { position: relative; }
+html[data-page="kanban"] .topbar { position: relative; }
 .kb-lanes-sticky { position: sticky; top: 0; z-index: 6; margin: 0 -4px; padding: 6px 4px 8px; background: var(--ap-bg); }
 .kb-lanes-head-scroll { overflow: hidden; margin: 0 -4px; padding: 0 4px; }
 .kb-lane-pin { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; margin-top: 8px; padding: 6px 12px 6px 8px; border: 0; border-left: 4px solid var(--lane-c); border-radius: var(--ap-radius-sm); background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider), 0 6px 14px -8px rgba(0, 0, 0, .25); cursor: pointer; font: inherit; color: var(--text); text-align: left; }
@@ -215,6 +215,43 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 .kb-form-actions { margin-top: 16px; justify-content: space-between; }
 .kb-form-actions .fa-actions-delete { min-width: 44px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; }
 .kb-form-actions .fa-actions-delete .material-symbols-outlined { font-size: 20px; }
+
+/* Voice capture + agent (new task) */
+.kb-voice { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.kb-record-btn { display: inline-flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 20px 6px 6px; border: 0; border-radius: 9999px; cursor: pointer; font: inherit; text-align: left; color: var(--text);
+  background: linear-gradient(135deg, rgba(22, 155, 194, .16), rgba(151, 71, 255, .16)); }
+.kb-record-btn:hover { background: linear-gradient(135deg, rgba(22, 155, 194, .26), rgba(151, 71, 255, .26)); }
+.kb-record-dot { width: 44px; height: 44px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex: none; color: #fff; background: linear-gradient(135deg, var(--primary), var(--violet)); }
+.kb-record-dot .material-symbols-outlined { font-size: 24px; font-variation-settings: 'FILL' 1; }
+.kb-record-text { display: flex; flex-direction: column; line-height: 1.25; }
+.kb-record-label { font-size: 15px; font-weight: 700; background: linear-gradient(135deg, var(--primary), var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kb-record-sub { font-size: 12px; color: var(--text-muted); }
+.kb-record-btn.recording { background: var(--danger-tint); }
+.kb-record-btn.recording .kb-record-dot { background: var(--danger); animation: mic-pulse 1.4s ease-in-out infinite; }
+.kb-record-btn.recording .kb-record-label { background: none; color: var(--danger); }
+.kb-record-btn.recording .kb-record-dot .material-symbols-outlined { font-size: 0; }
+.kb-record-btn.recording .kb-record-dot::after { content: ""; width: 14px; height: 14px; border-radius: 3px; background: #fff; }
+.kb-record-btn.working { cursor: progress; }
+.kb-record-btn.working .kb-record-dot .material-symbols-outlined { animation: preview-state-spin 1s linear infinite; }
+.kb-record-btn.working .kb-record-dot .material-symbols-outlined::before { content: ""; }
+.kb-voice-live { flex: 1 1 100%; font-size: 14px; line-height: 1.5; padding: 10px 14px; border-radius: var(--ap-radius-sm); background: var(--surface); box-shadow: 0 0 0 .5px var(--ap-divider); max-height: 140px; overflow-y: auto; }
+.kb-voice-live.placeholder { color: var(--text-muted); font-style: italic; }
+.kb-voice-live[hidden] { display: none; }
+.kb-voice .mic-error { flex: 1 1 100%; margin: 0; }
+.kb-agent-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: 9999px; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600;
+  background: linear-gradient(135deg, rgba(22, 155, 194, .14), rgba(151, 71, 255, .14)); }
+.kb-agent-link span:last-child { background: linear-gradient(135deg, var(--primary), var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kb-agent-link .material-symbols-outlined { font-size: 17px; color: var(--violet); }
+.kb-agent-working .kb-field[data-field] .kb-input { background-image: linear-gradient(90deg, transparent, rgba(151, 71, 255, .08), transparent); background-size: 200% 100%; animation: kb-shimmer 1s linear infinite; }
+@keyframes kb-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.kb-agent-filled .kb-input, .kb-agent-filled .type-toggle { box-shadow: 0 0 0 1.5px rgba(151, 71, 255, .55); }
+.kb-agent-filled .field-label::after { content: "Agent"; margin-left: 6px; font-size: 9.5px; letter-spacing: .04em; padding: 1px 6px; border-radius: 9999px; color: #fff; background: linear-gradient(135deg, var(--primary), var(--violet)); }
+.kb-desc-mic { bottom: 9px; right: 9px; }
+.kb-desc-mic .material-symbols-outlined { font-size: 18px; }
+.kb-desc-mic:hover { color: #fff; }
+.kb-desc-mic.listening .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+#f-description { padding-right: 46px; }
+.mic-error.on { display: block; }
 
 /* Settings */
 .kb-settings { max-width: 760px; }
