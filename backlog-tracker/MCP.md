@@ -149,8 +149,9 @@ agent to read documents with `list_project_documents` / `get_project_document`
 rather than `get_project_docs`, say which side wins for a repo-mirrored
 document (the repo file; a board-only edit is lost, except for a project with
 no single folder, whose Requirements and README are not synced), and say that
-release actions stay on the board apart from `approve_deploy_to_main` (admin)
-and `set_my_routine_binding`. `whoami`'s note and the notes returned by
+release actions stay on the board apart from `send_to_build`,
+`approve_for_deployment` and `approve_deploy_to_main` (all admin) and
+`set_my_routine_binding`. `whoami`'s note and the notes returned by
 `set_project_requirements` / `set_project_readme` say the same from the
 project's own fields. `test/mcp-server.test.js` keeps them in step with the
 tool list: every name in them is a registered tool, every write and admin tool
@@ -261,9 +262,9 @@ as text until Anthropic switches on its MCP Apps host.
 
 **Can — write (editor and admin only):**
 
-| Tickets | Documentation | Help centre | Skills library | Deploy (one exception) | Your own routine binding |
+| Tickets | Documentation | Help centre | Skills library | Release (admin only) | Your own routine binding |
 | --- | --- | --- | --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `approve_deploy_to_main` | `set_my_routine_binding` |
+| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `send_to_build`, `approve_for_deployment`, `approve_deploy_to_main` | `set_my_routine_binding` |
 | `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
 | `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
@@ -310,6 +311,39 @@ so calling it directly can never fire a deploy the console's own button
 would currently be hiding. Gated to `board.write` like every other write
 tool here (never a viewer), and every call is logged to `mcpAuditLog`
 under the caller's email, same as any other write.
+
+**`send_to_build` and `approve_for_deployment` (20 Oct 2026, Rob's decision on
+ticket `Ysh0yuU9z643E0uisr51`) are the same kind of exception, for the two
+approvals that come before Deploy to Main, so all three can be given by voice.
+Both need the `admin` role over and above `board.write` (editors and viewers
+get neither), take tickets named by id — never "everything" — and refuse the
+whole call, writing nothing, if any one ticket fails a guard. Every call is
+logged to `mcpAuditLog` under the caller's email.**
+
+- **`send_to_build`** (`projectId`, `itemIds`) makes the writes the board's
+  **Ready for Dev** click makes: `projects/{id}.notifyRequestedAt` and
+  `notifyItemIds` (plus `notifyRequestedByEmail`, so a member's own bound
+  Routine fires, and `notifyRequestedVia: "mcp"`). The existing Cloud Function
+  then starts one build session per ticket; the tool moves no card. It
+  refuses when the project's train is locked (a release is closing — the
+  board hides Ready for Dev for the same reason), or a ticket is not in this
+  project's Backlog, is blocked (e.g. waiting on an answer), is already
+  packaged (`patchReady`), or is already being built.
+- **`approve_for_deployment`** (`projectId`, `itemIds`, optional
+  `acknowledgeTests`) makes the writes the board's **Approved for
+  Deployment** click makes: each ticket goes to `ready-to-publish` with
+  `approvedByEmail`, `approvedAt` (and `approvedVia: "mcp"`), and the project
+  gets `trainLocked: true`. It deploys nothing; `approve_deploy_to_main` still
+  does that. It refuses a ticket that is not in this project's Ready for
+  Testing, is marked for revert, or needs no deployment (that has its own
+  confirm-tested path on the board). It also refuses a ticket whose train
+  tests are not green (running, failed or not run, for the commit now on the
+  train) unless `acknowledgeTests` is `true` — the agent must tell the person
+  first, because an approved ticket that goes red is not sent back
+  automatically.
+
+No MCP tool moves a card any other way, and `update_backlog_item` still has
+no `status`.
 
 **The skills library is organisation-wide, not per-project** — a shared
 place to publish packaged instructions (like this repo's own `ph-designer`
@@ -421,7 +455,9 @@ Management.
 There is no tool for those and no field an existing tool could reach to get
 at them, `approve_deploy_to_main` included — it writes exactly one field
 (`deployNotifyRequestedAt`, plus its own provenance) via its own dedicated
-code path, never through `updateProjectFields`. `update_backlog_item`'s
+code path, never through `updateProjectFields`; `send_to_build` and
+`approve_for_deployment` likewise write only what the board's own buttons
+write, through their own code paths. `update_backlog_item`'s
 schema has no `status`. The documentation tools DO write to `projects` —
 that is where `requirementsMd`, `readmeMd` and `artifactUrl` live — so "it
 never touches that collection" stopped being the guarantee and had to
@@ -434,8 +470,9 @@ never will be, since `approve_deploy_to_main` doesn't need it to be.
 throws on a train field, that no documentation tool's schema can even
 express one, that a full pass of the documentation tools leaves the
 project's own `deployBranch` untouched, and — separately — that
-`approve_deploy_to_main` is the one and only `board.write` tool whose name
-may mention deploying, merging or approving at all.
+`approve_deploy_to_main`, `send_to_build` and `approve_for_deployment` are the
+only `board.write` tools whose names may mention deploying, merging,
+approving or building at all, and that all three are admin-only.
 
 Every write records the person's email on the document (`createdByEmail`,
 `updatedByEmail`, and the comment's own `author`) and appends a row to

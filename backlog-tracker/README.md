@@ -1093,8 +1093,11 @@ Requirements/README), the repo file wins and the copy is read-only over MCP;
 the `onProjectDocWritten` trigger (`functions/index.js`) keeps the text every
 change to a mirror replaces.
 
-**No tool merges, approves a ticket out of Ready for Testing, or moves a
-card's status — with one deliberate, narrowly-scoped exception.**
+**No tool merges or moves a card's status by its own route — with three
+deliberate, narrowly-scoped, admin-only exceptions, each the board's own
+button for tickets named by id (20 Oct 2026):** `send_to_build` (Ready for
+Dev) and `approve_for_deployment` (Ready for Testing → Approved for
+Deployment; non-green tests need `acknowledgeTests`), then
 `approve_deploy_to_main` (admin only, since 27 Sep 2026) fires the exact same trigger
 the console's own **Deploy to Main** button writes; it never merges
 anything itself, and only when every ticket on the project's train is

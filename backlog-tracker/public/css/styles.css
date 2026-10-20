@@ -1023,7 +1023,6 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      a phone, the on-screen keyboard opening for the description textarea
      pushes the Add-to-backlog button down under the keyboard. */
   #ni-backdrop { align-items: flex-start; padding-top: 14px; }
-  .mic-btn { width: 42px; height: 42px; font-size: 18px; }
   .type-opt { padding: 10px 16px; font-size: 13px; }
   .form-row { gap: 10px; }
   .icon-btn { padding: 7px 10px; font-size: 15px; }
@@ -1694,7 +1693,7 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .sysmap-key.line-loop::before { border-color: var(--primary); border-width: 4px 0 0; }
 .sysmap-scroll { overflow: hidden; }
 .sysmap-zoom { display: inline-flex; gap: 2px; }
-.sysmap-svg { display: block; width: 100%; height: auto; touch-action: pan-y; cursor: grab; font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
+.sysmap-svg { display: block; width: 100%; height: auto; min-height: 220px; touch-action: pan-y; cursor: grab; font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
 .sysmap-pii { fill: rgba(211, 47, 47, .06); stroke: #d32f2f; stroke-width: 2.5; stroke-dasharray: 10 6; }
 .sysmap-pii-label { font-size: 13px; font-weight: 700; fill: #b71c1c; text-transform: uppercase; letter-spacing: .05em; }
 .sysmap-pii-wall { font-size: 13px; font-weight: 700; fill: #b71c1c; }

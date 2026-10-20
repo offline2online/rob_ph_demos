@@ -6401,6 +6401,22 @@ document.getElementById("system-map-history").addEventListener("click", (e) => {
     }, 150);
   });
 }
+// iPad: rotation, Split View and the side menu opening or closing change the
+// canvas width without always firing a window resize (and the first render can
+// run while the page is still laid out at width 0), so watch the canvas itself.
+if (typeof ResizeObserver === "function") {
+  let lastW = 0;
+  new ResizeObserver(() => {
+    const canvas = document.getElementById("system-map-canvas");
+    const page = document.getElementById("concept-incubator-page");
+    if (!canvas || !page || page.hidden) { lastW = 0; return; }
+    const w = canvas.clientWidth;
+    if (!w || w === lastW) return;
+    const first = !lastW;
+    lastW = w;
+    if (!systemMapModel || first || systemMapModeFor(w) !== systemMapLayoutMode) { systemMapView = null; renderSystemMap(); }
+  }).observe(document.getElementById("system-map-canvas"));
+}
 document.getElementById("system-map-release").addEventListener("change", renderSystemMap);
 function zoomSystemMap(factor, fx = 0.5, fy = 0.5) {
   const v = systemMapView || systemMapFit();
@@ -6439,6 +6455,8 @@ document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
     if (drag && drag.moved) canvasEl.dataset.justPanned = "1";
     drag = null;
   });
+  // A touch the browser takes over for scrolling ends in pointercancel, never pointerup.
+  window.addEventListener("pointercancel", () => { drag = null; });
 }
 // Instant tooltips (ticket tbaqBOALxMLRtaDtHrYs): one element shared by every
 // node and line, filled synchronously on pointer-over from the live model and
