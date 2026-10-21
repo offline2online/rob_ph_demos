@@ -30,12 +30,13 @@ assert.strictEqual(worstTrainTestState(["starting", "running"]), "running");
 assert.strictEqual(worstTrainTestState([]), "not-applicable");
 
 // at landing: no workflows → not-applicable; a failed dispatch → not-run
+const KANBAN = "kanban-staff-board-tests.yml";
 const consoleT = trainTestsFor(["backlog-tracker/x.js"]);
 assert.strictEqual(landingTrainTest(SHA, ["faq/index.html"], [], iso(T0)).state, "not-applicable");
 assert.strictEqual(landingTrainTest(SHA, ["backlog-tracker/x.js"], consoleT, iso(T0)).state, "starting");
 assert.strictEqual(landingTrainTest(SHA, ["backlog-tracker/x.js"], [], iso(T0)).state, "not-run");
 const both = landingTrainTest(SHA, ["backlog-tracker/x.js", "dsp-integration/y.ts"], consoleT, iso(T0));
-assert.deepStrictEqual(both.workflows.map((w) => [w.workflow, w.state]), [[CONSOLE, "starting"], [DSP, "not-run"]]);
+assert.deepStrictEqual(both.workflows.map((w) => [w.workflow, w.state]), [[CONSOLE, "starting"], [DSP, "not-run"], ["kanban-staff-board-tests.yml", "starting"]]);
 assert.strictEqual(both.state, "not-run");
 assert.strictEqual(both.sha, SHA);
 
@@ -53,15 +54,15 @@ assert.strictEqual(running.state, "running");
 assert.strictEqual(running.workflows[0].runUrl, "https://github.com/x/actions/runs/1");
 const runningCard = { ...card, trainTest: running };
 assert.strictEqual(nextCardTrainTest(runningCard, { [CONSOLE]: [run("in_progress", null)] }, T0 + 90e3), undefined);
-const passed = nextCardTrainTest(runningCard, { [CONSOLE]: [run("completed", "success")] }, T0 + 120e3);
+const passed = nextCardTrainTest(runningCard, { [CONSOLE]: [run("completed", "success")], [KANBAN]: [run("completed", "success")] }, T0 + 120e3);
 assert.strictEqual(passed.state, "passed");
-assert.strictEqual(nextCardTrainTest({ ...card, trainTest: passed }, { [CONSOLE]: [run("completed", "success")] }, T0 + 180e3), undefined);
+assert.strictEqual(nextCardTrainTest({ ...card, trainTest: passed }, { [CONSOLE]: [run("completed", "success")], [KANBAN]: [run("completed", "success")] }, T0 + 180e3), undefined);
 
 // the worst of two workflows wins
 const twoCard = { id: "c2", deployCommit: SHA, trainTest: both };
-const mixed = nextCardTrainTest(twoCard, { [CONSOLE]: [run("completed", "success")], [DSP]: [run("completed", "failure")] }, T0 + 60e3);
+const mixed = nextCardTrainTest(twoCard, { [CONSOLE]: [run("completed", "success")], [DSP]: [run("completed", "failure")], [KANBAN]: [run("completed", "success")] }, T0 + 60e3);
 assert.strictEqual(mixed.state, "failed");
-assert.deepStrictEqual(mixed.workflows.map((w) => w.state), ["passed", "failed"]);
+assert.deepStrictEqual(mixed.workflows.map((w) => w.state), ["passed", "failed", "passed"]);
 
 // a new deployCommit gives a fresh record (not the old sha's)
 const NEW = "b".repeat(40);
@@ -71,7 +72,7 @@ assert.strictEqual(moved.state, "running");
 assert.strictEqual(moved.since, iso(T0 + 400e3));
 
 // backfill: no record → from the commit's files; none needed → not-applicable
-const filled = nextCardTrainTest({ id: "c3", deployCommit: SHA }, { [CONSOLE]: [run("completed", "success")] }, T0, ["backlog-tracker/a.js"]);
+const filled = nextCardTrainTest({ id: "c3", deployCommit: SHA }, { [CONSOLE]: [run("completed", "success")], [KANBAN]: [run("completed", "success")] }, T0, ["backlog-tracker/a.js"]);
 assert.strictEqual(filled.state, "passed");
 assert.strictEqual(nextCardTrainTest({ id: "c4", deployCommit: SHA }, {}, T0, ["faq/a.html"]).state, "not-applicable");
 assert.strictEqual(nextCardTrainTest({ id: "c5" }, {}, T0), undefined, "a card with no commit has nothing to record");

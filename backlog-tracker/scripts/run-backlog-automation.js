@@ -57,6 +57,7 @@ const { trainLockShouldClear, trainHandoverReason } = require("../functions/trai
 const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
+const kanbanHeal = require("./kanban-e2e-heal");
 const { notifyRoutineOutcome, stalledNoteText, cardSettled, unbuiltReportAction } = require("../functions/notify-routine");
 const { loadDocsImpactRules, docsImpactCheck, refusalNote: docsImpactRefusalNote, waiverNote: docsImpactWaiverNote } = require("./docs-impact");
 
@@ -1790,10 +1791,15 @@ function dispatchRebuilds(branch, paths, label) {
 // behind a red deploy. test/train-tests.test.js now fails if a workflow that
 // tests a project folder on its deploy branch is missing from this list.
 const TRAIN_TEST_WORKFLOWS = [
-  { workflow: "firestore-rules-test.yml", prefix: "backlog-tracker/", label: "console tests" },
+  // The console tests include the Staff Kanban console suites (staff-kanban,
+  // kanban-mcp, kanban-rules), so a kanban-staff-board/ change starts them too
+  // (self-healing Staff Kanban E2E loop, 21 Oct 2026).
+  { workflow: "firestore-rules-test.yml", prefix: "backlog-tracker/", extraPrefixes: ["kanban-staff-board/"], label: "console tests", kanban: "console" },
   { workflow: "e2e-quick.yml", prefix: "dsp-integration/", label: "DSP tests (e2e-quick)" },
   { workflow: "retail-media-insights-tests.yml", prefix: "Retail-media-insights/", label: "Retail Media Insights tests" },
-  { workflow: "kanban-staff-board-tests.yml", prefix: "kanban-staff-board/", label: "Staff Kanban tests" },
+  // The prototype suite runs on any train that changes backlog-tracker/ too:
+  // the console and the prototype are tested twice against one plan.
+  { workflow: "kanban-staff-board-tests.yml", prefix: "kanban-staff-board/", extraPrefixes: ["backlog-tracker/"], label: "Staff Kanban tests", kanban: "all" },
 ];
 const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 
@@ -1804,7 +1810,7 @@ function trainTestsFor(paths) {
   // A board-docs.json (any project's) is checked by the console tests: its
   // validator lives in test:train-lock, and a bad manifest must not reach main.
   const manifestChanged = changed.some((p) => p.split("/").pop() === "board-docs.json");
-  return TRAIN_TEST_WORKFLOWS.filter((t) => (manifestChanged && t.workflow === CONSOLE_TEST_WORKFLOW) || changed.some((p) => p.startsWith(t.prefix)));
+  return TRAIN_TEST_WORKFLOWS.filter((t) => (manifestChanged && t.workflow === CONSOLE_TEST_WORKFLOW) || changed.some((p) => [t.prefix, ...(t.extraPrefixes || [])].some((x) => p.startsWith(x))));
 }
 const touchesConsoleTests = (paths) => trainTestsFor(paths).some((t) => t.workflow === CONSOLE_TEST_WORKFLOW);
 
@@ -2674,6 +2680,9 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
           await patchItem(c.id, { notes, trainTestReruns: c.trainTestReruns, updatedAt: new Date().toISOString() });
           console.log(`[train-rerun] ${branch}: ${t.workflow} passed on re-run at ${c.deployCommit.slice(0, 7)} (${c.id}) — flaky, nothing sent back`);
         }
+        // A red the Staff Kanban heal loop owns is fixed forward on the train,
+        // not by sending its ticket back (processKanbanE2eHeal).
+        if (t.kanban && trainProject && trainProject.kanbanE2e && trainProject.kanbanE2e.owned && trainProject.kanbanE2e.owned[t.workflow]) continue;
         const culprit = pickRedCulprit(order, trainCards, runs, {
           deployParkedRed,
           skip: new Set(trainCards.filter((c) => onlyStaleEvidence(commits, c.deployCommit)).map((c) => c.deployCommit)),
@@ -2729,6 +2738,157 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
     } catch (err) {
       console.log(`[train-eject] ${branch}: couldn't check for a red culprit (${scrubSecrets(err.message)})`);
     }
+  }
+}
+
+// ── Self-healing Staff Kanban E2E loop (21 Oct 2026, ticket 6CScTuviK0lxznLl5FNk) ──
+// The Staff Kanban suites run on every train that changes backlog-tracker/ or
+// kanban-staff-board/ (the `kanban` entries of TRAIN_TEST_WORKFLOWS). When one
+// is red (after its single automatic re-run), each failing case is raised as a
+// bug ticket — labelled "E2E auto-fix", linked to the case and to the ticket
+// that broke it — sent straight to build, and built onto THE SAME TRAIN, not a
+// branch of its own. The suite re-runs on the new head and the loop repeats
+// until green; a landed fix is approved by the green run, not by a tester.
+// Nothing here holds a card or a workflow: only Deploy to Main waits for
+// green, as it already did. A case still failing after 3 fixes is flagged for
+// Rob on the card and the rest of the train keeps going.
+//
+// The fix ticket is raised on the TRAIN's project: the pipeline builds every
+// ticket onto its own project's train, so that is the only way "the same
+// train" holds when another project's change broke a Kanban case. Pure
+// decisions are in kanban-e2e-heal.js.
+const KANBAN_WORKFLOWS = () => TRAIN_TEST_WORKFLOWS.filter((t) => t.kanban);
+const isAncestorOrSame = (a, b) => {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  try { run("git", ["merge-base", "--is-ancestor", a, b]); return true; } catch { return false; }
+};
+
+async function createFixTicket(fields) {
+  const res = await fetch(`${FIRESTORE_BASE}/backlogItems`, {
+    method: "POST",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`POST backlogItems failed: ${res.status} ${await res.text()}`);
+  return String((await res.json()).name || "").split("/").pop();
+}
+
+async function processKanbanE2eHeal() {
+  const workflows = KANBAN_WORKFLOWS();
+  if (!workflows.length) return;
+  // Every branch with a train card or an open fix ticket.
+  const cards = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "deployCommits", "e2eAutoFix", "flaggedForRob", "revertRequested", "notes"].map((fieldPath) => ({ fieldPath })) },
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: ["backlog", "ready-for-testing", "ready-to-publish"].map((v) => ({ stringValue: v })) } } } },
+  });
+  const byBranch = new Map();
+  for (const c of cards) {
+    const branch = c.deployBranch || (c.e2eAutoFix && c.e2eAutoFix.trainBranch);
+    if (!branch) continue;
+    if (!byBranch.has(branch)) byBranch.set(branch, []);
+    byBranch.get(branch).push(c);
+  }
+  for (const [branch, branchCards] of byBranch) {
+    try {
+      await healBranch(branch, branchCards, workflows);
+    } catch (err) {
+      console.log(`[kanban-e2e] ${branch}: ${scrubSecrets(err.message)}`);
+    }
+  }
+}
+
+async function healBranch(branch, branchCards, workflows) {
+  let head;
+  try { run("git", ["fetch", "origin", branch, "main", "--quiet"]); head = run("git", ["rev-parse", `origin/${branch}`]).trim(); }
+  catch { return; } // branch gone (train merged)
+  const paths = run("git", ["diff", "--name-only", `origin/main...origin/${branch}`]).split("\n").filter(Boolean);
+  const needed = trainTestsFor(paths).filter((t) => t.kanban);
+  const projectId = (branchCards.find((c) => c.projectId && c.deployBranch === branch) || branchCards.find((c) => c.projectId) || {}).projectId;
+  if (!projectId) return;
+  const project = await getProject(projectId);
+  const fixes = branchCards.filter((c) => c.e2eAutoFix && c.e2eAutoFix.trainBranch === branch).map((c) => ({
+    ...c, tested: !!c.deployCommit && isAncestorOrSame(c.deployCommit, head),
+  }));
+  // Verdict per Kanban workflow on this head. A run for an older head says
+  // nothing yet: "running" (the push that moved the head started a new one).
+  const verdicts = [];
+  const failedRuns = [];
+  for (const t of needed) {
+    let r = null;
+    try {
+      r = newestRealRun(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", branch,
+        "--limit", "10", "--json", "databaseId,attempt,headSha,status,conclusion,url"]) || "[]").map((x) => ({ ...x, id: x.databaseId })));
+    } catch (err) { console.log(`[kanban-e2e] ${branch}: couldn't read ${t.workflow} (${scrubSecrets(err.message)})`); }
+    let verdict = "running";
+    if (r && r.headSha === head) {
+      const v = trainRunVerdict(r);
+      verdict = v === "passed" ? "passed" : v === "failed" ? "failed" : "running"; // "rerun" = the single re-run is pending
+    }
+    verdicts.push({ workflow: t.workflow, label: t.label, verdict });
+    if (verdict === "failed") failedRuns.push({ t, run: r });
+  }
+
+  const owned = {};
+  for (const { t, run: r } of failedRuns) {
+    let log = "";
+    try { log = run("gh", ["run", "view", String(r.id), "--repo", REPO, "--log-failed"]); }
+    catch (err) { console.log(`[kanban-e2e] ${branch}: couldn't read the ${t.workflow} log (${scrubSecrets(err.message)})`); continue; }
+    const { cases, otherFailures } = kanbanHeal.parseFailedCases(log);
+    if (!cases.length) continue;
+    if (!otherFailures) owned[t.workflow] = head; // all red here is Kanban: the heal owns it, ejectRedCulprits stands down
+    const plan = kanbanHeal.planHeal({ failures: cases, fixes, sha: head });
+    // Who broke it: the ticket owning the head (or the nearest card commit below it).
+    const causeCard = branchCards.find((c) => !c.e2eAutoFix && c.deployBranch === branch && (c.deployCommit === head || (c.deployCommits || []).includes(head)))
+      || branchCards.find((c) => !c.e2eAutoFix && c.deployBranch === branch);
+    const nowIso = new Date().toISOString();
+    for (const { failure, attempt } of plan.raise) {
+      const rec = kanbanHeal.autoFixRecord({ failure, trainBranch: branch, trainProjectId: projectId, causedByItemId: causeCard && causeCard.id, workflow: t.workflow, runUrl: r.url, sha: head, attempt });
+      const fixId = await createFixTicket({
+        projectId, type: "bug", category: "Backend / Infrastructure", status: "backlog",
+        title: kanbanHeal.fixTitle(failure), desc: kanbanHeal.fixDescription(rec, { causedByTitle: causeCard && causeCard.title }),
+        e2eAutoFix: rec, labels: [kanbanHeal.E2E_AUTO_FIX_LABEL], autoRaised: true,
+        createdVia: "e2e-auto-fix", createdByEmail: "e2e-auto-fix@backlog-tracker", updatedByEmail: "e2e-auto-fix@backlog-tracker",
+        approvedVia: "E2E auto-fix", approvedAt: nowIso,
+        notes: [{ author: "backlog-automation", text: `Raised automatically from ${t.label} on ${branch} (${head.slice(0, 7)}), attempt ${attempt} of ${kanbanHeal.MAX_FIX_ATTEMPTS}. ${r.url || ""}`.trim(), at: nowIso }],
+        createdAt: new Date(), updatedAt: new Date(),
+      });
+      fixes.push({ id: fixId, status: "backlog", e2eAutoFix: rec, tested: false });
+      queueBuildRequest(project, fixId);
+      if (causeCard) {
+        causeCard.notes = await appendNote(causeCard, kanbanHeal.raisedNote(rec, fixId));
+        await patchItem(causeCard.id, { notes: causeCard.notes, updatedAt: nowIso });
+      }
+      console.log(`[kanban-e2e] ${branch}: ${failure.caseId}@${failure.viewport} red at ${head.slice(0, 7)} — raised ${fixId} (attempt ${attempt})`);
+    }
+    for (const { failure, history } of plan.flag) {
+      const last = history[history.length - 1];
+      const text = kanbanHeal.flagNote(failure, history);
+      for (const target of [last, causeCard].filter(Boolean)) {
+        const card = branchCards.find((c) => c.id === target.id) || { id: target.id, notes: [] };
+        card.notes = await appendNote(card, text);
+        await patchItem(card.id, { notes: card.notes, flaggedForRob: true, updatedAt: nowIso });
+        if (target === last) last.flaggedForRob = true;
+      }
+      console.log(`[kanban-e2e] ${branch}: ${failure.caseId}@${failure.viewport} still red after ${kanbanHeal.MAX_FIX_ATTEMPTS} fixes — flagged for Rob`);
+    }
+  }
+
+  // A landed fix is approved by a green run on a head that contains it.
+  const allPassed = verdicts.length > 0 && verdicts.every((v) => v.verdict === "passed");
+  for (const c of fixes) {
+    if (!c.tested || !kanbanHeal.shouldAutoApprove(c, { allPassed })) continue;
+    await patchItem(c.id, { status: "ready-to-publish", approvedVia: "E2E auto-fix (suite green)", approvedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    c.status = "ready-to-publish";
+    console.log(`[kanban-e2e] ${branch}: ${c.id} approved — the suite is green on ${head.slice(0, 7)}`);
+  }
+
+  const status = kanbanHeal.kanbanE2eStatus({ verdicts, fixes });
+  const prev = project.kanbanE2e || {};
+  const next = { state: status.state, healing: status.healing, flagged: status.flagged, detail: status.detail, sha: head, owned };
+  if (prev.state !== next.state || prev.healing !== next.healing || prev.flagged !== next.flagged || prev.sha !== next.sha || prev.detail !== next.detail || JSON.stringify(prev.owned || {}) !== JSON.stringify(owned)) {
+    await patchProject(projectId, { kanbanE2e: { ...next, updatedAt: new Date().toISOString() } });
   }
 }
 
@@ -6310,6 +6470,11 @@ async function main() {
     console.log(`[card-tests] failed: ${err.message}`);
   }
   try {
+    await processKanbanE2eHeal();
+  } catch (err) {
+    console.log(`[kanban-e2e] failed: ${err.message}`);
+  }
+  try {
     await ejectRedCulprits(runsFor);
   } catch (err) {
     console.log(`[train-eject] failed: ${err.message}`);
@@ -6401,6 +6566,7 @@ module.exports = {
   // ...and an approved deploy held red by main resumes once main is fixed
   heldDeployMainPlan, heldDeployMainRedNote, decidedMainRun,
   reportTrainTestResults, trainRunOwner, alreadyRerun, rerunRunKey, fdoc,
+  processKanbanE2eHeal, healBranch,
   trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/train-eject-after-revert.test.js — a ticket is judged on a run that did not contain a reverted ticket
   afterRevertDispatches, cardEvidenceRun, evidenceCandidates, onlyStaleEvidence, borrowableShas,

@@ -2006,3 +2006,17 @@ body { overflow-x: clip; }
 .profile-photo-error { margin: 4px 12px; font-size: 12.5px; color: #b3261e; }
 .ei-note-meta .ph-avatar { margin-right: 6px; }
 .team-row > .ph-avatar { margin-right: 8px; }
+
+/* Promote-to-project button while it runs: spinner sits inline in the label. */
+#pc-submit { display: inline-flex; align-items: center; gap: 8px; }
+#pc-submit .notify-claude-spinner { border-color: rgba(255,255,255,.4); border-top-color: #fff; }
+
+/* Self-healing Staff Kanban E2E loop: the train's status chip and the fix-ticket label */
+.project.collapsed .kanban-e2e-chip { display: none; }
+.kanban-e2e-chip { display: inline-flex; align-items: center; gap: 4px; margin: -2px 8px 10px 0; font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--primary-tint); color: var(--text-muted); }
+.kanban-e2e-chip .material-symbols-outlined { font-size: 15px; }
+.kanban-e2e-green { color: var(--success); }
+.kanban-e2e-healing { background: rgba(201, 138, 10, .1); color: var(--warning); }
+.kanban-e2e-flagged { background: var(--danger-tint); color: var(--danger); }
+.e2e-fix-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--primary-tint); color: var(--primary-text); }
+.e2e-fix-badge .material-symbols-outlined { font-size: 14px; }
