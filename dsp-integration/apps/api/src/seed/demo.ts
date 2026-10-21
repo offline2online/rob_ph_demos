@@ -89,21 +89,18 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; slots: Sl
 }
 
 /* Who each DSP brings: suppliers a global convenience retailer (7-Eleven)
-   really buys from, beverages and confectionery first. Unilever is on two
-   DSPs, which is what the Advertisers table's "via" column exists to show.
-   Nestlé's seat is the base seed's; the base seed's Swisse and L'Oréal
-   placeholders are retired by `retirePlaceholderAdvertisers` below. */
+   really buys from, beverages and confectionery first. Unilever, Blackmores,
+   Swisse and L'Oréal are not in the demo (21 Oct 2026). Nestlé's seat is the
+   base seed's; the base seed's Swisse and L'Oréal placeholders are retired by `retirePlaceholderAdvertisers` below. */
 const DEMO_SEATS: Record<string, { id: string; name: string; domain: string }[]> = {
   p_google: [
     { id: '5130003', name: 'Coca-Cola', domain: 'coca-cola.com' },
     { id: '5130004', name: 'Mars Wrigley', domain: 'mars.com' },
     { id: '5130005', name: 'Mondelez International', domain: 'mondelezinternational.com' },
     { id: '5130006', name: 'Kellanova', domain: 'kellanova.com' },
-    { id: '5130007', name: 'Unilever', domain: 'unilever.com' },
   ],
   p_amazon: [{ id: '588104412', name: 'The Hershey Company', domain: 'thehersheycompany.com' }],
   p_ttd: [
-    { id: 'ttd-7001', name: 'Unilever', domain: 'unilever.com' },
     { id: 'ttd-7002', name: 'PepsiCo', domain: 'pepsico.com' },
     { id: 'ttd-7003', name: 'Frito-Lay', domain: 'fritolay.com' },
     { id: 'ttd-7004', name: 'Monster Energy', domain: 'monsterenergy.com' },
@@ -116,8 +113,8 @@ const DIRECT_PARTNER = 'direct'
 
 /* Advertisers whitelisted on each demo DSP, by seat name. */
 const DEMO_WHITELIST: Record<string, string[]> = {
-  p_google: ['Coca-Cola', 'Unilever'],
-  p_ttd: ['Unilever', 'PepsiCo'],
+  p_google: ['Coca-Cola'],
+  p_ttd: ['PepsiCo'],
 }
 
 const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean }> = {
@@ -131,7 +128,6 @@ const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean }> = 
   [advertiserSlug('The Hershey Company')]: { approvalRequired: true },
   [advertiserSlug('Kellanova')]: { approvalRequired: true },
   [advertiserSlug('Frito-Lay')]: { approvalRequired: false },
-  [advertiserSlug('Unilever')]: { approvalRequired: true },
 }
 
 /* ---------------------------------------------------------- the campaigns */
@@ -214,10 +210,6 @@ const DEMO_CAMPAIGNS: DemoCampaign[] = [
     targeting: personalised(['Snacker']), brief: brief('Game-day snacking, personalised for the snacker segment; localised elsewhere.', { promotedProducts: ['Pringles Original 134g'], targetAudiences: ['Snackers'] }) },
   { id: 'c_demo_fritolay_doritos', name: 'Frito-Lay — Doritos Game Night', advertiser: 'Frito-Lay', partnerId: 'p_ttd', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#d84315', line: 'For the bold', createdAt: '2026-09-14T11:00:00.000Z',
     targeting: personalised(['Snacker', 'Value seeker']), brief: brief('Personalised for the snacker and value-seeker segments.', { promotedProducts: ['Doritos Nacho Cheese 170g'] }) },
-  { id: 'c_demo_unilever_magnum', name: 'Unilever — Magnum Classic', advertiser: 'Unilever', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#4e342e', line: 'Magnum — 2 for $8', createdAt: '2026-09-17T12:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Magnum multi-buy on the checkout screens.', { promotedProducts: ['Magnum Classic 4pk'] }), rejectReason: 'Price shown in the artwork (2 for $8). Prices come from Personalisation Hub, not the creative.' },
-  { id: 'c_demo_unilever_streets', name: 'Unilever — Streets Cornetto', advertiser: 'Unilever', partnerId: 'p_ttd', displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', colour: '#1565c0', line: 'Cornetto', createdAt: '2026-09-19T16:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Ice-cream freezer portrait screens, all stores.', { promotedProducts: ['Streets Cornetto Classic 4pk'], objective: 'Brand Awareness' }) },
   { id: 'c_demo_hershey_reeses', name: 'The Hershey Company — Reese’s Cups', advertiser: 'The Hershey Company', partnerId: 'p_amazon', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#6d4c41', line: 'Reese’s Cups', createdAt: '2026-09-18T10:00:00.000Z',
     targeting: LOCALISED, brief: brief('Reese’s launch at the checkout.'), rejectReason: 'Creative is 1280×720; the Landscape canvas is 1920×1080.' },
 ]
@@ -235,7 +227,7 @@ const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
    three sample campaigns are re-labelled under advertisers that are, with a
    new creative. Idempotent; on a database that already holds bookings under
    the old names, reset it rather than re-running this. */
-const PLACEHOLDER_SEATS = ['Swisse', 'L\'Oréal', 'L’Oréal']
+const PLACEHOLDER_SEATS = ['Swisse', 'L\'Oréal', 'L’Oréal', 'Blackmores', 'Unilever']
 const RELABELLED = [
   { id: 'c_api_swisse', from: 'swisse', advertiser: 'Mondelez International', name: 'Mondelez — Cadbury Easter', colour: '#4a148c', line: 'Cadbury Easter' },
   { id: 'c_api_swisse_kids', from: 'swisse', advertiser: 'Kellanova', name: 'Kellanova — Pringles Game Day (draft)', colour: '#b71c1c', line: 'Pringles Game Day' },
