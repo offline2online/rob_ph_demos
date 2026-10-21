@@ -3179,8 +3179,11 @@ export interface components {
                 windows: {
                     /** Format: date-time */
                     start: string;
-                    /** @enum {string} */
-                    status: "booked" | "available" | "unavailable";
+                    /**
+                     * @description `reserved`: not booked yet, but inside the flight of a live Direct advertiser deal on this position, so no one else can buy it; the exchange books it for the deal's advertiser (22 Oct 2026).
+                     * @enum {string}
+                     */
+                    status: "booked" | "available" | "reserved" | "unavailable";
                     booking: {
                         reservationId: string;
                         campaignId: string;

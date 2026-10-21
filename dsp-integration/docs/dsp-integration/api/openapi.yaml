@@ -3887,7 +3887,7 @@ components:
                   required: [start, status, booking]
                   properties:
                     start: {type: string, format: date-time}
-                    status: {type: string, enum: [booked, available, unavailable]}
+                    status: {type: string, enum: [booked, available, reserved, unavailable], description: '`reserved`: not booked yet, but inside the flight of a live Direct advertiser deal on this position, so no one else can buy it; the exchange books it for the deal''s advertiser (22 Oct 2026).'}
                     booking:
                       type: [object, 'null']
                       required: [reservationId, campaignId, advertiserId, partnerId, pricingType, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue, layers, personalisedTriggers]

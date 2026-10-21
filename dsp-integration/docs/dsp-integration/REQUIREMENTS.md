@@ -1774,7 +1774,9 @@ resolved from four levels:
   platform issues no invoice, statement or payment for it. The revenue is
   reported wherever revenue is: the Booking schedule shows the booking as
   "Name (Direct)" (DSP column "Direct") with booked windows, % sold and
-  Estimated revenue, filterable by the advertiser or by DSP "direct" (the
+  Estimated revenue, and an unbooked window inside the deal's flight reads
+  "Reserved · Direct" rather than Available (no one else can buy it),
+  filterable by the advertiser or by DSP "direct" (the
   screen shows no billed revenue, per "Booking revenue table" of 22 Sep;
   the schedule API's `billedRevenue` carries it once the window has
   played, confirmed by Rob 21 Oct 2026); its line items carry `partnerId: "direct"`

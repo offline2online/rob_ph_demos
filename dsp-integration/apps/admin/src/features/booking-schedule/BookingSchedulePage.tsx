@@ -243,6 +243,8 @@ function BookingTile({ booking, money }: { booking: Booking; money: (n: number) 
    part-sold submission it depended on). */
 function DailyCell({ cell, money }: { cell: Cell; money: (n: number) => string }) {
   if (cell.status === 'unavailable') return <span style={{ fontSize: 11, color: T.micro }}>—</span>
+  /* Inside a live Direct advertiser deal's flight: held for its advertiser, not on sale to anyone else. */
+  if (cell.status === 'reserved') return <span style={{ fontSize: 11, color: T.muted }}>Reserved · Direct</span>
   if (!cell.booking) return <span style={{ fontSize: 11, color: T.success }}>Available</span>
   return <BookingTile booking={cell.booking} money={money} />
 }
@@ -254,7 +256,7 @@ function DailyCell({ cell, money }: { cell: Cell; money: (n: number) => string }
    nothing the "N of M booked" line doesn't already say. */
 function GroupedCell({ cells, money }: { cells: Cell[]; money: (n: number) => string }) {
   const booked = cells.filter((c) => c.booking)
-  const sellable = cells.filter((c) => c.status !== 'unavailable' && !c.booking).length
+  const sellable = cells.filter((c) => c.status === 'available').length
   const names = [...new Set(booked.map((c) => c.booking!.advertiserName))]
   const revenue = booked.reduce((n, c) => n + c.booking!.bookedRevenue, 0)
   const tip = booked.length ? `${names.join(', ')} · ${money(revenue)}` : 'Nothing booked in this period.'

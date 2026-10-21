@@ -112,4 +112,12 @@ describe('Direct advertiser deal revenue', () => {
     const direct = (await app.inject({ method: 'GET', url: '/api/admin/v1/booking-schedule?from=2026-11-02&to=2026-11-05&partnerId=direct' })).json()
     expect(direct.totals.bookedRevenue).toBe(120)
   })
+
+  it('reads Reserved, not Available, for an unbooked window inside the live flight (E2E 21 Oct 2026)', async () => {
+    const { app } = await liveDirectDeal()
+    const statusOn = async (from: string, to: string) => ((await app.inject({ method: 'GET', url: `/api/admin/v1/booking-schedule?from=${from}&to=${to}` })).json().positions as { positionId: string; windows: { status: string }[] }[])
+      .find((p) => p.positionId === 'portrait.s1')!.windows.map((w) => w.status)
+    expect(new Set(await statusOn('2026-11-12', '2026-11-15'))).toEqual(new Set(['reserved']))
+    expect(await statusOn('2026-12-02', '2026-12-03')).not.toContain('reserved')
+  })
 })
