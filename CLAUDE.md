@@ -425,6 +425,19 @@ board:
   retries by itself once a person merges main into the branch. Before
   merging straight to `main`, check open `deploy/*` branches for the same
   files anyway.
+- **A push straight to `main` is not done until main's tests are green.**
+  Run `npm run test:train-lock` in `backlog-tracker/test` before pushing
+  anything that touches `backlog-tracker/`, `.github/workflows/` or a
+  project's README, then check "Rules & MCP server tests" on that main
+  commit. A new PR-triggered test workflow needs its `TRAIN_TEST_WORKFLOWS`
+  line in the same commit. On 21 Oct 2026 `kanban-staff-board-tests.yml`
+  reached main without it (0db46cc); main stayed red for three hours, and
+  every train that took main failed with it (DSP's approved deploy held, a
+  Backlog Tracker ticket red). Two guards were added after that:
+  `main-red-alert.yml` opens an issue when a train suite fails on main and
+  closes it when the suite passes again. `heldDeployMainPlan` makes a held
+  deploy whose tests are red on main too say "main is broken, not this
+  train", then take the fixed main and re-test by itself.
 
 New feature/bug requests land in a project's Backlog; once tested and
 approved, click that project's **"Deploy to Main"** button to have Claude

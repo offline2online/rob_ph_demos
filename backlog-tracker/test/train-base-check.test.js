@@ -72,7 +72,7 @@ global.fetch = async (url, o = {}) => {
   return reply(200);
 };
 const auto = require("../scripts/run-backlog-automation.js");
-const { baseCheckAction, failureSummaryFromLog, isMainMergeCommit, evidenceCandidates, BASE_CHECK_GIVE_UP_MS, baseCheckRef } = auto;
+const { heldDeployMainPlan, heldDeployMainRedNote, baseCheckAction, failureSummaryFromLog, isMainMergeCommit, evidenceCandidates, BASE_CHECK_GIVE_UP_MS, baseCheckRef } = auto;
 
 const WF = "firestore-rules-test.yml";
 const sha = (c) => c.repeat(40);
@@ -119,6 +119,22 @@ async function test(name, fn) {
 }
 
 (async () => {
+  // 21 Oct 2026: main went red (a workflow without its TRAIN_TEST_WORKFLOWS
+  // line), DSP's approved deploy was held "fix it on deploy/dsp-integration",
+  // and fixing main didn't release it.
+  await test("heldDeployMainPlan: red on main too blames main; fixed main is taken once per main tip", async () => {
+    const red = [{ workflow: WF }];
+    const fixed = { [WF]: { verdict: "passed", onTrain: false } };
+    assert.deepStrictEqual(heldDeployMainPlan({ red, onBase: { [WF]: "failed" }, onMain: { [WF]: { verdict: "failed", onTrain: true } }, mainHead: X }), { mainRed: true, resync: null });
+    assert.deepStrictEqual(heldDeployMainPlan({ red, onBase: { [WF]: "rerun" }, onMain: fixed, mainHead: Y }), { mainRed: true, resync: Y });
+    assert.deepStrictEqual(heldDeployMainPlan({ red, onBase: { [WF]: "failed" }, onMain: fixed, mainHead: Y, resyncedTo: Y }), { mainRed: true, resync: null }, "never twice for one main tip");
+    assert.deepStrictEqual(heldDeployMainPlan({ red, onBase: { [WF]: "passed" }, onMain: { [WF]: { verdict: "passed", onTrain: true } }, mainHead: Y }), { mainRed: false, resync: null }, "the train's own red: as before");
+    assert.deepStrictEqual(heldDeployMainPlan({ red, onBase: {}, onMain: {}, mainHead: Y }), { mainRed: false, resync: null }, "unknown blames nobody");
+    assert.deepStrictEqual(heldDeployMainPlan({ red: [{ workflow: WF }, { workflow: "b.yml" }], onBase: { [WF]: "failed", "b.yml": "passed" }, onMain: fixed, mainHead: Y }), { mainRed: false, resync: null }, "every red workflow must be fixed on main");
+    assert.deepStrictEqual(heldDeployMainPlan({ red: [], onBase: {}, onMain: {}, mainHead: Y }), { mainRed: false, resync: null });
+    assert.ok(/main is broken, not this train/.test(heldDeployMainRedNote("console tests failed", "0db46cc")));
+  });
+
   await test("baseCheckAction: green base ejects, red base holds, attempt-1 red re-runs main, running waits", async () => {
     const at = (o) => baseCheckAction({ workflow: WF, baseSha: X, keys: [], nowMs: 1e12, ...o });
     assert.deepStrictEqual(at({ baseRun: run_(1, X, 1, "completed", "success") }), { act: "eject", why: "base-green" });
