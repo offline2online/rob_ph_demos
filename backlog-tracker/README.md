@@ -2505,3 +2505,33 @@ and the console-click scenario "Ready for Dev — N new".
 ## Profile photos
 
 `public/js/avatar.js` holds the single `avatarHTML(email, size)` helper (initial-circle fallback, photo when `consoleUsers/{email}.photoUrl` is set) and the client-side crop/scale. Upload lives in the profile menu (`#profile-photo-*` in `index.html`, `setMemberPhoto()` in `app.js`); admins set photos from the Team page. Rules: `storage.rules` `avatars/{email}.jpg`, `firestore.rules` `consoleUsers` self-update. Tests: `test/avatar-rules.test.mjs`, `test/ui/avatars.test.mjs`, and emulator cases in `test/firestore-rules.test.js`. See REQUIREMENTS.md → "Profile photos (avatars)".
+
+## Staff Kanban (21 Oct 2026)
+
+The team's own task board, a Jira replacement, at `#staff-kanban` (sidebar →
+Build → Staff Kanban), separate from the Agent Board. Spec, test plan and the
+signed-off prototype are in `kanban-staff-board/` (project "Staff Kanban" on
+the board); the code is here:
+
+| File | What it does |
+|---|---|
+| `public/js/kanban/kanban-page.js` | The page: board, filters, swimlanes, drag and drop, task modal, voice capture, release report, settings. Loaded by `app.js` (`loadStaffKanban`) the first time the page opens, so the Agent Board's load is unchanged |
+| `public/js/kanban/kanban-store.js` | Firestore and Storage: listeners (open tickets, the 300 most recently closed, the picked release), writes, the PH-n counter transaction, comments, activity, mentions, uploads |
+| `public/js/kanban/kanban-core.js` | The rules shared by the page, the MCP tools and the tests: statuses, the testing hand-off, durations, search tokens and ranking, the release report, the local agent fill |
+| `public/js/kanban/kanban-editor.js` | The rich-text editor (the FAQ editor's toolbar, plus @mentions, screenshots, screen recording) |
+| `public/css/kanban.css` | Its styles; anything that would reach the rest of the console is scoped to `html[data-page="staff-kanban"]` |
+| `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, and the eleven `kanban_*` MCP tools |
+| `functions/kanban-core.js` | Generated CommonJS copy of `kanban-core.js`: `node test/kanban-core-copy.mjs --write` after changing the source (`kanban-mcp.test.js` fails until you do) |
+
+Rules: `firestore.rules` → "Staff Kanban" (members write, viewers read, admins
+alone change settings and sprints, keys never reused, activity append-only,
+mentions private to their recipient) and `storage.rules` → `kanban/`.
+
+The voice fill uses Claude once the **`ANTHROPIC_API_KEY`** repo secret is set
+(the deploy workflow syncs it into Secret Manager, as "unset" until then). Until
+then, or when Claude doesn't answer, the page fills the ticket with its local
+stand-in, as the prototype did.
+
+Tests: `test/ui/staff-kanban.test.mjs` (the 25 signed-off cases plus 4 console
+ones, in Chromium), `test/kanban-mcp.test.js` (server and MCP tools),
+`test/kanban-rules.test.js` (rules, in the emulator), all part of `npm test`.

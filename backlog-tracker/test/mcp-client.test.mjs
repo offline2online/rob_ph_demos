@@ -183,7 +183,11 @@ await test("tools/list returns the whole surface", async () => {
     "create_faq_article", "create_interface", "create_project_document", "delete_interface",
     "delete_project_document", "delete_skill", "demote_project", "get_approved_for_deployment_board", "get_backlog_item",
     "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_project_docs", "get_project_document",
-    "get_ready_for_testing_board", "get_routine_setup_instructions", "get_skill", "list_backlog_items",
+    "get_ready_for_testing_board", "get_routine_setup_instructions", "get_skill",
+    // Staff Kanban (functions/kanban.js, 21 Oct 2026).
+    "kanban_assign_task", "kanban_comment", "kanban_create_task", "kanban_flag_task", "kanban_get_task", "kanban_list_people",
+    "kanban_list_tasks", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task",
+    "list_backlog_items",
     "list_concept_critiques", "list_concepts", "list_doc_revisions", "list_pending_faq_revisions", "list_project_documents", "list_projects", "list_skill_misses",
     "list_skills", "mark_skill_reviewed", "report_skill_miss", "search_faq", "send_to_build", "set_blocked", "set_concept_artifact", "set_concept_description", "set_concept_readme",
     "set_concept_requirements", "set_my_routine_binding", "set_phase_skill_bindings",

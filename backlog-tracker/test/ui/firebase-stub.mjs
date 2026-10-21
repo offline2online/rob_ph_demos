@@ -45,6 +45,7 @@ const describe = (v) => {
     if (v.$sentinel === "serverTimestamp") return "$serverTimestamp";
     if (v.$sentinel === "deleteField") return "$deleteField";
     if (v.$sentinel === "arrayUnion") return { $arrayUnion: v.values.map(describe) };
+    if (v.$sentinel === "increment") return { $increment: v.n };
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, describe(x)]));
   }
   return v;
@@ -76,6 +77,7 @@ class Backend {
       return cur;
     }
     if (isObj(value) && value.$sentinel === "deleteField") return undefined;
+    if (isObj(value) && value.$sentinel === "increment") return (typeof existing === "number" ? existing : 0) + value.n;
     if (isObj(value)) return this.resolveMap(value, isObj(existing) ? existing : {});
     return clone(value);
   }
@@ -137,6 +139,7 @@ export function doc(base, ...rest) {
 }
 export function where(field, op, value) { return { kind: "where", field, op, value }; }
 export function orderBy(field, dir = "asc") { return { kind: "orderBy", field, dir }; }
+export function limit(n) { return { kind: "limit", n }; }
 export function query(col, ...constraints) { return { type: "query", path: col.path, constraints }; }
 
 const val = (v) => (v instanceof Timestamp ? v.ms : v);
@@ -148,6 +151,7 @@ function run(q) {
     if (c.kind === "where") {
       if (c.op === "==") rows = rows.filter((r) => same(r.data[c.field], c.value));
       else if (c.op === "!=") rows = rows.filter((r) => r.data[c.field] !== undefined && !same(r.data[c.field], c.value));
+      else if (c.op === "array-contains") rows = rows.filter((r) => Array.isArray(r.data[c.field]) && r.data[c.field].some((x) => same(x, c.value)));
       else throw new Error(`firebase-stub: where operator ${c.op} not implemented`);
     }
   }
@@ -157,6 +161,7 @@ function run(q) {
       rows.sort((a, b) => (c.dir === "desc" ? -1 : 1) * cmp(a.data[c.field], b.data[c.field]));
     }
   }
+  for (const c of q.constraints || []) if (c.kind === "limit") rows = rows.slice(0, c.n);
   return rows;
 }
 const metadata = { fromCache: false, hasPendingWrites: false };
@@ -218,6 +223,20 @@ export function writeBatch() {
     commit: async () => backend().commit(pending),
   };
 }
+// Transactions: reads see the committed state; writes commit together.
+export async function runTransaction(_db, fn) {
+  const pending = [];
+  const tx = {
+    get: async (ref) => getDoc(ref),
+    set: (ref, data, opts) => { pending.push({ op: "set", ref, data, merge: !!(opts && opts.merge) }); return tx; },
+    update: (ref, data) => { pending.push({ op: "update", ref, data }); return tx; },
+    delete: (ref) => { pending.push({ op: "delete", ref }); return tx; },
+  };
+  const out = await fn(tx);
+  backend().commit(pending);
+  return out;
+}
+export const increment = (n) => ({ $sentinel: "increment", n });
 export const serverTimestamp = () => SERVER_TS;
 export const arrayUnion = (...values) => ({ $sentinel: "arrayUnion", values });
 export const deleteField = () => DELETE;
@@ -256,10 +275,20 @@ export const onAuthStateChanged = (a, cb) => { setTimeout(() => cb(a.currentUser
 // ── everything else is a loud no ────────────────────────────────────────────
 const unimplemented = (name) => function () { throw new Error(`firebase-stub: ${name} not implemented`); };
 export const getFirestore = unimplemented("getFirestore");
-export const uploadBytes = unimplemented("uploadBytes");
-export const getDownloadURL = unimplemented("getDownloadURL");
+// Storage: every upload is kept in memory (window.__fbStub.uploads) and
+// given a download URL shaped like the real one; the harness serves it.
+export const ref = (_storage, path) => ({ type: "storageRef", path });
+export async function uploadBytes(r, blob, meta) {
+  const b = backend();
+  (b.uploads ||= {})[r.path] = { size: blob.size, contentType: (meta && meta.contentType) || blob.type, url: `https://firebasestorage.googleapis.com/v0/b/stub/o/${encodeURIComponent(r.path)}?alt=media` };
+  return { ref: r };
+}
+export async function getDownloadURL(r) {
+  const u = (backend().uploads || {})[r.path];
+  if (!u) throw new Error(`firebase-stub: no upload at ${r.path}`);
+  return u.url;
+}
 export const deleteObject = unimplemented("deleteObject");
-export const ref = unimplemented("ref");
 export const signInWithPopup = unimplemented("signInWithPopup");
 export const signInWithRedirect = unimplemented("signInWithRedirect");
 export const signInWithEmailAndPassword = unimplemented("signInWithEmailAndPassword");

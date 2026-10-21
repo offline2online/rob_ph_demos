@@ -70,6 +70,25 @@ service firebase.storage {
       allow delete: if isAvatarOwner(fileName) || isAdminClaim();
     }
 
+    // Staff Kanban: screenshots, screen recordings and attachments for a
+    // ticket (public/js/kanban/kanban-store.js upload), kanban/{PH-n}/… —
+    // or kanban/new/… for one uploaded before its ticket is created. Any
+    // member reads; editors write. Images, video, PDFs, text and the common
+    // office formats, up to 100 MB.
+    match /kanban/{key}/{fileName} {
+      allow read: if isEditor() || (request.auth != null && request.auth.token.consoleRole in ["admin", "editor", "viewer"]);
+      allow write: if isEditor()
+        && request.resource.size < 100 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType.matches('video/.*')
+            || request.resource.contentType.matches('text/.*')
+            || request.resource.contentType in ['application/pdf', 'application/zip', 'application/json',
+                 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']);
+      allow delete: if isEditor();
+    }
+
     match /attachments/{itemId}/{fileName} {
       allow read: if isEditor();
       allow write: if isEditor() &&

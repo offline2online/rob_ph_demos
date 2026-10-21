@@ -23,7 +23,8 @@ const readmeMd = read(path.join(BT, "README.md"));
 const mcpMd = read(path.join(BT, "MCP.md"));
 const requirementsMd = read(path.join(BT, "REQUIREMENTS.md"));
 const routineMd = read(path.join(BT, "ROUTINE_INSTRUCTIONS.md"));
-const mcpSource = read(path.join(BT, "functions", "mcp-server.js"));
+// Staff Kanban's tools are registered from functions/kanban.js.
+const mcpSource = read(path.join(BT, "functions", "mcp-server.js")) + "\n" + read(path.join(BT, "functions", "kanban.js"));
 const indexSource = read(path.join(BT, "functions", "index.js"));
 
 let passed = 0;
