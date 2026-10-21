@@ -125,6 +125,32 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
   });
   backdrop.addEventListener("click", () => { delete drawer.dataset.show; closeProfile(); setTab(null); });
 
+  // iPad WebKit can drop a tap's click altogether: touch and pointer events
+  // reach the item, no click follows, and nothing happens (Staff Kanban on an
+  // iPad, 21 Oct 2026). A touch tap that lifts on the item it started on, with
+  // no click from the browser shortly after, is clicked here instead. The
+  // browser's own click, when it comes, cancels the fallback, so a tap never
+  // fires twice.
+  let touchTap = null;
+  drawer.addEventListener("pointerdown", (e) => {
+    const item = e.pointerType === "touch" && e.target.closest(".nav-drawer-item");
+    touchTap = item ? { item, x: e.clientX, y: e.clientY, at: e.timeStamp } : null;
+  });
+  drawer.addEventListener("pointercancel", () => { touchTap = null; });
+  drawer.addEventListener("pointerup", (e) => {
+    const tap = touchTap;
+    touchTap = null;
+    if (!tap || e.pointerType !== "touch" || e.target.closest(".nav-drawer-item") !== tap.item) return;
+    if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 10 || e.timeStamp - tap.at > 800) return;
+    let clicked = false;
+    const seen = () => { clicked = true; };
+    tap.item.addEventListener("click", seen, { once: true, capture: true });
+    setTimeout(() => {
+      tap.item.removeEventListener("click", seen, { capture: true });
+      if (!clicked && tap.item.isConnected) tap.item.click();
+    }, 350);
+  });
+
   // ── Active destination ─────────────────────────────────────────────────
   function syncActive() {
     const id = activeNavId(window.location.hash);
