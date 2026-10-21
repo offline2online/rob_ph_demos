@@ -58,6 +58,7 @@ import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf, type BuyersList } from '@ph-dsp/types'
 import { isUniqueViolation, tx } from '../db/db'
 import { queueCreative, verifiedCampaign } from './creatives'
+import { bookDirectDealWindow, directDealAt } from './directDeal'
 import { vetAtBidCreative } from './atBid'
 import { checkAdvertiser, checkAudiences, checkCampaign, checkCampaignAtBid, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
 import { handOff } from './handoff'
@@ -176,6 +177,12 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   const existing = await ctx.reservations.forWindow(p.positionId, start)
   const taken = existing.find((r) => !r.testMode && TAKEN.includes(r.status))
   if (taken) return { ...out, skipped: taken.status === 'reserved' ? 'Reserved: held outside the open auction.' : 'Already sold.' }
+
+  /* A finalised Direct advertiser deal reserves the window outright (22 Oct 2026): no DSP is asked, no other deal or auction runs. */
+  if (!p.def.salesLocked) {
+    const direct = await directDealAt(ctx, p, start)
+    if (direct) return bookDirectDealWindow(ctx, p, start, direct, out)
+  }
 
   /* The waterfall (7 Oct 2026, Broadsign model): a position assigned several
      buyers lists tries them top-down, one list per tier. The first tier whose

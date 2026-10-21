@@ -970,6 +970,29 @@ describe('Advertisers / Inventory', () => {
     expect(await screen.findByText('Acme Foods (Direct)')).toBeInTheDocument()
   }, slow(30000))
 
+  /* Ticket OMwDvy3OUmY9raBtTf7v (22 Oct 2026): a deal whose flight overlaps another reserving deal on its slot shows the warning inline, naming the deal, advertiser, slot and dates, and cannot be saved. */
+  it('warns inline and blocks Save when a deal\'s flight overlaps another reserving deal on its slot', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const conflict = { dealId: 'bl_2', dealName: 'Beta direct', dealCode: 'PH-BETA', advertiser: 'Beta Co', displayTypeId: 'portrait', playlist: 'Portrait', slot: 1, slotLabel: 'Ad', positionId: 'portrait.s1', overlapFrom: '2026-11-20', overlapTo: '2026-11-30', message: 'x' }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/advertisers': { items: [{ advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, dspSeats: [] }] },
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [{ partnerId: 'direct', seatId: 'acme-foods' }], invitedCategories: [], targeting: [], activeFrom: '2026-11-01T00:00:00.000Z', activeTo: '2026-11-30T23:59:59.999Z', dealType: 'direct', status: 'shared', floorCpm: 150 }] },
+      '/api/admin/v1/available-inventory': inv,
+      '/api/admin/v1/reserving-conflicts': { conflicts: [conflict], candidates: {} },
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.click(await within(table).findByRole('button', { name: 'Edit Pharma brands' }))
+    const dialog = await screen.findByRole('dialog')
+    const warning = await within(dialog).findByTestId('reserving-conflict')
+    expect(warning).toHaveTextContent('Beta direct')
+    expect(warning).toHaveTextContent('Beta Co')
+    expect(warning).toHaveTextContent('Portrait, slot 1 (Ad)')
+    expect(warning).toHaveTextContent('2026-11-20 to 2026-11-30')
+    expect(within(dialog).getByRole('button', { name: 'Save changes' })).toBeDisabled()
+  }, slow(30000))
+
   /* Ticket KcqiJpzR5RXy4TWODYlG: term versions. The pop-up shows the version and acceptance, saves a name change silently, and warns before a rate change that makes accepted buyers re-accept. */
   const TERMS_LIST = { id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', floorCpm: 120, termVersion: 3, buyerAcceptance: [{ partnerId: 'p_google', seatId: '5130001', state: 'accepted', acceptedVersion: 3, acceptedAt: '2026-10-10T00:00:00Z' }] }
   const termsFetch = (requiresReacceptance: boolean, puts: unknown[]) => vi.fn(async (url: string, init?: RequestInit) => {

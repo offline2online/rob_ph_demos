@@ -36,6 +36,8 @@ export type BuyersList = S['BuyersList']
 export type BuyersListDealType = BuyersList['dealType']
 /* A Direct advertiser deal (22 Oct 2026) is a Programmatic guaranteed deal with a direct advertiser as its single buyer: it takes every guaranteed rule (one buyer, delivery term, fixed CPM or term total, derived committed plays). Its buyer is stored as {partnerId: DIRECT_PARTNER_ID, seatId: <advertiserId>}; there is no DSP. */
 export const DIRECT_PARTNER_ID = 'direct'
+/* Two reserving deals (Programmatic guaranteed or Direct advertiser) whose flights overlap on one slot (Rob, 22 Oct 2026). */
+export type ReservingConflict = S['ReservingConflict']
 export const isGuaranteedLike = (d: BuyersListDealType | undefined): boolean => d === 'guaranteed' || d === 'direct'
 export type BuyerAcceptance = S['BuyerAcceptance']
 export type TermChange = S['TermChange']

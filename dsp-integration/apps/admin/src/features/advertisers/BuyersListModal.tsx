@@ -20,6 +20,7 @@ import { IAB_OPTIONS_SORTED, iabFilterOption } from '../../shared/iabOptions'
 import { T } from '../../theme/phTheme'
 import { TERM_TOTAL_HINT, equivalentCpmText, rateText, rateTypeOf, resolveTerm, sourceLabel } from './effectiveTerm'
 import { FinaliseDealModal } from './FinaliseDealModal'
+import { ConflictCallout, useFlightConflicts } from './reservingConflicts'
 
 type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; floorCpm: number | null; termTotal: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
@@ -83,6 +84,9 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
   /* A Direct advertiser deal has exactly the Programmatic guaranteed fields and rules (22 Oct 2026); only its buyer differs. */
   const direct = draft.dealType === 'direct'
   const guaranteed = isGuaranteedLike(draft.dealType)
+  /* Reserving deals never overlap on a slot: asked as the dates change, and saving is blocked until they don't. */
+  const flightConflicts = useFlightConflicts(editing?.id, draft.dealType, draft.activeFrom, draft.activeTo, open && !!editing && guaranteed && draft.dealType === editing.dealType)
+  const blocked = flightConflicts.length > 0
   const privateAuction = draft.dealType === 'private_auction'
   /* A programmatic guaranteed deal is one-to-one with its buyer (21 Oct 2026): a list that already has several must be reduced to one before it can be saved as guaranteed. */
   const tooManyForPg = guaranteed && draft.invitedBuyers.length > 1
@@ -196,10 +200,10 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
       open={open} width={580} destroyOnHidden confirmLoading={saving} onCancel={onClose}
       footer={<div className="flex justify-end gap-2" data-testid="deal-actions">{[
         <Button key="cancel" onClick={onClose}>Cancel</Button>,
-        <Button key="save" type={isDraft && editing ? 'default' : 'primary'} loading={saving} onClick={() => save()}>{!isDraft ? 'Save changes' : editing ? 'Save draft' : 'Save as draft'}</Button>,
+        <Button key="save" type={isDraft && editing ? 'default' : 'primary'} loading={saving} disabled={blocked} onClick={() => save()}>{!isDraft ? 'Save changes' : editing ? 'Save draft' : 'Save as draft'}</Button>,
         ...(isDraft ? [
           <Tip key="finalise" title={slots.length ? undefined : 'Assign this deal to at least one slot in Available Inventory first. A deal with no inventory can’t be finalised.'}>
-            <span><Button type="primary" disabled={saving || !editing || !slots.length} onClick={() => save(true)}>Finalise deal terms</Button></span>
+            <span><Button type="primary" disabled={saving || blocked || !editing || !slots.length} onClick={() => save(true)}>Finalise deal terms</Button></span>
           </Tip>,
         ] : []),
       ]}</div>}
@@ -344,6 +348,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
             value={[draft.activeFrom ? dayjs(draft.activeFrom) : null, draft.activeTo ? dayjs(draft.activeTo) : null]}
             onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v?.[0] ? v[0].toISOString() : null, activeTo: v?.[1] ? v[1].toISOString() : null }))}
           />}
+        <ConflictCallout conflicts={flightConflicts} />
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
       </div>
       {guaranteed && (

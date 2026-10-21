@@ -3,6 +3,10 @@
    deal entries, no acceptance; Finalise (share) makes it live internally. */
 import { describe, expect, it } from 'vitest'
 import { buildApp } from '../src/http/app'
+import { callerOf, findPosition, windowStatusAt } from '../src/domain/positions'
+import { runAuction } from '../src/exchange/auction'
+import { multipart, png } from './media'
+import { expectMatchesContract } from './contract'
 import { testContext } from './helpers'
 
 const URL = '/api/admin/v1/buyers-lists'
@@ -63,6 +67,118 @@ describe('Direct advertiser deals', () => {
     const sheet = await app.inject({ url: `${URL}/${created.id}/deal-sheet` })
     expect(sheet.json().entries).toEqual([])
     expect((await app.inject({ method: 'POST', url: `${URL}/${created.id}/acceptances`, payload: { partnerId: 'direct', seatId: 'acme-foods' } })).statusCode).toBe(400)
+  })
+})
+
+/* A finalised Direct advertiser deal reserves its windows (ticket OMwDvy3OUmY9raBtTf7v). Reserving deals (PG or Direct) never
+   overlap on a slot: Rob's decision of 22 Oct 2026, no waterfall between them. */
+const GOOGLE = { authorization: 'Bearer poc-token-google-dv360' }
+const INV = '/api/admin/v1/available-inventory'
+const W = '2026-11-03T00:00:00.000Z'
+
+async function sellSetup() {
+  const { ctx, app, deal } = await setup()
+  const direct = (await app.inject({ method: 'POST', url: URL, payload: deal({ floorCpm: 150 }) })).json()
+  const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
+  const slot = { label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], storeScope: null, quota: null, zoneId: null }
+  await ctx.displayTypes.saveExtensions('portrait', { ...ext, slots: [{ ...slot, listMode: 'deal', buyersListId: direct.id, buyersListIds: [direct.id] } as never] })
+  ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('portrait', 1, 800)
+  const assign = (ids: string[]) => app.inject({ method: 'PUT', url: INV, payload: { items: [{ displayTypeId: 'portrait', slot: 1, assignedTo: { buyersListIds: ids }, floorCpm: null }] } })
+  /* A second reserving deal: Programmatic guaranteed needs a DSP seat, so a second Direct advertiser stands in. */
+  await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Beta Co' } })
+  const other = async (from: string, to: string) => (await app.inject({ method: 'POST', url: URL, payload: deal({ name: 'Beta direct', invitedBuyers: [{ partnerId: 'direct', seatId: 'beta-co' }], floorCpm: 150, activeFrom: from, activeTo: to }) })).json()
+  return { ctx, app, direct, assign, other, slot }
+}
+
+describe('Direct advertiser deals: no overlapping reserving deals on a slot', () => {
+  it('refuses assigning a deal whose flight overlaps one on the slot (409), naming the deal, advertiser, slot and dates', async () => {
+    const { app, direct, assign, other } = await sellSetup()
+    const clash = await other('2026-11-20T00:00:00.000Z', '2026-12-10T00:00:00.000Z')
+    const res = await assign([direct.id, clash.id])
+    expect(res.statusCode).toBe(409)
+    const msg = res.json().error.message as string
+    expect(msg).toContain('Acme direct')
+    expect(msg).toContain('Acme Foods')
+    expect(msg).toContain('Portrait')
+    expect(msg).toContain('slot 1')
+    expect(msg).toContain('2026-11-20 to 2026-11-30')
+    /* The slot is unchanged. */
+    expect((await app.inject({ url: INV })).json().items.find((i: { displayTypeId: string }) => i.displayTypeId === 'portrait').assignedTo.buyersListIds).toEqual([direct.id])
+  })
+
+  it('accepts a deal with non-overlapping dates on the same slot', async () => {
+    const { direct, assign, other } = await sellSetup()
+    const dec = await other('2026-12-01T00:00:00.000Z', '2026-12-31T00:00:00.000Z')
+    expect((await assign([direct.id, dec.id])).statusCode).toBe(200)
+  })
+
+  it('refuses a flight edit that makes an assigned deal overlap another, and allows one that does not', async () => {
+    const { app, direct, assign, other } = await sellSetup()
+    const dec = await other('2026-12-01T00:00:00.000Z', '2026-12-31T00:00:00.000Z')
+    expect((await assign([direct.id, dec.id])).statusCode).toBe(200)
+    const body = (activeFrom: string, activeTo: string) => ({ name: dec.name, dealType: 'direct', invitedBuyers: dec.invitedBuyers, floorCpm: 150, activeFrom, activeTo })
+    const bad = await app.inject({ method: 'PUT', url: `${URL}/${dec.id}`, payload: body('2026-11-25T00:00:00.000Z', '2026-12-31T00:00:00.000Z') })
+    expect(bad.statusCode).toBe(409)
+    expect(bad.json().error.message).toContain('2026-11-25 to 2026-11-30')
+    expect((await app.inject({ method: 'PUT', url: `${URL}/${dec.id}`, payload: body('2026-12-02T00:00:00.000Z', '2026-12-31T00:00:00.000Z') })).statusCode).toBe(200)
+  })
+
+  it('answers the overlap question before anything is saved (the inline warning and the picker flags)', async () => {
+    const { app, direct, other } = await sellSetup()
+    const clash = await other('2026-11-20T00:00:00.000Z', '2026-12-10T00:00:00.000Z')
+    const dec = await other('2026-12-01T00:00:00.000Z', '2026-12-31T00:00:00.000Z')
+    const slotAsk = await app.inject({ method: 'POST', url: '/api/admin/v1/reserving-conflicts', payload: { displayTypeId: 'portrait', slot: 1, buyersListIds: [direct.id, clash.id], candidates: [dec.id] } })
+    expect(slotAsk.statusCode).toBe(200)
+    expectMatchesContract('POST', '/admin/v1/reserving-conflicts', 200, slotAsk.json())
+    expect(slotAsk.json().conflicts).toHaveLength(1)
+    expect(slotAsk.json().conflicts[0]).toMatchObject({ dealName: 'Acme direct', advertiser: 'Acme Foods', playlist: 'Portrait', slot: 1, overlapFrom: '2026-11-20', overlapTo: '2026-11-30' })
+    /* Beta's December deal meets the November-to-December one just chosen, not Acme's November. */
+    expect(Object.keys(slotAsk.json().candidates)).toEqual([dec.id])
+    const picker = await app.inject({ method: 'POST', url: '/api/admin/v1/reserving-conflicts', payload: { displayTypeId: 'portrait', slot: 1, buyersListIds: [direct.id], candidates: [clash.id, dec.id] } })
+    expect(Object.keys(picker.json().candidates)).toEqual([clash.id])
+    const flightAsk = await app.inject({ method: 'POST', url: '/api/admin/v1/reserving-conflicts', payload: { listId: direct.id, activeFrom: '2026-11-01T00:00:00.000Z', activeTo: '2026-11-30T00:00:00.000Z' } })
+    expect(flightAsk.json().conflicts).toEqual([])
+  })
+})
+
+describe('Direct advertiser deals: the exchange reserves the windows', () => {
+  it('books the advertiser\'s approved campaign for the flight with no bid request; outside the flight nothing is reserved', async () => {
+    const { ctx, app, direct } = await sellSetup()
+    expect((await app.inject({ method: 'POST', url: `${URL}/${direct.id}/share` })).statusCode).toBe(200)
+    const cid = (await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: GOOGLE, payload: { advertiserId: 'swisse', name: 'Acme — Portrait', displayTypeId: 'portrait', default: { pricingType: 'localised' } } })).json().campaignId
+    const m = multipart({ version: 'default' }, { name: 'portrait.png', bytes: png(1080, 1920) })
+    await app.inject({ method: 'POST', url: `/api/v1/campaigns/${cid}/assets`, headers: { ...GOOGLE, ...m.headers }, payload: m.payload })
+    await app.inject({ method: 'POST', url: `/api/v1/campaigns/${cid}/submit`, headers: GOOGLE })
+    await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${cid}/approve`, payload: { assetVersion: 'v1' } })
+    await app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${cid}/activation`, payload: { enabled: true } })
+    ctx.db.prepare("UPDATE campaigns SET advertiser_id = 'acme-foods' WHERE id = ?").run(cid)
+
+    const result = await runAuction(ctx, new Date(W))
+    const out = result.positions.find((p) => p.positionId === 'portrait.s1')!
+    expect(out.bidRequests).toBe(0)
+    expect(out.winner).toMatchObject({ advertiserId: 'acme-foods' })
+    const rows = await ctx.reservations.forWindow('portrait.s1', W)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ status: 'reserved', partnerId: 'direct', campaignId: cid, clearingCpm: 150 })
+    expect(rows[0].handedOffAt).not.toBeNull()
+    expect((await ctx.campaigns.bookings(cid)).map((b) => b.windowStart)).toEqual([W])
+    expect((await ctx.campaigns.bookings(cid))[0].personalisedEligible).toBe(true)
+
+    /* Before the flight starts nothing is reserved. */
+    const early = await runAuction(ctx, new Date('2026-10-26T00:00:00.000Z'))
+    expect(early.positions.find((p) => p.positionId === 'portrait.s1')!.winner).toBeNull()
+    expect(await ctx.reservations.forWindow('portrait.s1', '2026-10-26T00:00:00.000Z')).toHaveLength(0)
+  })
+
+  it('reads Reserved in availability across the flight, and not outside it', async () => {
+    const { ctx, app, direct } = await sellSetup()
+    await app.inject({ method: 'POST', url: `${URL}/${direct.id}/share` })
+    const p = (await findPosition(ctx, 'portrait.s1'))!
+    const at = (d: string) => windowStatusAt(ctx, p, callerOf({} as never, undefined), new Date(`${d}T00:00:00.000Z`))
+    expect(await at('2026-11-15')).toBe('reserved')
+    expect(await at('2026-11-30')).toBe('reserved')
+    expect(await at('2026-12-02')).not.toBe('reserved')
+    expect(await at('2026-10-30')).not.toBe('reserved')
   })
 })
 

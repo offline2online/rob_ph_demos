@@ -27,6 +27,7 @@ import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
+import { ConflictCallout, rangeLabel, useSlotConflicts } from './reservingConflicts'
 import { BuyersListsTable } from './BuyersListsTable'
 import { positionSlotNumber, positionText } from './slotLine'
 export { positionText }
@@ -430,6 +431,11 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction,
 }
 
 function AssignedCell({ data, context }: IP) {
+  const c0 = context.current
+  /* Reserving deals never overlap on a slot (Rob, 22 Oct 2026): asked before saving, so the warning shows inline and the picker flags the options that would clash. */
+  const chosen = data ? tiersOf(edited(c0, data).assignedTo) : []
+  const reservingIds = data ? c0.buyersLists.filter((l) => (l.dealType === 'guaranteed' || l.dealType === 'direct') && !chosen.includes(l.id)).map((l) => l.id) : []
+  const overlaps = useSlotConflicts(data ? { displayTypeId: data.displayTypeId, slot: data.slot } : undefined, chosen, reservingIds)
   if (!data) return null
   const c = context.current
   const a = edited(c, data).assignedTo
@@ -459,7 +465,7 @@ function AssignedCell({ data, context }: IP) {
          list of DSP's"). */
       label: 'Deals and buyers lists (private auction)',
       options: [
-        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
+        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [overlaps.candidates[l.id] ? `Overlaps ${overlaps.candidates[l.id][0].dealName} (${rangeLabel(overlaps.candidates[l.id][0])}): slot already sold` : '', l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
         { value: ADD_BUYERS_LIST, label: '+ Add new deal and buyers list…' },
       ],
     },
@@ -532,6 +538,7 @@ function AssignedCell({ data, context }: IP) {
     {!c.canEdit || a.partnerIds.length || a.openAuction || a.advertisers.length || a.whitelistOnly || tiersOf(a).length || globalOn ? null : (
       <div style={{ fontSize: 12, color: T.muted }}>Unassigned: not offered to any buyer</div>
     )}
+    <ConflictCallout conflicts={overlaps.conflicts} testId={`reserving-conflict-${data.displayTypeId}-${data.slot}`} />
     <PriorityList
       label={`${data.displayTypeName} slot ${data.zoneSlot}`}
       ids={tiersOf(a)}
@@ -1010,6 +1017,12 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   }
 
   const onSave = async () => {
+    /* Blocked while any slot's new assignment overlaps a deal already sold on it; the warning is inline on that row. */
+    if (inv.dirty && inv.draft) {
+      const asks = invRows.filter((r) => inv.draft![slotKey(r)] && !deepEqual(inv.draft![slotKey(r)], savedEdits?.[slotKey(r)]) && tiersOf(inv.draft![slotKey(r)].assignedTo).length)
+      const found = await Promise.all(asks.map((r) => api<{ conflicts: unknown[] }>('POST', '/admin/v1/reserving-conflicts', { displayTypeId: r.displayTypeId, slot: r.slot, buyersListIds: tiersOf(inv.draft![slotKey(r)].assignedTo) }).then((x) => x.conflicts.length).catch(() => 0)))
+      if (found.some((n) => n > 0)) return void message.warning('A deal you assigned overlaps another already sold on that slot. Change the dates or the slot (see the warning on the row) before saving.')
+    }
     setSaving(true)
     let sent: { displayTypeId: string; slot: number }[] = []
     try {

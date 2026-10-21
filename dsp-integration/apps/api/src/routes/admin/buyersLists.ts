@@ -6,7 +6,8 @@ import { assignedOf, canonicalIabCategory, DIRECT_PARTNER_ID, isGuaranteedLike, 
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
-import { hasDependents, notFound, validationFailed } from '../../http/errors'
+import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
+import { flightConflicts, isReserving, slotConflicts } from '../../domain/reservingDeals'
 import { mintDealId } from '../../repos/BuyersListRepo'
 import { tx } from '../../db/db'
 import { invitedPartnerIds } from '../../domain/buyersLists'
@@ -289,6 +290,42 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     return { currentVersion: existing.termVersion, nextVersion: existing.termVersion + (changes.length ? 1 : 0), changes, requiresReacceptance, affectedBuyers }
   })
 
+  /* Dry run of the reserving-deal overlap rule (Rob, 22 Oct 2026); writes nothing. Two questions, so the UI can warn inline before anything is saved:
+       - a deal's flight: { listId, activeFrom, activeTo } -> its conflicts on every slot it is on;
+       - a slot's assignment: { displayTypeId, slot, buyersListIds, candidates? } -> conflicts of the deals newly in the list, and for each candidate (an option in the Assigned to picker) what choosing it would clash with. */
+  app.post<{ Body: { listId?: unknown; activeFrom?: unknown; activeTo?: unknown; dealType?: unknown; displayTypeId?: unknown; slot?: unknown; buyersListIds?: unknown; candidates?: unknown } }>('/reserving-conflicts', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'admin')
+    const b = req.body ?? {}
+    const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+    const date = (v: unknown): string | null => (typeof v === 'string' && v && !Number.isNaN(Date.parse(v)) ? v : null)
+    if (typeof b.listId === 'string') {
+      const list = await ctx.buyersLists.get(b.listId)
+      if (!list) throw notFound()
+      const dealType = (typeof b.dealType === 'string' ? b.dealType : list.dealType) as BuyersListDealType
+      return { conflicts: await flightConflicts(ctx, { id: list.id, dealType, activeFrom: b.activeFrom === undefined ? list.activeFrom : date(b.activeFrom), activeTo: b.activeTo === undefined ? list.activeTo : date(b.activeTo) }), candidates: {} }
+    }
+    const dt = typeof b.displayTypeId === 'string' ? await ctx.displayTypes.get(b.displayTypeId) : null
+    const slot = typeof b.slot === 'number' ? b.slot : 0
+    const def = dt?.phExtensions?.slots?.[slot - 1]
+    if (!dt || !def) throw validationFailed([{ field: 'displayTypeId', reason: 'A display type and one of its slots, or a listId, is required.' }])
+    const chosen = strs(b.buyersListIds)
+    const now = new Set(assignedOf(def).buyersListIds)
+    const conflicts = []
+    for (const id of chosen) {
+      if (now.has(id)) continue
+      const list = await ctx.buyersLists.get(id)
+      if (list && isReserving(list)) conflicts.push(...(await slotConflicts(ctx, list, dt, slot, chosen)))
+    }
+    const candidates: Record<string, Awaited<ReturnType<typeof slotConflicts>>> = {}
+    for (const id of strs(b.candidates)) {
+      const list = await ctx.buyersLists.get(id)
+      const found = list && isReserving(list) && !chosen.includes(id) ? await slotConflicts(ctx, list, dt, slot, chosen) : []
+      if (found.length) candidates[id] = found
+    }
+    return { conflicts, candidates }
+  })
+
   app.get<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId/term-versions', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'sections')
@@ -327,6 +364,11 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (errors.length) throw validationFailed(errors)
     /* Committed plays follow the slots and the term (21 Oct 2026). */
     if (parsed.dealType === existing.dealType) parsed.committedPlays = await derivedCommittedPlays(ctx, { id: existing.id, ...parsed })
+    /* Reserving deals never overlap on a slot (Rob, 22 Oct 2026): new dates that meet another PG or Direct advertiser deal on any of this deal's slots are refused. Unchanged dates are not re-judged, so an old overlap never blocks a rename. */
+    if (parsed.dealType === existing.dealType && isReserving(parsed) && (parsed.activeFrom !== existing.activeFrom || parsed.activeTo !== existing.activeTo)) {
+      const clashes = await flightConflicts(ctx, { id: existing.id, ...parsed })
+      if (clashes.length) throw conflict(clashes[0].message, clashes.map((c) => ({ field: 'activeTo', reason: c.message })))
+    }
     /* A different deal type is a different deal: insert a new list with a new ID and leave this one (and its slot assignments and campaigns) as it was until it ends. */
     if (parsed.dealType !== existing.dealType) {
       const minted: BuyersList = await ctx.buyersLists.insert({ by: auditActorOf(req).actor.name, id: `bl_${randomUUID().slice(0, 12)}`, dealId: mintDealId(), ...parsed, shared: existing.status === 'shared' })

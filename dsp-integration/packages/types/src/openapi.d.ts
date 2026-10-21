@@ -945,6 +945,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/reserving-conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Would this deal or assignment overlap another reserving deal on a slot? (no write)
+         * @description Programmatic guaranteed and Direct advertiser deals sell a slot outright, so they never compete and a slot cannot hold two of them with overlapping delivery terms (Rob, 22 Oct 2026); non-overlapping terms on one slot are fine. This asks the question without saving, so the UI can warn inline before the user commits. Send either
+         *     - `listId` with optional `activeFrom` / `activeTo` / `dealType` (a flight edit; omitted fields are the deal's own): the deal's conflicts on every slot it is assigned to; or
+         *     - `displayTypeId`, `slot` and `buyersListIds` (the deals the slot would hold): the conflicts of each reserving deal newly in the list, plus, for each deal ID in `candidates` (an option in the Assigned to picker), what choosing it would clash with.
+         *     The same rule refuses the save itself: `PUT /admin/v1/available-inventory` and `PUT /admin/v1/buyers-lists/{id}` answer 409 `conflict` naming the conflicting deal, its advertiser, the slot (playlist, position, slot) and the overlapping dates.
+         */
+        post: operations["checkReservingConflicts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/buyers-lists/{buyersListId}/term-versions": {
         parameters: {
             query?: never;
@@ -2640,6 +2663,26 @@ export interface components {
             to: unknown;
             /** @description True for floorCpm, termTotal, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance. */
             requiresReacceptance?: boolean;
+        };
+        /** @description Another reserving deal (Programmatic guaranteed or Direct advertiser) that already sells this slot for dates the deal in question overlaps. */
+        ReservingConflict: {
+            dealId: string;
+            dealName: string;
+            /** @description The platform-minted PH deal ID. */
+            dealCode: string;
+            advertiser: string;
+            displayTypeId: string;
+            /** @description The display type (playlist) name. */
+            playlist: string;
+            slot: number;
+            slotLabel: string | null;
+            positionId: string;
+            /** @description YYYY-MM-DD; null = open-ended. */
+            overlapFrom: string | null;
+            /** @description YYYY-MM-DD; null = open-ended. */
+            overlapTo: string | null;
+            /** @description A ready-to-show sentence naming the deal */
+            message: string;
         };
         TermCheck: {
             currentVersion: number;
@@ -4723,7 +4766,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
-            409: components["responses"]["HasDependents"];
+            /** @description error.code = has_dependents (an advertiser removed from a sold slot), or error.code = conflict: a Programmatic guaranteed or Direct advertiser deal newly assigned to a slot whose delivery term overlaps another such deal already on it (Rob, 22 Oct 2026). The message and details name the conflicting deal, its advertiser, the slot and the overlapping dates; nothing is saved. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     lockInventorySlot: {
@@ -5358,6 +5409,51 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    checkReservingConflicts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    listId?: string;
+                    dealType?: string;
+                    /** Format: date-time */
+                    activeFrom?: string | null;
+                    /** Format: date-time */
+                    activeTo?: string | null;
+                    displayTypeId?: string;
+                    slot?: number;
+                    buyersListIds?: string[];
+                    candidates?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The conflicts, empty when there are none */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        conflicts: components["schemas"]["ReservingConflict"][];
+                        /** @description Per candidate deal ID that would clash, its conflicts; a candidate with none is absent. */
+                        candidates: {
+                            [key: string]: components["schemas"]["ReservingConflict"][];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listBuyersListTermVersions: {
         parameters: {
             query?: never;
@@ -5496,6 +5592,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            /** @description error.code = conflict. A Programmatic guaranteed or Direct advertiser deal whose new delivery term overlaps another such deal on any slot it is assigned to (reserving deals never overlap on a slot, Rob, 22 Oct 2026). The message names the other deal, its advertiser, the slot and the overlapping dates; nothing is saved. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     deleteBuyersList: {

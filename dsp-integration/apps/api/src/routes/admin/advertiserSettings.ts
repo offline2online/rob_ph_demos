@@ -14,6 +14,7 @@ import { openHoursPerDayOf, positionHourGroups } from '../../domain/operatingGat
 import { assignedToSlot, rotationSizeOf, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
+import { isReserving, slotConflicts } from '../../domain/reservingDeals'
 import { auditActorOf } from '../../domain/sspAudit'
 import { changedAssignments, refreshCommittedPlays } from '../../domain/committedPlays'
 import { releaseSettledSlotLocks, slotBookedUntil, slotLiveBookings } from '../../domain/slotLock'
@@ -344,6 +345,22 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         }
       }
       if (errors.length) throw validationFailed(errors, 'A slot is assigned to DSPs or advertisers it can actually sell to.')
+      /* Reserving deals never overlap on a slot (Rob, 22 Oct 2026): PG and Direct advertiser deals sell the slot outright, so a deal newly assigned here is refused when its flight meets one already on the slot. Pairs already on the slot are left alone, so an old overlap never blocks an unrelated save. */
+      for (const [displayTypeId, slots] of wanted) {
+        const dt = (await ctx.displayTypes.get(displayTypeId))!
+        for (const [slot, patch] of slots) {
+          if (patch.assigned.advertisers.length) continue
+          const before = new Set(assignedOf(dt.phExtensions!.slots[slot - 1]).buyersListIds)
+          const ids = patch.assigned.buyersListIds
+          const clashes = []
+          for (const id of ids) {
+            if (before.has(id)) continue
+            const list = await ctx.buyersLists.get(id)
+            if (list && isReserving(list)) clashes.push(...(await slotConflicts(ctx, list, dt, slot, ids)))
+          }
+          if (clashes.length) throw conflict(clashes[0].message, clashes.map((c) => ({ field: 'assignedTo.buyersListIds', reason: c.message })))
+        }
+      }
       /* Deals that gain or lose a slot (21 Oct 2026). Their committed plays are derived from the slots, so a shared guaranteed deal's volume changes and its buyers must accept again: the save is held until the caller confirms. */
       const touched = new Set<string>()
       for (const [displayTypeId, slots] of wanted) {

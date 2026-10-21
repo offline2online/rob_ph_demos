@@ -378,14 +378,14 @@ export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefe
 }
 
 /* The delivery term of the deal this position is sold under, once that
-   deal's rate is locked. Every window in it is spoken for: the exchange
+   deal's rate is locked, or a finalised Direct advertiser deal's whole flight (22 Oct 2026). Every window in it is spoken for: the exchange
    books each directly at the locked rate (billing/lockedTerm.ts bookLockedTermWindow)
    and takes no other bid for it. */
 function lockedTermOf(ctx: Context, p: PositionRef): Awaitable<ReturnType<typeof lockedTermSpan> | null> {
   if (assignmentOf(p.def) !== 'deal') return null
   /* Any tier whose rate is locked books the position's windows (first, highest tier, wins). */
   return andThen(allOf(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) => {
-    for (const list of lists) { const span = list ? lockedTermSpan(list) : null; if (span) return span }
+    for (const list of lists) { const span = list ? lockedTermSpan(list) ?? (list.dealType === 'direct' && list.status === 'shared' ? { activeFrom: list.activeFrom, activeTo: list.activeTo } : null) : null; if (span) return span }
     return null
   })
 }

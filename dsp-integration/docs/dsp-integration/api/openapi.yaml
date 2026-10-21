@@ -862,7 +862,9 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
-        '409': {$ref: '#/components/responses/HasDependents'}
+        '409':
+          description: 'error.code = has_dependents (an advertiser removed from a sold slot), or error.code = conflict: a Programmatic guaranteed or Direct advertiser deal newly assigned to a slot whose delivery term overlaps another such deal already on it (Rob, 22 Oct 2026). The message and details name the conflicting deal, its advertiser, the slot and the overlapping dates; nothing is saved.'
+          content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
   /admin/v1/available-inventory/lock:
     put:
       tags: [Admin — Advertiser settings]
@@ -1321,6 +1323,50 @@ paths:
         '200': {description: The check, content: {application/json: {schema: {$ref: '#/components/schemas/TermCheck'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/reserving-conflicts:
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: checkReservingConflicts
+      summary: Would this deal or assignment overlap another reserving deal on a slot? (no write)
+      description: |
+        Programmatic guaranteed and Direct advertiser deals sell a slot outright, so they never compete and a slot cannot hold two of them with overlapping delivery terms (Rob, 22 Oct 2026); non-overlapping terms on one slot are fine. This asks the question without saving, so the UI can warn inline before the user commits. Send either
+        - `listId` with optional `activeFrom` / `activeTo` / `dealType` (a flight edit; omitted fields are the deal's own): the deal's conflicts on every slot it is assigned to; or
+        - `displayTypeId`, `slot` and `buyersListIds` (the deals the slot would hold): the conflicts of each reserving deal newly in the list, plus, for each deal ID in `candidates` (an option in the Assigned to picker), what choosing it would clash with.
+        The same rule refuses the save itself: `PUT /admin/v1/available-inventory` and `PUT /admin/v1/buyers-lists/{id}` answer 409 `conflict` naming the conflicting deal, its advertiser, the slot (playlist, position, slot) and the overlapping dates.
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                listId: {type: string}
+                dealType: {type: string}
+                activeFrom: {type: [string, 'null'], format: date-time}
+                activeTo: {type: [string, 'null'], format: date-time}
+                displayTypeId: {type: string}
+                slot: {type: integer, minimum: 1}
+                buyersListIds: {type: array, items: {type: string}}
+                candidates: {type: array, items: {type: string}}
+      responses:
+        '200':
+          description: The conflicts, empty when there are none
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conflicts, candidates]
+                properties:
+                  conflicts: {type: array, items: {$ref: '#/components/schemas/ReservingConflict'}}
+                  candidates:
+                    type: object
+                    description: Per candidate deal ID that would clash, its conflicts; a candidate with none is absent.
+                    additionalProperties: {type: array, items: {$ref: '#/components/schemas/ReservingConflict'}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /admin/v1/buyers-lists/{buyersListId}/term-versions:
     get:
       tags: [Admin — Advertiser settings]
@@ -1406,6 +1452,7 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: 'error.code = conflict. A Programmatic guaranteed or Direct advertiser deal whose new delivery term overlaps another such deal on any slot it is assigned to (reserving deals never overlap on a slot, Rob, 22 Oct 2026). The message names the other deal, its advertiser, the slot and the overlapping dates; nothing is saved.', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     delete:
       tags: [Admin — Advertiser settings]
       operationId: deleteBuyersList
@@ -3292,6 +3339,23 @@ components:
         from: {description: Previous value (any JSON)}
         to: {description: New value (any JSON)}
         requiresReacceptance: {type: boolean, description: 'True for floorCpm, termTotal, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance.'}
+    ReservingConflict:
+      type: object
+      description: Another reserving deal (Programmatic guaranteed or Direct advertiser) that already sells this slot for dates the deal in question overlaps.
+      required: [dealId, dealName, dealCode, advertiser, displayTypeId, playlist, slot, slotLabel, positionId, overlapFrom, overlapTo, message]
+      properties:
+        dealId: {type: string}
+        dealName: {type: string}
+        dealCode: {type: string, description: The platform-minted PH deal ID.}
+        advertiser: {type: string}
+        displayTypeId: {type: string}
+        playlist: {type: string, description: The display type (playlist) name.}
+        slot: {type: integer}
+        slotLabel: {type: [string, 'null']}
+        positionId: {type: string}
+        overlapFrom: {type: [string, 'null'], description: 'YYYY-MM-DD; null = open-ended.'}
+        overlapTo: {type: [string, 'null'], description: 'YYYY-MM-DD; null = open-ended.'}
+        message: {type: string, description: A ready-to-show sentence naming the deal, advertiser, slot and dates.}
     TermCheck:
       type: object
       required: [currentVersion, nextVersion, changes, requiresReacceptance, affectedBuyers]
