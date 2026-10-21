@@ -274,8 +274,10 @@ composite index is needed.
   server-side and capped at 50 results; screenshots downscaled to ≤1400 px.
 - **Accessibility:** keyboard-operable picker, menus and modal; ARIA on tabs,
   toggles and dialogs; tooltips reachable by focus and tap.
-- **Responsive:** desktop ≥1024 px with sidebar; tablet; phone 390 px with no
-  sideways page scroll.
+- **Responsive:** desktop ≥1024 px with sidebar; tablet (iPad portrait and
+  landscape: the menu's Staff Kanban link works by touch, and icons are boxed to
+  one em so the Record task button stays a clean circle even before the icon font
+  loads); phone 390 px with no sideways page scroll.
 
 ## 14. Interfaces
 
