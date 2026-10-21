@@ -337,6 +337,12 @@ the same dialog for both.
   **Close**.
 - A confirmed delete takes effect immediately; it is not held for Save
   changes. Any other unsaved changes on the page are left as they were.
+- **Deleting a deal and buyers list** (Advertisers / Inventory) follows the
+  same dialog. A deal assigned to one or more slots can't be deleted: the
+  dialog opens already saying so ("can't be deleted because it is assigned to
+  N slots"), lists every slot it is assigned to (display type, playlist,
+  position and slot) and tells the person to unassign it in Available
+  Inventory first. **Delete is disabled**; the API refuses it as well.
 
 ### Help text
 
@@ -869,6 +875,12 @@ only that advertiser's campaigns (with approval status), for PH Core to apply
 when it signs an Advertiser user in. This repo has no advertiser-facing login,
 insights or analytics screen to scope; that part needs the platform.
 
+**Deleting a user asks first** (ticket nN241VLRJD3iTRBsdnac). The delete icon
+in a Users row opens a "Delete user?" pop-up that names the user and says the
+action can't be undone; the user is removed only after **Delete** is pressed.
+Cancel, Escape or a click outside closes it with nothing deleted, and an API
+error shows inside the pop-up.
+
 **Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
 and only an admin changes approval, pricing, what a position is assigned to
 or what targeting it supports. A read-only viewer sees a *Read only* pill in
@@ -901,9 +913,11 @@ and publishes it as visitor segments when a visitor is identified; PH never rece
 advertiser can then target, and bid up or down on, its own audiences. Amazon Ads and Kroger Precision
 Marketing share brand-specific (new-to-brand) audiences privately with one advertiser in the same way.
 
-- **Add / Edit advertiser** (Advertisers / Inventory) has an **Audiences** multi-select. It works the same for
-  a DSP and a direct advertiser: "Add new Advertiser" gains the section, and every advertiser row has an Edit
-  action opening the same form (Admin; Marketing sees the Audiences column read-only; Help desk has no page).
+- **Edit advertiser** (Advertisers / Inventory) has an **Audiences** multi-select. It works the same for
+  a DSP and a direct advertiser. "Add new Advertiser" has **no Audiences section** (21 Oct 2026, ticket
+  vfaK4m8zvDF998LukxmQ): a new direct advertiser starts with none and, like every advertiser, can use all the
+  shared targeting attributes defined for the platform; private audiences are added afterwards. Every advertiser
+  row has an Edit action opening the form (Admin; Marketing sees the Audiences column read-only; Help desk has no page).
   A column shows how many each advertiser has.
 - Options are the Visitor Segments values defined in Shared Targeting Variables (§6) and any already private to
   another advertiser. A selected segment is **private to that advertiser**; it is private to more than one
@@ -2254,7 +2268,7 @@ see `api/PH-CORE-BOUNDARIES.md`.
 
 A deal's ID and type never change; its **mutable terms** are versioned on the
 same deal ID. The terms are the rate (`floorCpm`), `committedPlays`, the
-delivery term (`activeFrom` / `activeTo`), the auction window
+delivery term (`activeFrom` / `activeTo`), for a guaranteed deal its total for the term (`termTotal`, which replaced `ratePerDay` on 21 Oct 2026), the auction window
 (`auctionCloses`, private auction only) and who is invited. `termVersion`
 starts at 1 and every saved change to those terms adds a version, recorded
 append-only in `buyers_list_term_versions` (migration `0070`): what changed
@@ -2282,6 +2296,9 @@ is not a new version.
   have to re-accept. The edit pop-up calls it when the retailer clicks Save
   changes, and if it says so, asks them to confirm, naming the affected buyers
   and DSPs. A change that does not touch accepted terms saves without it.
+- **Slot changes (21 Oct 2026).** A guaranteed deal's `committedPlays` is derived from its assigned slots, so adding or
+  removing a slot on a **shared** deal is also a term change. The Available Inventory save is held with a `confirmReshare`
+  `400` until the caller confirms; see "Programmatic guaranteed: delivery term…".
 - **API.** `GET /buyers-lists` returns `termVersion` and `buyerAcceptance`;
   `GET /buyers-lists/{id}/term-versions` the history;
   `POST /buyers-lists/{id}/acceptances` records a buyer accepting the current
@@ -4905,9 +4922,11 @@ A reserve is either a **preferred deal** (the window held at the deal's agreed r
 
 - **Forecast** for the window = plays × audience = the slot's VAC-d assumed views per window (`assumedViewsPerWindow`, the same figure billing realises against).
 - **Committed volume** = `floor(forecast × (1 − buffer%))`. Expected delivery therefore sits above the guarantee and make-goods are rare. Returned as `forecastImpressions` / `guaranteedImpressions` and stored on the reservation (migration 0046).
-- **Buffer**: `guaranteeBufferPct` on Advertiser settings (in the "Committed delivery volume" group, beside Default committed plays), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
+- **Buffer**: `guaranteeBufferPct` on Advertiser settings (in the "Committed delivery volume" group; Default committed plays was retired on 21 Oct 2026), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
 - **To the DSP**: the reservation response carries `dspDeal` — DV360 Programmatic Guaranteed / Amazon guaranteed deal with `unitCount` = the committed impressions; a preferred deal maps to a preferred deal with no volume (`dsp/dealTerms.ts`).
 - **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the agreed rate).
+
+- **One buyer per PG deal (Rob, 21 Oct 2026; ticket OSBkZCpjYucdQWi8hBCt)**: a programmatic guaranteed deal is one-to-one with its buyer, as in the industry: one advertiser, its own deal ID. The deal modal's Buyers field accepts a single advertiser when the type is Programmatic guaranteed, and the API refuses a `guaranteed` create or update with more than one `invitedBuyers` (400 on `invitedBuyers`), as it already does for `preferred`. A multi-buyer list cannot be saved as guaranteed until reduced to one. Two advertisers on the same slot are two PG deals, each its own row and Deal ID. Private auction behaviour is unchanged (E2E Run 7 D4.1b).
 
 ## Bandwidth protection — restrict uncached creatives in defined hours (Rob, 7 Oct 2026)
 
@@ -4976,9 +4995,11 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   deal in the authoring picker. A category-only list admits category-matched
   bidders but has no named buyer to share with; the admin UI flags it
   ("not shareable") until at least one named seat is added.
-- **The type decides the fields.** `committedPlays` is captured only for
-  `guaranteed` (pre-filled from Default committed plays; the booked volume
-  per window is still `floor(forecast × (1 − buffer%))`); no type
+- **The type decides the fields.** `committedPlays` belongs only to
+  `guaranteed`, and is derived from the deal's assigned slots over its term
+  (21 Oct 2026, see "Programmatic guaranteed: delivery term…" below), never
+  typed in; the booked volume per window is still
+  `floor(forecast × (1 − buffer%))`; no type
   captures `auctionCloses` any more. The API refuses the other combinations (400),
   and a list that is not guaranteed reports no effective committed volume.
   The floor price CPM (platform → DSP → list; most specific raises it, never
@@ -5038,22 +5059,20 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   `docs/dsp-integration/E2E-TEST-SPEC.md` in the repo, mirrored to the board in
   three parts; add Run 7 and Phase 5 to it with these case IDs.
 
-## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
+## Default committed plays — retired (21 Oct 2026; ticket LjkTqL4rdegolMoFCYVJ)
 
-- **Setting**: `defaultCommittedPlays` on Advertiser settings (in the "Committed delivery
-  volume" group beside the guarantee buffer; field **Default committed plays**). Company-wide, a whole number of
-  plays, at least 1, or empty for none (per play); anything else is refused
-  with "Default committed plays is a whole number of plays, at least 1, or
-  empty." (400). Omitted on save keeps the stored value; `null` clears it
-  (migration 0054).
-- **Flow**: creating a buyers-and-targeting list pre-fills **Committed plays**
-  from it. It is a default, not a cap: the field stays editable and the saved
-  figure is the list's own. A changed default is picked up by the next new list
-  (and by an open new-list form whose field is still untouched).
-- **Unchanged**: editing a saved list never takes the default; existing lists'
-  `committedPlays` and the "N of M plays" delivery metering are not touched.
+The 7 Oct 2026 setting `defaultCommittedPlays` (Advertiser settings, pre-filling Committed plays on a new buyers list) is
+**gone**: a guaranteed deal's committed plays are derived from its assigned slots, so there is nothing to default. The
+field is removed from Advertiser settings, from `GET`/`PUT /admin/v1/advertiser-settings` (a client that still sends it
+is not refused; nothing is stored) and from the database (migration 0080 drops `default_committed_plays`). The
+guarantee buffer stays, in the same "Committed delivery volume" group, and is an input to the derived figure. The DSP-level
+`bidder.committedPlays` override no longer feeds anything for a guaranteed deal and has been removed from the DSP page.
 
 ## Buyers list: committed volume and rate inherit platform → DSP → list (Rob, 7 Oct 2026)
+
+> **21 Oct 2026:** only the **rate** still inherits. Committed volume no longer does: for a guaranteed deal it is derived
+> from the assigned slots (see "Programmatic guaranteed: delivery term…"), and `effectiveCommittedPlays` simply
+> mirrors that figure (`source` `buyer` once there is one, `none` before).
 
 - **Bug**: the Deals and buyers lists table and modal showed a list's own committed
   volume only, so a list with none read "Per play" / blank even when a default
@@ -5077,36 +5096,53 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   and uses the inherited value as the empty field's placeholder.
   `nothing set at any level` still reads "Per play".
 
-## Programmatic guaranteed: fixed rate per day (Rob, 20 Oct 2026; ticket rx1RfF2p7tyqJABWHR0q)
+## Programmatic guaranteed: delivery term, derived committed plays, fixed CPM or total (Rob, 21 Oct 2026; ticket LjkTqL4rdegolMoFCYVJ)
 
-Programmatic guaranteed books **whole days at a flat rate per day**, in line with the DOOH full-day takeover standard
-(demand path 2 of the AWS POC, near the top of this file). Other deal types are unchanged.
+A programmatic guaranteed (PG) deal covers **the whole agreed period** (industry standard: one deal per flight, not per
+day; DV360 PG, Broadsign, Vistar). This replaces the 20 Oct 2026 flat rate per day (ticket rx1RfF2p7tyqJABWHR0q), whose
+`ratePerDay` is retired. Other deal types are unchanged. Guaranteed Run 7 D4.7 and the AWS demo (path E) cover it; the
+AWS demo can still book one day, as a one-day range.
 
-- **Rate.** A guaranteed deal carries `ratePerDay`, the USD rate for one 24-hour day on a slot (a new column on
-  `buyers_lists`, migration 0079). In the deal pop-up the rate field is **Rate per day** and the **Rate type** is
-  **Fixed per day** (not *CPM fixed*). The explanation, "Books the slot for a full 24 hours per day at a flat daily
-  rate", is an info tooltip on the label, not copy under the field. A guaranteed deal saved before this (no
-  `ratePerDay`) keeps *CPM fixed* and its `floorCpm`.
-- **Flight in whole days.** The flight is picked as days (first day from 00:00 UTC, last day to 23:59:59.999 UTC); each
-  day is one 24-hour window on the slot, which is the platform's billing window.
-- **Equivalent CPM.** `ratePerDay / forecast impressions per day x 1000`, shown read-only beside the rate so a DSP can
-  compare it with a CPM deal. The forecast is each assigned slot's own (VAC-d assumed views for the day), so it is derived
-  on read from the assigned slots and never stored; with several slots it is shown as a range (`equivalentCpm:
-  {min, max}`). A new deal has no slot yet, so the pop-up says "Assign a slot to see the equivalent CPM".
-- **Floor.** The rate per day must still respect each slot's floor once converted: a rate whose equivalent CPM is below
-  the resolved floor (platform, DSP, deal, display type, slot) of **any** assigned slot is refused with `400` and field
-  `ratePerDay`, naming the slot and the minimum rate. It is checked on every save once a slot is assigned, and always at
-  **Share**, which already needs a slot. (Decision A on the ticket; taking a forecast from Advertiser settings so the
-  check works at first save was the rejected option B.)
-- **Re-acceptance.** `ratePerDay` is a term: changing it versions the deal and asks accepted buyers to accept again.
-- **What a DSP and the buyer see.** The deal sheet carries `ratePerDay`, `billingPeriodHours: 24` and `equivalentCpm`,
-  and each DSP entry's `rateDetails` is `{rate: <per day>, rateType: "Fixed per day", billingPeriodHours: 24,
-  equivalentCpm}`; the CSV gains *Rate per day* and *Equivalent CPM* columns and the description reads "…, 450 USD per
-  day, a flat rate for each full 24-hour day (equivalent 6.4 CPM)". `GET /v1/deals` (Partner API) returns `rateType`,
-  `ratePerDay`, `billingPeriodHours` and `equivalentCpm` on such a deal.
+- **Delivery term.** A guaranteed deal takes `activeFrom` / `activeTo` as whole days (first day from 00:00 UTC, last day
+  to 23:59:59.999 UTC, both included): `termDays` on the deal sheet and the DSP deal is the calendar-day count, so 1 to
+  30 Nov is 30 and a single day is a one-day range. One deal covers the range; nothing is booked per day.
+- **Price: a fixed CPM or a total for the term, not both.** `floorCpm` is the fixed CPM (rate type *CPM fixed*);
+  `termTotal` (USD, new column `term_total`, migration 0080) is one total for the whole term (rate type *Fixed per
+  term*). Sending both, `termTotal` on another deal type, or a non-positive total is `400` on `termTotal`. `ratePerDay`
+  is refused (`400`); migration 0080 carries a stored per-day rate over as rate x days where the term is closed. The
+  deal pop-up has a *Price* choice (Fixed CPM / Total for the term) and one field.
+- **Equivalent CPM** of a total = `termTotal / forecast impressions over the term x 1000`, forecast impressions being the
+  assigned slots' VAC-d impressions per day x `termDays` (one blended figure, `equivalentCpm: {min, max}` with min = max;
+  unscored slots are left out). It is derived on read, never stored. **Floor:** the total must cover each slot's resolved
+  floor over the term (`sum of impressions x floor / 1000`); a lower total is `400` on `termTotal`, checked on every
+  save once a slot is assigned and always at **Share**.
+- **Committed plays are derived, never typed or defaulted.** `committedPlays = floor( sum over the assigned slots of
+  forecast plays per day x termDays x (1 - guaranteeBufferPct / 100) )`, where a slot's forecast plays per day is its
+  plays per window (loop length, the display type's open hours) x its displays x windows a day. It is `null` until a
+  slot is assigned and the term has both dates, so a new deal has none: the pop-up **hides** the field then and, once
+  slots are assigned, shows **Committed plays** read-only. A typed `committedPlays` is refused (`400`). The stored figure
+  is what delivery and pacing run against, and what goes on the deal sheet (*Guaranteed plays*, with impressions), the CSV
+  and the DSP deal (`committedPlays`, `termDays`).
+- **When it recalculates.** On a slot assignment save (`PUT /admin/v1/available-inventory`) for every deal that gained or
+  lost a slot, on every save of the deal (new dates), and at Share. A change to the guarantee buffer or to a slot's
+  forecast applies from the next of those.
+- **Re-share warning.** A change that moves the committed plays of a deal that has already been **shared** versions the
+  terms (`committedPlays` is a term) and asks accepted buyers to accept again:
+  - editing the term in the deal pop-up: the term-check dry run lists `committedPlays` among the changes and the pop-up says
+    the committed plays will change and the deal must be re-shared and accepted again by the buyer, and Keep editing saves
+    nothing;
+  - adding or removing a slot of a shared guaranteed deal in Available Inventory: the API holds the save with `400` and one
+    `confirmReshare` detail per deal unless the request carries `confirmReshare: true`; the page shows the warning and
+    resends only on confirm, and cancelling leaves the deal and its slots unchanged. The updated deal is re-sent to the
+    DSPs only after that confirmation (the existing term-versioning and re-acceptance rules, 11 Oct 2026, apply).
+  Drafts and slots the deal already had need no confirmation.
+- **What a DSP and the buyer see.** The deal sheet carries `termDays`, `termTotal` (a total), `equivalentCpm` and the
+  derived `committedPlays` / `guaranteedImpressions`; each DSP entry's `rateDetails` is `{rate, rateType: "Fixed per
+  term" | "CPM fixed", termDays, equivalentCpm}`; the CSV has *Total for the term* and *Equivalent CPM* columns; the
+  description reads "…, 700 USD for the whole term, a fixed total (equivalent 6.4 CPM)". `GET /v1/deals` (Partner API)
+  returns `termDays`, `committedPlays` and, for a total, `rateType`, `termTotal` and `equivalentCpm`.
 - **Not changed.** Booking a window still goes through the reservation path and its floor check on the bid; the
-  reservation response and the DSP's `dspDeal` unit count are as before (impressions). Day-boundary and store-time-zone
-  handling stay UTC, as everywhere in the POC.
+  reservation response and the DSP's `dspDeal` unit count are as before. Day boundaries stay UTC, as everywhere in the POC.
 
 ## Visual layout check — tablet and desktop (Rob, 8 Oct 2026; ticket A3QkqCjHRP58R0lSAtKM)
 

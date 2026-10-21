@@ -113,7 +113,13 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.flagged()
     guards.requireScope(req, 'admin')
     const a = (await listAdvertisers(ctx)).find((x) => x.advertiserId === req.params.advertiserId)
-    if (!a || !a.direct) throw notFound('Not a direct advertiser.')
+    /* The direct record decides, not the listing: a DSP seat of the same name wins the listing (direct: false)
+       even though the direct record is still there, which used to answer "Not a direct advertiser" for one. */
+    const record = (await ctx.company.directAdvertisers()).find((d) => d.advertiserId === req.params.advertiserId)
+    /* Already gone (a second click, or another tab got there first): the end state asked for is true. */
+    if (!record && !a) return reply.status(204).send()
+    if (!a) throw notFound('Not a direct advertiser.')
+    if (!record) throw notFound(`${a.name} comes through a DSP, so it can't be deleted here.`)
     if (a.bookings > 0 || Object.values(a.campaigns).some((n) => n > 0)) throw conflict(`${a.name} has campaigns or bookings, so it can't be removed.`)
     /* Hard block: users bound to this advertiser (Company Settings -> Users) would be left
        pointing at nobody, so they must be removed first. */
@@ -128,7 +134,8 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       }
     }
     if (held.length) throw conflict(`${a.name} is assigned to ${held.length === 1 ? 'a slot' : `${held.length} slots`} on Available Inventory: ${held.join('; ')}. Remove it from ${held.length === 1 ? 'that slot' : 'those slots'} before deleting it.`)
-    await ctx.company.removeDirectAdvertiser(a.advertiserId)
+    /* Shadowed by a DSP seat: that advertiser lives on, so keep its seat mapping and audiences. */
+    await ctx.company.removeDirectAdvertiser(a.advertiserId, { keepSettings: !a.direct })
     return reply.status(204).send()
   })
 

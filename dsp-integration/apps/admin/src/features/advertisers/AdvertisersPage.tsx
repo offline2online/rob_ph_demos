@@ -61,7 +61,8 @@ function ApprovalCell({ data, context }: P) {
 }
 /* Add an advertiser with a direct relationship with the retailer (no DSP), or edit any advertiser's audiences
    (ticket OanRebXyEryAXBQrBsVe), from the same pop-up. It is saved at once (not part of Save changes). A new direct
-   advertiser is listed as "Name (Direct)". Audiences are Visitor Segments values shared with this advertiser only. */
+   advertiser is listed as "Name (Direct)". Adding has no Audiences section (a direct advertiser can use every shared
+   targeting attribute; private audiences are set afterwards by editing). Audiences are Visitor Segments values shared with this advertiser only. */
 const AUDIENCES_TIP = 'Audiences shared only with this advertiser, such as people who are new to their brand. Your own systems decide who is in each audience and publish it to the visitor’s live profile when they are identified; Personalisation Hub never receives their purchase history. Only this advertiser can target these audiences, on deals and reserved slots, not the open auction.'
 const SEGMENT_TIP = 'Visitor segments published by your CRM, customer data platform or loyalty system.'
 function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; editing: Advertiser | null; onClose: () => void; onSaved: () => void }) {
@@ -82,7 +83,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
     setError(null)
     try {
       if (editing) await api('PUT', `/admin/v1/advertisers/${editing.advertiserId}/audiences`, { audiences })
-      else await api('POST', '/admin/v1/advertisers/direct', { name, audiences })
+      else await api('POST', '/admin/v1/advertisers/direct', { name })
       onSaved()
       onClose()
       message.success(editing ? 'Advertiser saved' : 'Advertiser added')
@@ -108,16 +109,21 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
       <div className="mt-1.5" style={{ fontSize: 12, color: T.muted }}>
         {editing ? (editing.direct ? 'A direct advertiser has its own relationship with you, with no DSP in between.' : `Comes through ${editing.via.join(', ')}.`) : 'A direct advertiser has its own relationship with you, with no DSP in between.'}
       </div>
-      <div className="mt-4 mb-1" style={{ fontSize: 13, fontWeight: 500 }}><WithTip tip={AUDIENCES_TIP}><span id="advertiser-audiences-label">Audiences</span></WithTip></div>
-      <div className="mb-1 inline-flex items-center gap-[5px]" style={{ fontSize: 12, color: T.muted }}>Segments <InfoTip text={SEGMENT_TIP} /></div>
-      <Select
-        mode="multiple" allowClear showSearch className="w-full" aria-labelledby="advertiser-audiences-label" placeholder="Choose segments shared with this advertiser only"
-        loading={variables.isLoading} value={audiences} options={options} onChange={setAudiences}
-        notFoundContent={segments ? 'No Visitor Segments values defined in Shared Targeting Variables.' : 'Visitor Segments is not available.'}
-      />
-      <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
-        {error ?? 'Chosen segments are removed from the Visitor Segments offered to everyone else.'}
-      </div>
+      {editing && (
+        <>
+          <div className="mt-4 mb-1" style={{ fontSize: 13, fontWeight: 500 }}><WithTip tip={AUDIENCES_TIP}><span id="advertiser-audiences-label">Audiences</span></WithTip></div>
+          <div className="mb-1 inline-flex items-center gap-[5px]" style={{ fontSize: 12, color: T.muted }}>Segments <InfoTip text={SEGMENT_TIP} /></div>
+          <Select
+            mode="multiple" allowClear showSearch className="w-full" aria-labelledby="advertiser-audiences-label" placeholder="Choose segments shared with this advertiser only"
+            loading={variables.isLoading} value={audiences} options={options} onChange={setAudiences}
+            notFoundContent={segments ? 'No Visitor Segments values defined in Shared Targeting Variables.' : 'Visitor Segments is not available.'}
+          />
+          <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
+            {error ?? 'Chosen segments are removed from the Visitor Segments offered to everyone else.'}
+          </div>
+        </>
+      )}
+      {error && !editing && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
     </Modal>
   )
 }
@@ -533,7 +539,7 @@ function AssignedCell({ data, context }: IP) {
       label={`${data.displayTypeName} slot ${data.zoneSlot}`}
       ids={tiersOf(a)}
       names={new Map(c.buyersLists.map((l) => [l.id, l.name]))}
-      cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType, l.ratePerDay), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
+      cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType, l.termTotal), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
       openAuction={a.openAuction === true}
@@ -979,6 +985,33 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     return true
   }
 
+  /* A slot added to or taken from a SHARED guaranteed deal changes its committed plays (derived from its slots), so buyers must accept again (21 Oct 2026): the API holds the save until it is confirmed here. False when the user keeps editing. */
+  const confirmReshare = (reasons: string[]) => new Promise<boolean>((resolve) => {
+    modal.confirm({
+      title: 'Shared deals will need to be re-shared',
+      content: (
+        <div data-testid="reshare-warning">
+          <p>This change adds or removes slots on a deal that has already been shared. Its committed plays will change, so the deal must be re-shared and accepted again by the buyer. The updated deal is not re-sent to the DSPs until you confirm.</p>
+          <ul style={{ paddingLeft: 18, margin: 0 }}>{reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+        </div>
+      ),
+      okText: 'Save and re-share', cancelText: 'Keep editing',
+      onOk: () => resolve(true), onCancel: () => resolve(false),
+    })
+  })
+  const putInventory = async (items: unknown[]): Promise<boolean> => {
+    try {
+      await api('PUT', '/admin/v1/available-inventory', { items })
+      return true
+    } catch (e) {
+      const asks = e instanceof ApiRequestError && e.status === 400 ? (e.body?.error.details ?? []).filter((d) => d.field === 'confirmReshare') : []
+      if (!asks.length) throw e
+      if (!(await confirmReshare(asks.map((d) => d.reason ?? '')))) return false
+      await api('PUT', '/admin/v1/available-inventory', { items, confirmReshare: true })
+      return true
+    }
+  }
+
   const onSave = async () => {
     setSaving(true)
     let sent: { displayTypeId: string; slot: number }[] = []
@@ -1002,7 +1035,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
             maxCampaignsDefault: maxCampaignsDefaults.draft![r.displayTypeId] ?? null, maxPlayLengthSecDefault: maxPlayLengthDefaults.draft![r.displayTypeId] ?? null,
           }))
         sent = items
-        await api('PUT', '/admin/v1/available-inventory', { items })
+        /* Cancelling the re-share warning leaves the draft as it is, unsaved. */
+        if (!(await putInventory(items))) return
         inv.commitNext()
         billingUnitDefaults.commitNext()
         maxCampaignsDefaults.commitNext()

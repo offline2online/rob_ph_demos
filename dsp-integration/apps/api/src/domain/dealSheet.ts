@@ -11,7 +11,7 @@ import { baseFloorFor } from '../exchange/enforcement'
 import { TRANSACTING_CURRENCY } from './currency'
 import { creativeRequirementsFor, positionsOfList, type CreativeRequirement } from './dealCreative'
 import { slotDetailOf, type SlotDetail } from './displayTypes'
-import { equivalentCpmRange, HOURS_PER_DAY, perDaySlotsOf } from './perDayRate'
+import { equivalentCpmOf, equivalentCpmRange, termDaysOf, termSlotsOf } from './termPrice'
 import { NO_TARGETING, scopeAndVolumeOf, targetingOf, type DealSheetInventoryScope, type DealSheetTargeting, type DealSheetVolume } from './dealSheetScope'
 
 export interface DealSheetEntry {
@@ -29,18 +29,18 @@ export interface DealSheetEntry {
    BuyerStatus ACTIVE once a seat on this DSP holds the current terms, else PENDING. */
 export interface DealSheetInventorySource {
   externalDealId: string
-  /* Fixed per day (Programmatic guaranteed): `rate` is the USD rate for one 24-hour day, `equivalentCpm` the same price as a CPM over the assigned slots' forecast. */
-  rateDetails: { rate: number; rateType: RateType; currency: string; billingPeriodHours?: number; equivalentCpm?: { min: number; max: number } | null }
+  /* Fixed per term (Programmatic guaranteed): `rate` is the USD total for the whole delivery term, `equivalentCpm` the same price as a CPM over the assigned slots' forecast. */
+  rateDetails: { rate: number; rateType: RateType; currency: string; termDays?: number | null; equivalentCpm?: { min: number; max: number } | null }
   timeRange: { startTime: string | null; endTime: string | null }
   buyerStatus: 'PENDING' | 'ACTIVE'
   sellerStatus: 'PENDING' | 'ACTIVE'
   termVersion: number
 }
-export type RateType = 'CPM floor' | 'CPM fixed' | 'Fixed per day'
+export type RateType = 'CPM floor' | 'CPM fixed' | 'Fixed per term'
 export const RATE_TYPE_OF: Record<BuyersList['dealType'], RateType> = { private_auction: 'CPM floor', preferred: 'CPM fixed', guaranteed: 'CPM fixed' }
-/* A guaranteed deal priced per day (20 Oct 2026) is a flat rate for a full 24-hour day; one saved before that is still CPM fixed. */
-export const isPerDay = (l: Pick<BuyersList, 'dealType' | 'ratePerDay'>) => l.dealType === 'guaranteed' && l.ratePerDay != null
-export const rateTypeOf = (l: Pick<BuyersList, 'dealType' | 'ratePerDay'>): RateType => (isPerDay(l) ? 'Fixed per day' : RATE_TYPE_OF[l.dealType])
+/* A guaranteed deal priced as a total for its term (21 Oct 2026) is one fixed amount for the whole flight; otherwise its price is a CPM. */
+export const isTermTotal = (l: Pick<BuyersList, 'dealType' | 'termTotal'>) => l.dealType === 'guaranteed' && l.termTotal != null
+export const rateTypeOf = (l: Pick<BuyersList, 'dealType' | 'termTotal'>): RateType => (isTermTotal(l) ? 'Fixed per term' : RATE_TYPE_OF[l.dealType])
 
 /* DV360 Product.transactionType. */
 export const TRANSACTION_TYPE: Record<BuyersList['dealType'], string> = { private_auction: 'PRIVATE_AUCTION', preferred: 'PREFERRED_DEAL', guaranteed: 'PROGRAMMATIC_GUARANTEED' }
@@ -58,9 +58,9 @@ export interface DealSheet {
   currency: string
   rateCpm: number
   rateKind: 'floor' | 'fixed'
-  /* Fixed per day only: the USD rate for one 24-hour day on a slot, the day length, and the same price as a CPM (null until the deal has a slot to forecast from). */
-  ratePerDay?: number | null
-  billingPeriodHours?: number | null
+  /* Fixed per term only: the USD total for the whole delivery term, its length in days, and the same price as a CPM (null until the deal has a slot to forecast from). */
+  termTotal?: number | null
+  termDays?: number | null
   equivalentCpm?: { min: number; max: number } | null
   activeFrom: string | null
   activeTo: string | null
@@ -96,10 +96,11 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
   /* A locked rate is what the deal bills at for the rest of its term; until then the rate is the resolved floor. */
   const locked = list.lockedWin?.cpm
   const floor = locked ?? (await baseFloorFor(ctx, { buyersListId: list.id }))
-  const perDay = isPerDay(list)
-  const equivalentCpm = perDay ? equivalentCpmRange(await perDaySlotsOf(ctx, list)) : null
-  /* Per day, the CPM on the sheet is the equivalent one; the rate a DSP keys in is the daily figure. */
-  const rate = perDay ? equivalentCpm?.min ?? floor : floor
+  const perTerm = isTermTotal(list)
+  const termDays = termDaysOf(list.activeFrom, list.activeTo)
+  const equivalentCpm = perTerm ? equivalentCpmRange(equivalentCpmOf(list.termTotal as number, await termSlotsOf(ctx, list.id), termDays)) : null
+  /* A total for the term: the CPM on the sheet is the equivalent one; the rate a DSP keys in is the total. */
+  const rate = perTerm ? equivalentCpm?.min ?? floor : floor
   const rateType = rateTypeOf(list)
   const partners = new Map((await ctx.partners.list()).map((p) => [p.id, p]))
   const entries: DealSheetEntry[] = []
@@ -114,8 +115,8 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
       partnerId, dsp: partner.name, provider: partner.provider, dealId, seats, setup: dealSetupHint(partner.provider, list.dealType),
       inventorySource: {
         externalDealId: dealId,
-        rateDetails: perDay
-          ? { rate: list.ratePerDay as number, rateType, currency: TRANSACTING_CURRENCY, billingPeriodHours: HOURS_PER_DAY, equivalentCpm }
+        rateDetails: perTerm
+          ? { rate: list.termTotal as number, rateType, currency: TRANSACTING_CURRENCY, termDays, equivalentCpm }
           : { rate, rateType, currency: TRANSACTING_CURRENCY },
         timeRange: { startTime: list.activeFrom, endTime: list.activeTo },
         buyerStatus: accepted ? 'ACTIVE' : 'PENDING',
@@ -137,8 +138,9 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
     dealType: list.dealType,
     currency: TRANSACTING_CURRENCY,
     rateCpm: rate,
-    rateKind: locked != null || perDay ? 'fixed' : 'floor',
-    ...(perDay ? { ratePerDay: list.ratePerDay, billingPeriodHours: HOURS_PER_DAY, equivalentCpm } : {}),
+    rateKind: locked != null || perTerm || (list.dealType === 'guaranteed' && list.floorCpm != null) ? 'fixed' : 'floor',
+    ...(perTerm ? { termTotal: list.termTotal, equivalentCpm } : {}),
+    ...(list.dealType === 'guaranteed' ? { termDays } : {}),
     activeFrom: list.activeFrom,
     activeTo: list.activeTo,
     auctionCloses: list.auctionCloses,
@@ -166,8 +168,8 @@ function descriptionOf(list: BuyersList, rate: number, t: DealSheetTargeting, sc
   const flight = day(list.activeFrom) || day(list.activeTo) ? `, ${day(list.activeFrom) ?? 'open start'} to ${day(list.activeTo) ?? 'open end'}` : ''
   const where = scope.displays ? ` on ${scope.displays} ${scope.venueTypes.join('/') || 'retail'} screens in ${scope.stores} stores` : ''
   const vol = guaranteedImps ? ` Guarantees ${guaranteedImps.toLocaleString('en-GB')} impressions.` : ''
-  const price = isPerDay(list)
-    ? `${list.ratePerDay} ${TRANSACTING_CURRENCY} per day, a flat rate for each full ${HOURS_PER_DAY}-hour day${equivalentCpm ? ` (equivalent ${equivalentCpm.min === equivalentCpm.max ? equivalentCpm.min : `${equivalentCpm.min}–${equivalentCpm.max}`} CPM)` : ''}`
+  const price = isTermTotal(list)
+    ? `${list.termTotal} ${TRANSACTING_CURRENCY} for the whole term, a fixed total${equivalentCpm ? ` (equivalent ${equivalentCpm.min === equivalentCpm.max ? equivalentCpm.min : `${equivalentCpm.min}–${equivalentCpm.max}`} CPM)` : ''}`
     : `${rate} ${TRANSACTING_CURRENCY} ${rateTypeOf(list)}`
   return `${DEAL_TYPE_LABEL[list.dealType]}${flight}, ${price}${where}. Targeting: ${t.plainLanguage === NO_TARGETING ? 'none beyond the attached positions' : t.plainLanguage}.${vol}`
 }
@@ -180,13 +182,13 @@ const cell = (v: string | number | null | undefined): string => {
 /* A flat sheet a buyer can open in Excel: one row per DSP deal ID and creative format, in DV360's field names. */
 export function dealSheetCsv(sheet: DealSheet): string {
   const v = sheet.estimatedVolume, sc = sheet.inventoryScope
-  const head = ['Order name', 'Order status', 'Product name', 'Display name', 'Transaction type', 'Deal type', 'Pricing type', 'Start time', 'End time', 'Deal ID', 'DSP', 'Rate', 'Rate type', 'Currency', 'Rate per day', 'Equivalent CPM', 'Buyer status', 'Seller status', 'Term version', 'Auction closes', 'Guaranteed impressions', 'Guaranteed plays', 'Buyers', 'Slots', 'Creative type', 'Width', 'Height', 'Max duration (s)',
+  const head = ['Order name', 'Order status', 'Product name', 'Display name', 'Transaction type', 'Deal type', 'Pricing type', 'Start time', 'End time', 'Deal ID', 'DSP', 'Rate', 'Rate type', 'Currency', 'Total for the term', 'Equivalent CPM', 'Buyer status', 'Seller status', 'Term version', 'Auction closes', 'Guaranteed impressions', 'Guaranteed plays', 'Buyers', 'Slots', 'Creative type', 'Width', 'Height', 'Max duration (s)',
     'Targeting', 'Targeting (DV360 type)', 'Seller-side only targeting', 'Venue types', 'Geography', 'Stores', 'Displays', 'Screen formats', 'Estimated plays per window', 'Estimated assumed views per window', 'Targeted share', 'Estimated guaranteed impressions per window', 'Description']
   const reqs: (CreativeRequirement | null)[] = sheet.creativeRequirements.length ? sheet.creativeRequirements : [null]
   const t = sheet.targeting
   const rows = sheet.entries.flatMap((e) => reqs.map((r) => [
     sheet.order.name, sheet.order.status, sheet.product.name, sheet.product.displayName, sheet.product.transactionType, DEAL_TYPE_LABEL[sheet.dealType], sheet.product.pricingType, sheet.product.startTime, sheet.product.endTime,
-    e.inventorySource.externalDealId, e.dsp, e.inventorySource.rateDetails.rate, e.inventorySource.rateDetails.rateType, e.inventorySource.rateDetails.currency, sheet.ratePerDay ?? '', sheet.equivalentCpm ? (sheet.equivalentCpm.min === sheet.equivalentCpm.max ? sheet.equivalentCpm.min : `${sheet.equivalentCpm.min}-${sheet.equivalentCpm.max}`) : '', e.inventorySource.buyerStatus, e.inventorySource.sellerStatus, e.inventorySource.termVersion,
+    e.inventorySource.externalDealId, e.dsp, e.inventorySource.rateDetails.rate, e.inventorySource.rateDetails.rateType, e.inventorySource.rateDetails.currency, sheet.termTotal ?? '', sheet.equivalentCpm ? (sheet.equivalentCpm.min === sheet.equivalentCpm.max ? sheet.equivalentCpm.min : `${sheet.equivalentCpm.min}-${sheet.equivalentCpm.max}`) : '', e.inventorySource.buyerStatus, e.inventorySource.sellerStatus, e.inventorySource.termVersion,
     sheet.auctionCloses, sheet.guaranteedImpressions, sheet.committedPlays, e.seats.map((s) => `${s.name} (${s.id})`).join('; '), sheet.slots.map(slotLine).join('; '),
     r?.formats.join(' + ') ?? '', r?.canvas.width ?? '', r?.canvas.height ?? '', r?.maxPlayLengthSec ?? '',
     t.plainLanguage, t.targetingCriteria.map((g) => `${g.targetingType}: ${g.conditions.map((c) => c.text).join('; ')}`).join(' | '), t.sellerSideOnly.map((c) => c.text).join('; '),

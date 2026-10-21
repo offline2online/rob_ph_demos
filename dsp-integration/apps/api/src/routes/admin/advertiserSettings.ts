@@ -14,6 +14,8 @@ import { openHoursPerDayOf, positionHourGroups } from '../../domain/operatingGat
 import { assignedToSlot, rotationSizeOf, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
+import { auditActorOf } from '../../domain/sspAudit'
+import { changedAssignments, refreshCommittedPlays } from '../../domain/committedPlays'
 import { releaseSettledSlotLocks, slotBookedUntil, slotLiveBookings } from '../../domain/slotLock'
 
 /* Interactive targeting needs the visitor to have something to scan. */
@@ -51,7 +53,6 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         uncachedRestrictionEnd: b.uncachedRestrictionEnd ?? current.uncachedRestrictionEnd,
         bidLookaheadSeconds: b.bidLookaheadSeconds ?? current.bidLookaheadSeconds,
         cachedAssetRetentionHours: b.cachedAssetRetentionHours ?? current.cachedAssetRetentionHours,
-        defaultCommittedPlays: b.defaultCommittedPlays === undefined ? current.defaultCommittedPlays : b.defaultCommittedPlays,
         maxPlayLengthSec: b.maxPlayLengthSec ?? current.maxPlayLengthSec,
       })
     })
@@ -273,7 +274,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
      of a sellable slot that live here. Everything else about it is set on
      its display type (spec §1 configuration inheritance: override always
      wins; a slot with no override of its own simply follows it). */
-  app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
+  app.put<{ Body: { items?: unknown; confirmReshare?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
     const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; assignedTo?: unknown; floorCpm?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown; maxPlayLengthSec?: unknown; maxPlayLengthSecDefault?: unknown; inGlobalDeal?: unknown }[]) : null
@@ -343,6 +344,20 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         }
       }
       if (errors.length) throw validationFailed(errors, 'A slot is assigned to DSPs or advertisers it can actually sell to.')
+      /* Deals that gain or lose a slot (21 Oct 2026). Their committed plays are derived from the slots, so a shared guaranteed deal's volume changes and its buyers must accept again: the save is held until the caller confirms. */
+      const touched = new Set<string>()
+      for (const [displayTypeId, slots] of wanted) {
+        const dt = await ctx.displayTypes.get(displayTypeId)
+        for (const [slot, patch] of slots) for (const id of changedAssignments(assignedOf(dt!.phExtensions!.slots[slot - 1]).buyersListIds, patch.assigned.buyersListIds)) touched.add(id)
+      }
+      const reshared: { id: string; name: string }[] = []
+      for (const id of touched) {
+        const list = await ctx.buyersLists.get(id)
+        if (list?.dealType === 'guaranteed' && list.status === 'shared') reshared.push({ id, name: list.name })
+      }
+      if (reshared.length && req.body?.confirmReshare !== true) {
+        throw validationFailed(reshared.map((d) => ({ field: 'confirmReshare', reason: `${d.name}: its committed plays will change, so the deal must be re-shared and accepted again by the buyer.` })), 'Confirm that shared deals will be re-shared.')
+      }
 
       /* A sold slot keeps its advertiser (ticket, 30 Sep 2026): taking one off
          a slot that is reserved or sold for a current or future window would
@@ -429,6 +444,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         if (maxPlayLengthDefaults.has(displayTypeId)) ext.maxPlayLengthSec = maxPlayLengthDefaults.get(displayTypeId) ?? null
         await ctx.displayTypes.saveExtensions(displayTypeId, ext)
       }
+      await refreshCommittedPlays(ctx, touched, auditActorOf(req).actor.name)
     })
     return inventory()
   })
