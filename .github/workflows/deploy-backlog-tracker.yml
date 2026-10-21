@@ -101,7 +101,8 @@ jobs:
       # Google's side, every retry hit "409, unable to queue the operation",
       # and the job died before hosting deployed (run 37189515221).
       #
-      # GH_DISPATCH_TOKEN and BOARD_API_KEY are written even when the repo
+      # GH_DISPATCH_TOKEN, BOARD_API_KEY and ANTHROPIC_API_KEY (Staff Kanban's
+      # voice agent fill, functions/kanban.js) are written even when the repo
       # secret is empty, as the "unset" placeholder: functions/index.js
       # declares them with defineSecret(), and `firebase deploy` fails
       # outright if a declared secret does not exist. Their functions treat
@@ -116,6 +117,7 @@ jobs:
           CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json" --quiet
           sync() { printf '%s' "$2" | bash scripts/sync-function-secret.sh "$1"; }
@@ -128,6 +130,7 @@ jobs:
           fi
           sync GH_DISPATCH_TOKEN "${GH_DISPATCH_TOKEN:-unset}"
           sync BOARD_API_KEY "${BOARD_API_KEY:-unset}"
+          sync ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-unset}"
 
       - name: Install migration script dependencies
         if: steps.dedupe.outputs.skip != 'true'

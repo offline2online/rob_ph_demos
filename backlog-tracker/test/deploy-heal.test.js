@@ -11,7 +11,7 @@
 // Run with:  node test/deploy-heal.test.js
 "use strict";
 const assert = require("assert");
-const { healFailedDeploy } = require("../scripts/run-backlog-automation.js");
+const { healFailedDeploy, legacyDeployHealable } = require("../scripts/run-backlog-automation.js");
 
 function fakeGh({ attempt = 1, runs = [] }) {
   const calls = [];
@@ -78,6 +78,15 @@ test("it lists the workflow it is given (dsp-api-deploy.yml), the console's by d
   const g = fakeGh({ runs: [self] });
   healFailedDeploy("100", new Map(), g.gh);
   assert.ok(g.calls.some((c) => c.includes("--workflow deploy-backlog-tracker.yml")));
+});
+
+// 21 Oct 2026: 27 back-to-back dispatches cancelled each other; 18 cards read
+// "cancelled" while the deploy that carried them succeeded.
+test("a cancelled deploy is healed like a failed one; success and skipped are not", () => {
+  assert.strictEqual(legacyDeployHealable("failure"), true);
+  assert.strictEqual(legacyDeployHealable("cancelled"), true);
+  assert.strictEqual(legacyDeployHealable("success"), false);
+  assert.strictEqual(legacyDeployHealable("skipped"), false);
 });
 
 console.log(`\n${passed} passed, 0 failed`);

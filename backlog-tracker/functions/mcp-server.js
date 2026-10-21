@@ -45,6 +45,12 @@ const crypto = require("crypto");
 const { onRequest } = require("firebase-functions/v2/https");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
+const { defineSecret } = require("firebase-functions/params");
+const kanban = require("./kanban");
+// Staff Kanban's voice agent fill (functions/kanban.js). "unset" until the
+// ANTHROPIC_API_KEY repo secret is added (the deploy workflow writes the
+// placeholder so the deploy never fails on a missing secret).
+const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 // The MCP Apps views behind the two "board" tools (see that file's header).
@@ -259,6 +265,16 @@ function atLeast(role, needed) {
 // STORAGE rules cannot read Firestore at all — attachments would be
 // uploadable only by the two bootstrap admins without this claim. It also
 // makes the common rules path cheap: a claim check costs no document read.
+// Staff Kanban: every member's name and photo for the board (functions/kanban.js).
+exports.syncMemberDirectory = onDocumentWritten("consoleUsers/{userEmail}", (event) => kanban.syncMemberDirectoryWrite(event));
+// The helpers Staff Kanban's browser endpoints share with the rest of this file.
+const kanbanHelpers = {
+  requireConsoleUser: (req, minRole) => requireConsoleUser(req, minRole),
+  rateLimited: (req, bucket, max) => rateLimited(req, bucket, max),
+  tooMany: (res) => tooMany(res),
+  anthropicKey: () => { try { return ANTHROPIC_API_KEY.value(); } catch { return ""; } },
+};
+
 exports.syncConsoleUserClaims = onDocumentWritten("consoleUsers/{userEmail}", async (event) => {
   const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
   const email = String(event.params.userEmail || "").toLowerCase();
@@ -4529,6 +4545,8 @@ const TOOLS = [
   },
 ];
 
+// Staff Kanban's tools (KB-MCP-1), defined beside the rest of its server code.
+TOOLS.push(...kanban.kanbanTools({ textResult, toolError, audit }));
 const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -4637,12 +4655,13 @@ const SERVER_INSTRUCTIONS = [
   "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has send_to_build, approve_for_deployment, approve_deploy_to_main and set_phase_skill_bindings.",
   "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
   "To take over or catch up on a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in its order. A person can start the same plan with the project_handover prompt.",
-  "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full, possibly hundreds of thousands of characters, so call it only with include set to the one block you need.",
+  "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full (it can be huge), so set include to the one block you need.",
   "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document, so read it first and send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
   REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
   "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
-  "Skills library, shared by all projects: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
+  "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment).",
+  "Skills (all projects): list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
   "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
 ].join(" ");
 
@@ -4963,12 +4982,12 @@ function routePath(req) {
 // sign-in queued behind them. minInstances stays 0: sign-in no longer waits
 // on this function (see public/js/auth-gate.js), so a cold start only ever
 // delays an agent's first call.
-exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512MiB", cpu: 1, concurrency: 40, maxInstances: 20 }, async (req, res) => {
+exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512MiB", cpu: 1, concurrency: 40, maxInstances: 20, secrets: [ANTHROPIC_API_KEY] }, async (req, res) => {
   cors(req, res);
   const path = routePath(req);
   // The console-only endpoints are called from the console's own origin
   // with a Firebase ID token; nothing cross-origin has any business here.
-  if (path === "/claims/sync" || path === "/me/connections" || path === "/admin/provision") {
+  if (path === "/claims/sync" || path === "/me/connections" || path === "/admin/provision" || path.startsWith("/kanban/")) {
     res.set("Access-Control-Allow-Origin", PUBLIC_ORIGIN);
   }
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
@@ -4991,6 +5010,9 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512Mi
       case "/claims/sync": return await handleClaimsSync(req, res);
       case "/me/connections": return await handleMyConnections(req, res);
       case "/admin/provision": return await handleAdminProvision(req, res);
+      // Staff Kanban's browser endpoints (functions/kanban.js).
+      case "/kanban/agent-fill": return await kanban.handleAgentFill(req, res, kanbanHelpers);
+      case "/kanban/directory-sync": return await kanban.handleDirectorySync(req, res, kanbanHelpers);
       default:
         res.status(404).json({ error: "not_found", error_description: `no endpoint at ${path}` });
     }

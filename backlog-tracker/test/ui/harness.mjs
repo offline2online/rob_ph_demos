@@ -52,18 +52,27 @@ export async function startHarness() {
   const stubSource = fs.readFileSync(stubPath, "utf8");
 
   // seed: { docs: { collection: { id: fields } }, user: { email, role } }
-  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme, contextOptions = {} } = {}) {
+  // init: { fn, arg } — an extra init script (e.g. a speech-recognition stub).
+  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme, contextOptions = {}, init } = {}) {
     const context = await browser.newContext({ viewport: { width, height }, ...(colorScheme ? { colorScheme } : {}), ...contextOptions });
     const problems = [];
     const refused = [];
     const addProblem = (p) => problems.push(p);
     await context.addInitScript((s) => { window.__FB_SEED = s; }, seed);
+    if (init) await context.addInitScript(init.fn, init.arg);
     await context.route("**/*", async (route) => {
       const url = new URL(route.request().url());
       if (url.origin === origin) {
-        if (url.pathname.startsWith("/mcp/")) {
+        if (url.pathname.startsWith("/mcp/") && !url.pathname.startsWith("/mcp/kanban/")) {
           // /mcp/claims/sync is the background membership check.
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: (seed.user && seed.user.role) || "editor", email: (seed.user && seed.user.email) || "editor@personalisationhub.com", claimUpdated: false }) });
+        }
+        // Staff Kanban's endpoints (functions/kanban.js). The agent fill is
+        // unconfigured by default, as in production without a key, so the page
+        // falls back to its local fill; seed.agentDraft stands in for Claude.
+        if (url.pathname === "/mcp/kanban/directory-sync") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ members: 0 }) });
+        if (url.pathname === "/mcp/kanban/agent-fill") {
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.agentDraft ? { draft: seed.agentDraft, source: "claude" } : { draft: null, reason: "not-configured" }) });
         }
         return route.fallback();
       }
@@ -78,6 +87,8 @@ export async function startHarness() {
       if (url.hostname === "fonts.googleapis.com") return fontsDir ? route.fulfill({ status: 200, contentType: "text/css", path: path.join(fontsDir, "ms.css") }) : route.fulfill({ status: 200, contentType: "text/css", body: "" });
       if (fontsDir && url.hostname === "fonts.gstatic.com") return route.fulfill({ status: 200, contentType: "font/woff2", path: path.join(fontsDir, "ms.woff2") });
       if (url.hostname === "firestore.googleapis.com") { refused.push(url.href); return route.abort("failed"); }
+      // Storage downloads (the stub's upload URLs): a 1x1 PNG stands in.
+      if (url.hostname === "firebasestorage.googleapis.com") return route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64") });
       addProblem(`request to unrouted host: ${url.href}`);
       return route.abort("failed");
     });

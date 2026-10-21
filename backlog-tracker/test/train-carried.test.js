@@ -36,7 +36,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const {
-  onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
+  onTrainItems, trainOwnedPrNumbers, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
 } = require("../scripts/run-backlog-automation.js");
 const { isTrainRelevantItem, trainLockShouldClear } = require("../functions/train-lock");
 
@@ -55,6 +55,13 @@ const carriedCard = { id: "OhKUnoGbpUAeJiXiLIvc", projectId: "oTcLAbnhUUO2S7Nkbs
 const carrying = { sha: SIBLING_SHA, itemId: SIBLING_ID };
 
 // ── backlogItemIdFromMessage ────────────────────────────────────────────
+
+// 21 Oct 2026: a human-merged train PR was finished once per card (27 deploys).
+test("a train PR is the train's to finish, never a card's own merged PR", () => {
+  const owned = trainOwnedPrNumbers([{ trainPrNumber: 449 }, { trainPrNumber: "448" }, { trainPrNumber: null }, {}, null]);
+  assert.deepStrictEqual([...owned].sort(), [448, 449]);
+  assert.strictEqual(trainOwnedPrNumbers([]).size, 0);
+});
 
 test("reads the `Backlog item:` trailer off a train commit message", () => {
   assert.strictEqual(backlogItemIdFromMessage(`Show running app version in project header\n\nBacklog item: ${SIBLING_ID}\n`), SIBLING_ID);

@@ -2289,6 +2289,7 @@ exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSec
 const mcp = require("./mcp-server");
 exports.mcpServer = mcp.mcpServer;
 exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
+exports.syncMemberDirectory = mcp.syncMemberDirectory;
 
 // Test-only hook, same pattern as mcp-server.js's own `mcp.__test` — lets
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials

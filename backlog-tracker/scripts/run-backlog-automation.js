@@ -1793,6 +1793,7 @@ const TRAIN_TEST_WORKFLOWS = [
   { workflow: "firestore-rules-test.yml", prefix: "backlog-tracker/", label: "console tests" },
   { workflow: "e2e-quick.yml", prefix: "dsp-integration/", label: "DSP tests (e2e-quick)" },
   { workflow: "retail-media-insights-tests.yml", prefix: "Retail-media-insights/", label: "Retail Media Insights tests" },
+  { workflow: "kanban-staff-board-tests.yml", prefix: "kanban-staff-board/", label: "Staff Kanban tests" },
 ];
 const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 
@@ -2430,6 +2431,68 @@ function baseCheckAction({ workflow, baseSha, baseRun, keys, nowMs }) {
   const sent = (keys || []).filter((k) => k.startsWith(prefix)).map((k) => Number(k.slice(prefix.length))).filter(Number.isFinite);
   if (!sent.length) return { act: "dispatch" };
   return nowMs - Math.max(...sent) >= BASE_CHECK_GIVE_UP_MS ? { act: "eject", why: "base-never-ran" } : { act: "wait" };
+}
+
+// ── A deploy held red by main is resumed when main is fixed ──────────────
+// The ticket-level check above has a deploy-level twin. On 21 Oct 2026 a
+// workflow reached main without its TRAIN_TEST_WORKFLOWS line, the console
+// tests went red on main (0db46cc), and every train that had taken main went
+// red with it: DSP's approved deploy was held with "Fix it on
+// deploy/dsp-integration", which nobody could, and the gate only re-reads the
+// train's own runs, so fixing main did not release it either. Now a held
+// deploy whose red tests are red on main too says so, and once main is green
+// on them again the train takes main (once per main commit) and re-tests,
+// so the approved deploy carries on with nobody clicking.
+//
+// Pure, for test/train-base-check.test.js.
+//   red:      the gate's red workflows ([{ workflow }])
+//   onBase:   { [workflow]: trainRunVerdict on the main commit the train contains }
+//   onMain:   { [workflow]: { verdict, onTrain } } for the newest real run on
+//             main; onTrain says the train already contains that commit
+//   mainHead: main's tip now      resyncedTo: the main tip last taken for this
+// Returns { mainRed, resync } — resync is the main tip to take, or null.
+function heldDeployMainPlan({ red, onBase, onMain, mainHead, resyncedTo }) {
+  const list = (red || []).filter((w) => w && w.workflow);
+  if (!list.length) return { mainRed: false, resync: null };
+  const mainRed = list.every((w) => ["failed", "rerun"].includes((onBase || {})[w.workflow]));
+  const fixedOnMain = list.every((w) => {
+    const m = (onMain || {})[w.workflow];
+    return m && m.verdict === "passed" && !m.onTrain;
+  });
+  const resync = fixedOnMain && mainHead && mainHead !== resyncedTo ? mainHead : null;
+  return { mainRed, resync };
+}
+
+const heldDeployMainRedNote = (what, base7) =>
+  `Deploy held, nothing merged: ${what}. They fail the same way on main without this train (${base7}), so main is broken, not this train: ` +
+  `no ticket needs sending back. Fix main; this train then takes main, re-tests and the approved deploy carries on by itself.`;
+
+// Reads what heldDeployMainPlan needs. Never throws: what it can't read
+// counts as unknown, which neither blames main nor resyncs. Judged on runs
+// that reached a verdict (a run still going, or cancelled by the next push to
+// main, says nothing), and the train's main commit is judged by the newest
+// such run at or before it: most main commits have no run of their own.
+function decidedMainRun(runs, isAt) {
+  return (runs || []).find((r) => ["passed", "failed", "rerun"].includes(trainRunVerdict(r)) && isAt(r.headSha)) || null;
+}
+
+function readHeldDeployMainState(deployBranch, head, red, gh = (args) => run("gh", args)) {
+  const onBase = {};
+  const onMain = {};
+  const baseSha = mainBaseOf(head, gh);
+  const mainHead = mainHeadSha(gh);
+  const ancestor = (a, b) => { try { run("git", ["merge-base", "--is-ancestor", a, b]); return true; } catch { return false; } };
+  for (const w of red) {
+    try {
+      const runs = JSON.parse(gh(["api", `repos/${REPO}/actions/workflows/${w.workflow}/runs?branch=main&per_page=30`,
+        "-q", "[.workflow_runs[] | {id, attempt: .run_attempt, headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
+      const latest = decidedMainRun(runs, () => true);
+      if (latest) onMain[w.workflow] = { verdict: trainRunVerdict(latest), onTrain: ancestor(latest.headSha, head) };
+      const atBase = baseSha ? decidedMainRun(runs, (sha) => sha === baseSha || ancestor(sha, baseSha)) : null;
+      if (atBase) onBase[w.workflow] = trainRunVerdict(atBase);
+    } catch { /* unknown */ }
+  }
+  return { baseSha, mainHead, onBase, onMain };
 }
 
 // The one line a person needs: which test failed and what it said, from
@@ -4308,6 +4371,14 @@ function resolveDeployRun(entry, ctx, mergeCommit = null) {
   return out;
 }
 
+// The old per-card deploy record (deployRunUrl) heals a failed run, and
+// also a cancelled one: on 21 Oct 2026 the console deploy was dispatched 27
+// times in a row, each dispatch cancelled the queued one before it, and 18
+// cards read "cancelled" although the deploy that carried them succeeded.
+function legacyDeployHealable(conclusion) {
+  return conclusion === "failure" || conclusion === "cancelled";
+}
+
 // A pending deploy entry older than this becomes "unknown" (a failure for the
 // roll-up, with a note), so a card never reads Deploying… indefinitely.
 const DEPLOY_PENDING_MAX_MS = 2 * 60 * 60 * 1000;
@@ -5027,11 +5098,35 @@ async function processDeployTrain(project) {
     const what = gate.workflows.map((w) => `${w.label} ${w.state === "red" ? `failed${w.url ? ` (${w.url})` : ""}` : w.state === "pending" ? "is still running" : "has not run on this commit yet — started it"}`).join("; ");
     console.log(`[deploy-train] ${project.id}: holding the deploy — train tests ${gate.state} on ${gate.head.slice(0, 7)}: ${what}`);
     if (gate.state === "pending" || gate.state === "missing") followUpReasons.push(`${project.id}: deploy waiting on the train's tests`);
+    let redNote = `Deploy held, nothing merged: ${what}. Fix it on ${deployBranch} (or send the ticket that broke it back with Failed testing) — the approved deploy carries on by itself once the tests pass.`;
+    if (red) {
+      const redWorkflows = gate.workflows.filter((w) => w.state === "red");
+      const state = readHeldDeployMainState(deployBranch, gate.head, redWorkflows);
+      const plan = heldDeployMainPlan({ red: redWorkflows, ...state, resyncedTo: project.trainMainResyncedTo || null });
+      if (plan.resync) {
+        const sync = syncTrainWithMain(deployBranch);
+        if (sync.kind !== "conflict") {
+          dispatchTrainTests(deployBranch, redWorkflows.map((w) => TRAIN_TEST_WORKFLOWS.find((t) => t.workflow === w.workflow).prefix + "x"), "deploy-train");
+          console.log(`[deploy-train] ${project.id}: main is green again at ${plan.resync.slice(0, 7)} — took it onto ${deployBranch} and re-testing`);
+          followUpReasons.push(`${project.id}: deploy re-testing after taking main`);
+          await patchProject(project.id, {
+            trainStatus: "deploying",
+            trainHold: "tests-running",
+            trainMainResyncedTo: plan.resync,
+            trainNote: `The train's tests failed because main was broken; main is fixed (${plan.resync.slice(0, 7)}), so ${deployBranch} has taken it and is re-testing. The approved deploy carries on by itself when they pass.`,
+            updatedAt: new Date().toISOString(),
+          });
+          return;
+        }
+        console.log(`[deploy-train] ${project.id}: couldn't take main onto ${deployBranch} (conflict in ${(sync.paths || []).join(", ")})`);
+      }
+      if (plan.mainRed) redNote = heldDeployMainRedNote(what, String(state.baseSha).slice(0, 7));
+    }
     await patchProject(project.id, {
       trainStatus: "deploying",
       trainHold: red ? "tests-red" : "tests-running",
       trainNote: red
-        ? `Deploy held, nothing merged: ${what}. Fix it on ${deployBranch} (or send the ticket that broke it back with Failed testing) — the approved deploy carries on by itself once the tests pass.`
+        ? redNote
         : `Deploy to Main is waiting for the train's tests before opening the PR: ${what}. It carries on by itself when they pass.`,
       updatedAt: new Date().toISOString(),
     });
@@ -5736,6 +5831,9 @@ async function reconcileDeployStatuses() {
   const pending = [
     ...(await byConclusion("pending")),
     ...(await byConclusion("failure")).filter((i) => (i.deployRunUrl || Array.isArray(i.deployRuns)) && Date.parse(i.mergedAt || i.updatedAt || 0) >= failedSince),
+    // A run cancelled by the workflow's concurrency group was superseded, not
+    // failed: re-checked like a failure so the newer success is adopted.
+    ...(await byConclusion("cancelled")).filter((i) => (i.deployRunUrl || Array.isArray(i.deployRuns)) && Date.parse(i.mergedAt || i.updatedAt || 0) >= failedSince),
   ];
   if (!pending.length) return;
   console.log(`[deploy-status] ${pending.length} item(s) with a pending or failed deploy to check`);
@@ -5759,7 +5857,7 @@ async function reconcileDeployStatuses() {
       let conclusion = match.conclusion || "unknown";
       let url = match.url || item.deployRunUrl || null;
       const matchRunId = runId || (String(match.url || "").match(/\/runs\/(\d+)/) || [])[1];
-      if (conclusion === "failure" && matchRunId) {
+      if (legacyDeployHealable(conclusion) && matchRunId) {
         const verdict = healFailedDeploy(matchRunId, healCache);
         if (verdict.action === "rerun") {
           console.log(`[deploy-status] ${item.id}: deploy run ${matchRunId} failed — re-running its failed job once`);
@@ -5833,7 +5931,25 @@ async function recordPipelineHealth(conclusion) {
 // normal processMergePr success path (already-merged branch, deploy
 // trigger, status flip, note) runs in this same pass — no Routine fire, no
 // human click, and no code path duplicated.
+// The PR numbers a project's deployment train owns. A card on a train
+// carries its train PR's number too, and reconcileMergedTrains finishes
+// those — one deploy for the whole train. Picked up here as well, each card
+// went through processMergePr and dispatched its own console deploy: on
+// 21 Oct 2026 a run that read PR #449 as open in reconcileMergedTrains saw
+// it merged seconds later here and dispatched 27 deploys, 7 s apart.
+// Pure, for test/train-carried.test.js.
+function trainOwnedPrNumbers(projects) {
+  return new Set((projects || []).map((p) => Number(p && p.trainPrNumber)).filter((n) => Number.isFinite(n) && n > 0));
+}
+
 async function reconcileHumanMergedPrs() {
+  let trainPrs = new Set();
+  try {
+    trainPrs = trainOwnedPrNumbers(await runQuery({ from: [{ collectionId: "projects" }], select: selectFields(["trainPrNumber"]) }));
+  } catch (err) {
+    console.log(`[human-merge] couldn't read the projects' train PRs (${err.message}) — skipping this run`);
+    return [];
+  }
   const waiting = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     select: selectFields(["mergeReady", "mergePrNumber", "prNumber", "prUrl"]),
@@ -5844,6 +5960,7 @@ async function reconcileHumanMergedPrs() {
     if (item.mergeReady) continue; // already queued for this run
     const prNumber = item.mergePrNumber || item.prNumber || (item.prUrl ? (String(item.prUrl).match(/\/pull\/(\d+)/) || [])[1] : null);
     if (!prNumber) continue;
+    if (trainPrs.has(Number(prNumber))) continue; // the train's own reconcile finishes it
     try {
       const parsed = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "state"]));
       if (parsed.state !== "MERGED") continue;
@@ -6254,7 +6371,7 @@ module.exports = {
   conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
   // test/train-carried.test.js — a card whose content a sibling's commit
   // delivered follows that train instead of being marked live on approval
-  onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
+  onTrainItems, trainOwnedPrNumbers, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
   // test/generated-builds.test.js
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict, deployWorkflowsFor,
   tryAutoResolvePackageJsonConflict, tryAutoResolveTrainMergeConflict, mergeCommandChains, resumeConflictedTrain, trainConflictKey,
@@ -6281,6 +6398,8 @@ module.exports = {
   trainRunVerdict, culpritAction, rerunTrainRun, trainFailureNotes, flakyPassKey, flakyNote, ejectRedCulprits,
   // test/train-base-check.test.js — a ticket is never sent back for a failure main already has
   baseCheckAction, failureSummaryFromLog, isMainMergeCommit, BASE_CHECK_GIVE_UP_MS, baseCheckRef, heldForMain,
+  // ...and an approved deploy held red by main resumes once main is fixed
+  heldDeployMainPlan, heldDeployMainRedNote, decidedMainRun,
   reportTrainTestResults, trainRunOwner, alreadyRerun, rerunRunKey, fdoc,
   trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/train-eject-after-revert.test.js — a ticket is judged on a run that did not contain a reverted ticket
@@ -6297,7 +6416,7 @@ module.exports = {
   TRAIN_MERGE_DISPATCHES, NOT_DISPATCHED_AFTER_TRAIN, HOSTED_DEPLOYS, trainMergeNeeds,
   GENERATED_BUILDS, PREVIEW_REBUILD_STALE_MS, previewLinkFields, refreshPreviewBuildStates, rebuildNote, repointTrainPreviewUrls,
   // test/deploy-heal.test.js — a transient deploy failure heals itself
-  healFailedDeploy,
+  healFailedDeploy, legacyDeployHealable,
   // test/deploy-tracking.test.js
   planDeployRuns, rollUpDeployRuns, resolveDeployRun, consoleDeployNeeded, prototypeSourceStamp, prototypeBuildCurrent, deployFailureNote, findDispatchedDeployRun,
 };
