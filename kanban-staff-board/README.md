@@ -38,10 +38,12 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
   bottom of the screen. You can drag cards
   with a mouse, or press and hold them on touch. Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
-  Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The filter row
-  stays on one line from 1240px wide with the sidebar open; below that it wraps. The filters cover My
-  tasks, assignee avatars (first names), release, type, priority, sprint,
-  label and search. Selecting people in the assignee filter splits the board into one
+  Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The primary filters, staff avatars,
+  **My tasks** and **Release**, sit in a bar pinned to the top while you scroll, with the column headers under it. Flagged,
+  type, priority, sprint and label are in the **Filters** menu, whose button shows how many are on. The bar stays on
+  one line from 1024px wide. Changing a filter keeps your place on the page. **On a phone** the columns are a
+  sideways carousel: swipe left or right, or tap a column tab in the pinned strip. With swimlanes, every
+  person's lane shows the column you're on, and swiping changes it for all of them. Selecting people in the assignee filter splits the board into one
   swimlane per person. Each lane has a full-width header with the person's name, and can be
   collapsed on its own or with Expand all / Collapse all. The board scrolls as one page: columns have no
   inner scrollbars. On this page the console topbar scrolls away. Only the column headers stick to the top,

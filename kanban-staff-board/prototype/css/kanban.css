@@ -621,3 +621,90 @@ body.kb-drag-active .kb-col[data-status="done"] .kb-res-split { visibility: hidd
 .kb-team-photo .material-symbols-outlined { font-size: 17px; }
 .kb-team li .kb-avatar { width: 36px; height: 36px; font-size: 15px; }
 @media (max-width: 640px) { .kb-team-photo-label { display: none; } }
+
+/* ── Pinned filter bar (21 Oct 2026) ────────────────────────────────────
+   Staff, My tasks, Release and Filters stay at the top while the board
+   scrolls, with the column headers (desktop) or the column tabs (phone)
+   pinned beneath them. Flagged, type, priority, sprint and label live in
+   the Filters menu. */
+.kb-sticky { position: sticky; top: 0; z-index: 7; background: var(--ap-bg); margin: -8px -4px 8px; padding: 8px 4px 0; }
+.kb-sticky .kb-filters { margin: 0 0 8px; }
+.kb-sticky .kb-lanes-sticky { position: static; padding: 0 4px 8px; }
+.kb-filter-toggle { display: inline-flex !important; }
+.kb-filter-count { min-width: 18px; padding: 0 5px; border-radius: 9999px; background: rgba(255, 255, 255, .35); font-size: 11px; font-weight: 700; text-align: center; }
+.kb-filter-toggle:not(.on) .kb-filter-count { background: var(--primary-tint); color: var(--primary-text); }
+.kb-release-select { font-weight: 600; }
+.kb-filter-anchor { position: relative; height: 0; }
+.kb-filter-panel { position: absolute; z-index: 9; top: -2px; left: 0; width: min(560px, 100%); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; padding: 14px; border-radius: var(--ap-radius); background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider), 0 14px 36px rgba(0, 0, 0, .18); }
+.kb-filter-panel[hidden] { display: none; }
+.kb-filter-panel .kb-flag-filter { grid-column: 1 / -1; justify-self: start; }
+.kb-filter-panel .kb-rfilter select { width: 100%; min-height: 40px; font: inherit; font-size: 13.5px; padding: 0 10px; }
+.kb-filter-panel-foot { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
+.kb-filter-panel-foot .btn-primary { min-height: 38px; padding: 0 18px; }
+.kb-pager { display: none; }
+
+@media (min-width: 641px) {
+  /* the people chips reveal the panel's left edge */
+  .kb-filter-panel { left: 200px; }
+}
+
+@media (max-width: 640px) {
+  .kb-sticky { margin: 0 -12px 8px; padding: 6px 12px 0; box-shadow: 0 6px 12px -10px rgba(0, 0, 0, .35); }
+  .kb-sticky .kb-filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 6px; margin: 0 -12px 6px; padding: 2px 12px; }
+  .kb-sticky .kb-filters::-webkit-scrollbar { display: none; }
+  .kb-sticky .kb-filters > * { flex: none; }
+  .kb-sticky .kb-people { flex: none; overflow: visible; gap: 0; }
+  .kb-sticky .kb-people .kb-person-chip { padding: 0; }
+  .kb-sticky .kb-people .kb-person-chip + .kb-person-chip { margin-left: -6px; }
+  .kb-sticky .kb-people .kb-person-chip.on > span:last-child { display: none; }
+  .kb-sticky .kb-people .kb-person-chip.on { background: transparent; }
+  .kb-sticky .kb-filters select { flex: none; width: auto; max-width: 150px; min-height: 40px; }
+  .kb-sticky .kb-mine { min-height: 40px; padding: 0 12px; }
+  .kb-filter-panel { left: 0; right: 0; width: auto; grid-template-columns: minmax(0, 1fr); }
+  .kb-filter-panel .kb-rfilter select { min-height: 44px; }
+
+  /* Column tabs: pinned, swipe or tap to change column */
+  .kb-pager { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px 8px; }
+  .kb-pager::-webkit-scrollbar { display: none; }
+  .kb-pager-tab { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: 9999px; border-top: 0 !important; background: rgba(120, 120, 128, .12); color: var(--text-muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .kb-pager-tab.on { background: var(--ap-card); color: var(--text); box-shadow: 0 0 0 .5px var(--ap-divider), 0 2px 6px rgba(0, 0, 0, .12); }
+  .kb-pager-tab.on::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .kb-pager-tab.kb-col-backlog.on::before { background: var(--accent-backlog); }
+  .kb-pager-tab.kb-col-ready-for-dev.on::before { background: var(--kb-dev); }
+  .kb-pager-tab.kb-col-in-progress.on::before { background: var(--primary); }
+  .kb-pager-tab.kb-col-ready-for-testing.on::before { background: var(--warning); }
+  .kb-pager-tab.kb-col-approved.on::before { background: var(--violet); }
+  .kb-pager-tab.kb-col-done.on::before { background: var(--success); }
+  .kb-pager-count { font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 9999px; background: rgba(0, 0, 0, .06); }
+
+  /* Plain board: a sideways carousel, one column per screen */
+  .kb-board-wrap { position: relative; overflow-x: auto !important; scroll-snap-type: x mandatory; scroll-behavior: smooth; margin: 0 -12px !important; padding: 0 12px 8px !important; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .kb-board-wrap::-webkit-scrollbar { display: none; }
+  body.kb-drag-active .kb-board-wrap { scroll-snap-type: none; scroll-behavior: auto; }
+  .kb-board:not(.kb-board-lanes) { grid-template-columns: none !important; grid-auto-flow: column; grid-auto-columns: calc(100vw - 40px); gap: 12px; align-items: start; }
+  .kb-board:not(.kb-board-lanes) .kb-col { scroll-snap-align: center; }
+  .kb-board:not(.kb-board-lanes) .kb-col > .kb-col-head { position: static; cursor: default; }
+
+  /* Swimlanes: every lane shows the column the pager is on */
+  .kb-board-lanes { grid-template-columns: minmax(0, 1fr) !important; }
+  .kb-board-lanes .kb-lane-cell { display: none !important; }
+  .kb-board-lanes[data-col="backlog"] .kb-lane-cell[data-status="backlog"],
+  .kb-board-lanes[data-col="ready-for-dev"] .kb-lane-cell[data-status="ready-for-dev"],
+  .kb-board-lanes[data-col="in-progress"] .kb-lane-cell[data-status="in-progress"],
+  .kb-board-lanes[data-col="ready-for-testing"] .kb-lane-cell[data-status="ready-for-testing"],
+  .kb-board-lanes[data-col="approved"] .kb-lane-cell[data-status="approved"],
+  .kb-board-lanes[data-col="done"] .kb-lane-cell[data-status="done"] { display: flex !important; }
+  .kb-board-lanes .kb-lane-cell.kb-cell-hidden { display: none !important; }
+  .kb-board-lanes .kb-lane-cell .kb-cell-head { display: none; }
+  .kb-board-lanes .kb-lane-cell .kb-list { min-height: 56px; }
+  .kb-board-wrap:has(.kb-board-lanes) { overflow: visible !important; scroll-snap-type: none; }
+  .kb-lane { position: sticky; top: var(--kb-sticky-h, 0px); z-index: 4; }
+}
+@media (max-width: 640px) {
+  /* Two compact rows on a phone: staff, then My tasks / Release / Filters */
+  .kb-sticky .kb-filters { flex-wrap: wrap; overflow: visible; row-gap: 6px; }
+  .kb-sticky .kb-people { flex: 1 1 100% !important; overflow-x: auto; scrollbar-width: none; }
+  .kb-sticky .kb-filters .kb-mine, .kb-sticky .kb-filters .kb-filter-toggle { flex: none; }
+  .kb-sticky .kb-filters .kb-release-select { flex: 1 1 0 !important; min-width: 0; max-width: none; }
+  .kb-sticky .kb-clear { flex: none; }
+}

@@ -352,6 +352,7 @@
     document.addEventListener("click", (e) => {
       if (!e.target.closest("#profile-menu, #profile-btn, .tab")) closeProfile();
       if (!e.target.closest(".project-options")) $$(".project-options-menu").forEach((m) => { m.hidden = true; });
+      if (filtersOpen && !e.target.closest("#kb-filter-panel, #kb-filter-toggle")) { filtersOpen = false; const fp = $("#kb-filter-panel"); if (fp) fp.hidden = true; const ft = $("#kb-filter-toggle"); if (ft) ft.setAttribute("aria-expanded", "false"); }
     });
     const measure = () => root.style.setProperty("--sticky-topbar-h", $(".topbar").offsetHeight + "px");
     addEventListener("resize", measure); measure();
@@ -395,8 +396,9 @@
 
   function renderKanban(view) {
     const relOpts = opt("", "All releases", board.release) + SEED.releases.map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), board.release)).join("");
-    const extraCount = [board.release, board.type, board.priority, board.sprint, board.label].filter(Boolean).length;
-    const filtersActive = board.flagged || board.mine || board.assignees.size || board.type || board.priority || board.sprint || board.label || board.q;
+    // Primary filters: staff, My tasks, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
+    const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.label].filter(Boolean).length;
+    const filtersActive = moreCount || board.mine || board.assignees.size || board.release || board.q;
     view.innerHTML = `
       <div class="page-header">
         <h2>Staff Kanban</h2>
@@ -408,31 +410,37 @@
           <button type="button" class="btn-ghost kb-settings-btn" data-route="settings" title="Kanban settings" aria-label="Kanban settings"><span class="material-symbols-outlined" aria-hidden="true">settings</span></button>
         </div>
       </div>
-      <div class="kb-filters" role="search">
-        <div class="kb-people" role="group" aria-label="Filter by assignee">
-          ${SEED.users.map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${u.id}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.first)}">${avatar(u.id)}<span>${esc(u.first)}</span></button>`).join("")}
-          <button type="button" class="kb-person-chip${board.assignees.has("none") ? " on" : ""}" data-person="none" aria-pressed="${board.assignees.has("none")}">${avatar("")}<span>Unassigned</span></button>
+      <div class="kb-sticky" id="kb-sticky">
+        <div class="kb-filters" role="search">
+          <div class="kb-people" role="group" aria-label="Filter by assignee">
+            ${SEED.users.map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${u.id}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.first)}">${avatar(u.id)}<span>${esc(u.first)}</span></button>`).join("")}
+            <button type="button" class="kb-person-chip${board.assignees.has("none") ? " on" : ""}" data-person="none" aria-pressed="${board.assignees.has("none")}" title="Unassigned">${avatar("")}<span>Unassigned</span></button>
+          </div>
+          <button type="button" class="kb-mine${board.mine ? " on" : ""}" id="kb-mine" aria-pressed="${board.mine}"><span class="material-symbols-outlined" aria-hidden="true">person</span>My tasks</button>
+          <select id="kb-release" class="kb-release-select" aria-label="Release">${relOpts}</select>
+          <button type="button" class="kb-mine kb-filter-toggle${filtersOpen || moreCount ? " on" : ""}" id="kb-filter-toggle" aria-expanded="${filtersOpen}" aria-controls="kb-filter-panel"><span class="material-symbols-outlined" aria-hidden="true">tune</span>Filters${moreCount ? `<span class="kb-filter-count">${moreCount}</span>` : ""}</button>
+          ${filtersActive ? '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>' : ""}
         </div>
-        <button type="button" class="kb-mine${board.mine ? " on" : ""}" id="kb-mine" aria-pressed="${board.mine}"><span class="material-symbols-outlined" aria-hidden="true">person</span>My tasks</button>
-        <button type="button" class="kb-mine kb-flag-filter${board.flagged ? " on" : ""}" id="kb-flagged" aria-pressed="${board.flagged}"><span class="material-symbols-outlined" aria-hidden="true">flag</span>Flagged<span class="kb-flag-count">${state.tasks.filter((t) => t.flagged && t.status !== "done").length}</span></button>
-        <button type="button" class="kb-mine kb-filter-toggle${filtersOpen ? " on" : ""}" id="kb-filter-toggle" aria-expanded="${filtersOpen}"><span class="material-symbols-outlined" aria-hidden="true">tune</span>Filters${extraCount ? ` · ${extraCount}` : ""}</button>
-        <div class="kb-filter-more${filtersOpen ? " open" : ""}">
-        <select id="kb-release" aria-label="Release">${relOpts}</select>
-        <select id="kb-type" aria-label="Type">${opt("", "All types", board.type)}${TYPES.map((t) => opt(t.key, t.label, board.type)).join("")}</select>
-        <select id="kb-priority" aria-label="Priority">${opt("", "All priorities", board.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, board.priority)).join("")}</select>
-        <select id="kb-sprint" aria-label="Sprint">${opt("", "All sprints", board.sprint)}${SEED.sprints.map((s) => opt(s.id, s.name, board.sprint)).join("")}</select>
-        <select id="kb-label" aria-label="Label">${opt("", "All labels", board.label)}${SEED.labels.map((l) => opt(l, l, board.label)).join("")}</select>
+        <div class="kb-filter-anchor">
+          <div class="kb-filter-panel" id="kb-filter-panel" role="dialog" aria-label="More filters"${filtersOpen ? "" : " hidden"}>
+            <button type="button" class="kb-mine kb-flag-filter${board.flagged ? " on" : ""}" id="kb-flagged" aria-pressed="${board.flagged}"><span class="material-symbols-outlined" aria-hidden="true">flag</span>Flagged only<span class="kb-flag-count">${state.tasks.filter((t) => t.flagged && t.status !== "done").length}</span></button>
+            <label class="kb-rfilter"><span>Type</span><select id="kb-type">${opt("", "All types", board.type)}${TYPES.map((t) => opt(t.key, t.label, board.type)).join("")}</select></label>
+            <label class="kb-rfilter"><span>Priority</span><select id="kb-priority">${opt("", "All priorities", board.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, board.priority)).join("")}</select></label>
+            <label class="kb-rfilter"><span>Sprint</span><select id="kb-sprint">${opt("", "All sprints", board.sprint)}${SEED.sprints.map((s) => opt(s.id, s.name, board.sprint)).join("")}</select></label>
+            <label class="kb-rfilter"><span>Label</span><select id="kb-label">${opt("", "All labels", board.label)}${SEED.labels.map((l) => opt(l, l, board.label)).join("")}</select></label>
+            <div class="kb-filter-panel-foot">${moreCount ? '<button type="button" class="link-btn" id="kb-clear-more">Clear these</button>' : "<span></span>"}<button type="button" class="btn-primary" id="kb-filter-done">Done</button></div>
+          </div>
         </div>
-        ${filtersActive ? '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>' : ""}
+        <div class="kb-lanes-sticky" id="kb-lanes-sticky" hidden>
+          <div class="kb-lanes-head-scroll" id="kb-lanes-head-scroll"><div class="kb-board kb-lanes-head-grid" id="kb-lanes-head"></div></div>
+          <button type="button" class="kb-lane-pin" id="kb-lane-pin" hidden></button>
+        </div>
+        <div class="kb-pager" id="kb-pager" role="tablist" aria-label="Columns"></div>
       </div>
       <div class="kb-lanes-bar" id="kb-lanes-bar" hidden>
         <span class="kb-lanes-bar-label"><span class="material-symbols-outlined" aria-hidden="true">view_agenda</span>Swimlanes by staff member</span>
         <button type="button" class="link-btn" id="kb-lanes-expand">Expand all</button>
         <button type="button" class="link-btn" id="kb-lanes-collapse">Collapse all</button>
-      </div>
-      <div class="kb-lanes-sticky" id="kb-lanes-sticky" hidden>
-        <div class="kb-lanes-head-scroll" id="kb-lanes-head-scroll"><div class="kb-board kb-lanes-head-grid" id="kb-lanes-head"></div></div>
-        <button type="button" class="kb-lane-pin" id="kb-lane-pin" hidden></button>
       </div>
       <div class="kb-board-wrap" id="kb-board-wrap"><div class="kb-board" id="kb-board"></div></div>`;
     // The swimlane column headers live outside the sideways-scrolling board so
@@ -455,19 +463,93 @@
     $("#kb-new-btn").addEventListener("click", () => openTask(null));
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
     $("#kb-q").addEventListener("input", (e) => { board.q = e.target.value; renderKanbanBoard(); });
+    // A filter change redraws the board in place: the page keeps its scroll
+    // position (and, on a phone, the column you were on).
+    const redraw = () => keepPosition(() => renderKanban(view));
+    // Height of the pinned bar, so a phone's swimlane names can pin just under it.
+    const stickyEl = $("#kb-sticky");
+    const setStickyH = () => root.style.setProperty("--kb-sticky-h", stickyEl.offsetHeight + "px");
+    if (window.ResizeObserver) new ResizeObserver(setStickyH).observe(stickyEl);
+    setStickyH();
     $$(".kb-person-chip").forEach((b) => b.addEventListener("click", () => {
       const id = b.dataset.person;
       if (board.assignees.has(id)) board.assignees.delete(id); else board.assignees.add(id);
-      renderKanban(view);
+      redraw();
     }));
-    $("#kb-filter-toggle").addEventListener("click", () => { filtersOpen = !filtersOpen; renderKanban(view); });
-    $("#kb-mine").addEventListener("click", () => { board.mine = !board.mine; renderKanban(view); });
-    $("#kb-flagged").addEventListener("click", () => { board.flagged = !board.flagged; renderKanban(view); });
+    $("#kb-filter-toggle").addEventListener("click", (e) => { e.stopPropagation(); filtersOpen = !filtersOpen; $("#kb-filter-panel").hidden = !filtersOpen; $("#kb-filter-toggle").setAttribute("aria-expanded", String(filtersOpen)); });
+    $("#kb-filter-done").addEventListener("click", () => { filtersOpen = false; $("#kb-filter-panel").hidden = true; $("#kb-filter-toggle").setAttribute("aria-expanded", "false"); });
+    $("#kb-mine").addEventListener("click", () => { board.mine = !board.mine; redraw(); });
+    $("#kb-flagged").addEventListener("click", () => { board.flagged = !board.flagged; redraw(); });
     [["kb-release", "release"], ["kb-type", "type"], ["kb-priority", "priority"], ["kb-sprint", "sprint"], ["kb-label", "label"]].forEach(([id, k]) =>
-      $("#" + id).addEventListener("change", (e) => { board[k] = e.target.value; renderKanban(view); }));
+      $("#" + id).addEventListener("change", (e) => { board[k] = e.target.value; redraw(); }));
+    const clearMore = $("#kb-clear-more");
+    if (clearMore) clearMore.addEventListener("click", () => { Object.assign(board, { flagged: false, type: "", priority: "", sprint: "", label: "" }); redraw(); });
     const clear = $("#kb-clear");
-    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, type: "", priority: "", sprint: "", label: "" }); board.assignees.clear(); renderKanban(view); });
+    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, release: "", type: "", priority: "", sprint: "", label: "" }); board.assignees.clear(); redraw(); });
+    // Phone: swipe the board left / right between columns.
+    wrap.addEventListener("scroll", () => { if (mqPhone.matches && !$("#kb-board").classList.contains("kb-board-lanes")) syncPagerFromScroll(); }, { passive: true });
+    let sw = null;
+    wrap.addEventListener("touchstart", (e) => { if (e.touches.length === 1) sw = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, { passive: true });
+    wrap.addEventListener("touchend", (e) => {
+      if (!sw || drag || !mqPhone.matches || !$("#kb-board").classList.contains("kb-board-lanes")) { sw = null; return; }
+      const t = e.changedTouches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+      sw = null;
+      if (Math.abs(dx) > 60 && Math.abs(dy) < 50) goToColumn(phoneCol + (dx < 0 ? 1 : -1));
+    }, { passive: true });
     renderKanbanBoard();
+  }
+
+  function keepPosition(fn) {
+    const y = scrollY, wrap = $("#kb-board-wrap"), x = wrap ? wrap.scrollLeft : 0;
+    fn();
+    const w = $("#kb-board-wrap");
+    if (w) { w.style.scrollBehavior = "auto"; w.scrollLeft = x; w.style.scrollBehavior = ""; }
+    scrollTo(0, y);
+    requestAnimationFrame(() => scrollTo(0, y));
+  }
+
+  // Phone: one column at a time. The pinned pager names the column you're on;
+  // tap a name, or swipe the board, to move between them.
+  let phoneCol = 0;
+  function drawPager(tasks) {
+    const pager = $("#kb-pager");
+    if (!pager) return;
+    pager.innerHTML = STATUSES.map((s, i) => {
+      const n = tasks.filter((t) => t.status === s.key).length;
+      return `<button type="button" class="kb-pager-tab kb-col-${s.key}${i === phoneCol ? " on" : ""}" role="tab" aria-selected="${i === phoneCol}" data-col="${i}">${esc(s.key === "done" ? "Completed / Withdrawn" : s.label)}<span class="kb-pager-count">${n}</span></button>`;
+    }).join("");
+    $$(".kb-pager-tab", pager).forEach((b) => b.addEventListener("click", () => goToColumn(+b.dataset.col)));
+    scrollPagerToActive();
+  }
+  function scrollPagerToActive() {
+    const on = $(".kb-pager-tab.on");
+    if (on) on.parentElement.scrollTo({ left: on.offsetLeft - 16, behavior: "smooth" });
+  }
+  function setPagerActive(i) {
+    phoneCol = Math.max(0, Math.min(STATUSES.length - 1, i));
+    $$(".kb-pager-tab").forEach((b) => { const on = +b.dataset.col === phoneCol; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
+    scrollPagerToActive();
+  }
+  function goToColumn(i) {
+    setPagerActive(i);
+    const el = $("#kb-board");
+    if (!el) return;
+    if (el.classList.contains("kb-board-lanes")) { el.dataset.col = STATUSES[phoneCol].key; return; }
+    const col = $(`.kb-col[data-status="${STATUSES[phoneCol].key}"]`, el), wrap = $("#kb-board-wrap");
+    if (col && wrap) wrap.scrollTo({ left: col.offsetLeft - parseFloat(getComputedStyle(wrap).paddingLeft), behavior: "smooth" });
+    const top = wrap.getBoundingClientRect().top + scrollY - $("#kb-sticky").offsetHeight;
+    if (scrollY > top) scrollTo({ top, behavior: "smooth" });
+  }
+  let pagerTimer;
+  function syncPagerFromScroll() {
+    clearTimeout(pagerTimer);
+    pagerTimer = setTimeout(() => {
+      const wrap = $("#kb-board-wrap"), cols = $$("#kb-board > .kb-col");
+      if (!wrap || !cols.length) return;
+      const mid = wrap.scrollLeft + wrap.clientWidth / 2;
+      const i = cols.findIndex((c) => c.offsetLeft + c.offsetWidth >= mid);
+      if (i >= 0 && i !== phoneCol) setPagerActive(i);
+    }, 60);
   }
 
   // Swimlanes: one per staff member picked in the assignee filter (Jira's
@@ -500,6 +582,8 @@
     $("#kb-count").textContent = `${tasks.length} task${tasks.length === 1 ? "" : "s"}`;
     const lanes = laneIds();
     el.classList.toggle("kb-board-lanes", !!lanes);
+    el.dataset.col = STATUSES[phoneCol].key;
+    drawPager(tasks);
     const sorted = (list, k) => list.filter((t) => t.status === k).sort((a, b) => a.rank - b.rank);
     if (lanes) {
       $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
@@ -550,12 +634,11 @@
         ${listsHTML(list, s, '<p class="empty-hint kb-empty">No tasks</p>')}
       </section>`;
     }).join("");
-    $$(".kb-col-head", el).forEach((h) => h.addEventListener("click", () => {
-      if (!mqPhone.matches) return;
-      const k = h.parentElement.dataset.status;
-      if (collapsedCols.has(k)) collapsedCols.delete(k); else collapsedCols.add(k);
-      h.parentElement.classList.toggle("column-collapsed");
-    }));
+    // Phone: open on the column the pager says you're on.
+    if (mqPhone.matches) requestAnimationFrame(() => {
+      const col = $(`.kb-col[data-status="${STATUSES[phoneCol].key}"]`, el), wrap = $("#kb-board-wrap");
+      if (col && wrap) { wrap.style.scrollBehavior = "auto"; wrap.scrollLeft = col.offsetLeft - parseFloat(getComputedStyle(wrap).paddingLeft); wrap.style.scrollBehavior = ""; }
+    });
   }
 
   // Desktop: the board scrolls sideways in its own box, so a lane header can't
@@ -696,7 +779,7 @@
     }).join("");
     if (!mqPhone.matches) {
       const ref = $("#kb-lanes-head .kb-col-done") || $('.kb-col[data-status="done"]');
-      const head = $("#kb-lanes-sticky");
+      const head = $("#kb-sticky");
       const r = ref.getBoundingClientRect();
       const top = Math.max(head && !head.hidden ? head.getBoundingClientRect().bottom : 0, 0) + 8;
       const left = Math.min(Math.max(r.left, 0), innerWidth - r.width - 8);
