@@ -15,7 +15,13 @@ Promoted from the Concept Incubator concept `vmhUoPiogxiJq1YmtJph`
 | Deploy | The prototype is GitHub Pages: live on merge to `main`. The production build lives in `backlog-tracker/` and deploys with the console |
 
 **Status (21 Oct 2026):** the prototype implements the whole spec; the
-production build in the console hasn't started. Its tickets are on the board.
+production build in the console hasn't started. The concept was promoted to the
+board project `New5VKTF2QBqT3T4YEla` (deploy branch `deploy/kanban-staff-board`),
+whose Backlog holds its 28 tickets: 24 build (12 front end, 12 back end), the E2E
+suite, the README, the spec, and the manual checks M-1 to M-4. The production code
+goes in `backlog-tracker/`; this folder keeps the spec, prototype and tests.
+[`board-docs.json`](board-docs.json) mirrors the test plan and run report onto
+the project's Docs page.
 
 When you change any prototype CSS or JS file, bump the `?v=` on its link in
 `prototype/index.html`: GitHub Pages lets browsers cache those files for 10

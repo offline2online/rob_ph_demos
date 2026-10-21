@@ -1,0 +1,17 @@
+{
+  "projectId": "New5VKTF2QBqT3T4YEla",
+  "startHere": "readme",
+  "mirrors": [
+    {
+      "key": "e2e-test-plan",
+      "path": "kanban-staff-board/docs/E2E-TEST-PLAN.md",
+      "name": "End-to-end test plan (TC-01 to TC-25, manual checks M-1 to M-4)"
+    },
+    {
+      "key": "e2e-report-2026-10-21",
+      "path": "kanban-staff-board/docs/E2E-REPORT-2026-10-21.md",
+      "name": "End-to-end run, 21 Oct 2026 (prototype, 25/25)"
+    }
+  ],
+  "boardDocs": []
+}
