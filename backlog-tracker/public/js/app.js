@@ -6321,11 +6321,16 @@ async function deleteConcept(id) {
 // hides Promote the moment `status` flips (see renderConceptDetailPage).
 // Program and release are optional and settable later from the Docs page.
 // Returns { projectId, folder, tickets: [{id, title, kind}], ticketError }.
+function promoteFolderFor(name) {
+  return pickRepoFolder(name, [...RESERVED_ROOT_FOLDERS, ...projects.map((p) => p.repoFolder).filter(Boolean)]);
+}
 const RESERVED_ROOT_FOLDERS = ["backlog-tracker", "faq", "docs", "shared", "scripts", "menu-board-demo", "dsp-integration", "visitor-profile", "brands-suppliers-assets", "github", "node_modules", "functions", "public"];
-async function promoteConceptToProject(conceptId, name, programId, releaseId) {
+async function promoteConceptToProject(conceptId, name, programId, releaseId, onProgress) {
   const concept = concepts.find((c) => c.id === conceptId);
   if (!concept) return null;
-  const folder = pickRepoFolder(name, [...RESERVED_ROOT_FOLDERS, ...projects.map((p) => p.repoFolder).filter(Boolean)]);
+  const progress = typeof onProgress === "function" ? onProgress : () => {};
+  const folder = promoteFolderFor(name);
+  progress("Creating project…");
   const data = {
     name: name.trim(),
     createdAt: serverTimestamp(),
@@ -6359,6 +6364,7 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId) {
   try {
     const plan = planPromotionTickets({ name: data.name, folder, readmeMd: concept.readmeMd, requirementsMd: concept.requirementsMd, documents: concept.documents });
     for (const t of plan) {
+      progress(`Raising tickets ${tickets.length + 1}/${plan.length}…`);
       const id = await addItem(ref.id, t.title, t.desc, t.type, t.category, { effort: t.effort, priority: t.priority });
       tickets.push({ id, title: t.title, kind: t.kind });
     }
@@ -7143,19 +7149,43 @@ const pcReleaseSelect = document.getElementById("pc-release-select");
 const updatePcNameCount = wireCharCount(document.getElementById("pc-name-input"), document.getElementById("pc-name-count"));
 let pcConceptId = null;
 
+let pcBusy = false;
+function updatePcFolderHint() {
+  const v = document.getElementById("pc-name-input").value.trim();
+  document.getElementById("pc-folder-hint").textContent = v ? `Repo folder: ${promoteFolderFor(v)}/` : "";
+}
+function setPcBusy(busy, message) {
+  pcBusy = busy;
+  const btn = document.getElementById("pc-submit");
+  btn.disabled = busy;
+  btn.innerHTML = busy ? '<span class="notify-claude-spinner" aria-hidden="true"></span> Promoting…' : "Promote";
+  document.getElementById("pc-cancel").disabled = busy;
+  document.getElementById("pc-close").disabled = busy;
+  const st = document.getElementById("pc-progress");
+  st.hidden = !busy;
+  st.textContent = busy ? (message || "") : "";
+}
+
 function openPromoteConceptModal(conceptId) {
   const c = concepts.find((x) => x.id === conceptId);
-  if (!c) return;
+  if (!c) {
+    showAlert("This concept isn't loaded, so it can't be promoted. Reload the page and try again.", { title: "Can't promote" });
+    return;
+  }
   pcConceptId = conceptId;
   pcBackdrop.hidden = false;
+  setPcBusy(false);
   const nameEl = document.getElementById("pc-name-input");
   nameEl.value = c.name || "";
   updatePcNameCount();
+  updatePcFolderHint();
   populateProgramSelect(pcProgramSelect, "");
   populateReleaseSelect(pcReleaseSelect, "");
   nameEl.focus();
 }
-function closePromoteConceptModal() { pcBackdrop.hidden = true; pcConceptId = null; }
+// Closing is blocked while a promotion is running: the pop-up is the only
+// place its progress and outcome show.
+function closePromoteConceptModal() { if (pcBusy) return; pcBackdrop.hidden = true; pcConceptId = null; }
 
 document.getElementById("concept-promote-btn").addEventListener("click", async () => {
   if (!conceptDetailId) return;
@@ -7167,6 +7197,10 @@ document.getElementById("pc-close").addEventListener("click", closePromoteConcep
 pcBackdrop.addEventListener("click", (e) => { if (e.target === pcBackdrop) closePromoteConceptModal(); });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !pcBackdrop.hidden) closePromoteConceptModal();
+});
+document.getElementById("pc-name-input").addEventListener("input", updatePcFolderHint);
+document.getElementById("pc-name-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); document.getElementById("pc-submit").click(); }
 });
 // Same inline "+ New program…" handling as docsProgramSelect — unlike the
 // New Project modal, this select's value has to already be a real program
@@ -7188,19 +7222,23 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
   const programId = pcProgramSelect.value !== "__new__" ? pcProgramSelect.value : "";
   const releaseId = pcReleaseSelect.value || "";
   const conceptId = pcConceptId;
-  const submitBtn = document.getElementById("pc-submit");
-  submitBtn.disabled = true;
+  if (pcBusy) return;
+  setPcBusy(true, "Creating project…");
   let result;
   try {
-    result = await promoteConceptToProject(conceptId, name, programId, releaseId);
+    result = await promoteConceptToProject(conceptId, name, programId, releaseId, (m) => setPcBusy(true, m));
   } catch (err) {
-    submitBtn.disabled = false;
+    setPcBusy(false);
     await showAlert(describeSaveError(err, [{ label: "Project name", value: name, max: 80 }]));
     return;
   }
-  submitBtn.disabled = false;
+  setPcBusy(false);
+  if (!result) {
+    await showAlert("This concept isn't loaded any more, so nothing was created. Reload the page and try again.", { title: "Couldn't promote" });
+    return;
+  }
   closePromoteConceptModal();
-  if (result) {
+  {
     const by = (k) => result.tickets.filter((t) => t.kind === k).length;
     await showAlert(
       `"${name}" is now a project, with repo folder "${result.folder}/" linked (the folder itself appears in the repo when its first ticket lands).\n\n` +

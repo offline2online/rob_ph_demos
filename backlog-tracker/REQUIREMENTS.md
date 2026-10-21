@@ -1232,6 +1232,14 @@ the promotion flow (`promoteConceptToProject` in `public/js/app.js`), which
 also writes the new `projects/{id}` doc, seeded with this concept's
 `readmeMd`/`requirementsMd` verbatim so nothing is re-keyed.
 
+The Promote pop-up never ends silently (21 Oct 2026): Enter in the name box
+submits; the "Repo folder: <slug>/" line under the name updates as it is
+typed (`pickRepoFolder`); while it runs the button reads "Promoting…" with a
+spinner, progress shows ("Creating project…", "Raising tickets 12/27…") and
+Cancel/×/backdrop/Escape are disabled; a concept that is no longer loaded
+shows an error alert instead of closing. Before submitting, backdrop/Escape
+still close it.
+
 `comments` mirrors `backlogItems.notes`' shape exactly (`author`/`text`/
 `at`, appended via `arrayUnion` with a literal client `Date`, never
 `serverTimestamp()`, which Firestore rejects inside an array element) —
