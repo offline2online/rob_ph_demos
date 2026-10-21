@@ -2433,6 +2433,65 @@ function baseCheckAction({ workflow, baseSha, baseRun, keys, nowMs }) {
   return nowMs - Math.max(...sent) >= BASE_CHECK_GIVE_UP_MS ? { act: "eject", why: "base-never-ran" } : { act: "wait" };
 }
 
+// ── A deploy held red by main is resumed when main is fixed ──────────────
+// The ticket-level check above has a deploy-level twin. On 21 Oct 2026 a
+// workflow reached main without its TRAIN_TEST_WORKFLOWS line, the console
+// tests went red on main (0db46cc), and every train that had taken main went
+// red with it: DSP's approved deploy was held with "Fix it on
+// deploy/dsp-integration", which nobody could, and the gate only re-reads the
+// train's own runs, so fixing main did not release it either. Now a held
+// deploy whose red tests are red on main too says so, and once main is green
+// on them again the train takes main (once per main commit) and re-tests,
+// so the approved deploy carries on with nobody clicking.
+//
+// Pure, for test/train-base-check.test.js.
+//   red:      the gate's red workflows ([{ workflow }])
+//   onBase:   { [workflow]: trainRunVerdict on the main commit the train contains }
+//   onMain:   { [workflow]: { verdict, onTrain } } for the newest real run on
+//             main; onTrain says the train already contains that commit
+//   mainHead: main's tip now      resyncedTo: the main tip last taken for this
+// Returns { mainRed, resync } — resync is the main tip to take, or null.
+function heldDeployMainPlan({ red, onBase, onMain, mainHead, resyncedTo }) {
+  const list = (red || []).filter((w) => w && w.workflow);
+  if (!list.length) return { mainRed: false, resync: null };
+  const mainRed = list.every((w) => ["failed", "rerun"].includes((onBase || {})[w.workflow]));
+  const fixedOnMain = list.every((w) => {
+    const m = (onMain || {})[w.workflow];
+    return m && m.verdict === "passed" && !m.onTrain;
+  });
+  const resync = fixedOnMain && mainHead && mainHead !== resyncedTo ? mainHead : null;
+  return { mainRed, resync };
+}
+
+const heldDeployMainRedNote = (what, base7) =>
+  `Deploy held, nothing merged: ${what}. They fail the same way on main without this train (${base7}), so main is broken, not this train: ` +
+  `no ticket needs sending back. Fix main; this train then takes main, re-tests and the approved deploy carries on by itself.`;
+
+// Reads what heldDeployMainPlan needs. Never throws: what it can't read
+// counts as unknown, which neither blames main nor resyncs.
+function readHeldDeployMainState(deployBranch, head, red, gh = (args) => run("gh", args)) {
+  const onBase = {};
+  const onMain = {};
+  const baseSha = mainBaseOf(head, gh);
+  const mainHead = mainHeadSha(gh);
+  for (const w of red) {
+    try {
+      if (baseSha) onBase[w.workflow] = trainRunVerdict(newestRealRun(fetchWorkflowRunsOnSha(w.workflow, baseSha)));
+    } catch { /* unknown */ }
+    try {
+      const runs = JSON.parse(gh(["api", `repos/${REPO}/actions/workflows/${w.workflow}/runs?branch=main&per_page=10`,
+        "-q", "[.workflow_runs[] | {id, attempt: .run_attempt, headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
+      const r = newestRealRun(runs);
+      if (r) {
+        let onTrain = false;
+        try { run("git", ["merge-base", "--is-ancestor", r.headSha, head]); onTrain = true; } catch { /* not on the train */ }
+        onMain[w.workflow] = { verdict: trainRunVerdict(r), onTrain };
+      }
+    } catch { /* unknown */ }
+  }
+  return { baseSha, mainHead, onBase, onMain };
+}
+
 // The one line a person needs: which test failed and what it said, from
 // `gh run view --log-failed` (lines are "job<TAB>step<TAB>timestamp text").
 // Knows node:assert runners (FAIL / not ok + the message under it), vitest
@@ -5028,11 +5087,35 @@ async function processDeployTrain(project) {
     const what = gate.workflows.map((w) => `${w.label} ${w.state === "red" ? `failed${w.url ? ` (${w.url})` : ""}` : w.state === "pending" ? "is still running" : "has not run on this commit yet — started it"}`).join("; ");
     console.log(`[deploy-train] ${project.id}: holding the deploy — train tests ${gate.state} on ${gate.head.slice(0, 7)}: ${what}`);
     if (gate.state === "pending" || gate.state === "missing") followUpReasons.push(`${project.id}: deploy waiting on the train's tests`);
+    let redNote = `Deploy held, nothing merged: ${what}. Fix it on ${deployBranch} (or send the ticket that broke it back with Failed testing) — the approved deploy carries on by itself once the tests pass.`;
+    if (red) {
+      const redWorkflows = gate.workflows.filter((w) => w.state === "red");
+      const state = readHeldDeployMainState(deployBranch, gate.head, redWorkflows);
+      const plan = heldDeployMainPlan({ red: redWorkflows, ...state, resyncedTo: project.trainMainResyncedTo || null });
+      if (plan.resync) {
+        const sync = syncTrainWithMain(deployBranch);
+        if (sync.kind !== "conflict") {
+          dispatchTrainTests(deployBranch, redWorkflows.map((w) => TRAIN_TEST_WORKFLOWS.find((t) => t.workflow === w.workflow).prefix + "x"), "deploy-train");
+          console.log(`[deploy-train] ${project.id}: main is green again at ${plan.resync.slice(0, 7)} — took it onto ${deployBranch} and re-testing`);
+          followUpReasons.push(`${project.id}: deploy re-testing after taking main`);
+          await patchProject(project.id, {
+            trainStatus: "deploying",
+            trainHold: "tests-running",
+            trainMainResyncedTo: plan.resync,
+            trainNote: `The train's tests failed because main was broken; main is fixed (${plan.resync.slice(0, 7)}), so ${deployBranch} has taken it and is re-testing. The approved deploy carries on by itself when they pass.`,
+            updatedAt: new Date().toISOString(),
+          });
+          return;
+        }
+        console.log(`[deploy-train] ${project.id}: couldn't take main onto ${deployBranch} (conflict in ${(sync.paths || []).join(", ")})`);
+      }
+      if (plan.mainRed) redNote = heldDeployMainRedNote(what, String(state.baseSha).slice(0, 7));
+    }
     await patchProject(project.id, {
       trainStatus: "deploying",
       trainHold: red ? "tests-red" : "tests-running",
       trainNote: red
-        ? `Deploy held, nothing merged: ${what}. Fix it on ${deployBranch} (or send the ticket that broke it back with Failed testing) — the approved deploy carries on by itself once the tests pass.`
+        ? redNote
         : `Deploy to Main is waiting for the train's tests before opening the PR: ${what}. It carries on by itself when they pass.`,
       updatedAt: new Date().toISOString(),
     });
@@ -6282,6 +6365,8 @@ module.exports = {
   trainRunVerdict, culpritAction, rerunTrainRun, trainFailureNotes, flakyPassKey, flakyNote, ejectRedCulprits,
   // test/train-base-check.test.js — a ticket is never sent back for a failure main already has
   baseCheckAction, failureSummaryFromLog, isMainMergeCommit, BASE_CHECK_GIVE_UP_MS, baseCheckRef, heldForMain,
+  // ...and an approved deploy held red by main resumes once main is fixed
+  heldDeployMainPlan, heldDeployMainRedNote,
   reportTrainTestResults, trainRunOwner, alreadyRerun, rerunRunKey, fdoc,
   trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/train-eject-after-revert.test.js — a ticket is judged on a run that did not contain a reverted ticket
