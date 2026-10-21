@@ -436,7 +436,7 @@ function AssignedCell({ data, context }: IP) {
   const c = context.current
   const a = edited(c, data).assignedTo
   const dspNames = new Map(c.dsps.map((d) => [d.partnerId, d.name]))
-  /* An advertiser can buy through more than one DSP (e.g. Unilever via both
+  /* An advertiser can buy through more than one DSP (e.g. one advertiser via both
      Google DSP and The Trade Desk, same as the Advertisers table's own "Via"
      column) — one option per advertiser, not per DSP-advertiser pairing,
      otherwise two options share the same `adv:<name>` value and Select can

@@ -31,12 +31,12 @@ describe('demo estate', () => {
     expect((await ctx.displays.listByDisplayType('landscape')).length).toBeGreaterThan((await ctx.displays.listByDisplayType('portrait')).length)
 
     const advertisers = await listAdvertisers(ctx)
-    expect(advertisers.length).toBeGreaterThanOrEqual(12)
-    expect(advertisers.find((a) => a.advertiserId === advertiserSlug('Unilever'))!.via.sort()).toEqual(['Google DSP', 'The Trade Desk'])
+    expect(advertisers.length).toBeGreaterThanOrEqual(11)
     expect(advertisers.find((a) => a.advertiserId === advertiserSlug('Monster Energy'))).toMatchObject({ approvalRequired: true })
     /* Real suppliers to a convenience retailer; the base seed's placeholders are gone. */
     const names = advertisers.map((a) => a.name)
-    expect(names).toEqual(expect.arrayContaining(['Coca-Cola', 'PepsiCo', 'Red Bull', 'Monster Energy', 'Gatorade', 'Mars Wrigley', 'Mondelez International', 'The Hershey Company', 'Nestlé', 'Kellanova', 'Frito-Lay', 'Unilever']))
+    expect(names).toEqual(expect.arrayContaining(['Coca-Cola', 'PepsiCo', 'Red Bull', 'Monster Energy', 'Gatorade', 'Mars Wrigley', 'Mondelez International', 'The Hershey Company', 'Nestlé', 'Kellanova', 'Frito-Lay']))
+    for (const gone of ['Unilever', 'Blackmores', 'Swisse', "L'Oréal"]) expect(names).not.toContain(gone)
     expect(names).not.toContain('Swisse')
     expect(names).not.toContain("L'Oréal")
     expect(advertisers.filter((a) => a.direct).map((a) => a.name).sort()).toEqual(['Gatorade', 'Red Bull'])

@@ -83,21 +83,19 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; slots: Sl
 }
 
 /* Who each DSP brings: suppliers a global convenience retailer (7-Eleven)
-   really buys from, beverages and confectionery first. Unilever is on two
-   DSPs, which is what the Advertisers table's "via" column exists to show.
+   really buys from, beverages and confectionery first.
    Nestlé's seat is the base seed's; the base seed's Swisse and L'Oréal
-   placeholders are retired by `retirePlaceholderAdvertisers` below. */
+   placeholders, and Unilever and Blackmores, are removed by
+   `retirePlaceholderAdvertisers` below. */
 const DEMO_SEATS: Record<string, { id: string; name: string; domain: string }[]> = {
   p_google: [
     { id: '5130003', name: 'Coca-Cola', domain: 'coca-cola.com' },
     { id: '5130004', name: 'Mars Wrigley', domain: 'mars.com' },
     { id: '5130005', name: 'Mondelez International', domain: 'mondelezinternational.com' },
     { id: '5130006', name: 'Kellanova', domain: 'kellanova.com' },
-    { id: '5130007', name: 'Unilever', domain: 'unilever.com' },
   ],
   p_amazon: [{ id: '588104412', name: 'The Hershey Company', domain: 'thehersheycompany.com' }],
   p_ttd: [
-    { id: 'ttd-7001', name: 'Unilever', domain: 'unilever.com' },
     { id: 'ttd-7002', name: 'PepsiCo', domain: 'pepsico.com' },
     { id: 'ttd-7003', name: 'Frito-Lay', domain: 'fritolay.com' },
     { id: 'ttd-7004', name: 'Monster Energy', domain: 'monsterenergy.com' },
@@ -110,8 +108,8 @@ const DIRECT_PARTNER = 'direct'
 
 /* Advertisers whitelisted on each demo DSP, by seat name. */
 const DEMO_WHITELIST: Record<string, string[]> = {
-  p_google: ['Coca-Cola', 'Unilever'],
-  p_ttd: ['Unilever', 'PepsiCo'],
+  p_google: ['Coca-Cola'],
+  p_ttd: ['PepsiCo'],
 }
 
 const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean }> = {
@@ -125,7 +123,6 @@ const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean }> = 
   [advertiserSlug('The Hershey Company')]: { approvalRequired: true },
   [advertiserSlug('Kellanova')]: { approvalRequired: true },
   [advertiserSlug('Frito-Lay')]: { approvalRequired: false },
-  [advertiserSlug('Unilever')]: { approvalRequired: true },
 }
 
 /* ---------------------------------------------------------- the campaigns */
@@ -208,10 +205,6 @@ const DEMO_CAMPAIGNS: DemoCampaign[] = [
     targeting: personalised(['Snacker']), brief: brief('Game-day snacking, personalised for the snacker segment; localised elsewhere.', { promotedProducts: ['Pringles Original 134g'], targetAudiences: ['Snackers'] }) },
   { id: 'c_demo_fritolay_doritos', name: 'Frito-Lay — Doritos Game Night', advertiser: 'Frito-Lay', partnerId: 'p_ttd', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#d84315', line: 'For the bold', createdAt: '2026-09-14T11:00:00.000Z',
     targeting: personalised(['Snacker', 'Value seeker']), brief: brief('Personalised for the snacker and value-seeker segments.', { promotedProducts: ['Doritos Nacho Cheese 170g'] }) },
-  { id: 'c_demo_unilever_magnum', name: 'Unilever — Magnum Classic', advertiser: 'Unilever', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#4e342e', line: 'Magnum — 2 for $8', createdAt: '2026-09-17T12:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Magnum multi-buy on the checkout screens.', { promotedProducts: ['Magnum Classic 4pk'] }), rejectReason: 'Price shown in the artwork (2 for $8). Prices come from Personalisation Hub, not the creative.' },
-  { id: 'c_demo_unilever_streets', name: 'Unilever — Streets Cornetto', advertiser: 'Unilever', partnerId: 'p_ttd', displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', colour: '#1565c0', line: 'Cornetto', createdAt: '2026-09-19T16:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Ice-cream freezer portrait screens, all stores.', { promotedProducts: ['Streets Cornetto Classic 4pk'], objective: 'Brand Awareness' }) },
   { id: 'c_demo_hershey_reeses', name: 'The Hershey Company — Reese’s Cups', advertiser: 'The Hershey Company', partnerId: 'p_amazon', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#6d4c41', line: 'Reese’s Cups', createdAt: '2026-09-18T10:00:00.000Z',
     targeting: LOCALISED, brief: brief('Reese’s launch at the checkout.'), rejectReason: 'Creative is 1280×720; the Landscape canvas is 1920×1080.' },
 ]
@@ -230,6 +223,12 @@ const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
    new creative. Idempotent; on a database that already holds bookings under
    the old names, reset it rather than re-running this. */
 const PLACEHOLDER_SEATS = ['Swisse', 'L\'Oréal', 'L’Oréal']
+
+/* Advertisers removed from the demo entirely (21 Oct 2026): their DSP seats,
+   direct-advertiser rows, settings, campaigns and bookings. Matched by slug,
+   so it also cleans a database that was seeded before they were removed. */
+const REMOVED_ADVERTISERS = ['Unilever', 'Blackmores', 'Swisse', 'L\'Oréal'].map((n) => advertiserSlug(n))
+const REMOVED_BY_TABLE = ['reservations', 'billing_line_items', 'realtime_impressions', 'advertiser_seats', 'advertiser_audiences', 'advertiser_settings', 'direct_advertisers']
 const RELABELLED = [
   { id: 'c_api_swisse', from: 'swisse', advertiser: 'Mondelez International', name: 'Mondelez — Cadbury Easter', colour: '#4a148c', line: 'Cadbury Easter' },
   { id: 'c_api_swisse_kids', from: 'swisse', advertiser: 'Kellanova', name: 'Kellanova — Pringles Game Day (draft)', colour: '#b71c1c', line: 'Pringles Game Day' },
@@ -238,7 +237,7 @@ const RELABELLED = [
 
 export async function retirePlaceholderAdvertisers(ctx: Context) {
   for (const p of await ctx.partners.list()) {
-    const gone = p.seats.filter((s) => PLACEHOLDER_SEATS.includes(s.name))
+    const gone = p.seats.filter((s) => PLACEHOLDER_SEATS.includes(s.name) || REMOVED_ADVERTISERS.includes(advertiserSlug(s.name)))
     if (!gone.length) continue
     const ids = new Set(gone.map((s) => s.id))
     await ctx.partners.update(p.id, { seats: p.seats.filter((s) => !ids.has(s.id)), allowList: p.allowList.filter((id) => !ids.has(id)) })
@@ -254,6 +253,21 @@ export async function retirePlaceholderAdvertisers(ctx: Context) {
       ctx.db.prepare('UPDATE campaign_assets SET file = ? WHERE campaign_id = ?').run(file, r.id)
     })
   }
+  await removeAdvertisers(ctx)
+}
+
+async function removeAdvertisers(ctx: Context) {
+  for (const row of ctx.db.prepare('SELECT id, advertiser_id AS a FROM campaigns').all() as { id: string; a: string | null }[]) {
+    if (!row.a || !REMOVED_ADVERTISERS.includes(row.a)) continue
+    await ctx.dspCreatives.deleteForCampaign(row.id)
+    await ctx.campaignRetention.deleteApprovalRows(row.id)
+    await ctx.campaigns.deleteCampaign(row.id)
+  }
+  await onFree(ctx.db, () => {
+    for (const t of REMOVED_BY_TABLE) {
+      for (const id of REMOVED_ADVERTISERS) ctx.db.prepare(`DELETE FROM ${t} WHERE advertiser_id = ?`).run(id)
+    }
+  })
 }
 
 /* ---------------------------------------------------------------- apply */
