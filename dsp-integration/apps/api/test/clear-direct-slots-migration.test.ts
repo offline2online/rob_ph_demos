@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { openDb } from '../src/db/db'
 import { migrateUp } from '../src/db/migrate'
 import { releaseSettledSlotLocks } from '../src/domain/slotLock'
+import { sqliteSspAuditRepo } from '../src/repos/SspAuditRepo'
 import { NOW, testContext } from './helpers'
 
 const slotsOf = (db: ReturnType<typeof openDb>, id: string) => (JSON.parse((db.prepare('SELECT ph_extensions FROM display_types WHERE id = ?').get(id) as { ph_extensions: string }).ph_extensions) as { slots: Record<string, unknown>[] }).slots
@@ -40,6 +41,11 @@ describe('0082 clear direct slot assignments', () => {
     expect(audit.map((a) => a.field)).toEqual(['slots[1].advertisers', 'slots[1].listMode', 'slots[2].advertisers', 'slots[3].salesLocked'])
     expect(audit[0]).toMatchObject({ old_value: '["Red Bull","Gatorade"]', new_value: '[]', actor_type: 'agent' })
     expect(audit[2]).toMatchObject({ old_value: '["Red Bull","Nestlé"]', new_value: '["Nestlé"]' })
+    /* The change history reads them back (E2E 21 Oct 2026: a bare 'rtb' in new_value made every page of the log a 500). */
+    const read = (sqliteSspAuditRepo(db).query({}) as { items: { field: string; oldValue: unknown; newValue: unknown }[] }).items.filter((e) => e.field.startsWith('slots['))
+    expect(read.find((e) => e.field === 'slots[1].listMode')).toMatchObject({ oldValue: null, newValue: 'rtb' })
+    expect(read.find((e) => e.field === 'slots[1].advertisers')).toMatchObject({ oldValue: ['Red Bull', 'Gatorade'], newValue: [] })
+    expect(read.find((e) => e.field === 'slots[3].salesLocked')).toMatchObject({ oldValue: null, newValue: true })
     /* Re-running finds nothing left to clear. */
     db.prepare("DELETE FROM schema_migrations WHERE version = '0082'").run()
     const before = (db.prepare('SELECT count(*) AS n FROM ssp_audit_log').get() as { n: number }).n

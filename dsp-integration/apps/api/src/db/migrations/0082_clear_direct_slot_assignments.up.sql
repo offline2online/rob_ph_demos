@@ -11,7 +11,7 @@ FROM display_types dt, json_each(dt.ph_extensions, '$.slots') s
 WHERE EXISTS (SELECT 1 FROM json_each(s.value, '$.advertisers') a
   WHERE a.value IN (SELECT d.name FROM direct_advertisers d WHERE NOT EXISTS (SELECT 1 FROM partners p, json_each(p.seats) st WHERE json_extract(st.value, '$.name') = d.name)));
 
--- The change history: advertisers (and, where the slot goes back to real time, its list mode; where it is locked, the lock).
+-- The change history: advertisers (and, where the slot goes back to real time, its list mode; where it is locked, the lock). Every old_value/new_value is JSON text, because SspAuditRepo reads it back with JSON.parse: json_extract returns listMode as a bare string, hence json_quote.
 INSERT INTO ssp_audit_log (id, at, change_id, actor_type, actor_id, actor_name, session_user_id, request, reason, object_type, object_id, object_label, change_type, field, old_value, new_value)
 SELECT 'aud_' || lower(hex(randomblob(6))), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'chg_m0082' || lower(hex(randomblob(3))), 'agent', 'migration-0082', 'Migration 0082', 'migration-0082',
   'MIGRATION 0082_clear_direct_slot_assignments', 'Direct advertisers are assigned through a Direct advertiser deal, not named on a slot.',
@@ -21,7 +21,7 @@ FROM _m0082_fix WHERE NOT live;
 INSERT INTO ssp_audit_log (id, at, change_id, actor_type, actor_id, actor_name, session_user_id, request, reason, object_type, object_id, object_label, change_type, field, old_value, new_value)
 SELECT 'aud_' || lower(hex(randomblob(6))), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'chg_m0082' || lower(hex(randomblob(3))), 'agent', 'migration-0082', 'Migration 0082', 'migration-0082',
   'MIGRATION 0082_clear_direct_slot_assignments', 'No named advertiser left: the slot is real time again.',
-  'display_type', dt_id, dt_name, 'updated', 'slots[' || (idx + 1) || '].listMode', old_mode, 'rtb'
+  'display_type', dt_id, dt_name, 'updated', 'slots[' || (idx + 1) || '].listMode', json_quote(old_mode), json_quote('rtb')
 FROM _m0082_fix WHERE NOT live AND kept_adv = '[]';
 
 INSERT INTO ssp_audit_log (id, at, change_id, actor_type, actor_id, actor_name, session_user_id, request, reason, object_type, object_id, object_label, change_type, field, old_value, new_value)

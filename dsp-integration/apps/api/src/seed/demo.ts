@@ -21,6 +21,7 @@ import { allPositions, assignmentOf, nextWindow, windowMs } from '../domain/posi
 import type { StoredTargeting } from '../domain/targetingSummary'
 import { CHECKS, bookablePositions, campaignFor } from './bookings'
 import { audienceOf } from '../domain/displayTypes'
+import { refreshCommittedPlays } from '../domain/committedPlays'
 
 /* ------------------------------------------------------------- the estate */
 
@@ -325,7 +326,7 @@ export async function seedDemo(ctx: Context) {
       await ctx.buyersLists.insert({
         id: d.id, name: `${d.advertiser} direct`, description: `${d.advertiser} books the retailer directly, with no DSP: Summer 2026–27 flight at a fixed CPM.`, dealType: 'direct',
         invitedBuyers: [{ partnerId: DIRECT_PARTNER, seatId: advertiserSlug(d.advertiser) }], floorCpm: d.floorCpm,
-        activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2027-03-31T00:00:00.000Z', auctionCloses: null,
+        activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2027-03-31T23:59:59.999Z', auctionCloses: null,
       })
     }
 
@@ -344,6 +345,8 @@ export async function seedDemo(ctx: Context) {
       report.slots += spec.slots.length
     }
   })
+  /* Their committed plays are derived from the slots they hold, which were only just written (E2E 21 Oct 2026: they were null). */
+  await refreshCommittedPlays(ctx, DEMO_DIRECT_DEALS.map((d) => d.id), 'Demo seed')
 
   /* Campaigns in every state. */
   const insertCampaign = ctx.db.prepare(

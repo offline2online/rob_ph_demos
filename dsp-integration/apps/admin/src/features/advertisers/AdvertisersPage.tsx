@@ -161,6 +161,8 @@ type InvCtx = { current: {
   maxCampaignsDefaults: Defaults
   maxPlayLengthDefaults: Defaults
   dsps: DspAdvertisers[]
+  /* Direct advertisers' names: one can't be picked in Assigned to, but one still held on a sold slot is shown. */
+  directNames: string[]
   /* Each playlist's display types, listed once for the whole response rather than on every row. */
   playlistDisplayTypes: Record<string, PlaylistDisplayType[]>
   buyersLists: BuyersList[]
@@ -463,13 +465,18 @@ function AssignedCell({ data, context }: IP) {
       /* Directly underneath DSPs, not after Advertisers (Rob, 23 Sep —
          failed testing, "place the new buyers list directly underneath the
          list of DSP's"). */
-      label: 'Deals and buyers lists (private auction)',
+      label: 'Deals and buyers lists',
       options: [
         ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [overlaps.candidates[l.id] ? `Overlaps ${overlaps.candidates[l.id][0].dealName} (${rangeLabel(overlaps.candidates[l.id][0])}): slot already sold` : '', l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
         { value: ADD_BUYERS_LIST, label: '+ Add new deal and buyers list…' },
       ],
     },
-    { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })) },
+    { label: 'Advertisers', options: [
+      ...[...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })),
+      /* A direct advertiser can't be picked (21 Oct 2026), but one still held on a sold slot (migration 0082 keeps it
+         until its bookings have played) needs an option, or its chip reads "adv:Name". Disabled: it can't be re-added. */
+      ...a.advertisers.filter((n) => !advertiserDsps.has(n) && c.directNames.includes(n)).map((n) => ({ value: `adv:${n}`, label: `${n} (Direct)`, disabled: true, note: 'Kept until its bookings have played. Direct advertisers get slots through a Direct advertiser deal.' })),
+    ] },
     { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }, { value: GLOBAL_CHIP, label: GLOBAL_CHIP_LABEL, disabled: !!suppressed, note: suppressed ? `Unavailable: this slot is ${suppressed}.` : undefined }] },
   ]
   return (
@@ -1070,7 +1077,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        type): the page finds that display type's default playlist and opens
        its settings. */
     open: (id: string) => navigate(`/playlists?displayTypeId=${encodeURIComponent(id)}`),
-    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {},
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], directNames: (q.data?.items ?? []).filter((a) => a.direct).map((a) => a.name), playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {},
     buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
     setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),

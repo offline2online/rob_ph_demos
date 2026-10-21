@@ -77,6 +77,21 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect((await save(['Nobody Ltd'])).statusCode).toBe(400)
   })
 
+  it('keeps a direct advertiser already held on a sold slot when the slot is resaved, and still refuses adding one', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })
+    /* What migration 0082 leaves on a slot with a live booking: the direct advertiser stays until its bookings have played. */
+    const dt = (await ctx.displayTypes.get('menu_board'))!
+    await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: dt.phExtensions!.slots.map((s, i) => (i === 1 ? { ...s, advertisers: ['Acme Foods', 'Nestlé'], listMode: null } : s)) })
+    const save = (slot: number, advertisers: string[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot, assignedTo: { partnerIds: [], advertisers, whitelistOnly: false } }] } })
+    expect((await save(2, ['Acme Foods', 'Nestlé'])).statusCode).toBe(200)
+    expect((await save(2, ['Nestlé'])).statusCode).toBe(200)
+    /* Gone once removed, and never onto another slot. */
+    expect((await save(2, ['Acme Foods', 'Nestlé'])).statusCode).toBe(400)
+    expect((await save(1, ['Acme Foods'])).statusCode).toBe(400)
+  })
+
   it('refuses to delete a direct advertiser still assigned to a slot (legacy data), naming the slot', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)

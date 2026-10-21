@@ -11,6 +11,7 @@ import { useQuery } from '@tanstack/react-query'
 import { isGuaranteedLike, type BuyersList, type components } from '@ph-dsp/types'
 import { useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
+import { Q } from '../../api/queries'
 import { InfoTip } from '../../shared/InfoTip'
 import { T } from '../../theme/phTheme'
 import { equivalentCpmText, rateTypeOf } from './effectiveTerm'
@@ -24,6 +25,9 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
   const { message } = App.useApp()
   const [sharing, setSharing] = useState(false)
   const { data } = useQuery({ queryKey: ['deal-sheet', list?.id, list?.updatedAt], enabled: !!list, queryFn: () => api<Sheet>('GET', `/admin/v1/buyers-lists/${list?.id}/deal-sheet`) })
+  /* A Direct advertiser deal's one buyer is named, not counted (its buyer's seat id is the advertiser id). */
+  const advertisers = useQuery({ queryKey: Q.advertisers.queryKey, enabled: list?.dealType === 'direct', queryFn: () => api<{ items: { advertiserId: string; name: string }[] }>('GET', '/admin/v1/advertisers') })
+  const directName = list?.dealType === 'direct' && list.invitedBuyers[0] ? (advertisers.data?.items ?? []).find((a) => a.advertiserId === list.invitedBuyers[0].seatId)?.name ?? list.invitedBuyers[0].seatId : null
   const share = async () => {
     if (!list) return
     setSharing(true)
@@ -62,7 +66,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
           ))}
           <dl className="m-0 grid grid-cols-[150px_1fr] gap-y-1">
             {!data?.entries.length && <>{label('Deal ID')}<dd className="m-0" style={{ fontFamily: 'monospace' }}>{list.dealId}</dd></>}
-            {!data?.entries.length && <>{label('Buyers')}<dd className="m-0">{`${list.invitedBuyers.length} buyer${list.invitedBuyers.length === 1 ? '' : 's'}`}</dd></>}
+            {!data?.entries.length && (directName ? <>{label('Direct advertiser')}<dd className="m-0">{directName}</dd></> : <>{label('Buyers')}<dd className="m-0">{`${list.invitedBuyers.length} buyer${list.invitedBuyers.length === 1 ? '' : 's'}`}</dd></>)}
             {label('Deal type')}<dd className="m-0">{TYPE_LABEL[list.dealType]}</dd>
             {isGuaranteedLike(list.dealType) && list.termTotal != null
               ? <>{label('Total for the term')}<dd className="m-0" data-testid="finalise-term-total">{list.termTotal} {data?.currency ?? 'USD'} for the whole term{data?.equivalentCpm ? <div style={{ color: T.muted, fontSize: 12.5 }}>Equivalent CPM {equivalentCpmText(data.equivalentCpm)}</div> : null}</dd></>

@@ -47,7 +47,9 @@ describe('demo estate', () => {
     expect(portrait.slots.flatMap((s) => s.advertisers)).not.toContain('Gatorade')
     expect(portrait.slots[2]).toMatchObject({ listMode: 'deal', buyersListIds: ['bl_demo_direct_redbull', 'bl_demo_direct_gatorade'] })
     for (const [id, seatId] of [['bl_demo_direct_redbull', advertiserSlug('Red Bull')], ['bl_demo_direct_gatorade', advertiserSlug('Gatorade')]]) {
-      expect(await ctx.buyersLists.get(id)).toMatchObject({ dealType: 'direct', invitedBuyers: [{ partnerId: 'direct', seatId }], floorCpm: expect.any(Number), activeFrom: expect.any(String), activeTo: expect.any(String) })
+      expect(await ctx.buyersLists.get(id)).toMatchObject({ dealType: 'direct', invitedBuyers: [{ partnerId: 'direct', seatId }], floorCpm: expect.any(Number), activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2027-03-31T23:59:59.999Z' })
+      /* Derived from the slot it holds, like any guaranteed-style deal. */
+      expect((await ctx.buyersLists.get(id))!.committedPlays).toBeGreaterThan(0)
     }
     /* Every state is represented somewhere. */
     const totals = advertisers.reduce((acc, a) => ({ draft: acc.draft + a.campaigns.draft, awaiting_approval: acc.awaiting_approval + a.campaigns.awaiting_approval, approved: acc.approved + a.campaigns.approved, rejected: acc.rejected + a.campaigns.rejected }), { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 })

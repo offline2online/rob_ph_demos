@@ -90,11 +90,13 @@ export async function validateAssigned(
   if (new Set(a.buyersListIds).size !== a.buyersListIds.length) out.push({ field: field('buyersListIds'), reason: 'A buyers list can be in the waterfall once: each tier holds one list.' })
   for (const id of a.buyersListIds) if (!(await buyersLists.get(id))) out.push({ field: field(a.buyersListIds.length > 1 ? 'buyersListIds' : 'buyersListId'), reason: `Unknown buyers list${a.buyersListIds.length > 1 ? ` (${id})` : ''}.` })
   /* The advertiser has to be a seat on a DSP this position can sell through. A direct advertiser (no DSP) is
-     refused (21 Oct 2026): it gets a slot only through a Direct advertiser deal, never by being named here. */
+     refused (21 Oct 2026): it gets a slot only through a Direct advertiser deal, never by being named here. One
+     already held stays, like a blocked one below: migration 0082 leaves it on a sold slot until its bookings have
+     played, and resaving that slot (its floor, or a display-type save resending every slot) must not fail on it. */
   const scope = a.partnerIds.length ? partners.filter((p) => a.partnerIds.includes(p.id)) : partners
   for (const name of a.advertisers) {
     if (direct.includes(name) && !partners.some((x) => x.seats.some((s) => s.name === name))) {
-      out.push({ field: field('advertisers'), reason: `${name} is a direct advertiser, which can't be assigned to a slot directly: assign a Direct advertiser deal instead.` })
+      if (!previous.advertisers.includes(name)) out.push({ field: field('advertisers'), reason: `${name} is a direct advertiser, which can't be assigned to a slot directly: assign a Direct advertiser deal instead.` })
       continue
     }
     const p = scope.find((x) => x.seats.some((s) => s.name === name))
