@@ -42,6 +42,34 @@ service firebase.storage {
             || request.auth.token.consoleEditor == true);
     }
 
+    // Profile photos: avatars/{lowercased email}.jpg, one per person,
+    // cropped to a 256x256 JPEG in the browser (~30 KB; 2 MB is the ceiling).
+    // Any member may read; only the owner of that address, or an admin, may
+    // write or delete it. Admins arrive via the consoleRole claim
+    // (functions/mcp-server.js) or the two hard-coded owner accounts.
+    function isAdminClaim() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && (request.auth.token.email.lower() in [
+              "rob@offline2online.com",
+              "rob@personalisationhub.com"
+            ]
+            || request.auth.token.consoleRole == "admin");
+    }
+    function isAvatarOwner(fileName) {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && fileName == request.auth.token.email.lower() + ".jpg";
+    }
+
+    match /avatars/{fileName} {
+      allow read: if isEditor() || (request.auth != null && request.auth.token.consoleRole in ["admin", "editor", "viewer"]);
+      allow write: if (isAvatarOwner(fileName) || isAdminClaim())
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg';
+      allow delete: if isAvatarOwner(fileName) || isAdminClaim();
+    }
+
     match /attachments/{itemId}/{fileName} {
       allow read: if isEditor();
       allow write: if isEditor() &&

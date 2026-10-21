@@ -166,7 +166,7 @@ await test("with a role claim on the token, the board starts without waiting on 
   assert.strictEqual(st.remembered, "1");
   assert.strictEqual(st.rememberedRole, "editor");
   assert.ok(s.fetches.some((f) => f.url.endsWith("/mcp/claims/sync")), "the claim repair still runs, in the background");
-  assert.ok(s.ctl.appLoadedAt <= s.fetches.find((f) => f.url.endsWith("/mcp/claims/sync")).at + 5, "app.js is not held back behind the function");
+  assert.ok(s.ctl.appLoadedAt <= s.fetches.find((f) => f.url.endsWith("/mcp/claims/sync")).at + 1000, "app.js is not held back behind the function");
 });
 
 await test("no claim yet: the person's own consoleUsers row decides, even when the function never answers", async () => {

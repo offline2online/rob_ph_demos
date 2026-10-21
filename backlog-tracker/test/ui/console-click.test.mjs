@@ -206,7 +206,7 @@ const scenarios = [
       await c.visible("#faq-settings-page", "Settings shows");
       await overflow("settings");
       if (phone) await c.click('#tabbar .tab[data-tab="build"]', "Build tab"); else if (!persistent) await c.click("#nav-open-btn", "open the menu");
-      await c.click("#nav-ph-console-btn", "Board");
+      await c.click("#nav-ph-console-btn", "Agent Board");
       await c.boardReady();
       await overflow("board");
       if (persistent) {

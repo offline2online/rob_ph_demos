@@ -896,6 +896,11 @@ ends, stalls with no end event, network blips, a throwing `start()` and
 typing mid-dictation must all keep the run going, while the stop click,
 adding a ticket or comment, and closing the form must end it and release
 the microphone (REQUIREMENTS.md → "Dictation never cuts off by itself").
+**`test/ui/new-item-voice.test.mjs`** (20 Oct 2026) drives the New item
+modal's voice-first Record button in Chromium with a scripted
+`SpeechRecognition` and `getUserMedia`, at 1280 and 390 px: button states,
+live transcript, the agent filling Title / Description / Type / Area, the
+typed fallback, the denied-microphone error and the pinned action bar.
 
 `test/` holds these suites:
 
@@ -2272,7 +2277,7 @@ entry, directly under Agent Console.
   comment thread with the same dictation-mic composer every other comment
   box in this console has, retained across sessions so the conversation
   can be picked back up any time. A still-active concept also gets
-  **Promote to project…** and **Delete this concept**; a promoted one
+  **Promote to project…** (one click: name only, repo folder auto-picked and linked, build/E2E/document tickets raised in the new project's Backlog — see `public/js/promote-plan.js`) and **Delete this concept**; a promoted one
   shows a "Promoted to project X" line instead and everything past the
   discussion thread becomes read-only, since the project's own Docs page
   is the source of truth from that point on.
@@ -2496,3 +2501,7 @@ Tests: `notify-fanout.test.js` (a second click skips the in-flight ticket),
 `ready-for-testing-trigger.test.js` (the hold), `train-revert-by-hand.test.js`
 (a real git repo), `parallel-builds.test.js` (`parsesAs`, `mergeBrokeSyntax`)
 and the console-click scenario "Ready for Dev — N new".
+
+## Profile photos
+
+`public/js/avatar.js` holds the single `avatarHTML(email, size)` helper (initial-circle fallback, photo when `consoleUsers/{email}.photoUrl` is set) and the client-side crop/scale. Upload lives in the profile menu (`#profile-photo-*` in `index.html`, `setMemberPhoto()` in `app.js`); admins set photos from the Team page. Rules: `storage.rules` `avatars/{email}.jpg`, `firestore.rules` `consoleUsers` self-update. Tests: `test/avatar-rules.test.mjs`, `test/ui/avatars.test.mjs`, and emulator cases in `test/firestore-rules.test.js`. See REQUIREMENTS.md → "Profile photos (avatars)".
