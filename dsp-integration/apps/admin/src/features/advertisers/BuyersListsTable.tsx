@@ -18,11 +18,11 @@ import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { DealSheetModal } from './DealSheetModal'
-import { buyerStatusOf, cpmKindHint, equivalentCpmText, ratePerDayText, rateTypeOf, rateValue, sourceLabel } from './effectiveTerm'
+import { buyerStatusOf, cpmKindHint, ratePerDayText, rateTypeOf, rateValue, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }
-type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean } }
+type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* One line per targeting rule, in the words of the criteria picker: "State: includes selected NSW, VIC". */
@@ -123,14 +123,36 @@ const TermCell = ({ data }: P) => {
 /* Rate (USD CPM): the rate a deal locked in for the rest of its flight, once it has one; until then the
    rate it inherits platform -> DSP -> this list, so the cell is never blank. */
 const Sub = ({ children }: { children: string }) => <div style={{ fontSize: 11.5, color: T.muted }}>{children}</div>
-const RateCell = ({ data }: P) => {
+const RateCell = ({ data, context }: P) => {
   if (!data) return null
   if (data.lockedWin) return <Tip title="Locked: the rate this deal's auction settled at, billed for the rest of its flight."><span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span></Tip>
   const perDay = data.dealType === 'guaranteed' && data.ratePerDay != null
-  const text = perDay ? `${ratePerDayText(data.ratePerDay)}${data.equivalentCpm ? ` ≈ ${equivalentCpmText(data.equivalentCpm)} CPM` : ''}` : rateValue(data.effectiveRateCpm)
+  const text = perDay ? ratePerDayText(data.ratePerDay) : rateValue(data.effectiveRateCpm)
   const src = sourceLabel(data.effectiveRateCpm?.source ?? 'none')
+  /* A per-day rate's hover also lists each assigned slot with its anticipated plays and the plays left after the guarantee buffer. */
+  const { bufferPct } = context.current
+  const slots = perDay ? context.current.slots.get(data.id) ?? [] : []
+  const base = `${cpmKindHint(data.dealType, data.ratePerDay)}${src ? ` Source: ${src}.` : ''}`
+  const tip = perDay && slots.length ? (
+    <div>
+      <div>{base}</div>
+      {slots.map((r, i) => (
+        <div key={i} style={{ marginTop: 6 }} data-testid={`rate-slot-${data.id}-${i}`}>
+          <div style={{ fontWeight: 500 }}>{r.displayType}{r.description ? ` (${r.description})` : ''}</div>
+          <div>{r.playlist || 'No playlist'}{r.zoneName ? ` · ${r.zoneName}` : ''}</div>
+          <div>{r.position} (slot {r.slot})</div>
+          {r.playsPerWindow != null
+            ? <>
+              <div>Anticipated plays: {r.playsPerWindow.toLocaleString('en-US')} expected in total</div>
+              <div>{Math.max(0, Math.floor(r.playsPerWindow * (1 - bufferPct / 100))).toLocaleString('en-US')} after the {bufferPct}% buffer</div>
+            </>
+            : <div>Anticipated plays: not available</div>}
+        </div>
+      ))}
+    </div>
+  ) : base
   return text
-    ? <Tip title={`${cpmKindHint(data.dealType, data.ratePerDay)}${src ? ` Source: ${src}.` : ''}`}><div><span style={{ fontSize: 12.5 }}>{text}</span> <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateTypeOf(data.dealType, data.ratePerDay)}</span>{!perDay && <Sub>{src}</Sub>}</div></Tip>
+    ? <Tip title={tip}><div><span style={{ fontSize: 12.5 }}>{text}</span> <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateTypeOf(data.dealType, data.ratePerDay)}</span>{!perDay && <Sub>{src}</Sub>}</div></Tip>
     : <span style={{ color: T.muted }}>Per play</span>
 }
 const DealIdCell = ({ data, context }: P) => {
@@ -154,6 +176,7 @@ const ActionsCell = ({ data, context }: P) =>
 
 export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, showTargeting = false }: { showTargeting?: boolean; lists: BuyersList[]; canEdit: boolean; capacity: Capacity; slots: Map<string, SlotInfo[]>; onChanged: () => void }) {
   const partners = useQuery(Q.partners)
+  const bufferPct = useQuery(Q.advertiserSettings).data?.guaranteeBufferPct ?? 10
   const dspName = (id: string) => (partners.data ?? []).find((p) => p.id === id)?.name ?? id
   const seatName = (pid: string, sid: string) => (partners.data ?? []).find((p) => p.id === pid)?.seats?.find((x) => x.id === sid)?.name ?? sid
   const [modalOpen, setModalOpen] = useState(false)
@@ -171,7 +194,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
   const columns = useMemo<ColDef<BuyersList>[]>(() => [
     { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${JSON.stringify(p.data?.targeting ?? [])}|${p.data?.status}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}` },
     { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
-    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm]) },
+    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.ratePerDay, p.context.current.slots.get(p.data?.id ?? '') ?? [], p.context.current.bufferPct]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },
@@ -181,7 +204,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ], [canEdit])
   const context = {
-    canEdit, showTargeting, capacity, slots, dspName, seatName,
+    canEdit, showTargeting, bufferPct, capacity, slots, dspName, seatName,
     onEdit: (l: BuyersList) => {
       setEditing(l)
       setModalOpen(true)

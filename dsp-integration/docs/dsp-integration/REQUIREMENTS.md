@@ -5089,10 +5089,11 @@ Programmatic guaranteed books **whole days at a flat rate per day**, in line wit
   `ratePerDay`) keeps *CPM fixed* and its `floorCpm`.
 - **Flight in whole days.** The flight is picked as days (first day from 00:00 UTC, last day to 23:59:59.999 UTC); each
   day is one 24-hour window on the slot, which is the platform's billing window.
-- **Equivalent CPM.** `ratePerDay / forecast impressions per day x 1000`, shown read-only beside the rate so a DSP can
-  compare it with a CPM deal. The forecast is each assigned slot's own (VAC-d assumed views for the day), so it is derived
-  on read from the assigned slots and never stored; with several slots it is shown as a range (`equivalentCpm:
-  {min, max}`). A new deal has no slot yet, so the pop-up says "Assign a slot to see the equivalent CPM".
+- **Equivalent CPM.** `ratePerDay / forecast impressions per day x 1000`. It is derived on read from the assigned slots
+  and never stored (`equivalentCpm: {min, max}`); the API still uses it for the floor check and the deal sheet. The deal
+  pop-up no longer shows it (21 Oct 2026): it shows the rate per day alone. In the Deals and buyers lists table, hovering
+  a per-day rate lists each assigned slot's details with its anticipated plays in total and the plays after the guarantee
+  buffer (Advertiser settings, default 10%): `floor(plays x (1 - buffer%))`.
 - **Floor.** The rate per day must still respect each slot's floor once converted: a rate whose equivalent CPM is below
   the resolved floor (platform, DSP, deal, display type, slot) of **any** assigned slot is refused with `400` and field
   `ratePerDay`, naming the slot and the minimum rate. It is checked on every save once a slot is assigned, and always at

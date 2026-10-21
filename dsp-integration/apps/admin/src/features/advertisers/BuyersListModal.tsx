@@ -18,7 +18,7 @@ import { WithTip } from '../../shared/InfoTip'
 import { Tip } from '../../shared/Tip'
 import { IAB_OPTIONS_SORTED, iabFilterOption } from '../../shared/iabOptions'
 import { T } from '../../theme/phTheme'
-import { equivalentCpmText, PER_DAY_HINT, playsText, rateText, rateTypeOf, resolveTerm, sourceLabel } from './effectiveTerm'
+import { PER_DAY_HINT, playsText, rateText, rateTypeOf, resolveTerm, sourceLabel } from './effectiveTerm'
 import { FinaliseDealModal } from './FinaliseDealModal'
 
 type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; ratePerDay: number | null }
@@ -99,15 +99,6 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
   const platformFloor = settings.data?.floorCpm
   const volume = resolveTerm(defaultPlays, draftDsps.map((b) => b?.committedPlays), draft.committedPlays)
   const rate = resolveTerm(platformFloor, draftDsps.map((b) => b?.floorCpm), draft.floorCpm, (n) => Math.max(platformFloor ?? 0, n))
-  /* Equivalent CPM (rate per day / forecast impressions per day x 1000) needs the assigned slots' forecast. The API derives it for the saved rate; the draft's follows it linearly, so it updates as the rate is typed. */
-  const equivalent = (() => {
-    const saved = editing?.ratePerDay && editing.equivalentCpm ? editing : null
-    if (!saved || !draft.ratePerDay) return null
-    const k = draft.ratePerDay / (saved.ratePerDay as number)
-    const e = saved.equivalentCpm as { min: number; max: number }
-    return { min: Math.round(e.min * k * 100) / 100, max: Math.round(e.max * k * 100) / 100 }
-  })()
-  const equivalentNote = equivalentCpmText(equivalent) ?? (slots.length ? 'Save to see it' : 'Assign a slot to see the equivalent CPM')
   const connected = (partners.data ?? []).filter((p) => p.status === 'connected' && p.seats?.length)
   const labelOf = new Map(connected.flatMap((p) => (p.seats ?? []).map((s) => [buyerKey({ partnerId: p.id, seatId: s.id }), `${s.name} (${p.name})`] as const)))
   const options = connected.map((p) => ({
@@ -376,9 +367,6 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
               status={errors.ratePerDay ? 'error' : undefined}
               value={draft.ratePerDay} onChange={(v) => setDraft((d) => ({ ...d, ratePerDay: typeof v === 'number' && v > 0 ? v : null }))}
             />
-          </div>
-          <div style={{ flex: 1 }}>
-            <Input aria-label="Equivalent CPM" readOnly addonBefore="Equivalent CPM" value={equivalentCpmText(equivalent) ?? ''} placeholder={equivalentNote} />
           </div>
         </div>
         {errors.ratePerDay && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.ratePerDay}</div>}

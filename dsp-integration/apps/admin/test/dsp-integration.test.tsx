@@ -886,6 +886,26 @@ describe('Advertisers / Inventory', () => {
     expect(within(table).queryByText('24,960')).toBeNull()
   })
 
+  /* Ticket qnA1jQbjNdP8U0SCtgM9 (21 Oct 2026): a per-day rate drops the equivalent CPM; hovering it lists each slot's anticipated plays and the plays after the guarantee buffer. */
+  it('shows the rate per day alone, with each slot’s anticipated and buffer-adjusted plays on hover', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const row = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }
+    const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_1', buyersListIds: ['bl_1'] }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'guaranteed', ratePerDay: 500, equivalentCpm: { min: 5, max: 5 } }] },
+      '/api/admin/v1/available-inventory': { ...inv, items: [{ ...row, assignedTo: assigned }] },
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    const rate = await within(table).findByText('USD 500 per day')
+    expect(within(table).queryByText(/CPM/)).toBeNull()
+    fireEvent.mouseOver(rate)
+    const tip = await screen.findByRole('tooltip')
+    expect(within(tip).getByText(/Anticipated plays: .* expected in total/)).toBeInTheDocument()
+    expect(within(tip).getByText(/after the 10% buffer/)).toBeInTheDocument()
+  }, slow(30000))
+
   /* Ticket 5CCgGEYSkVoDTH9yNSYu (10 Oct 2026): the deal ID is minted by the platform, shown read-only, and never part of the save payload. */
   it('shows a read-only Deal ID in the buyers table and edit modal, and warns that changing the deal type mints a new deal', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
@@ -961,30 +981,22 @@ describe('Advertisers / Inventory', () => {
   })
   const PER_DAY_LIST = { ...TERMS_LIST, dealType: 'guaranteed', status: 'draft', sharedAt: null, termVersion: 1, buyerAcceptance: [], committedPlays: 1000, ratePerDay: 500, equivalentCpm: { min: 5, max: 5 } }
 
-  it('a guaranteed deal is priced per day: Rate per day, Fixed per day, a read-only equivalent CPM, and the explanation in a tooltip', async () => {
+  it('a guaranteed deal is priced per day: Rate per day, Fixed per day, no equivalent CPM field, and the explanation in a tooltip', async () => {
     const puts: unknown[] = []
     vi.stubGlobal('fetch', perDayFetch({ ...PER_DAY_LIST, assignedSlots: [{ positionId: 'menu_board.s2', label: 'Menu Board — Long Format' }] }, puts))
     const dialog = await openTermsEditor()
     const rate = within(dialog).getByRole('spinbutton', { name: 'Rate per day' })
     expect(rate).toHaveValue('500.00')
-    expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveValue('5')
-    expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveAttribute('readonly')
+    expect(within(dialog).queryByRole('textbox', { name: 'Equivalent CPM' })).not.toBeInTheDocument()
     expect(within(dialog).getByTestId('rate-type')).toHaveTextContent('Fixed per day')
     expect(within(dialog).queryByText(/full 24 hours per day at a flat daily rate/)).not.toBeInTheDocument()
     expect(within(dialog).queryByLabelText('Rate')).not.toBeInTheDocument()
     /* The flight is picked in whole days: no time-of-day picker. */
     expect(dialog.querySelector('.ant-picker-time-panel')).toBeNull()
     fireEvent.change(rate, { target: { value: '1000' } })
-    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveValue('10'))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save draft' }))
     await waitFor(() => expect(puts).toHaveLength(1))
     expect(puts[0]).toMatchObject({ dealType: 'guaranteed', ratePerDay: 1000 })
-  }, slow(30000))
-
-  it('a guaranteed deal with no slot yet asks for a slot to show the equivalent CPM', async () => {
-    vi.stubGlobal('fetch', perDayFetch({ ...PER_DAY_LIST, ratePerDay: null, equivalentCpm: null, assignedSlots: [] }, []))
-    const dialog = await openTermsEditor()
-    expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveAttribute('placeholder', 'Assign a slot to see the equivalent CPM')
   }, slow(30000))
 
   it('Finalise confirms the slots and terms, and Share deal shares the deal', async () => {
