@@ -61,7 +61,8 @@ function ApprovalCell({ data, context }: P) {
 }
 /* Add an advertiser with a direct relationship with the retailer (no DSP), or edit any advertiser's audiences
    (ticket OanRebXyEryAXBQrBsVe), from the same pop-up. It is saved at once (not part of Save changes). A new direct
-   advertiser is listed as "Name (Direct)". Audiences are Visitor Segments values shared with this advertiser only. */
+   advertiser is listed as "Name (Direct)". Adding has no Audiences section (a direct advertiser can use every shared
+   targeting attribute; private audiences are set afterwards by editing). Audiences are Visitor Segments values shared with this advertiser only. */
 const AUDIENCES_TIP = 'Audiences shared only with this advertiser, such as people who are new to their brand. Your own systems decide who is in each audience and publish it to the visitor’s live profile when they are identified; Personalisation Hub never receives their purchase history. Only this advertiser can target these audiences, on deals and reserved slots, not the open auction.'
 const SEGMENT_TIP = 'Visitor segments published by your CRM, customer data platform or loyalty system.'
 function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; editing: Advertiser | null; onClose: () => void; onSaved: () => void }) {
@@ -82,7 +83,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
     setError(null)
     try {
       if (editing) await api('PUT', `/admin/v1/advertisers/${editing.advertiserId}/audiences`, { audiences })
-      else await api('POST', '/admin/v1/advertisers/direct', { name, audiences })
+      else await api('POST', '/admin/v1/advertisers/direct', { name })
       onSaved()
       onClose()
       message.success(editing ? 'Advertiser saved' : 'Advertiser added')
@@ -108,16 +109,21 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
       <div className="mt-1.5" style={{ fontSize: 12, color: T.muted }}>
         {editing ? (editing.direct ? 'A direct advertiser has its own relationship with you, with no DSP in between.' : `Comes through ${editing.via.join(', ')}.`) : 'A direct advertiser has its own relationship with you, with no DSP in between.'}
       </div>
-      <div className="mt-4 mb-1" style={{ fontSize: 13, fontWeight: 500 }}><WithTip tip={AUDIENCES_TIP}><span id="advertiser-audiences-label">Audiences</span></WithTip></div>
-      <div className="mb-1 inline-flex items-center gap-[5px]" style={{ fontSize: 12, color: T.muted }}>Segments <InfoTip text={SEGMENT_TIP} /></div>
-      <Select
-        mode="multiple" allowClear showSearch className="w-full" aria-labelledby="advertiser-audiences-label" placeholder="Choose segments shared with this advertiser only"
-        loading={variables.isLoading} value={audiences} options={options} onChange={setAudiences}
-        notFoundContent={segments ? 'No Visitor Segments values defined in Shared Targeting Variables.' : 'Visitor Segments is not available.'}
-      />
-      <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
-        {error ?? 'Chosen segments are removed from the Visitor Segments offered to everyone else.'}
-      </div>
+      {editing && (
+        <>
+          <div className="mt-4 mb-1" style={{ fontSize: 13, fontWeight: 500 }}><WithTip tip={AUDIENCES_TIP}><span id="advertiser-audiences-label">Audiences</span></WithTip></div>
+          <div className="mb-1 inline-flex items-center gap-[5px]" style={{ fontSize: 12, color: T.muted }}>Segments <InfoTip text={SEGMENT_TIP} /></div>
+          <Select
+            mode="multiple" allowClear showSearch className="w-full" aria-labelledby="advertiser-audiences-label" placeholder="Choose segments shared with this advertiser only"
+            loading={variables.isLoading} value={audiences} options={options} onChange={setAudiences}
+            notFoundContent={segments ? 'No Visitor Segments values defined in Shared Targeting Variables.' : 'Visitor Segments is not available.'}
+          />
+          <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
+            {error ?? 'Chosen segments are removed from the Visitor Segments offered to everyone else.'}
+          </div>
+        </>
+      )}
+      {error && !editing && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
     </Modal>
   )
 }

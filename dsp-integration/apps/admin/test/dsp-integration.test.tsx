@@ -747,13 +747,14 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByLabelText('Advertiser name')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Add advertiser' })).toBeDisabled()
     /* Audiences shared with this advertiser only (ticket OanRebXyEryAXBQrBsVe). */
-    expect(within(dialog).getByText('Audiences')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Audiences')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     /* Every advertiser row, DSP or direct, has an Edit action opening the same form. */
     fireEvent.click(within(advertisers).getByRole('button', { name: 'Edit Acme Foods' }))
     const edit = await screen.findByRole('dialog')
     expect(within(edit).getByRole('button', { name: 'Save advertiser' })).toBeInTheDocument()
     expect(within(edit).getByLabelText('Advertiser name')).toBeDisabled()
+    expect(within(edit).getByText('Audiences')).toBeInTheDocument()
     fireEvent.click(within(edit).getByRole('button', { name: 'Cancel' }))
     expect(within(advertisers).getAllByRole('button', { name: /^Edit / }).length).toBeGreaterThan(1)
     /* Only a direct advertiser can be deleted. */
