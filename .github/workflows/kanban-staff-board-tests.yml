@@ -1,0 +1,46 @@
+name: Staff Kanban tests
+
+# Runs kanban-staff-board/test: the Playwright end-to-end suite (25 cases,
+# kanban-staff-board/docs/E2E-TEST-PLAN.md) against the prototype. Triggered by
+# pull requests that touch the folder (a train PR from deploy/kanban-staff-board
+# included) and on demand. It is deliberately not branch-triggered: the train
+# automation would have to dispatch it (TRAIN_TEST_WORKFLOWS in
+# backlog-tracker/scripts/run-backlog-automation.js), which is a follow-up
+# ticket on the Kanban Staff Board project.
+on:
+  pull_request:
+    paths:
+      - 'kanban-staff-board/**'
+      - '.github/workflows/kanban-staff-board-tests.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: kanban-staff-board-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: kanban-staff-board-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: kanban-staff-board/test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright and Chromium
+        # Pinned to the version in package.json; the folder has no lockfile.
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: End-to-end suite
+        run: npm test
