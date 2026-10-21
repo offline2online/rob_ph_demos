@@ -183,7 +183,7 @@ how to confirm it is live. A merge alone is never proof: look at the run.
 | `visitor-profile/` | GitHub Pages | On merge | The URL |
 | `Brands-Suppliers-Assets/` (legacy, superseded by `menu-board-demo/`) | GitHub Pages | On merge | The URL |
 | `space-invaders/` | GitHub Pages for the static pages; `space-invaders/session-server.js` runs where `space-invaders/railway.json` points, not from a workflow here | Pages on merge | The URL |
-| `kanban-staff-board/` (Staff Kanban project `New5VKTF2QBqT3T4YEla`: spec, prototype, E2E suite; the production build is in `backlog-tracker/` → `js/kanban/`, `functions/kanban.js`, and ships with the console) | GitHub Pages (prototype) | On merge | The URL |
+| `kanban-staff-board/` (Staff Kanban project `New5VKTF2QBqT3T4YEla`: spec, prototype, E2E suite; the production build is in `backlog-tracker/public/js/kanban/` and `backlog-tracker/functions/kanban.js`, and ships with the console) | GitHub Pages (prototype) | On merge | The URL |
 | `shared/`, `docs/` | Not deployed: documents only | | |
 
 A change to anything under `.github/workflows/` cannot be merged by the
