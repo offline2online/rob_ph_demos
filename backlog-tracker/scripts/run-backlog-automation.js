@@ -5917,7 +5917,25 @@ async function recordPipelineHealth(conclusion) {
 // normal processMergePr success path (already-merged branch, deploy
 // trigger, status flip, note) runs in this same pass — no Routine fire, no
 // human click, and no code path duplicated.
+// The PR numbers a project's deployment train owns. A card on a train
+// carries its train PR's number too, and reconcileMergedTrains finishes
+// those — one deploy for the whole train. Picked up here as well, each card
+// went through processMergePr and dispatched its own console deploy: on
+// 21 Oct 2026 a run that read PR #449 as open in reconcileMergedTrains saw
+// it merged seconds later here and dispatched 27 deploys, 7 s apart.
+// Pure, for test/train-carried.test.js.
+function trainOwnedPrNumbers(projects) {
+  return new Set((projects || []).map((p) => Number(p && p.trainPrNumber)).filter((n) => Number.isFinite(n) && n > 0));
+}
+
 async function reconcileHumanMergedPrs() {
+  let trainPrs = new Set();
+  try {
+    trainPrs = trainOwnedPrNumbers(await runQuery({ from: [{ collectionId: "projects" }], select: selectFields(["trainPrNumber"]) }));
+  } catch (err) {
+    console.log(`[human-merge] couldn't read the projects' train PRs (${err.message}) — skipping this run`);
+    return [];
+  }
   const waiting = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     select: selectFields(["mergeReady", "mergePrNumber", "prNumber", "prUrl"]),
@@ -5928,6 +5946,7 @@ async function reconcileHumanMergedPrs() {
     if (item.mergeReady) continue; // already queued for this run
     const prNumber = item.mergePrNumber || item.prNumber || (item.prUrl ? (String(item.prUrl).match(/\/pull\/(\d+)/) || [])[1] : null);
     if (!prNumber) continue;
+    if (trainPrs.has(Number(prNumber))) continue; // the train's own reconcile finishes it
     try {
       const parsed = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "state"]));
       if (parsed.state !== "MERGED") continue;
@@ -6338,7 +6357,7 @@ module.exports = {
   conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
   // test/train-carried.test.js — a card whose content a sibling's commit
   // delivered follows that train instead of being marked live on approval
-  onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
+  onTrainItems, trainOwnedPrNumbers, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
   // test/generated-builds.test.js
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict, deployWorkflowsFor,
   tryAutoResolvePackageJsonConflict, tryAutoResolveTrainMergeConflict, mergeCommandChains, resumeConflictedTrain, trainConflictKey,
