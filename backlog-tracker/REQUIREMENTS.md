@@ -1638,6 +1638,23 @@ REST API is reachable with a plain `curl`, no service account needed.
   console lists the last 200 dictation events (starts, ends, error codes,
   watchdog restarts) for diagnosing a report. Tested by
   `test/dictation.test.mjs` against a scripted recogniser.
+- **Every mic writes each phrase once, Android included (21 Oct 2026).**
+  Reported from an Android phone on the Staff Kanban's Record task: "add
+  add add a new add a new Epic…". Android Chrome in continuous mode
+  reports every in-progress guess as a final, each the whole utterance so
+  far. `public/js/dictation-results.js` reads results for every mic in the
+  console (`createDictationController()` and the Staff Kanban's recorder):
+  Android, from the user agent or its client hints, never runs continuous
+  mode; results are walked from `e.resultIndex` but never past a final not
+  yet committed, and never back over one already committed; a final that
+  only carries the previous final of the same session further replaces it,
+  and one that repeats it, or is an earlier shorter guess, is dropped. That
+  covers an Android device whose user agent doesn't say so ("Desktop site",
+  tablets): after two such finals in one session the page stops using
+  continuous mode for the rest of the visit. Tested by
+  `test/dictation-results.test.mjs` (the reported sequence),
+  `test/dictation.test.mjs` and KB-C5/KB-C6 in
+  `test/ui/staff-kanban.test.mjs`.
 - **App name and global navigation.** The app itself (browser tab, `<h1>`,
   footer) is titled **"PH Agent Console"** — distinct from any one
   project's own name on the board (e.g. the "Backlog Tracker & FAQs"

@@ -77,7 +77,8 @@ minutes. The prototype keeps changes in the viewer's own `localStorage`;
   The side panel runs priority, type, assignee, reporter, release, estimate, then time logged.
   When you edit a task, the description and the comment box each have a round mic for dictation
   (it turns into a red stop button while listening), and Status sits at the end of
-  the side panel.
+  the side panel. On Android every recording listens one utterance at a time, so a phrase
+  isn't written out again with each new word (REQUIREMENTS.md → KB-MOD-4a).
 - **Flags**. Each card has a flag button (shown on hover, always shown once a card is flagged).
   Flagged cards turn amber. There's a **Flagged** filter with a count, a Flag toggle in the
   modal header, and flags also show in the release report.

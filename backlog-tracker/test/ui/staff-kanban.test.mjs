@@ -61,6 +61,43 @@ const speechStub = (phrase) => ({
     window.SpeechRecognition = class { start() { setTimeout(() => this.onresult && this.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: said }], { isFinal: true })] }), 150); } stop() { setTimeout(() => this.onend && this.onend(), 10); } abort() {} };
   },
 });
+// Android Chrome's recogniser (21 Oct 2026: "add add add a new add a new
+// Epic…" on a phone). In continuous mode every guess is a final, each the
+// whole utterance so far; otherwise the guesses are interim and one final
+// ends the session. Either way the session ends after the utterance, and
+// each new session says the next one. window.__srContinuous records each
+// session's mode.
+const ANDROID_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36";
+const androidSpeech = (utterances) => ({
+  arg: utterances,
+  fn: (said) => {
+    navigator.mediaDevices.getUserMedia = async () => ({ getTracks: () => [{ stop() {} }] });
+    window.__srContinuous = [];
+    let next = 0;
+    window.SpeechRecognition = class {
+      start() {
+        this.ended = false;
+        window.__srContinuous.push(this.continuous);
+        const words = said[next++];
+        if (!words) return;
+        const all = words.split(" ");
+        const guesses = all.map((_, i) => all.slice(0, i + 1).join(" "));
+        guesses.unshift(guesses[0]); // Android sends some guesses twice
+        const results = [];
+        guesses.forEach((g, i) => setTimeout(() => {
+          if (this.ended) return;
+          const last = i === guesses.length - 1;
+          const index = results.length && !results[results.length - 1].isFinal ? results.length - 1 : results.length;
+          results[index] = Object.assign([{ transcript: g }], { isFinal: this.continuous || last });
+          if (this.onresult) this.onresult({ resultIndex: index, results: results.slice() });
+          if (last) setTimeout(() => { if (!this.ended) { this.ended = true; if (this.onend) this.onend(); } }, 20);
+        }, 30 * (i + 1)));
+      }
+      stop() { if (!this.ended) { this.ended = true; setTimeout(() => this.onend && this.onend(), 10); } }
+      abort() { this.ended = true; }
+    };
+  },
+});
 
 console.log("\nStaff Kanban — console end to end\n");
 
@@ -569,6 +606,28 @@ await test("KB-C4 deep links: a report URL opens the report, and the hash follow
   assert.match(await p.title(), /Release report/);
   await p.click('#kb-view [data-route="kanban"]'); await p.waitForSelector(".kb-card");
   assert.equal(await p.evaluate(() => location.hash), "#staff-kanban");
+  await p.done();
+});
+
+await test("KB-C5 Android: Record task listens one utterance per session and writes each phrase once", async () => {
+  const p = await open("#staff-kanban", { ...DESKTOP, contextOptions: { userAgent: ANDROID_UA } }, { init: androidSpeech(["add a new Epic to the board", "Jack Johnson"]) });
+  await p.click("#kb-new-btn");
+  await p.click("#f-record");
+  await until(async () => (await p.textContent("#f-voice-live")) === "add a new Epic to the board Jack Johnson", "both phrases in the live transcript", 5000);
+  assert.deepEqual(await p.evaluate(() => window.__srContinuous.slice(0, 3)), [false, false, false], "never continuous mode on Android");
+  await p.click("#f-record");
+  await until(async () => (await p.inputValue("#f-title")).length > 0, "the agent to fill the title");
+  assert.doesNotMatch(await p.$eval("#f-description .ql-editor", (e) => e.innerText), /add add|Epic add/i);
+  await p.done();
+});
+
+await test("KB-C6 Android unrecognised (Desktop site): cumulative finals are written once, then continuous mode stops", async () => {
+  const p = await open("#staff-kanban", DESKTOP, { init: androidSpeech(["add a new Epic to the board", "Jack Johnson"]) });
+  await p.click('.kb-card[data-key="PH-23"]');
+  await p.click("#f-comment-mic");
+  await until(async () => (await p.$eval('[data-field="comments"] .ql-editor', (e) => e.innerText.trim())) === "Add a new Epic to the board Jack Johnson", "both phrases in the comment box, once each", 5000);
+  assert.deepEqual(await p.evaluate(() => window.__srContinuous.slice(0, 2)), [true, false], "the first session's cumulative finals switch the rest to one utterance each");
+  await p.click("#f-comment-mic");
   await p.done();
 });
 
