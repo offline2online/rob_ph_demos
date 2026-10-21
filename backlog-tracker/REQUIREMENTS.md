@@ -3186,3 +3186,12 @@ the board in one step.
   overlap, the platform is centred, and no label overlaps a node or another
   label, at 390, 820, 1180, 1440 and 1920 px, for a sparse, typical and
   full board.
+
+## Profile photos (avatars)
+
+Any member can upload, replace or remove their own profile photo from the profile menu (**Profile photo → Upload photo / Remove**); an admin can set or clear anyone's from **Settings → Team & agent access**. The browser crops to a centred square and scales to 256×256 JPEG (~0.85) before upload; images over 10 MB and non-images are refused inline and nothing is uploaded.
+
+- **Storage**: `avatars/{lowercased email}.jpg`. `storage.rules`: read for any member; write/delete only by the owner of that address or an admin; under 2 MB, `image/jpeg`.
+- **Record**: `consoleUsers/{email}.photoUrl` + `photoUpdatedAt` (`?v=` cache-bust). `firestore.rules`: a member may change only `lastLoginAt`, `photoUrl` and `photoUpdatedAt` on their OWN row (`photoUrl` ≤ 1000 chars, bucket `avatars` URL or `""`; `photoUpdatedAt == request.time`); admins may write both on any row.
+- **Fallback**: uploaded photo → Google sign-in photo (own avatar only) → coloured circle with the first-name initial.
+- **One component**: `public/js/avatar.js` `avatarHTML(email, size)`, repainted in place when a member row changes (a per-document `onSnapshot` per email). Used on the topbar button, profile menu, card notes/comments (Edit item, quick comment, concept discussion), Team rows and system-map revision history. 24px on cards/notes, 28px in lists, 32–40px in the profile menu and Team list.
