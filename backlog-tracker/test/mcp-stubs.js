@@ -14,6 +14,7 @@ function nowTs() {
 const SERVER_TIMESTAMP = { __sentinel: "serverTimestamp" };
 const DELETE_FIELD = { __sentinel: "delete" };
 function arrayUnion(...items) { return { __sentinel: "arrayUnion", items }; }
+function increment(n) { return { __sentinel: "increment", n }; }
 
 function resolve(value) {
   if (value === SERVER_TIMESTAMP) return nowTs();
@@ -31,6 +32,8 @@ function applyWrite(existing, data, merge) {
   for (const [k, v] of Object.entries(data)) {
     if (v === DELETE_FIELD) {
       delete base[k];
+    } else if (v && v.__sentinel === "increment") {
+      base[k] = (typeof base[k] === "number" ? base[k] : 0) + v.n;
     } else if (v && v.__sentinel === "arrayUnion") {
       const cur = Array.isArray(base[k]) ? base[k].slice() : [];
       base[k] = cur.concat(v.items.map(resolve));
@@ -104,7 +107,8 @@ function query(store, collection, filters = [], limit = null) {
 function collectionRef(store, name) {
   const q = query(store, name);
   return Object.assign(Object.create(Object.getPrototypeOf(q)), q, {
-    doc: (id) => docRef(store, name, id),
+    // doc() with no id gets a fresh one, as Firestore's auto-id does.
+    doc: (id) => docRef(store, name, id || store.nextId()),
     async add(data) { const id = store.nextId(); await docRef(store, name, id).set(data); return docRef(store, name, id); },
   });
 }
@@ -137,6 +141,7 @@ function install() {
   const authState = {
     // Set by a test before the code under test verifies an ID token.
     idTokens: new Map(),   // token string -> decoded claims
+    secrets: {},           // defineSecret(name).value()
     users: new Map(),      // email -> { uid, customClaims }
     created: [],
   };
@@ -148,13 +153,15 @@ function install() {
     "firebase-functions/v2/firestore": {
       onDocumentWritten: (docPath, handler) => { captured.firestoreTriggers.set(docPath, handler); return handler; },
     },
+    // Secrets: a test sets authState.secrets[name]; unset reads as "".
+    "firebase-functions/params": { defineSecret: (name) => ({ value: () => (authState.secrets && authState.secrets[name]) || "" }) },
     "firebase-functions/logger": {
       info: (...a) => logs.push(["info", ...a]), warn: (...a) => logs.push(["warn", ...a]),
       error: (...a) => logs.push(["error", ...a]), debug: () => {},
     },
     "firebase-admin/firestore": {
       getFirestore: () => db,
-      FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion, delete: () => DELETE_FIELD },
+      FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion, increment, delete: () => DELETE_FIELD },
     },
     "firebase-admin/auth": {
       getAuth: () => ({

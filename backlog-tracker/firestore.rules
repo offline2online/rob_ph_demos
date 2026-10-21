@@ -817,6 +817,100 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── Staff Kanban (kanban-staff-board/REQUIREMENTS.md §12–13) ───────────
+    // The human task board (public/js/kanban/). Members read everything and
+    // write tickets, comments and the activity log; a viewer reads only; an
+    // admin alone changes Kanban settings and sprints. A ticket's key PH-n
+    // comes from kanbanCounters/main in the same transaction, and the two
+    // rules below tie them: the counter only ever advances by one, and only
+    // with the ticket it numbers, so a key is never reused (KB-TASK-1).
+    // Written by the page (kanban-store.js) and, as the service account
+    // (which bypasses rules), by the MCP tools in functions/kanban-mcp.js.
+    function kanbanCounterPath() {
+      return /databases/$(database)/documents/kanbanCounters/main;
+    }
+    function isKanbanTask(d) {
+      return d.key is string && isNonEmptyBoundedString(d.title, 200)
+        && d.type in ["task", "bug", "epic"]
+        && d.status in ["backlog", "ready-for-dev", "in-progress", "ready-for-testing", "approved", "done"]
+        && (d.status == "done" ? d.resolution in ["completed", "withdrawn"] : d.resolution == null)
+        && d.open == (d.status != "done")
+        && d.rank is number
+        && d.description is string && d.description.size() <= 200000
+        && d.labels is list && d.labels.size() <= 30
+        && d.links is list && d.links.size() <= 50
+        && d.attachments is list && d.attachments.size() <= 50
+        && d.searchTokens is list && d.searchTokens.size() <= 600
+        && d.updatedBy == callerEmail();
+    }
+    match /kanbanTasks/{key} {
+      allow read: if isBoardReader();
+      allow create: if isEditor() && isKanbanTask(incoming())
+        && incoming().key == key && incoming().number is int
+        && key == "PH-" + string(incoming().number)
+        && incoming().createdBy == callerEmail()
+        && incoming().commentCount == 0
+        && getAfter(kanbanCounterPath()).data.nextNumber == incoming().number + 1;
+      allow update: if isEditor() && isKanbanTask(incoming())
+        && incoming().key == resource.data.key
+        && incoming().number == resource.data.number
+        && incoming().createdBy == resource.data.createdBy
+        && incoming().createdAt == resource.data.createdAt;
+      allow delete: if isEditor();
+
+      match /comments/{commentId} {
+        allow read: if isBoardReader();
+        allow create: if isEditor() && incoming().author == callerEmail()
+          && incoming().html is string && incoming().html.size() <= 200000
+          && incoming().text is string && incoming().text.size() <= 20000
+          && incoming().at == request.time;
+        allow update, delete: if isEditor() && resource.data.author == callerEmail();
+      }
+      // Append-only: who moved, reassigned or flagged what, and when.
+      match /activity/{entryId} {
+        allow read: if isBoardReader();
+        allow create: if isEditor() && incoming().who == callerEmail()
+          && isNonEmptyBoundedString(incoming().text, 500)
+          && incoming().at == request.time;
+      }
+    }
+    match /kanbanCounters/{counterId} {
+      allow read: if isBoardReader();
+      allow create: if isEditor() && counterId == "main" && incoming().nextNumber is int
+        && existsAfter(/databases/$(database)/documents/kanbanTasks/$("PH-" + string(incoming().nextNumber - 1)))
+        && !exists(/databases/$(database)/documents/kanbanTasks/$("PH-" + string(incoming().nextNumber - 1)));
+      allow update: if isEditor() && incoming().nextNumber == resource.data.nextNumber + 1
+        && existsAfter(/databases/$(database)/documents/kanbanTasks/$("PH-" + string(resource.data.nextNumber)))
+        && !exists(/databases/$(database)/documents/kanbanTasks/$("PH-" + string(resource.data.nextNumber)));
+    }
+    match /kanbanSettings/{settingsId} {
+      allow read: if isBoardReader();
+      allow create, update: if isAdmin() && settingsId == "main" && incoming().updatedBy == callerEmail();
+    }
+    match /kanbanSprints/{sprintId} {
+      allow read: if isBoardReader();
+      allow create, update: if isAdmin() && isNonEmptyBoundedString(incoming().name, 80);
+      allow delete: if isAdmin();
+    }
+    // @mentions (KB-MOD-3): a member notifies someone else; only the person
+    // notified reads theirs, marks it read or clears it.
+    match /kanbanNotifications/{noteId} {
+      allow read: if signedIn() && resource.data.to == callerEmail();
+      allow create: if isEditor() && incoming().from == callerEmail()
+        && incoming().to is string && incoming().to != callerEmail()
+        && incoming().keys().hasOnly(["to", "from", "taskKey", "taskTitle", "kind", "read", "at"])
+        && incoming().read == false && incoming().at == request.time;
+      allow update: if signedIn() && resource.data.to == callerEmail()
+        && incoming().diff(resource.data).affectedKeys().hasOnly(["read"]);
+      allow delete: if signedIn() && resource.data.to == callerEmail();
+    }
+    // Names and photos of every member, for assignee lists and avatars.
+    // consoleUsers itself is admin-only to list; functions/index.js keeps
+    // this copy (no roles) — no client writes it.
+    match /memberDirectory/{memberEmail} {
+      allow read: if isBoardReader();
+    }
+
     // Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
     // — currently just the analytics tag id appended to every customer-facing
     // FAQ page (see faq/js/page-common.js). Read/write here is editor-only,

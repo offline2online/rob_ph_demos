@@ -2,11 +2,12 @@
 
 **Project:** Kanban Staff Board (PH Agent Console), promoted from concept
 `vmhUoPiogxiJq1YmtJph` ("Kanban — Staff Task Board (Jira replacement)").
-**Repo folder:** `kanban-staff-board/`. **Status (21 Oct 2026):** clickable,
-front-end-only prototype in `prototype/` covers every requirement below; the
-production build inside the PH Agent Console (`backlog-tracker/`) has not
-started. This file is the spec for that build; `prototype/` is the reference
-behaviour, and `docs/E2E-TEST-PLAN.md` is how both are verified.
+**Repo folder:** `kanban-staff-board/`. **Status (21 Oct 2026):** built in the
+PH Agent Console (`backlog-tracker/`: page `public/js/kanban/`, rules in
+`firestore.rules` / `storage.rules`, server and MCP tools in
+`functions/kanban.js`) and passing the whole test plan against the console;
+see `docs/E2E-REPORT-2026-10-21-console.md`. `prototype/` stays as the signed-off
+reference behaviour, and `docs/E2E-TEST-PLAN.md` is how both are verified.
 
 Requirement IDs (`KB-…`) are referenced by the test plan, the automated suite
 (`test/e2e.test.mjs`) and the build tickets. Each lists its acceptance
@@ -48,11 +49,13 @@ first word), with their profile photo or initial.
 
 **KB-NAV-1** The console sidebar lists **Agent Board** and **Staff Kanban** as
 separate entries under Build; the page heading and browser title read "Staff
-Kanban". AC: both entries present; the active one is highlighted; the phone
-tab bar has a Staff Kanban tab.
+Kanban". AC: both entries present; the active one is highlighted; on a phone
+it is in the tab bar's Build sheet (the console's tab bar stays at four tabs:
+Build, Publish, Search, Profile). Route `#staff-kanban`, with
+`#staff-kanban/report?…` and `#staff-kanban/settings`.
 
 **KB-NAV-2** The Staff Kanban page header holds the title, task count, search
-box, **Release report**, **+ New task** and a settings cog (no ⋮ menu). AC: the
+box, **Release report**, **+ New task**, the mentions bell and a settings cog (no ⋮ menu). AC: the
 cog opens Kanban settings; Release report opens the report for the board's
 selected release.
 
@@ -169,8 +172,11 @@ priority, type, assignee, release, estimate, due date, sprint, labels, parent
 epic and flag when mentioned; filled fields are marked "Agent" for checking.
 **Fill in the ticket from this description** does the same for typed text.
 Clear errors for blocked/missing microphone or unsupported browser.
-Production: the transcript is sent to Claude (a console Cloud Function); the
-prototype uses a local stand-in (`agentDraft()`).
+Production: the transcript goes to Claude (`claude-opus-5-5`, structured JSON,
+low effort) through `POST /mcp/kanban/agent-fill` (`functions/kanban.js`); until
+the `ANTHROPIC_API_KEY` repo secret is set, and whenever Claude doesn't answer,
+the page uses the local stand-in (`agentDraft()` in `kanban-core.js`), as the
+prototype does.
 
 **KB-MOD-3 Rich text.** Description uses the Help Centre article editor's
 toolbar (Quill 1.3.7): headings H1–H4, bold/italic/underline/strike,
@@ -211,12 +217,18 @@ grouped by person. Epics are excluded from effort figures. Explanations live in
 Core fields always shown (title and status always required). Hidden fields
 stay editable on an existing ticket under "N more fields" and over MCP.
 
-**KB-SET-2** Ready for Testing reassignment target; current release; the team
-list with photos.
+**KB-SET-2** Ready for Testing reassignment target; current release; each
+release's date (releases themselves are the console's Releases page); sprints
+(name, start, end); the team list with photos and "Shown as" names. Members
+read settings; only admins change them.
 
 ## 10. People and photos
 
-**KB-PPL-1** Assignee lists show every console member by first name.
+**KB-PPL-1** Assignee lists show every console member by first name: the first
+word of their console name, or the "Shown as" name an admin sets in Kanban
+settings → Team (for names where the given name comes last, e.g. Lê Quang Huy → Huy).
+Members come from `memberDirectory`, a copy of `consoleUsers` without roles kept
+by a Cloud Function, since the full member list is admin-only.
 **KB-PPL-2** Profile photos (shared console feature, ticket
 `cQZRViGdvsqJrnNk00GF` on Backlog Tracker & FAQs): uploaded photo, else Google
 photo, else initial — used on cards, filters, lanes, comments, mentions and the
@@ -234,17 +246,24 @@ Staff can add and move tasks verbally through their agent.
 
 ## 12. Data model (production)
 
+As built (`backlog-tracker/public/js/kanban/kanban-store.js`). People are
+stored by lowercased email; release ids are the console's `releases` ids.
+
 | Collection | Shape |
 |---|---|
-| `kanbanTasks/{key}` | `key`, `number`, `type` (task/bug/epic), `title`, `descriptionHtml`, `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done), `rank`, `assigneeEmail`, `previousAssigneeEmail`, `reporterEmail`, `releaseId` (console `releases`), `sprintId`, `estimateHours`, `loggedHours`, `priority`, `dueDate`, `labels[]`, `epicKey`, `links[] {type,key}`, `flagged`, `attachments[]` (Storage paths), `mentions[]`, `createdAt/By`, `updatedAt/By` |
-| `kanbanTasks/{key}/comments/{id}` | `authorEmail`, `html`, `text`, `mentions[]`, `at` |
-| `kanbanTasks/{key}/activity/{id}` | `who`, `at`, `text` (moves, reassignments, flags) |
-| `kanbanSettings/main` | `fields {key: {show, required}}`, `testerEmail`, `currentReleaseId` |
-| `kanbanCounters/main` | `nextNumber` (transaction) |
+| `kanbanTasks/{PH-n}` | `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
+| `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at` |
+| `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, reassignments, flags); append-only |
+| `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |
+| `kanbanSettings/main` | `fields {key: {show, required}}`, `tester`, `currentRelease`, `releaseDates {releaseId: date}`, `labels[]`, `firstNames {email: name}`, `updatedAt/By` |
 | `kanbanSprints/{id}` | `name`, `start`, `end` |
-| Storage `kanban/{key}/…` | screenshots and recordings |
+| `kanbanNotifications/{id}` | `to`, `from`, `taskKey`, `taskTitle`, `kind` (description/comment), `read`, `at` |
+| `memberDirectory/{email}` | `email`, `displayName`, `photoUrl`, `photoUpdatedAt`, `disabled` (server-written) |
+| Storage `kanban/{PH-n or new}/…` | screenshots, recordings, attachments |
 
-Releases reuse the console's existing `releases` collection.
+Loading: every open ticket, the 300 most recently closed, and every ticket of
+the release picked in the Release filter. All queries are single-field, so no
+composite index is needed.
 
 ## 13. Non-functional
 
@@ -264,4 +283,5 @@ Releases reuse the console's existing `releases` collection.
   shared tickets.
 - **Console members** (`consoleUsers`): people, roles, photos.
 - **Console releases** (`releases`): fix versions.
-- **MCP server** (`backlog-tracker/functions/mcp-server.js`): KB-MCP-1 tools.
+- **MCP server** (`backlog-tracker/functions/mcp-server.js`, tools in
+  `functions/kanban.js`): KB-MCP-1 tools, plus `kanban_list_people`.
