@@ -869,6 +869,12 @@ only that advertiser's campaigns (with approval status), for PH Core to apply
 when it signs an Advertiser user in. This repo has no advertiser-facing login,
 insights or analytics screen to scope; that part needs the platform.
 
+**Deleting a user asks first** (ticket nN241VLRJD3iTRBsdnac). The delete icon
+in a Users row opens a "Delete user?" pop-up that names the user and says the
+action can't be undone; the user is removed only after **Delete** is pressed.
+Cancel, Escape or a click outside closes it with nothing deleted, and an API
+error shows inside the pop-up.
+
 **Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
 and only an admin changes approval, pricing, what a position is assigned to
 or what targeting it supports. A read-only viewer sees a *Read only* pill in
