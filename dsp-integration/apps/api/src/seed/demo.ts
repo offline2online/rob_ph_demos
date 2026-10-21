@@ -14,6 +14,7 @@
    is already running, and a second run changes nothing. */
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { randomUUID } from 'node:crypto'
+import { crc32, deflateSync } from 'node:zlib'
 import { advertiserSlug, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { onFree, tx } from '../db/db'
@@ -58,11 +59,14 @@ const slot = (label: string, over: Partial<Slot> = {}): Slot => ({
 })
 
 const DEMO_DEAL_ID = 'bl_demo_private_auction'
-/* One Direct advertiser deal each, with a flight and a fixed CPM (the slot waterfall tries them in this order). */
+/* One Direct advertiser deal each, with a flight and a fixed CPM. They share Portrait's third slot, so their flights
+   follow each other: reserving deals never overlap on a slot (ticket OMwDvy3OUmY9raBtTf7v; E2E 21 Oct 2026, both had
+   held 1 Sep 2026 – 31 Mar 2027, so Gatorade's could never book). */
 const DEMO_DIRECT_DEALS = [
-  { id: 'bl_demo_direct_redbull', advertiser: 'Red Bull', floorCpm: 180 },
-  { id: 'bl_demo_direct_gatorade', advertiser: 'Gatorade', floorCpm: 150 },
+  { id: 'bl_demo_direct_redbull', advertiser: 'Red Bull', floorCpm: 180, activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2026-12-31T23:59:59.999Z', campaignId: 'c_demo_redbull_portrait' },
+  { id: 'bl_demo_direct_gatorade', advertiser: 'Gatorade', floorCpm: 150, activeFrom: '2027-01-01T00:00:00.000Z', activeTo: '2027-03-31T23:59:59.999Z', campaignId: 'c_demo_gatorade_portrait' },
 ]
+const DIRECT_DEAL_IDS = new Set(DEMO_DIRECT_DEALS.map((d) => d.id))
 
 /* Four sellable positions on Landscape, three on Portrait. Each display type
    inherits the platform floor; the hero slot on each carries a floor of its own
@@ -138,6 +142,8 @@ interface DemoCampaign {
   id: string; name: string; advertiser: string; partnerId: string; displayTypeId: string
   pricingType: 'localised' | 'personalised'; state: State; colour: string; line: string
   targeting: StoredTargeting; brief: Record<string, unknown>; createdAt: string; rejectReason?: string
+  /* A real PNG creative rather than the SVG placeholder, for one the exchange hands off. */
+  png?: boolean
 }
 
 const LOCALISED: StoredTargeting = { default: { pricingType: 'localised' } }
@@ -189,6 +195,11 @@ const DEMO_CAMPAIGNS: DemoCampaign[] = [
     targeting: metro('localised'), brief: brief('Metro stores through the summer, booked direct with the retailer.', { promotedProducts: ['Red Bull 250ml', 'Red Bull Sugarfree 250ml'], skus: ['SKU-50101'] }) },
   { id: 'c_demo_redbull_edition', name: 'Red Bull — Summer Edition', advertiser: 'Red Bull', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', colour: '#c62828', line: 'The Summer Edition', createdAt: '2026-09-19T09:30:00.000Z',
     targeting: states('NSW', 'VIC'), brief: brief('Limited-run flavour for the east coast.', { promotedProducts: ['Red Bull Summer Edition 250ml'], targetAudiences: ['Adults 18–34'], objective: 'Brand Awareness' }) },
+  /* What each Direct advertiser deal books on Portrait's third slot: approved, activated and a PNG (the hand-off takes PNG, JPEG or MP4 only; E2E 21 Oct 2026). */
+  { id: 'c_demo_redbull_portrait', name: 'Red Bull — Wings at the chiller', advertiser: 'Red Bull', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'approved', png: true, colour: '#1a237e', line: 'Gives you wings', createdAt: '2026-09-10T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Booked direct with the retailer through its Direct advertiser deal on the chiller screen.', { promotedProducts: ['Red Bull 250ml'] }) },
+  { id: 'c_demo_gatorade_portrait', name: 'Gatorade — Thirst Quencher', advertiser: 'Gatorade', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'approved', png: true, colour: '#e65100', line: 'Is it in you?', createdAt: '2026-09-10T10:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Booked direct with the retailer through its Direct advertiser deal, from January.', { promotedProducts: ['Gatorade Lemon-Lime 600ml'] }) },
   { id: 'c_demo_cocacola_zero', name: 'Coca-Cola — Zero Sugar', advertiser: 'Coca-Cola', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#000000', line: 'Zero Sugar. Real taste.', createdAt: '2026-09-09T09:00:00.000Z',
     /* Combines the individual and aggregate-store trigger tiers. */
     targeting: personalised(['Fitness', 'Health'], [[rule('store.reason_for_visit', 'greater_than_or_equal', ['Returns: 30%'])]]),
@@ -220,6 +231,22 @@ const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
     `<text x="50%" y="45%" fill="#fff" font-family="Helvetica, Arial, sans-serif" font-size="${Math.round(h / 8)}" font-weight="700" text-anchor="middle">${brand}</text>` +
     `<text x="50%" y="60%" fill="#fff" font-family="Helvetica, Arial, sans-serif" font-size="${Math.round(h / 18)}" text-anchor="middle">${line}</text></svg>`)
 
+/* A real PNG in the brand colour with a white band, for a creative that has to pass the hand-off's file checks. */
+function solidPng(w: number, h: number, hex: string) {
+  const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  const row = (c: number[]) => Buffer.concat([Buffer.from([0]), Buffer.alloc(w * 3, Buffer.from(c))])
+  const brand = row(rgb), band = row([255, 255, 255])
+  const raw = Buffer.concat(Array.from({ length: h }, (_, y) => (y > h * 0.55 && y < h * 0.62 ? band : brand)))
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length)
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data])
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body))
+    return Buffer.concat([len, body, crc])
+  }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+}
+
 /* ------------------------------------------------- retiring placeholders */
 
 /* The base seed (kept minimal, and counted by the API tests) brings Swisse and
@@ -230,9 +257,11 @@ const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
    the old names, reset it rather than re-running this. */
 const PLACEHOLDER_SEATS = ['Swisse', 'L\'Oréal', 'L’Oréal', 'Blackmores', 'Unilever']
 const RELABELLED = [
-  { id: 'c_api_swisse', from: 'swisse', advertiser: 'Mondelez International', name: 'Mondelez — Cadbury Easter', colour: '#4a148c', line: 'Cadbury Easter' },
-  { id: 'c_api_swisse_kids', from: 'swisse', advertiser: 'Kellanova', name: 'Kellanova — Pringles Game Day (draft)', colour: '#b71c1c', line: 'Pringles Game Day' },
-  { id: 'c_dsp_loreal', from: 'loreal', advertiser: 'The Hershey Company', name: 'The Hershey Company — Reese’s Party Pack', colour: '#6d4c41', line: 'Reese’s Party Pack — A$29.95' },
+  { id: 'c_api_swisse', from: 'swisse', advertiser: 'Mondelez International', name: 'Mondelez — Cadbury Easter', colour: '#4a148c', line: 'Cadbury Easter',
+    brief: brief('Easter chocolate, aimed at shoppers already at the confectionery fixture.', { promotedProducts: ['Cadbury Mini Eggs 300g'], targetAudiences: ['Families'], objective: 'Brand Awareness' }) },
+  { id: 'c_api_swisse_kids', from: 'swisse', advertiser: 'Kellanova', name: 'Kellanova — Pringles Game Day (draft)', colour: '#b71c1c', line: 'Pringles Game Day', brief: null },
+  { id: 'c_dsp_loreal', from: 'loreal', advertiser: 'The Hershey Company', name: 'The Hershey Company — Reese’s Party Pack', colour: '#6d4c41', line: 'Reese’s Party Pack — A$29.95',
+    brief: brief('Reese’s Party Pack launch across metro stores.', { promotedProducts: ['Reese’s Party Pack 300g'] }) },
 ]
 
 export async function retirePlaceholderAdvertisers(ctx: Context) {
@@ -249,8 +278,10 @@ export async function retirePlaceholderAdvertisers(ctx: Context) {
     const { width, height } = dt?.displayCanvasSize ?? { width: 1920, height: 1080 }
     const file = await ctx.assets.put(svg(width, height, r.colour, r.advertiser, r.line), '.svg')
     await onFree(ctx.db, () => {
-      ctx.db.prepare('UPDATE campaigns SET name = ?, advertiser_id = ? WHERE id = ?').run(r.name, advertiserSlug(r.advertiser), r.id)
+      /* The brief and the approval history go too: they named the retired brand's products (E2E 21 Oct 2026). */
+      ctx.db.prepare('UPDATE campaigns SET name = ?, advertiser_id = ?, brief = ? WHERE id = ?').run(r.name, advertiserSlug(r.advertiser), r.brief ? JSON.stringify(r.brief) : null, r.id)
       ctx.db.prepare('UPDATE campaign_assets SET file = ? WHERE campaign_id = ?').run(file, r.id)
+      ctx.db.prepare("UPDATE campaign_approval_audit SET actor = ? WHERE campaign_id = ? AND actor IN ('Swisse', 'L’Oréal', 'L''Oréal')").run(r.advertiser, r.id)
     })
   }
 }
@@ -324,9 +355,9 @@ export async function seedDemo(ctx: Context) {
     for (const d of DEMO_DIRECT_DEALS) {
       if (await ctx.buyersLists.get(d.id)) continue
       await ctx.buyersLists.insert({
-        id: d.id, name: `${d.advertiser} direct`, description: `${d.advertiser} books the retailer directly, with no DSP: Summer 2026–27 flight at a fixed CPM.`, dealType: 'direct',
+        id: d.id, name: `${d.advertiser} direct`, description: `${d.advertiser} books the retailer directly, with no DSP: its own flight on the slot at a fixed CPM.`, dealType: 'direct',
         invitedBuyers: [{ partnerId: DIRECT_PARTNER, seatId: advertiserSlug(d.advertiser) }], floorCpm: d.floorCpm,
-        activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2027-03-31T23:59:59.999Z', auctionCloses: null,
+        activeFrom: d.activeFrom, activeTo: d.activeTo, auctionCloses: null,
       })
     }
 
@@ -353,7 +384,7 @@ export async function seedDemo(ctx: Context) {
     `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled, brief)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
   )
-  const insertAsset = ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, 'image/svg+xml', ?, ?, 1024, ?)")
+  const insertAsset = ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, ?, ?, ?, ?, ?)")
   for (const c of DEMO_CAMPAIGNS) {
     if (await ctx.campaigns.getCampaign(c.id)) continue
     const dt = await ctx.displayTypes.get(c.displayTypeId)
@@ -363,10 +394,11 @@ export async function seedDemo(ctx: Context) {
     const source = partner?.provider === 'the_trade_desk' || c.state === 'draft' ? 'api' : 'dsp'
     /* A rejected-for-size creative really is the wrong size. */
     const [w, h] = c.rejectReason?.includes('1280×720') ? [1280, 720] : [width, height]
-    const file = await ctx.assets.put(svg(w, h, c.colour, c.advertiser, c.line), '.svg')
+    const bytes = c.png ? solidPng(w, h, c.colour) : svg(w, h, c.colour, c.advertiser, c.line)
+    const file = await ctx.assets.put(bytes, c.png ? '.png' : '.svg')
     await onFree(ctx.db, () => {
       insertCampaign.run(c.id, c.name, JSON.stringify(c.targeting), c.createdAt, source, advertiserSlug(c.advertiser), c.partnerId, c.displayTypeId, c.pricingType, JSON.stringify(c.brief))
-      insertAsset.run(randomUUID(), c.id, file, w, h, c.createdAt)
+      insertAsset.run(randomUUID(), c.id, file, c.png ? 'image/png' : 'image/svg+xml', w, h, c.png ? bytes.length : 1024, c.createdAt)
     })
     report.campaigns++
     if (c.state === 'draft') continue
@@ -430,7 +462,11 @@ async function seedDemoBookings(ctx: Context) {
     /* Only what a position is assigned to can book it, so each advertiser
        rotates through the positions it may use (a DSP-only or direct
        advertiser would otherwise land on slots it can't book and show none). */
+    /* A direct advertiser reaches a slot only through its Direct advertiser deal, and a slot holding one is reserved
+       by it for the flight (22 Oct 2026): neither takes part in the rotation; their bookings are seeded below. */
+    if (brand.partnerId === DIRECT_PARTNER) continue
     const eligible = positions.filter((p) => {
+      if ((p.def.buyersListIds ?? []).some((id) => DIRECT_DEAL_IDS.has(id))) return false
       const allowed = p.def.partnerIds ?? []
       if (allowed.length && !allowed.includes(brand.partnerId)) return false
       return !(p.def.advertisers ?? []).length
@@ -493,6 +529,31 @@ async function seedDemoBookings(ctx: Context) {
         await ctx.campaigns.bookSlot({ id: `bk_demo_held_${position.positionId}_${brand.advertiserId}_${k}`, campaignId, displayTypeId: dt.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
         written++
       }
+    }
+  }
+
+  /* Each Direct advertiser deal's slot: a run of windows inside its flight, at the deal's rate, as the exchange books them (exchange/directDeal.ts). */
+  for (const d of DEMO_DIRECT_DEALS) {
+    const position = positions.find((p) => (p.def.buyersListIds ?? []).includes(d.id))
+    if (!position || !(await ctx.campaigns.getCampaign(d.campaignId))) continue
+    const advertiserId = advertiserSlug(d.advertiser)
+    const deal = await ctx.buyersLists.get(d.id)
+    const { len, first } = await gridOf(position)
+    const from = Math.max(first, Math.ceil((Date.parse(d.activeFrom) - first) / len) * len + first)
+    for (const [k, step] of [0, 1, 3, 6, 10, 15].entries()) {
+      const start = new Date(from + step * len).toISOString()
+      if (Date.parse(start) > Date.parse(d.activeTo)) break
+      const id = `res_demo_direct_${advertiserId}_${k}`
+      if (await ctx.reservations.get(id)) continue
+      if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
+      await ctx.reservations.insert({
+        id, partnerId: DIRECT_PARTNER, advertiserId, campaignId: d.campaignId, positionId: position.positionId, windowStart: start,
+        type: 'reserve', channel: 'api', bidCpm: d.floorCpm, currency, status: 'reserved', clearingCpm: d.floorCpm,
+        reason: `Reserved: ${deal?.name ?? d.id} (${deal?.dealId ?? ''}), a Direct advertiser deal, booked for its whole flight with no auction.`,
+        testMode: false, pricingType: 'localised', handedOffAt: new Date().toISOString(), dealType: 'guaranteed',
+      })
+      await ctx.campaigns.bookSlot({ id: `bk_demo_direct_${advertiserId}_${k}`, campaignId: d.campaignId, displayTypeId: position.displayType.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
+      written++
     }
   }
 

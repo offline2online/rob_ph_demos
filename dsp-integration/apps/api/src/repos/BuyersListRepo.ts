@@ -82,7 +82,8 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     /* Resolved against the platform and DSP levels by the admin route (withDelivery); the row alone can't know them. */
     effectiveCommittedPlays: { min: r.committed_plays, max: r.committed_plays, source: r.committed_plays == null ? 'none' : 'buyer' },
     effectiveRateCpm: { min: r.floor_cpm, max: r.floor_cpm, source: r.floor_cpm == null ? 'none' : 'buyer' },
-    termVersion: r.term_version, buyerAcceptance: acceptanceOf(r),
+    /* A Direct advertiser deal has no buyer acceptance (Finalise makes it live), so it reports none rather than a pending one. */
+    termVersion: r.term_version, buyerAcceptance: r.direct ? [] : acceptanceOf(r),
     status: r.shared_at ? 'shared' : 'draft', sharedAt: r.shared_at, assignedSlots: [],
     createdAt: r.created_at, updatedAt: r.updated_at,
   })

@@ -880,8 +880,11 @@ direct advertiser then. Nothing is converted into a draft Direct advertiser deal
 removal, and every lock, is recorded in the SSP change history under actor
 `migration-0082`, with the old advertisers as the old value. The down migration
 restores nothing. The demo seed (`npm run db:demo`) gives Red Bull and Gatorade a
-Direct advertiser deal each (flight 1 Sep 2026 to 31 Mar 2027, fixed CPM) on the
-Portrait slot "Direct deals: Red Bull & Gatorade", so they play through their deals.
+Direct advertiser deal each on the Portrait slot "Direct deals: Red Bull &
+Gatorade", with flights that follow each other (reserving deals never overlap on
+a slot): Red Bull 1 Sep to 31 Dec 2026 at 180 CPM, Gatorade 1 Jan to 31 Mar 2027
+at 150 CPM, each booking its own approved Portrait campaign, so they play
+through their deals.
 
 **Users page on the real API (10 Oct 2026, ticket H6BcvdNZUvdP8Ebh5Tve).**
 `mockups/platform-users.html` (Company Settings → Users) reads and saves
@@ -1770,9 +1773,11 @@ resolved from four levels:
   deals and a direct advertiser is **billed outside the platform**, so the
   platform issues no invoice, statement or payment for it. The revenue is
   reported wherever revenue is: the Booking schedule shows the booking as
-  "Name (Direct)" (DSP column "Direct") with booked windows, % sold,
-  Estimated revenue and, once played, billed revenue, filterable by the
-  advertiser or by DSP "direct"; its line items carry `partnerId: "direct"`
+  "Name (Direct)" (DSP column "Direct") with booked windows, % sold and
+  Estimated revenue, filterable by the advertiser or by DSP "direct" (the
+  screen shows no billed revenue, per "Booking revenue table" of 22 Sep;
+  the schedule API's `billedRevenue` carries it once the window has
+  played, confirmed by Rob 21 Oct 2026); its line items carry `partnerId: "direct"`
   and no `seatId`, which is how the Retail Media Insights dashboards tell a
   direct buyer from a DSP seat. Those dashboards belong to their own project
   and read billing through their source adapter.

@@ -149,11 +149,12 @@ function approvalParts(db: Db, config: Config, own: { displayTypes: DisplayTypeS
   const { displayTypes, company, partners, campaignChanges, clock } = own
   /* Files, not the database: no gate needed. */
   const assets = localAssetStore(config.assetsDir, config.publicUrl)
-  /* Advertiser names come from the DSP seats (seats are not secret). */
+  /* Advertiser names come from the DSP seats (seats are not secret), and a direct advertiser's from its own record
+     (E2E 21 Oct 2026: Campaign Approval grouped Red Bull's campaigns under "red-bull"). */
   const seatNames = async () => (await partners.list()).flatMap((p) => p.seats)
   const approvalCampaigns = gate(db, pocCampaignSource(db, {
     listeners: campaignChanges,
-    advertiserName: async (id) => (await seatNames()).find((s) => advertiserSlug(s.name) === id)?.name ?? id,
+    advertiserName: async (id) => (await seatNames()).find((s) => advertiserSlug(s.name) === id)?.name ?? (await company.directAdvertisers()).find((d) => d.advertiserId === id)?.name ?? id,
     partnerName: async (id) => (await partners.get(id))?.name ?? null,
     canvas: async (id) => (await displayTypes.get(id))?.displayCanvasSize ?? null,
     assetUrl: (file) => assets.url(file),

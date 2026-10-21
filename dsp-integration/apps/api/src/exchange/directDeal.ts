@@ -42,6 +42,8 @@ export async function bookDirectDealWindow(ctx: Context, p: PositionRef, start: 
   const mine = (await ctx.campaigns.listCampaigns({ advertiserId })).filter((c) => (!c.dealId || c.dealId === list.dealId) && (!c.displayTypeId || c.displayTypeId === p.displayType.id))
   const ordered = [...mine.filter((c) => c.dealId === list.dealId), ...mine.filter((c) => !c.dealId)]
   const rate = await rateOf(ctx, list)
+  /* Why the last eligible campaign could not take the window, so the outcome names the real cause (E2E 21 Oct 2026: a failed hand-off read as "not approved"). */
+  let notHanded: string | null = null
   for (const c of ordered) {
     if (await checkCampaign(ctx, c.campaignId)) continue
     if (checkTargeting(p, c.pricingType, true)) continue
@@ -59,8 +61,10 @@ export async function bookDirectDealWindow(ctx: Context, p: PositionRef, start: 
     }
     const handed = await handOff(ctx, r)
     /* Not handed off (no creative, doesn't fit): release the window so the next campaign can take it. */
-    if (!handed.handedOffAt) { await ctx.reservations.update(r.id, { status: 'lost', reason: handed.reason }); continue }
+    if (!handed.handedOffAt) { notHanded = handed.reason?.replace(/^Not handed off: /, '') || 'no creative fits'; await ctx.reservations.update(r.id, { status: 'lost', reason: handed.reason }); continue }
     return { ...out, skipped: `Reserved for ${list.name}, a Direct advertiser deal: booked with no bid request.`, winner: { reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, clearingCpm: rate } }
   }
-  return { ...out, skipped: `Reserved for ${list.name}, a Direct advertiser deal, but none of the advertiser's campaigns is approved, activated and ready to play: the window falls to the default campaign.` }
+  return { ...out, skipped: notHanded
+    ? `Reserved for ${list.name}, a Direct advertiser deal, but its advertiser's campaign could not be handed off (${notHanded}): the window falls to the default campaign.`
+    : `Reserved for ${list.name}, a Direct advertiser deal, but none of the advertiser's campaigns is approved, activated and ready to play: the window falls to the default campaign.` }
 }

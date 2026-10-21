@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { advertiserSlug } from '@ph-dsp/types'
 import { buildApp } from '../src/http/app'
 import { allPositions, isRealtime } from '../src/domain/positions'
+import { runAuction } from '../src/exchange/auction'
 import { listAdvertisers } from '../src/routes/admin/advertisers'
 import { seedDemo } from '../src/seed/demo'
 import { NOW, testContext } from './helpers'
@@ -46,8 +47,9 @@ describe('demo estate', () => {
     expect(portrait.slots.flatMap((s) => s.advertisers)).not.toContain('Red Bull')
     expect(portrait.slots.flatMap((s) => s.advertisers)).not.toContain('Gatorade')
     expect(portrait.slots[2]).toMatchObject({ listMode: 'deal', buyersListIds: ['bl_demo_direct_redbull', 'bl_demo_direct_gatorade'] })
-    for (const [id, seatId] of [['bl_demo_direct_redbull', advertiserSlug('Red Bull')], ['bl_demo_direct_gatorade', advertiserSlug('Gatorade')]]) {
-      expect(await ctx.buyersLists.get(id)).toMatchObject({ dealType: 'direct', invitedBuyers: [{ partnerId: 'direct', seatId }], floorCpm: expect.any(Number), activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2027-03-31T23:59:59.999Z' })
+    /* Their flights follow each other on the one slot: reserving deals never overlap. */
+    for (const [id, seatId, activeFrom, activeTo] of [['bl_demo_direct_redbull', advertiserSlug('Red Bull'), '2026-09-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z'], ['bl_demo_direct_gatorade', advertiserSlug('Gatorade'), '2027-01-01T00:00:00.000Z', '2027-03-31T23:59:59.999Z']]) {
+      expect(await ctx.buyersLists.get(id)).toMatchObject({ dealType: 'direct', invitedBuyers: [{ partnerId: 'direct', seatId }], floorCpm: expect.any(Number), activeFrom, activeTo })
       /* Derived from the slot it holds, like any guaranteed-style deal. */
       expect((await ctx.buyersLists.get(id))!.committedPlays).toBeGreaterThan(0)
     }
@@ -82,6 +84,25 @@ describe('demo estate', () => {
     expect(schedule.json().positions.map((p: { positionId: string }) => p.positionId)).toHaveLength(8)
     const layers = new Set(schedule.json().positions.flatMap((p: { windows: { booking: { pricingType: string } | null }[] }) => p.windows.map((w) => w.booking?.pricingType)).filter(Boolean))
     expect(layers).toEqual(new Set(['localised', 'personalised']))
+  })
+
+  it('books each Direct advertiser deal only on its own slot, at its rate, and the exchange can hand its campaign off (E2E 21 Oct 2026)', async () => {
+    const ctx = await testContext({ bookings: true, demo: true, clock: () => NOW })
+    const booked = (await ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString())).filter((r) => !r.testMode)
+    /* Direct advertisers book nowhere else, and nobody else books inside a Direct deal's flight on its slot. */
+    for (const r of booked.filter((x) => x.partnerId === 'direct')) expect(r.positionId).toBe('portrait.s3')
+    const onSlot = booked.filter((r) => r.positionId === 'portrait.s3')
+    expect(onSlot.length).toBeGreaterThan(0)
+    for (const r of onSlot) {
+      expect(r.partnerId).toBe('direct')
+      expect(r.clearingCpm).toBe(r.advertiserId === 'red-bull' ? 180 : 150)
+    }
+    /* Red Bull's live flight books its PNG campaign through the exchange, with no bid request. */
+    const free = new Date(Math.ceil((NOW.getTime() + 40 * 86_400_000) / 86_400_000) * 86_400_000)
+    const out = (await runAuction(ctx, free)).positions.find((p) => p.positionId === 'portrait.s3')!
+    expect(out.bidRequests).toBe(0)
+    expect(out.winner).toMatchObject({ advertiserId: 'red-bull', partnerId: 'direct', clearingCpm: 180 })
+    expect((await ctx.reservations.get(out.winner!.reservationId))!.handedOffAt).not.toBeNull()
   })
 
   it('is idempotent', async () => {

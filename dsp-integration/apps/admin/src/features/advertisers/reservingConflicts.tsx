@@ -36,7 +36,8 @@ export const rangeLabel = (c: Pick<ReservingConflict, 'overlapFrom' | 'overlapTo
 export function ConflictCallout({ conflicts, testId }: { conflicts: ReservingConflict[]; testId?: string }) {
   if (!conflicts.length) return null
   return (
-    <div className="mt-2 flex flex-col gap-2" data-testid={testId ?? 'reserving-conflict'}>
+    /* Wraps: inside Available Inventory's Assigned to cell AG Grid's nowrap cut it to one truncated line (E2E 21 Oct 2026); the row's autoHeight grows to fit. */
+    <div className="mt-2 flex flex-col gap-2" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.4 }} data-testid={testId ?? 'reserving-conflict'}>
       {conflicts.map((c) => (
         <Callout key={`${c.dealId}/${c.positionId}`} tone="warning" icon="event_busy">
           <strong>{c.dealName}</strong> ({c.advertiser}) already holds <strong>{c.playlist}, slot {c.slot}{c.slotLabel ? ` (${c.slotLabel})` : ''}</strong>: the slot is already sold for {rangeLabel(c)}. Change the dates or the slot to save.

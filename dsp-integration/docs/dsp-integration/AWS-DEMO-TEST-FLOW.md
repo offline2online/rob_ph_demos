@@ -32,9 +32,11 @@ Private auction and preferred deal are greyed out and not demoed; targeting on d
   changes). If *Campaign Status* and *Advertisers / Inventory* are missing from
   the menu it is switched off.
 - **The table:** Campaign schedule → second tab, **Upcoming Campaign Approval**.
-- **Seed data:** Swisse requires approval (campaign *c_api_swisse* is Awaiting
-  approval); Nestlé does not (*c_dsp_nestle* is Approved automatically);
-  L'Oréal has a Rejected campaign. Reset the hosted data with the
+- **Seed data:** Mondelez International (Google DSP) requires approval (campaign
+  *c_api_swisse*, "Mondelez — Cadbury Easter", is Awaiting approval); Nestlé does
+  not (*c_dsp_nestle* is Approved automatically); The Hershey Company has a
+  Rejected campaign. (Swisse, L'Oréal, Unilever and Blackmores are not in the
+  demo since 21 Oct 2026.) Reset the hosted data with the
   `dsp-api-deploy.yml` workflow (`reset = RESET`) for a clean run.
 
 ## A. The table (both flows land here)
@@ -50,10 +52,10 @@ Private auction and preferred deal are greyed out and not demoed; targeting on d
 
 ## B. Approval without a deal ID (Partner API → retailer → creative ID)
 
-Use the Partner API with a Swisse token (`API.md`: create → upload default →
-submit), or the seeded Swisse campaigns.
+Use the Partner API with the Google DSP token for Mondelez International
+(`API.md`: create → upload default → submit), or the seeded Mondelez campaign.
 
-1. Submit two Swisse campaigns. `GET /v1/campaigns/{id}/status` → `awaiting_approval`,
+1. Submit two Mondelez campaigns. `GET /v1/campaigns/{id}/status` → `awaiting_approval`,
    `creativeId: null`. Both appear Awaiting approval in the table. *(D1)*
 2. Tick both. **Expect** the bar to offer **Approve + assign to new creative ID**,
    **Approve + assign to existing creative ID** and **Reject…**. Tick a campaign
@@ -61,13 +63,13 @@ submit), or the seeded Swisse campaigns.
    with a hint to choose one advertiser; untick it. *(D2)*
 3. **Approve + assign to new creative ID.** **Expect** both rows Approved with
    the same `CR-XXXXXXXX`, and status → `approved` with that `creativeId`. *(D1)*
-4. Submit a third Swisse campaign, tick it, **Reject…**. **Expect** the Reject
+4. Submit a third Mondelez campaign, tick it, **Reject…**. **Expect** the Reject
    button disabled until a reason is typed; then the row Rejected, and status →
    `rejected` with that `reason`. *(D3)*
 5. As the advertiser, upload a corrected creative (different bytes — an
    identical re-upload is approved without review) and submit again. **Expect**
    Awaiting approval. Tick it, **Approve + assign to existing creative ID**.
-   **Expect** the picker to list each Swisse creative ID with its member
+   **Expect** the picker to list each Mondelez creative ID with its member
    campaigns and touch points, and no other advertiser's IDs. Pick the one from
    step 3. **Expect** all three campaigns under it. *(D3)*
 6. Activate an approved campaign and place a bid through the Partner API.
@@ -80,7 +82,7 @@ submit), or the seeded Swisse campaigns.
    (resubmission)", and the table shows "(resubmission)" beside its ID. Approve
    into it: `pendingEdit: false`, same ID. *(D4)*
 8. **Auto-approved advertiser.** Open the Nestlé campaigns in the same table
-   (or turn Swisse's *Campaign approval* off in Advertisers / Inventory and
+   (or turn Mondelez International's *Campaign approval* off in Advertisers / Inventory and
    submit). **Expect** them Approved on submission, ticking them offering only
    **Generate creative ID** and **Assign to existing creative ID** (no Approve or
    Reject), and the retailer path refusing them. Generate, then assign a second
@@ -149,9 +151,9 @@ Superseded by this section: Red Bull named in a slot's Assigned to; a direct adv
 5. **Finalise** the deal (the pop-up reads "Confirm and make deal live"). **Expect** no DSP share or acceptance, status shared, windows across the flight reading **Reserved** in availability and none outside it. *(X1b, X1c)*
 6. Run an auction for a window in the flight. **Expect** no bid request sent to any DSP, no real-time sale of the slot, and one booking for Red Bull's first approved, activated campaign, handed off. With two Red Bull campaigns **expect** the first eligible wins and one booking per window. *(X1c, X5)*
 7. As Red Bull's campaign author, open the deal-ID picker. **Expect** only Red Bull's own finalised deals covering the date; another advertiser's deal ID is refused 400; a campaign with no deal ID still plays. *(X3)*
-8. After the window plays, run billing. **Expect** one revenue line item at the deal's rate marked Direct, and the Booking schedule showing "Red Bull (Direct)" with estimated then billed revenue (filter by DSP "direct"). **Expect** no invoice anywhere. *(X2)*
+8. After the window plays, run billing. **Expect** one revenue line item at the deal's rate marked Direct, and the Booking schedule showing "Red Bull (Direct)" with its Estimated revenue (filter by DSP "direct"); the billed amount is in the schedule API's `billedRevenue`, not on the screen. **Expect** no invoice anywhere. *(X2)*
 
-**Seed note:** `npm run db:demo` gives Red Bull and Gatorade one Direct advertiser deal each on that slot with the same flight (1 Sep 2026 to 31 Mar 2027). The no-overlap rule (step 4) postdates that seed and is not re-judged for existing pairs, so with both live the first deal in the slot's order (Red Bull) takes every window. Give Gatorade a disjoint flight to see both.
+**Seed note:** `npm run db:demo` gives Red Bull and Gatorade one Direct advertiser deal each on that slot, one after the other as the no-overlap rule (step 4) requires: Red Bull 1 Sep to 31 Dec 2026 at 180 CPM, Gatorade 1 Jan to 31 Mar 2027 at 150 CPM. Each books its own approved Portrait campaign (a PNG, so it hands off): "Red Bull — Wings at the chiller" and "Gatorade — Thirst Quencher". No DSP advertiser is booked on that slot.
 
 ## Acceptance for the demo
 

@@ -353,10 +353,10 @@ export type WindowStatus = 'available' | 'reserved' | 'sold' | 'unavailable'
    for a request that asks about every position (the inventory list's
    status filter), taken from `prefetched`: one ranged query for the whole
    estate instead of one per position (review, 24 Sep 2026). `taken` maps
-   each such window to the status that took it, and `lockedTerm` is the
-   delivery term of a deal this position is assigned to once its rate is
-   locked, if it has one: both decide which windows read Reserved (OQ52). */
-export interface WindowFacts { next: number; now: number; hasDisplays: boolean; hours: ScreenGroup[]; taken: Map<string, ReservationStatus>; lockedTerm?: { activeFrom: string | null; activeTo: string | null } | null }
+   each such window to the status that took it, and `lockedTerms` are the
+   delivery terms of the deals this position is assigned to whose rate is
+   locked (or that are live Direct advertiser deals): both decide which windows read Reserved (OQ52). */
+export interface WindowFacts { next: number; now: number; hasDisplays: boolean; hours: ScreenGroup[]; taken: Map<string, ReservationStatus>; lockedTerms?: { activeFrom: string | null; activeTo: string | null }[] }
 const NO_WINDOWS: ReadonlyMap<string, ReservationStatus> = new Map()
 /* Sync-first (db.ts andThen): the status filter asks it for every position. */
 export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefetched?: Map<string, Map<string, ReservationStatus>>): Awaitable<WindowFacts> {
@@ -367,12 +367,12 @@ export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefe
       ? andThen(ctx.reservations.inRange(p.positionId, starts[0].toISOString(), new Date(starts[starts.length - 1].getTime() + 1).toISOString()), (rows) =>
           new Map(rows.filter((r) => !r.testMode && TAKEN.includes(r.status)).map((r) => [r.windowStart, r.status])))
       : none
-  return andThen(allOf([ctx.displays.summaryByDisplayType(p.displayType.id), lockedTermOf(ctx, p), taken, positionHourGroups(ctx, p)] as const), ([displays, lockedTerm, t, hours]) => ({
+  return andThen(allOf([ctx.displays.summaryByDisplayType(p.displayType.id), lockedTermOf(ctx, p), taken, positionHourGroups(ctx, p)] as const), ([displays, lockedTerms, t, hours]) => ({
     next: nextWindowFor(ctx.clock(), windowMsFor(p)).getTime(),
     now: ctx.clock().getTime(),
     hasDisplays: displays.displays > 0,
     hours,
-    lockedTerm,
+    lockedTerms,
     taken: t,
   }))
 }
@@ -381,13 +381,17 @@ export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefe
    deal's rate is locked, or a finalised Direct advertiser deal's whole flight (22 Oct 2026). Every window in it is spoken for: the exchange
    books each directly at the locked rate (billing/lockedTerm.ts bookLockedTermWindow)
    and takes no other bid for it. */
-function lockedTermOf(ctx: Context, p: PositionRef): Awaitable<ReturnType<typeof lockedTermSpan> | null> {
-  if (assignmentOf(p.def) !== 'deal') return null
-  /* Any tier whose rate is locked books the position's windows (first, highest tier, wins). */
-  return andThen(allOf(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) => {
-    for (const list of lists) { const span = list ? lockedTermSpan(list) ?? (list.dealType === 'direct' && list.status === 'shared' ? { activeFrom: list.activeFrom, activeTo: list.activeTo } : null) : null; if (span) return span }
-    return null
-  })
+type Span = NonNullable<ReturnType<typeof lockedTermSpan>>
+function lockedTermOf(ctx: Context, p: PositionRef): Awaitable<Span[]> {
+  if (assignmentOf(p.def) !== 'deal') return []
+  /* Every tier whose rate is locked books the position's windows in its own term. A slot can hold several Direct
+     advertiser deals with disjoint flights (reserving deals never overlap), so each one's flight reads Reserved, not
+     only the first's (E2E 21 Oct 2026: a December deal behind a November one read Available). */
+  return andThen(allOf(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
+    lists.flatMap((list) => {
+      const span = list ? lockedTermSpan(list) ?? (list.dealType === 'direct' && list.status === 'shared' ? { activeFrom: list.activeFrom, activeTo: list.activeTo } : null) : null
+      return span ? [span] : []
+    }))
 }
 
 /* Synchronous on purpose: availability over a year asks it 366 times per
@@ -409,7 +413,7 @@ export function windowStatus(p: PositionRef, c: Caller, start: Date, f: WindowFa
   if (!windowOpenFor(f.hours, start, windowMsFor(p))) return 'unavailable'
   if (beyondPendingChange(p.def, start.getTime(), f.now)) return 'unavailable'
   /* Inside a locked deal term: already spoken for, not open to bids. */
-  if (f.lockedTerm && isActiveAt(f.lockedTerm, iso)) return 'reserved'
+  if (f.lockedTerms?.some((t) => isActiveAt(t, iso))) return 'reserved'
   /* Locked against new sales (30 Sep 2026): windows already sold read Sold
      above; every other upcoming one is closed to further sales, even to the
      advertiser it is held for. */

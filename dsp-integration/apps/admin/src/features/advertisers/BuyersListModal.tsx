@@ -215,7 +215,14 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
       }
     >
       <div className="mb-3.5" style={{ fontSize: 12.5, color: T.muted }} data-testid="deal-status-note">
-        {!isDraft
+        {/* A Direct advertiser deal is never shared with a DSP: Finalise makes it live (E2E 21 Oct 2026). */}
+        {draft.dealType === 'direct'
+          ? !isDraft
+            ? 'Live: the slots it is assigned to are reserved for its direct advertiser over its flight. It is not sent to a DSP.'
+            : editing
+              ? `Draft: not live yet. ${slots.length ? `Assigned to ${slots.length} slot${slots.length === 1 ? '' : 's'}; finalise it to make it live.` : 'Assign it to a slot in Available Inventory, then finalise it to make it live.'}`
+              : 'Save as draft first. Then assign it to a slot in Available Inventory and finalise it to make it live. It is never sent to a DSP.'
+          : !isDraft
           ? 'Shared with the buyers. A change to its terms asks the buyers who accepted to accept again.'
           : editing
             ? `Draft: not shared with any DSP. ${slots.length ? `Assigned to ${slots.length} slot${slots.length === 1 ? '' : 's'}; finalise it to share it.` : 'Assign it to a slot in Available Inventory, then finalise it to share it.'}`

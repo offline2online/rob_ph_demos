@@ -180,6 +180,17 @@ describe('Direct advertiser deals: the exchange reserves the windows', () => {
     expect(await at('2026-12-02')).not.toBe('reserved')
     expect(await at('2026-10-30')).not.toBe('reserved')
   })
+
+  it('reads Reserved across every live Direct deal on the slot, not only the first (E2E 21 Oct 2026)', async () => {
+    const { ctx, app, direct, assign, other } = await sellSetup()
+    const dec = await other('2026-12-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z')
+    expect((await assign([direct.id, dec.id])).statusCode).toBe(200)
+    for (const id of [direct.id, dec.id]) await app.inject({ method: 'POST', url: `${URL}/${id}/share` })
+    const p = (await findPosition(ctx, 'portrait.s1'))!
+    const at = (d: string) => windowStatusAt(ctx, p, callerOf({} as never, undefined), new Date(`${d}T00:00:00.000Z`))
+    expect(await at('2026-11-15')).toBe('reserved')
+    expect(await at('2026-12-15')).toBe('reserved')
+  })
 })
 
 /* Campaign authoring: a direct advertiser picks its own live Direct deal (ticket knqu0B2PGTF9PG1EUWYD). */
