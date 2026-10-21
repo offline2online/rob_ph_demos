@@ -2468,25 +2468,28 @@ const heldDeployMainRedNote = (what, base7) =>
   `no ticket needs sending back. Fix main; this train then takes main, re-tests and the approved deploy carries on by itself.`;
 
 // Reads what heldDeployMainPlan needs. Never throws: what it can't read
-// counts as unknown, which neither blames main nor resyncs.
+// counts as unknown, which neither blames main nor resyncs. Judged on runs
+// that reached a verdict (a run still going, or cancelled by the next push to
+// main, says nothing), and the train's main commit is judged by the newest
+// such run at or before it: most main commits have no run of their own.
+function decidedMainRun(runs, isAt) {
+  return (runs || []).find((r) => ["passed", "failed", "rerun"].includes(trainRunVerdict(r)) && isAt(r.headSha)) || null;
+}
+
 function readHeldDeployMainState(deployBranch, head, red, gh = (args) => run("gh", args)) {
   const onBase = {};
   const onMain = {};
   const baseSha = mainBaseOf(head, gh);
   const mainHead = mainHeadSha(gh);
+  const ancestor = (a, b) => { try { run("git", ["merge-base", "--is-ancestor", a, b]); return true; } catch { return false; } };
   for (const w of red) {
     try {
-      if (baseSha) onBase[w.workflow] = trainRunVerdict(newestRealRun(fetchWorkflowRunsOnSha(w.workflow, baseSha)));
-    } catch { /* unknown */ }
-    try {
-      const runs = JSON.parse(gh(["api", `repos/${REPO}/actions/workflows/${w.workflow}/runs?branch=main&per_page=10`,
+      const runs = JSON.parse(gh(["api", `repos/${REPO}/actions/workflows/${w.workflow}/runs?branch=main&per_page=30`,
         "-q", "[.workflow_runs[] | {id, attempt: .run_attempt, headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
-      const r = newestRealRun(runs);
-      if (r) {
-        let onTrain = false;
-        try { run("git", ["merge-base", "--is-ancestor", r.headSha, head]); onTrain = true; } catch { /* not on the train */ }
-        onMain[w.workflow] = { verdict: trainRunVerdict(r), onTrain };
-      }
+      const latest = decidedMainRun(runs, () => true);
+      if (latest) onMain[w.workflow] = { verdict: trainRunVerdict(latest), onTrain: ancestor(latest.headSha, head) };
+      const atBase = baseSha ? decidedMainRun(runs, (sha) => sha === baseSha || ancestor(sha, baseSha)) : null;
+      if (atBase) onBase[w.workflow] = trainRunVerdict(atBase);
     } catch { /* unknown */ }
   }
   return { baseSha, mainHead, onBase, onMain };
@@ -6396,7 +6399,7 @@ module.exports = {
   // test/train-base-check.test.js — a ticket is never sent back for a failure main already has
   baseCheckAction, failureSummaryFromLog, isMainMergeCommit, BASE_CHECK_GIVE_UP_MS, baseCheckRef, heldForMain,
   // ...and an approved deploy held red by main resumes once main is fixed
-  heldDeployMainPlan, heldDeployMainRedNote,
+  heldDeployMainPlan, heldDeployMainRedNote, decidedMainRun,
   reportTrainTestResults, trainRunOwner, alreadyRerun, rerunRunKey, fdoc,
   trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/train-eject-after-revert.test.js — a ticket is judged on a run that did not contain a reverted ticket

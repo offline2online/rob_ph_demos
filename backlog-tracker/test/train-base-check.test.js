@@ -72,7 +72,7 @@ global.fetch = async (url, o = {}) => {
   return reply(200);
 };
 const auto = require("../scripts/run-backlog-automation.js");
-const { heldDeployMainPlan, heldDeployMainRedNote, baseCheckAction, failureSummaryFromLog, isMainMergeCommit, evidenceCandidates, BASE_CHECK_GIVE_UP_MS, baseCheckRef } = auto;
+const { heldDeployMainPlan, heldDeployMainRedNote, decidedMainRun, baseCheckAction, failureSummaryFromLog, isMainMergeCommit, evidenceCandidates, BASE_CHECK_GIVE_UP_MS, baseCheckRef } = auto;
 
 const WF = "firestore-rules-test.yml";
 const sha = (c) => c.repeat(40);
@@ -132,6 +132,17 @@ async function test(name, fn) {
     assert.deepStrictEqual(heldDeployMainPlan({ red, onBase: {}, onMain: {}, mainHead: Y }), { mainRed: false, resync: null }, "unknown blames nobody");
     assert.deepStrictEqual(heldDeployMainPlan({ red: [{ workflow: WF }, { workflow: "b.yml" }], onBase: { [WF]: "failed", "b.yml": "passed" }, onMain: fixed, mainHead: Y }), { mainRed: false, resync: null }, "every red workflow must be fixed on main");
     assert.deepStrictEqual(heldDeployMainPlan({ red: [], onBase: {}, onMain: {}, mainHead: Y }), { mainRed: false, resync: null });
+    // Main's newest runs were in progress and cancelled by the next push; the
+    // train's main commit (b18cb38) had no run of its own.
+    const runs = [
+      { headSha: "e88", status: "in_progress", conclusion: null },
+      { headSha: "e69", status: "completed", conclusion: "cancelled" },
+      { headSha: "a63", status: "completed", conclusion: "success", attempt: 1 },
+      { headSha: "0db", status: "completed", conclusion: "failure", attempt: 1 },
+    ];
+    assert.strictEqual(decidedMainRun(runs, () => true).headSha, "a63");
+    assert.strictEqual(decidedMainRun(runs, (sha) => sha === "0db").headSha, "0db");
+    assert.strictEqual(decidedMainRun(runs, () => false), null);
     assert.ok(/main is broken, not this train/.test(heldDeployMainRedNote("console tests failed", "0db46cc")));
   });
 
