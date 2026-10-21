@@ -234,7 +234,7 @@ Approval** since 27 Sep 2026, see §7):
 **Display Types**, **Playlist Management**, **Advertisers / Inventory**,
 then **DSP Integration** at the bottom. The pages used day to day come
 first; DSP Integration, set up once per DSP, comes last. **Advertisers /
-Inventory** (and, from there, **Campaign schedule**'s Campaign status tab)
+Inventory** (and, from there, **Advertiser Bookings**' Campaign Approval tab)
 shows only while the retailer has DSP integration switched on (§7, *The DSP
 integration switch*). Within DSP Integration, the
 company pages are **Exchange settings**, **Advertiser settings** and
@@ -1438,6 +1438,16 @@ a human rejection now works the same way:
   audit entry carries `assetReasons` the same shape as the live rejection,
   so a later reviewer (or an un-reject, §3 above) can see exactly which
   assets were called out, not just that *something* was rejected.
+
+### Advertiser Bookings: two tabs again (Rob, 21 Oct 2026)
+
+The 13 Oct 2026 change that left Campaign Approval as a single table is
+reversed now that programmatic guaranteed is supported. `/booking-schedule`
+is titled **Advertiser Bookings** and has two tabs: **Booking schedule**
+(default: the booking grid and Booking revenue table) and **Campaign
+Approval** (`?tab=campaign-status`; the tab is in the URL, so it survives a
+refresh). A campaign's back link returns to the Campaign Approval tab. The
+Booking schedule button on the Advertisers page stays removed.
 
 ### Approval queue health, and coded rejection reasons (Rob, 19 Oct 2026)
 

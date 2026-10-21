@@ -120,10 +120,10 @@ function featureRoutes(flags: Flags): RouteObject[] {
            (this route's first/default tab) is unchanged. Page title renamed
            "Advertiser Bookings" (ticket, 27 Sep 2026) — "Campaign schedule" read as
            if it were about scheduling a campaign, not about what advertisers have
-           booked. Renamed "Campaign Approval" and reduced to the one table, no
-           tabs, when the booking schedule was dropped from the initial release
-           (ticket BG4LKXiqTMYNm8jRNFDk, 13 Oct 2026). */
-        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Campaign Approval', hideNav: true } satisfies RouteHandle, element: <WhileDspOn><CampaignSchedulePage /></WhileDspOn> },
+           booked. Reduced to the Campaign Approval table alone on 13 Oct 2026
+           (ticket BG4LKXiqTMYNm8jRNFDk); the two tabs are back now that
+           programmatic guaranteed is supported (ticket BGxKMB89DIOgWuwgfrej). */
+        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Advertiser Bookings', hideNav: true } satisfies RouteHandle, element: <WhileDspOn><CampaignSchedulePage /></WhileDspOn> },
         /* The campaign detail drill-down still stands alone, opened from a
            playlist row in the Campaign status tab — same STAND-IN for the
            existing Campaigns section (package 11), removed on integration. */

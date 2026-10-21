@@ -366,7 +366,7 @@ describe('Campaign Status stand-in', () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     /* Campaign Status is the Campaign schedule section's second tab now
        (ticket, 26 Sep 2026), not its own route. */
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     /* Heading: total + per-status counts, no "submitted by advertisers and
        DSPs" copy and no Draft count (ticket, 22 Sep — Draft never surfaces
        in a retailer-facing view). */
@@ -411,14 +411,23 @@ describe('Campaign Status stand-in', () => {
     expect(screen.queryByRole('menuitem', { name: /Reject/ })).not.toBeInTheDocument()
   })
 
-  /* Ticket BG4LKXiqTMYNm8jRNFDk (13 Oct 2026): the Booking schedule tab is gone, so the
-     page is Campaign Approval with the table straight under the header and no tabs. */
-  it('is a page named Campaign Approval with no tabs', async () => {
+  /* Ticket BGxKMB89DIOgWuwgfrej: the two tabs are back (removed 13 Oct 2026 by BG4LKXiqTMYNm8jRNFDk). */
+  it('has Booking schedule and Campaign Approval tabs, Booking schedule first', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     renderAt('/booking-schedule')
+    const tabs = await screen.findAllByRole('tab')
+    expect(tabs.map((t) => t.textContent)).toEqual(['Booking schedule', 'Campaign Approval'])
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(tabs[1])
     expect(await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })).toBeInTheDocument()
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
-    expect(screen.queryByText('Booking schedule')).not.toBeInTheDocument()
+  })
+
+  it('opens Campaign Approval from ?tab=campaign-status', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
+    const router = renderAt('/booking-schedule?tab=campaign-status')
+    expect(await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Campaign Approval' })).toHaveAttribute('aria-selected', 'true')
+    expect(router.state.location.search).toBe('?tab=campaign-status')
   })
 
   /* The Status column's own funnel is the only status filter (ticket dinPPBl9Rk95UbrXoRbt);
@@ -430,7 +439,7 @@ describe('Campaign Status stand-in', () => {
       '/api/admin/v1/campaigns': { items: [campaign, approved, hq] },
       '/api/admin/v1/campaigns/c2/approval': { ...approval, campaignId: 'c2', campaignName: 'Blackmores autumn', status: 'approved' },
     })))
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     /* Re-query the grid each time: AG Grid redraws its rows as the filter changes. */
     const grid = () => screen.getByLabelText('Campaign Status')
     const shown = (name: string) => waitFor(() => expect(within(grid()).getByText(name)).toBeInTheDocument(), { timeout: 10000 })
@@ -468,7 +477,7 @@ describe('Campaign Status stand-in', () => {
       '/api/admin/v1/campaigns/c1/approval': { ...approval, creativeId: 'CR-AAA' },
       '/api/admin/v1/campaigns/c2/approval': { ...approval, campaignId: 'c2', campaignName: 'Blackmores autumn', status: 'approved', creativeId: 'CR-BBB' },
     })))
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     const grid = () => screen.getByLabelText('Campaign Status')
     const shown = (name: string) => waitFor(() => expect(within(grid()).getAllByText(name).length).toBeGreaterThan(0), { timeout: 10000 })
     const hidden = (name: string) => waitFor(() => expect(within(grid()).queryByText(name)).not.toBeInTheDocument(), { timeout: 10000 })
@@ -509,7 +518,7 @@ describe('Campaign Status stand-in', () => {
   it('never lists a Draft campaign — a retailer only ever sees one that has been submitted', async () => {
     const draftApproval = { ...approval, status: 'draft', mode: null, submittedAt: null }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/campaigns/c1/approval': draftApproval })))
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     await waitFor(() => expect(document.body.textContent).toMatch(/0 campaigns/), { timeout: 10000 })
     const grid = screen.getByLabelText('Campaign Status')
     await waitFor(() => expect(within(grid).queryByText('Swisse spring')).not.toBeInTheDocument(), { timeout: 10000 })
@@ -579,7 +588,7 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     }))
   })
   const open = async () => {
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     const grid = await screen.findByLabelText('Campaign Status')
     await within(grid).findByLabelText('Select Swisse spring', {}, { timeout: 10000 })
     return grid
@@ -1527,7 +1536,7 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     }))
   })
   const open = async () => {
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     const grid = await screen.findByLabelText('Campaign Status')
     await within(grid).findByLabelText('Select Swisse sleep', {}, { timeout: 10000 })
     return grid
