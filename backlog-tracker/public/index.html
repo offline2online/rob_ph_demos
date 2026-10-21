@@ -107,7 +107,7 @@
         </div>
       </div>
       <div class="topbar-actions">
-        <button type="button" class="icon-btn profile-btn" id="profile-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="profile-menu" aria-label="Profile and admin"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span></button>
+        <button type="button" class="icon-btn profile-btn" id="profile-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="profile-menu" aria-label="Profile and admin"><span id="profile-btn-avatar" class="profile-btn-avatar"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span></span></button>
       </div>
     </header>
 
@@ -161,7 +161,13 @@
          the same menu as a bottom sheet. #topbar-user / #topbar-signout keep
          their ids because auth-gate.js writes and listens to them. -->
     <div class="profile-menu" id="profile-menu" role="menu" aria-label="Profile and admin" hidden>
-      <div class="profile-menu-who"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span><span class="topbar-user" id="topbar-user"></span></div>
+      <div class="profile-menu-who"><span id="profile-photo-face" class="profile-photo-face"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span></span><span class="topbar-user" id="topbar-user"></span></div>
+      <div class="profile-photo-row">
+        <button type="button" class="profile-menu-item" id="profile-photo-upload" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span><span id="profile-photo-label">Upload photo</span></button>
+        <button type="button" class="profile-menu-item" id="profile-photo-remove" role="menuitem" hidden><span class="material-symbols-outlined" aria-hidden="true">delete</span>Remove</button>
+        <span class="material-symbols-outlined profile-photo-info" tabindex="0" aria-label="About profile photos" title="Your photo is cropped to a square and shown everywhere your name appears. Any image up to 10 MB. Remove it to fall back to your Google photo, then your initial.">info</span>
+      </div>
+      <p class="profile-photo-error" id="profile-photo-error" role="alert" hidden></p>
       <div class="nav-drawer-section">Admin</div>
       <button type="button" class="profile-menu-item" id="faq-settings-btn" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">settings</span>Settings</button>
       <button type="button" class="profile-menu-item" id="topbar-signout" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">logout</span>Sign out</button>

@@ -8,7 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@firebase/rules-unit-testing");
-const { doc, getDoc, getDocs, collection, setDoc, deleteDoc, serverTimestamp, writeBatch, arrayUnion } = require("firebase/firestore");
+const { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, arrayUnion } = require("firebase/firestore");
 
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
 
@@ -239,6 +239,23 @@ async function main() {
     deleteDoc(doc(as(TEAM_ADMIN), "consoleUsers/ada@personalisationhub.com")));
   await check("An owner account works with no consoleUsers row at all", "allow", () =>
     setDoc(doc(as(HUMAN), "consoleUsers/newbie2@personalisationhub.com"), { email: "newbie2@personalisationhub.com", role: "viewer" }));
+
+  // ── Profile photos: a member changes only their OWN photoUrl/photoUpdatedAt ─
+  const BUCKET_URL = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Fsam%40personalisationhub.com.jpg?alt=media&token=t";
+  await check("A member can set their own photo", "allow", () =>
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
+  await check("A member can clear their own photo", "allow", () =>
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: "", photoUpdatedAt: serverTimestamp() }));
+  await check("A member cannot set a photo URL pointing off the bucket", "deny", () =>
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: "https://evil.example/x.jpg", photoUpdatedAt: serverTimestamp() }));
+  await check("A member cannot backdate photoUpdatedAt", "deny", () =>
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: new Date(0) }));
+  await check("A member cannot set someone else's photo", "deny", () =>
+    updateDoc(doc(as(MEMBER), "consoleUsers/kit@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
+  await check("A member cannot piggy-back their role on a photo update", "deny", () =>
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp(), role: "admin" }));
+  await check("An admin can set another member's photo", "allow", () =>
+    updateDoc(doc(as(TEAM_ADMIN), "consoleUsers/kit@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
 
   // ── The MCP credential store is nobody's business but the server's ─────
   await check("An admin CANNOT read stored MCP tokens", "deny", () => getDoc(doc(as(TEAM_ADMIN), "mcpTokens/deadbeef")));
