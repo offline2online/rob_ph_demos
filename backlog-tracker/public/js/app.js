@@ -319,6 +319,11 @@ let projectsLoaded = false;
 let interfaces = [];
 let programs = [];
 let releases = [];
+// Staff Kanban page (see openStaffKanbanPage): declared up here because
+// closeAllSubPages reaches it from early in the file.
+const staffKanbanPage = document.getElementById("staff-kanban-page");
+let staffKanban = null;
+let staffKanbanLoading = null;
 let projectDocs = [];
 let skills = [];
 let concepts = [];
@@ -528,6 +533,7 @@ function closeAllSubPages() {
   closeReleasesPage();
   closeConceptIncubatorPage();
   closeConceptDetailPage();
+  closeStaffKanbanPage();
   // Every routed page (FAQ Management, Settings, the article editor — see
   // "URL routing" below) opens by calling this first, so clearing the hash
   // here is the one
@@ -7281,6 +7287,7 @@ function renderReleasesPage() {
 // their CURRENT value, so an unsaved choice survives a live update).
 function onReleasesChanged() {
   render();
+  if (staffKanban && !staffKanbanPage.hidden) staffKanban.refresh();
   renderSystemMap();
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
   if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
@@ -7425,6 +7432,56 @@ document.getElementById("releases-table-body").addEventListener("click", async (
 // viewer is otherwise still "signed in" and would only find out their write
 // was rejected from a raw firestore.rules permission-denied.
 const skillsPage = document.getElementById("skills-page");
+
+// ── Staff Kanban (#staff-kanban) ─────────────────────────────────────────
+// The human task board (kanban-staff-board/REQUIREMENTS.md). Its code lives
+// in js/kanban/ and is loaded the first time the page opens, so the Agent
+// Board's own load is unchanged. Sub-routes: #staff-kanban (the board),
+// #staff-kanban/report?<filters> and #staff-kanban/settings.
+function loadStaffKanban() {
+  if (staffKanban) return Promise.resolve(staffKanban);
+  if (!staffKanbanLoading) {
+    staffKanbanLoading = import("./kanban/kanban-page.js").then(({ mountStaffKanban }) => {
+      staffKanban = mountStaffKanban({
+        root: staffKanbanPage, db, storage, auth,
+        me: normEmail(auth.currentUser && auth.currentUser.email),
+        role: currentConsoleRole,
+        releases: () => releases,
+        confirm: (message, opts) => showConfirmDialog(message, opts),
+        go: (sub, params) => {
+          const qs = params ? new URLSearchParams(params).toString() : "";
+          setRouteHash(`#staff-kanban${sub ? "/" + sub : ""}${qs ? "?" + qs : ""}`);
+          applyRouteFromHash();
+        },
+      });
+      return staffKanban;
+    }).catch((err) => { staffKanbanLoading = null; throw err; });
+  }
+  return staffKanbanLoading;
+}
+function openStaffKanbanPage(sub, params) {
+  if (staffKanbanPage.hidden) closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  staffKanbanPage.hidden = false;
+  const qs = params ? params.toString() : "";
+  setRouteHash(`#staff-kanban${sub ? "/" + sub : ""}${qs ? "?" + qs : ""}`);
+  updateTopbarTitle();
+  loadStaffKanban().then((k) => { if (!staffKanbanPage.hidden) k.show(sub, params || new URLSearchParams()); })
+    .catch((err) => { console.error("backlog-tracker: couldn't load Staff Kanban", err); showAlert("Staff Kanban couldn't load. Reload the page and try again."); });
+}
+function openStaffKanbanRouteFromHash(hash) {
+  const rest = hash.slice("#staff-kanban".length).replace(/^\//, "");
+  const [sub, qs] = rest.split("?");
+  openStaffKanbanPage(["report", "settings"].includes(sub) ? sub : "", new URLSearchParams(qs || ""));
+}
+function closeStaffKanbanPage() {
+  if (staffKanbanPage.hidden) return;
+  staffKanbanPage.hidden = true;
+  if (staffKanban) staffKanban.hide();
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
 
 function openSkillsPage() {
   closeAllSubPages();
@@ -10062,6 +10119,7 @@ function wireFaqArticleRowInteractions(containerId) {
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
 document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage("all"); });
 document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
+document.getElementById("staff-kanban-btn").addEventListener("click", () => { closeNavDrawer(); openStaffKanbanPage(""); });
 document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
 
 // Command-K: one flat list of everything a person might want to jump to.
@@ -10111,6 +10169,9 @@ const ROUTE_TITLES = {
   "#skills": "Skills",
   "#releases": "Releases",
   "#concept-incubator": "Concept Incubator",
+  "#staff-kanban": "Staff Kanban",
+  "#staff-kanban/report": "Release report",
+  "#staff-kanban/settings": "Kanban settings",
 };
 // Set when a #faq-article/<id> route is applied before that article has
 // actually arrived over the realtime channel yet (a cold reload straight
@@ -10233,8 +10294,9 @@ function applyRouteFromHash() {
   else if (hash === "#concept-incubator") openConceptIncubatorPage();
   else if (hash.startsWith("#concept-")) openConceptRouteFromHash(hash);
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
+  else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

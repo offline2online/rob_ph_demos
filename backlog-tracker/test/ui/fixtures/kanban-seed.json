@@ -1,0 +1,1645 @@
+{
+ "today": "2026-10-20",
+ "users": [
+  {
+   "id": "rob",
+   "email": "rob@offline2online.com",
+   "first": "Rob"
+  },
+  {
+   "id": "minh",
+   "email": "minh.nguyen@personalisationhub.com",
+   "first": "Minh"
+  },
+  {
+   "id": "linh",
+   "email": "linh.tran@personalisationhub.com",
+   "first": "Linh"
+  },
+  {
+   "id": "huy",
+   "email": "huy.le@personalisationhub.com",
+   "first": "Huy"
+  },
+  {
+   "id": "thao",
+   "email": "thao.pham@personalisationhub.com",
+   "first": "Th\u1ea3o"
+  },
+  {
+   "id": "duc",
+   "email": "duc.do@personalisationhub.com",
+   "first": "\u0110\u1ee9c"
+  }
+ ],
+ "memberDirectory": {
+  "rob@offline2online.com": {
+   "email": "rob@offline2online.com",
+   "displayName": "Rob"
+  },
+  "minh.nguyen@personalisationhub.com": {
+   "email": "minh.nguyen@personalisationhub.com",
+   "displayName": "Nguy\u1ec5n V\u0103n Minh"
+  },
+  "linh.tran@personalisationhub.com": {
+   "email": "linh.tran@personalisationhub.com",
+   "displayName": "Tr\u1ea7n Th\u1ecb Linh"
+  },
+  "huy.le@personalisationhub.com": {
+   "email": "huy.le@personalisationhub.com",
+   "displayName": "L\u00ea Quang Huy"
+  },
+  "thao.pham@personalisationhub.com": {
+   "email": "thao.pham@personalisationhub.com",
+   "displayName": "Ph\u1ea1m Thu Th\u1ea3o"
+  },
+  "duc.do@personalisationhub.com": {
+   "email": "duc.do@personalisationhub.com",
+   "displayName": "\u0110\u1ed7 Minh \u0110\u1ee9c"
+  }
+ },
+ "releases": {
+  "4-11": {
+   "name": "PH 4.11",
+   "version": "4.11",
+   "status": "live",
+   "order": 1,
+   "createdAt": {
+    "$ts": 1788220800000
+   }
+  },
+  "4-12": {
+   "name": "PH 4.12",
+   "version": "4.12",
+   "status": "draft",
+   "order": 2,
+   "createdAt": {
+    "$ts": 1788220800000
+   }
+  },
+  "4-13": {
+   "name": "PH 4.13",
+   "version": "4.13",
+   "status": "draft",
+   "order": 3,
+   "createdAt": {
+    "$ts": 1788220800000
+   }
+  }
+ },
+ "kanbanTasks": {
+  "PH-1": {
+   "key": "PH-1",
+   "number": 1,
+   "type": "epic",
+   "title": "Menu Boards \u2014 scheduled local offers",
+   "description": "<p>Let HQ and stores schedule local offers on menu boards: start and end times, store groups, and correct pricing in previews and on screen.</p>",
+   "descriptionText": "Let HQ and stores schedule local offers on menu boards: start and end times, store groups, and correct pricing in previews and on screen.",
+   "status": "in-progress",
+   "resolution": null,
+   "open": true,
+   "rank": 10,
+   "assignee": "huy.le@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "",
+   "estimate": null,
+   "logged": 0,
+   "priority": "high",
+   "due": "",
+   "labels": [
+    "menu-boards"
+   ],
+   "epic": "",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-2": {
+   "key": "PH-2",
+   "number": 2,
+   "type": "epic",
+   "title": "Display Types & DSP exchange go-live",
+   "description": "",
+   "descriptionText": "",
+   "status": "in-progress",
+   "resolution": null,
+   "open": true,
+   "rank": 20,
+   "assignee": "duc.do@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "",
+   "estimate": null,
+   "logged": 0,
+   "priority": "highest",
+   "due": "2026-10-28",
+   "labels": [
+    "dsp"
+   ],
+   "epic": "",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-3": {
+   "key": "PH-3",
+   "number": 3,
+   "type": "epic",
+   "title": "Help Centre migration off Freshdesk",
+   "description": "",
+   "descriptionText": "",
+   "status": "in-progress",
+   "resolution": null,
+   "open": true,
+   "rank": 30,
+   "assignee": "thao.pham@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "",
+   "estimate": null,
+   "logged": 0,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "help-centre"
+   ],
+   "epic": "",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-4": {
+   "key": "PH-4",
+   "number": 4,
+   "type": "epic",
+   "title": "Live Visitor Profile \u2014 personalisation attributes",
+   "description": "",
+   "descriptionText": "",
+   "status": "ready-for-dev",
+   "resolution": null,
+   "open": true,
+   "rank": 40,
+   "assignee": "minh.nguyen@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-13",
+   "sprint": "",
+   "estimate": null,
+   "logged": 0,
+   "priority": "high",
+   "due": "",
+   "labels": [
+    "visitor-profile"
+   ],
+   "epic": "",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-5": {
+   "key": "PH-5",
+   "number": 5,
+   "type": "epic",
+   "title": "Retail Admin queueing & appointments refresh",
+   "description": "",
+   "descriptionText": "",
+   "status": "backlog",
+   "resolution": null,
+   "open": true,
+   "rank": 50,
+   "assignee": "linh.tran@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-13",
+   "sprint": "",
+   "estimate": null,
+   "logged": 0,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "retail-admin"
+   ],
+   "epic": "",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-32": {
+   "key": "PH-32",
+   "number": 32,
+   "type": "task",
+   "title": "Bulk-schedule local offers across a store group",
+   "description": "<p>As an HQ marketer I want to schedule one local offer for every store in a group (e.g. all London high-street stores) so I don't have to repeat it per store.</p><p>Acceptance:<br>- Choose a store group or tag<br>- Preview the stores affected before saving<br>- Respects each store's own price override</p>",
+   "descriptionText": "As an HQ marketer I want to schedule one local offer for every store in a group (e.g. all London high-street stores) so I don't have to repeat it per store.\n\nAcceptance:\n- Choose a store group or tag\n- Preview the stores affected before saving\n- Respects each store's own price override",
+   "status": "backlog",
+   "resolution": null,
+   "open": true,
+   "rank": 60,
+   "assignee": "",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-13",
+   "sprint": "",
+   "estimate": 24,
+   "logged": 0,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "menu-boards",
+    "hq-admin"
+   ],
+   "epic": "PH-1",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-33": {
+   "key": "PH-33",
+   "number": 33,
+   "type": "bug",
+   "title": "Offer expiry sweep ignores the store's time zone",
+   "description": "<p>Offers in stores outside Europe/London expire an hour early or late around DST. The sweep compares against UTC midnight instead of the store's local midnight.</p>",
+   "descriptionText": "Offers in stores outside Europe/London expire an hour early or late around DST. The sweep compares against UTC midnight instead of the store's local midnight.",
+   "status": "backlog",
+   "resolution": null,
+   "open": true,
+   "rank": 70,
+   "assignee": "huy.le@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "linh.tran@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s42",
+   "estimate": 12,
+   "logged": 0,
+   "priority": "high",
+   "due": "2026-10-30",
+   "labels": [
+    "menu-boards"
+   ],
+   "epic": "PH-1",
+   "links": [
+    {
+     "type": "relates to",
+     "key": "PH-25"
+    }
+   ],
+   "flagged": true,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "linh.tran@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-34": {
+   "key": "PH-34",
+   "number": 34,
+   "type": "task",
+   "title": "Add personalisation attribute audit log export (CSV)",
+   "description": "",
+   "descriptionText": "",
+   "status": "backlog",
+   "resolution": null,
+   "open": true,
+   "rank": 80,
+   "assignee": "",
+   "previousAssignee": "",
+   "reporter": "minh.nguyen@personalisationhub.com",
+   "release": "4-13",
+   "sprint": "",
+   "estimate": 10,
+   "logged": 0,
+   "priority": "low",
+   "due": "",
+   "labels": [
+    "visitor-profile"
+   ],
+   "epic": "PH-4",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "minh.nguyen@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-35": {
+   "key": "PH-35",
+   "number": 35,
+   "type": "task",
+   "title": "Partner API: webhook for sold-slot confirmation",
+   "description": "",
+   "descriptionText": "",
+   "status": "backlog",
+   "resolution": null,
+   "open": true,
+   "rank": 90,
+   "assignee": "duc.do@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-13",
+   "sprint": "",
+   "estimate": 16,
+   "logged": 0,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "dsp",
+    "api"
+   ],
+   "epic": "PH-2",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-36": {
+   "key": "PH-36",
+   "number": 36,
+   "type": "bug",
+   "title": "Help Centre search returns archived articles",
+   "description": "",
+   "descriptionText": "",
+   "status": "backlog",
+   "resolution": null,
+   "open": true,
+   "rank": 100,
+   "assignee": "",
+   "previousAssignee": "",
+   "reporter": "thao.pham@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "",
+   "estimate": 3,
+   "logged": 0,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "help-centre"
+   ],
+   "epic": "PH-3",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "thao.pham@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-37": {
+   "key": "PH-37",
+   "number": 37,
+   "type": "task",
+   "title": "Accessibility pass on Retail Admin queue screen (WCAG 2.2 AA)",
+   "description": "",
+   "descriptionText": "",
+   "status": "backlog",
+   "resolution": null,
+   "open": true,
+   "rank": 110,
+   "assignee": "thao.pham@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-13",
+   "sprint": "",
+   "estimate": 12,
+   "logged": 0,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "retail-admin",
+    "accessibility"
+   ],
+   "epic": "PH-5",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-27": {
+   "key": "PH-27",
+   "number": 27,
+   "type": "task",
+   "title": "Appointment reminders by SMS 2 hours before slot",
+   "description": "<p>Send an SMS reminder 2 hours before a booked appointment. Customer can reply C to cancel, which frees the slot in the queue.</p>",
+   "descriptionText": "Send an SMS reminder 2 hours before a booked appointment. Customer can reply C to cancel, which frees the slot in the queue.",
+   "status": "ready-for-dev",
+   "resolution": null,
+   "open": true,
+   "rank": 120,
+   "assignee": "linh.tran@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 24,
+   "logged": 0,
+   "priority": "high",
+   "due": "2026-10-31",
+   "labels": [
+    "retail-admin"
+   ],
+   "epic": "PH-5",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-28": {
+   "key": "PH-28",
+   "number": 28,
+   "type": "task",
+   "title": "Rate-limit headers on the Partner API (X-RateLimit-*)",
+   "description": "",
+   "descriptionText": "",
+   "status": "ready-for-dev",
+   "resolution": null,
+   "open": true,
+   "rank": 130,
+   "assignee": "duc.do@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "minh.nguyen@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 5,
+   "logged": 0,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "dsp",
+    "api",
+    "security"
+   ],
+   "epic": "PH-2",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "minh.nguyen@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-29": {
+   "key": "PH-29",
+   "number": 29,
+   "type": "bug",
+   "title": "Product Assets: PNG upload over 8 MB fails silently",
+   "description": "<p>Uploading a PNG larger than 8 MB on Product Assets shows the spinner then nothing. Should show the size limit and reject the file up front.</p>",
+   "descriptionText": "Uploading a PNG larger than 8 MB on Product Assets shows the spinner then nothing. Should show the size limit and reject the file up front.",
+   "status": "ready-for-dev",
+   "resolution": null,
+   "open": true,
+   "rank": 140,
+   "assignee": "huy.le@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "thao.pham@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 8,
+   "logged": 0,
+   "priority": "high",
+   "due": "2026-10-24",
+   "labels": [
+    "hq-admin"
+   ],
+   "epic": "",
+   "links": [],
+   "flagged": false,
+   "attachments": [
+    {
+     "name": "upload-fails.mov",
+     "size": 0
+    }
+   ],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "thao.pham@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-30": {
+   "key": "PH-30",
+   "number": 30,
+   "type": "task",
+   "title": "Visitor attribute envelope v1.3 \u2014 add consent scope",
+   "description": "",
+   "descriptionText": "",
+   "status": "ready-for-dev",
+   "resolution": null,
+   "open": true,
+   "rank": 150,
+   "assignee": "minh.nguyen@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 12,
+   "logged": 0,
+   "priority": "highest",
+   "due": "2026-10-28",
+   "labels": [
+    "visitor-profile",
+    "api"
+   ],
+   "epic": "PH-4",
+   "links": [
+    {
+     "type": "blocks",
+     "key": "PH-31"
+    }
+   ],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-19": {
+   "key": "PH-19",
+   "number": 19,
+   "type": "task",
+   "title": "Display Types: drag to reorder playlist elements",
+   "description": "<p>Elements in a playlist can be reordered by drag and drop; order is saved immediately and reflected in the next play window.</p>",
+   "descriptionText": "Elements in a playlist can be reordered by drag and drop; order is saved immediately and reflected in the next play window.",
+   "status": "in-progress",
+   "resolution": null,
+   "open": true,
+   "rank": 160,
+   "assignee": "duc.do@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 16,
+   "logged": 9,
+   "priority": "high",
+   "due": "2026-10-27",
+   "labels": [
+    "dsp",
+    "hq-admin"
+   ],
+   "epic": "PH-2",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 1,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-20": {
+   "key": "PH-20",
+   "number": 20,
+   "type": "bug",
+   "title": "Menu board preview shows RRP instead of local offer price",
+   "description": "<p>On the Menu Board preview, products with an active local offer still show HQ RRP. The live board is correct; only the preview is wrong.</p>",
+   "descriptionText": "On the Menu Board preview, products with an active local offer still show HQ RRP. The live board is correct; only the preview is wrong.",
+   "status": "in-progress",
+   "resolution": null,
+   "open": true,
+   "rank": 170,
+   "assignee": "huy.le@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 6,
+   "logged": 4.5,
+   "priority": "highest",
+   "due": "2026-10-21",
+   "labels": [
+    "menu-boards"
+   ],
+   "epic": "PH-1",
+   "links": [],
+   "flagged": true,
+   "attachments": [
+    {
+     "name": "covent-garden-preview.png",
+     "size": 0
+    }
+   ],
+   "commentCount": 2,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-21": {
+   "key": "PH-21",
+   "number": 21,
+   "type": "task",
+   "title": "Migrate 140 FAQ articles' images to Firebase Storage",
+   "description": "",
+   "descriptionText": "",
+   "status": "in-progress",
+   "resolution": null,
+   "open": true,
+   "rank": 180,
+   "assignee": "thao.pham@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 10,
+   "logged": 6,
+   "priority": "medium",
+   "due": "2026-10-29",
+   "labels": [
+    "help-centre"
+   ],
+   "epic": "PH-3",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-22": {
+   "key": "PH-22",
+   "number": 22,
+   "type": "task",
+   "title": "Queue: staff can transfer a customer to another desk",
+   "description": "",
+   "descriptionText": "",
+   "status": "in-progress",
+   "resolution": null,
+   "open": true,
+   "rank": 190,
+   "assignee": "linh.tran@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 20,
+   "logged": 3,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "retail-admin"
+   ],
+   "epic": "PH-5",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-23": {
+   "key": "PH-23",
+   "number": 23,
+   "type": "task",
+   "title": "Personalisation attribute cache \u2014 15-minute TTL",
+   "description": "",
+   "descriptionText": "",
+   "status": "in-progress",
+   "resolution": null,
+   "open": true,
+   "rank": 200,
+   "assignee": "minh.nguyen@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "minh.nguyen@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 8,
+   "logged": 7.5,
+   "priority": "high",
+   "due": "2026-10-20",
+   "labels": [
+    "visitor-profile",
+    "performance"
+   ],
+   "epic": "PH-4",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "minh.nguyen@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-24": {
+   "key": "PH-24",
+   "number": 24,
+   "type": "bug",
+   "title": "Exchange: two winners recorded for the same play window",
+   "description": "<p>Under concurrent bids two winners can be written for one window. Migration 0021's unique index should prevent this; the SQLite path bypasses it.</p>",
+   "descriptionText": "Under concurrent bids two winners can be written for one window. Migration 0021's unique index should prevent this; the SQLite path bypasses it.",
+   "status": "in-progress",
+   "resolution": null,
+   "open": true,
+   "rank": 210,
+   "assignee": "duc.do@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "minh.nguyen@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 8,
+   "logged": 10,
+   "priority": "highest",
+   "due": "2026-10-19",
+   "labels": [
+    "dsp"
+   ],
+   "epic": "PH-2",
+   "links": [
+    {
+     "type": "is blocked by",
+     "key": "PH-28"
+    }
+   ],
+   "flagged": true,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "minh.nguyen@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-15": {
+   "key": "PH-15",
+   "number": 15,
+   "type": "task",
+   "title": "Stockists tab: filter by region",
+   "description": "",
+   "descriptionText": "",
+   "status": "ready-for-testing",
+   "resolution": null,
+   "open": true,
+   "rank": 220,
+   "assignee": "rob@offline2online.com",
+   "previousAssignee": "huy.le@personalisationhub.com",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 6,
+   "logged": 6.5,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "hq-admin"
+   ],
+   "epic": "",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-16": {
+   "key": "PH-16",
+   "number": 16,
+   "type": "bug",
+   "title": "Retail Admin: store hours save loses the Sunday row",
+   "description": "",
+   "descriptionText": "",
+   "status": "ready-for-testing",
+   "resolution": null,
+   "open": true,
+   "rank": 230,
+   "assignee": "rob@offline2online.com",
+   "previousAssignee": "linh.tran@personalisationhub.com",
+   "reporter": "linh.tran@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 3,
+   "logged": 2,
+   "priority": "high",
+   "due": "2026-10-22",
+   "labels": [
+    "retail-admin"
+   ],
+   "epic": "PH-5",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "linh.tran@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-17": {
+   "key": "PH-17",
+   "number": 17,
+   "type": "task",
+   "title": "Help Centre: redirect old Freshdesk article URLs",
+   "description": "",
+   "descriptionText": "",
+   "status": "ready-for-testing",
+   "resolution": null,
+   "open": true,
+   "rank": 240,
+   "assignee": "rob@offline2online.com",
+   "previousAssignee": "thao.pham@personalisationhub.com",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 5,
+   "logged": 4,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "help-centre"
+   ],
+   "epic": "PH-3",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-18": {
+   "key": "PH-18",
+   "number": 18,
+   "type": "task",
+   "title": "Advertisers list: sort by spend this month",
+   "description": "",
+   "descriptionText": "",
+   "status": "ready-for-testing",
+   "resolution": null,
+   "open": true,
+   "rank": 250,
+   "assignee": "rob@offline2online.com",
+   "previousAssignee": "duc.do@personalisationhub.com",
+   "reporter": "duc.do@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 4,
+   "logged": 5,
+   "priority": "low",
+   "due": "",
+   "labels": [
+    "dsp",
+    "hq-admin"
+   ],
+   "epic": "PH-2",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "duc.do@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-12": {
+   "key": "PH-12",
+   "number": 12,
+   "type": "task",
+   "title": "Local offer pill links to the per-product pricing page",
+   "description": "",
+   "descriptionText": "",
+   "status": "approved",
+   "resolution": null,
+   "open": true,
+   "rank": 260,
+   "assignee": "huy.le@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s40",
+   "estimate": 4,
+   "logged": 3.5,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "menu-boards",
+    "hq-admin"
+   ],
+   "epic": "PH-1",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-13": {
+   "key": "PH-13",
+   "number": 13,
+   "type": "task",
+   "title": "Upgrade Partner API to Fastify 5",
+   "description": "",
+   "descriptionText": "",
+   "status": "approved",
+   "resolution": null,
+   "open": true,
+   "rank": 270,
+   "assignee": "duc.do@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "duc.do@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s40",
+   "estimate": 6,
+   "logged": 6,
+   "priority": "low",
+   "due": "",
+   "labels": [
+    "dsp",
+    "api"
+   ],
+   "epic": "PH-2",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "duc.do@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-14": {
+   "key": "PH-14",
+   "number": 14,
+   "type": "bug",
+   "title": "Visitor profile drawer clips long attribute names",
+   "description": "",
+   "descriptionText": "",
+   "status": "approved",
+   "resolution": null,
+   "open": true,
+   "rank": 280,
+   "assignee": "minh.nguyen@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "thao.pham@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 2,
+   "logged": 1.5,
+   "priority": "low",
+   "due": "",
+   "labels": [
+    "visitor-profile",
+    "accessibility"
+   ],
+   "epic": "PH-4",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "thao.pham@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-6": {
+   "key": "PH-6",
+   "number": 6,
+   "type": "task",
+   "title": "Menu board: show offer end date on hover",
+   "description": "",
+   "descriptionText": "",
+   "status": "done",
+   "resolution": "completed",
+   "open": false,
+   "closedAt": {
+    "$ts": 1792058400000
+   },
+   "rank": 290,
+   "assignee": "huy.le@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-11",
+   "sprint": "s40",
+   "estimate": 5,
+   "logged": 5,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "menu-boards"
+   ],
+   "epic": "PH-1",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-7": {
+   "key": "PH-7",
+   "number": 7,
+   "type": "task",
+   "title": "Seed 12 FAQ categories from the September audit",
+   "description": "",
+   "descriptionText": "",
+   "status": "done",
+   "resolution": "completed",
+   "open": false,
+   "closedAt": {
+    "$ts": 1792058400000
+   },
+   "rank": 300,
+   "assignee": "thao.pham@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-11",
+   "sprint": "s40",
+   "estimate": 8,
+   "logged": 9,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "help-centre"
+   ],
+   "epic": "PH-3",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-8": {
+   "key": "PH-8",
+   "number": 8,
+   "type": "bug",
+   "title": "Queue display flickers when two customers are called",
+   "description": "",
+   "descriptionText": "",
+   "status": "done",
+   "resolution": "completed",
+   "open": false,
+   "closedAt": {
+    "$ts": 1792058400000
+   },
+   "rank": 310,
+   "assignee": "linh.tran@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "linh.tran@personalisationhub.com",
+   "release": "4-11",
+   "sprint": "s40",
+   "estimate": 4,
+   "logged": 3,
+   "priority": "high",
+   "due": "",
+   "labels": [
+    "retail-admin"
+   ],
+   "epic": "PH-5",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "linh.tran@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-9": {
+   "key": "PH-9",
+   "number": 9,
+   "type": "task",
+   "title": "Exchange load test at 15,000 displays",
+   "description": "",
+   "descriptionText": "",
+   "status": "done",
+   "resolution": "completed",
+   "open": false,
+   "closedAt": {
+    "$ts": 1792058400000
+   },
+   "rank": 320,
+   "assignee": "duc.do@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "minh.nguyen@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s40",
+   "estimate": 12,
+   "logged": 14,
+   "priority": "high",
+   "due": "",
+   "labels": [
+    "dsp",
+    "performance"
+   ],
+   "epic": "PH-2",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "minh.nguyen@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-10": {
+   "key": "PH-10",
+   "number": 10,
+   "type": "task",
+   "title": "Attribute envelope v1.2 published to the interface contract",
+   "description": "",
+   "descriptionText": "",
+   "status": "done",
+   "resolution": "completed",
+   "open": false,
+   "closedAt": {
+    "$ts": 1792058400000
+   },
+   "rank": 330,
+   "assignee": "minh.nguyen@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s40",
+   "estimate": 6,
+   "logged": 5,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "visitor-profile",
+    "api"
+   ],
+   "epic": "PH-4",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-11": {
+   "key": "PH-11",
+   "number": 11,
+   "type": "bug",
+   "title": "HQ Admin grid: price column shows a store's override",
+   "description": "",
+   "descriptionText": "",
+   "status": "done",
+   "resolution": "completed",
+   "open": false,
+   "closedAt": {
+    "$ts": 1792058400000
+   },
+   "rank": 340,
+   "assignee": "huy.le@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 3,
+   "logged": 2.5,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "hq-admin",
+    "menu-boards"
+   ],
+   "epic": "PH-1",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-31": {
+   "key": "PH-31",
+   "number": 31,
+   "type": "task",
+   "title": "Consent scope: enforce in DSP targeting filters",
+   "description": "",
+   "descriptionText": "",
+   "status": "backlog",
+   "resolution": null,
+   "open": true,
+   "rank": 350,
+   "assignee": "duc.do@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "minh.nguyen@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s42",
+   "estimate": 8,
+   "logged": 0,
+   "priority": "high",
+   "due": "2026-11-03",
+   "labels": [
+    "dsp",
+    "visitor-profile",
+    "security"
+   ],
+   "epic": "PH-4",
+   "links": [
+    {
+     "type": "is blocked by",
+     "key": "PH-30"
+    }
+   ],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "minh.nguyen@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-26": {
+   "key": "PH-26",
+   "number": 26,
+   "type": "task",
+   "title": "Welsh-language menu boards: bilingual price labels",
+   "description": "",
+   "descriptionText": "",
+   "status": "ready-for-dev",
+   "resolution": null,
+   "open": true,
+   "rank": 360,
+   "assignee": "huy.le@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 8,
+   "logged": 0,
+   "priority": "medium",
+   "due": "2026-10-27",
+   "labels": [
+    "menu-boards"
+   ],
+   "epic": "PH-1",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-25": {
+   "key": "PH-25",
+   "number": 25,
+   "type": "task",
+   "title": "Store time zone on the stores table",
+   "description": "",
+   "descriptionText": "",
+   "status": "ready-for-dev",
+   "resolution": null,
+   "open": true,
+   "rank": 370,
+   "assignee": "huy.le@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s42",
+   "estimate": 3,
+   "logged": 0,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "menu-boards",
+    "api"
+   ],
+   "epic": "PH-1",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-38": {
+   "key": "PH-38",
+   "number": 38,
+   "type": "task",
+   "title": "Import Freshdesk ticket history into the Help Centre",
+   "description": "<p>Bring two years of Freshdesk tickets across for search. Withdrawn: support agreed the old tickets aren't needed once the articles are rewritten.</p>",
+   "descriptionText": "Bring two years of Freshdesk tickets across for search. Withdrawn: support agreed the old tickets aren't needed once the articles are rewritten.",
+   "status": "done",
+   "resolution": "withdrawn",
+   "open": false,
+   "closedAt": {
+    "$ts": 1792058400000
+   },
+   "rank": 380,
+   "assignee": "thao.pham@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "rob@offline2online.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 6,
+   "logged": 1.5,
+   "priority": "low",
+   "due": "",
+   "labels": [
+    "help-centre"
+   ],
+   "epic": "PH-3",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "rob@offline2online.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  },
+  "PH-39": {
+   "key": "PH-39",
+   "number": 39,
+   "type": "bug",
+   "title": "Queue display shows the wrong store logo after midnight",
+   "description": "<p>Couldn't reproduce after the store's display was re-paired; the cached logo came from an old pairing.</p>",
+   "descriptionText": "Couldn't reproduce after the store's display was re-paired; the cached logo came from an old pairing.",
+   "status": "done",
+   "resolution": "withdrawn",
+   "open": false,
+   "closedAt": {
+    "$ts": 1792058400000
+   },
+   "rank": 390,
+   "assignee": "linh.tran@personalisationhub.com",
+   "previousAssignee": "",
+   "reporter": "linh.tran@personalisationhub.com",
+   "release": "4-12",
+   "sprint": "s41",
+   "estimate": 3,
+   "logged": 0.5,
+   "priority": "medium",
+   "due": "",
+   "labels": [
+    "retail-admin"
+   ],
+   "epic": "PH-5",
+   "links": [],
+   "flagged": false,
+   "attachments": [],
+   "commentCount": 0,
+   "createdAt": {
+    "$ts": 1790845200000
+   },
+   "createdBy": "linh.tran@personalisationhub.com",
+   "updatedAt": {
+    "$ts": 1790845200000
+   }
+  }
+ },
+ "comments": {
+  "PH-19": {
+   "c0": {
+    "author": "duc.do@personalisationhub.com",
+    "text": "Reorder works, persisting order next. Using the same rank approach as the exchange's slot list.",
+    "html": "",
+    "at": {
+     "$ts": 1792226400000
+    }
+   }
+  },
+  "PH-20": {
+   "c0": {
+    "author": "rob@offline2online.com",
+    "text": "Seen on Covent Garden store \u2014 screenshot attached.",
+    "html": "",
+    "at": {
+     "$ts": 1792145520000
+    }
+   },
+   "c1": {
+    "author": "huy.le@personalisationhub.com",
+    "text": "Preview reads the cached price map. Fix in review.",
+    "html": "",
+    "at": {
+     "$ts": 1792292700000
+    }
+   }
+  }
+ },
+ "sprints": {
+  "s40": {
+   "name": "Sprint 40",
+   "start": "2026-09-30",
+   "end": "2026-10-13"
+  },
+  "s41": {
+   "name": "Sprint 41",
+   "start": "2026-10-14",
+   "end": "2026-10-27"
+  },
+  "s42": {
+   "name": "Sprint 42",
+   "start": "2026-10-28",
+   "end": "2026-11-10"
+  }
+ },
+ "settings": {
+  "tester": "rob@offline2online.com",
+  "currentRelease": "4-12",
+  "releaseDates": {
+   "4-11": "2026-10-09",
+   "4-12": "2026-10-28",
+   "4-13": "2026-12-04"
+  },
+  "labels": [
+   "menu-boards",
+   "dsp",
+   "help-centre",
+   "retail-admin",
+   "hq-admin",
+   "visitor-profile",
+   "performance",
+   "accessibility",
+   "api",
+   "security"
+  ],
+  "firstNames": {
+   "rob@offline2online.com": "Rob",
+   "minh.nguyen@personalisationhub.com": "Minh",
+   "linh.tran@personalisationhub.com": "Linh",
+   "huy.le@personalisationhub.com": "Huy",
+   "thao.pham@personalisationhub.com": "Th\u1ea3o",
+   "duc.do@personalisationhub.com": "\u0110\u1ee9c"
+  }
+ },
+ "nextNumber": 40
+}
