@@ -292,7 +292,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const maxPlayLengthDefaults = new Map<string, number | null>()
       const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
 
-      /* Direct advertisers (no DSP) can be held on a slot too. */
+      /* Direct advertisers (no DSP) are named so a save that includes one is refused, pointing at deals. */
       const directNames = (await ctx.company.directAdvertisers()).map((d) => d.name)
       for (const [i, r] of rows.entries()) {
         const f = (k: string) => `items[${i}].${k}`

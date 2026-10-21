@@ -741,7 +741,7 @@ describe('Advertisers / Inventory', () => {
     expect([...swisse.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent).filter((_, i) => i === 2 || (i >= 4 && i <= 7))).toEqual(['0', '0', '0', '0', '0'])
   })
 
-  it('lists a direct advertiser as "Direct advertiser" in Via and "Name (Direct)" in the Assigned to options, and lets an admin add one', async () => {
+  it('lists a direct advertiser as "Direct advertiser" in Via and and is not offered in the Assigned to options, and lets an admin add one', async () => {
     const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
     vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
     renderAt('/advertisers')

@@ -64,27 +64,35 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(del.json().detail ?? del.body).toMatch(/campaigns or bookings/)
   })
 
-  it('holds a slot for a direct advertiser from Available Inventory’s Assigned to', async () => {
+  it('refuses a direct advertiser in Available Inventory’s Assigned to, pointing to deals', async () => {
     const app = buildApp(await testContext())
     expect((await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })).statusCode).toBe(201)
     const save = (advertisers: string[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers, whitelistOnly: false } }] } })
     const res = await save(['Acme Foods'])
-    expect(res.statusCode).toBe(200)
-    expect(res.json().items[0].assignedTo).toMatchObject({ advertisers: ['Acme Foods'], partnerIds: [], openAuction: false })
-    /* Alongside a DSP advertiser too; an unknown name is still refused. */
-    expect((await save(['Acme Foods', 'Nestlé'])).json().items[0].assignedTo).toMatchObject({ advertisers: ['Acme Foods', 'Nestlé'], partnerIds: ['p_google'] })
+    expect(res.statusCode).toBe(400)
+    expect(JSON.stringify(res.json())).toMatch(/Acme Foods is a direct advertiser.*Direct advertiser deal/)
+    /* Alongside a DSP advertiser it is still refused; a DSP advertiser alone and an unknown name behave as before. */
+    expect((await save(['Acme Foods', 'Nestlé'])).statusCode).toBe(400)
+    expect((await save(['Nestlé'])).json().items[0].assignedTo).toMatchObject({ advertisers: ['Nestlé'], partnerIds: ['p_google'] })
     expect((await save(['Nobody Ltd'])).statusCode).toBe(400)
   })
 
-  it('refuses to delete a direct advertiser still assigned to a slot, naming the slot', async () => {
-    const app = buildApp(await testContext())
+  it('refuses to delete a direct advertiser still assigned to a slot (legacy data), naming the slot', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
     await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: ['Acme Foods'], whitelistOnly: false } }] } })
+    /* The API no longer assigns one, so the leftover assignment is written straight to the display type. */
+    const holdAcme = async (advertisers: string[]) => {
+      const dt = (await ctx.displayTypes.get('menu_board'))!
+      const ext = dt.phExtensions!
+      await ctx.displayTypes.saveExtensions(dt.id, { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, advertisers } : s)) })
+    }
+    await holdAcme(['Acme Foods'])
     const del = () => app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/acme-foods' })
     const res = await del()
     expect(res.statusCode).toBe(409)
     expect(res.json().error.message).toMatch(/Acme Foods is assigned to a slot.*slot 2/)
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false } }] } })
+    await holdAcme([])
     expect((await del()).statusCode).toBe(204)
   })
 

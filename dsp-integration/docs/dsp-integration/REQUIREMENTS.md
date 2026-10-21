@@ -851,12 +851,14 @@ with the delete icon beside it in the Advertisers table
 bookings; DSP advertisers have no delete icon). It is listed with the DSP
 advertisers (`direct: true`, empty `via`) and takes the same approval and floor
 settings. Wherever a DSP name would accompany an advertiser it reads
-**"Name (Direct)"**: the Via column, the Assigned to options, and the booking
-schedule (its advertiser filter, offered only when no DSP is picked, and its
-tiles). A DSP seat of the same name wins, so one advertiser is never listed
-twice. Picking one in a slot's Assigned to holds that slot for it and saves
-like a DSP advertiser (no DSP comes along, since it has none); before
-9 Oct 2026 the save was refused as "not an advertiser on any connected DSP".
+**"Name (Direct)"**: the Via column and the booking schedule (its advertiser
+filter, offered only when no DSP is picked, and its tiles). A DSP seat of the
+same name wins, so one advertiser is never listed twice. **A direct advertiser
+is not offered in a slot's Assigned to (21 Oct 2026), and cannot be assigned
+there:** `PUT /admin/v1/available-inventory` answers 400 naming the advertiser
+and pointing to deals. It reaches a slot only through a Direct advertiser deal.
+(This replaces the 9 Oct rule that picking one held the slot for it.) DSP named
+advertisers are unchanged.
 
 **Users page on the real API (10 Oct 2026, ticket H6BcvdNZUvdP8Ebh5Tve).**
 `mockups/platform-users.html` (Company Settings → Users) reads and saves

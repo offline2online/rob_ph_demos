@@ -8,7 +8,7 @@ import { App, Button, Input, InputNumber, Modal, Select, Spin, Switch } from 'an
 import { Tip } from '../../shared/Tip'
 import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -162,8 +162,6 @@ type InvCtx = { current: {
   dsps: DspAdvertisers[]
   /* Each playlist's display types, listed once for the whole response rather than on every row. */
   playlistDisplayTypes: Record<string, PlaylistDisplayType[]>
-  /* Names of the advertisers with a direct relationship with the retailer (no DSP). */
-  direct: string[]
   buyersLists: BuyersList[]
   set: (key: string, patch: Partial<SlotEdit>) => void
   setBillingUnitDefault: (displayTypeId: string, v: number | null) => void
@@ -443,7 +441,6 @@ function AssignedCell({ data, context }: IP) {
      only ever treat one of them as selected (Rob, 23 Sep — failed testing,
      "bug with the presentation of the individual advertisers list"). */
   const advertiserDsps = new Map<string, string[]>()
-  for (const name of c.direct) advertiserDsps.set(name, [])
   for (const d of c.dsps) for (const x of d.advertisers) {
     const via = advertiserDsps.get(x.name) ?? []
     if (!via.includes(d.name)) via.push(d.name)
@@ -466,7 +463,7 @@ function AssignedCell({ data, context }: IP) {
         { value: ADD_BUYERS_LIST, label: '+ Add new deal and buyers list…' },
       ],
     },
-    { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: via.length ? `${name} (${via.join(', ')})` : directLabel(name) })) },
+    { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })) },
     { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }, { value: GLOBAL_CHIP, label: GLOBAL_CHIP_LABEL, disabled: !!suppressed, note: suppressed ? `Unavailable: this slot is ${suppressed}.` : undefined }] },
   ]
   return (
@@ -1060,7 +1057,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        type): the page finds that display type's default playlist and opens
        its settings. */
     open: (id: string) => navigate(`/playlists?displayTypeId=${encodeURIComponent(id)}`),
-    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {}, direct: data.items.filter((a) => a.direct).map((a) => a.name),
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {},
     buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
     setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
@@ -1138,7 +1135,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 
-      <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that advertisers can buy. A slot can be sold to connected DSPs through the open auction or a private auction, or assigned to Direct advertisers, who sign in to HQ Admin to add and manage their own campaigns. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that advertisers can buy. A slot can be sold to connected DSPs through the open auction or a private auction, or reserved through a Direct advertiser deal, whose advertiser signs in to HQ Admin to add and manage its own campaigns. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="view_week" size={18} />
