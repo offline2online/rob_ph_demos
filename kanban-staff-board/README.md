@@ -9,11 +9,22 @@ Promoted from the Concept Incubator concept `vmhUoPiogxiJq1YmtJph`
 |---|---|
 | Spec | [`REQUIREMENTS.md`](REQUIREMENTS.md): every requirement (`KB-…`) with acceptance criteria, data model, MCP, security |
 | Prototype | [`prototype/`](prototype/), live at <https://offline2online.github.io/rob_ph_demos/kanban-staff-board/prototype/>. Front-end only, mock data |
-| Tests | [`test/`](test/): Playwright end-to-end suite, one case per test-plan row. `cd test && npm install && npx playwright install chromium && npm test` |
-| Test plan | [`docs/E2E-TEST-PLAN.md`](docs/E2E-TEST-PLAN.md); latest run [`docs/E2E-REPORT-2026-10-21.md`](docs/E2E-REPORT-2026-10-21.md) (25/25) |
+| Tests | [`test/`](test/): Playwright end-to-end suite, one case per test-plan row, run in every profile of the viewport matrix (desktop, tablet, phone; mouse and touch; Chromium, Firefox, WebKit). `cd test && npm install && npx playwright install chromium firefox webkit && npm test` |
+| Test plan | [`docs/E2E-TEST-PLAN.md`](docs/E2E-TEST-PLAN.md) (TC-01 to TC-66); runs: [prototype, 25/25](docs/E2E-REPORT-2026-10-21.md), [console, 30/30](docs/E2E-REPORT-2026-10-21-console.md), [console and prototype across the viewport matrix](docs/E2E-REPORT-2026-10-21-console-matrix.md) |
 | CI | `.github/workflows/kanban-staff-board-tests.yml` on pull requests touching this folder, and on demand |
 | Deploy | The prototype is GitHub Pages: live on merge to `main`. The production build lives in `backlog-tracker/` and deploys with the console (`deploy-backlog-tracker.yml`) when its train merges |
 | Console tests | `backlog-tracker/test/ui/staff-kanban.test.mjs` (the same cases against the console), `kanban-mcp.test.js`, `kanban-rules.test.js` |
+
+## When these tests run
+
+The whole suite is the **mandatory regression suite for any change to the Kanban board**. It runs on every build that lands in Ready for
+Testing, on Deploy to Feature, before merge to `main`, and on any console deployment that touches `backlog-tracker/`, as a
+self-healing loop: a failing case is raised as a bug ticket, approved for development automatically, built onto the same train and
+re-tested until green. Failures never block the workflow; all the tickets and their fixes go to `main` together. The suite and its
+run reports are built; the loop that raises, approves and re-tests the tickets is the companion ticket on Backlog Tracker & FAQs
+("Self-healing Staff Kanban E2E loop on every deployment"), not built yet. Today the console's train runs the console suite in its
+`rules` check, and the prototype suite runs on pull requests touching this folder. Details, and what the CI workflow still needs
+(Firefox and WebKit installed, a longer limit), are in [`docs/E2E-TEST-PLAN.md`](docs/E2E-TEST-PLAN.md) → "When these tests run".
 
 **Status (21 Oct 2026):** built into the PH Agent Console. The page is
 `backlog-tracker/public/js/kanban/`, the rules are in `backlog-tracker/firestore.rules`
