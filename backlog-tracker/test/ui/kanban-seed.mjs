@@ -28,5 +28,6 @@ export function kanbanSeed({ user = { email: ROB, role: "admin" }, extra = {}, p
   };
   for (const [key, cs] of Object.entries(KB.comments)) docs[`kanbanTasks/${key}/comments`] = cs;
   for (const [k, v] of Object.entries(extra)) docs[k] = { ...(docs[k] || {}), ...v };
-  return { user, docs };
+  // A copy: a case that edits its seed (TC-16b) must not change the next case's.
+  return JSON.parse(JSON.stringify({ user, docs }));
 }

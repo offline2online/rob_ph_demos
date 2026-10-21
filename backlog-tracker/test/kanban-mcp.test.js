@@ -243,6 +243,64 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(await kanban.claudeDraft("k", "x", ctx, { Anthropic: make({ stop_reason: "end_turn", content: [{ type: "text", text: "not json" }] }) }), null);
   });
 
+  // TC-45d of kanban-staff-board/docs/E2E-TEST-PLAN.md: the fourth way to move a ticket (the three
+  // others, mouse drag, touch drag and the Status menu, are in the browser suites). One ticket walks every
+  // ordered move between the seven places (Backlog, Ready for Dev, In Progress, Ready for Testing,
+  // Approved for Deployment, Completed, Withdrawn): 42 moves, each checked for what the board reads.
+  await test("TC-45d kanban_move_task: all 42 moves between the seven places", async () => {
+    const { allMoves, PLACES } = await import("../../kanban-staff-board/test/lib/driver.mjs");
+    const label = { backlog: "Backlog", "ready-for-dev": "Ready for Dev", "in-progress": "In Progress", "ready-for-testing": "Ready for Testing", approved: "Approved for Deployment", completed: "Completed", withdrawn: "Withdrawn" };
+    const made = await tool(sam, "kanban_create_task", { title: "Walks every move", assignee: HUY, estimate: "5h" });
+    const key = made.json.key;
+    const moves = allMoves(PLACES.map((p) => p.id));
+    assert.strictEqual(moves.length, 42);
+    let assignee = HUY, prev = "";
+    for (const [i, [from, to]] of moves.entries()) {
+      const pl = PLACES.find((p) => p.id === to);
+      const before = activity(key).length;
+      const r = await tool(sam, "kanban_move_task", pl.status === "done" ? { key, status: "done", resolution: pl.resolution } : { key, status: pl.status });
+      const at = `move ${i + 1} ${from} → ${to}`;
+      assert.ok(!r.isError && r.json.moved === true, `${at}: ${r.text}`);
+      const t = task(key);
+      assert.strictEqual(t.status, pl.status, at);
+      assert.strictEqual(t.resolution || null, pl.resolution || null, `${at}: resolution`);
+      assert.strictEqual(t.open, pl.status !== "done", `${at}: open`);
+      if (pl.status === "done") assert.ok(t.closedAt, `${at}: closedAt set`); else assert.ok(!("closedAt" in t), `${at}: closedAt cleared`);
+      // the testing hand-off
+      if (to === "ready-for-testing" && assignee !== ROB) { prev = assignee; assignee = ROB; }
+      else if (from === "ready-for-testing" && (to === "in-progress" || to === "ready-for-dev") && prev) assignee = prev;
+      assert.strictEqual(t.assignee, assignee, `${at}: assignee`);
+      const lines = activity(key);
+      assert.strictEqual(lines.length, before + 1, `${at}: one activity line`);
+      assert.ok(lines[lines.length - 1].startsWith(`${label[from]} → ${label[to]}`), `${at}: "${lines[lines.length - 1]}"`);
+      assert.strictEqual(r.json.status, pl.status); assert.strictEqual(r.json.resolution || null, pl.resolution || null);
+    }
+    // moving to where it already is changes nothing
+    const again = await tool(sam, "kanban_move_task", { key, status: "backlog" }); // the circuit ends where it began
+    assert.strictEqual(again.json.moved, false);
+  });
+
+  // TC-44 (server half): what the board writes when a person moves or edits a card is what kanban_get_task
+  // returns. The browser half (a ticket made over MCP appears on an open board) is in the console UI suite.
+  await test("TC-44 a change made on the board is what kanban_get_task returns", async () => {
+    const made = await tool(sam, "kanban_create_task", { title: "Moved by hand on the board", assignee: HUY, estimate: "2h" });
+    const key = made.json.key;
+    // the page's updateTask: one batch with the ticket's fields and an activity line
+    env.store.col("kanbanTasks").set(key, { ...task(key), status: "in-progress", resolution: null, open: true, priority: "highest", labels: ["from-the-board"], updatedBy: HUY });
+    env.store.col(`kanbanTasks/${key}/activity`).set("a-board", { who: HUY, text: "Backlog → In Progress", at: new Date() });
+    env.store.col(`kanbanTasks/${key}/comments`).set("c-board", { author: HUY, text: "Started on this", html: "<p>Started on this</p>", at: new Date() });
+    const got = await tool(sam, "kanban_get_task", { key });
+    assert.ok(!got.isError, got.text);
+    assert.strictEqual(got.json.status, "in-progress");
+    assert.strictEqual(got.json.priority, "highest");
+    assert.ok(got.json.activity.some((a) => a.text === "Backlog → In Progress" && a.who === HUY));
+    assert.strictEqual(got.json.comments[0].text, "Started on this");
+    // and the other way: a change over MCP is what the board's store would read
+    await tool(sam, "kanban_move_task", { key, status: "done", resolution: "completed" });
+    const t = task(key);
+    assert.strictEqual(t.open, false); assert.strictEqual(t.status, "done"); assert.strictEqual(t.updatedBy, SAM);
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   if (failures.length) { for (const [n, e] of failures) console.log(`\n--- ${n}\n${e && e.stack}`); process.exit(1); }
 })().catch((e) => { console.error(e); process.exit(1); });
