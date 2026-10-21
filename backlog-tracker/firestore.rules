@@ -55,6 +55,13 @@ service cloud.firestore {
     function isAutomationAccount() {
       return callerEmail() == "board-automation@backlog-tracker-e4ed2.firebaseapp.com";
     }
+    // A profile photo is a Firebase Storage download URL for this bucket's
+    // avatars/ folder (or "" for none); storage.rules decides who may write
+    // the file itself.
+    function validPhotoUrl(u) {
+      return u is string && u.size() <= 1000
+        && (u == "" || u.matches("https://firebasestorage\\.googleapis\\.com/v0/b/backlog-tracker-e4ed2\\.firebasestorage\\.app/o/avatars.*"));
+    }
     function memberDoc() {
       return get(/databases/$(database)/documents/consoleUsers/$(callerEmail())).data;
     }
@@ -593,9 +600,15 @@ service cloud.firestore {
       allow list: if isAdmin();
       // Anyone may stamp their OWN row's lastLoginAt (and nothing else) so
       // Admin > Users can show when they last used the console.
+      // A member may also set or clear their OWN profile photo: photoUrl
+      // (a download URL for the bucket's avatars/ folder, or "" to clear it)
+      // and photoUpdatedAt (== request.time). Nothing else becomes writable.
       allow update: if signedIn() && userEmail == callerEmail()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["lastLoginAt"])
-        && incoming().lastLoginAt == request.time;
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["lastLoginAt", "photoUrl", "photoUpdatedAt"])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["lastLoginAt"])
+            || incoming().lastLoginAt == request.time)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["photoUrl", "photoUpdatedAt"])
+            || (incoming().photoUpdatedAt == request.time && validPhotoUrl(incoming().get("photoUrl", ""))));
       allow create, update: if isAdmin()
         && incoming().email is string
         && userEmail == incoming().email.lower()
@@ -603,7 +616,9 @@ service cloud.firestore {
         && incoming().role in ["admin", "editor", "viewer"]
         && (!("displayName" in incoming()) || (incoming().displayName is string && incoming().displayName.size() <= 120))
         && (!("disabled" in incoming()) || incoming().disabled is bool)
-        && (!("mcpEnabled" in incoming()) || incoming().mcpEnabled is bool);
+        && (!("mcpEnabled" in incoming()) || incoming().mcpEnabled is bool)
+        && (!("photoUrl" in incoming()) || validPhotoUrl(incoming().photoUrl))
+        && (!("photoUpdatedAt" in incoming()) || incoming().photoUpdatedAt is timestamp);
       // Removing yourself is the one way an admin could strand their own
       // session mid-click; disable the row instead if that is really meant.
       allow delete: if isAdmin() && userEmail != callerEmail();

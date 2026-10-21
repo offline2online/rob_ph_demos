@@ -30,6 +30,7 @@ import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js"
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
+import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, getAvatarMember, normEmail, checkAvatarFile, avatarBlobFromFile } from "./avatar.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts, compareReleases, pinnedLayout, mapSnapshot, diffSystemMap, describeChanges } from "./system-map.js";
 import { pickRepoFolder, planPromotionTickets } from "./promote-plan.js";
@@ -4313,8 +4314,9 @@ function noteAuthorLabel(author) {
 
 function eiNoteRowHTML(note) {
   const who = noteAuthorLabel(note.author);
+  const face = note.author && note.author !== "claude" && note.author !== "viewer" ? avatarHTML(note.author, 24) : "";
   return `<div class="ei-note-row">
-    <div class="ei-note-meta"><b>${escapeHTML(who)}</b><span>${escapeHTML(formatNoteAt(note.at))}</span></div>
+    <div class="ei-note-meta">${face}<b>${escapeHTML(who)}</b><span>${escapeHTML(formatNoteAt(note.at))}</span></div>
     <p class="ei-note-text">${escapeHTML(note.text)}</p>
   </div>`;
 }
@@ -6607,7 +6609,7 @@ async function renderSystemMapHistory() {
   const rows = snap.docs.slice(0, 20).map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   const when = (t) => (t && t.toDate ? t.toDate().toLocaleString("en-GB") : "");
   box.innerHTML = rows.length ? rows.map((r) => `<div class="sysmap-rev">
-      <div class="sysmap-rev-head"><strong>Revision ${escapeHTML(String(r.rev || ""))}</strong> <span>${escapeHTML(when(r.at))} · ${escapeHTML(r.authorEmail || "unknown")} · ${escapeHTML(r.mode || "")}</span>
+      <div class="sysmap-rev-head"><strong>Revision ${escapeHTML(String(r.rev || ""))}</strong> <span>${escapeHTML(when(r.at))} · ${avatarHTML(r.authorEmail, 24)} ${escapeHTML(r.authorEmail || "unknown")} · ${escapeHTML(r.mode || "")}</span>
         ${r.prevPinned ? `<button type="button" class="restore-btn sysmap-rollback" data-rev-id="${escapeHTML(r.id)}" data-editor-only>Roll back positions</button>` : ""}</div>
       <div class="sysmap-rev-reason">${escapeHTML(r.reason || "")}</div>
       <ul>${(r.changes || []).slice(0, 12).map((c) => `<li>${escapeHTML(describeChanges([c], 1))}</li>`).join("")}${(r.changeCount || 0) > 12 ? `<li>+${r.changeCount - 12} more</li>` : ""}</ul>
@@ -9065,6 +9067,90 @@ document.getElementById("fa-analytics-tag-save").addEventListener("click", async
   });
 })();
 
+// ── Profile photos ────────────────────────────────────────────────────────
+// avatars/{email}.jpg in Storage + consoleUsers/{email}.photoUrl/photoUpdatedAt
+// (see avatar.js for how one photo reaches every place a person appears).
+// A listener per email, started the first time avatarHTML() meets it: any
+// member may read a single consoleUsers doc, and the snapshot is what makes a
+// photo uploaded in another tab or browser appear here without a reload.
+const avatarWatchers = new Set();
+function watchAvatarMember(email) {
+  const e = normEmail(email);
+  if (!e || avatarWatchers.has(e)) return;
+  avatarWatchers.add(e);
+  onSnapshot(doc(db, "consoleUsers", e),
+    (snap) => setAvatarMember(e, snap.exists() ? snap.data() : null),
+    () => { /* not readable (not signed in yet, or not a member) — initials stay */ });
+}
+setUnknownMemberHandler(watchAvatarMember);
+
+async function setMemberPhoto(email, file) {
+  const e = normEmail(email);
+  const path = `avatars/${e}.jpg`;
+  if (!file) {
+    try { await deleteObject(storageRef(storage, path)); } catch (err) { console.warn("backlog-tracker: couldn't delete avatar file", err); }
+    await updateDoc(doc(db, "consoleUsers", e), { photoUrl: "", photoUpdatedAt: serverTimestamp() });
+    return;
+  }
+  const problem = checkAvatarFile(file);
+  if (problem) throw new Error(problem);
+  let blob;
+  try { blob = await avatarBlobFromFile(file); } catch { throw new Error("Couldn't read that image. Try a JPEG or PNG."); }
+  const fileRef = storageRef(storage, path);
+  try { await uploadBytes(fileRef, blob, { contentType: "image/jpeg" }); }
+  catch (err) { throw new Error(`Couldn't upload the photo: ${err && err.code === "storage/unauthorized" ? "you can only change your own photo." : (err && err.message) || err}`); }
+  const url = await getDownloadURL(fileRef);
+  await updateDoc(doc(db, "consoleUsers", e), { photoUrl: url, photoUpdatedAt: serverTimestamp() });
+}
+
+function pickAvatarFile(onFile) {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "image/*"; input.hidden = true;
+  input.addEventListener("change", () => { const f = input.files && input.files[0]; input.remove(); if (f) onFile(f); });
+  document.body.appendChild(input);
+  input.click();
+}
+
+function renderProfileMenuPhoto() {
+  const me = normEmail(auth.currentUser && auth.currentUser.email);
+  const btn = document.getElementById("profile-btn-avatar");
+  if (btn && me) btn.innerHTML = avatarHTML(me, 32);
+  const face = document.getElementById("profile-photo-face");
+  if (face && me) face.innerHTML = avatarHTML(me, 40);
+  const m = getAvatarMember(me);
+  const label = document.getElementById("profile-photo-label");
+  if (label) label.textContent = m && m.photoUrl ? "Change photo" : "Upload photo";
+  const rm = document.getElementById("profile-photo-remove");
+  if (rm) rm.hidden = !(m && m.photoUrl);
+}
+function showProfilePhotoError(msg) {
+  const el = document.getElementById("profile-photo-error");
+  if (el) { el.textContent = msg; el.hidden = !msg; }
+}
+document.getElementById("profile-photo-upload")?.addEventListener("click", () => {
+  showProfilePhotoError("");
+  pickAvatarFile(async (file) => {
+    const me = auth.currentUser && auth.currentUser.email;
+    if (!me) return;
+    try { await setMemberPhoto(me, file); } catch (err) { showProfilePhotoError(err && err.message ? err.message : String(err)); }
+  });
+});
+document.getElementById("profile-photo-remove")?.addEventListener("click", async () => {
+  showProfilePhotoError("");
+  const me = auth.currentUser && auth.currentUser.email;
+  if (!me) return;
+  try { await setMemberPhoto(me, null); } catch (err) { showProfilePhotoError(err && err.message ? err.message : String(err)); }
+});
+onAuthStateChanged(auth, (user) => {
+  if (!user || !user.email) return;
+  setAvatarSelf(user.email, user.photoURL);
+  renderProfileMenuPhoto();
+  watchAvatarMember(user.email);
+});
+// Any photo change (this tab or another) repaints the avatars; the menu's
+// button label and Remove visibility follow the own-row snapshot.
+document.addEventListener("avatar-row-changed", renderProfileMenuPhoto);
+
 // ── Settings → Team & agent access ────────────────────────────────────────
 //
 // One list that decides two things at once: who may open this console in a
@@ -9134,6 +9220,7 @@ function teamRowHTML(member) {
   const agentOn = member.mcpEnabled !== false && member.disabled !== true;
   const isSelf = email === (auth.currentUser && auth.currentUser.email || "").toLowerCase();
   return `<div class="team-row" data-email="${escapeHTML(email)}">
+    ${avatarHTML(email, 40)}
     <div class="team-row-main">
       <div class="team-row-email">${escapeHTML(email)}${isSelf ? " (you)" : ""}</div>
       <div class="team-row-name">${escapeHTML(member.displayName || "")}${member.disabled === true ? " · disabled" : ""}</div>
@@ -9144,6 +9231,8 @@ function teamRowHTML(member) {
       ${Object.entries(CONSOLE_ROLE_LABELS).map(([v, l]) => `<option value="${v}"${v === role ? " selected" : ""}>${l}</option>`).join("")}
     </select>
     <span class="team-badge ${agentOn ? "team-badge-on" : "team-badge-off"}">Agent ${agentOn ? "on" : "off"}</span>
+    <button type="button" class="btn-ghost" data-team-photo title="Set a profile photo for ${escapeHTML(email)}. Useful for staff who never sign in on desktop.">${member.photoUrl ? "Change photo" : "Set photo"}</button>
+    ${member.photoUrl ? '<button type="button" class="btn-ghost" data-team-photo-clear title="Remove their uploaded photo; they fall back to their initial.">Clear photo</button>' : ""}
     <button type="button" class="btn-ghost" data-team-toggle-agent="${agentOn ? "off" : "on"}">${agentOn ? "Turn agent off" : "Turn agent on"}</button>
     <button type="button" class="btn-ghost" data-team-provision title="Creates their login and emails them a link to set a password — only needed for someone without a Google account.">Send sign-in setup</button>
     <button type="button" class="btn-ghost" data-team-revoke title="Signs every agent this person has connected out of the console.">Disconnect agents</button>
@@ -9158,7 +9247,7 @@ async function loadTeamMembers() {
   try {
     const snap = await getDocs(collection(db, "consoleUsers"));
     const rows = [];
-    snap.forEach((d) => rows.push(Object.assign({ id: d.id }, d.data())));
+    snap.forEach((d) => { rows.push(Object.assign({ id: d.id }, d.data())); setAvatarMember(d.id, d.data()); });
     teamRowsCache = rows;
     renderTeamList();
   } catch (err) {
@@ -9264,6 +9353,19 @@ document.getElementById("team-list")?.addEventListener("click", async (e) => {
     // cached credential.
     if (!turningOn) await revokeAgentConnections(email, null, { quiet: true });
     await loadTeamMembers();
+    return;
+  }
+
+  if (e.target.closest("[data-team-photo]")) {
+    pickAvatarFile(async (file) => {
+      try { await setMemberPhoto(email, file); await loadTeamMembers(); }
+      catch (err) { await showAlert(err && err.message ? err.message : String(err)); }
+    });
+    return;
+  }
+  if (e.target.closest("[data-team-photo-clear]")) {
+    try { await setMemberPhoto(email, null); await loadTeamMembers(); }
+    catch (err) { await showAlert(err && err.message ? err.message : String(err)); }
     return;
   }
 

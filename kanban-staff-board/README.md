@@ -1,18 +1,26 @@
-# Kanban — Staff Task Board (Jira replacement)
+# Kanban Staff Board — Staff Kanban
 
-Clickable prototype for the PH Agent Console concept **"Kanban — Staff Task
-Board (Jira replacement)"** (Concept Incubator, `conceptId
-vmhUoPiogxiJq1YmtJph`). This is a concept, not yet a board project, so there
-is no `REQUIREMENTS.md` here. The concept's README and Requirements on the
-board are the spec.
+The PH Agent Console's human task board: staff create, assign, move and
+report on their own work (a Jira replacement), separate from the Agent Board.
+Promoted from the Concept Incubator concept `vmhUoPiogxiJq1YmtJph`
+("Kanban — Staff Task Board (Jira replacement)").
 
-Live: <https://offline2online.github.io/rob_ph_demos/kanban-staff-board/prototype/>
+| | |
+|---|---|
+| Spec | [`REQUIREMENTS.md`](REQUIREMENTS.md): every requirement (`KB-…`) with acceptance criteria, data model, MCP, security |
+| Prototype | [`prototype/`](prototype/), live at <https://offline2online.github.io/rob_ph_demos/kanban-staff-board/prototype/>. Front-end only, mock data |
+| Tests | [`test/`](test/): Playwright end-to-end suite, one case per test-plan row. `cd test && npm install && npx playwright install chromium && npm test` |
+| Test plan | [`docs/E2E-TEST-PLAN.md`](docs/E2E-TEST-PLAN.md); latest run [`docs/E2E-REPORT-2026-10-21.md`](docs/E2E-REPORT-2026-10-21.md) (25/25) |
+| CI | `.github/workflows/kanban-staff-board-tests.yml` on pull requests touching this folder, and on demand |
+| Deploy | The prototype is GitHub Pages: live on merge to `main`. The production build lives in `backlog-tracker/` and deploys with the console |
 
-When you change any CSS or JS file, bump the `?v=` on its link in `index.html`. GitHub Pages lets browsers
-cache those files for 10 minutes.
+**Status (21 Oct 2026):** the prototype implements the whole spec; the
+production build in the console hasn't started. Its tickets are on the board.
 
-It is front-end only, with mock data and no backend. Changes are kept in the
-viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** puts the mock data back.
+When you change any prototype CSS or JS file, bump the `?v=` on its link in
+`prototype/index.html`: GitHub Pages lets browsers cache those files for 10
+minutes. The prototype keeps changes in the viewer's own `localStorage`;
+**Kanban settings (cog) → Reset demo data** puts the mock data back.
 
 ## What's in `prototype/`
 
@@ -21,11 +29,11 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
 | `index.html` | Console shell (topbar, Build / Publish sidebar, profile menu, phone tab bar) and the task modal |
 | `css/console.css`, `css/console-apple.css` | Verbatim copies of `backlog-tracker/public/css/styles.css` and `apple.css` (20 Oct 2026), so it looks like the console |
 | `css/kanban.css` | Only what this prototype adds: six-column board, cards, task modal, settings, release report |
-| `js/data.js` | Mock team (Rob plus five Vietnam-based engineers), releases PH 4.11–4.13, sprints, epics, 33 tasks |
+| `js/data.js` | Mock team (Rob plus five Vietnam-based engineers), releases PH 4.11–4.13, sprints, 39 tickets (5 epics) |
 | `js/editor.js` | Rich-text editor for descriptions and comments: the FAQ article editor's Quill 1.3.7 toolbar (headings, formatting, alignment, lists, quote, code, callouts, link, image, video, tables) plus @mentions, screenshots (upload, paste or drop), screen recording and URLs that link themselves |
 | `js/vendor/` | Quill 1.3.7 and DOMPurify (the console's own vendored build), bundled so the page doesn't depend on a CDN |
 | `js/kanban.js` | Routing (`#kanban`, `#agent-board`, `#report`, `#settings`), drag and drop, modal, report, settings |
-| `img/` | Console logo and favicon |
+| `img/` | Console logo, favicon and Rob's profile photo (`rob.jpg`, his default avatar) |
 
 ## Screens
 
@@ -38,10 +46,12 @@ viewer's own `localStorage`, and **Kanban settings (cog) → Reset demo data** p
   bottom of the screen. You can drag cards
   with a mouse, or press and hold them on touch. Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
-  Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The filter row
-  stays on one line from 1240px wide with the sidebar open; below that it wraps. The filters cover My
-  tasks, assignee avatars (first names), release, type, priority, sprint,
-  label and search. Selecting people in the assignee filter splits the board into one
+  Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The primary filters, staff avatars,
+  **My tasks** and **Release**, sit in a bar pinned to the top while you scroll, with the column headers under it. Flagged,
+  type, priority, sprint and label are in the **Filters** menu, whose button shows how many are on. The bar stays on
+  one line from 1024px wide. Changing a filter keeps your place on the page. **On a phone** the columns are a
+  sideways carousel: swipe left or right, or tap a column tab in the pinned strip. With swimlanes, every
+  person's lane shows the column you're on, and swiping changes it for all of them. Selecting people in the assignee filter splits the board into one
   swimlane per person. Each lane has a full-width header with the person's name, and can be
   collapsed on its own or with Expand all / Collapse all. The board scrolls as one page: columns have no
   inner scrollbars. On this page the console topbar scrolls away. Only the column headers stick to the top,

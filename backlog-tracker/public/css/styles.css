@@ -1992,3 +1992,17 @@ body { overflow-x: clip; }
 @media (prefers-reduced-motion: reduce) {
   .ni-record-btn.listening .ni-record-dot, .ni-record-btn.working .ni-record-dot .material-symbols-outlined, .ni-agent-working .ni-field[data-ni-field] .ni-input { animation: none; }
 }
+
+/* Profile photos / avatars (avatar.js). Always a circle; --av is the size. */
+.ph-avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; width: var(--av, 24px); height: var(--av, 24px); border-radius: 50%; overflow: hidden; color: #fff; font-size: calc(var(--av, 24px) * .45); font-weight: 600; line-height: 1; vertical-align: middle; }
+.ph-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph-avatar-initial { user-select: none; }
+.profile-btn-avatar { display: inline-flex; }
+.profile-btn .profile-btn-avatar .material-symbols-outlined { font-size: 28px; }
+.profile-photo-face { display: inline-flex; }
+.profile-photo-row { display: flex; align-items: center; gap: 4px; padding: 0 4px; }
+.profile-photo-row .profile-menu-item { flex: 1 1 auto; width: auto; }
+.profile-photo-info { font-size: 18px; color: var(--text-muted); cursor: help; }
+.profile-photo-error { margin: 4px 12px; font-size: 12.5px; color: #b3261e; }
+.ei-note-meta .ph-avatar { margin-right: 6px; }
+.team-row > .ph-avatar { margin-right: 8px; }
