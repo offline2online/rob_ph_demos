@@ -8049,12 +8049,21 @@ function joinDictated(base, addition) {
   return base + " " + addition;
 }
 
-function autoGrow(el) {
+// `follow` is for live dictation: once the box hits its height cap, keep the
+// newest words in view (scroll the box to its end, and the page just enough
+// that the box's bottom edge is on screen) instead of leaving the top showing.
+// Sized from the visual viewport so the on-screen keyboard on mobile counts.
+function autoGrow(el, follow) {
   el.style.height = "auto";
-  const max = Math.max(120, Math.round(window.innerHeight * 0.55));
+  const viewH = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  const max = Math.max(120, Math.round(viewH * 0.55));
   const next = Math.min(el.scrollHeight, max);
   el.style.height = next + "px";
   el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+  if (follow) {
+    el.scrollTop = el.scrollHeight;
+    if (typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
+  }
 }
 
 function suggestType(text) {
@@ -8236,7 +8245,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     }
     textareaEl.value = next;
     lastRendered = next;
-    autoGrow(textareaEl);
+    autoGrow(textareaEl, true);
     if (charCountUpdate) charCountUpdate();
   }
 
