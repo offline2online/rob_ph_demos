@@ -21,7 +21,7 @@ const cases = [
   ["a faq-only or other project's change doesn't", touchesConsoleTests(["faq/index.html", "dsp-integration/x.ts"]), false],
   ["a dsp-integration source change starts e2e-quick", trainTestsFor(["dsp-integration/apps/api/src/exchange/openrtb.ts"]).map((t) => t.workflow), ["e2e-quick.yml"]],
   ["a prototype rebuild alone starts nothing", trainTestsFor(["dsp-integration/prototype/assets/index.js", "dsp-integration/prototype/build-info.json"]), []],
-  ["a change to both projects starts both", trainTestsFor(["backlog-tracker/x.js", "dsp-integration/y.ts"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml"]],
+  ["a change to both projects starts both", trainTestsFor(["backlog-tracker/x.js", "dsp-integration/y.ts"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml", "kanban-staff-board-tests.yml"]],
   // board-docs.json (any project) is validated by the console tests
   ["a dsp-integration board-docs.json starts the console tests and e2e-quick", trainTestsFor(["dsp-integration/board-docs.json"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml"]],
   ["a Retail-media-insights board-docs.json starts the console and RMI suites", trainTestsFor(["Retail-media-insights/board-docs.json"]).map((t) => t.workflow), ["firestore-rules-test.yml", "retail-media-insights-tests.yml"]],

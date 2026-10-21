@@ -619,6 +619,28 @@ Requirements that follow from it:
   every ticket as live on its own once GitHub reports the merge — no second
   click.
 
+### Staff Kanban E2E on every train (self-healing)
+
+- A train whose diff against main touches `backlog-tracker/` or
+  `kanban-staff-board/` runs the Staff Kanban suites (prototype e2e; console
+  `staff-kanban`, `kanban-mcp`, `kanban-rules`) at each stage: on each landing in
+  Ready for Testing, on each push to the train, and as the gate before Deploy
+  to Main. Any project's train, not only Staff Kanban's.
+- A failing case (after the single automatic re-run) is raised as a bug ticket
+  (`e2eAutoFix`: case id, viewport, failure, run, causing ticket; label "E2E
+  auto-fix"), approved for development and sent to build automatically, and
+  built onto the SAME train branch. The suite re-runs; the loop repeats until
+  green. The fix card is approved by the green run.
+- A fix ticket never blocks a card or a workflow. Only Deploy to Main waits for
+  green. Original tickets and fixes merge together in one PR.
+- Safety stop: a case still failing after 3 fix attempts is flagged for Rob
+  (`flaggedForRob`, with the attempt history) on the fix card and the causing
+  ticket; the rest of the train keeps going.
+- Visibility: the project header shows `kanbanE2e` — running, healing n bugs,
+  green or flagged — with the per-suite detail on hover; auto-raised tickets
+  carry the "E2E auto-fix" label.
+- A red the heal owns is not also ejected by `ejectRedCulprits`.
+
 ## Approving out of Ready for Testing
 
 **The checkbox is the approval.** A Ready for Testing card has one CTA —

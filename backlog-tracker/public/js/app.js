@@ -943,6 +943,9 @@ function cardHTML(item) {
   const blockedFlag = (isBacklog && item.blocked && item.blocked.reason)
     ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}</span><span class="blocked-flag-actions">${item.blocked.note ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="Answer the build's question — this rebuilds the ticket"><span class="material-symbols-outlined">forum</span>Answer</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
     : "";
+  const e2eFixBadge = item.e2eAutoFix
+    ? `<span class="e2e-fix-badge" title="${escapeHTML(`Raised automatically when ${item.e2eAutoFix.caseId}${item.e2eAutoFix.viewport && item.e2eAutoFix.viewport !== "default" ? ` (${item.e2eAutoFix.viewport})` : ""} failed on ${item.e2eAutoFix.trainBranch || "the train"}${item.e2eAutoFix.causedByItemId ? `; caused by ticket ${item.e2eAutoFix.causedByItemId}` : ""}. Attempt ${item.e2eAutoFix.attempt || 1} of 3.${item.flaggedForRob ? " Flagged for Rob." : ""}`)}"><span class="material-symbols-outlined">auto_fix_high</span>E2E auto-fix${item.flaggedForRob ? " · flagged" : ""}</span>`
+    : "";
   const testVersionBadge = item.testVersion
     ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
     : "";
@@ -1055,7 +1058,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -1481,6 +1484,27 @@ function isTrainLocked(project) {
 // Ready for Testing/Approved for Deployment are both empty — or a generic
 // explanation for the ordinary "still building/testing" case, which never
 // gets a trainNote of its own.
+// Self-healing Staff Kanban E2E loop: run-backlog-automation.js writes
+// projects/{id}.kanbanE2e ({state, healing, flagged, detail}) for a train that
+// changes backlog-tracker/ or kanban-staff-board/. Shown only once a Kanban
+// suite applies; the hover is the per-suite detail.
+const KANBAN_E2E_CHIPS = {
+  running: ["Kanban E2E running", "autorenew"],
+  healing: ["Kanban E2E healing", "build"],
+  flagged: ["Kanban E2E flagged for Rob", "flag"],
+  green: ["Kanban E2E green", "check_circle"],
+};
+function kanbanE2eChipHTML(project) {
+  const k = project && project.kanbanE2e;
+  const def = k && KANBAN_E2E_CHIPS[k.state];
+  if (!def) return "";
+  const n = Number(k.healing) || 0;
+  const label = k.state === "healing" ? `Kanban E2E healing ${n} bug${n === 1 ? "" : "s"}` : def[0];
+  return `<div class="kanban-e2e-chip kanban-e2e-${escapeHTML(k.state)}" title="${escapeHTML(k.detail || label)}">
+    <span class="material-symbols-outlined">${def[1]}</span><span>${escapeHTML(label)}</span>
+  </div>`;
+}
+
 function trainLockedNoteHTML(project) {
   if (!isTrainLocked(project)) return "";
   const note = (typeof project.trainNote === "string" && project.trainNote.trim())
@@ -2154,7 +2178,7 @@ function projectSectionHTML(project) {
           </div>
         </div>
       </div>
-      ${trainLockedNoteHTML(project)}
+      ${trainLockedNoteHTML(project)}${kanbanE2eChipHTML(project)}
       ${docsBehindChipHTML(project)}
       <div class="project-body">${board}</div>
     </section>`;

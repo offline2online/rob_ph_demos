@@ -114,3 +114,12 @@ the activity log is append-only, mentions private to their recipient).
 Storage rules (`kanban/…` uploads) and Claude's real answers can't be run in
 CI: check an upload and a Record task once the console has deployed, with
 the manual checks above (ticket "Run the Staff Kanban manual checks M-1 to M-4").
+
+## Self-healing CI loop
+
+These suites run on every deployment train that changes `backlog-tracker/` or
+`kanban-staff-board/` (any project's). A failing case is raised automatically as
+an "E2E auto-fix" bug carrying the case id and viewport, built onto the same
+train, and the suite re-runs until green; three failed fixes for one case flag it
+for Rob. Only the merge to main waits for green. See
+`backlog-tracker/README.md` → "Self-healing Staff Kanban E2E loop".
