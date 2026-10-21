@@ -166,6 +166,8 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       if (invitedBuyers.length > 1) errors.push({ field: 'invitedBuyers', reason: 'A preferred deal is with one named buyer; use a private auction to invite several.' })
       if (b.floorCpm === undefined || b.floorCpm === null) errors.push({ field: 'floorCpm', reason: 'A preferred deal has a fixed CPM: enter the price the buyer pays on every slot it takes.' })
     }
+    /* A programmatic guaranteed deal is one-to-one with its buyer (Rob, 21 Oct 2026): one buyer, one deal ID. Two advertisers on the same slot are two PG deals. Reduce a multi-buyer list to one before switching it to guaranteed. */
+    if (dealType === 'guaranteed' && invitedBuyers.length > 1) errors.push({ field: 'invitedBuyers', reason: 'A programmatic guaranteed deal is with one named buyer; create a separate deal for each additional advertiser.' })
     /* committedPlays: the volume this deal commits to over its term — a whole number of plays, or null for none. */
     let committedPlays: number | null = null
     if (b.committedPlays !== null && b.committedPlays !== undefined && dealType !== 'guaranteed') errors.push({ field: 'committedPlays', reason: 'Only a guaranteed deal commits volume; leave it empty for a private auction or preferred deal.' })

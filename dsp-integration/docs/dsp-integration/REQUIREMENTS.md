@@ -4923,6 +4923,8 @@ A reserve is either a **preferred deal** (the window held at the deal's agreed r
 - **To the DSP**: the reservation response carries `dspDeal` — DV360 Programmatic Guaranteed / Amazon guaranteed deal with `unitCount` = the committed impressions; a preferred deal maps to a preferred deal with no volume (`dsp/dealTerms.ts`).
 - **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the agreed rate).
 
+- **One buyer per PG deal (Rob, 21 Oct 2026; ticket OSBkZCpjYucdQWi8hBCt)**: a programmatic guaranteed deal is one-to-one with its buyer, as in the industry: one advertiser, its own deal ID. The deal modal's Buyers field accepts a single advertiser when the type is Programmatic guaranteed, and the API refuses a `guaranteed` create or update with more than one `invitedBuyers` (400 on `invitedBuyers`), as it already does for `preferred`. A multi-buyer list cannot be saved as guaranteed until reduced to one. Two advertisers on the same slot are two PG deals, each its own row and Deal ID. Private auction behaviour is unchanged (E2E Run 7 D4.1b).
+
 ## Bandwidth protection — restrict uncached creatives in defined hours (Rob, 7 Oct 2026)
 
 Our version of Broadsign's network controls, reframed around pre-caching

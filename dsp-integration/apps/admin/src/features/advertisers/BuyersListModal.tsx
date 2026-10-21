@@ -90,6 +90,8 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
   }))
   const guaranteed = draft.dealType === 'guaranteed'
   const privateAuction = draft.dealType === 'private_auction'
+  /* A programmatic guaranteed deal is one-to-one with its buyer (21 Oct 2026): a list that already has several must be reduced to one before it can be saved as guaranteed. */
+  const tooManyForPg = guaranteed && draft.invitedBuyers.length > 1
 
   /* The dropdown offers every advertiser (seat) a connected DSP has synced, grouped by DSP — no typing, no identifier type. */
   const partners = useQuery(Q.partners)
@@ -152,6 +154,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
   })
 
   const save = async (finalise = false) => {
+    if (tooManyForPg) return void setErrors({ invitedBuyers: 'A programmatic guaranteed deal is with one named buyer; remove the others, or create a separate deal for each advertiser.' })
     setSaving(true)
     setErrors({})
     const payload = showTargeting ? draft : { ...draft, targeting: [] }
@@ -250,20 +253,21 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         />
         {editing && draft.dealType !== editing.dealType && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }} data-testid="deal-type-new-deal-note">The deal type is fixed once saved. Saving creates a new deal with a new Deal ID; this deal ({editing.dealId}) is left as it is.</div>}
         <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="deal-type-note">
-          {privateAuction ? 'Invited buyers bid on each slot, first price; nothing is held or locked, and no volume is committed.' : guaranteed ? 'Commits a volume of impressions; there is no bidding.' : 'One named buyer at a fixed CPM with first look at each slot; it may pass. No window is reserved and no volume is committed.'}
+          {privateAuction ? 'Invited buyers bid on each slot, first price; nothing is held or locked, and no volume is committed.' : guaranteed ? 'Commits a volume of impressions to one buyer; there is no bidding.' : 'One named buyer at a fixed CPM with first look at each slot; it may pass. No window is reserved and no volume is committed.'}
         </div>
       </div>
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Only advertisers a connected DSP has synced can be invited (who can buy); each is matched on the seat ID that DSP bids under.">Buyers</WithTip></label>
         <Select
-          mode="multiple" className="w-full" aria-label="Buyers" showSearch optionFilterProp="label"
-          status={errors.invitedBuyers ? 'error' : undefined} loading={partners.isLoading}
-          placeholder="Choose advertisers synced from your connected DSPs"
+          mode="multiple" maxCount={guaranteed ? 1 : undefined} className="w-full" aria-label="Buyers" showSearch optionFilterProp="label"
+          status={errors.invitedBuyers || tooManyForPg ? 'error' : undefined} loading={partners.isLoading}
+          placeholder={guaranteed ? 'Choose the one advertiser this deal is with' : 'Choose advertisers synced from your connected DSPs'}
           notFoundContent="No advertisers synced yet — connect a DSP first."
           value={draft.invitedBuyers.map(buyerKey)} options={[...(staleOptions.length ? [{ label: 'Not synced', options: staleOptions }] : []), ...options]}
           onChange={setBuyers}
         />
         {errors.invitedBuyers && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.invitedBuyers}</div>}
+        {tooManyForPg && !errors.invitedBuyers && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }} data-testid="pg-single-buyer-note">A programmatic guaranteed deal is with one buyer. Remove the others to keep this as a guaranteed deal; each additional advertiser needs its own deal and Deal ID.</div>}
       </div>
       {privateAuction && <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Widens who may bid in this private auction: invite every advertiser a connected DSP reports in these IAB categories, without naming each one. Combines with the invited buyers above (either is enough to bid); the advertiser blacklist still applies. Resolved live, so advertisers a DSP adds or re-categorises move in or out with no edit. A category is a bid-time filter only: the deal ID is shared with, and authored against, named buyers. Fill in at least one of the two.">Invited IAB categories</WithTip></label>

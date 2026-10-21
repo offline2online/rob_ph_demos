@@ -267,6 +267,30 @@ describe('Run 7 — D4 programmatic guaranteed: reserve with committed volume', 
     expect(bad.statusCode).toBe(400)
   })
 
+  it('D4.1b — a programmatic guaranteed deal is one-to-one with its buyer: two buyers are refused on create and on update, private auction is unchanged', async () => {
+    const h = await dealHarness('guaranteed')
+    const two = [{ partnerId: 'p_google', seatId: '5130002' }, { partnerId: 'p_google', seatId: '5130001' }]
+    const base = { name: 'D4.1b', dealType: 'guaranteed', committedPlays: 900 }
+    const created = await h.app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...base, invitedBuyers: two } })
+    expect(created.statusCode).toBe(400)
+    expect(created.json().error.details.map((d: { field: string }) => d.field)).toEqual(['invitedBuyers'])
+    const updated = await h.app.inject({ method: 'PUT', url: `/api/admin/v1/buyers-lists/${h.list.id}`, payload: { ...base, invitedBuyers: two } })
+    expect(updated.statusCode).toBe(400)
+    const auction = await h.app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { name: 'D4.1b auction', dealType: 'private_auction', invitedBuyers: two } })
+    expect(auction.statusCode).toBe(201)
+    /* a multi-buyer private auction cannot be switched to PG until it has one buyer */
+    const switched = await h.app.inject({ method: 'PUT', url: `/api/admin/v1/buyers-lists/${auction.json().id}`, payload: { ...base, invitedBuyers: two } })
+    expect(switched.statusCode).toBe(400)
+    /* the deal type is fixed once saved, so reducing to one buyer and saving as PG mints a new PG deal */
+    const one = await h.app.inject({ method: 'PUT', url: `/api/admin/v1/buyers-lists/${auction.json().id}`, payload: { ...base, invitedBuyers: [two[0]] } })
+    expect(one.statusCode).toBe(201)
+    /* two advertisers on one slot are two PG deals, each with its own deal ID */
+    const a = await h.app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...base, name: 'D4.1b A', invitedBuyers: [two[0]] } })
+    const b = await h.app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...base, name: 'D4.1b B', invitedBuyers: [two[1]] } })
+    expect([a.statusCode, b.statusCode]).toEqual([201, 201])
+    expect(a.json().dealId).not.toBe(b.json().dealId)
+  })
+
   it('D4.2 — approve → reserve: committed volume = floor(forecast × (1 − buffer%)), carried to DV360 as Programmatic Guaranteed, billed realised VAC-d (no make-good)', async () => {
     const h = await dealHarness('guaranteed')
     expect((await h.app.inject({ url: '/api/admin/v1/advertiser-settings' })).json().guaranteeBufferPct).toBe(BUFFER_PCT)
