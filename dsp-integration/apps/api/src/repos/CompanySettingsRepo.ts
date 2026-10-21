@@ -21,8 +21,6 @@ export interface CompanySettings {
   bidLookaheadSeconds: number
   /* Pre-caching: hours the player may retain a cached approved creative, an upper bound (domain/cachedAssetRetention.ts). */
   cachedAssetRetentionHours: number
-  /* Play config: the committed-plays figure a new buyers list is pre-filled with; null = none (per play). */
-  defaultCommittedPlays: number | null
   /* Max play length: the company-wide default fixed duration of one play, in seconds (a display type and a slot can override it). Plays per window = floor(window / this), never the loop. */
   maxPlayLengthSec: number
 }
@@ -54,7 +52,7 @@ export interface CompanySettingsRepo {
   /* Advertisers with a direct relationship with the retailer (no DSP), by name. */
   directAdvertisers(): Awaitable<DirectAdvertiserRecord[]>
   addDirectAdvertiser(advertiserId: string, name: string): Awaitable<void>
-  removeDirectAdvertiser(advertiserId: string): Awaitable<void>
+  removeDirectAdvertiser(advertiserId: string, opts?: { keepSettings?: boolean }): Awaitable<void>
   /* The DSP seats each PH advertiser bids under, by advertiserId. */
   advertiserSeats(): Awaitable<Record<string, AdvertiserSeatRecord[]>>
   /* Replace one advertiser's seat mapping. */
@@ -84,7 +82,7 @@ interface Row {
   currency: string; floor_cpm: number; interactive_cpe: number
   category_whitelist: string; category_blacklist: string; guarantee_buffer_pct: number
   uncached_restriction: 'off' | 'fixed' | 'store_open'; uncached_restriction_start: string; uncached_restriction_end: string
-  bid_lookahead_seconds: number; cached_asset_retention_hours: number; default_committed_plays: number | null; max_play_length_sec: number
+  bid_lookahead_seconds: number; cached_asset_retention_hours: number; max_play_length_sec: number
 }
 
 /* Freeze a snapshot (and the arrays inside it) so a caller can't mutate the
@@ -133,7 +131,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       c.company = frozen({
         currency: r.currency, floorCpm: r.floor_cpm, interactiveCpe: r.interactive_cpe,
         categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []), guaranteeBufferPct: r.guarantee_buffer_pct,
-        uncachedRestriction: r.uncached_restriction, uncachedRestrictionStart: r.uncached_restriction_start, uncachedRestrictionEnd: r.uncached_restriction_end, bidLookaheadSeconds: r.bid_lookahead_seconds, cachedAssetRetentionHours: r.cached_asset_retention_hours, defaultCommittedPlays: r.default_committed_plays, maxPlayLengthSec: r.max_play_length_sec,
+        uncachedRestriction: r.uncached_restriction, uncachedRestrictionStart: r.uncached_restriction_start, uncachedRestrictionEnd: r.uncached_restriction_end, bidLookaheadSeconds: r.bid_lookahead_seconds, cachedAssetRetentionHours: r.cached_asset_retention_hours, maxPlayLengthSec: r.max_play_length_sec,
       })
     }
     return c.company as CompanySettings
@@ -155,11 +153,11 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       prepared(db,
         `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, interactive_cpe = ?,
            category_whitelist = ?, category_blacklist = ?, guarantee_buffer_pct = ?,
-           uncached_restriction = ?, uncached_restriction_start = ?, uncached_restriction_end = ?, bid_lookahead_seconds = ?, cached_asset_retention_hours = ?, default_committed_plays = ?, max_play_length_sec = ?, updated_at = ? WHERE id = ?`,
+           uncached_restriction = ?, uncached_restriction_start = ?, uncached_restriction_end = ?, bid_lookahead_seconds = ?, cached_asset_retention_hours = ?, max_play_length_sec = ?, updated_at = ? WHERE id = ?`,
       ).run(
         s.currency, s.floorCpm, s.interactiveCpe,
         toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', s.guaranteeBufferPct,
-        s.uncachedRestriction, s.uncachedRestrictionStart, s.uncachedRestrictionEnd, s.bidLookaheadSeconds, s.cachedAssetRetentionHours, s.defaultCommittedPlays, s.maxPlayLengthSec, now(), ID,
+        s.uncachedRestriction, s.uncachedRestrictionStart, s.uncachedRestrictionEnd, s.bidLookaheadSeconds, s.cachedAssetRetentionHours, s.maxPlayLengthSec, now(), ID,
       )
       invalidate()
       return get()
@@ -182,8 +180,9 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     addDirectAdvertiser(advertiserId, name) {
       prepared(db, 'INSERT INTO direct_advertisers (advertiser_id, name, created_at) VALUES (?, ?, ?) ON CONFLICT (advertiser_id) DO NOTHING').run(advertiserId, name, now())
     },
-    removeDirectAdvertiser(advertiserId) {
+    removeDirectAdvertiser(advertiserId, opts) {
       prepared(db, 'DELETE FROM direct_advertisers WHERE advertiser_id = ?').run(advertiserId)
+      if (opts?.keepSettings) return
       prepared(db, 'DELETE FROM advertiser_seats WHERE advertiser_id = ?').run(advertiserId)
       prepared(db, 'DELETE FROM advertiser_audiences WHERE advertiser_id = ?').run(advertiserId)
     },

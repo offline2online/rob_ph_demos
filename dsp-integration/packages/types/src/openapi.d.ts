@@ -2268,8 +2268,6 @@ export interface components {
              * @default 15
              */
             maxPlayLengthSec: number;
-            /** @description Play config: the committed-plays figure a new buyers list is pre-filled with (the field stays editable per list; editing a saved list never changes it). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it. */
-            defaultCommittedPlays?: number | null;
             /**
              * @description Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day, in the player's local time. `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.
              * @default off
@@ -2414,17 +2412,16 @@ export interface components {
             /** @description The deal's resolved base floor in USD CPM. */
             rateCpm?: number;
             /**
-             * @description Present on a Programmatic guaranteed deal priced per day: the slot is booked for each full 24-hour day at `ratePerDay`.
+             * @description Present on a Programmatic guaranteed deal priced as a total for its term: `termTotal` is the USD amount for the whole delivery term.
              * @enum {string}
              */
-            rateType?: "Fixed per day";
-            /** @description The flat USD rate for one full day on a slot. */
-            ratePerDay?: number;
-            /**
-             * @description The length of the priced period.
-             * @enum {integer}
-             */
-            billingPeriodHours?: 24;
+            rateType?: "Fixed per term";
+            /** @description The USD total for the whole delivery term. */
+            termTotal?: number;
+            /** @description Programmatic guaranteed only: calendar days in the delivery term, both ends included (null while either end is open). */
+            termDays?: number | null;
+            /** @description Programmatic guaranteed only: the volume derived from the assigned slots over the whole term, less the guarantee buffer. */
+            committedPlays?: number | null;
             /** @description The same price as a CPM over the assigned slots' forecast, for comparison; null until a slot is assigned. */
             equivalentCpm?: {
                 min: number;
@@ -2442,11 +2439,11 @@ export interface components {
             rateCpm: number;
             /** @enum {string} */
             rateKind: "floor" | "fixed";
-            /** @description Fixed per day only. The flat USD rate for one 24-hour day on a slot. */
-            ratePerDay?: number | null;
-            /** @description Fixed per day only: 24. */
-            billingPeriodHours?: number | null;
-            /** @description Fixed per day only: the rate per day as a CPM over the assigned slots' forecast; null until a slot is assigned. */
+            /** @description Fixed per term only. The USD total for the whole delivery term. */
+            termTotal?: number | null;
+            /** @description Programmatic guaranteed only: calendar days in the delivery term (null while either end is open). */
+            termDays?: number | null;
+            /** @description Fixed per term only: the total as a CPM over the assigned slots' forecast for the term; null until a slot is assigned. */
             equivalentCpm?: {
                 min: number;
                 max: number;
@@ -2454,7 +2451,7 @@ export interface components {
             activeFrom: string | null;
             activeTo: string | null;
             auctionCloses: string | null;
-            /** @description Guaranteed deals only. */
+            /** @description Guaranteed deals only: derived from the assigned slots over the whole delivery term, less the guarantee buffer. */
             committedPlays: number | null;
             entries: components["schemas"]["DealSheetEntry"][];
             /** @description Every slot the deal is assigned to, with its number, zone and the display type's description, so the buyer knows where the deal plays. Empty while the deal is attached to no slot. */
@@ -2581,13 +2578,13 @@ export interface components {
             inventorySource: {
                 externalDealId: string;
                 rateDetails: {
-                    /** @description USD per CPM, or per 24-hour day when rateType is Fixed per day. */
+                    /** @description USD per CPM, or the USD total for the whole delivery term when rateType is Fixed per term. */
                     rate: number;
                     /** @enum {string} */
-                    rateType: "CPM floor" | "CPM fixed" | "Fixed per day";
+                    rateType: "CPM floor" | "CPM fixed" | "Fixed per term";
                     currency: string;
-                    /** @description Fixed per day: 24. */
-                    billingPeriodHours?: number;
+                    /** @description Fixed per term: calendar days in the delivery term. */
+                    termDays?: number | null;
                     equivalentCpm?: {
                         min: number;
                         max: number;
@@ -2634,12 +2631,12 @@ export interface components {
         };
         TermChange: {
             /** @enum {string} */
-            field: "floorCpm" | "ratePerDay" | "committedPlays" | "activeFrom" | "activeTo" | "auctionCloses" | "invitedBuyers" | "invitedCategories";
+            field: "floorCpm" | "termTotal" | "committedPlays" | "activeFrom" | "activeTo" | "auctionCloses" | "invitedBuyers" | "invitedCategories";
             /** @description Previous value (any JSON) */
             from: unknown;
             /** @description New value (any JSON) */
             to: unknown;
-            /** @description True for floorCpm, ratePerDay, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance. */
+            /** @description True for floorCpm, termTotal, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance. */
             requiresReacceptance?: boolean;
         };
         TermCheck: {
@@ -2732,9 +2729,9 @@ export interface components {
             readonly buyerAcceptance: components["schemas"]["BuyerAcceptance"][];
             effectiveCommittedPlays: components["schemas"]["EffectiveTerm"];
             effectiveRateCpm: components["schemas"]["EffectiveTerm"];
-            /** @description Programmatic guaranteed priced per day: the flat USD rate for one 24-hour day on a slot; null for a deal that pre-dates per-day pricing or is not guaranteed. */
-            ratePerDay?: number | null;
-            /** @description ratePerDay / forecast impressions per day x 1000 across the assigned slots (min and max differ when slots differ). Null while the deal has no rate per day or no assigned slot to forecast from. */
+            /** @description Programmatic guaranteed priced as a total for its term: the USD amount for the whole delivery term; null when it is priced as a CPM or is not guaranteed. */
+            termTotal?: number | null;
+            /** @description termTotal / forecast impressions over the term x 1000 across the assigned slots (min and max are the same blended figure). Null while the deal has no total for the term, no closed term or no assigned slot to forecast from. */
             readonly equivalentCpm?: {
                 min: number;
                 max: number;
@@ -2777,8 +2774,11 @@ export interface components {
              *     (7 Oct 2026; open question 45). Volume is carried by deals,
              *     never by the open auction, which stays per play and holds no
              *     block of plays. null = no volume commitment (the deal is per
-             *     play). For a guaranteed deal the figure is sized from the
-             *     forecast plus the contingency buffer, not typed in here.
+             *     play). For a guaranteed deal (21 Oct 2026) the figure is derived:
+             *     floor(forecast plays of every assigned slot over the whole delivery
+             *     term x (1 - guarantee buffer %)). It is null until a slot is
+             *     assigned and the term has both dates, recalculates when slots or
+             *     dates change, and is never typed in.
              */
             committedPlays: number | null;
             /**
@@ -4668,6 +4668,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Send true to confirm a save that adds or removes a slot on a SHARED Programmatic guaranteed deal. Its committed plays are derived from its slots, so they change and the deal must be re-shared and accepted again by the buyer; without true the save is refused (400, one `confirmReshare` detail per deal) and nothing is written. */
+                    confirmReshare?: boolean;
                     items: {
                         displayTypeId: string;
                         slot: number;
@@ -5222,9 +5224,11 @@ export interface operations {
                      * @enum {string}
                      */
                     dealType?: "private_auction" | "preferred" | "guaranteed";
-                    /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
+                    /** @description Not accepted (21 Oct 2026): a guaranteed deal's committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal. */
                     committedPlays?: number | null;
-                    /** @description Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    termTotal?: number | null;
+                    /** @description Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term. */
                     ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
                     floorCpm?: number | null;
@@ -5454,9 +5458,11 @@ export interface operations {
                      * @enum {string}
                      */
                     dealType?: "private_auction" | "preferred" | "guaranteed";
-                    /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
+                    /** @description Not accepted (21 Oct 2026): a guaranteed deal's committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal. */
                     committedPlays?: number | null;
-                    /** @description Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    termTotal?: number | null;
+                    /** @description Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term. */
                     ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
                     floorCpm?: number | null;

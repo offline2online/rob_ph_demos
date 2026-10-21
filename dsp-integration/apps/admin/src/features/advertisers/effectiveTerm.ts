@@ -31,21 +31,21 @@ export const rateValue = (t: MaybeTerm) => { const r = range(t, (n) => String(n)
 type DealType = BuyersList['dealType']
 export const cpmKind = (d: DealType | undefined) => (d === 'preferred' || d === 'guaranteed' ? 'committed' : 'floor')
 /* Rate type, in DV360's words (ticket DbSVEGXNIWlYW68UQnY3): CPM floor for a Private auction, CPM fixed for a Preferred deal and Programmatic guaranteed. */
-export const rateTypeOf = (d: DealType | undefined, ratePerDay?: number | null) => (d === 'guaranteed' && ratePerDay != null ? 'Fixed per day' : cpmKind(d) === 'floor' ? 'CPM floor' : 'CPM fixed')
-/* Programmatic guaranteed books whole days (20 Oct 2026; DOOH full-day takeover): a flat rate per 24-hour day, with the CPM it works out to beside it for comparison with CPM deals. */
-export const PER_DAY_HINT = 'Books the slot for a full 24 hours per day at a flat daily rate.'
-export const ratePerDayText = (n: number | null | undefined) => (n == null ? null : `USD ${n} per day`)
+export const rateTypeOf = (d: DealType | undefined, termTotal?: number | null) => (d === 'guaranteed' && termTotal != null ? 'Fixed per term' : cpmKind(d) === 'floor' ? 'CPM floor' : 'CPM fixed')
+/* Programmatic guaranteed covers a whole delivery term (21 Oct 2026; one deal per flight): priced as a fixed CPM, or a total for the term with the CPM it works out to beside it for comparison with CPM deals. */
+export const TERM_TOTAL_HINT = 'A fixed USD total for the whole delivery term, however many days and slots. The CPM it works out to is shown beside it for comparison with CPM deals.'
+export const termTotalText = (n: number | null | undefined) => (n == null ? null : `USD ${n.toLocaleString('en-US')} for the term`)
 export const equivalentCpmText = (e: { min: number; max: number } | null | undefined) => (!e ? null : e.min === e.max ? `${e.min}` : `${e.min}–${e.max}`)
-export const cpmKindHint = (d: DealType | undefined, ratePerDay?: number | null) =>
-  d === 'guaranteed' && ratePerDay != null
-    ? `Fixed per day: ${PER_DAY_HINT}`
+export const cpmKindHint = (d: DealType | undefined, termTotal?: number | null) =>
+  d === 'guaranteed' && termTotal != null
+    ? `Fixed per term: ${TERM_TOTAL_HINT}`
     : cpmKind(d) === 'floor'
     ? 'CPM floor: the minimum a buyer must bid above. The clearing price can land higher until the deal locks.'
     : 'CPM fixed: the fixed rate this window clears and bills at.'
 /* One line for a list, e.g. "USD 4–6 · CPM floor", or the locked rate once the deal has one. */
-export const cpmSummary = (l: Pick<BuyersList, 'dealType' | 'lockedWin' | 'effectiveRateCpm' | 'ratePerDay' | 'equivalentCpm'>) => {
+export const cpmSummary = (l: Pick<BuyersList, 'dealType' | 'lockedWin' | 'effectiveRateCpm' | 'termTotal' | 'equivalentCpm'>) => {
   if (l.lockedWin) return `Locked: ${l.lockedWin.cpm} CPM`
-  if (l.dealType === 'guaranteed' && l.ratePerDay != null) return `${ratePerDayText(l.ratePerDay)}${l.equivalentCpm ? ` (≈ ${equivalentCpmText(l.equivalentCpm)} CPM)` : ''} · Fixed per day`
+  if (l.dealType === 'guaranteed' && l.termTotal != null) return `${termTotalText(l.termTotal)}${l.equivalentCpm ? ` (≈ ${equivalentCpmText(l.equivalentCpm)} CPM)` : ''} · Fixed per term`
   const t = rateValue(l.effectiveRateCpm)
   return t ? `${t} · ${rateTypeOf(l.dealType)}` : null
 }

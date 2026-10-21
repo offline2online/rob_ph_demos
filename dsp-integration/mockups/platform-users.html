@@ -29,6 +29,8 @@ h1{font-size:20px;font-weight:700;margin:0}
 .btn.primary:hover{background:#38b0cf;border-color:#38b0cf}
 .btn:disabled{opacity:.4;cursor:not-allowed}
 .btn.text{border-color:transparent;background:none;padding:0 8px}
+.btn.danger{background:var(--error);border-color:var(--error);color:#fff}
+.btn.danger:hover{background:#ff7875;border-color:#ff7875}
 table{width:100%;border-collapse:collapse;border:1px solid var(--divider);border-radius:8px}
 th{background:#fafafa;text-align:left;font-weight:700;padding:12px 16px;border-bottom:1px solid var(--divider)}
 td{padding:12px 16px;border-bottom:1px solid var(--divider)}
@@ -143,6 +145,14 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
       </form>
     </div>
   </div>
+
+  <div class="mask" id="dmask">
+    <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="dt" aria-describedby="db">
+      <header id="dt">Delete user?</header>
+      <div class="body"><div class="blockerr" id="dErr" role="alert"></div><p id="db" style="margin:0"></p></div>
+      <footer><button type="button" class="btn" id="dCancel">Cancel</button><button type="button" class="btn danger" id="dConfirm">Delete</button></footer>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -237,7 +247,18 @@ $("addBtn").onclick=function(){open_()};$("cancel").onclick=close_;
 $("mask").addEventListener("mousedown",function(e){if(e.target===$("mask"))close_()});
 document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("mask").classList.contains("open"))close_()});
 $("role").onchange=syncRole;$("adv").onchange=syncAdv;
-$("rows").onclick=function(e){var b=e.target.closest("[data-del]");if(b){var u=users[+b.dataset.del];call("DELETE","/users/"+encodeURIComponent(u.email)).then(loadAll).then(function(){toast("Removed "+u.firstName+" "+u.lastName+".")}).catch(function(x){showErr(x.message)});return}var t=e.target.closest("[data-edit]");if(t)open_(+t.dataset.edit)};
+var delUser=null;
+function closeDel(){$("dmask").classList.remove("open");delUser=null}
+$("dCancel").onclick=closeDel;
+$("dmask").addEventListener("mousedown",function(e){if(e.target===$("dmask"))closeDel()});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("dmask").classList.contains("open"))closeDel()});
+/* Deleting a platform user asks first: the pop-up says it can't be undone and the user must confirm (ticket nN241VLRJD3iTRBsdnac). */
+$("dConfirm").onclick=function(){
+  var u=delUser;if(!u)return;
+  $("dConfirm").disabled=true;$("dErr").classList.remove("show");
+  call("DELETE","/users/"+encodeURIComponent(u.email)).then(loadAll).then(function(){closeDel();toast("Removed "+u.firstName+" "+u.lastName+".")}).catch(function(x){$("dErr").textContent=x.message;$("dErr").classList.add("show")}).then(function(){$("dConfirm").disabled=false});
+};
+$("rows").onclick=function(e){var b=e.target.closest("[data-del]");if(b){delUser=users[+b.dataset.del];$("db").textContent="This will permanently delete "+((delUser.firstName+" "+delUser.lastName).trim()||delUser.email)+" ("+delUser.email+"). This action can\u2019t be undone.";$("dErr").classList.remove("show");$("dmask").classList.add("open");$("dmask").scrollTop=0;$("dCancel").focus();return}var t=e.target.closest("[data-edit]");if(t)open_(+t.dataset.edit)};
 $("form").onsubmit=function(e){
   e.preventDefault();
   var isAdv=$("role").value==="Advertiser",isNew=isAdv&&$("adv").value==="__new";

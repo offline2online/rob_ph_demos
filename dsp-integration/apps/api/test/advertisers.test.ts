@@ -52,6 +52,18 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(((await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string }[]).some((a) => a.advertiserId === 'acme-foods')).toBe(false)
   })
 
+  it('treats a direct record shadowed by a DSP seat as a direct advertiser, not "Not a direct advertiser"', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    await ctx.company.addDirectAdvertiser('swisse', 'Swisse')
+    const items = (await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string; direct: boolean }[]
+    expect(items.find((a) => a.advertiserId === 'swisse')?.direct).toBe(false)
+    /* Swisse has campaigns, so it is refused for that reason (409), not as "not direct" (404). */
+    const del = await app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/swisse' })
+    expect(del.statusCode).toBe(409)
+    expect(del.json().detail ?? del.body).toMatch(/campaigns or bookings/)
+  })
+
   it('holds a slot for a direct advertiser from Available Inventory’s Assigned to', async () => {
     const app = buildApp(await testContext())
     expect((await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })).statusCode).toBe(201)
@@ -85,6 +97,10 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect((await post('Own Brand')).statusCode).toBe(201)
     expect((await post('own  brand')).statusCode).toBe(409)
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/swisse' })).statusCode).toBe(404)
+    /* Deleting one that is already gone is not an error. */
+    const del = () => app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/own-brand' })
+    expect((await del()).statusCode).toBe(204)
+    expect((await del()).statusCode).toBe(204)
     const marketing = buildApp(await testContext({ role: 'hq_marketing' }))
     expect((await marketing.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'X' } })).statusCode).toBe(403)
   })

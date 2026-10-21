@@ -177,20 +177,20 @@ describe('Buyers lists (spec "Support private auctions")', () => {
       plays, playedSec: 1, expectedSec: 1, assumedViews: 1, realisedViews: 1, cpm: 1, currency: 'AUD', amount: 1, playsByVersion: [],
     })
 
-    it('saves, returns and edits committedPlays; null means per play', async () => {
+    it('derives committedPlays from the assigned slots (21 Oct 2026): none at creation, never typed in', async () => {
       const app = buildApp(await testContext())
-      const created = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, ...term, committedPlays: 1000 } })
+      const created = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, ...term, dealType: 'guaranteed' } })
       expect(created.statusCode).toBe(201)
       expectMatchesContract('POST', '/admin/v1/buyers-lists', 201, created.json())
-      expect(created.json()).toMatchObject({ committedPlays: 1000, deliveredPlays: 0 })
+      expect(created.json()).toMatchObject({ committedPlays: null, deliveredPlays: 0 })
       const plain = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: list })
       expect(plain.json()).toMatchObject({ committedPlays: null, deliveredPlays: 0 })
-      const updated = await app.inject({ method: 'PUT', url: `/api/admin/v1/buyers-lists/${created.json().id}`, payload: { ...list, ...term, committedPlays: null } })
-      expectMatchesContract('PUT', '/admin/v1/buyers-lists/{buyersListId}', 200, updated.json())
-      expect(updated.json().committedPlays).toBeNull()
+      const typed = await app.inject({ method: 'PUT', url: `/api/admin/v1/buyers-lists/${created.json().id}`, payload: { ...list, ...term, dealType: 'guaranteed', committedPlays: 1000 } })
+      expect(typed.statusCode).toBe(400)
+      expect(typed.json().error.details[0].field).toBe('committedPlays')
     })
 
-    it('refuses zero, fractions, negatives and non-numbers', async () => {
+    it('refuses any typed committedPlays, whatever it is', async () => {
       const app = buildApp(await testContext())
       for (const committedPlays of [0, 1.5, -3, '1000']) {
         const res = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, committedPlays } })
@@ -202,7 +202,7 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     it("meters delivery in plays at the deal's positions, inside its term only", async () => {
       const ctx = await testContext()
       const app = buildApp(ctx)
-      const id = (await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, ...term, committedPlays: 1000 } })).json().id
+      const id = (await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, ...term, dealType: 'guaranteed', status: 'draft' } })).json().id
       await app.inject({
         method: 'PUT', url: '/api/admin/v1/available-inventory',
         payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: id } }] },
@@ -213,7 +213,8 @@ describe('Buyers lists (spec "Support private auctions")', () => {
       await ctx.billing.insert(item('d', 'menu_board.s1', '2026-10-05T00:00:00.000Z', 700), '2026-10-06T00:00:00.000Z') // another position
       const listed = (await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists' })).json()
       expectMatchesContract('GET', '/admin/v1/buyers-lists', 200, listed)
-      expect(listed.items[0]).toMatchObject({ committedPlays: 1000, deliveredPlays: 200 })
+      expect(listed.items[0]).toMatchObject({ deliveredPlays: 200 })
+      expect(listed.items[0].committedPlays).toBeGreaterThan(200)
     })
 
     it('a deal with no commitment reports no delivery: the open auction holds no volume', async () => {
@@ -232,19 +233,19 @@ describe('Buyers lists (spec "Support private auctions")', () => {
   describe('deal type', () => {
     const post = (app: ReturnType<typeof buildApp>, payload: Record<string, unknown>) => app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, ...payload } })
 
-    it('defaults to a private auction, or guaranteed when an older client sends committedPlays', async () => {
+    it('defaults to a private auction when the type is omitted, and refuses committedPlays from an older client', async () => {
       const app = buildApp(await testContext())
       const plain = await post(app, {})
       expectMatchesContract('POST', '/admin/v1/buyers-lists', 201, plain.json())
       expect(plain.json().dealType).toBe('private_auction')
-      expect((await post(app, { committedPlays: 500 })).json().dealType).toBe('guaranteed')
+      expect((await post(app, { committedPlays: 500 })).statusCode).toBe(400)
     })
 
     it('only a guaranteed deal commits volume; a preferred deal is one buyer at a fixed CPM; no deal has an auction window any more', async () => {
       const app = buildApp(await testContext())
-      const guaranteed = await post(app, { dealType: 'guaranteed', committedPlays: 800 })
+      const guaranteed = await post(app, { dealType: 'guaranteed' })
       expect(guaranteed.statusCode).toBe(201)
-      expect(guaranteed.json()).toMatchObject({ dealType: 'guaranteed', committedPlays: 800 })
+      expect(guaranteed.json()).toMatchObject({ dealType: 'guaranteed', committedPlays: null })
       const preferred = await post(app, { dealType: 'preferred', floorCpm: 150 })
       expect(preferred.statusCode).toBe(201)
       expect(preferred.json()).toMatchObject({ dealType: 'preferred', committedPlays: null, auctionCloses: null, effectiveCommittedPlays: { source: 'none' } })
