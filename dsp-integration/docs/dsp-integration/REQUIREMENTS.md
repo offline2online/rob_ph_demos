@@ -1755,6 +1755,23 @@ resolved from four levels:
 - Because assets must be approved before they play (§3), the pricing and
   allocation model works over extended periods (daily, weekly or monthly)
   rather than purely in real time.
+- **Direct advertiser deals are recorded and reported, not invoiced** (22 Oct
+  2026, decision Rob; ticket EipHu2GUdlbZMpPGCTjF, 5/7). A Direct advertiser
+  deal's reservation (`partnerId: "direct"`, `reserved`, the deal's fixed CPM
+  or the CPM equivalent to its total for the term) goes through the same
+  billing as a DSP-sold reservation: one line item per window once it has
+  ended, at the deal's rate on realised VAC-d (proof of play), with the
+  personalised multiplier and late-playback ledger applying unchanged. Its
+  line item is the **revenue record**, not an invoice: DSPs bill their own
+  deals and a direct advertiser is **billed outside the platform**, so the
+  platform issues no invoice, statement or payment for it. The revenue is
+  reported wherever revenue is: the Booking schedule shows the booking as
+  "Name (Direct)" (DSP column "Direct") with booked windows, % sold,
+  Estimated revenue and, once played, billed revenue, filterable by the
+  advertiser or by DSP "direct"; its line items carry `partnerId: "direct"`
+  and no `seatId`, which is how the Retail Media Insights dashboards tell a
+  direct buyer from a DSP seat. Those dashboards belong to their own project
+  and read billing through their source adapter.
 - **Private auctions using the two-period model bill the same way, at a
   fixed rate** (23 Sep 2026 — see §5 "Private auctions (buyers lists)" for
   the two-period model itself). A CPM is a rate, not a fixed sum: the brand

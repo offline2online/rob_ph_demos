@@ -28,8 +28,10 @@ import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN, type ReservationRecord } from '../../repos/ReservationRepo'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { zonePlaceOf } from '../../domain/displayTypes'
-import { advertiserSlug, directLabel } from '@ph-dsp/types'
+import { DIRECT_PARTNER_ID, advertiserSlug, directLabel } from '@ph-dsp/types'
 
+/* What a Direct advertiser deal's booking reads as in the DSP column: it has no DSP (ticket EipHu2GUdlbZMpPGCTjF). */
+const DIRECT_LABEL = 'Direct'
 const DAY = 86_400_000
 /* How far back a real-time position's plays are counted (ticket vhRFN1K3N4Giw1Z0OEI6, 8 Oct 2026). */
 export const RECENT_PLAYS_DAYS = 7
@@ -192,7 +194,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
           booking: {
             reservationId: r.id, campaignId: r.campaignId as string, advertiserId: r.advertiserId, partnerId: r.partnerId,
             pricingType: type, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
-            partnerName: partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
+            partnerName: r.partnerId === DIRECT_PARTNER_ID ? DIRECT_LABEL : partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
             layers, personalisedTriggers: triggersOf(targeted, layers.personalised),
           },
         })

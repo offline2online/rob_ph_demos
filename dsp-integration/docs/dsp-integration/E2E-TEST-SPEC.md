@@ -160,9 +160,9 @@ Surface: HQ Admin (UI) + admin API. Tests: `advertisers.test.ts`, `users.test.ts
 - **Y5 Personalised on a private deal.** A personalised campaign on a private deal is accepted (B5); the same on open real-time is refused (E6). Available targeting follows the enabled criteria.
 
 ### X. Direct advertiser relationship (Flow 3)
-Fixture: a **direct advertiser** (no DSP) **assigned a slot** in Available Inventory. **No bid, no auction, no billing through the platform.**
+Fixture: a **direct advertiser** (no DSP) **assigned a slot** in Available Inventory. **No bid, no auction; billed outside the platform, revenue recorded and reported in the platform.**
 - **X1 Slot assignment.** The slot is assigned to the direct advertiser in Available Inventory; it is excluded from open real-time and from every buyers list; only that advertiser's campaigns can play on it.
-- **X2 No billing.** Plays on the slot produce **no platform line item / invoice**; the retailer's billing views show none. (The retainer is settled outside PH.)
+- **X2 Revenue recorded, not invoiced.** Plays on the slot produce a **revenue line item per window at the deal's rate** (`partnerId: direct`) on realised delivery, and the Booking schedule's booked/billed revenue includes it, labelled "Name (Direct)"; the platform generates **no invoice**. (The direct advertiser is billed outside PH. Test: `direct-deal-revenue.test.ts`.)
 - **X3 No deal ID.** The advertiser's campaigns carry no deal ID and no `pmp.deals`.
 - **X4 Localised and personalised variants accepted** on that slot, per the targeting elements the retailer has enabled (shared variables and defined values); a variant on an unenabled element is refused `validation_failed`; booking is `personalised_eligible`.
 - **X5 Hand-off.** An approved campaign on the slot is handed off with the right asset version (verify the booking, not playback).
@@ -171,7 +171,7 @@ Fixture: a **direct advertiser** (no DSP) **assigned a slot** in Available Inven
 
 Closes the gap that Run 6's advertiser side is Partner API only. **Driven entirely through the HQ Admin UI**, logged in as an advertiser user. Run **twice, identically but for the deal ID**:
 
-- **Run 11A — Direct advertiser (Flow 3):** campaigns carry **no deal ID**; no billing shown.
+- **Run 11A — Direct advertiser (Flow 3):** campaigns carry **no deal ID**; revenue shown as direct, no invoice.
 - **Run 11B — Private-auction DSP advertiser (Flow 2):** campaigns **are associated with a deal ID** (the buyers-list deal), which carries to the bid (`pmp.deals`) and to approval → creative ID.
 
 Cases (each id suffixed A or B for the run):
@@ -195,7 +195,7 @@ On-screen playback is **PH Core's** and is never covered by this suite: the crea
 | Flow 0 setup: connect DSP, create display type & slot, exchange settings | J0–J5, Z1–Z3 |
 | Path 1 open auction (no targeting; Monster, PepsiCo, Mars Wrigley bid 35 s before play; highest bid wins, creative from the bid response): approve creative, fill, floor, proof of play | A1–A8, B1–B7, C1–C3, D1–D3, Run 7 D1, Run 8 S1–S3 |
 | Path 2 programmatic guaranteed (Coca-Cola books a slot for 24 h at a fixed price; pre-approved creatives managed in PH; targeting and scheduling rules run by PH Core) | Run 7 D4.1–D4.7 (D4.6 = the 24 h booking; D4.7 = the delivery term); booking and approval cases in Run 8 D1–D6 |
-| Path 3 advertiser direct (Red Bull, managed entirely in PH, no DSP): slot owned by a brand, no billing, several prioritised campaigns | Z1–Z2, X1–X5, Run 11A, Run 8 D1–D6 |
+| Path 3 advertiser direct (Red Bull, managed entirely in PH, no DSP): slot owned by a brand, billed outside the platform (revenue recorded and reported), several prioritised campaigns | Z1–Z2, X1–X5, Run 11A, Run 8 D1–D6 |
 | On-screen playback, localised swap, CV personalised variant, PWA campaign triggering | **PH Core — out of scope** |
 | Private auction, preferred deal, targeting on deals and open auction | **Out of POC scope** (greyed out); Run 2–3, Run 7 D2–D3/D5 and P/Y cases tested as built, not demoed |
 
