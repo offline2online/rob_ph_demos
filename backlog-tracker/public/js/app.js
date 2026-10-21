@@ -7529,8 +7529,12 @@ function openStaffKanbanPage(sub, params) {
   const qs = params ? params.toString() : "";
   setRouteHash(`#staff-kanban${sub ? "/" + sub : ""}${qs ? "?" + qs : ""}`);
   updateTopbarTitle();
-  loadStaffKanban().then((k) => { if (!staffKanbanPage.hidden) k.show(sub, params || new URLSearchParams()); })
-    .catch((err) => { console.error("backlog-tracker: couldn't load Staff Kanban", err); showAlert("Staff Kanban couldn't load. Reload the page and try again."); });
+  window.__kbDiag?.(`page shown (hash ${window.location.hash}); board loading`);
+  loadStaffKanban().then((k) => {
+    window.__kbDiag?.(`board code loaded; kanban page ${staffKanbanPage.hidden ? "HIDDEN before drawing" : "visible"}`);
+    if (!staffKanbanPage.hidden) { k.show(sub, params || new URLSearchParams()); window.__kbDiag?.("board drawn"); }
+  })
+    .catch((err) => { window.__kbDiagError?.(`load failed: ${err && (err.stack || err.message)}`); console.error("backlog-tracker: couldn't load Staff Kanban", err); showAlert("Staff Kanban couldn't load. Reload the page and try again."); });
 }
 function openStaffKanbanRouteFromHash(hash) {
   const rest = hash.slice("#staff-kanban".length).replace(/^\//, "");
@@ -7539,6 +7543,7 @@ function openStaffKanbanRouteFromHash(hash) {
 }
 function closeStaffKanbanPage() {
   if (staffKanbanPage.hidden) return;
+  window.__kbDiag?.(`kanban page closed by: ${(new Error().stack || "").split("\n").slice(2, 5).map((l) => l.trim()).join(" ← ")}`);
   staffKanbanPage.hidden = true;
   if (staffKanban) staffKanban.hide();
   document.getElementById("projects-root").hidden = false;
@@ -10190,7 +10195,10 @@ function wireFaqArticleRowInteractions(containerId) {
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
 document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage("all"); });
 document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
-document.getElementById("staff-kanban-btn").addEventListener("click", () => { closeNavDrawer(); openStaffKanbanPage(""); });
+document.getElementById("staff-kanban-btn").addEventListener("click", () => {
+  window.__kbDiag?.("handler: tap received");
+  try { closeNavDrawer(); openStaffKanbanPage(""); } catch (err) { window.__kbDiagError?.(`handler threw: ${err && (err.stack || err.message)}`); throw err; }
+});
 document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
 
 // Command-K: one flat list of everything a person might want to jump to.
