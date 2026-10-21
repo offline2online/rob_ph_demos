@@ -40,6 +40,8 @@
        reviews it. Same-origin also means it's covered by the hosting
        headers in firebase.json and needs no SRI. -->
   <script src="js/vendor/purify.min.js" defer></script>
+  <!-- TEMPORARY (21 Oct 2026): Staff Kanban tap diagnostic for the iPad bug — see js/kanban-diag.js. -->
+  <script src="js/kanban-diag.js"></script>
   <!-- auth-gate.js only imports app.js once the session is confirmed, and
        app.js in turn pulls the Firestore and Storage SDKs (the two largest
        modules on the page) from gstatic. Without these hints that whole
