@@ -1793,6 +1793,7 @@ const TRAIN_TEST_WORKFLOWS = [
   { workflow: "firestore-rules-test.yml", prefix: "backlog-tracker/", label: "console tests" },
   { workflow: "e2e-quick.yml", prefix: "dsp-integration/", label: "DSP tests (e2e-quick)" },
   { workflow: "retail-media-insights-tests.yml", prefix: "Retail-media-insights/", label: "Retail Media Insights tests" },
+  { workflow: "kanban-staff-board-tests.yml", prefix: "kanban-staff-board/", label: "Staff Kanban tests" },
 ];
 const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 
