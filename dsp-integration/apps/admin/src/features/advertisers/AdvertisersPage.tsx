@@ -539,7 +539,7 @@ function AssignedCell({ data, context }: IP) {
       label={`${data.displayTypeName} slot ${data.zoneSlot}`}
       ids={tiersOf(a)}
       names={new Map(c.buyersLists.map((l) => [l.id, l.name]))}
-      cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType, l.ratePerDay), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
+      cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType, l.termTotal), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
       openAuction={a.openAuction === true}
@@ -985,6 +985,33 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     return true
   }
 
+  /* A slot added to or taken from a SHARED guaranteed deal changes its committed plays (derived from its slots), so buyers must accept again (21 Oct 2026): the API holds the save until it is confirmed here. False when the user keeps editing. */
+  const confirmReshare = (reasons: string[]) => new Promise<boolean>((resolve) => {
+    modal.confirm({
+      title: 'Shared deals will need to be re-shared',
+      content: (
+        <div data-testid="reshare-warning">
+          <p>This change adds or removes slots on a deal that has already been shared. Its committed plays will change, so the deal must be re-shared and accepted again by the buyer. The updated deal is not re-sent to the DSPs until you confirm.</p>
+          <ul style={{ paddingLeft: 18, margin: 0 }}>{reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+        </div>
+      ),
+      okText: 'Save and re-share', cancelText: 'Keep editing',
+      onOk: () => resolve(true), onCancel: () => resolve(false),
+    })
+  })
+  const putInventory = async (items: unknown[]): Promise<boolean> => {
+    try {
+      await api('PUT', '/admin/v1/available-inventory', { items })
+      return true
+    } catch (e) {
+      const asks = e instanceof ApiRequestError && e.status === 400 ? (e.body?.error.details ?? []).filter((d) => d.field === 'confirmReshare') : []
+      if (!asks.length) throw e
+      if (!(await confirmReshare(asks.map((d) => d.reason ?? '')))) return false
+      await api('PUT', '/admin/v1/available-inventory', { items, confirmReshare: true })
+      return true
+    }
+  }
+
   const onSave = async () => {
     setSaving(true)
     let sent: { displayTypeId: string; slot: number }[] = []
@@ -1008,7 +1035,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
             maxCampaignsDefault: maxCampaignsDefaults.draft![r.displayTypeId] ?? null, maxPlayLengthSecDefault: maxPlayLengthDefaults.draft![r.displayTypeId] ?? null,
           }))
         sent = items
-        await api('PUT', '/admin/v1/available-inventory', { items })
+        /* Cancelling the re-share warning leaves the draft as it is, unsaved. */
+        if (!(await putInventory(items))) return
         inv.commitNext()
         billingUnitDefaults.commitNext()
         maxCampaignsDefaults.commitNext()

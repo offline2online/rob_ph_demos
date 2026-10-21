@@ -791,6 +791,7 @@ paths:
               type: object
               required: [items]
               properties:
+                confirmReshare: {type: boolean, description: 'Send true to confirm a save that adds or removes a slot on a SHARED Programmatic guaranteed deal. Its committed plays are derived from its slots, so they change and the deal must be re-shared and accepted again by the buyer; without true the save is refused (400, one `confirmReshare` detail per deal) and nothing is written.'}
                 items:
                   type: array
                   items:
@@ -1247,8 +1248,9 @@ paths:
                     throughout the delivery term. A new value is refused
                     (400); leave it null.
                 dealType: {type: string, enum: [private_auction, preferred, guaranteed], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
-                committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
-                ratePerDay: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
+                committedPlays: {type: [integer, 'null'], description: 'Not accepted (21 Oct 2026): a guaranteed deal''s committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal.'}
+                termTotal: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
+                ratePerDay: {type: [number, 'null'], description: 'Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term.'}
                 floorCpm:
                   type: [number, 'null']
                   exclusiveMinimum: 0
@@ -1391,8 +1393,9 @@ paths:
                   format: date-time
                   description: 'Retired (16 Oct 2026); see POST''s description. A new value is refused (400); a deal that already has one may send it back unchanged, and it has no effect.'
                 dealType: {type: string, enum: [private_auction, preferred, guaranteed], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
-                committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
-                ratePerDay: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
+                committedPlays: {type: [integer, 'null'], description: 'Not accepted (21 Oct 2026): a guaranteed deal''s committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal.'}
+                termTotal: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
+                ratePerDay: {type: [number, 'null'], description: 'Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term.'}
                 floorCpm:
                   type: [number, 'null']
                   exclusiveMinimum: 0
@@ -2973,7 +2976,6 @@ components:
         bidLookaheadSeconds: {type: integer, minimum: 1, default: 35, description: 'Real-time bidding: how many seconds before a slot plays its auction opens, so the winning creative can be downloaded and rendered in time. Company-wide. Default 35, matching Broadsign Reach (its Real-Time Audience API sends bid requests about 35 s before the expected programmatic slot). Optional on save: omitted keeps the stored value.'}
         cachedAssetRetentionHours: {type: integer, minimum: 1, default: 48, description: 'Pre-caching: how many hours PH Core''s PWA player may retain a cached, approved creative before evicting it. Company-wide. Default 48, matching Broadsign Air''s pre-cache horizon. An upper bound, not a guaranteed hold: a rejected creative is evicted at once, and the player''s disk cap and least-recently-used eviction still apply. Optional on save: omitted keeps the stored value.'}
         maxPlayLengthSec: {type: integer, minimum: 1, maximum: 600, default: 15, description: 'Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / (max play length x slots in the rotation)) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.'}
-        defaultCommittedPlays: {type: integer, minimum: 1, nullable: true, description: 'Play config: the committed-plays figure a new buyers list is pre-filled with (the field stays editable per list; editing a saved list never changes it). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it.'}
         uncachedRestriction: {type: string, enum: [off, fixed, store_open], default: off, description: 'Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day, in the player''s local time. `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.'}
         uncachedRestrictionStart: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', default: '09:00', description: 'Start of the daily restricted window (HH:MM, UTC); used when uncachedRestriction is `fixed`. A start after the end wraps past midnight. Optional on save.'}
         uncachedRestrictionEnd: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', default: '18:00', description: 'End of the daily restricted window (HH:MM, UTC, exclusive); used when uncachedRestriction is `fixed`. Optional on save.'}
@@ -3089,9 +3091,10 @@ components:
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
         rateCpm: {type: number, description: The deal's resolved base floor in USD CPM.}
-        rateType: {type: string, enum: ['Fixed per day'], description: 'Present on a Programmatic guaranteed deal priced per day: the slot is booked for each full 24-hour day at `ratePerDay`.'}
-        ratePerDay: {type: number, description: The flat USD rate for one full day on a slot.}
-        billingPeriodHours: {type: integer, enum: [24], description: The length of the priced period.}
+        rateType: {type: string, enum: ['Fixed per term'], description: 'Present on a Programmatic guaranteed deal priced as a total for its term: `termTotal` is the USD amount for the whole delivery term.'}
+        termTotal: {type: number, description: The USD total for the whole delivery term.}
+        termDays: {type: [integer, 'null'], description: 'Programmatic guaranteed only: calendar days in the delivery term, both ends included (null while either end is open).'}
+        committedPlays: {type: [integer, 'null'], description: 'Programmatic guaranteed only: the volume derived from the assigned slots over the whole term, less the guarantee buffer.'}
         equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}, description: 'The same price as a CPM over the assigned slots'' forecast, for comparison; null until a slot is assigned.'}
         creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
     DealSheet:
@@ -3104,13 +3107,13 @@ components:
         currency: {type: string}
         rateCpm: {type: number, description: 'The rate in CPM: the deal''s locked rate once it has one, else its resolved base floor.'}
         rateKind: {type: string, enum: [floor, fixed]}
-        ratePerDay: {type: [number, 'null'], description: Fixed per day only. The flat USD rate for one 24-hour day on a slot.}
-        billingPeriodHours: {type: [integer, 'null'], description: 'Fixed per day only: 24.'}
-        equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}, description: 'Fixed per day only: the rate per day as a CPM over the assigned slots'' forecast; null until a slot is assigned.'}
+        termTotal: {type: [number, 'null'], description: Fixed per term only. The USD total for the whole delivery term.}
+        termDays: {type: [integer, 'null'], description: 'Programmatic guaranteed only: calendar days in the delivery term (null while either end is open).'}
+        equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}, description: 'Fixed per term only: the total as a CPM over the assigned slots'' forecast for the term; null until a slot is assigned.'}
         activeFrom: {type: [string, 'null']}
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
-        committedPlays: {type: [integer, 'null'], description: Guaranteed deals only.}
+        committedPlays: {type: [integer, 'null'], description: 'Guaranteed deals only: derived from the assigned slots over the whole delivery term, less the guarantee buffer.'}
         entries: {type: array, items: {$ref: '#/components/schemas/DealSheetEntry'}}
         slots:
           type: array
@@ -3242,7 +3245,7 @@ components:
             rateDetails:
               type: object
               required: [rate, rateType, currency]
-              properties: {rate: {type: number, description: 'USD per CPM, or per 24-hour day when rateType is Fixed per day.'}, rateType: {type: string, enum: [CPM floor, CPM fixed, Fixed per day]}, currency: {type: string}, billingPeriodHours: {type: integer, description: 'Fixed per day: 24.'}, equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}}}
+              properties: {rate: {type: number, description: 'USD per CPM, or the USD total for the whole delivery term when rateType is Fixed per term.'}, rateType: {type: string, enum: [CPM floor, CPM fixed, Fixed per term]}, currency: {type: string}, termDays: {type: [integer, 'null'], description: 'Fixed per term: calendar days in the delivery term.'}, equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}}}
             timeRange:
               type: object
               required: [startTime, endTime]
@@ -3283,10 +3286,10 @@ components:
       type: object
       required: [field, from, to]
       properties:
-        field: {type: string, enum: [floorCpm, ratePerDay, committedPlays, activeFrom, activeTo, auctionCloses, invitedBuyers, invitedCategories]}
+        field: {type: string, enum: [floorCpm, termTotal, committedPlays, activeFrom, activeTo, auctionCloses, invitedBuyers, invitedCategories]}
         from: {description: Previous value (any JSON)}
         to: {description: New value (any JSON)}
-        requiresReacceptance: {type: boolean, description: 'True for floorCpm, ratePerDay, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance.'}
+        requiresReacceptance: {type: boolean, description: 'True for floorCpm, termTotal, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance.'}
     TermCheck:
       type: object
       required: [currentVersion, nextVersion, changes, requiresReacceptance, affectedBuyers]
@@ -3379,12 +3382,12 @@ components:
           items: {$ref: '#/components/schemas/BuyerAcceptance'}
         effectiveCommittedPlays: {$ref: '#/components/schemas/EffectiveTerm'}
         effectiveRateCpm: {$ref: '#/components/schemas/EffectiveTerm'}
-        ratePerDay: {type: [number, 'null'], description: 'Programmatic guaranteed priced per day: the flat USD rate for one 24-hour day on a slot; null for a deal that pre-dates per-day pricing or is not guaranteed.'}
+        termTotal: {type: [number, 'null'], description: 'Programmatic guaranteed priced as a total for its term: the USD amount for the whole delivery term; null when it is priced as a CPM or is not guaranteed.'}
         equivalentCpm:
           type: [object, 'null']
           readOnly: true
           required: [min, max]
-          description: 'ratePerDay / forecast impressions per day x 1000 across the assigned slots (min and max differ when slots differ). Null while the deal has no rate per day or no assigned slot to forecast from.'
+          description: 'termTotal / forecast impressions over the term x 1000 across the assigned slots (min and max are the same blended figure). Null while the deal has no total for the term, no closed term or no assigned slot to forecast from.'
           properties: {min: {type: number}, max: {type: number}}
         id: {type: string}
         deals:
@@ -3436,8 +3439,11 @@ components:
             (7 Oct 2026; open question 45). Volume is carried by deals,
             never by the open auction, which stays per play and holds no
             block of plays. null = no volume commitment (the deal is per
-            play). For a guaranteed deal the figure is sized from the
-            forecast plus the contingency buffer, not typed in here.
+            play). For a guaranteed deal (21 Oct 2026) the figure is derived:
+            floor(forecast plays of every assigned slot over the whole delivery
+            term x (1 - guarantee buffer %)). It is null until a slot is
+            assigned and the term has both dates, recalculates when slots or
+            dates change, and is never typed in.
         deliveredPlays:
           type: integer
           minimum: 0

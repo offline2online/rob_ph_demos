@@ -1,5 +1,6 @@
-/* Rob, 7 Oct 2026: committed volume and rate show on every buyers list and are never blank. They inherit
-   platform default -> DSP -> buyers list. Rate is the base bid floor in USD CPM. */
+/* Rob, 7 Oct 2026: the rate shows on every buyers list and is never blank. It inherits platform default -> DSP -> buyers
+   list; it is the base bid floor in USD CPM. Committed volume no longer inherits (21 Oct 2026): it is derived from the
+   deal's assigned slots (pg-term.test.ts). */
 import { describe, expect, it } from 'vitest'
 import { effectiveTerm } from '../src/domain/pricing'
 import { buildApp } from '../src/http/app'
@@ -10,19 +11,19 @@ import { testContext } from './helpers'
 const list = { name: 'Q4', description: '', dealType: 'guaranteed', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }
 const api = '/api/admin/v1'
 
-describe('buyers list committed volume and rate inherit platform -> DSP -> list', () => {
-  it('shows the platform default, then the DSP value, then the list’s own, never blank', async () => {
+describe('buyers list rate inherits platform -> DSP -> list', () => {
+  it('shows the platform default, then the DSP value, then the list’s own, never blank, and no inherited volume', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
     const settings = (await app.inject({ method: 'GET', url: `${api}/advertiser-settings` })).json()
-    const put = await app.inject({ method: 'PUT', url: `${api}/advertiser-settings`, payload: { ...settings, floorCpm: 100, defaultCommittedPlays: 5000 } })
+    const put = await app.inject({ method: 'PUT', url: `${api}/advertiser-settings`, payload: { ...settings, floorCpm: 100 } })
     expect(put.statusCode).toBe(200)
     const read = async (id: string) => (await app.inject({ method: 'GET', url: `${api}/buyers-lists` })).json().items.find((l: { id: string }) => l.id === id)
 
     const created = await app.inject({ method: 'POST', url: `${api}/buyers-lists`, payload: list })
     expectMatchesContract('POST', '/admin/v1/buyers-lists', 201, created.json())
     const id = created.json().id
-    expect((await read(id)).effectiveCommittedPlays).toEqual({ min: 5000, max: 5000, source: 'platform' })
+    expect((await read(id)).effectiveCommittedPlays).toEqual({ min: null, max: null, source: 'none' })
     expect((await read(id)).effectiveRateCpm).toEqual({ min: 100, max: 100, source: 'platform' })
 
     const dsp = await app.inject({ method: 'PUT', url: `${api}/partners/p_google`, payload: { bidder: { committedPlays: 8000, floorCpm: 120 } } })
@@ -30,11 +31,9 @@ describe('buyers list committed volume and rate inherit platform -> DSP -> list'
     expect(dsp.json().bidder).toMatchObject({ committedPlays: 8000, floorCpm: 120 })
     const listed = await app.inject({ method: 'GET', url: `${api}/buyers-lists` })
     expectMatchesContract('GET', '/admin/v1/buyers-lists', 200, listed.json())
-    expect((await read(id)).effectiveCommittedPlays).toEqual({ min: 8000, max: 8000, source: 'dsp' })
     expect((await read(id)).effectiveRateCpm).toEqual({ min: 120, max: 120, source: 'dsp' })
 
-    await app.inject({ method: 'PUT', url: `${api}/buyers-lists/${id}`, payload: { ...list, committedPlays: 1200, floorCpm: 150 } })
-    expect((await read(id)).effectiveCommittedPlays).toEqual({ min: 1200, max: 1200, source: 'buyer' })
+    await app.inject({ method: 'PUT', url: `${api}/buyers-lists/${id}`, payload: { ...list, floorCpm: 150 } })
     expect((await read(id)).effectiveRateCpm).toEqual({ min: 150, max: 150, source: 'buyer' })
 
     /* A private auction commits no volume, whatever the levels above hold; its rate still inherits. */

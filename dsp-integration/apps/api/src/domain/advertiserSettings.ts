@@ -41,9 +41,6 @@ export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> |
   /* Optional on save (omitted keeps the stored value); when sent, a percentage from 0 to 50. */
   const buf = b?.guaranteeBufferPct
   if (buf !== undefined && (typeof buf !== 'number' || !Number.isFinite(buf) || buf < 0 || buf > MAX_GUARANTEE_BUFFER_PCT)) out.push({ field: 'guaranteeBufferPct', reason: `The guarantee buffer is a percentage from 0 to ${MAX_GUARANTEE_BUFFER_PCT}.` })
-  /* Optional on save (omitted keeps the stored value, null clears it); when a number, a whole number of plays, at least 1. */
-  const dcp = b?.defaultCommittedPlays
-  if (dcp !== undefined && dcp !== null && (typeof dcp !== 'number' || !Number.isInteger(dcp) || dcp < 1)) out.push({ field: 'defaultCommittedPlays', reason: 'Default committed plays is a whole number of plays, at least 1, or empty.' })
   /* Optional on save (omitted keeps the stored value); when sent, whole seconds within the allowed range. */
   const mpl = b?.maxPlayLengthSec
   if (mpl !== undefined && (typeof mpl !== 'number' || !Number.isInteger(mpl) || mpl < MIN_MAX_PLAY_LENGTH_SEC || mpl > MAX_MAX_PLAY_LENGTH_SEC)) out.push({ field: 'maxPlayLengthSec', reason: `Max play length is a whole number of seconds from ${MIN_MAX_PLAY_LENGTH_SEC} to ${MAX_MAX_PLAY_LENGTH_SEC}.` })

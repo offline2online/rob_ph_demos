@@ -270,7 +270,7 @@ describe('Run 7 — D4 programmatic guaranteed: reserve with committed volume', 
   it('D4.1b — a programmatic guaranteed deal is one-to-one with its buyer: two buyers are refused on create and on update, private auction is unchanged', async () => {
     const h = await dealHarness('guaranteed')
     const two = [{ partnerId: 'p_google', seatId: '5130002' }, { partnerId: 'p_google', seatId: '5130001' }]
-    const base = { name: 'D4.1b', dealType: 'guaranteed', committedPlays: 900 }
+    const base = { name: 'D4.1b', dealType: 'guaranteed' }
     const created = await h.app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...base, invitedBuyers: two } })
     expect(created.statusCode).toBe(400)
     expect(created.json().error.details.map((d: { field: string }) => d.field)).toEqual(['invitedBuyers'])
@@ -331,6 +331,30 @@ describe('Run 7 — D4 programmatic guaranteed: reserve with committed volume', 
     expect(second.statusCode).toBe(409)
     expect(h.campaigns.handoffs.filter((b) => b.windowStart === day(1).toISOString())).toHaveLength(1)
     expect(h.campaigns.refusedBookings).toEqual([])
+  })
+
+  /* Ticket LjkTqL4rdegolMoFCYVJ (21 Oct 2026): one deal per flight. The deal covers a delivery term (a single day is a one-day range); its committed plays are derived from the slots assigned to it, never typed in or defaulted. */
+  it('D4.7 — one deal covers the whole delivery term: committed plays derive from the assigned slot over the range, less the buffer', async () => {
+    const h = await harness()
+    const ymd = (n: number) => day(n).toISOString().slice(0, 10)
+    const create = (extra: Record<string, unknown>) => h.app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { name: 'D4.7', dealType: 'guaranteed', status: 'draft', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }], ...extra } })
+    const term = { activeFrom: `${ymd(1)}T00:00:00.000Z`, activeTo: `${ymd(30)}T23:59:59.999Z` }
+    const typed = await create({ ...term, committedPlays: 900 })
+    expect(typed.statusCode).toBe(400)
+    const created = (await create(term)).json()
+    expect(created).toMatchObject({ dealType: 'guaranteed', committedPlays: null })
+    /* The real Available Inventory save, which is what recalculates the figure. */
+    const assign = async (id: string) => expect((await h.app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: DT, slot: 1, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: id } }] } })).statusCode).toBe(200)
+    await assign(created.id)
+    const read = async (id: string) => (await h.app.inject({ url: '/api/admin/v1/buyers-lists' })).json().items.find((l: { id: string }) => l.id === id)
+    /* Two displays play a 15-second slot 5,760 times a day each, 11,520 in all: 30 days, less the 10% buffer. */
+    expect((await read(created.id)).committedPlays).toBe(Math.floor(11520 * 30 * (1 - BUFFER_PCT / 100)))
+    /* A shorter range commits less; a single day is a one-day range. */
+    const week = await h.app.inject({ method: 'PUT', url: `/api/admin/v1/buyers-lists/${created.id}`, payload: { name: 'D4.7', dealType: 'guaranteed', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }], activeFrom: term.activeFrom, activeTo: `${ymd(7)}T23:59:59.999Z` } })
+    expect(week.json().committedPlays).toBe(Math.floor(11520 * 7 * (1 - BUFFER_PCT / 100)))
+    const oneDay = (await create({ activeFrom: `${ymd(1)}T00:00:00.000Z`, activeTo: `${ymd(1)}T23:59:59.999Z` })).json()
+    await assign(oneDay.id)
+    expect((await read(oneDay.id)).committedPlays).toBe(Math.floor(11520 * (1 - BUFFER_PCT / 100)))
   })
 
   /* AWS demo path 2 (ticket sGXWYJjMiQAlzXrhwQ8y, 20 Oct 2026): one slot, one advertiser, one full day at a fixed CPM with a guaranteed impression count. Playing the creative for the 24 hours is PH Core's; this asserts what the exchange owns — the booking, its window, the price, the guarantee and the bill. */

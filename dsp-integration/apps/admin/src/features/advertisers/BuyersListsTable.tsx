@@ -18,7 +18,7 @@ import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { DealSheetModal } from './DealSheetModal'
-import { buyerStatusOf, cpmKindHint, ratePerDayText, rateTypeOf, rateValue, sourceLabel } from './effectiveTerm'
+import { buyerStatusOf, cpmKindHint, termTotalText, rateTypeOf, rateValue, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }
@@ -126,14 +126,14 @@ const Sub = ({ children }: { children: string }) => <div style={{ fontSize: 11.5
 const RateCell = ({ data, context }: P) => {
   if (!data) return null
   if (data.lockedWin) return <Tip title="Locked: the rate this deal's auction settled at, billed for the rest of its flight."><span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span></Tip>
-  const perDay = data.dealType === 'guaranteed' && data.ratePerDay != null
-  const text = perDay ? ratePerDayText(data.ratePerDay) : rateValue(data.effectiveRateCpm)
+  const perTerm = data.dealType === 'guaranteed' && data.termTotal != null
+  const text = perTerm ? termTotalText(data.termTotal) : rateValue(data.effectiveRateCpm)
   const src = sourceLabel(data.effectiveRateCpm?.source ?? 'none')
   /* A per-day rate's hover also lists each assigned slot with its anticipated plays and the plays left after the guarantee buffer. */
   const { bufferPct } = context.current
-  const slots = perDay ? context.current.slots.get(data.id) ?? [] : []
-  const base = `${cpmKindHint(data.dealType, data.ratePerDay)}${src ? ` Source: ${src}.` : ''}`
-  const tip = perDay && slots.length ? (
+  const slots = perTerm ? context.current.slots.get(data.id) ?? [] : []
+  const base = `${cpmKindHint(data.dealType, data.termTotal)}${src ? ` Source: ${src}.` : ''}`
+  const tip = perTerm && slots.length ? (
     <div>
       <div>{base}</div>
       {slots.map((r, i) => (
@@ -152,7 +152,7 @@ const RateCell = ({ data, context }: P) => {
     </div>
   ) : base
   return text
-    ? <Tip title={tip}><div><span style={{ fontSize: 12.5 }}>{text}</span> <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateTypeOf(data.dealType, data.ratePerDay)}</span>{!perDay && <Sub>{src}</Sub>}</div></Tip>
+    ? <Tip title={tip}><div><span style={{ fontSize: 12.5 }}>{text}</span> <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateTypeOf(data.dealType, data.termTotal)}</span>{!perTerm && <Sub>{src}</Sub>}</div></Tip>
     : <span style={{ color: T.muted }}>Per play</span>
 }
 const DealIdCell = ({ data, context }: P) => {
@@ -194,7 +194,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
   const columns = useMemo<ColDef<BuyersList>[]>(() => [
     { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${JSON.stringify(p.data?.targeting ?? [])}|${p.data?.status}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}` },
     { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
-    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.ratePerDay, p.context.current.slots.get(p.data?.id ?? '') ?? [], p.context.current.bufferPct]) },
+    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.termTotal, p.context.current.slots.get(p.data?.id ?? '') ?? [], p.context.current.bufferPct]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },

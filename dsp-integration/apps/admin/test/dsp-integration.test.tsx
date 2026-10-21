@@ -214,7 +214,8 @@ describe('Advertiser settings page', () => {
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Guarantee buffer/, { selector: 'input' })).toBeInTheDocument()
-    expect(screen.getByLabelText(/Default committed plays/, { selector: 'input' })).toBeInTheDocument()
+    /* Default committed plays is retired (21 Oct 2026): a guaranteed deal's plays are derived from its slots. */
+    expect(screen.queryByLabelText(/Default committed plays/)).not.toBeInTheDocument()
     expect(screen.getByLabelText(/Max play length/, { selector: 'input' })).toBeInTheDocument()
     expect(document.getElementById('uncachedRestriction')).not.toBeNull()
     expect(document.getElementById('uncachedRestrictionStart')).toBeNull()
@@ -887,19 +888,19 @@ describe('Advertisers / Inventory', () => {
     expect(within(table).queryByText('24,960')).toBeNull()
   })
 
-  /* Ticket qnA1jQbjNdP8U0SCtgM9 (21 Oct 2026): a per-day rate drops the equivalent CPM; hovering it lists each slot's anticipated plays and the plays after the guarantee buffer. */
-  it('shows the rate per day alone, with each slot’s anticipated and buffer-adjusted plays on hover', async () => {
+  /* Ticket qnA1jQbjNdP8U0SCtgM9 (21 Oct 2026): a total for the term drops the equivalent CPM; hovering it lists each slot's anticipated plays and the plays after the guarantee buffer. */
+  it('shows the total for the term alone, with each slot’s anticipated and buffer-adjusted plays on hover', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
     const row = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }
     const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_1', buyersListIds: ['bl_1'] }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...ADVERTISER_PAGE,
-      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'guaranteed', ratePerDay: 500, equivalentCpm: { min: 5, max: 5 } }] },
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'guaranteed', termTotal: 500, equivalentCpm: { min: 5, max: 5 } }] },
       '/api/admin/v1/available-inventory': { ...inv, items: [{ ...row, assignedTo: assigned }] },
     })))
     renderAt('/advertisers')
     const table = await screen.findByLabelText('Deals and buyers lists')
-    const rate = await within(table).findByText('USD 500 per day')
+    const rate = await within(table).findByText('USD 500 for the term')
     expect(within(table).queryByText(/CPM/)).toBeNull()
     fireEvent.mouseOver(rate)
     const tip = await screen.findByRole('tooltip')
@@ -973,31 +974,71 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   }, slow(30000))
 
-  /* Ticket rx1RfF2p7tyqJABWHR0q (20 Oct 2026): Programmatic guaranteed books whole 24-hour days at a flat rate per day. */
-  const perDayFetch = (list: Record<string, unknown>, puts: unknown[]) => vi.fn(async (url: string, init?: RequestInit) => {
+  /* Ticket LjkTqL4rdegolMoFCYVJ (21 Oct 2026): a Programmatic guaranteed deal covers a whole delivery term, priced as a fixed CPM or a total for the term; its committed plays are derived from the assigned slots and shown read-only once there are some. */
+  const perTermFetch = (list: Record<string, unknown>, puts: unknown[]) => vi.fn(async (url: string, init?: RequestInit) => {
     const path = url.split('?')[0]
     if (init?.method === 'POST' && path.endsWith('/term-check')) return new Response(JSON.stringify({ currentVersion: 1, nextVersion: 1, changes: [], requiresReacceptance: false, affectedBuyers: [] }), { status: 200 })
     if (init?.method === 'PUT') { puts.push(JSON.parse(String(init.body))); return new Response(JSON.stringify(list), { status: 200 }) }
     return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [list] } })(url)
   })
-  const PER_DAY_LIST = { ...TERMS_LIST, dealType: 'guaranteed', status: 'draft', sharedAt: null, termVersion: 1, buyerAcceptance: [], committedPlays: 1000, ratePerDay: 500, equivalentCpm: { min: 5, max: 5 } }
+  const PG_LIST = { ...TERMS_LIST, dealType: 'guaranteed', status: 'draft', sharedAt: null, termVersion: 1, buyerAcceptance: [], committedPlays: null, termTotal: null, floorCpm: null, equivalentCpm: null }
+  const SLOT = { positionId: 'menu_board.s2', label: 'Menu Board — Long Format' }
 
-  it('a guaranteed deal is priced per day: Rate per day, Fixed per day, no equivalent CPM field, and the explanation in a tooltip', async () => {
+  it('a guaranteed deal is priced as a fixed CPM or a total for the term, never per day', async () => {
     const puts: unknown[] = []
-    vi.stubGlobal('fetch', perDayFetch({ ...PER_DAY_LIST, assignedSlots: [{ positionId: 'menu_board.s2', label: 'Menu Board — Long Format' }] }, puts))
+    vi.stubGlobal('fetch', perTermFetch({ ...PG_LIST, termTotal: 500, equivalentCpm: { min: 5, max: 5 }, assignedSlots: [SLOT] }, puts))
     const dialog = await openTermsEditor()
-    const rate = within(dialog).getByRole('spinbutton', { name: 'Rate per day' })
-    expect(rate).toHaveValue('500.00')
-    expect(within(dialog).queryByRole('textbox', { name: 'Equivalent CPM' })).not.toBeInTheDocument()
-    expect(within(dialog).getByTestId('rate-type')).toHaveTextContent('Fixed per day')
-    expect(within(dialog).queryByText(/full 24 hours per day at a flat daily rate/)).not.toBeInTheDocument()
-    expect(within(dialog).queryByLabelText('Rate')).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('spinbutton', { name: 'Rate per day' })).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('combobox', { name: 'Price type' })).toBeInTheDocument()
+    const total = within(dialog).getByRole('spinbutton', { name: 'Total for the term' })
+    expect(total).toHaveValue('500.00')
+    expect(within(dialog).getByTestId('rate-type')).toHaveTextContent('Fixed per term')
+    expect(within(dialog).getByTestId('equivalent-cpm')).toHaveTextContent('Equivalent CPM 5')
     /* The flight is picked in whole days: no time-of-day picker. */
     expect(dialog.querySelector('.ant-picker-time-panel')).toBeNull()
-    fireEvent.change(rate, { target: { value: '1000' } })
+    fireEvent.change(total, { target: { value: '1000' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save draft' }))
     await waitFor(() => expect(puts).toHaveLength(1))
-    expect(puts[0]).toMatchObject({ dealType: 'guaranteed', ratePerDay: 1000 })
+    expect(puts[0]).toMatchObject({ dealType: 'guaranteed', termTotal: 1000 })
+    expect(puts[0]).not.toHaveProperty('ratePerDay')
+    expect(puts[0]).not.toHaveProperty('committedPlays')
+  }, slow(30000))
+
+  it('hides committed plays until slots are assigned, then shows the derived figure read-only and never sends it', async () => {
+    const puts: unknown[] = []
+    vi.stubGlobal('fetch', perTermFetch({ ...PG_LIST, assignedSlots: [] }, puts))
+    let dialog = await openTermsEditor()
+    expect(within(dialog).queryByLabelText('Committed plays')).not.toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Guaranteed impressions')).not.toBeInTheDocument()
+    cleanup()
+    vi.stubGlobal('fetch', perTermFetch({ ...PG_LIST, committedPlays: 155520, assignedSlots: [SLOT] }, puts))
+    dialog = await openTermsEditor()
+    const plays = within(dialog).getByLabelText('Committed plays')
+    expect(plays).toHaveValue('155,520')
+    expect(plays).toHaveAttribute('readonly')
+    expect(within(dialog).getByTestId('committed-plays')).toHaveTextContent('guarantee buffer')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save draft' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).not.toHaveProperty('committedPlays')
+  }, slow(30000))
+
+  it('warns that a changed term changes the committed plays and the deal must be re-shared, and cancelling saves nothing', async () => {
+    const puts: unknown[] = []
+    const shared = { ...PG_LIST, status: 'shared', sharedAt: '2026-10-20T00:00:00.000Z', committedPlays: 1000, assignedSlots: [SLOT] }
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const path = url.split('?')[0]
+      if (init?.method === 'POST' && path.endsWith('/term-check')) return new Response(JSON.stringify({ currentVersion: 1, nextVersion: 2, changes: [{ field: 'committedPlays', from: 1000, to: 1500, requiresReacceptance: true }], requiresReacceptance: true, affectedBuyers: [{ partnerId: 'p_google', partnerName: 'Google DV360', seatId: '5130001', acceptedVersion: 1 }] }), { status: 200 })
+      if (init?.method === 'PUT') { puts.push(JSON.parse(String(init.body))); return new Response(JSON.stringify(shared), { status: 200 }) }
+      return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [shared] } })(url)
+    }))
+    const dialog = await openTermsEditor()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+    const warning = await screen.findByTestId('reacceptance-warning')
+    expect(within(warning).getByTestId('committed-plays-change')).toHaveTextContent('from 1,000 to 1,500')
+    expect(warning).toHaveTextContent('re-shared and accepted again by the buyer')
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+    await waitFor(() => expect(screen.queryByTestId('reacceptance-warning')).not.toBeInTheDocument())
+    expect(puts).toHaveLength(0)
   }, slow(30000))
 
   it('Finalise confirms the slots and terms, and Share deal shares the deal', async () => {
