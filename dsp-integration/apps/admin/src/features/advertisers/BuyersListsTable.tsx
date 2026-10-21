@@ -230,6 +230,14 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     }
   }
 
+  /* Known from the rows already on screen, so the dialog says why Delete is off the moment it opens
+     rather than after a refused click; the API still enforces it (and names its own reasons) as a backstop. */
+  const assigned = deleting ? slots.get(deleting.id) ?? [] : []
+  const slotLine = (r: SlotInfo) => `${r.displayType}${r.description ? ` (${r.description})` : ''} · ${r.playlist || 'No playlist'} · ${r.position} (slot ${r.slot})`
+  const blockedMessage = deleting && (assigned.length
+    ? `“${deleting.name}” can’t be deleted because it is assigned to ${assigned.length} slot${assigned.length === 1 ? '' : 's'}.`
+    : deleteError?.message)
+
   return (
     <div className="mb-7">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -257,15 +265,26 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
       {deleting && (
         <DeleteDialog
           open={!!deleting} name={deleting.name}
-          blockedReason={deleteError?.message}
+          blockedReason={blockedMessage}
           deleting={deleteBusy} onDelete={confirmDelete} onClose={() => setDeleting(null)}
         >
-          This removes the deal and buyers list. It can’t be undone.
-          {deleteError?.body?.error.details?.length ? (
-            <ul className="mt-2 mb-0 pl-[18px]">
-              {deleteError.body.error.details.map((d, i) => <li key={i}>{d.reason}</li>)}
-            </ul>
-          ) : null}
+          {assigned.length ? (
+            <>
+              <div>{blockedMessage} Unassign it from each slot below in Available Inventory (the Assigned to column), then delete it.</div>
+              <ul className="mt-2 mb-0 pl-[18px]">
+                {assigned.map((r, i) => <li key={i}>{slotLine(r)}</li>)}
+              </ul>
+            </>
+          ) : (
+            <>
+              {deleteError ? <div>{deleteError.message}</div> : 'This removes the deal and buyers list. It can’t be undone.'}
+              {deleteError?.body?.error.details?.length ? (
+                <ul className="mt-2 mb-0 pl-[18px]">
+                  {deleteError.body.error.details.map((d, i) => <li key={i}>{d.reason}</li>)}
+                </ul>
+              ) : null}
+            </>
+          )}
         </DeleteDialog>
       )}
     </div>

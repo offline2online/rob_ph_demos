@@ -337,6 +337,12 @@ the same dialog for both.
   **Close**.
 - A confirmed delete takes effect immediately; it is not held for Save
   changes. Any other unsaved changes on the page are left as they were.
+- **Deleting a deal and buyers list** (Advertisers / Inventory) follows the
+  same dialog. A deal assigned to one or more slots can't be deleted: the
+  dialog opens already saying so ("can't be deleted because it is assigned to
+  N slots"), lists every slot it is assigned to (display type, playlist,
+  position and slot) and tells the person to unassign it in Available
+  Inventory first. **Delete is disabled**; the API refuses it as well.
 
 ### Help text
 
