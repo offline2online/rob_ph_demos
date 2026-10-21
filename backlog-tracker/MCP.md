@@ -130,6 +130,23 @@ empty or mis-edited collection can never lock everyone out.
 `get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
 `list_concepts`, `get_concept`.
 
+### Staff Kanban (the team's own task board)
+
+The human task board at `#staff-kanban` (kanban-staff-board/REQUIREMENTS.md
+→ KB-MCP-1; code in `functions/kanban.js`), separate from the Agent Board's
+tickets above. Every write is attributed to the calling member and logged in
+the ticket's activity; a viewer gets the read tools only. Staff can add,
+move and report on tasks by talking to their agent ("add a bug for Huy:
+the offer sweep ignores the store's time zone, about 4 hours, this release").
+
+| Read | Write (editor and admin) |
+| --- | --- |
+| `kanban_list_people` (members by first name, releases, sprints, current release, tester) | `kanban_create_task` (always into Backlog, next PH-n key) |
+| `kanban_list_tasks` (the board's filters: assignee or `me`, release, status, type, priority, sprint, label, flagged, search) | `kanban_update_task` (any field but the column) |
+| `kanban_get_task` (everything, with comments, activity and an epic's children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off) |
+| `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
+| `kanban_release_report` (outstanding, remaining effort, per-person capacity) | `kanban_comment` (`mention` notifies people on the board's bell) |
+
 **Reading ticket history.** `list_backlog_items` pages: it returns at most
 100 tickets per call (default 25), newest-updated first and then by id, plus
 `matched` (the total) and `nextCursor` — pass that back as `cursor` until it
