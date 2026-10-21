@@ -537,3 +537,5 @@ npm test
 - The API seeds an empty database on its first start (not with
   `NODE_ENV=production` unless `PH_SEED_DEMO=true`). Delete
   `data/poc.sqlite` and `data/assets/` to reseed.
+
+Direct advertisers in campaign authoring (22 Oct 2026, ticket knqu0B2PGTF9PG1EUWYD): `domain/advertiserDeals.ts` resolves a direct advertiser's own finalised Direct deals for `GET /admin/v1/advertisers/{id}/deals` and the deal-ID checks on the Partner API and `PUT /campaigns/{id}/deals`; see REQUIREMENTS.md → seat mapping and PH-CORE-BOUNDARIES.md.

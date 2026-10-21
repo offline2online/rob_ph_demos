@@ -1075,3 +1075,15 @@ PH Core's call, as analytics is PH Core's (Q53/Q54). This build passes no
 per-play attribute data to a partner: a DSP sees which of its campaigns
 played and the billed figures, never an attribute value or a per-play
 audience.
+
+
+## Direct advertiser campaign authoring and deal IDs (22 Oct 2026, ticket knqu0B2PGTF9PG1EUWYD)
+
+A direct advertiser authoring a campaign in PH Core picks its internal PH deal ID from
+`GET /admin/v1/advertisers/{id}/deals`, which lists the Direct advertiser deals it is the
+named buyer of that are finalised and whose delivery term covers the date. PH Core must:
+
+- offer that list in its deal-ID picker for a direct advertiser, and send the chosen `PH-` ID
+  as `dealId` (Partner API create) or in `PUT /campaigns/{id}/deals`;
+- treat the deal ID as owned by one advertiser: any other advertiser's ID is refused 400 here;
+- keep one campaign booking per slot and window as for any deal.

@@ -65,3 +65,44 @@ describe('Direct advertiser deals', () => {
     expect((await app.inject({ method: 'POST', url: `${URL}/${created.id}/acceptances`, payload: { partnerId: 'direct', seatId: 'acme-foods' } })).statusCode).toBe(400)
   })
 })
+
+/* Campaign authoring: a direct advertiser picks its own live Direct deal (ticket knqu0B2PGTF9PG1EUWYD). */
+describe('Direct advertiser deals in campaign authoring', () => {
+  const mk = async () => {
+    const { ctx, app, deal } = await setup()
+    await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Beta Co' } })
+    const make = async (extra: Record<string, unknown>) => (await app.inject({ method: 'POST', url: URL, payload: deal({ floorCpm: 150, ...extra }) })).json()
+    const live = async (id: string) => {
+      const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
+      await ctx.displayTypes.saveExtensions('portrait', { ...ext, slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: id, buyersListIds: [id], storeScope: null, quota: null, zoneId: null } as never] })
+      return app.inject({ method: 'POST', url: `${URL}/${id}/share` })
+    }
+    return { ctx, app, make, live }
+  }
+  const deals = async (app: Awaited<ReturnType<typeof mk>>['app'], id: string, at = '2026-11-10T00:00:00.000Z') =>
+    (await app.inject({ url: `/api/admin/v1/advertisers/${id}/deals?at=${at}` })).json().items as { dealId: string; dealType: string }[]
+
+  it('lists only its own finalised deal whose term covers the date', async () => {
+    const { app, make, live } = await mk()
+    const draft = await make({})
+    expect(await deals(app, 'acme-foods')).toEqual([])
+    expect((await live(draft.id)).statusCode).toBe(200)
+    const items = await deals(app, 'acme-foods')
+    expect(items.map((i) => i.dealId)).toEqual([draft.dealId])
+    expect(items[0].dealType).toBe('direct')
+    expect(await deals(app, 'acme-foods', '2026-12-15T00:00:00.000Z')).toEqual([])
+    expect(await deals(app, 'beta-co')).toEqual([])
+  })
+
+  it('a campaign takes its own advertiser’s deal ID and refuses another advertiser’s', async () => {
+    const { ctx, app, make, live } = await mk()
+    const acme = await make({})
+    await live(acme.id)
+    const { assertInvitedDeals } = await import('../src/domain/advertiserDeals')
+    const at = '2026-11-10T00:00:00.000Z'
+    await expect(assertInvitedDeals(ctx, 'acme-foods', 'dealId', [acme.dealId], [], at)).resolves.toBeUndefined()
+    await expect(assertInvitedDeals(ctx, 'beta-co', 'dealId', [acme.dealId], [], at)).rejects.toMatchObject({ status: 400 })
+    await expect(assertInvitedDeals(ctx, 'acme-foods', 'dealId', ['PH-NOPE000000'], [], at)).rejects.toMatchObject({ status: 400 })
+    void app
+  })
+})

@@ -836,7 +836,14 @@ buyers lists whose invited buyers include any of the advertiser's mapped seats
 (exact `{ partnerId, seatId }` match; an IAB-category invitation alone does not
 count) and whose delivery term covers `at` (default now); this is what the
 authoring deal-ID picker lists. A **direct advertiser has no mapping** (the PUT
-is refused) and resolves to no deals. **Kept live:** a re-sync that drops a seat
+is refused); it resolves to its own **Direct advertiser deals** instead (22 Oct
+2026, ticket knqu0B2PGTF9PG1EUWYD): those it is the named buyer of that are
+finalised (`status: shared`) with a delivery term covering `at`, each carrying
+its internal PH deal ID. Another advertiser's deal ID is refused 400 on the
+Partner API campaign create and both `PUT .../campaigns/{id}/deals` routes.
+Campaigns arrive in Campaign Approval carrying the deal ID and group under it as
+in Flow B. PH Core authoring must supply the deal ID the same way (see
+PH-CORE-BOUNDARIES.md). **Kept live:** a re-sync that drops a seat
 leaves it in `dspSeats` with `synced: false`, so it can be re-pointed, and it no
 longer resolves any deal. The mapping screen is not built yet; this is the data
 and API.
@@ -1284,6 +1291,7 @@ mapping, T0gLfo2zDrRXPVGcvEoL), so any non-empty deal ID is accepted for now.
 | A5 | Direct | Reject with and without a reason | Button disabled until typed; reason reaches status `reason` |
 | A6 | Direct | Approved campaign edited and resubmitted | Awaiting approval, keeps its ID; picker pre-highlights "original (resubmission)"; approving restores it, no new ID |
 | A7 | Direct | Campaign status before and after | `creativeId` null, then the ID; `dealId` null throughout |
+| A8 | Direct advertiser with a live Direct deal | Deals endpoint; campaign carrying that deal ID; another advertiser's deal ID | Endpoint lists the deal; accepted and grouped by deal as Flow B; foreign ID 400 (`apps/api/test/direct-deals.test.ts`) |
 | B1 | Private auction | Submit campaigns carrying a deal ID | Rows show the deal ID; status carries `dealId` |
 | B2 | Private auction | Approve a subset of a deal into a new ID | Subset `approved` with the ID; the rest Awaiting approval |
 | B3 | Private auction | A second round approves another subset | Into a new ID, or an existing one; the deal now holds one or more IDs |
