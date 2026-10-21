@@ -20,12 +20,13 @@ import { effectiveTerm } from '../../domain/pricing'
 import { positionIdOf } from '../../domain/positions'
 import { slotDetailOf, type SlotDetail } from '../../domain/displayTypes'
 import { dealAudienceErrors } from '../../domain/audiences'
-import { belowFloorReasons, equivalentCpmRange, perDaySlotsOf } from '../../domain/perDayRate'
+import { belowFloorReasons, equivalentCpmOf, equivalentCpmRange, termDaysOf, termSlotsOf } from '../../domain/termPrice'
+import { derivedCommittedPlays } from '../../domain/committedPlays'
 import { permittedFor, undefinedValues } from '../../domain/variables'
 import type { Access, VariableValues } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { status?: unknown; dealId?: unknown; name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; invitedCategories?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown; ratePerDay?: unknown }
+type Body = { status?: unknown; dealId?: unknown; name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; invitedCategories?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown; termTotal?: unknown; ratePerDay?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -53,10 +54,10 @@ const positionsOfDeal = async (ctx: Context, buyersListId: string) =>
     (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListIds.includes(buyersListId) ? [positionIdOf(t.id, i + 1)] : [])),
   )
 
-/* A per-day rate is refused when, on any slot the deal is assigned to, it converts to a CPM under that slot's floor. A deal with no slot yet has no forecast to convert against: it is checked again at Share, which needs a slot. */
-const checkPerDayFloor = async (ctx: Context, listId: string, ratePerDay: number | null, errors: { field: string; reason: string }[]) => {
-  if (ratePerDay == null) return
-  for (const reason of belowFloorReasons(ratePerDay, await perDaySlotsOf(ctx, { id: listId, ratePerDay }))) errors.push({ field: 'ratePerDay', reason })
+/* A total for the term is refused when, across the slots the deal is assigned to, it is worth less than their floors over the term's forecast impressions. A deal with no slot yet has no forecast to convert against: it is checked again at Share, which needs a slot. */
+const checkTermFloor = async (ctx: Context, listId: string, termTotal: number | null, activeFrom: string | null, activeTo: string | null, errors: { field: string; reason: string }[]) => {
+  if (termTotal == null) return
+  for (const reason of belowFloorReasons(termTotal, await termSlotsOf(ctx, listId), termDaysOf(activeFrom, activeTo))) errors.push({ field: 'termTotal', reason })
 }
 
 /* Volume lives on the deal, never the open auction (open question 45): a
@@ -67,12 +68,11 @@ const withDelivery = async (ctx: Context, l: BuyersList, slots?: Map<string, Ass
   const company = await ctx.company.get()
   const dsps = new Map((await ctx.partners.list()).map((p) => [p.id, p]))
   const invited = invitedPartnerIds(l, [...dsps.values()]).map((id) => dsps.get(id)?.bidder)
-  /* Only a guaranteed deal carries volume: a private auction or preferred deal reports none, whatever the levels above hold. */
-  const effectiveCommittedPlays = l.dealType === 'guaranteed'
-    ? effectiveTerm({ platform: company.defaultCommittedPlays, dsp: invited.map((b) => b?.committedPlays), buyer: l.committedPlays })
-    : { min: null, max: null, source: 'none' as const }
+  /* Only a guaranteed deal carries volume, and it is the figure derived from its slots (21 Oct 2026); a private auction or preferred deal reports none. */
+  const committed = l.dealType === 'guaranteed' ? l.committedPlays : null
+  const effectiveCommittedPlays = { min: committed, max: committed, source: committed == null ? ('none' as const) : ('buyer' as const) }
   const effectiveRateCpm = effectiveTerm({ platform: company.floorCpm, dsp: invited.map((b) => b?.floorCpm), buyer: l.floorCpm }, (n) => Math.max(company.floorCpm, n))
-  const equivalentCpm = equivalentCpmRange(await perDaySlotsOf(ctx, l))
+  const equivalentCpm = l.dealType === 'guaranteed' && l.termTotal != null ? equivalentCpmRange(equivalentCpmOf(l.termTotal, await termSlotsOf(ctx, l.id), termDaysOf(l.activeFrom, l.activeTo))) : null
   return { ...l, effectiveCommittedPlays, effectiveRateCpm, equivalentCpm, deliveredPlays: await deliveredOf(ctx, l), assignedSlots: (slots ?? (await assignedSlotsByList(ctx))).get(l.id) ?? [] }
 }
 const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
@@ -88,12 +88,12 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
      categories; targeting (only variables shared with every invited DSP,
      values from each variable's defined list); the delivery term; committed
      plays (guaranteed only); and the floor, never below the platform's. */
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; ratePerDay: number | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; termTotal: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
-    /* The deal type (7 Oct 2026) decides which of the fields below the list may carry. Omitted by an older client: guaranteed if it commits plays, else a private auction. */
-    const requestedType = b.dealType === undefined || b.dealType === null ? (typeof b.committedPlays === 'number' ? 'guaranteed' : 'private_auction') : b.dealType
+    /* The deal type (7 Oct 2026) decides which of the fields below the list may carry. Omitted by an older client: a private auction. */
+    const requestedType = b.dealType === undefined || b.dealType === null ? 'private_auction' : b.dealType
     if (requestedType !== 'private_auction' && requestedType !== 'preferred' && requestedType !== 'guaranteed') errors.push({ field: 'dealType', reason: 'private_auction, preferred or guaranteed.' })
     const dealType: BuyersListDealType = requestedType === 'preferred' || requestedType === 'guaranteed' ? requestedType : 'private_auction'
     const rawBuyers = Array.isArray(b.invitedBuyers) ? (b.invitedBuyers as unknown[]) : null
@@ -166,13 +166,10 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       if (invitedBuyers.length > 1) errors.push({ field: 'invitedBuyers', reason: 'A preferred deal is with one named buyer; use a private auction to invite several.' })
       if (b.floorCpm === undefined || b.floorCpm === null) errors.push({ field: 'floorCpm', reason: 'A preferred deal has a fixed CPM: enter the price the buyer pays on every slot it takes.' })
     }
-    /* committedPlays: the volume this deal commits to over its term — a whole number of plays, or null for none. */
-    let committedPlays: number | null = null
-    if (b.committedPlays !== null && b.committedPlays !== undefined && dealType !== 'guaranteed') errors.push({ field: 'committedPlays', reason: 'Only a guaranteed deal commits volume; leave it empty for a private auction or preferred deal.' })
-    else if (b.committedPlays !== null && b.committedPlays !== undefined) {
-      if (typeof b.committedPlays !== 'number' || !Number.isInteger(b.committedPlays) || b.committedPlays < 1) errors.push({ field: 'committedPlays', reason: 'A whole number of plays, 1 or more, or null for no volume commitment.' })
-      else committedPlays = b.committedPlays
-    }
+    /* A programmatic guaranteed deal is one-to-one with its buyer (Rob, 21 Oct 2026): one buyer, one deal ID. Two advertisers on the same slot are two PG deals. Reduce a multi-buyer list to one before switching it to guaranteed. */
+    if (dealType === 'guaranteed' && invitedBuyers.length > 1) errors.push({ field: 'invitedBuyers', reason: 'A programmatic guaranteed deal is with one named buyer; create a separate deal for each additional advertiser.' })
+    /* committedPlays is derived from the assigned slots, the term and the guarantee buffer (21 Oct 2026): the caller computes it, so a typed one is refused rather than ignored. */
+    if (b.committedPlays !== null && b.committedPlays !== undefined) errors.push({ field: 'committedPlays', reason: dealType !== 'guaranteed' ? 'Only a guaranteed deal commits volume; leave it empty for a private auction or preferred deal.' : 'Committed plays is worked out from the slots assigned to the deal, its delivery term and the guarantee buffer; leave it out.' })
     /* Bid floor hierarchy (7 Oct 2026): blank inherits the DSP's floor, else the platform's; a value can raise the floor, never go below the platform floor. */
     let floorCpm: number | null = null
     if (b.floorCpm !== undefined && b.floorCpm !== null) {
@@ -180,14 +177,17 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       else if (b.floorCpm < platformFloor) errors.push({ field: 'floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}.` })
       else floorCpm = b.floorCpm
     }
-    /* Rate per day (20 Oct 2026): a guaranteed deal books whole 24-hour days at a flat USD rate per day. Its equivalent CPM needs the assigned slots' forecast, so the floor is checked once slots exist (checkPerDayFloor), not here. */
-    let ratePerDay: number | null = null
-    if (b.ratePerDay !== undefined && b.ratePerDay !== null) {
-      if (dealType !== 'guaranteed') errors.push({ field: 'ratePerDay', reason: 'Only a Programmatic guaranteed deal is priced per day; leave it empty for a private auction or preferred deal.' })
-      else if (typeof b.ratePerDay !== 'number' || !Number.isFinite(b.ratePerDay) || b.ratePerDay <= 0) errors.push({ field: 'ratePerDay', reason: 'Rate per day must be greater than 0 USD.' })
-      else ratePerDay = Math.round(b.ratePerDay * 100) / 100
+    /* Programmatic guaranteed is priced as a fixed CPM (floorCpm) or a total for the whole term (termTotal, USD; 21 Oct 2026), not both. Its equivalent CPM needs the assigned slots' forecast, so the floor is checked once slots exist (checkTermFloor), not here. */
+    let termTotal: number | null = null
+    if (b.ratePerDay !== undefined && b.ratePerDay !== null) errors.push({ field: 'ratePerDay', reason: 'A rate per day is replaced by a fixed CPM or a total for the delivery term (termTotal).' })
+    if (b.termTotal !== undefined && b.termTotal !== null) {
+      if (dealType !== 'guaranteed') errors.push({ field: 'termTotal', reason: 'Only a Programmatic guaranteed deal is priced as a total for its term; leave it empty for a private auction or preferred deal.' })
+      else if (typeof b.termTotal !== 'number' || !Number.isFinite(b.termTotal) || b.termTotal <= 0) errors.push({ field: 'termTotal', reason: 'Total for the term must be greater than 0 USD.' })
+      else if (floorCpm != null) errors.push({ field: 'termTotal', reason: 'Price a guaranteed deal as a fixed CPM or a total for the term, not both.' })
+      else termTotal = Math.round(b.termTotal * 100) / 100
     }
-    return { name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm, ratePerDay }
+    const committedPlays: number | null = null
+    return { name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm, termTotal }
   }
 
   app.get('/buyers-lists', async (req) => {
@@ -242,9 +242,11 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       if (list.status === 'shared') return list
       const errors: { field: string; reason: string }[] = []
       if (!(await positionsOfDeal(ctx, list.id)).length) errors.push({ field: 'assignedSlots', reason: 'Assign this deal to at least one slot in Available Inventory before sharing it.' })
-      await checkPerDayFloor(ctx, list.id, list.ratePerDay ?? null, errors)
+      await checkTermFloor(ctx, list.id, list.termTotal ?? null, list.activeFrom, list.activeTo, errors)
       if (!list.invitedBuyers.length) errors.push({ field: 'invitedBuyers', reason: 'Invite at least one named buyer: a deal that invites only IAB categories has no seat to share it with.' })
       if (errors.length) throw validationFailed(errors)
+      /* The volume the buyers accept is the one the slots give today: refreshed first, so the deal is shared with its current figure. */
+      await ctx.buyersLists.setCommittedPlays(list.id, await derivedCommittedPlays(ctx, list), auditActorOf(req).actor.name)
       return (await ctx.buyersLists.share(list.id)) as BuyersList
     })
     return withDelivery(ctx, shared)
@@ -261,8 +263,10 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses)
     await dealAudienceErrors(ctx, parsed, errors)
     /* The slots are the existing deal's; a changed deal type is a new deal with none. */
-    if (parsed.dealType === existing.dealType) await checkPerDayFloor(ctx, existing.id, parsed.ratePerDay, errors)
+    if (parsed.dealType === existing.dealType) await checkTermFloor(ctx, existing.id, parsed.termTotal, parsed.activeFrom, parsed.activeTo, errors)
     if (errors.length) throw validationFailed(errors)
+    /* Committed plays follow the slots and the term: a changed term changes the figure, and that is part of what buyers re-accept. */
+    if (parsed.dealType === existing.dealType) parsed.committedPlays = await derivedCommittedPlays(ctx, { id: existing.id, ...parsed })
     /* A different deal type mints a new deal: nothing on this one changes, so nobody re-accepts. */
     const changes = parsed.dealType !== existing.dealType || existing.status === 'draft' ? [] : termChanges(existing, parsed)
     const requiresReacceptance = needsReacceptance(changes)
@@ -308,8 +312,10 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses)
     await dealAudienceErrors(ctx, parsed, errors)
     /* The slots are the existing deal's; a changed deal type is a new deal with none. */
-    if (parsed.dealType === existing.dealType) await checkPerDayFloor(ctx, existing.id, parsed.ratePerDay, errors)
+    if (parsed.dealType === existing.dealType) await checkTermFloor(ctx, existing.id, parsed.termTotal, parsed.activeFrom, parsed.activeTo, errors)
     if (errors.length) throw validationFailed(errors)
+    /* Committed plays follow the slots and the term (21 Oct 2026). */
+    if (parsed.dealType === existing.dealType) parsed.committedPlays = await derivedCommittedPlays(ctx, { id: existing.id, ...parsed })
     /* A different deal type is a different deal: insert a new list with a new ID and leave this one (and its slot assignments and campaigns) as it was until it ends. */
     if (parsed.dealType !== existing.dealType) {
       const minted: BuyersList = await ctx.buyersLists.insert({ by: auditActorOf(req).actor.name, id: `bl_${randomUUID().slice(0, 12)}`, dealId: mintDealId(), ...parsed, shared: existing.status === 'shared' })

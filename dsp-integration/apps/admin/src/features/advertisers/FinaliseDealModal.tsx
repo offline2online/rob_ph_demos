@@ -64,11 +64,11 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
             {!data?.entries.length && <>{label('Deal ID')}<dd className="m-0" style={{ fontFamily: 'monospace' }}>{list.dealId}</dd></>}
             {!data?.entries.length && <>{label('Buyers')}<dd className="m-0">{`${list.invitedBuyers.length} buyer${list.invitedBuyers.length === 1 ? '' : 's'}`}</dd></>}
             {label('Deal type')}<dd className="m-0">{TYPE_LABEL[list.dealType]}</dd>
-            {list.dealType === 'guaranteed' && list.ratePerDay != null
-              ? <>{label('Rate per day')}<dd className="m-0" data-testid="finalise-rate-per-day">{list.ratePerDay} {data?.currency ?? 'USD'} per 24-hour day{data?.equivalentCpm ? <div style={{ color: T.muted, fontSize: 12.5 }}>Equivalent CPM {equivalentCpmText(data.equivalentCpm)}</div> : null}</dd></>
+            {list.dealType === 'guaranteed' && list.termTotal != null
+              ? <>{label('Total for the term')}<dd className="m-0" data-testid="finalise-term-total">{list.termTotal} {data?.currency ?? 'USD'} for the whole term{data?.equivalentCpm ? <div style={{ color: T.muted, fontSize: 12.5 }}>Equivalent CPM {equivalentCpmText(data.equivalentCpm)}</div> : null}</dd></>
               : <>{label('Rate')}<dd className="m-0">{data ? `${data.rateCpm} ${data.currency}` : '…'}</dd></>}
-            {label('Rate type')}<dd className="m-0">{rateTypeOf(list.dealType, list.ratePerDay)}</dd>
-            {label('Flight dates')}<dd className="m-0">{when(list.activeFrom) ?? 'No start date'} → {when(list.activeTo) ?? 'No end date'}</dd>
+            {label('Rate type')}<dd className="m-0">{rateTypeOf(list.dealType, list.termTotal)}</dd>
+            {label('Flight dates')}<dd className="m-0">{when(list.activeFrom) ?? 'No start date'} → {when(list.activeTo) ?? 'No end date'}{data?.termDays != null ? ` (${data.termDays} day${data.termDays === 1 ? '' : 's'})` : ''}</dd>
             {list.committedPlays != null && <>{label('Guaranteed impressions')}<dd className="m-0">{data?.guaranteedImpressions != null ? data.guaranteedImpressions.toLocaleString() : '…'}<div style={{ color: T.muted, fontSize: 12.5 }}>{list.committedPlays.toLocaleString()} plays</div></dd></>}
             {list.auctionCloses && <>{label('Auction closes')}<dd className="m-0">{when(list.auctionCloses)}</dd></>}
             {label(`Slots (${(list.assignedSlots ?? []).length})`)}

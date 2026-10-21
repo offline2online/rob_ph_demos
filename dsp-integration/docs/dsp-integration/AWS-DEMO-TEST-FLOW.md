@@ -124,12 +124,13 @@ Advertisers / Inventory → Available Inventory.
    amount and never clears below the resolved slot floor. *(`reserve-booking.test.ts`,
    `e2e/run5-reserved.test.ts`)*
 
-## E. Programmatic guaranteed — one slot for 24 hours (demo path 2)
+## E. Programmatic guaranteed — one deal for the delivery term (demo path 2)
 
-Automated twin: `cd dsp-integration/apps/api && npx vitest run test/e2e/run7-deal-types.test.ts -t D4` (D4.1–D4.6).
+Automated twin: `cd dsp-integration/apps/api && npx vitest run test/e2e/run7-deal-types.test.ts -t D4` (D4.1–D4.7).
 
-1. Create a guaranteed deal (buyers list, deal type *Programmatic guaranteed*) for one slot and share it with the DSP (the Coca-Cola advertiser). **Expect** committed plays captured and no auction window. *(D4.1)*
-2. Book the slot for one day at the agreed fixed CPM. **Expect** the booking window is exactly 24 hours, the price is the fixed CPM, and the guaranteed impressions are floor(forecast × (1 − buffer%)); the DSP receives the same figure in its own deal shape. *(D4.2, D4.4, D4.6)*
+1. Create a guaranteed deal (buyers list, deal type *Programmatic guaranteed*) with a delivery term (a date range such as 1–30 Nov; the demo can use a single day, a one-day range) and a price (fixed CPM or a total for the term). **Expect** no *Committed plays* field and no auction window. Assign one slot in Available Inventory: **expect** *Committed plays* now appears, read-only, and equals floor(the slot's forecast plays for every day of the range × (1 − buffer%)); a second slot adds its plays, a shorter range lowers it. Then share the deal with the DSP (the Coca-Cola advertiser). *(D4.1, D4.7)*
+   - If you then add or change a slot (or the dates) on the **shared** deal, **expect** a warning that the committed plays will change and the deal must be re-shared and accepted again; cancelling leaves it unchanged. *(pg-term.test.ts)*
+2. Book the slot for one day at the agreed fixed CPM. **Expect** the booking window is exactly 24 hours, the price is the agreed rate, and the guaranteed impressions are floor(forecast × (1 − buffer%)); the DSP receives the same figure in its own deal shape. *(D4.2, D4.4, D4.6)*
 3. Try to sell that day again, by bid or a second reservation. **Expect** it refused (409). *(D4.5)*
 4. After the day plays, run billing. **Expect** one bill for the full day at the fixed CPM on realised views, nothing made good if under-delivered, and none the next time. *(D4.2, D4.6)*
 5. Back in section C, **expect** open auction still clears on the other slots. *(Run 7 D1, Run 8 S1–S3)*

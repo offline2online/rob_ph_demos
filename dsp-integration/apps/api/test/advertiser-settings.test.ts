@@ -86,22 +86,15 @@ describe('Advertiser settings (spec §4, §6)', () => {
     }
   })
 
-  it('default committed plays: null by default, saves, omitted keeps it, null clears it, refuses 0 and non-integers', async () => {
+  it('has no default committed plays any more (21 Oct 2026): a guaranteed deal derives them from its slots, and the guarantee buffer stays editable', async () => {
     const app = buildApp(await testContext())
-    const get = async () => (await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().defaultCommittedPlays
-    expect(await get()).toBeNull()
-    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: 5000 } })
+    const get = async () => (await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json()
+    expect(await get()).not.toHaveProperty('defaultCommittedPlays')
+    /* A client that still sends it is not refused, and nothing is stored. */
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: 5000, guaranteeBufferPct: 15 } })
     expect(ok.statusCode).toBe(200)
-    expect(await get()).toBe(5000)
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
-    expect(await get()).toBe(5000)
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: null } })
-    expect(await get()).toBeNull()
-    for (const bad of [0, -5, 1.5, '100']) {
-      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: bad } })
-      expect(res.statusCode).toBe(400)
-      expect(res.json().error.details).toEqual([{ field: 'defaultCommittedPlays', reason: 'Default committed plays is a whole number of plays, at least 1, or empty.' }])
-    }
+    expect(ok.json()).not.toHaveProperty('defaultCommittedPlays')
+    expect((await get()).guaranteeBufferPct).toBe(15)
   })
 
   it('drives the play windows from the billing unit: the platform default is a day, a slot can make it a week, and the next window is the one after the running one', async () => {
