@@ -2,7 +2,7 @@
    slot assigned to it over its whole delivery term, less the guarantee buffer. Anything that changes the slots, the term or the
    buffer changes the figure, so the routes that make those changes recompute it here and store the result on the deal
    (BuyersListRepo.setCommittedPlays), where the deal sheet, the DSP payload and delivery read it. */
-import type { BuyersList } from '@ph-dsp/types'
+import { isGuaranteedLike, type BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { committedPlaysOf, termDaysOf, termSlotsOf } from './termPrice'
 
@@ -10,7 +10,7 @@ type TermOf = Pick<BuyersList, 'id' | 'dealType' | 'activeFrom' | 'activeTo'>
 
 /* Null for any deal that is not guaranteed, has no slot yet, or has an open-ended term. */
 export async function derivedCommittedPlays(ctx: Context, list: TermOf): Promise<number | null> {
-  if (list.dealType !== 'guaranteed') return null
+  if (!isGuaranteedLike(list.dealType)) return null
   return committedPlaysOf(await termSlotsOf(ctx, list.id), termDaysOf(list.activeFrom, list.activeTo), (await ctx.company.get()).guaranteeBufferPct)
 }
 
@@ -18,7 +18,7 @@ export async function derivedCommittedPlays(ctx: Context, list: TermOf): Promise
 export async function refreshCommittedPlays(ctx: Context, listIds: Iterable<string>, by?: string): Promise<void> {
   for (const id of new Set(listIds)) {
     const list = await ctx.buyersLists.get(id)
-    if (!list || list.dealType !== 'guaranteed') continue
+    if (!list || !isGuaranteedLike(list.dealType)) continue
     await ctx.buyersLists.setCommittedPlays(id, await derivedCommittedPlays(ctx, list), by)
   }
 }

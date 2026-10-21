@@ -4,13 +4,14 @@
    locked_win (JSON, see LockedWin) is null until that auction clears, and
    set once, never overwritten — see lockWin. */
 import type { BuyerAcceptance, BuyersList, BuyersListDealType, Condition, InvitedBuyer, LockedWin, TermChange, TermVersion } from '@ph-dsp/types'
+import { DIRECT_PARTNER_ID } from '@ph-dsp/types'
 import { needsReacceptance, termChanges } from '../domain/termVersions'
 import { randomInt } from 'node:crypto'
 import { type Db, fromJson, prepared, toJson, tx, type Awaitable } from '../db/db'
 
 interface Row {
-  id: string; deal_id: string; name: string; description: string; deal_type: BuyersListDealType; invited_buyers: string; invited_categories: string; targeting: string; active_from: string | null; active_to: string | null
-  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; term_total: number | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null
+  id: string; deal_id: string; name: string; description: string; deal_type: 'private_auction' | 'preferred' | 'guaranteed'; invited_buyers: string; invited_categories: string; targeting: string; active_from: string | null; active_to: string | null
+  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; term_total: number | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null; direct: number
 }
 interface AcceptanceRow { partner_id: string; seat_id: string; accepted_version: number; accepted_at: string }
 interface VersionRow { version: number; at: string; by_name: string; changes: string; requires_reacceptance: number }
@@ -18,6 +19,9 @@ interface VersionRow { version: number; at: string; by_name: string; changes: st
 /* The deal ID the platform mints for a new list: PH- plus 10 characters from an alphabet without look-alikes (no 0/O, 1/I/L), e.g. PH-7K2M9QXW4B. Never typed, never edited; the unique index makes a collision a retry, not a duplicate. */
 const DEAL_ID_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'
 export const mintDealId = (): string => `PH-${Array.from({ length: 10 }, () => DEAL_ID_ALPHABET[randomInt(DEAL_ID_ALPHABET.length)]).join('')}`
+
+/* A Direct advertiser deal is stored as a guaranteed deal with the direct flag set (migration 0081). */
+const storedType = (d: BuyersListDealType | undefined): 'private_auction' | 'preferred' | 'guaranteed' => (d === 'direct' ? 'guaranteed' : d ?? 'private_auction')
 
 export interface DealRow { deal_id: string; list_id: string; partner_id: string; retired_at: string | null }
 
@@ -51,7 +55,7 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
   /* One deal per DSP the list names a seat on (ticket fgBVnNItNcu7qMBUtqH7). The list's own deal_id (minted at create, quoted by bids since 0067) goes to its first DSP; a later DSP mints its own. A DSP whose last named seat went is retired, not deleted; inviting it again revives the same ID. */
   const syncDeals = (listId: string, listDealId: string, invited: InvitedBuyer[]) => {
     const now = new Date().toISOString()
-    const named = [...new Set(invited.map((b) => b.partnerId))]
+    const named = [...new Set(invited.map((b) => b.partnerId))].filter((id) => id !== DIRECT_PARTNER_ID)
     const have = new Map((prepared(db, 'SELECT * FROM buyers_list_deals WHERE list_id = ?').all(listId) as unknown as DealRow[]).map((d) => [d.partner_id, d]))
     for (const partnerId of named) {
       const d = have.get(partnerId)
@@ -72,7 +76,7 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     })
   }
   const toRecord = (r: Row): BuyersList => ({
-    id: r.id, dealId: r.deal_id, deals: dealsOf(r.id, r.deal_id), name: r.name, description: r.description, dealType: r.deal_type, invitedBuyers: fromJson(r.invited_buyers, []), invitedCategories: fromJson(r.invited_categories, []), targeting: fromJson(r.targeting, []),
+    id: r.id, dealId: r.deal_id, deals: dealsOf(r.id, r.deal_id), name: r.name, description: r.description, dealType: r.direct ? 'direct' : r.deal_type, invitedBuyers: fromJson(r.invited_buyers, []), invitedCategories: fromJson(r.invited_categories, []), targeting: fromJson(r.targeting, []),
     activeFrom: r.active_from, activeTo: r.active_to, auctionCloses: r.auction_closes, lockedWin: fromJson(r.locked_win, null),
     committedPlays: r.committed_plays, floorCpm: r.floor_cpm, termTotal: r.term_total, equivalentCpm: null, deliveredPlays: 0,
     /* Resolved against the platform and DSP levels by the admin route (withDelivery); the row alone can't know them. */
@@ -92,8 +96,8 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     insert(l) {
       const now = new Date().toISOString()
       const ids = l.dealId ?? mintDealId()
-      prepared(db, 'INSERT INTO buyers_lists (id, deal_id, name, description, deal_type, invited_buyers, invited_categories, targeting, active_from, active_to, auction_closes, locked_win, committed_plays, floor_cpm, term_total, created_at, updated_at, shared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(l.id, ids, l.name, l.description, l.dealType ?? 'private_auction', toJson(l.invitedBuyers) ?? '[]', toJson(l.invitedCategories ?? []) ?? '[]', toJson(l.targeting) ?? '[]', l.activeFrom, l.activeTo, l.auctionCloses, null, l.committedPlays ?? null, l.floorCpm ?? null, l.termTotal ?? null, now, now, l.shared === false ? null : now)
+      prepared(db, 'INSERT INTO buyers_lists (id, deal_id, name, description, deal_type, invited_buyers, invited_categories, targeting, active_from, active_to, auction_closes, locked_win, committed_plays, floor_cpm, term_total, created_at, updated_at, shared_at, direct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(l.id, ids, l.name, l.description, storedType(l.dealType), toJson(l.invitedBuyers) ?? '[]', toJson(l.invitedCategories ?? []) ?? '[]', toJson(l.targeting) ?? '[]', l.activeFrom, l.activeTo, l.auctionCloses, null, l.committedPlays ?? null, l.floorCpm ?? null, l.termTotal ?? null, now, now, l.shared === false ? null : now, l.dealType === 'direct' ? 1 : 0)
       syncDeals(l.id, ids, l.invitedBuyers)
       prepared(db, 'INSERT INTO buyers_list_term_versions (list_id, version, at, by_name, changes, requires_reacceptance) VALUES (?, 1, ?, ?, ?, 0)').run(l.id, now, l.by ?? 'system', '[]')
       return toRecord(row(l.id) as Row)
@@ -108,8 +112,8 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
         const changes = !before.shared_at ? [] : termChanges(was, { floorCpm: patch.floorCpm ?? null, termTotal: patch.termTotal ?? null, committedPlays: patch.committedPlays ?? null, activeFrom: patch.activeFrom, activeTo: patch.activeTo, auctionCloses: patch.auctionCloses, invitedBuyers: patch.invitedBuyers, invitedCategories: patch.invitedCategories ?? [] })
         const version = before.term_version + (changes.length ? 1 : 0)
         const reaccept = needsReacceptance(changes) ? version : before.reaccept_version
-        prepared(db, 'UPDATE buyers_lists SET name = ?, description = ?, deal_type = ?, invited_buyers = ?, invited_categories = ?, targeting = ?, active_from = ?, active_to = ?, auction_closes = ?, committed_plays = ?, floor_cpm = ?, term_total = ?, term_version = ?, reaccept_version = ?, updated_at = ? WHERE id = ?')
-          .run(patch.name, patch.description, patch.dealType, toJson(patch.invitedBuyers) ?? '[]', toJson(patch.invitedCategories ?? []) ?? '[]', toJson(patch.targeting) ?? '[]', patch.activeFrom, patch.activeTo, patch.auctionCloses, patch.committedPlays ?? null, patch.floorCpm ?? null, patch.termTotal ?? null, version, reaccept, now, id)
+        prepared(db, 'UPDATE buyers_lists SET name = ?, description = ?, deal_type = ?, direct = ?, invited_buyers = ?, invited_categories = ?, targeting = ?, active_from = ?, active_to = ?, auction_closes = ?, committed_plays = ?, floor_cpm = ?, term_total = ?, term_version = ?, reaccept_version = ?, updated_at = ? WHERE id = ?')
+          .run(patch.name, patch.description, storedType(patch.dealType), patch.dealType === 'direct' ? 1 : 0, toJson(patch.invitedBuyers) ?? '[]', toJson(patch.invitedCategories ?? []) ?? '[]', toJson(patch.targeting) ?? '[]', patch.activeFrom, patch.activeTo, patch.auctionCloses, patch.committedPlays ?? null, patch.floorCpm ?? null, patch.termTotal ?? null, version, reaccept, now, id)
         if (changes.length) prepared(db, 'INSERT INTO buyers_list_term_versions (list_id, version, at, by_name, changes, requires_reacceptance) VALUES (?, ?, ?, ?, ?, ?)').run(id, version, now, patch.by ?? 'system', toJson(changes) ?? '[]', needsReacceptance(changes) ? 1 : 0)
         /* A removed buyer's acceptance goes with it; re-inviting starts pending. */
         const keep = new Set(patch.invitedBuyers.map((b) => `${b.partnerId}\u0000${b.seatId}`))

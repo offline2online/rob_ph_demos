@@ -5,7 +5,7 @@
      - inventory scope: the attached positions' venue, geography, store and display counts, narrowed by LOCALISATION
        criteria only (a personalised criterion is matched against the live visitor, so it never changes the screen list);
      - estimated volume: plays per window x screens, VAC-d assumed views, x the targeted share. An estimate, labelled so. */
-import { OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type Operator } from '@ph-dsp/types'
+import { isGuaranteedLike, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type Operator } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { guaranteedImpressions } from './guarantee'
 import { assumedViewsPerWindow, maxPlayLengthSecFor, windowMsFor, type PositionRef } from './positions'
@@ -177,7 +177,7 @@ export async function scopeAndVolumeOf(ctx: Context, list: BuyersList, positions
   const from = list.activeFrom ? Date.parse(list.activeFrom) : NaN
   const to = list.activeTo ? Date.parse(list.activeTo) : NaN
   const windows = Number.isFinite(from) && Number.isFinite(to) && to > from && windowMs > 0 ? Math.floor((to - from) / windowMs) : null
-  const guaranteed = list.dealType === 'guaranteed'
+  const guaranteed = isGuaranteedLike(list.dealType)
   const viewsPerWindow = Math.round(views)
   const geography = [...regions].sort()
   const venueTypes = [...venues].sort()

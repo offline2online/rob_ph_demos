@@ -10,7 +10,7 @@
    Canvas and format per display type are owned by PH Core and read here
    read-only (api/PH-CORE-BOUNDARIES.md "Canvas and format per display type");
    max play length is the slot's resolved value (slot -> display type -> company). */
-import { assignedOf } from '@ph-dsp/types'
+import { isGuaranteedLike, assignedOf } from '@ph-dsp/types'
 import type { BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { equivalentCpmOf, equivalentCpmRange, termDaysOf, termSlotsOf } from './termPrice'
@@ -81,8 +81,8 @@ export async function dealOf(ctx: Context, list: BuyersList, rateCpm?: number, p
     auctionCloses: list.auctionCloses,
     ...(rateCpm !== undefined ? { rateCpm } : {}),
     /* Programmatic guaranteed (21 Oct 2026): the whole delivery term and the volume derived from the assigned slots, which a DSP is told. A total for the term also carries its equivalent CPM, for comparison with CPM deals. */
-    ...(list.dealType === 'guaranteed' ? { termDays: termDaysOf(list.activeFrom, list.activeTo), committedPlays: list.committedPlays } : {}),
-    ...(list.dealType === 'guaranteed' && list.termTotal != null ? { rateType: 'Fixed per term' as const, termTotal: list.termTotal, equivalentCpm: equivalentCpmRange(equivalentCpmOf(list.termTotal, await termSlotsOf(ctx, list.id), termDaysOf(list.activeFrom, list.activeTo))) } : {}),
+    ...(isGuaranteedLike(list.dealType) ? { termDays: termDaysOf(list.activeFrom, list.activeTo), committedPlays: list.committedPlays } : {}),
+    ...(isGuaranteedLike(list.dealType) && list.termTotal != null ? { rateType: 'Fixed per term' as const, termTotal: list.termTotal, equivalentCpm: equivalentCpmRange(equivalentCpmOf(list.termTotal, await termSlotsOf(ctx, list.id), termDaysOf(list.activeFrom, list.activeTo))) } : {}),
     creativeRequirements: await creativeRequirementsFor(ctx, list.id),
   }
 }

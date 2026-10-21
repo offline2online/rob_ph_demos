@@ -104,7 +104,7 @@ export const receivesBidRequests = (p: PartnerRecord) => p.status === 'connected
      the same response are discarded with a reason and retried in a later
      window, so a response full of new crids can't stall the clearing. */
 /* Waterfall rank by deal type: lower is tried first. A guaranteed deal reserves its inventory and is not auctioned. */
-const TIER_RANK: Record<BuyersList['dealType'], number> = { guaranteed: 0, preferred: 1, private_auction: 2 }
+const TIER_RANK: Record<BuyersList['dealType'], number> = { guaranteed: 0, direct: 0, preferred: 1, private_auction: 2 }
 export const POSITION_CONCURRENCY = 16
 export const MAX_BIDS_PER_RESPONSE = 10
 

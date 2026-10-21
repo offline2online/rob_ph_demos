@@ -8,7 +8,7 @@
    and creative as rows in that list; the explanatory copy sits in a tooltip beside the title (ticket wp5SuM9hSX1Od0CeNn4T). */
 import { App, Button, Modal } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import type { BuyersList, components } from '@ph-dsp/types'
+import { isGuaranteedLike, type BuyersList, type components } from '@ph-dsp/types'
 import { useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
 import { InfoTip } from '../../shared/InfoTip'
@@ -17,7 +17,7 @@ import { equivalentCpmText, rateTypeOf } from './effectiveTerm'
 import { slotLine } from './slotLine'
 
 type Sheet = components['schemas']['DealSheet']
-const TYPE_LABEL = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
+const TYPE_LABEL = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed', direct: 'Direct advertiser' } as const
 const when = (v: string | null) => (v ? new Date(v).toLocaleString() : null)
 
 export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersList | null; onClose: () => void; onShared: (list: BuyersList) => void }) {
@@ -29,7 +29,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
     setSharing(true)
     try {
       const shared = await api<BuyersList>('POST', `/admin/v1/buyers-lists/${list.id}/share`)
-      message.success('Deal shared with the buyers')
+      message.success(list.dealType === 'direct' ? 'Deal is live' : 'Deal shared with the buyers')
       onShared(shared)
     } catch (e) {
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : 'Could not share this deal.')
@@ -39,7 +39,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
   }
   const slotLabels = new Map((list?.assignedSlots ?? []).map((s) => [s.positionId, slotLine(s)]))
   const label = (s: string) => <dt style={{ color: T.muted }}>{s}</dt>
-  const guidance = <>Check the slots and terms below. <strong>Confirm and share deal with DSPs</strong> is the final step: it sends this deal, including its deal ID, to the invited buyers via each DSP for authorisation. It is a fixed deal: buyers can accept it but not change it. After it is shared, any change to its terms asks the buyers who accepted to accept again.</>
+  const guidance = list?.dealType === 'direct' ? <>Check the slots and terms below. <strong>Confirm and make deal live</strong> is the final step: the deal goes live inside Personalisation Hub for its direct advertiser. It is not sent to a DSP and needs no acceptance.</> : <>Check the slots and terms below. <strong>Confirm and share deal with DSPs</strong> is the final step: it sends this deal, including its deal ID, to the invited buyers via each DSP for authorisation. It is a fixed deal: buyers can accept it but not change it. After it is shared, any change to its terms asks the buyers who accepted to accept again.</>
   return (
     <Modal
       open={!!list} onCancel={onClose} width={640} destroyOnHidden
@@ -47,7 +47,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
         <InfoTip text={<span data-testid="finalise-guidance">{guidance}</span>} size={18} width={360} /></span>}
       footer={<div className="flex justify-end gap-2" data-testid="finalise-actions">
         <Button onClick={onClose}>Back</Button>
-        <Button type="primary" loading={sharing} onClick={share}>Confirm and share deal with DSPs</Button>
+        <Button type="primary" loading={sharing} onClick={share}>{list?.dealType === 'direct' ? 'Confirm and make deal live' : 'Confirm and share deal with DSPs'}</Button>
       </div>}
     >
       {list && (
@@ -64,7 +64,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
             {!data?.entries.length && <>{label('Deal ID')}<dd className="m-0" style={{ fontFamily: 'monospace' }}>{list.dealId}</dd></>}
             {!data?.entries.length && <>{label('Buyers')}<dd className="m-0">{`${list.invitedBuyers.length} buyer${list.invitedBuyers.length === 1 ? '' : 's'}`}</dd></>}
             {label('Deal type')}<dd className="m-0">{TYPE_LABEL[list.dealType]}</dd>
-            {list.dealType === 'guaranteed' && list.termTotal != null
+            {isGuaranteedLike(list.dealType) && list.termTotal != null
               ? <>{label('Total for the term')}<dd className="m-0" data-testid="finalise-term-total">{list.termTotal} {data?.currency ?? 'USD'} for the whole term{data?.equivalentCpm ? <div style={{ color: T.muted, fontSize: 12.5 }}>Equivalent CPM {equivalentCpmText(data.equivalentCpm)}</div> : null}</dd></>
               : <>{label('Rate')}<dd className="m-0">{data ? `${data.rateCpm} ${data.currency}` : '…'}</dd></>}
             {label('Rate type')}<dd className="m-0">{rateTypeOf(list.dealType, list.termTotal)}</dd>

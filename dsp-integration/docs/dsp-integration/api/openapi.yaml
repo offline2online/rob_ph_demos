@@ -1247,7 +1247,7 @@ paths:
                     auction window — invited buyers bid on each slot
                     throughout the delivery term. A new value is refused
                     (400); leave it null.
-                dealType: {type: string, enum: [private_auction, preferred, guaranteed], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
+                dealType: {type: string, enum: [private_auction, preferred, guaranteed, direct], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
                 committedPlays: {type: [integer, 'null'], description: 'Not accepted (21 Oct 2026): a guaranteed deal''s committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal.'}
                 termTotal: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
                 ratePerDay: {type: [number, 'null'], description: 'Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term.'}
@@ -1392,7 +1392,7 @@ paths:
                   type: [string, 'null']
                   format: date-time
                   description: 'Retired (16 Oct 2026); see POST''s description. A new value is refused (400); a deal that already has one may send it back unchanged, and it has no effect.'
-                dealType: {type: string, enum: [private_auction, preferred, guaranteed], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
+                dealType: {type: string, enum: [private_auction, preferred, guaranteed, direct], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
                 committedPlays: {type: [integer, 'null'], description: 'Not accepted (21 Oct 2026): a guaranteed deal''s committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal.'}
                 termTotal: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
                 ratePerDay: {type: [number, 'null'], description: 'Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term.'}
@@ -1570,7 +1570,7 @@ paths:
                         buyersListId: {type: string}
                         dealId: {type: string, description: 'The deal ID to send as a campaign''s `dealId`: the platform-minted ID of the advertiser''s DSP on the buyers list (the first of `deals` when its seats span several DSPs).'}
                         name: {type: string}
-                        dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
+                        dealType: {type: string, enum: [private_auction, preferred, guaranteed, direct]}
                         activeFrom: {type: string, nullable: true}
                         activeTo: {type: string, nullable: true}
         '400': {$ref: '#/components/responses/ValidationFailed'}
@@ -3018,6 +3018,8 @@ components:
     InvitedBuyer:
       type: object
       description: |
+        On a `direct` deal the one buyer is a direct advertiser: `partnerId` is
+        the literal `direct` and `seatId` the advertiser's id (Advertisers page).
         One invited buyer on a buyers list (deal): a seat (advertiser) that a
         connected DSP synced, picked from that DSP's own seats. There is no
         free text and no identifier type — the entry always carries the
@@ -3086,7 +3088,7 @@ components:
         name: {type: string}
         dealId: {type: string, description: 'The deal ID for the calling DSP (Partner API) — each DSP accepts its own. The admin view also carries `deals`, the full set.'}
         deals: {type: array, items: {$ref: '#/components/schemas/ListDeal'}, description: 'Admin view only: every DSP deal ID of the list.'}
-        dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
+        dealType: {type: string, enum: [private_auction, preferred, guaranteed, direct]}
         activeFrom: {type: [string, 'null']}
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
@@ -3103,7 +3105,7 @@ components:
       properties:
         buyersListId: {type: string}
         name: {type: string}
-        dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
+        dealType: {type: string, enum: [private_auction, preferred, guaranteed, direct]}
         currency: {type: string}
         rateCpm: {type: number, description: 'The rate in CPM: the deal''s locked rate once it has one, else its resolved base floor.'}
         rateKind: {type: string, enum: [floor, fixed]}
@@ -3405,7 +3407,7 @@ components:
         description: {type: string}
         dealType:
           type: string
-          enum: [private_auction, preferred, guaranteed]
+          enum: [private_auction, preferred, guaranteed, direct]
           description: |
             The deal type this list bids against, and the single place it is
             set (Rob, 7 Oct 2026). It maps to the DSP's deal structure (deal
@@ -3416,7 +3418,10 @@ components:
             preferred: one invited buyer at a fixed CPM (floorCpm), first
             look at each slot ahead of private and open auction, may pass;
             nothing reserved. guaranteed: commits volume, the only type that
-            reserves inventory.
+            reserves inventory. direct (22 Oct 2026): a Direct advertiser deal, same
+            fields and rules as guaranteed but with one direct advertiser as its
+            single buyer (invitedBuyers entry {partnerId: 'direct', seatId: <advertiserId>});
+            no DSP seats, no IAB categories, no DSP deal, share or acceptance.
         invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
         invitedCategories:
           type: array

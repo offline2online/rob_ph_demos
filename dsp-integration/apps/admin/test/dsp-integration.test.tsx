@@ -944,6 +944,32 @@ describe('Advertisers / Inventory', () => {
     expect(await within(dialog).findByTestId('deal-type-new-deal-note')).toHaveTextContent('new Deal ID')
   })
 
+  /* Ticket krIPF8rPnMwVOmynHNRh (22 Oct 2026): Direct advertiser is an enabled deal type beside Programmatic guaranteed; Private auction and Preferred stay greyed out. Its buyer is one direct advertiser, never a DSP seat. */
+  it('offers Direct advertiser as an enabled deal type whose buyers are direct advertisers only', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/advertisers': { items: [{ advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, dspSeats: [] }] },
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }] },
+      '/api/admin/v1/available-inventory': inv,
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.click(await within(table).findByRole('button', { name: 'Edit Pharma brands' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Deal type' }))
+    const option = async (name: string) => (await waitFor(() => { const o = screen.getAllByText(name).map((e) => e.closest('.ant-select-item-option')).find(Boolean); if (!o) throw new Error(`no option ${name}`); return o })) as HTMLElement
+    expect(await option('Private auction')).toHaveClass('ant-select-item-option-disabled')
+    expect(await option('Preferred deal')).toHaveClass('ant-select-item-option-disabled')
+    expect(await option('Direct advertiser')).not.toHaveClass('ant-select-item-option-disabled')
+    fireEvent.click(await option('Direct advertiser'))
+    expect(await within(dialog).findByTestId('deal-type-note')).toHaveTextContent('not sent to a DSP')
+    /* Same price choice as Programmatic guaranteed. */
+    expect(within(dialog).getByRole('combobox', { name: 'Price type' })).toBeInTheDocument()
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Buyers' }))
+    expect(await screen.findByText('Acme Foods (Direct)')).toBeInTheDocument()
+  }, slow(30000))
+
   /* Ticket KcqiJpzR5RXy4TWODYlG: term versions. The pop-up shows the version and acceptance, saves a name change silently, and warns before a rate change that makes accepted buyers re-accept. */
   const TERMS_LIST = { id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', floorCpm: 120, termVersion: 3, buyerAcceptance: [{ partnerId: 'p_google', seatId: '5130001', state: 'accepted', acceptedVersion: 3, acceptedAt: '2026-10-10T00:00:00Z' }] }
   const termsFetch = (requiresReacceptance: boolean, puts: unknown[]) => vi.fn(async (url: string, init?: RequestInit) => {

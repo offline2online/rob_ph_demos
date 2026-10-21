@@ -2326,7 +2326,9 @@ export interface components {
             openAuction?: boolean;
         };
         /**
-         * @description One invited buyer on a buyers list (deal): a seat (advertiser) that a
+         * @description On a `direct` deal the one buyer is a direct advertiser: `partnerId` is
+         *     the literal `direct` and `seatId` the advertiser's id (Advertisers page).
+         *     One invited buyer on a buyers list (deal): a seat (advertiser) that a
          *     connected DSP synced, picked from that DSP's own seats. There is no
          *     free text and no identifier type — the entry always carries the
          *     identifier the DSP bids under, and entitlement (bid intake and
@@ -2405,7 +2407,7 @@ export interface components {
             /** @description Admin view only: every DSP deal ID of the list. */
             deals?: components["schemas"]["ListDeal"][];
             /** @enum {string} */
-            dealType: "private_auction" | "preferred" | "guaranteed";
+            dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
             activeFrom: string | null;
             activeTo: string | null;
             auctionCloses: string | null;
@@ -2433,7 +2435,7 @@ export interface components {
             buyersListId: string;
             name: string;
             /** @enum {string} */
-            dealType: "private_auction" | "preferred" | "guaranteed";
+            dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
             currency: string;
             /** @description The rate in CPM: the deal's locked rate once it has one, else its resolved base floor. */
             rateCpm: number;
@@ -2753,10 +2755,13 @@ export interface components {
              *     preferred: one invited buyer at a fixed CPM (floorCpm), first
              *     look at each slot ahead of private and open auction, may pass;
              *     nothing reserved. guaranteed: commits volume, the only type that
-             *     reserves inventory.
+             *     reserves inventory. direct (22 Oct 2026): a Direct advertiser deal, same
+             *     fields and rules as guaranteed but with one direct advertiser as its
+             *     single buyer (invitedBuyers entry {partnerId: 'direct', seatId: <advertiserId>});
+             *     no DSP seats, no IAB categories, no DSP deal, share or acceptance.
              * @enum {string}
              */
-            dealType: "private_auction" | "preferred" | "guaranteed";
+            dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
             /**
              * @description Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
@@ -5223,7 +5228,7 @@ export interface operations {
                      * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).
                      * @enum {string}
                      */
-                    dealType?: "private_auction" | "preferred" | "guaranteed";
+                    dealType?: "private_auction" | "preferred" | "guaranteed" | "direct";
                     /** @description Not accepted (21 Oct 2026): a guaranteed deal's committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal. */
                     committedPlays?: number | null;
                     /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
@@ -5457,7 +5462,7 @@ export interface operations {
                      * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).
                      * @enum {string}
                      */
-                    dealType?: "private_auction" | "preferred" | "guaranteed";
+                    dealType?: "private_auction" | "preferred" | "guaranteed" | "direct";
                     /** @description Not accepted (21 Oct 2026): a guaranteed deal's committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal. */
                     committedPlays?: number | null;
                     /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
@@ -5669,7 +5674,7 @@ export interface operations {
                             dealId: string;
                             name: string;
                             /** @enum {string} */
-                            dealType: "private_auction" | "preferred" | "guaranteed";
+                            dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
                             activeFrom: string | null;
                             activeTo: string | null;
                         }[];

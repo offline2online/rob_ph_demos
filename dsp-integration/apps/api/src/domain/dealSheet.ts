@@ -4,7 +4,7 @@
    DSP has its own deal ID (ticket fgBVnNItNcu7qMBUtqH7). The seller-initiated API push is a later phase, gated on PH being
    a certified supply source on each DSP (REQUIREMENTS.md §5 "Sharing a deal with the buyer", §7).
    Read-only: it derives from the list, its DSPs and its attached positions and stores nothing. */
-import { storeZoneLabel, type BuyersList } from '@ph-dsp/types'
+import { isGuaranteedLike, storeZoneLabel, type BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { dealSetupHint } from '../dsp/dealTerms'
 import { baseFloorFor } from '../exchange/enforcement'
@@ -37,13 +37,13 @@ export interface DealSheetInventorySource {
   termVersion: number
 }
 export type RateType = 'CPM floor' | 'CPM fixed' | 'Fixed per term'
-export const RATE_TYPE_OF: Record<BuyersList['dealType'], RateType> = { private_auction: 'CPM floor', preferred: 'CPM fixed', guaranteed: 'CPM fixed' }
+export const RATE_TYPE_OF: Record<BuyersList['dealType'], RateType> = { private_auction: 'CPM floor', preferred: 'CPM fixed', guaranteed: 'CPM fixed', direct: 'CPM fixed' }
 /* A guaranteed deal priced as a total for its term (21 Oct 2026) is one fixed amount for the whole flight; otherwise its price is a CPM. */
-export const isTermTotal = (l: Pick<BuyersList, 'dealType' | 'termTotal'>) => l.dealType === 'guaranteed' && l.termTotal != null
+export const isTermTotal = (l: Pick<BuyersList, 'dealType' | 'termTotal'>) => isGuaranteedLike(l.dealType) && l.termTotal != null
 export const rateTypeOf = (l: Pick<BuyersList, 'dealType' | 'termTotal'>): RateType => (isTermTotal(l) ? 'Fixed per term' : RATE_TYPE_OF[l.dealType])
 
 /* DV360 Product.transactionType. */
-export const TRANSACTION_TYPE: Record<BuyersList['dealType'], string> = { private_auction: 'PRIVATE_AUCTION', preferred: 'PREFERRED_DEAL', guaranteed: 'PROGRAMMATIC_GUARANTEED' }
+export const TRANSACTION_TYPE: Record<BuyersList['dealType'], string> = { private_auction: 'PRIVATE_AUCTION', preferred: 'PREFERRED_DEAL', guaranteed: 'PROGRAMMATIC_GUARANTEED', direct: 'PROGRAMMATIC_GUARANTEED' }
 
 /* A slot the deal is assigned to, as the buyer should read it: number, zone and the display type's description. */
 export interface DealSheetSlot extends SlotDetail { positionId: string; displayTypeName: string; label: string }
@@ -90,7 +90,7 @@ export interface DealSheet {
   description: string
 }
 
-export const DEAL_TYPE_LABEL: Record<BuyersList['dealType'], string> = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' }
+export const DEAL_TYPE_LABEL: Record<BuyersList['dealType'], string> = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed', direct: 'Direct advertiser' }
 
 export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealSheet> {
   /* A locked rate is what the deal bills at for the rest of its term; until then the rate is the resolved floor. */
@@ -112,7 +112,7 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
     const dealId = (await ctx.buyersLists.dealIdFor(list.id, partnerId)) ?? list.dealId
     const accepted = list.buyerAcceptance.some((a) => a.partnerId === partnerId && a.state === 'accepted' && a.acceptedVersion === list.termVersion)
     entries.push({
-      partnerId, dsp: partner.name, provider: partner.provider, dealId, seats, setup: dealSetupHint(partner.provider, list.dealType),
+      partnerId, dsp: partner.name, provider: partner.provider, dealId, seats, setup: dealSetupHint(partner.provider, list.dealType === 'direct' ? 'guaranteed' : list.dealType),
       inventorySource: {
         externalDealId: dealId,
         rateDetails: perTerm
@@ -129,7 +129,7 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
   const creativeRequirements = await creativeRequirementsFor(ctx, list.id)
   const { inventoryScope, estimatedVolume } = await scopeAndVolumeOf(ctx, list, positions)
   const targeting = targetingOf(list)
-  const committedPlays = list.dealType === 'guaranteed' ? list.committedPlays ?? null : null
+  const committedPlays = isGuaranteedLike(list.dealType) ? list.committedPlays ?? null : null
   const guaranteedImps = committedPlays != null && estimatedVolume.assumedViewsPerPlay != null ? Math.round(committedPlays * estimatedVolume.assumedViewsPerPlay) : null
   const orderStatus = list.status !== 'shared' ? 'DRAFT' : entries.length && entries.every((e) => e.inventorySource.buyerStatus === 'ACTIVE') ? 'ACCEPTED' : 'PENDING_ACCEPTANCE'
   return {
@@ -138,9 +138,9 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
     dealType: list.dealType,
     currency: TRANSACTING_CURRENCY,
     rateCpm: rate,
-    rateKind: locked != null || perTerm || (list.dealType === 'guaranteed' && list.floorCpm != null) ? 'fixed' : 'floor',
+    rateKind: locked != null || perTerm || (isGuaranteedLike(list.dealType) && list.floorCpm != null) ? 'fixed' : 'floor',
     ...(perTerm ? { termTotal: list.termTotal, equivalentCpm } : {}),
-    ...(list.dealType === 'guaranteed' ? { termDays } : {}),
+    ...(isGuaranteedLike(list.dealType) ? { termDays } : {}),
     activeFrom: list.activeFrom,
     activeTo: list.activeTo,
     auctionCloses: list.auctionCloses,
