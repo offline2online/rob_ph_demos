@@ -867,6 +867,21 @@ and pointing to deals. It reaches a slot only through a Direct advertiser deal.
 (This replaces the 9 Oct rule that picking one held the slot for it.) DSP named
 advertisers are unchanged.
 
+**Migration 0082 clears existing direct assignments (22 Oct 2026, ticket
+mpbRDjAPS4uIagi2IVsz).** It removes every direct advertiser (a
+`direct_advertisers` name no DSP seat carries) from every slot's Assigned to; a
+slot left with no named advertiser goes back to real time (`rtb`). A slot with a
+live booking (won or reserved, not Test mode) keeps its advertiser and is
+**locked against new sales** instead, the sold-slot rule: when its bookings have
+played the lock releases and the sweep (`releaseSettledSlotLocks`) removes the
+direct advertiser then. Nothing is converted into a draft Direct advertiser deal
+(a deal needs flight dates and a price the old assignment never held); every
+removal, and every lock, is recorded in the SSP change history under actor
+`migration-0082`, with the old advertisers as the old value. The down migration
+restores nothing. The demo seed (`npm run db:demo`) gives Red Bull and Gatorade a
+Direct advertiser deal each (flight 1 Sep 2026 to 31 Mar 2027, fixed CPM) on the
+Portrait slot "Direct deals: Red Bull & Gatorade", so they play through their deals.
+
 **Users page on the real API (10 Oct 2026, ticket H6BcvdNZUvdP8Ebh5Tve).**
 `mockups/platform-users.html` (Company Settings → Users) reads and saves
 through `GET/POST /admin/v1/users`, `PUT/DELETE /admin/v1/users/{email}`

@@ -40,6 +40,14 @@ describe('demo estate', () => {
     expect(names).not.toContain('Swisse')
     expect(names).not.toContain("L'Oréal")
     expect(advertisers.filter((a) => a.direct).map((a) => a.name).sort()).toEqual(['Gatorade', 'Red Bull'])
+    /* Direct advertisers hold a slot only through their Direct advertiser deals (22 Oct 2026), each with a flight and a price. */
+    const portrait = (await ctx.displayTypes.get('portrait'))!.phExtensions!
+    expect(portrait.slots.flatMap((s) => s.advertisers)).not.toContain('Red Bull')
+    expect(portrait.slots.flatMap((s) => s.advertisers)).not.toContain('Gatorade')
+    expect(portrait.slots[2]).toMatchObject({ listMode: 'deal', buyersListIds: ['bl_demo_direct_redbull', 'bl_demo_direct_gatorade'] })
+    for (const [id, seatId] of [['bl_demo_direct_redbull', advertiserSlug('Red Bull')], ['bl_demo_direct_gatorade', advertiserSlug('Gatorade')]]) {
+      expect(await ctx.buyersLists.get(id)).toMatchObject({ dealType: 'direct', invitedBuyers: [{ partnerId: 'direct', seatId }], floorCpm: expect.any(Number), activeFrom: expect.any(String), activeTo: expect.any(String) })
+    }
     /* Every state is represented somewhere. */
     const totals = advertisers.reduce((acc, a) => ({ draft: acc.draft + a.campaigns.draft, awaiting_approval: acc.awaiting_approval + a.campaigns.awaiting_approval, approved: acc.approved + a.campaigns.approved, rejected: acc.rejected + a.campaigns.rejected }), { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 })
     expect(Object.values(totals).every((n) => n >= 2)).toBe(true)

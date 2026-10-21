@@ -57,6 +57,11 @@ const slot = (label: string, over: Partial<Slot> = {}): Slot => ({
 })
 
 const DEMO_DEAL_ID = 'bl_demo_private_auction'
+/* One Direct advertiser deal each, with a flight and a fixed CPM (the slot waterfall tries them in this order). */
+const DEMO_DIRECT_DEALS = [
+  { id: 'bl_demo_direct_redbull', advertiser: 'Red Bull', floorCpm: 180 },
+  { id: 'bl_demo_direct_gatorade', advertiser: 'Gatorade', floorCpm: 150 },
+]
 
 /* Four sellable positions on Landscape, three on Portrait. Each display type
    inherits the platform floor; the hero slot on each carries a floor of its own
@@ -77,7 +82,8 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; slots: Sl
     slots: [
       slot('Aisle hero', { floorCpm: 120 }),
       slot('Health & beauty', { partnerIds: ['p_google', 'p_ttd'], }),
-      slot('Held for Red Bull & Gatorade', { partnerIds: [], advertisers: ['Red Bull', 'Gatorade'], listMode: null }),
+      /* Direct advertisers play through their Direct advertiser deals (22 Oct 2026), never by being named on the slot. */
+      slot('Direct deals: Red Bull & Gatorade', { partnerIds: [], listMode: 'deal', buyersListId: DEMO_DIRECT_DEALS[0].id, buyersListIds: DEMO_DIRECT_DEALS.map((d) => d.id) }),
     ],
   },
 }
@@ -318,6 +324,16 @@ export async function seedDemo(ctx: Context) {
       await ctx.buyersLists.insert({
         id: DEMO_DEAL_ID, name: 'Demo private auction', description: 'Open to every Google DSP and Trade Desk advertiser; no auction deadline, so it clears a fresh auction every play window.',
         invitedBuyers: invited, activeFrom: null, activeTo: null, auctionCloses: null,
+      })
+    }
+
+    /* Direct advertiser deals: how Red Bull and Gatorade get their slot. */
+    for (const d of DEMO_DIRECT_DEALS) {
+      if (await ctx.buyersLists.get(d.id)) continue
+      await ctx.buyersLists.insert({
+        id: d.id, name: `${d.advertiser} direct`, description: `${d.advertiser} books the retailer directly, with no DSP: Summer 2026–27 flight at a fixed CPM.`, dealType: 'direct',
+        invitedBuyers: [{ partnerId: DIRECT_PARTNER, seatId: advertiserSlug(d.advertiser) }], floorCpm: d.floorCpm,
+        activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2027-03-31T00:00:00.000Z', auctionCloses: null,
       })
     }
 
