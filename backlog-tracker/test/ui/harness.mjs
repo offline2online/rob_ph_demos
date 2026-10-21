@@ -15,7 +15,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
+import { chromium, webkit } from "playwright-core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const publicDir = path.join(here, "..", "..", "public");
@@ -39,6 +39,7 @@ function staticServer() {
 }
 
 export async function launchChromium() {
+  if (process.env.HARNESS_BROWSER === "webkit") return webkit.launch({ headless: true });
   const launch = { headless: true };
   if (process.env.PLAYWRIGHT_CHROMIUM) launch.executablePath = process.env.PLAYWRIGHT_CHROMIUM;
   else if (fs.existsSync("/opt/pw-browsers/chromium")) launch.executablePath = "/opt/pw-browsers/chromium";
