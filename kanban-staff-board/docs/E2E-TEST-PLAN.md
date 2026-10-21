@@ -92,6 +92,7 @@ recording needs a real screen and is a manual check (M-1).
 | KB-C2 | KB-MOD-3 | A mention of Rob is waiting; open the bell; click it | Unread count 1; "Huy mentioned you in a comment on PH-20"; opens PH-20; marked read |
 | KB-C3 | KB-MOD-2 | The console has a Claude key (stubbed answer); Record task | Claude's title, release, epic, estimate and flag fill the form instead of the local stand-in's |
 | KB-C4 | KB-REP-1, KB-NAV-1 | Open `#staff-kanban/report?release=4-13`; back to the board | The report for PH 4.13; title "Release report"; the hash follows |
+| KB-C5 | KB-NAV-1 | iPad 820x1180 and 1180x820 with touch: open the menu, tap Staff Kanban; open + New task | The board opens (`#staff-kanban`); the Record task dot is a 44 px circle with nothing overflowing |
 
 Server side, `backlog-tracker/test/kanban-mcp.test.js` covers KB-MCP-1 (every
 tool over JSON-RPC as an editor and a viewer, keys from the counter, the

@@ -572,6 +572,23 @@ await test("KB-C4 deep links: a report URL opens the report, and the hash follow
   await p.done();
 });
 
+await test("KB-C5 tablet: the menu's Staff Kanban link opens the board by touch, and the Record task button stays intact", async () => {
+  for (const [w, hgt] of [[820, 1180], [1180, 820]]) {
+    const op = await h.open({ seed: kanbanSeed(), hash: "", width: w, height: hgt, contextOptions: { isMobile: true, hasTouch: true } });
+    const o = op.page;
+    await o.waitForTimeout(800);
+    if (w < 1024) { await o.tap("#nav-open-btn"); await o.waitForTimeout(450); }
+    await o.tap("#staff-kanban-btn");
+    await until(() => o.locator(".kb-card").count(), `the board at ${w}px`, 15000);
+    assert.equal(await o.evaluate(() => location.hash), "#staff-kanban");
+    await o.tap("#kb-new-btn"); await o.waitForSelector("#f-record");
+    const g = await o.evaluate(() => { const d = document.querySelector(".kb-record-dot"), r = d.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), overflow: d.scrollWidth > d.clientWidth + 1 || d.scrollHeight > d.clientHeight + 1, radius: getComputedStyle(d).borderRadius }; });
+    assert.deepEqual([g.w, g.h, g.overflow, g.radius], [44, 44, false, "50%"], `Record dot is a clean 44px circle at ${w}px`);
+    assert.deepEqual(op.problems, [], "no page errors");
+    await op.close();
+  }
+});
+
 await h.close();
 const failed = results.filter((r) => !r[1]);
 console.log(`\n${results.length - failed.length}/${results.length} Staff Kanban console cases passed`);
