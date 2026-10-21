@@ -17,7 +17,7 @@ Walk the demo in this order. The full definition is in REQUIREMENTS.md → "AWS 
 
 1. **Open auction** (section C): no targeting; Monster, PepsiCo and Mars Wrigley bid through the DSPs on the same slot 35 seconds before play; the highest bid wins and plays the creative in its bid response.
 2. **Programmatic guaranteed**: Coca-Cola books a slot for 24 hours at a fixed price. Its pre-approved creatives (Coca-Cola, Coke Zero, Sprite, Fanta, Schweppes, Namthip water) are managed in PH with targeting and scheduling rules (hot/cold store segments) that PH Core triggers on the PWA player. Not a DSP bid response. Walk it in section E; its automated case is Run 7 D4.6.
-3. **Advertiser direct** (section F): Red Bull, managed entirely within PH, no DSP; the slot is reached only through a **Direct advertiser deal** (internal PH deal ID, flight dates, price), never by naming Red Bull in Assigned to; several prioritised campaigns on one slot; billed outside PH, revenue recorded and reported. Section B is the approval-table flow for campaigns, which a direct advertiser's campaigns also use.
+3. **Advertiser direct** (section B): Red Bull, managed entirely within PH, no DSP; several prioritised campaigns on one slot.
 
 Private auction and preferred deal are greyed out and not demoed; targeting on deals and open auction is out of scope.
 
@@ -48,7 +48,7 @@ Private auction and preferred deal are greyed out and not demoed; targeting on d
 3. **Expect** a tick box only on *Awaiting approval* rows, no per-row Approve
    or Reject, and the Activation toggle disabled until approved.
 
-## B. Approval without a deal ID (Partner API → retailer → creative ID)
+## B. Direct advertiser flow (Partner API → retailer → creative ID)
 
 Use the Partner API with a Swisse token (`API.md`: create → upload default →
 submit), or the seeded Swisse campaigns.
@@ -137,26 +137,10 @@ Automated twin: `cd dsp-integration/apps/api && npx vitest run test/e2e/run7-dea
 
 **PH Core, not tested here:** the pre-approved creative actually playing for the 24 hours and its hot/cold store-segment targeting. Check on a real screen with the playback rehearsal checklist.
 
-## F. Advertiser direct — Red Bull through a Direct advertiser deal (demo path 3)
-
-Automated twin: `cd dsp-integration/apps/api && CI=1 npx vitest run test/e2e/run10-direct-deals.test.ts` (Z1, X1a–X5; in `e2e:quick`).
-Superseded by this section: Red Bull named in a slot's Assigned to; a direct advertiser with no deal ID; "no billing through the platform".
-
-1. Advertisers / Inventory: **Add** a direct advertiser (or use the seeded Red Bull). **Expect** it flagged "(Direct)" with no DSP seat IDs. *(Z1)*
-2. Available Inventory, Portrait slot 3. Open its **Assigned to**. **Expect** Red Bull is not offered there; a save naming it through the API is refused 400, pointing to Direct advertiser deals. *(X1a)*
-3. DSP Integration → buyers lists → **New**, Deal type **Direct advertiser**. **Expect** Private auction and Preferred deal greyed out; a single buyer chosen from direct advertisers only; flight dates; a price as a Fixed CPM **or** a Total for the term (both is refused); committed plays read-only once a slot is assigned. Save as a draft: **expect** an internal deal ID `PH-` plus 10 characters. *(X1b)*
-4. Assign the deal to the slot. Add a second reserving deal (Direct or Programmatic guaranteed) whose dates overlap. **Expect** an inline warning naming the deal, advertiser, slot and overlapping dates, and Save blocked; change the dates so they do not overlap and it saves. *(X1d)*
-5. **Finalise** the deal (the pop-up reads "Confirm and make deal live"). **Expect** no DSP share or acceptance, status shared, windows across the flight reading **Reserved** in availability and none outside it. *(X1b, X1c)*
-6. Run an auction for a window in the flight. **Expect** no bid request sent to any DSP, no real-time sale of the slot, and one booking for Red Bull's first approved, activated campaign, handed off. With two Red Bull campaigns **expect** the first eligible wins and one booking per window. *(X1c, X5)*
-7. As Red Bull's campaign author, open the deal-ID picker. **Expect** only Red Bull's own finalised deals covering the date; another advertiser's deal ID is refused 400; a campaign with no deal ID still plays. *(X3)*
-8. After the window plays, run billing. **Expect** one revenue line item at the deal's rate marked Direct, and the Booking schedule showing "Red Bull (Direct)" with estimated then billed revenue (filter by DSP "direct"). **Expect** no invoice anywhere. *(X2)*
-
-**Seed note:** `npm run db:demo` gives Red Bull and Gatorade one Direct advertiser deal each on that slot with the same flight (1 Sep 2026 to 31 Mar 2027). The no-overlap rule (step 4) postdates that seed and is not re-judged for existing pairs, so with both live the first deal in the slot's order (Red Bull) takes every window. Give Gatorade a disjoint flight to see both.
-
 ## Acceptance for the demo
 
 - [ ] `CI=1 npm run e2e:quick` green (includes Run 8) and the admin suite green.
-- [ ] Sections A, B, C, D, E and F each pass once on the hosted prototype after a reset.
+- [ ] Sections A, B, C, D and E each pass once on the hosted prototype after a reset.
 - [ ] `prototype/build-info.json` names the commit under test.
 - [ ] Not covered by this build, so not demonstrable: a DSP bidding *on a
   creative ID* in the exchange, and assigning an ID from the campaign detail

@@ -2726,7 +2726,7 @@ components:
       properties:
         advertiserId: {type: string}
         name: {type: string, maxLength: 200}
-        dealId: {type: string, maxLength: 200, description: 'Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). It must be the platform-minted `dealId` of a buyers list the advertiser is an invited buyer on (through its mapped DSP seat; list them with GET /admin/v1/advertisers/{advertiserId}/deals), never free text: anything else is a 400, as is any deal ID for an advertiser with no deal relationship. A direct advertiser''s relationship is its own finalised Direct advertiser deals (22 Oct 2026): it may carry the internal PH deal ID of one it is the named buyer of, never another advertiser''s. The retailer approves a deal''s campaigns in subsets, each subset into a creative ID (deal ID = the grouping going in; creative ID = minted by HQ on approval). Omitted for a campaign with no deal.'}
+        dealId: {type: string, maxLength: 200, description: 'Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). It must be the platform-minted `dealId` of a buyers list the advertiser is an invited buyer on (through its mapped DSP seat; list them with GET /admin/v1/advertisers/{advertiserId}/deals), never free text: anything else is a 400, as is any deal ID for an advertiser with no deal relationship (a direct advertiser), whose campaigns carry none. The retailer approves a deal''s campaigns in subsets, each subset into a creative ID (deal ID = the grouping going in; creative ID = minted by HQ on approval). Omitted for a campaign with no deal.'}
         displayTypeId: {type: string}
         slot:
           type: integer
