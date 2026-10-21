@@ -4368,6 +4368,14 @@ function resolveDeployRun(entry, ctx, mergeCommit = null) {
   return out;
 }
 
+// The old per-card deploy record (deployRunUrl) heals a failed run, and
+// also a cancelled one: on 21 Oct 2026 the console deploy was dispatched 27
+// times in a row, each dispatch cancelled the queued one before it, and 18
+// cards read "cancelled" although the deploy that carried them succeeded.
+function legacyDeployHealable(conclusion) {
+  return conclusion === "failure" || conclusion === "cancelled";
+}
+
 // A pending deploy entry older than this becomes "unknown" (a failure for the
 // roll-up, with a note), so a card never reads Deploying… indefinitely.
 const DEPLOY_PENDING_MAX_MS = 2 * 60 * 60 * 1000;
@@ -5820,6 +5828,9 @@ async function reconcileDeployStatuses() {
   const pending = [
     ...(await byConclusion("pending")),
     ...(await byConclusion("failure")).filter((i) => (i.deployRunUrl || Array.isArray(i.deployRuns)) && Date.parse(i.mergedAt || i.updatedAt || 0) >= failedSince),
+    // A run cancelled by the workflow's concurrency group was superseded, not
+    // failed: re-checked like a failure so the newer success is adopted.
+    ...(await byConclusion("cancelled")).filter((i) => (i.deployRunUrl || Array.isArray(i.deployRuns)) && Date.parse(i.mergedAt || i.updatedAt || 0) >= failedSince),
   ];
   if (!pending.length) return;
   console.log(`[deploy-status] ${pending.length} item(s) with a pending or failed deploy to check`);
@@ -5843,7 +5854,7 @@ async function reconcileDeployStatuses() {
       let conclusion = match.conclusion || "unknown";
       let url = match.url || item.deployRunUrl || null;
       const matchRunId = runId || (String(match.url || "").match(/\/runs\/(\d+)/) || [])[1];
-      if (conclusion === "failure" && matchRunId) {
+      if (legacyDeployHealable(conclusion) && matchRunId) {
         const verdict = healFailedDeploy(matchRunId, healCache);
         if (verdict.action === "rerun") {
           console.log(`[deploy-status] ${item.id}: deploy run ${matchRunId} failed — re-running its failed job once`);
@@ -6402,7 +6413,7 @@ module.exports = {
   TRAIN_MERGE_DISPATCHES, NOT_DISPATCHED_AFTER_TRAIN, HOSTED_DEPLOYS, trainMergeNeeds,
   GENERATED_BUILDS, PREVIEW_REBUILD_STALE_MS, previewLinkFields, refreshPreviewBuildStates, rebuildNote, repointTrainPreviewUrls,
   // test/deploy-heal.test.js — a transient deploy failure heals itself
-  healFailedDeploy,
+  healFailedDeploy, legacyDeployHealable,
   // test/deploy-tracking.test.js
   planDeployRuns, rollUpDeployRuns, resolveDeployRun, consoleDeployNeeded, prototypeSourceStamp, prototypeBuildCurrent, deployFailureNote, findDispatchedDeployRun,
 };
