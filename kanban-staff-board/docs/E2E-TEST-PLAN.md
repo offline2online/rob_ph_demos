@@ -167,6 +167,7 @@ TC-26 onwards:
 | KB-C2b | KB-MOD-3 | As KB-C2 on a phone: where is the panel? | The panel is inside the window. **Known defect**: on a phone it opens 32 px off the left edge |
 | KB-C4 | KB-REP-1, KB-NAV-1 | Open `#staff-kanban/report?release=4-13`; back to the board | The report for PH 4.13; title "Release report"; the hash follows |
 | KB-C5 | KB-NAV-1 | (Runs once, Chromium.) iPad 820x1180 and 1180x820 with touch: open the menu, tap Staff Kanban; open + New task | The board opens (`#staff-kanban`); the Record task dot is a 44 px circle with nothing overflowing |
+| KB-C6 | KB-NAV-1 | (Runs once, Chromium.) iPad 1210x696 with touch: send pointerdown and pointerup on Staff Kanban with no click (what Chrome on Rob's iPad did, 21 Oct 2026); then tap it normally | The board opens from the touch alone, clicked once by the menu's touch fallback; a normal tap still clicks exactly once |
 
 Server side, `backlog-tracker/test/kanban-mcp.test.js` covers KB-MCP-1 (every
 tool over JSON-RPC as an editor and a viewer, keys from the counter, the
@@ -189,3 +190,12 @@ the activity log is append-only, mentions private to their recipient).
 Storage rules (`kanban/…` uploads) and Claude's real answers can't be run in
 CI: check an upload and a Record task once the console has deployed, with
 the manual checks above (ticket "Run the Staff Kanban manual checks M-1 to M-4").
+
+## Self-healing CI loop
+
+These suites run on every deployment train that changes `backlog-tracker/` or
+`kanban-staff-board/` (any project's). A failing case is raised automatically as
+an "E2E auto-fix" bug carrying the case id and viewport, built onto the same
+train, and the suite re-runs until green; three failed fixes for one case flag it
+for Rob. Only the merge to main waits for green. See
+`backlog-tracker/README.md` → "Self-healing Staff Kanban E2E loop".

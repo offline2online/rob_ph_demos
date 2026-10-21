@@ -624,6 +624,26 @@ const scenarios = [
     },
   },
   {
+    name: "promote: Enter submits, folder hint follows the name",
+    seed: () => relSeed(),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "build", "concept-incubator-btn", "concept-incubator-page");
+      await c.click('#concept-incubator-list .concept-card[data-id="c1"] .skill-card-name', "open concept");
+      await c.click("#concept-promote-btn", "promote");
+      await c.visible("#pc-backdrop:not([hidden])", "pop-up");
+      await c.page.fill("#pc-name-input", "Staff Kanban");
+      assert.strictEqual(await c.text("#pc-folder-hint"), "Repo folder: staff-kanban/");
+      await c.page.fill("#pc-name-input", "Staff Kanban Two");
+      await c.page.press("#pc-name-input", "Escape");
+      await c.hidden("#pc-backdrop", "Escape closes before submitting");
+      await c.click("#concept-promote-btn", "promote again");
+      await c.page.fill("#pc-name-input", "Staff Kanban");
+      await c.page.press("#pc-name-input", "Enter");
+      await c.waitText("#dialog-backdrop", "Project created", "Enter promoted the concept");
+    },
+  },
+  {
     name: "concepts: the short description shows on the tile and on the concept page",
     seed: () => relSeed(),
     async run(c) {

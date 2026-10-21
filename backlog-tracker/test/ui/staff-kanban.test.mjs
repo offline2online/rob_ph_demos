@@ -671,6 +671,33 @@ if (!ONLY || "KB-C5".startsWith(ONLY)) queue.push(["KB-C5 tablet: the menu's Sta
   }
 }]);
 
+// KB-C6: on Rob's iPad (Chrome, 21 Oct 2026) the tap reached the menu link as
+// pointer and touch events but the browser never sent the click. The touch
+// fallback in nav-shell.js clicks it; a tap whose click does arrive opens once.
+if (!ONLY || "KB-C6".startsWith(ONLY)) queue.push(["KB-C6 tablet: a touch tap whose click never arrives still opens Staff Kanban; a normal tap clicks once", async () => {
+  const op = await h.open({ seed: kanbanSeed(), hash: "", width: 1210, height: 696, contextOptions: { isMobile: true, hasTouch: true } });
+  const o = op.page;
+  await o.waitForTimeout(800);
+  await o.evaluate(() => { window.__navClicks = 0; document.getElementById("staff-kanban-btn").addEventListener("click", () => { window.__navClicks++; }); });
+  // Pointer and touch events only, as the iPad sent them — no click.
+  await o.evaluate(() => {
+    const b = document.getElementById("staff-kanban-btn"), r = b.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, pointerType: "touch", isPrimary: true, clientX: r.left + 40, clientY: r.top + r.height / 2 };
+    b.dispatchEvent(new PointerEvent("pointerdown", at));
+    b.dispatchEvent(new PointerEvent("pointerup", at));
+  });
+  await until(() => o.locator(".kb-card").count(), "the board after a tap with no click", 15000);
+  assert.equal(await o.evaluate(() => location.hash), "#staff-kanban");
+  assert.equal(await o.evaluate(() => window.__navClicks), 1, "the fallback clicked once");
+  // A real tap: the browser's own click cancels the fallback.
+  await o.tap("#nav-ph-console-btn"); await o.waitForTimeout(150);
+  await o.evaluate(() => { window.__navClicks = 0; });
+  await o.tap("#staff-kanban-btn"); await o.waitForTimeout(700);
+  assert.equal(await o.evaluate(() => window.__navClicks), 1, "a normal tap clicks once, not twice");
+  assert.deepEqual(op.problems, [], "no page errors");
+  await op.close();
+}]);
+
 // ── TC-26 … TC-66 (kanban-staff-board/test/lib/cases.mjs, shared with the prototype's suite) ──
 const E = {
   T, on, assert, open, TALL, speechStub, methodOf,

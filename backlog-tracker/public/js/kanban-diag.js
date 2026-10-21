@@ -24,8 +24,16 @@
     if (el.classList && el.classList.length) s += "." + Array.prototype.slice.call(el.classList, 0, 3).join(".");
     return s;
   }
+  // Drawn only once the tap has been quiet for a while: drawing during the
+  // tap is itself a visible change, which iPad WebKit answers by dropping the
+  // tap's click (the first build of this file did exactly that).
+  var drawTimer = 0;
   function render() {
     if (!shown) return;
+    clearTimeout(drawTimer);
+    drawTimer = setTimeout(draw, 1500);
+  }
+  function draw() {
     if (!box) {
       box = document.createElement("div");
       box.id = "kb-diag";
@@ -81,7 +89,8 @@
       var p = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : e;
       var top = typeof p.clientX === "number" ? document.elementFromPoint(p.clientX, p.clientY) : null;
       step(type + " on " + describe(e.target) + (top && top !== e.target ? " · top element " + describe(top) : "") +
-        (e.defaultPrevented ? " · defaultPrevented" : "") + (e.pointerType ? " · " + e.pointerType : ""));
+        (e.defaultPrevented ? " · defaultPrevented" : "") + (e.pointerType ? " · " + e.pointerType : "") +
+        (type === "click" ? (e.isTrusted ? " · from the browser" : " · sent by the console's touch fallback") : ""));
       if (type === "click") {
         setTimeout(function () {
           var page = document.getElementById("staff-kanban-page");

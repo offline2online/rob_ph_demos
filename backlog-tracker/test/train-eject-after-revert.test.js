@@ -58,7 +58,7 @@ assert.strictEqual(cardEvidenceRun(merged, "a1", { a1: red, m2: green, r3: green
 const dsp = afterRevertDispatches(["dsp-integration/apps/admin/src/App.tsx"]);
 assert.deepStrictEqual(dsp.tests.map((t) => t.workflow), ["e2e-quick.yml"]);
 assert.deepStrictEqual(dsp.rebuilds, ["dsp-prototype.yml"]);
-assert.deepStrictEqual(afterRevertDispatches(["backlog-tracker/public/js/app.js"]).tests.map((t) => t.workflow), ["firestore-rules-test.yml"]);
+assert.deepStrictEqual(afterRevertDispatches(["backlog-tracker/public/js/app.js"]).tests.map((t) => t.workflow), ["firestore-rules-test.yml", "kanban-staff-board-tests.yml"]);
 const gen = afterRevertDispatches(["dsp-integration/prototype/index.html"]);
 assert.deepStrictEqual([gen.tests, gen.rebuilds], [[], []], "generated output alone starts nothing");
 

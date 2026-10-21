@@ -619,6 +619,28 @@ Requirements that follow from it:
   every ticket as live on its own once GitHub reports the merge — no second
   click.
 
+### Staff Kanban E2E on every train (self-healing)
+
+- A train whose diff against main touches `backlog-tracker/` or
+  `kanban-staff-board/` runs the Staff Kanban suites (prototype e2e; console
+  `staff-kanban`, `kanban-mcp`, `kanban-rules`) at each stage: on each landing in
+  Ready for Testing, on each push to the train, and as the gate before Deploy
+  to Main. Any project's train, not only Staff Kanban's.
+- A failing case (after the single automatic re-run) is raised as a bug ticket
+  (`e2eAutoFix`: case id, viewport, failure, run, causing ticket; label "E2E
+  auto-fix"), approved for development and sent to build automatically, and
+  built onto the SAME train branch. The suite re-runs; the loop repeats until
+  green. The fix card is approved by the green run.
+- A fix ticket never blocks a card or a workflow. Only Deploy to Main waits for
+  green. Original tickets and fixes merge together in one PR.
+- Safety stop: a case still failing after 3 fix attempts is flagged for Rob
+  (`flaggedForRob`, with the attempt history) on the fix card and the causing
+  ticket; the rest of the train keeps going.
+- Visibility: the project header shows `kanbanE2e` — running, healing n bugs,
+  green or flagged — with the per-suite detail on hover; auto-raised tickets
+  carry the "E2E auto-fix" label.
+- A red the heal owns is not also ejected by `ejectRedCulprits`.
+
 ## Approving out of Ready for Testing
 
 **The checkbox is the approval.** A Ready for Testing card has one CTA —
@@ -1231,6 +1253,14 @@ change under "## Critique adjustments"; rejecting changes nothing. MCP:
 the promotion flow (`promoteConceptToProject` in `public/js/app.js`), which
 also writes the new `projects/{id}` doc, seeded with this concept's
 `readmeMd`/`requirementsMd` verbatim so nothing is re-keyed.
+
+The Promote pop-up never ends silently (21 Oct 2026): Enter in the name box
+submits; the "Repo folder: <slug>/" line under the name updates as it is
+typed (`pickRepoFolder`); while it runs the button reads "Promoting…" with a
+spinner, progress shows ("Creating project…", "Raising tickets 12/27…") and
+Cancel/×/backdrop/Escape are disabled; a concept that is no longer loaded
+shows an error alert instead of closing. Before submitting, backdrop/Escape
+still close it.
 
 `comments` mirrors `backlogItems.notes`' shape exactly (`author`/`text`/
 `at`, appended via `arrayUnion` with a literal client `Date`, never

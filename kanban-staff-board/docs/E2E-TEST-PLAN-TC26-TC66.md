@@ -74,5 +74,5 @@ the console run it; "Console" means only the console has the feature.
 | TC-65 | §13 | Touch | Rotate mid-edit and mid-drag | The form keeps its title, estimate and description and saves; after the drag nothing is left over and there is one card. **Expected: confirm** whether the drag should cancel |
 | TC-66 | KB-NAV-1 | All | Report → Settings, Back, Back, Forward, Forward; open the report, settings and board by URL | Each step shows the right page and the URL; deep links open the right page cold |
 
-Console-only additions to the signed-off set, now in the matrix: KB-C1 to KB-C4 (below). KB-C5 sets its own iPad sizes and runs once.
+Console-only additions to the signed-off set, now in the matrix: KB-C1 to KB-C4 (below). KB-C5 and KB-C6 set their own iPad sizes and run once.
 
