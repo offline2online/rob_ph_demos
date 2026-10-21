@@ -12,16 +12,19 @@ Promoted from the Concept Incubator concept `vmhUoPiogxiJq1YmtJph`
 | Tests | [`test/`](test/): Playwright end-to-end suite, one case per test-plan row. `cd test && npm install && npx playwright install chromium && npm test` |
 | Test plan | [`docs/E2E-TEST-PLAN.md`](docs/E2E-TEST-PLAN.md); latest run [`docs/E2E-REPORT-2026-10-21.md`](docs/E2E-REPORT-2026-10-21.md) (25/25) |
 | CI | `.github/workflows/kanban-staff-board-tests.yml` on pull requests touching this folder, and on demand |
-| Deploy | The prototype is GitHub Pages: live on merge to `main`. The production build lives in `backlog-tracker/` and deploys with the console |
+| Deploy | The prototype is GitHub Pages: live on merge to `main`. The production build lives in `backlog-tracker/` and deploys with the console (`deploy-backlog-tracker.yml`) when its train merges |
+| Console tests | `backlog-tracker/test/ui/staff-kanban.test.mjs` (the same cases against the console), `kanban-mcp.test.js`, `kanban-rules.test.js` |
 
-**Status (21 Oct 2026):** the prototype implements the whole spec; the
-production build in the console hasn't started. The concept was promoted to the
-board project `New5VKTF2QBqT3T4YEla` (deploy branch `deploy/kanban-staff-board`),
-whose Backlog holds its 28 tickets: 24 build (12 front end, 12 back end), the E2E
-suite, the README, the spec, and the manual checks M-1 to M-4. The production code
-goes in `backlog-tracker/`; this folder keeps the spec, prototype and tests.
-[`board-docs.json`](board-docs.json) mirrors the test plan and run report onto
-the project's Docs page.
+**Status (21 Oct 2026):** built into the PH Agent Console. The page is
+`backlog-tracker/public/js/kanban/`, the rules are in `backlog-tracker/firestore.rules`
+and `storage.rules`, and the server and MCP tools are `backlog-tracker/functions/kanban.js`
+(see `backlog-tracker/README.md` → "Staff Kanban"). It passes the whole test plan
+against the console: [`docs/E2E-REPORT-2026-10-21-console.md`](docs/E2E-REPORT-2026-10-21-console.md).
+It ships on the board project `New5VKTF2QBqT3T4YEla` (deploy branch
+`deploy/kanban-staff-board`) and goes live when that train merges. This folder keeps
+the spec, the signed-off prototype (the reference behaviour) and its tests.
+[`board-docs.json`](board-docs.json) mirrors the test plan and run reports onto the
+project's Docs page.
 
 When you change any prototype CSS or JS file, bump the `?v=` on its link in
 `prototype/index.html`: GitHub Pages lets browsers cache those files for 10
