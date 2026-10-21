@@ -172,8 +172,12 @@ export function defineNewCases(E) {
       if (want instanceof RegExp) assert.match(got, want, `${text} → ${got}`); else assert.equal(got, want, `${text} → ${got}`);
     }
     // invalid text refuses to save and names the format
-    await press(p, "#kb-new-btn"); await p.fill("#f-title", "Estimate junk"); await p.fill("#f-estimate", "soon"); await saveTask(p);
-    await until(async () => /Estimate/.test(await p.textContent("#f-error")), "the estimate error", 3000);
+    // Opened like create() does: wait for the form, then let its focus timer run, so the
+    // fills land on the new form (on a CI runner this step timed out at 3 s, twice).
+    await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title"); await sleep(100);
+    await p.fill("#f-title", "Estimate junk"); await p.fill("#f-estimate", "soon"); await saveTask(p);
+    await until(async () => /Estimate/.test(await p.textContent("#f-error").catch(() => "")), "the estimate error", 8000)
+      .catch(async (e) => { throw new Error(`${e.message} (modal open: ${await modalOpen(p)}, error: "${await p.textContent("#f-error").catch(() => "")}", title: "${await p.inputValue("#f-title").catch(() => "?")}")`); });
     assert.match(await p.textContent("#f-error"), /Estimate: use a format like 1d 4h, 6h or 30m/);
     await p.fill("#f-logged", "lots"); await p.fill("#f-estimate", "4h"); await saveTask(p);
     assert.match(await p.textContent("#f-error"), /Time logged: use a format/);
