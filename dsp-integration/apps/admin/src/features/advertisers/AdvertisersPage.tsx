@@ -30,7 +30,7 @@ import { BuyersListModal } from './BuyersListModal'
 import { ConflictCallout, rangeLabel, useSlotConflicts } from './reservingConflicts'
 import { BuyersListsTable } from './BuyersListsTable'
 import { BlockedDialog, describeBlock, type Blocked } from '../../shared/BlockedDialog'
-import { positionSlotNumber, positionText } from './slotLine'
+import { positionText, slotColumnText } from './slotLine'
 export { positionText }
 import { type Flags, envFlags } from '../../flags'
 
@@ -255,11 +255,10 @@ const PlaylistCell = ({ data, context }: IP) => {
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? (
     <Tip title={<div>
-      <div style={{ fontWeight: 500 }}>{positionText(data)}</div>
-      {positionSlotNumber(data) && <div>{positionSlotNumber(data)}</div>}
+      <div style={{ fontWeight: 500 }}>{slotColumnText(data)}</div>
       <div>{data.displayTypeName}{data.displayTypeDescription ? `: ${data.displayTypeDescription}` : ''}</div>
     </div>}>
-      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Position: ${positionText(data)}`}>{positionText(data)}</div>
+      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Slot: ${slotColumnText(data)}`}>{slotColumnText(data)}</div>
     </Tip>
   ) : null
 /* Opens the display type with Playlist Settings — where slot assignment
@@ -808,10 +807,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        the flat position across every zone, when each zone runs its own
        separate playlist and starts at slot 1). Equal to `slot` on a
        single-zone display type. */
-    { headerName: 'Slot', width: 70, field: 'zoneSlot', suppressSizeToFit: true, cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Slot', invValues((r) => [String(r.zoneSlot)])) },
-    { headerName: 'Position', width: 200, minWidth: 150, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? positionText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Position') },
+    /* Slot and Position are one column (ticket IkQ23uiIpN8dd6Wh9L27, 22 Oct 2026): the slot, then its name in brackets. */
+    { headerName: 'Slot', width: 230, minWidth: 170, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? slotColumnText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Slot') },
     {
-      headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
+      headerName: 'Assigned to', width: 400, minWidth: 300, cellRenderer: AssignedCell, autoHeight: true,
       headerComponent: header('Assigned to', ASSIGNED_TO_TIP),
       valueGetter: (p) => {
         if (!p.data) return ''
