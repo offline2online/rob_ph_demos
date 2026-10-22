@@ -1590,12 +1590,9 @@ export function mountStaffKanban(ctx) {
 
     view.innerHTML = `
       <div class="page-header">
+        <button type="button" class="btn-ghost kb-back" data-route="kanban" aria-label="Back to Staff Kanban" title="Back to Staff Kanban"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span></button>
         <h2>Release report</h2>
         <span class="page-header-count">${esc(f.release === "all" ? "All releases" : releaseName(f.release))}</span>
-        <div class="kb-header-actions">
-          <button type="button" class="btn-ghost kb-icon-label" id="rp-copy"><span class="material-symbols-outlined" aria-hidden="true">link</span>Copy link</button>
-          <button type="button" class="btn-ghost kb-icon-label" data-route="kanban"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Staff Kanban</button>
-        </div>
       </div>
       <div class="kb-filters kb-report-filters">
         ${sel("release", ["Release"], relItems)}
@@ -1675,10 +1672,6 @@ export function mountStaffKanban(ctx) {
     if (reset) reset.addEventListener("click", () => go("report"));
     $$("[data-person]", view).forEach((r) => r.addEventListener("click", () => update("assignee", f.assignee === r.dataset.person ? "" : r.dataset.person)));
     $$("[data-open]", view).forEach((r) => r.addEventListener("click", () => openTask(r.dataset.open)));
-    $("#rp-copy").addEventListener("click", () => {
-      const url = location.href;
-      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast("Report link copied"), () => toast("Copy the address bar to share this view"));
-    });
     // bar hover tooltip
     const bt = $("#kb-bar-tip");
     $$(".kb-bar-row", view).forEach((b) => {
@@ -1705,8 +1698,8 @@ export function mountStaffKanban(ctx) {
     const rels = releases();
     view.innerHTML = `
       <div class="page-header">
+        <button type="button" class="btn-ghost kb-back" data-route="kanban" aria-label="Back to Staff Kanban" title="Back to Staff Kanban"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span></button>
         <h2>Kanban settings</h2>
-        <button type="button" class="btn-ghost kb-icon-label page-header-action" data-route="kanban"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Staff Kanban</button>
       </div>
       <div class="kb-settings">
         ${admin ? "" : '<p class="kb-readonly-note"><span class="material-symbols-outlined" aria-hidden="true">lock</span>Only an admin can change these settings.</p>'}

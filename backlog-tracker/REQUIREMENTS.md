@@ -83,6 +83,10 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   deployNotifyRequestedByEmail?: string | null, // the signed-in member who triggered this — either the approve_deploy_to_main caller, or (VNE6dxMu3h6jO3g6FNNB) a plain console click; audit trail on the project doc itself, alongside mcpAuditLog, and the per-member routine binding lookup
   groomRequestedAt?: timestamp,   // bumped by the "Groom Backlog" button
   groomRequestedByEmail?: string | null, // same per-member routine binding lookup, for the Groom Backlog button
+  groomThreshold?: number,        // Groom Backlog shows only above this many Backlog tickets (default 5)
+  groomBudget?: number,           // package complexity budget in points (default 10; small 1, medium 3, large 6)
+  packageQueue?: [{id, name, itemIds, status: "queued"|"running"|"done"|"failed", startedAt?, finishedAt?, note?}], // packages built one at a time by functions/package-queue.js
+  packageQueueRequestedByEmail?: string | null,
   routinePromptMd?: string,       // see "Per-project Routine instructions" below
   faqAutoFlagOnLive?: boolean,    // see "FAQ auto-review" below
   programId?: string,             // see "programs/{programId}" below

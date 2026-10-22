@@ -18,6 +18,7 @@ const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
 const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
 const { shouldStampReportedAt, inFlightItemIds } = require("./notify-routine");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
+const { advancePackageQueue } = require("./package-queue");
 
 initializeApp();
 
@@ -1830,6 +1831,23 @@ async function runTicketIntake(event) {
   upd.updatedAt = FieldValue.serverTimestamp();
   await event.data.after.ref.update(upd);
 }
+// Groom Backlog packages (ticket 4rc1t7zXf5o8q8BUTbQ5): the board queues
+// selected packages on projects/{id}.packageQueue; these two triggers run them
+// one batch at a time. Cards of a running batch carry packageId, so the card
+// trigger exits at once for every other card write. See package-queue.js.
+exports.onPackageQueueChanged = onDocumentWritten("projects/{projectId}", async (event) => {
+  const after = event.data?.after?.data();
+  if (!after || !Array.isArray(after.packageQueue)) return;
+  if (!after.packageQueue.some((p) => p.status === "queued" || p.status === "running")) return;
+  await advancePackageQueue(getFirestore(), FieldValue, event.params.projectId);
+});
+
+exports.onPackageCardSettled = onDocumentWritten("backlogItems/{itemId}", async (event) => {
+  const after = event.data?.after?.data();
+  if (!after || !after.packageId || !after.projectId) return;
+  await advancePackageQueue(getFirestore(), FieldValue, after.projectId);
+});
+
 exports.onBacklogItemIntake = onDocumentWritten("backlogItems/{itemId}", runTicketIntake);
 
 // A build session's own buildSession.finishedAt is its guess at "now" and has
