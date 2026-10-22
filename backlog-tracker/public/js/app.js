@@ -34,6 +34,7 @@ import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, ge
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts, compareReleases, pinnedLayout, mapSnapshot, diffSystemMap, describeChanges } from "./system-map.js";
 import { pickRepoFolder, planPromotionTickets } from "./promote-plan.js";
+import { packageBacklog, groomButtonVisible, DEFAULT_GROOM_THRESHOLD, DEFAULT_PACKAGE_BUDGET } from "./groom-packages.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -1122,6 +1123,98 @@ function waitingOnAnswerChipHTML(pid) {
 // isInDevelopment checks): those are mid-fix, not waiting to be classified
 // and summarized, so a Backlog column that's entirely made of those has
 // nothing left for "Groom Backlog" to do, the same as an empty column.
+function groomThresholdOf(project) {
+  const n = Number(project && project.groomThreshold);
+  return project && project.groomThreshold != null && Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_GROOM_THRESHOLD;
+}
+function groomBudgetOf(project) {
+  const n = Number(project && project.groomBudget);
+  return n >= 1 ? Math.floor(n) : DEFAULT_PACKAGE_BUDGET;
+}
+
+// ── Groom Backlog packages (ticket 4rc1t7zXf5o8q8BUTbQ5). Groomed Backlog
+// tickets are batched by complexity budget (public/js/groom-packages.js) and
+// shown as packages above the Backlog list. Ticked packages are queued on
+// projects/{id}.packageQueue and built one batch at a time by the
+// onPackageQueueChanged / onPackageCardSettled functions (package-queue.js).
+const selectedPackageIds = {};
+function getSelectedPackages(pid) {
+  if (!selectedPackageIds[pid]) selectedPackageIds[pid] = new Set();
+  return selectedPackageIds[pid];
+}
+function packagesForProject(project) {
+  const pid = project.id;
+  const groomed = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && isBuildableBacklogItem(i) && i.groomedSummary);
+  if (!groomed.length) return [];
+  const queued = new Set((project.packageQueue || []).filter((p) => p.status === "queued" || p.status === "running").flatMap((p) => p.itemIds));
+  return packageBacklog(groomed.filter((i) => !queued.has(i.id)), { budget: groomBudgetOf(project) });
+}
+function packageQueueHTML(project) {
+  const queue = project.packageQueue || [];
+  if (!queue.length) return "";
+  const icon = { queued: "schedule", running: "autorenew", done: "check_circle", failed: "error" };
+  return `<div class="package-queue">${queue.slice(-8).map((p) => `<div class="package-queue-row package-${escapeHTML(p.status)}" title="${escapeHTML(p.note || "")}">
+      <span class="material-symbols-outlined">${icon[p.status] || "schedule"}</span>
+      <span>${escapeHTML(p.name)} &middot; ${p.itemIds.length} ticket${p.itemIds.length === 1 ? "" : "s"}</span>
+      <span class="package-status">${escapeHTML(p.status)}${p.note ? ` &mdash; ${escapeHTML(p.note)}` : ""}</span>
+    </div>`).join("")}</div>`;
+}
+function groomPackagesHTML(project) {
+  const pid = project.id;
+  const pkgs = packagesForProject(project);
+  const queueHtml = packageQueueHTML(project);
+  if (!pkgs.length) return queueHtml ? `<div class="package-panel">${queueHtml}</div>` : "";
+  const sel = getSelectedPackages(pid);
+  const ids = new Set(pkgs.map((p) => p.id));
+  [...sel].forEach((id) => { if (!ids.has(id)) sel.delete(id); });
+  const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+  const cards = pkgs.map((p) => `<div class="package-card${sel.has(p.id) ? " selected" : ""}">
+      <label class="package-card-head"><input type="checkbox" class="package-select-cb" data-project-id="${escapeHTML(pid)}" data-package-id="${escapeHTML(p.id)}" ${sel.has(p.id) ? "checked" : ""}>
+        <strong>${escapeHTML(p.name)}</strong>
+        <span class="package-meta">${p.itemIds.length} ticket${p.itemIds.length === 1 ? "" : "s"} &middot; ${p.counts.small}S ${p.counts.medium}M ${p.counts.large}L${p.overBudget ? " &middot; over budget (same area kept together)" : ""}</span></label>
+      <ul class="package-items">${p.itemIds.map((id) => `<li><span class="package-size package-size-${escapeHTML(p.sizes[id])}">${escapeHTML(p.sizes[id])}</span> ${escapeHTML((byId[id] && byId[id].title) || id)}</li>`).join("")}</ul>
+    </div>`).join("");
+  return `<div class="package-panel">
+    <div class="package-panel-head"><span class="material-symbols-outlined">inventory_2</span><strong>Packages</strong>
+      <label class="package-select-all"><input type="checkbox" class="package-select-all-cb" data-project-id="${escapeHTML(pid)}" ${sel.size === pkgs.length ? "checked" : ""}> All</label>
+      <button type="button" class="package-build-btn" data-project-id="${escapeHTML(pid)}" ${sel.size ? "" : "disabled"}>Build ${sel.size || ""} selected, one at a time</button></div>
+    ${cards}${queueHtml}</div>`;
+}
+
+async function queueSelectedPackages(pid) {
+  const project = projects.find((p) => p.id === pid);
+  if (!project) return;
+  const sel = getSelectedPackages(pid);
+  const chosen = packagesForProject(project).filter((p) => sel.has(p.id));
+  if (!chosen.length) return;
+  const existing = (project.packageQueue || []).filter((p) => p.status === "queued" || p.status === "running");
+  const history = (project.packageQueue || []).filter((p) => p.status === "done" || p.status === "failed").slice(-6);
+  const entries = chosen.map((p) => ({ id: p.id, name: p.name, itemIds: p.itemIds, status: "queued", queuedAt: Date.now() }));
+  sel.clear();
+  await setDoc(doc(db, "projects", pid), {
+    packageQueue: [...history, ...existing, ...entries],
+    packageQueueRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
+  }, { merge: true });
+}
+
+async function editGroomSettings(pid) {
+  const project = projects.find((p) => p.id === pid);
+  if (!project) return;
+  const v = await showFieldDialog({
+    title: "Grooming settings",
+    message: "Groom Backlog appears once the Backlog holds more than this many tickets. The budget sizes each package (small = 1, medium = 3, large = 6).",
+    fields: [
+      { id: "threshold", label: "Show Groom Backlog above (tickets)", type: "number", value: String(groomThresholdOf(project)) },
+      { id: "budget", label: "Package complexity budget (points)", type: "number", value: String(groomBudgetOf(project)) },
+    ],
+  });
+  if (!v) return;
+  const threshold = Math.max(0, Math.floor(Number(v.threshold)));
+  const budget = Math.max(1, Math.floor(Number(v.budget)));
+  if (!Number.isFinite(threshold) || !Number.isFinite(budget)) { await showAlert("Enter whole numbers."); return; }
+  await setDoc(doc(db, "projects", pid), { groomThreshold: threshold, groomBudget: budget }, { merge: true });
+}
+
 function groomableCountForProject(pid) {
   return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !i.patchReady).length;
 }
@@ -1314,6 +1407,10 @@ function optionsMenuHTML(project) {
     </button>`;
   }
 
+  html += `<button type="button" class="options-menu-item groom-settings-btn" data-project-id="${escapeHTML(pid)}">
+      Grooming settings
+      <span class="options-menu-sub">Groom Backlog shows above ${groomThresholdOf(project)} tickets · package budget ${groomBudgetOf(project)}</span>
+    </button>`;
   html += `<button type="button" class="options-menu-item options-menu-item-danger project-archive-project-btn" data-project-id="${escapeHTML(pid)}">
     Archive project
   </button>`;
@@ -1830,6 +1927,8 @@ function groomNotifyButtonHTML(project) {
     if (isTrainLocked(project)) return "";
     const groomableCount = groomableCountForProject(pid);
     if (!groomableCount) return "";
+    // Only worth grooming once the Backlog outgrows the project's threshold.
+    if (!groomButtonVisible(groomableCount, project.groomThreshold)) return "";
     return `<button type="button" class="notify-claude-btn groom-notify-btn" data-project-id="${escapeHTML(pid)}" title="Classify and summarize every item currently in Backlog — doesn't implement anything">
       <span class="material-symbols-outlined notify-claude-icon">content_cut</span>
       <span class="notify-claude-label">Groom Backlog</span>
@@ -2145,6 +2244,7 @@ function projectSectionHTML(project) {
     const colCollapsed = isColumnCollapsed(project.id, col.key);
     return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
       <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? needsDecisionChipHTML(project.id) + groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? reviewBatchInlineHTML(project) : "")}</div>
+      ${col.key === "backlog" ? groomPackagesHTML(project) : ""}
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
       </div>
@@ -4243,6 +4343,27 @@ projectsRoot.addEventListener("click", async (e) => {
   if (deployToFeatureBtn) { closeAllOptionMenus(); deployToFeature(deployToFeatureBtn.dataset.projectId); return; }
   const deployNotifyBtn = e.target.closest(".deploy-notify-btn");
   if (deployNotifyBtn) { closeAllOptionMenus(); requestDeployNotify(deployNotifyBtn.dataset.projectId); return; }
+  const packageCb = e.target.closest(".package-select-cb");
+  if (packageCb) {
+    const sel = getSelectedPackages(packageCb.dataset.projectId);
+    if (packageCb.checked) sel.add(packageCb.dataset.packageId); else sel.delete(packageCb.dataset.packageId);
+    render();
+    return;
+  }
+  const packageAllCb = e.target.closest(".package-select-all-cb");
+  if (packageAllCb) {
+    const pid = packageAllCb.dataset.projectId;
+    const sel = getSelectedPackages(pid);
+    const project = projects.find((p) => p.id === pid);
+    const all = project ? packagesForProject(project) : [];
+    if (packageAllCb.checked) all.forEach((p) => sel.add(p.id)); else sel.clear();
+    render();
+    return;
+  }
+  const packageBuildBtn = e.target.closest(".package-build-btn");
+  if (packageBuildBtn) { queueSelectedPackages(packageBuildBtn.dataset.projectId); return; }
+  const groomSettingsBtn = e.target.closest(".groom-settings-btn");
+  if (groomSettingsBtn) { closeAllOptionMenus(); editGroomSettings(groomSettingsBtn.dataset.projectId); return; }
   const groomNotifyBtn = e.target.closest(".groom-notify-btn");
   if (groomNotifyBtn) { closeAllOptionMenus(); requestGroomNotify(groomNotifyBtn.dataset.projectId); return; }
   const reviewBatchBtn = e.target.closest(".review-batch-btn");

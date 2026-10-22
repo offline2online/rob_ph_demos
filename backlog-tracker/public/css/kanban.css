@@ -16,6 +16,8 @@
 .kb-avatar-lg.kb-avatar-none .material-symbols-outlined { font-size: 20px; }
 
 /* Page header actions */
+.kb-back { padding: 6px; border-radius: 50%; line-height: 0; flex: none; }
+.kb-back .material-symbols-outlined { font-size: 24px; }
 .kb-header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
 .kb-icon-label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .kb-icon-label .material-symbols-outlined { font-size: 19px; }

@@ -142,6 +142,20 @@ other two, via `projects/{id}.groomRoutine`. See
 `ROUTINE_INSTRUCTIONS.md`'s own "The 'Groom Backlog' flow" section for
 exactly what a fired session does with this.
 
+**Packages (4rc1t7zXf5o8q8BUTbQ5).** Groom Backlog only shows once the Backlog
+holds more than `projects/{id}.groomThreshold` tickets (default 5; ⋮ →
+Grooming settings, with `groomBudget`, default 10). The grooming pass also
+writes `groomComplexity` (small/medium/large = 1/3/6 points) and `groomAreas`
+per ticket. `public/js/groom-packages.js` batches groomed tickets into
+packages by that budget — never by ticket count — and keeps tickets that share
+an area in one package even over budget. Ticked packages are queued on
+`projects/{id}.packageQueue`; `functions/package-queue.js`
+(`onPackageQueueChanged`, `onPackageCardSettled`) builds them one batch at a
+time through the ordinary Ready for Dev path, and a failed batch does not stop
+the ones behind it. Tests: `test/groom-packages.test.mjs`,
+`test/package-queue.test.js`. Each ticket still lands as its own commit on the
+train (one session per card); one commit per batch is not implemented.
+
 ## Notify Claude can't push — how a fix actually reaches GitHub
 
 The Claude Code session a Routine fire starts is a brand-new, bare
