@@ -2270,6 +2270,10 @@ page or `update_skill`/`upload_skill`, and bind the new one with
 same three checks (Build, Review Batch gate, Deploy step 3c) even when a
 skill does not resolve.
 
+## Live whiteboard
+
+`public/whiteboard.html` (with `js/whiteboard.js`, `js/whiteboard-core.js`, `css/whiteboard.css`) is a full-screen shared whiteboard, the last item in the **Build** menu. The menu item creates `whiteboards/{20-character id}` and opens `whiteboard.html?b={id}` with a Share panel (Copy link, native share); anyone with the link can open and draw with no sign-in, and strokes sync live through `whiteboards/{id}/strokes`. Access is by knowing the id only (`firestore.rules` → "Whiteboard"; the rules ship with the normal deploy). Spec: `REQUIREMENTS.md` → "Live whiteboard".
+
 ## Concept Incubator
 
 A home for early-stage ideas ("spitballs") that need further shape before
