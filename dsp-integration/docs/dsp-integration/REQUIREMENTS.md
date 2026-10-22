@@ -338,12 +338,29 @@ the same dialog for both.
   **Close**.
 - A confirmed delete takes effect immediately; it is not held for Save
   changes. Any other unsaved changes on the page are left as they were.
-- **Deleting a deal and buyers list** (Advertisers / Inventory) follows the
-  same dialog. A deal assigned to one or more slots can't be deleted: the
-  dialog opens already saying so ("can't be deleted because it is assigned to
-  N slots"), lists every slot it is assigned to (display type, playlist,
-  position and slot) and tells the person to unassign it in Available
-  Inventory first. **Delete is disabled**; the API refuses it as well.
+- **Deals are archived, never deleted** (Advertisers / Inventory; ticket
+  bCcJ2e00CRLxtd98Utlr, 22 Oct 2026). The row's action is **Archive** and uses
+  the same confirmation dialog. A deal assigned to one or more slots can't be
+  archived: the dialog opens already saying so ("can't be archived because it
+  is assigned to N slots"), lists every slot it is assigned to (display type,
+  playlist, position and slot) and tells the person to unassign it in
+  Available Inventory first. **Archive is disabled**; the API refuses it as
+  well (`409 has_dependents`). An archived deal leaves the live Deals table and
+  the Assigned to picker, takes no new bookings or bids, is read only (edit,
+  share and acceptances answer `409`) and is not offered to DSPs, quoted or
+  auctioned. Its deal ID, terms, history, campaigns, bookings and billing stay
+  and still resolve for reporting and revenue. **View Archived Deals**, at the
+  top right of the Deals table, opens a historic table (AG Grid, a filter on
+  every column) of all archived deals: deal, deal type, buyers, rate / total,
+  flight dates, deal ID, archived date and archived by. Archiving is recorded
+  in the SSP change history (§3a).
+- **Automatic end of flight.** Once a shared deal's flight dates have ended and
+  its last window inside the flight has played and been billed, the deal
+  releases itself from every slot (unassigns) and is then archived, archived
+  by `system`, both recorded in the SSP change history. No manual unassign is
+  needed. Checked on the scheduler tick after Billing, on booking and billing
+  state only: a won or reserved window inside the flight that is not billed yet
+  keeps the deal assigned until it is. A deal with no end date never ends.
 
 ### Help text
 

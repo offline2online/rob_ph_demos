@@ -1195,8 +1195,10 @@ paths:
     get:
       tags: [Admin — Advertiser settings]
       operationId: listBuyersLists
-      summary: Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table
+      summary: Every live buyers list (private-auction deal), for the Assigned to picker and the buyers lists table; ?archived=true lists the archive
       security: [{adminSession: []}]
+      parameters:
+        - {name: archived, in: query, required: false, schema: {type: boolean}, description: 'true returns only archived deals (View Archived Deals), newest archive first; otherwise archived deals are left out.'}
       responses:
         '200':
           description: Buyers lists
@@ -1455,14 +1457,20 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {description: 'error.code = conflict. A Programmatic guaranteed or Direct advertiser deal whose new delivery term overlaps another such deal on any slot it is assigned to (reserving deals never overlap on a slot, Rob, 22 Oct 2026). The message names the other deal, its advertiser, the slot and the overlapping dates; nothing is saved.', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    delete:
+
+  /admin/v1/buyers-lists/{buyersListId}/archive:
+    post:
       tags: [Admin — Advertiser settings]
-      operationId: deleteBuyersList
-      summary: Delete; 409 while any slot is still assigned to it
-      security: [{adminSession: []}]
+      operationId: archiveBuyersList
+      summary: Archive a deal (deals are never deleted); 409 while any slot is still assigned to it
+      description: |
+        Replaces `DELETE /admin/v1/buyers-lists/{id}`. The archived deal leaves the live table and the Assigned to picker, takes no new bookings or bids and is read-only (`PUT`, share and acceptances answer 409 `conflict`), is not offered to DSPs and cannot be assigned to a slot. Its deal ID, terms, history, campaigns, bookings and billing stay and still resolve. Idempotent. Recorded in the SSP change history. A deal whose flight has ended and whose last window is billed is released from its slots and archived the same way by the scheduler, with `archivedBy` `system`.
+      security: [{adminSession: [admin]}]
       parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
       responses:
-        '204': {description: Deleted}
+        '200':
+          description: The archived deal
+          content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/HasDependents'}
@@ -3412,15 +3420,17 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, status, sharedAt, assignedSlots, termVersion, buyerAcceptance, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
+      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, status, sharedAt, archivedAt, archivedBy, assignedSlots, termVersion, buyerAcceptance, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
       properties:
         status:
           type: string
-          enum: [draft, shared]
+          enum: [draft, shared, archived]
           readOnly: true
           description: |
-            The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
+            `archived`: the deal was archived (never deleted); see `archivedAt`, `archivedBy` and `POST .../archive`. The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
         sharedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the deal was shared; null while it is a draft. Lists that pre-date drafts are shared as of when they were created.}
+        archivedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the deal was archived; null while it is live.}
+        archivedBy: {type: [string, 'null'], readOnly: true, description: 'Who archived it: the person''s name, or `system` when its flight ended and its last window was billed.'}
         assignedSlots:
           type: array
           readOnly: true

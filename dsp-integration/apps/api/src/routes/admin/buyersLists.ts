@@ -31,6 +31,11 @@ type Body = { status?: unknown; dealId?: unknown; name?: unknown; description?: 
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
+/* An archived deal is read-only: edits, sharing and acceptances answer 409. */
+const notArchived = (l: BuyersList) => {
+  if (l.status === 'archived') throw conflict('This deal is archived, so it is read-only.', [{ field: 'status', reason: 'Archived deals cannot be edited, shared or accepted.' }])
+}
+
 const dependentSlots = async (ctx: Context, buyersListId: string) =>
   (await ctx.displayTypes.list()).flatMap((t) =>
     (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListIds.includes(buyersListId) ? [`${t.name} — ${s.label || `slot ${i + 1}`}`] : [])),
@@ -209,11 +214,15 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
 
   const directIdsOf = async () => new Set((await ctx.company.directAdvertisers()).map((d) => d.advertiserId))
 
-  app.get('/buyers-lists', async (req) => {
+  app.get<{ Querystring: { archived?: string } }>('/buyers-lists', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'sections')
     const slots = await assignedSlotsByList(ctx)
-    return { items: await Promise.all((await ctx.buyersLists.list()).map((l) => withDelivery(ctx, l, slots))) }
+    /* The live table by default; ?archived=true is View Archived Deals, newest archive first. */
+    const archived = req.query.archived === 'true'
+    const lists = await ctx.buyersLists.list(archived ? 'archived' : 'live')
+    if (archived) lists.sort((a, b) => (b.archivedAt ?? '').localeCompare(a.archivedAt ?? ''))
+    return { items: await Promise.all(lists.map((l) => withDelivery(ctx, l, slots))) }
   })
 
   /* The deal as a DSP buyer sees it: terms plus the creative requirements derived from the attached positions. */
@@ -258,6 +267,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const shared = await tx(ctx.db, async () => {
       const list = await ctx.buyersLists.get(req.params.buyersListId)
       if (!list) throw notFound()
+      notArchived(list)
       if (list.status === 'shared') return list
       const errors: { field: string; reason: string }[] = []
       if (!(await positionsOfDeal(ctx, list.id)).length) errors.push({ field: 'assignedSlots', reason: 'Assign this deal to at least one slot in Available Inventory before sharing it.' })
@@ -347,6 +357,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.requireScope(req, 'admin')
     const list = await ctx.buyersLists.get(req.params.buyersListId)
     if (!list) throw notFound()
+    notArchived(list)
     if (list.status === 'draft') throw validationFailed([{ field: 'status', reason: 'This deal has not been shared yet, so there is nothing to accept.' }])
     if (list.dealType === 'direct') throw validationFailed([{ field: 'status', reason: 'A Direct advertiser deal is not sent to a DSP, so there is no buyer acceptance.' }])
     const partnerId = typeof req.body?.partnerId === 'string' ? req.body.partnerId.trim() : ''
@@ -360,6 +371,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.requireScope(req, 'admin')
     const existing = await ctx.buyersLists.get(req.params.buyersListId)
     if (!existing) throw notFound()
+    notArchived(existing)
     const errors: { field: string; reason: string }[] = []
     /* Immutable like a DV360 deal: the ID can be echoed back unchanged, never altered. */
     if (req.body?.dealId !== undefined && req.body.dealId !== existing.dealId) errors.push({ field: 'dealId', reason: 'A deal ID cannot be changed.' })
@@ -387,16 +399,18 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     return withDelivery(ctx, updated)
   })
 
-  app.delete<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId', async (req, reply) => {
+  /* Deals are archived, never deleted (ticket bCcJ2e00CRLxtd98Utlr). Refused while a slot is assigned to the deal, naming each slot; the check and the archive are one transaction, so no slot can be assigned in between. The change history records it: the archive is an update of the deal's status, archivedAt and archivedBy. */
+  app.post<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId/archive', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    /* The check and the delete are one transaction: no slot can be assigned to it in between. */
-    await tx(ctx.db, async () => {
-      if (!(await ctx.buyersLists.get(req.params.buyersListId))) throw notFound()
-      const dependents = await dependentSlots(ctx, req.params.buyersListId)
-      if (dependents.length) throw hasDependents("This buyers list can't be deleted while a slot is assigned to it.", dependents.map((reason) => ({ field: 'slots', reason })))
-      await ctx.buyersLists.delete(req.params.buyersListId)
+    const archived = await tx(ctx.db, async () => {
+      const list = await ctx.buyersLists.get(req.params.buyersListId)
+      if (!list) throw notFound()
+      if (list.status === 'archived') return list
+      const dependents = await dependentSlots(ctx, list.id)
+      if (dependents.length) throw hasDependents("This deal can't be archived while a slot is assigned to it.", dependents.map((reason) => ({ field: 'slots', reason })))
+      return (await ctx.buyersLists.archive(list.id, auditActorOf(req).actor.name)) as BuyersList
     })
-    return reply.status(204).send()
+    return withDelivery(ctx, archived)
   })
 }

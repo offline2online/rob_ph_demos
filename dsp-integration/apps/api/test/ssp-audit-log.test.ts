@@ -88,16 +88,17 @@ describe('SSP settings audit log', () => {
     expect((await log()).items).toHaveLength(count)
   })
 
-  it('records buyers lists being created, changed and deleted, and the exchange settings', async () => {
+  it('records buyers lists being created, changed and archived, and the exchange settings', async () => {
     const { app, log } = await setup()
     const list = { name: 'Q4 private auction', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }
     const id = (await app.inject({ method: 'POST', url: `${BASE}/buyers-lists`, headers: AGENT, payload: list })).json().id
     await app.inject({ method: 'PUT', url: `${BASE}/buyers-lists/${id}`, payload: { ...list, floorCpm: 400 } })
-    await app.inject({ method: 'DELETE', url: `${BASE}/buyers-lists/${id}` })
+    await app.inject({ method: 'POST', url: `${BASE}/buyers-lists/${id}/archive` })
     const trail = (await log(`?objectType=buyers_list&objectId=${id}&order=asc`)).items
     expect(trail[0]).toMatchObject({ changeType: 'created', actor: { type: 'agent' } })
     expect(trail.find((e) => e.field === 'floorCpm' && e.changeType === 'updated')).toMatchObject({ oldValue: null, newValue: 400, actor: { type: 'human' } })
-    expect(trail[trail.length - 1]).toMatchObject({ changeType: 'deleted', newValue: null })
+    expect(trail.find((e) => e.field === 'archivedBy')).toMatchObject({ changeType: 'updated', oldValue: null, actor: { type: 'human' } })
+    expect(trail.find((e) => e.field === 'status' && e.newValue === 'archived')).toMatchObject({ changeType: 'updated' })
 
     await app.inject({ method: 'PUT', url: `${BASE}/exchange`, payload: { enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', globalDealEnabled: true } })
     expect((await log('?objectType=exchange&field=globalDealEnabled')).items[0]).toMatchObject({ oldValue: false, newValue: true })

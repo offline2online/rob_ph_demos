@@ -1246,6 +1246,35 @@ describe('Advertisers / Inventory', () => {
     expect(tip).toHaveTextContent('State: includes selected QLD')
   }, slow(45000))
 
+  /* Ticket bCcJ2e00CRLxtd98Utlr: deals are archived, never deleted. The row action is Archive; View Archived Deals is an AG Grid table with a filter on every column. */
+  it('archives a deal from its row and lists archived deals under View Archived Deals', async () => {
+    const base = { invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', description: '', status: 'draft' }
+    const live = { ...base, id: 'bl_1', dealId: 'PH-LIVE000001', name: 'Live deal' }
+    const old = { ...base, id: 'bl_2', dealId: 'PH-OLD0000001', name: 'Ended deal', status: 'archived', archivedAt: '2026-10-01T00:00:00.000Z', archivedBy: 'system' }
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST' && url.endsWith('/archive')) {
+        calls.push(url)
+        return new Response(JSON.stringify({ ...live, status: 'archived' }), { status: 200 })
+      }
+      return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: url.includes('archived=true') ? [old] : [live] } })(url)
+    }))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    expect(within(table).queryByLabelText('Delete Live deal')).toBeNull()
+    fireEvent.click(await within(table).findByLabelText('Archive Live deal'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Archive Live deal?')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Archive' }))
+    await waitFor(() => expect(calls).toEqual(['/api/admin/v1/buyers-lists/bl_1/archive']))
+    fireEvent.click(await screen.findByRole('button', { name: /View Archived Deals/ }))
+    const archive = await screen.findByLabelText('Archived deals')
+    expect(await within(archive).findByText('Ended deal')).toBeInTheDocument()
+    expect(within(archive).getByText('PH-OLD0000001')).toBeInTheDocument()
+    expect(within(archive).getByText('system')).toBeInTheDocument()
+    expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(8)
+  }, slow(45000))
+
   /* Ticket Zxw7VRUSytMAovkbDFKt: with the dealTargeting flag off (the default) a deal's tooltip shows no targeting. */
   it('hides a deal’s targeting criteria in its tooltip when targeting is off', async () => {
     const lists = [{ id: 'bl_1', name: 'Eastern states', description: 'Big metros', invitedBuyers: [], invitedCategories: [], activeFrom: null, activeTo: null, dealType: 'private_auction', targeting: [{ source: 'store', variable: 'store.state', op: 'include', values: ['NSW'] }] }]

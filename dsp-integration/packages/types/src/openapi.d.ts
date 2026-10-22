@@ -857,7 +857,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table */
+        /** Every live buyers list (private-auction deal), for the Assigned to picker and the buyers lists table; ?archived=true lists the archive */
         get: operations["listBuyersLists"];
         put?: never;
         /** New buyers list — the buyers list and its deal terms are one object; the platform mints its immutable dealId (a client-supplied dealId is a 400) */
@@ -1019,8 +1019,27 @@ export interface paths {
          */
         put: operations["updateBuyersList"];
         post?: never;
-        /** Delete; 409 while any slot is still assigned to it */
-        delete: operations["deleteBuyersList"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/buyers-lists/{buyersListId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a deal (deals are never deleted); 409 while any slot is still assigned to it
+         * @description Replaces `DELETE /admin/v1/buyers-lists/{id}`. The archived deal leaves the live table and the Assigned to picker, takes no new bookings or bids and is read-only (`PUT`, share and acceptances answer 409 `conflict`), is not offered to DSPs and cannot be assigned to a slot. Its deal ID, terms, history, campaigns, bookings and billing stay and still resolve. Idempotent. Recorded in the SSP change history. A deal whose flight has ended and whose last window is billed is released from its slots and archived the same way by the scheduler, with `archivedBy` `system`.
+         */
+        post: operations["archiveBuyersList"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2738,15 +2757,22 @@ export interface components {
          */
         BuyersList: {
             /**
-             * @description The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
+             * @description `archived`: the deal was archived (never deleted); see `archivedAt`, `archivedBy` and `POST .../archive`. The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
              * @enum {string}
              */
-            readonly status: "draft" | "shared";
+            readonly status: "draft" | "shared" | "archived";
             /**
              * Format: date-time
              * @description When the deal was shared; null while it is a draft. Lists that pre-date drafts are shared as of when they were created.
              */
             readonly sharedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the deal was archived; null while it is live.
+             */
+            readonly archivedAt: string | null;
+            /** @description Who archived it: the person's name, or `system` when its flight ended and its last window was billed. */
+            readonly archivedBy: string | null;
             /** @description Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry. */
             readonly assignedSlots: {
                 /** @description displayTypeId.sN */
@@ -5235,7 +5261,10 @@ export interface operations {
     };
     listBuyersLists: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description true returns only archived deals (View Archived Deals), newest archive first; otherwise archived deals are left out. */
+                archived?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5640,7 +5669,7 @@ export interface operations {
             };
         };
     };
-    deleteBuyersList: {
+    archiveBuyersList: {
         parameters: {
             query?: never;
             header?: never;
@@ -5651,12 +5680,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
-            204: {
+            /** @description The archived deal */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
+                };
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];

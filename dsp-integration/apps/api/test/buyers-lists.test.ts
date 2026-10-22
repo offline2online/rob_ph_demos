@@ -10,7 +10,7 @@ const list = {
 }
 
 describe('Buyers lists (spec "Support private auctions")', () => {
-  it('creates, lists, updates and deletes a buyers list', async () => {
+  it('creates, lists, updates and archives a buyers list', async () => {
     const app = buildApp(await testContext())
     const created = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: list })
     expect(created.statusCode).toBe(201)
@@ -31,9 +31,19 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     expect(updated.json().name).toBe('Q4 private auction (renamed)')
     expect(updated.json().invitedBuyers).toHaveLength(2)
 
-    const deleted = await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${id}` })
-    expect(deleted.statusCode).toBe(204)
+    const archived = await app.inject({ method: 'POST', url: `/api/admin/v1/buyers-lists/${id}/archive` })
+    expect(archived.statusCode).toBe(200)
+    expectMatchesContract('POST', '/admin/v1/buyers-lists/{buyersListId}/archive', 200, archived.json())
+    expect(archived.json()).toMatchObject({ id, status: 'archived', archivedBy: expect.any(String), archivedAt: expect.any(String) })
     expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists' })).json().items).toHaveLength(0)
+    const archive = (await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists?archived=true' })).json()
+    expectMatchesContract('GET', '/admin/v1/buyers-lists', 200, archive)
+    expect(archive.items.map((l: { id: string; dealId: string }) => [l.id, l.dealId])).toEqual([[id, created.json().dealId]])
+    /* Read-only from here: edit, share and acceptance answer 409, and there is no delete. */
+    expect((await app.inject({ method: 'PUT', url: `/api/admin/v1/buyers-lists/${id}`, payload: list })).statusCode).toBe(409)
+    expect((await app.inject({ method: 'POST', url: `/api/admin/v1/buyers-lists/${id}/share` })).statusCode).toBe(409)
+    expect((await app.inject({ method: 'POST', url: `/api/admin/v1/buyers-lists/${id}/acceptances`, payload: { partnerId: 'p_google', seatId: '5130001' } })).statusCode).toBe(409)
+    expect((await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${id}` })).statusCode).toBe(404)
   })
 
   it('rejects an empty name, no invited buyers, an unknown DSP, a seat the DSP never synced, a DSP that is not connected, and an active window the wrong way round', async () => {
@@ -53,13 +63,13 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     expect(await fields({ ...list, activeFrom: '2026-10-01T00:00:00Z', activeTo: '2026-09-01T00:00:00Z' })).toEqual(['activeTo'])
   })
 
-  it("404s updating or deleting a buyers list that doesn't exist", async () => {
+  it("404s updating or archiving a buyers list that doesn't exist", async () => {
     const app = buildApp(await testContext())
     expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/buyers-lists/bl_nope', payload: list })).statusCode).toBe(404)
-    expect((await app.inject({ method: 'DELETE', url: '/api/admin/v1/buyers-lists/bl_nope' })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists/bl_nope/archive' })).statusCode).toBe(404)
   })
 
-  it("can't be deleted while a slot is assigned to it, and can be assigned from Available Inventory", async () => {
+  it("can't be archived while a slot is assigned to it, and can be assigned from Available Inventory", async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
     const created = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: list })
@@ -74,13 +84,15 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     expect(assigned.json().items[0].assignedTo).toMatchObject({ buyersListId: id, buyersListName: 'Q4 private auction' })
     expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1]).toMatchObject({ listMode: 'deal', buyersListId: id })
 
-    const blocked = await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${id}` })
+    const blocked = await app.inject({ method: 'POST', url: `/api/admin/v1/buyers-lists/${id}/archive` })
     expect(blocked.statusCode).toBe(409)
-    expectMatchesContract('DELETE', '/admin/v1/buyers-lists/{buyersListId}', 409, blocked.json())
+    expect(blocked.json().error.code).toBe('has_dependents')
+    expectMatchesContract('POST', '/admin/v1/buyers-lists/{buyersListId}/archive', 409, blocked.json())
 
-    /* Unassign, then the delete succeeds. */
+    /* Unassign, then the archive succeeds; an archived deal can't be assigned again. */
     expect((await save(null)).statusCode).toBe(200)
-    expect((await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${id}` })).statusCode).toBe(204)
+    expect((await app.inject({ method: 'POST', url: `/api/admin/v1/buyers-lists/${id}/archive` })).statusCode).toBe(200)
+    expect((await save(id)).statusCode).toBeGreaterThanOrEqual(400)
   })
 
   it('rejects assigning a slot to both a buyers list and named advertisers, or an unknown buyers list', async () => {

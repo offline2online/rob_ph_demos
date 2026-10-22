@@ -17,6 +17,7 @@ import { buildApp } from '../src/http/app'
 import { effectivePartnerIds, findPosition } from '../src/domain/positions'
 import { expectMatchesContract } from './contract'
 import { multipart, png } from './media'
+import { prepared } from '../src/db/db'
 import { NOW, testContext } from './helpers'
 
 const GOOGLE = { authorization: 'Bearer poc-token-google-dv360' }
@@ -215,7 +216,9 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
 
     /* Invited on both DSPs' Swisse seats: either may take it, but the
        commitment is bilateral: the first DSP to commit holds the term. */
-    await ctx.buyersLists.delete('bl_pg')
+    /* Not under test: the fixture is replaced by a deal with other invited seats (deals are archived, never deleted, so the row is removed directly). */
+    for (const t of ['buyers_list_deals', 'buyers_list_acceptances', 'buyers_list_term_versions']) prepared(ctx.db, `DELETE FROM ${t} WHERE list_id = 'bl_pg'`).run()
+    prepared(ctx.db, "DELETE FROM buyers_lists WHERE id = 'bl_pg'").run()
     await termDeal(ctx, [{ partnerId: 'p_google', seatId: '5130002' }, { partnerId: 'p_amazon', seatId: 'amz-swisse' }])
     expect((await effectivePartnerIds(ctx, p.def))!.sort()).toEqual(['p_amazon', 'p_google'])
     expect((await post(RESERVE)).statusCode).toBe(201)

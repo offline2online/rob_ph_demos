@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 import { T } from '../theme/phTheme'
 import { Icon } from './Icon'
 
-export function DeleteDialog({ open, name, blockedReason, deleting, onDelete, onClose, children }: {
+export function DeleteDialog({ open, name, blockedReason, deleting, onDelete, onClose, children, action = 'Delete', icon = 'delete' }: {
   open: boolean
   name: string
   /* Set when something depends on the item: Delete is disabled, with this as its title. */
@@ -15,6 +15,9 @@ export function DeleteDialog({ open, name, blockedReason, deleting, onDelete, on
   onDelete: () => void
   onClose: () => void
   children: ReactNode
+  /* The confirming verb and its icon, for a dialog that archives rather than deletes. */
+  action?: string
+  icon?: string
 }) {
   const blocked = !!blockedReason
   return (
@@ -25,16 +28,16 @@ export function DeleteDialog({ open, name, blockedReason, deleting, onDelete, on
       onCancel={onClose}
       title={
         <span className="inline-flex items-center gap-2.5">
-          <Icon name={blocked ? 'block' : 'delete'} size={20} style={{ color: blocked ? T.warning : T.error }} />
-          {`Delete ${name}?`}
+          <Icon name={blocked ? 'block' : icon} size={20} style={{ color: blocked ? T.warning : T.error }} />
+          {`${action} ${name}?`}
         </span>
       }
       footer={[
         <Button key="close" onClick={onClose}>
           {blocked ? 'Close' : 'Cancel'}
         </Button>,
-        <Button key="delete" type="primary" danger disabled={blocked} title={blockedReason ?? undefined} loading={deleting} onClick={onDelete}>
-          Delete
+        <Button key="confirm" type="primary" danger disabled={blocked} title={blockedReason ?? undefined} loading={deleting} onClick={onDelete}>
+          {action}
         </Button>,
       ]}
     >

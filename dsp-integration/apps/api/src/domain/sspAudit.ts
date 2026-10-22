@@ -78,7 +78,7 @@ export async function takeSnapshot(ctx: Context): Promise<Snapshot> {
   for (const [id, values] of Object.entries(await ctx.company.advertiserAudiences())) add('advertiser_audiences', id, `Advertiser ${id}: audiences`, { audiences: values })
   const access = await ctx.company.variableAccess()
   add('targeting_variable_access', 'access', 'Shared targeting variables: which DSPs may target each', Object.fromEntries(Object.entries(access).map(([k, v]) => [k, v])))
-  for (const l of await ctx.buyersLists.list()) add('buyers_list', l.id, l.name, l)
+  for (const l of await ctx.buyersLists.list('all')) add('buyers_list', l.id, l.name, l)
   for (const t of await ctx.displayTypes.list()) if (t.phExtensions) add('display_type', t.id, t.name, t.phExtensions)
   for (const p of await ctx.partners.list()) add('dsp_partner', p.id, p.name, { mode: p.mode, bidder: p.bidder, allowList: p.allowList, blockList: p.blockList, categoryAllowList: p.categoryAllowList, categoryBlockList: p.categoryBlockList })
   return s

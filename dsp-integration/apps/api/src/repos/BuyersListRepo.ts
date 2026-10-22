@@ -11,7 +11,7 @@ import { type Db, fromJson, prepared, toJson, tx, type Awaitable } from '../db/d
 
 interface Row {
   id: string; deal_id: string; name: string; description: string; deal_type: 'private_auction' | 'preferred' | 'guaranteed'; invited_buyers: string; invited_categories: string; targeting: string; active_from: string | null; active_to: string | null
-  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; term_total: number | null; below_floor_override: number; below_floor_override_by: string | null; below_floor_override_at: string | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null; direct: number
+  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; term_total: number | null; below_floor_override: number; below_floor_override_by: string | null; below_floor_override_at: string | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null; direct: number; archived_at: string | null; archived_by: string | null
 }
 interface AcceptanceRow { partner_id: string; seat_id: string; accepted_version: number; accepted_at: string }
 interface VersionRow { version: number; at: string; by_name: string; changes: string; requires_reacceptance: number }
@@ -26,13 +26,15 @@ const storedType = (d: BuyersListDealType | undefined): 'private_auction' | 'pre
 export interface DealRow { deal_id: string; list_id: string; partner_id: string; retired_at: string | null }
 
 export interface BuyersListRepo {
-  list(): Awaitable<BuyersList[]>
+  /* Live deals by default (every consumer wants those); 'archived' is the archive, 'all' both. The SSP change history snapshots 'all', so archiving reads as an update, not a delete. */
+  list(scope?: 'live' | 'archived' | 'all'): Awaitable<BuyersList[]>
   get(id: string): Awaitable<BuyersList | null>
   insert(l: { by?: string; id: string; dealId?: string; name: string; description: string; dealType?: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories?: string[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays?: number | null; floorCpm?: number | null; termTotal?: number | null; belowFloorOverride?: boolean; /* false: saved as a draft, shared with no DSP yet. Omitted: shared, as every list was before drafts existed. */ shared?: boolean }): Awaitable<BuyersList>
   update(id: string, patch: { by?: string; name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories?: string[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays?: number | null; floorCpm?: number | null; termTotal?: number | null; belowFloorOverride?: boolean }): Awaitable<BuyersList | null>
   /* Stores the committed plays derived from the deal's assigned slots, term and guarantee buffer (never typed in). On a shared deal a changed figure versions the terms and asks accepted buyers to accept again; a draft has been sent to no one, so nothing is versioned. Null if the list doesn't exist. */
   setCommittedPlays(id: string, committedPlays: number | null, by?: string): Awaitable<BuyersList | null>
-  delete(id: string): Awaitable<void>
+  /* Deals are never deleted. Archiving keeps the row, its deal IDs, terms and history; `by` is the person's name, or 'system' at the end of flight. Idempotent (an archived deal keeps its first archive). Null if the list doesn't exist. */
+  archive(id: string, by: string): Awaitable<BuyersList | null>
   /* Shares a draft deal with its invited buyers: stamps shared_at. From here its term changes ask buyers to re-accept. Idempotent (a shared deal keeps its first shared_at). Null if the list doesn't exist. */
   share(id: string): Awaitable<BuyersList | null>
   /* Records that a named invited buyer accepted the deal's current terms. Null if the list doesn't exist; the route has already checked the seat is invited. */
@@ -84,12 +86,12 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     effectiveRateCpm: { min: r.floor_cpm, max: r.floor_cpm, source: r.floor_cpm == null ? 'none' : 'buyer' },
     /* A Direct advertiser deal has no buyer acceptance (Finalise makes it live), so it reports none rather than a pending one. */
     termVersion: r.term_version, buyerAcceptance: r.direct ? [] : acceptanceOf(r),
-    status: r.shared_at ? 'shared' : 'draft', sharedAt: r.shared_at, assignedSlots: [],
+    status: r.archived_at ? 'archived' : r.shared_at ? 'shared' : 'draft', sharedAt: r.shared_at, archivedAt: r.archived_at, archivedBy: r.archived_by, assignedSlots: [],
     createdAt: r.created_at, updatedAt: r.updated_at,
   })
   const row = (id: string) => prepared(db, 'SELECT * FROM buyers_lists WHERE id = ?').get(id) as Row | undefined
   return {
-    list: () => (prepared(db, 'SELECT * FROM buyers_lists ORDER BY seq').all() as unknown as Row[]).map(toRecord),
+    list: (scope = 'live') => (prepared(db, `SELECT * FROM buyers_lists ${scope === 'all' ? '' : scope === 'archived' ? 'WHERE archived_at IS NOT NULL' : 'WHERE archived_at IS NULL'} ORDER BY seq`).all() as unknown as Row[]).map(toRecord),
     get: (id) => {
       const r = row(id)
       return r ? toRecord(r) : null
@@ -171,11 +173,14 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
       prepared(db, 'INSERT INTO buyers_list_deals (deal_id, list_id, partner_id, created_at) VALUES (?, ?, ?, ?)').run(id, listId, partnerId, new Date().toISOString())
       return id
     },
-    delete(id) {
-      prepared(db, 'DELETE FROM buyers_list_deals WHERE list_id = ?').run(id)
-      prepared(db, 'DELETE FROM buyers_list_acceptances WHERE list_id = ?').run(id)
-      prepared(db, 'DELETE FROM buyers_list_term_versions WHERE list_id = ?').run(id)
-      prepared(db, 'DELETE FROM buyers_lists WHERE id = ?').run(id)
+    archive(id, by) {
+      const r = row(id)
+      if (!r) return null
+      if (!r.archived_at) {
+        const now = new Date().toISOString()
+        prepared(db, 'UPDATE buyers_lists SET archived_at = ?, archived_by = ?, updated_at = ? WHERE id = ?').run(now, by, now, id)
+      }
+      return toRecord(row(id) as Row)
     },
     lockWin(id, win) {
       const r = row(id)

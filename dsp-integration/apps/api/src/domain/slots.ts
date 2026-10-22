@@ -88,7 +88,11 @@ export async function validateAssigned(
   if (a.buyersListIds.length && (a.advertisers.length || a.whitelistOnly)) out.push({ field: field('buyersListId'), reason: 'A private auction (buyers list) is mutually exclusive with named advertisers and the whitelist.' })
   /* The waterfall (7 Oct 2026): an ordered list, one list per tier, so a list can appear once. */
   if (new Set(a.buyersListIds).size !== a.buyersListIds.length) out.push({ field: field('buyersListIds'), reason: 'A buyers list can be in the waterfall once: each tier holds one list.' })
-  for (const id of a.buyersListIds) if (!(await buyersLists.get(id))) out.push({ field: field(a.buyersListIds.length > 1 ? 'buyersListIds' : 'buyersListId'), reason: `Unknown buyers list${a.buyersListIds.length > 1 ? ` (${id})` : ''}.` })
+  for (const id of a.buyersListIds) {
+    const found = await buyersLists.get(id)
+    if (!found) out.push({ field: field(a.buyersListIds.length > 1 ? 'buyersListIds' : 'buyersListId'), reason: `Unknown buyers list${a.buyersListIds.length > 1 ? ` (${id})` : ''}.` })
+    else if (found.status === 'archived') out.push({ field: field(a.buyersListIds.length > 1 ? 'buyersListIds' : 'buyersListId'), reason: `${found.name} is archived and cannot be assigned to a slot.` })
+  }
   /* The advertiser has to be a seat on a DSP this position can sell through. A direct advertiser (no DSP) is
      refused (21 Oct 2026): it gets a slot only through a Direct advertiser deal, never by being named here. One
      already held stays, like a blocked one below: migration 0082 leaves it on a sold slot until its bookings have

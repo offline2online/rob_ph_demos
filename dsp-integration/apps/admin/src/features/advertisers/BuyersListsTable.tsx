@@ -2,7 +2,7 @@
    Inventory UX): view, manage and edit the buyers lists that are then
    selectable in Available Inventory's Assigned to column, underneath that
    table (Rob, 23 Sep). */
-import { Button } from 'antd'
+import { Button, Modal } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { DIRECT_PARTNER_ID, isGuaranteedLike, OPERATOR_LABELS, TARGETING_VARIABLES, storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
@@ -13,6 +13,7 @@ import { DeleteDialog } from '../../shared/DeleteDialog'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
+import { searchColumn, setColumn } from '../../shared/TableFilters'
 import { Tip } from '../../shared/Tip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
@@ -22,7 +23,7 @@ import { buyerStatusOf, cpmKindHint, termTotalText, rateTypeOf, rateValue, sourc
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }
-type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
+type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onArchive: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* One line per targeting rule, in the words of the criteria picker: "State: includes selected NSW, VIC". */
@@ -174,9 +175,40 @@ const ActionsCell = ({ data, context }: P) =>
     <span className="inline-flex gap-1">
       {data.status === 'shared' && data.dealType !== 'direct' && <Button type="text" size="small" aria-label={`Deal sheet for ${data.name}`} icon={<Icon name="ios_share" size={15} />} onClick={() => context.current.onShare(data)} />}
       <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
-      <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />
+      <Button type="text" size="small" aria-label={`Archive ${data.name}`} icon={<Icon name="archive" size={15} />} onClick={() => context.current.onArchive(data)} />
     </span>
   ) : null
+
+const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleString() : '')
+const ArchivedNameCell = ({ data }: P) => (data ? <div className="min-w-0"><div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div><div style={{ fontSize: 11.5, color: T.muted }}>Archived · read only</div></div> : null)
+const ArchivedAtCell = ({ data }: P) => (data?.archivedAt ? <span style={{ fontSize: 12.5 }}>{fmtDate(data.archivedAt)}</span> : null)
+const ArchivedByCell = ({ data }: P) => (data?.archivedBy ? <span style={{ fontSize: 12.5 }}>{data.archivedBy}</span> : null)
+
+/* View Archived Deals: the historic table of every archived deal, newest archive first (ticket bCcJ2e00CRLxtd98Utlr). Deals are archived, never deleted, so each keeps its deal ID, terms and history; read only. */
+function ArchivedDealsModal({ open, onClose, bufferPct, dspName, seatName }: { open: boolean; onClose: () => void; bufferPct: number; dspName: (id: string) => string; seatName: (p: string, s: string) => string }) {
+  const q = useQuery({ queryKey: ['buyers-lists', 'archived'], enabled: open, queryFn: () => api<{ items: BuyersList[] }>('GET', '/admin/v1/buyers-lists?archived=true') })
+  const rows = q.data?.items ?? []
+  const typeText = (l?: BuyersList) => (l ? DEAL_TYPE_LABELS[l.dealType] ?? 'Private auction' : '')
+  const columns = useMemo<ColDef<BuyersList>[]>(() => [
+    { headerName: 'Deal', flex: 2, minWidth: 180, cellRenderer: ArchivedNameCell, valueGetter: (p) => p.data?.name ?? '', ...searchColumn<BuyersList>('Deal') },
+    { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => typeText(p.data), ...setColumn<BuyersList>('Deal type', () => rows.map(typeText)) },
+    { headerName: 'Buyers', width: 180, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => [...(p.data?.invitedBuyers ?? []).map((b) => p.context.current.seatName(b.partnerId, b.seatId)), ...(p.data?.invitedCategories ?? [])].join(', '), ...searchColumn<BuyersList>('Buyers') },
+    { headerName: 'Rate / total', width: 180, minWidth: 150, cellRenderer: RateCell, valueGetter: (p) => (p.data?.termTotal != null ? termTotalText(p.data.termTotal) : rateValue(p.data?.effectiveRateCpm)), ...searchColumn<BuyersList>('Rate / total') },
+    { headerName: 'Flight dates', width: 250, minWidth: 210, cellRenderer: TermCell, valueGetter: (p) => `${fmtDate(p.data?.activeFrom ?? null)} ${fmtDate(p.data?.activeTo ?? null)}`, ...searchColumn<BuyersList>('Flight dates') },
+    { headerName: 'Deal ID', width: 160, minWidth: 140, cellRenderer: DealIdCell, valueGetter: (p) => p.data?.dealId ?? '', ...searchColumn<BuyersList>('Deal ID') },
+    { headerName: 'Archived', width: 170, minWidth: 140, cellRenderer: ArchivedAtCell, valueGetter: (p) => fmtDate(p.data?.archivedAt ?? null), ...searchColumn<BuyersList>('Archived') },
+    { headerName: 'Archived by', width: 140, minWidth: 120, cellRenderer: ArchivedByCell, valueGetter: (p) => p.data?.archivedBy ?? '', ...setColumn<BuyersList>('Archived by', () => rows.map((l) => l.archivedBy ?? '')) },
+  ], [rows])
+  const context = { canEdit: false, showTargeting: false, bufferPct, capacity: new Map(), slots: new Map(), dspName, seatName, onEdit: () => {}, onShare: () => {}, onArchive: () => {} }
+  return (
+    <Modal open={open} width={1180} onCancel={onClose} footer={<Button onClick={onClose}>Close</Button>} title={<span className="inline-flex items-center gap-2.5"><Icon name="inventory_2" size={20} />Archived deals</span>}>
+      <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 12 }}>Deals are archived, never deleted. An archived deal is read only and takes no new bookings or bids, but its deal ID, terms, campaigns, bookings and billing remain. A deal whose flight has ended and whose last window is billed is archived automatically, by system.</div>
+      {q.isError ? <div style={{ fontSize: 12.5, color: T.error }}>Archived deals could not be loaded.</div>
+        : q.data && rows.length === 0 ? <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="inventory_2" size={18} /><span>No archived deals yet.</span></div>
+        : <Grid<BuyersList> label="Archived deals" rows={rows} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} />}
+    </Modal>
+  )
+}
 
 export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, showTargeting = false }: { showTargeting?: boolean; lists: BuyersList[]; canEdit: boolean; capacity: Capacity; slots: Map<string, SlotInfo[]>; onChanged: () => void }) {
   const partners = useQuery(Q.partners)
@@ -193,6 +225,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
   const [sharing, setSharing] = useState<BuyersList | null>(null)
   const [deleteError, setDeleteError] = useState<ApiRequestError | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
 
   /* Memoised: a new array each render makes AG Grid reload its columns and remount every cell,
      so a late re-render (the partners query resolving) swapped the cells out from under a click.
@@ -216,7 +249,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
       setModalOpen(true)
     },
     onShare: (l: BuyersList) => setSharing(l),
-    onDelete: (l: BuyersList) => {
+    onArchive: (l: BuyersList) => {
       setDeleting(l)
       setDeleteError(null)
     },
@@ -226,7 +259,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     if (!deleting) return
     setDeleteBusy(true)
     try {
-      await api('DELETE', `/admin/v1/buyers-lists/${deleting.id}`)
+      await api('POST', `/admin/v1/buyers-lists/${deleting.id}/archive`)
       setDeleting(null)
       onChanged()
     } catch (e) {
@@ -237,11 +270,11 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
   }
 
   /* Known from the rows already on screen, so the dialog says why Delete is off the moment it opens
-     rather than after a refused click; the API still enforces it (and names its own reasons) as a backstop. */
+     rather than after a refused click (deals are archived, never deleted); the API still enforces it (and names its own reasons) as a backstop. */
   const assigned = deleting ? slots.get(deleting.id) ?? [] : []
   const slotLine = (r: SlotInfo) => `${r.displayType}${r.description ? ` (${r.description})` : ''} · ${r.playlist || 'No playlist'} · ${r.position} (slot ${r.slot})`
   const blockedMessage = deleting && (assigned.length
-    ? `“${deleting.name}” can’t be deleted because it is assigned to ${assigned.length} slot${assigned.length === 1 ? '' : 's'}.`
+    ? `“${deleting.name}” can’t be archived because it is assigned to ${assigned.length} slot${assigned.length === 1 ? '' : 's'}.`
     : deleteError?.message)
 
   return (
@@ -252,11 +285,14 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
             Deals and buyers lists
           </WithTip>
         </SectionLabel>
-        {canEdit && (
-          <Button type="primary" icon={<Icon name="add" size={16} />} onClick={() => { setEditing(null); setModalOpen(true) }}>
-            New deal and buyers list
-          </Button>
-        )}
+        <div className="flex items-center gap-3">
+          <Button type="link" style={{ padding: 0 }} icon={<Icon name="inventory_2" size={16} />} onClick={() => setArchiveOpen(true)}>View Archived Deals</Button>
+          {canEdit && (
+            <Button type="primary" icon={<Icon name="add" size={16} />} onClick={() => { setEditing(null); setModalOpen(true) }}>
+              New deal and buyers list
+            </Button>
+          )}
+        </div>
       </div>
       {lists.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
@@ -268,22 +304,23 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
       )}
       <BuyersListModal showTargeting={showTargeting} open={modalOpen} editing={editing} onClose={() => setModalOpen(false)} onSaved={() => onChanged()} />
       <DealSheetModal list={sharing} onClose={() => setSharing(null)} />
+      <ArchivedDealsModal open={archiveOpen} onClose={() => setArchiveOpen(false)} bufferPct={bufferPct} dspName={dspName} seatName={seatName} />
       {deleting && (
         <DeleteDialog
           open={!!deleting} name={deleting.name}
-          blockedReason={blockedMessage}
+          blockedReason={blockedMessage} action="Archive" icon="archive"
           deleting={deleteBusy} onDelete={confirmDelete} onClose={() => setDeleting(null)}
         >
           {assigned.length ? (
             <>
-              <div>{blockedMessage} Unassign it from each slot below in Available Inventory (the Assigned to column), then delete it.</div>
+              <div>{blockedMessage} Unassign it from each slot below in Available Inventory (the Assigned to column), then archive it.</div>
               <ul className="mt-2 mb-0 pl-[18px]">
                 {assigned.map((r, i) => <li key={i}>{slotLine(r)}</li>)}
               </ul>
             </>
           ) : (
             <>
-              {deleteError ? <div>{deleteError.message}</div> : 'This removes the deal and buyers list. It can’t be undone.'}
+              {deleteError ? <div>{deleteError.message}</div> : 'This moves the deal to View Archived Deals. It leaves this table and the Assigned to picker, takes no new bookings or bids and becomes read-only; its deal ID, terms, campaigns, bookings and billing stay.'}
               {deleteError?.body?.error.details?.length ? (
                 <ul className="mt-2 mb-0 pl-[18px]">
                   {deleteError.body.error.details.map((d, i) => <li key={i}>{d.reason}</li>)}
