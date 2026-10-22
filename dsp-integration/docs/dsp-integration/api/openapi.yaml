@@ -1242,6 +1242,7 @@ paths:
                     shared targeting variable the retailer has enabled for EVERY
                     invited buyer's DSP (400 otherwise). Omitted = no targeting.
                 activeFrom: {type: [string, 'null'], format: date-time, description: 'The delivery term''s start; inclusive, null = no bound.'}
+                timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight''s start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store''s own local time, so a window starts and ends by that store''s clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.'}
                 activeTo: {type: [string, 'null'], format: date-time, description: 'The delivery term''s end; inclusive, null = no bound.'}
                 auctionCloses:
                   type: [string, 'null']
@@ -1347,6 +1348,7 @@ paths:
                 listId: {type: string}
                 dealType: {type: string}
                 activeFrom: {type: [string, 'null'], format: date-time}
+                timeZoneMode: {type: string, enum: [platform, store]}
                 activeTo: {type: [string, 'null'], format: date-time}
                 displayTypeId: {type: string}
                 slot: {type: integer, minimum: 1}
@@ -1436,6 +1438,7 @@ paths:
                     shared targeting variable the retailer has enabled for EVERY
                     invited buyer's DSP (400 otherwise). Omitted = no targeting.
                 activeFrom: {type: [string, 'null'], format: date-time, description: 'The delivery term''s start; inclusive, null = no bound.'}
+                timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight''s start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store''s own local time, so a window starts and ends by that store''s clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.'}
                 activeTo: {type: [string, 'null'], format: date-time, description: 'The delivery term''s end; inclusive, null = no bound.'}
                 auctionCloses:
                   type: [string, 'null']
@@ -3147,6 +3150,7 @@ components:
         deals: {type: array, items: {$ref: '#/components/schemas/ListDeal'}, description: 'Admin view only: every DSP deal ID of the list.'}
         dealType: {type: string, enum: [private_auction, preferred, guaranteed, direct]}
         activeFrom: {type: [string, 'null']}
+        timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight is read in: platform (the platform time zone) or store (each store''s own local time). Shown wherever the flight is displayed.'}
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
         rateCpm: {type: number, description: The deal's resolved base floor in USD CPM.}
@@ -3170,6 +3174,7 @@ components:
         termDays: {type: [integer, 'null'], description: 'Programmatic guaranteed only: calendar days in the delivery term (null while either end is open).'}
         equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}, description: 'Fixed per term only: the total as a CPM over the assigned slots'' forecast for the term; null until a slot is assigned.'}
         activeFrom: {type: [string, 'null']}
+        timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight is read in: platform (the platform time zone) or store (each store''s own local time). Shown wherever the flight is displayed.'}
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
         committedPlays: {type: [integer, 'null'], description: 'Guaranteed deals only: derived from the assigned slots over the whole delivery term, less the guarantee buffer.'}
@@ -3365,6 +3370,8 @@ components:
         positionId: {type: string}
         overlapFrom: {type: [string, 'null'], description: 'YYYY-MM-DD; null = open-ended.'}
         overlapTo: {type: [string, 'null'], description: 'YYYY-MM-DD; null = open-ended.'}
+        overlapFromAt: {type: [string, 'null'], format: date-time, description: 'The exact moment the shared span starts (22 Oct 2026); null = open-ended.'}
+        overlapToAt: {type: [string, 'null'], format: date-time, description: 'The exact moment the shared span ends; null = open-ended.'}
         message: {type: string, description: A ready-to-show sentence naming the deal, advertiser, slot and dates.}
     TermCheck:
       type: object
@@ -3464,6 +3471,7 @@ components:
         belowFloorOverride: {type: boolean, description: 'True when the deal was saved with an explicit override of the below-floor warning (22 Oct 2026); shown as Below floor (override).'}
         belowFloorOverrideBy: {type: [string, 'null'], description: 'Who saved the override.'}
         belowFloorOverrideAt: {type: [string, 'null'], format: date-time, description: 'When the override was saved.'}
+        timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight is read in: platform (the platform time zone) or store (each store''s own local time). Shown wherever the flight is displayed.'}
         equivalentCpm:
           type: [object, 'null']
           readOnly: true

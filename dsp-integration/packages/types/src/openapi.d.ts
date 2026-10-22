@@ -2451,6 +2451,11 @@ export interface components {
             /** @enum {string} */
             dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
             activeFrom: string | null;
+            /**
+             * @description The time zone the flight is read in: platform (the platform time zone) or store (each store's own local time). Shown wherever the flight is displayed.
+             * @enum {string}
+             */
+            timeZoneMode?: "platform" | "store";
             activeTo: string | null;
             auctionCloses: string | null;
             /** @description The deal's resolved base floor in USD CPM. */
@@ -2493,6 +2498,11 @@ export interface components {
                 max: number;
             } | null;
             activeFrom: string | null;
+            /**
+             * @description The time zone the flight is read in: platform (the platform time zone) or store (each store's own local time). Shown wherever the flight is displayed.
+             * @enum {string}
+             */
+            timeZoneMode?: "platform" | "store";
             activeTo: string | null;
             auctionCloses: string | null;
             /** @description Guaranteed deals only: derived from the assigned slots over the whole delivery term, less the guarantee buffer. */
@@ -2700,6 +2710,16 @@ export interface components {
             overlapFrom: string | null;
             /** @description YYYY-MM-DD; null = open-ended. */
             overlapTo: string | null;
+            /**
+             * Format: date-time
+             * @description The exact moment the shared span starts (22 Oct 2026); null = open-ended.
+             */
+            overlapFromAt?: string | null;
+            /**
+             * Format: date-time
+             * @description The exact moment the shared span ends; null = open-ended.
+             */
+            overlapToAt?: string | null;
             /** @description A ready-to-show sentence naming the deal */
             message: string;
         };
@@ -2811,6 +2831,11 @@ export interface components {
              * @description When the override was saved.
              */
             belowFloorOverrideAt?: string | null;
+            /**
+             * @description The time zone the flight is read in: platform (the platform time zone) or store (each store's own local time). Shown wherever the flight is displayed.
+             * @enum {string}
+             */
+            timeZoneMode?: "platform" | "store";
             /** @description termTotal / forecast impressions over the term x 1000 across the assigned slots (min and max are the same blended figure). Null while the deal has no total for the term, no closed term or no assigned slot to forecast from. */
             readonly equivalentCpm?: {
                 min: number;
@@ -5325,6 +5350,11 @@ export interface operations {
                      */
                     activeFrom: string | null;
                     /**
+                     * @description The time zone the flight's start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store's own local time, so a window starts and ends by that store's clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.
+                     * @enum {string}
+                     */
+                    timeZoneMode?: "platform" | "store";
+                    /**
                      * Format: date-time
                      * @description The delivery term's end; inclusive, null = no bound.
                      */
@@ -5487,6 +5517,8 @@ export interface operations {
                     dealType?: string;
                     /** Format: date-time */
                     activeFrom?: string | null;
+                    /** @enum {string} */
+                    timeZoneMode?: "platform" | "store";
                     /** Format: date-time */
                     activeTo?: string | null;
                     displayTypeId?: string;
@@ -5608,6 +5640,11 @@ export interface operations {
                      * @description The delivery term's start; inclusive, null = no bound.
                      */
                     activeFrom: string | null;
+                    /**
+                     * @description The time zone the flight's start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store's own local time, so a window starts and ends by that store's clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.
+                     * @enum {string}
+                     */
+                    timeZoneMode?: "platform" | "store";
                     /**
                      * Format: date-time
                      * @description The delivery term's end; inclusive, null = no bound.

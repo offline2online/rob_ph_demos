@@ -6,7 +6,7 @@ import type { BuyersList, components } from '@ph-dsp/types'
 import { api } from '../../api/client'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
-import { equivalentCpmText } from './effectiveTerm'
+import { equivalentCpmText, flightMoment, zoneLabelOf } from './effectiveTerm'
 import { slotLine } from './slotLine'
 
 type Sheet = components['schemas']['DealSheet']
@@ -19,7 +19,7 @@ const cond = (c: { text: string }) => c.text
 /* Plain text for pasting into an email or chat: the Order, Product and what is bought once, then one block per DSP
    (its InventorySource), in DV360's terms (ticket DbSVEGXNIWlYW68UQnY3). */
 export function dealSheetText(s: Sheet): string {
-  const flight = `${when(s.product.startTime) ?? 'No start date'} to ${when(s.product.endTime) ?? 'No end date'}`
+  const flight = `${flightMoment(s.product.startTime) ?? 'No start date'} to ${flightMoment(s.product.endTime) ?? 'No end date'} (${zoneLabelOf(s.timeZoneMode)})`
   const creative = s.creativeRequirements.length
     ? s.creativeRequirements.map((r) => `  - ${r.formats.join(' + ')}, ${r.canvas.width}x${r.canvas.height} (${r.orientation}), max play ${r.maxPlayLengthSec}s`).join('\n')
     : '  - None yet: the deal is not attached to a slot'
@@ -98,7 +98,7 @@ export function DealSheetModal({ list, onClose }: { list: BuyersList | null; onC
                 {data.termTotal != null
                   ? <><dt style={dt}>Total for the term</dt><dd className="m-0" data-testid="deal-sheet-term-total">{data.termTotal} {data.currency} for the whole term · {rateType ?? 'Fixed per term'}{data.equivalentCpm && <div style={{ color: T.muted, fontSize: 12.5 }}>Equivalent CPM {equivalentCpmText(data.equivalentCpm)}</div>}</dd></>
                   : <><dt style={dt}>Rate</dt><dd className="m-0">{data.rateCpm} {data.currency}{rateType ? ` · ${rateType}` : ''}</dd></>}
-                <dt style={dt}>Flight dates</dt><dd className="m-0">{when(data.activeFrom) ?? 'No start date'} → {when(data.activeTo) ?? 'No end date'}{data.termDays != null ? ` (${data.termDays} day${data.termDays === 1 ? '' : 's'})` : ''}</dd>
+                <dt style={dt}>Flight dates</dt><dd className="m-0">{flightMoment(data.activeFrom) ?? 'No start date'} → {flightMoment(data.activeTo) ?? 'No end date'}{data.termDays != null ? ` (${data.termDays} day${data.termDays === 1 ? '' : 's'})` : ''}<div style={{ color: T.muted, fontSize: 12.5 }}>{zoneLabelOf(data.timeZoneMode)}</div></dd>
                 <dt style={dt}>Term version</dt><dd className="m-0">{data.termVersion}</dd>
                 {data.guaranteedImpressions != null && <><dt style={dt}>Guaranteed impressions</dt><dd className="m-0" data-testid="deal-sheet-impressions">{data.guaranteedImpressions.toLocaleString()}<div style={{ color: T.muted, fontSize: 12.5 }}>{(data.committedPlays ?? 0).toLocaleString()} plays</div></dd></>}
                 {data.auctionCloses && <><dt style={dt}>Auction window closes</dt><dd className="m-0">{when(data.auctionCloses)}</dd></>}

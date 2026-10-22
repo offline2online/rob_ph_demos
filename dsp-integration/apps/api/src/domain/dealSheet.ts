@@ -4,7 +4,7 @@
    DSP has its own deal ID (ticket fgBVnNItNcu7qMBUtqH7). The seller-initiated API push is a later phase, gated on PH being
    a certified supply source on each DSP (REQUIREMENTS.md §5 "Sharing a deal with the buyer", §7).
    Read-only: it derives from the list, its DSPs and its attached positions and stores nothing. */
-import { isGuaranteedLike, storeZoneLabel, type BuyersList } from '@ph-dsp/types'
+import { isGuaranteedLike, storeZoneLabel, type BuyersList, type TimeZoneMode } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { dealSetupHint } from '../dsp/dealTerms'
 import { baseFloorFor } from '../exchange/enforcement'
@@ -64,6 +64,8 @@ export interface DealSheet {
   equivalentCpm?: { min: number; max: number } | null
   activeFrom: string | null
   activeTo: string | null
+  /* The time zone the flight's times are read in: the platform's, or each store's own. */
+  timeZoneMode: TimeZoneMode
   auctionCloses: string | null
   committedPlays: number | null
   entries: DealSheetEntry[]
@@ -143,6 +145,7 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
     ...(isGuaranteedLike(list.dealType) ? { termDays } : {}),
     activeFrom: list.activeFrom,
     activeTo: list.activeTo,
+    timeZoneMode: list.timeZoneMode ?? 'platform',
     auctionCloses: list.auctionCloses,
     committedPlays,
     entries,
@@ -163,9 +166,10 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
 }
 
 const day = (v: string | null) => (v ? v.slice(0, 10) : null)
+export const TIME_ZONE_LABEL: Record<TimeZoneMode, string> = { platform: 'Platform time zone', store: 'Local store time' }
 /* One paragraph a buyer can paste into a DSP's description field (The Trade Desk, until its deal model is confirmed). */
 function descriptionOf(list: BuyersList, rate: number, t: DealSheetTargeting, scope: DealSheetInventoryScope, guaranteedImps: number | null, equivalentCpm: { min: number; max: number } | null): string {
-  const flight = day(list.activeFrom) || day(list.activeTo) ? `, ${day(list.activeFrom) ?? 'open start'} to ${day(list.activeTo) ?? 'open end'}` : ''
+  const flight = day(list.activeFrom) || day(list.activeTo) ? `, ${day(list.activeFrom) ?? 'open start'} to ${day(list.activeTo) ?? 'open end'} (${TIME_ZONE_LABEL[list.timeZoneMode ?? 'platform']})` : ''
   const where = scope.displays ? ` on ${scope.displays} ${scope.venueTypes.join('/') || 'retail'} screens in ${scope.stores} stores` : ''
   const vol = guaranteedImps ? ` Guarantees ${guaranteedImps.toLocaleString('en-GB')} impressions.` : ''
   const price = isTermTotal(list)

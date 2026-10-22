@@ -11,14 +11,15 @@ export type Flight = Pick<BuyersList, 'dealType' | 'activeFrom' | 'activeTo'>
 
 export const isReserving = (l: Pick<BuyersList, 'dealType'>) => isGuaranteedLike(l.dealType)
 
-/* The days two flights share, inclusive at both ends (a deal is active through its activeTo); a missing bound is open-ended. Null when they do not meet. */
-export function flightOverlap(a: Pick<Flight, 'activeFrom' | 'activeTo'>, b: Pick<Flight, 'activeFrom' | 'activeTo'>): { from: string | null; to: string | null } | null {
+/* The span two flights share, on the real start and end instants to the millisecond (22 Oct 2026). An end is the moment the flight stops, so one that ends where another starts does not overlap; a missing bound is open-ended. Null when they do not meet. `from` / `to` are the days, `fromAt` / `toAt` the exact moments. */
+export function flightOverlap(a: Pick<Flight, 'activeFrom' | 'activeTo'>, b: Pick<Flight, 'activeFrom' | 'activeTo'>): { from: string | null; to: string | null; fromAt: string | null; toAt: string | null } | null {
   const lo = (x: string | null) => (x ? Date.parse(x) : -Infinity)
   const hi = (x: string | null) => (x ? Date.parse(x) : Infinity)
   const from = Math.max(lo(a.activeFrom), lo(b.activeFrom))
   const to = Math.min(hi(a.activeTo), hi(b.activeTo))
-  if (from > to) return null
-  return { from: Number.isFinite(from) ? new Date(from).toISOString().slice(0, 10) : null, to: Number.isFinite(to) ? new Date(to).toISOString().slice(0, 10) : null }
+  if (from >= to) return null
+  const at = (n: number) => (Number.isFinite(n) ? new Date(n).toISOString() : null)
+  return { from: at(from)?.slice(0, 10) ?? null, to: at(to)?.slice(0, 10) ?? null, fromAt: at(from), toAt: at(to) }
 }
 
 /* The advertiser a deal is sold to: its one named buyer, by name where it can be resolved. */
@@ -29,8 +30,12 @@ export async function advertiserNameOf(ctx: Context, list: Pick<BuyersList, 'inv
   return (await ctx.partners.get(b.partnerId))?.seats.find((s) => s.id === b.seatId)?.name ?? b.seatId
 }
 
-const day = (d: string | null, open: string) => d ?? open
-export const rangeText = (from: string | null, to: string | null) => (from && to && from === to ? from : `${day(from, 'the start')} to ${day(to, 'no end date')}`)
+/* A moment as the warning shows it: just the day at a day's start or end (so a whole-day deal reads as before), the day and minute otherwise. Read as saved, not converted to the browser's zone. */
+const momentText = (iso: string | null, open: string) => (iso == null ? open : iso.endsWith('T00:00:00.000Z') || iso.endsWith('T23:59:59.999Z') ? iso.slice(0, 10) : `${iso.slice(0, 10)} ${iso.slice(11, 16)}`)
+export const rangeText = (from: string | null, to: string | null, fromAt: string | null = from, toAt: string | null = to) => {
+  const a = momentText(fromAt, 'the start'), z = momentText(toAt, 'no end date')
+  return from && to && from === to && a.length === 10 && z.length === 10 ? from : `${a} to ${z}`
+}
 
 /* Every other reserving deal on the slot that `deal` (with this flight) overlaps. `others` are the deal IDs already on the slot. */
 export async function slotConflicts(ctx: Context, deal: { id: string } & Flight, dt: DisplayType, slot: number, others: readonly string[]): Promise<ReservingConflict[]> {
@@ -47,8 +52,8 @@ export async function slotConflicts(ctx: Context, deal: { id: string } & Flight,
     out.push({
       dealId: other.id, dealName: other.name, dealCode: other.dealId, advertiser,
       displayTypeId: dt.id, playlist: dt.name, slot, slotLabel: label || null, positionId: positionIdOf(dt.id, slot),
-      overlapFrom: over.from, overlapTo: over.to,
-      message: `${other.name} (${advertiser}) already holds ${dt.name}, slot ${slot}${label ? ` (${label})` : ''}: this slot is already sold for ${rangeText(over.from, over.to)}. Change the dates or the slot.`,
+      overlapFrom: over.from, overlapTo: over.to, overlapFromAt: over.fromAt, overlapToAt: over.toAt,
+      message: `${other.name} (${advertiser}) already holds ${dt.name}, slot ${slot}${label ? ` (${label})` : ''}: this slot is already sold for ${rangeText(over.from, over.to, over.fromAt, over.toAt)}. Change the dates or the slot.`,
     })
   }
   return out

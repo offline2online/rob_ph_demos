@@ -233,3 +233,34 @@ describe('Direct advertiser deals in campaign authoring', () => {
     void app
   })
 })
+
+/* Flight start and end times, and a time zone mode (ticket yOginusgiFgFkwVHTRFH, 22 Oct 2026). */
+describe('Deal flights: times and a time zone mode', () => {
+  it('saves the time zone mode with the deal, defaults to the platform, keeps it when an edit omits it, and refuses a bad value', async () => {
+    const { app, deal } = await setup()
+    const made = (await app.inject({ method: 'POST', url: URL, payload: deal({ floorCpm: 150 }) })).json()
+    expect(made.timeZoneMode).toBe('platform')
+    const body = { name: made.name, dealType: 'direct', invitedBuyers: made.invitedBuyers, floorCpm: 150, activeFrom: made.activeFrom, activeTo: made.activeTo }
+    const store = await app.inject({ method: 'PUT', url: `${URL}/${made.id}`, payload: { ...body, timeZoneMode: 'store' } })
+    expect(store.statusCode).toBe(200)
+    expect(store.json().timeZoneMode).toBe('store')
+    expect((await app.inject({ method: 'PUT', url: `${URL}/${made.id}`, payload: { ...body, name: 'Renamed' } })).json().timeZoneMode).toBe('store')
+    expect((await app.inject({ url: `${URL}/${made.id}/deal-sheet` })).json()).toMatchObject({ timeZoneMode: 'store' })
+    expect((await app.inject({ method: 'PUT', url: `${URL}/${made.id}`, payload: { ...body, timeZoneMode: 'moon' } })).statusCode).toBe(400)
+  })
+
+  it('allows two deals on one slot on the same day when their times do not overlap, and refuses ones that do, with the shared span', async () => {
+    const { app, direct, assign, other } = await sellSetup()
+    const morning = (await app.inject({ method: 'PUT', url: `${URL}/${direct.id}`, payload: { name: direct.name, dealType: 'direct', invitedBuyers: direct.invitedBuyers, floorCpm: 150, activeFrom: '2026-11-10T08:00:00.000Z', activeTo: '2026-11-10T12:00:00.000Z' } }))
+    expect(morning.statusCode).toBe(200)
+    /* Starts the moment the morning deal ends: no overlap. */
+    const afternoon = await other('2026-11-10T12:00:00.000Z', '2026-11-10T18:00:00.000Z')
+    expect((await assign([direct.id, afternoon.id])).statusCode).toBe(200)
+    const clash = await other('2026-11-10T11:30:00.000Z', '2026-11-10T13:00:00.000Z')
+    const refused = await assign([direct.id, clash.id])
+    expect(refused.statusCode).toBe(409)
+    expect(refused.json().error.message).toContain('2026-11-10 11:30 to 2026-11-10 12:00')
+    const ask = await app.inject({ method: 'POST', url: '/api/admin/v1/reserving-conflicts', payload: { displayTypeId: 'portrait', slot: 1, buyersListIds: [direct.id, clash.id] } })
+    expect(ask.json().conflicts[0]).toMatchObject({ overlapFromAt: '2026-11-10T11:30:00.000Z', overlapToAt: '2026-11-10T12:00:00.000Z' })
+  })
+})

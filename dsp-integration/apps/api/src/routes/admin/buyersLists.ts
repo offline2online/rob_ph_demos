@@ -2,7 +2,7 @@
    deal objects, managed from Available Inventory's own table underneath the
    Assigned to picker (Rob, 23 Sep). */
 import { randomUUID } from 'node:crypto'
-import { assignedOf, canonicalIabCategory, DIRECT_PARTNER_ID, isGuaranteedLike, isAggregateVariable, isValidAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type TermCheck, type Condition, type InvitedBuyer } from '@ph-dsp/types'
+import { assignedOf, canonicalIabCategory, DIRECT_PARTNER_ID, isGuaranteedLike, isAggregateVariable, isValidAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type TimeZoneMode, type TermCheck, type Condition, type InvitedBuyer } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
@@ -27,7 +27,7 @@ import { permittedFor, undefinedValues } from '../../domain/variables'
 import type { Access, VariableValues } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { status?: unknown; dealId?: unknown; name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; invitedCategories?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown; termTotal?: unknown; ratePerDay?: unknown; belowFloorOverride?: unknown }
+type Body = { status?: unknown; dealId?: unknown; name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; invitedCategories?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; timeZoneMode?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown; termTotal?: unknown; ratePerDay?: unknown; belowFloorOverride?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -97,7 +97,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
      categories; targeting (only variables shared with every invited DSP,
      values from each variable's defined list); the delivery term; committed
      plays (guaranteed only); and the floor, never below the platform's. */
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null, directIds: Set<string> = new Set()): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; termTotal: number | null; belowFloorOverride: boolean } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null, directIds: Set<string> = new Set()): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; timeZoneMode: TimeZoneMode | undefined; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; termTotal: number | null; belowFloorOverride: boolean } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -175,6 +175,9 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const activeFrom = parseDate(b.activeFrom, 'activeFrom')
     const activeTo = parseDate(b.activeTo, 'activeTo')
     if (activeFrom && activeTo && Date.parse(activeFrom) > Date.parse(activeTo)) errors.push({ field: 'activeTo', reason: 'Must be on or after activeFrom.' })
+    /* The time zone the flight's start and end times are read in (22 Oct 2026): the platform's (the default) or each store's own. Omitted means as it is (the stored mode on an edit, the platform's on a create). */
+    if (b.timeZoneMode !== undefined && b.timeZoneMode !== 'platform' && b.timeZoneMode !== 'store') errors.push({ field: 'timeZoneMode', reason: 'platform or store.' })
+    const timeZoneMode: TimeZoneMode | undefined = b.timeZoneMode === 'platform' || b.timeZoneMode === 'store' ? b.timeZoneMode : undefined
     /* The two-period model is retired (Rob, 16 Oct 2026; industry-standard private auctions): invited buyers bid per slot for the whole flight, first price against the deal's CPM floor, with no auction window and no rate lock. A deal that already has an auctionCloses keeps it as a record (a locked deal honours its terms to flight end); no new one is accepted. */
     const auctionCloses = parseDate(b.auctionCloses, 'auctionCloses')
     if (auctionCloses && auctionCloses !== legacyAuctionCloses) errors.push({ field: 'auctionCloses', reason: 'Private auctions no longer have an auction window: invited buyers bid on each slot throughout the flight. Leave auctionCloses empty.' })
@@ -209,7 +212,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       else termTotal = Math.round(b.termTotal * 100) / 100
     }
     const committedPlays: number | null = null
-    return { name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm, termTotal, belowFloorOverride }
+    return { name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, timeZoneMode, auctionCloses, committedPlays, floorCpm, termTotal, belowFloorOverride }
   }
 
   const directIdsOf = async () => new Set((await ctx.company.directAdvertisers()).map((d) => d.advertiserId))
@@ -311,7 +314,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
   /* Dry run of the reserving-deal overlap rule (Rob, 22 Oct 2026); writes nothing. Two questions, so the UI can warn inline before anything is saved:
        - a deal's flight: { listId, activeFrom, activeTo } -> its conflicts on every slot it is on;
        - a slot's assignment: { displayTypeId, slot, buyersListIds, candidates? } -> conflicts of the deals newly in the list, and for each candidate (an option in the Assigned to picker) what choosing it would clash with. */
-  app.post<{ Body: { listId?: unknown; activeFrom?: unknown; activeTo?: unknown; dealType?: unknown; displayTypeId?: unknown; slot?: unknown; buyersListIds?: unknown; candidates?: unknown } }>('/reserving-conflicts', async (req) => {
+  app.post<{ Body: { listId?: unknown; activeFrom?: unknown; activeTo?: unknown; dealType?: unknown; timeZoneMode?: unknown; displayTypeId?: unknown; slot?: unknown; buyersListIds?: unknown; candidates?: unknown } }>('/reserving-conflicts', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
     const b = req.body ?? {}

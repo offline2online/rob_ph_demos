@@ -1045,6 +1045,22 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   }, slow(30000))
 
+  /* Ticket yOginusgiFgFkwVHTRFH (22 Oct 2026): the flight has start and end times and a Time zone dropdown above it (Platform time zone by default); the chosen mode is saved with the deal and shown where the flight is. */
+  it('shows a Time zone dropdown above the flight, defaulting to the platform time zone, and saves the chosen mode', async () => {
+    const puts: Record<string, unknown>[] = []
+    vi.stubGlobal('fetch', termsFetch(false, puts as unknown[]))
+    const dialog = await openTermsEditor()
+    const zone = within(dialog).getByRole('combobox', { name: 'Time zone' })
+    expect(within(dialog).getByText('Platform time zone')).toBeInTheDocument()
+    expect(within(dialog).getByPlaceholderText('Start date and time')).toBeInTheDocument()
+    expect(within(dialog).getByPlaceholderText('End date and time')).toBeInTheDocument()
+    fireEvent.mouseDown(zone)
+    fireEvent.click(await screen.findByText('Local store time'))
+    fireEvent.click(within(dialog).getByRole('button', { name: /Save/ }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).toMatchObject({ timeZoneMode: 'store' })
+  }, slow(30000))
+
   /* Ticket LjkTqL4rdegolMoFCYVJ (21 Oct 2026): a Programmatic guaranteed deal covers a whole delivery term, priced as a fixed CPM or a total for the term; its committed plays are derived from the assigned slots and shown read-only once there are some. */
   const perTermFetch = (list: Record<string, unknown>, puts: unknown[]) => vi.fn(async (url: string, init?: RequestInit) => {
     const path = url.split('?')[0]

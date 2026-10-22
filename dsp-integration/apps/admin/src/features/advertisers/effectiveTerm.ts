@@ -59,6 +59,13 @@ export const buyerStatusOf = (l: Pick<BuyersList, 'status' | 'termVersion' | 'bu
 /* Guaranteed impressions are derived: committed plays x assumed views per play (stored: plays only). */
 export const impressionsOf = (plays: number | null | undefined, viewsPerPlay: number | null | undefined) => (plays != null && viewsPerPlay ? Math.round(plays * viewsPerPlay) : null)
 
+/* A flight moment as saved (22 Oct 2026): the stored date and time, never converted to the browser's zone, e.g. "1 Nov 2026 09:00". */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+export const flightMoment = (iso: string | null): string | null => (iso ? `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)} ${iso.slice(11, 16)}` : null)
+/* The time zone mode shown wherever a flight is displayed. */
+export const TIME_ZONE_LABEL = { platform: 'Platform time zone', store: 'Local store time' } as const
+export const zoneLabelOf = (mode: 'platform' | 'store' | undefined) => TIME_ZONE_LABEL[mode ?? 'platform']
+
 /* Details column (ticket nfDLP1CZiPjGfN8FG764, 21 Oct 2026): what a deal delivers over its whole flight, for the hover.
    Signage, so plays are the measure: a slot's plays = plays per window per display x displays x windows a day x days in the flight
    (calendar days, both ends included, as the API counts a term). Value is plays / 1000 x the CPM, or the term total split across

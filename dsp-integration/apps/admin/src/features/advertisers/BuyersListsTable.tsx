@@ -19,7 +19,7 @@ import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { DealSheetModal } from './DealSheetModal'
-import { buyerStatusOf, flightDays, slotPlaysOver, termTotalText, rateTypeOf, rateValue, sourceLabel, valueOf, valueText } from './effectiveTerm'
+import { buyerStatusOf, flightDays, flightMoment, slotPlaysOver, termTotalText, rateTypeOf, rateValue, sourceLabel, valueOf, valueText, zoneLabelOf } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }
@@ -114,16 +114,15 @@ const SlotsCell = ({ data, context }: P) => {
   )
   return <Tip title={tip}><span style={{ fontSize: 12.5 }}>{rows.length} slot{rows.length === 1 ? '' : 's'}</span></Tip>
 }
-const fmt = (v: string | null) => (v ? new Date(v).toLocaleString() : null)
 /* The flight dates (spec "Private auctions: two-period model", 23 Sep
    2026) — the span this deal is awarded for; was "Active window" before
    the auction window (bidding deadline) became a separate period. */
 const TermCell = ({ data }: P) => {
   if (!data) return null
-  const from = fmt(data.activeFrom)
-  const to = fmt(data.activeTo)
+  const from = flightMoment(data.activeFrom)
+  const to = flightMoment(data.activeTo)
   if (!from && !to) return <span style={{ color: T.muted }}>Always active</span>
-  return <span style={{ fontSize: 12.5 }}>{from ?? 'No start date'} → {to ?? 'No end date'}</span>
+  return <span style={{ fontSize: 12.5 }}>{from ?? 'No start date'} → {to ?? 'No end date'}<div style={{ fontSize: 11.5, color: T.muted }}>{zoneLabelOf(data.timeZoneMode)}</div></span>
 }
 /* Details (ticket nfDLP1CZiPjGfN8FG764): the rate, the deal type and a one-line summary in the cell; the hover is a compact,
    programmatic read of the deal over its whole flight. It does not repeat the Slots hover (per-window slot copy): per slot it
@@ -145,7 +144,7 @@ const DetailsCell = ({ data, context }: P) => {
   const totalPlays = counted.reduce((a, n) => a + n, 0)
   const complete = slots.length > 0 && counted.length === slots.length
   const total = complete ? valueText(valueOf(data, totalPlays, totalPlays)) : null
-  const flight = data.activeFrom || data.activeTo ? `${fmt(data.activeFrom) ?? 'No start date'} → ${fmt(data.activeTo) ?? 'No end date'}` : 'Always active'
+  const flight = data.activeFrom || data.activeTo ? `${flightMoment(data.activeFrom) ?? 'No start date'} → ${flightMoment(data.activeTo) ?? 'No end date'} (${zoneLabelOf(data.timeZoneMode)})` : 'Always active'
   /* The cell's one-line summary: slots, plays and value over the flight, or why there is no total yet. */
   const summary = !slots.length ? 'Not assigned to a slot' : days == null ? 'Open flight: no total' : !complete ? `${slots.length} slot${slots.length === 1 ? '' : 's'}` : [`${slots.length} slot${slots.length === 1 ? '' : 's'}`, `${num(totalPlays)} plays`, total].filter(Boolean).join(' · ')
   const sub = (l: string, v: string) => <div><span style={{ color: T.muted }}>{l}: </span>{v}</div>

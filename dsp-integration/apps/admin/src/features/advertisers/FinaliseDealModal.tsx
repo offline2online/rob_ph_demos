@@ -14,7 +14,7 @@ import { api, ApiRequestError } from '../../api/client'
 import { Q } from '../../api/queries'
 import { InfoTip } from '../../shared/InfoTip'
 import { T } from '../../theme/phTheme'
-import { equivalentCpmText, rateTypeOf } from './effectiveTerm'
+import { equivalentCpmText, flightMoment, rateTypeOf, zoneLabelOf } from './effectiveTerm'
 import { slotLine } from './slotLine'
 
 type Sheet = components['schemas']['DealSheet']
@@ -72,7 +72,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
               ? <>{label('Total for the term')}<dd className="m-0" data-testid="finalise-term-total">{list.termTotal} {data?.currency ?? 'USD'} for the whole term{data?.equivalentCpm ? <div style={{ color: T.muted, fontSize: 12.5 }}>Equivalent CPM {equivalentCpmText(data.equivalentCpm)}</div> : null}</dd></>
               : <>{label('Rate')}<dd className="m-0">{data ? `${data.rateCpm} ${data.currency}` : '…'}</dd></>}
             {label('Rate type')}<dd className="m-0">{rateTypeOf(list.dealType, list.termTotal)}</dd>
-            {label('Flight dates')}<dd className="m-0">{when(list.activeFrom) ?? 'No start date'} → {when(list.activeTo) ?? 'No end date'}{data?.termDays != null ? ` (${data.termDays} day${data.termDays === 1 ? '' : 's'})` : ''}</dd>
+            {label('Flight dates')}<dd className="m-0">{flightMoment(list.activeFrom) ?? 'No start date'} → {flightMoment(list.activeTo) ?? 'No end date'}{data?.termDays != null ? ` (${data.termDays} day${data.termDays === 1 ? '' : 's'})` : ''}<div style={{ color: T.muted, fontSize: 12.5 }}>{zoneLabelOf(list.timeZoneMode)}</div></dd>
             {list.committedPlays != null && <>{label('Guaranteed impressions')}<dd className="m-0">{data?.guaranteedImpressions != null ? data.guaranteedImpressions.toLocaleString() : '…'}<div style={{ color: T.muted, fontSize: 12.5 }}>{list.committedPlays.toLocaleString()} plays</div></dd></>}
             {list.auctionCloses && <>{label('Auction closes')}<dd className="m-0">{when(list.auctionCloses)}</dd></>}
             {label(`Slots (${(list.assignedSlots ?? []).length})`)}
