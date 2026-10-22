@@ -292,6 +292,36 @@ const scenarios = [
     },
   },
   {
+    name: "project header: big collapse control left of the name, star at the right; pinned bar collapses too",
+    seed: () => {
+      const s = seed();
+      for (let n = 2; n <= 8; n++) s.docs.backlogItems[`b${n}`] = { ...s.docs.backlogItems.b1, title: `Backlog card ${n}`, createdAt: t(T0 + n), updatedAt: t(T0 + n) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      c.at("collapse control is large and left of the name; star is right of it");
+      const g = await c.page.evaluate(() => {
+        const r = (sel) => document.querySelector(sel).getBoundingClientRect();
+        const col = r(".project-collapse-btn"), name = r(".project-name"), star = r(".project-star-btn");
+        return { colW: col.width, colH: col.height, colRight: col.right, nameLeft: name.left, starLeft: star.left, nameRight: name.right };
+      });
+      assert.ok(g.colW >= 43.5 && g.colH >= 43.5, `collapse control is ${g.colW}x${g.colH}`);
+      assert.ok(g.colRight <= g.nameLeft + 1, "collapse control sits left of the project name");
+      assert.ok(g.starLeft >= g.nameRight - 1, "star sits right of the project name");
+      if (c.width > 640) return;
+      c.at("collapse from the pinned bar");
+      await c.page.locator(".card").last().scrollIntoViewIfNeeded();
+      await c.page.evaluate(() => window.scrollBy(0, 120));
+      await c.visible("#mobile-action-bar .mobile-action-bar-collapse", "the pinned bar has a collapse control");
+      await c.click("#mobile-action-bar .mobile-action-bar-collapse", "collapse from the pinned bar");
+      await until(async () => (await c.page.locator(".project.collapsed").count()) === 1 ? true : null, "the project collapses");
+      c.at("expand again from the page header");
+      await c.click(".project-collapse-btn", "expand");
+      await until(async () => (await c.page.locator(".project.collapsed").count()) === 0 ? true : null, "the project expands");
+    },
+  },
+  {
     name: "⋮ menu: Archived tickets lists the archived card",
     seed: () => seed(),
     async run(c) {
@@ -741,7 +771,6 @@ function selfChecks() {
     assert.deepStrictEqual([...urls].sort(), [...SDK_MODULES].sort());
   });
   check("an unimplemented stub function throws its own name", () => {
-    assert.throws(() => stub.getFirestore(), /firebase-stub: getFirestore not implemented/);
     assert.throws(() => stub.signOut(), /firebase-stub: signOut not implemented/);
   });
   return results;

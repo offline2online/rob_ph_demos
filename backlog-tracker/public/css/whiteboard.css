@@ -1,0 +1,83 @@
+/* Live whiteboard: a full-screen page of its own (whiteboard.html). Colours and
+   radii follow the console tokens in styles.css; the font is Roboto and the
+   icons are Material Symbols Outlined, as everywhere else in Personalisation Hub. */
+:root {
+  --bg: #ffffff; --surface: #ffffff; --text: #232628; --text-muted: rgba(35, 38, 40, .6);
+  --border: #d9d9d9; --primary: #169bc2; --primary-tint: rgba(22, 155, 194, .1); --primary-text: #0b7090;
+  --danger: #d4433f; --shadow: 0 2px 12px rgba(0, 0, 0, .16);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: Roboto, system-ui, sans-serif; overscroll-behavior: none; }
+.material-symbols-outlined { font-size: 22px; line-height: 1; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+#wb-canvas {
+  position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair;
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, rgba(0, 0, 0, .12) 1px, transparent 1.5px); background-size: 24px 24px;
+}
+#wb-canvas[data-tool="pan"] { cursor: grab; }
+#wb-canvas[data-tool="pan"].is-panning { cursor: grabbing; }
+#wb-canvas[data-tool="eraser"] { cursor: cell; }
+
+.wb-toolbar {
+  position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; gap: 4px; max-width: calc(100vw - 16px); overflow-x: auto;
+  padding: 6px; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow), 0 0 0 .5px rgba(0, 0, 0, .1);
+}
+.wb-tool, .wb-share-btn, .wb-icon {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none;
+  min-width: 44px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent;
+}
+.wb-tool:hover, .wb-icon:hover { background: rgba(0, 0, 0, .06); }
+.wb-tool[aria-pressed="true"] { background: var(--primary-tint); color: var(--primary-text); }
+.wb-label { font-size: 13px; font-weight: 500; }
+.wb-sep { flex: none; width: 1px; height: 26px; background: var(--border); margin: 0 4px; }
+.wb-group { display: inline-flex; gap: 2px; flex: none; }
+.wb-swatch, .wb-size { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border: 0; border-radius: 10px; background: transparent; padding: 0; }
+.wb-swatch i { width: 22px; height: 22px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15); }
+.wb-swatch[aria-pressed="true"] i { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--primary); }
+.wb-size i { display: block; border-radius: 50%; background: var(--text); }
+.wb-size[aria-pressed="true"] { background: var(--primary-tint); }
+.wb-share-btn { background: var(--primary); color: #fff; font-weight: 600; padding: 0 14px; }
+.wb-share-btn:hover { background: #09759c; }
+
+.wb-status { position: fixed; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 4; padding: 6px 12px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); font-size: 13px; color: var(--text-muted); }
+.wb-status:empty { display: none; }
+
+.wb-share {
+  position: fixed; top: calc(76px + env(safe-area-inset-top)); right: 12px; z-index: 6; width: min(380px, calc(100vw - 24px));
+  padding: 16px; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow), 0 0 0 .5px rgba(0, 0, 0, .1);
+}
+.wb-share-head { display: flex; align-items: center; justify-content: space-between; }
+.wb-share-note { margin: 6px 0 12px; font-size: 14px; color: var(--text-muted); }
+.wb-share-row { display: flex; gap: 8px; }
+.wb-share-row input { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px; background: #f7f8f8; color: var(--text); }
+.wb-primary, .wb-secondary, .wb-danger { min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid transparent; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.wb-primary { background: var(--primary); color: #fff; }
+.wb-primary:hover { background: #09759c; }
+.wb-secondary { background: transparent; border-color: var(--border); }
+.wb-secondary:hover { background: rgba(0, 0, 0, .05); }
+.wb-danger { background: var(--danger); color: #fff; }
+#wb-native-share { margin-top: 10px; }
+.wb-share-msg { margin: 10px 0 0; min-height: 20px; font-size: 14px; color: var(--primary-text); font-weight: 500; }
+
+.wb-confirm { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 8; padding: 20px; background: var(--surface); border-radius: 14px; box-shadow: 0 8px 40px rgba(0, 0, 0, .3); text-align: center; max-width: calc(100vw - 32px); }
+.wb-confirm p { margin: 0 0 16px; font-weight: 500; }
+.wb-confirm div { display: flex; gap: 8px; justify-content: center; }
+
+.wb-error { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; background: var(--bg); }
+.wb-error[hidden], .wb-ui[hidden], .wb-share[hidden], .wb-confirm[hidden], #wb-native-share[hidden] { display: none; }
+.wb-error .material-symbols-outlined { font-size: 48px; color: var(--text-muted); }
+.wb-error h1 { margin: 0; font-size: 22px; font-weight: 700; }
+.wb-error p { margin: 0; color: var(--text-muted); max-width: 36ch; }
+
+/* Phone: tools wrap into icon-only buttons, share panel becomes a bottom sheet. */
+@media (max-width: 640px) {
+  .wb-label { display: none; }
+  .wb-tool { padding: 0; }
+  .wb-share { top: auto; right: 0; left: 0; bottom: 0; width: auto; border-radius: 14px 14px 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .wb-status { bottom: calc(76px + env(safe-area-inset-bottom)); }
+}

@@ -274,7 +274,8 @@ export const onAuthStateChanged = (a, cb) => { setTimeout(() => cb(a.currentUser
 
 // ── everything else is a loud no ────────────────────────────────────────────
 const unimplemented = (name) => function () { throw new Error(`firebase-stub: ${name} not implemented`); };
-export const getFirestore = unimplemented("getFirestore");
+// The whiteboard page (a separate document) asks for the default Firestore; the console itself uses initializeFirestore.
+export const getFirestore = () => ({ type: "firestore" });
 // Storage: every upload is kept in memory (window.__fbStub.uploads) and
 // given a download URL shaped like the real one; the harness serves it.
 export const ref = (_storage, path) => ({ type: "storageRef", path });
