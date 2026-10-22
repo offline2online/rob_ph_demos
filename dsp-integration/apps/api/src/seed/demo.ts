@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto'
 import { crc32, deflateSync } from 'node:zlib'
 import { advertiserSlug, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
+import { applyTradingHours } from './tradingHours'
 import { onFree, tx } from '../db/db'
 import { allPositions, assignmentOf, nextWindow, windowMs } from '../domain/positions'
 import type { StoredTargeting } from '../domain/targetingSummary'
@@ -310,6 +311,7 @@ export async function seedDemo(ctx: Context) {
     /* Localized segments for the booking schedule's plays-per-day cuts (stand-in for the platform's store segments). */
     const setSegments = ctx.db.prepare('UPDATE stores SET segments = ? WHERE id = ? AND segments = ?')
     for (const [id, segs] of [['st_melbourne_cbd', ['Metro']], ['st_brisbane_city', ['Metro']], ['st_perth_cbd', ['Metro']], ['st_newcastle', ['Regional']]] as const) setSegments.run(JSON.stringify(segs), id, '[]')
+    applyTradingHours(ctx.db)
     const storeId = ctx.db.prepare('SELECT id FROM stores WHERE name = ?')
     const insDisplay = ctx.db.prepare('INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING')
     for (const [id, name, store, dt] of DEMO_DISPLAYS) {
