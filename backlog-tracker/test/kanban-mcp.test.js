@@ -80,13 +80,13 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list|get|search|release)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
-  await test("kanban_create_task: PH-1 in Backlog, the current release, attributed, logged", async () => {
+  await test("kanban_create_task: PH-1 in Backlog, no release unless given, attributed, logged", async () => {
     const r = await tool(sam, "kanban_create_task", { title: "Offer expiry sweep ignores the store's time zone", description: "Stores outside London expire an hour early.\n\nAround DST.", type: "bug", assignee: HUY, estimate: "1d 4h", priority: "high", labels: ["Menu Boards"] });
     assert.ok(!r.isError, r.text);
     assert.deepStrictEqual(r.json, { created: true, key: "PH-1", status: "backlog" });
     const t = task("PH-1");
     assert.strictEqual(t.status, "backlog"); assert.strictEqual(t.open, true); assert.strictEqual(t.resolution, null);
-    assert.strictEqual(t.release, "r412"); assert.strictEqual(t.reporter, SAM); assert.strictEqual(t.createdBy, SAM); assert.strictEqual(t.updatedBy, SAM);
+    assert.strictEqual(t.release, ""); assert.strictEqual(t.reporter, SAM); assert.strictEqual(t.createdBy, SAM); assert.strictEqual(t.updatedBy, SAM);
     assert.strictEqual(t.estimate, 12); assert.deepStrictEqual(t.labels, ["menu-boards"]);
     assert.strictEqual(t.description, "<p>Stores outside London expire an hour early.</p><p>Around DST.</p>");
     assert.ok(t.searchTokens.includes("ph-1") && t.searchTokens.includes("sweep") && t.searchTokens.includes("swe") && t.searchTokens.includes("london"));
@@ -95,10 +95,10 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   });
 
   await test("keys come from the counter and are never reused", async () => {
-    const r = await tool(sam, "kanban_create_task", { title: "Second" });
+    const r = await tool(sam, "kanban_create_task", { title: "Second", release: "r412" });
     assert.strictEqual(r.json.key, "PH-2");
     env.store.col("kanbanTasks").delete("PH-2");
-    const r3 = await tool(sam, "kanban_create_task", { title: "Third" });
+    const r3 = await tool(sam, "kanban_create_task", { title: "Third", release: "r412" });
     assert.strictEqual(r3.json.key, "PH-3");
   });
 
@@ -142,6 +142,17 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(task("PH-3").flagged, true);
   });
 
+  await test("an admin with no console row is a member: listed, assignable by email and as \"me\"", async () => {
+    const people = await tool(sam, "kanban_list_people", {});
+    assert.ok(people.json.people.some((p) => p.email === ROB));
+    const c = await tool(sam, "kanban_create_task", { title: "For me", assignee: "me" });
+    assert.ok(!c.isError, c.text); assert.strictEqual(task(c.json.key).assignee, SAM);
+    const a = await tool(sam, "kanban_assign_task", { key: c.json.key, assignee: ROB });
+    assert.ok(!a.isError, a.text); assert.strictEqual(task(c.json.key).assignee, ROB);
+    const m = await tool(sam, "kanban_assign_task", { key: c.json.key, assignee: "me" });
+    assert.ok(!m.isError, m.text); assert.strictEqual(task(c.json.key).assignee, SAM);
+  });
+
   await test("an epic: children listed, and losing its type unlinks them", async () => {
     const e = await tool(sam, "kanban_create_task", { title: "Menu Boards — scheduled local offers", type: "epic" });
     await tool(sam, "kanban_update_task", { key: "PH-1", epic: e.json.key });
@@ -169,6 +180,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(s.json.results[0].key, "PH-1");
     const byNumber = await tool(kit, "kanban_search_tickets", { query: "PH-3" });
     assert.strictEqual(byNumber.json.results[0].key, "PH-3");
+    assert.ok(!(await tool(sam, "kanban_update_task", { key: "PH-1", release: "r412" })).isError); // PH-1 was created with no release
     const rep = await tool(kit, "kanban_release_report", {});
     assert.strictEqual(rep.json.release, "r412"); assert.strictEqual(rep.json.releaseName, "PH 4.12");
     assert.ok(rep.json.outstanding >= 2);
@@ -208,7 +220,11 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     env.store.col("memberDirectory").clear();
     const r = await call({ method: "POST", path: "/mcp/kanban/directory-sync", headers: { "X-Firebase-ID-Token": signIn(KIT) } });
     assert.strictEqual(r.statusCode, 200);
-    assert.strictEqual(env.store.col("memberDirectory").size, env.store.col("consoleUsers").size);
+    // The bootstrap admins have no consoleUsers row but are members all the same.
+    const ids = [...env.store.col("consoleUsers").keys()];
+    for (const b of ["rob@offline2online.com", "rob@personalisationhub.com"]) if (!ids.includes(b)) ids.push(b);
+    assert.strictEqual(env.store.col("memberDirectory").size, ids.length);
+    assert.ok(env.store.col("memberDirectory").has("rob@offline2online.com"));
     const out = await call({ method: "POST", path: "/mcp/kanban/directory-sync", headers: { "X-Firebase-ID-Token": signIn("nobody@example.com") } });
     assert.strictEqual(out.statusCode, 403);
   });
@@ -299,6 +315,14 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     await tool(sam, "kanban_move_task", { key, status: "done", resolution: "completed" });
     const t = task(key);
     assert.strictEqual(t.open, false); assert.strictEqual(t.status, "done"); assert.strictEqual(t.updatedBy, SAM);
+  });
+  await test("a ticket with no release can be given one later", async () => {
+    const r = await tool(sam, "kanban_create_task", { title: "Create a one-pager" });
+    assert.ok(!r.isError, r.text);
+    assert.strictEqual(task(r.json.key).release, "");
+    const u = await tool(sam, "kanban_update_task", { key: r.json.key, release: "r412" });
+    assert.ok(!u.isError, u.text);
+    assert.strictEqual(task(r.json.key).release, "r412");
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

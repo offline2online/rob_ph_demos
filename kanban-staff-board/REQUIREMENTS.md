@@ -136,7 +136,10 @@ once saved it can be chosen as the **Parent epic** of any task or bug.
 assignee, status, release (fix version), estimate. **Optional fields** (Jira
 equivalents): type, priority, sprint, due date, time logged, labels, comments,
 attachments, parent epic, linked tickets, flag. All fields flow into filters
-and the release report.
+and the release report. **Release is optional**: it is never a required field (settings
+can't make it so), a ticket created on the form or over MCP (`kanban_create_task`) may have
+none, and one can be added later; unreleased tickets still show on the board and in
+filters, and appear under "All releases" in the report.
 
 **KB-TASK-4 Flags.** Any ticket can be flagged from its card or its modal;
 flagged cards are amber with a filled flag.

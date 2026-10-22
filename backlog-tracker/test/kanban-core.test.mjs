@@ -48,6 +48,10 @@ t("release report: outstanding, remaining, capacity, epics left out", () => {
   assert.equal(r.outstanding.length, 1); assert.equal(r.totals.remaining, 6); assert.equal(r.totals.withdrawn, 1);
   assert.equal(r.workingDays, 5); assert.equal(r.capacityPerPerson, 30);
 });
+t("settings: release is never required, even if saved so", () => {
+  assert.equal(k.normaliseSettings({ fields: { release: { show: true, required: true } } }).fields.release.required, false);
+  assert.equal(k.defaultFields().release.required, false);
+});
 t("settings: core fields always shown, title and status always required", () => {
   const s = k.normaliseSettings({ fields: { title: { show: false, required: false }, sprint: { show: false, required: true } }, firstNames: { "h@x": "Huy" } });
   assert.deepEqual(s.fields.title, { show: true, required: true });

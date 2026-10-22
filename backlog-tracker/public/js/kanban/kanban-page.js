@@ -1732,7 +1732,7 @@ export function mountStaffKanban(ctx) {
       return `<div class="kb-set-row${core ? " kb-set-core" : ""}">
         <span class="kb-set-name">${esc(f.label)}${core && f.lockRequired ? '<span class="kb-set-tag">Always required</span>' : ""}</span>
         <label class="kb-set-toggle"><span class="kb-set-col">Show</span><input type="checkbox" data-show="${f.key}" ${c.show ? "checked" : ""} ${core || !admin ? "disabled" : ""} aria-label="Show ${esc(f.label)} on the form"></label>
-        <label class="kb-set-toggle"><span class="kb-set-col">Required</span><input type="checkbox" data-req="${f.key}" ${c.required ? "checked" : ""} ${f.lockRequired || !c.show || !admin || ["comments", "attachments", "flag"].includes(f.key) ? "disabled" : ""} aria-label="${esc(f.label)} required"></label>
+        <label class="kb-set-toggle"><span class="kb-set-col">Required</span><input type="checkbox" data-req="${f.key}" ${c.required ? "checked" : ""} ${f.lockRequired || !c.show || !admin || ["comments", "attachments", "flag", "release"].includes(f.key) ? "disabled" : ""} aria-label="${esc(f.label)} required"></label>
       </div>`;
     };
     const rels = releases();
