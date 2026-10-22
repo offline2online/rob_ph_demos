@@ -785,8 +785,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        the flat position across every zone, when each zone runs its own
        separate playlist and starts at slot 1). Equal to `slot` on a
        single-zone display type. */
-    /* Slot and Position are one column (ticket IkQ23uiIpN8dd6Wh9L27, 22 Oct 2026): the slot, then its name in brackets. minWidth = width so the name isn't cut off on a wide table. */
-    { headerName: 'Slot', width: 300, minWidth: 300, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? slotColumnText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Slot') },
+    /* Slot and Position are one column (ticket IkQ23uiIpN8dd6Wh9L27, 22 Oct 2026): the slot, then its name in brackets. minWidth = width, sized to just fit "Slot 1 (Hero slot)" (a third of the old 300px, 22 Oct 2026); a longer zone or position name truncates with its hover. */
+    { headerName: 'Slot', width: 140, minWidth: 140, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? slotColumnText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Slot') },
     {
       /* minWidth too: sizeColumnsToFit shrinks every column to its minWidth on a wide table, which left this at 300px and cut off its waterfall note (E2E 22 Oct 2026). */
       headerName: 'Assigned to', width: 400, minWidth: 400, cellRenderer: AssignedCell, autoHeight: true,
