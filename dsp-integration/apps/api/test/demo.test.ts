@@ -94,14 +94,16 @@ describe('demo estate', () => {
     expect(slot4).toMatchObject({ advertisers: [], listMode: 'deal', buyersListId: 'bl_demo_pg_nestle' })
     const deal = (await ctx.buyersLists.get('bl_demo_pg_nestle'))!
     expect(deal).toMatchObject({ dealType: 'guaranteed', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], floorCpm: 200 })
-    expect(Date.parse(deal.activeTo!) - Date.parse(deal.activeFrom!)).toBe(7 * 24 * 3_600_000)
+    expect(Date.parse(deal.activeTo!) - Date.parse(deal.activeFrom!)).toBe(7 * 24 * 3_600_000 - 1)
+    expect(deal.activeTo).toMatch(/T23:59:59\.999Z$/)
     /* Its bookings sit on slot 4 inside the flight, at the deal's rate, and nobody else books that slot. */
     const booked = (await ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString())).filter((r) => !r.testMode && r.positionId === 'landscape.s4')
     expect(booked.length).toBeGreaterThan(0)
     for (const r of booked) {
       expect(r).toMatchObject({ advertiserId: 'nestle', partnerId: 'p_google', clearingCpm: 200, dealType: 'guaranteed' })
       expect(Date.parse(r.windowStart)).toBeGreaterThanOrEqual(Date.parse(deal.activeFrom!))
-      expect(Date.parse(r.windowStart)).toBeLessThanOrEqual(Date.parse(deal.activeTo!))
+      /* The whole window, not just its start (E2E 22 Oct 2026: one started the instant the flight ended). */
+      expect(Date.parse(r.windowStart)).toBeLessThan(Date.parse(deal.activeTo!))
       expect(r.reason).toContain(deal.dealId)
     }
   })

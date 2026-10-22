@@ -135,7 +135,7 @@ export async function baseFloorFor(ctx: Context, scope: FloorScope = {}): Promis
   const company = await ctx.company.get()
   const listId = scope.buyersListId ?? (scope.position && assignmentOf(scope.position.def) === 'deal' ? assignedOf(scope.position.def).buyersListId : undefined)
   const list = listId ? await ctx.buyersLists.get(listId) : null
-  return resolveBaseFloor(company.floorCpm, scope.partner?.bidder.floorCpm, list?.floorCpm, scope.position ? displayTypeFloorCpmOf(scope.position.displayType) : null, scope.position ? slotFloorCpmOf(scope.position.def) : null)
+  return resolveBaseFloor(company.floorCpm, scope.partner?.bidder.floorCpm, list?.floorCpm, scope.position ? displayTypeFloorCpmOf(scope.position.displayType) : null, scope.position ? slotFloorCpmOf(scope.position.def) : null, list?.belowFloorOverride === true)
 }
 
 /* The effective floor a bid must clear: the resolved base floor (platform,

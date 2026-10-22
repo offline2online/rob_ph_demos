@@ -42,7 +42,7 @@ export async function archiveEndedDeals(ctx: Context): Promise<string[]> {
         if (!slots?.some((s) => assignedOf(s).buyersListIds.includes(l.id))) continue
         await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: slots.map((s) => (assignedOf(s).buyersListIds.includes(l.id) ? without(s, l.id) : s)) })
       }
-      await ctx.buyersLists.archive(l.id, SYSTEM_ACTOR.name)
+      await ctx.buyersLists.archive(l.id, SYSTEM_ACTOR.name, ctx.clock().toISOString())
       done.push(l.name)
     }
   })

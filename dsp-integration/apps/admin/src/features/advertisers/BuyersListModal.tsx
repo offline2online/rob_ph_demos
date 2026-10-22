@@ -404,7 +404,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
       </div>
       ) : (
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. The rate for deals using this list, overriding the DSP's floor. It can raise the floor but never go below the platform floor. Leave empty to inherit.">{draft.dealType === 'preferred' || guaranteed ? 'Fixed CPM' : 'Rate'}</WithTip></label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. The rate for deals using this list, overriding the DSP's floor. It can raise the floor. On a Preferred or Programmatic guaranteed deal it can go below the platform floor only when you choose Save anyway, and the deal is then marked Below floor (override). Leave empty to inherit.">{draft.dealType === 'preferred' || guaranteed ? 'Fixed CPM' : 'Rate'}</WithTip></label>
         <InputNumber
           id="buyersListFloorCpm" min={0} style={{ width: '100%' }} step={1} placeholder={rateText(rate) ?? 'Inherit the DSP or platform floor'}
           status={errors.floorCpm ? 'error' : undefined}
@@ -412,6 +412,8 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
           value={draft.floorCpm} onChange={(v) => setDraft((d) => ({ ...d, floorCpm: typeof v === 'number' && v > 0 ? v : null }))}
         />
         {errors.floorCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.floorCpm}</div>}
+        {/* A below-floor fixed CPM is flagged here too, not only a below-floor total (E2E 22 Oct 2026). */}
+        {editing?.belowFloorOverride && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }} data-testid="below-floor-override">Below floor (override){editing.belowFloorOverrideBy ? `: saved by ${editing.belowFloorOverrideBy}` : ''}. Saving it again below the floor asks for the override again.</div>}
         <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="effective-rate">
           {rateText(rate) ? `Rate: ${rateText(rate)} (${sourceLabel(rate.source)})` : 'Rate: per play'}
           <div data-testid="rate-type">Rate type: {rateTypeOf(draft.dealType)}</div>

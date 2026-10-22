@@ -221,6 +221,10 @@ describe('Programmatic guaranteed: a fixed CPM or a total for the term', () => {
     const saved = await app.inject({ method: 'POST', url: URL, payload: { ...low, belowFloorOverride: true } })
     expect(saved.statusCode).toBe(201)
     expect(saved.json()).toMatchObject({ floorCpm: floor - 1, belowFloorOverride: true })
+    /* The agreed rate is what is shown and sent, not the platform floor (E2E 22 Oct 2026: every surface read the floor). */
+    const id = saved.json().id as string
+    expect((await app.inject({ method: 'GET', url: URL })).json().items.find((l: { id: string }) => l.id === id).effectiveRateCpm).toMatchObject({ min: floor - 1, max: floor - 1 })
+    expect((await app.inject({ method: 'GET', url: `${URL}/${id}/deal-sheet` })).json().rateCpm).toBe(floor - 1)
     const atFloor = await app.inject({ method: 'POST', url: URL, payload: { ...body, floorCpm: floor, belowFloorOverride: true } })
     expect(atFloor.json().belowFloorOverride).toBe(false)
     const auction = await app.inject({ method: 'POST', url: URL, payload: { ...low, dealType: 'private_auction', belowFloorOverride: true } })

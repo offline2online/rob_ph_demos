@@ -23,6 +23,8 @@ import { buyerStatusOf, flightDays, flightMoment, slotPlaysOver, termTotalText, 
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }
+/* Secondary text inside a Tip (dark background). */
+const TIP_MUTED = 'rgba(255,255,255,0.65)'
 type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onArchive: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
@@ -147,7 +149,8 @@ const DetailsCell = ({ data, context }: P) => {
   const flight = data.activeFrom || data.activeTo ? `${flightMoment(data.activeFrom) ?? 'No start date'} → ${flightMoment(data.activeTo) ?? 'No end date'} (${zoneLabelOf(data.timeZoneMode)})` : 'Always active'
   /* The cell's one-line summary: slots, plays and value over the flight, or why there is no total yet. */
   const summary = !slots.length ? 'Not assigned to a slot' : days == null ? 'Open flight: no total' : !complete ? `${slots.length} slot${slots.length === 1 ? '' : 's'}` : [`${slots.length} slot${slots.length === 1 ? '' : 's'}`, `${num(totalPlays)} plays`, total].filter(Boolean).join(' · ')
-  const sub = (l: string, v: string) => <div><span style={{ color: T.muted }}>{l}: </span>{v}</div>
+  /* The hover sits on the tooltip's dark background, where T.muted (black at 45%) is invisible (E2E 22 Oct 2026): secondary text is white at 65% there. */
+  const sub = (l: string, v: string) => <div><span style={{ color: TIP_MUTED }}>{l}: </span>{v}</div>
   const tip = (
     <div data-testid={`details-tip-${data.id}`}>
       <div style={{ fontWeight: 500 }}>{typeLabel}</div>
@@ -166,9 +169,9 @@ const DetailsCell = ({ data, context }: P) => {
             const v = p === null || !complete ? null : valueText(valueOf(data, p, totalPlays))
             return <div key={i} data-testid={`details-slot-${data.id}-${i}`}>{s.displayType} · slot {s.slot}: {p === null ? 'plays n/a' : `${num(p)} plays`}{v ? ` · ${v}` : ''}</div>
           })}
-          {slots.length > MAX_TIP_SLOTS && <div style={{ color: T.muted }}>+ {slots.length - MAX_TIP_SLOTS} more slot{slots.length - MAX_TIP_SLOTS === 1 ? '' : 's'}</div>}
+          {slots.length > MAX_TIP_SLOTS && <div style={{ color: TIP_MUTED }}>+ {slots.length - MAX_TIP_SLOTS} more slot{slots.length - MAX_TIP_SLOTS === 1 ? '' : 's'}</div>}
           <div style={{ marginTop: 4, fontWeight: 500 }} data-testid={`details-total-${data.id}`}>Deal total: {complete ? `${num(totalPlays)} plays${total ? ` · ${total}` : ''}` : 'not available for every slot'}</div>
-          {!perTerm && !data.lockedWin && <div style={{ color: T.muted }}>Value = plays ÷ 1,000 × CPM.</div>}
+          {!perTerm && !data.lockedWin && <div style={{ color: TIP_MUTED }}>Value = plays ÷ 1,000 × CPM.</div>}
         </>}
     </div>
   )
@@ -199,7 +202,8 @@ const ActionsCell = ({ data, context }: P) =>
     </span>
   ) : null
 
-const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleString() : '')
+/* Same "22 Oct 2026 14:05" form as the flight dates, not the browser's locale (E2E 22 Oct 2026: it read 10/22/2026, 2:19:36 AM). */
+const fmtDate = (v: string | null) => flightMoment(v) ?? ''
 const ArchivedNameCell = ({ data }: P) => (data ? <div className="min-w-0"><div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div><div style={{ fontSize: 11.5, color: T.muted }}>Archived · read only</div></div> : null)
 const ArchivedAtCell = ({ data }: P) => (data?.archivedAt ? <span style={{ fontSize: 12.5 }}>{fmtDate(data.archivedAt)}</span> : null)
 const ArchivedByCell = ({ data }: P) => (data?.archivedBy ? <span style={{ fontSize: 12.5 }}>{data.archivedBy}</span> : null)
@@ -213,9 +217,9 @@ function ArchivedDealsModal({ open, onClose, bufferPct, dspName, seatName }: { o
     { headerName: 'Deal', flex: 2, minWidth: 180, cellRenderer: ArchivedNameCell, valueGetter: (p) => p.data?.name ?? '', ...searchColumn<BuyersList>('Deal') },
     { headerName: 'Buyers', width: 180, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => [...(p.data?.invitedBuyers ?? []).map((b) => p.context.current.seatName(b.partnerId, b.seatId)), ...(p.data?.invitedCategories ?? [])].join(', '), ...searchColumn<BuyersList>('Buyers') },
     { headerName: 'Details', width: 280, minWidth: 220, cellRenderer: DetailsCell, valueGetter: (p) => `${typeText(p.data)} ${p.data?.termTotal != null ? termTotalText(p.data.termTotal) : rateValue(p.data?.effectiveRateCpm) ?? ''}`, ...searchColumn<BuyersList>('Details') },
-    { headerName: 'Flight dates', width: 250, minWidth: 210, cellRenderer: TermCell, valueGetter: (p) => `${fmtDate(p.data?.activeFrom ?? null)} ${fmtDate(p.data?.activeTo ?? null)}`, ...searchColumn<BuyersList>('Flight dates') },
+    { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${fmtDate(p.data?.activeFrom ?? null)} ${fmtDate(p.data?.activeTo ?? null)}`, ...searchColumn<BuyersList>('Flight dates') },
     { headerName: 'Deal ID', width: 160, minWidth: 140, cellRenderer: DealIdCell, valueGetter: (p) => p.data?.dealId ?? '', ...searchColumn<BuyersList>('Deal ID') },
-    { headerName: 'Archived', width: 170, minWidth: 140, cellRenderer: ArchivedAtCell, valueGetter: (p) => fmtDate(p.data?.archivedAt ?? null), ...searchColumn<BuyersList>('Archived') },
+    { headerName: 'Archived', width: 180, minWidth: 160, cellRenderer: ArchivedAtCell, valueGetter: (p) => fmtDate(p.data?.archivedAt ?? null), ...searchColumn<BuyersList>('Archived') },
     { headerName: 'Archived by', width: 140, minWidth: 120, cellRenderer: ArchivedByCell, valueGetter: (p) => p.data?.archivedBy ?? '', ...setColumn<BuyersList>('Archived by', () => rows.map((l) => l.archivedBy ?? '')) },
   ], [rows])
   const context = { canEdit: false, showTargeting: false, bufferPct, capacity: new Map(), slots: new Map(), dspName, seatName, onEdit: () => {}, onShare: () => {}, onArchive: () => {} }
@@ -257,7 +261,8 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     { headerName: 'Details', width: 300, minWidth: 240, cellRenderer: DetailsCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.termTotal, p.data?.belowFloorOverride, p.data?.activeFrom, p.data?.activeTo, p.data?.dealId, p.data?.invitedBuyers ?? [], p.context.current.slots.get(p.data?.id ?? '') ?? []]) },
     { headerName: 'Buyers', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
     { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []) },
-    { headerName: 'Flight dates', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
+    /* Start and end each carry a time now (ticket yOginusgiFgFkwVHTRFH): wide enough not to clip the end time (E2E 22 Oct 2026). */
+    { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
     ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ], [canEdit])
   const context = {
@@ -297,13 +302,14 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
 
   return (
     <div className="mb-7">
-      <div className="mb-3 flex items-center justify-between gap-3">
+      {/* Wraps on a phone: with View Archived Deals beside it the primary button was pushed off a 390px screen (E2E 22 Oct 2026). */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <SectionLabel style={{ margin: 0 }}>
           <WithTip tip="Deals and buyers lists decide who can buy your advertiser slots, and on what terms. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), the buyers, the flight dates and the rate. To set one up: 1. Create a buyers list. 2. Assign it to slots in Available Inventory's Assigned to column. 3. Finalise the deal terms, then confirm and share the deal with the DSPs.">
             Deals and buyers lists
           </WithTip>
         </SectionLabel>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button type="link" style={{ padding: 0 }} icon={<Icon name="inventory_2" size={16} />} onClick={() => setArchiveOpen(true)}>View Archived Deals</Button>
           {canEdit && (
             <Button type="primary" icon={<Icon name="add" size={16} />} onClick={() => { setEditing(null); setModalOpen(true) }}>

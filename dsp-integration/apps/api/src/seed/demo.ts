@@ -74,7 +74,8 @@ const NESTLE_PG = { id: 'bl_demo_pg_nestle', advertiser: 'Nestlé', partnerId: '
 const NESTLE_FLIGHT_MS = 7 * 24 * 3_600_000
 const nestleFlight = (now: Date) => {
   const from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  return { activeFrom: new Date(from).toISOString(), activeTo: new Date(from + NESTLE_FLIGHT_MS).toISOString() }
+  /* Seven whole days, ending at the last millisecond of the seventh like every other flight (E2E 22 Oct 2026: it ended at 00:00 on the eighth, and one booking started at that instant). */
+  return { activeFrom: new Date(from).toISOString(), activeTo: new Date(from + NESTLE_FLIGHT_MS - 1).toISOString() }
 }
 
 /* Four sellable positions on Landscape, three on Portrait. Each display type
@@ -532,7 +533,8 @@ async function seedDemoBookings(ctx: Context) {
       const from = Math.max(first, Math.ceil((Date.parse(deal.activeFrom) - first) / len) * len + first)
       for (const [k, step] of [0, 1, 3, 6, 10, 15].entries()) {
         const start = new Date(from + step * len).toISOString()
-        if (Date.parse(start) > Date.parse(deal.activeTo)) break
+        /* The whole window has to fall inside the flight. */
+        if (Date.parse(start) + len > Date.parse(deal.activeTo) + 1) break
         const id = `res_demo_pg_${advertiserId}_${k}`
         if (await ctx.reservations.get(id)) continue
         if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue

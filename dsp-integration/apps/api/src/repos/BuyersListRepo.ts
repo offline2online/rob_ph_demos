@@ -34,7 +34,8 @@ export interface BuyersListRepo {
   /* Stores the committed plays derived from the deal's assigned slots, term and guarantee buffer (never typed in). On a shared deal a changed figure versions the terms and asks accepted buyers to accept again; a draft has been sent to no one, so nothing is versioned. Null if the list doesn't exist. */
   setCommittedPlays(id: string, committedPlays: number | null, by?: string): Awaitable<BuyersList | null>
   /* Deals are never deleted. Archiving keeps the row, its deal IDs, terms and history; `by` is the person's name, or 'system' at the end of flight. Idempotent (an archived deal keeps its first archive). Null if the list doesn't exist. */
-  archive(id: string, by: string): Awaitable<BuyersList | null>
+  /* `at`: when it was archived; the scheduler passes its own clock so a test clock is honoured. Default now. */
+  archive(id: string, by: string, at?: string): Awaitable<BuyersList | null>
   /* Shares a draft deal with its invited buyers: stamps shared_at. From here its term changes ask buyers to re-accept. Idempotent (a shared deal keeps its first shared_at). Null if the list doesn't exist. */
   share(id: string): Awaitable<BuyersList | null>
   /* Records that a named invited buyer accepted the deal's current terms. Null if the list doesn't exist; the route has already checked the seat is invited. */
@@ -173,11 +174,11 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
       prepared(db, 'INSERT INTO buyers_list_deals (deal_id, list_id, partner_id, created_at) VALUES (?, ?, ?, ?)').run(id, listId, partnerId, new Date().toISOString())
       return id
     },
-    archive(id, by) {
+    archive(id, by, at) {
       const r = row(id)
       if (!r) return null
       if (!r.archived_at) {
-        const now = new Date().toISOString()
+        const now = at ?? new Date().toISOString()
         prepared(db, 'UPDATE buyers_lists SET archived_at = ?, archived_by = ?, updated_at = ? WHERE id = ?').run(now, by, now, id)
       }
       return toRecord(row(id) as Row)

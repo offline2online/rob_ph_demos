@@ -135,7 +135,8 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
               />
             </Field>
             <Field label="Operating hours" htmlFor="operatingHours" tip={TIPS.operatingHours} className="mb-4">
-              <div className="flex items-center gap-2">
+              {/* Wraps on a phone: with Custom's start and end beside it the row was 784px wide at 390 (E2E 22 Oct 2026). */}
+              <div className="flex flex-wrap items-center gap-2">
                 <Select
                   id="operatingHours" style={{ width: 160 }} options={OPERATING_MODES}
                   value={operatingHoursOf(d.phExtensions).mode}

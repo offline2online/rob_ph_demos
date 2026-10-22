@@ -80,7 +80,7 @@ const withDelivery = async (ctx: Context, l: BuyersList, slots?: Map<string, Ass
   /* Only a guaranteed deal carries volume, and it is the figure derived from its slots (21 Oct 2026); a private auction or preferred deal reports none. */
   const committed = isGuaranteedLike(l.dealType) ? l.committedPlays : null
   const effectiveCommittedPlays = { min: committed, max: committed, source: committed == null ? ('none' as const) : ('buyer' as const) }
-  const effectiveRateCpm = effectiveTerm({ platform: company.floorCpm, dsp: invited.map((b) => b?.floorCpm), buyer: l.floorCpm }, (n) => Math.max(company.floorCpm, n))
+  const effectiveRateCpm = effectiveTerm({ platform: company.floorCpm, dsp: invited.map((b) => b?.floorCpm), buyer: l.floorCpm }, (n) => (l.belowFloorOverride && typeof l.floorCpm === 'number' ? n : Math.max(company.floorCpm, n)))
   const equivalentCpm = isGuaranteedLike(l.dealType) && l.termTotal != null ? equivalentCpmRange(equivalentCpmOf(l.termTotal, await termSlotsOf(ctx, l.id), termDaysOf(l.activeFrom, l.activeTo))) : null
   return { ...l, effectiveCommittedPlays, effectiveRateCpm, equivalentCpm, deliveredPlays: await deliveredOf(ctx, l), assignedSlots: (slots ?? (await assignedSlotsByList(ctx))).get(l.id) ?? [] }
 }
@@ -199,7 +199,8 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (b.floorCpm !== undefined && b.floorCpm !== null) {
       if (typeof b.floorCpm !== 'number' || !Number.isFinite(b.floorCpm) || b.floorCpm <= 0) errors.push({ field: 'floorCpm', reason: 'Floor price (CPM) must be greater than 0, or empty to inherit.' })
       else if (b.floorCpm < platformFloor && override && (dealType === 'preferred' || guaranteedLike)) { floorCpm = b.floorCpm; belowFloorOverride = true }
-      else if (b.floorCpm < platformFloor) errors.push({ field: 'floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}.${dealType === 'preferred' || guaranteedLike ? ' Send belowFloorOverride: true to save it anyway.' : ''}` })
+      /* Overridable deal types are told the price IS below the floor (the editor then offers Save anyway), not that it can't be. */
+      else if (b.floorCpm < platformFloor) errors.push({ field: 'floorCpm', reason: dealType === 'preferred' || guaranteedLike ? `Floor price (CPM) is below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}. Send belowFloorOverride: true to save it anyway.` : `Floor price (CPM) can't be below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}.` })
       else floorCpm = b.floorCpm
     }
     /* Programmatic guaranteed is priced as a fixed CPM (floorCpm) or a total for the whole term (termTotal, USD; 21 Oct 2026), not both. Its equivalent CPM needs the assigned slots' forecast, so the floor is checked once slots exist (checkTermFloor), not here. */

@@ -31,6 +31,8 @@ describe('deal end of flight', () => {
     await schedulerTick(ctx, () => {})
     const after = (await ctx.buyersLists.get(deal.id))!
     expect(after).toMatchObject({ status: 'archived', archivedBy: 'system', dealId: deal.dealId })
+    /* Stamped with the scheduler's clock, not the wall clock (E2E 22 Oct 2026). */
+    expect(after.archivedAt).toBe(ctx.clock().toISOString())
     expect(assignedOf((await ctx.displayTypes.get('portrait'))!.phExtensions!.slots[0]).buyersListIds).toEqual([])
     const trail = (await ctx.sspAudit.query({ objectType: 'buyers_list', objectId: deal.id })).items
     expect(trail.find((e) => e.field === 'archivedBy')).toMatchObject({ newValue: 'system', actor: { type: 'agent', id: 'system' } })
