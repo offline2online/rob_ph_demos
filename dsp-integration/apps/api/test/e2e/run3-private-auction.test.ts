@@ -122,8 +122,8 @@ describe('Run 3 — private auction: non-happy', () => {
     const out = await runAuction(h.ctx, day(0))
     expect(out.positions[0]).toMatchObject({ bidRequests: 0, bids: 0, winner: null })
     expect((await h.partner.bid(campaignId, day(1), 500)).statusCode).toBeGreaterThanOrEqual(400)
-    /* The list deleted outright: the same. */
-    await h.ctx.buyersLists.delete(h.list.id)
+    /* The list archived: the same. */
+    await h.ctx.buyersLists.archive(h.list.id, 'test')
     expect((await runAuction(h.ctx, day(2))).positions[0]).toMatchObject({ bidRequests: 0, winner: null })
     expect(h.campaigns.handoffs.filter((b) => b.displayTypeId === DT)).toEqual([])
   })

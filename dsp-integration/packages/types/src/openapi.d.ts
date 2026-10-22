@@ -857,7 +857,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table */
+        /** Every live buyers list (private-auction deal), for the Assigned to picker and the buyers lists table; ?archived=true lists the archive */
         get: operations["listBuyersLists"];
         put?: never;
         /** New buyers list — the buyers list and its deal terms are one object; the platform mints its immutable dealId (a client-supplied dealId is a 400) */
@@ -945,6 +945,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/reserving-conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Would this deal or assignment overlap another reserving deal on a slot? (no write)
+         * @description Programmatic guaranteed and Direct advertiser deals sell a slot outright, so they never compete and a slot cannot hold two of them with overlapping delivery terms (Rob, 22 Oct 2026); non-overlapping terms on one slot are fine. This asks the question without saving, so the UI can warn inline before the user commits. Send either
+         *     - `listId` with optional `activeFrom` / `activeTo` / `dealType` (a flight edit; omitted fields are the deal's own): the deal's conflicts on every slot it is assigned to; or
+         *     - `displayTypeId`, `slot` and `buyersListIds` (the deals the slot would hold): the conflicts of each reserving deal newly in the list, plus, for each deal ID in `candidates` (an option in the Assigned to picker), what choosing it would clash with.
+         *     The same rule refuses the save itself: `PUT /admin/v1/available-inventory` and `PUT /admin/v1/buyers-lists/{id}` answer 409 `conflict` naming the conflicting deal, its advertiser, the slot (playlist, position, slot) and the overlapping dates.
+         */
+        post: operations["checkReservingConflicts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/buyers-lists/{buyersListId}/term-versions": {
         parameters: {
             query?: never;
@@ -996,8 +1019,27 @@ export interface paths {
          */
         put: operations["updateBuyersList"];
         post?: never;
-        /** Delete; 409 while any slot is still assigned to it */
-        delete: operations["deleteBuyersList"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/buyers-lists/{buyersListId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a deal (deals are never deleted); 409 while any slot is still assigned to it
+         * @description Replaces `DELETE /admin/v1/buyers-lists/{id}`. The archived deal leaves the live table and the Assigned to picker, takes no new bookings or bids and is read-only (`PUT`, share and acceptances answer 409 `conflict`), is not offered to DSPs and cannot be assigned to a slot. Its deal ID, terms, history, campaigns, bookings and billing stay and still resolve. Idempotent. Recorded in the SSP change history. A deal whose flight has ended and whose last window is billed is released from its slots and archived the same way by the scheduler, with `archivedBy` `system`.
+         */
+        post: operations["archiveBuyersList"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1962,7 +2004,7 @@ export interface components {
         CampaignCreate: {
             advertiserId: string;
             name: string;
-            /** @description Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). It must be the platform-minted `dealId` of a buyers list the advertiser is an invited buyer on (through its mapped DSP seat; list them with GET /admin/v1/advertisers/{advertiserId}/deals), never free text: anything else is a 400, as is any deal ID for an advertiser with no deal relationship (a direct advertiser), whose campaigns carry none. The retailer approves a deal's campaigns in subsets, each subset into a creative ID (deal ID = the grouping going in; creative ID = minted by HQ on approval). Omitted for a campaign with no deal. */
+            /** @description Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). It must be the platform-minted `dealId` of a buyers list the advertiser is an invited buyer on (through its mapped DSP seat; list them with GET /admin/v1/advertisers/{advertiserId}/deals), never free text: anything else is a 400, as is any deal ID for an advertiser with no deal relationship. A direct advertiser's relationship is its own finalised Direct advertiser deals (22 Oct 2026): it may carry the internal PH deal ID of one it is the named buyer of, never another advertiser's. The retailer approves a deal's campaigns in subsets, each subset into a creative ID (deal ID = the grouping going in; creative ID = minted by HQ on approval). Omitted for a campaign with no deal. */
             dealId?: string;
             displayTypeId?: string;
             /**
@@ -2268,8 +2310,6 @@ export interface components {
              * @default 15
              */
             maxPlayLengthSec: number;
-            /** @description Play config: the committed-plays figure a new buyers list is pre-filled with (the field stays editable per list; editing a saved list never changes it). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it. */
-            defaultCommittedPlays?: number | null;
             /**
              * @description Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day, in the player's local time. `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.
              * @default off
@@ -2328,7 +2368,9 @@ export interface components {
             openAuction?: boolean;
         };
         /**
-         * @description One invited buyer on a buyers list (deal): a seat (advertiser) that a
+         * @description On a `direct` deal the one buyer is a direct advertiser: `partnerId` is
+         *     the literal `direct` and `seatId` the advertiser's id (Advertisers page).
+         *     One invited buyer on a buyers list (deal): a seat (advertiser) that a
          *     connected DSP synced, picked from that DSP's own seats. There is no
          *     free text and no identifier type — the entry always carries the
          *     identifier the DSP bids under, and entitlement (bid intake and
@@ -2407,24 +2449,28 @@ export interface components {
             /** @description Admin view only: every DSP deal ID of the list. */
             deals?: components["schemas"]["ListDeal"][];
             /** @enum {string} */
-            dealType: "private_auction" | "preferred" | "guaranteed";
+            dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
             activeFrom: string | null;
+            /**
+             * @description The time zone the flight is read in: platform (the platform time zone) or store (each store's own local time). Shown wherever the flight is displayed.
+             * @enum {string}
+             */
+            timeZoneMode?: "platform" | "store";
             activeTo: string | null;
             auctionCloses: string | null;
             /** @description The deal's resolved base floor in USD CPM. */
             rateCpm?: number;
             /**
-             * @description Present on a Programmatic guaranteed deal priced per day: the slot is booked for each full 24-hour day at `ratePerDay`.
+             * @description Present on a Programmatic guaranteed deal priced as a total for its term: `termTotal` is the USD amount for the whole delivery term.
              * @enum {string}
              */
-            rateType?: "Fixed per day";
-            /** @description The flat USD rate for one full day on a slot. */
-            ratePerDay?: number;
-            /**
-             * @description The length of the priced period.
-             * @enum {integer}
-             */
-            billingPeriodHours?: 24;
+            rateType?: "Fixed per term";
+            /** @description The USD total for the whole delivery term. */
+            termTotal?: number;
+            /** @description Programmatic guaranteed only: calendar days in the delivery term, both ends included (null while either end is open). */
+            termDays?: number | null;
+            /** @description Programmatic guaranteed only: the volume derived from the assigned slots over the whole term, less the guarantee buffer. */
+            committedPlays?: number | null;
             /** @description The same price as a CPM over the assigned slots' forecast, for comparison; null until a slot is assigned. */
             equivalentCpm?: {
                 min: number;
@@ -2436,25 +2482,30 @@ export interface components {
             buyersListId: string;
             name: string;
             /** @enum {string} */
-            dealType: "private_auction" | "preferred" | "guaranteed";
+            dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
             currency: string;
             /** @description The rate in CPM: the deal's locked rate once it has one, else its resolved base floor. */
             rateCpm: number;
             /** @enum {string} */
             rateKind: "floor" | "fixed";
-            /** @description Fixed per day only. The flat USD rate for one 24-hour day on a slot. */
-            ratePerDay?: number | null;
-            /** @description Fixed per day only: 24. */
-            billingPeriodHours?: number | null;
-            /** @description Fixed per day only: the rate per day as a CPM over the assigned slots' forecast; null until a slot is assigned. */
+            /** @description Fixed per term only. The USD total for the whole delivery term. */
+            termTotal?: number | null;
+            /** @description Programmatic guaranteed only: calendar days in the delivery term (null while either end is open). */
+            termDays?: number | null;
+            /** @description Fixed per term only: the total as a CPM over the assigned slots' forecast for the term; null until a slot is assigned. */
             equivalentCpm?: {
                 min: number;
                 max: number;
             } | null;
             activeFrom: string | null;
+            /**
+             * @description The time zone the flight is read in: platform (the platform time zone) or store (each store's own local time). Shown wherever the flight is displayed.
+             * @enum {string}
+             */
+            timeZoneMode?: "platform" | "store";
             activeTo: string | null;
             auctionCloses: string | null;
-            /** @description Guaranteed deals only. */
+            /** @description Guaranteed deals only: derived from the assigned slots over the whole delivery term, less the guarantee buffer. */
             committedPlays: number | null;
             entries: components["schemas"]["DealSheetEntry"][];
             /** @description Every slot the deal is assigned to, with its number, zone and the display type's description, so the buyer knows where the deal plays. Empty while the deal is attached to no slot. */
@@ -2581,13 +2632,13 @@ export interface components {
             inventorySource: {
                 externalDealId: string;
                 rateDetails: {
-                    /** @description USD per CPM, or per 24-hour day when rateType is Fixed per day. */
+                    /** @description USD per CPM, or the USD total for the whole delivery term when rateType is Fixed per term. */
                     rate: number;
                     /** @enum {string} */
-                    rateType: "CPM floor" | "CPM fixed" | "Fixed per day";
+                    rateType: "CPM floor" | "CPM fixed" | "Fixed per term";
                     currency: string;
-                    /** @description Fixed per day: 24. */
-                    billingPeriodHours?: number;
+                    /** @description Fixed per term: calendar days in the delivery term. */
+                    termDays?: number | null;
                     equivalentCpm?: {
                         min: number;
                         max: number;
@@ -2634,13 +2685,43 @@ export interface components {
         };
         TermChange: {
             /** @enum {string} */
-            field: "floorCpm" | "ratePerDay" | "committedPlays" | "activeFrom" | "activeTo" | "auctionCloses" | "invitedBuyers" | "invitedCategories";
+            field: "floorCpm" | "termTotal" | "committedPlays" | "activeFrom" | "activeTo" | "auctionCloses" | "invitedBuyers" | "invitedCategories";
             /** @description Previous value (any JSON) */
             from: unknown;
             /** @description New value (any JSON) */
             to: unknown;
-            /** @description True for floorCpm, ratePerDay, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance. */
+            /** @description True for floorCpm, termTotal, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance. */
             requiresReacceptance?: boolean;
+        };
+        /** @description Another reserving deal (Programmatic guaranteed or Direct advertiser) that already sells this slot for dates the deal in question overlaps. */
+        ReservingConflict: {
+            dealId: string;
+            dealName: string;
+            /** @description The platform-minted PH deal ID. */
+            dealCode: string;
+            advertiser: string;
+            displayTypeId: string;
+            /** @description The display type (playlist) name. */
+            playlist: string;
+            slot: number;
+            slotLabel: string | null;
+            positionId: string;
+            /** @description YYYY-MM-DD; null = open-ended. */
+            overlapFrom: string | null;
+            /** @description YYYY-MM-DD; null = open-ended. */
+            overlapTo: string | null;
+            /**
+             * Format: date-time
+             * @description The exact moment the shared span starts (22 Oct 2026); null = open-ended.
+             */
+            overlapFromAt?: string | null;
+            /**
+             * Format: date-time
+             * @description The exact moment the shared span ends; null = open-ended.
+             */
+            overlapToAt?: string | null;
+            /** @description A ready-to-show sentence naming the deal */
+            message: string;
         };
         TermCheck: {
             currentVersion: number;
@@ -2696,15 +2777,22 @@ export interface components {
          */
         BuyersList: {
             /**
-             * @description The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
+             * @description `archived`: the deal was archived (never deleted); see `archivedAt`, `archivedBy` and `POST .../archive`. The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
              * @enum {string}
              */
-            readonly status: "draft" | "shared";
+            readonly status: "draft" | "shared" | "archived";
             /**
              * Format: date-time
              * @description When the deal was shared; null while it is a draft. Lists that pre-date drafts are shared as of when they were created.
              */
             readonly sharedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the deal was archived; null while it is live.
+             */
+            readonly archivedAt: string | null;
+            /** @description Who archived it: the person's name, or `system` when its flight ended and its last window was billed. */
+            readonly archivedBy: string | null;
             /** @description Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry. */
             readonly assignedSlots: {
                 /** @description displayTypeId.sN */
@@ -2732,9 +2820,23 @@ export interface components {
             readonly buyerAcceptance: components["schemas"]["BuyerAcceptance"][];
             effectiveCommittedPlays: components["schemas"]["EffectiveTerm"];
             effectiveRateCpm: components["schemas"]["EffectiveTerm"];
-            /** @description Programmatic guaranteed priced per day: the flat USD rate for one 24-hour day on a slot; null for a deal that pre-dates per-day pricing or is not guaranteed. */
-            ratePerDay?: number | null;
-            /** @description ratePerDay / forecast impressions per day x 1000 across the assigned slots (min and max differ when slots differ). Null while the deal has no rate per day or no assigned slot to forecast from. */
+            /** @description Programmatic guaranteed priced as a total for its term: the USD amount for the whole delivery term; null when it is priced as a CPM or is not guaranteed. */
+            termTotal?: number | null;
+            /** @description True when the deal was saved with an explicit override of the below-floor warning (22 Oct 2026); shown as Below floor (override). */
+            belowFloorOverride?: boolean;
+            /** @description Who saved the override. */
+            belowFloorOverrideBy?: string | null;
+            /**
+             * Format: date-time
+             * @description When the override was saved.
+             */
+            belowFloorOverrideAt?: string | null;
+            /**
+             * @description The time zone the flight is read in: platform (the platform time zone) or store (each store's own local time). Shown wherever the flight is displayed.
+             * @enum {string}
+             */
+            timeZoneMode?: "platform" | "store";
+            /** @description termTotal / forecast impressions over the term x 1000 across the assigned slots (min and max are the same blended figure). Null while the deal has no total for the term, no closed term or no assigned slot to forecast from. */
             readonly equivalentCpm?: {
                 min: number;
                 max: number;
@@ -2756,10 +2858,13 @@ export interface components {
              *     preferred: one invited buyer at a fixed CPM (floorCpm), first
              *     look at each slot ahead of private and open auction, may pass;
              *     nothing reserved. guaranteed: commits volume, the only type that
-             *     reserves inventory.
+             *     reserves inventory. direct (22 Oct 2026): a Direct advertiser deal, same
+             *     fields and rules as guaranteed but with one direct advertiser as its
+             *     single buyer (invitedBuyers entry {partnerId: 'direct', seatId: <advertiserId>});
+             *     no DSP seats, no IAB categories, no DSP deal, share or acceptance.
              * @enum {string}
              */
-            dealType: "private_auction" | "preferred" | "guaranteed";
+            dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
             /**
              * @description Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
@@ -2777,8 +2882,11 @@ export interface components {
              *     (7 Oct 2026; open question 45). Volume is carried by deals,
              *     never by the open auction, which stays per play and holds no
              *     block of plays. null = no volume commitment (the deal is per
-             *     play). For a guaranteed deal the figure is sized from the
-             *     forecast plus the contingency buffer, not typed in here.
+             *     play). For a guaranteed deal (21 Oct 2026) the figure is derived:
+             *     floor(forecast plays of every assigned slot over the whole delivery
+             *     term x (1 - guarantee buffer %)). It is null until a slot is
+             *     assigned and the term has both dates, recalculates when slots or
+             *     dates change, and is never typed in.
              */
             committedPlays: number | null;
             /**
@@ -3046,7 +3154,7 @@ export interface components {
             slotCount: number;
             /** @description The devices registered to this slot's display type in PH Core (Displays & Devices), the same count the booking schedule shows. Available Inventory shows it in brackets after the playlist name, and multiplies playsPerWindow by it for the bracketed fleet total. Per display type, so the same on every row sharing a displayTypeId; not an orientation roll-up. Read-only. */
             displayCount: number;
-            /** @description Hours per day the display type's displays are open for plays (zone-based operating hours). 24 for an external zone (Exterior, Entrance & out of category); for an internal zone, or a display type with no zone, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
+            /** @description Hours per day the display type's displays are open for plays (its operating hours setting). 24 for 24 hours; the custom range's length for Custom; for Store hours, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
             openHoursPerDay: number;
             /** @description Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change. */
             playsPerWindow: number;
@@ -3131,8 +3239,11 @@ export interface components {
                 windows: {
                     /** Format: date-time */
                     start: string;
-                    /** @enum {string} */
-                    status: "booked" | "available" | "unavailable";
+                    /**
+                     * @description `reserved`: not booked yet, but inside the flight of a live Direct advertiser deal on this position, so no one else can buy it; the exchange books it for the deal's advertiser (22 Oct 2026).
+                     * @enum {string}
+                     */
+                    status: "booked" | "available" | "reserved" | "unavailable";
                     booking: {
                         reservationId: string;
                         campaignId: string;
@@ -3157,6 +3268,36 @@ export interface components {
                             default: boolean;
                             localised: boolean;
                             personalised: boolean;
+                        };
+                        /**
+                         * @description Approval state of the tile (ticket
+                         *     S5PZyZ3MFr45LTM0zfAK, 22 Oct 2026). Approval is
+                         *     per campaign. `defaultApproved` is the booked
+                         *     campaign's own approval (its default creative);
+                         *     `defaultRisk` is `secured` when approved, else
+                         *     `at_risk` when this tile's own window starts in
+                         *     `startsInDays` <= 3 (or has started), else
+                         *     `warning`. `localised` / `personalised` count
+                         *     approved of submitted among this advertiser's
+                         *     campaigns booked on this position in the range
+                         *     shown, split by each campaign's own type
+                         *     (interactive counts as localised). There is no
+                         *     per-version approval.
+                         */
+                        approval?: {
+                            defaultApproved: boolean;
+                            /** @enum {string} */
+                            defaultRisk: "secured" | "at_risk" | "warning";
+                            /** @description Days from now to the start of this tile's window; negative once started. */
+                            startsInDays: number;
+                            localised: {
+                                approved: number;
+                                submitted: number;
+                            };
+                            personalised: {
+                                approved: number;
+                                submitted: number;
+                            };
                         };
                         /**
                          * @description Only when layers.personalised is true (ticket
@@ -3517,6 +3658,27 @@ export interface components {
              * @enum {string|null}
              */
             storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
+            /**
+             * @description When the display type's displays play, set at display type level
+             *     (ticket WvnAf6fR7snXV1C0z9PV, 22 Oct 2026); every display of the
+             *     type inherits it, there is no per-display override. The store
+             *     zone only sets the initial value: Exterior and Entrance start at
+             *     `24h`, every other zone (and no zone) at `store`. Absent reads as
+             *     the zone's value, so a display type that was never edited is
+             *     unchanged. Absent keeps the saved value; null clears it back to the
+             *     zone's value. `start` / `end` are kept only for `custom`.
+             */
+            operatingHours?: {
+                /**
+                 * @description `24h` (always open), `store` (the store's trading hours) or `custom` (start and end below).
+                 * @enum {string}
+                 */
+                mode: "24h" | "store" | "custom";
+                /** @description Custom only: opening time `HH:MM` in the platform time zone (UTC in this POC), the same every day. */
+                start?: string | null;
+                /** @description Custom only: closing time `HH:MM`, later than `start` on the same day (`24:00` allowed). */
+                end?: string | null;
+            } | null;
             slots: {
                 label: string;
                 /** @enum {string} */
@@ -4668,6 +4830,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Send true to confirm a save that adds or removes a slot on a SHARED Programmatic guaranteed deal. Its committed plays are derived from its slots, so they change and the deal must be re-shared and accepted again by the buyer; without true the save is refused (400, one `confirmReshare` detail per deal) and nothing is written. */
+                    confirmReshare?: boolean;
                     items: {
                         displayTypeId: string;
                         slot: number;
@@ -4716,7 +4880,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
-            409: components["responses"]["HasDependents"];
+            /** @description error.code = has_dependents (an advertiser removed from a sold slot), or error.code = conflict: a Programmatic guaranteed or Direct advertiser deal newly assigned to a slot whose delivery term overlaps another such deal already on it (Rob, 22 Oct 2026). The message and details name the conflicting deal, its advertiser, the slot and the overlapping dates; nothing is saved. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     lockInventorySlot: {
@@ -5144,7 +5316,10 @@ export interface operations {
     };
     listBuyersLists: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description true returns only archived deals (View Archived Deals), newest archive first; otherwise archived deals are left out. */
+                archived?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5205,6 +5380,11 @@ export interface operations {
                      */
                     activeFrom: string | null;
                     /**
+                     * @description The time zone the flight's start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store's own local time, so a window starts and ends by that store's clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.
+                     * @enum {string}
+                     */
+                    timeZoneMode?: "platform" | "store";
+                    /**
                      * Format: date-time
                      * @description The delivery term's end; inclusive, null = no bound.
                      */
@@ -5221,10 +5401,14 @@ export interface operations {
                      * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).
                      * @enum {string}
                      */
-                    dealType?: "private_auction" | "preferred" | "guaranteed";
-                    /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
+                    dealType?: "private_auction" | "preferred" | "guaranteed" | "direct";
+                    /** @description Not accepted (21 Oct 2026): a guaranteed deal's committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal. */
                     committedPlays?: number | null;
-                    /** @description Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    termTotal?: number | null;
+                    /** @description Preferred, Programmatic guaranteed and Direct advertiser deals only (22 Oct 2026): true to save a deal priced below the platform floor anyway (a fixed CPM under it, or a total for the term whose equivalent CPM is under the slots' floors). Without it such a price is refused (400, field floorCpm or termTotal). It has to be sent again on every save that keeps the deal below the floor; omitted or false on a save that is no longer below it. */
+                    belowFloorOverride?: boolean;
+                    /** @description Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term. */
                     ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
                     floorCpm?: number | null;
@@ -5349,6 +5533,53 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    checkReservingConflicts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    listId?: string;
+                    dealType?: string;
+                    /** Format: date-time */
+                    activeFrom?: string | null;
+                    /** @enum {string} */
+                    timeZoneMode?: "platform" | "store";
+                    /** Format: date-time */
+                    activeTo?: string | null;
+                    displayTypeId?: string;
+                    slot?: number;
+                    buyersListIds?: string[];
+                    candidates?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The conflicts, empty when there are none */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        conflicts: components["schemas"]["ReservingConflict"][];
+                        /** @description Per candidate deal ID that would clash, its conflicts; a candidate with none is absent. */
+                        candidates: {
+                            [key: string]: components["schemas"]["ReservingConflict"][];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listBuyersListTermVersions: {
         parameters: {
             query?: never;
@@ -5440,6 +5671,11 @@ export interface operations {
                      */
                     activeFrom: string | null;
                     /**
+                     * @description The time zone the flight's start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store's own local time, so a window starts and ends by that store's clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.
+                     * @enum {string}
+                     */
+                    timeZoneMode?: "platform" | "store";
+                    /**
                      * Format: date-time
                      * @description The delivery term's end; inclusive, null = no bound.
                      */
@@ -5453,10 +5689,14 @@ export interface operations {
                      * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).
                      * @enum {string}
                      */
-                    dealType?: "private_auction" | "preferred" | "guaranteed";
-                    /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
+                    dealType?: "private_auction" | "preferred" | "guaranteed" | "direct";
+                    /** @description Not accepted (21 Oct 2026): a guaranteed deal's committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal. */
                     committedPlays?: number | null;
-                    /** @description Programmatic guaranteed only (20 Oct 2026): the flat USD rate for one full 24-hour day on a slot. The deal books whole days. Its equivalent CPM (rate per day / forecast impressions per day x 1000) is derived from the slots the deal is assigned to and must not fall below any of their floors: a rate that does is refused (422-style 400 with field ratePerDay) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
+                    termTotal?: number | null;
+                    /** @description Preferred, Programmatic guaranteed and Direct advertiser deals only (22 Oct 2026): true to save a deal priced below the platform floor anyway (a fixed CPM under it, or a total for the term whose equivalent CPM is under the slots' floors). Without it such a price is refused (400, field floorCpm or termTotal). It has to be sent again on every save that keeps the deal below the floor; omitted or false on a save that is no longer below it. */
+                    belowFloorOverride?: boolean;
+                    /** @description Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term. */
                     ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
                     floorCpm?: number | null;
@@ -5485,9 +5725,18 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
+            /** @description error.code = conflict. A Programmatic guaranteed or Direct advertiser deal whose new delivery term overlaps another such deal on any slot it is assigned to (reserving deals never overlap on a slot, Rob, 22 Oct 2026). The message names the other deal, its advertiser, the slot and the overlapping dates; nothing is saved. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
-    deleteBuyersList: {
+    archiveBuyersList: {
         parameters: {
             query?: never;
             header?: never;
@@ -5498,12 +5747,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
-            204: {
+            /** @description The archived deal */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
+                };
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
@@ -5663,7 +5914,7 @@ export interface operations {
                             dealId: string;
                             name: string;
                             /** @enum {string} */
-                            dealType: "private_auction" | "preferred" | "guaranteed";
+                            dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
                             activeFrom: string | null;
                             activeTo: string | null;
                         }[];

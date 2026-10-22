@@ -237,13 +237,14 @@ describe('private auctions (deal mode; spec "Support private auctions")', () => 
     expect((await rows())[0]).toMatchObject({ status: 'rejected', reason: 'Nestlé is not an invited buyer on this private auction (Expired deal).' })
   })
 
-  it('admits nobody once the buyers list itself is deleted (falls through to the default campaign)', async () => {
+  it('admits nobody once the buyers list itself is archived (falls through to the default campaign)', async () => {
     const { ctx, setSlot } = await setup()
     const list = await ctx.buyersLists.insert({ id: 'bl_gone', name: 'Soon-deleted', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: null })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
-    await ctx.buyersLists.delete(list.id)
+    await ctx.buyersLists.archive(list.id, 'test')
     const first = await runAuction(ctx, W1)
-    expect(first.positions[0]).toMatchObject({ bidRequests: 0, winner: null })
+    /* An archived deal is never assigned (the archive is refused while a slot holds it); forced here, it still sells nothing: every bid is refused as not invited. */
+    expect(first.positions[0]).toMatchObject({ winner: null })
   })
 })
 

@@ -1,12 +1,14 @@
 # Staff Kanban — End-to-end test plan
 
-Covers every requirement in [`../REQUIREMENTS.md`](../REQUIREMENTS.md). Each
-test case (TC) is automated twice:
+Covers every requirement in [`../REQUIREMENTS.md`](../REQUIREMENTS.md). **This is the mandatory regression suite for any change to the
+Staff Kanban board** (see "When these tests run"). Each test case (TC) is automated twice, and **every case runs in every profile of the
+viewport matrix** (desktop, tablet and phone, mouse and touch):
 
 - against the signed-off prototype, in [`../test/e2e.test.mjs`](../test/e2e.test.mjs)
-  (Playwright + `node:test`, Chromium);
+  (Playwright + `node:test`);
 - against the production build in the PH Agent Console, in
-  `backlog-tracker/test/ui/staff-kanban.test.mjs`. That runs the real console
+  `backlog-tracker/test/ui/staff-kanban.test.mjs`. TC-26 onwards are written once, in
+  [`../test/lib/cases.mjs`](../test/lib/cases.mjs), and run by both. That runs the real console
   (`index.html`, `app.js`, `js/kanban/`) with the Firebase SDK stubbed, seeded
   with the prototype's own team, releases and 39 tickets. It's part of the
   console's `npm test` (and so of every console train's tests). The console run
@@ -19,32 +21,81 @@ Run results are recorded in `E2E-REPORT-<date>.md` (prototype) and
 
 ```bash
 cd kanban-staff-board/test
-npm install                      # Playwright 1.56.1
-npx playwright install chromium  # once per machine
-npm test                         # 25 cases, about 45 seconds
+npm install                                      # Playwright 1.56.1
+npx playwright install chromium firefox webkit   # once per machine
+npm test                                         # the whole matrix, 4 profiles at a time
+npm run test:serial                              # the same cases in one process
 ```
 
-CI: `.github/workflows/kanban-staff-board-tests.yml` runs the prototype suite on
-every pull request that touches `kanban-staff-board/**`, on demand, and on any
-deployment train that changes this folder (TRAIN_TEST_WORKFLOWS). The console
-suite runs with the console's tests (`firestore-rules-test.yml`):
+The console suite: `cd backlog-tracker/test && npm ci && node ui/staff-kanban.test.mjs` (also part of `npm run test:ui`). Both take the
+same switches: `KB_PROFILES`, `KB_ENGINES`, `KB_ONLY`, `KB_RETRIES`, `KB_JOBS` (see "Viewport matrix"). The server half of TC-44 and TC-45d
+is `backlog-tracker/test/kanban-mcp.test.js` (`npm run test:mcp`).
+
+Each case opens a fresh browser context (clean `localStorage`, so the demo data is the starting state) and fails on any uncaught page
+error. A case that fails is run once more in a fresh context; a pass on the retry is printed as `FLAKY`. Speech recognition and the
+microphone are stubbed with a scripted transcript; screen recording needs a real screen and is a manual check (M-1).
+
+**Three kinds of line in the output besides ok / not ok.** `CONFIRM TC-nn: question → observed: …` is a result the spec doesn't define
+("Expected: confirm"): the case records what the build does, passes, and the question is raised on the ticket. `KNOWN DEFECT TC-nn` is a
+case that asserts the correct behaviour of a defect the suite found: it is reported until the defect is fixed (then `FIXED` says to
+remove the `known` option). `NOT RUN` names an engine that isn't installed: those profiles are never counted as passes.
+
+## When these tests run
+
+This is the mandatory regression suite for the Staff Kanban board: **any change to the board is only finished when the whole suite is green,
+in every viewport of the matrix, in both builds.** The whole suite runs, as a self-healing loop:
+
+1. on every build that lands in **Ready for Testing**;
+2. on **Deploy to Feature** (the train's feature branch, `deploy/kanban-staff-board`);
+3. **before merge to `main`** (the train PR);
+4. on **any console deployment that touches `backlog-tracker/`**.
+
+A failure never blocks the workflow. Each failing case is **raised as a bug ticket** on the board, **approved for development
+automatically**, **built onto the same train** and **re-tested until green**; all of those tickets and their fixes go to `main`
+together with the train. A case that fails once and passes on the retry is not a failure: it is printed as `FLAKY` and counted in
+the run report so it can be chased.
+
+**What exists today, and what does not.** The suite, the matrix and the run reports are in this ticket. The wiring that raises
+the bug tickets, approves them and re-tests is the companion ticket on Backlog Tracker & FAQs, "Self-healing Staff Kanban E2E loop on
+every deployment", and is **not built yet**. What runs today:
+
+| Where | What runs | How |
+|---|---|---|
+| Console train (any change under `backlog-tracker/`) | The console suite, Chromium profiles, in the `rules` check | `npm run test:ui` → `ui/staff-kanban.test.mjs`; the server half (TC-44, TC-45d) is in `npm run test:mcp` |
+| Pull requests touching `kanban-staff-board/**` | The prototype suite | `.github/workflows/kanban-staff-board-tests.yml`: `npm test`. That workflow installs Chromium only and has a 15-minute limit; the companion ticket needs to install Firefox and WebKit (`npx playwright install --with-deps chromium firefox webkit`) and lift the limit. Until it does, the Firefox and WebKit profiles report "NOT RUN" and the Chromium profiles run in parallel |
+| By hand | Either suite | `cd kanban-staff-board/test && npm test`; `cd backlog-tracker/test && node ui/staff-kanban.test.mjs` |
+
+## Viewport matrix
+
+Every case runs in each profile (`test/lib/profiles.mjs`, shared by both suites). A profile is an engine, a viewport and an
+input type; the suites run it as a Playwright launch profile, one worker process per profile, several at a time (`KB_JOBS`).
+A case that only makes sense on one kind of input says so in its "On" column.
+
+| Profile id | Viewport | Input | Engines |
+|---|---|---|---|
+| `desktop-1440-<engine>` | 1440 × 900 | mouse | Chromium, Firefox, WebKit |
+| `desktop-1024-chromium` | 1024 × 768, sidebar open | mouse | Chromium |
+| `tablet-l-<engine>` | 1024 × 768 (landscape) | touch | Chromium, WebKit |
+| `tablet-p-<engine>` | 768 × 1024 (portrait) | touch | Chromium, WebKit |
+| `phone-390-<engine>` | 390 × 844 | touch | Chromium, WebKit |
+| `phone-360-chromium` | 360 × 740 (small phone) | touch | Chromium |
+
+Touch is real touch events over the DevTools protocol on Chromium. WebKit and Firefox have no such channel, so a touch gesture there is the
+same sequence of pointer events a finger produces, sent to the page (the board listens to pointer events): it checks the board's logic, not
+the engine's native scrolling, which only Chromium exercises (TC-52, TC-25).
 
 ```bash
-cd backlog-tracker/test && npm install && node ui/staff-kanban.test.mjs
+KB_PROFILES=quick npm test                          # desktop 1440 and phone 390 in Chromium
+KB_PROFILES=phone-390-chromium,tablet-p-chromium npm test
+KB_ONLY=TC-45 npm test                              # one case family
+KB_ENGINES=chromium npm test                        # without Firefox and WebKit
+KB_RETRIES=0 npm test                               # no retry of a failed case
 ```
-
-Each case opens a fresh browser context (clean `localStorage`, so the demo data
-is the starting state) and fails on any uncaught page error. Speech
-recognition and the microphone are stubbed with a scripted transcript; screen
-recording needs a real screen and is a manual check (M-1).
 
 ## Environments
 
-| Name | Viewport | Input |
-|---|---|---|
-| Desktop | 1440 × 900 (also 1024, 1100, 1600–2000 tall where noted) | mouse, keyboard |
-| Tablet touch | 1024 × 768, touch | touch (press-and-hold drag) |
-| Phone | 390 × 844, touch | touch, tap |
+See "Viewport matrix" above. TC-01 to TC-25 were written for desktop 1440, tablet 1024 touch and phone 390 and now run in all of them: a case that is
+only about one kind of screen (TC-05, TC-10, TC-25 touch and phone; TC-09 and TC-18 from 1024 px up; TC-02, TC-04, TC-06 not on a phone) says so in the run report.
 
 ## Test cases
 
@@ -76,22 +127,49 @@ recording needs a real screen and is a manual check (M-1).
 | TC-24 | KB-BOARD-2, KB-TASK-7 | PH-26 Status → Withdrawn; open epic PH-1 | Status menu lists Completed and Withdrawn separately; card withdrawn and struck through; epic counts it as withdrawn |
 | TC-25 | KB-LANE-1, KB-BOARD-8 | Phone: select Rob and Huy; tab Ready for Testing; swipe left | Every lane shows Ready for Testing; swipe moves all lanes to Approved |
 
+### TC-26 to TC-66
+
+The 41 cases added on 21 Oct 2026 (profile and photos, creating and editing tickets, moving them, filters, search and the report) are in
+[`E2E-TEST-PLAN-TC26-TC66.md`](E2E-TEST-PLAN-TC26-TC66.md), with their steps and expected results. They run in both suites and in the whole matrix like the rest.
+
 ### Differences in the console run
+
+TC-01 to TC-25:
 
 - **TC-10**: on a phone Staff Kanban sits in the tab bar's Build sheet (the console keeps four tabs), so the check is that Build is the current tab.
 - **TC-13**: a reload re-seeds the stubbed database, so persistence is checked as the document written: link, mention (by email), the screenshot as a Storage URL uploaded under `kanban/PH-20/`, table and callout; a notification is written for the mentioned person.
 - **TC-16b** (console only): a ticket the board isn't holding (closed long ago) is still found, through the server-side `searchTokens` query.
 - **TC-21**: photos are the console's own (Profile → Upload photo; admins in Settings → Team & agent access), so the check is Rob's photo on the profile button, cards and chip, and a photo arriving from another person appearing without a reload.
-- **TC-23**: the Agent Board is the console's real board; Back returns to it.
+- **TC-23**: the Agent Board is the console's real board; Back returns to it; on a phone and a narrow tablet the menu is the Build sheet or the hamburger.
+- **TC-25** (and the swipe in TC-52): a real swipe is Chromium-only; in WebKit the carousel is scrolled by script.
+
+TC-26 onwards:
+
+- **TC-26 to TC-28**: the prototype keeps a 160 px JPEG data URL in its own state and shows an error toast; the console puts a 256 px JPEG in Storage at `avatars/<email>.jpg`, writes `photoUrl` on the member's row, and shows the error under the profile menu. The console's crop is checked by running `avatarBlobFromFile` on the same bytes.
+- **TC-27**: the console falls back to the Google photo, then the initial; the prototype has no Google account, and Remove goes straight to the initial.
+- **TC-29**: the prototype has no roles; the "editor and viewer cannot" half is console only. The rules refusing the write are tested in `avatar-rules.test.mjs`.
+- **TC-30, TC-31, TC-44, TC-56, TC-57, TC-58**: console only (the prototype has no directory, server, roles or second session). They are skipped there, with the reason, in the run output.
+- **TC-34**: the prototype accepts a negative estimate (`-2h` is read as 2h); the console refuses it. Raised as a question.
+- **TC-36**: "two sessions" is simulated in the console by a write from the second session into the in-memory database; the prototype checks only that a deleted key is not reused.
+- **TC-38**: the console uploads to Storage and refuses over 100 MB; the prototype lists name and size only.
+- **TC-41**: the console's Label filter lists the labels in use; the prototype's is a fixed list.
+- **TC-45d, TC-44 (server half)**: `kanban-mcp.test.js`, against the real MCP server with stubbed SDKs.
+- **TC-48**: the second session is a second page in the same browser (prototype); in the console the stored `rank` order is checked.
+- **TC-63**: the bell is console only (KB-C2, KB-C2b); the prototype shows toasts.
 
 ### Console-only cases
 
 | ID | Covers | Steps | Expected |
 |---|---|---|---|
-| KB-C1 | §2 roles, §13 security | Sign in as a viewer; drag; open a ticket; open settings | No + New task; drag does nothing; no Save or Delete; fields disabled; nothing written; settings locked |
+| KB-C1 | §2 roles, §13 security (every profile) | Sign in as a viewer; drag; open a ticket; open settings | No + New task; drag does nothing; no Save or Delete; fields disabled; nothing written; settings locked |
 | KB-C2 | KB-MOD-3 | A mention of Rob is waiting; open the bell; click it | Unread count 1; "Huy mentioned you in a comment on PH-20"; opens PH-20; marked read |
 | KB-C3 | KB-MOD-2 | The console has a Claude key (stubbed answer); Record task | Claude's title, release, epic, estimate and flag fill the form instead of the local stand-in's |
+| KB-C2b | KB-MOD-3 | As KB-C2 on a phone: where is the panel? | The panel is inside the window. **Known defect**: on a phone it opens 32 px off the left edge |
 | KB-C4 | KB-REP-1, KB-NAV-1 | Open `#staff-kanban/report?release=4-13`; back to the board | The report for PH 4.13; title "Release report"; the hash follows |
+| KB-C5 | KB-NAV-1 | (Runs once, Chromium.) iPad 820x1180 and 1180x820 with touch: open the menu, tap Staff Kanban; open + New task | The board opens (`#staff-kanban`); the Record task dot is a 44 px circle with nothing overflowing |
+| KB-C6 | KB-NAV-1 | (Runs once, Chromium.) iPad 1210x696 with touch: send pointerdown and pointerup on Staff Kanban with no click (what Chrome on Rob's iPad did, 21 Oct 2026); then tap it normally | The board opens from the touch alone, clicked once by the menu's touch fallback; a normal tap still clicks exactly once |
+| KB-C7 | KB-MOD-2, KB-MOD-4a | Android user agent; + New task, Record task; the stub recogniser says "add a new Epic to the board", then "Jack Johnson", as Android does (each guess the whole utterance so far) | Live transcript "add a new Epic to the board Jack Johnson", each phrase once; no session runs in continuous mode; the agent's description has no repeats |
+| KB-C8 | KB-MOD-4, KB-MOD-4a | Desktop user agent (Android with "Desktop site" on); open PH-23, comment mic; the recogniser sends every guess as a final in continuous mode | The comment box reads "Add a new Epic to the board Jack Johnson"; the first session is continuous, the next is not |
 
 Server side, `backlog-tracker/test/kanban-mcp.test.js` covers KB-MCP-1 (every
 tool over JSON-RPC as an editor and a viewer, keys from the counter, the
@@ -114,3 +192,12 @@ the activity log is append-only, mentions private to their recipient).
 Storage rules (`kanban/…` uploads) and Claude's real answers can't be run in
 CI: check an upload and a Record task once the console has deployed, with
 the manual checks above (ticket "Run the Staff Kanban manual checks M-1 to M-4").
+
+## Self-healing CI loop
+
+These suites run on every deployment train that changes `backlog-tracker/` or
+`kanban-staff-board/` (any project's). A failing case is raised automatically as
+an "E2E auto-fix" bug carrying the case id and viewport, built onto the same
+train, and the suite re-runs until green; three failed fixes for one case flag it
+for Rob. Only the merge to main waits for green. See
+`backlog-tracker/README.md` → "Self-healing Staff Kanban E2E loop".

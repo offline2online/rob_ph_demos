@@ -201,7 +201,7 @@ than being appended. That also covers an Android device whose user agent
 doesn't say so ("Desktop site", tablets); after two such finals in one
 session the page stops using continuous mode for the rest of the visit.
 Shared with the console's other mics: `backlog-tracker/public/js/dictation-results.js`
-(the prototype carries a copy in `kanban.js`). Tested by KB-C5/KB-C6 in
+(the prototype carries a copy in `kanban.js`). Tested by KB-C7/KB-C8 in
 `backlog-tracker/test/ui/staff-kanban.test.mjs` and
 `backlog-tracker/test/dictation-results.test.mjs`.
 
@@ -288,8 +288,10 @@ composite index is needed.
   server-side and capped at 50 results; screenshots downscaled to ≤1400 px.
 - **Accessibility:** keyboard-operable picker, menus and modal; ARIA on tabs,
   toggles and dialogs; tooltips reachable by focus and tap.
-- **Responsive:** desktop ≥1024 px with sidebar; tablet; phone 390 px with no
-  sideways page scroll.
+- **Responsive:** desktop ≥1024 px with sidebar; tablet (iPad portrait and
+  landscape: the menu's Staff Kanban link works by touch, and icons are boxed to
+  one em so the Record task button stays a clean circle even before the icon font
+  loads); phone 390 px with no sideways page scroll.
 
 ## 14. Interfaces
 

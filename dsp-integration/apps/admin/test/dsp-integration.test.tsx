@@ -214,7 +214,8 @@ describe('Advertiser settings page', () => {
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Guarantee buffer/, { selector: 'input' })).toBeInTheDocument()
-    expect(screen.getByLabelText(/Default committed plays/, { selector: 'input' })).toBeInTheDocument()
+    /* Default committed plays is retired (21 Oct 2026): a guaranteed deal's plays are derived from its slots. */
+    expect(screen.queryByLabelText(/Default committed plays/)).not.toBeInTheDocument()
     expect(screen.getByLabelText(/Max play length/, { selector: 'input' })).toBeInTheDocument()
     expect(document.getElementById('uncachedRestriction')).not.toBeNull()
     expect(document.getElementById('uncachedRestrictionStart')).toBeNull()
@@ -365,7 +366,7 @@ describe('Campaign Status stand-in', () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     /* Campaign Status is the Campaign schedule section's second tab now
        (ticket, 26 Sep 2026), not its own route. */
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     /* Heading: total + per-status counts, no "submitted by advertisers and
        DSPs" copy and no Draft count (ticket, 22 Sep — Draft never surfaces
        in a retailer-facing view). */
@@ -410,14 +411,23 @@ describe('Campaign Status stand-in', () => {
     expect(screen.queryByRole('menuitem', { name: /Reject/ })).not.toBeInTheDocument()
   })
 
-  /* Ticket BG4LKXiqTMYNm8jRNFDk (13 Oct 2026): the Booking schedule tab is gone, so the
-     page is Campaign Approval with the table straight under the header and no tabs. */
-  it('is a page named Campaign Approval with no tabs', async () => {
+  /* Ticket BGxKMB89DIOgWuwgfrej: the two tabs are back (removed 13 Oct 2026 by BG4LKXiqTMYNm8jRNFDk). */
+  it('has Booking schedule and Campaign Approval tabs, Booking schedule first', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     renderAt('/booking-schedule')
+    const tabs = await screen.findAllByRole('tab')
+    expect(tabs.map((t) => t.textContent)).toEqual(['Booking schedule', 'Campaign Approval'])
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(tabs[1])
     expect(await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })).toBeInTheDocument()
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
-    expect(screen.queryByText('Booking schedule')).not.toBeInTheDocument()
+  })
+
+  it('opens Campaign Approval from ?tab=campaign-status', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
+    const router = renderAt('/booking-schedule?tab=campaign-status')
+    expect(await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Campaign Approval' })).toHaveAttribute('aria-selected', 'true')
+    expect(router.state.location.search).toBe('?tab=campaign-status')
   })
 
   /* The Status column's own funnel is the only status filter (ticket dinPPBl9Rk95UbrXoRbt);
@@ -429,7 +439,7 @@ describe('Campaign Status stand-in', () => {
       '/api/admin/v1/campaigns': { items: [campaign, approved, hq] },
       '/api/admin/v1/campaigns/c2/approval': { ...approval, campaignId: 'c2', campaignName: 'Blackmores autumn', status: 'approved' },
     })))
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     /* Re-query the grid each time: AG Grid redraws its rows as the filter changes. */
     const grid = () => screen.getByLabelText('Campaign Status')
     const shown = (name: string) => waitFor(() => expect(within(grid()).getByText(name)).toBeInTheDocument(), { timeout: 10000 })
@@ -467,7 +477,7 @@ describe('Campaign Status stand-in', () => {
       '/api/admin/v1/campaigns/c1/approval': { ...approval, creativeId: 'CR-AAA' },
       '/api/admin/v1/campaigns/c2/approval': { ...approval, campaignId: 'c2', campaignName: 'Blackmores autumn', status: 'approved', creativeId: 'CR-BBB' },
     })))
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     const grid = () => screen.getByLabelText('Campaign Status')
     const shown = (name: string) => waitFor(() => expect(within(grid()).getAllByText(name).length).toBeGreaterThan(0), { timeout: 10000 })
     const hidden = (name: string) => waitFor(() => expect(within(grid()).queryByText(name)).not.toBeInTheDocument(), { timeout: 10000 })
@@ -508,7 +518,7 @@ describe('Campaign Status stand-in', () => {
   it('never lists a Draft campaign — a retailer only ever sees one that has been submitted', async () => {
     const draftApproval = { ...approval, status: 'draft', mode: null, submittedAt: null }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/campaigns/c1/approval': draftApproval })))
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     await waitFor(() => expect(document.body.textContent).toMatch(/0 campaigns/), { timeout: 10000 })
     const grid = screen.getByLabelText('Campaign Status')
     await waitFor(() => expect(within(grid).queryByText('Swisse spring')).not.toBeInTheDocument(), { timeout: 10000 })
@@ -578,7 +588,7 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     }))
   })
   const open = async () => {
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     const grid = await screen.findByLabelText('Campaign Status')
     await within(grid).findByLabelText('Select Swisse spring', {}, { timeout: 10000 })
     return grid
@@ -731,7 +741,7 @@ describe('Advertisers / Inventory', () => {
     expect([...swisse.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent).filter((_, i) => i === 2 || (i >= 4 && i <= 7))).toEqual(['0', '0', '0', '0', '0'])
   })
 
-  it('lists a direct advertiser as "Direct advertiser" in Via and "Name (Direct)" in the Assigned to options, and lets an admin add one', async () => {
+  it('lists a direct advertiser as "Direct advertiser" in Via and and is not offered in the Assigned to options, and lets an admin add one', async () => {
     const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
     vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
     renderAt('/advertisers')
@@ -747,13 +757,14 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByLabelText('Advertiser name')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Add advertiser' })).toBeDisabled()
     /* Audiences shared with this advertiser only (ticket OanRebXyEryAXBQrBsVe). */
-    expect(within(dialog).getByText('Audiences')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Audiences')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     /* Every advertiser row, DSP or direct, has an Edit action opening the same form. */
     fireEvent.click(within(advertisers).getByRole('button', { name: 'Edit Acme Foods' }))
     const edit = await screen.findByRole('dialog')
     expect(within(edit).getByRole('button', { name: 'Save advertiser' })).toBeInTheDocument()
     expect(within(edit).getByLabelText('Advertiser name')).toBeDisabled()
+    expect(within(edit).getByText('Audiences')).toBeInTheDocument()
     fireEvent.click(within(edit).getByRole('button', { name: 'Cancel' }))
     expect(within(advertisers).getAllByRole('button', { name: /^Edit / }).length).toBeGreaterThan(1)
     /* Only a direct advertiser can be deleted. */
@@ -886,6 +897,39 @@ describe('Advertisers / Inventory', () => {
     expect(within(table).queryByText('24,960')).toBeNull()
   })
 
+  /* Ticket nfDLP1CZiPjGfN8FG764 (22 Oct 2026): the Details hover totals each slot's plays and value over the whole flight, with the deal total, and carries no per-window slot copy. */
+  it('shows each slot’s total plays and value over the flight, and the deal total, on the Details hover', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const row = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }
+    const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_1', buyersListIds: ['bl_1'] }
+    const base = { description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: '2026-11-01T00:00:00Z', activeTo: '2026-11-10T00:00:00Z' }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [
+        { ...base, id: 'bl_1', name: 'Pharma brands', dealType: 'guaranteed', termTotal: 500, equivalentCpm: { min: 5, max: 5 } },
+        { ...base, id: 'bl_2', dealId: 'PH-DIRECT0001', name: 'Direct deal', dealType: 'direct', invitedBuyers: [{ partnerId: 'direct', seatId: 'adv_x' }], effectiveRateCpm: { min: 4, max: 4, source: 'buyer' } },
+      ] },
+      '/api/admin/v1/available-inventory': { ...inv, items: [{ ...row, assignedTo: assigned }, { ...row, slot: 5, zoneSlot: 5, displayCount: 1, assignedTo: { ...assigned, buyersListId: 'bl_2', buyersListIds: ['bl_2'] } }] },
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    /* 1,920 plays per window per display x 12 displays x 1 window a day x 10 days. */
+    expect(await within(table).findByTestId('details-summary-bl_1')).toHaveTextContent('Programmatic guaranteed · 1 slot · 230,400 plays · USD 500')
+    expect(within(table).getByTestId('rate-type-bl_1')).toHaveTextContent('Fixed per term')
+    fireEvent.mouseOver(within(table).getByTestId('details-summary-bl_1'))
+    const tip = await screen.findByTestId('details-tip-bl_1')
+    expect(within(tip).getByTestId('details-slot-bl_1-0')).toHaveTextContent('230,400 plays · USD 500')
+    expect(within(tip).getByTestId('details-total-bl_1')).toHaveTextContent('Deal total: 230,400 plays · USD 500')
+    expect(tip).toHaveTextContent('USD 500 for the term')
+    expect(tip).not.toHaveTextContent(/per window|IAB zone|buffer/)
+    /* A Direct advertiser deal gets the same cell, with the advertiser and the internal deal ID. 19,200 plays x 4 CPM / 1000. */
+    fireEvent.mouseOver(within(table).getByTestId('details-summary-bl_2'))
+    const direct = await screen.findByTestId('details-tip-bl_2')
+    expect(direct).toHaveTextContent('Advertiser: adv_x')
+    expect(direct).toHaveTextContent('Deal ID: PH-DIRECT0001')
+    expect(within(direct).getByTestId('details-total-bl_2')).toHaveTextContent('Deal total: 19,200 plays · USD 77')
+  }, slow(30000))
+
   /* Ticket 5CCgGEYSkVoDTH9yNSYu (10 Oct 2026): the deal ID is minted by the platform, shown read-only, and never part of the save payload. */
   it('shows a read-only Deal ID in the buyers table and edit modal, and warns that changing the deal type mints a new deal', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
@@ -912,6 +956,55 @@ describe('Advertisers / Inventory', () => {
     fireEvent.click(await screen.findByText('Programmatic guaranteed', { selector: '.ant-select-item-option-content' }))
     expect(await within(dialog).findByTestId('deal-type-new-deal-note')).toHaveTextContent('new Deal ID')
   })
+
+  /* Ticket krIPF8rPnMwVOmynHNRh (22 Oct 2026): Direct advertiser is an enabled deal type beside Programmatic guaranteed; Private auction and Preferred stay greyed out. Its buyer is one direct advertiser, never a DSP seat. */
+  it('offers Direct advertiser as an enabled deal type whose buyers are direct advertisers only', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/advertisers': { items: [{ advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, dspSeats: [] }] },
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }] },
+      '/api/admin/v1/available-inventory': inv,
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.click(await within(table).findByRole('button', { name: 'Edit Pharma brands' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Deal type' }))
+    const option = async (name: string) => (await waitFor(() => { const o = screen.getAllByText(name).map((e) => e.closest('.ant-select-item-option')).find(Boolean); if (!o) throw new Error(`no option ${name}`); return o })) as HTMLElement
+    expect(await option('Private auction')).toHaveClass('ant-select-item-option-disabled')
+    expect(await option('Preferred deal')).toHaveClass('ant-select-item-option-disabled')
+    expect(await option('Direct advertiser')).not.toHaveClass('ant-select-item-option-disabled')
+    fireEvent.click(await option('Direct advertiser'))
+    expect(await within(dialog).findByTestId('deal-type-note')).toHaveTextContent('not sent to a DSP')
+    /* Same price choice as Programmatic guaranteed. */
+    expect(within(dialog).getByRole('combobox', { name: 'Price type' })).toBeInTheDocument()
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Buyers' }))
+    expect(await screen.findByText('Acme Foods (Direct)')).toBeInTheDocument()
+  }, slow(30000))
+
+  /* Ticket OMwDvy3OUmY9raBtTf7v (22 Oct 2026): a deal whose flight overlaps another reserving deal on its slot shows the warning inline, naming the deal, advertiser, slot and dates, and cannot be saved. */
+  it('warns inline and blocks Save when a deal\'s flight overlaps another reserving deal on its slot', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const conflict = { dealId: 'bl_2', dealName: 'Beta direct', dealCode: 'PH-BETA', advertiser: 'Beta Co', displayTypeId: 'portrait', playlist: 'Portrait', slot: 1, slotLabel: 'Ad', positionId: 'portrait.s1', overlapFrom: '2026-11-20', overlapTo: '2026-11-30', message: 'x' }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/advertisers': { items: [{ advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, dspSeats: [] }] },
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [{ partnerId: 'direct', seatId: 'acme-foods' }], invitedCategories: [], targeting: [], activeFrom: '2026-11-01T00:00:00.000Z', activeTo: '2026-11-30T23:59:59.999Z', dealType: 'direct', status: 'shared', floorCpm: 150 }] },
+      '/api/admin/v1/available-inventory': inv,
+      '/api/admin/v1/reserving-conflicts': { conflicts: [conflict], candidates: {} },
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.click(await within(table).findByRole('button', { name: 'Edit Pharma brands' }))
+    const dialog = await screen.findByRole('dialog')
+    const warning = await within(dialog).findByTestId('reserving-conflict')
+    expect(warning).toHaveTextContent('Beta direct')
+    expect(warning).toHaveTextContent('Beta Co')
+    expect(warning).toHaveTextContent('Portrait, slot 1 (Ad)')
+    expect(warning).toHaveTextContent('2026-11-20 to 2026-11-30')
+    expect(within(dialog).getByRole('button', { name: 'Save changes' })).toBeDisabled()
+  }, slow(30000))
 
   /* Ticket KcqiJpzR5RXy4TWODYlG: term versions. The pop-up shows the version and acceptance, saves a name change silently, and warns before a rate change that makes accepted buyers re-accept. */
   const TERMS_LIST = { id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', floorCpm: 120, termVersion: 3, buyerAcceptance: [{ partnerId: 'p_google', seatId: '5130001', state: 'accepted', acceptedVersion: 3, acceptedAt: '2026-10-10T00:00:00Z' }] }
@@ -952,39 +1045,113 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   }, slow(30000))
 
-  /* Ticket rx1RfF2p7tyqJABWHR0q (20 Oct 2026): Programmatic guaranteed books whole 24-hour days at a flat rate per day. */
-  const perDayFetch = (list: Record<string, unknown>, puts: unknown[]) => vi.fn(async (url: string, init?: RequestInit) => {
+  /* Ticket yOginusgiFgFkwVHTRFH (22 Oct 2026): the flight has start and end times and a Time zone dropdown above it (Platform time zone by default); the chosen mode is saved with the deal and shown where the flight is. */
+  it('shows a Time zone dropdown above the flight, defaulting to the platform time zone, and saves the chosen mode', async () => {
+    const puts: Record<string, unknown>[] = []
+    vi.stubGlobal('fetch', termsFetch(false, puts as unknown[]))
+    const dialog = await openTermsEditor()
+    const zone = within(dialog).getByRole('combobox', { name: 'Time zone' })
+    expect(within(dialog).getByText('Platform time zone')).toBeInTheDocument()
+    expect(within(dialog).getByPlaceholderText('Start date and time')).toBeInTheDocument()
+    expect(within(dialog).getByPlaceholderText('End date and time')).toBeInTheDocument()
+    fireEvent.mouseDown(zone)
+    fireEvent.click(await screen.findByText('Local store time'))
+    fireEvent.click(within(dialog).getByRole('button', { name: /Save/ }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).toMatchObject({ timeZoneMode: 'store' })
+  }, slow(30000))
+
+  /* Ticket LjkTqL4rdegolMoFCYVJ (21 Oct 2026): a Programmatic guaranteed deal covers a whole delivery term, priced as a fixed CPM or a total for the term; its committed plays are derived from the assigned slots and shown read-only once there are some. */
+  const perTermFetch = (list: Record<string, unknown>, puts: unknown[]) => vi.fn(async (url: string, init?: RequestInit) => {
     const path = url.split('?')[0]
     if (init?.method === 'POST' && path.endsWith('/term-check')) return new Response(JSON.stringify({ currentVersion: 1, nextVersion: 1, changes: [], requiresReacceptance: false, affectedBuyers: [] }), { status: 200 })
     if (init?.method === 'PUT') { puts.push(JSON.parse(String(init.body))); return new Response(JSON.stringify(list), { status: 200 }) }
     return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [list] } })(url)
   })
-  const PER_DAY_LIST = { ...TERMS_LIST, dealType: 'guaranteed', status: 'draft', sharedAt: null, termVersion: 1, buyerAcceptance: [], committedPlays: 1000, ratePerDay: 500, equivalentCpm: { min: 5, max: 5 } }
+  const PG_LIST = { ...TERMS_LIST, dealType: 'guaranteed', status: 'draft', sharedAt: null, termVersion: 1, buyerAcceptance: [], committedPlays: null, termTotal: null, floorCpm: null, equivalentCpm: null }
+  const SLOT = { positionId: 'menu_board.s2', label: 'Menu Board — Long Format' }
 
-  it('a guaranteed deal is priced per day: Rate per day, Fixed per day, a read-only equivalent CPM, and the explanation in a tooltip', async () => {
+  it('a guaranteed deal is priced as a fixed CPM or a total for the term, never per day', async () => {
     const puts: unknown[] = []
-    vi.stubGlobal('fetch', perDayFetch({ ...PER_DAY_LIST, assignedSlots: [{ positionId: 'menu_board.s2', label: 'Menu Board — Long Format' }] }, puts))
+    vi.stubGlobal('fetch', perTermFetch({ ...PG_LIST, termTotal: 500, equivalentCpm: { min: 5, max: 5 }, assignedSlots: [SLOT] }, puts))
     const dialog = await openTermsEditor()
-    const rate = within(dialog).getByRole('spinbutton', { name: 'Rate per day' })
-    expect(rate).toHaveValue('500.00')
-    expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveValue('5')
-    expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveAttribute('readonly')
-    expect(within(dialog).getByTestId('rate-type')).toHaveTextContent('Fixed per day')
-    expect(within(dialog).queryByText(/full 24 hours per day at a flat daily rate/)).not.toBeInTheDocument()
-    expect(within(dialog).queryByLabelText('Rate')).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('spinbutton', { name: 'Rate per day' })).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('combobox', { name: 'Price type' })).toBeInTheDocument()
+    const total = within(dialog).getByRole('spinbutton', { name: 'Total for the term' })
+    expect(total).toHaveValue('500.00')
+    expect(within(dialog).getByTestId('rate-type')).toHaveTextContent('Fixed per term')
+    expect(within(dialog).getByTestId('equivalent-cpm')).toHaveTextContent('Equivalent CPM 5')
     /* The flight is picked in whole days: no time-of-day picker. */
     expect(dialog.querySelector('.ant-picker-time-panel')).toBeNull()
-    fireEvent.change(rate, { target: { value: '1000' } })
-    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveValue('10'))
+    fireEvent.change(total, { target: { value: '1000' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save draft' }))
     await waitFor(() => expect(puts).toHaveLength(1))
-    expect(puts[0]).toMatchObject({ dealType: 'guaranteed', ratePerDay: 1000 })
+    expect(puts[0]).toMatchObject({ dealType: 'guaranteed', termTotal: 1000 })
+    expect(puts[0]).not.toHaveProperty('ratePerDay')
+    expect(puts[0]).not.toHaveProperty('committedPlays')
   }, slow(30000))
 
-  it('a guaranteed deal with no slot yet asks for a slot to show the equivalent CPM', async () => {
-    vi.stubGlobal('fetch', perDayFetch({ ...PER_DAY_LIST, ratePerDay: null, equivalentCpm: null, assignedSlots: [] }, []))
+  it('hides committed plays until slots are assigned, then shows the derived figure read-only and never sends it', async () => {
+    const puts: unknown[] = []
+    vi.stubGlobal('fetch', perTermFetch({ ...PG_LIST, assignedSlots: [] }, puts))
+    let dialog = await openTermsEditor()
+    expect(within(dialog).queryByLabelText('Committed plays')).not.toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Guaranteed impressions')).not.toBeInTheDocument()
+    cleanup()
+    vi.stubGlobal('fetch', perTermFetch({ ...PG_LIST, committedPlays: 155520, assignedSlots: [SLOT] }, puts))
+    dialog = await openTermsEditor()
+    const plays = within(dialog).getByLabelText('Committed plays')
+    expect(plays).toHaveValue('155,520')
+    expect(plays).toHaveAttribute('readonly')
+    expect(within(dialog).getByTestId('committed-plays')).toHaveTextContent('guarantee buffer')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save draft' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).not.toHaveProperty('committedPlays')
+  }, slow(30000))
+
+  it('warns that a changed term changes the committed plays and the deal must be re-shared, and cancelling saves nothing', async () => {
+    const puts: unknown[] = []
+    const shared = { ...PG_LIST, status: 'shared', sharedAt: '2026-10-20T00:00:00.000Z', committedPlays: 1000, assignedSlots: [SLOT] }
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const path = url.split('?')[0]
+      if (init?.method === 'POST' && path.endsWith('/term-check')) return new Response(JSON.stringify({ currentVersion: 1, nextVersion: 2, changes: [{ field: 'committedPlays', from: 1000, to: 1500, requiresReacceptance: true }], requiresReacceptance: true, affectedBuyers: [{ partnerId: 'p_google', partnerName: 'Google DV360', seatId: '5130001', acceptedVersion: 1 }] }), { status: 200 })
+      if (init?.method === 'PUT') { puts.push(JSON.parse(String(init.body))); return new Response(JSON.stringify(shared), { status: 200 }) }
+      return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [shared] } })(url)
+    }))
     const dialog = await openTermsEditor()
-    expect(within(dialog).getByRole('textbox', { name: 'Equivalent CPM' })).toHaveAttribute('placeholder', 'Assign a slot to see the equivalent CPM')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+    const warning = await screen.findByTestId('reacceptance-warning')
+    expect(within(warning).getByTestId('committed-plays-change')).toHaveTextContent('from 1,000 to 1,500')
+    expect(warning).toHaveTextContent('re-shared and accepted again by the buyer')
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+    await waitFor(() => expect(screen.queryByTestId('reacceptance-warning')).not.toBeInTheDocument())
+    expect(puts).toHaveLength(0)
+  }, slow(30000))
+
+  it('warns when the price is below the platform floor and saves it again with the override on confirm', async () => {
+    const bodies: Record<string, unknown>[] = []
+    const reason = 'Floor price (CPM) can\'t be below the platform floor of 5 USD. Send belowFloorOverride: true to save it anyway.'
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const path = url.split('?')[0]
+      if (init?.method === 'POST' && path.endsWith('/term-check')) return new Response(JSON.stringify({ error: { code: 'validation_failed', message: 'Invalid.', details: [{ field: 'floorCpm', reason }] } }), { status: 400 })
+      if (init?.method === 'PUT') {
+        const b = JSON.parse(String(init.body)) as Record<string, unknown>
+        bodies.push(b)
+        return b.belowFloorOverride
+          ? new Response(JSON.stringify({ ...PG_LIST, floorCpm: 2, termTotal: null, belowFloorOverride: true }), { status: 200 })
+          : new Response(JSON.stringify({ error: { code: 'validation_failed', message: 'Invalid.', details: [{ field: 'floorCpm', reason }] } }), { status: 400 })
+      }
+      return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [PG_LIST] } })(url)
+    }))
+    const dialog = await openTermsEditor()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save draft' }))
+    const warning = await screen.findByTestId('below-floor-warning')
+    expect(warning).toHaveTextContent('below the platform floor of 5 USD')
+    expect(warning).not.toHaveTextContent('Send belowFloorOverride')
+    fireEvent.click(screen.getByRole('button', { name: 'Save anyway (override)' }))
+    await waitFor(() => expect(bodies).toHaveLength(2))
+    expect(bodies[0]).not.toHaveProperty('belowFloorOverride')
+    expect(bodies[1]).toMatchObject({ belowFloorOverride: true })
   }, slow(30000))
 
   it('Finalise confirms the slots and terms, and Share deal shares the deal', async () => {
@@ -1069,7 +1236,10 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const table = await screen.findByLabelText('Deals and buyers lists')
     expect(await within(table).findByText('Floor deal')).toBeInTheDocument()
-    for (const h of ['Rate', 'Buyers', 'Flight dates', 'Deal type', 'Deal ID']) expect(within(table).getAllByText(h).length).toBeGreaterThan(0)
+    for (const h of ['Details', 'Buyers', 'Flight dates', 'Deal ID']) expect(within(table).getAllByText(h).length).toBeGreaterThan(0)
+    /* Ticket nfDLP1CZiPjGfN8FG764: Rate and Deal type are one Details column. */
+    for (const gone of ['Rate', 'Deal type']) expect(within(table).queryByText(gone)).toBeNull()
+    expect(within(table).getByTestId('details-summary-bl_1')).toHaveTextContent('Private auction')
     for (const old of ['CPM', 'Invited buyers', 'Delivery term']) expect(within(table).queryByText(old)).toBeNull()
     expect(within(table).getByTestId('rate-type-bl_1')).toHaveTextContent('CPM floor')
     expect(within(table).getByTestId('rate-type-bl_2')).toHaveTextContent('CPM fixed')
@@ -1106,6 +1276,35 @@ describe('Advertisers / Inventory', () => {
     const tip = await screen.findByTestId('targeting-tip-bl_2')
     expect(tip).toHaveTextContent('Targeting criteria')
     expect(tip).toHaveTextContent('State: includes selected QLD')
+  }, slow(45000))
+
+  /* Ticket bCcJ2e00CRLxtd98Utlr: deals are archived, never deleted. The row action is Archive; View Archived Deals is an AG Grid table with a filter on every column. */
+  it('archives a deal from its row and lists archived deals under View Archived Deals', async () => {
+    const base = { invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', description: '', status: 'draft' }
+    const live = { ...base, id: 'bl_1', dealId: 'PH-LIVE000001', name: 'Live deal' }
+    const old = { ...base, id: 'bl_2', dealId: 'PH-OLD0000001', name: 'Ended deal', status: 'archived', archivedAt: '2026-10-01T00:00:00.000Z', archivedBy: 'system' }
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST' && url.endsWith('/archive')) {
+        calls.push(url)
+        return new Response(JSON.stringify({ ...live, status: 'archived' }), { status: 200 })
+      }
+      return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: url.includes('archived=true') ? [old] : [live] } })(url)
+    }))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    expect(within(table).queryByLabelText('Delete Live deal')).toBeNull()
+    fireEvent.click(await within(table).findByLabelText('Archive Live deal'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Archive Live deal?')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Archive' }))
+    await waitFor(() => expect(calls).toEqual(['/api/admin/v1/buyers-lists/bl_1/archive']))
+    fireEvent.click(await screen.findByRole('button', { name: /View Archived Deals/ }))
+    const archive = await screen.findByLabelText('Archived deals')
+    expect(await within(archive).findByText('Ended deal')).toBeInTheDocument()
+    expect(within(archive).getByText('PH-OLD0000001')).toBeInTheDocument()
+    expect(within(archive).getByText('system')).toBeInTheDocument()
+    expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(7)
   }, slow(45000))
 
   /* Ticket Zxw7VRUSytMAovkbDFKt: with the dealTargeting flag off (the default) a deal's tooltip shows no targeting. */
@@ -1206,35 +1405,19 @@ describe('Advertisers / Inventory', () => {
     expect(await screen.findByRole('switch', { name: 'Enable global deal' })).toBeInTheDocument()
   }, slow(45000))
 
-  it('holds a position for an advertiser, and never offers interactive targeting', async () => {
-    const calls: { url: string; body: unknown }[] = []
-    const saved = () => calls.find((c) => c.url.includes('available-inventory'))?.body
-    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
-      if (init?.method === 'PUT') calls.push({ url, body: JSON.parse(String(init.body)) })
-      return fakeFetch(ADVERTISER_PAGE)(url)
-    }))
+  it('offers no buyer by name in Assigned to (22 Oct 2026: slots are sold through deals), and never offers interactive targeting', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     const combo = (row: string, label: string) =>
       within(within(inventory).getAllByLabelText(`${row}: ${label}`)[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
 
-    /* Hold the Menu Board position for an advertiser: a pill, and the DSP the API adds. */
+    /* The picker lists DSPs and deals, never an advertiser: neither a DSP's (Nestlé via Google DSP) nor a direct one. */
     fireEvent.mouseDown(combo('Menu Board — Long Format slot 2', 'assigned to'))
-    fireEvent.click(await screen.findByTitle('Nestlé (Google DSP)'))
-    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
-    /* Only the slot that changed is sent. */
-    await waitFor(() => expect(saved()).toEqual({ items: [{
-      displayTypeId: 'menu_board', slot: 2,
-      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null, buyersListIds: [], openAuction: false },
-      floorCpm: null, billingUnitHoursDefault: null, maxCampaignsDefault: null, maxPlayLengthSecDefault: null,
-    }] }))
-    /* This test opens two AntD Selects, drives a save round-trip and waits
-       on it with real timers — already the file's slowest, and, measured in
-       this sandbox, right at (and under full-suite load, occasionally over)
-       the file's default 20s budget regardless of this change (Rob, 23
-       Sep). A per-test override, not a global one, so a real hang elsewhere
-       in the file still fails fast. */
+    expect((await screen.findAllByTitle('Google DSP')).length).toBeGreaterThan(0)
+    expect(screen.queryByTitle('Nestlé (Google DSP)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Advertisers', { selector: '.ant-select-item-group' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   }, slow(45000))
 
   /* Floor CPM replaced Reserve price (Rob, 17 Oct 2026): every slot shows the
@@ -1473,7 +1656,7 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     }))
   })
   const open = async () => {
-    renderAt('/booking-schedule')
+    renderAt('/booking-schedule?tab=campaign-status')
     const grid = await screen.findByLabelText('Campaign Status')
     await within(grid).findByLabelText('Select Swisse sleep', {}, { timeout: 10000 })
     return grid

@@ -1,5 +1,6 @@
 /* Ticket DbiT9qrFwL4O5ibgSowF: the deal sheet a retail media team shares so a buyer can key a deal into their DSP. */
 import { describe, expect, it } from 'vitest'
+import { refreshCommittedPlays } from '../src/domain/committedPlays'
 import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
 import { testContext } from './helpers'
@@ -121,15 +122,19 @@ describe('Deal sheet', () => {
     it('Programmatic guaranteed carries guaranteed impressions, derived from the stored committed plays', async () => {
       const ctx = await testContext()
       const app = buildApp(ctx)
-      const created = (await app.inject({ method: 'POST', url: URL, payload: { ...list, dealType: 'guaranteed', committedPlays: 1000 } })).json()
+      const created = (await app.inject({ method: 'POST', url: URL, payload: { ...list, dealType: 'guaranteed', activeFrom: '2026-11-01T00:00:00.000Z', activeTo: '2026-11-30T23:59:59.999Z' } })).json()
       await attach(ctx, created.id)
+      await refreshCommittedPlays(ctx, [created.id])
       const sheet = await sheetOf(app, created.id)
       expect(sheet.product.transactionType).toBe('PROGRAMMATIC_GUARANTEED')
       expect(sheet.entries[0].inventorySource.rateDetails.rateType).toBe('CPM fixed')
-      expect(sheet.committedPlays).toBe(1000)
+      /* Derived from the slot's forecast plays over the 30-day term, less the buffer. */
+      expect(sheet.termDays).toBe(30)
+      expect(sheet.committedPlays).toBeGreaterThan(0)
+      const committed = sheet.committedPlays as number
       const perPlay = sheet.estimatedVolume.assumedViewsPerPlay
       expect(perPlay).toBeGreaterThan(0)
-      expect(sheet.guaranteedImpressions).toBe(Math.round(1000 * perPlay))
+      expect(sheet.guaranteedImpressions).toBe(Math.round(committed * perPlay))
       expect(sheet.description).toContain(`Guarantees ${sheet.guaranteedImpressions.toLocaleString('en-GB')} impressions`)
       expect(sheet.estimatedVolume.bufferPct).toBe((await ctx.company.get()).guaranteeBufferPct)
       expect(sheet.estimatedVolume.guaranteedImpressionsPerWindow).toBe(Math.max(0, Math.floor(sheet.estimatedVolume.assumedViewsPerWindow * (1 - sheet.estimatedVolume.bufferPct / 100))))

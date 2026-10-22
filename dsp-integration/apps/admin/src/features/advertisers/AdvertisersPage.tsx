@@ -8,7 +8,7 @@ import { App, Button, Input, InputNumber, Modal, Select, Spin, Switch } from 'an
 import { Tip } from '../../shared/Tip'
 import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -27,6 +27,7 @@ import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
+import { ConflictCallout, rangeLabel, useSlotConflicts } from './reservingConflicts'
 import { BuyersListsTable } from './BuyersListsTable'
 import { positionSlotNumber, positionText } from './slotLine'
 export { positionText }
@@ -61,7 +62,8 @@ function ApprovalCell({ data, context }: P) {
 }
 /* Add an advertiser with a direct relationship with the retailer (no DSP), or edit any advertiser's audiences
    (ticket OanRebXyEryAXBQrBsVe), from the same pop-up. It is saved at once (not part of Save changes). A new direct
-   advertiser is listed as "Name (Direct)". Audiences are Visitor Segments values shared with this advertiser only. */
+   advertiser is listed as "Name (Direct)". Adding has no Audiences section (a direct advertiser can use every shared
+   targeting attribute; private audiences are set afterwards by editing). Audiences are Visitor Segments values shared with this advertiser only. */
 const AUDIENCES_TIP = 'Audiences shared only with this advertiser, such as people who are new to their brand. Your own systems decide who is in each audience and publish it to the visitor’s live profile when they are identified; Personalisation Hub never receives their purchase history. Only this advertiser can target these audiences, on deals and reserved slots, not the open auction.'
 const SEGMENT_TIP = 'Visitor segments published by your CRM, customer data platform or loyalty system.'
 function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; editing: Advertiser | null; onClose: () => void; onSaved: () => void }) {
@@ -82,7 +84,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
     setError(null)
     try {
       if (editing) await api('PUT', `/admin/v1/advertisers/${editing.advertiserId}/audiences`, { audiences })
-      else await api('POST', '/admin/v1/advertisers/direct', { name, audiences })
+      else await api('POST', '/admin/v1/advertisers/direct', { name })
       onSaved()
       onClose()
       message.success(editing ? 'Advertiser saved' : 'Advertiser added')
@@ -108,16 +110,21 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
       <div className="mt-1.5" style={{ fontSize: 12, color: T.muted }}>
         {editing ? (editing.direct ? 'A direct advertiser has its own relationship with you, with no DSP in between.' : `Comes through ${editing.via.join(', ')}.`) : 'A direct advertiser has its own relationship with you, with no DSP in between.'}
       </div>
-      <div className="mt-4 mb-1" style={{ fontSize: 13, fontWeight: 500 }}><WithTip tip={AUDIENCES_TIP}><span id="advertiser-audiences-label">Audiences</span></WithTip></div>
-      <div className="mb-1 inline-flex items-center gap-[5px]" style={{ fontSize: 12, color: T.muted }}>Segments <InfoTip text={SEGMENT_TIP} /></div>
-      <Select
-        mode="multiple" allowClear showSearch className="w-full" aria-labelledby="advertiser-audiences-label" placeholder="Choose segments shared with this advertiser only"
-        loading={variables.isLoading} value={audiences} options={options} onChange={setAudiences}
-        notFoundContent={segments ? 'No Visitor Segments values defined in Shared Targeting Variables.' : 'Visitor Segments is not available.'}
-      />
-      <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
-        {error ?? 'Chosen segments are removed from the Visitor Segments offered to everyone else.'}
-      </div>
+      {editing && (
+        <>
+          <div className="mt-4 mb-1" style={{ fontSize: 13, fontWeight: 500 }}><WithTip tip={AUDIENCES_TIP}><span id="advertiser-audiences-label">Audiences</span></WithTip></div>
+          <div className="mb-1 inline-flex items-center gap-[5px]" style={{ fontSize: 12, color: T.muted }}>Segments <InfoTip text={SEGMENT_TIP} /></div>
+          <Select
+            mode="multiple" allowClear showSearch className="w-full" aria-labelledby="advertiser-audiences-label" placeholder="Choose segments shared with this advertiser only"
+            loading={variables.isLoading} value={audiences} options={options} onChange={setAudiences}
+            notFoundContent={segments ? 'No Visitor Segments values defined in Shared Targeting Variables.' : 'Visitor Segments is not available.'}
+          />
+          <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
+            {error ?? 'Chosen segments are removed from the Visitor Segments offered to everyone else.'}
+          </div>
+        </>
+      )}
+      {error && !editing && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
     </Modal>
   )
 }
@@ -156,8 +163,6 @@ type InvCtx = { current: {
   dsps: DspAdvertisers[]
   /* Each playlist's display types, listed once for the whole response rather than on every row. */
   playlistDisplayTypes: Record<string, PlaylistDisplayType[]>
-  /* Names of the advertisers with a direct relationship with the retailer (no DSP). */
-  direct: string[]
   buyersLists: BuyersList[]
   set: (key: string, patch: Partial<SlotEdit>) => void
   setBillingUnitDefault: (displayTypeId: string, v: number | null) => void
@@ -426,23 +431,15 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction,
 }
 
 function AssignedCell({ data, context }: IP) {
+  const c0 = context.current
+  /* Reserving deals never overlap on a slot (Rob, 22 Oct 2026): asked before saving, so the warning shows inline and the picker flags the options that would clash. */
+  const chosen = data ? tiersOf(edited(c0, data).assignedTo) : []
+  const reservingIds = data ? c0.buyersLists.filter((l) => (l.dealType === 'guaranteed' || l.dealType === 'direct') && !chosen.includes(l.id)).map((l) => l.id) : []
+  const overlaps = useSlotConflicts(data ? { displayTypeId: data.displayTypeId, slot: data.slot } : undefined, chosen, reservingIds)
   if (!data) return null
   const c = context.current
   const a = edited(c, data).assignedTo
   const dspNames = new Map(c.dsps.map((d) => [d.partnerId, d.name]))
-  /* An advertiser can buy through more than one DSP (e.g. Unilever via both
-     Google DSP and The Trade Desk, same as the Advertisers table's own "Via"
-     column) — one option per advertiser, not per DSP-advertiser pairing,
-     otherwise two options share the same `adv:<name>` value and Select can
-     only ever treat one of them as selected (Rob, 23 Sep — failed testing,
-     "bug with the presentation of the individual advertisers list"). */
-  const advertiserDsps = new Map<string, string[]>()
-  for (const name of c.direct) advertiserDsps.set(name, [])
-  for (const d of c.dsps) for (const x of d.advertisers) {
-    const via = advertiserDsps.get(x.name) ?? []
-    if (!via.includes(d.name)) via.push(d.name)
-    advertiserDsps.set(x.name, via)
-  }
   const e = edited(c, data)
   const siblings = c.siblingsOf(data).length
   /* A buyers list does not suppress the global deal (12 Oct 2026): it sits in the open tier beneath the numbered lists. */
@@ -454,13 +451,15 @@ function AssignedCell({ data, context }: IP) {
       /* Directly underneath DSPs, not after Advertisers (Rob, 23 Sep —
          failed testing, "place the new buyers list directly underneath the
          list of DSP's"). */
-      label: 'Deals and buyers lists (private auction)',
+      label: 'Deals and buyers lists',
       options: [
-        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
+        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [overlaps.candidates[l.id] ? `Overlaps ${overlaps.candidates[l.id][0].dealName} (${rangeLabel(overlaps.candidates[l.id][0])}): slot already sold` : '', l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
         { value: ADD_BUYERS_LIST, label: '+ Add new deal and buyers list…' },
       ],
     },
-    { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: via.length ? `${name} (${via.join(', ')})` : directLabel(name) })) },
+    /* No buyer is picked by name (22 Oct 2026): a slot is sold only through a deal or an open auction. A name still held on a sold slot
+       (migration 0086 keeps it until its bookings have played) needs an option, or its chip reads "adv:Name". Disabled: it can't be re-added. */
+    ...(a.advertisers.length ? [{ label: 'Held until bookings have played', options: a.advertisers.map((n) => ({ value: `adv:${n}`, label: n, disabled: true, note: 'Buyers get slots through a deal. Kept until its bookings have played.' })) }] : []),
     { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }, { value: GLOBAL_CHIP, label: GLOBAL_CHIP_LABEL, disabled: !!suppressed, note: suppressed ? `Unavailable: this slot is ${suppressed}.` : undefined }] },
   ]
   return (
@@ -529,11 +528,12 @@ function AssignedCell({ data, context }: IP) {
     {!c.canEdit || a.partnerIds.length || a.openAuction || a.advertisers.length || a.whitelistOnly || tiersOf(a).length || globalOn ? null : (
       <div style={{ fontSize: 12, color: T.muted }}>Unassigned: not offered to any buyer</div>
     )}
+    <ConflictCallout conflicts={overlaps.conflicts} testId={`reserving-conflict-${data.displayTypeId}-${data.slot}`} />
     <PriorityList
       label={`${data.displayTypeName} slot ${data.zoneSlot}`}
       ids={tiersOf(a)}
       names={new Map(c.buyersLists.map((l) => [l.id, l.name]))}
-      cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType, l.ratePerDay), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
+      cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType, l.termTotal), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
       openAuction={a.openAuction === true}
@@ -979,7 +979,40 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     return true
   }
 
+  /* A slot added to or taken from a SHARED guaranteed deal changes its committed plays (derived from its slots), so buyers must accept again (21 Oct 2026): the API holds the save until it is confirmed here. False when the user keeps editing. */
+  const confirmReshare = (reasons: string[]) => new Promise<boolean>((resolve) => {
+    modal.confirm({
+      title: 'Shared deals will need to be re-shared',
+      content: (
+        <div data-testid="reshare-warning">
+          <p>This change adds or removes slots on a deal that has already been shared. Its committed plays will change, so the deal must be re-shared and accepted again by the buyer. The updated deal is not re-sent to the DSPs until you confirm.</p>
+          <ul style={{ paddingLeft: 18, margin: 0 }}>{reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+        </div>
+      ),
+      okText: 'Save and re-share', cancelText: 'Keep editing',
+      onOk: () => resolve(true), onCancel: () => resolve(false),
+    })
+  })
+  const putInventory = async (items: unknown[]): Promise<boolean> => {
+    try {
+      await api('PUT', '/admin/v1/available-inventory', { items })
+      return true
+    } catch (e) {
+      const asks = e instanceof ApiRequestError && e.status === 400 ? (e.body?.error.details ?? []).filter((d) => d.field === 'confirmReshare') : []
+      if (!asks.length) throw e
+      if (!(await confirmReshare(asks.map((d) => d.reason ?? '')))) return false
+      await api('PUT', '/admin/v1/available-inventory', { items, confirmReshare: true })
+      return true
+    }
+  }
+
   const onSave = async () => {
+    /* Blocked while any slot's new assignment overlaps a deal already sold on it; the warning is inline on that row. */
+    if (inv.dirty && inv.draft) {
+      const asks = invRows.filter((r) => inv.draft![slotKey(r)] && !deepEqual(inv.draft![slotKey(r)], savedEdits?.[slotKey(r)]) && tiersOf(inv.draft![slotKey(r)].assignedTo).length)
+      const found = await Promise.all(asks.map((r) => api<{ conflicts: unknown[] }>('POST', '/admin/v1/reserving-conflicts', { displayTypeId: r.displayTypeId, slot: r.slot, buyersListIds: tiersOf(inv.draft![slotKey(r)].assignedTo) }).then((x) => x.conflicts.length).catch(() => 0)))
+      if (found.some((n) => n > 0)) return void message.warning('A deal you assigned overlaps another already sold on that slot. Change the dates or the slot (see the warning on the row) before saving.')
+    }
     setSaving(true)
     let sent: { displayTypeId: string; slot: number }[] = []
     try {
@@ -1002,7 +1035,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
             maxCampaignsDefault: maxCampaignsDefaults.draft![r.displayTypeId] ?? null, maxPlayLengthSecDefault: maxPlayLengthDefaults.draft![r.displayTypeId] ?? null,
           }))
         sent = items
-        await api('PUT', '/admin/v1/available-inventory', { items })
+        /* Cancelling the re-share warning leaves the draft as it is, unsaved. */
+        if (!(await putInventory(items))) return
         inv.commitNext()
         billingUnitDefaults.commitNext()
         maxCampaignsDefaults.commitNext()
@@ -1026,7 +1060,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        type): the page finds that display type's default playlist and opens
        its settings. */
     open: (id: string) => navigate(`/playlists?displayTypeId=${encodeURIComponent(id)}`),
-    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {}, direct: data.items.filter((a) => a.direct).map((a) => a.name),
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {},
     buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
     setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
@@ -1047,10 +1081,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
   const countedTypes = new Map<string, Set<string>>()
   /* The slots each list is assigned to, for the Slots column's hover on the Deals and buyers lists table. */
-  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }[]>()
+  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }[]>()
   for (const r of invRows) {
     for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
-      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r) }])
+      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r) }])
     }
     if (typeof r.displayCount !== 'number') continue
     const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount
@@ -1104,7 +1138,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 
-      <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that advertisers can buy. A slot can be sold to connected DSPs through the open auction or a private auction, or assigned to Direct advertisers, who sign in to HQ Admin to add and manage their own campaigns. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that advertisers can buy. A slot can be sold to connected DSPs through the open auction or a private auction, or reserved through a Direct advertiser deal, whose advertiser signs in to HQ Admin to add and manage its own campaigns. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="view_week" size={18} />

@@ -324,7 +324,7 @@ async function main() {
   currentPhase = 5
   console.log('\nPhase 5 — deal types: preferred and programmatic guaranteed, CV gender (M1–M9)')
   const AGREED_RATE = floorCpm + 50
-  const assign = (buyersListId: string | null) => admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, assignedTo: { partnerIds: buyersListId ? [] : [PARTNER], advertisers: [], whitelistOnly: false, buyersListId } }] })
+  const assign = (buyersListId: string | null) => admin('PUT', '/available-inventory', { confirmReshare: true, items: [{ displayTypeId: dtId, slot: 1, assignedTo: { partnerIds: buyersListId ? [] : [PARTNER], advertisers: [], whitelistOnly: false, buyersListId } }] })
   const newList = (dealType: string, extra: Record<string, unknown> = {}) => admin('POST', '/buyers-lists', { name: `Run 7 ${dealType}`, dealType, invitedBuyers: [{ partnerId: PARTNER, seatId: '5130005' }], ...extra })
   const viewsPerWindow = 1200 /* the audience score seeded in Phase 1b */
   const t0 = Date.parse(w2) + 24 * 3_600_000
@@ -336,7 +336,7 @@ async function main() {
   /* M1 — deal type drives the fields the list captures. */
   const refusedVolume = await newList('preferred', { committedPlays: 500 })
   record('M1', 'a preferred deal refuses committed plays (volume is captured for guaranteed only)', refusedVolume.status === 400 && /committedPlays/.test(refusedVolume.text), '400 on committedPlays', `${refusedVolume.status} ${refusedVolume.text.slice(0, 160)}`)
-  const refusedClose = await newList('guaranteed', { committedPlays: 500, auctionCloses: new Date(t0).toISOString() })
+  const refusedClose = await newList('guaranteed', { auctionCloses: new Date(t0).toISOString() })
   record('M1b', 'a guaranteed deal refuses an auction window (only a private auction has one)', refusedClose.status === 400 && /auctionCloses/.test(refusedClose.text), '400 on auctionCloses', `${refusedClose.status} ${refusedClose.text.slice(0, 160)}`)
 
   /* M2–M4 — preferred deal. */
@@ -356,10 +356,16 @@ async function main() {
   }
 
   /* M5–M8 — programmatic guaranteed. */
-  const pg = await newList('guaranteed', { committedPlays: 900 })
-  must('M5', 'programmatic guaranteed deal created with committed plays', pg.status === 201 && pg.json?.dealType === 'guaranteed' && pg.json?.committedPlays === 900, '201 dealType guaranteed, 900', `${pg.status} ${pg.text.slice(0, 200)}`)
+  /* A guaranteed deal covers a delivery term; its committed plays are derived from the slots assigned over that term (21 Oct 2026), so none are sent. */
+  const pgTerm = { activeFrom: `${new Date(t0 - 24 * 3_600_000).toISOString().slice(0, 10)}T00:00:00.000Z`, activeTo: `${new Date(t0 + 10 * 24 * 3_600_000).toISOString().slice(0, 10)}T23:59:59.999Z` }
+  const typedVolume = await newList('guaranteed', { ...pgTerm, committedPlays: 900 })
+  record('M5a', 'a guaranteed deal refuses typed committed plays (they are derived from the assigned slots)', typedVolume.status === 400 && /committedPlays/.test(typedVolume.text), '400 on committedPlays', `${typedVolume.status} ${typedVolume.text.slice(0, 160)}`)
+  const pg = await newList('guaranteed', pgTerm)
+  must('M5', 'programmatic guaranteed deal created for a delivery term, with no committed plays until slots are assigned', pg.status === 201 && pg.json?.dealType === 'guaranteed' && pg.json?.committedPlays == null, '201 dealType guaranteed, committedPlays null', `${pg.status} ${pg.text.slice(0, 200)}`)
   const assignedPg = await assign(pg.json.id)
   must('M5b', 'slot reassigned to the guaranteed deal', assignedPg.status === 200, '200', `${assignedPg.status} ${assignedPg.text.slice(0, 200)}`)
+  const pgDerived = ((await admin('GET', '/buyers-lists')).json?.items ?? []).find((l: any) => l.id === pg.json.id)
+  must('M5c', 'committed plays now appear, derived from the assigned slot over the whole term', typeof pgDerived?.committedPlays === 'number' && pgDerived.committedPlays > 0, 'a positive committedPlays', JSON.stringify(pgDerived?.committedPlays))
   const bufferPct = (await admin('GET', '/advertiser-settings')).json?.guaranteeBufferPct ?? 10
   /* The campaign carries personalised Computer Vision gender versions (K), so the commitment is made against the gendered subset the camera can reach, not the whole slot (8 Oct 2026): one AND group of rules is half the slot's views in the POC audience source. */
   const GENDER_SHARE = 0.5

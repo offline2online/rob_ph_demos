@@ -370,6 +370,7 @@
         <label class="field-label" for="pc-name-input">Project name</label>
         <input type="text" id="pc-name-input" maxlength="80" placeholder="e.g. Loyalty App">
         <span class="char-count" id="pc-name-count"></span>
+        <p class="field-hint" id="pc-folder-hint" aria-live="polite"></p>
 
         <label class="field-label" for="pc-program-select">Program / Product</label>
         <select id="pc-program-select"></select>
@@ -380,6 +381,7 @@
         <p class="field-hint">Optional — the release this project ships in. Create one on the Releases page first if it doesn't exist yet.</p>
 
         <p class="field-hint">One click: creates the project, links its repo folder, copies this concept's README and requirements, and raises front-end, back-end, end-to-end-test and document tickets in its Backlog (nothing is approved). The concept stays on this page afterward, read-only.</p>
+        <p class="field-hint" id="pc-progress" role="status" aria-live="polite" hidden></p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="pc-cancel">Cancel</button>

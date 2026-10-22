@@ -36,7 +36,10 @@ describe('slot lock', () => {
   it('refuses removing an advertiser from a slot with a live booking, then locks and releases', async () => {
     const { ctx, app } = await setup()
     const seat = (await ctx.partners.list()).flatMap((p) => p.seats.map((s) => s.name))[0]
-    expect((await app.inject({ method: 'PUT', url: INV, payload: { items: [await rowWith(app, [seat])] } })).statusCode).toBe(200)
+    /* A name can no longer be added through the API: this is what migration 0086 leaves on a sold slot. */
+    expect((await app.inject({ method: 'PUT', url: INV, payload: { items: [await rowWith(app, [seat])] } })).statusCode).toBe(400)
+    const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('portrait', { ...ext, slots: ext.slots.map((x) => ({ ...x, advertisers: [seat], listMode: null, buyersListId: null })) } as never)
     await book(ctx, '2026-09-22T00:00:00.000Z')
 
     /* Hard block: the advertiser stays, the booking stays. */

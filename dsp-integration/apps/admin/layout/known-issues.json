@@ -37,13 +37,6 @@
    "note": "US Dollar” — controls on one row are 30.0px apart vertically"
   },
   {
-   "page": "dsp-advertiser-settings",
-   "viewport": "tablet",
-   "rule": "grid",
-   "where": "div “Default committed playsinfo”",
-   "note": "controls on one row are 8.0px apart vertically"
-  },
-  {
    "page": "dsp-partner-amazon",
    "viewport": "tablet",
    "rule": "field-row",

@@ -25,8 +25,11 @@ const cents = (n: number) => Math.round(n * 100) / 100
    minimums: a DSP or list floor can raise the result, never lower it below
    them ("deals never clear below the resolved slot floor"), and a stored
    value below the platform floor, because it was raised later, is clamped up
-   to it. All in USD. */
-export function resolveBaseFloor(platformCpm: number, dspCpm?: number | null, listCpm?: number | null, displayTypeCpm?: number | null, slotCpm?: number | null): number {
+   to it. All in USD. A deal saved below the floor with an explicit override
+   (belowFloorOverride, 22 Oct 2026) keeps its own rate: that is the price
+   agreed with the buyer, so it is what is shown, sent to DSPs and booked. */
+export function resolveBaseFloor(platformCpm: number, dspCpm?: number | null, listCpm?: number | null, displayTypeCpm?: number | null, slotCpm?: number | null, listBelowFloorOverride = false): number {
+  if (listBelowFloorOverride && typeof listCpm === 'number') return listCpm
   const level = typeof listCpm === 'number' ? listCpm : typeof dspCpm === 'number' ? dspCpm : typeof displayTypeCpm === 'number' ? displayTypeCpm : platformCpm
   return Math.max(platformCpm, typeof slotCpm === 'number' ? slotCpm : 0, level)
 }

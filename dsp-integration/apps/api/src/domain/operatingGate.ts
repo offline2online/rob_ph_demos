@@ -3,13 +3,13 @@
    Outside a display's resolved hours nothing is offered for it: no real-time
    bid request, no private-auction bid request, no window booking, and the
    screen plays house content. Those moments are not unsold opportunities and
-   carry no missed revenue. 'Unavailable — store closed' is only ever the
-   reason for an INTERNAL zone; an external display has no closed time.
+   carry no missed revenue. 'Unavailable — store closed' is never the reason
+   for a display on 24 hours, which has no closed time.
 
    Hours are whole UTC hours (this POC has no store time zones), as in
    dailyCapacity.ts. Pure functions: groups of displays sharing hours are
    built by the callers that already hold the displays and stores. */
-import { type Hours, type ScreenGroup, ALWAYS_OPEN, isExternalZone, openMsIn, operatingHours } from './dailyCapacity'
+import { type Hours, type OperatingSource, type ScreenGroup, isExternalZone, isStoreIndependent, openMsIn, operatingHours, settingKey, settingOf } from './dailyCapacity'
 import type { Context } from '../context'
 import type { Awaitable } from '../db/db'
 import type { DisplayRecord } from '../platform/DisplaySource'
@@ -27,8 +27,8 @@ export const windowOpenFor = (groups: readonly ScreenGroup[], start: Date, len: 
   groups.some((g) => g.screens > 0 && openMsIn(start.getTime(), start.getTime() + len, g.hours) > 0)
 
 /* Displays of a display type grouped by resolved hours (one group per distinct hours, not one per display). */
-export function hourGroups(zone: string | null | undefined, displays: readonly Pick<DisplayRecord, 'storeId'>[], stores: ReadonlyMap<string, Pick<StoreRecord, 'openHour' | 'closeHour'>>): ScreenGroup[] {
-  if (isExternalZone(zone)) return displays.length ? [{ hours: ALWAYS_OPEN, screens: displays.length }] : []
+export function hourGroups(zone: OperatingSource, displays: readonly Pick<DisplayRecord, 'storeId'>[], stores: ReadonlyMap<string, Pick<StoreRecord, 'openHour' | 'closeHour'>>): ScreenGroup[] {
+  if (isStoreIndependent(zone)) return displays.length ? [{ hours: operatingHours(zone, null), screens: displays.length }] : []
   const by = new Map<string, ScreenGroup>()
   for (const d of displays) {
     const hours = operatingHours(zone, d.storeId ? stores.get(d.storeId) : undefined)
@@ -53,14 +53,18 @@ export const openHoursPerDayOf = (groups: readonly ScreenGroup[]): number => (gr
 /* imp.ext.ph.operatingHours: the standard per-screen form, grouped by distinct hours so a 15,000-display estate stays one short list. */
 export interface OperatingHoursExt {
   zone: string | null
+  /* 24h, store (the store's trading hours) or custom: the display type's saved setting, else its zone's value. */
+  mode: '24h' | 'store' | 'custom'
   external: boolean
   tz: 'UTC'
   screens: { open: string; close: string; days: number[]; count: number }[]
 }
-const hh = (h: number) => `${String(h).padStart(2, '0')}:00`
-export function operatingHoursExt(zone: string | null | undefined, groups: readonly ScreenGroup[]): OperatingHoursExt {
+const hh = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
+export function operatingHoursExt(src: OperatingSource, groups: readonly ScreenGroup[]): OperatingHoursExt {
+  const zone = typeof src === 'object' && src ? src.storeZone : (src as string | null | undefined)
   return {
     zone: zone ?? null,
+    mode: settingOf(src).mode,
     external: isExternalZone(zone),
     tz: 'UTC',
     screens: groups.map((g) => ({ open: hh(g.hours.open), close: hh(g.hours.close), days: [0, 1, 2, 3, 4, 5, 6], count: g.screens })),
@@ -111,18 +115,18 @@ function storesById(ctx: Context, cache: HourGroupsCache, now: number): Awaitabl
 }
 
 /* A position's displays grouped by resolved hours. Sync-first like the other per-position reads. */
-export function positionHourGroups(ctx: Context, p: { displayType: { id: string; phExtensions?: { storeZone?: string | null } | null } }): Awaitable<ScreenGroup[]> {
-  const zone = p.displayType.phExtensions?.storeZone
+export function positionHourGroups(ctx: Context, p: { displayType: { id: string; phExtensions?: Exclude<OperatingSource, string | null | undefined> | null } }): Awaitable<ScreenGroup[]> {
+  const zone = p.displayType.phExtensions
   let cache = hourGroupsCache.get(ctx.displays)
   if (!cache) hourGroupsCache.set(ctx.displays, (cache = { byKey: new Map(), stores: null }))
   const c = cache
   const now = Date.now()
-  const key = `${p.displayType.id}\u0000${zone ?? ''}`
+  const key = `${p.displayType.id}\u0000${typeof zone === 'object' && zone ? zone.storeZone ?? '' : ''}\u0000${settingKey(zone)}`
   const hit = c.byKey.get(key)
   if (hit && now - hit.at <= HOUR_GROUPS_TTL_MS) return hit.groups
   const displays = ctx.displays.listByDisplayType(p.displayType.id)
   const build = (ds: DisplayRecord[]) => {
-    if (isExternalZone(zone)) return hourGroups(zone, ds, new Map())
+    if (isStoreIndependent(zone)) return hourGroups(zone, ds, new Map())
     const stores = storesById(ctx, c, now)
     return stores instanceof Promise ? stores.then((byId) => hourGroups(zone, ds, byId)) : hourGroups(zone, ds, stores)
   }
@@ -134,9 +138,9 @@ export function positionHourGroups(ctx: Context, p: { displayType: { id: string;
   return groups
 }
 
-/* May this display receive offers at this instant? A display with no store record follows the zone's default (open all day). */
-export async function displayOpenAt(ctx: Context, d: { storeId: string | null }, zone: string | null | undefined, at: Date): Promise<boolean> {
-  if (isExternalZone(zone)) return true
+/* May this display receive offers at this instant? A display with no store record on Store hours is open all day. */
+export async function displayOpenAt(ctx: Context, d: { storeId: string | null }, zone: OperatingSource, at: Date): Promise<boolean> {
+  if (settingOf(zone).mode === '24h') return true
   const store = d.storeId ? await ctx.stores.get(d.storeId) : null
   return openAt(operatingHours(zone, store), at)
 }

@@ -15,7 +15,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
+import { chromium, firefox, webkit } from "playwright-core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const publicDir = path.join(here, "..", "..", "public");
@@ -45,16 +45,26 @@ export async function launchChromium() {
   return chromium.launch(launch).catch(() => chromium.launch({ headless: true, channel: "chrome" }));
 }
 
+// Engines other than Chromium are optional (the Staff Kanban viewport matrix asks for them):
+// `harness.engine(name)` returns the launched browser, or null when that engine isn't installed.
 export async function startHarness() {
   const server = await staticServer();
   const origin = `http://127.0.0.1:${server.address().port}`;
   const browser = await launchChromium();
+  const engines = new Map([["chromium", browser]]);
+  const missing = new Map();
+  async function engine(name) {
+    if (engines.has(name)) return engines.get(name);
+    if (missing.has(name)) return null;
+    try { const b = await { firefox, webkit }[name].launch({ headless: true }); engines.set(name, b); return b; }
+    catch (e) { missing.set(name, String(e.message || e).split("\n")[0]); return null; }
+  }
   const stubSource = fs.readFileSync(stubPath, "utf8");
 
   // seed: { docs: { collection: { id: fields } }, user: { email, role } }
   // init: { fn, arg } — an extra init script (e.g. a speech-recognition stub).
-  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme, contextOptions = {}, init } = {}) {
-    const context = await browser.newContext({ viewport: { width, height }, ...(colorScheme ? { colorScheme } : {}), ...contextOptions });
+  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme, contextOptions = {}, init, engine: engineName = "chromium" } = {}) {
+    const context = await (engines.get(engineName) || browser).newContext({ viewport: { width, height }, ...(colorScheme ? { colorScheme } : {}), ...contextOptions });
     const problems = [];
     const refused = [];
     const addProblem = (p) => problems.push(p);
@@ -106,8 +116,8 @@ export async function startHarness() {
   }
 
   return {
-    open, origin,
-    async close() { await browser.close(); await new Promise((r) => server.close(r)); },
+    open, origin, engine, missing,
+    async close() { for (const b of engines.values()) await b.close(); await new Promise((r) => server.close(r)); },
   };
 }
 

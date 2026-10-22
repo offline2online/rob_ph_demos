@@ -86,22 +86,15 @@ describe('Advertiser settings (spec §4, §6)', () => {
     }
   })
 
-  it('default committed plays: null by default, saves, omitted keeps it, null clears it, refuses 0 and non-integers', async () => {
+  it('has no default committed plays any more (21 Oct 2026): a guaranteed deal derives them from its slots, and the guarantee buffer stays editable', async () => {
     const app = buildApp(await testContext())
-    const get = async () => (await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().defaultCommittedPlays
-    expect(await get()).toBeNull()
-    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: 5000 } })
+    const get = async () => (await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json()
+    expect(await get()).not.toHaveProperty('defaultCommittedPlays')
+    /* A client that still sends it is not refused, and nothing is stored. */
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: 5000, guaranteeBufferPct: 15 } })
     expect(ok.statusCode).toBe(200)
-    expect(await get()).toBe(5000)
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
-    expect(await get()).toBe(5000)
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: null } })
-    expect(await get()).toBeNull()
-    for (const bad of [0, -5, 1.5, '100']) {
-      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: bad } })
-      expect(res.statusCode).toBe(400)
-      expect(res.json().error.details).toEqual([{ field: 'defaultCommittedPlays', reason: 'Default committed plays is a whole number of plays, at least 1, or empty.' }])
-    }
+    expect(ok.json()).not.toHaveProperty('defaultCommittedPlays')
+    expect((await get()).guaranteeBufferPct).toBe(15)
   })
 
   it('drives the play windows from the billing unit: the platform default is a day, a slot can make it a week, and the next window is the one after the running one', async () => {
@@ -338,11 +331,11 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(assigned(await save({ partnerIds: ['p_google', 'p_amazon'], advertisers: [], whitelistOnly: false })))
       .toMatchObject({ partnerIds: ['p_google', 'p_amazon'], partnerNames: ['Google DSP', 'Amazon Ads DSP'] })
 
-    /* Named advertisers: held for them, and their DSP comes along. */
+    /* No buyer is named on a slot (22 Oct 2026): a DSP's advertiser is refused too, pointing at deals. */
     const named = await save({ partnerIds: [], advertisers: ['Nestlé', 'Swisse'], whitelistOnly: false })
-    expect(assigned(named)).toMatchObject({ advertisers: ['Nestlé', 'Swisse'], partnerIds: ['p_google'], whitelistOnly: false })
-    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].listMode).toBe(null)
-    expect((await buildApp(ctx).inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: { authorization: 'Bearer poc-token-google-dv360' } })).statusCode).toBe(200)
+    expect(named.statusCode).toBe(400)
+    expect(JSON.stringify(named.json())).toMatch(/Nestlé can't be assigned to a slot directly.*deal/)
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].advertisers).toEqual([])
 
     /* The whitelist instead. */
     await ctx.partners.update('p_google', { allowList: ['5130001'] })
@@ -361,19 +354,18 @@ describe('Advertiser settings (spec §4, §6)', () => {
       return res.json().error.details.map((d: { field: string }) => d.field)
     }
     expect(await fields({ partnerIds: ['p_nope'], advertisers: [], whitelistOnly: false })).toEqual(['items[0].assignedTo.partnerIds'])
-    /* L'Oréal is an Amazon advertiser, not a Google one. */
     expect(await fields({ partnerIds: ['p_google'], advertisers: ["L'Oréal"], whitelistOnly: false })).toEqual(['items[0].assignedTo.advertisers'])
-    expect(await fields({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly'])
+    expect(await fields({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly', 'items[0].assignedTo.advertisers'])
     await ctx.partners.update('p_google', { allowList: [] })
     await ctx.partners.update('p_amazon', { allowList: [] })
     expect(await fields({ partnerIds: [], advertisers: [], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly'])
 
-    /* A blocked advertiser can't be added, but one already held stays. */
+    /* A name already held (what migration 0086 leaves on a sold slot) stays when the slot is resaved, even once blocked; none can be added. */
+    const dt = (await ctx.displayTypes.get('menu_board'))!
+    await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: dt.phExtensions!.slots.map((s, i) => (i === 1 ? { ...s, advertisers: ['Nestlé'], partnerIds: ['p_google'], listMode: null } : s)) })
     expect((await save({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false })).statusCode).toBe(200)
     await ctx.partners.update('p_google', { blockList: ['5130001'] })
     expect((await save({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false })).statusCode).toBe(200)
-    /* Once the position is held for someone else, Nestlé can't come back. */
-    expect((await save({ partnerIds: [], advertisers: ['Swisse'], whitelistOnly: false })).statusCode).toBe(200)
     expect(await fields({ partnerIds: [], advertisers: ['Nestlé', 'Swisse'], whitelistOnly: false })).toEqual(['items[0].assignedTo.advertisers'])
   })
 

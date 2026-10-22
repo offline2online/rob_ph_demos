@@ -679,6 +679,12 @@ down to a passive "In development — locked" hint instead, the same
 unlocks on its own the moment the automation flips `status` to
 `ready-for-testing` — no separate cleanup needed.
 
+**Staff Kanban E2E on every train.** A train that changes `backlog-tracker/` or
+`kanban-staff-board/` also runs the Staff Kanban suites (see "Staff Kanban" →
+"Self-healing Staff Kanban E2E loop"). A red case raises an auto-approved
+"E2E auto-fix" bug onto the same train, the suite re-runs, and Deploy to Main
+waits only for green.
+
 ### Cards that ship together are grouped on the board
 
 Two or more cards packaged into the same deployment are drawn bracketed
@@ -2541,3 +2547,40 @@ stand-in, as the prototype did.
 Tests: `test/ui/staff-kanban.test.mjs` (the 25 signed-off cases plus 4 console
 ones, in Chromium), `test/kanban-mcp.test.js` (server and MCP tools),
 `test/kanban-rules.test.js` (rules, in the emulator), all part of `npm test`.
+
+### Self-healing Staff Kanban E2E loop (21 Oct 2026)
+
+The Staff Kanban suites — `kanban-staff-board/test/e2e.test.mjs` (the
+`kanban-staff-board-tests.yml` workflow) and `test/ui/staff-kanban.test.mjs`,
+`test/kanban-mcp.test.js`, `test/kanban-rules.test.js` (inside the console tests,
+`firestore-rules-test.yml`) — run on **every deployment train of any project that
+changes `backlog-tracker/` or `kanban-staff-board/`**: when a build lands in
+Ready for Testing, on each later push to the train (Deploy to Feature), and
+again as the gate before Deploy to Main. Both workflows are in
+`TRAIN_TEST_WORKFLOWS` (`kanban: "console" | "all"`, `extraPrefixes`), so the
+existing dispatch, per-card result and merge gate cover them; no workflow file
+changed.
+
+When a run is red (after the one automatic re-run), `processKanbanE2eHeal`
+(`scripts/run-backlog-automation.js`, decisions in `scripts/kanban-e2e-heal.js`)
+reads the failed log and, per failing case and viewport:
+
+1. raises a bug ticket labelled **E2E auto-fix** (`e2eAutoFix`: case, viewport,
+   failure, the run, the ticket that broke it), already approved for development
+   and queued for build — nobody ticks it or clicks Ready for Dev;
+2. the build lands on **the same train branch**, so the suite re-runs on it;
+3. once the suite is green on a head that contains the fix, the fix card is
+   approved by the run, not a tester; then the loop ends and the original
+   tickets and every fix go to main in one merge;
+4. a case still red after **3** fixes is flagged for Rob on the fix card and on
+   the ticket that broke it (`flaggedForRob`, with the attempt history); the
+   rest of the train keeps moving.
+
+A fix ticket never holds a card or a workflow; only Deploy to Main waits for
+green, as before. `ejectRedCulprits` stands down for a red the heal owns
+(`projects/{id}.kanbanE2e.owned`) — the break is fixed forward, not by sending
+its ticket back. The project header shows **Kanban E2E running / healing n bugs
+/ green / flagged** (`projects/{id}.kanbanE2e`, hover for the per-suite detail).
+Fix tickets are raised on the **train's own project** (the pipeline builds a
+ticket onto its project's train), which is the Staff Kanban project when its
+own train breaks. Tests: `test/kanban-e2e-heal.test.js` (in `test:train-lock`).

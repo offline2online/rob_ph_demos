@@ -10,10 +10,10 @@
    Canvas and format per display type are owned by PH Core and read here
    read-only (api/PH-CORE-BOUNDARIES.md "Canvas and format per display type");
    max play length is the slot's resolved value (slot -> display type -> company). */
-import { assignedOf } from '@ph-dsp/types'
+import { isGuaranteedLike, assignedOf } from '@ph-dsp/types'
 import type { BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
-import { equivalentCpmRange, HOURS_PER_DAY, perDaySlotsOf } from './perDayRate'
+import { equivalentCpmOf, equivalentCpmRange, termDaysOf, termSlotsOf } from './termPrice'
 import { allPositions, maxPlayLengthSecFor, type PositionRef } from './positions'
 
 export type CreativeType = 'image' | 'video'
@@ -78,10 +78,12 @@ export async function dealOf(ctx: Context, list: BuyersList, rateCpm?: number, p
     dealType: list.dealType,
     activeFrom: list.activeFrom,
     activeTo: list.activeTo,
+    timeZoneMode: list.timeZoneMode ?? 'platform',
     auctionCloses: list.auctionCloses,
     ...(rateCpm !== undefined ? { rateCpm } : {}),
-    /* Programmatic guaranteed priced per day (20 Oct 2026): what a DSP is told. The slot is booked for each full 24-hour day at this flat rate; the equivalent CPM is for comparison. */
-    ...(list.dealType === 'guaranteed' && list.ratePerDay != null ? { rateType: 'Fixed per day' as const, ratePerDay: list.ratePerDay, billingPeriodHours: HOURS_PER_DAY, equivalentCpm: equivalentCpmRange(await perDaySlotsOf(ctx, list)) } : {}),
+    /* Programmatic guaranteed (21 Oct 2026): the whole delivery term and the volume derived from the assigned slots, which a DSP is told. A total for the term also carries its equivalent CPM, for comparison with CPM deals. */
+    ...(isGuaranteedLike(list.dealType) ? { termDays: termDaysOf(list.activeFrom, list.activeTo), committedPlays: list.committedPlays } : {}),
+    ...(isGuaranteedLike(list.dealType) && list.termTotal != null ? { rateType: 'Fixed per term' as const, termTotal: list.termTotal, equivalentCpm: equivalentCpmRange(equivalentCpmOf(list.termTotal, await termSlotsOf(ctx, list.id), termDaysOf(list.activeFrom, list.activeTo))) } : {}),
     creativeRequirements: await creativeRequirementsFor(ctx, list.id),
   }
 }

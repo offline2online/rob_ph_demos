@@ -64,20 +64,13 @@ const INTERACTIVE_TIP = (
   </div>
 )
 
-/* The two committed-volume settings sit together; each tip says what it does and how it differs from the other. */
+/* The guarantee buffer is the only committed-volume setting: a guaranteed deal's plays are derived from its assigned slots (21 Oct 2026), never defaulted. */
 const BUFFER_TIP = (
   <div style={{ fontSize: 12 }}>
-    Sets a <b>guaranteed deal’s</b> committed volume. It is never typed: the platform takes the slot’s VAC-d forecast and works out <b>floor(forecast × (1 − buffer %))</b>, so the buffer is the share held back for screen downtime and expected delivery sits above the guarantee.
-    <div className="mt-2">The committed figure is sent to the DSP as the guaranteed unit count. Preferred deals promise no volume and ignore it. Applies to every guaranteed deal. 0 to 50, default 10. It does not touch a buyers list’s Committed plays.</div>
+    Sets a <b>guaranteed deal’s</b> committed volume. It is never typed or defaulted: the platform takes the forecast plays of every slot assigned to the deal across its whole delivery term and works out <b>floor(total forecast plays × (1 − buffer %))</b>, so the buffer is the share held back for screen downtime and expected delivery sits above the guarantee.
+    <div className="mt-2">The committed figure is shown on the deal once slots are assigned, and sent to the DSP as the guaranteed unit count. Preferred deals promise no volume and ignore it. Applies to every guaranteed deal. 0 to 50, default 10.</div>
   </div>
 )
-const DEFAULT_PLAYS_TIP = (
-  <div style={{ fontSize: 12 }}>
-    A starting value for <b>Committed plays</b> on a <b>new deal and buyers list</b>. It is only a default: never a cap, the field stays editable, and the list keeps its own figure.
-    <div className="mt-2">It pre-fills a new list only. It never changes a saved list or any existing list, and a changed default is picked up by the next new list. It does not affect how a guaranteed deal’s volume is computed (that is the Guarantee buffer). Whole number, at least 1; leave empty for per play.</div>
-  </div>
-)
-
 const UNCACHED_TIP = (
   <div style={{ fontSize: 12 }}>
     Bandwidth protection. Suppresses only <b>not-yet-cached</b> creatives from winning in the window: a bid wins there only if the player already holds its creative. Cached creative plays throughout, and outside the window everything bids as normal.
@@ -136,7 +129,7 @@ export function AdvertiserSettings() {
         <Switch id="globalDealEnabled" checked={draft.exchange.globalDealEnabled === true} onChange={(on) => update('exchange', (x) => ({ ...x, globalDealEnabled: on }))} />
       </div>
 
-      <SectionLabel><WithTip tip="How many plays a slot offers and what a deal commits to. The company max slot length sets the default length of one play, which a display type and then a slot can override. The buffer decides a guaranteed deal's committed volume, worked out from the slot's forecast. The default seeds Committed plays on a new buyers list. They are separate: changing one never changes another.">Play configuration</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="How many plays a slot offers and what a deal commits to. The company max slot length sets the default length of one play, which a display type and then a slot can override. The buffer decides a guaranteed deal's committed volume, worked out from the forecast plays of the slots assigned to it over its whole delivery term.">Play configuration</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
         <Field label={<span className="block whitespace-nowrap">Max play length</span>} htmlFor="maxPlayLengthSec" tip="The company-wide default length of one play of a slot, in seconds. A display type and then a slot can override it on Advertisers / Inventory (slot wins over display type, which wins over this). Plays per window are the billing unit divided by it × the slots playing in the loop (HQ slots included), whoever is booked; it applies to HQ campaigns too; a creative longer than it is rejected on upload, never trimmed. Whole seconds, 1 to 600. Default 15." className="w-56">
           <div className="flex items-center gap-2">
@@ -150,9 +143,6 @@ export function AdvertiserSettings() {
             <InputNumber id="guaranteeBufferPct" className="w-full" step={1} min={0} max={50} placeholder="10" value={s.guaranteeBufferPct ?? 10} onChange={(v) => set('guaranteeBufferPct', (v === null ? null : Number(v)) as number)} />
             <span aria-hidden="true">%</span>
           </div>
-        </Field>
-        <Field label={<span className="block whitespace-nowrap">Default committed plays</span>} htmlFor="defaultCommittedPlays" tip={DEFAULT_PLAYS_TIP} tipWidth={400} className="w-56">
-          <InputNumber id="defaultCommittedPlays" className="w-full" step={1} min={1} precision={0} placeholder="Per play" value={s.defaultCommittedPlays ?? null} onChange={(v) => set('defaultCommittedPlays', typeof v === 'number' ? v : null)} />
         </Field>
       </div>
 

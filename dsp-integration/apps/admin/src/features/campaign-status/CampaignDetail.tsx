@@ -114,7 +114,7 @@ export function CampaignDetail() {
       {/* Campaign Status is the Campaign schedule section's second tab now
           (ticket, 26 Sep 2026), not its own page — back there, not to the
           removed standalone route. */}
-      <Button color="primary" variant="text" className="mb-2 px-0" icon={<Icon name="arrow_back" size={16} />} onClick={() => navigate(BOOKING_SCHEDULE_PATH)}>Campaign Approval</Button>
+      <Button color="primary" variant="text" className="mb-2 px-0" icon={<Icon name="arrow_back" size={16} />} onClick={() => navigate(`${BOOKING_SCHEDULE_PATH}?tab=campaign-status`)}>Campaign Approval</Button>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="m-0 flex-1" style={{ fontSize: 20, fontWeight: 700 }}>{c.name}</h2>
         <span style={{ fontSize: 12.5, color: T.muted }}>Status</span>

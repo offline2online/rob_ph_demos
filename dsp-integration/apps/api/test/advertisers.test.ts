@@ -52,27 +52,64 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(((await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string }[]).some((a) => a.advertiserId === 'acme-foods')).toBe(false)
   })
 
-  it('holds a slot for a direct advertiser from Available Inventory’s Assigned to', async () => {
+  it('treats a direct record shadowed by a DSP seat as a direct advertiser, not "Not a direct advertiser"', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    await ctx.company.addDirectAdvertiser('swisse', 'Swisse')
+    const items = (await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string; direct: boolean }[]
+    expect(items.find((a) => a.advertiserId === 'swisse')?.direct).toBe(false)
+    /* Swisse has campaigns, so it is refused for that reason (409), not as "not direct" (404). */
+    const del = await app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/swisse' })
+    expect(del.statusCode).toBe(409)
+    expect(del.json().detail ?? del.body).toMatch(/campaigns or bookings/)
+  })
+
+  it('refuses any named buyer, direct or a DSP’s, in Available Inventory’s Assigned to, pointing to deals', async () => {
     const app = buildApp(await testContext())
     expect((await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })).statusCode).toBe(201)
     const save = (advertisers: string[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers, whitelistOnly: false } }] } })
     const res = await save(['Acme Foods'])
-    expect(res.statusCode).toBe(200)
-    expect(res.json().items[0].assignedTo).toMatchObject({ advertisers: ['Acme Foods'], partnerIds: [], openAuction: false })
-    /* Alongside a DSP advertiser too; an unknown name is still refused. */
-    expect((await save(['Acme Foods', 'Nestlé'])).json().items[0].assignedTo).toMatchObject({ advertisers: ['Acme Foods', 'Nestlé'], partnerIds: ['p_google'] })
+    expect(res.statusCode).toBe(400)
+    expect(JSON.stringify(res.json())).toMatch(/Acme Foods can't be assigned to a slot directly.*Direct advertiser deal/)
+    /* A DSP advertiser (Nestlé via Google DSP) is refused the same way, alone or alongside another. */
+    const dsp = await save(['Nestlé'])
+    expect(dsp.statusCode).toBe(400)
+    expect(JSON.stringify(dsp.json())).toMatch(/Nestlé can't be assigned to a slot directly.*Programmatic guaranteed deal/)
+    expect((await save(['Acme Foods', 'Nestlé'])).statusCode).toBe(400)
     expect((await save(['Nobody Ltd'])).statusCode).toBe(400)
   })
 
-  it('refuses to delete a direct advertiser still assigned to a slot, naming the slot', async () => {
-    const app = buildApp(await testContext())
+  it('keeps a direct advertiser already held on a sold slot when the slot is resaved, and still refuses adding one', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
     await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: ['Acme Foods'], whitelistOnly: false } }] } })
+    /* What migration 0082 leaves on a slot with a live booking: the direct advertiser stays until its bookings have played. */
+    const dt = (await ctx.displayTypes.get('menu_board'))!
+    await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: dt.phExtensions!.slots.map((s, i) => (i === 1 ? { ...s, advertisers: ['Acme Foods', 'Nestlé'], listMode: null } : s)) })
+    const save = (slot: number, advertisers: string[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot, assignedTo: { partnerIds: [], advertisers, whitelistOnly: false } }] } })
+    expect((await save(2, ['Acme Foods', 'Nestlé'])).statusCode).toBe(200)
+    expect((await save(2, ['Nestlé'])).statusCode).toBe(200)
+    /* Gone once removed, and never onto another slot. */
+    expect((await save(2, ['Acme Foods', 'Nestlé'])).statusCode).toBe(400)
+    expect((await save(1, ['Acme Foods'])).statusCode).toBe(400)
+  })
+
+  it('refuses to delete a direct advertiser still assigned to a slot (legacy data), naming the slot', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })
+    /* The API no longer assigns one, so the leftover assignment is written straight to the display type. */
+    const holdAcme = async (advertisers: string[]) => {
+      const dt = (await ctx.displayTypes.get('menu_board'))!
+      const ext = dt.phExtensions!
+      await ctx.displayTypes.saveExtensions(dt.id, { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, advertisers } : s)) })
+    }
+    await holdAcme(['Acme Foods'])
     const del = () => app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/acme-foods' })
     const res = await del()
     expect(res.statusCode).toBe(409)
     expect(res.json().error.message).toMatch(/Acme Foods is assigned to a slot.*slot 2/)
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false } }] } })
+    await holdAcme([])
     expect((await del()).statusCode).toBe(204)
   })
 
@@ -85,6 +122,10 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect((await post('Own Brand')).statusCode).toBe(201)
     expect((await post('own  brand')).statusCode).toBe(409)
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/swisse' })).statusCode).toBe(404)
+    /* Deleting one that is already gone is not an error. */
+    const del = () => app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/own-brand' })
+    expect((await del()).statusCode).toBe(204)
+    expect((await del()).statusCode).toBe(204)
     const marketing = buildApp(await testContext({ role: 'hq_marketing' }))
     expect((await marketing.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'X' } })).statusCode).toBe(403)
   })

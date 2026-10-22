@@ -58,6 +58,7 @@ import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf, type BuyersList } from '@ph-dsp/types'
 import { isUniqueViolation, tx } from '../db/db'
 import { queueCreative, verifiedCampaign } from './creatives'
+import { bookDirectDealWindow, directDealAt } from './directDeal'
 import { vetAtBidCreative } from './atBid'
 import { checkAdvertiser, checkAudiences, checkCampaign, checkCampaignAtBid, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
 import { handOff } from './handoff'
@@ -104,7 +105,7 @@ export const receivesBidRequests = (p: PartnerRecord) => p.status === 'connected
      the same response are discarded with a reason and retried in a later
      window, so a response full of new crids can't stall the clearing. */
 /* Waterfall rank by deal type: lower is tried first. A guaranteed deal reserves its inventory and is not auctioned. */
-const TIER_RANK: Record<BuyersList['dealType'], number> = { guaranteed: 0, preferred: 1, private_auction: 2 }
+const TIER_RANK: Record<BuyersList['dealType'], number> = { guaranteed: 0, direct: 0, preferred: 1, private_auction: 2 }
 export const POSITION_CONCURRENCY = 16
 export const MAX_BIDS_PER_RESPONSE = 10
 
@@ -176,6 +177,12 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   const existing = await ctx.reservations.forWindow(p.positionId, start)
   const taken = existing.find((r) => !r.testMode && TAKEN.includes(r.status))
   if (taken) return { ...out, skipped: taken.status === 'reserved' ? 'Reserved: held outside the open auction.' : 'Already sold.' }
+
+  /* A finalised Direct advertiser deal reserves the window outright (22 Oct 2026): no DSP is asked, no other deal or auction runs. */
+  if (!p.def.salesLocked) {
+    const direct = await directDealAt(ctx, p, start)
+    if (direct) return bookDirectDealWindow(ctx, p, start, direct, out)
+  }
 
   /* The waterfall (7 Oct 2026, Broadsign model): a position assigned several
      buyers lists tries them top-down, one list per tier. The first tier whose

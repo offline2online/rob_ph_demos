@@ -1075,3 +1075,25 @@ PH Core's call, as analytics is PH Core's (Q53/Q54). This build passes no
 per-play attribute data to a partner: a DSP sees which of its campaigns
 played and the billed figures, never an attribute value or a per-play
 audience.
+
+
+## Direct advertiser campaign authoring and deal IDs (22 Oct 2026, ticket knqu0B2PGTF9PG1EUWYD)
+
+A direct advertiser authoring a campaign in PH Core picks its internal PH deal ID from
+`GET /admin/v1/advertisers/{id}/deals`, which lists the Direct advertiser deals it is the
+named buyer of that are finalised and whose delivery term covers the date. PH Core must:
+
+- offer that list in its deal-ID picker for a direct advertiser, and send the chosen `PH-` ID
+  as `dealId` (Partner API create) or in `PUT /campaigns/{id}/deals`;
+- treat the deal ID as owned by one advertiser: any other advertiser's ID is refused 400 here;
+- keep one campaign booking per slot and window as for any deal.
+
+## Flight times and store time zones (22 Oct 2026, ticket yOginusgiFgFkwVHTRFH)
+
+A deal's flight is a start and an end date-time with a `timeZoneMode`: `platform` (the platform time zone, the
+default) or `store` (each store's or device's own local time). This build has no store time zones, so a store's clock
+is the platform clock and the overlap check, term gating and delivery all compare the stored instants directly, in
+either mode. PH Core must provide each store's IANA time zone. With it, a `store` flight is evaluated per store: the
+stored start and end are read as that store's wall clock, the reserving-deal overlap check runs per slot and per store
+on the real instants, and delivery opens and closes the flight by that store's clock. Every deal saved before times
+existed reads in the platform time zone from 00:00:00 to 23:59:59.999 on its dates, as it always did.

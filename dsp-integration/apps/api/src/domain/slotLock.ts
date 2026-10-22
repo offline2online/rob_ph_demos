@@ -6,11 +6,19 @@
    (reserved or won windows that have not finished playing, Test mode
    excluded — the same definition of "sold" as the Q47 delete blocks), never
    campaign playback or delivery analytics. */
+import type { Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { liveCommitments } from './deleteChecks'
 import { positionIdOf, windowEnds } from './positions'
 import { tx } from '../db/db'
 import { TAKEN } from '../repos/ReservationRepo'
+
+/* No buyer can be named on a slot (migration 0086): a slot locked while it still held one loses it when the lock releases, and goes
+   back to real time if it was the only one. */
+const withoutNamed = (s: Slot): Slot => {
+  if (!s.advertisers?.length) return s
+  return { ...s, advertisers: [], listMode: 'rtb', buyersListId: null, buyersListIds: [], openAuction: false }
+}
 
 /* The live bookings on one slot (1-based, flat across zones), as delete-check
    dependents so a refusal can name each window. */
@@ -49,7 +57,7 @@ export async function releaseSettledSlotLocks(ctx: Context): Promise<number> {
         }
         n++
         const { salesLocked: _released, ...rest } = s
-        next.push(rest)
+        next.push(withoutNamed(rest))
       }
       if (n) await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: next })
       return n

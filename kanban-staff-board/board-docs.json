@@ -5,7 +5,12 @@
     {
       "key": "e2e-test-plan",
       "path": "kanban-staff-board/docs/E2E-TEST-PLAN.md",
-      "name": "End-to-end test plan (TC-01 to TC-25, manual checks M-1 to M-4)"
+      "name": "End-to-end test plan (TC-01 to TC-66, KB-C cases, manual checks M-1 to M-4)"
+    },
+    {
+      "key": "e2e-test-plan-tc26-tc66",
+      "path": "kanban-staff-board/docs/E2E-TEST-PLAN-TC26-TC66.md",
+      "name": "End-to-end test plan, TC-26 to TC-66"
     },
     {
       "key": "e2e-report-2026-10-21",
@@ -16,6 +21,11 @@
       "key": "e2e-report-2026-10-21-console",
       "path": "kanban-staff-board/docs/E2E-REPORT-2026-10-21-console.md",
       "name": "End-to-end run against the console build, 21 Oct 2026 (30/30)"
+    },
+    {
+      "key": "e2e-report-2026-10-21-console-matrix",
+      "path": "kanban-staff-board/docs/E2E-REPORT-2026-10-21-console-matrix.md",
+      "name": "End-to-end run across the viewport matrix, 21 Oct 2026 (prototype and console)"
     }
   ],
   "boardDocs": []

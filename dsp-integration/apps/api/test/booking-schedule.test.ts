@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { runBilling } from '../src/exchange/billing'
 import { buildApp } from '../src/http/app'
 import type { ReservationRecord } from '../src/repos/ReservationRepo'
+import { approvalOf } from '../src/routes/admin/bookingSchedule'
 import { expectMatchesContract } from './contract'
 import { NOW, sellByWindow, testContext } from './helpers'
 
@@ -94,7 +95,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     /* The seeded 15 Sep window: won at 120 CPM, 1,236 assumed views; billed on
        what played. c_dsp_nestle carries a default layer plus a localised
        metro-open upsell, so its tile stacks two layers. */
-    expect(at('2026-09-15')).toEqual({ start: '2026-09-15T00:00:00.000Z', status: 'booked', booking: { reservationId: 'res_seed_nestle_0915', campaignId: 'c_dsp_nestle', advertiserId: 'nestle', partnerId: 'p_google', pricingType: 'localised', type: 'bid', advertiserName: 'Nestlé', partnerName: 'Google DSP', cpm: 120, assumedViews: 1236, bookedRevenue: 148.32, billedRevenue: 74.16, layers: { default: true, localised: true, personalised: false }, personalisedTriggers: null } })
+    expect(at('2026-09-15')).toMatchObject({ start: '2026-09-15T00:00:00.000Z', status: 'booked', booking: { reservationId: 'res_seed_nestle_0915', campaignId: 'c_dsp_nestle', advertiserId: 'nestle', partnerId: 'p_google', pricingType: 'localised', type: 'bid', advertiserName: 'Nestlé', partnerName: 'Google DSP', cpm: 120, assumedViews: 1236, bookedRevenue: 148.32, billedRevenue: 74.16, layers: { default: true, localised: true, personalised: false }, personalisedTriggers: null } })
     /* Reserved at the price agreed through the DSP. */
     expect(at('2026-09-22')).toMatchObject({ status: 'booked', booking: { type: 'reserve', advertiserName: 'Swisse', cpm: 175, bookedRevenue: 216.3, billedRevenue: null } })
     /* A Test-mode win is not a booking. */
@@ -104,6 +105,34 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(res.json().totals).toEqual({ bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16 })
     /* Both bookings are localised campaigns (Rob, 20 Sep: show what type is selling). */
     expect(res.json().byPricingType).toEqual([{ pricingType: 'localised', bookedWindows: 2, bookedRevenue: 364.62 }])
+  })
+
+  /* Ticket S5PZyZ3MFr45LTM0zfAK (22 Oct 2026): the tile's approval state. */
+  it('colours the default by approval and flight start, and counts approved of submitted campaigns per layer', async () => {
+    expect(approvalOf(true, 1, { approved: 0, submitted: 0 }, { approved: 0, submitted: 0 }).defaultRisk).toBe('secured')
+    expect(approvalOf(false, 2, { approved: 0, submitted: 0 }, { approved: 0, submitted: 0 }).defaultRisk).toBe('at_risk')
+    expect(approvalOf(false, 3, { approved: 0, submitted: 0 }, { approved: 0, submitted: 0 }).defaultRisk).toBe('at_risk')
+    expect(approvalOf(false, -1, { approved: 0, submitted: 0 }, { approved: 0, submitted: 0 }).defaultRisk).toBe('at_risk')
+    expect(approvalOf(false, 5, { approved: 0, submitted: 0 }, { approved: 0, submitted: 0 }).defaultRisk).toBe('warning')
+    const { ctx, get } = await setup()
+    await ctx.campaigns.createCampaign({ id: 'c_pers', name: 'Swisse — Personalised', targeting: null, source: 'api', advertiserId: 'swisse', partnerId: 'p_google', displayTypeId: 'menu_board', pricingType: 'personalised' })
+    await ctx.reservations.insert(booking({ id: 'r_local', campaignId: 'c_api_swisse', pricingType: 'localised' }))
+    await ctx.reservations.insert(booking({ id: 'r_personal', windowStart: '2026-09-23T00:00:00.000Z', campaignId: 'c_pers', pricingType: 'personalised' }))
+    const res = await get('?from=2026-09-15&to=2026-09-23')
+    expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
+    const at = (d: string) => res.json().positions[0].windows.find((w: { start: string }) => w.start.startsWith(d)).booking
+    const approved = async (id: string) => (await ctx.approvals.statusOf(id)) === 'approved'
+    const loc = at('2026-09-22').approval
+    const pers = at('2026-09-23').approval
+    expect(loc.defaultApproved).toBe(await approved('c_api_swisse'))
+    expect(pers.defaultApproved).toBe(await approved('c_pers'))
+    /* Both tiles belong to one advertiser on one position, so they share the counters, split by the campaign's own type. */
+    /* The split is by each campaign's own type: c_api_swisse is localised, c_pers personalised. */
+    expect(loc.localised).toEqual({ approved: (await approved('c_api_swisse')) ? 1 : 0, submitted: 1 })
+    expect(loc.personalised).toEqual({ approved: (await approved('c_pers')) ? 1 : 0, submitted: 1 })
+    expect(pers.localised).toEqual(loc.localised)
+    /* The tile's own window against now (20 Sep): 22 Sep is 2 days out, 23 Sep 3. */
+    expect(loc.startsInDays).toBeLessThan(pers.startsInDays)
   })
 
   /* The reach-count API left this build's scope on 30 Sep: a booking has no

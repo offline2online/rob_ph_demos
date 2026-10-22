@@ -20,6 +20,13 @@
    Plays that didn't happen (display offline, store closed, loop cut short)
    are not billed (Q29). Line items are stored only: no UI, report or API.
 
+   A Direct advertiser deal's reservation (partnerId 'direct') is billed the
+   same way, at the deal's rate (ticket EipHu2GUdlbZMpPGCTjF, Rob 22 Oct
+   2026). Its line item is the revenue record that the Booking schedule and
+   the Retail Media Insights dashboards report; the platform does not invoice
+   it, because a direct advertiser is billed outside the platform, as DSPs
+   bill their own deals.
+
    Settlement is final (Rob, 4 Oct 2026): the line item is the invoice and
    never changes. Billing counts the plays the platform had RECEIVED by the
    moment it settles (PlaybackSource.totals receivedBy), so playback that

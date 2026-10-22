@@ -257,7 +257,7 @@ function auth() {
   if (authObj) return authObj;
   const u = backend().user;
   const user = {
-    email: u.email, emailVerified: true,
+    email: u.email, emailVerified: true, photoURL: u.photoURL || null, displayName: u.displayName || null,
     getIdToken: async () => "stub-id-token",
     getIdTokenResult: async () => ({ claims: { consoleRole: u.role } }),
     reload: async () => {},
@@ -288,7 +288,7 @@ export async function getDownloadURL(r) {
   if (!u) throw new Error(`firebase-stub: no upload at ${r.path}`);
   return u.url;
 }
-export const deleteObject = unimplemented("deleteObject");
+export async function deleteObject(r) { const b = backend(); (b.uploads ||= {}); delete b.uploads[r.path]; (b.deleted ||= []).push(r.path); }
 export const signInWithPopup = unimplemented("signInWithPopup");
 export const signInWithRedirect = unimplemented("signInWithRedirect");
 export const signInWithEmailAndPassword = unimplemented("signInWithEmailAndPassword");

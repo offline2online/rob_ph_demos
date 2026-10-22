@@ -694,3 +694,11 @@ html[data-page="staff-kanban"] #dialog-backdrop { z-index: 60; }
 .kb-team-name { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 12px; }
 .kb-team-name .kb-input { width: 110px; min-height: 32px; }
 @media (max-width: 640px) { .kb-team-name { margin-left: 0; } }
+
+/* Tablet hardening (21 Oct 2026, ticket zgEFlulbGUudjo5bSEcJ): icons are ligatures, so until
+   (or unless) the icon font arrives — a tablet on a slow or filtered network — the icon name is
+   plain text and stretches whatever holds it; the Record task button warped that way. Each glyph
+   is boxed to one em square and clipped, and the Record dot is pinned to a 44px circle. */
+.kb-page .material-symbols-outlined, #task-backdrop .material-symbols-outlined { display: inline-block; width: 1em; height: 1em; overflow: hidden; white-space: nowrap; flex: none; }
+.kb-record-dot { flex: 0 0 44px; min-width: 44px; min-height: 44px; padding: 0; box-sizing: border-box; aspect-ratio: 1 / 1; overflow: hidden; }
+.kb-record-btn { flex: none; max-width: 100%; box-sizing: border-box; }

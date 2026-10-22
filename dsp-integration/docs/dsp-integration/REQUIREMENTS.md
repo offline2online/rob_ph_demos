@@ -11,6 +11,8 @@ record.
 
 **Changelog**
 
+- **22 Oct 2026** — **No buyer of any kind is named on a slot; slots are sold only through deals** (Rob; ticket QdMaGvVhMZgcdcmIAalT, extending mpbRDjAPS4uIagi2IVsz and z7kRMUflMRwkyBdEWxbn). Assigned to no longer offers an **Advertisers** group: neither a direct advertiser nor a DSP's advertiser (Nestlé via Google DSP) can be picked. `PUT /admin/v1/available-inventory` refuses any name in `assignedTo.advertisers` with 400, pointing to deals (a name a sold slot already holds is tolerated on resave until its lock releases). **DSPs (open auction), Deals and buyers lists, Whitelist only and the Global deal stay**: they sell to anyone eligible, not to a named buyer. Migration 0086 clears every named advertiser; the demo seed sells Landscape slot 4 to Nestlé through a Programmatic guaranteed deal. This supersedes the "DSP named advertisers are unchanged" sentence under migration 0082 below.
+- **22 Oct 2026** — **Direct advertisers reach a slot only through a Direct advertiser deal** (Rob; tickets krIPF8rPnMwVOmynHNRh, knqu0B2PGTF9PG1EUWYD, mpbRDjAPS4uIagi2IVsz, OMwDvy3OUmY9raBtTf7v, EipHu2GUdlbZMpPGCTjF, z7kRMUflMRwkyBdEWxbn and H8YNT4aXwSqD6gffTkAz, the 7-ticket series). A deal has an internal PH deal ID, flight dates and a price. Three earlier statements are **superseded**: (1) a direct advertiser named in a slot's **Assigned to** (refused since 21 Oct; migration 0082 clears existing ones); (2) "no deal ID for a direct advertiser" (it now carries its own PH deal ID on its campaigns); (3) "no billing through the platform" (the revenue is **recorded and reported** like DSP revenue, but never invoiced, because a direct advertiser is billed outside PH). Spec: "Direct advertisers" under Advertisers, "Billing", and the deal-type entries under Programmatic guaranteed. Walkthrough: AWS-DEMO-TEST-FLOW.md section F; tests: E2E-TEST-SPEC.md Run 10 X and `apps/api/test/e2e/run10-direct-deals.test.ts`.
 - **20 Oct 2026** — The AWS POC is scoped to **three demand paths** (ticket JNSjYNvGcgwdzFvaPHlk). See "AWS POC demand paths" below the changelog.
 - **17 Oct 2026** — Available Inventory's **Reserve price** is replaced by an
   editable per-slot **Floor CPM** (Rob; ticket EEm4tA5fSB6RKlEjNhVu). Each
@@ -217,7 +219,7 @@ and are not changed by this project.
 
 1. **Open auction.** No targeting at all. Monster, PepsiCo and Mars Wrigley bid against each other through the DSPs on the same slot **35 seconds before it plays**; the highest bid wins and plays the creative supplied in its bid response.
 2. **Programmatic guaranteed (PG).** An advertiser books a slot for a **full day (24 hours)** up front, pays a fixed amount and gets the slot. Coca-Cola is the demo brand. The creative must be **pre-approved and is managed directly in PH** (Coca-Cola, Coke Zero, Sprite, Fanta, Schweppes and Namthip water, the Thai 7-Eleven range), with targeting and scheduling rules (hot/cold store-segment localisation) that trigger the right campaigns on the PWA player. That is handled by **PH Core**, not by a DSP bid response.
-3. **Advertiser direct.** The advertiser relationship is managed entirely within PH (no DSP). Red Bull is the demo brand: CV personalisation, several prioritised campaigns on one slot.
+3. **Advertiser direct.** The advertiser relationship is managed entirely within PH (no DSP). Red Bull is the demo brand: CV personalisation, several prioritised campaigns on one slot. **The slot is reached only through a Direct advertiser deal** (22 Oct 2026): an internal PH deal ID, flight dates and a price. The advertiser is never named in the slot's Assigned to, and is billed outside PH; the revenue is recorded and reported. Earlier wording that puts a direct advertiser in Assigned to, gives it no deal ID, or says the platform does no billing for it is **superseded**.
 
 **Out of POC scope:** private auction and preferred deal (visible but greyed out in the UI), and targeting on deals and on the open auction. Anything below that describes PG as a future release for the AWS demo, or that offers targeting on a deal or an open auction, is superseded by this paragraph.
 
@@ -234,7 +236,7 @@ Approval** since 27 Sep 2026, see §7):
 **Display Types**, **Playlist Management**, **Advertisers / Inventory**,
 then **DSP Integration** at the bottom. The pages used day to day come
 first; DSP Integration, set up once per DSP, comes last. **Advertisers /
-Inventory** (and, from there, **Campaign schedule**'s Campaign status tab)
+Inventory** (and, from there, **Advertiser Bookings**' Campaign Approval tab)
 shows only while the retailer has DSP integration switched on (§7, *The DSP
 integration switch*). Within DSP Integration, the
 company pages are **Exchange settings**, **Advertiser settings** and
@@ -337,6 +339,29 @@ the same dialog for both.
   **Close**.
 - A confirmed delete takes effect immediately; it is not held for Save
   changes. Any other unsaved changes on the page are left as they were.
+- **Deals are archived, never deleted** (Advertisers / Inventory; ticket
+  bCcJ2e00CRLxtd98Utlr, 22 Oct 2026). The row's action is **Archive** and uses
+  the same confirmation dialog. A deal assigned to one or more slots can't be
+  archived: the dialog opens already saying so ("can't be archived because it
+  is assigned to N slots"), lists every slot it is assigned to (display type,
+  playlist, position and slot) and tells the person to unassign it in
+  Available Inventory first. **Archive is disabled**; the API refuses it as
+  well (`409 has_dependents`). An archived deal leaves the live Deals table and
+  the Assigned to picker, takes no new bookings or bids, is read only (edit,
+  share and acceptances answer `409`) and is not offered to DSPs, quoted or
+  auctioned. Its deal ID, terms, history, campaigns, bookings and billing stay
+  and still resolve for reporting and revenue. **View Archived Deals**, at the
+  top right of the Deals table, opens a historic table (AG Grid, a filter on
+  every column) of all archived deals: deal, deal type, buyers, rate / total,
+  flight dates, deal ID, archived date and archived by. Archiving is recorded
+  in the SSP change history (§3a).
+- **Automatic end of flight.** Once a shared deal's flight dates have ended and
+  its last window inside the flight has played and been billed, the deal
+  releases itself from every slot (unassigns) and is then archived, archived
+  by `system`, both recorded in the SSP change history. No manual unassign is
+  needed. Checked on the scheduler tick after Billing, on booking and billing
+  state only: a won or reserved window inside the flight that is not billed yet
+  keeps the deal assigned until it is. A deal with no end date never ends.
 
 ### Help text
 
@@ -830,7 +855,14 @@ buyers lists whose invited buyers include any of the advertiser's mapped seats
 (exact `{ partnerId, seatId }` match; an IAB-category invitation alone does not
 count) and whose delivery term covers `at` (default now); this is what the
 authoring deal-ID picker lists. A **direct advertiser has no mapping** (the PUT
-is refused) and resolves to no deals. **Kept live:** a re-sync that drops a seat
+is refused); it resolves to its own **Direct advertiser deals** instead (22 Oct
+2026, ticket knqu0B2PGTF9PG1EUWYD): those it is the named buyer of that are
+finalised (`status: shared`) with a delivery term covering `at`, each carrying
+its internal PH deal ID. Another advertiser's deal ID is refused 400 on the
+Partner API campaign create and both `PUT .../campaigns/{id}/deals` routes.
+Campaigns arrive in Campaign Approval carrying the deal ID and group under it as
+in Flow B. PH Core authoring must supply the deal ID the same way (see
+PH-CORE-BOUNDARIES.md). **Kept live:** a re-sync that drops a seat
 leaves it in `dspSeats` with `synced: false`, so it can be re-pointed, and it no
 longer resolves any deal. The mapping screen is not built yet; this is the data
 and API.
@@ -845,12 +877,49 @@ with the delete icon beside it in the Advertisers table
 bookings; DSP advertisers have no delete icon). It is listed with the DSP
 advertisers (`direct: true`, empty `via`) and takes the same approval and floor
 settings. Wherever a DSP name would accompany an advertiser it reads
-**"Name (Direct)"**: the Via column, the Assigned to options, and the booking
-schedule (its advertiser filter, offered only when no DSP is picked, and its
-tiles). A DSP seat of the same name wins, so one advertiser is never listed
-twice. Picking one in a slot's Assigned to holds that slot for it and saves
-like a DSP advertiser (no DSP comes along, since it has none); before
-9 Oct 2026 the save was refused as "not an advertiser on any connected DSP".
+**"Name (Direct)"**: the Via column and the booking schedule (its advertiser
+filter, offered only when no DSP is picked, and its tiles). A DSP seat of the
+same name wins, so one advertiser is never listed twice. **A direct advertiser
+is not offered in a slot's Assigned to (21 Oct 2026), and cannot be assigned
+there:** `PUT /admin/v1/available-inventory` answers 400 naming the advertiser
+and pointing to deals. It reaches a slot only through a Direct advertiser deal.
+(This replaces the 9 Oct rule that picking one held the slot for it.) DSP named
+advertisers are unchanged.
+
+**Migration 0082 clears existing direct assignments (22 Oct 2026, ticket
+mpbRDjAPS4uIagi2IVsz).** It removes every direct advertiser (a
+`direct_advertisers` name no DSP seat carries) from every slot's Assigned to; a
+slot left with no named advertiser goes back to real time (`rtb`). A slot with a
+live booking (won or reserved, not Test mode) keeps its advertiser and is
+**locked against new sales** instead, the sold-slot rule: when its bookings have
+played the lock releases and the sweep (`releaseSettledSlotLocks`) removes the
+direct advertiser then. Nothing is converted into a draft Direct advertiser deal
+(a deal needs flight dates and a price the old assignment never held); every
+removal, and every lock, is recorded in the SSP change history under actor
+`migration-0082`, with the old advertisers as the old value. The down migration
+restores nothing. The demo seed (`npm run db:demo`) gives Red Bull and Gatorade a
+Direct advertiser deal each on the Portrait slot "Direct deals: Red Bull &
+Gatorade", with flights that follow each other (reserving deals never overlap on
+a slot): Red Bull 1 Sep to 31 Dec 2026 at 180 CPM, Gatorade 1 Jan to 31 Mar 2027
+at 150 CPM, each booking its own approved Portrait campaign, so they play
+through their deals.
+
+**Migration 0086 clears every named advertiser (22 Oct 2026, ticket
+QdMaGvVhMZgcdcmIAalT).** The same pattern as 0082, for every advertiser named in
+a slot's Assigned to, DSP advertisers included. A slot left with none goes back
+to real time (`rtb`); a slot with a live booking (won or reserved, not Test mode)
+is **locked against new sales** instead and keeps the names until its bookings
+have played, when `releaseSettledSlotLocks` removes them (`domain/slotLock.ts`).
+Nothing is converted into a deal. Each change is recorded in the SSP change
+history under actor `migration-0086`; `old_value` / `new_value` are JSON text
+(`json_quote` for strings), which `SspAuditRepo` reads back with `JSON.parse`
+(`test/clear-named-slots-migration.test.ts` reads the rows back through it). The
+validator (`validateAssigned`) refuses any name not already held on the slot.
+In the demo seed, Landscape slot 4 is no longer "Held for Nestlé": it is sold
+through **Nestlé guaranteed**, a Programmatic guaranteed deal with Nestlé's Google
+DSP seat at 200 CPM and a one-week flight starting on the day of seeding, and
+Nestlé's bookings on that slot are linked to the deal at its rate. No seeded slot
+names an advertiser.
 
 **Users page on the real API (10 Oct 2026, ticket H6BcvdNZUvdP8Ebh5Tve).**
 `mockups/platform-users.html` (Company Settings → Users) reads and saves
@@ -868,6 +937,12 @@ same way but have no sign-in behind them. **Signing in is PH Core's**
 only that advertiser's campaigns (with approval status), for PH Core to apply
 when it signs an Advertiser user in. This repo has no advertiser-facing login,
 insights or analytics screen to scope; that part needs the platform.
+
+**Deleting a user asks first** (ticket nN241VLRJD3iTRBsdnac). The delete icon
+in a Users row opens a "Delete user?" pop-up that names the user and says the
+action can't be undone; the user is removed only after **Delete** is pressed.
+Cancel, Escape or a click outside closes it with nothing deleted, and an API
+error shows inside the pop-up.
 
 **Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
 and only an admin changes approval, pricing, what a position is assigned to
@@ -901,9 +976,11 @@ and publishes it as visitor segments when a visitor is identified; PH never rece
 advertiser can then target, and bid up or down on, its own audiences. Amazon Ads and Kroger Precision
 Marketing share brand-specific (new-to-brand) audiences privately with one advertiser in the same way.
 
-- **Add / Edit advertiser** (Advertisers / Inventory) has an **Audiences** multi-select. It works the same for
-  a DSP and a direct advertiser: "Add new Advertiser" gains the section, and every advertiser row has an Edit
-  action opening the same form (Admin; Marketing sees the Audiences column read-only; Help desk has no page).
+- **Edit advertiser** (Advertisers / Inventory) has an **Audiences** multi-select. It works the same for
+  a DSP and a direct advertiser. "Add new Advertiser" has **no Audiences section** (21 Oct 2026, ticket
+  vfaK4m8zvDF998LukxmQ): a new direct advertiser starts with none and, like every advertiser, can use all the
+  shared targeting attributes defined for the platform; private audiences are added afterwards. Every advertiser
+  row has an Edit action opening the form (Admin; Marketing sees the Audiences column read-only; Help desk has no page).
   A column shows how many each advertiser has.
 - Options are the Visitor Segments values defined in Shared Targeting Variables (§6) and any already private to
   another advertiser. A selected segment is **private to that advertiser**; it is private to more than one
@@ -1152,9 +1229,12 @@ tickets must satisfy.
   deals the advertiser is an invited buyer on through its mapped DSP seat
   (ticket T0gLfo2zDrRXPVGcvEoL). Whether the field exists at all is decided by
   context, not left blank: an advertiser with a deal relationship (a private
-  auction through a DSP) has it; a **direct advertiser** — a direct retainer
-  relationship with the retailer, shown "Name (Direct)" — has no deal, so the
-  field is not shown and the API refuses a deal ID for it. Several campaigns
+  auction through a DSP) has it; a **direct advertiser** — a direct
+  relationship with the retailer, shown "Name (Direct)" — has the field too,
+  choosing among its own live **Direct advertiser deals** (its internal PH deal
+  ID); it may leave it empty, and another advertiser's ID is refused. *(The
+  earlier rule that a direct advertiser has no deal and the API refuses a deal
+  ID for it is **superseded 22 Oct 2026**.)* Several campaigns
   may carry the same deal ID. Before approval the advertiser may change the
   association; changing it on an approved campaign sends it back to Awaiting
   approval, like any other resubmission.
@@ -1166,7 +1246,7 @@ tickets must satisfy.
   creative ID inside a deal contains only that deal's campaigns (see rule 3
   below). Neither replaces the other.
 
-**Flow A — direct advertiser (no deal ID)**
+**Flow A — a campaign with no deal ID** *(a direct advertiser may now also carry its own PH deal ID, see "Direct advertisers"; the approval steps are unchanged)*
 
 1. The advertiser authors campaigns **one at a time** through the normal PH
    Core flow and submits each for approval. Each lands as its own row in
@@ -1245,7 +1325,7 @@ mapping, T0gLfo2zDrRXPVGcvEoL), so any non-empty deal ID is accepted for now.
 
 | Aspect | Flow A — direct | Flow B — private auction |
 | --- | --- | --- |
-| Deal ID | none (null) | set at authoring, immutable through approval |
+| Deal ID | none (null), or a direct advertiser's own PH deal ID | set at authoring, immutable through approval |
 | Row in approval table | ungrouped, grouped by advertiser | grouped by deal ID under advertiser |
 | Who mints the creative ID | HQ, on approval | HQ, on approval |
 | Granularity of an approval | any subset of one advertiser's campaigns | any subset of one advertiser's campaigns, deals may be mixed |
@@ -1267,7 +1347,8 @@ mapping, T0gLfo2zDrRXPVGcvEoL), so any non-empty deal ID is accepted for now.
 | A4 | Direct | Stale `assetVersion` / already approved / empty list | 409 / 409 / 400, nothing written |
 | A5 | Direct | Reject with and without a reason | Button disabled until typed; reason reaches status `reason` |
 | A6 | Direct | Approved campaign edited and resubmitted | Awaiting approval, keeps its ID; picker pre-highlights "original (resubmission)"; approving restores it, no new ID |
-| A7 | Direct | Campaign status before and after | `creativeId` null, then the ID; `dealId` null throughout |
+| A7 | Direct | Campaign status before and after (no deal ID chosen) | `creativeId` null, then the ID; `dealId` null throughout |
+| A8 | Direct advertiser with a live Direct deal | Deals endpoint; campaign carrying that deal ID; another advertiser's deal ID | Endpoint lists the deal; accepted and grouped by deal as Flow B; foreign ID 400 (`apps/api/test/direct-deals.test.ts`) |
 | B1 | Private auction | Submit campaigns carrying a deal ID | Rows show the deal ID; status carries `dealId` |
 | B2 | Private auction | Approve a subset of a deal into a new ID | Subset `approved` with the ID; the rest Awaiting approval |
 | B3 | Private auction | A second round approves another subset | Into a new ID, or an existing one; the deal now holds one or more IDs |
@@ -1424,6 +1505,16 @@ a human rejection now works the same way:
   audit entry carries `assetReasons` the same shape as the live rejection,
   so a later reviewer (or an un-reject, §3 above) can see exactly which
   assets were called out, not just that *something* was rejected.
+
+### Advertiser Bookings: two tabs again (Rob, 21 Oct 2026)
+
+The 13 Oct 2026 change that left Campaign Approval as a single table is
+reversed now that programmatic guaranteed is supported. `/booking-schedule`
+is titled **Advertiser Bookings** and has two tabs: **Booking schedule**
+(default: the booking grid and Booking revenue table) and **Campaign
+Approval** (`?tab=campaign-status`; the tab is in the URL, so it survives a
+refresh). A campaign's back link returns to the Campaign Approval tab. The
+Booking schedule button on the Advertisers page stays removed.
 
 ### Approval queue health, and coded rejection reasons (Rob, 19 Oct 2026)
 
@@ -1706,6 +1797,27 @@ resolved from four levels:
 - Because assets must be approved before they play (§3), the pricing and
   allocation model works over extended periods (daily, weekly or monthly)
   rather than purely in real time.
+- **Direct advertiser deals are recorded and reported, not invoiced** (22 Oct
+  2026, decision Rob; ticket EipHu2GUdlbZMpPGCTjF, 5/7). A Direct advertiser
+  deal's reservation (`partnerId: "direct"`, `reserved`, the deal's fixed CPM
+  or the CPM equivalent to its total for the term) goes through the same
+  billing as a DSP-sold reservation: one line item per window once it has
+  ended, at the deal's rate on realised VAC-d (proof of play), with the
+  personalised multiplier and late-playback ledger applying unchanged. Its
+  line item is the **revenue record**, not an invoice: DSPs bill their own
+  deals and a direct advertiser is **billed outside the platform**, so the
+  platform issues no invoice, statement or payment for it. The revenue is
+  reported wherever revenue is: the Booking schedule shows the booking as
+  "Name (Direct)" (DSP column "Direct") with booked windows, % sold and
+  Estimated revenue, and an unbooked window inside the deal's flight reads
+  "Reserved · Direct" rather than Available (no one else can buy it),
+  filterable by the advertiser or by DSP "direct" (the
+  screen shows no billed revenue, per "Booking revenue table" of 22 Sep;
+  the schedule API's `billedRevenue` carries it once the window has
+  played, confirmed by Rob 21 Oct 2026); its line items carry `partnerId: "direct"`
+  and no `seatId`, which is how the Retail Media Insights dashboards tell a
+  direct buyer from a DSP seat. Those dashboards belong to their own project
+  and read billing through their source adapter.
 - **Private auctions using the two-period model bill the same way, at a
   fixed rate** (23 Sep 2026 — see §5 "Private auctions (buyers lists)" for
   the two-period model itself). A CPM is a rate, not a fixed sum: the brand
@@ -2082,6 +2194,20 @@ It carries:
   Targeting, Flight dates (15 Oct 2026, ticket DbSVEGXNIWlYW68UQnY3). *Estimated volume* (was "Capacity") is an estimate
   of the plays per window available to the list from the criteria set on it,
   summed over its assigned positions; its tooltip says it is not a hard figure.
+- **Details column** (Rob, 21 Oct 2026; ticket nfDLP1CZiPjGfN8FG764): on the
+  Deals and buyers lists table, and on View Archived Deals, *Rate* and *Deal
+  type* are one **Details** column. The cell shows the rate and its rate
+  type, then the deal type and a one-line summary (slots, plays and value
+  over the flight). Its hover is a compact programmatic read that fits on
+  screen at 390 px and up: deal type, rate, flight dates and times, then per
+  slot the **total plays and total value over the whole flight** (not per
+  window; the Slots hover keeps the per-window slot copy), then the deal
+  total. Plays are the measure (signage): a slot's plays = plays per window
+  per display x displays x windows a day x calendar days in the flight; value
+  = plays / 1,000 x the CPM, or the term total split by each slot's share of
+  the plays; a floor is shown as "from". An open-ended flight has no total.
+  A Direct advertiser deal gets the same cell, with the advertiser and the
+  internal deal ID in the hover. Beyond five slots the hover says "+ N more".
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.
@@ -2212,17 +2338,22 @@ loop length      = max slot length x slots in rotation
 plays per window = floor(open hours within the billing unit / loop length)
 ```
 
-- **Open hours follow the zone** (ticket "Plays per window follows zone-based
-  operating hours", decision Rob 17 Oct 2026; `operatingHours()` in
-  `domain/dailyCapacity.ts`, §5 "Zone-based operating hours"). **External
-  zones** (Exterior; Entrance & out of category) count 24 hours. **Internal
-  zones** (In aisles; Checkout; Other & connected store) and a display type
-  with no zone count store trading hours: for Available Inventory, an assumed
-  trading day equal to the **average** opening and closing hours across the
-  stores with active displays on the display type (`openHoursPerDay` on the
-  row; 24 when it has no displays). So a 24 h billing unit on an Entrance
-  display type holds 24 h / loop length plays, and on an In-aisles display
-  type with stores open 08:00-20:00 on average, 12 h / loop length.
+- **Open hours follow the display type's operating hours** (ticket "Plays per
+  window follows zone-based operating hours", decision Rob 17 Oct 2026; made
+  editable by ticket WvnAf6fR7snXV1C0z9PV, Rob 22 Oct 2026; `operatingHours()`
+  in `domain/dailyCapacity.ts`, §5 "Zone-based operating hours"). The display
+  type's **Operating hours** is **24 hours**, **Store hours** or **Custom**
+  (start and end, same every day). The store zone only sets the initial value:
+  **external zones** (Exterior; Entrance & out of category) start at 24 hours;
+  **internal zones** (In aisles; Checkout; Other & connected store) and a
+  display type with no zone start at Store hours. For Store hours, Available
+  Inventory assumes a trading day equal to the **average** opening and closing
+  hours across the stores with active displays on the display type
+  (`openHoursPerDay` on the row; 24 when it has no displays); Custom counts the
+  length of its range (06:00-23:00 is 17 hours). So a 24 h billing unit on an
+  Entrance display type left on 24 hours holds 24 h / loop length plays, and on
+  an In-aisles display type with stores open 08:00-20:00 on average, 12 h / loop
+  length.
 - **One calculation**: `playsPerWindowOpenOf()` in `domain/plays.ts` feeds
   the Available Inventory column, the editor's live recalculation and the
   Estimated volume on the Deals and buyers lists and the deal sheet (fleet
@@ -2254,7 +2385,7 @@ see `api/PH-CORE-BOUNDARIES.md`.
 
 A deal's ID and type never change; its **mutable terms** are versioned on the
 same deal ID. The terms are the rate (`floorCpm`), `committedPlays`, the
-delivery term (`activeFrom` / `activeTo`), the auction window
+delivery term (`activeFrom` / `activeTo`), for a guaranteed deal its total for the term (`termTotal`, which replaced `ratePerDay` on 21 Oct 2026), the auction window
 (`auctionCloses`, private auction only) and who is invited. `termVersion`
 starts at 1 and every saved change to those terms adds a version, recorded
 append-only in `buyers_list_term_versions` (migration `0070`): what changed
@@ -2282,6 +2413,9 @@ is not a new version.
   have to re-accept. The edit pop-up calls it when the retailer clicks Save
   changes, and if it says so, asks them to confirm, naming the affected buyers
   and DSPs. A change that does not touch accepted terms saves without it.
+- **Slot changes (21 Oct 2026).** A guaranteed deal's `committedPlays` is derived from its assigned slots, so adding or
+  removing a slot on a **shared** deal is also a term change. The Available Inventory save is held with a `confirmReshare`
+  `400` until the caller confirms; see "Programmatic guaranteed: delivery term…".
 - **API.** `GET /buyers-lists` returns `termVersion` and `buyerAcceptance`;
   `GET /buyers-lists/{id}/term-versions` the history;
   `POST /buyers-lists/{id}/acceptances` records a buyer accepting the current
@@ -2555,6 +2689,18 @@ stores its criteria didn't match unsold to it. That model is retired:
   advertiser's submission also carries, on top of the mandatory default
   base (ticket "Booking schedule: single-advertiser stacking tile" — see
   the booking schedule functional requirement below).
+- **The booking tile shows approval at a glance** (ticket S5PZyZ3MFr45LTM0zfAK,
+  22 Oct 2026, decided by Rob). Approval is per campaign, so there is no
+  per-version approval. The tile is **green with a tick beside DEFAULT** when
+  the booked campaign's default is approved; when it is not approved (or has
+  no creative) the tile is **red** if its own booked window starts within 3
+  days of now (at risk, revenue not secured) and **orange** if further out.
+  The Localised and Personalised counters read *approved/submitted* among the
+  advertiser's campaigns booked on that position in the range shown, split by
+  each campaign's own type, using each campaign's own approval status
+  (orange while any await approval, green when all are approved; hidden when
+  none). The hover card is a two-column list: Booking value, CPM, Reserved
+  CPM and Assumed views, labels left, values right-aligned.
 - Open questions 50 and 51 (below) — the target algorithm for clearing
   overlapping localised bids and billing a part-sold position — are
   **superseded, not answered**: there is no longer a part-sold position for
@@ -3182,6 +3328,11 @@ written or add any other reporting on it. As the exchange, disputes resolve agai
   sensor-derived multiplier is accepted for trading or only for reporting.
 
 ## 8. Data model
+
+> **`buyers_lists` below-floor override (migration 0083, 22 Oct 2026):** `below_floor_override` (0/1, default 0),
+> `below_floor_override_by` and `below_floor_override_at` record that a deal was saved below the platform floor with
+> the admin's explicit override; surfaced as `belowFloorOverride`, `belowFloorOverrideBy`, `belowFloorOverrideAt` on
+> the deal (see the guaranteed-deal pricing rules above).
 
 The display type, playlist and campaign records are the platform's
 **existing** records, with this project's additions kept in clearly separated
@@ -4312,29 +4463,42 @@ playback analytics.**
   UTC and store hours are hours of that day (no store time zones in this POC).
   Firm = reserve bookings only. Spec: §5, §6.
 - **Zone-based operating hours** (ticket 24VWhzDd4yv7CswOPrGX, decision Rob
-  16 Oct 2026; `operatingHours()` in `domain/dailyCapacity.ts`): a display's
-  operating hours are resolved from the IAB store zone of its display type
-  (`phExtensions.storeZone`), with no per-display setting. **Exterior** and
-  **Entrance & out of category** are external: 24 hours (window screens are
-  Entrance). **In aisles**, **Checkout** and **Other & connected store** are
-  internal: the store's trading hours, as before; a display type with no zone
-  defined also follows the store. Plays per day on the Booking schedule counts
-  each display at its resolved hours, not the store's for every display.
+  16 Oct 2026; made editable by ticket WvnAf6fR7snXV1C0z9PV, Rob 22 Oct 2026;
+  `operatingHours()` in `domain/dailyCapacity.ts`): a display's operating hours
+  are set on its **display type** (`phExtensions.operatingHours`: `mode` `24h` |
+  `store` | `custom`, plus `start` / `end` as `HH:MM` for custom, platform time
+  zone, same every day, end later than start), and every display of the type
+  inherits it; there is **no per-display override**. The **IAB store zone sets
+  the initial value**: **Exterior** and **Entrance & out of category** are
+  external, 24 hours (window screens are Entrance); **In aisles**, **Checkout**
+  and **Other & connected store** are internal, Store hours (the store's trading
+  hours, as before); a display type with no zone defined defaults to Store
+  hours. On the Display Types form, Operating hours sits to the right of Store
+  zone (Start and End appear beside it for Custom) and Default VAC-d is below
+  that row. Picking a zone fills Operating hours with the zone's value; the
+  user may change it to any of the three. **If Custom hours have been set,
+  changing the zone keeps them**; on 24 hours or Store hours, changing the zone
+  updates it to the new zone's value. A display type with no saved setting
+  (never edited) reads as its zone's value, so nothing changes until someone
+  edits it. It saves with Save changes / Cancel and appears in the SSP change
+  history like the other display type fields. Plays per day on the Booking
+  schedule counts each display at its resolved hours, not the store's for every
+  display.
   **Enforced** (ticket 6a8L1QcfFUq5alWFgwnb, 16 Oct 2026;
   `domain/operatingGate.ts`): outside a display's hours it is offered nothing.
   A real-time signal is a no-fill "Unavailable — store closed" with no bid
   request, and is **not** recorded as unsold (no missed revenue); the label is
-  only ever used for internal zones, since an external display is never
-  closed. A private-auction window none of the position's displays is open for
-  is skipped before any bid request. A window the same way reads `unavailable`
-  in inventory and `POST /v1/reservations` refuses it (409). Estimated volume
-  and guaranteed impressions on the deal sheet scale each display by its open
-  share of the day (Exterior/Entrance 24h; aisles etc. trading hours). Every
-  bid request publishes `imp[0].ext.ph.operatingHours` (`zone`, `external`,
+  never used for a display on 24 hours, which is never closed. A private-auction
+  window none of the position's displays is open for is skipped before any bid
+  request. A window the same way reads `unavailable` in inventory and
+  `POST /v1/reservations` refuses it (409). Estimated volume and guaranteed
+  impressions on the deal sheet scale each display by its open share of the day
+  (24 hours: 1; Store hours: trading hours; Custom: its range). Every bid
+  request publishes `imp[0].ext.ph.operatingHours` (`zone`, `mode`, `external`,
   `tz: "UTC"`, `screens[{open, close, days, count}]`, grouped by distinct hours
-  rather than one row per display). Hours and day boundaries are UTC as
-  elsewhere in the POC; there is no separate per-display SSP feed, the hours
-  ride on the bid request.
+  rather than one row per display; a custom range carries its own open and
+  close). Hours and day boundaries are UTC as elsewhere in the POC; there is no
+  separate per-display SSP feed, the hours ride on the bid request.
 - **Hour-of-week VAC-d** (ticket L0lA4mMgRdA7YTcQpGxg, 16 Oct 2026;
   `domain/vacdProfile.ts`, `displays.vacd_profile`, migration 0074): a display
   may carry 168 hourly assumed-view values (Monday 00:00 UTC first). With none
@@ -4905,9 +5069,14 @@ A reserve is either a **preferred deal** (the window held at the deal's agreed r
 
 - **Forecast** for the window = plays × audience = the slot's VAC-d assumed views per window (`assumedViewsPerWindow`, the same figure billing realises against).
 - **Committed volume** = `floor(forecast × (1 − buffer%))`. Expected delivery therefore sits above the guarantee and make-goods are rare. Returned as `forecastImpressions` / `guaranteedImpressions` and stored on the reservation (migration 0046).
-- **Buffer**: `guaranteeBufferPct` on Advertiser settings (in the "Committed delivery volume" group, beside Default committed plays), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
+- **Buffer**: `guaranteeBufferPct` on Advertiser settings (in the "Committed delivery volume" group; Default committed plays was retired on 21 Oct 2026), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
 - **To the DSP**: the reservation response carries `dspDeal` — DV360 Programmatic Guaranteed / Amazon guaranteed deal with `unitCount` = the committed impressions; a preferred deal maps to a preferred deal with no volume (`dsp/dealTerms.ts`).
 - **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the agreed rate).
+
+- **One buyer per PG deal (Rob, 21 Oct 2026; ticket OSBkZCpjYucdQWi8hBCt)**: a programmatic guaranteed deal is one-to-one with its buyer, as in the industry: one advertiser, its own deal ID. The deal modal's Buyers field accepts a single advertiser when the type is Programmatic guaranteed, and the API refuses a `guaranteed` create or update with more than one `invitedBuyers` (400 on `invitedBuyers`), as it already does for `preferred`. A multi-buyer list cannot be saved as guaranteed until reduced to one. Two advertisers on the same slot are two PG deals, each its own row and Deal ID. Private auction behaviour is unchanged (E2E Run 7 D4.1b).
+- **Direct advertiser deal type (22 Oct 2026; ticket krIPF8rPnMwVOmynHNRh, 1/7 of the direct-advertiser-via-deals series)**: the deal modal's Deal type offers **Direct advertiser** beside Programmatic guaranteed (Private auction and Preferred deal stay visible but greyed out for the AWS POC). It has **exactly the Programmatic guaranteed fields and rules**: a single buyer, flight dates in whole days, price as a Fixed CPM or a Total for the term (never both; both is a 400), the same floor check, committed plays derived from the assigned slots and the guarantee buffer (read-only; a typed value is a 400). The buyer is chosen from **direct advertisers** (`GET /admin/v1/advertisers`, `direct: true`), never DSP seats or IAB categories, and is stored as `{partnerId: "direct", seatId: <advertiserId>}`; a direct advertiser is refused as the buyer of any other type. On save the platform mints the internal PH deal ID (`PH-` + 10 characters, immutable). There is **no DSP share, deal sheet entry or buyer acceptance** (`POST …/acceptances` is a 400, the deal sheet has no entries, `deals` is empty): **Finalise** (`POST …/share`) makes the deal live internally once it has an assigned slot and its advertiser, and the pop-up reads "Confirm and make deal live". Storage: `deal_type` stays `guaranteed` with `buyers_lists.direct = 1` (migration 0081, no table rebuild) and the API presents `dealType: "direct"`. In the waterfall it ranks with guaranteed until the open decision on its position relative to PG is settled. Not in this ticket: removing direct advertisers from a slot's Assigned to (2/7), the migration of existing assignments (3/7), the exchange reserving its windows (4/7), billing/reporting (5/7) and campaign authoring (6/7). *(All since built; see the 22 Oct 2026 changelog entry.)*
+- **Direct advertiser deals reserve their windows; reserving deals never overlap (22 Oct 2026; ticket OMwDvy3OUmY9raBtTf7v, 4/7)**: a **finalised** (shared) Direct advertiser deal reserves its assigned slots for its whole flight, like Programmatic guaranteed. Windows read **Reserved** in availability (`windowStatus`), are excluded from the open real-time auction (`realtime.ts` no-fill) and from every other deal, and **no bid request goes to any DSP**: at each window the exchange (`exchange/directDeal.ts`, called first in `clearPosition`) books a `reserved` reservation (`partnerId: "direct"`, at the deal's fixed CPM or the equivalent CPM of its term total) for the advertiser's first eligible campaign and hands it to the campaign system (`personalisedEligible`). Eligible: the direct advertiser's campaigns tied to the deal's PH deal ID, then those with no deal ID; approved and activated, for this display type or none. The campaign system plays one campaign per slot and window (migration 0021), so several campaigns on a slot are served first-eligible-wins, and their priorities are those of each campaign's own personalised and localised versions. **No waterfall between reserving deals** (decision Rob, 22 Oct 2026): Programmatic guaranteed and Direct advertiser deals both sell the slot outright, so a slot cannot hold two of them, in any combination, with overlapping flights (to the minute: see the flight times bullet below). Non-overlapping terms on one slot are allowed (PG in November, Direct in December). Assigning a reserving deal whose flight overlaps one already on the slot is refused by Available Inventory and by `PUT /admin/v1/available-inventory` (**409 `conflict`**, naming the conflicting deal, its advertiser, the slot and the overlapping dates); so is editing a deal's dates (`PUT /admin/v1/buyers-lists/{id}`, 409) so they overlap another reserving deal on any of its slots. Pairs that already overlapped before this rule are not re-judged by an unrelated save. **Warning in the UI**: before anything is saved, an inline warning (a status callout on the page, not a tooltip) names the conflicting deal, its advertiser, the slot (playlist, slot) and the overlapping dates and says the slot is already sold for them; the save is blocked until the dates or slot change. It shows under a slot's Assigned to cell, on the deal modal's Flight dates (Save and Finalise disabled), and the Assigned to picker flags options that would clash ("Overlaps ... : slot already sold"). The UI asks the new dry-run `POST /admin/v1/reserving-conflicts` (writes nothing; see `api/openapi.yaml`). Spec: "Reservations"; "Programmatic guaranteed: delivery term..."; "Prioritised buyers lists - the waterfall" (does not apply between reserving deals).
+- **Flight start and end times, and a time zone mode (22 Oct 2026; ticket yOginusgiFgFkwVHTRFH).** A deal's flight is a start and an end **date and time** (`activeFrom` / `activeTo`, still date-times), not whole days. The deal pop-up has a **Time zone** dropdown above the flight fields: **Platform time zone** (the default) or **Local store time** (each store's or device's own local clock). The choice is saved on the deal as `timeZoneMode` (`platform` | `store`; migration 0085, default `platform`; an edit that omits it keeps the stored mode) and shown wherever the flight is: the Deals table's Flight dates cell, the Finalise pop-up, the deal sheet (`timeZoneMode`, and the description line) and the Partner API deal. The pop-up's start and end each take a date and a time; a half-filled flight is not saved. **Existing whole-day deals migrate with no change of value**: a flight saved as a day already reads 00:00:00 to 23:59:59.999, now read in the Platform time zone. **The overlap rule uses the full instants**: the span two reserving deals share is computed on the real start and end, to the millisecond, per slot, and an end is the moment the flight ends, so one that ends at 12:00 and one that starts at 12:00 do not overlap and two deals on one slot on the same day are allowed when their times do not. An overlap still blocks the save (`409`, the inline warning; its message and `overlapFromAt` / `overlapToAt` give the shared span with times). **POC limit**: this build has no store time zones (as `operatingGate` and `dailyCapacity`), so a store's clock is the platform clock and the stored instants compare directly in either mode; with real store zones (a PH Core seam, see `api/PH-CORE-BOUNDARIES.md`) the check is made per store on that store's own instants and delivery follows each store's clock.
 
 ## Bandwidth protection — restrict uncached creatives in defined hours (Rob, 7 Oct 2026)
 
@@ -4976,9 +5145,11 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   deal in the authoring picker. A category-only list admits category-matched
   bidders but has no named buyer to share with; the admin UI flags it
   ("not shareable") until at least one named seat is added.
-- **The type decides the fields.** `committedPlays` is captured only for
-  `guaranteed` (pre-filled from Default committed plays; the booked volume
-  per window is still `floor(forecast × (1 − buffer%))`); no type
+- **The type decides the fields.** `committedPlays` belongs only to
+  `guaranteed`, and is derived from the deal's assigned slots over its term
+  (21 Oct 2026, see "Programmatic guaranteed: delivery term…" below), never
+  typed in; the booked volume per window is still
+  `floor(forecast × (1 − buffer%))`; no type
   captures `auctionCloses` any more. The API refuses the other combinations (400),
   and a list that is not guaranteed reports no effective committed volume.
   The floor price CPM (platform → DSP → list; most specific raises it, never
@@ -5038,22 +5209,20 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   `docs/dsp-integration/E2E-TEST-SPEC.md` in the repo, mirrored to the board in
   three parts; add Run 7 and Phase 5 to it with these case IDs.
 
-## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
+## Default committed plays — retired (21 Oct 2026; ticket LjkTqL4rdegolMoFCYVJ)
 
-- **Setting**: `defaultCommittedPlays` on Advertiser settings (in the "Committed delivery
-  volume" group beside the guarantee buffer; field **Default committed plays**). Company-wide, a whole number of
-  plays, at least 1, or empty for none (per play); anything else is refused
-  with "Default committed plays is a whole number of plays, at least 1, or
-  empty." (400). Omitted on save keeps the stored value; `null` clears it
-  (migration 0054).
-- **Flow**: creating a buyers-and-targeting list pre-fills **Committed plays**
-  from it. It is a default, not a cap: the field stays editable and the saved
-  figure is the list's own. A changed default is picked up by the next new list
-  (and by an open new-list form whose field is still untouched).
-- **Unchanged**: editing a saved list never takes the default; existing lists'
-  `committedPlays` and the "N of M plays" delivery metering are not touched.
+The 7 Oct 2026 setting `defaultCommittedPlays` (Advertiser settings, pre-filling Committed plays on a new buyers list) is
+**gone**: a guaranteed deal's committed plays are derived from its assigned slots, so there is nothing to default. The
+field is removed from Advertiser settings, from `GET`/`PUT /admin/v1/advertiser-settings` (a client that still sends it
+is not refused; nothing is stored) and from the database (migration 0080 drops `default_committed_plays`). The
+guarantee buffer stays, in the same "Committed delivery volume" group, and is an input to the derived figure. The DSP-level
+`bidder.committedPlays` override no longer feeds anything for a guaranteed deal and has been removed from the DSP page.
 
 ## Buyers list: committed volume and rate inherit platform → DSP → list (Rob, 7 Oct 2026)
+
+> **21 Oct 2026:** only the **rate** still inherits. Committed volume no longer does: for a guaranteed deal it is derived
+> from the assigned slots (see "Programmatic guaranteed: delivery term…"), and `effectiveCommittedPlays` simply
+> mirrors that figure (`source` `buyer` once there is one, `none` before).
 
 - **Bug**: the Deals and buyers lists table and modal showed a list's own committed
   volume only, so a list with none read "Per play" / blank even when a default
@@ -5077,36 +5246,63 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   and uses the inherited value as the empty field's placeholder.
   `nothing set at any level` still reads "Per play".
 
-## Programmatic guaranteed: fixed rate per day (Rob, 20 Oct 2026; ticket rx1RfF2p7tyqJABWHR0q)
+## Programmatic guaranteed: delivery term, derived committed plays, fixed CPM or total (Rob, 21 Oct 2026; ticket LjkTqL4rdegolMoFCYVJ)
 
-Programmatic guaranteed books **whole days at a flat rate per day**, in line with the DOOH full-day takeover standard
-(demand path 2 of the AWS POC, near the top of this file). Other deal types are unchanged.
+A programmatic guaranteed (PG) deal covers **the whole agreed period** (industry standard: one deal per flight, not per
+day; DV360 PG, Broadsign, Vistar). This replaces the 20 Oct 2026 flat rate per day (ticket rx1RfF2p7tyqJABWHR0q), whose
+`ratePerDay` is retired. Other deal types are unchanged. Guaranteed Run 7 D4.7 and the AWS demo (path E) cover it; the
+AWS demo can still book one day, as a one-day range.
 
-- **Rate.** A guaranteed deal carries `ratePerDay`, the USD rate for one 24-hour day on a slot (a new column on
-  `buyers_lists`, migration 0079). In the deal pop-up the rate field is **Rate per day** and the **Rate type** is
-  **Fixed per day** (not *CPM fixed*). The explanation, "Books the slot for a full 24 hours per day at a flat daily
-  rate", is an info tooltip on the label, not copy under the field. A guaranteed deal saved before this (no
-  `ratePerDay`) keeps *CPM fixed* and its `floorCpm`.
-- **Flight in whole days.** The flight is picked as days (first day from 00:00 UTC, last day to 23:59:59.999 UTC); each
-  day is one 24-hour window on the slot, which is the platform's billing window.
-- **Equivalent CPM.** `ratePerDay / forecast impressions per day x 1000`, shown read-only beside the rate so a DSP can
-  compare it with a CPM deal. The forecast is each assigned slot's own (VAC-d assumed views for the day), so it is derived
-  on read from the assigned slots and never stored; with several slots it is shown as a range (`equivalentCpm:
-  {min, max}`). A new deal has no slot yet, so the pop-up says "Assign a slot to see the equivalent CPM".
-- **Floor.** The rate per day must still respect each slot's floor once converted: a rate whose equivalent CPM is below
-  the resolved floor (platform, DSP, deal, display type, slot) of **any** assigned slot is refused with `400` and field
-  `ratePerDay`, naming the slot and the minimum rate. It is checked on every save once a slot is assigned, and always at
-  **Share**, which already needs a slot. (Decision A on the ticket; taking a forecast from Advertiser settings so the
-  check works at first save was the rejected option B.)
-- **Re-acceptance.** `ratePerDay` is a term: changing it versions the deal and asks accepted buyers to accept again.
-- **What a DSP and the buyer see.** The deal sheet carries `ratePerDay`, `billingPeriodHours: 24` and `equivalentCpm`,
-  and each DSP entry's `rateDetails` is `{rate: <per day>, rateType: "Fixed per day", billingPeriodHours: 24,
-  equivalentCpm}`; the CSV gains *Rate per day* and *Equivalent CPM* columns and the description reads "…, 450 USD per
-  day, a flat rate for each full 24-hour day (equivalent 6.4 CPM)". `GET /v1/deals` (Partner API) returns `rateType`,
-  `ratePerDay`, `billingPeriodHours` and `equivalentCpm` on such a deal.
+- **Delivery term.** A guaranteed deal takes `activeFrom` / `activeTo` as whole days (first day from 00:00 UTC, last day
+  to 23:59:59.999 UTC, both included): `termDays` on the deal sheet and the DSP deal is the calendar-day count, so 1 to
+  30 Nov is 30 and a single day is a one-day range. One deal covers the range; nothing is booked per day.
+- **Price: a fixed CPM or a total for the term, not both.** `floorCpm` is the fixed CPM (rate type *CPM fixed*);
+  `termTotal` (USD, new column `term_total`, migration 0080) is one total for the whole term (rate type *Fixed per
+  term*). Sending both, `termTotal` on another deal type, or a non-positive total is `400` on `termTotal`. `ratePerDay`
+  is refused (`400`); migration 0080 carries a stored per-day rate over as rate x days where the term is closed. The
+  deal pop-up has a *Price* choice (Fixed CPM / Total for the term) and one field.
+- **Equivalent CPM** of a total = `termTotal / forecast impressions over the term x 1000`, forecast impressions being the
+  assigned slots' VAC-d impressions per day x `termDays` (one blended figure, `equivalentCpm: {min, max}` with min = max;
+  unscored slots are left out). It is derived on read, never stored. **Floor:** the total must cover each slot's resolved
+  floor over the term (`sum of impressions x floor / 1000`); a lower total is `400` on `termTotal`, checked on every
+  save once a slot is assigned and always at **Share**.
+- **Below-floor override (22 Oct 2026; ticket O0nPOgvjA2z89Q5Sy8zo).** A price under the floor is warned about, not
+  blocked, for a Preferred, Programmatic guaranteed or Direct advertiser deal, both price types: a fixed CPM under the
+  platform floor, or a total whose equivalent CPM is under the slots' floors (a private auction's rate stays a hard
+  limit: it is only a floor). The API keeps the `400` (on `floorCpm` / `termTotal`, its reason ending "Send
+  belowFloorOverride: true to save it anyway") unless the request carries `belowFloorOverride: true`; the deal pop-up
+  shows the reason as a warning and a *Save anyway (override)* confirm that resends with it. The deal then records
+  `belowFloorOverride` (with `belowFloorOverrideBy` / `belowFloorOverrideAt`, the admin and time of the latest
+  override) and the Deals table and pop-up show **Below floor (override)**. Every later save that keeps the deal below
+  the floor needs the override again; a save that is back at or above the floor clears the flag. **Share** does not
+  re-ask for a deal that carries the flag. No extra role check: the section is admin-only.
+- **Committed plays are derived, never typed or defaulted.** `committedPlays = floor( sum over the assigned slots of
+  forecast plays per day x termDays x (1 - guaranteeBufferPct / 100) )`, where a slot's forecast plays per day is its
+  plays per window (loop length, the display type's open hours) x its displays x windows a day. It is `null` until a
+  slot is assigned and the term has both dates, so a new deal has none: the pop-up **hides** the field then and, once
+  slots are assigned, shows **Committed plays** read-only. A typed `committedPlays` is refused (`400`). The stored figure
+  is what delivery and pacing run against, and what goes on the deal sheet (*Guaranteed plays*, with impressions), the CSV
+  and the DSP deal (`committedPlays`, `termDays`).
+- **When it recalculates.** On a slot assignment save (`PUT /admin/v1/available-inventory`) for every deal that gained or
+  lost a slot, on every save of the deal (new dates), and at Share. A change to the guarantee buffer or to a slot's
+  forecast applies from the next of those.
+- **Re-share warning.** A change that moves the committed plays of a deal that has already been **shared** versions the
+  terms (`committedPlays` is a term) and asks accepted buyers to accept again:
+  - editing the term in the deal pop-up: the term-check dry run lists `committedPlays` among the changes and the pop-up says
+    the committed plays will change and the deal must be re-shared and accepted again by the buyer, and Keep editing saves
+    nothing;
+  - adding or removing a slot of a shared guaranteed deal in Available Inventory: the API holds the save with `400` and one
+    `confirmReshare` detail per deal unless the request carries `confirmReshare: true`; the page shows the warning and
+    resends only on confirm, and cancelling leaves the deal and its slots unchanged. The updated deal is re-sent to the
+    DSPs only after that confirmation (the existing term-versioning and re-acceptance rules, 11 Oct 2026, apply).
+  Drafts and slots the deal already had need no confirmation.
+- **What a DSP and the buyer see.** The deal sheet carries `termDays`, `termTotal` (a total), `equivalentCpm` and the
+  derived `committedPlays` / `guaranteedImpressions`; each DSP entry's `rateDetails` is `{rate, rateType: "Fixed per
+  term" | "CPM fixed", termDays, equivalentCpm}`; the CSV has *Total for the term* and *Equivalent CPM* columns; the
+  description reads "…, 700 USD for the whole term, a fixed total (equivalent 6.4 CPM)". `GET /v1/deals` (Partner API)
+  returns `termDays`, `committedPlays` and, for a total, `rateType`, `termTotal` and `equivalentCpm`.
 - **Not changed.** Booking a window still goes through the reservation path and its floor check on the bid; the
-  reservation response and the DSP's `dspDeal` unit count are as before (impressions). Day-boundary and store-time-zone
-  handling stay UTC, as everywhere in the POC.
+  reservation response and the DSP's `dspDeal` unit count are as before. Day boundaries stay UTC, as everywhere in the POC.
 
 ## Visual layout check — tablet and desktop (Rob, 8 Oct 2026; ticket A3QkqCjHRP58R0lSAtKM)
 
