@@ -2957,6 +2957,11 @@ export interface components {
              */
             displayTypeStoreZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
             /**
+             * @description Whether the row's display type is landscape or portrait, from its canvas size. Shown beside the display type name in the Slots hover on Deals and buyers lists. Absent from a demo snapshot taken before 22 Oct 2026.
+             * @enum {string}
+             */
+            displayTypeOrientation?: "landscape" | "portrait";
+            /**
              * @description Whether the slot has an audience score (an audience_vacd row).
              *     An unscored slot reports 0 assumed views, so it is never
              *     exposed to advertisers (GET /v1/inventory), forecast, auctioned

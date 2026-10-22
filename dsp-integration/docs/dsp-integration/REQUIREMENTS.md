@@ -2209,6 +2209,14 @@ It carries:
   the plays; a floor is shown as "from". An open-ended flight has no total.
   A Direct advertiser deal gets the same cell, with the advertiser and the
   internal deal ID in the hover. Beyond five slots the hover says "+ N more".
+  The hover also has a **Period** line: the flight's length in days.
+  (22 Oct 2026) The **Slots** hover names each display type with its
+  orientation (Portrait or Landscape, `displayTypeOrientation` on an
+  Available Inventory row, from the canvas size) and the displays registered
+  to it in brackets, and shows the fleet total in brackets after the plays
+  per window (480 plays per window, 4,320 total). The **Buyer(s)** column
+  names the buyer outright on a Direct advertiser or programmatic guaranteed
+  deal with one buyer, and counts buyers otherwise.
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.

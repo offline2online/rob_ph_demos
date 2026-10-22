@@ -1090,10 +1090,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
   const countedTypes = new Map<string, Set<string>>()
   /* The slots each list is assigned to, for the Slots column's hover on the Deals and buyers lists table. */
-  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }[]>()
+  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; orientation: 'landscape' | 'portrait' | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }[]>()
   for (const r of invRows) {
     for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
-      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r) }])
+      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, orientation: r.displayTypeOrientation ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r) }])
     }
     if (typeof r.displayCount !== 'number') continue
     const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount

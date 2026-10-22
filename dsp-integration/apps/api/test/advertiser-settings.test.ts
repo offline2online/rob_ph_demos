@@ -110,7 +110,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
-      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', displayTypeDescription: null, displayTypeStoreZone: null, zoneName: 'Zone 1', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, inGlobalDeal: true, globalDealSuppressedBy: null, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
+      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', displayTypeDescription: null, displayTypeStoreZone: null, displayTypeOrientation: 'landscape', zoneName: 'Zone 1', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, inGlobalDeal: true, globalDealSuppressedBy: null, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null, buyersListIds: [], buyersListNames: [], openAuction: false }, qrControl: true, visionAi: true,
       floorCpm: 100, floorCpmOverride: null, platformFloorCpm: 100,
       billingUnitHours: 24, billingUnitHoursOverride: null, billingUnitPending: null, displayTypeBillingUnitHours: null,
