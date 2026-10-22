@@ -28,7 +28,6 @@ import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN, type ReservationRecord } from '../../repos/ReservationRepo'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { isActiveAt } from '../../billing/term'
-import { plannedDirectBookings } from '../../exchange/directDeal'
 import { zonePlaceOf } from '../../domain/displayTypes'
 import { DIRECT_PARTNER_ID, advertiserSlug, directLabel } from '@ph-dsp/types'
 
@@ -121,8 +120,6 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
   for (const r of await ctx.reservations.byStatus(TAKEN, new Date(from).toISOString(), new Date(to).toISOString())) {
     if (!r.testMode && r.clearingCpm !== null) live.set(`${r.positionId}|${r.windowStart}`, r)
   }
-  /* A finalised Direct advertiser deal holds every window of its flight, booked by the exchange only a window ahead: the rest read as its booking too (ticket TWJmiwQpPu9Y4tAUjncC). */
-  for (const r of await plannedDirectBookings(ctx, estate, (p) => lenOf.get(p.positionId) as number, from, to, new Set(live.keys()))) live.set(`${r.positionId}|${r.windowStart}`, r)
   /* The campaigns each advertiser has live on each position in this range, for the tile's approval counters. */
   const campaignsOn = new Map<string, Set<string>>()
   for (const r of live.values()) {
@@ -133,10 +130,32 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
   /* Approval is per campaign: its status and its type (localised / personalised) are read once each per request. */
   const approvedMemo = new Map<string, Promise<boolean>>()
   const isApproved = (campaignId: string) => {
-    if (!campaignId) return Promise.resolve(false)
     let a = approvedMemo.get(campaignId)
     if (!a) approvedMemo.set(campaignId, (a = Promise.resolve(ctx.approvals.statusOf(campaignId)).then((s) => s === 'approved')))
     return a
+  }
+  /* The counters are the same for every tile of one position and advertiser, so they are worked out once per request. */
+  const typeMemo = new Map<string, Promise<string | null | undefined>>()
+  const typeOf = (campaignId: string) => {
+    let t = typeMemo.get(campaignId)
+    if (!t) typeMemo.set(campaignId, (t = Promise.resolve(ctx.campaigns.getCampaign(campaignId)).then((c) => c?.pricingType)))
+    return t
+  }
+  const countsMemo = new Map<string, Promise<{ localised: { approved: number; submitted: number }; personalised: { approved: number; submitted: number } }>>()
+  const countsFor = (key: string) => {
+    let c = countsMemo.get(key)
+    if (!c) countsMemo.set(key, (c = (async () => {
+      const counts = { localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } }
+      for (const id of campaignsOn.get(key) ?? []) {
+        const t = await typeOf(id)
+        const k = t === 'personalised' ? 'personalised' : t === 'localised' || t === 'interactive' ? 'localised' : null
+        if (!k) continue
+        counts[k].submitted++
+        if (await isApproved(id)) counts[k].approved++
+      }
+      return counts
+    })()))
+    return c
   }
   const billed = await ctx.billing.amountsFor([...live.values()].map((r) => r.id))
   /* Per request, not per cell: a campaign's targeting and a window length's
@@ -223,19 +242,12 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
            its trigger icons. */
         const targeted = await targetedFor(r.campaignId)
         const layers = layersOf(targeted, r.pricingType)
-        const counts = { localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } }
-        for (const id of campaignsOn.get(`${r.positionId}|${r.advertiserId}`) ?? []) {
-          const t = (await ctx.campaigns.getCampaign(id))?.pricingType
-          const k = t === 'personalised' ? 'personalised' : t === 'localised' || t === 'interactive' ? 'localised' : null
-          if (!k) continue
-          counts[k].submitted++
-          if (await isApproved(id)) counts[k].approved++
-        }
-        const approval = approvalOf(await isApproved(r.campaignId ?? ''), round2((start.getTime() - ctx.clock().getTime()) / DAY), counts.localised, counts.personalised)
+        const counts = await countsFor(`${r.positionId}|${r.advertiserId}`)
+        const approval = approvalOf(await isApproved(r.campaignId as string), round2((start.getTime() - ctx.clock().getTime()) / DAY), counts.localised, counts.personalised)
         windows.push({
           start: column.toISOString(), status: 'booked' as const,
           booking: {
-            reservationId: r.id, campaignId: r.campaignId ?? '', advertiserId: r.advertiserId, partnerId: r.partnerId,
+            reservationId: r.id, campaignId: r.campaignId as string, advertiserId: r.advertiserId, partnerId: r.partnerId,
             pricingType: type, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
             partnerName: r.partnerId === DIRECT_PARTNER_ID ? DIRECT_LABEL : partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
             layers, personalisedTriggers: triggersOf(targeted, layers.personalised), approval,
