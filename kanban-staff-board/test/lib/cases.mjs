@@ -58,8 +58,12 @@ export function defineNewCases(E) {
     if (f.type) await press(p, `#task-form .type-opt[data-type="${f.type}"]`);
     if (f.title != null) await p.fill("#f-title", f.title);
     for (const [k, id] of [["priority", "f-priority"], ["assignee", "f-assignee"], ["reporter", "f-reporter"], ["release", "f-release"], ["sprint", "f-sprint"], ["epic", "f-epic"]]) if (f[k] != null) await p.selectOption("#" + id, f[k]);
-    if (f.estimate != null) await p.fill("#f-estimate", f.estimate);
-    if (f.logged != null) await p.fill("#f-logged", f.logged);
+    // fill, then check the value stuck: on a 360px CI phone run a fill landed on the form's
+    // previous render and the ticket saved with "No estimate" (TC-34, 6h)
+    for (const [k, id] of [["estimate", "f-estimate"], ["logged", "f-logged"]]) {
+      if (f[k] == null) continue;
+      for (let i = 0; i < 5; i++) { await p.fill("#" + id, f[k]); if ((await val(p, "#" + id)) === f[k]) break; await sleep(100); }
+    }
     if (f.due != null) await p.fill("#f-due", f.due);
     for (const l of f.labels || []) { await p.fill("#f-label-input", l); await p.keyboard.press("Enter"); }
     for (const l of f.links || []) { await p.selectOption("#f-link-type", l.type); await p.click("#f-link-key .kb-picker-input"); await p.keyboard.type(l.key); await sleep(120); await p.keyboard.press("Enter"); await sleep(120); }
@@ -68,7 +72,7 @@ export function defineNewCases(E) {
     if (f.files) await p.setInputFiles("#f-file", f.files);
   }
   async function create(p, f) {
-    await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title");
+    await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title"); await sleep(100); // let the form's focus timer run before filling
     await fillForm(p, f);
     await saveTask(p);
     const key = await toastKey(p);
