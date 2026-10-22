@@ -61,35 +61,28 @@ function ApprovalCell({ data, context }: P) {
     </span>
   )
 }
-/* Add an advertiser with a direct relationship with the retailer (no DSP), or edit any advertiser's audiences
-   (ticket OanRebXyEryAXBQrBsVe), from the same pop-up. It is saved at once (not part of Save changes). A new direct
-   advertiser is listed as "Name (Direct)". Adding has no Audiences section (a direct advertiser can use every shared
-   targeting attribute; private audiences are set afterwards by editing). Audiences are Visitor Segments values shared with this advertiser only. */
-const AUDIENCES_TIP = 'Audiences shared only with this advertiser, such as people who are new to their brand. Your own systems decide who is in each audience and publish it to the visitor’s live profile when they are identified; Personalisation Hub never receives their purchase history. Only this advertiser can target these audiences, on deals and reserved slots, not the open auction.'
-const SEGMENT_TIP = 'Visitor segments published by your CRM, customer data platform or loyalty system.'
+/* Add an advertiser with a direct relationship with the retailer (no DSP), or open any advertiser's details from the
+   same pop-up. Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr), so an existing advertiser has
+   nothing left to change here: its name is fixed and the pop-up only closes. A new direct advertiser is listed as
+   "Name (Direct)". */
 function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; editing: Advertiser | null; onClose: () => void; onSaved: () => void }) {
   const { message } = App.useApp()
   const [name, setName] = useState('')
-  const [audiences, setAudiences] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [blocked, setBlocked] = useState<Blocked | null>(null)
-  const variables = useQuery({ ...Q.targetingVariables, enabled: open })
-  const segments = variables.data?.find((v) => v.key === 'visitor.visitor_segments')
-  const options = [...new Set([...(segments?.values ?? []), ...(segments?.privateValues ?? []), ...audiences])].map((v) => ({ value: v, label: v }))
   useEffect(() => {
-    if (open) { setName(editing?.name ?? ''); setAudiences(editing?.audiences ?? []); setError(null) }
+    if (open) { setName(editing?.name ?? ''); setError(null) }
   }, [open, editing])
   const save = async () => {
-    if (!name.trim() || busy) return
+    if (editing || !name.trim() || busy) return
     setBusy(true)
     setError(null)
     try {
-      if (editing) await api('PUT', `/admin/v1/advertisers/${editing.advertiserId}/audiences`, { audiences })
-      else await api('POST', '/admin/v1/advertisers/direct', { name })
+      await api('POST', '/admin/v1/advertisers/direct', { name })
       onSaved()
       onClose()
-      message.success(editing ? 'Advertiser saved' : 'Advertiser added')
+      message.success('Advertiser added')
     } catch (e) {
       /* A hard block (409 has_dependents) is a friendly dialog, never the API's sentence in red (E2E 22 Oct 2026). */
       const b = describeBlock(e, 'save', 'This advertiser')
@@ -102,7 +95,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
   return (
     <Modal
       open={open} width={500} destroyOnHidden confirmLoading={busy} onCancel={onClose} onOk={save}
-      okText={editing ? 'Save advertiser' : 'Add advertiser'} okButtonProps={{ disabled: !name.trim() }}
+      okText="Add advertiser" okButtonProps={{ disabled: !name.trim(), style: editing ? { display: 'none' } : undefined }}
       title={
         <span className="inline-flex items-center gap-2">
           <Icon name="sell" size={20} style={{ color: T.primary }} />
@@ -115,26 +108,11 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
       <div className="mt-1.5" style={{ fontSize: 12, color: T.muted }}>
         {editing ? (editing.direct ? 'A direct advertiser has its own relationship with you, with no DSP in between.' : `Comes through ${editing.via.join(', ')}.`) : 'A direct advertiser has its own relationship with you, with no DSP in between.'}
       </div>
-      {editing && (
-        <>
-          <div className="mt-4 mb-1" style={{ fontSize: 13, fontWeight: 500 }}><WithTip tip={AUDIENCES_TIP}><span id="advertiser-audiences-label">Audiences</span></WithTip></div>
-          <div className="mb-1 inline-flex items-center gap-[5px]" style={{ fontSize: 12, color: T.muted }}>Segments <InfoTip text={SEGMENT_TIP} /></div>
-          <Select
-            mode="multiple" allowClear showSearch className="w-full" aria-labelledby="advertiser-audiences-label" placeholder="Choose segments shared with this advertiser only"
-            loading={variables.isLoading} value={audiences} options={options} onChange={setAudiences}
-            notFoundContent={segments ? 'No Visitor Segments values defined in Shared Targeting Variables.' : 'Visitor Segments is not available.'}
-          />
-          <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
-            {error ?? 'Chosen segments are removed from the Visitor Segments offered to everyone else.'}
-          </div>
-        </>
-      )}
-      {error && !editing && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
+      {error && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
       {blocked && <BlockedDialog blocked={blocked} onClose={() => setBlocked(null)} />}
     </Modal>
   )
 }
-const AudiencesCell = ({ data }: P) => (data ? <span title={(data.audiences ?? []).join(', ')}>{(data.audiences ?? []).length}</span> : null)
 const ActionsCell = ({ data, context }: P) =>
   data && context.current.canEdit ? (
     <span className="inline-flex items-center">
@@ -956,11 +934,6 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       headerName: 'Rejected', width: 105, suppressSizeToFit: true, ...COUNT_COLUMN,
       headerComponent: header('Rejected', 'Campaigns the retailer rejected.'),
       valueGetter: (p) => (p.data ? campaignCounts(p.data).rejected : 0),
-    },
-    {
-      headerName: 'Audiences', width: 110, suppressSizeToFit: true, cellRenderer: AudiencesCell, ...COUNT_COLUMN,
-      headerComponent: header('Audiences', 'Visitor segments shared with this advertiser only, such as people who are new to their brand. Edit the advertiser to change them.'),
-      valueGetter: (p) => (p.data ? (p.data.audiences ?? []).length : 0),
     },
     /* Campaigns and Bookings columns removed (Rob's ticket, 26 Sep 2026):
        already covered in Campaign Status and the booking schedule, their

@@ -730,7 +730,7 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
     const heads = [...advertisers.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)
-    expect(heads.slice(0, 9)).toEqual(['Advertiser', 'Via', 'Buyers list', 'Campaign approval', 'Campaigns', 'Awaiting approval', 'Approved', 'Rejected', 'Audiences'])
+    expect(heads.slice(0, 8)).toEqual(['Advertiser', 'Via', 'Buyers list', 'Campaign approval', 'Campaigns', 'Awaiting approval', 'Approved', 'Rejected'])
     await waitFor(() => {
       const row = advertisers.querySelector('.ag-center-cols-container [row-id="nestle"]')!
       const cells = [...row.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent)
@@ -756,15 +756,15 @@ describe('Advertisers / Inventory', () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByLabelText('Advertiser name')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Add advertiser' })).toBeDisabled()
-    /* Audiences shared with this advertiser only (ticket OanRebXyEryAXBQrBsVe). */
+    /* Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr). */
     expect(within(dialog).queryByText('Audiences')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     /* Every advertiser row, DSP or direct, has an Edit action opening the same form. */
     fireEvent.click(within(advertisers).getByRole('button', { name: 'Edit Acme Foods' }))
     const edit = await screen.findByRole('dialog')
-    expect(within(edit).getByRole('button', { name: 'Save advertiser' })).toBeInTheDocument()
+    expect(within(edit).queryByRole('button', { name: 'Save advertiser' })).not.toBeInTheDocument()
     expect(within(edit).getByLabelText('Advertiser name')).toBeDisabled()
-    expect(within(edit).getByText('Audiences')).toBeInTheDocument()
+    expect(within(edit).queryByText('Audiences')).not.toBeInTheDocument()
     fireEvent.click(within(edit).getByRole('button', { name: 'Cancel' }))
     expect(within(advertisers).getAllByRole('button', { name: /^Edit / }).length).toBeGreaterThan(1)
     /* Only a direct advertiser can be deleted. */

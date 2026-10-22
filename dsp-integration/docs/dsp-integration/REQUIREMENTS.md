@@ -981,12 +981,11 @@ and publishes it as visitor segments when a visitor is identified; PH never rece
 advertiser can then target, and bid up or down on, its own audiences. Amazon Ads and Kroger Precision
 Marketing share brand-specific (new-to-brand) audiences privately with one advertiser in the same way.
 
-- **Edit advertiser** (Advertisers / Inventory) has an **Audiences** multi-select. It works the same for
-  a DSP and a direct advertiser. "Add new Advertiser" has **no Audiences section** (21 Oct 2026, ticket
-  vfaK4m8zvDF998LukxmQ): a new direct advertiser starts with none and, like every advertiser, can use all the
-  shared targeting attributes defined for the platform; private audiences are added afterwards. Every advertiser
-  row has an Edit action opening the form (Admin; Marketing sees the Audiences column read-only; Help desk has no page).
-  A column shows how many each advertiser has.
+- **Removed from the admin screens (22 Oct 2026, ticket GknBt80ENeXkt0EEyDwr):** audiences are no longer part of
+  the platform's admin. The Advertisers table has **no Audiences column**, and the Edit advertiser pop-up has
+  **no Audiences section**: it shows the advertiser's name and how it reaches the retailer, with a Cancel button
+  and nothing to save. "Add new Advertiser" is unchanged. The API and `advertiser_audiences` table are left in
+  place for now and are not reachable from the admin UI.
 - Options are the Visitor Segments values defined in Shared Targeting Variables (§6) and any already private to
   another advertiser. A selected segment is **private to that advertiser**; it is private to more than one
   advertiser only if the retailer adds it to each. Stored in `advertiser_audiences` (migration 0078).
