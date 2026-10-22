@@ -5912,6 +5912,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         items: {
+                            /** @description The touch points this deal covers: those of the display types of the slots it is assigned to (22 Oct 2026). The Campaign Brief offers only these, and a campaign on the deal whose brief names another is refused 400. */
+                            touchPoints: string[];
                             /** @description The deal ID for each DSP the advertiser has a mapped seat on in this list — the one its seat accepts (DV360 accepts the DV360 deal, The Trade Desk its own). */
                             deals: components["schemas"]["DspDealId"][];
                             buyersListId: string;

@@ -188,6 +188,22 @@ Cases (each id suffixed A or B for the run):
 - **H7 Filtered campaign table.** The advertiser-filtered table shows only their campaigns, moving **Awaiting approval → Approved**, plus **Live / Not Live**.
 - **H8 (B only) Deal ID carries through.** The bid quotes `pmp.deals` with the DSP's own deal ID (Y1); approval assigns the creative ID.
 
+## Run 12 — Red Bull direct advertiser demo flow, end to end
+
+Rob's AWS demo flow of 22 Oct 2026, automated at the seams in `apps/api/test/e2e/run12-red-bull-demo.test.ts` (walkthrough: AWS-DEMO-TEST-FLOW.md section G). PH Core (login, Launch a New Campaign, Campaign Brief, playback) and the Live Visitor Profile Visitor API are stubbed at their interfaces; no stand-in UI. One test per step, in order, on one harness:
+- **R12-1** Direct advertiser Red Bull and an invited Red Bull advertiser user (`invite: true`, linked, marked invited).
+- **R12-2** Direct advertiser deal with a 30-day flight and a `PH-` ID; finalise is refused until a slot is assigned.
+- **R12-3** Deal assigned to 2 existing advertiser slots, then finalised.
+- **R12-4** New Display Type (Kiosk) with a new advertiser slot.
+- **R12-5** New slot added to the same deal; the deal covers 3 slots.
+- **R12-6** Advertiser scope (PH Core login seam): Red Bull only.
+- **R12-7** `GET /admin/v1/advertisers/{id}/deals` returns exactly Red Bull's `PH-` deal ID; another advertiser sees none.
+- **R12-8** The deal's `touchPoints` are those of its slots' display types; a campaign naming another is refused 400.
+- **R12-9** A Default and a Targeted campaign (`loves_energy_drinks`) each carry the deal ID.
+- **R12-10** Both approved and activated.
+- **R12-11** The window is booked for the Default campaign, handed off, no bid request.
+- **R12-12** A pushed visitor segment selects the Targeted campaign's personalised version; other visitors get the default.
+
 ## Demo playback — out of scope here
 
 On-screen playback is **PH Core's** and is never covered by this suite: the creative playing, the **localised swap** and the **CV personalised variant**. We assert only what this build owns — the booking, the approved asset version, the targeting stored and handed off, billing. The 10 Dec 2026 demo needs a **separate rehearsal checklist** for playback, run on real screens; steps in the AWS demo flows that depend on it are marked **PH Core** below and never filed as bugs here.

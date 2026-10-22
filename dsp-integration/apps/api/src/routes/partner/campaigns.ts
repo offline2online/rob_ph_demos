@@ -5,7 +5,7 @@
      GET  /v1/campaigns/{id}            stored default + targeted versions (priorities, rules) and status
      GET  /v1/campaigns/{id}/status     approval status
    A partner only ever sees its own campaigns; anyone else's is not found. */
-import { assertInvitedDeals } from '../../domain/advertiserDeals'
+import { assertDealTouchPoints, assertInvitedDeals } from '../../domain/advertiserDeals'
 import { audienceRefusal, segmentValuesInTargeting } from '../../domain/audiences'
 import { createHash, randomUUID } from 'node:crypto'
 import { type Approval, ApprovalError } from '@ph-dsp/campaign-approval/server'
@@ -176,6 +176,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     /* Enforcement (checkFloor/checkTargeting) reads one pricingType for the
        whole campaign, taken from the mandatory default layer. */
     const pricingType = b.default!.pricingType as PricingType
+    if (typeof dealId === 'string') await assertDealTouchPoints(ctx, b.advertiserId as string, [dealId], brief.brief?.touchPoints, ctx.clock().toISOString())
     const c = await ctx.campaigns.createCampaign({
       id: `c_${randomUUID().slice(0, 12)}`, name: (b.name as string).trim(), targeting, source: 'api',
       advertiserId: b.advertiserId as string, partnerId: req.partner.id, displayTypeId: (b.displayTypeId as string | undefined) ?? null,
@@ -202,7 +203,9 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const ids = req.body?.dealIds
     if (!Array.isArray(ids) || ids.some((d) => typeof d !== 'string')) throw validationFailed([{ field: 'dealIds', reason: 'An array of deal IDs.' }])
     const c = await own(req.partner, req.params.id)
-    await assertInvitedDeals(ctx, c.advertiserId, 'dealIds', ids as string[], (await ctx.approvals.view(c.campaignId)).dealIds ?? [], ctx.clock().toISOString())
+    const held = (await ctx.approvals.view(c.campaignId)).dealIds ?? []
+    await assertInvitedDeals(ctx, c.advertiserId, 'dealIds', ids as string[], held, ctx.clock().toISOString())
+    await assertDealTouchPoints(ctx, c.advertiserId, (ids as string[]).filter((d) => !held.includes(d)), c.brief?.touchPoints, ctx.clock().toISOString())
     try { return statusView(await ctx.approvals.setDeals(req.params.id, ids as string[], req.partner.name)) } catch (e) { throw approvalError(e) }
   })
 
