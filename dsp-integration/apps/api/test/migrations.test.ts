@@ -117,3 +117,42 @@ describe('migrations', () => {
     expect(got.map((b) => `${b.partnerId}:${b.seatId}`).sort()).toEqual(['a:x9', 'g:1', 'g:2'])
   })
 })
+
+/* 22 Oct 2026: migrations 0082 and 0086 clear named advertisers from slots on
+   purpose. Run over a populated database from just before them, everything else
+   the owner set up must come through untouched, and the audit trail must say
+   what changed. */
+describe('migrations over a populated database', () => {
+  const rows = (db: ReturnType<typeof openDb>, table: string, cols: string[]) => db.prepare(`SELECT ${cols.join(', ')} FROM ${table} ORDER BY 1`).all()
+  const columns = (db: ReturnType<typeof openDb>, table: string) => (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name)
+
+  it('changes only the named advertisers on slots (0082, 0086) and leaves every other record as it was', () => {
+    const db = openDb(':memory:')
+    migrateUp(db, '0081')
+    const mk = (id: string, ext: unknown) =>
+      db.prepare("INSERT INTO display_types (id, touch_point, name, description, canvas_width, canvas_height, background_color, playlist_settings, qr_control, enabled_features, ph_extensions) VALUES (?, 'Digital Signage', ?, 'Hand-made', 1, 1, '#000', '{}', '{}', '{}', ?)").run(id, `Type ${id}`, JSON.stringify(ext))
+    db.prepare("INSERT INTO playlists (id, name, items) VALUES ('pl_mine', 'Hand-made playlist', '[]')").run()
+    db.prepare("INSERT INTO direct_advertisers (advertiser_id, name, created_at) VALUES ('da1', 'Acme', '2026-10-01T00:00:00.000Z')").run()
+    mk('named', { slots: [{ label: 'Hero', advertisers: ['Acme'], listMode: 'exclusive' }, { label: 'Side', advertisers: [], listMode: 'rtb' }] })
+    mk('plain', { slots: [{ label: 'Only', advertisers: [], listMode: 'rtb' }], defaultVacd: 120 })
+
+    const untouched = ['playlists', 'direct_advertisers']
+    const before = Object.fromEntries(untouched.map((t) => [t, rows(db, t, columns(db, t))]))
+    const plainBefore = db.prepare("SELECT * FROM display_types WHERE id = 'plain'").get()
+    const namedBefore = db.prepare("SELECT name, description FROM display_types WHERE id = 'named'").get()
+
+    migrateUp(db)
+
+    for (const t of untouched) expect(rows(db, t, before[t].length ? Object.keys(before[t][0] as object) : columns(db, t)), t).toEqual(before[t])
+    const after = db.prepare("SELECT * FROM display_types WHERE id = 'plain'").get() as Record<string, unknown>
+    for (const [k, v] of Object.entries(plainBefore as Record<string, unknown>)) expect(after[k], `plain.${k}`).toEqual(v)
+    expect(db.prepare("SELECT name, description FROM display_types WHERE id = 'named'").get()).toEqual(namedBefore)
+    const slots = JSON.parse((db.prepare("SELECT ph_extensions e FROM display_types WHERE id = 'named'").get() as { e: string }).e).slots
+    expect(slots[0]).toMatchObject({ label: 'Hero', advertisers: [], listMode: 'rtb' })
+    expect(slots[1]).toMatchObject({ label: 'Side', advertisers: [] })
+    const audit = db.prepare("SELECT actor_id FROM ssp_audit_log WHERE object_id = 'named'").all() as { actor_id: string }[]
+    expect(audit.length).toBeGreaterThan(0)
+    expect(new Set(audit.map((a) => a.actor_id))).toEqual(new Set(['migration-0082']))
+    expect(db.prepare("SELECT COUNT(*) n FROM ssp_audit_log WHERE object_id = 'plain'").get()).toEqual({ n: 0 })
+  })
+})

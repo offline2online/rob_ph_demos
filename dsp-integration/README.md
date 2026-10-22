@@ -120,7 +120,7 @@ see [deploy/firebase/README.md](deploy/firebase/README.md)), and on start-up
 `src/demo/staticApi.ts` sends every `/api` call there. Everyone using the
 link shares one set of data, and **there is no login** — every visitor is
 the stand-in HQ admin — so it is for demo data only; the workflow's
-`reset = RESET` input restores the demo estate.
+`reset = RESET` input restores the demo estate — it wipes hand-made demo data, so only with the owner's go-ahead; it backs up first (`dspApiBackups`, `reset = RESTORE <timestamp>`; see `deploy/firebase/README.md`).
 
 **It may open with DSP integration switched off.** The hosted database
 predates the switch, so the migration that added it left it off

@@ -69,9 +69,45 @@ jobs:
       - name: Write Firebase service account key
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
 
+      # The one `reset` input also drives backups (a workflow's `on:` block can
+      # only change in a reviewed PR, so no new inputs): RESET wipes and reseeds;
+      # BACKUP only copies; LIST prints the backups; "RESTORE <timestamp>" puts
+      # one back. A copy of everything in dspApiState (database, creatives,
+      # keys) goes to the private Firestore collection dspApiBackups before
+      # anything can delete it, a reset or a restore. Never an Actions
+      # artifact: this repo is public and instance.json holds the keys.
+      # (22 Oct 2026: two resets wiped hand-made demo data, nothing was kept.)
+      - name: Back up hosted data
+        if: github.event_name == 'workflow_dispatch' && (inputs.reset == 'RESET' || inputs.reset == 'BACKUP' || startsWith(inputs.reset, 'RESTORE '))
+        working-directory: dsp-integration/deploy/firebase/functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          REASON: ${{ inputs.reset == 'RESET' && 'before reset' || inputs.reset == 'BACKUP' && 'manual' || 'before restore' }}
+        run: node state-backup.mjs backup "$REASON"
+
+      - name: List backups
+        if: github.event_name == 'workflow_dispatch' && inputs.reset == 'LIST'
+        working-directory: dsp-integration/deploy/firebase/functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node state-backup.mjs list
+
+      # Puts a backup back (the step above has just copied what is there now,
+      # and the script copies it again as "before restore"). The deploy below
+      # starts a new instance, which cold-starts from what was restored.
+      - name: Restore hosted data
+        if: github.event_name == 'workflow_dispatch' && startsWith(inputs.reset, 'RESTORE ')
+        working-directory: dsp-integration/deploy/firebase/functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          INPUT: ${{ inputs.reset }}
+        run: node state-backup.mjs restore "${INPUT#RESTORE }"
+
       # Wipes the saved database and creatives (Firestore dspApiState), not the
-      # instance's keys and tokens. The redeploy below starts a new instance,
-      # which then seeds fresh demo data.
+      # instance's keys and tokens. DESTROYS hand-made demo data: only with the
+      # owner's go-ahead for this run. The backup step above has already copied
+      # it all; put it back with reset = "RESTORE <timestamp>". The redeploy
+      # below starts a new instance, which then seeds fresh demo data.
       - name: Reset hosted data
         if: github.event_name == 'workflow_dispatch' && inputs.reset == 'RESET'
         working-directory: dsp-integration/deploy/firebase/functions

@@ -178,6 +178,12 @@ see `dsp-integration/deploy/firebase/README.md`) and sends every read and
 save there; everyone using the link shares that data. **It is a public demo
 with no login** — every visitor is the stand-in HQ admin — so never put
 real data in it; reset it with that workflow's `reset = RESET` input.
+**The hosted API's `reset = RESET` wipes hand-made demo data, and must
+never be run without the owner's explicit go-ahead for that run** (22 Oct
+2026: two resets after releases put Rob's hand-built AWS demo back to seed
+data). A normal deploy keeps the data. Before any reset or restore the
+workflow backs up `dspApiState` to the private `dspApiBackups` collection;
+`reset = RESTORE <timestamp>` puts one back (`dsp-integration/deploy/firebase/README.md`).
 **It may open with DSP integration switched off** (the retailer's own
 switch at the top of DSP Integration → Exchange settings, added 24 Sep
 2026): switched off, Campaign Status and Advertisers / Inventory aren't in
