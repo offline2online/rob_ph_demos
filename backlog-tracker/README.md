@@ -2272,7 +2272,7 @@ skill does not resolve.
 
 ## Live whiteboard
 
-`public/whiteboard.html` (with `js/whiteboard.js`, `js/whiteboard-core.js`, `css/whiteboard.css`) is a full-screen shared whiteboard, the last item in the **Build** menu. The menu item creates `whiteboards/{20-character id}` and opens `whiteboard.html?b={id}` with a Share panel (Copy link, native share); anyone with the link can open and draw with no sign-in, and strokes sync live through `whiteboards/{id}/strokes`. Access is by knowing the id only (`firestore.rules` → "Whiteboard"; the rules ship with the normal deploy). Spec: `REQUIREMENTS.md` → "Live whiteboard".
+`public/whiteboard.html` (with `js/whiteboard.js`, `js/whiteboard-core.js`, `css/whiteboard.css`) is a full-screen shared whiteboard, the last item in the **Build** menu. The menu item creates `whiteboards/{20-character id}` and opens `whiteboard.html?b={id}` with a Share panel (Copy link, native share); anyone with the link can open and draw with no sign-in, and strokes sync live through `whiteboards/{id}/strokes`. Access is by knowing the id only (`firestore.rules` → "Whiteboard"; the rules ship with the normal deploy). The toolbar fits every screen width without scrolling, and touch taps act when the finger lifts (`js/touch-click.js`, shared with the console's sidebar) because iPad WebKit drops or delays some taps' clicks. Tablet tests: `test/ui/whiteboard-tablet.test.mjs`. Spec: `REQUIREMENTS.md` → "Live whiteboard".
 
 ## Concept Incubator
 

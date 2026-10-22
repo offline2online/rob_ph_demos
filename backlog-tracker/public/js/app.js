@@ -10356,13 +10356,19 @@ document.getElementById("releases-btn").addEventListener("click", () => { closeN
 
 // Whiteboard: each click starts a new board with its own 20-character id and
 // opens it full screen with the share panel showing (public/whiteboard.html).
+// The board page reads the board from the server, so this waits for the write
+// to land, but not forever: a write still pending after WHITEBOARD_CREATE_MS
+// says so instead of leaving the tap looking dead.
+const WHITEBOARD_CREATE_MS = 15000;
 document.getElementById("whiteboard-btn").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
   if (btn.disabled) return;
   btn.disabled = true;
   try {
     const id = newBoardId();
-    await setDoc(doc(db, "whiteboards", id), { shared: true, createdAt: serverTimestamp() });
+    let timer;
+    const tooSlow = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("whiteboard create timed out")), WHITEBOARD_CREATE_MS); });
+    await Promise.race([setDoc(doc(db, "whiteboards", id), { shared: true, createdAt: serverTimestamp() }), tooSlow]).finally(() => clearTimeout(timer));
     closeNavDrawer();
     location.href = boardUrl(id, location.href) + "&new=1";
   } catch (err) {
@@ -10371,6 +10377,9 @@ document.getElementById("whiteboard-btn").addEventListener("click", async (e) =>
     btn.disabled = false;
   }
 });
+// Back from a board: iPad browsers restore the console from the back-forward
+// cache exactly as it was left, the button still disabled mid-tap.
+window.addEventListener("pageshow", (e) => { if (e.persisted) document.getElementById("whiteboard-btn").disabled = false; });
 
 // Command-K: one flat list of everything a person might want to jump to.
 function navEntries() {

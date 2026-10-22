@@ -14,6 +14,7 @@ import {
   COLORS, SIZES, isValidBoardId, boardUrl, toWorld, zoomAt, clampZoom, chunkCoords, strokeHit,
   gestureMembers, lastOwnGesture, boundsOf, MAX_COORDS_PER_STROKE,
 } from "./whiteboard-core.js";
+import { clickOnTouchTap } from "./touch-click.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("wb-canvas");
@@ -46,6 +47,17 @@ async function start() {
     return;
   }
   $("wb-ui").hidden = false;
+  // Touch taps act when the finger lifts: iPad WebKit drops or delays some
+  // taps' clicks, and a late colour click used to miss the next stroke.
+  clickOnTouchTap($("wb-ui"), "button");
+  // The toolbar wraps onto a second row on narrow screens; the share panel and
+  // Reset view place themselves under its real bottom edge.
+  const toolbar = $("wb-toolbar");
+  const barBottom = () => toolbar.getBoundingClientRect().bottom;
+  const syncBar = () => document.documentElement.style.setProperty("--wb-bar-bottom", `${Math.round(barBottom())}px`);
+  if (window.ResizeObserver) new ResizeObserver(syncBar).observe(toolbar);
+  addEventListener("resize", syncBar);
+  syncBar();
 
   // ---- state ----
   let strokes = [];                 // [{id, g, color, size, pts, t}] ordered by t
@@ -249,9 +261,9 @@ async function start() {
   $("wb-reset").addEventListener("click", () => {
     const b = boundsOf(strokes);
     if (!b) { view = { x: 0, y: 0, k: 1 }; dirty = true; return; }
-    const pad = 60, w = Math.max(1, b.maxX - b.minX), h = Math.max(1, b.maxY - b.minY);
-    const k = clampZoom(Math.min((innerWidth - pad * 2) / w, (innerHeight - pad * 2 - 70) / h, 2));
-    view = { k, x: (innerWidth - w * k) / 2 - b.minX * k, y: (innerHeight + 70 - h * k) / 2 - b.minY * k };
+    const pad = 60, top = barBottom(), w = Math.max(1, b.maxX - b.minX), h = Math.max(1, b.maxY - b.minY);
+    const k = clampZoom(Math.min((innerWidth - pad * 2) / w, (innerHeight - pad * 2 - top) / h, 2));
+    view = { k, x: (innerWidth - w * k) / 2 - b.minX * k, y: (innerHeight + top - h * k) / 2 - b.minY * k };
     dirty = true;
   });
   const confirmEl = $("wb-confirm");

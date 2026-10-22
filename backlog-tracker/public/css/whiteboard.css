@@ -24,7 +24,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--primary); o
 
 .wb-toolbar {
   position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 5;
-  display: flex; align-items: center; gap: 4px; max-width: calc(100vw - 16px); overflow-x: auto;
+  /* Never scrolls sideways: labels drop out where they don't fit (below), and
+     the bar wraps onto a second row before anything goes off screen. */
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; row-gap: 2px;
+  width: max-content; max-width: calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right));
   padding: 6px; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow), 0 0 0 .5px rgba(0, 0, 0, .1);
 }
 .wb-tool, .wb-share-btn, .wb-icon {
@@ -48,7 +51,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--primary); o
 .wb-status:empty { display: none; }
 
 .wb-share {
-  position: fixed; top: calc(76px + env(safe-area-inset-top)); right: 12px; z-index: 6; width: min(380px, calc(100vw - 24px));
+  position: fixed; top: calc(var(--wb-bar-bottom, 64px) + 12px); right: 12px; z-index: 6; width: min(380px, calc(100vw - 24px));
   padding: 16px; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow), 0 0 0 .5px rgba(0, 0, 0, .1);
 }
 .wb-share-head { display: flex; align-items: center; justify-content: space-between; }
@@ -74,10 +77,22 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--primary); o
 .wb-error h1 { margin: 0; font-size: 22px; font-weight: 700; }
 .wb-error p { margin: 0; color: var(--text-muted); max-width: 36ch; }
 
-/* Phone: tools wrap into icon-only buttons, share panel becomes a bottom sheet. */
-@media (max-width: 640px) {
-  .wb-label { display: none; }
+/* The labelled bar is about 1,130px wide: below that, icons only (Share keeps
+   its word), and the separators go once the bar may wrap. */
+@media (max-width: 1199px) {
+  .wb-tool .wb-label { display: none; }
   .wb-tool { padding: 0; }
+}
+@media (max-width: 820px) {
+  .wb-sep { display: none; }
+  .wb-toolbar { gap: 2px; }
+  /* Icon only, so the bar fits one row on an iPad in portrait; the title still names it. */
+  .wb-share-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .wb-share-btn { padding: 0 10px; }
+}
+
+/* Phone: the share panel becomes a bottom sheet. */
+@media (max-width: 640px) {
   .wb-share { top: auto; right: 0; left: 0; bottom: 0; width: auto; border-radius: 14px 14px 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
   .wb-status { bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
