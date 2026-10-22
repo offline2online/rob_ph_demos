@@ -147,6 +147,8 @@ the offer sweep ignores the store's time zone, about 4 hours, this release").
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
 | `kanban_release_report` (outstanding, remaining effort, per-person capacity) | `kanban_comment` (`mention` notifies people on the board's bell) |
 
+Every member is on the board, including the bootstrap admins, who have no `consoleUsers` row. Anywhere a person is named (`assignee`, `reporter`) `me` means the authenticated member.
+
 **Reading ticket history.** `list_backlog_items` pages: it returns at most
 100 tickets per call (default 25), newest-updated first and then by id, plus
 `matched` (the total) and `nextCursor` — pass that back as `cursor` until it
