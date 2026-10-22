@@ -3,13 +3,23 @@
    (ticket T0gLfo2zDrRXPVGcvEoL), resolved against what each DSP has synced now. The
    deal ID on a campaign is a reference to one of these lists' platform-minted deal
    IDs (ticket 5CCgGEYSkVoDTH9yNSYu), never free text. A direct advertiser maps no
-   seats, so it has none: it has no deal relationship and the field does not apply. */
-import type { BuyersList } from '@ph-dsp/types'
+   seats; its deals are the live Direct advertiser deals it is the buyer of (ticket
+   knqu0B2PGTF9PG1EUWYD, 22 Oct 2026), carrying the internal PH deal ID. */
+import { DIRECT_PARTNER_ID, type BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { dealsForSeats } from './buyersLists'
+import { isActiveAt } from '../billing/term'
 import { validationFailed } from '../http/errors'
 
+/* A direct advertiser's own deals: Direct advertiser deals it is the named buyer of, finalised (live) and with a delivery term covering `at`. Nobody else's. */
+async function directDeals(ctx: Pick<Context, 'company' | 'buyersLists'>, advertiserId: string, at: string): Promise<BuyersList[] | null> {
+  if (!(await ctx.company.directAdvertisers()).some((d) => d.advertiserId === advertiserId)) return null
+  return (await ctx.buyersLists.list()).filter((l) => l.dealType === 'direct' && l.status === 'shared' && isActiveAt(l, at) && l.invitedBuyers.some((b) => b.partnerId === DIRECT_PARTNER_ID && b.seatId === advertiserId))
+}
+
 export async function invitedDeals(ctx: Pick<Context, 'company' | 'partners' | 'buyersLists'>, advertiserId: string, at: string): Promise<BuyersList[]> {
+  const direct = await directDeals(ctx, advertiserId, at)
+  if (direct) return direct
   const mapped = (await ctx.company.advertiserSeats())[advertiserId] ?? []
   if (!mapped.length) return []
   const partners = new Map((await ctx.partners.list()).map((p) => [p.id, p]))
@@ -19,6 +29,8 @@ export async function invitedDeals(ctx: Pick<Context, 'company' | 'partners' | '
 
 /* Per list, the deal ID(s) this advertiser's mapped DSPs accept (ticket fgBVnNItNcu7qMBUtqH7): a list has one deal ID per DSP, and an advertiser holds seats on one or more of them, so only those are its to use. */
 export async function invitedDealIds(ctx: Pick<Context, 'company' | 'partners' | 'buyersLists'>, advertiserId: string, at: string): Promise<{ list: BuyersList; deals: { partnerId: string; dealId: string }[] }[]> {
+  const direct = await directDeals(ctx, advertiserId, at)
+  if (direct) return direct.map((list) => ({ list, deals: [{ partnerId: DIRECT_PARTNER_ID, dealId: list.dealId }] }))
   const partnerIds = new Set(((await ctx.company.advertiserSeats())[advertiserId] ?? []).map((m) => m.partnerId))
   return (await invitedDeals(ctx, advertiserId, at)).map((list) => ({ list, deals: list.deals.filter((d) => partnerIds.has(d.partnerId) && !d.retiredAt).map(({ partnerId, dealId }) => ({ partnerId, dealId })) }))
 }

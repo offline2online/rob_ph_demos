@@ -34,6 +34,7 @@
    is no time for pre-approval within tmax). A Test-mode DSP's bid is cleared among Test bids but never fills
    an impression. The PH Core player side of this is not in this repo
    (PH-CORE-BOUNDARIES.md "Real-time bidding"). */
+import { directDealAt } from './directDeal'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { failed, fileChecks } from '../domain/assetChecks'
@@ -105,6 +106,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   if (fallthrough) {
     const taken = (await ctx.reservations.forWindow(p.positionId, windowStart)).find((r) => !r.testMode && TAKEN.includes(r.status))
     if (taken) return noFill('This window was won under a deal: the Open auction only sells windows no deal won.')
+    if (await directDealAt(ctx, found, windowStart)) return noFill('This slot is reserved by a Direct advertiser deal for its whole flight: the Open auction does not sell it.')
   }
   if (!(await isSellable(ctx, p))) return noFill('The position has no audience score.')
   if (p.def.salesLocked) return noFill('The position is locked against new sales.')

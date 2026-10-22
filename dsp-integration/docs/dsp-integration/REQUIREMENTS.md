@@ -11,6 +11,7 @@ record.
 
 **Changelog**
 
+- **22 Oct 2026** — **Direct advertisers reach a slot only through a Direct advertiser deal** (Rob; tickets krIPF8rPnMwVOmynHNRh, knqu0B2PGTF9PG1EUWYD, mpbRDjAPS4uIagi2IVsz, OMwDvy3OUmY9raBtTf7v, EipHu2GUdlbZMpPGCTjF, z7kRMUflMRwkyBdEWxbn and H8YNT4aXwSqD6gffTkAz, the 7-ticket series). A deal has an internal PH deal ID, flight dates and a price. Three earlier statements are **superseded**: (1) a direct advertiser named in a slot's **Assigned to** (refused since 21 Oct; migration 0082 clears existing ones); (2) "no deal ID for a direct advertiser" (it now carries its own PH deal ID on its campaigns); (3) "no billing through the platform" (the revenue is **recorded and reported** like DSP revenue, but never invoiced, because a direct advertiser is billed outside PH). Spec: "Direct advertisers" under Advertisers, "Billing", and the deal-type entries under Programmatic guaranteed. Walkthrough: AWS-DEMO-TEST-FLOW.md section F; tests: E2E-TEST-SPEC.md Run 10 X and `apps/api/test/e2e/run10-direct-deals.test.ts`.
 - **20 Oct 2026** — The AWS POC is scoped to **three demand paths** (ticket JNSjYNvGcgwdzFvaPHlk). See "AWS POC demand paths" below the changelog.
 - **17 Oct 2026** — Available Inventory's **Reserve price** is replaced by an
   editable per-slot **Floor CPM** (Rob; ticket EEm4tA5fSB6RKlEjNhVu). Each
@@ -217,7 +218,7 @@ and are not changed by this project.
 
 1. **Open auction.** No targeting at all. Monster, PepsiCo and Mars Wrigley bid against each other through the DSPs on the same slot **35 seconds before it plays**; the highest bid wins and plays the creative supplied in its bid response.
 2. **Programmatic guaranteed (PG).** An advertiser books a slot for a **full day (24 hours)** up front, pays a fixed amount and gets the slot. Coca-Cola is the demo brand. The creative must be **pre-approved and is managed directly in PH** (Coca-Cola, Coke Zero, Sprite, Fanta, Schweppes and Namthip water, the Thai 7-Eleven range), with targeting and scheduling rules (hot/cold store-segment localisation) that trigger the right campaigns on the PWA player. That is handled by **PH Core**, not by a DSP bid response.
-3. **Advertiser direct.** The advertiser relationship is managed entirely within PH (no DSP). Red Bull is the demo brand: CV personalisation, several prioritised campaigns on one slot.
+3. **Advertiser direct.** The advertiser relationship is managed entirely within PH (no DSP). Red Bull is the demo brand: CV personalisation, several prioritised campaigns on one slot. **The slot is reached only through a Direct advertiser deal** (22 Oct 2026): an internal PH deal ID, flight dates and a price. The advertiser is never named in the slot's Assigned to, and is billed outside PH; the revenue is recorded and reported. Earlier wording that puts a direct advertiser in Assigned to, gives it no deal ID, or says the platform does no billing for it is **superseded**.
 
 **Out of POC scope:** private auction and preferred deal (visible but greyed out in the UI), and targeting on deals and on the open auction. Anything below that describes PG as a future release for the AWS demo, or that offers targeting on a deal or an open auction, is superseded by this paragraph.
 
@@ -836,7 +837,14 @@ buyers lists whose invited buyers include any of the advertiser's mapped seats
 (exact `{ partnerId, seatId }` match; an IAB-category invitation alone does not
 count) and whose delivery term covers `at` (default now); this is what the
 authoring deal-ID picker lists. A **direct advertiser has no mapping** (the PUT
-is refused) and resolves to no deals. **Kept live:** a re-sync that drops a seat
+is refused); it resolves to its own **Direct advertiser deals** instead (22 Oct
+2026, ticket knqu0B2PGTF9PG1EUWYD): those it is the named buyer of that are
+finalised (`status: shared`) with a delivery term covering `at`, each carrying
+its internal PH deal ID. Another advertiser's deal ID is refused 400 on the
+Partner API campaign create and both `PUT .../campaigns/{id}/deals` routes.
+Campaigns arrive in Campaign Approval carrying the deal ID and group under it as
+in Flow B. PH Core authoring must supply the deal ID the same way (see
+PH-CORE-BOUNDARIES.md). **Kept live:** a re-sync that drops a seat
 leaves it in `dspSeats` with `synced: false`, so it can be re-pointed, and it no
 longer resolves any deal. The mapping screen is not built yet; this is the data
 and API.
@@ -851,12 +859,32 @@ with the delete icon beside it in the Advertisers table
 bookings; DSP advertisers have no delete icon). It is listed with the DSP
 advertisers (`direct: true`, empty `via`) and takes the same approval and floor
 settings. Wherever a DSP name would accompany an advertiser it reads
-**"Name (Direct)"**: the Via column, the Assigned to options, and the booking
-schedule (its advertiser filter, offered only when no DSP is picked, and its
-tiles). A DSP seat of the same name wins, so one advertiser is never listed
-twice. Picking one in a slot's Assigned to holds that slot for it and saves
-like a DSP advertiser (no DSP comes along, since it has none); before
-9 Oct 2026 the save was refused as "not an advertiser on any connected DSP".
+**"Name (Direct)"**: the Via column and the booking schedule (its advertiser
+filter, offered only when no DSP is picked, and its tiles). A DSP seat of the
+same name wins, so one advertiser is never listed twice. **A direct advertiser
+is not offered in a slot's Assigned to (21 Oct 2026), and cannot be assigned
+there:** `PUT /admin/v1/available-inventory` answers 400 naming the advertiser
+and pointing to deals. It reaches a slot only through a Direct advertiser deal.
+(This replaces the 9 Oct rule that picking one held the slot for it.) DSP named
+advertisers are unchanged.
+
+**Migration 0082 clears existing direct assignments (22 Oct 2026, ticket
+mpbRDjAPS4uIagi2IVsz).** It removes every direct advertiser (a
+`direct_advertisers` name no DSP seat carries) from every slot's Assigned to; a
+slot left with no named advertiser goes back to real time (`rtb`). A slot with a
+live booking (won or reserved, not Test mode) keeps its advertiser and is
+**locked against new sales** instead, the sold-slot rule: when its bookings have
+played the lock releases and the sweep (`releaseSettledSlotLocks`) removes the
+direct advertiser then. Nothing is converted into a draft Direct advertiser deal
+(a deal needs flight dates and a price the old assignment never held); every
+removal, and every lock, is recorded in the SSP change history under actor
+`migration-0082`, with the old advertisers as the old value. The down migration
+restores nothing. The demo seed (`npm run db:demo`) gives Red Bull and Gatorade a
+Direct advertiser deal each on the Portrait slot "Direct deals: Red Bull &
+Gatorade", with flights that follow each other (reserving deals never overlap on
+a slot): Red Bull 1 Sep to 31 Dec 2026 at 180 CPM, Gatorade 1 Jan to 31 Mar 2027
+at 150 CPM, each booking its own approved Portrait campaign, so they play
+through their deals.
 
 **Users page on the real API (10 Oct 2026, ticket H6BcvdNZUvdP8Ebh5Tve).**
 `mockups/platform-users.html` (Company Settings → Users) reads and saves
@@ -1166,9 +1194,12 @@ tickets must satisfy.
   deals the advertiser is an invited buyer on through its mapped DSP seat
   (ticket T0gLfo2zDrRXPVGcvEoL). Whether the field exists at all is decided by
   context, not left blank: an advertiser with a deal relationship (a private
-  auction through a DSP) has it; a **direct advertiser** — a direct retainer
-  relationship with the retailer, shown "Name (Direct)" — has no deal, so the
-  field is not shown and the API refuses a deal ID for it. Several campaigns
+  auction through a DSP) has it; a **direct advertiser** — a direct
+  relationship with the retailer, shown "Name (Direct)" — has the field too,
+  choosing among its own live **Direct advertiser deals** (its internal PH deal
+  ID); it may leave it empty, and another advertiser's ID is refused. *(The
+  earlier rule that a direct advertiser has no deal and the API refuses a deal
+  ID for it is **superseded 22 Oct 2026**.)* Several campaigns
   may carry the same deal ID. Before approval the advertiser may change the
   association; changing it on an approved campaign sends it back to Awaiting
   approval, like any other resubmission.
@@ -1180,7 +1211,7 @@ tickets must satisfy.
   creative ID inside a deal contains only that deal's campaigns (see rule 3
   below). Neither replaces the other.
 
-**Flow A — direct advertiser (no deal ID)**
+**Flow A — a campaign with no deal ID** *(a direct advertiser may now also carry its own PH deal ID, see "Direct advertisers"; the approval steps are unchanged)*
 
 1. The advertiser authors campaigns **one at a time** through the normal PH
    Core flow and submits each for approval. Each lands as its own row in
@@ -1259,7 +1290,7 @@ mapping, T0gLfo2zDrRXPVGcvEoL), so any non-empty deal ID is accepted for now.
 
 | Aspect | Flow A — direct | Flow B — private auction |
 | --- | --- | --- |
-| Deal ID | none (null) | set at authoring, immutable through approval |
+| Deal ID | none (null), or a direct advertiser's own PH deal ID | set at authoring, immutable through approval |
 | Row in approval table | ungrouped, grouped by advertiser | grouped by deal ID under advertiser |
 | Who mints the creative ID | HQ, on approval | HQ, on approval |
 | Granularity of an approval | any subset of one advertiser's campaigns | any subset of one advertiser's campaigns, deals may be mixed |
@@ -1281,7 +1312,8 @@ mapping, T0gLfo2zDrRXPVGcvEoL), so any non-empty deal ID is accepted for now.
 | A4 | Direct | Stale `assetVersion` / already approved / empty list | 409 / 409 / 400, nothing written |
 | A5 | Direct | Reject with and without a reason | Button disabled until typed; reason reaches status `reason` |
 | A6 | Direct | Approved campaign edited and resubmitted | Awaiting approval, keeps its ID; picker pre-highlights "original (resubmission)"; approving restores it, no new ID |
-| A7 | Direct | Campaign status before and after | `creativeId` null, then the ID; `dealId` null throughout |
+| A7 | Direct | Campaign status before and after (no deal ID chosen) | `creativeId` null, then the ID; `dealId` null throughout |
+| A8 | Direct advertiser with a live Direct deal | Deals endpoint; campaign carrying that deal ID; another advertiser's deal ID | Endpoint lists the deal; accepted and grouped by deal as Flow B; foreign ID 400 (`apps/api/test/direct-deals.test.ts`) |
 | B1 | Private auction | Submit campaigns carrying a deal ID | Rows show the deal ID; status carries `dealId` |
 | B2 | Private auction | Approve a subset of a deal into a new ID | Subset `approved` with the ID; the rest Awaiting approval |
 | B3 | Private auction | A second round approves another subset | Into a new ID, or an existing one; the deal now holds one or more IDs |
@@ -1730,6 +1762,27 @@ resolved from four levels:
 - Because assets must be approved before they play (§3), the pricing and
   allocation model works over extended periods (daily, weekly or monthly)
   rather than purely in real time.
+- **Direct advertiser deals are recorded and reported, not invoiced** (22 Oct
+  2026, decision Rob; ticket EipHu2GUdlbZMpPGCTjF, 5/7). A Direct advertiser
+  deal's reservation (`partnerId: "direct"`, `reserved`, the deal's fixed CPM
+  or the CPM equivalent to its total for the term) goes through the same
+  billing as a DSP-sold reservation: one line item per window once it has
+  ended, at the deal's rate on realised VAC-d (proof of play), with the
+  personalised multiplier and late-playback ledger applying unchanged. Its
+  line item is the **revenue record**, not an invoice: DSPs bill their own
+  deals and a direct advertiser is **billed outside the platform**, so the
+  platform issues no invoice, statement or payment for it. The revenue is
+  reported wherever revenue is: the Booking schedule shows the booking as
+  "Name (Direct)" (DSP column "Direct") with booked windows, % sold and
+  Estimated revenue, and an unbooked window inside the deal's flight reads
+  "Reserved · Direct" rather than Available (no one else can buy it),
+  filterable by the advertiser or by DSP "direct" (the
+  screen shows no billed revenue, per "Booking revenue table" of 22 Sep;
+  the schedule API's `billedRevenue` carries it once the window has
+  played, confirmed by Rob 21 Oct 2026); its line items carry `partnerId: "direct"`
+  and no `seatId`, which is how the Retail Media Insights dashboards tell a
+  direct buyer from a DSP seat. Those dashboards belong to their own project
+  and read billing through their source adapter.
 - **Private auctions using the two-period model bill the same way, at a
   fixed rate** (23 Sep 2026 — see §5 "Private auctions (buyers lists)" for
   the two-period model itself). A CPM is a rate, not a fixed sum: the brand
@@ -4937,6 +4990,8 @@ A reserve is either a **preferred deal** (the window held at the deal's agreed r
 - **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the agreed rate).
 
 - **One buyer per PG deal (Rob, 21 Oct 2026; ticket OSBkZCpjYucdQWi8hBCt)**: a programmatic guaranteed deal is one-to-one with its buyer, as in the industry: one advertiser, its own deal ID. The deal modal's Buyers field accepts a single advertiser when the type is Programmatic guaranteed, and the API refuses a `guaranteed` create or update with more than one `invitedBuyers` (400 on `invitedBuyers`), as it already does for `preferred`. A multi-buyer list cannot be saved as guaranteed until reduced to one. Two advertisers on the same slot are two PG deals, each its own row and Deal ID. Private auction behaviour is unchanged (E2E Run 7 D4.1b).
+- **Direct advertiser deal type (22 Oct 2026; ticket krIPF8rPnMwVOmynHNRh, 1/7 of the direct-advertiser-via-deals series)**: the deal modal's Deal type offers **Direct advertiser** beside Programmatic guaranteed (Private auction and Preferred deal stay visible but greyed out for the AWS POC). It has **exactly the Programmatic guaranteed fields and rules**: a single buyer, flight dates in whole days, price as a Fixed CPM or a Total for the term (never both; both is a 400), the same floor check, committed plays derived from the assigned slots and the guarantee buffer (read-only; a typed value is a 400). The buyer is chosen from **direct advertisers** (`GET /admin/v1/advertisers`, `direct: true`), never DSP seats or IAB categories, and is stored as `{partnerId: "direct", seatId: <advertiserId>}`; a direct advertiser is refused as the buyer of any other type. On save the platform mints the internal PH deal ID (`PH-` + 10 characters, immutable). There is **no DSP share, deal sheet entry or buyer acceptance** (`POST …/acceptances` is a 400, the deal sheet has no entries, `deals` is empty): **Finalise** (`POST …/share`) makes the deal live internally once it has an assigned slot and its advertiser, and the pop-up reads "Confirm and make deal live". Storage: `deal_type` stays `guaranteed` with `buyers_lists.direct = 1` (migration 0081, no table rebuild) and the API presents `dealType: "direct"`. In the waterfall it ranks with guaranteed until the open decision on its position relative to PG is settled. Not in this ticket: removing direct advertisers from a slot's Assigned to (2/7), the migration of existing assignments (3/7), the exchange reserving its windows (4/7), billing/reporting (5/7) and campaign authoring (6/7). *(All since built; see the 22 Oct 2026 changelog entry.)*
+- **Direct advertiser deals reserve their windows; reserving deals never overlap (22 Oct 2026; ticket OMwDvy3OUmY9raBtTf7v, 4/7)**: a **finalised** (shared) Direct advertiser deal reserves its assigned slots for its whole flight, like Programmatic guaranteed. Windows read **Reserved** in availability (`windowStatus`), are excluded from the open real-time auction (`realtime.ts` no-fill) and from every other deal, and **no bid request goes to any DSP**: at each window the exchange (`exchange/directDeal.ts`, called first in `clearPosition`) books a `reserved` reservation (`partnerId: "direct"`, at the deal's fixed CPM or the equivalent CPM of its term total) for the advertiser's first eligible campaign and hands it to the campaign system (`personalisedEligible`). Eligible: the direct advertiser's campaigns tied to the deal's PH deal ID, then those with no deal ID; approved and activated, for this display type or none. The campaign system plays one campaign per slot and window (migration 0021), so several campaigns on a slot are served first-eligible-wins, and their priorities are those of each campaign's own personalised and localised versions. **No waterfall between reserving deals** (decision Rob, 22 Oct 2026): Programmatic guaranteed and Direct advertiser deals both sell the slot outright, so a slot cannot hold two of them, in any combination, with overlapping flight dates (inclusive of both end dates). Non-overlapping terms on one slot are allowed (PG in November, Direct in December). Assigning a reserving deal whose flight overlaps one already on the slot is refused by Available Inventory and by `PUT /admin/v1/available-inventory` (**409 `conflict`**, naming the conflicting deal, its advertiser, the slot and the overlapping dates); so is editing a deal's dates (`PUT /admin/v1/buyers-lists/{id}`, 409) so they overlap another reserving deal on any of its slots. Pairs that already overlapped before this rule are not re-judged by an unrelated save. **Warning in the UI**: before anything is saved, an inline warning (a status callout on the page, not a tooltip) names the conflicting deal, its advertiser, the slot (playlist, slot) and the overlapping dates and says the slot is already sold for them; the save is blocked until the dates or slot change. It shows under a slot's Assigned to cell, on the deal modal's Flight dates (Save and Finalise disabled), and the Assigned to picker flags options that would clash ("Overlaps ... : slot already sold"). The UI asks the new dry-run `POST /admin/v1/reserving-conflicts` (writes nothing; see `api/openapi.yaml`). Spec: "Reservations"; "Programmatic guaranteed: delivery term..."; "Prioritised buyers lists - the waterfall" (does not apply between reserving deals).
 
 ## Bandwidth protection — restrict uncached creatives in defined hours (Rob, 7 Oct 2026)
 

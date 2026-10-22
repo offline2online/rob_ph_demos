@@ -2,11 +2,12 @@
    deal objects, managed from Available Inventory's own table underneath the
    Assigned to picker (Rob, 23 Sep). */
 import { randomUUID } from 'node:crypto'
-import { assignedOf, canonicalIabCategory, isAggregateVariable, isValidAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type TermCheck, type Condition, type InvitedBuyer } from '@ph-dsp/types'
+import { assignedOf, canonicalIabCategory, DIRECT_PARTNER_ID, isGuaranteedLike, isAggregateVariable, isValidAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type TermCheck, type Condition, type InvitedBuyer } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
-import { hasDependents, notFound, validationFailed } from '../../http/errors'
+import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
+import { flightConflicts, isReserving, slotConflicts } from '../../domain/reservingDeals'
 import { mintDealId } from '../../repos/BuyersListRepo'
 import { tx } from '../../db/db'
 import { invitedPartnerIds } from '../../domain/buyersLists'
@@ -69,10 +70,10 @@ const withDelivery = async (ctx: Context, l: BuyersList, slots?: Map<string, Ass
   const dsps = new Map((await ctx.partners.list()).map((p) => [p.id, p]))
   const invited = invitedPartnerIds(l, [...dsps.values()]).map((id) => dsps.get(id)?.bidder)
   /* Only a guaranteed deal carries volume, and it is the figure derived from its slots (21 Oct 2026); a private auction or preferred deal reports none. */
-  const committed = l.dealType === 'guaranteed' ? l.committedPlays : null
+  const committed = isGuaranteedLike(l.dealType) ? l.committedPlays : null
   const effectiveCommittedPlays = { min: committed, max: committed, source: committed == null ? ('none' as const) : ('buyer' as const) }
   const effectiveRateCpm = effectiveTerm({ platform: company.floorCpm, dsp: invited.map((b) => b?.floorCpm), buyer: l.floorCpm }, (n) => Math.max(company.floorCpm, n))
-  const equivalentCpm = l.dealType === 'guaranteed' && l.termTotal != null ? equivalentCpmRange(equivalentCpmOf(l.termTotal, await termSlotsOf(ctx, l.id), termDaysOf(l.activeFrom, l.activeTo))) : null
+  const equivalentCpm = isGuaranteedLike(l.dealType) && l.termTotal != null ? equivalentCpmRange(equivalentCpmOf(l.termTotal, await termSlotsOf(ctx, l.id), termDaysOf(l.activeFrom, l.activeTo))) : null
   return { ...l, effectiveCommittedPlays, effectiveRateCpm, equivalentCpm, deliveredPlays: await deliveredOf(ctx, l), assignedSlots: (slots ?? (await assignedSlotsByList(ctx))).get(l.id) ?? [] }
 }
 const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
@@ -88,14 +89,16 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
      categories; targeting (only variables shared with every invited DSP,
      values from each variable's defined list); the delivery term; committed
      plays (guaranteed only); and the floor, never below the platform's. */
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; termTotal: number | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null, directIds: Set<string> = new Set()): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; termTotal: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
     /* The deal type (7 Oct 2026) decides which of the fields below the list may carry. Omitted by an older client: a private auction. */
     const requestedType = b.dealType === undefined || b.dealType === null ? 'private_auction' : b.dealType
-    if (requestedType !== 'private_auction' && requestedType !== 'preferred' && requestedType !== 'guaranteed') errors.push({ field: 'dealType', reason: 'private_auction, preferred or guaranteed.' })
-    const dealType: BuyersListDealType = requestedType === 'preferred' || requestedType === 'guaranteed' ? requestedType : 'private_auction'
+    if (requestedType !== 'private_auction' && requestedType !== 'preferred' && requestedType !== 'guaranteed' && requestedType !== 'direct') errors.push({ field: 'dealType', reason: 'private_auction, preferred, guaranteed or direct.' })
+    const dealType: BuyersListDealType = requestedType === 'preferred' || requestedType === 'guaranteed' || requestedType === 'direct' ? requestedType : 'private_auction'
+    /* A Direct advertiser deal (22 Oct 2026) takes every Programmatic guaranteed rule; only who the buyer is differs. */
+    const guaranteedLike = dealType === 'guaranteed' || dealType === 'direct'
     const rawBuyers = Array.isArray(b.invitedBuyers) ? (b.invitedBuyers as unknown[]) : null
     const invitedBuyers: InvitedBuyer[] = []
     if (b.invitedBuyers !== undefined && b.invitedBuyers !== null && !rawBuyers) errors.push({ field: 'invitedBuyers', reason: 'A list of seats.' })
@@ -104,7 +107,13 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       const partnerId = typeof r.partnerId === 'string' ? r.partnerId.trim() : ''
       const seatId = typeof r.seatId === 'string' ? r.seatId.trim() : ''
       const partner = partnerId ? partnerById.get(partnerId) : undefined
-      if (!partner) errors.push({ field: `invitedBuyers[${i}].partnerId`, reason: 'Pick a connected DSP.' })
+      if (dealType === 'direct') {
+        if (partnerId !== DIRECT_PARTNER_ID || !directIds.has(seatId)) errors.push({ field: `invitedBuyers[${i}]`, reason: 'A Direct advertiser deal is with a direct advertiser: choose one from the Advertisers page (no DSP seats).' })
+        else if (!invitedBuyers.some((x) => x.seatId === seatId)) invitedBuyers.push({ partnerId: DIRECT_PARTNER_ID, seatId })
+        return
+      }
+      if (partnerId === DIRECT_PARTNER_ID) errors.push({ field: `invitedBuyers[${i}]`, reason: 'A direct advertiser can only be the buyer of a Direct advertiser deal.' })
+      else if (!partner) errors.push({ field: `invitedBuyers[${i}].partnerId`, reason: 'Pick a connected DSP.' })
       else if (!partner.seats.some((x) => x.id === seatId)) errors.push({ field: `invitedBuyers[${i}].seatId`, reason: `Not a seat synced from ${partner.name}.` })
       else if (!invitedBuyers.some((x) => x.partnerId === partnerId && x.seatId === seatId)) invitedBuyers.push({ partnerId, seatId })
     })
@@ -113,7 +122,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const rawCategories = b.invitedCategories === undefined || b.invitedCategories === null ? [] : Array.isArray(b.invitedCategories) ? (b.invitedCategories as unknown[]) : null
     if (!rawCategories) errors.push({ field: 'invitedCategories', reason: 'A list of IAB categories.' })
     /* Categories are a private-auction bid-time filter only: a preferred or guaranteed deal is a bilateral commitment to named seats, so an invited category has no meaning there. */
-    else if (rawCategories.length && dealType !== 'private_auction') errors.push({ field: 'invitedCategories', reason: 'Only a private auction can invite IAB categories; a preferred or guaranteed deal is with named buyers.' })
+    else if (rawCategories.length && dealType !== 'private_auction') errors.push({ field: 'invitedCategories', reason: 'Only a private auction can invite IAB categories; a preferred, guaranteed or direct deal is with named buyers.' })
     else rawCategories.forEach((raw, i) => {
       const c = canonicalIabCategory(raw)
       if (!c) errors.push({ field: `invitedCategories[${i}]`, reason: `${typeof raw === 'string' ? raw : 'That'} is not an IAB category. Choose from the IAB Content Taxonomy (tier 1, or tier 2 as "Tier 1 › Tier 2").` })
@@ -167,9 +176,9 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       if (b.floorCpm === undefined || b.floorCpm === null) errors.push({ field: 'floorCpm', reason: 'A preferred deal has a fixed CPM: enter the price the buyer pays on every slot it takes.' })
     }
     /* A programmatic guaranteed deal is one-to-one with its buyer (Rob, 21 Oct 2026): one buyer, one deal ID. Two advertisers on the same slot are two PG deals. Reduce a multi-buyer list to one before switching it to guaranteed. */
-    if (dealType === 'guaranteed' && invitedBuyers.length > 1) errors.push({ field: 'invitedBuyers', reason: 'A programmatic guaranteed deal is with one named buyer; create a separate deal for each additional advertiser.' })
+    if (guaranteedLike && invitedBuyers.length > 1) errors.push({ field: 'invitedBuyers', reason: `A ${dealType === 'direct' ? 'Direct advertiser' : 'programmatic guaranteed'} deal is with one named buyer; create a separate deal for each additional advertiser.` })
     /* committedPlays is derived from the assigned slots, the term and the guarantee buffer (21 Oct 2026): the caller computes it, so a typed one is refused rather than ignored. */
-    if (b.committedPlays !== null && b.committedPlays !== undefined) errors.push({ field: 'committedPlays', reason: dealType !== 'guaranteed' ? 'Only a guaranteed deal commits volume; leave it empty for a private auction or preferred deal.' : 'Committed plays is worked out from the slots assigned to the deal, its delivery term and the guarantee buffer; leave it out.' })
+    if (b.committedPlays !== null && b.committedPlays !== undefined) errors.push({ field: 'committedPlays', reason: !guaranteedLike ? 'Only a guaranteed deal commits volume; leave it empty for a private auction or preferred deal.' : 'Committed plays is worked out from the slots assigned to the deal, its delivery term and the guarantee buffer; leave it out.' })
     /* Bid floor hierarchy (7 Oct 2026): blank inherits the DSP's floor, else the platform's; a value can raise the floor, never go below the platform floor. */
     let floorCpm: number | null = null
     if (b.floorCpm !== undefined && b.floorCpm !== null) {
@@ -181,7 +190,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     let termTotal: number | null = null
     if (b.ratePerDay !== undefined && b.ratePerDay !== null) errors.push({ field: 'ratePerDay', reason: 'A rate per day is replaced by a fixed CPM or a total for the delivery term (termTotal).' })
     if (b.termTotal !== undefined && b.termTotal !== null) {
-      if (dealType !== 'guaranteed') errors.push({ field: 'termTotal', reason: 'Only a Programmatic guaranteed deal is priced as a total for its term; leave it empty for a private auction or preferred deal.' })
+      if (!guaranteedLike) errors.push({ field: 'termTotal', reason: 'Only a Programmatic guaranteed or Direct advertiser deal is priced as a total for its term; leave it empty for a private auction or preferred deal.' })
       else if (typeof b.termTotal !== 'number' || !Number.isFinite(b.termTotal) || b.termTotal <= 0) errors.push({ field: 'termTotal', reason: 'Total for the term must be greater than 0 USD.' })
       else if (floorCpm != null) errors.push({ field: 'termTotal', reason: 'Price a guaranteed deal as a fixed CPM or a total for the term, not both.' })
       else termTotal = Math.round(b.termTotal * 100) / 100
@@ -189,6 +198,8 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const committedPlays: number | null = null
     return { name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm, termTotal }
   }
+
+  const directIdsOf = async () => new Set((await ctx.company.directAdvertisers()).map((d) => d.advertiserId))
 
   app.get('/buyers-lists', async (req) => {
     guards.flagged()
@@ -225,7 +236,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     /* The deal ID is minted by the platform (ticket 5CCgGEYSkVoDTH9yNSYu): a typed one is refused, not ignored. */
     if (req.body?.dealId !== undefined) errors.push({ field: 'dealId', reason: 'The deal ID is generated by the platform; leave it out.' })
     if (req.body?.status !== undefined && req.body.status !== 'draft' && req.body.status !== 'shared') errors.push({ field: 'status', reason: 'draft or shared.' })
-    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors)
+    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, null, await directIdsOf())
     await dealAudienceErrors(ctx, parsed, errors)
     if (errors.length) throw validationFailed(errors)
     const created: BuyersList = await ctx.buyersLists.insert({ by: auditActorOf(req).actor.name, id: `bl_${randomUUID().slice(0, 12)}`, dealId: mintDealId(), ...parsed, shared: req.body?.status !== 'draft' })
@@ -260,7 +271,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (!existing) throw notFound()
     const errors: { field: string; reason: string }[] = []
     const body: Body = { ...(req.body ?? {}), dealType: req.body?.dealType ?? existing.dealType }
-    const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses)
+    const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses, await directIdsOf())
     await dealAudienceErrors(ctx, parsed, errors)
     /* The slots are the existing deal's; a changed deal type is a new deal with none. */
     if (parsed.dealType === existing.dealType) await checkTermFloor(ctx, existing.id, parsed.termTotal, parsed.activeFrom, parsed.activeTo, errors)
@@ -279,6 +290,42 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     return { currentVersion: existing.termVersion, nextVersion: existing.termVersion + (changes.length ? 1 : 0), changes, requiresReacceptance, affectedBuyers }
   })
 
+  /* Dry run of the reserving-deal overlap rule (Rob, 22 Oct 2026); writes nothing. Two questions, so the UI can warn inline before anything is saved:
+       - a deal's flight: { listId, activeFrom, activeTo } -> its conflicts on every slot it is on;
+       - a slot's assignment: { displayTypeId, slot, buyersListIds, candidates? } -> conflicts of the deals newly in the list, and for each candidate (an option in the Assigned to picker) what choosing it would clash with. */
+  app.post<{ Body: { listId?: unknown; activeFrom?: unknown; activeTo?: unknown; dealType?: unknown; displayTypeId?: unknown; slot?: unknown; buyersListIds?: unknown; candidates?: unknown } }>('/reserving-conflicts', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'admin')
+    const b = req.body ?? {}
+    const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+    const date = (v: unknown): string | null => (typeof v === 'string' && v && !Number.isNaN(Date.parse(v)) ? v : null)
+    if (typeof b.listId === 'string') {
+      const list = await ctx.buyersLists.get(b.listId)
+      if (!list) throw notFound()
+      const dealType = (typeof b.dealType === 'string' ? b.dealType : list.dealType) as BuyersListDealType
+      return { conflicts: await flightConflicts(ctx, { id: list.id, dealType, activeFrom: b.activeFrom === undefined ? list.activeFrom : date(b.activeFrom), activeTo: b.activeTo === undefined ? list.activeTo : date(b.activeTo) }), candidates: {} }
+    }
+    const dt = typeof b.displayTypeId === 'string' ? await ctx.displayTypes.get(b.displayTypeId) : null
+    const slot = typeof b.slot === 'number' ? b.slot : 0
+    const def = dt?.phExtensions?.slots?.[slot - 1]
+    if (!dt || !def) throw validationFailed([{ field: 'displayTypeId', reason: 'A display type and one of its slots, or a listId, is required.' }])
+    const chosen = strs(b.buyersListIds)
+    const now = new Set(assignedOf(def).buyersListIds)
+    const conflicts = []
+    for (const id of chosen) {
+      if (now.has(id)) continue
+      const list = await ctx.buyersLists.get(id)
+      if (list && isReserving(list)) conflicts.push(...(await slotConflicts(ctx, list, dt, slot, chosen)))
+    }
+    const candidates: Record<string, Awaited<ReturnType<typeof slotConflicts>>> = {}
+    for (const id of strs(b.candidates)) {
+      const list = await ctx.buyersLists.get(id)
+      const found = list && isReserving(list) && !chosen.includes(id) ? await slotConflicts(ctx, list, dt, slot, chosen) : []
+      if (found.length) candidates[id] = found
+    }
+    return { conflicts, candidates }
+  })
+
   app.get<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId/term-versions', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'sections')
@@ -293,6 +340,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const list = await ctx.buyersLists.get(req.params.buyersListId)
     if (!list) throw notFound()
     if (list.status === 'draft') throw validationFailed([{ field: 'status', reason: 'This deal has not been shared yet, so there is nothing to accept.' }])
+    if (list.dealType === 'direct') throw validationFailed([{ field: 'status', reason: 'A Direct advertiser deal is not sent to a DSP, so there is no buyer acceptance.' }])
     const partnerId = typeof req.body?.partnerId === 'string' ? req.body.partnerId.trim() : ''
     const seatId = typeof req.body?.seatId === 'string' ? req.body.seatId.trim() : ''
     if (!list.invitedBuyers.some((b) => b.partnerId === partnerId && b.seatId === seatId)) throw validationFailed([{ field: 'seatId', reason: 'Not a named invited buyer of this list.' }])
@@ -309,13 +357,18 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (req.body?.dealId !== undefined && req.body.dealId !== existing.dealId) errors.push({ field: 'dealId', reason: 'A deal ID cannot be changed.' })
     /* An omitted dealType means "as it is" on an edit, so an older client can never mint a new deal by accident. */
     const body: Body = { ...(req.body ?? {}), dealType: req.body?.dealType ?? existing.dealType }
-    const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses)
+    const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses, await directIdsOf())
     await dealAudienceErrors(ctx, parsed, errors)
     /* The slots are the existing deal's; a changed deal type is a new deal with none. */
     if (parsed.dealType === existing.dealType) await checkTermFloor(ctx, existing.id, parsed.termTotal, parsed.activeFrom, parsed.activeTo, errors)
     if (errors.length) throw validationFailed(errors)
     /* Committed plays follow the slots and the term (21 Oct 2026). */
     if (parsed.dealType === existing.dealType) parsed.committedPlays = await derivedCommittedPlays(ctx, { id: existing.id, ...parsed })
+    /* Reserving deals never overlap on a slot (Rob, 22 Oct 2026): new dates that meet another PG or Direct advertiser deal on any of this deal's slots are refused. Unchanged dates are not re-judged, so an old overlap never blocks a rename. */
+    if (parsed.dealType === existing.dealType && isReserving(parsed) && (parsed.activeFrom !== existing.activeFrom || parsed.activeTo !== existing.activeTo)) {
+      const clashes = await flightConflicts(ctx, { id: existing.id, ...parsed })
+      if (clashes.length) throw conflict(clashes[0].message, clashes.map((c) => ({ field: 'activeTo', reason: c.message })))
+    }
     /* A different deal type is a different deal: insert a new list with a new ID and leave this one (and its slot assignments and campaigns) as it was until it ends. */
     if (parsed.dealType !== existing.dealType) {
       const minted: BuyersList = await ctx.buyersLists.insert({ by: auditActorOf(req).actor.name, id: `bl_${randomUUID().slice(0, 12)}`, dealId: mintDealId(), ...parsed, shared: existing.status === 'shared' })

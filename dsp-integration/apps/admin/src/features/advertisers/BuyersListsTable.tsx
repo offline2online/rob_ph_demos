@@ -4,7 +4,7 @@
    table (Rob, 23 Sep). */
 import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { OPERATOR_LABELS, TARGETING_VARIABLES, storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
+import { DIRECT_PARTNER_ID, isGuaranteedLike, OPERATOR_LABELS, TARGETING_VARIABLES, storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Q } from '../../api/queries'
@@ -58,9 +58,11 @@ const NameCell = ({ data, context }: P) => {
           </div>}
         </div>}>{name}</Tip>
         : name}
-      {data.status === 'draft' && <div style={{ fontSize: 11.5, color: T.muted }} data-testid={`draft-${data.id}`}>Draft · not shared with any DSP</div>}
+      {data.status === 'draft' && <div style={{ fontSize: 11.5, color: T.muted }} data-testid={`draft-${data.id}`}>{data.dealType === 'direct' ? 'Draft · not live yet' : 'Draft · not shared with any DSP'}</div>}
+      {/* A Direct advertiser deal is never shared with a DSP or accepted by a buyer: Finalise makes it live (E2E 21 Oct 2026, it read "Shared · Pending" for good). */}
+      {data.status === 'shared' && data.dealType === 'direct' && <div style={{ fontSize: 11.5, color: T.muted }} data-testid={`status-${data.id}`}>Live · direct, not sent to a DSP</div>}
       {/* A shared deal's status in DV360's words, alongside PH's Shared. */}
-      {(() => {
+      {data.dealType !== 'direct' && (() => {
         const s = buyerStatusOf(data)
         return s && <div style={{ fontSize: 11.5, color: s.reacceptance ? T.error : T.muted }} data-testid={`status-${data.id}`}>Shared · {s.label}{s.reacceptance ? ' · re-acceptance required' : ''}</div>
       })()}
@@ -70,11 +72,13 @@ const NameCell = ({ data, context }: P) => {
 /* Who the deal is for: named advertisers, IAB categories, or both (a union). */
 const BuyersCell = ({ data, context }: P) => {
   if (!data) return null
-  const buyers = data.invitedBuyers.length ? `${data.invitedBuyers.length} buyer${data.invitedBuyers.length === 1 ? '' : 's'}` : ''
+  const { dspName, seatName } = context.current
+  /* A Direct advertiser deal has exactly one buyer, so it is named rather than counted. */
+  const buyers = data.dealType === 'direct' && data.invitedBuyers.length === 1 ? seatName(data.invitedBuyers[0].partnerId, data.invitedBuyers[0].seatId)
+    : data.invitedBuyers.length ? `${data.invitedBuyers.length} buyer${data.invitedBuyers.length === 1 ? '' : 's'}` : ''
   const cats = (data.invitedCategories ?? []).length ? `Category: ${data.invitedCategories.join(', ')}` : ''
   const text = [buyers, cats].filter(Boolean).join(' + ')
   const categoryOnly = !buyers && !!cats
-  const { dspName, seatName } = context.current
   const rows = data.invitedBuyers.map((b) => `${seatName(b.partnerId, b.seatId)} (${dspName(b.partnerId)})`)
   const note = categoryOnly ? `${text} — no named buyer: can’t be shared or authored until one is added` : ''
   const tip = rows.length || cats ? (
@@ -126,7 +130,7 @@ const Sub = ({ children }: { children: string }) => <div style={{ fontSize: 11.5
 const RateCell = ({ data, context }: P) => {
   if (!data) return null
   if (data.lockedWin) return <Tip title="Locked: the rate this deal's auction settled at, billed for the rest of its flight."><span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span></Tip>
-  const perTerm = data.dealType === 'guaranteed' && data.termTotal != null
+  const perTerm = isGuaranteedLike(data.dealType) && data.termTotal != null
   const text = perTerm ? termTotalText(data.termTotal) : rateValue(data.effectiveRateCpm)
   const src = sourceLabel(data.effectiveRateCpm?.source ?? 'none')
   /* A per-day rate's hover also lists each assigned slot with its anticipated plays and the plays left after the guarantee buffer. */
@@ -163,12 +167,12 @@ const DealIdCell = ({ data, context }: P) => {
   if (!live.length) return cell
   return <Tip title={<div>{live.map((d) => <div key={d.dealId}>{context.current.dspName(d.partnerId)}: <span style={{ fontFamily: 'monospace' }}>{d.dealId}</span></div>)}</div>}>{cell}</Tip>
 }
-const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
+const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed', direct: 'Direct advertiser' } as const
 const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{DEAL_TYPE_LABELS[data.dealType] ?? 'Private auction'}</span> : null)
 const ActionsCell = ({ data, context }: P) =>
   data ? (
     <span className="inline-flex gap-1">
-      {data.status === 'shared' && <Button type="text" size="small" aria-label={`Deal sheet for ${data.name}`} icon={<Icon name="ios_share" size={15} />} onClick={() => context.current.onShare(data)} />}
+      {data.status === 'shared' && data.dealType !== 'direct' && <Button type="text" size="small" aria-label={`Deal sheet for ${data.name}`} icon={<Icon name="ios_share" size={15} />} onClick={() => context.current.onShare(data)} />}
       <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
       <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />
     </span>
@@ -177,8 +181,10 @@ const ActionsCell = ({ data, context }: P) =>
 export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, showTargeting = false }: { showTargeting?: boolean; lists: BuyersList[]; canEdit: boolean; capacity: Capacity; slots: Map<string, SlotInfo[]>; onChanged: () => void }) {
   const partners = useQuery(Q.partners)
   const bufferPct = useQuery(Q.advertiserSettings).data?.guaranteeBufferPct ?? 10
-  const dspName = (id: string) => (partners.data ?? []).find((p) => p.id === id)?.name ?? id
-  const seatName = (pid: string, sid: string) => (partners.data ?? []).find((p) => p.id === pid)?.seats?.find((x) => x.id === sid)?.name ?? sid
+  /* A Direct advertiser deal's buyer is a direct advertiser (partner "direct", seat = its advertiser id), not a DSP seat. */
+  const advertisers = useQuery({ queryKey: Q.advertisers.queryKey, queryFn: () => api<{ items: { advertiserId: string; name: string }[] }>('GET', '/admin/v1/advertisers') })
+  const dspName = (id: string) => (id === DIRECT_PARTNER_ID ? 'Direct' : (partners.data ?? []).find((p) => p.id === id)?.name ?? id)
+  const seatName = (pid: string, sid: string) => (pid === DIRECT_PARTNER_ID ? (advertisers.data?.items ?? []).find((a) => a.advertiserId === sid)?.name : (partners.data ?? []).find((p) => p.id === pid)?.seats?.find((x) => x.id === sid)?.name) ?? sid
   const [modalOpen, setModalOpen] = useState(false)
   const [editingSnapshot, setEditing] = useState<BuyersList | null>(null)
   /* Read the open list from the live rows, so slots assigned while it is open (or since it was last opened) enable Finalise at once. */
@@ -192,7 +198,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
      so a late re-render (the partners query resolving) swapped the cells out from under a click.
      Cells read anything that changes (names, capacity, handlers) through context.current. */
   const columns = useMemo<ColDef<BuyersList>[]>(() => [
-    { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${JSON.stringify(p.data?.targeting ?? [])}|${p.data?.status}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}` },
+    { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${JSON.stringify(p.data?.targeting ?? [])}|${p.data?.status}|${p.data?.dealType}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}` },
     { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
     { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.termTotal, p.context.current.slots.get(p.data?.id ?? '') ?? [], p.context.current.bufferPct]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:

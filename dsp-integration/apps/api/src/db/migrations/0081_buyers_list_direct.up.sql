@@ -1,0 +1,2 @@
+-- Direct advertiser deals (ticket krIPF8rPnMwVOmynHNRh, 22 Oct 2026): a deal type with exactly the Programmatic guaranteed fields and rules but a direct advertiser as its one buyer and no DSP. Stored as deal_type 'guaranteed' plus this flag, so deal_type's CHECK needs no table rebuild; the repository presents it as dealType 'direct'.
+ALTER TABLE buyers_lists ADD COLUMN direct INTEGER NOT NULL DEFAULT 0;

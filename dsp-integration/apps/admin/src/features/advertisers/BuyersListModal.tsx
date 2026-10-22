@@ -8,7 +8,7 @@
    least one assigned slot; opens FinaliseDealModal to confirm the slots, deal ID and terms) -> Share deal (inside that pop-up). */
 import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { ALL_DSPS, OPERATOR_LABELS, formatAggregateValue, isAggregateVariable, parseAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable, type TermCheck } from '@ph-dsp/types'
+import { ALL_DSPS, DIRECT_PARTNER_ID, isGuaranteedLike, OPERATOR_LABELS, formatAggregateValue, isAggregateVariable, parseAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable, type TermCheck } from '@ph-dsp/types'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
@@ -20,6 +20,7 @@ import { IAB_OPTIONS_SORTED, iabFilterOption } from '../../shared/iabOptions'
 import { T } from '../../theme/phTheme'
 import { TERM_TOTAL_HINT, equivalentCpmText, rateText, rateTypeOf, resolveTerm, sourceLabel } from './effectiveTerm'
 import { FinaliseDealModal } from './FinaliseDealModal'
+import { ConflictCallout, useFlightConflicts } from './reservingConflicts'
 
 type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; floorCpm: number | null; termTotal: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
@@ -76,15 +77,24 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
     /* The auction window is retired (16 Oct 2026); only a legacy deal's saved value is carried, so an edit does not re-version it. */
     auctionCloses: dealType === d.dealType ? d.auctionCloses : null,
     invitedCategories: dealType === 'private_auction' ? d.invitedCategories : [],
-    termTotal: dealType === 'guaranteed' ? d.termTotal : null,
+    termTotal: isGuaranteedLike(dealType) ? d.termTotal : null,
+    /* The buyer of a Direct advertiser deal is a direct advertiser, not a DSP seat: switching to or from it clears the buyer. */
+    invitedBuyers: (dealType === 'direct') === (d.dealType === 'direct') ? d.invitedBuyers : [],
   }))
-  const guaranteed = draft.dealType === 'guaranteed'
+  /* A Direct advertiser deal has exactly the Programmatic guaranteed fields and rules (22 Oct 2026); only its buyer differs. */
+  const direct = draft.dealType === 'direct'
+  const guaranteed = isGuaranteedLike(draft.dealType)
+  /* Reserving deals never overlap on a slot: asked as the dates change, and saving is blocked until they don't. */
+  const flightConflicts = useFlightConflicts(editing?.id, draft.dealType, draft.activeFrom, draft.activeTo, open && !!editing && guaranteed && draft.dealType === editing.dealType)
+  const blocked = flightConflicts.length > 0
   const privateAuction = draft.dealType === 'private_auction'
   /* A programmatic guaranteed deal is one-to-one with its buyer (21 Oct 2026): a list that already has several must be reduced to one before it can be saved as guaranteed. */
   const tooManyForPg = guaranteed && draft.invitedBuyers.length > 1
 
   /* The dropdown offers every advertiser (seat) a connected DSP has synced, grouped by DSP — no typing, no identifier type. */
   const partners = useQuery(Q.partners)
+  const advertisers = useQuery({ queryKey: Q.advertisers.queryKey, queryFn: () => api<{ items: { advertiserId: string; name: string; direct?: boolean }[] }>('GET', '/admin/v1/advertisers') })
+  const directOptions = (advertisers.data?.items ?? []).filter((a) => a.direct).map((a) => ({ value: buyerKey({ partnerId: DIRECT_PARTNER_ID, seatId: a.advertiserId }), label: `${a.name} (Direct)` }))
   /* What the two terms resolve to for this draft: platform default -> DSP -> this list (Rob, 7 Oct 2026), so
      neither field is ever left looking blank. The platform floor clamps a lower DSP floor up, as the exchange does. */
   const draftDsps = [...new Set(draft.invitedBuyers.map((b) => b.partnerId))].map((id) => (partners.data ?? []).find((p) => p.id === id)?.bidder)
@@ -190,10 +200,10 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
       open={open} width={580} destroyOnHidden confirmLoading={saving} onCancel={onClose}
       footer={<div className="flex justify-end gap-2" data-testid="deal-actions">{[
         <Button key="cancel" onClick={onClose}>Cancel</Button>,
-        <Button key="save" type={isDraft && editing ? 'default' : 'primary'} loading={saving} onClick={() => save()}>{!isDraft ? 'Save changes' : editing ? 'Save draft' : 'Save as draft'}</Button>,
+        <Button key="save" type={isDraft && editing ? 'default' : 'primary'} loading={saving} disabled={blocked} onClick={() => save()}>{!isDraft ? 'Save changes' : editing ? 'Save draft' : 'Save as draft'}</Button>,
         ...(isDraft ? [
           <Tip key="finalise" title={slots.length ? undefined : 'Assign this deal to at least one slot in Available Inventory first. A deal with no inventory can’t be finalised.'}>
-            <span><Button type="primary" disabled={saving || !editing || !slots.length} onClick={() => save(true)}>Finalise deal terms</Button></span>
+            <span><Button type="primary" disabled={saving || blocked || !editing || !slots.length} onClick={() => save(true)}>Finalise deal terms</Button></span>
           </Tip>,
         ] : []),
       ]}</div>}
@@ -205,7 +215,14 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
       }
     >
       <div className="mb-3.5" style={{ fontSize: 12.5, color: T.muted }} data-testid="deal-status-note">
-        {!isDraft
+        {/* A Direct advertiser deal is never shared with a DSP: Finalise makes it live (E2E 21 Oct 2026). */}
+        {draft.dealType === 'direct'
+          ? !isDraft
+            ? 'Live: the slots it is assigned to are reserved for its direct advertiser over its flight. It is not sent to a DSP.'
+            : editing
+              ? `Draft: not live yet. ${slots.length ? `Assigned to ${slots.length} slot${slots.length === 1 ? '' : 's'}; finalise it to make it live.` : 'Assign it to a slot in Available Inventory, then finalise it to make it live.'}`
+              : 'Save as draft first. Then assign it to a slot in Available Inventory and finalise it to make it live. It is never sent to a DSP.'
+          : !isDraft
           ? 'Shared with the buyers. A change to its terms asks the buyers who accepted to accept again.'
           : editing
             ? `Draft: not shared with any DSP. ${slots.length ? `Assigned to ${slots.length} slot${slots.length === 1 ? '' : 's'}; finalise it to share it.` : 'Assign it to a slot in Available Inventory, then finalise it to share it.'}`
@@ -217,7 +234,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         {errors.name && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.name}</div>}
       </div>
       {editing && editing.termVersion != null && <div className="mb-3.5" style={{ fontSize: 12.5, color: T.muted }} data-testid="term-version">
-        <WithTip tip="The deal's rate, flight dates and buyers are versioned on the same deal ID. Changing the price, flight dates or slots (which changes the committed plays) asks the buyers who accepted to accept again.">{`Term version ${editing.termVersion} · ${(editing.buyerAcceptance ?? []).filter((a) => a.state === 'accepted').length} of ${(editing.buyerAcceptance ?? []).length} buyers on this version`}</WithTip>
+        <WithTip tip={editing.dealType === 'direct' ? "The deal's rate, flight dates and buyer are versioned on the same deal ID. A Direct advertiser deal needs no buyer acceptance." : "The deal's rate, flight dates and buyers are versioned on the same deal ID. Changing the price, flight dates or slots (which changes the committed plays) asks the buyers who accepted to accept again."}>{editing.dealType === 'direct' ? `Term version ${editing.termVersion}` : `Term version ${editing.termVersion} · ${(editing.buyerAcceptance ?? []).filter((a) => a.state === 'accepted').length} of ${(editing.buyerAcceptance ?? []).length} buyers on this version`}</WithTip>
       </div>}
       {editing && <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListDealId"><WithTip tip="Generated by the platform when the list was created and fixed for the life of the deal. This is the ID the buyer targets in their DSP (pmp.deals[].id); share it with them.">Deal ID</WithTip></label>
@@ -234,18 +251,19 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         <Input.TextArea rows={2} value={draft.description} placeholder="So this list is distinguishable in the table below" onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} />
       </div>
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListDealType"><WithTip tip="The deal type this list bids against, and where it is set: the DSP deal (deal ID and type) and any reservation on a slot using this list follow it. Private auction: invited buyers bid on each slot throughout the flight, first price, against the rate as a floor; nothing is held or locked. Preferred deal: one named buyer, a fixed CPM and first look at every slot ahead of private and open auction; the buyer may pass, and no window is reserved. Programmatic guaranteed: commits a volume, shown as guaranteed impressions."><span style={{ color: T.error }}>*</span> Deal type</WithTip></label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListDealType"><WithTip tip="The deal type this list bids against, and where it is set: the DSP deal (deal ID and type) and any reservation on a slot using this list follow it. Private auction: invited buyers bid on each slot throughout the flight, first price, against the rate as a floor; nothing is held or locked. Preferred deal: one named buyer, a fixed CPM and first look at every slot ahead of private and open auction; the buyer may pass, and no window is reserved. Programmatic guaranteed: commits a volume, shown as guaranteed impressions. Direct advertiser: the same terms as programmatic guaranteed, sold straight to one direct advertiser; it is not sent to a DSP."><span style={{ color: T.error }}>*</span> Deal type</WithTip></label>
         <Select
           id="buyersListDealType" className="w-full" aria-label="Deal type" value={draft.dealType} onChange={setDealType}
           options={[
             { value: 'private_auction', label: <WithTip tip={COMING_SOON}>Private auction</WithTip>, disabled: true },
             { value: 'preferred', label: <WithTip tip={COMING_SOON}>Preferred deal</WithTip>, disabled: true },
             { value: 'guaranteed', label: 'Programmatic guaranteed' },
+            { value: 'direct', label: 'Direct advertiser' },
           ]}
         />
         {editing && draft.dealType !== editing.dealType && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }} data-testid="deal-type-new-deal-note">The deal type is fixed once saved. Saving creates a new deal with a new Deal ID; this deal ({editing.dealId}) is left as it is.</div>}
         <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="deal-type-note">
-          {privateAuction ? 'Invited buyers bid on each slot, first price; nothing is held or locked, and no volume is committed.' : guaranteed ? 'One deal with one named buyer covers the whole delivery term. It commits a volume worked out from its assigned slots; there is no bidding.' : 'One named buyer at a fixed CPM with first look at each slot; it may pass. No window is reserved and no volume is committed.'}
+          {privateAuction ? 'Invited buyers bid on each slot, first price; nothing is held or locked, and no volume is committed.' : direct ? 'One deal with one direct advertiser covers the whole delivery term, with the same terms as programmatic guaranteed. It is not sent to a DSP: Finalise makes it live inside Personalisation Hub.' : guaranteed ? 'One deal with one named buyer covers the whole delivery term. It commits a volume worked out from its assigned slots; there is no bidding.' : 'One named buyer at a fixed CPM with first look at each slot; it may pass. No window is reserved and no volume is committed.'}
         </div>
       </div>
       <div className="mb-3.5">
@@ -253,9 +271,9 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         <Select
           mode="multiple" maxCount={guaranteed ? 1 : undefined} className="w-full" aria-label="Buyers" showSearch optionFilterProp="label"
           status={errors.invitedBuyers || tooManyForPg ? 'error' : undefined} loading={partners.isLoading}
-          placeholder={guaranteed ? 'Choose the one advertiser this deal is with' : 'Choose advertisers synced from your connected DSPs'}
-          notFoundContent="No advertisers synced yet — connect a DSP first."
-          value={draft.invitedBuyers.map(buyerKey)} options={[...(staleOptions.length ? [{ label: 'Not synced', options: staleOptions }] : []), ...options]}
+          placeholder={direct ? 'Choose the one direct advertiser this deal is with' : guaranteed ? 'Choose the one advertiser this deal is with' : 'Choose advertisers synced from your connected DSPs'}
+          notFoundContent={direct ? 'No direct advertisers yet — add one on the Advertisers page.' : 'No advertisers synced yet — connect a DSP first.'}
+          value={draft.invitedBuyers.map(buyerKey)} options={direct ? directOptions as never : [...(staleOptions.length ? [{ label: 'Not synced', options: staleOptions }] : []), ...options]}
           onChange={setBuyers}
         />
         {errors.invitedBuyers && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.invitedBuyers}</div>}
@@ -337,6 +355,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
             value={[draft.activeFrom ? dayjs(draft.activeFrom) : null, draft.activeTo ? dayjs(draft.activeTo) : null]}
             onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v?.[0] ? v[0].toISOString() : null, activeTo: v?.[1] ? v[1].toISOString() : null }))}
           />}
+        <ConflictCallout conflicts={flightConflicts} />
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
       </div>
       {guaranteed && (
@@ -359,7 +378,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         />
         {errors.termTotal && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.termTotal}</div>}
         {editing?.termTotal != null && editing.equivalentCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="equivalent-cpm">Equivalent CPM {equivalentCpmText(editing.equivalentCpm)} across the assigned slots</div>}
-        <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="rate-type">Rate type: {rateTypeOf('guaranteed', draft.termTotal ?? 0)}</div>
+        <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="rate-type">Rate type: {rateTypeOf(draft.dealType, draft.termTotal ?? 0)}</div>
       </div>
       ) : (
       <div className="mb-3.5">

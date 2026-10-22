@@ -10,7 +10,7 @@ import { equivalentCpmText } from './effectiveTerm'
 import { slotLine } from './slotLine'
 
 type Sheet = components['schemas']['DealSheet']
-const TYPE_LABEL = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
+const TYPE_LABEL = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed', direct: 'Direct advertiser' } as const
 const when = (v: string | null) => (v ? new Date(v).toLocaleString() : null)
 
 const num = (n: number | null | undefined) => (n == null ? '-' : n.toLocaleString())

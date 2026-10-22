@@ -741,7 +741,7 @@ describe('Advertisers / Inventory', () => {
     expect([...swisse.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent).filter((_, i) => i === 2 || (i >= 4 && i <= 7))).toEqual(['0', '0', '0', '0', '0'])
   })
 
-  it('lists a direct advertiser as "Direct advertiser" in Via and "Name (Direct)" in the Assigned to options, and lets an admin add one', async () => {
+  it('lists a direct advertiser as "Direct advertiser" in Via and and is not offered in the Assigned to options, and lets an admin add one', async () => {
     const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
     vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
     renderAt('/advertisers')
@@ -943,6 +943,55 @@ describe('Advertisers / Inventory', () => {
     fireEvent.click(await screen.findByText('Programmatic guaranteed', { selector: '.ant-select-item-option-content' }))
     expect(await within(dialog).findByTestId('deal-type-new-deal-note')).toHaveTextContent('new Deal ID')
   })
+
+  /* Ticket krIPF8rPnMwVOmynHNRh (22 Oct 2026): Direct advertiser is an enabled deal type beside Programmatic guaranteed; Private auction and Preferred stay greyed out. Its buyer is one direct advertiser, never a DSP seat. */
+  it('offers Direct advertiser as an enabled deal type whose buyers are direct advertisers only', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/advertisers': { items: [{ advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, dspSeats: [] }] },
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }] },
+      '/api/admin/v1/available-inventory': inv,
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.click(await within(table).findByRole('button', { name: 'Edit Pharma brands' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Deal type' }))
+    const option = async (name: string) => (await waitFor(() => { const o = screen.getAllByText(name).map((e) => e.closest('.ant-select-item-option')).find(Boolean); if (!o) throw new Error(`no option ${name}`); return o })) as HTMLElement
+    expect(await option('Private auction')).toHaveClass('ant-select-item-option-disabled')
+    expect(await option('Preferred deal')).toHaveClass('ant-select-item-option-disabled')
+    expect(await option('Direct advertiser')).not.toHaveClass('ant-select-item-option-disabled')
+    fireEvent.click(await option('Direct advertiser'))
+    expect(await within(dialog).findByTestId('deal-type-note')).toHaveTextContent('not sent to a DSP')
+    /* Same price choice as Programmatic guaranteed. */
+    expect(within(dialog).getByRole('combobox', { name: 'Price type' })).toBeInTheDocument()
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Buyers' }))
+    expect(await screen.findByText('Acme Foods (Direct)')).toBeInTheDocument()
+  }, slow(30000))
+
+  /* Ticket OMwDvy3OUmY9raBtTf7v (22 Oct 2026): a deal whose flight overlaps another reserving deal on its slot shows the warning inline, naming the deal, advertiser, slot and dates, and cannot be saved. */
+  it('warns inline and blocks Save when a deal\'s flight overlaps another reserving deal on its slot', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const conflict = { dealId: 'bl_2', dealName: 'Beta direct', dealCode: 'PH-BETA', advertiser: 'Beta Co', displayTypeId: 'portrait', playlist: 'Portrait', slot: 1, slotLabel: 'Ad', positionId: 'portrait.s1', overlapFrom: '2026-11-20', overlapTo: '2026-11-30', message: 'x' }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/advertisers': { items: [{ advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, dspSeats: [] }] },
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [{ partnerId: 'direct', seatId: 'acme-foods' }], invitedCategories: [], targeting: [], activeFrom: '2026-11-01T00:00:00.000Z', activeTo: '2026-11-30T23:59:59.999Z', dealType: 'direct', status: 'shared', floorCpm: 150 }] },
+      '/api/admin/v1/available-inventory': inv,
+      '/api/admin/v1/reserving-conflicts': { conflicts: [conflict], candidates: {} },
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.click(await within(table).findByRole('button', { name: 'Edit Pharma brands' }))
+    const dialog = await screen.findByRole('dialog')
+    const warning = await within(dialog).findByTestId('reserving-conflict')
+    expect(warning).toHaveTextContent('Beta direct')
+    expect(warning).toHaveTextContent('Beta Co')
+    expect(warning).toHaveTextContent('Portrait, slot 1 (Ad)')
+    expect(warning).toHaveTextContent('2026-11-20 to 2026-11-30')
+    expect(within(dialog).getByRole('button', { name: 'Save changes' })).toBeDisabled()
+  }, slow(30000))
 
   /* Ticket KcqiJpzR5RXy4TWODYlG: term versions. The pop-up shows the version and acceptance, saves a name change silently, and warns before a rate change that makes accepted buyers re-accept. */
   const TERMS_LIST = { id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', floorCpm: 120, termVersion: 3, buyerAcceptance: [{ partnerId: 'p_google', seatId: '5130001', state: 'accepted', acceptedVersion: 3, acceptedAt: '2026-10-10T00:00:00Z' }] }

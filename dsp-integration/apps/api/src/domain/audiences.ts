@@ -87,7 +87,8 @@ export async function dealAudienceErrors(ctx: Pick<Context, 'company'>, deal: { 
   const mapped = Object.entries(await ctx.company.advertiserSeats())
   deal.invitedBuyers.forEach((b, i) => {
     for (const v of used) {
-      const holds = mapped.some(([advertiserId, seats]) => owners.get(v)!.has(advertiserId) && seats.some((m) => m.partnerId === b.partnerId && m.seatId === b.seatId))
+      /* A direct advertiser is its own advertiser: the buyer's seat id is the advertiser id. */
+      const holds = b.partnerId === 'direct' ? owners.get(v)!.has(b.seatId) : mapped.some(([advertiserId, seats]) => owners.get(v)!.has(advertiserId) && seats.some((m) => m.partnerId === b.partnerId && m.seatId === b.seatId))
       if (!holds) return void errors.push({ field: `invitedBuyers[${i}]`, reason: `${v} is an audience shared with another advertiser only; this seat is not mapped to an advertiser that holds it.` })
     }
   })

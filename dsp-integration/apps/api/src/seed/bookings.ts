@@ -46,7 +46,6 @@ const STANDING_NAMES: Record<string, string> = {
   'the-hershey-company': 'The Hershey Company — Reese’s Cups',
   kellanova: 'Kellanova — Pringles Game Day',
   'frito-lay': 'Frito-Lay — Doritos Game Night',
-  unilever: 'Unilever — Magnum Classic',
 }
 
 /* A campaign the advertiser could really have booked with: approved, and

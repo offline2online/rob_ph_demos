@@ -2,7 +2,7 @@
    so the table and the modal never show them blank. The API resolves them per list (BuyersList.effective…);
    `resolveTerm` is the same rule for the modal's unsaved draft, whose invited buyers and own values the
    server hasn't seen yet. Rate is the base bid floor in USD CPM; volume is plays. */
-import type { BuyersList } from '@ph-dsp/types'
+import { isGuaranteedLike, type BuyersList } from '@ph-dsp/types'
 
 export type Term = BuyersList['effectiveCommittedPlays']
 export type TermSource = Term['source']
@@ -29,15 +29,15 @@ export const rateValue = (t: MaybeTerm) => { const r = range(t, (n) => String(n)
 /* Floor or committed (8 Oct 2026): a private auction's CPM is the minimum an invited buyer must bid above (the clearing
    price can land higher until the deal locks); a preferred or guaranteed deal's is the fixed rate the window clears and bills at. */
 type DealType = BuyersList['dealType']
-export const cpmKind = (d: DealType | undefined) => (d === 'preferred' || d === 'guaranteed' ? 'committed' : 'floor')
+export const cpmKind = (d: DealType | undefined) => (d === 'preferred' || isGuaranteedLike(d) ? 'committed' : 'floor')
 /* Rate type, in DV360's words (ticket DbSVEGXNIWlYW68UQnY3): CPM floor for a Private auction, CPM fixed for a Preferred deal and Programmatic guaranteed. */
-export const rateTypeOf = (d: DealType | undefined, termTotal?: number | null) => (d === 'guaranteed' && termTotal != null ? 'Fixed per term' : cpmKind(d) === 'floor' ? 'CPM floor' : 'CPM fixed')
+export const rateTypeOf = (d: DealType | undefined, termTotal?: number | null) => (isGuaranteedLike(d) && termTotal != null ? 'Fixed per term' : cpmKind(d) === 'floor' ? 'CPM floor' : 'CPM fixed')
 /* Programmatic guaranteed covers a whole delivery term (21 Oct 2026; one deal per flight): priced as a fixed CPM, or a total for the term with the CPM it works out to beside it for comparison with CPM deals. */
 export const TERM_TOTAL_HINT = 'A fixed USD total for the whole delivery term, however many days and slots. The CPM it works out to is shown beside it for comparison with CPM deals.'
 export const termTotalText = (n: number | null | undefined) => (n == null ? null : `USD ${n.toLocaleString('en-US')} for the term`)
 export const equivalentCpmText = (e: { min: number; max: number } | null | undefined) => (!e ? null : e.min === e.max ? `${e.min}` : `${e.min}–${e.max}`)
 export const cpmKindHint = (d: DealType | undefined, termTotal?: number | null) =>
-  d === 'guaranteed' && termTotal != null
+  isGuaranteedLike(d) && termTotal != null
     ? `Fixed per term: ${TERM_TOTAL_HINT}`
     : cpmKind(d) === 'floor'
     ? 'CPM floor: the minimum a buyer must bid above. The clearing price can land higher until the deal locks.'
@@ -45,7 +45,7 @@ export const cpmKindHint = (d: DealType | undefined, termTotal?: number | null) 
 /* One line for a list, e.g. "USD 4–6 · CPM floor", or the locked rate once the deal has one. */
 export const cpmSummary = (l: Pick<BuyersList, 'dealType' | 'lockedWin' | 'effectiveRateCpm' | 'termTotal' | 'equivalentCpm'>) => {
   if (l.lockedWin) return `Locked: ${l.lockedWin.cpm} CPM`
-  if (l.dealType === 'guaranteed' && l.termTotal != null) return `${termTotalText(l.termTotal)}${l.equivalentCpm ? ` (≈ ${equivalentCpmText(l.equivalentCpm)} CPM)` : ''} · Fixed per term`
+  if (isGuaranteedLike(l.dealType) && l.termTotal != null) return `${termTotalText(l.termTotal)}${l.equivalentCpm ? ` (≈ ${equivalentCpmText(l.equivalentCpm)} CPM)` : ''} · Fixed per term`
   const t = rateValue(l.effectiveRateCpm)
   return t ? `${t} · ${rateTypeOf(l.dealType)}` : null
 }

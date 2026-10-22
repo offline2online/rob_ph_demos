@@ -18,7 +18,7 @@
    time — but a breakdown of which trigger mechanism(s) its rules use,
    ticket "Booking schedule: personalised trigger icons"). */
 import type { BookingSchedule } from '@ph-dsp/types'
-import { TARGETING_VARIABLES } from '@ph-dsp/types'
+import { TARGETING_VARIABLES, assignedOf } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
@@ -27,9 +27,12 @@ import { allPositions, assignmentOf, assumedViewsPerWindow, effectivePartnerIds,
 import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN, type ReservationRecord } from '../../repos/ReservationRepo'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
+import { isActiveAt } from '../../billing/term'
 import { zonePlaceOf } from '../../domain/displayTypes'
-import { advertiserSlug, directLabel } from '@ph-dsp/types'
+import { DIRECT_PARTNER_ID, advertiserSlug, directLabel } from '@ph-dsp/types'
 
+/* What a Direct advertiser deal's booking reads as in the DSP column: it has no DSP (ticket EipHu2GUdlbZMpPGCTjF). */
+const DIRECT_LABEL = 'Direct'
 const DAY = 86_400_000
 /* How far back a real-time position's plays are counted (ticket vhRFN1K3N4Giw1Z0OEI6, 8 Oct 2026). */
 export const RECENT_PLAYS_DAYS = 7
@@ -150,6 +153,10 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
     revenue.set(p.displayType.id, rev)
     const realTime = isRealtime(p)
+    /* The flights of the live Direct advertiser deals on this position: a window in one that the exchange has not booked
+       yet is reserved for the deal's advertiser, not available to anyone else (E2E 21 Oct 2026: it read Available). */
+    const directFlights = (await Promise.all(assignedOf(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id))))
+      .filter((l): l is NonNullable<typeof l> => !!l && l.dealType === 'direct' && l.status === 'shared')
     const windows = []
     for (const column of starts) {
 
@@ -192,7 +199,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
           booking: {
             reservationId: r.id, campaignId: r.campaignId as string, advertiserId: r.advertiserId, partnerId: r.partnerId,
             pricingType: type, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
-            partnerName: partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
+            partnerName: r.partnerId === DIRECT_PARTNER_ID ? DIRECT_LABEL : partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
             layers, personalisedTriggers: triggersOf(targeted, layers.personalised),
           },
         })
@@ -202,7 +209,8 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
          dash, never "available". (A booking already on one — made before the
          position went real-time — still shows, since it is real revenue.) */
       const open = hasDisplays && !realTime && start.getTime() >= firstSellable
-      windows.push({ start: column.toISOString(), status: open ? ('available' as const) : ('unavailable' as const), booking: null })
+      const reserved = open && directFlights.some((l) => isActiveAt(l, start.toISOString()))
+      windows.push({ start: column.toISOString(), status: reserved ? ('reserved' as const) : open ? ('available' as const) : ('unavailable' as const), booking: null })
     }
     positions.push({
       positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label, displayCount,

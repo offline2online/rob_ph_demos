@@ -268,21 +268,25 @@
     {
       "key": "e2e-test-spec-2",
       "path": "dsp-integration/docs/dsp-integration/E2E-TEST-SPEC.md",
-      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (2/3) — Runs 2–8, hardening to AWS creative IDs",
+      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (2/3) — Runs 2–9, hardening to AWS setup; raising tickets",
       "slices": [
         {
           "start": "## Run 2 — Open auction, non-happy paths (hardening)",
-          "end": "## Run 9 — Flow 0: retailer setup (AWS demo setup flow)"
+          "end": "## Run 10 — Flow 2 (private auction) uncovered elements and Flow 3 (direct advertiser)"
+        },
+        {
+          "start": "## Raising tickets on failure"
         }
       ]
     },
     {
       "key": "e2e-test-spec-3",
       "path": "dsp-integration/docs/dsp-integration/E2E-TEST-SPEC.md",
-      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (3/3) — Runs 9–11, Run 6 journey, gaps",
+      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (3/3) — Runs 10–11, Run 6 journey, gaps",
       "slices": [
         {
-          "start": "## Run 9 — Flow 0: retailer setup (AWS demo setup flow)"
+          "start": "## Run 10 — Flow 2 (private auction) uncovered elements and Flow 3 (direct advertiser)",
+          "end": "## Raising tickets on failure"
         }
       ]
     },
