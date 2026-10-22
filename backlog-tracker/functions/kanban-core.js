@@ -69,7 +69,7 @@ function defaultFields() {
   return {
     title: { show: true, required: true }, description: { show: true, required: false },
     reporter: { show: true, required: true }, assignee: { show: true, required: false },
-    status: { show: true, required: true }, release: { show: true, required: true },
+    status: { show: true, required: true }, release: { show: true, required: false },
     estimate: { show: true, required: false },
     type: { show: true, required: true }, priority: { show: true, required: false },
     sprint: { show: false, required: false }, due: { show: false, required: false },
@@ -92,7 +92,7 @@ function normaliseSettings(raw) {
   for (const f of CORE_FIELDS) fields[f.key].show = true;
   fields.title.required = true;
   fields.status.required = true;
-  for (const k of ["comments", "attachments", "flag"]) fields[k].required = false;
+  for (const k of ["comments", "attachments", "flag", "release"]) fields[k].required = false; // a ticket may have no release
   for (const k of FIELD_KEYS) if (!fields[k].show) fields[k].required = false;
   return {
     fields,
