@@ -5337,3 +5337,31 @@ suite and gates the deploy train.
   to Main) and in `e2e.config.json`'s quick and full modes. It builds the
   hosted-demo bundle and serves it itself; it needs no API process.
 
+
+## Hard blocks show a friendly dialog, never a red error (Rob, 22 Oct 2026; ticket z0qiB0GGHR010H0Shrj0)
+
+Found during the AWS demo: on Fridge LED Milk, switching a slot's owner from
+Supplier to Headquarters and pressing Save in Playlist Management raised a red
+toast with the API's raw sentence. A hard block is the exchange refusing a
+change that would break a commitment (`409 has_dependents`). Every such refusal
+now opens one dialog (`apps/admin/src/shared/BlockedDialog.tsx`, built from
+`describeBlock()`): **what is blocked**, **why** (the booked windows or
+dependents, listed, with their dates), and **what you can do next**. Close is
+the only action. A save that is refused says "Your changes were not saved".
+
+**Audit — every hard block in the Partner/admin API and where the admin shows it**
+
+| # | Block (API) | Trigger | Shown as |
+|---|---|---|---|
+| 1 | `PUT display-types/:id/extensions` — "An Advertiser slot can't be changed to another owner…" | Owner of an Advertiser slot switched while a current or future window is reserved or sold | Dialog — Display Types and Playlist Management Save |
+| 2 | `PUT display-types/:id/record` — "The assigned playlist can't be changed…" | Default playlist changed while positions are reserved or sold | Dialog — Display Types Save |
+| 3 | `PUT playlists/:id/settings` — "This playlist can't be changed…" | Playlist settings saved while its display type's positions are reserved or sold | Dialog — Playlist Management Save |
+| 4 | `DELETE display-types/:id` | Displays assigned, advertiser-owned slots, or reserved/sold windows | Pre-check dialog on Delete (already); dialog if the delete itself is refused |
+| 5 | `DELETE playlists/:id` | Playlist is a display type's default or a zone's | Pre-check dialog on Delete (already); dialog if the delete itself is refused |
+| 6 | `POST buyers-lists/:id/archive` — "This deal can't be archived…" | A slot is still assigned to the deal | Pre-check dialog on Archive; refusal shown inside that dialog |
+| 7 | `PUT available-inventory` — "Slots are sold, so the advertiser can't be removed" | Advertiser taken off a sold slot | Confirm dialog offering "Lock against new sales"; otherwise the block dialog |
+| 8 | `PUT advertisers/:id` — "can't lose …" | Advertiser capability removed while it is in use | Dialog — Advertisers Save |
+
+The reason list is the API's own `details` (position, window date, reserved or
+sold), so the API response is unchanged. Validation errors (a missing field, an
+out-of-range number) are not hard blocks and stay inline on their field.

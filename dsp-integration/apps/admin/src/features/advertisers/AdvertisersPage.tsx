@@ -29,6 +29,7 @@ import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { ConflictCallout, rangeLabel, useSlotConflicts } from './reservingConflicts'
 import { BuyersListsTable } from './BuyersListsTable'
+import { BlockedDialog, describeBlock, type Blocked } from '../../shared/BlockedDialog'
 import { positionSlotNumber, positionText } from './slotLine'
 export { positionText }
 import { type Flags, envFlags } from '../../flags'
@@ -880,6 +881,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const maxPlayLengthDefaults = useDraft(savedMaxPlayLengthDefaults)
   useReportDirty(dirty || inv.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty)
   const [saving, setSaving] = useState(false)
+  const [blocked, setBlocked] = useState<Blocked | null>(null)
   const [addingAdvertiser, setAddingAdvertiser] = useState(false)
   const [editingAdvertiser, setEditingAdvertiser] = useState<Advertiser | null>(null)
   const [deleting, setDeleting] = useState<Advertiser | null>(null)
@@ -1049,6 +1051,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       await qc.invalidateQueries({ queryKey: ['advertisers'] })
     } catch (e) {
       if (e instanceof ApiRequestError && e.status === 409 && offerLock(e, sent)) return
+      const b = describeBlock(e, 'save', 'These changes')
+      if (b) return void setBlocked(b)
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : 'Could not save changes.')
     } finally {
       setSaving(false)
@@ -1181,6 +1185,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           />
         </>
       )}
+      {blocked && <BlockedDialog blocked={blocked} onClose={() => setBlocked(null)} />}
       {canEdit && <SaveBar dirty={dirty || inv.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset(); maxPlayLengthDefaults.reset() }} />}
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
