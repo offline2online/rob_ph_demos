@@ -189,7 +189,12 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
       })
       const mocks = buildMocks()
       const ctx = createContext({ config: loadConfig({ ...process.env, DSP_MOCKS_URL: 'http://mocks.internal' }), dspFetch: inProcessFetch(mocks.app) })
-      if (await seed(ctx)) log('Seeded a fresh database with the demo estate.')
+      /* Only a database that did not come from the store is ever seeded. A
+         restored one is the owner's, however little of it is left: seed()
+         itself only asks "are there any display types?", so someone who
+         deleted them all would otherwise get the demo estate back on the
+         next cold start (22 Oct 2026, demo data lost before the AWS demo). */
+      if (!saved && (await seed(ctx))) log('Seeded a fresh database with the demo estate.')
       const app = buildApp(ctx)
       await app.ready()
       if (!saved) await persist(ctx)

@@ -27,6 +27,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
 import { useFeatures } from '../../api/features'
 import type { Flags } from '../../flags'
+import { BlockedDialog, describeBlock, type Blocked } from '../../shared/BlockedDialog'
 import { DeleteDialog } from '../../shared/DeleteDialog'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
@@ -375,7 +376,12 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
   }
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['playlists'] }), qc.invalidateQueries({ queryKey: ['display-types'] })])
-  const fail = (e: unknown, fallback: string) => message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : fallback)
+  const [blocked, setBlocked] = useState<Blocked | null>(null)
+  const fail = (e: unknown, fallback: string, action: 'save' | 'delete' = 'save', partial = false) => {
+    const b = describeBlock(e, action, 'This playlist')
+    if (b) return setBlocked({ ...b, partial })
+    message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : fallback)
+  }
   const items = playlists.data ?? []
   /* Display type names, for the auto-created pill (a deleted type falls back to its id). */
   const typeNames = useMemo(() => new Map(items.flatMap((p) => p.assignments.map((a) => [a.displayTypeId, a.displayTypeName] as const))), [items])
@@ -384,12 +390,20 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
     if (!draft || !types.data || !playlists.data) return
     setSaving(true)
     try {
-      await Promise.all([
+      /* The two saves are independent: when one is refused the other may still have saved, so the dialog must not
+         say nothing was saved (E2E 22 Oct 2026), and the page refreshes to show what did. */
+      const results = await Promise.allSettled([
         saveDisplayTypes(draft.types, types.data, { extensions: slotAssignment }),
         savePlaylistSettings(draft.playlists, playlists.data),
       ])
-      commitNext()
-      await refresh()
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+      if (failed) {
+        await refresh()
+        fail(failed.reason, 'Could not save changes.', 'save', results.some((r) => r.status === 'fulfilled' && r.value > 0))
+      } else {
+        commitNext()
+        await refresh()
+      }
     } catch (e) {
       fail(e, 'Could not save changes.')
     } finally {
@@ -433,7 +447,7 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
       await api('DELETE', `/admin/v1/playlists/${deleting.p.id}`)
       setDeleting(null)
       await refresh()
-    } catch (e) { setDeleting(null); fail(e, 'Could not delete this playlist.') }
+    } catch (e) { setDeleting(null); fail(e, 'Could not delete this playlist.', 'delete') }
   }
 
   const rows = useMemo<Row[]>(() => items.flatMap((p) => {
@@ -478,6 +492,7 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
         getRowStyle={(p) => (p.data && p.data.p.id === settingsExpanded ? { background: T.primaryTint } : undefined)}
       />
       <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} />
+      {blocked && <BlockedDialog blocked={blocked} onClose={() => setBlocked(null)} />}
       {deleting && (
         <DeleteDialog open name={deleting.p.name} blockedReason={deleting.check.canDelete ? null : 'This playlist is assigned to a display type or zone'}
           deleting={deleting.busy} onDelete={confirmDelete} onClose={() => setDeleting(null)}>

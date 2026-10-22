@@ -29,6 +29,7 @@ import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { ConflictCallout, rangeLabel, useSlotConflicts } from './reservingConflicts'
 import { BuyersListsTable } from './BuyersListsTable'
+import { BlockedDialog, describeBlock, type Blocked } from '../../shared/BlockedDialog'
 import { positionSlotNumber, positionText } from './slotLine'
 export { positionText }
 import { type Flags, envFlags } from '../../flags'
@@ -72,6 +73,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
   const [audiences, setAudiences] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [blocked, setBlocked] = useState<Blocked | null>(null)
   const variables = useQuery({ ...Q.targetingVariables, enabled: open })
   const segments = variables.data?.find((v) => v.key === 'visitor.visitor_segments')
   const options = [...new Set([...(segments?.values ?? []), ...(segments?.privateValues ?? []), ...audiences])].map((v) => ({ value: v, label: v }))
@@ -89,7 +91,10 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
       onClose()
       message.success(editing ? 'Advertiser saved' : 'Advertiser added')
     } catch (e) {
-      setError(e instanceof ApiRequestError ? e.message : 'Could not save the advertiser.')
+      /* A hard block (409 has_dependents) is a friendly dialog, never the API's sentence in red (E2E 22 Oct 2026). */
+      const b = describeBlock(e, 'save', 'This advertiser')
+      if (b) setBlocked(b)
+      else setError(e instanceof ApiRequestError ? e.message : 'Could not save the advertiser.')
     } finally {
       setBusy(false)
     }
@@ -125,6 +130,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
         </>
       )}
       {error && !editing && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
+      {blocked && <BlockedDialog blocked={blocked} onClose={() => setBlocked(null)} />}
     </Modal>
   )
 }
@@ -880,6 +886,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const maxPlayLengthDefaults = useDraft(savedMaxPlayLengthDefaults)
   useReportDirty(dirty || inv.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty)
   const [saving, setSaving] = useState(false)
+  const [blocked, setBlocked] = useState<Blocked | null>(null)
   const [addingAdvertiser, setAddingAdvertiser] = useState(false)
   const [editingAdvertiser, setEditingAdvertiser] = useState<Advertiser | null>(null)
   const [deleting, setDeleting] = useState<Advertiser | null>(null)
@@ -1049,6 +1056,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       await qc.invalidateQueries({ queryKey: ['advertisers'] })
     } catch (e) {
       if (e instanceof ApiRequestError && e.status === 409 && offerLock(e, sent)) return
+      const b = describeBlock(e, 'save', 'These changes')
+      if (b) return void setBlocked(b)
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : 'Could not save changes.')
     } finally {
       setSaving(false)
@@ -1081,10 +1090,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
   const countedTypes = new Map<string, Set<string>>()
   /* The slots each list is assigned to, for the Slots column's hover on the Deals and buyers lists table. */
-  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }[]>()
+  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; orientation: 'landscape' | 'portrait' | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }[]>()
   for (const r of invRows) {
     for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
-      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r) }])
+      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, orientation: r.displayTypeOrientation ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r) }])
     }
     if (typeof r.displayCount !== 'number') continue
     const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount
@@ -1181,6 +1190,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           />
         </>
       )}
+      {blocked && <BlockedDialog blocked={blocked} onClose={() => setBlocked(null)} />}
       {canEdit && <SaveBar dirty={dirty || inv.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset(); maxPlayLengthDefaults.reset() }} />}
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
