@@ -734,8 +734,8 @@ if (!ONLY || "KB-C5".startsWith(ONLY)) queue.push(["KB-C5 tablet: the menu's Sta
 }]);
 
 // KB-C6: on Rob's iPad (Chrome, 21 Oct 2026) the tap reached the menu link as
-// pointer and touch events but the browser never sent the click. The touch
-// fallback in nav-shell.js clicks it; a tap whose click does arrive opens once.
+// pointer and touch events but the browser never sent the click. Touch taps
+// now click on pointerup (touch-click.js); the browser's own click is swallowed, so a tap opens once.
 if (!ONLY || "KB-C6".startsWith(ONLY)) queue.push(["KB-C6 tablet: a touch tap whose click never arrives still opens Staff Kanban; a normal tap clicks once", async () => {
   const op = await h.open({ seed: kanbanSeed(), hash: "", width: 1210, height: 696, contextOptions: { isMobile: true, hasTouch: true } });
   const o = op.page;
@@ -750,7 +750,7 @@ if (!ONLY || "KB-C6".startsWith(ONLY)) queue.push(["KB-C6 tablet: a touch tap wh
   });
   await until(() => o.locator(".kb-card").count(), "the board after a tap with no click", 15000);
   assert.equal(await o.evaluate(() => location.hash), "#staff-kanban");
-  assert.equal(await o.evaluate(() => window.__navClicks), 1, "the fallback clicked once");
+  assert.equal(await o.evaluate(() => window.__navClicks), 1, "the tap clicked once");
   // A real tap: the browser's own click cancels the fallback.
   await o.tap("#nav-ph-console-btn"); await o.waitForTimeout(150);
   await o.evaluate(() => { window.__navClicks = 0; });
