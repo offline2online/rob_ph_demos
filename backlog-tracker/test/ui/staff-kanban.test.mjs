@@ -132,6 +132,44 @@ const speechStub = (phrase) => ({
 const viewerSeed = () => kanbanSeed({ user: { email: emailOf("Thảo"), role: "viewer" } });
 const PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 const methodOf = (p) => (p.profile.kind === "phone" ? "status" : p.profile.touch ? "touch" : "drag");
+// Android Chrome's recogniser (21 Oct 2026: "add add add a new add a new
+// Epic…" on a phone). In continuous mode every guess is a final, each the
+// whole utterance so far; otherwise the guesses are interim and one final
+// ends the session. Either way the session ends after the utterance, and
+// each new session says the next one. window.__srContinuous records each
+// session's mode. `android`: the page sees an Android user agent.
+const ANDROID_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36";
+const androidSpeech = (utterances, { android = false } = {}) => ({
+  arg: { utterances, ua: android ? ANDROID_UA : "" },
+  fn: ({ utterances: said, ua }) => {
+    if (ua) Object.defineProperty(Navigator.prototype, "userAgent", { get: () => ua, configurable: true });
+    navigator.mediaDevices.getUserMedia = async () => ({ getTracks: () => [{ stop() {} }] });
+    window.__srContinuous = [];
+    let next = 0;
+    window.SpeechRecognition = class {
+      start() {
+        this.ended = false;
+        window.__srContinuous.push(this.continuous);
+        const words = said[next++];
+        if (!words) return;
+        const all = words.split(" ");
+        const guesses = all.map((_, i) => all.slice(0, i + 1).join(" "));
+        guesses.unshift(guesses[0]); // Android sends some guesses twice
+        const results = [];
+        guesses.forEach((g, i) => setTimeout(() => {
+          if (this.ended) return;
+          const last = i === guesses.length - 1;
+          const index = results.length && !results[results.length - 1].isFinal ? results.length - 1 : results.length;
+          results[index] = Object.assign([{ transcript: g }], { isFinal: this.continuous || last });
+          if (this.onresult) this.onresult({ resultIndex: index, results: results.slice() });
+          if (last) setTimeout(() => { if (!this.ended) { this.ended = true; if (this.onend) this.onend(); } }, 20);
+        }, 30 * (i + 1)));
+      }
+      stop() { if (!this.ended) { this.ended = true; setTimeout(() => this.onend && this.onend(), 10); } }
+      abort() { this.ended = true; }
+    };
+  },
+});
 
 console.log("\nStaff Kanban — console end to end\n");
 // ── TC-01 … TC-25: the signed-off cases, now across the viewport matrix ────
@@ -650,6 +688,30 @@ T("KB-C4", "deep links: a report URL opens the report, and the hash follows the 
   assert.match(await p.title(), /Release report/);
   await press(p, '#kb-view [data-route="kanban"]'); await p.waitForSelector(".kb-card");
   assert.equal(await p.evaluate(() => location.hash), "#staff-kanban");
+  await p.done();
+});
+
+T("KB-C7", "Android: Record task listens one utterance per session and writes each phrase once", async (prof) => {
+  const p = await open(prof, "#staff-kanban", { init: androidSpeech(["add a new Epic to the board", "Jack Johnson"], { android: true }) });
+  await press(p, "#kb-new-btn");
+  await press(p, "#f-record");
+  await until(async () => (await p.textContent("#f-voice-live")) === "add a new Epic to the board Jack Johnson", "both phrases in the live transcript, once each", 5000);
+  // The third session starts once the second has ended; wait for it rather than racing it.
+  await until(() => p.evaluate(() => window.__srContinuous.length >= 3), "the session after the last utterance", 5000);
+  assert.deepEqual(await p.evaluate(() => window.__srContinuous.filter(Boolean)), [], "never continuous mode on Android");
+  await press(p, "#f-record");
+  await until(async () => (await p.inputValue("#f-title")).length > 0, "the agent to fill the title");
+  assert.doesNotMatch(await p.$eval("#f-description .ql-editor", (e) => e.innerText), /add add|Epic add/i);
+  await p.done();
+});
+
+T("KB-C8", "Android unrecognised (Desktop site): cumulative finals are written once, then continuous mode stops", async (prof) => {
+  const p = await open(prof, "#staff-kanban", { init: androidSpeech(["add a new Epic to the board", "Jack Johnson"]) });
+  await press(p, '.kb-card[data-key="PH-23"]');
+  await press(p, "#f-comment-mic");
+  await until(async () => (await p.$eval('[data-field="comments"] .ql-editor', (e) => e.innerText.trim())) === "Add a new Epic to the board Jack Johnson", "both phrases in the comment box, once each", 5000);
+  assert.deepEqual(await p.evaluate(() => window.__srContinuous.slice(0, 2)), [true, false], "the first session's cumulative finals switch the rest to one utterance each");
+  await press(p, "#f-comment-mic");
   await p.done();
 });
 

@@ -916,6 +916,12 @@ ends, stalls with no end event, network blips, a throwing `start()` and
 typing mid-dictation must all keep the run going, while the stop click,
 adding a ticket or comment, and closing the form must end it and release
 the microphone (REQUIREMENTS.md → "Dictation never cuts off by itself").
+**`test/dictation-results.test.mjs`** (21 Oct 2026) covers
+`public/js/dictation-results.js`, which turns recognition results into text
+for every mic in the console, the Staff Kanban's included: Android Chrome's
+continuous mode sends each guess as a final, so a phrase was written out
+again with every new word (REQUIREMENTS.md → "Every mic writes each phrase
+once, Android included").
 **`test/ui/new-item-voice.test.mjs`** (20 Oct 2026) drives the New item
 modal's voice-first Record button in Chromium with a scripted
 `SpeechRecognition` and `getUserMedia`, at 1280 and 390 px: button states,
