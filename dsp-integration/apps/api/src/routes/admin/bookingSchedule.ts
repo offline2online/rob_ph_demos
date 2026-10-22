@@ -166,6 +166,13 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     if (!t) targetedMemo.set(campaignId ?? '', (t = targetedOf(ctx, campaignId)))
     return t
   }
+  /* A buyers list is the same for every position that names it: read once per request. */
+  const buyersListMemo = new Map<string, ReturnType<Context['buyersLists']['get']>>()
+  const buyersList = (id: string) => {
+    let l = buyersListMemo.get(id)
+    if (!l) buyersListMemo.set(id, (l = ctx.buyersLists.get(id)))
+    return l
+  }
   const firstSellableMemo = new Map<number, number>()
   /* Real-time (open / whitelist-only) positions are sold per impression and
      never booked ahead (ticket vhRFN1K3N4Giw1Z0OEI6, 8 Oct 2026): instead of
@@ -203,7 +210,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     const realTime = isRealtime(p)
     /* The flights of the live Direct advertiser deals on this position: a window in one that the exchange has not booked
        yet is reserved for the deal's advertiser, not available to anyone else (E2E 21 Oct 2026: it read Available). */
-    const directFlights = (await Promise.all(assignedOf(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id))))
+    const directFlights = (await Promise.all(assignedOf(p.def).buyersListIds.map(buyersList)))
       .filter((l): l is NonNullable<typeof l> => !!l && l.dealType === 'direct' && l.status === 'shared')
     const windows = []
     for (const column of starts) {
