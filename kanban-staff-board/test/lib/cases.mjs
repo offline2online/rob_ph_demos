@@ -195,7 +195,9 @@ export function defineNewCases(E) {
     assert.ok(eff && !/-/.test(eff), `Backlog effort ${eff}`);
     const before = (await headers(p))[0].effort;
     const k2 = await create(p, { title: "Adds effort", estimate: "3h" });
-    const after = (await headers(p))[0].effort;
+    // the console's header follows the write a moment later (on a CI phone run it was read before it moved)
+    let after = (await headers(p))[0].effort;
+    for (let i = 0; i < 50 && after === before; i++) { await sleep(100); after = (await headers(p))[0].effort; }
     assert.notEqual(after, before, `Backlog effort moved from ${before} to ${after} after adding ${k2}`);
     await p.done();
   });
