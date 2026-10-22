@@ -58,3 +58,30 @@ export const buyerStatusOf = (l: Pick<BuyersList, 'status' | 'termVersion' | 'bu
 }
 /* Guaranteed impressions are derived: committed plays x assumed views per play (stored: plays only). */
 export const impressionsOf = (plays: number | null | undefined, viewsPerPlay: number | null | undefined) => (plays != null && viewsPerPlay ? Math.round(plays * viewsPerPlay) : null)
+
+/* Details column (ticket nfDLP1CZiPjGfN8FG764, 21 Oct 2026): what a deal delivers over its whole flight, for the hover.
+   Signage, so plays are the measure: a slot's plays = plays per window per display x displays x windows a day x days in the flight
+   (calendar days, both ends included, as the API counts a term). Value is plays / 1000 x the CPM, or the term total split across
+   the slots by their share of the plays. A floor is the lowest value the deal can settle at, so it is flagged as "from". */
+export type DetailSlot = { playsPerWindow: number | null; displayCount: number | null; windowHours: number }
+export const flightDays = (from: string | null | undefined, to: string | null | undefined): number | null => {
+  if (!from || !to) return null
+  const a = Date.parse(from.slice(0, 10)), b = Date.parse(to.slice(0, 10))
+  return Number.isNaN(a) || Number.isNaN(b) || b < a ? null : Math.round((b - a) / 86_400_000) + 1
+}
+export const slotPlaysOver = (s: DetailSlot, days: number | null): number | null =>
+  days == null || s.playsPerWindow == null || s.displayCount == null || !(s.windowHours > 0) ? null : Math.round(s.playsPerWindow * s.displayCount * (24 / s.windowHours) * days)
+export type DealValue = { min: number; max: number; from: boolean }
+type ValueList = Pick<BuyersList, 'dealType' | 'lockedWin' | 'effectiveRateCpm' | 'termTotal'>
+/* The deal's value for `plays` plays (the whole deal's, or one slot's share of a term total); null with no rate to price at. */
+export const valueOf = (l: ValueList, plays: number, totalPlays: number): DealValue | null => {
+  if (l.lockedWin) { const v = (plays / 1000) * l.lockedWin.cpm; return { min: v, max: v, from: false } }
+  if (isGuaranteedLike(l.dealType) && l.termTotal != null) { const v = totalPlays > 0 ? (l.termTotal * plays) / totalPlays : 0; return { min: v, max: v, from: false } }
+  const r = l.effectiveRateCpm
+  return !r || r.min === null || r.max === null ? null : { min: (plays / 1000) * r.min, max: (plays / 1000) * r.max, from: cpmKind(l.dealType) === 'floor' }
+}
+export const valueText = (v: DealValue | null) => {
+  if (!v) return null
+  const f = (n: number) => Math.round(n).toLocaleString('en-US')
+  return `${v.from ? 'from ' : ''}USD ${Math.round(v.min) === Math.round(v.max) ? f(v.min) : `${f(v.min)}–${f(v.max)}`}`
+}

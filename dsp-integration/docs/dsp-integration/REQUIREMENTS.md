@@ -2176,6 +2176,20 @@ It carries:
   Targeting, Flight dates (15 Oct 2026, ticket DbSVEGXNIWlYW68UQnY3). *Estimated volume* (was "Capacity") is an estimate
   of the plays per window available to the list from the criteria set on it,
   summed over its assigned positions; its tooltip says it is not a hard figure.
+- **Details column** (Rob, 21 Oct 2026; ticket nfDLP1CZiPjGfN8FG764): on the
+  Deals and buyers lists table, and on View Archived Deals, *Rate* and *Deal
+  type* are one **Details** column. The cell shows the rate and its rate
+  type, then the deal type and a one-line summary (slots, plays and value
+  over the flight). Its hover is a compact programmatic read that fits on
+  screen at 390 px and up: deal type, rate, flight dates and times, then per
+  slot the **total plays and total value over the whole flight** (not per
+  window; the Slots hover keeps the per-window slot copy), then the deal
+  total. Plays are the measure (signage): a slot's plays = plays per window
+  per display x displays x windows a day x calendar days in the flight; value
+  = plays / 1,000 x the CPM, or the term total split by each slot's share of
+  the plays; a floor is shown as "from". An open-ended flight has no total.
+  A Direct advertiser deal gets the same cell, with the advertiser and the
+  internal deal ID in the hover. Beyond five slots the hover says "+ N more".
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.

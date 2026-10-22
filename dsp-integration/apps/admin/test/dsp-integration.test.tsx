@@ -897,24 +897,37 @@ describe('Advertisers / Inventory', () => {
     expect(within(table).queryByText('24,960')).toBeNull()
   })
 
-  /* Ticket qnA1jQbjNdP8U0SCtgM9 (21 Oct 2026): a total for the term drops the equivalent CPM; hovering it lists each slot's anticipated plays and the plays after the guarantee buffer. */
-  it('shows the total for the term alone, with each slot’s anticipated and buffer-adjusted plays on hover', async () => {
+  /* Ticket nfDLP1CZiPjGfN8FG764 (22 Oct 2026): the Details hover totals each slot's plays and value over the whole flight, with the deal total, and carries no per-window slot copy. */
+  it('shows each slot’s total plays and value over the flight, and the deal total, on the Details hover', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
     const row = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }
     const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_1', buyersListIds: ['bl_1'] }
+    const base = { description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: '2026-11-01T00:00:00Z', activeTo: '2026-11-10T00:00:00Z' }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...ADVERTISER_PAGE,
-      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'guaranteed', termTotal: 500, equivalentCpm: { min: 5, max: 5 } }] },
-      '/api/admin/v1/available-inventory': { ...inv, items: [{ ...row, assignedTo: assigned }] },
+      '/api/admin/v1/buyers-lists': { items: [
+        { ...base, id: 'bl_1', name: 'Pharma brands', dealType: 'guaranteed', termTotal: 500, equivalentCpm: { min: 5, max: 5 } },
+        { ...base, id: 'bl_2', dealId: 'PH-DIRECT0001', name: 'Direct deal', dealType: 'direct', invitedBuyers: [{ partnerId: 'direct', seatId: 'adv_x' }], effectiveRateCpm: { min: 4, max: 4, source: 'buyer' } },
+      ] },
+      '/api/admin/v1/available-inventory': { ...inv, items: [{ ...row, assignedTo: assigned }, { ...row, slot: 5, zoneSlot: 5, displayCount: 1, assignedTo: { ...assigned, buyersListId: 'bl_2', buyersListIds: ['bl_2'] } }] },
     })))
     renderAt('/advertisers')
     const table = await screen.findByLabelText('Deals and buyers lists')
-    const rate = await within(table).findByText('USD 500 for the term')
-    expect(within(table).queryByText(/CPM/)).toBeNull()
-    fireEvent.mouseOver(rate)
-    const tip = await screen.findByRole('tooltip')
-    expect(within(tip).getByText(/Anticipated plays: .* expected in total/)).toBeInTheDocument()
-    expect(within(tip).getByText(/after the 10% buffer/)).toBeInTheDocument()
+    /* 1,920 plays per window per display x 12 displays x 1 window a day x 10 days. */
+    expect(await within(table).findByTestId('details-summary-bl_1')).toHaveTextContent('Programmatic guaranteed · 1 slot · 230,400 plays · USD 500')
+    expect(within(table).getByTestId('rate-type-bl_1')).toHaveTextContent('Fixed per term')
+    fireEvent.mouseOver(within(table).getByTestId('details-summary-bl_1'))
+    const tip = await screen.findByTestId('details-tip-bl_1')
+    expect(within(tip).getByTestId('details-slot-bl_1-0')).toHaveTextContent('230,400 plays · USD 500')
+    expect(within(tip).getByTestId('details-total-bl_1')).toHaveTextContent('Deal total: 230,400 plays · USD 500')
+    expect(tip).toHaveTextContent('USD 500 for the term')
+    expect(tip).not.toHaveTextContent(/per window|IAB zone|buffer/)
+    /* A Direct advertiser deal gets the same cell, with the advertiser and the internal deal ID. 19,200 plays x 4 CPM / 1000. */
+    fireEvent.mouseOver(within(table).getByTestId('details-summary-bl_2'))
+    const direct = await screen.findByTestId('details-tip-bl_2')
+    expect(direct).toHaveTextContent('Advertiser: adv_x')
+    expect(direct).toHaveTextContent('Deal ID: PH-DIRECT0001')
+    expect(within(direct).getByTestId('details-total-bl_2')).toHaveTextContent('Deal total: 19,200 plays · USD 77')
   }, slow(30000))
 
   /* Ticket 5CCgGEYSkVoDTH9yNSYu (10 Oct 2026): the deal ID is minted by the platform, shown read-only, and never part of the save payload. */
@@ -1207,7 +1220,10 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const table = await screen.findByLabelText('Deals and buyers lists')
     expect(await within(table).findByText('Floor deal')).toBeInTheDocument()
-    for (const h of ['Rate', 'Buyers', 'Flight dates', 'Deal type', 'Deal ID']) expect(within(table).getAllByText(h).length).toBeGreaterThan(0)
+    for (const h of ['Details', 'Buyers', 'Flight dates', 'Deal ID']) expect(within(table).getAllByText(h).length).toBeGreaterThan(0)
+    /* Ticket nfDLP1CZiPjGfN8FG764: Rate and Deal type are one Details column. */
+    for (const gone of ['Rate', 'Deal type']) expect(within(table).queryByText(gone)).toBeNull()
+    expect(within(table).getByTestId('details-summary-bl_1')).toHaveTextContent('Private auction')
     for (const old of ['CPM', 'Invited buyers', 'Delivery term']) expect(within(table).queryByText(old)).toBeNull()
     expect(within(table).getByTestId('rate-type-bl_1')).toHaveTextContent('CPM floor')
     expect(within(table).getByTestId('rate-type-bl_2')).toHaveTextContent('CPM fixed')
@@ -1272,7 +1288,7 @@ describe('Advertisers / Inventory', () => {
     expect(await within(archive).findByText('Ended deal')).toBeInTheDocument()
     expect(within(archive).getByText('PH-OLD0000001')).toBeInTheDocument()
     expect(within(archive).getByText('system')).toBeInTheDocument()
-    expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(8)
+    expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(7)
   }, slow(45000))
 
   /* Ticket Zxw7VRUSytMAovkbDFKt: with the dealTargeting flag off (the default) a deal's tooltip shows no targeting. */
