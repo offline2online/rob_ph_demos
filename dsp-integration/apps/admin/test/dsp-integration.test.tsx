@@ -1302,6 +1302,8 @@ describe('Advertisers / Inventory', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Archive' }))
     await waitFor(() => expect(calls).toEqual(['/api/admin/v1/buyers-lists/bl_1/archive']))
     fireEvent.click(await screen.findByRole('button', { name: /View Archived Deals/ }))
+    /* A page of its own (ticket cy45L5xGDqKwzt4diBBa), not a dialog. */
+    expect(screen.queryByRole('dialog')).toBeNull()
     const archive = await screen.findByLabelText('Archived deals')
     expect(await within(archive).findByText('Ended deal')).toBeInTheDocument()
     expect(within(archive).getByText('PH-OLD0000001')).toBeInTheDocument()

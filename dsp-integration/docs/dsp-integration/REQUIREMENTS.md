@@ -353,8 +353,11 @@ the same dialog for both.
   share and acceptances answer `409`) and is not offered to DSPs, quoted or
   auctioned. Its deal ID, terms, history, campaigns, bookings and billing stay
   and still resolve for reporting and revenue. **View Archived Deals**, at the
-  top right of the Deals table, opens a historic table (AG Grid, a filter on
-  every column) of all archived deals: deal, deal type, buyers, rate / total,
+  top right of the Deals table, opens **Archived deals**, a full-screen page of
+  its own (`/advertisers/archived-deals`, with a back link to Advertisers /
+  Inventory; ticket cy45L5xGDqKwzt4diBBa, 22 Oct 2026) holding a historic
+  table (AG Grid, a filter under every column heading and a "Showing X of N"
+  count) of all archived deals: deal, deal type, buyers, rate / total,
   flight dates, deal ID, archived date and archived by. Archiving is recorded
   in the SSP change history (§3a).
 - **Automatic end of flight.** Once a shared deal's flight dates have ended and
