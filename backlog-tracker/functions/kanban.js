@@ -25,6 +25,10 @@ const db = () => require("firebase-admin/firestore").getFirestore();
 const TASKS = "kanbanTasks";
 
 // ── Member directory ──────────────────────────────────────────────────────
+// The console's bootstrap admins (mcp-server.js STATIC_ADMINS, firestore.rules)
+// are members without a consoleUsers row, so the sync below would otherwise
+// leave them off every assignee list.
+const BOOTSTRAP_ADMINS = ["rob@offline2online.com", "rob@personalisationhub.com"];
 function directoryEntry(email, row) {
   return {
     email,
@@ -39,7 +43,10 @@ async function syncMemberDirectoryWrite(event) {
   if (!email) return;
   const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
   const ref = db().collection("memberDirectory").doc(email);
-  if (!after) { await ref.delete(); return; }
+  if (!after) {
+    if (BOOTSTRAP_ADMINS.includes(email)) await ref.set(directoryEntry(email, {})); else await ref.delete();
+    return;
+  }
   const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
   // A sign-in stamp (lastLoginAt) changes nothing the directory holds.
   const same = before && ["displayName", "photoUrl", "disabled"].every((k) => before[k] === after[k])
@@ -62,6 +69,12 @@ async function syncWholeDirectory() {
     b.set(db().collection("memberDirectory").doc(email), directoryEntry(email, d.data() || {}));
     writes++;
   });
+  for (const email of BOOTSTRAP_ADMINS) {
+    if (want.has(email)) continue;
+    want.add(email);
+    b.set(db().collection("memberDirectory").doc(email), directoryEntry(email, {}));
+    writes++;
+  }
   for (const id of have) if (!want.has(id)) { b.delete(db().collection("memberDirectory").doc(id)); writes++; }
   if (writes) await b.commit();
   return { members: want.size };
@@ -186,7 +199,7 @@ async function handleDirectorySync(req, res, h) {
 function kanbanTools(h) {
   const { textResult, toolError, audit } = h;
   const tasks = () => db().collection(TASKS);
-  const PERSON = { type: "string", description: "A member's email address; kanban_list_people says who's who." };
+  const PERSON = { type: "string", description: "A member's email address, or \"me\" for yourself; kanban_list_people says who's who." };
   const KEY = { type: "string", description: "Ticket key, e.g. PH-36." };
   const normKey = (k) => { const n = core.keyNumber(String(k || "").trim().replace(/^ph\s*-?\s*/i, "PH-").replace(/^(\d+)$/, "PH-$1")); return n == null ? null : core.keyOf(n); };
 
@@ -194,10 +207,25 @@ function kanbanTools(h) {
     const s = await db().collection("kanbanSettings").doc("main").get();
     return core.normaliseSettings(s.exists ? s.data() : null);
   }
-  async function people() {
+  // The directory, plus the bootstrap admins and the caller when they have no
+  // consoleUsers row (so no directory entry yet).
+  async function people(session) {
     const snap = await db().collection("memberDirectory").get();
-    return snap.docs.map((d) => d.data() || {}).filter((m) => !m.disabled);
+    const list = snap.docs.map((d) => d.data() || {}).filter((m) => !m.disabled);
+    const have = new Set(snap.docs.map((d) => String(d.data().email || d.id).toLowerCase()));
+    for (const email of [...BOOTSTRAP_ADMINS, session && session.email]) {
+      const e = String(email || "").toLowerCase();
+      if (e && !have.has(e)) { have.add(e); list.push(directoryEntry(e, session && e === session.email ? { displayName: session.displayName } : {})); }
+    }
+    return list;
   }
+  // "me" means the authenticated member.
+  const meOr = (v, session) => (String(v || "").trim().toLowerCase() === "me" ? session.email : v);
+  const resolveMe = (args, session) => {
+    const out = Object.assign({}, args);
+    for (const k of ["assignee", "reporter"]) if (k in out) out[k] = meOr(out[k], session);
+    return out;
+  };
   async function firstNamer() {
     const [ppl, s] = await Promise.all([people(), settings()]);
     const map = new Map(ppl.map((p) => [p.email, (s.firstNames || {})[p.email] || String(p.displayName || p.email).split(/\s+/)[0]]));
@@ -265,8 +293,8 @@ function kanbanTools(h) {
       description: "Staff Kanban: who's on the board (email and the first name the board shows), the releases and sprints tickets can belong to, the current release and the tester Ready for Testing hands tickets to.",
       scope: "board.read",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      async run() {
-        const [ppl, s, rel, spr] = await Promise.all([people(), settings(), db().collection("releases").get(), db().collection("kanbanSprints").get()]);
+      async run(args, session) {
+        const [ppl, s, rel, spr] = await Promise.all([people(session), settings(), db().collection("releases").get(), db().collection("kanbanSprints").get()]);
         return textResult({
           people: ppl.map((p) => ({ email: p.email, name: (s.firstNames || {})[p.email] || String(p.displayName || p.email).split(/\s+/)[0], fullName: p.displayName || null })),
           releases: rel.docs.map((d) => ({ id: d.id, name: d.data().name, version: d.data().version || null, live: d.data().status === "live", date: s.releaseDates[d.id] || null })),
@@ -341,14 +369,14 @@ function kanbanTools(h) {
       description: "Staff Kanban: the release report — outstanding tickets, remaining effort, time logged and each person's remaining effort against capacity (6 focused hours per working day to the release date). Defaults to the current release.",
       scope: "board.read",
       inputSchema: { type: "object", properties: { release: { type: "string", description: "A release id, or \"all\"." }, assignee: { type: "string" }, status: { type: "string" } }, additionalProperties: false },
-      async run(args) {
+      async run(args, session) {
         const s = await settings();
         const release = args.release || s.currentRelease;
         if (!release) return toolError("No current release is set. Give a release id (kanban_list_people lists them).");
         const relDoc = release === "all" ? null : await db().collection("releases").doc(release).get();
         const all = await loadTasks({ release: release === "all" ? "" : release });
         const first = await firstNamer();
-        const r = core.releaseReport(all, { release, assignee: args.assignee || "", status: args.status || "" }, { people: (await people()).map((p) => p.email), releaseDate: s.releaseDates[release] || "", released: !!(relDoc && relDoc.exists && relDoc.data().status === "live") });
+        const r = core.releaseReport(all, { release, assignee: args.assignee || "", status: args.status || "" }, { people: (await people(session)).map((p) => p.email), releaseDate: s.releaseDates[release] || "", released: !!(relDoc && relDoc.exists && relDoc.data().status === "live") });
         return textResult({
           release, releaseName: relDoc && relDoc.exists ? relDoc.data().name : release === "all" ? "All releases" : release,
           releaseDate: s.releaseDates[release] || null, workingDaysLeft: r.workingDays,
@@ -365,6 +393,7 @@ function kanbanTools(h) {
       scope: "board.write",
       inputSchema: { type: "object", properties: Object.assign({}, WRITABLE), required: ["title"], additionalProperties: false },
       async run(args, session) {
+        args = resolveMe(args, session);
         const { value: v, errors } = core.cleanTaskFields(args);
         if (errors.length) return toolError(errors.join("; "));
         if (v.type === "epic") v.epic = "";
@@ -408,7 +437,7 @@ function kanbanTools(h) {
         const key = normKey(args.key);
         const cur = key && await getTask(key);
         if (!cur) return toolError(`No ticket ${args.key}.`);
-        const input = Object.assign({}, args); delete input.key;
+        const input = resolveMe(args, session); delete input.key;
         if (!Object.keys(input).length) return toolError("Nothing to change.");
         const { value: v, errors } = core.cleanTaskFields(input, { partial: true });
         if (errors.length) return toolError(errors.join("; "));
@@ -473,9 +502,9 @@ function kanbanTools(h) {
         const key = normKey(args.key);
         const cur = key && await getTask(key);
         if (!cur) return toolError(`No ticket ${args.key}.`);
-        const { value: v, errors } = core.cleanTaskFields({ assignee: args.assignee }, { partial: true });
+        const { value: v, errors } = core.cleanTaskFields({ assignee: meOr(args.assignee, session) }, { partial: true });
         if (errors.length) return toolError(errors.join("; "));
-        if (v.assignee && !(await people()).some((p) => p.email === v.assignee)) return toolError(`${v.assignee} isn't a member of the console.`);
+        if (v.assignee && !(await people(session)).some((p) => p.email === v.assignee)) return toolError(`${v.assignee} isn't a member of the console.`);
         const first = await firstNamer();
         const b = db().batch();
         b.update(tasks().doc(key), Object.assign({ assignee: v.assignee, previousAssignee: "" }, stamp(session.email)));
@@ -518,7 +547,7 @@ function kanbanTools(h) {
         const text = String(args.text || "").trim();
         if (!text) return toolError("text is required.");
         if (text.length > 4000) return toolError("A comment is limited to 4000 characters.");
-        const members = new Set((await people()).map((p) => p.email));
+        const members = new Set((await people(session)).map((p) => p.email));
         const mention = [...new Set((args.mention || []).map((e) => String(e).trim().toLowerCase()))].filter((e) => members.has(e) && e !== session.email);
         const b = db().batch();
         b.set(tasks().doc(key).collection("comments").doc(), { author: session.email, html: asHtml(text), text, mentions: mention, at: FieldValue.serverTimestamp() });

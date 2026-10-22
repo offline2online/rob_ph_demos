@@ -142,6 +142,17 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(task("PH-3").flagged, true);
   });
 
+  await test("an admin with no console row is a member: listed, assignable by email and as \"me\"", async () => {
+    const people = await tool(sam, "kanban_list_people", {});
+    assert.ok(people.json.people.some((p) => p.email === ROB));
+    const c = await tool(sam, "kanban_create_task", { title: "For me", assignee: "me" });
+    assert.ok(!c.isError, c.text); assert.strictEqual(task(c.json.key).assignee, SAM);
+    const a = await tool(sam, "kanban_assign_task", { key: c.json.key, assignee: ROB });
+    assert.ok(!a.isError, a.text); assert.strictEqual(task(c.json.key).assignee, ROB);
+    const m = await tool(sam, "kanban_assign_task", { key: c.json.key, assignee: "me" });
+    assert.ok(!m.isError, m.text); assert.strictEqual(task(c.json.key).assignee, SAM);
+  });
+
   await test("an epic: children listed, and losing its type unlinks them", async () => {
     const e = await tool(sam, "kanban_create_task", { title: "Menu Boards — scheduled local offers", type: "epic" });
     await tool(sam, "kanban_update_task", { key: "PH-1", epic: e.json.key });
@@ -208,7 +219,11 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     env.store.col("memberDirectory").clear();
     const r = await call({ method: "POST", path: "/mcp/kanban/directory-sync", headers: { "X-Firebase-ID-Token": signIn(KIT) } });
     assert.strictEqual(r.statusCode, 200);
-    assert.strictEqual(env.store.col("memberDirectory").size, env.store.col("consoleUsers").size);
+    // The bootstrap admins have no consoleUsers row but are members all the same.
+    const ids = [...env.store.col("consoleUsers").keys()];
+    for (const b of ["rob@offline2online.com", "rob@personalisationhub.com"]) if (!ids.includes(b)) ids.push(b);
+    assert.strictEqual(env.store.col("memberDirectory").size, ids.length);
+    assert.ok(env.store.col("memberDirectory").has("rob@offline2online.com"));
     const out = await call({ method: "POST", path: "/mcp/kanban/directory-sync", headers: { "X-Firebase-ID-Token": signIn("nobody@example.com") } });
     assert.strictEqual(out.statusCode, 403);
   });
