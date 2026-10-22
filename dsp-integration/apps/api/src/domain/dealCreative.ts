@@ -78,6 +78,7 @@ export async function dealOf(ctx: Context, list: BuyersList, rateCpm?: number, p
     dealType: list.dealType,
     activeFrom: list.activeFrom,
     activeTo: list.activeTo,
+    timeZoneMode: list.timeZoneMode ?? 'platform',
     auctionCloses: list.auctionCloses,
     ...(rateCpm !== undefined ? { rateCpm } : {}),
     /* Programmatic guaranteed (21 Oct 2026): the whole delivery term and the volume derived from the assigned slots, which a DSP is told. A total for the term also carries its equivalent CPM, for comparison with CPM deals. */

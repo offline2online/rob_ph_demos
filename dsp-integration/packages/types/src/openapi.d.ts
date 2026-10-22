@@ -857,7 +857,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table */
+        /** Every live buyers list (private-auction deal), for the Assigned to picker and the buyers lists table; ?archived=true lists the archive */
         get: operations["listBuyersLists"];
         put?: never;
         /** New buyers list — the buyers list and its deal terms are one object; the platform mints its immutable dealId (a client-supplied dealId is a 400) */
@@ -1019,8 +1019,27 @@ export interface paths {
          */
         put: operations["updateBuyersList"];
         post?: never;
-        /** Delete; 409 while any slot is still assigned to it */
-        delete: operations["deleteBuyersList"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/buyers-lists/{buyersListId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a deal (deals are never deleted); 409 while any slot is still assigned to it
+         * @description Replaces `DELETE /admin/v1/buyers-lists/{id}`. The archived deal leaves the live table and the Assigned to picker, takes no new bookings or bids and is read-only (`PUT`, share and acceptances answer 409 `conflict`), is not offered to DSPs and cannot be assigned to a slot. Its deal ID, terms, history, campaigns, bookings and billing stay and still resolve. Idempotent. Recorded in the SSP change history. A deal whose flight has ended and whose last window is billed is released from its slots and archived the same way by the scheduler, with `archivedBy` `system`.
+         */
+        post: operations["archiveBuyersList"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2432,6 +2451,11 @@ export interface components {
             /** @enum {string} */
             dealType: "private_auction" | "preferred" | "guaranteed" | "direct";
             activeFrom: string | null;
+            /**
+             * @description The time zone the flight is read in: platform (the platform time zone) or store (each store's own local time). Shown wherever the flight is displayed.
+             * @enum {string}
+             */
+            timeZoneMode?: "platform" | "store";
             activeTo: string | null;
             auctionCloses: string | null;
             /** @description The deal's resolved base floor in USD CPM. */
@@ -2474,6 +2498,11 @@ export interface components {
                 max: number;
             } | null;
             activeFrom: string | null;
+            /**
+             * @description The time zone the flight is read in: platform (the platform time zone) or store (each store's own local time). Shown wherever the flight is displayed.
+             * @enum {string}
+             */
+            timeZoneMode?: "platform" | "store";
             activeTo: string | null;
             auctionCloses: string | null;
             /** @description Guaranteed deals only: derived from the assigned slots over the whole delivery term, less the guarantee buffer. */
@@ -2681,6 +2710,16 @@ export interface components {
             overlapFrom: string | null;
             /** @description YYYY-MM-DD; null = open-ended. */
             overlapTo: string | null;
+            /**
+             * Format: date-time
+             * @description The exact moment the shared span starts (22 Oct 2026); null = open-ended.
+             */
+            overlapFromAt?: string | null;
+            /**
+             * Format: date-time
+             * @description The exact moment the shared span ends; null = open-ended.
+             */
+            overlapToAt?: string | null;
             /** @description A ready-to-show sentence naming the deal */
             message: string;
         };
@@ -2738,15 +2777,22 @@ export interface components {
          */
         BuyersList: {
             /**
-             * @description The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
+             * @description `archived`: the deal was archived (never deleted); see `archivedAt`, `archivedBy` and `POST .../archive`. The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
              * @enum {string}
              */
-            readonly status: "draft" | "shared";
+            readonly status: "draft" | "shared" | "archived";
             /**
              * Format: date-time
              * @description When the deal was shared; null while it is a draft. Lists that pre-date drafts are shared as of when they were created.
              */
             readonly sharedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the deal was archived; null while it is live.
+             */
+            readonly archivedAt: string | null;
+            /** @description Who archived it: the person's name, or `system` when its flight ended and its last window was billed. */
+            readonly archivedBy: string | null;
             /** @description Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry. */
             readonly assignedSlots: {
                 /** @description displayTypeId.sN */
@@ -2776,6 +2822,20 @@ export interface components {
             effectiveRateCpm: components["schemas"]["EffectiveTerm"];
             /** @description Programmatic guaranteed priced as a total for its term: the USD amount for the whole delivery term; null when it is priced as a CPM or is not guaranteed. */
             termTotal?: number | null;
+            /** @description True when the deal was saved with an explicit override of the below-floor warning (22 Oct 2026); shown as Below floor (override). */
+            belowFloorOverride?: boolean;
+            /** @description Who saved the override. */
+            belowFloorOverrideBy?: string | null;
+            /**
+             * Format: date-time
+             * @description When the override was saved.
+             */
+            belowFloorOverrideAt?: string | null;
+            /**
+             * @description The time zone the flight is read in: platform (the platform time zone) or store (each store's own local time). Shown wherever the flight is displayed.
+             * @enum {string}
+             */
+            timeZoneMode?: "platform" | "store";
             /** @description termTotal / forecast impressions over the term x 1000 across the assigned slots (min and max are the same blended figure). Null while the deal has no total for the term, no closed term or no assigned slot to forecast from. */
             readonly equivalentCpm?: {
                 min: number;
@@ -3094,7 +3154,7 @@ export interface components {
             slotCount: number;
             /** @description The devices registered to this slot's display type in PH Core (Displays & Devices), the same count the booking schedule shows. Available Inventory shows it in brackets after the playlist name, and multiplies playsPerWindow by it for the bracketed fleet total. Per display type, so the same on every row sharing a displayTypeId; not an orientation roll-up. Read-only. */
             displayCount: number;
-            /** @description Hours per day the display type's displays are open for plays (zone-based operating hours). 24 for an external zone (Exterior, Entrance & out of category); for an internal zone, or a display type with no zone, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
+            /** @description Hours per day the display type's displays are open for plays (its operating hours setting). 24 for 24 hours; the custom range's length for Custom; for Store hours, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
             openHoursPerDay: number;
             /** @description Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change. */
             playsPerWindow: number;
@@ -3208,6 +3268,36 @@ export interface components {
                             default: boolean;
                             localised: boolean;
                             personalised: boolean;
+                        };
+                        /**
+                         * @description Approval state of the tile (ticket
+                         *     S5PZyZ3MFr45LTM0zfAK, 22 Oct 2026). Approval is
+                         *     per campaign. `defaultApproved` is the booked
+                         *     campaign's own approval (its default creative);
+                         *     `defaultRisk` is `secured` when approved, else
+                         *     `at_risk` when this tile's own window starts in
+                         *     `startsInDays` <= 3 (or has started), else
+                         *     `warning`. `localised` / `personalised` count
+                         *     approved of submitted among this advertiser's
+                         *     campaigns booked on this position in the range
+                         *     shown, split by each campaign's own type
+                         *     (interactive counts as localised). There is no
+                         *     per-version approval.
+                         */
+                        approval?: {
+                            defaultApproved: boolean;
+                            /** @enum {string} */
+                            defaultRisk: "secured" | "at_risk" | "warning";
+                            /** @description Days from now to the start of this tile's window; negative once started. */
+                            startsInDays: number;
+                            localised: {
+                                approved: number;
+                                submitted: number;
+                            };
+                            personalised: {
+                                approved: number;
+                                submitted: number;
+                            };
                         };
                         /**
                          * @description Only when layers.personalised is true (ticket
@@ -3568,6 +3658,27 @@ export interface components {
              * @enum {string|null}
              */
             storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
+            /**
+             * @description When the display type's displays play, set at display type level
+             *     (ticket WvnAf6fR7snXV1C0z9PV, 22 Oct 2026); every display of the
+             *     type inherits it, there is no per-display override. The store
+             *     zone only sets the initial value: Exterior and Entrance start at
+             *     `24h`, every other zone (and no zone) at `store`. Absent reads as
+             *     the zone's value, so a display type that was never edited is
+             *     unchanged. Absent keeps the saved value; null clears it back to the
+             *     zone's value. `start` / `end` are kept only for `custom`.
+             */
+            operatingHours?: {
+                /**
+                 * @description `24h` (always open), `store` (the store's trading hours) or `custom` (start and end below).
+                 * @enum {string}
+                 */
+                mode: "24h" | "store" | "custom";
+                /** @description Custom only: opening time `HH:MM` in the platform time zone (UTC in this POC), the same every day. */
+                start?: string | null;
+                /** @description Custom only: closing time `HH:MM`, later than `start` on the same day (`24:00` allowed). */
+                end?: string | null;
+            } | null;
             slots: {
                 label: string;
                 /** @enum {string} */
@@ -5205,7 +5316,10 @@ export interface operations {
     };
     listBuyersLists: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description true returns only archived deals (View Archived Deals), newest archive first; otherwise archived deals are left out. */
+                archived?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5266,6 +5380,11 @@ export interface operations {
                      */
                     activeFrom: string | null;
                     /**
+                     * @description The time zone the flight's start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store's own local time, so a window starts and ends by that store's clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.
+                     * @enum {string}
+                     */
+                    timeZoneMode?: "platform" | "store";
+                    /**
                      * Format: date-time
                      * @description The delivery term's end; inclusive, null = no bound.
                      */
@@ -5287,6 +5406,8 @@ export interface operations {
                     committedPlays?: number | null;
                     /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
                     termTotal?: number | null;
+                    /** @description Preferred, Programmatic guaranteed and Direct advertiser deals only (22 Oct 2026): true to save a deal priced below the platform floor anyway (a fixed CPM under it, or a total for the term whose equivalent CPM is under the slots' floors). Without it such a price is refused (400, field floorCpm or termTotal). It has to be sent again on every save that keeps the deal below the floor; omitted or false on a save that is no longer below it. */
+                    belowFloorOverride?: boolean;
                     /** @description Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term. */
                     ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
@@ -5426,6 +5547,8 @@ export interface operations {
                     dealType?: string;
                     /** Format: date-time */
                     activeFrom?: string | null;
+                    /** @enum {string} */
+                    timeZoneMode?: "platform" | "store";
                     /** Format: date-time */
                     activeTo?: string | null;
                     displayTypeId?: string;
@@ -5548,6 +5671,11 @@ export interface operations {
                      */
                     activeFrom: string | null;
                     /**
+                     * @description The time zone the flight's start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store's own local time, so a window starts and ends by that store's clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.
+                     * @enum {string}
+                     */
+                    timeZoneMode?: "platform" | "store";
+                    /**
                      * Format: date-time
                      * @description The delivery term's end; inclusive, null = no bound.
                      */
@@ -5566,6 +5694,8 @@ export interface operations {
                     committedPlays?: number | null;
                     /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
                     termTotal?: number | null;
+                    /** @description Preferred, Programmatic guaranteed and Direct advertiser deals only (22 Oct 2026): true to save a deal priced below the platform floor anyway (a fixed CPM under it, or a total for the term whose equivalent CPM is under the slots' floors). Without it such a price is refused (400, field floorCpm or termTotal). It has to be sent again on every save that keeps the deal below the floor; omitted or false on a save that is no longer below it. */
+                    belowFloorOverride?: boolean;
                     /** @description Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term. */
                     ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
@@ -5606,7 +5736,7 @@ export interface operations {
             };
         };
     };
-    deleteBuyersList: {
+    archiveBuyersList: {
         parameters: {
             query?: never;
             header?: never;
@@ -5617,12 +5747,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
-            204: {
+            /** @description The archived deal */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
+                };
             };
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];

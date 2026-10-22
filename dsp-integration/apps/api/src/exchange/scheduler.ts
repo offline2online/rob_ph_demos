@@ -9,6 +9,7 @@ import { tx } from '../db/db'
 import { sweepRejectedCampaigns } from '../domain/campaignRetention'
 import { assignedOf, type BuyersList } from '@ph-dsp/types'
 import { isActiveAt } from '../billing/term'
+import { archiveEndedDeals } from '../domain/dealEnd'
 import { type PositionRef, allPositions, beyondPendingChange, assignmentOf, nextWindowFor, windowMsFor, windowStartOf } from '../domain/positions'
 import { releaseSettledSlotLocks } from '../domain/slotLock'
 import { sweepSettledReservations } from '../domain/reservationRetention'
@@ -69,6 +70,11 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   })
   /* Playback that arrived after its window was invoiced is never billed; it is
      recorded as lost revenue from downtime (settlement is final, billing/late.ts). */
+  /* A deal whose flight is over and whose last window is billed leaves its slots and is archived (domain/dealEnd.ts). */
+  await job('Deal end of flight', async () => {
+    const archived = await archiveEndedDeals(ctx)
+    if (archived.length) log(`Released and archived ${archived.length} deal${archived.length === 1 ? '' : 's'} whose flight ended: ${archived.join(', ')}.`)
+  })
   await job('Late playback', async () => {
     const late = await recordLatePlays(ctx)
     if (late) log(`Recorded ${late} late play${late === 1 ? '' : 's'} received after settlement as lost revenue from downtime.`)

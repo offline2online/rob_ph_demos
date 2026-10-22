@@ -60,17 +60,18 @@ describe.each([['Website', 'site', OPENRTB_26_SITE_REQUEST], ['Mobile App', 'app
     expect(sent).toHaveLength(0)
   })
 
-  it('takes a reserve, billing unit, campaign cap and named advertiser for the slot, as digital signage does', async () => {
+  it('takes a reserve, billing unit and campaign cap for the slot, and refuses a named advertiser, as digital signage does', async () => {
     const { put, app, id } = await setup(touchPoint)
     await put(slots)
     const item = (over: Record<string, unknown>) => ({ displayTypeId: id, slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, billingUnitHours: null, maxCampaigns: null, ...over })
     const save = (over: Record<string, unknown>) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [item(over)] } })
     expect((await save({})).statusCode).toBe(200)
-    /* An open slot can also be held for a named advertiser. */
     await put([slots[0], { label: 'Sidebar', owner: 'advertiser' }])
-    for (const over of [{ maxCampaigns: 3 }, { floorCpm: 150 }, { billingUnitHours: 24 }, { assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null } }]) {
+    for (const over of [{ maxCampaigns: 3 }, { floorCpm: 150 }, { billingUnitHours: 24 }]) {
       const res = await save(over)
       expect(res.statusCode, JSON.stringify(over) + res.body).toBe(200)
     }
+    /* No buyer is named on a slot (22 Oct 2026): it is sold through a deal. */
+    expect((await save({ assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null } })).statusCode).toBe(400)
   })
 })

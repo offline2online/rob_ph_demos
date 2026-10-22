@@ -36,6 +36,8 @@ const DIRECT_LABEL = 'Direct'
 const DAY = 86_400_000
 /* How far back a real-time position's plays are counted (ticket vhRFN1K3N4Giw1Z0OEI6, 8 Oct 2026). */
 export const RECENT_PLAYS_DAYS = 7
+/* A flight starting within this many days with its default still unapproved is at risk (ticket S5PZyZ3MFr45LTM0zfAK, 22 Oct 2026). */
+export const DEFAULT_RISK_DAYS = 3
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 export interface ScheduleFilter { campaignId?: string; advertiserId?: string; partnerId?: string }
@@ -43,6 +45,7 @@ export interface ScheduleFilter { campaignId?: string; advertiserId?: string; pa
 type Booking = NonNullable<BookingSchedule['positions'][number]['windows'][number]['booking']>
 type Layers = Booking['layers']
 type Triggers = Booking['personalisedTriggers']
+type Approval = NonNullable<Booking['approval']>
 type TargetedVersion = NonNullable<StoredTargeting['targeted']>[number]
 
 const targetedOf = async (ctx: Context, campaignId: string | null): Promise<TargetedVersion[]> =>
@@ -83,6 +86,14 @@ function triggersOf(targeted: TargetedVersion[], hasPersonalised: boolean): Trig
   return triggers
 }
 
+/* The tile's approval state (ticket S5PZyZ3MFr45LTM0zfAK, 22 Oct 2026). The default creative guarantees the slot is
+   filled: approved is secured; otherwise it is at risk (red) when this tile's own window starts within
+   DEFAULT_RISK_DAYS of now, else a warning (orange). The counters are approved of submitted among the advertiser's
+   campaigns booked on this position, split by each campaign's own type; there is no per-version approval. */
+export function approvalOf(defaultApproved: boolean, startsInDays: number, localised: Approval['localised'], personalised: Approval['personalised']): Approval {
+  return { defaultApproved, defaultRisk: defaultApproved ? 'secured' : startsInDays <= DEFAULT_RISK_DAYS ? 'at_risk' : 'warning', startsInDays, localised, personalised }
+}
+
 export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter = {}): Promise<BookingSchedule> {
   const len = await shortestWindowMs(ctx)
   const partners = await ctx.partners.list()
@@ -108,6 +119,20 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
   const live = new Map<string, ReservationRecord>()
   for (const r of await ctx.reservations.byStatus(TAKEN, new Date(from).toISOString(), new Date(to).toISOString())) {
     if (!r.testMode && r.clearingCpm !== null) live.set(`${r.positionId}|${r.windowStart}`, r)
+  }
+  /* The campaigns each advertiser has live on each position in this range, for the tile's approval counters. */
+  const campaignsOn = new Map<string, Set<string>>()
+  for (const r of live.values()) {
+    if (!r.advertiserId || !r.campaignId) continue
+    const k = `${r.positionId}|${r.advertiserId}`
+    campaignsOn.set(k, (campaignsOn.get(k) ?? new Set()).add(r.campaignId))
+  }
+  /* Approval is per campaign: its status and its type (localised / personalised) are read once each per request. */
+  const approvedMemo = new Map<string, Promise<boolean>>()
+  const isApproved = (campaignId: string) => {
+    let a = approvedMemo.get(campaignId)
+    if (!a) approvedMemo.set(campaignId, (a = Promise.resolve(ctx.approvals.statusOf(campaignId)).then((s) => s === 'approved')))
+    return a
   }
   const billed = await ctx.billing.amountsFor([...live.values()].map((r) => r.id))
   /* Per request, not per cell: a campaign's targeting and a window length's
@@ -194,13 +219,22 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
            its trigger icons. */
         const targeted = await targetedFor(r.campaignId)
         const layers = layersOf(targeted, r.pricingType)
+        const counts = { localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } }
+        for (const id of campaignsOn.get(`${r.positionId}|${r.advertiserId}`) ?? []) {
+          const t = (await ctx.campaigns.getCampaign(id))?.pricingType
+          const k = t === 'personalised' ? 'personalised' : t === 'localised' || t === 'interactive' ? 'localised' : null
+          if (!k) continue
+          counts[k].submitted++
+          if (await isApproved(id)) counts[k].approved++
+        }
+        const approval = approvalOf(await isApproved(r.campaignId as string), round2((start.getTime() - ctx.clock().getTime()) / DAY), counts.localised, counts.personalised)
         windows.push({
           start: column.toISOString(), status: 'booked' as const,
           booking: {
             reservationId: r.id, campaignId: r.campaignId as string, advertiserId: r.advertiserId, partnerId: r.partnerId,
             pricingType: type, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
             partnerName: r.partnerId === DIRECT_PARTNER_ID ? DIRECT_LABEL : partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
-            layers, personalisedTriggers: triggersOf(targeted, layers.personalised),
+            layers, personalisedTriggers: triggersOf(targeted, layers.personalised), approval,
           },
         })
         continue

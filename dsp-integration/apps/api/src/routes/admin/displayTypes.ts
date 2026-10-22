@@ -4,6 +4,7 @@ import type { DisplayType, DisplayTypeExtensions } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { tx } from '../../db/db'
+import { customHours } from '../../domain/dailyCapacity'
 import { dependentDetails, displayTypeDeleteCheck, liveCommitments } from '../../domain/deleteChecks'
 import { ensureReferencedPlaylists, validateRecord, zonesOf } from '../../domain/displayTypes'
 import { assignmentOf } from '../../domain/positions'
@@ -102,6 +103,11 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
       const dv = body.defaultVacd
       if (dv != null && !(Number.isInteger(dv) && dv >= 0)) errors.push({ field: 'defaultVacd', reason: 'A whole number of assumed views per play window, 0 or more.' })
       if (body.storeZone != null && !['exterior', 'entrance', 'checkout', 'aisles', 'other'].includes(body.storeZone)) errors.push({ field: 'storeZone', reason: 'One of exterior, entrance, checkout, aisles or other.' })
+      const oh = body.operatingHours
+      if (oh != null) {
+        if (!['24h', 'store', 'custom'].includes(oh.mode)) errors.push({ field: 'operatingHours.mode', reason: 'One of 24h, store or custom.' })
+        else if (oh.mode === 'custom' && !customHours(oh)) errors.push({ field: 'operatingHours', reason: 'Custom hours need a start and an end as HH:MM, the end later than the start on the same day.' })
+      }
       if (errors.length) throw validationFailed(errors)
       /* While the retailer has DSP integration switched off (Exchange settings),
          no NEW advertiser slot: a slot may be Advertiser only if it already was
@@ -127,6 +133,7 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
          manual one; clearing it clears the source. */
       const nextVacd = body.defaultVacd === undefined ? dt.phExtensions?.defaultVacd : body.defaultVacd
       const vacdSource = nextVacd == null ? null : nextVacd === dt.phExtensions?.defaultVacd ? dt.phExtensions?.defaultVacdSource ?? 'manual' : 'manual'
+      const nextHours = body.operatingHours === undefined ? dt.phExtensions?.operatingHours : body.operatingHours
       const ext: DisplayTypeExtensions = {
         slots: body.slots.map((s, i) => {
           const was = previous[i]
@@ -157,6 +164,8 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
         ...(dt.phExtensions?.floorCpm != null ? { floorCpm: dt.phExtensions.floorCpm } : {}),
         /* Absent keeps what is saved; null clears it (not defined). */
         ...((body.storeZone === undefined ? dt.phExtensions?.storeZone : body.storeZone) ? { storeZone: (body.storeZone === undefined ? dt.phExtensions?.storeZone : body.storeZone) as NonNullable<typeof body.storeZone> } : {}),
+        /* Absent keeps what is saved; null clears it (back to the zone's value). Start and end only mean something for custom. */
+        ...(nextHours ? { operatingHours: nextHours.mode === 'custom' ? { mode: 'custom' as const, start: nextHours.start!, end: nextHours.end! } : { mode: nextHours.mode } } : {}),
         ...((body.venue ?? dt.phExtensions?.venue) ? { venue: body.venue ?? dt.phExtensions?.venue } : {}),
       }
       return ctx.displayTypes.saveExtensions(req.params.id, ext)

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ReservingConflict } from '@ph-dsp/types'
 import { api } from '../../api/client'
 import { Callout } from '../../shared/Callout'
+import { flightMoment } from './effectiveTerm'
 
 type Answer = { conflicts: ReservingConflict[]; candidates: Record<string, ReservingConflict[]> }
 const NONE: Answer = { conflicts: [], candidates: {} }
@@ -31,7 +32,12 @@ export function useSlotConflicts(slot: { displayTypeId: string; slot: number } |
 }
 
 const date = (d: string | null, open: string) => d ?? open
-export const rangeLabel = (c: Pick<ReservingConflict, 'overlapFrom' | 'overlapTo'>) => (c.overlapFrom && c.overlapFrom === c.overlapTo ? c.overlapFrom : `${date(c.overlapFrom, 'the start')} to ${date(c.overlapTo, 'no end date')}`)
+/* With flight times (ticket yOginusgiFgFkwVHTRFH) a same-day clash is only visible in the hours, so the shared span is
+   shown to the minute when the API gives it (overlapFromAt/overlapToAt), else by date (E2E 22 Oct 2026). */
+export const rangeLabel = (c: Pick<ReservingConflict, 'overlapFrom' | 'overlapTo' | 'overlapFromAt' | 'overlapToAt'>) =>
+  c.overlapFromAt || c.overlapToAt
+    ? `${flightMoment(c.overlapFromAt ?? null) ?? 'the start'} to ${flightMoment(c.overlapToAt ?? null) ?? 'no end date'}`
+    : c.overlapFrom && c.overlapFrom === c.overlapTo ? c.overlapFrom : `${date(c.overlapFrom, 'the start')} to ${date(c.overlapTo, 'no end date')}`
 
 export function ConflictCallout({ conflicts, testId }: { conflicts: ReservingConflict[]; testId?: string }) {
   if (!conflicts.length) return null

@@ -331,11 +331,11 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(assigned(await save({ partnerIds: ['p_google', 'p_amazon'], advertisers: [], whitelistOnly: false })))
       .toMatchObject({ partnerIds: ['p_google', 'p_amazon'], partnerNames: ['Google DSP', 'Amazon Ads DSP'] })
 
-    /* Named advertisers: held for them, and their DSP comes along. */
+    /* No buyer is named on a slot (22 Oct 2026): a DSP's advertiser is refused too, pointing at deals. */
     const named = await save({ partnerIds: [], advertisers: ['Nestlé', 'Swisse'], whitelistOnly: false })
-    expect(assigned(named)).toMatchObject({ advertisers: ['Nestlé', 'Swisse'], partnerIds: ['p_google'], whitelistOnly: false })
-    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].listMode).toBe(null)
-    expect((await buildApp(ctx).inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: { authorization: 'Bearer poc-token-google-dv360' } })).statusCode).toBe(200)
+    expect(named.statusCode).toBe(400)
+    expect(JSON.stringify(named.json())).toMatch(/Nestlé can't be assigned to a slot directly.*deal/)
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].advertisers).toEqual([])
 
     /* The whitelist instead. */
     await ctx.partners.update('p_google', { allowList: ['5130001'] })
@@ -354,19 +354,18 @@ describe('Advertiser settings (spec §4, §6)', () => {
       return res.json().error.details.map((d: { field: string }) => d.field)
     }
     expect(await fields({ partnerIds: ['p_nope'], advertisers: [], whitelistOnly: false })).toEqual(['items[0].assignedTo.partnerIds'])
-    /* L'Oréal is an Amazon advertiser, not a Google one. */
     expect(await fields({ partnerIds: ['p_google'], advertisers: ["L'Oréal"], whitelistOnly: false })).toEqual(['items[0].assignedTo.advertisers'])
-    expect(await fields({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly'])
+    expect(await fields({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly', 'items[0].assignedTo.advertisers'])
     await ctx.partners.update('p_google', { allowList: [] })
     await ctx.partners.update('p_amazon', { allowList: [] })
     expect(await fields({ partnerIds: [], advertisers: [], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly'])
 
-    /* A blocked advertiser can't be added, but one already held stays. */
+    /* A name already held (what migration 0086 leaves on a sold slot) stays when the slot is resaved, even once blocked; none can be added. */
+    const dt = (await ctx.displayTypes.get('menu_board'))!
+    await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: dt.phExtensions!.slots.map((s, i) => (i === 1 ? { ...s, advertisers: ['Nestlé'], partnerIds: ['p_google'], listMode: null } : s)) })
     expect((await save({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false })).statusCode).toBe(200)
     await ctx.partners.update('p_google', { blockList: ['5130001'] })
     expect((await save({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false })).statusCode).toBe(200)
-    /* Once the position is held for someone else, Nestlé can't come back. */
-    expect((await save({ partnerIds: [], advertisers: ['Swisse'], whitelistOnly: false })).statusCode).toBe(200)
     expect(await fields({ partnerIds: [], advertisers: ['Nestlé', 'Swisse'], whitelistOnly: false })).toEqual(['items[0].assignedTo.advertisers'])
   })
 

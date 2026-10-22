@@ -85,7 +85,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const categoryLists = effectiveCategoryLists(company)
   const { width: w, height: h } = view.screen
   /* Resolved per-screen operating hours (zone-based), grouped by distinct hours: SSPs/DSPs read when each screen can play. */
-  const operatingHours = operatingHoursExt(p.displayType.phExtensions?.storeZone, await positionHourGroups(ctx, p))
+  const operatingHours = operatingHoursExt(p.displayType.phExtensions, await positionHourGroups(ctx, p))
   const inventory = openRtbInventoryOf(p.displayType.touchPoint)
   const publisher = { id: exchange.sellerId, name: exchange.organisation, domain: exchange.domain }
   const listId = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListId : undefined

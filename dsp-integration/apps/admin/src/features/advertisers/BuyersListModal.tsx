@@ -8,7 +8,7 @@
    least one assigned slot; opens FinaliseDealModal to confirm the slots, deal ID and terms) -> Share deal (inside that pop-up). */
 import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { ALL_DSPS, DIRECT_PARTNER_ID, isGuaranteedLike, OPERATOR_LABELS, formatAggregateValue, isAggregateVariable, parseAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable, type TermCheck } from '@ph-dsp/types'
+import { ALL_DSPS, DIRECT_PARTNER_ID, isGuaranteedLike, OPERATOR_LABELS, formatAggregateValue, isAggregateVariable, parseAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable, type TermCheck, type TimeZoneMode } from '@ph-dsp/types'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
@@ -22,25 +22,26 @@ import { TERM_TOTAL_HINT, equivalentCpmText, rateText, rateTypeOf, resolveTerm, 
 import { FinaliseDealModal } from './FinaliseDealModal'
 import { ConflictCallout, useFlightConflicts } from './reservingConflicts'
 
-type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; floorCpm: number | null; termTotal: number | null }
+type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; timeZoneMode: TimeZoneMode; auctionCloses: string | null; floorCpm: number | null; termTotal: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
 /* The full IAB Content Taxonomy 1.0, tier 1 then its subcategories. */
 const IAB_CATEGORY_OPTIONS = IAB_OPTIONS_SORTED
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
 /* The AWS POC supports programmatic guaranteed (plus open auction) only: the other deal types stay visible, greyed out, for demos. */
 const COMING_SOON = 'Coming in a future release. The POC supports programmatic guaranteed deals only.'
-const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'guaranteed', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, floorCpm: null, termTotal: null })
+const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'guaranteed', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, timeZoneMode: 'platform', auctionCloses: null, floorCpm: null, termTotal: null })
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description, dealType: l.dealType,
   invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
   invitedCategories: l.dealType === 'private_auction' ? [...(l.invitedCategories ?? [])] : [],
   targeting: (l.targeting ?? []).map((c) => ({ ...c, values: [...c.values] })),
-  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, floorCpm: l.floorCpm ?? null, termTotal: l.termTotal ?? null,
+  activeFrom: l.activeFrom, activeTo: l.activeTo, timeZoneMode: l.timeZoneMode ?? 'platform', auctionCloses: l.auctionCloses, floorCpm: l.floorCpm ?? null, termTotal: l.termTotal ?? null,
 })
-/* A Programmatic guaranteed flight is picked in whole days (20 Oct 2026; DOOH full-day takeover): the first day from 00:00 UTC, the last day to 23:59:59.999 UTC, so every day on the slot is a full 24 hours. */
-const dayStart = (d: dayjs.Dayjs) => `${d.format('YYYY-MM-DD')}T00:00:00.000Z`
-const dayEnd = (d: dayjs.Dayjs) => `${d.format('YYYY-MM-DD')}T23:59:59.999Z`
-const dayOf = (iso: string | null) => (iso ? dayjs(iso.slice(0, 10)) : null)
+/* A flight has a start and an end date AND time (22 Oct 2026), read in the deal's time zone mode. The times are shown exactly as saved: the picker never converts them to the browser's zone. An end picked at 23:59 means the end of that minute, so a whole-day flight still ends at 23:59:59.999. */
+const momentOf = (iso: string | null) => (iso ? dayjs(iso.slice(0, 19)) : null)
+const startIso = (d: dayjs.Dayjs) => `${d.format('YYYY-MM-DDTHH:mm')}:00.000Z`
+const endIso = (d: dayjs.Dayjs) => `${d.format('YYYY-MM-DDTHH:mm')}:${d.format('HH:mm') === '23:59' ? '59.999' : '00.000'}Z`
+const TIME_ZONE_OPTIONS: { value: TimeZoneMode; label: string }[] = [{ value: 'platform', label: 'Platform time zone' }, { value: 'store', label: 'Local store time' }]
 
 export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting = false }: {
   open: boolean
@@ -155,11 +156,28 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
     })
   })
 
-  const save = async (finalise = false) => {
+  /* Below-floor warning (Rob, 22 Oct 2026): a price under the platform floor is warned about, not blocked. Saving it is an explicit override, which the deal records. */
+  const confirmBelowFloor = (reasons: string[]) => new Promise<boolean>((resolve) => {
+    modal.confirm({
+      title: 'This deal is priced below the platform floor',
+      content: (
+        <div data-testid="below-floor-warning">
+          {reasons.map((r) => <p key={r}>{r}</p>)}
+          <p>You can save it anyway, for example a preferred supplier on an extended term with guaranteed sales. The deal will be marked Below floor (override).</p>
+        </div>
+      ),
+      okText: 'Save anyway (override)', cancelText: 'Keep editing',
+      onOk: () => resolve(true), onCancel: () => resolve(false),
+    })
+  })
+
+  const save = async (finalise = false, belowFloorOverride = false): Promise<void> => {
     if (tooManyForPg) return void setErrors({ invitedBuyers: 'A programmatic guaranteed deal is with one named buyer; remove the others, or create a separate deal for each advertiser.' })
+    /* A flight needs both ends, each a date and a time: a half-set one is not saved. */
+    if (!draft.activeFrom !== !draft.activeTo) return void setErrors({ activeTo: `Set the flight's ${draft.activeFrom ? 'end' : 'start'} date and time too, or clear both.` })
     setSaving(true)
     setErrors({})
-    const payload = showTargeting ? draft : { ...draft, targeting: [] }
+    const payload = { ...(showTargeting ? draft : { ...draft, targeting: [] }), ...(belowFloorOverride ? { belowFloorOverride: true } : {}) }
     try {
       if (editing) {
         const check = await api<TermCheck>('POST', `/admin/v1/buyers-lists/${editing.id}/term-check`, payload).catch(() => null)
@@ -187,6 +205,12 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
          of detail-less error). Always show a message; add field errors too
          when the API gave them. */
       const detailFields = e instanceof ApiRequestError ? (e.body?.error.details ?? []).filter((d) => d.field) : []
+      /* The API names the override in the reason of a below-floor refusal: ask, and save again with it if the retailer agrees. */
+      const belowFloor = detailFields.filter((d) => (d.field === 'floorCpm' || d.field === 'termTotal') && /belowFloorOverride/.test(d.reason ?? ''))
+      if (!belowFloorOverride && belowFloor.length) {
+        if (await confirmBelowFloor(belowFloor.map((d) => (d.reason ?? '').replace(/ Send belowFloorOverride: true to save it anyway\.$/, '')))) return save(finalise, true)
+        return void setErrors(Object.fromEntries(belowFloor.map((d) => [d.field as string, (d.reason ?? '').replace(/ Send belowFloorOverride: true to save it anyway\.$/, '')])))
+      }
       if (detailFields.length) setErrors(Object.fromEntries(detailFields.map((d) => [d.field as string, d.reason ?? 'Invalid.'])))
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).filter((d) => !d.field).map((d) => d.reason)].join(' ') : 'Could not save this buyers list.')
     } finally {
@@ -343,18 +367,15 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         })}
       </div>}
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip={guaranteed ? 'The delivery term: one deal covers the whole range (a single day is a one-day range). Both days are included. The committed plays are worked out over it, so give it both dates.' : 'The span this deal is awarded for (Start date to End date) — leave either side empty for no bound. Outside it, the deal admits nobody.'}>Flight dates</WithTip></label>
-        {guaranteed
-          ? <DatePicker.RangePicker
-            allowEmpty={[true, true]} style={{ width: '100%' }} aria-label="Flight days" format="D MMM YYYY"
-            value={[dayOf(draft.activeFrom), dayOf(draft.activeTo)]}
-            onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v?.[0] ? dayStart(v[0]) : null, activeTo: v?.[1] ? dayEnd(v[1]) : null }))}
-          />
-          : <DatePicker.RangePicker
-            allowEmpty={[true, true]} showTime style={{ width: '100%' }}
-            value={[draft.activeFrom ? dayjs(draft.activeFrom) : null, draft.activeTo ? dayjs(draft.activeTo) : null]}
-            onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v?.[0] ? v[0].toISOString() : null, activeTo: v?.[1] ? v[1].toISOString() : null }))}
-          />}
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip={guaranteed ? 'The delivery term: one deal covers the whole range, from its start time to its end time. Two reserving deals cannot overlap on a slot, but may share a day when their times do not. The committed plays are worked out over it, so give it both dates.' : 'The span this deal is awarded for (Start date to End date) — leave either side empty for no bound. Outside it, the deal admits nobody.'}>Flight dates</WithTip></label>
+        <div className="mb-2">
+          <label className="mb-1 block" htmlFor="buyersListTimeZone" style={{ fontSize: 12, color: T.muted }}><WithTip tip="Platform time zone reads the start and end times on the platform's clock. Local store time reads them on each store's or device's own clock, so a window starts and ends by that store's time.">Time zone</WithTip></label>
+          <Select id="buyersListTimeZone" aria-label="Time zone" style={{ width: '100%' }} value={draft.timeZoneMode} options={TIME_ZONE_OPTIONS} onChange={(timeZoneMode) => setDraft((d) => ({ ...d, timeZoneMode }))} />
+        </div>
+        <div className="flex gap-2">
+          <DatePicker showTime={{ format: 'HH:mm' }} format="D MMM YYYY HH:mm" allowClear style={{ flex: 1 }} aria-label="Flight start" placeholder="Start date and time" value={momentOf(draft.activeFrom)} onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v ? startIso(v) : null }))} />
+          <DatePicker showTime={{ format: 'HH:mm' }} format="D MMM YYYY HH:mm" allowClear style={{ flex: 1 }} aria-label="Flight end" placeholder="End date and time" value={momentOf(draft.activeTo)} onChange={(v) => setDraft((d) => ({ ...d, activeTo: v ? endIso(v) : null }))} />
+        </div>
         <ConflictCallout conflicts={flightConflicts} />
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
       </div>
@@ -378,11 +399,12 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         />
         {errors.termTotal && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.termTotal}</div>}
         {editing?.termTotal != null && editing.equivalentCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="equivalent-cpm">Equivalent CPM {equivalentCpmText(editing.equivalentCpm)} across the assigned slots</div>}
+        {editing?.belowFloorOverride && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }} data-testid="below-floor-override">Below floor (override){editing.belowFloorOverrideBy ? `: saved by ${editing.belowFloorOverrideBy}` : ''}. Saving it again below the floor asks for the override again.</div>}
         <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="rate-type">Rate type: {rateTypeOf(draft.dealType, draft.termTotal ?? 0)}</div>
       </div>
       ) : (
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. The rate for deals using this list, overriding the DSP's floor. It can raise the floor but never go below the platform floor. Leave empty to inherit.">{draft.dealType === 'preferred' || guaranteed ? 'Fixed CPM' : 'Rate'}</WithTip></label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. The rate for deals using this list, overriding the DSP's floor. It can raise the floor. On a Preferred or Programmatic guaranteed deal it can go below the platform floor only with an explicit override, and the deal is then marked Below floor (override). Leave empty to inherit.">{draft.dealType === 'preferred' || guaranteed ? 'Fixed CPM' : 'Rate'}</WithTip></label>
         <InputNumber
           id="buyersListFloorCpm" min={0} style={{ width: '100%' }} step={1} placeholder={rateText(rate) ?? 'Inherit the DSP or platform floor'}
           status={errors.floorCpm ? 'error' : undefined}
@@ -390,6 +412,8 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
           value={draft.floorCpm} onChange={(v) => setDraft((d) => ({ ...d, floorCpm: typeof v === 'number' && v > 0 ? v : null }))}
         />
         {errors.floorCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.floorCpm}</div>}
+        {/* A below-floor fixed CPM is flagged here too, not only a below-floor total (E2E 22 Oct 2026). */}
+        {editing?.belowFloorOverride && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }} data-testid="below-floor-override">Below floor (override){editing.belowFloorOverrideBy ? `: saved by ${editing.belowFloorOverrideBy}` : ''}. Saving it again below the floor asks for the override again.</div>}
         <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="effective-rate">
           {rateText(rate) ? `Rate: ${rateText(rate)} (${sourceLabel(rate.source)})` : 'Rate: per play'}
           <div data-testid="rate-type">Rate type: {rateTypeOf(draft.dealType)}</div>

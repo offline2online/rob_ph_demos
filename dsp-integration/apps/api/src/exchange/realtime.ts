@@ -101,7 +101,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   }
 
   /* Zone-based operating hours: outside them the screen plays house content. No bid request, and not an unsold opportunity (no missed revenue). */
-  if (!(await displayOpenAt(ctx, display, p.displayType.phExtensions?.storeZone, now))) return noFill('Unavailable — store closed')
+  if (!(await displayOpenAt(ctx, display, p.displayType.phExtensions, now))) return noFill('Unavailable — store closed')
   if (!isLive(await ctx.exchange.get())) return noFill('DSP integration is not live.')
   if (fallthrough) {
     const taken = (await ctx.reservations.forWindow(p.positionId, windowStart)).find((r) => !r.testMode && TAKEN.includes(r.status))

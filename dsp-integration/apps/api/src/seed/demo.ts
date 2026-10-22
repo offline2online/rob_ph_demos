@@ -68,6 +68,16 @@ const DEMO_DIRECT_DEALS = [
 ]
 const DIRECT_DEAL_IDS = new Set(DEMO_DIRECT_DEALS.map((d) => d.id))
 
+/* Nestlé's hold on Landscape's fourth slot is a Programmatic guaranteed deal with its Google DSP seat (22 Oct 2026, ticket
+   QdMaGvVhMZgcdcmIAalT): a buyer is never named on a slot. A one-week flight that starts today, so the demo shows it live. */
+const NESTLE_PG = { id: 'bl_demo_pg_nestle', advertiser: 'Nestlé', partnerId: 'p_google', seatId: '5130001', floorCpm: 200, campaignId: 'c_demo_nestle_kitkat' }
+const NESTLE_FLIGHT_MS = 7 * 24 * 3_600_000
+const nestleFlight = (now: Date) => {
+  const from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  /* Seven whole days, ending at the last millisecond of the seventh like every other flight (E2E 22 Oct 2026: it ended at 00:00 on the eighth, and one booking started at that instant). */
+  return { activeFrom: new Date(from).toISOString(), activeTo: new Date(from + NESTLE_FLIGHT_MS - 1).toISOString() }
+}
+
 /* Four sellable positions on Landscape, three on Portrait. Each display type
    inherits the platform floor; the hero slot on each carries a floor of its own
    (the hero slot is dearer). */
@@ -79,7 +89,8 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; slots: Sl
       /* Sold by window: the demo's private auction. Every other open slot is real time. */
       slot('Supplier slot', { partnerIds: ['p_google', 'p_ttd'], listMode: 'deal', buyersListId: DEMO_DEAL_ID }),
       slot('Whitelist slot', { listMode: 'whitelist_only' }),
-      slot('Held for Nestlé', { partnerIds: ['p_google'], advertisers: ['Nestlé'], listMode: null, }),
+      /* Sold through Nestlé's Programmatic guaranteed deal, never by naming the buyer on the slot. */
+      slot('Nestlé: guaranteed deal', { partnerIds: [], listMode: 'deal', buyersListId: NESTLE_PG.id, buyersListIds: [NESTLE_PG.id] }),
     ],
   },
   portrait: {
@@ -361,6 +372,15 @@ export async function seedDemo(ctx: Context) {
       })
     }
 
+    /* Nestlé's Programmatic guaranteed deal: its Google DSP seat, a fixed CPM, a one-week flight starting today. */
+    if (!(await ctx.buyersLists.get(NESTLE_PG.id))) {
+      await ctx.buyersLists.insert({
+        id: NESTLE_PG.id, name: `${NESTLE_PG.advertiser} guaranteed`, description: `${NESTLE_PG.advertiser} buys a week on Landscape's fourth slot through its Google DSP seat: a guaranteed deal at a fixed CPM, with no auction.`, dealType: 'guaranteed',
+        invitedBuyers: [{ partnerId: NESTLE_PG.partnerId, seatId: NESTLE_PG.seatId }], floorCpm: NESTLE_PG.floorCpm,
+        ...nestleFlight(ctx.clock()), auctionCloses: null,
+      })
+    }
+
     /* Slots: only on a display type that has no sellable position yet, so a
        hand-edited estate is never overwritten. */
     for (const [id, spec] of Object.entries(DEMO_SLOTS)) {
@@ -377,7 +397,7 @@ export async function seedDemo(ctx: Context) {
     }
   })
   /* Their committed plays are derived from the slots they hold, which were only just written (E2E 21 Oct 2026: they were null). */
-  await refreshCommittedPlays(ctx, DEMO_DIRECT_DEALS.map((d) => d.id), 'Demo seed')
+  await refreshCommittedPlays(ctx, [...DEMO_DIRECT_DEALS.map((d) => d.id), NESTLE_PG.id], 'Demo seed')
 
   /* Campaigns in every state. */
   const insertCampaign = ctx.db.prepare(
@@ -462,14 +482,13 @@ async function seedDemoBookings(ctx: Context) {
     /* Only what a position is assigned to can book it, so each advertiser
        rotates through the positions it may use (a DSP-only or direct
        advertiser would otherwise land on slots it can't book and show none). */
-    /* A direct advertiser reaches a slot only through its Direct advertiser deal, and a slot holding one is reserved
+    /* A direct advertiser reaches a slot only through its Direct advertiser deal, and a slot holding a guaranteed deal is reserved
        by it for the flight (22 Oct 2026): neither takes part in the rotation; their bookings are seeded below. */
     if (brand.partnerId === DIRECT_PARTNER) continue
     const eligible = positions.filter((p) => {
-      if ((p.def.buyersListIds ?? []).some((id) => DIRECT_DEAL_IDS.has(id))) return false
+      if ((p.def.buyersListIds ?? []).some((id) => DIRECT_DEAL_IDS.has(id) || id === NESTLE_PG.id)) return false
       const allowed = p.def.partnerIds ?? []
-      if (allowed.length && !allowed.includes(brand.partnerId)) return false
-      return !(p.def.advertisers ?? []).length
+      return !allowed.length || allowed.includes(brand.partnerId)
     })
     if (!eligible.length) continue
     for (let n = 0; n < 6; n++) {
@@ -504,29 +523,28 @@ async function seedDemoBookings(ctx: Context) {
     }
   }
 
-  /* A position held for a named advertiser is only ever theirs, so it
-     would sit nearly empty in the rotation above: give the holder a run of
-     windows on it. */
-  for (const position of positions) {
-    for (const [hi, name] of (position.def.advertisers ?? []).entries()) {
-      const brand = brands.find((x) => x.name === name)
-      if (!brand) continue
-      const dt = position.displayType
-      const campaignId = (await campaignOf(brand.advertiserId, 'localised')) ??
-        (await campaignFor(ctx, { ...brand, displayTypeId: dt.id }, '#37474f', dt.displayCanvasSize.width, dt.displayCanvasSize.height))
+  /* Nestlé's Programmatic guaranteed deal: a run of windows inside its one-week flight, at the deal's rate, on the slot it is attached to, each linked to the deal. */
+  {
+    const position = positions.find((p) => (p.def.buyersListIds ?? []).includes(NESTLE_PG.id))
+    const deal = await ctx.buyersLists.get(NESTLE_PG.id)
+    if (position && deal?.activeFrom && deal.activeTo && (await ctx.campaigns.getCampaign(NESTLE_PG.campaignId))) {
+      const advertiserId = advertiserSlug(NESTLE_PG.advertiser)
       const { len, first } = await gridOf(position)
-      for (const [k, day] of [1, 2, 5, 8, 12].map((d) => d * 2 + hi).entries()) {
-        const id = `res_demo_held_${position.positionId}_${brand.advertiserId}_${k}`
-        const start = new Date(first + day * len).toISOString()
+      const from = Math.max(first, Math.ceil((Date.parse(deal.activeFrom) - first) / len) * len + first)
+      for (const [k, step] of [0, 1, 3, 6, 10, 15].entries()) {
+        const start = new Date(from + step * len).toISOString()
+        /* The whole window has to fall inside the flight. */
+        if (Date.parse(start) + len > Date.parse(deal.activeTo) + 1) break
+        const id = `res_demo_pg_${advertiserId}_${k}`
         if (await ctx.reservations.get(id)) continue
         if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
-        const cpm = MONEY[(k + 3) % MONEY.length]
         await ctx.reservations.insert({
-          id, partnerId: brand.partnerId, advertiserId: brand.advertiserId, campaignId, positionId: position.positionId, windowStart: start,
-          type: 'reserve', channel: 'api', bidCpm: cpm, currency, status: 'reserved', clearingCpm: cpm, reason: null,
-          testMode: false, pricingType: 'localised', handedOffAt: new Date().toISOString(),
+          id, partnerId: NESTLE_PG.partnerId, advertiserId, campaignId: NESTLE_PG.campaignId, positionId: position.positionId, windowStart: start,
+          type: 'reserve', channel: 'api', bidCpm: NESTLE_PG.floorCpm, currency, status: 'reserved', clearingCpm: NESTLE_PG.floorCpm,
+          reason: `Reserved: ${deal.name} (${deal.dealId}), a Programmatic guaranteed deal with ${NESTLE_PG.advertiser} via Google DSP, booked for its one-week flight with no auction.`,
+          testMode: false, pricingType: 'personalised', handedOffAt: new Date().toISOString(), dealType: 'guaranteed', seatId: NESTLE_PG.seatId,
         })
-        await ctx.campaigns.bookSlot({ id: `bk_demo_held_${position.positionId}_${brand.advertiserId}_${k}`, campaignId, displayTypeId: dt.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
+        await ctx.campaigns.bookSlot({ id: `bk_demo_pg_${advertiserId}_${k}`, campaignId: NESTLE_PG.campaignId, displayTypeId: position.displayType.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
         written++
       }
     }

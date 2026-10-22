@@ -1195,8 +1195,10 @@ paths:
     get:
       tags: [Admin — Advertiser settings]
       operationId: listBuyersLists
-      summary: Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table
+      summary: Every live buyers list (private-auction deal), for the Assigned to picker and the buyers lists table; ?archived=true lists the archive
       security: [{adminSession: []}]
+      parameters:
+        - {name: archived, in: query, required: false, schema: {type: boolean}, description: 'true returns only archived deals (View Archived Deals), newest archive first; otherwise archived deals are left out.'}
       responses:
         '200':
           description: Buyers lists
@@ -1240,6 +1242,7 @@ paths:
                     shared targeting variable the retailer has enabled for EVERY
                     invited buyer's DSP (400 otherwise). Omitted = no targeting.
                 activeFrom: {type: [string, 'null'], format: date-time, description: 'The delivery term''s start; inclusive, null = no bound.'}
+                timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight''s start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store''s own local time, so a window starts and ends by that store''s clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.'}
                 activeTo: {type: [string, 'null'], format: date-time, description: 'The delivery term''s end; inclusive, null = no bound.'}
                 auctionCloses:
                   type: [string, 'null']
@@ -1252,6 +1255,7 @@ paths:
                 dealType: {type: string, enum: [private_auction, preferred, guaranteed, direct], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
                 committedPlays: {type: [integer, 'null'], description: 'Not accepted (21 Oct 2026): a guaranteed deal''s committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal.'}
                 termTotal: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
+                belowFloorOverride: {type: boolean, description: 'Preferred, Programmatic guaranteed and Direct advertiser deals only (22 Oct 2026): true to save a deal priced below the platform floor anyway (a fixed CPM under it, or a total for the term whose equivalent CPM is under the slots'' floors). Without it such a price is refused (400, field floorCpm or termTotal). It has to be sent again on every save that keeps the deal below the floor; omitted or false on a save that is no longer below it.'}
                 ratePerDay: {type: [number, 'null'], description: 'Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term.'}
                 floorCpm:
                   type: [number, 'null']
@@ -1344,6 +1348,7 @@ paths:
                 listId: {type: string}
                 dealType: {type: string}
                 activeFrom: {type: [string, 'null'], format: date-time}
+                timeZoneMode: {type: string, enum: [platform, store]}
                 activeTo: {type: [string, 'null'], format: date-time}
                 displayTypeId: {type: string}
                 slot: {type: integer, minimum: 1}
@@ -1433,6 +1438,7 @@ paths:
                     shared targeting variable the retailer has enabled for EVERY
                     invited buyer's DSP (400 otherwise). Omitted = no targeting.
                 activeFrom: {type: [string, 'null'], format: date-time, description: 'The delivery term''s start; inclusive, null = no bound.'}
+                timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight''s start and end times are read in (22 Oct 2026): platform (the platform time zone, the default) or store (each store''s own local time, so a window starts and ends by that store''s clock). Omitted on an edit means as it is. It is saved with the deal and shown wherever the flight is.'}
                 activeTo: {type: [string, 'null'], format: date-time, description: 'The delivery term''s end; inclusive, null = no bound.'}
                 auctionCloses:
                   type: [string, 'null']
@@ -1441,6 +1447,7 @@ paths:
                 dealType: {type: string, enum: [private_auction, preferred, guaranteed, direct], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).'}
                 committedPlays: {type: [integer, 'null'], description: 'Not accepted (21 Oct 2026): a guaranteed deal''s committed plays are derived from its assigned slots, its delivery term and the guarantee buffer, so a number here is refused (400). Read it back on the deal.'}
                 termTotal: {type: [number, 'null'], exclusiveMinimum: 0, description: 'Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type.'}
+                belowFloorOverride: {type: boolean, description: 'Preferred, Programmatic guaranteed and Direct advertiser deals only (22 Oct 2026): true to save a deal priced below the platform floor anyway (a fixed CPM under it, or a total for the term whose equivalent CPM is under the slots'' floors). Without it such a price is refused (400, field floorCpm or termTotal). It has to be sent again on every save that keeps the deal below the floor; omitted or false on a save that is no longer below it.'}
                 ratePerDay: {type: [number, 'null'], description: 'Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term.'}
                 floorCpm:
                   type: [number, 'null']
@@ -1453,14 +1460,20 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {description: 'error.code = conflict. A Programmatic guaranteed or Direct advertiser deal whose new delivery term overlaps another such deal on any slot it is assigned to (reserving deals never overlap on a slot, Rob, 22 Oct 2026). The message names the other deal, its advertiser, the slot and the overlapping dates; nothing is saved.', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    delete:
+
+  /admin/v1/buyers-lists/{buyersListId}/archive:
+    post:
       tags: [Admin — Advertiser settings]
-      operationId: deleteBuyersList
-      summary: Delete; 409 while any slot is still assigned to it
-      security: [{adminSession: []}]
+      operationId: archiveBuyersList
+      summary: Archive a deal (deals are never deleted); 409 while any slot is still assigned to it
+      description: |
+        Replaces `DELETE /admin/v1/buyers-lists/{id}`. The archived deal leaves the live table and the Assigned to picker, takes no new bookings or bids and is read-only (`PUT`, share and acceptances answer 409 `conflict`), is not offered to DSPs and cannot be assigned to a slot. Its deal ID, terms, history, campaigns, bookings and billing stay and still resolve. Idempotent. Recorded in the SSP change history. A deal whose flight has ended and whose last window is billed is released from its slots and archived the same way by the scheduler, with `archivedBy` `system`.
+      security: [{adminSession: [admin]}]
       parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
       responses:
-        '204': {description: Deleted}
+        '200':
+          description: The archived deal
+          content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/HasDependents'}
@@ -3137,6 +3150,7 @@ components:
         deals: {type: array, items: {$ref: '#/components/schemas/ListDeal'}, description: 'Admin view only: every DSP deal ID of the list.'}
         dealType: {type: string, enum: [private_auction, preferred, guaranteed, direct]}
         activeFrom: {type: [string, 'null']}
+        timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight is read in: platform (the platform time zone) or store (each store''s own local time). Shown wherever the flight is displayed.'}
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
         rateCpm: {type: number, description: The deal's resolved base floor in USD CPM.}
@@ -3160,6 +3174,7 @@ components:
         termDays: {type: [integer, 'null'], description: 'Programmatic guaranteed only: calendar days in the delivery term (null while either end is open).'}
         equivalentCpm: {type: [object, 'null'], required: [min, max], properties: {min: {type: number}, max: {type: number}}, description: 'Fixed per term only: the total as a CPM over the assigned slots'' forecast for the term; null until a slot is assigned.'}
         activeFrom: {type: [string, 'null']}
+        timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight is read in: platform (the platform time zone) or store (each store''s own local time). Shown wherever the flight is displayed.'}
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
         committedPlays: {type: [integer, 'null'], description: 'Guaranteed deals only: derived from the assigned slots over the whole delivery term, less the guarantee buffer.'}
@@ -3355,6 +3370,8 @@ components:
         positionId: {type: string}
         overlapFrom: {type: [string, 'null'], description: 'YYYY-MM-DD; null = open-ended.'}
         overlapTo: {type: [string, 'null'], description: 'YYYY-MM-DD; null = open-ended.'}
+        overlapFromAt: {type: [string, 'null'], format: date-time, description: 'The exact moment the shared span starts (22 Oct 2026); null = open-ended.'}
+        overlapToAt: {type: [string, 'null'], format: date-time, description: 'The exact moment the shared span ends; null = open-ended.'}
         message: {type: string, description: A ready-to-show sentence naming the deal, advertiser, slot and dates.}
     TermCheck:
       type: object
@@ -3410,15 +3427,17 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, status, sharedAt, assignedSlots, termVersion, buyerAcceptance, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
+      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, status, sharedAt, archivedAt, archivedBy, assignedSlots, termVersion, buyerAcceptance, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
       properties:
         status:
           type: string
-          enum: [draft, shared]
+          enum: [draft, shared, archived]
           readOnly: true
           description: |
-            The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
+            `archived`: the deal was archived (never deleted); see `archivedAt`, `archivedBy` and `POST .../archive`. The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
         sharedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the deal was shared; null while it is a draft. Lists that pre-date drafts are shared as of when they were created.}
+        archivedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the deal was archived; null while it is live.}
+        archivedBy: {type: [string, 'null'], readOnly: true, description: 'Who archived it: the person''s name, or `system` when its flight ended and its last window was billed.'}
         assignedSlots:
           type: array
           readOnly: true
@@ -3449,6 +3468,10 @@ components:
         effectiveCommittedPlays: {$ref: '#/components/schemas/EffectiveTerm'}
         effectiveRateCpm: {$ref: '#/components/schemas/EffectiveTerm'}
         termTotal: {type: [number, 'null'], description: 'Programmatic guaranteed priced as a total for its term: the USD amount for the whole delivery term; null when it is priced as a CPM or is not guaranteed.'}
+        belowFloorOverride: {type: boolean, description: 'True when the deal was saved with an explicit override of the below-floor warning (22 Oct 2026); shown as Below floor (override).'}
+        belowFloorOverrideBy: {type: [string, 'null'], description: 'Who saved the override.'}
+        belowFloorOverrideAt: {type: [string, 'null'], format: date-time, description: 'When the override was saved.'}
+        timeZoneMode: {type: string, enum: [platform, store], description: 'The time zone the flight is read in: platform (the platform time zone) or store (each store''s own local time). Shown wherever the flight is displayed.'}
         equivalentCpm:
           type: [object, 'null']
           readOnly: true
@@ -3782,7 +3805,7 @@ components:
           type: number
           minimum: 0
           maximum: 24
-          description: Hours per day the display type's displays are open for plays (zone-based operating hours). 24 for an external zone (Exterior, Entrance & out of category); for an internal zone, or a display type with no zone, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only.
+          description: Hours per day the display type's displays are open for plays (its operating hours setting). 24 for 24 hours; the custom range's length for Custom; for Store hours, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only.
         playsPerWindow:
           type: integer
           description: Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change.
@@ -3917,6 +3940,29 @@ components:
                             default: {type: boolean}
                             localised: {type: boolean}
                             personalised: {type: boolean}
+                        approval:
+                          type: object
+                          description: |
+                            Approval state of the tile (ticket
+                            S5PZyZ3MFr45LTM0zfAK, 22 Oct 2026). Approval is
+                            per campaign. `defaultApproved` is the booked
+                            campaign's own approval (its default creative);
+                            `defaultRisk` is `secured` when approved, else
+                            `at_risk` when this tile's own window starts in
+                            `startsInDays` <= 3 (or has started), else
+                            `warning`. `localised` / `personalised` count
+                            approved of submitted among this advertiser's
+                            campaigns booked on this position in the range
+                            shown, split by each campaign's own type
+                            (interactive counts as localised). There is no
+                            per-version approval.
+                          required: [defaultApproved, defaultRisk, startsInDays, localised, personalised]
+                          properties:
+                            defaultApproved: {type: boolean}
+                            defaultRisk: {type: string, enum: [secured, at_risk, warning]}
+                            startsInDays: {type: number, description: Days from now to the start of this tile's window; negative once started.}
+                            localised: {type: object, required: [approved, submitted], properties: {approved: {type: integer}, submitted: {type: integer}}}
+                            personalised: {type: object, required: [approved, submitted], properties: {approved: {type: integer}, submitted: {type: integer}}}
                         personalisedTriggers:
                           type: [object, 'null']
                           description: |
@@ -4306,6 +4352,22 @@ components:
             floor, which stays score-driven. Set on the display type; every
             slot inherits it. Absent keeps the saved value; null clears it
             (not defined, the default).
+        operatingHours:
+          type: [object, 'null']
+          required: [mode]
+          properties:
+            mode: {type: string, enum: ['24h', store, custom], description: '`24h` (always open), `store` (the store''s trading hours) or `custom` (start and end below).'}
+            start: {type: [string, 'null'], description: 'Custom only: opening time `HH:MM` in the platform time zone (UTC in this POC), the same every day.'}
+            end: {type: [string, 'null'], description: 'Custom only: closing time `HH:MM`, later than `start` on the same day (`24:00` allowed).'}
+          description: |
+            When the display type's displays play, set at display type level
+            (ticket WvnAf6fR7snXV1C0z9PV, 22 Oct 2026); every display of the
+            type inherits it, there is no per-display override. The store
+            zone only sets the initial value: Exterior and Entrance start at
+            `24h`, every other zone (and no zone) at `store`. Absent reads as
+            the zone's value, so a display type that was never edited is
+            unchanged. Absent keeps the saved value; null clears it back to the
+            zone's value. `start` / `end` are kept only for `custom`.
         slots:
           type: array
           items:

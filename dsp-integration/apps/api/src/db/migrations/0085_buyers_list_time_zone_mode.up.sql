@@ -1,0 +1,2 @@
+-- A deal's flight has start and end times, read in a time zone mode (ticket yOginusgiFgFkwVHTRFH, 22 Oct 2026): 'platform' (the platform time zone, the default) or 'store' (each store's own local time). Existing deals are untouched: a whole-day flight already runs 00:00:00 to 23:59:59.999 and is read in the platform time zone.
+ALTER TABLE buyers_lists ADD COLUMN time_zone_mode TEXT NOT NULL DEFAULT 'platform';

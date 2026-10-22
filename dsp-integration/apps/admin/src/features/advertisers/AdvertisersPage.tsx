@@ -161,8 +161,6 @@ type InvCtx = { current: {
   maxCampaignsDefaults: Defaults
   maxPlayLengthDefaults: Defaults
   dsps: DspAdvertisers[]
-  /* Direct advertisers' names: one can't be picked in Assigned to, but one still held on a sold slot is shown. */
-  directNames: string[]
   /* Each playlist's display types, listed once for the whole response rather than on every row. */
   playlistDisplayTypes: Record<string, PlaylistDisplayType[]>
   buyersLists: BuyersList[]
@@ -442,18 +440,6 @@ function AssignedCell({ data, context }: IP) {
   const c = context.current
   const a = edited(c, data).assignedTo
   const dspNames = new Map(c.dsps.map((d) => [d.partnerId, d.name]))
-  /* An advertiser can buy through more than one DSP (e.g. Unilever via both
-     Google DSP and The Trade Desk, same as the Advertisers table's own "Via"
-     column) — one option per advertiser, not per DSP-advertiser pairing,
-     otherwise two options share the same `adv:<name>` value and Select can
-     only ever treat one of them as selected (Rob, 23 Sep — failed testing,
-     "bug with the presentation of the individual advertisers list"). */
-  const advertiserDsps = new Map<string, string[]>()
-  for (const d of c.dsps) for (const x of d.advertisers) {
-    const via = advertiserDsps.get(x.name) ?? []
-    if (!via.includes(d.name)) via.push(d.name)
-    advertiserDsps.set(x.name, via)
-  }
   const e = edited(c, data)
   const siblings = c.siblingsOf(data).length
   /* A buyers list does not suppress the global deal (12 Oct 2026): it sits in the open tier beneath the numbered lists. */
@@ -471,12 +457,9 @@ function AssignedCell({ data, context }: IP) {
         { value: ADD_BUYERS_LIST, label: '+ Add new deal and buyers list…' },
       ],
     },
-    { label: 'Advertisers', options: [
-      ...[...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })),
-      /* A direct advertiser can't be picked (21 Oct 2026), but one still held on a sold slot (migration 0082 keeps it
-         until its bookings have played) needs an option, or its chip reads "adv:Name". Disabled: it can't be re-added. */
-      ...a.advertisers.filter((n) => !advertiserDsps.has(n) && c.directNames.includes(n)).map((n) => ({ value: `adv:${n}`, label: `${n} (Direct)`, disabled: true, note: 'Kept until its bookings have played. Direct advertisers get slots through a Direct advertiser deal.' })),
-    ] },
+    /* No buyer is picked by name (22 Oct 2026): a slot is sold only through a deal or an open auction. A name still held on a sold slot
+       (migration 0086 keeps it until its bookings have played) needs an option, or its chip reads "adv:Name". Disabled: it can't be re-added. */
+    ...(a.advertisers.length ? [{ label: 'Held until bookings have played', options: a.advertisers.map((n) => ({ value: `adv:${n}`, label: n, disabled: true, note: 'Buyers get slots through a deal. Kept until its bookings have played.' })) }] : []),
     { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }, { value: GLOBAL_CHIP, label: GLOBAL_CHIP_LABEL, disabled: !!suppressed, note: suppressed ? `Unavailable: this slot is ${suppressed}.` : undefined }] },
   ]
   return (
@@ -1077,7 +1060,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        type): the page finds that display type's default playlist and opens
        its settings. */
     open: (id: string) => navigate(`/playlists?displayTypeId=${encodeURIComponent(id)}`),
-    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], directNames: (q.data?.items ?? []).filter((a) => a.direct).map((a) => a.name), playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {},
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {},
     buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
     setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
@@ -1098,10 +1081,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
   const countedTypes = new Map<string, Set<string>>()
   /* The slots each list is assigned to, for the Slots column's hover on the Deals and buyers lists table. */
-  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }[]>()
+  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }[]>()
   for (const r of invRows) {
     for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
-      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r) }])
+      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r) }])
     }
     if (typeof r.displayCount !== 'number') continue
     const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount

@@ -34,7 +34,7 @@ export async function forecastPlaysPerDayOf(ctx: Context, p: PositionRef): Promi
   const company = await ctx.company.get()
   const displays = await ctx.displays.listByDisplayType(p.displayType.id)
   const stores = new Map((await ctx.stores.list()).map((s) => [s.id, s]))
-  const openHours = openHoursPerDayOf(hourGroups(p.displayType.phExtensions?.storeZone, displays, stores))
+  const openHours = openHoursPerDayOf(hourGroups(p.displayType.phExtensions, displays, stores))
   const perWindow = playsPerWindowOpenOf(windowMsFor(p), maxPlayLengthSecFor(company.maxPlayLengthSec, p), rotationSizeOf(p.displayType, p.slot), openHours) * displays.length
   return Math.round((perWindow * HOURS_PER_DAY) / windowHoursFor(p))
 }

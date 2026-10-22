@@ -42,7 +42,7 @@ export async function bookingCapacity(ctx: Context, days: Date[]): Promise<Booki
       for (const [storeId, screens] of perStore) {
         const s = stores.get(storeId)
         if (s && !keep(s.segments)) continue
-        const hours = operatingHours(p.displayType.phExtensions?.storeZone, s)
+        const hours = operatingHours(p.displayType.phExtensions, s)
         const key = `${hours.open}-${hours.close}`
         const g = byHours.get(key) ?? { hours, screens: 0 }
         g.screens += screens

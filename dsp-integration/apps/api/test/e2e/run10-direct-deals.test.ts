@@ -52,12 +52,12 @@ describe('Run 10 — Flow 3: a direct advertiser reaches a slot through a Direct
     expect(rb?.seats ?? []).toEqual([])
   })
 
-  it('X1a — a direct advertiser cannot be put in Assigned to; the refusal points to a Direct advertiser deal', async () => {
+  it('X1a — no advertiser can be put in Assigned to; the refusal points to a Direct advertiser deal', async () => {
     const h = await harness()
     await h.app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Red Bull' } })
     const res = await h.app.inject({ method: 'PUT', url: INV, payload: { items: [{ displayTypeId: DT, slot: 1, floorCpm: null, assignedTo: { partnerIds: [], advertisers: ['Red Bull'], whitelistOnly: false } }] } })
     expect(res.statusCode).toBe(400)
-    expect(JSON.stringify(res.json())).toMatch(/Red Bull is a direct advertiser.*Direct advertiser deal/)
+    expect(JSON.stringify(res.json())).toMatch(/Red Bull can't be assigned to a slot directly.*Direct advertiser deal/)
   })
 
   it('X1b — the deal carries an internal PH deal ID, flight dates and a price; it is one-to-one with the advertiser and has no DSP entries', async () => {
