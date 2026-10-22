@@ -22,6 +22,7 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { newBoardId, boardUrl } from "./whiteboard-core.js";
 import { APP_VERSION } from "./version.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
@@ -10352,6 +10353,24 @@ document.getElementById("faq-articles-btn").addEventListener("click", () => { cl
 document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
 document.getElementById("staff-kanban-btn").addEventListener("click", () => { closeNavDrawer(); openStaffKanbanPage(""); });
 document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
+
+// Whiteboard: each click starts a new board with its own 20-character id and
+// opens it full screen with the share panel showing (public/whiteboard.html).
+document.getElementById("whiteboard-btn").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    const id = newBoardId();
+    await setDoc(doc(db, "whiteboards", id), { shared: true, createdAt: serverTimestamp() });
+    closeNavDrawer();
+    location.href = boardUrl(id, location.href) + "&new=1";
+  } catch (err) {
+    console.warn("whiteboard create:", err);
+    alert("Couldn't start a whiteboard. Check your connection and try again.");
+    btn.disabled = false;
+  }
+});
 
 // Command-K: one flat list of everything a person might want to jump to.
 function navEntries() {

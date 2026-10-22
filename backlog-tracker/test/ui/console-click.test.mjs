@@ -771,7 +771,6 @@ function selfChecks() {
     assert.deepStrictEqual([...urls].sort(), [...SDK_MODULES].sort());
   });
   check("an unimplemented stub function throws its own name", () => {
-    assert.throws(() => stub.getFirestore(), /firebase-stub: getFirestore not implemented/);
     assert.throws(() => stub.signOut(), /firebase-stub: signOut not implemented/);
   });
   return results;

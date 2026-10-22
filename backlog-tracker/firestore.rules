@@ -938,5 +938,49 @@ service cloud.firestore {
         && (!("deploy" in incoming()) || (incoming().deploy is list && incoming().deploy.size() <= 20));
       allow delete: if isAdmin();
     }
+
+    // ── Whiteboard ─────────────────────────────────────────────────────────
+    // public/whiteboard.html. A board is whiteboards/{id} (id = 20 random
+    // letters/digits, made by the console) with its strokes underneath. The
+    // id in the link is the credential: anyone who has it can open the board
+    // and draw, erase and clear while shared is true, with no sign-in, so a
+    // board can be handed to someone outside the team. Boards are NOT listable
+    // by non-members, so an id cannot be found, only be given. Turning
+    // sharing off (shared: false) is a member's update and closes the strokes
+    // to everyone else. The board doc holds no email or name.
+    function whiteboardShared(boardId) {
+      let p = /databases/$(database)/documents/whiteboards/$(boardId);
+      return exists(p) && get(p).data.shared == true;
+    }
+    function validWhiteboardStroke() {
+      let d = incoming();
+      return d.keys().hasOnly(["g", "color", "size", "pts", "t"])
+        && d.g is string && d.g.size() >= 1 && d.g.size() <= 40
+        && d.color is string && d.color.matches("^#[0-9a-fA-F]{6}$")
+        && d.size is number && d.size > 0 && d.size <= 200
+        && d.pts is list && d.pts.size() >= 2 && d.pts.size() <= 4000 && d.pts.size() % 2 == 0
+        && d.pts[0] is number && d.pts[d.pts.size() - 1] is number
+        && d.t is number;
+    }
+    match /whiteboards/{boardId} {
+      allow get: if boardId.matches("^[A-Za-z0-9]{20}$");
+      allow list: if isBoardReader();
+      allow create: if isEditor()
+        && boardId.matches("^[A-Za-z0-9]{20}$")
+        && incoming().keys().hasOnly(["shared", "createdAt"])
+        && incoming().shared is bool
+        && incoming().createdAt == request.time;
+      allow update: if isEditor()
+        && incoming().diff(resource.data).affectedKeys().hasOnly(["shared"])
+        && incoming().shared is bool;
+      allow delete: if isAdmin();
+
+      match /strokes/{strokeId} {
+        allow read: if whiteboardShared(boardId) || isBoardReader();
+        allow create: if whiteboardShared(boardId) && validWhiteboardStroke();
+        allow delete: if whiteboardShared(boardId);
+        allow update: if false;
+      }
+    }
   }
 }
