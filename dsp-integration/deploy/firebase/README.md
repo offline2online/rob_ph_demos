@@ -85,9 +85,35 @@ save from a public URL (Rob's choice, 23 Sep 2026). What that means:
   deployed database predates it, so the migration left it **off**; switch
   it on in the prototype to see Campaign Status and Advertisers /
   Inventory. A reset seeds the demo retailer with it on.
-- **Reset:** run the workflow with `reset = RESET`. It deletes the saved
-  database and creatives (keeping the keys and tokens), redeploys, and the
-  new instance seeds the demo estate afresh.
+- **Reset wipes hand-made demo data. Never run it without the owner's
+  explicit go-ahead for that run** (an earlier "yes" does not cover the next
+  one). Two resets on 22 Oct 2026, run after releases, put the demo Rob had
+  set up by hand for the AWS demo back to seed data and kept no copy. A
+  normal deploy does not do this: a push to `main` starts a new instance
+  that restores the saved database (`host.ts` seeds only a database that did
+  not come from the store, and `seed()` itself only fills an empty one).
+  `apps/api/test/hosted.test.ts` pins that, and `migrations.test.ts` pins that
+  the migrations change only what they document.
+  Run the workflow with `reset = RESET` to wipe the saved database and
+  creatives (keeping the keys and tokens), redeploy, and have the new
+  instance seed the demo estate afresh.
+- **Backups.** Before a reset or a restore deletes anything, the workflow
+  copies all of `dspApiState` (database, creatives and `instance.json`, so
+  the keys) to the Firestore collection **`dspApiBackups/<timestamp>`**
+  (`functions/state-backup.mjs`; no rule in `firestore.rules`, so no browser
+  can read it; the newest 10 are kept). It is never an Actions artifact:
+  this repo is public.
+  - The workflow's one `reset` input also drives them (a workflow's `on:`
+    block can only change in a reviewed PR): `reset = BACKUP` takes one
+    without changing anything; `reset = LIST` prints them.
+  - `reset = RESTORE <timestamp>` puts a backup back before the deploy, so the
+    new instance cold-starts from it. It first backs up what is there now
+    ("before restore"), so a restore can be undone. The same script runs
+    locally: `GOOGLE_APPLICATION_CREDENTIALS=… node state-backup.mjs
+    list|backup|restore <timestamp>`.
+  - Migrations 0082 and 0086 clear named advertisers from slots by design
+    (written to the change history as `migration-0082`/`migration-0086`);
+    they run once, when a deploy first meets a database that lacks them.
 - A real deployment replaces all of this. It needs the platform's session
   (`SessionSource`), its token issuance and its database: see
   `docs/dsp-integration/api/PH-CORE-BOUNDARIES.md`.

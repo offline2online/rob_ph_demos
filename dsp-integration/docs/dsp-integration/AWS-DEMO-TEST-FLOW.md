@@ -155,10 +155,29 @@ Superseded by this section: Red Bull named in a slot's Assigned to; a direct adv
 
 **Seed note:** `npm run db:demo` gives Red Bull and Gatorade one Direct advertiser deal each on that slot, one after the other as the no-overlap rule (step 4) requires: Red Bull 1 Sep to 31 Dec 2026 at 180 CPM, Gatorade 1 Jan to 31 Mar 2027 at 150 CPM. Each books its own approved Portrait campaign (a PNG, so it hands off): "Red Bull — Wings at the chiller" and "Gatorade — Thirst Quencher". No DSP advertiser is booked on that slot.
 
+## G. Red Bull end to end — direct advertiser, from invite to a personalised play (demo path 3, full flow)
+
+Automated twin: `cd dsp-integration/apps/api && CI=1 npx vitest run test/e2e/run12-red-bull-demo.test.ts` (Run 12, one test per step; in `e2e:quick`). Rob's flow of 22 Oct 2026. Steps marked **PH Core** or **Visitor Profile** are done in that product; this build is checked at the seam it exposes to them.
+
+1. Company Settings → Users → **Add user**: role Advertiser, advertiser **Red Bull** (first add Red Bull under Advertisers / Inventory → Add direct advertiser), tick **Send invite**. **Expect** the user linked to Red Bull and marked invited. **PH Core** sends the invite email. *(Run 12 step 1; `POST /admin/v1/users` with `invite: true`)*
+2. DSP Integration → buyers lists → **New**, Deal type **Direct advertiser**, buyer Red Bull, flight 21 Sep to 20 Oct 2026 (30 days), Fixed CPM 150. Save. **Expect** a `PH-` deal ID. Finalise is refused until a slot is assigned (step 3). *(step 2)*
+3. Available Inventory: put the deal on 2 existing advertiser slots, then **Finalise**. **Expect** status shared. *(step 3)*
+4. Display Types → **New**: touch point Kiosk, then its slot editor: owner Advertiser. **Expect** a new advertiser slot. *(step 4)*
+5. Available Inventory: add the new slot to the **same** Red Bull deal (a slot never names an advertiser). **Expect** the deal on 3 slots. *(step 5)*
+6. **PH Core:** the Red Bull user logs in and selects **Launch a New Campaign**. Here: `GET /admin/v1/users/{email}/scope` returns Red Bull only. *(step 6)*
+7. **PH Core:** the Campaign Brief deal-ID picker. **Expect** exactly one deal, Red Bull's `PH-` ID (`GET /admin/v1/advertisers/red-bull/deals`). *(step 7)*
+8. **PH Core:** the Campaign Brief offers only the deal's touch points (`touchPoints` on that response: Digital Signage and Kiosk). **Expect** a campaign naming any other (for example Website) refused 400 when the deal ID is set. *(step 8)*
+9. **PH Core:** create a **Default** campaign and a **Targeted** campaign (customer segment `loves_energy_drinks`), each with the deal ID. **Expect** both on the deal. *(step 9)*
+10. Campaign Approval: approve both for Red Bull and activate them. *(step 10)*
+11. Run an auction for a window in the flight. **Expect** no bid request, and the Default campaign booked for the deal's window and handed off. *(step 11)*
+12. **Visitor Profile:** push the segment `loves_energy_drinks` for a visitor. **PH Core's** player plays the Targeted campaign's personalised version for that visitor; any other visitor gets the default. Here: `selectVersion` with a `VisitorSource` stub (interface-contract row 6). *(step 12)*
+
+**Not tested here (PH Core / Visitor Profile):** the invite email, login, Launch a New Campaign and the Campaign Brief screens, the player and the Visitor API itself. Check them on real screens with the playback rehearsal checklist.
+
 ## Acceptance for the demo
 
 - [ ] `CI=1 npm run e2e:quick` green (includes Run 8) and the admin suite green.
-- [ ] Sections A, B, C, D, E and F each pass once on the hosted prototype after a reset.
+- [ ] Sections A, B, C, D, E, F and G each pass once on the hosted prototype after a reset.
 - [ ] `prototype/build-info.json` names the commit under test.
 - [ ] Not covered by this build, so not demonstrable: a DSP bidding *on a
   creative ID* in the exchange, and assigning an ID from the campaign detail

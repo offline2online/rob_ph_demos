@@ -194,6 +194,20 @@ version of the same editor. Stored HTML is sanitised (DOMPurify) when shown.
 each have a round 36 px mic that turns into a red stop button while
 listening; one recording at a time.
 
+**KB-MOD-4a Each phrase written once, Android included (21 Oct 2026).**
+Reported from an Android phone on Record task: "add add add a new add a new
+Epic…". Android Chrome in continuous mode reports every in-progress guess as
+a final, each the whole utterance so far. So on Android, Record task and both
+mics listen one utterance per session (restarted when it ends), and on every
+device a final that only carries the previous one further replaces it rather
+than being appended. That also covers an Android device whose user agent
+doesn't say so ("Desktop site", tablets); after two such finals in one
+session the page stops using continuous mode for the rest of the visit.
+Shared with the console's other mics: `backlog-tracker/public/js/dictation-results.js`
+(the prototype carries a copy in `kanban.js`). Tested by KB-C7/KB-C8 in
+`backlog-tracker/test/ui/staff-kanban.test.mjs` and
+`backlog-tracker/test/dictation-results.test.mjs`.
+
 **KB-MOD-5 Layout.** Delete / Cancel / primary button are pinned to the bottom
 of the modal. The details column folds away to the right (header button or
 "Details" tab) so the description gets the full width; the choice is

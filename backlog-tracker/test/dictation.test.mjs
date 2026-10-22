@@ -368,6 +368,60 @@ await check("a real permission denial on the first start stops with a clear mess
   assert.match($("ni-mic-error").textContent, /blocked/);
 });
 
+// The same module instance app.js imported (the harness rewrites its
+// imports to these file URLs), so a scenario can forget an engine seen earlier.
+const { resetDictationEngineState } = await import(pathToFileURL(path.join(publicDir, "js", "dictation-results.js")).href);
+
+await check("Android: one utterance per session, never continuous mode", async () => {
+  define(window.navigator, "userAgent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36");
+  try {
+    field.value = "";
+    await startMic();
+    const r = current();
+    assert.equal(r.continuous, false, "Android sessions are one utterance each");
+    r.say("add a new", false);
+    r.say("add a new epic to the board", true);
+    r.endByItself(); // Android ends the session after every utterance
+    assert.equal(current().continuous, false);
+    current().say("assign it to Jack", true);
+    assert.equal(field.value, "Add a new epic to the board assign it to Jack");
+    mic.click();
+    await sleep(40);
+    assert.equal(listening(), false);
+  } finally {
+    delete window.navigator.userAgent;
+  }
+});
+
+// 21 Oct 2026, from an Android phone: "add add add a new add a new Epic…".
+// Android Chrome in continuous mode sends every guess as a final, each the
+// whole utterance so far. Here the user agent doesn't say Android ("Desktop
+// site" on, or a tablet), so the run starts in continuous mode.
+await check("cumulative finals are written once, and the next session stops using continuous mode", async () => {
+  try {
+    field.value = "";
+    await startMic();
+    const r = current();
+    assert.equal(r.continuous, true, "not detectably Android");
+    for (const t of ["add", "add", "add a new", "add a new Epic", "add a new Epic", "add a new Epic to", "add a new Epic to", "add a new Epic to the", "add a new Epic to the board"]) r.say(t, true);
+    assert.equal(field.value, "Add a new Epic to the board");
+    r.endByItself();
+    assert.equal(current().continuous, false, "the rest of the visit records one utterance per session");
+    for (const t of ["Jack", "Jack Johnson", "Jack Johnson"]) current().say(t, true);
+    assert.equal(field.value, "Add a new Epic to the board Jack Johnson");
+    // A new session that opens by redelivering the last phrase, then carries it further.
+    current().endByItself();
+    current().say("Jack Johnson", true);
+    current().say("Jack Johnson please", true);
+    assert.equal(field.value, "Add a new Epic to the board Jack Johnson please");
+    mic.click();
+    await sleep(40);
+    assert.equal(listening(), false);
+  } finally {
+    resetDictationEngineState();
+  }
+});
+
 await sleep(50);
 restoreConsole();
 if (errors.length) {

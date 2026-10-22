@@ -2957,6 +2957,11 @@ export interface components {
              */
             displayTypeStoreZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
             /**
+             * @description Whether the row's display type is landscape or portrait, from its canvas size. Shown beside the display type name in the Slots hover on Deals and buyers lists. Absent from a demo snapshot taken before 22 Oct 2026.
+             * @enum {string}
+             */
+            displayTypeOrientation?: "landscape" | "portrait";
+            /**
              * @description Whether the slot has an audience score (an audience_vacd row).
              *     An unscored slot reports 0 assumed views, so it is never
              *     exposed to advertisers (GET /v1/inventory), forecast, auctioned
@@ -5907,6 +5912,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         items: {
+                            /** @description The touch points this deal covers: those of the display types of the slots it is assigned to (22 Oct 2026). The Campaign Brief offers only these, and a campaign on the deal whose brief names another is refused 400. */
+                            touchPoints: string[];
                             /** @description The deal ID for each DSP the advertiser has a mapped seat on in this list — the one its seat accepts (DV360 accepts the DV360 deal, The Trade Desk its own). */
                             deals: components["schemas"]["DspDealId"][];
                             buyersListId: string;

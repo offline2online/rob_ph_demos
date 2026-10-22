@@ -12,6 +12,7 @@ record.
 **Changelog**
 
 - **22 Oct 2026** — **No buyer of any kind is named on a slot; slots are sold only through deals** (Rob; ticket QdMaGvVhMZgcdcmIAalT, extending mpbRDjAPS4uIagi2IVsz and z7kRMUflMRwkyBdEWxbn). Assigned to no longer offers an **Advertisers** group: neither a direct advertiser nor a DSP's advertiser (Nestlé via Google DSP) can be picked. `PUT /admin/v1/available-inventory` refuses any name in `assignedTo.advertisers` with 400, pointing to deals (a name a sold slot already holds is tolerated on resave until its lock releases). **DSPs (open auction), Deals and buyers lists, Whitelist only and the Global deal stay**: they sell to anyone eligible, not to a named buyer. Migration 0086 clears every named advertiser; the demo seed sells Landscape slot 4 to Nestlé through a Programmatic guaranteed deal. This supersedes the "DSP named advertisers are unchanged" sentence under migration 0082 below.
+- **22 Oct 2026** — **A deal's touch points, and the Red Bull end-to-end flow** (Rob; ticket dmcbOIDGV3FnBQ66KYIb). A deal's touch points are those of the display types of the slots it is assigned to; `GET /admin/v1/advertisers/{id}/deals` returns them as `touchPoints` and a campaign whose brief names another is refused 400. Visitor segments for a play are a stated interface (`shared/interface-contract.md` row 6). The whole flow is E2E-TEST-SPEC.md Run 12 and AWS-DEMO-TEST-FLOW.md section G.
 - **22 Oct 2026** — **Direct advertisers reach a slot only through a Direct advertiser deal** (Rob; tickets krIPF8rPnMwVOmynHNRh, knqu0B2PGTF9PG1EUWYD, mpbRDjAPS4uIagi2IVsz, OMwDvy3OUmY9raBtTf7v, EipHu2GUdlbZMpPGCTjF, z7kRMUflMRwkyBdEWxbn and H8YNT4aXwSqD6gffTkAz, the 7-ticket series). A deal has an internal PH deal ID, flight dates and a price. Three earlier statements are **superseded**: (1) a direct advertiser named in a slot's **Assigned to** (refused since 21 Oct; migration 0082 clears existing ones); (2) "no deal ID for a direct advertiser" (it now carries its own PH deal ID on its campaigns); (3) "no billing through the platform" (the revenue is **recorded and reported** like DSP revenue, but never invoiced, because a direct advertiser is billed outside PH). Spec: "Direct advertisers" under Advertisers, "Billing", and the deal-type entries under Programmatic guaranteed. Walkthrough: AWS-DEMO-TEST-FLOW.md section F; tests: E2E-TEST-SPEC.md Run 10 X and `apps/api/test/e2e/run10-direct-deals.test.ts`.
 - **20 Oct 2026** — The AWS POC is scoped to **three demand paths** (ticket JNSjYNvGcgwdzFvaPHlk). See "AWS POC demand paths" below the changelog.
 - **17 Oct 2026** — Available Inventory's **Reserve price** is replaced by an
@@ -2208,6 +2209,14 @@ It carries:
   the plays; a floor is shown as "from". An open-ended flight has no total.
   A Direct advertiser deal gets the same cell, with the advertiser and the
   internal deal ID in the hover. Beyond five slots the hover says "+ N more".
+  The hover also has a **Period** line: the flight's length in days.
+  (22 Oct 2026) The **Slots** hover names each display type with its
+  orientation (Portrait or Landscape, `displayTypeOrientation` on an
+  Available Inventory row, from the canvas size) and the displays registered
+  to it in brackets, and shows the fleet total in brackets after the plays
+  per window (480 plays per window, 4,320 total). The **Buyer(s)** column
+  names the buyer outright on a Direct advertiser or programmatic guaranteed
+  deal with one buyer, and counts buyers otherwise.
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.
@@ -5337,3 +5346,35 @@ suite and gates the deploy train.
   to Main) and in `e2e.config.json`'s quick and full modes. It builds the
   hosted-demo bundle and serves it itself; it needs no API process.
 
+
+## Hard blocks show a friendly dialog, never a red error (Rob, 22 Oct 2026; ticket z0qiB0GGHR010H0Shrj0)
+
+Found during the AWS demo: on Fridge LED Milk, switching a slot's owner from
+Supplier to Headquarters and pressing Save in Playlist Management raised a red
+toast with the API's raw sentence. A hard block is the exchange refusing a
+change that would break a commitment (`409 has_dependents`). Every such refusal
+now opens one dialog (`apps/admin/src/shared/BlockedDialog.tsx`, built from
+`describeBlock()`): **what is blocked**, **why** (the booked windows or
+dependents, listed, with their dates), and **what you can do next**. Close is
+the only action. A save that is refused says "Your changes were not saved"; on
+Playlist Management, whose Save sends display types and playlist settings
+separately, a refusal of one part while the other saved says "Your other changes
+were saved; this one was not" and the page shows what did save. The "What you
+can do" steps are a bulleted list.
+
+**Audit — every hard block in the Partner/admin API and where the admin shows it**
+
+| # | Block (API) | Trigger | Shown as |
+|---|---|---|---|
+| 1 | `PUT display-types/:id/extensions` — "An Advertiser slot can't be changed to another owner…" | Owner of an Advertiser slot switched while a current or future window is reserved or sold | Dialog — Display Types and Playlist Management Save |
+| 2 | `PUT display-types/:id/record` — "The assigned playlist can't be changed…" | Default playlist changed while positions are reserved or sold | Dialog — Display Types Save |
+| 3 | `PUT playlists/:id/settings` — "This playlist can't be changed…" | Playlist settings saved while its display type's positions are reserved or sold | Dialog — Playlist Management Save |
+| 4 | `DELETE display-types/:id` | Displays assigned, advertiser-owned slots, or reserved/sold windows | Pre-check dialog on Delete (already); dialog if the delete itself is refused |
+| 5 | `DELETE playlists/:id` | Playlist is a display type's default or a zone's | Pre-check dialog on Delete (already); dialog if the delete itself is refused |
+| 6 | `POST buyers-lists/:id/archive` — "This deal can't be archived…" | A slot is still assigned to the deal | Pre-check dialog on Archive; refusal shown inside that dialog |
+| 7 | `PUT available-inventory` — "Slots are sold, so the advertiser can't be removed" | Advertiser taken off a sold slot | Confirm dialog offering "Lock against new sales"; otherwise the block dialog |
+| 8 | `PUT advertisers/:id/audiences` — "… can't lose …: … is targeted by the live deal …" | An audience (Visitor Segments value) removed from an advertiser while a live deal targets it | Dialog ("This audience can't be removed") — Edit advertiser pop-up, Save advertiser |
+
+The reason list is the API's own `details` (position, window date, reserved or
+sold), so the API response is unchanged. Validation errors (a missing field, an
+out-of-range number) are not hard blocks and stay inline on their field.

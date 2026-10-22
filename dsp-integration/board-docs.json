@@ -258,7 +258,7 @@
       "key": "e2e-test-spec-1",
       "id": "f34VQZCy2kkWJfBP6Iwp",
       "path": "dsp-integration/docs/dsp-integration/E2E-TEST-SPEC.md",
-      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (1/3) — demand paths, how to run, Run 1",
+      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (1/4) — demand paths, how to run, Run 1",
       "slices": [
         {
           "end": "## Run 2 — Open auction, non-happy paths (hardening)"
@@ -268,7 +268,7 @@
     {
       "key": "e2e-test-spec-2",
       "path": "dsp-integration/docs/dsp-integration/E2E-TEST-SPEC.md",
-      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (2/3) — Runs 2–9, hardening to AWS setup; raising tickets",
+      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (2/4) — Runs 2–9, hardening to AWS setup; raising tickets",
       "slices": [
         {
           "start": "## Run 2 — Open auction, non-happy paths (hardening)",
@@ -282,10 +282,21 @@
     {
       "key": "e2e-test-spec-3",
       "path": "dsp-integration/docs/dsp-integration/E2E-TEST-SPEC.md",
-      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (3/3) — Runs 10–11, Run 6 journey, gaps",
+      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (3/4) — Runs 10–12, demo playback, AWS demo coverage map",
       "slices": [
         {
           "start": "## Run 10 — Flow 2 (private auction) uncovered elements and Flow 3 (direct advertiser)",
+          "end": "## Run 6 — Full user journey (real-world customer flows)"
+        }
+      ]
+    },
+    {
+      "key": "e2e-test-spec-4",
+      "path": "dsp-integration/docs/dsp-integration/E2E-TEST-SPEC.md",
+      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (4/4) — Run 6 journey, known gaps",
+      "slices": [
+        {
+          "start": "## Run 6 — Full user journey (real-world customer flows)",
           "end": "## Raising tickets on failure"
         }
       ]

@@ -13,6 +13,7 @@
      some-overridden  as all-scored, plus a few screens with a VAC-d of their
                       own that differs from their type's default. */
 import type { Context } from '../context'
+import { applyTradingHours } from './tradingHours'
 import { tx } from '../db/db'
 
 export const SCENARIOS = ['all-scored', 'some-unscored', 'some-overridden'] as const
@@ -46,6 +47,7 @@ export async function seedScreens(ctx: Context, scenario: Scenario = 'all-scored
     const types = await ctx.displayTypes.list()
     const typeIds = new Set(types.map((t) => t.id))
     for (const s of MOCK_STORES) db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, region = excluded.region').run(s.id, s.name, s.region)
+    applyTradingHours(db)
 
     /* In scope: screens with no store, and screens this seed assigned earlier. */
     const screens = db.prepare("SELECT id, display_type_id AS typeId FROM displays WHERE store_id IS NULL OR store_id = '' OR store_id LIKE 'st_mock_%' ORDER BY id").all() as unknown as { id: string; typeId: string }[]

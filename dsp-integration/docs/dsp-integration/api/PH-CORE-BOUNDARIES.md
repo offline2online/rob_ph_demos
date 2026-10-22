@@ -1088,6 +1088,20 @@ named buyer of that are finalised and whose delivery term covers the date. PH Co
 - treat the deal ID as owned by one advertiser: any other advertiser's ID is refused 400 here;
 - keep one campaign booking per slot and window as for any deal.
 
+### A deal's touch points, and the visitor segment at play (22 Oct 2026, ticket dmcbOIDGV3FnBQ66KYIb)
+
+- **Touch points of a deal** are the touch points of the display types of the slots it is assigned to (a slot never names an
+  advertiser, so adding a slot to the deal is how an advertiser comes to cover it). `GET /admin/v1/advertisers/{id}/deals`
+  carries them as `touchPoints` on each deal. PH Core's Campaign Brief must offer only those. A campaign whose brief names a
+  touch point the deal does not cover is refused 400 (`brief.touchPoints`) when the deal ID is set: in the Partner API create,
+  `PUT /partner campaigns/{id}/deals` and `PUT /admin/v1/campaigns/{id}/deals`. A deal on no slot yet has none to compare with and
+  refuses nothing.
+- **Visitor segments** reach PH Core from the Live Visitor Profile project's Visitor API (`platform/VisitorSource.ts`,
+  shared/interface-contract.md row 6). PH Core's player reads the visitor's `visitor.visitor_segments` and plays the first matching
+  targeted version of the booked campaign by priority, else the default (`domain/versionSelection.ts` is the reference). The
+  exchange calls neither: the booking is personalised-eligible and the tier of what played returns on the play.
+- **One booking per slot and window** still holds, so the Default and Targeted campaigns of Run 12 sit on different slots of the deal.
+
 ## Flight times and store time zones (22 Oct 2026, ticket yOginusgiFgFkwVHTRFH)
 
 A deal's flight is a start and an end date-time with a `timeZoneMode`: `platform` (the platform time zone, the

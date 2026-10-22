@@ -9,7 +9,7 @@ import { conflict, hasDependents, notFound, validationFailed } from '../../http/
 import { segmentValuesInTargeting, validateAudiences } from '../../domain/audiences'
 import { allPositions, findPosition, nextWindow, windowMs } from '../../domain/positions'
 import { TAKEN } from '../../repos/ReservationRepo'
-import { invitedDealIds } from '../../domain/advertiserDeals'
+import { dealTouchPoints, invitedDealIds } from '../../domain/advertiserDeals'
 
 export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   const company = await ctx.company.get()
@@ -204,7 +204,8 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (!a) throw notFound('Not an advertiser.')
     const at = req.query.at ?? ctx.clock().toISOString()
     if (Number.isNaN(Date.parse(at))) throw validationFailed([{ field: 'at', reason: 'A date-time.' }])
-    return { items: (await invitedDealIds(ctx, a.advertiserId, at)).filter((e) => e.deals.length).map(({ list: l, deals }) => ({ buyersListId: l.id, dealId: deals[0].dealId, deals, name: l.name, dealType: l.dealType, activeFrom: l.activeFrom, activeTo: l.activeTo })) }
+    const points = await dealTouchPoints(ctx)
+    return { items: (await invitedDealIds(ctx, a.advertiserId, at)).filter((e) => e.deals.length).map(({ list: l, deals }) => ({ buyersListId: l.id, dealId: deals[0].dealId, deals, name: l.name, dealType: l.dealType, activeFrom: l.activeFrom, activeTo: l.activeTo, touchPoints: points.get(l.id) ?? [] })) }
   })
 
   /* Save changes. Applies to future submissions; campaigns already awaiting

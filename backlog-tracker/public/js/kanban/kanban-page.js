@@ -8,6 +8,7 @@
 import { createStore } from "./kanban-store.js";
 import { KBEditor } from "./kanban-editor.js";
 import { colourFor, photoSrcFor, setAvatarMember, getAvatarMember } from "../avatar.js";
+import { createResultReader, useContinuousMode, isAndroidDevice } from "../dictation-results.js";
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
@@ -1041,7 +1042,11 @@ export function mountStaffKanban(ctx) {
   // is a local stand-in; the real console would hand the transcript to Claude.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
+  // A start still waiting on the microphone; stopRecorder() cancels it, and
+  // a second start while it waits is ignored (one recording at a time).
+  let recStarting = null;
   function stopRecorder(abort) {
+    recStarting = null;
     if (!rec) return;
     const r = rec; rec = null;
     r.wanted = false;
@@ -1050,26 +1055,46 @@ export function mountStaffKanban(ctx) {
     if (!abort && r.onDone) setTimeout(() => r.onDone(r.text()), 250);
     if (r.onState) r.onState("idle");
   }
+  // Android Chrome in continuous mode reports every in-progress guess as a
+  // final, each the whole utterance so far — "add add a new add a new Epic…"
+  // (21 Oct 2026). So Android records one utterance per session, restarted
+  // when it ends, and dictation-results.js folds any cumulative finals that
+  // still arrive (the same reader as the console's other mics in app.js).
   async function startRecorder({ onLive, onDone, onState, onError }) {
     if (!SR) { onError("Voice capture isn't supported in this browser. Try Chrome, Edge or Safari, or type the description."); return; }
+    if (recStarting || rec) return;
+    const starting = recStarting = {};
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((t) => t.stop());
     } catch (e) {
+      if (recStarting !== starting) return;
+      recStarting = null;
       onError(e && e.name === "NotAllowedError" ? "Microphone access is blocked. Allow it in the browser's site settings and try again."
         : e && e.name === "NotFoundError" ? "No microphone found on this device." : "The microphone couldn't be started.");
       return;
     }
-    let finals = "", interim = "";
-    const r = { wanted: true, onDone, onState, started: Date.now(), text: () => (finals + " " + interim).replace(/\s+/g, " ").trim() };
+    // Android needs a moment to release the probe's hold on the mic, or the
+    // recogniser shows as listening but never transcribes a word.
+    if (isAndroidDevice()) await new Promise((ok) => setTimeout(ok, 250));
+    if (recStarting !== starting) return; // stopped or closed while waiting
+    recStarting = null;
+    // Committed segments, one per final (a cumulative final replaces the
+    // segment before it), plus this session's words not yet finalized.
+    const segs = [];
+    let interim = "";
+    const reader = createResultReader();
+    const commit = (f) => { if (f.replaces && segs.length) segs[segs.length - 1] = f.text; else segs.push(f.text); };
+    const r = { wanted: true, onDone, onState, started: Date.now(), text: () => [...segs, interim].join(" ").replace(/\s+/g, " ").trim() };
     const make = () => {
       const inst = new SR();
-      inst.lang = "en-GB"; inst.continuous = true; inst.interimResults = true;
+      inst.lang = "en-GB"; inst.continuous = useContinuousMode(); inst.interimResults = true;
+      reader.reset();
       inst.onresult = (e) => {
-        interim = "";
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) finals += " " + e.results[i][0].transcript; else interim += e.results[i][0].transcript;
-        }
+        if (r.inst !== inst) return; // a replaced session's late events
+        const out = reader.read(e);
+        out.finals.forEach(commit);
+        interim = out.interim;
         onLive(r.text());
       };
       inst.onerror = (e) => {
@@ -1079,8 +1104,22 @@ export function mountStaffKanban(ctx) {
           : e.error === "network" ? "Voice capture needs a network connection." : e.error === "audio-capture" ? "No microphone found on this device." : "Voice capture stopped unexpectedly. Try again.");
         stopRecorder(true);
       };
-      // Browsers end a session on silence; keep listening until Stop.
-      inst.onend = () => { if (rec === r && r.wanted) { try { r.inst = make(); r.inst.start(); } catch { stopRecorder(false); } } };
+      // Browsers end a session on silence (Android after every utterance);
+      // keep what was shown and keep listening until Stop, restarting the
+      // same instance at once (the shortest gap between utterances), or a
+      // new one if it won't start again.
+      inst.onend = () => {
+        if (r.inst !== inst) return;
+        const settled = reader.settle(interim);
+        interim = "";
+        if (settled) commit(settled);
+        if (rec !== r || !r.wanted) return;
+        reader.reset();
+        inst.continuous = useContinuousMode();
+        try { inst.start(); } catch {
+          try { r.inst = make(); r.inst.start(); } catch { stopRecorder(false); }
+        }
+      };
       return inst;
     };
     r.inst = make();
@@ -1105,7 +1144,7 @@ export function mountStaffKanban(ctx) {
         else { label.textContent = draft && draft.title ? "Record again" : "Record task"; sub.textContent = draft && draft.title ? "Replaces the details below" : "Say what needs doing"; }
       };
       btn.addEventListener("click", () => {
-        if (btn.classList.contains("working")) return;
+        if (btn.classList.contains("working") || recStarting) return;
         if (rec) { stopRecorder(false); return; }
         err.classList.remove("on");
         live.hidden = false; live.textContent = "";
@@ -1193,6 +1232,7 @@ export function mountStaffKanban(ctx) {
       mic.firstElementChild.textContent = on ? "stop" : "mic";
     };
     mic.addEventListener("click", () => {
+      if (recStarting) return; // still waiting on the microphone
       const target = dictationTarget(taId), err = $("#" + errId);
       if (rec) {
         const wasMe = activeMic === mic;

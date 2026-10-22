@@ -1621,8 +1621,12 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [buyersListId, dealId, deals, name, dealType, activeFrom, activeTo]
+                      required: [buyersListId, dealId, deals, name, dealType, activeFrom, activeTo, touchPoints]
                       properties:
+                        touchPoints:
+                          type: array
+                          description: 'The touch points this deal covers: those of the display types of the slots it is assigned to (22 Oct 2026). The Campaign Brief offers only these, and a campaign on the deal whose brief names another is refused 400.'
+                          items: {type: string}
                         deals:
                           type: array
                           description: The deal ID for each DSP the advertiser has a mapped seat on in this list — the one its seat accepts (DV360 accepts the DV360 deal, The Trade Desk its own).
@@ -3595,6 +3599,7 @@ components:
         displayTypeDescription: {type: [string, 'null'], description: The display type's description, shown beside the slot on Available Inventory (ticket c5S06G5mN6F3GJTI8bxD). Absent from a demo snapshot taken before 14 Oct 2026.}
         zoneName: {type: [string, 'null'], description: The zone this slot plays in on a multi-zone display type; null on a single-zone one. Absent from a demo snapshot taken before 14 Oct 2026.}
         displayTypeStoreZone: {type: [string, 'null'], enum: [exterior, entrance, checkout, aisles, other, null], description: The IAB / IAB Europe store zone set on the row's display type; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.}
+        displayTypeOrientation: {type: string, enum: [landscape, portrait], description: "Whether the row's display type is landscape or portrait, from its canvas size. Shown beside the display type name in the Slots hover on Deals and buyers lists. Absent from a demo snapshot taken before 22 Oct 2026."}
         scored:
           type: boolean
           description: |

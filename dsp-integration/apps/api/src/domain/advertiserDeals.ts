@@ -5,7 +5,7 @@
    IDs (ticket 5CCgGEYSkVoDTH9yNSYu), never free text. A direct advertiser maps no
    seats; its deals are the live Direct advertiser deals it is the buyer of (ticket
    knqu0B2PGTF9PG1EUWYD, 22 Oct 2026), carrying the internal PH deal ID. */
-import { DIRECT_PARTNER_ID, type BuyersList } from '@ph-dsp/types'
+import { DIRECT_PARTNER_ID, assignedOf, type BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { dealsForSeats } from './buyersLists'
 import { isActiveAt } from '../billing/term'
@@ -44,4 +44,30 @@ export async function assertInvitedDeals(ctx: Pick<Context, 'company' | 'partner
   if (bad.length) throw validationFailed([{ field, reason: allowed.size
     ? `Not a deal this advertiser is an invited buyer on: ${bad.join(', ')}.`
     : 'This advertiser has no private-auction deals, so a campaign cannot carry a deal ID.' }])
+}
+
+/* A deal's touch points (Rob, 22 Oct 2026, ticket dmcbOIDGV3FnBQ66KYIb): the touch points of the display types
+   of the slots the deal is assigned to. PH Core's Campaign Brief offers only these for a campaign on the deal. */
+export async function dealTouchPoints(ctx: Pick<Context, 'displayTypes'>): Promise<Map<string, string[]>> {
+  const byList = new Map<string, Set<string>>()
+  for (const dt of await ctx.displayTypes.list()) {
+    for (const s of dt.phExtensions?.slots ?? []) {
+      for (const id of assignedOf(s).buyersListIds) (byList.get(id) ?? byList.set(id, new Set()).get(id)!).add(dt.touchPoint)
+    }
+  }
+  return new Map([...byList].map(([id, set]) => [id, [...set].sort()]))
+}
+
+/* Refuse a campaign whose brief names a touch point the deal does not cover (400). A brief with none names nothing to refuse. */
+export async function assertDealTouchPoints(ctx: Pick<Context, 'company' | 'partners' | 'buyersLists' | 'displayTypes'>, advertiserId: string | null | undefined, dealIds: string[], touchPoints: string[] | undefined, at: string): Promise<void> {
+  if (!dealIds.length || !touchPoints?.length) return
+  const byList = await dealTouchPoints(ctx)
+  const entries = (await invitedDealIds(ctx, advertiserId ?? '', at)).filter((e) => e.deals.some((d) => dealIds.includes(d.dealId)))
+  for (const e of entries) {
+    const offered = byList.get(e.list.id) ?? []
+    /* A deal on no slot yet has no touch points to compare with (a private auction can be authored against before it is assigned): nothing to refuse. */
+    if (!offered.length) continue
+    const bad = touchPoints.filter((t) => !offered.includes(t))
+    if (bad.length) throw validationFailed([{ field: 'brief.touchPoints', reason: `${e.list.name} (${e.deals[0].dealId}) does not cover ${bad.join(', ')}; its touch points are ${offered.join(', ')}.` }])
+  }
 }

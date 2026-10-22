@@ -168,6 +168,8 @@ TC-26 onwards:
 | KB-C4 | KB-REP-1, KB-NAV-1 | Open `#staff-kanban/report?release=4-13`; back to the board | The report for PH 4.13; title "Release report"; the hash follows |
 | KB-C5 | KB-NAV-1 | (Runs once, Chromium.) iPad 820x1180 and 1180x820 with touch: open the menu, tap Staff Kanban; open + New task | The board opens (`#staff-kanban`); the Record task dot is a 44 px circle with nothing overflowing |
 | KB-C6 | KB-NAV-1 | (Runs once, Chromium.) iPad 1210x696 with touch: send pointerdown and pointerup on Staff Kanban with no click (what Chrome on Rob's iPad did, 21 Oct 2026); then tap it normally | The board opens from the touch alone, clicked once by the menu's touch fallback; a normal tap still clicks exactly once |
+| KB-C7 | KB-MOD-2, KB-MOD-4a | Android user agent; + New task, Record task; the stub recogniser says "add a new Epic to the board", then "Jack Johnson", as Android does (each guess the whole utterance so far) | Live transcript "add a new Epic to the board Jack Johnson", each phrase once; no session runs in continuous mode; the agent's description has no repeats |
+| KB-C8 | KB-MOD-4, KB-MOD-4a | Desktop user agent (Android with "Desktop site" on); open PH-23, comment mic; the recogniser sends every guess as a final in continuous mode | The comment box reads "Add a new Epic to the board Jack Johnson"; the first session is continuous, the next is not |
 
 Server side, `backlog-tracker/test/kanban-mcp.test.js` covers KB-MCP-1 (every
 tool over JSON-RPC as an editor and a viewer, keys from the counter, the

@@ -36,6 +36,7 @@ import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampV
 import { pickRepoFolder, planPromotionTickets } from "./promote-plan.js";
 import { packageBacklog, groomButtonVisible, DEFAULT_GROOM_THRESHOLD, DEFAULT_PACKAGE_BUDGET } from "./groom-packages.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
+import { createResultReader, useContinuousMode } from "./dictation-results.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -8143,12 +8144,11 @@ document.getElementById("skill-submit").addEventListener("click", async () => {
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 // Android Chrome's SpeechRecognition duplicates/triples text under
-// continuous:true (see the restart-on-end comment inside
-// createDictationController below) — that workaround stays Android-only.
-// Everywhere else gets one real continuous session instead of chained
-// one-shot ones, which is what was dropping the start of the next phrase
-// on desktop Chrome.
-const IS_ANDROID = /Android/i.test(navigator.userAgent);
+// continuous:true, so Android chains one-utterance sessions instead
+// (useContinuousMode() in dictation-results.js, which also catches an
+// Android device whose user agent doesn't say so). Everywhere else gets one
+// real continuous session instead of chained one-shot ones, which is what
+// was dropping the start of the next phrase on desktop Chrome.
 
 // Per-viewer dictation preferences — plain localStorage, same spirit as
 // bt-collapsed-projects elsewhere in this file. Never written to
@@ -8390,6 +8390,17 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   // their own internal restarts — a final that is exactly the segment just
   // committed is dropped rather than doubled.
   let lastFinalKey = "";
+  // Turns each session's result events into finals to commit, folding the
+  // cumulative finals Android sends ("add", "add a new", "add a new epic")
+  // into one (dictation-results.js). lastSegStart: where the segment this
+  // session committed last begins in `committed` (-1: none yet), so a final
+  // that carries it further can take its place.
+  const reader = createResultReader();
+  let lastSegStart = -1;
+  // Where the segment lastFinalKey names begins: a redelivered final adopts
+  // it as this session's last segment, so a cumulative final after it
+  // replaces it rather than writing it out again.
+  let lastKeyStart = -1;
   // This session's words not yet finalized, exactly as shown in the field,
   // and when they last changed. A session that ends (or stalls) without
   // finalizing them commits them as they are — nothing the user saw
@@ -8451,19 +8462,23 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     if (charCountUpdate) charCountUpdate();
   }
 
-  // One finalized result → committed text, exactly once.
-  function commitFinal(rawTranscript) {
-    const processed = capitalizeDictated(postProcessFinalSegment(rawTranscript || ""), joinDictated(baseline, committed));
+  // One finalized result → committed text, exactly once. `replaces`: it
+  // takes the place of this session's last segment (see `reader`).
+  function commitFinal(rawTranscript, replaces) {
+    const before = replaces && lastSegStart >= 0 ? committed.slice(0, lastSegStart) : committed;
+    const processed = capitalizeDictated(postProcessFinalSegment(rawTranscript || ""), joinDictated(baseline, before));
     if (!processed) return;
     const key = processed.toLowerCase();
-    if (key === lastFinalKey) return;
+    if (!replaces && key === lastFinalKey) { lastSegStart = lastKeyStart; return; }
     lastFinalKey = key;
-    committed = joinDictated(committed, processed);
+    lastSegStart = lastKeyStart = before.length;
+    committed = joinDictated(before, processed);
   }
   function commitInterim() {
     const pending = interim;
     interim = "";
-    if (pending.trim()) commitFinal(pending);
+    const settled = reader.settle(pending);
+    if (settled) commitFinal(settled.text, settled.replaces);
   }
 
   // Detach an instance's handlers before anything else touches it, so a
@@ -8521,8 +8536,10 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     // continuous:true is a known bad actor on Android Chrome (speech
     // tripled, then dead around 10s), so Android chains one-utterance
     // sessions; everywhere else one continuous session, restarted in onend
-    // whenever the browser ends it on its own.
-    r.continuous = !IS_ANDROID;
+    // whenever the browser ends it on its own. beginSession() sets it again
+    // before every start, in case this run has since caught the engine
+    // sending cumulative finals.
+    r.continuous = useContinuousMode();
     r.interimResults = true;
     r.maxAlternatives = 1;
     // Every handler checks it still belongs to the live instance: a
@@ -8542,15 +8559,11 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
       refusedStreak = 0;
       lastEventAt = Date.now();
       if (softHintOn) showError("");
-      // e.resultIndex is the first result that changed since the last
-      // event — walking from there commits each final exactly once on
-      // every platform (Google's own Web Speech demo pattern).
-      let interimText = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const result = e.results[i];
-        const transcript = result[0] ? result[0].transcript : "";
-        if (result.isFinal) commitFinal(transcript); else interimText += transcript;
-      }
+      // Walks from e.resultIndex (the first result that changed since the
+      // last event, Google's own Web Speech demo pattern), committing each
+      // final exactly once and folding Android's cumulative ones.
+      const { finals, interim: interimText } = reader.read(e);
+      for (const f of finals) commitFinal(f.text, f.replaces);
       if (interimText !== interim) { interim = interimText; interimAt = Date.now(); }
       render(interim);
     };
@@ -8649,6 +8662,9 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     }
     heardSomething = false;
     interim = "";
+    reader.reset();
+    lastSegStart = -1;
+    recognition.continuous = useContinuousMode();
     sessionStartedAt = lastEventAt = Date.now();
     try {
       recognition.start();
@@ -8871,6 +8887,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     committed = "";
     interim = "";
     lastFinalKey = "";
+    lastSegStart = -1;
     lastRendered = textareaEl.value;
     scheduleRestart(DICTATION_TUNING.typingResumeMs, true);
   });

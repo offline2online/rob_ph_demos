@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { Context } from '../src/context'
 import { type BlobStore, type DocStore, chunkedStore, createHost } from '../../../deploy/firebase/functions/src/host'
 
 /* Firestore's shape, in memory: what the production DocStore adapter does. */
@@ -101,6 +102,62 @@ describe('hosted API', () => {
     /* A new instance over the same bucket: the save is there, not a reseed. */
     const second = newHost(store)
     expect(body(await get(second, '/api/admin/v1/display-types/landscape/record')).name).toBe('Saved on the host')
+  }, 60_000)
+
+  /* 22 Oct 2026: the demo set up by hand ahead of the AWS demo went back to
+     seed data. The cause was two manual resets (deploy workflow, reset =
+     RESET), not a deploy; this pins that a deploy, which starts a new
+     instance over the saved state, never reseeds or overwrites. */
+  it('a redeploy (a new instance over the saved state) keeps edits to a display type, slot, playlist and deal', async () => {
+    const { store } = memoryStore()
+    const first = newHost(store)
+    const { ctx } = await first.boot()
+    const url = '/api/admin/v1/display-types/landscape/record'
+    const { phExtensions: _ext, ...record } = body(await get(first, url))
+    const slots = JSON.parse((ctx.db.prepare('SELECT ph_extensions e FROM display_types WHERE id = ?').get('landscape') as { e: string }).e).slots as { label: string }[]
+    expect(slots.length).toBeGreaterThan(0)
+    /* The edits that persist: the type (through the API, which saves), then its slot, a playlist and a deal (SQL, saved by that same API write). */
+    ctx.db.prepare("UPDATE playlists SET name = 'Hand-made playlist' WHERE id = (SELECT MIN(id) FROM playlists)").run()
+    ctx.db.prepare("UPDATE buyers_lists SET name = 'Hand-made deal' WHERE id = (SELECT MIN(id) FROM buyers_lists)").run()
+    ctx.db.prepare('UPDATE display_types SET ph_extensions = json_set(ph_extensions, ?, ?) WHERE id = ?').run('$.slots[0].label', 'Hand-made slot', 'landscape')
+    const put = await first.handle({ method: 'PUT', url, headers: { 'content-type': 'application/json' }, rawBody: Buffer.from(JSON.stringify({ ...record, description: 'Hand-made display type' })), ip: '1.1.1.1' })
+    expect(put.status).toBe(200)
+    const snapshot = (c: Context) => ({
+      type: (c.db.prepare('SELECT description d FROM display_types WHERE id = ?').get('landscape') as { d: string }).d,
+      slot: JSON.parse((c.db.prepare('SELECT ph_extensions e FROM display_types WHERE id = ?').get('landscape') as { e: string }).e).slots[0].label,
+      playlists: c.db.prepare('SELECT id, name FROM playlists ORDER BY id').all(),
+      deals: c.db.prepare('SELECT id, name FROM buyers_lists ORDER BY id').all(),
+    })
+    const before = snapshot(ctx)
+    expect(before.type).toBe('Hand-made display type')
+    expect(before.slot).toBe('Hand-made slot')
+    expect(JSON.stringify(before.playlists)).toContain('Hand-made playlist')
+    expect(JSON.stringify(before.deals)).toContain('Hand-made deal')
+
+    /* Three cold starts in a row, each as a deploy would make one, each making a request. */
+    for (let i = 0; i < 3; i++) {
+      const next = newHost(store)
+      expect((await get(next, '/api/admin/v1/display-types')).status).toBe(200)
+      expect(snapshot((await next.boot()).ctx)).toEqual(before)
+    }
+  }, 120_000)
+
+  it('never reseeds a restored database, even when every display type has been deleted', async () => {
+    const { store } = memoryStore()
+    const first = newHost(store)
+    const { ctx } = await first.boot()
+    ctx.db.prepare("INSERT INTO stores (id, name, region) VALUES ('st_mine', 'My own store', 'North')").run()
+    ctx.db.prepare('DELETE FROM displays').run()
+    ctx.db.prepare('DELETE FROM reservations').run()
+    ctx.db.prepare('DELETE FROM display_types').run()
+    /* Any successful write saves the whole database; this one changes nothing. */
+    const current = body(await get(first, '/api/admin/v1/advertiser-settings'))
+    const save = await first.handle({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', headers: { 'content-type': 'application/json' }, rawBody: Buffer.from(JSON.stringify(current)), ip: '1.1.1.1' })
+    expect(save.status, save.body.toString()).toBeLessThan(300)
+
+    const c2 = (await newHost(store).boot()).ctx
+    expect((c2.db.prepare('SELECT COUNT(*) n FROM display_types').get() as { n: number }).n).toBe(0)
+    expect(c2.db.prepare("SELECT name FROM stores WHERE id = 'st_mine'").get()).toEqual({ name: 'My own store' })
   }, 60_000)
 
   it('answers CORS for the hosted prototype’s origins only, and builds creative URLs on its own origin', async () => {

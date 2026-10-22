@@ -29,9 +29,9 @@ test('carry-over: the 24 mirrors from MIRRORS (28a088d5) are unchanged and cut t
 })
 
 test('every mirror is under the cap; each E2E part under 15,000; every E2E heading is in exactly one part', () => {
-  assert.equal(manifest.mirrors.length, 28)
+  assert.equal(manifest.mirrors.length, 29)
   for (const m of manifest.mirrors) assert.ok(cutEntry(manifest, m).length < MIRROR_CAP, m.name)
-  assert.equal(e2eParts.length, 3)
+  assert.equal(e2eParts.length, 4)
   const texts = e2eParts.map((m) => cutEntry(manifest, m))
   texts.forEach((t) => assert.ok(t.length < 15000))
   const headings = read(E2E).split('\n').filter((l) => /^#{1,6} /.test(l))
@@ -51,10 +51,11 @@ test('ids, names and (path, slices) are unique; projectId and startHere are righ
   assert.equal(start.path, 'dsp-integration/docs/dsp-integration/START-HERE.md')
 })
 
-test('E2E part 1 keeps the existing document id; parts 2 and 3 and the hosted demo API have none', () => {
+test('E2E part 1 keeps the existing document id; parts 2 to 4 and the hosted demo API have none', () => {
   assert.equal(e2eParts[0].id, 'f34VQZCy2kkWJfBP6Iwp')
   assert.equal(e2eParts[1].id, undefined)
   assert.equal(e2eParts[2].id, undefined)
+  assert.equal(e2eParts[3].id, undefined)
   const hosted = manifest.mirrors.find((m) => m.path === 'dsp-integration/deploy/firebase/README.md')
   assert.equal(hosted.id, undefined)
   assert.equal(hosted.name, 'Hosted demo API — deploy, reset and limits')
@@ -85,9 +86,9 @@ test('matching: boundaries 1/7 and 2/7 never match each other', () => {
   assert.equal(matchEntries(idless(b(2)), [doc1, doc2])[0].doc.id, 'x2')
 })
 
-test('--check-cut exits 0 and lists 28 mirrors; the script holds no mirror list of its own', () => {
+test('--check-cut exits 0 and lists 29 mirrors; the script holds no mirror list of its own', () => {
   const out = execFileSync('node', ['scripts/sync-board-docs.mjs', '--check-cut'], { cwd: ROOT, encoding: 'utf8' })
-  assert.equal(out.split('\n').filter((l) => l.startsWith('✓')).length, 28)
+  assert.equal(out.split('\n').filter((l) => l.startsWith('✓')).length, 29)
   const src = readFileSync(join(ROOT, 'scripts/sync-board-docs.mjs'), 'utf8')
   assert.ok(!/const MIRRORS\b|repoMirror|PH-CORE-BOUNDARIES\.md'/.test(src))
 })
