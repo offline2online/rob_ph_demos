@@ -1512,6 +1512,15 @@ be stale by the time you run):
      is genuinely missing, write that plainly — e.g. "Nothing outstanding
      — ready to build as described" — rather than leaving the field blank
      or inventing a gap that isn't real.
+   - `groomComplexity` — `"small"`, `"medium"` or `"large"`: how big the
+     change is likely to be, judged from the ticket's wording and your
+     knowledge of the product (code footprint and risk), without opening
+     source. The board batches packages by this score (small 1, medium 3,
+     large 6 points against the project's budget).
+   - `groomAreas` — an array of 1-3 short lower-case area names the
+     ticket will touch (e.g. `["backlog-tracker/public", "faq"]`). Tickets
+     that share an area are always built in the same package, so use the
+     same spelling for the same area across tickets.
 3. Bump `updatedAt`. Unlike the default Backlog flow's step 1, this flow
    does **not** require rewriting `title` on every item — grooming isn't
    obligated to touch it — but it's fine to tidy an obviously wrong or

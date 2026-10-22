@@ -2020,3 +2020,26 @@ body { overflow-x: clip; }
 .kanban-e2e-flagged { background: var(--danger-tint); color: var(--danger); }
 .e2e-fix-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--primary-tint); color: var(--primary-text); }
 .e2e-fix-badge .material-symbols-outlined { font-size: 14px; }
+
+/* Groom Backlog packages (above the Backlog list) */
+.package-panel { display: flex; flex-direction: column; gap: 8px; margin: 0 0 10px; padding: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; }
+.package-panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.package-panel-head .material-symbols-outlined { font-size: 18px; color: var(--primary-text); }
+.package-select-all { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); }
+.package-build-btn { min-height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--primary); background: var(--primary); color: #fff; font: inherit; font-size: 13px; cursor: pointer; }
+.package-build-btn:disabled { opacity: .45; cursor: default; }
+.package-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.package-card.selected { border-color: var(--primary); background: var(--primary-tint); }
+.package-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; cursor: pointer; }
+.package-meta { color: var(--text-muted); font-size: 12px; }
+.package-items { list-style: none; margin: 6px 0 0; padding: 0; font-size: 12.5px; display: flex; flex-direction: column; gap: 3px; }
+.package-size { display: inline-block; min-width: 52px; text-align: center; padding: 0 6px; border-radius: 10px; font-size: 11px; background: var(--surface-2); color: var(--text-muted); }
+.package-size-medium { background: rgba(201, 138, 10, .15); color: var(--warning); }
+.package-size-large { background: var(--danger-tint); color: var(--danger); }
+.package-queue { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.package-queue-row { display: flex; align-items: center; gap: 6px; }
+.package-queue-row .material-symbols-outlined { font-size: 16px; }
+.package-status { margin-left: auto; color: var(--text-muted); }
+.package-running .material-symbols-outlined { color: var(--primary-text); }
+.package-done .material-symbols-outlined { color: var(--success); }
+.package-failed .material-symbols-outlined { color: var(--danger); }
