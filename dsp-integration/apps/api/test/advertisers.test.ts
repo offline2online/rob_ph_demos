@@ -64,16 +64,18 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(del.json().detail ?? del.body).toMatch(/campaigns or bookings/)
   })
 
-  it('refuses a direct advertiser in Available Inventory’s Assigned to, pointing to deals', async () => {
+  it('refuses any named buyer, direct or a DSP’s, in Available Inventory’s Assigned to, pointing to deals', async () => {
     const app = buildApp(await testContext())
     expect((await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })).statusCode).toBe(201)
     const save = (advertisers: string[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers, whitelistOnly: false } }] } })
     const res = await save(['Acme Foods'])
     expect(res.statusCode).toBe(400)
-    expect(JSON.stringify(res.json())).toMatch(/Acme Foods is a direct advertiser.*Direct advertiser deal/)
-    /* Alongside a DSP advertiser it is still refused; a DSP advertiser alone and an unknown name behave as before. */
+    expect(JSON.stringify(res.json())).toMatch(/Acme Foods can't be assigned to a slot directly.*Direct advertiser deal/)
+    /* A DSP advertiser (Nestlé via Google DSP) is refused the same way, alone or alongside another. */
+    const dsp = await save(['Nestlé'])
+    expect(dsp.statusCode).toBe(400)
+    expect(JSON.stringify(dsp.json())).toMatch(/Nestlé can't be assigned to a slot directly.*Programmatic guaranteed deal/)
     expect((await save(['Acme Foods', 'Nestlé'])).statusCode).toBe(400)
-    expect((await save(['Nestlé'])).json().items[0].assignedTo).toMatchObject({ advertisers: ['Nestlé'], partnerIds: ['p_google'] })
     expect((await save(['Nobody Ltd'])).statusCode).toBe(400)
   })
 

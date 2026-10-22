@@ -11,6 +11,7 @@ record.
 
 **Changelog**
 
+- **22 Oct 2026** — **No buyer of any kind is named on a slot; slots are sold only through deals** (Rob; ticket QdMaGvVhMZgcdcmIAalT, extending mpbRDjAPS4uIagi2IVsz and z7kRMUflMRwkyBdEWxbn). Assigned to no longer offers an **Advertisers** group: neither a direct advertiser nor a DSP's advertiser (Nestlé via Google DSP) can be picked. `PUT /admin/v1/available-inventory` refuses any name in `assignedTo.advertisers` with 400, pointing to deals (a name a sold slot already holds is tolerated on resave until its lock releases). **DSPs (open auction), Deals and buyers lists, Whitelist only and the Global deal stay**: they sell to anyone eligible, not to a named buyer. Migration 0086 clears every named advertiser; the demo seed sells Landscape slot 4 to Nestlé through a Programmatic guaranteed deal. This supersedes the "DSP named advertisers are unchanged" sentence under migration 0082 below.
 - **22 Oct 2026** — **Direct advertisers reach a slot only through a Direct advertiser deal** (Rob; tickets krIPF8rPnMwVOmynHNRh, knqu0B2PGTF9PG1EUWYD, mpbRDjAPS4uIagi2IVsz, OMwDvy3OUmY9raBtTf7v, EipHu2GUdlbZMpPGCTjF, z7kRMUflMRwkyBdEWxbn and H8YNT4aXwSqD6gffTkAz, the 7-ticket series). A deal has an internal PH deal ID, flight dates and a price. Three earlier statements are **superseded**: (1) a direct advertiser named in a slot's **Assigned to** (refused since 21 Oct; migration 0082 clears existing ones); (2) "no deal ID for a direct advertiser" (it now carries its own PH deal ID on its campaigns); (3) "no billing through the platform" (the revenue is **recorded and reported** like DSP revenue, but never invoiced, because a direct advertiser is billed outside PH). Spec: "Direct advertisers" under Advertisers, "Billing", and the deal-type entries under Programmatic guaranteed. Walkthrough: AWS-DEMO-TEST-FLOW.md section F; tests: E2E-TEST-SPEC.md Run 10 X and `apps/api/test/e2e/run10-direct-deals.test.ts`.
 - **20 Oct 2026** — The AWS POC is scoped to **three demand paths** (ticket JNSjYNvGcgwdzFvaPHlk). See "AWS POC demand paths" below the changelog.
 - **17 Oct 2026** — Available Inventory's **Reserve price** is replaced by an
@@ -902,6 +903,23 @@ Gatorade", with flights that follow each other (reserving deals never overlap on
 a slot): Red Bull 1 Sep to 31 Dec 2026 at 180 CPM, Gatorade 1 Jan to 31 Mar 2027
 at 150 CPM, each booking its own approved Portrait campaign, so they play
 through their deals.
+
+**Migration 0086 clears every named advertiser (22 Oct 2026, ticket
+QdMaGvVhMZgcdcmIAalT).** The same pattern as 0082, for every advertiser named in
+a slot's Assigned to, DSP advertisers included. A slot left with none goes back
+to real time (`rtb`); a slot with a live booking (won or reserved, not Test mode)
+is **locked against new sales** instead and keeps the names until its bookings
+have played, when `releaseSettledSlotLocks` removes them (`domain/slotLock.ts`).
+Nothing is converted into a deal. Each change is recorded in the SSP change
+history under actor `migration-0086`; `old_value` / `new_value` are JSON text
+(`json_quote` for strings), which `SspAuditRepo` reads back with `JSON.parse`
+(`test/clear-named-slots-migration.test.ts` reads the rows back through it). The
+validator (`validateAssigned`) refuses any name not already held on the slot.
+In the demo seed, Landscape slot 4 is no longer "Held for Nestlé": it is sold
+through **Nestlé guaranteed**, a Programmatic guaranteed deal with Nestlé's Google
+DSP seat at 200 CPM and a one-week flight starting on the day of seeding, and
+Nestlé's bookings on that slot are linked to the deal at its rate. No seeded slot
+names an advertiser.
 
 **Users page on the real API (10 Oct 2026, ticket H6BcvdNZUvdP8Ebh5Tve).**
 `mockups/platform-users.html` (Company Settings → Users) reads and saves

@@ -6,7 +6,7 @@ import type { BuyersListRepo } from '../repos/BuyersListRepo'
 import type { CompanySettings } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { zonesOf, type Zone } from './displayTypes'
-import { effectiveLists, isBlocked, isOn } from './lists'
+import { effectiveLists, isOn } from './lists'
 
 const countOfCap = (cap: number | null | undefined) => (cap === null || cap === undefined || cap === UNLIMITED ? 0 : Number(cap))
 /* The rotation cap is the slot count; null = the platform default (Unlimited). */
@@ -69,8 +69,7 @@ export function validateExtensions(dt: DisplayType, ext: DisplayTypeExtensions):
 }
 
 /* Who a sellable position is assigned to (Advertisers / Inventory). DSPs say
-   who may bid; advertisers hold it for them, and their DSPs are added
-   automatically; a buyers list restricts it to a private auction among its
+   who may bid; no advertiser is named (a held name is only ever one kept on a sold slot); a buyers list restricts it to a private auction among its
    invited buyers; none of these means any connected DSP. */
 export async function validateAssigned(
   a: Assigned,
@@ -78,7 +77,6 @@ export async function validateAssigned(
   partners: PartnerRecord[],
   previous: Assigned,
   buyersLists: BuyersListRepo,
-  direct: string[] = [],
 ): Promise<Detail[]> {
   const out: Detail[] = []
   const unknown = a.partnerIds.filter((id) => !partners.some((p) => p.id === id))
@@ -93,26 +91,14 @@ export async function validateAssigned(
     if (!found) out.push({ field: field(a.buyersListIds.length > 1 ? 'buyersListIds' : 'buyersListId'), reason: `Unknown buyers list${a.buyersListIds.length > 1 ? ` (${id})` : ''}.` })
     else if (found.status === 'archived') out.push({ field: field(a.buyersListIds.length > 1 ? 'buyersListIds' : 'buyersListId'), reason: `${found.name} is archived and cannot be assigned to a slot.` })
   }
-  /* The advertiser has to be a seat on a DSP this position can sell through. A direct advertiser (no DSP) is
-     refused (21 Oct 2026): it gets a slot only through a Direct advertiser deal, never by being named here. One
-     already held stays, like a blocked one below: migration 0082 leaves it on a sold slot until its bookings have
-     played, and resaving that slot (its floor, or a display-type save resending every slot) must not fail on it. */
-  const scope = a.partnerIds.length ? partners.filter((p) => a.partnerIds.includes(p.id)) : partners
+  /* No buyer is named on a slot (22 Oct 2026, tickets mpbRDjAPS4uIagi2IVsz and QdMaGvVhMZgcdcmIAalT): a direct advertiser or a DSP's
+     advertiser gets a slot only through a deal (a Direct advertiser deal, a Programmatic guaranteed deal or a private auction), never by
+     being named here. A name already held stays, so resaving a sold slot (its floor, or a display-type save resending every slot) doesn't
+     fail on it: migration 0086 leaves it on a sold slot until its bookings have played, then the lock sweep removes it. */
   for (const name of a.advertisers) {
-    if (direct.includes(name) && !partners.some((x) => x.seats.some((s) => s.name === name))) {
-      if (!previous.advertisers.includes(name)) out.push({ field: field('advertisers'), reason: `${name} is a direct advertiser, which can't be assigned to a slot directly: assign a Direct advertiser deal instead.` })
-      continue
-    }
-    const p = scope.find((x) => x.seats.some((s) => s.name === name))
-    const seat = p?.seats.find((s) => s.name === name)
-    if (!p || !seat) {
-      out.push({ field: field('advertisers'), reason: `${name} is not an advertiser on ${a.partnerIds.length ? 'the chosen DSPs' : 'any connected DSP'}.` })
-      continue
-    }
-    /* A blocked advertiser is withdrawn from the picker; one already held
-       stays, so the position doesn't change under whoever set it (spec §6). */
-    if (isBlocked(seat.id, effectiveLists(p)) && !previous.advertisers.includes(name)) out.push({ field: field('advertisers'), reason: `${name} is on the blacklist.` })
+    if (!previous.advertisers.includes(name)) out.push({ field: field('advertisers'), reason: `${name} can't be assigned to a slot directly: sell the slot through a deal (a Direct advertiser deal, a Programmatic guaranteed deal or a private auction with ${name} invited) instead.` })
   }
+  const scope = a.partnerIds.length ? partners.filter((p) => a.partnerIds.includes(p.id)) : partners
   if (a.whitelistOnly) {
     const lists = scope.map((p) => effectiveLists(p))
     if (lists.every((l) => !l.allowList.length)) out.push({ field: field('whitelistOnly'), reason: 'The whitelist is empty.' })

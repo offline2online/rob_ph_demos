@@ -16,7 +16,7 @@ describe('demo estate', () => {
     const ctx = await testContext({ bookings: true, demo: true, clock: () => NOW })
 
     const positions = await allPositions(ctx)
-    expect(positions.filter((p) => p.displayType.id === 'landscape').map((p) => p.def.label)).toEqual(['Hero slot', 'Supplier slot', 'Whitelist slot', 'Held for Nestlé'])
+    expect(positions.filter((p) => p.displayType.id === 'landscape').map((p) => p.def.label)).toEqual(['Hero slot', 'Supplier slot', 'Whitelist slot', 'Nestlé: guaranteed deal'])
     expect(positions.filter((p) => p.displayType.id === 'portrait')).toHaveLength(3)
     expect(positions.filter((p) => p.displayType.id === 'menu_board')).toHaveLength(1)
     /* The rotation cap is the slot count, and the loop divides cleanly. */
@@ -84,6 +84,26 @@ describe('demo estate', () => {
     expect(schedule.json().positions.map((p: { positionId: string }) => p.positionId)).toHaveLength(8)
     const layers = new Set(schedule.json().positions.flatMap((p: { windows: { booking: { pricingType: string } | null }[] }) => p.windows.map((w) => w.booking?.pricingType)).filter(Boolean))
     expect(layers).toEqual(new Set(['localised', 'personalised']))
+  })
+
+  it('sells Landscape slot 4 to Nestlé through a one-week Programmatic guaranteed deal, never by naming it on the slot (22 Oct 2026)', async () => {
+    const ctx = await testContext({ bookings: true, demo: true, clock: () => NOW })
+    /* No seeded slot names a buyer. */
+    for (const dt of await ctx.displayTypes.list()) for (const s of dt.phExtensions?.slots ?? []) expect(s.advertisers ?? [], `${dt.id} ${s.label}`).toEqual([])
+    const slot4 = (await ctx.displayTypes.get('landscape'))!.phExtensions!.slots[3]
+    expect(slot4).toMatchObject({ advertisers: [], listMode: 'deal', buyersListId: 'bl_demo_pg_nestle' })
+    const deal = (await ctx.buyersLists.get('bl_demo_pg_nestle'))!
+    expect(deal).toMatchObject({ dealType: 'guaranteed', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], floorCpm: 200 })
+    expect(Date.parse(deal.activeTo!) - Date.parse(deal.activeFrom!)).toBe(7 * 24 * 3_600_000)
+    /* Its bookings sit on slot 4 inside the flight, at the deal's rate, and nobody else books that slot. */
+    const booked = (await ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString())).filter((r) => !r.testMode && r.positionId === 'landscape.s4')
+    expect(booked.length).toBeGreaterThan(0)
+    for (const r of booked) {
+      expect(r).toMatchObject({ advertiserId: 'nestle', partnerId: 'p_google', clearingCpm: 200, dealType: 'guaranteed' })
+      expect(Date.parse(r.windowStart)).toBeGreaterThanOrEqual(Date.parse(deal.activeFrom!))
+      expect(Date.parse(r.windowStart)).toBeLessThanOrEqual(Date.parse(deal.activeTo!))
+      expect(r.reason).toContain(deal.dealId)
+    }
   })
 
   it('books each Direct advertiser deal only on its own slot, at its rate, and the exchange can hand its campaign off (E2E 21 Oct 2026)', async () => {

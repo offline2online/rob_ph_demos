@@ -1405,35 +1405,19 @@ describe('Advertisers / Inventory', () => {
     expect(await screen.findByRole('switch', { name: 'Enable global deal' })).toBeInTheDocument()
   }, slow(45000))
 
-  it('holds a position for an advertiser, and never offers interactive targeting', async () => {
-    const calls: { url: string; body: unknown }[] = []
-    const saved = () => calls.find((c) => c.url.includes('available-inventory'))?.body
-    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
-      if (init?.method === 'PUT') calls.push({ url, body: JSON.parse(String(init.body)) })
-      return fakeFetch(ADVERTISER_PAGE)(url)
-    }))
+  it('offers no buyer by name in Assigned to (22 Oct 2026: slots are sold through deals), and never offers interactive targeting', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     const combo = (row: string, label: string) =>
       within(within(inventory).getAllByLabelText(`${row}: ${label}`)[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
 
-    /* Hold the Menu Board position for an advertiser: a pill, and the DSP the API adds. */
+    /* The picker lists DSPs and deals, never an advertiser: neither a DSP's (Nestlé via Google DSP) nor a direct one. */
     fireEvent.mouseDown(combo('Menu Board — Long Format slot 2', 'assigned to'))
-    fireEvent.click(await screen.findByTitle('Nestlé (Google DSP)'))
-    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
-    /* Only the slot that changed is sent. */
-    await waitFor(() => expect(saved()).toEqual({ items: [{
-      displayTypeId: 'menu_board', slot: 2,
-      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null, buyersListIds: [], openAuction: false },
-      floorCpm: null, billingUnitHoursDefault: null, maxCampaignsDefault: null, maxPlayLengthSecDefault: null,
-    }] }))
-    /* This test opens two AntD Selects, drives a save round-trip and waits
-       on it with real timers — already the file's slowest, and, measured in
-       this sandbox, right at (and under full-suite load, occasionally over)
-       the file's default 20s budget regardless of this change (Rob, 23
-       Sep). A per-test override, not a global one, so a real hang elsewhere
-       in the file still fails fast. */
+    expect((await screen.findAllByTitle('Google DSP')).length).toBeGreaterThan(0)
+    expect(screen.queryByTitle('Nestlé (Google DSP)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Advertisers', { selector: '.ant-select-item-group' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   }, slow(45000))
 
   /* Floor CPM replaced Reserve price (Rob, 17 Oct 2026): every slot shows the

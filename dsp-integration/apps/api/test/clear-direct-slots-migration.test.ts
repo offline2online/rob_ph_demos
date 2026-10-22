@@ -30,7 +30,7 @@ function seeded() {
 describe('0082 clear direct slot assignments', () => {
   it('removes direct advertisers, keeps DSP advertisers, locks a sold slot and records it in the change history', () => {
     const db = seeded()
-    expect(migrateUp(db)).toContain('0082_clear_direct_slot_assignments')
+    expect(migrateUp(db, '0082')).toContain('0082_clear_direct_slot_assignments')
     const s = slotsOf(db, 'portrait')
     expect(s[0]).toMatchObject({ advertisers: [], listMode: 'rtb', buyersListId: null, buyersListIds: [], openAuction: false })
     expect(s[1]).toMatchObject({ advertisers: ['Nestlé'], listMode: null })
@@ -49,14 +49,14 @@ describe('0082 clear direct slot assignments', () => {
     /* Re-running finds nothing left to clear. */
     db.prepare("DELETE FROM schema_migrations WHERE version = '0082'").run()
     const before = (db.prepare('SELECT count(*) AS n FROM ssp_audit_log').get() as { n: number }).n
-    migrateUp(db)
+    migrateUp(db, '0082')
     expect(slotsOf(db, 'portrait')[2]).toMatchObject({ advertisers: ['Gatorade'], salesLocked: true })
     expect((db.prepare('SELECT count(*) AS n FROM ssp_audit_log').get() as { n: number }).n).toBe(before + 1)
   })
 
   it('does nothing on a database with no direct assignments', () => {
     const db = openDb(':memory:')
-    migrateUp(db)
+    migrateUp(db, '0082')
     expect((db.prepare("SELECT count(*) AS n FROM ssp_audit_log WHERE actor_id = 'migration-0082'").get() as { n: number }).n).toBe(0)
   })
 
