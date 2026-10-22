@@ -404,7 +404,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
       </div>
       ) : (
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. The rate for deals using this list, overriding the DSP's floor. It can raise the floor. On a Preferred or Programmatic guaranteed deal it can go below the platform floor only when you choose Save anyway, and the deal is then marked Below floor (override). Leave empty to inherit.">{draft.dealType === 'preferred' || guaranteed ? 'Fixed CPM' : 'Rate'}</WithTip></label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. The rate for deals using this list, overriding the DSP's floor. It can raise the floor. On a Preferred or Programmatic guaranteed deal it can go below the platform floor only with an explicit override, and the deal is then marked Below floor (override). Leave empty to inherit.">{draft.dealType === 'preferred' || guaranteed ? 'Fixed CPM' : 'Rate'}</WithTip></label>
         <InputNumber
           id="buyersListFloorCpm" min={0} style={{ width: '100%' }} step={1} placeholder={rateText(rate) ?? 'Inherit the DSP or platform floor'}
           status={errors.floorCpm ? 'error' : undefined}
