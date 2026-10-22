@@ -87,7 +87,17 @@ try {
       // Zoom and reset do not throw.
       await page.mouse.move(cx, cy);
       await page.keyboard.down("Control"); await page.mouse.wheel(0, -200); await page.keyboard.up("Control");
+      // Zoom buttons switch auto-fit off; Reset view and the fit button switch it back on.
       await page.click("#wb-reset");
+      assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "true", "Reset view turns auto-fit on");
+      await page.click("#wb-zoom-in");
+      assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "false", "zoom in turns auto-fit off");
+      await page.click("#wb-zoom-out");
+      await page.click("#wb-fit");
+      assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "true", "fit button turns auto-fit on");
+      await page.click("#wb-zoom-out");
+      await page.click("#wb-reset");
+      assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "true", "Reset view turns auto-fit on");
       assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll");
       assert.deepStrictEqual(o.problems, [], `no problems on the board at ${width}px`);
     } catch (e) { fail(`board at ${width}px`, e); }

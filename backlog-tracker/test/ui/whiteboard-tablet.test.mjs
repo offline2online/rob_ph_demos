@@ -145,6 +145,10 @@ try {
         await page.tap("#wb-share-close");
         await page.waitForSelector("#wb-share", { state: "hidden" });
 
+        // Auto-fit rescales the view as strokes land, and strokes store their size in world units;
+        // switch it off so this scenario checks the stored size at a 1:1 view.
+        await page.tap("#wb-fit");
+        assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "false", "fit button toggles auto-fit off by touch");
         const cdp = await page.context().newCDPSession(page);
         const cx = w / 2, cy = ht / 2 + 40;
 

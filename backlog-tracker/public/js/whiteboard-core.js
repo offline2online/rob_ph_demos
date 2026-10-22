@@ -112,3 +112,14 @@ export function boundsOf(strokes) {
   }
   return minX === Infinity ? null : { minX, minY, maxX, maxY };
 }
+
+// The view that frames every stroke centred in the area below the toolbar
+// (`top` px down) with `pad` px around it, never zoomed in past `maxK`. An
+// empty board gets the plain 1:1 view.
+export function fitView(strokes, width, height, top = 0, pad = 60, maxK = 2) {
+  const b = boundsOf(strokes);
+  if (!b) return { x: 0, y: 0, k: 1 };
+  const w = Math.max(1, b.maxX - b.minX), h = Math.max(1, b.maxY - b.minY);
+  const k = clampZoom(Math.min((width - pad * 2) / w, (height - pad * 2 - top) / h, maxK));
+  return { k, x: (width - w * k) / 2 - b.minX * k, y: (height + top - h * k) / 2 - b.minY * k };
+}

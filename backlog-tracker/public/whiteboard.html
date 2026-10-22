@@ -31,10 +31,16 @@
       <span class="wb-group" id="wb-sizes" role="group" aria-label="Pen size"></span>
       <span class="wb-sep" aria-hidden="true"></span>
       <button type="button" class="wb-tool" id="wb-undo" title="Undo your last stroke"><span class="material-symbols-outlined" aria-hidden="true">undo</span><span class="wb-label">Undo</span></button>
-      <button type="button" class="wb-tool" id="wb-reset" title="Reset view"><span class="material-symbols-outlined" aria-hidden="true">center_focus_strong</span><span class="wb-label">Reset view</span></button>
+      <button type="button" class="wb-tool" id="wb-reset" title="Reset view: frame the whole drawing and auto-fit"><span class="material-symbols-outlined" aria-hidden="true">center_focus_strong</span><span class="wb-label">Reset view</span></button>
       <button type="button" class="wb-tool" id="wb-clear" title="Clear the whole board"><span class="material-symbols-outlined" aria-hidden="true">delete_sweep</span><span class="wb-label">Clear</span></button>
       <span class="wb-sep" aria-hidden="true"></span>
       <button type="button" class="wb-share-btn" id="wb-share-open" aria-haspopup="dialog" aria-expanded="false" title="Share"><span class="material-symbols-outlined" aria-hidden="true">share</span><span class="wb-share-word">Share</span></button>
+    </div>
+
+    <div class="wb-zoom" id="wb-zoom" role="group" aria-label="Zoom">
+      <button type="button" class="wb-tool" id="wb-fit" aria-pressed="true" title="Auto-fit: keep everything drawn in view"><span class="material-symbols-outlined" aria-hidden="true">fit_screen</span></button>
+      <button type="button" class="wb-tool" id="wb-zoom-out" title="Zoom out" aria-label="Zoom out"><span class="material-symbols-outlined" aria-hidden="true">remove</span></button>
+      <button type="button" class="wb-tool" id="wb-zoom-in" title="Zoom in" aria-label="Zoom in"><span class="material-symbols-outlined" aria-hidden="true">add</span></button>
     </div>
 
     <div class="wb-status" id="wb-status" role="status" aria-live="polite"></div>

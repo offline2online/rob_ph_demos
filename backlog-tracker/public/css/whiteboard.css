@@ -47,6 +47,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--primary); o
 .wb-share-btn { background: var(--primary); color: #fff; font-weight: 600; padding: 0 14px; }
 .wb-share-btn:hover { background: #09759c; }
 
+.wb-zoom {
+  position: fixed; right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 4;
+  display: flex; align-items: center; gap: 2px; padding: 4px; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow), 0 0 0 .5px rgba(0, 0, 0, .1);
+}
+
 .wb-status { position: fixed; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 4; padding: 6px 12px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); font-size: 13px; color: var(--text-muted); }
 .wb-status:empty { display: none; }
 
