@@ -785,10 +785,11 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        the flat position across every zone, when each zone runs its own
        separate playlist and starts at slot 1). Equal to `slot` on a
        single-zone display type. */
-    /* Slot and Position are one column (ticket IkQ23uiIpN8dd6Wh9L27, 22 Oct 2026): the slot, then its name in brackets. */
-    { headerName: 'Slot', width: 230, minWidth: 170, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? slotColumnText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Slot') },
+    /* Slot and Position are one column (ticket IkQ23uiIpN8dd6Wh9L27, 22 Oct 2026): the slot, then its name in brackets. minWidth = width so the name isn't cut off on a wide table. */
+    { headerName: 'Slot', width: 300, minWidth: 300, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? slotColumnText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Slot') },
     {
-      headerName: 'Assigned to', width: 400, minWidth: 300, cellRenderer: AssignedCell, autoHeight: true,
+      /* minWidth too: sizeColumnsToFit shrinks every column to its minWidth on a wide table, which left this at 300px and cut off its waterfall note (E2E 22 Oct 2026). */
+      headerName: 'Assigned to', width: 400, minWidth: 400, cellRenderer: AssignedCell, autoHeight: true,
       headerComponent: header('Assigned to', ASSIGNED_TO_TIP),
       valueGetter: (p) => {
         if (!p.data) return ''
