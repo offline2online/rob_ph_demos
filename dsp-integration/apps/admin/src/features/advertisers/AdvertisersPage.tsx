@@ -30,7 +30,7 @@ import { BuyersListModal } from './BuyersListModal'
 import { ConflictCallout, rangeLabel, useSlotConflicts } from './reservingConflicts'
 import { BuyersListsTable } from './BuyersListsTable'
 import { BlockedDialog, describeBlock, type Blocked } from '../../shared/BlockedDialog'
-import { positionSlotNumber, positionText } from './slotLine'
+import { positionText, slotColumnText } from './slotLine'
 export { positionText }
 import { type Flags, envFlags } from '../../flags'
 
@@ -61,35 +61,28 @@ function ApprovalCell({ data, context }: P) {
     </span>
   )
 }
-/* Add an advertiser with a direct relationship with the retailer (no DSP), or edit any advertiser's audiences
-   (ticket OanRebXyEryAXBQrBsVe), from the same pop-up. It is saved at once (not part of Save changes). A new direct
-   advertiser is listed as "Name (Direct)". Adding has no Audiences section (a direct advertiser can use every shared
-   targeting attribute; private audiences are set afterwards by editing). Audiences are Visitor Segments values shared with this advertiser only. */
-const AUDIENCES_TIP = 'Audiences shared only with this advertiser, such as people who are new to their brand. Your own systems decide who is in each audience and publish it to the visitor’s live profile when they are identified; Personalisation Hub never receives their purchase history. Only this advertiser can target these audiences, on deals and reserved slots, not the open auction.'
-const SEGMENT_TIP = 'Visitor segments published by your CRM, customer data platform or loyalty system.'
+/* Add an advertiser with a direct relationship with the retailer (no DSP), or open any advertiser's details from the
+   same pop-up. Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr), so an existing advertiser has
+   nothing left to change here: its name is fixed and the pop-up only closes. A new direct advertiser is listed as
+   "Name (Direct)". */
 function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; editing: Advertiser | null; onClose: () => void; onSaved: () => void }) {
   const { message } = App.useApp()
   const [name, setName] = useState('')
-  const [audiences, setAudiences] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [blocked, setBlocked] = useState<Blocked | null>(null)
-  const variables = useQuery({ ...Q.targetingVariables, enabled: open })
-  const segments = variables.data?.find((v) => v.key === 'visitor.visitor_segments')
-  const options = [...new Set([...(segments?.values ?? []), ...(segments?.privateValues ?? []), ...audiences])].map((v) => ({ value: v, label: v }))
   useEffect(() => {
-    if (open) { setName(editing?.name ?? ''); setAudiences(editing?.audiences ?? []); setError(null) }
+    if (open) { setName(editing?.name ?? ''); setError(null) }
   }, [open, editing])
   const save = async () => {
-    if (!name.trim() || busy) return
+    if (editing || !name.trim() || busy) return
     setBusy(true)
     setError(null)
     try {
-      if (editing) await api('PUT', `/admin/v1/advertisers/${editing.advertiserId}/audiences`, { audiences })
-      else await api('POST', '/admin/v1/advertisers/direct', { name })
+      await api('POST', '/admin/v1/advertisers/direct', { name })
       onSaved()
       onClose()
-      message.success(editing ? 'Advertiser saved' : 'Advertiser added')
+      message.success('Advertiser added')
     } catch (e) {
       /* A hard block (409 has_dependents) is a friendly dialog, never the API's sentence in red (E2E 22 Oct 2026). */
       const b = describeBlock(e, 'save', 'This advertiser')
@@ -102,7 +95,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
   return (
     <Modal
       open={open} width={500} destroyOnHidden confirmLoading={busy} onCancel={onClose} onOk={save}
-      okText={editing ? 'Save advertiser' : 'Add advertiser'} okButtonProps={{ disabled: !name.trim() }}
+      okText="Add advertiser" okButtonProps={{ disabled: !name.trim(), style: editing ? { display: 'none' } : undefined }}
       title={
         <span className="inline-flex items-center gap-2">
           <Icon name="sell" size={20} style={{ color: T.primary }} />
@@ -115,26 +108,11 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
       <div className="mt-1.5" style={{ fontSize: 12, color: T.muted }}>
         {editing ? (editing.direct ? 'A direct advertiser has its own relationship with you, with no DSP in between.' : `Comes through ${editing.via.join(', ')}.`) : 'A direct advertiser has its own relationship with you, with no DSP in between.'}
       </div>
-      {editing && (
-        <>
-          <div className="mt-4 mb-1" style={{ fontSize: 13, fontWeight: 500 }}><WithTip tip={AUDIENCES_TIP}><span id="advertiser-audiences-label">Audiences</span></WithTip></div>
-          <div className="mb-1 inline-flex items-center gap-[5px]" style={{ fontSize: 12, color: T.muted }}>Segments <InfoTip text={SEGMENT_TIP} /></div>
-          <Select
-            mode="multiple" allowClear showSearch className="w-full" aria-labelledby="advertiser-audiences-label" placeholder="Choose segments shared with this advertiser only"
-            loading={variables.isLoading} value={audiences} options={options} onChange={setAudiences}
-            notFoundContent={segments ? 'No Visitor Segments values defined in Shared Targeting Variables.' : 'Visitor Segments is not available.'}
-          />
-          <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
-            {error ?? 'Chosen segments are removed from the Visitor Segments offered to everyone else.'}
-          </div>
-        </>
-      )}
-      {error && !editing && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
+      {error && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
       {blocked && <BlockedDialog blocked={blocked} onClose={() => setBlocked(null)} />}
     </Modal>
   )
 }
-const AudiencesCell = ({ data }: P) => (data ? <span title={(data.audiences ?? []).join(', ')}>{(data.audiences ?? []).length}</span> : null)
 const ActionsCell = ({ data, context }: P) =>
   data && context.current.canEdit ? (
     <span className="inline-flex items-center">
@@ -255,11 +233,10 @@ const PlaylistCell = ({ data, context }: IP) => {
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? (
     <Tip title={<div>
-      <div style={{ fontWeight: 500 }}>{positionText(data)}</div>
-      {positionSlotNumber(data) && <div>{positionSlotNumber(data)}</div>}
+      <div style={{ fontWeight: 500 }}>{slotColumnText(data)}</div>
       <div>{data.displayTypeName}{data.displayTypeDescription ? `: ${data.displayTypeDescription}` : ''}</div>
     </div>}>
-      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Position: ${positionText(data)}`}>{positionText(data)}</div>
+      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Slot: ${slotColumnText(data)}`}>{slotColumnText(data)}</div>
     </Tip>
   ) : null
 /* Opens the display type with Playlist Settings — where slot assignment
@@ -364,7 +341,12 @@ const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 
 /* The waterfall as rows in priority order: drag a row (or use the arrows) to
    reorder, top row is tried first. Priority belongs to this slot's
    assignment, so the same list can rank differently on another slot. */
-function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction, globalDeal, openDsps }: { label: string; ids: string[]; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void; openAuction: boolean; globalDeal: boolean; openDsps: string[] }) {
+function PriorityList({ label, ids: allIds, reserving, names, cpms, canEdit, onChange, openAuction, globalDeal, openDsps }: { label: string; ids: string[]; reserving: Set<string>; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void; openAuction: boolean; globalDeal: boolean; openDsps: string[] }) {
+  /* Only deals that share the slot are ranked (Rob, 22 Oct 2026): Programmatic guaranteed and Direct advertiser deals take the
+     whole slot, so they carry no priority, only a flight that must not overlap another's. They are kept ahead of the ranked
+     deals in the saved order and shown apart, unnumbered. */
+  const held = allIds.filter((id) => reserving.has(id))
+  const ids = allIds.filter((id) => !reserving.has(id))
   const [dragging, setDragging] = useState<number | null>(null)
   const [showAll, setShowAll] = useState(false)
   const LIMIT = 5
@@ -372,15 +354,29 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction,
     if (from === to || to < 0 || to >= ids.length) return
     const next = [...ids]
     next.splice(to, 0, ...next.splice(from, 1))
-    onChange(next)
+    onChange([...held, ...next])
   }
   /* Ordering only means something with two or more lists (ticket fbJdWqr5SwcInFFofwCc, 8 Oct 2026), unless an
      Open auction sits below the deals: then the fallthrough is shown even for one deal (9 Oct 2026). */
   /* The open tier is the chosen DSPs and/or the global deal (12 Oct 2026): one pool, every entry bids at once. */
   const openTier = openAuction || globalDeal
-  if (ids.length < 2 && !(ids.length === 1 && openTier)) return null
+  const ranked = ids.length >= 2 || (ids.length === 1 && openTier)
+  if (!ranked && !held.length) return null
   const hidden = showAll || ids.length <= LIMIT ? 0 : ids.length - LIMIT
+  const reservedRows = held.length > 0 && (
+    <div className="mt-2" role="list" aria-label={`${label}: deals reserving the whole slot`}>
+      <div style={{ fontSize: 12, color: T.muted }} className="mb-1">Reserves the whole slot: no priority, flights must not overlap</div>
+      {held.map((id) => (
+        <div key={id} role="listitem" className="mb-1 flex items-center gap-2" style={{ border: '1px solid #d9d9d9', borderRadius: 6, padding: '2px 8px', background: '#fff' }}>
+          <Icon name="lock" size={14} /><span className="flex-1 truncate" style={{ fontSize: 13 }}>{names.get(id) ?? id}</span>
+        </div>
+      ))}
+    </div>
+  )
+  if (!ranked) return reservedRows
   return (
+    <>
+    {reservedRows}
     <div className="mt-2" role="list" aria-label={`${label}: buyers lists in priority order`}>
       <div style={{ fontSize: 12, color: T.muted }} className="mb-1">{openTier ? 'Deals: tried top to bottom, resolved ahead of time' : 'Priority: tried top to bottom'}</div>
       {ids.map((id, i) => i >= ids.length - hidden ? null : (
@@ -433,6 +429,7 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction,
         </div>
       )}
     </div>
+    </>
   )
 }
 
@@ -538,6 +535,7 @@ function AssignedCell({ data, context }: IP) {
     <PriorityList
       label={`${data.displayTypeName} slot ${data.zoneSlot}`}
       ids={tiersOf(a)}
+      reserving={new Set(c.buyersLists.filter((l) => l.dealType === 'guaranteed' || l.dealType === 'direct').map((l) => l.id))}
       names={new Map(c.buyersLists.map((l) => [l.id, l.name]))}
       cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType, l.termTotal), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
       canEdit={c.canEdit}
@@ -726,6 +724,7 @@ const ASSIGNED_TO_TIP = (
   <div className="flex flex-col gap-[6px]">
     <p className="m-0"><strong>Assigning.</strong> Pick DSPs or buyers lists for this slot in the Assigned to cell. An empty cell is valid: the slot is unassigned and does not sell.</p>
     <p className="m-0"><strong>Waterfall.</strong> The deals and buyers lists you assign form an ordered priority stack, tried highest first. Beneath them sits the Open auction tier: the DSPs (or All DSPs) chosen for the open auction, plus the global deal where included. If no deal wins the window, the slot falls through to the Open auction.</p>
+    <p className="m-0"><strong>Reserving deals.</strong> Programmatic guaranteed and Direct advertiser deals take the whole slot, so they are not ranked: they are listed apart, and only their flight dates must not overlap.</p>
     <p className="m-0"><strong>Priority.</strong> Drag the rows to reorder, or use the arrows. The position badge shows each rank.</p>
     <p className="m-0"><strong>Example.</strong> A slot has buyers list 1, buyers list 2, then the Open auction. Each window is offered to buyers list 1 first; if it does not take it, to buyers list 2; and if no deal wins, it clears in the Open auction.</p>
   </div>
@@ -786,10 +785,11 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        the flat position across every zone, when each zone runs its own
        separate playlist and starts at slot 1). Equal to `slot` on a
        single-zone display type. */
-    { headerName: 'Slot', width: 70, field: 'zoneSlot', suppressSizeToFit: true, cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Slot', invValues((r) => [String(r.zoneSlot)])) },
-    { headerName: 'Position', width: 200, minWidth: 150, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? positionText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Position') },
+    /* Slot and Position are one column (ticket IkQ23uiIpN8dd6Wh9L27, 22 Oct 2026): the slot, then its name in brackets. minWidth = width so the name isn't cut off on a wide table. */
+    { headerName: 'Slot', width: 300, minWidth: 300, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? slotColumnText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Slot') },
     {
-      headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
+      /* minWidth too: sizeColumnsToFit shrinks every column to its minWidth on a wide table, which left this at 300px and cut off its waterfall note (E2E 22 Oct 2026). */
+      headerName: 'Assigned to', width: 400, minWidth: 400, cellRenderer: AssignedCell, autoHeight: true,
       headerComponent: header('Assigned to', ASSIGNED_TO_TIP),
       valueGetter: (p) => {
         if (!p.data) return ''
@@ -935,11 +935,6 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       headerName: 'Rejected', width: 105, suppressSizeToFit: true, ...COUNT_COLUMN,
       headerComponent: header('Rejected', 'Campaigns the retailer rejected.'),
       valueGetter: (p) => (p.data ? campaignCounts(p.data).rejected : 0),
-    },
-    {
-      headerName: 'Audiences', width: 110, suppressSizeToFit: true, cellRenderer: AudiencesCell, ...COUNT_COLUMN,
-      headerComponent: header('Audiences', 'Visitor segments shared with this advertiser only, such as people who are new to their brand. Edit the advertiser to change them.'),
-      valueGetter: (p) => (p.data ? (p.data.audiences ?? []).length : 0),
     },
     /* Campaigns and Bookings columns removed (Rob's ticket, 26 Sep 2026):
        already covered in Campaign Status and the booking schedule, their

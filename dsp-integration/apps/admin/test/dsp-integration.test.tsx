@@ -717,7 +717,7 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Floor CPM', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
+      .toEqual(['Playlist', 'Slot', 'Assigned to', 'Floor CPM', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
   })
 
   it('shows buyers list and campaign counts on the Advertisers table, in the specified column order', async () => {
@@ -730,7 +730,7 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
     const heads = [...advertisers.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)
-    expect(heads.slice(0, 9)).toEqual(['Advertiser', 'Via', 'Buyers list', 'Campaign approval', 'Campaigns', 'Awaiting approval', 'Approved', 'Rejected', 'Audiences'])
+    expect(heads.slice(0, 8)).toEqual(['Advertiser', 'Via', 'Buyers list', 'Campaign approval', 'Campaigns', 'Awaiting approval', 'Approved', 'Rejected'])
     await waitFor(() => {
       const row = advertisers.querySelector('.ag-center-cols-container [row-id="nestle"]')!
       const cells = [...row.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent)
@@ -756,15 +756,15 @@ describe('Advertisers / Inventory', () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByLabelText('Advertiser name')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Add advertiser' })).toBeDisabled()
-    /* Audiences shared with this advertiser only (ticket OanRebXyEryAXBQrBsVe). */
+    /* Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr). */
     expect(within(dialog).queryByText('Audiences')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     /* Every advertiser row, DSP or direct, has an Edit action opening the same form. */
     fireEvent.click(within(advertisers).getByRole('button', { name: 'Edit Acme Foods' }))
     const edit = await screen.findByRole('dialog')
-    expect(within(edit).getByRole('button', { name: 'Save advertiser' })).toBeInTheDocument()
+    expect(within(edit).queryByRole('button', { name: 'Save advertiser' })).not.toBeInTheDocument()
     expect(within(edit).getByLabelText('Advertiser name')).toBeDisabled()
-    expect(within(edit).getByText('Audiences')).toBeInTheDocument()
+    expect(within(edit).queryByText('Audiences')).not.toBeInTheDocument()
     fireEvent.click(within(edit).getByRole('button', { name: 'Cancel' }))
     expect(within(advertisers).getAllByRole('button', { name: /^Edit / }).length).toBeGreaterThan(1)
     /* Only a direct advertiser can be deleted. */
@@ -795,7 +795,7 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Floor CPM', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
+      .toEqual(['Playlist', 'Slot', 'Assigned to', 'Floor CPM', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */
@@ -1302,6 +1302,8 @@ describe('Advertisers / Inventory', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Archive' }))
     await waitFor(() => expect(calls).toEqual(['/api/admin/v1/buyers-lists/bl_1/archive']))
     fireEvent.click(await screen.findByRole('button', { name: /View Archived Deals/ }))
+    /* A page of its own (ticket cy45L5xGDqKwzt4diBBa), not a dialog. */
+    expect(screen.queryByRole('dialog')).toBeNull()
     const archive = await screen.findByLabelText('Archived deals')
     expect(await within(archive).findByText('Ended deal')).toBeInTheDocument()
     expect(within(archive).getByText('PH-OLD0000001')).toBeInTheDocument()
@@ -1365,6 +1367,24 @@ describe('Advertisers / Inventory', () => {
     const open = within(cell).getByRole('list', { name: /open auction DSPs/ })
     expect(within(open).getByText('Included in global deals')).toBeInTheDocument()
     expect(within(open).queryByLabelText(/^Position/)).toBeNull()
+  }, slow(45000))
+
+  /* Ticket z7qPFTdA4NOC3K9hYOAs (22 Oct 2026): deals that reserve the whole slot are not ranked in the waterfall. */
+  it('ranks only the deals that share a slot; reserving deals sit apart, unnumbered', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const mk = (id: string, name: string, dealType: string) => ({ id, name, description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType })
+    const lists = [mk('bl_pg', 'Coke PG', 'guaranteed'), mk('bl_a', 'Auction A', 'private_auction'), mk('bl_b', 'Auction B', 'private_auction')]
+    const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_pg', buyersListIds: ['bl_pg', 'bl_a', 'bl_b'], openAuction: false }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists }, '/api/admin/v1/available-inventory': { ...inv, items: [{ ...inv.items[0], assignedTo: assigned }] } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const cell = within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement
+    const ranked = within(cell).getByRole('list', { name: /buyers lists in priority order/ })
+    expect(within(ranked).getAllByLabelText(/^Position/).map((n) => n.textContent)).toEqual(['1', '2'])
+    expect(within(ranked).queryByText('Coke PG')).toBeNull()
+    const held = within(cell).getByRole('list', { name: /deals reserving the whole slot/ })
+    expect(within(held).getByText('Coke PG')).toBeInTheDocument()
+    expect(within(held).queryByLabelText(/^Position/)).toBeNull()
   }, slow(45000))
 
   /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */

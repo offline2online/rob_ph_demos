@@ -14,6 +14,7 @@ record.
 - **22 Oct 2026** — **No buyer of any kind is named on a slot; slots are sold only through deals** (Rob; ticket QdMaGvVhMZgcdcmIAalT, extending mpbRDjAPS4uIagi2IVsz and z7kRMUflMRwkyBdEWxbn). Assigned to no longer offers an **Advertisers** group: neither a direct advertiser nor a DSP's advertiser (Nestlé via Google DSP) can be picked. `PUT /admin/v1/available-inventory` refuses any name in `assignedTo.advertisers` with 400, pointing to deals (a name a sold slot already holds is tolerated on resave until its lock releases). **DSPs (open auction), Deals and buyers lists, Whitelist only and the Global deal stay**: they sell to anyone eligible, not to a named buyer. Migration 0086 clears every named advertiser; the demo seed sells Landscape slot 4 to Nestlé through a Programmatic guaranteed deal. This supersedes the "DSP named advertisers are unchanged" sentence under migration 0082 below.
 - **22 Oct 2026** — **A deal's touch points, and the Red Bull end-to-end flow** (Rob; ticket dmcbOIDGV3FnBQ66KYIb). A deal's touch points are those of the display types of the slots it is assigned to; `GET /admin/v1/advertisers/{id}/deals` returns them as `touchPoints` and a campaign whose brief names another is refused 400. Visitor segments for a play are a stated interface (`shared/interface-contract.md` row 6). The whole flow is E2E-TEST-SPEC.md Run 12 and AWS-DEMO-TEST-FLOW.md section G.
 - **22 Oct 2026** — **Direct advertisers reach a slot only through a Direct advertiser deal** (Rob; tickets krIPF8rPnMwVOmynHNRh, knqu0B2PGTF9PG1EUWYD, mpbRDjAPS4uIagi2IVsz, OMwDvy3OUmY9raBtTf7v, EipHu2GUdlbZMpPGCTjF, z7kRMUflMRwkyBdEWxbn and H8YNT4aXwSqD6gffTkAz, the 7-ticket series). A deal has an internal PH deal ID, flight dates and a price. Three earlier statements are **superseded**: (1) a direct advertiser named in a slot's **Assigned to** (refused since 21 Oct; migration 0082 clears existing ones); (2) "no deal ID for a direct advertiser" (it now carries its own PH deal ID on its campaigns); (3) "no billing through the platform" (the revenue is **recorded and reported** like DSP revenue, but never invoiced, because a direct advertiser is billed outside PH). Spec: "Direct advertisers" under Advertisers, "Billing", and the deal-type entries under Programmatic guaranteed. Walkthrough: AWS-DEMO-TEST-FLOW.md section F; tests: E2E-TEST-SPEC.md Run 10 X and `apps/api/test/e2e/run10-direct-deals.test.ts`.
+- **22 Oct 2026** — **A finalised Direct advertiser deal reads as booked on every window of its flight** (Rob; ticket TWJmiwQpPu9Y4tAUjncC). The exchange writes a deal's booking one window ahead, but the Booking schedule no longer shows the later windows as a bare "Reserved · Direct": each is the advertiser's booking (named, with Default / Localised / Personalised layers, approval state, the deal's CPM) and counts in Booking revenue, % sold, revenue by pricing type and Plays per day as pre-booked. Derived at read time (`plannedDirectBookings`, `exchange/directDeal.ts`); a window the exchange has booked shows that row instead. Nothing is stored.
 - **20 Oct 2026** — The AWS POC is scoped to **three demand paths** (ticket JNSjYNvGcgwdzFvaPHlk). See "AWS POC demand paths" below the changelog.
 - **17 Oct 2026** — Available Inventory's **Reserve price** is replaced by an
   editable per-slot **Floor CPM** (Rob; ticket EEm4tA5fSB6RKlEjNhVu). Each
@@ -352,8 +353,11 @@ the same dialog for both.
   share and acceptances answer `409`) and is not offered to DSPs, quoted or
   auctioned. Its deal ID, terms, history, campaigns, bookings and billing stay
   and still resolve for reporting and revenue. **View Archived Deals**, at the
-  top right of the Deals table, opens a historic table (AG Grid, a filter on
-  every column) of all archived deals: deal, deal type, buyers, rate / total,
+  top right of the Deals table, opens **Archived deals**, a full-screen page of
+  its own (`/advertisers/archived-deals`, with a back link to Advertisers /
+  Inventory; ticket cy45L5xGDqKwzt4diBBa, 22 Oct 2026) holding a historic
+  table (AG Grid, a filter under every column heading and a "Showing X of N"
+  count) of all archived deals: deal, deal type, buyers, rate / total,
   flight dates, deal ID, archived date and archived by. Archiving is recorded
   in the SSP change history (§3a).
 - **Automatic end of flight.** Once a shared deal's flight dates have ended and
@@ -977,12 +981,11 @@ and publishes it as visitor segments when a visitor is identified; PH never rece
 advertiser can then target, and bid up or down on, its own audiences. Amazon Ads and Kroger Precision
 Marketing share brand-specific (new-to-brand) audiences privately with one advertiser in the same way.
 
-- **Edit advertiser** (Advertisers / Inventory) has an **Audiences** multi-select. It works the same for
-  a DSP and a direct advertiser. "Add new Advertiser" has **no Audiences section** (21 Oct 2026, ticket
-  vfaK4m8zvDF998LukxmQ): a new direct advertiser starts with none and, like every advertiser, can use all the
-  shared targeting attributes defined for the platform; private audiences are added afterwards. Every advertiser
-  row has an Edit action opening the form (Admin; Marketing sees the Audiences column read-only; Help desk has no page).
-  A column shows how many each advertiser has.
+- **Removed from the admin screens (22 Oct 2026, ticket GknBt80ENeXkt0EEyDwr):** audiences are no longer part of
+  the platform's admin. The Advertisers table has **no Audiences column**, and the Edit advertiser pop-up has
+  **no Audiences section**: it shows the advertiser's name and how it reaches the retailer, with a Cancel button
+  and nothing to save. "Add new Advertiser" is unchanged. The API and `advertiser_audiences` table are left in
+  place for now and are not reachable from the admin UI.
 - Options are the Visitor Segments values defined in Shared Targeting Variables (§6) and any already private to
   another advertiser. A selected segment is **private to that advertiser**; it is private to more than one
   advertiser only if the retailer adds it to each. Stored in `advertiser_audiences` (migration 0078).
@@ -2569,6 +2572,17 @@ rank differently on each.
   priority rows only appear once two or more lists are assigned to the slot —
   with one list there is nothing to order, so none are shown
   (unless the slot also has an Open auction tier; see below).
+- **Only deals that share a slot are ranked (22 Oct 2026; ticket
+  z7qPFTdA4NOC3K9hYOAs)**: the waterfall is private auctions, preferred deals
+  and the open auction. Programmatic guaranteed and Direct advertiser deals take
+  the whole slot, so priority means nothing for them; the only rule is that
+  their flights must not overlap (already enforced, see the 22 Oct 2026 note on
+  reserving deals). Admin shows them in their own unnumbered group, "Reserves
+  the whole slot: no priority, flights must not overlap", with no drag handle or
+  arrows, and numbers only the remaining deals. Stored order is unchanged
+  (`buyersListIds`); the UI keeps reserving deals ahead of the ranked ones when
+  it reorders. The ranked rows appear once two or more ranked deals (or one
+  plus an Open auction) are on the slot.
 - **API**: `assignedTo.buyersListIds` (ordered, no duplicates, each must
   exist); `buyersListId` alone is still accepted.
 - Known edge: a reserve commitment (`type: reserve`) on a waterfall slot

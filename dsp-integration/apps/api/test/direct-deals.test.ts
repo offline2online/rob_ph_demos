@@ -181,6 +181,28 @@ describe('Direct advertiser deals: the exchange reserves the windows', () => {
     expect(await at('2026-10-30')).not.toBe('reserved')
   })
 
+  it('reads every unbooked window of the flight as the advertiser\'s booking, in the schedule, its revenue and plays per day (ticket TWJmiwQpPu9Y4tAUjncC)', async () => {
+    const { app, direct } = await sellSetup()
+    await app.inject({ method: 'POST', url: `${URL}/${direct.id}/share` })
+    const res = await app.inject({ method: 'GET', url: '/api/admin/v1/booking-schedule?from=2026-11-10&to=2026-11-12' })
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
+    const sched = res.json()
+    const pos = sched.positions.find((x: { positionId: string }) => x.positionId === 'portrait.s1')
+    const cell = pos.windows.find((w: { start: string }) => w.start.startsWith('2026-11-10'))
+    expect(cell.status).toBe('booked')
+    expect(cell.booking).toMatchObject({ advertiserId: 'acme-foods', advertiserName: 'Acme Foods (Direct)', partnerId: 'direct', type: 'reserve', cpm: 150, layers: { default: true } })
+    expect(cell.booking.approval).toMatchObject({ defaultApproved: false })
+    expect(sched.directAdvertisers.map((a: { advertiserId: string }) => a.advertiserId)).toContain('acme-foods')
+    const row = sched.revenue.find((r: { displayTypeId: string }) => r.displayTypeId === 'portrait')
+    expect(row.bookedWindows).toBeGreaterThan(0)
+    expect(row.bookedRevenue).toBeGreaterThan(0)
+    const cap = await app.inject({ method: 'GET', url: '/api/admin/v1/booking-schedule/capacity?from=2026-11-10&to=2026-11-11' })
+    const day = cap.json().positions.find((x: { positionId: string }) => x.positionId === 'portrait.s1').days[0]
+    expect(day.firmPlays).toBeGreaterThan(0)
+    expect(day.deals[0].advertiserName).toBe('Acme Foods (Direct)')
+  })
+
   it('reads Reserved across every live Direct deal on the slot, not only the first (E2E 21 Oct 2026)', async () => {
     const { ctx, app, direct, assign, other } = await sellSetup()
     const dec = await other('2026-12-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z')

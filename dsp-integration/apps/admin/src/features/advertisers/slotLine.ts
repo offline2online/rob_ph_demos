@@ -24,3 +24,9 @@ export const positionText = (r: PlaceLike): string =>
   [zonePart(r), slotName(r) ?? `Slot ${r.zoneSlot ?? ''}`.trim()].filter(Boolean).join(' · ')
 /* Hover line 2: the slot number, only when line 1 is led by a name rather than the number. */
 export const positionSlotNumber = (r: PlaceLike): string | null => (slotName(r) && r.zoneSlot != null ? `Slot ${r.zoneSlot}` : null)
+/* Available Inventory's single Slot column (ticket IkQ23uiIpN8dd6Wh9L27): the slot, with the slot's name in brackets when one was given. */
+export const slotColumnText = (r: PlaceLike): string => {
+  const slot = [zonePart(r), `Slot ${r.zoneSlot ?? ''}`.trim()].filter(Boolean).join(' · ')
+  const name = slotName(r)
+  return name ? `${slot} (${name})` : slot
+}
