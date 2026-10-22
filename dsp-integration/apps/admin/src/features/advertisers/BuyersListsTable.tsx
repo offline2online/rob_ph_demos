@@ -22,7 +22,7 @@ import { DealSheetModal } from './DealSheetModal'
 import { buyerStatusOf, flightDays, flightMoment, slotPlaysOver, termTotalText, rateTypeOf, rateValue, sourceLabel, valueOf, valueText, zoneLabelOf } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
-type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; orientation?: 'landscape' | 'portrait' | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }
+type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }
 /* Secondary text inside a Tip (dark background). */
 const TIP_MUTED = 'rgba(255,255,255,0.65)'
 type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onArchive: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
@@ -76,8 +76,8 @@ const NameCell = ({ data, context }: P) => {
 const BuyersCell = ({ data, context }: P) => {
   if (!data) return null
   const { dspName, seatName } = context.current
-  /* A Direct advertiser or programmatic guaranteed deal has exactly one buyer, so it is named rather than counted. */
-  const buyers = (data.dealType === 'direct' || data.dealType === 'guaranteed') && data.invitedBuyers.length === 1 ? seatName(data.invitedBuyers[0].partnerId, data.invitedBuyers[0].seatId)
+  /* A Direct advertiser deal has exactly one buyer, so it is named rather than counted. */
+  const buyers = data.dealType === 'direct' && data.invitedBuyers.length === 1 ? seatName(data.invitedBuyers[0].partnerId, data.invitedBuyers[0].seatId)
     : data.invitedBuyers.length ? `${data.invitedBuyers.length} buyer${data.invitedBuyers.length === 1 ? '' : 's'}` : ''
   const cats = (data.invitedCategories ?? []).length ? `Category: ${data.invitedCategories.join(', ')}` : ''
   const text = [buyers, cats].filter(Boolean).join(' + ')
@@ -105,11 +105,11 @@ const SlotsCell = ({ data, context }: P) => {
       <div style={{ fontWeight: 500 }}>Assigned slots</div>
       {rows.map((r, i) => (
         <div key={i} style={{ marginTop: 4 }}>
-          <div style={{ fontWeight: 500 }}>{r.displayType}{r.orientation && !r.displayType.toLowerCase().includes(r.orientation) ? ` ${r.orientation === 'portrait' ? 'Portrait' : 'Landscape'}` : ''}{r.displayCount != null ? ` (${num(r.displayCount)} display${r.displayCount === 1 ? '' : 's'})` : ''}{r.description ? ` (${r.description})` : ''}</div>
+          <div style={{ fontWeight: 500 }}>{r.displayType}{r.description ? ` (${r.description})` : ''}</div>
           <div>{r.playlist || 'No playlist'}{r.zoneName ? ` · ${r.zoneName}` : ''}</div>
           {/* The IAB store zone set on the display type (ticket yZ8BvwUQV4Yc7a0IVwak, 15 Oct 2026). */}
           <div>IAB zone: {storeZoneLabel(r.storeZone) ?? 'Not defined'}</div>
-          <div>{r.position} (slot {r.slot}){r.playsPerWindow != null ? ` · ${num(r.playsPerWindow)}${r.displayCount != null ? ` (${num(r.playsPerWindow * r.displayCount)} total)` : ''} plays per window` : ''}</div>
+          <div>{r.position} (slot {r.slot}){r.playsPerWindow != null ? ` · ${r.playsPerWindow.toLocaleString('en-US')} plays per window` : ''}</div>
         </div>
       ))}
     </div>
@@ -156,7 +156,6 @@ const DetailsCell = ({ data, context }: P) => {
       <div style={{ fontWeight: 500 }}>{typeLabel}</div>
       {sub('Rate', `${rate ?? 'Per play'}${rateType ? ` ${rateType}` : ''}${src && !perTerm && !data.lockedWin ? ` (${src})` : ''}`)}
       {sub('Flight', flight)}
-      {sub('Period', days == null ? (data.activeFrom || data.activeTo ? 'Open flight' : 'Always active') : `${num(days)} day${days === 1 ? '' : 's'}`)}
       {data.dealType === 'direct' && <>
         {sub('Advertiser', data.invitedBuyers.length ? context.current.seatName(data.invitedBuyers[0].partnerId, data.invitedBuyers[0].seatId) : 'None yet')}
         {sub('Deal ID', data.dealId)}
@@ -216,7 +215,7 @@ function ArchivedDealsModal({ open, onClose, bufferPct, dspName, seatName }: { o
   const typeText = (l?: BuyersList) => (l ? DEAL_TYPE_LABELS[l.dealType] ?? 'Private auction' : '')
   const columns = useMemo<ColDef<BuyersList>[]>(() => [
     { headerName: 'Deal', flex: 2, minWidth: 180, cellRenderer: ArchivedNameCell, valueGetter: (p) => p.data?.name ?? '', ...searchColumn<BuyersList>('Deal') },
-    { headerName: 'Buyer(s)', width: 180, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => [...(p.data?.invitedBuyers ?? []).map((b) => p.context.current.seatName(b.partnerId, b.seatId)), ...(p.data?.invitedCategories ?? [])].join(', '), ...searchColumn<BuyersList>('Buyer(s)') },
+    { headerName: 'Buyers', width: 180, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => [...(p.data?.invitedBuyers ?? []).map((b) => p.context.current.seatName(b.partnerId, b.seatId)), ...(p.data?.invitedCategories ?? [])].join(', '), ...searchColumn<BuyersList>('Buyers') },
     { headerName: 'Details', width: 280, minWidth: 220, cellRenderer: DetailsCell, valueGetter: (p) => `${typeText(p.data)} ${p.data?.termTotal != null ? termTotalText(p.data.termTotal) : rateValue(p.data?.effectiveRateCpm) ?? ''}`, ...searchColumn<BuyersList>('Details') },
     { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${fmtDate(p.data?.activeFrom ?? null)} ${fmtDate(p.data?.activeTo ?? null)}`, ...searchColumn<BuyersList>('Flight dates') },
     { headerName: 'Deal ID', width: 160, minWidth: 140, cellRenderer: DealIdCell, valueGetter: (p) => p.data?.dealId ?? '', ...searchColumn<BuyersList>('Deal ID') },
@@ -260,7 +259,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Details', width: 300, minWidth: 240, cellRenderer: DetailsCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.termTotal, p.data?.belowFloorOverride, p.data?.activeFrom, p.data?.activeTo, p.data?.dealId, p.data?.invitedBuyers ?? [], p.context.current.slots.get(p.data?.id ?? '') ?? []]) },
-    { headerName: 'Buyer(s)', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
+    { headerName: 'Buyers', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
     { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []) },
     /* Start and end each carry a time now (ticket yOginusgiFgFkwVHTRFH): wide enough not to clip the end time (E2E 22 Oct 2026). */
     { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },

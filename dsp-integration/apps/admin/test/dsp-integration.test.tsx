@@ -921,8 +921,6 @@ describe('Advertisers / Inventory', () => {
     expect(within(tip).getByTestId('details-slot-bl_1-0')).toHaveTextContent('230,400 plays · USD 500')
     expect(within(tip).getByTestId('details-total-bl_1')).toHaveTextContent('Deal total: 230,400 plays · USD 500')
     expect(tip).toHaveTextContent('USD 500 for the term')
-    /* The flight's length sits in its own Period line (22 Oct 2026). */
-    expect(tip).toHaveTextContent('Period: 10 days')
     expect(tip).not.toHaveTextContent(/per window|IAB zone|buffer/)
     /* A Direct advertiser deal gets the same cell, with the advertiser and the internal deal ID. 19,200 plays x 4 CPM / 1000. */
     fireEvent.mouseOver(within(table).getByTestId('details-summary-bl_2'))
@@ -1238,7 +1236,7 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const table = await screen.findByLabelText('Deals and buyers lists')
     expect(await within(table).findByText('Floor deal')).toBeInTheDocument()
-    for (const h of ['Details', 'Buyer(s)', 'Flight dates', 'Deal ID']) expect(within(table).getAllByText(h).length).toBeGreaterThan(0)
+    for (const h of ['Details', 'Buyers', 'Flight dates', 'Deal ID']) expect(within(table).getAllByText(h).length).toBeGreaterThan(0)
     /* Ticket nfDLP1CZiPjGfN8FG764: Rate and Deal type are one Details column. */
     for (const gone of ['Rate', 'Deal type']) expect(within(table).queryByText(gone)).toBeNull()
     expect(within(table).getByTestId('details-summary-bl_1')).toHaveTextContent('Private auction')
