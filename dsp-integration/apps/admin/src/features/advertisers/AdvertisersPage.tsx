@@ -364,7 +364,12 @@ const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 
 /* The waterfall as rows in priority order: drag a row (or use the arrows) to
    reorder, top row is tried first. Priority belongs to this slot's
    assignment, so the same list can rank differently on another slot. */
-function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction, globalDeal, openDsps }: { label: string; ids: string[]; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void; openAuction: boolean; globalDeal: boolean; openDsps: string[] }) {
+function PriorityList({ label, ids: allIds, reserving, names, cpms, canEdit, onChange, openAuction, globalDeal, openDsps }: { label: string; ids: string[]; reserving: Set<string>; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void; openAuction: boolean; globalDeal: boolean; openDsps: string[] }) {
+  /* Only deals that share the slot are ranked (Rob, 22 Oct 2026): Programmatic guaranteed and Direct advertiser deals take the
+     whole slot, so they carry no priority, only a flight that must not overlap another's. They are kept ahead of the ranked
+     deals in the saved order and shown apart, unnumbered. */
+  const held = allIds.filter((id) => reserving.has(id))
+  const ids = allIds.filter((id) => !reserving.has(id))
   const [dragging, setDragging] = useState<number | null>(null)
   const [showAll, setShowAll] = useState(false)
   const LIMIT = 5
@@ -372,15 +377,29 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction,
     if (from === to || to < 0 || to >= ids.length) return
     const next = [...ids]
     next.splice(to, 0, ...next.splice(from, 1))
-    onChange(next)
+    onChange([...held, ...next])
   }
   /* Ordering only means something with two or more lists (ticket fbJdWqr5SwcInFFofwCc, 8 Oct 2026), unless an
      Open auction sits below the deals: then the fallthrough is shown even for one deal (9 Oct 2026). */
   /* The open tier is the chosen DSPs and/or the global deal (12 Oct 2026): one pool, every entry bids at once. */
   const openTier = openAuction || globalDeal
-  if (ids.length < 2 && !(ids.length === 1 && openTier)) return null
+  const ranked = ids.length >= 2 || (ids.length === 1 && openTier)
+  if (!ranked && !held.length) return null
   const hidden = showAll || ids.length <= LIMIT ? 0 : ids.length - LIMIT
+  const reservedRows = held.length > 0 && (
+    <div className="mt-2" role="list" aria-label={`${label}: deals reserving the whole slot`}>
+      <div style={{ fontSize: 12, color: T.muted }} className="mb-1">Reserves the whole slot: no priority, flights must not overlap</div>
+      {held.map((id) => (
+        <div key={id} role="listitem" className="mb-1 flex items-center gap-2" style={{ border: '1px solid #d9d9d9', borderRadius: 6, padding: '2px 8px', background: '#fff' }}>
+          <Icon name="lock" size={14} /><span className="flex-1 truncate" style={{ fontSize: 13 }}>{names.get(id) ?? id}</span>
+        </div>
+      ))}
+    </div>
+  )
+  if (!ranked) return reservedRows
   return (
+    <>
+    {reservedRows}
     <div className="mt-2" role="list" aria-label={`${label}: buyers lists in priority order`}>
       <div style={{ fontSize: 12, color: T.muted }} className="mb-1">{openTier ? 'Deals: tried top to bottom, resolved ahead of time' : 'Priority: tried top to bottom'}</div>
       {ids.map((id, i) => i >= ids.length - hidden ? null : (
@@ -433,6 +452,7 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction,
         </div>
       )}
     </div>
+    </>
   )
 }
 
@@ -538,6 +558,7 @@ function AssignedCell({ data, context }: IP) {
     <PriorityList
       label={`${data.displayTypeName} slot ${data.zoneSlot}`}
       ids={tiersOf(a)}
+      reserving={new Set(c.buyersLists.filter((l) => l.dealType === 'guaranteed' || l.dealType === 'direct').map((l) => l.id))}
       names={new Map(c.buyersLists.map((l) => [l.id, l.name]))}
       cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType, l.termTotal), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
       canEdit={c.canEdit}
@@ -726,6 +747,7 @@ const ASSIGNED_TO_TIP = (
   <div className="flex flex-col gap-[6px]">
     <p className="m-0"><strong>Assigning.</strong> Pick DSPs or buyers lists for this slot in the Assigned to cell. An empty cell is valid: the slot is unassigned and does not sell.</p>
     <p className="m-0"><strong>Waterfall.</strong> The deals and buyers lists you assign form an ordered priority stack, tried highest first. Beneath them sits the Open auction tier: the DSPs (or All DSPs) chosen for the open auction, plus the global deal where included. If no deal wins the window, the slot falls through to the Open auction.</p>
+    <p className="m-0"><strong>Reserving deals.</strong> Programmatic guaranteed and Direct advertiser deals take the whole slot, so they are not ranked: they are listed apart, and only their flight dates must not overlap.</p>
     <p className="m-0"><strong>Priority.</strong> Drag the rows to reorder, or use the arrows. The position badge shows each rank.</p>
     <p className="m-0"><strong>Example.</strong> A slot has buyers list 1, buyers list 2, then the Open auction. Each window is offered to buyers list 1 first; if it does not take it, to buyers list 2; and if no deal wins, it clears in the Open auction.</p>
   </div>

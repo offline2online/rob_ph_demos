@@ -2570,6 +2570,17 @@ rank differently on each.
   priority rows only appear once two or more lists are assigned to the slot —
   with one list there is nothing to order, so none are shown
   (unless the slot also has an Open auction tier; see below).
+- **Only deals that share a slot are ranked (22 Oct 2026; ticket
+  z7qPFTdA4NOC3K9hYOAs)**: the waterfall is private auctions, preferred deals
+  and the open auction. Programmatic guaranteed and Direct advertiser deals take
+  the whole slot, so priority means nothing for them; the only rule is that
+  their flights must not overlap (already enforced, see the 22 Oct 2026 note on
+  reserving deals). Admin shows them in their own unnumbered group, "Reserves
+  the whole slot: no priority, flights must not overlap", with no drag handle or
+  arrows, and numbers only the remaining deals. Stored order is unchanged
+  (`buyersListIds`); the UI keeps reserving deals ahead of the ranked ones when
+  it reorders. The ranked rows appear once two or more ranked deals (or one
+  plus an Open auction) are on the slot.
 - **API**: `assignedTo.buyersListIds` (ordered, no duplicates, each must
   exist); `buyersListId` alone is still accepted.
 - Known edge: a reserve commitment (`type: reserve`) on a waterfall slot

@@ -1367,6 +1367,24 @@ describe('Advertisers / Inventory', () => {
     expect(within(open).queryByLabelText(/^Position/)).toBeNull()
   }, slow(45000))
 
+  /* Ticket z7qPFTdA4NOC3K9hYOAs (22 Oct 2026): deals that reserve the whole slot are not ranked in the waterfall. */
+  it('ranks only the deals that share a slot; reserving deals sit apart, unnumbered', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const mk = (id: string, name: string, dealType: string) => ({ id, name, description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType })
+    const lists = [mk('bl_pg', 'Coke PG', 'guaranteed'), mk('bl_a', 'Auction A', 'private_auction'), mk('bl_b', 'Auction B', 'private_auction')]
+    const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_pg', buyersListIds: ['bl_pg', 'bl_a', 'bl_b'], openAuction: false }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists }, '/api/admin/v1/available-inventory': { ...inv, items: [{ ...inv.items[0], assignedTo: assigned }] } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const cell = within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement
+    const ranked = within(cell).getByRole('list', { name: /buyers lists in priority order/ })
+    expect(within(ranked).getAllByLabelText(/^Position/).map((n) => n.textContent)).toEqual(['1', '2'])
+    expect(within(ranked).queryByText('Coke PG')).toBeNull()
+    const held = within(cell).getByRole('list', { name: /deals reserving the whole slot/ })
+    expect(within(held).getByText('Coke PG')).toBeInTheDocument()
+    expect(within(held).queryByLabelText(/^Position/)).toBeNull()
+  }, slow(45000))
+
   /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */
   it('warns on a slot with no audience score', async () => {
     const reason = 'No audience score yet.'
