@@ -12,5 +12,7 @@ export const TIPS = {
     "Assumed views per play window, per display, for every slot on this display type. A slot uses its own measured audience, or a display's own override, when it has one; otherwise it uses this figure. Leave empty and the type's slots are unscored — excluded from inventory, forecast and the auction.",
   storeZone:
     "Where this display type sits in the store, using the five zones of the IAB / IAB Europe in-store retail media standard. Every slot on it inherits the zone. A label for planning and reporting: it does not change the floor, which stays score-driven.",
+  operatingHours:
+    "When the displays of this type play. 24 hours, the store's trading hours, or a custom start and end in the platform time zone, the same every day. The store zone sets the starting value (Exterior and Entrance: 24 hours; the others: Store hours); changing the zone keeps custom hours. Every display of this type inherits it. Outside these hours nothing is offered or counted as unsold.",
   enableZones: 'Each zone runs its own playlist, so each has its own rotation.',
 } as const

@@ -3103,7 +3103,7 @@ export interface components {
             slotCount: number;
             /** @description The devices registered to this slot's display type in PH Core (Displays & Devices), the same count the booking schedule shows. Available Inventory shows it in brackets after the playlist name, and multiplies playsPerWindow by it for the bracketed fleet total. Per display type, so the same on every row sharing a displayTypeId; not an orientation roll-up. Read-only. */
             displayCount: number;
-            /** @description Hours per day the display type's displays are open for plays (zone-based operating hours). 24 for an external zone (Exterior, Entrance & out of category); for an internal zone, or a display type with no zone, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
+            /** @description Hours per day the display type's displays are open for plays (its operating hours setting). 24 for 24 hours; the custom range's length for Custom; for Store hours, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
             openHoursPerDay: number;
             /** @description Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change. */
             playsPerWindow: number;
@@ -3577,6 +3577,27 @@ export interface components {
              * @enum {string|null}
              */
             storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
+            /**
+             * @description When the display type's displays play, set at display type level
+             *     (ticket WvnAf6fR7snXV1C0z9PV, 22 Oct 2026); every display of the
+             *     type inherits it, there is no per-display override. The store
+             *     zone only sets the initial value: Exterior and Entrance start at
+             *     `24h`, every other zone (and no zone) at `store`. Absent reads as
+             *     the zone's value, so a display type that was never edited is
+             *     unchanged. Absent keeps the saved value; null clears it back to the
+             *     zone's value. `start` / `end` are kept only for `custom`.
+             */
+            operatingHours?: {
+                /**
+                 * @description `24h` (always open), `store` (the store's trading hours) or `custom` (start and end below).
+                 * @enum {string}
+                 */
+                mode: "24h" | "store" | "custom";
+                /** @description Custom only: opening time `HH:MM` in the platform time zone (UTC in this POC), the same every day. */
+                start?: string | null;
+                /** @description Custom only: closing time `HH:MM`, later than `start` on the same day (`24:00` allowed). */
+                end?: string | null;
+            } | null;
             slots: {
                 label: string;
                 /** @enum {string} */

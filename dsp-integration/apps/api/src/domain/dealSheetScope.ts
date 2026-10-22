@@ -160,7 +160,7 @@ export async function scopeAndVolumeOf(ctx: Context, list: BuyersList, positions
     displays += kept.length
     displaysBefore += all.length
     /* Zone-based operating hours: each display counts only its open share of the day (external zones 24h, internal the store's trading hours). */
-    const keptGroups = hourGroups(dt.phExtensions?.storeZone, kept, stores)
+    const keptGroups = hourGroups(dt.phExtensions, kept, stores)
     const openShare = openShareOfDay(keptGroups)
     const perDisplay = playsPerWindowOpenOf(windowMsFor(p), maxPlayLengthSecFor(company.maxPlayLengthSec, p), rotationSizeOf(dt, p.slot), openHoursPerDayOf(keptGroups))
     const slotViews = await assumedViewsPerWindow(ctx, p)

@@ -2289,17 +2289,22 @@ loop length      = max slot length x slots in rotation
 plays per window = floor(open hours within the billing unit / loop length)
 ```
 
-- **Open hours follow the zone** (ticket "Plays per window follows zone-based
-  operating hours", decision Rob 17 Oct 2026; `operatingHours()` in
-  `domain/dailyCapacity.ts`, §5 "Zone-based operating hours"). **External
-  zones** (Exterior; Entrance & out of category) count 24 hours. **Internal
-  zones** (In aisles; Checkout; Other & connected store) and a display type
-  with no zone count store trading hours: for Available Inventory, an assumed
-  trading day equal to the **average** opening and closing hours across the
-  stores with active displays on the display type (`openHoursPerDay` on the
-  row; 24 when it has no displays). So a 24 h billing unit on an Entrance
-  display type holds 24 h / loop length plays, and on an In-aisles display
-  type with stores open 08:00-20:00 on average, 12 h / loop length.
+- **Open hours follow the display type's operating hours** (ticket "Plays per
+  window follows zone-based operating hours", decision Rob 17 Oct 2026; made
+  editable by ticket WvnAf6fR7snXV1C0z9PV, Rob 22 Oct 2026; `operatingHours()`
+  in `domain/dailyCapacity.ts`, §5 "Zone-based operating hours"). The display
+  type's **Operating hours** is **24 hours**, **Store hours** or **Custom**
+  (start and end, same every day). The store zone only sets the initial value:
+  **external zones** (Exterior; Entrance & out of category) start at 24 hours;
+  **internal zones** (In aisles; Checkout; Other & connected store) and a
+  display type with no zone start at Store hours. For Store hours, Available
+  Inventory assumes a trading day equal to the **average** opening and closing
+  hours across the stores with active displays on the display type
+  (`openHoursPerDay` on the row; 24 when it has no displays); Custom counts the
+  length of its range (06:00-23:00 is 17 hours). So a 24 h billing unit on an
+  Entrance display type left on 24 hours holds 24 h / loop length plays, and on
+  an In-aisles display type with stores open 08:00-20:00 on average, 12 h / loop
+  length.
 - **One calculation**: `playsPerWindowOpenOf()` in `domain/plays.ts` feeds
   the Available Inventory column, the editor's live recalculation and the
   Estimated volume on the Deals and buyers lists and the deal sheet (fleet
@@ -4397,29 +4402,42 @@ playback analytics.**
   UTC and store hours are hours of that day (no store time zones in this POC).
   Firm = reserve bookings only. Spec: §5, §6.
 - **Zone-based operating hours** (ticket 24VWhzDd4yv7CswOPrGX, decision Rob
-  16 Oct 2026; `operatingHours()` in `domain/dailyCapacity.ts`): a display's
-  operating hours are resolved from the IAB store zone of its display type
-  (`phExtensions.storeZone`), with no per-display setting. **Exterior** and
-  **Entrance & out of category** are external: 24 hours (window screens are
-  Entrance). **In aisles**, **Checkout** and **Other & connected store** are
-  internal: the store's trading hours, as before; a display type with no zone
-  defined also follows the store. Plays per day on the Booking schedule counts
-  each display at its resolved hours, not the store's for every display.
+  16 Oct 2026; made editable by ticket WvnAf6fR7snXV1C0z9PV, Rob 22 Oct 2026;
+  `operatingHours()` in `domain/dailyCapacity.ts`): a display's operating hours
+  are set on its **display type** (`phExtensions.operatingHours`: `mode` `24h` |
+  `store` | `custom`, plus `start` / `end` as `HH:MM` for custom, platform time
+  zone, same every day, end later than start), and every display of the type
+  inherits it; there is **no per-display override**. The **IAB store zone sets
+  the initial value**: **Exterior** and **Entrance & out of category** are
+  external, 24 hours (window screens are Entrance); **In aisles**, **Checkout**
+  and **Other & connected store** are internal, Store hours (the store's trading
+  hours, as before); a display type with no zone defined defaults to Store
+  hours. On the Display Types form, Operating hours sits to the right of Store
+  zone (Start and End appear beside it for Custom) and Default VAC-d is below
+  that row. Picking a zone fills Operating hours with the zone's value; the
+  user may change it to any of the three. **If Custom hours have been set,
+  changing the zone keeps them**; on 24 hours or Store hours, changing the zone
+  updates it to the new zone's value. A display type with no saved setting
+  (never edited) reads as its zone's value, so nothing changes until someone
+  edits it. It saves with Save changes / Cancel and appears in the SSP change
+  history like the other display type fields. Plays per day on the Booking
+  schedule counts each display at its resolved hours, not the store's for every
+  display.
   **Enforced** (ticket 6a8L1QcfFUq5alWFgwnb, 16 Oct 2026;
   `domain/operatingGate.ts`): outside a display's hours it is offered nothing.
   A real-time signal is a no-fill "Unavailable — store closed" with no bid
   request, and is **not** recorded as unsold (no missed revenue); the label is
-  only ever used for internal zones, since an external display is never
-  closed. A private-auction window none of the position's displays is open for
-  is skipped before any bid request. A window the same way reads `unavailable`
-  in inventory and `POST /v1/reservations` refuses it (409). Estimated volume
-  and guaranteed impressions on the deal sheet scale each display by its open
-  share of the day (Exterior/Entrance 24h; aisles etc. trading hours). Every
-  bid request publishes `imp[0].ext.ph.operatingHours` (`zone`, `external`,
+  never used for a display on 24 hours, which is never closed. A private-auction
+  window none of the position's displays is open for is skipped before any bid
+  request. A window the same way reads `unavailable` in inventory and
+  `POST /v1/reservations` refuses it (409). Estimated volume and guaranteed
+  impressions on the deal sheet scale each display by its open share of the day
+  (24 hours: 1; Store hours: trading hours; Custom: its range). Every bid
+  request publishes `imp[0].ext.ph.operatingHours` (`zone`, `mode`, `external`,
   `tz: "UTC"`, `screens[{open, close, days, count}]`, grouped by distinct hours
-  rather than one row per display). Hours and day boundaries are UTC as
-  elsewhere in the POC; there is no separate per-display SSP feed, the hours
-  ride on the bid request.
+  rather than one row per display; a custom range carries its own open and
+  close). Hours and day boundaries are UTC as elsewhere in the POC; there is no
+  separate per-display SSP feed, the hours ride on the bid request.
 - **Hour-of-week VAC-d** (ticket L0lA4mMgRdA7YTcQpGxg, 16 Oct 2026;
   `domain/vacdProfile.ts`, `displays.vacd_profile`, migration 0074): a display
   may carry 168 hourly assumed-view values (Monday 00:00 UTC first). With none

@@ -3787,7 +3787,7 @@ components:
           type: number
           minimum: 0
           maximum: 24
-          description: Hours per day the display type's displays are open for plays (zone-based operating hours). 24 for an external zone (Exterior, Entrance & out of category); for an internal zone, or a display type with no zone, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only.
+          description: Hours per day the display type's displays are open for plays (its operating hours setting). 24 for 24 hours; the custom range's length for Custom; for Store hours, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only.
         playsPerWindow:
           type: integer
           description: Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change.
@@ -4311,6 +4311,22 @@ components:
             floor, which stays score-driven. Set on the display type; every
             slot inherits it. Absent keeps the saved value; null clears it
             (not defined, the default).
+        operatingHours:
+          type: [object, 'null']
+          required: [mode]
+          properties:
+            mode: {type: string, enum: ['24h', store, custom], description: '`24h` (always open), `store` (the store''s trading hours) or `custom` (start and end below).'}
+            start: {type: [string, 'null'], description: 'Custom only: opening time `HH:MM` in the platform time zone (UTC in this POC), the same every day.'}
+            end: {type: [string, 'null'], description: 'Custom only: closing time `HH:MM`, later than `start` on the same day (`24:00` allowed).'}
+          description: |
+            When the display type's displays play, set at display type level
+            (ticket WvnAf6fR7snXV1C0z9PV, 22 Oct 2026); every display of the
+            type inherits it, there is no per-display override. The store
+            zone only sets the initial value: Exterior and Entrance start at
+            `24h`, every other zone (and no zone) at `store`. Absent reads as
+            the zone's value, so a display type that was never edited is
+            unchanged. Absent keeps the saved value; null clears it back to the
+            zone's value. `start` / `end` are kept only for `custom`.
         slots:
           type: array
           items:

@@ -10,7 +10,7 @@
    Playlist dropdown above it is hidden — there's nothing to pick between
    yet, since no playlist exists until Save creates one. */
 import { Button, ColorPicker, Input, InputNumber, Select } from 'antd'
-import { hasStructuralFeatures, STORE_ZONES, TOUCH_POINTS, type DisplayType, type Partner, type Playlist, type TouchPoint } from '@ph-dsp/types'
+import { hasStructuralFeatures, OPERATING_MODES, operatingHoursOf, STORE_ZONES, zoneOperatingMode, TOUCH_POINTS, type DisplayType, type Partner, type Playlist, type TouchPoint } from '@ph-dsp/types'
 import { useState } from 'react'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
@@ -117,16 +117,46 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           phExtensions.defaultVacd; shown only where extensions are saved
           (slot ownership on). Empty clears it (ticket jhVpFHHsCp2L48vn4lRe). */}
       {slotAssignment && (
-        <div className="flex flex-wrap items-start gap-6">
-          {/* IAB / IAB Europe store zone: a label, set on the type and inherited by its slots. */}
-          <Field label="Store Zone" htmlFor="storeZone" tip={TIPS.storeZone} className="mb-4">
-            <Select
-              id="storeZone" allowClear style={{ width: 260 }} placeholder="Not defined"
-              value={d.phExtensions?.storeZone ?? undefined}
-              options={STORE_ZONES}
-              onChange={(v) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), storeZone: v ?? null } }))}
-            />
-          </Field>
+        <>
+          <div className="flex flex-wrap items-start gap-6">
+            {/* IAB / IAB Europe store zone: a label, set on the type and inherited by its slots. It also sets Operating hours' starting value
+                (24 hours for Exterior and Entrance, Store hours otherwise); custom hours are kept when the zone changes (ticket WvnAf6fR7snXV1C0z9PV). */}
+            <Field label="Store Zone" htmlFor="storeZone" tip={TIPS.storeZone} className="mb-4">
+              <Select
+                id="storeZone" allowClear style={{ width: 260 }} placeholder="Not defined"
+                value={d.phExtensions?.storeZone ?? undefined}
+                options={STORE_ZONES}
+                onChange={(v) => update((t) => {
+                  const ext = t.phExtensions ?? { slots: [] }
+                  const zone = v ?? null
+                  const hours = operatingHoursOf(ext)
+                  return { ...t, phExtensions: { ...ext, storeZone: zone, operatingHours: hours.mode === 'custom' ? hours : { mode: zoneOperatingMode(zone) } } }
+                })}
+              />
+            </Field>
+            <Field label="Operating hours" htmlFor="operatingHours" tip={TIPS.operatingHours} className="mb-4">
+              <div className="flex items-center gap-2">
+                <Select
+                  id="operatingHours" style={{ width: 160 }} options={OPERATING_MODES}
+                  value={operatingHoursOf(d.phExtensions).mode}
+                  onChange={(mode) => update((t) => {
+                    const ext = t.phExtensions ?? { slots: [] }
+                    const was = operatingHoursOf(ext)
+                    return { ...t, phExtensions: { ...ext, operatingHours: mode === 'custom' ? { mode, start: was.start ?? '09:00', end: was.end ?? '17:00' } : { mode } } }
+                  })}
+                />
+                {operatingHoursOf(d.phExtensions).mode === 'custom' && (
+                  <>
+                    <Input aria-label="Operating hours start" type="time" style={{ width: 120 }} value={operatingHoursOf(d.phExtensions).start ?? ''}
+                      onChange={(e) => e.target.value && update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), operatingHours: { ...operatingHoursOf(t.phExtensions), mode: 'custom', start: e.target.value } } }))} />
+                    <span style={{ color: T.muted }}>to</span>
+                    <Input aria-label="Operating hours end" type="time" style={{ width: 120 }} value={operatingHoursOf(d.phExtensions).end ?? ''}
+                      onChange={(e) => e.target.value && update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), operatingHours: { ...operatingHoursOf(t.phExtensions), mode: 'custom', end: e.target.value } } }))} />
+                  </>
+                )}
+              </div>
+            </Field>
+          </div>
           <Field label="Default VAC-d (assumed views per play window)" htmlFor="defaultVacd" tip={TIPS.defaultVacd} className="mb-4">
             <InputNumber
               id="defaultVacd" min={0} precision={0} style={{ width: 160 }} placeholder="None (unscored)"
@@ -135,7 +165,7 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
               onChange={(v) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), defaultVacd: v == null ? null : Number(v) } }))}
             />
           </Field>
-        </div>
+        </>
       )}
       <Field label="Background Color" className="mb-4">
         <ColorPicker aria-label="Background Color" value={d.backgroundColor} onChange={(c) => set({ backgroundColor: c.toHexString() })} />

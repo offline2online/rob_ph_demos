@@ -19,17 +19,51 @@ const DAY = 24 * HOUR
 export interface Hours { open: number; close: number }
 export const ALWAYS_OPEN: Hours = { open: 0, close: 24 }
 
-/* Zone-based operating hours (ticket 24VWhzDd4yv7CswOPrGX, decision Rob 16 Oct
-   2026). A display's operating hours come from the IAB store zone of its
-   display type, never from a per-display setting: the external zones (Exterior,
-   Entrance & out of category — window screens are Entrance) still have passing
-   traffic when the store is shut, so they run 24 hours; the internal zones
-   (In aisles, Checkout, Other & connected store) follow the store's trading
-   hours. A display type with no zone defined follows the store, as before. */
+/* Operating hours (ticket 24VWhzDd4yv7CswOPrGX, Rob 16 Oct 2026; made editable
+   by ticket WvnAf6fR7snXV1C0z9PV, Rob 22 Oct 2026). A display's operating
+   hours come from its DISPLAY TYPE, never from a per-display setting: 24 hours,
+   the store's trading hours, or a custom start and end (platform time zone,
+   the same every day). The IAB store zone only sets the initial value: the
+   external zones (Exterior, Entrance & out of category — window screens are
+   Entrance) still have passing traffic when the store is shut, so they start
+   at 24 hours; the internal zones (In aisles, Checkout, Other & connected
+   store) and a type with no zone start at Store hours. A display type that was
+   never edited has no saved setting and reads as its zone's value. */
+export type OperatingMode = '24h' | 'store' | 'custom'
+export interface OperatingSetting { mode: OperatingMode; start?: string | null; end?: string | null }
+/* What operating hours are resolved from: a display type's extensions, or (as before) just a store zone. */
+export type OperatingSource = string | null | undefined | { storeZone?: string | null; operatingHours?: OperatingSetting | null }
+
 export const EXTERNAL_ZONES: readonly string[] = ['exterior', 'entrance']
 export const isExternalZone = (zone: string | null | undefined): boolean => !!zone && EXTERNAL_ZONES.includes(zone)
-export function operatingHours(zone: string | null | undefined, store: { openHour: number; closeHour: number } | null | undefined): Hours {
-  if (isExternalZone(zone)) return ALWAYS_OPEN
+export const zoneDefaultMode = (zone: string | null | undefined): OperatingMode => (isExternalZone(zone) ? '24h' : 'store')
+const zoneOf = (src: OperatingSource): string | null | undefined => (typeof src === 'object' && src ? src.storeZone : (src as string | null | undefined))
+/* The setting in force: the saved one, else the zone's value. */
+export function settingOf(src: OperatingSource): OperatingSetting {
+  const saved = typeof src === 'object' && src ? src.operatingHours : null
+  if (saved && (saved.mode === '24h' || saved.mode === 'store' || (saved.mode === 'custom' && customHours(saved)))) return saved
+  return { mode: zoneDefaultMode(zoneOf(src)) }
+}
+/* "HH:MM" as hours of the day (06:30 is 6.5). */
+export const hoursOfTime = (t: string | null | undefined): number | null => {
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(t ?? '')
+  const h = m ? Number(m[1]) + Number(m[2]) / 60 : NaN
+  return h >= 0 && h <= 24 ? h : null
+}
+/* A custom setting's hours, or null when its start and end are not a valid same-day range. */
+export function customHours(s: OperatingSetting): Hours | null {
+  const open = hoursOfTime(s.start)
+  const close = hoursOfTime(s.end)
+  return open !== null && close !== null && open < close ? { open, close } : null
+}
+/* True when the resolved hours need no store (24 hours, or a fixed custom range). */
+export const isStoreIndependent = (src: OperatingSource): boolean => settingOf(src).mode !== 'store'
+/* A key that is the same for the same resolved setting, for caches. */
+export const settingKey = (src: OperatingSource): string => { const s = settingOf(src); return s.mode === 'custom' ? `custom:${s.start}-${s.end}` : s.mode }
+export function operatingHours(src: OperatingSource, store: { openHour: number; closeHour: number } | null | undefined): Hours {
+  const s = settingOf(src)
+  if (s.mode === '24h') return ALWAYS_OPEN
+  if (s.mode === 'custom') return customHours(s)!
   return { open: store?.openHour ?? 0, close: store?.closeHour ?? 24 }
 }
 
