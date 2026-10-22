@@ -15,6 +15,7 @@ assert.match(av, /allow write: if \(isAvatarOwner\(fileName\) \|\| isAdminClaim\
 assert.match(av, /request\.resource\.size < 2 \* 1024 \* 1024/);
 assert.match(av, /request\.resource\.contentType == 'image\/jpeg'/);
 assert.match(av, /allow delete: if isAvatarOwner\(fileName\) \|\| isAdminClaim\(\)/);
+assert.match(av, /allow read: if isAvatarOwner\(fileName\) \|\|/, "owner must read own avatar for getDownloadURL");
 assert.match(storage, /fileName == request\.auth\.token\.email\.lower\(\) \+ "\.jpg"/);
 assert.doesNotMatch(av, /allow (write|delete): if isEditor\(\)/, "an ordinary editor must not write other people's avatars");
 

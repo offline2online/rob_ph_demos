@@ -9365,8 +9365,21 @@ async function setMemberPhoto(email, file) {
   const fileRef = storageRef(storage, path);
   try { await uploadBytes(fileRef, blob, { contentType: "image/jpeg" }); }
   catch (err) { throw new Error(`Couldn't upload the photo: ${err && err.code === "storage/unauthorized" ? "you can only change your own photo." : (err && err.message) || err}`); }
-  const url = await getDownloadURL(fileRef);
-  await updateDoc(doc(db, "consoleUsers", e), { photoUrl: url, photoUpdatedAt: serverTimestamp() });
+  let url;
+  try { url = await getDownloadURL(fileRef); }
+  catch (err) {
+    // The download URL is a read, which needs the member's console claim; a token
+    // minted before they were added lacks it. Refresh once and retry.
+    if (!(err && err.code === "storage/unauthorized")) throw err;
+    try { await auth.currentUser.getIdToken(true); url = await getDownloadURL(fileRef); }
+    catch { throw new Error("Couldn't finish the upload: your sign-in is out of date. Sign out and back in, then try again."); }
+  }
+  try { await updateDoc(doc(db, "consoleUsers", e), { photoUrl: url, photoUpdatedAt: serverTimestamp() }); }
+  catch (err) {
+    throw new Error(err && err.code === "permission-denied"
+      ? "Couldn't save the photo: you aren't on the console's team list, so there is no profile to attach it to. Ask an admin to add you under Settings → Team & agent access."
+      : ((err && err.message) || String(err)));
+  }
 }
 
 function pickAvatarFile(onFile) {
