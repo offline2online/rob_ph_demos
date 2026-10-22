@@ -189,6 +189,44 @@ describe('Programmatic guaranteed: a fixed CPM or a total for the term', () => {
     expect(share.json().error.details.some((d: { field: string }) => d.field === 'termTotal')).toBe(true)
   })
 
+  it('saves a total below the floors only with an explicit override, records it, and asks again on the next edit that stays below', async () => {
+    const { app, assign, create, floor, totalAt } = await setup()
+    const { id } = await create({ termTotal: 1000 })
+    await assign({ 2: id })
+    const low = await totalAt(id, floor - 1)
+    const refused = await app.inject({ method: 'PUT', url: `${URL}/${id}`, payload: { ...body, termTotal: low } })
+    expect(refused.statusCode).toBe(400)
+    expect(refused.json().error.details[0].reason).toMatch(/belowFloorOverride/)
+    const saved = await app.inject({ method: 'PUT', url: `${URL}/${id}`, payload: { ...body, termTotal: low, belowFloorOverride: true } })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json()).toMatchObject({ termTotal: low, belowFloorOverride: true })
+    expect(saved.json().belowFloorOverrideAt).toEqual(expect.any(String))
+    expect(saved.json().belowFloorOverrideBy).toEqual(expect.any(String))
+    /* Reopened: still identifiable. Shared: the record stands in for the check. */
+    expect((await app.inject({ method: 'GET', url: URL })).json().items.find((l: { id: string }) => l.id === id).belowFloorOverride).toBe(true)
+    expect((await app.inject({ method: 'POST', url: `${URL}/${id}/share` })).statusCode).toBe(200)
+    /* An edit that keeps it below the floor needs the override again; one that lifts it clears the flag. */
+    expect((await app.inject({ method: 'PUT', url: `${URL}/${id}`, payload: { ...body, name: 'Renamed', termTotal: low } })).statusCode).toBe(400)
+    const lifted = await app.inject({ method: 'PUT', url: `${URL}/${id}`, payload: { ...body, termTotal: await totalAt(id, floor + 50), belowFloorOverride: true } })
+    expect(lifted.statusCode).toBe(200)
+    expect(lifted.json().belowFloorOverride).toBe(false)
+  })
+
+  it('saves a fixed CPM below the platform floor only with an explicit override, and not on a private auction', async () => {
+    const { app, floor } = await setup()
+    const low = { ...body, floorCpm: floor - 1 }
+    const refused = await app.inject({ method: 'POST', url: URL, payload: low })
+    expect(refused.statusCode).toBe(400)
+    expect(refused.json().error.details[0]).toMatchObject({ field: 'floorCpm' })
+    const saved = await app.inject({ method: 'POST', url: URL, payload: { ...low, belowFloorOverride: true } })
+    expect(saved.statusCode).toBe(201)
+    expect(saved.json()).toMatchObject({ floorCpm: floor - 1, belowFloorOverride: true })
+    const atFloor = await app.inject({ method: 'POST', url: URL, payload: { ...body, floorCpm: floor, belowFloorOverride: true } })
+    expect(atFloor.json().belowFloorOverride).toBe(false)
+    const auction = await app.inject({ method: 'POST', url: URL, payload: { ...low, dealType: 'private_auction', belowFloorOverride: true } })
+    expect(auction.statusCode).toBe(400)
+  })
+
   it('refuses a total on any other deal type, a total that is not positive, both prices at once, and the retired rate per day', async () => {
     const { app } = await setup()
     const other = await app.inject({ method: 'POST', url: URL, payload: { ...body, dealType: 'private_auction', termTotal: 500 } })

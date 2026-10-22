@@ -2776,6 +2776,15 @@ export interface components {
             effectiveRateCpm: components["schemas"]["EffectiveTerm"];
             /** @description Programmatic guaranteed priced as a total for its term: the USD amount for the whole delivery term; null when it is priced as a CPM or is not guaranteed. */
             termTotal?: number | null;
+            /** @description True when the deal was saved with an explicit override of the below-floor warning (22 Oct 2026); shown as Below floor (override). */
+            belowFloorOverride?: boolean;
+            /** @description Who saved the override. */
+            belowFloorOverrideBy?: string | null;
+            /**
+             * Format: date-time
+             * @description When the override was saved.
+             */
+            belowFloorOverrideAt?: string | null;
             /** @description termTotal / forecast impressions over the term x 1000 across the assigned slots (min and max are the same blended figure). Null while the deal has no total for the term, no closed term or no assigned slot to forecast from. */
             readonly equivalentCpm?: {
                 min: number;
@@ -5287,6 +5296,8 @@ export interface operations {
                     committedPlays?: number | null;
                     /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
                     termTotal?: number | null;
+                    /** @description Preferred, Programmatic guaranteed and Direct advertiser deals only (22 Oct 2026): true to save a deal priced below the platform floor anyway (a fixed CPM under it, or a total for the term whose equivalent CPM is under the slots' floors). Without it such a price is refused (400, field floorCpm or termTotal). It has to be sent again on every save that keeps the deal below the floor; omitted or false on a save that is no longer below it. */
+                    belowFloorOverride?: boolean;
                     /** @description Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term. */
                     ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
@@ -5566,6 +5577,8 @@ export interface operations {
                     committedPlays?: number | null;
                     /** @description Programmatic guaranteed only (21 Oct 2026): the USD total for the whole delivery term (activeFrom to activeTo), the alternative to a fixed CPM (floorCpm); not both. Its equivalent CPM (total / forecast impressions over the term x 1000) is derived from the assigned slots and the total must cover their floors: a total that does not is refused (400 with field termTotal) on save once a slot is assigned, and always at Share. Refused on any other deal type. */
                     termTotal?: number | null;
+                    /** @description Preferred, Programmatic guaranteed and Direct advertiser deals only (22 Oct 2026): true to save a deal priced below the platform floor anyway (a fixed CPM under it, or a total for the term whose equivalent CPM is under the slots' floors). Without it such a price is refused (400, field floorCpm or termTotal). It has to be sent again on every save that keeps the deal below the floor; omitted or false on a save that is no longer below it. */
+                    belowFloorOverride?: boolean;
                     /** @description Retired (21 Oct 2026): a non-null value is refused (400). Price a guaranteed deal as a fixed CPM or a total for the term. */
                     ratePerDay?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */

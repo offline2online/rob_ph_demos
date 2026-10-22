@@ -156,7 +156,7 @@ const RateCell = ({ data, context }: P) => {
     </div>
   ) : base
   return text
-    ? <Tip title={tip}><div><span style={{ fontSize: 12.5 }}>{text}</span> <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateTypeOf(data.dealType, data.termTotal)}</span>{!perTerm && <Sub>{src}</Sub>}</div></Tip>
+    ? <Tip title={tip}><div><span style={{ fontSize: 12.5 }}>{text}</span> <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateTypeOf(data.dealType, data.termTotal)}</span>{!perTerm && <Sub>{src}</Sub>}{data.belowFloorOverride && <div data-testid={`below-floor-${data.id}`} style={{ fontSize: 11.5, color: T.error }}>Below floor (override)</div>}</div></Tip>
     : <span style={{ color: T.muted }}>Per play</span>
 }
 const DealIdCell = ({ data, context }: P) => {
@@ -200,7 +200,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
   const columns = useMemo<ColDef<BuyersList>[]>(() => [
     { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${JSON.stringify(p.data?.targeting ?? [])}|${p.data?.status}|${p.data?.dealType}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}` },
     { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
-    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.termTotal, p.context.current.slots.get(p.data?.id ?? '') ?? [], p.context.current.bufferPct]) },
+    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.termTotal, p.data?.belowFloorOverride, p.context.current.slots.get(p.data?.id ?? '') ?? [], p.context.current.bufferPct]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },

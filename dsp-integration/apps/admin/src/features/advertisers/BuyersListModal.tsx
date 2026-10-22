@@ -155,11 +155,26 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
     })
   })
 
-  const save = async (finalise = false) => {
+  /* Below-floor warning (Rob, 22 Oct 2026): a price under the platform floor is warned about, not blocked. Saving it is an explicit override, which the deal records. */
+  const confirmBelowFloor = (reasons: string[]) => new Promise<boolean>((resolve) => {
+    modal.confirm({
+      title: 'This deal is priced below the platform floor',
+      content: (
+        <div data-testid="below-floor-warning">
+          {reasons.map((r) => <p key={r}>{r}</p>)}
+          <p>You can save it anyway, for example a preferred supplier on an extended term with guaranteed sales. The deal will be marked Below floor (override).</p>
+        </div>
+      ),
+      okText: 'Save anyway (override)', cancelText: 'Keep editing',
+      onOk: () => resolve(true), onCancel: () => resolve(false),
+    })
+  })
+
+  const save = async (finalise = false, belowFloorOverride = false): Promise<void> => {
     if (tooManyForPg) return void setErrors({ invitedBuyers: 'A programmatic guaranteed deal is with one named buyer; remove the others, or create a separate deal for each advertiser.' })
     setSaving(true)
     setErrors({})
-    const payload = showTargeting ? draft : { ...draft, targeting: [] }
+    const payload = { ...(showTargeting ? draft : { ...draft, targeting: [] }), ...(belowFloorOverride ? { belowFloorOverride: true } : {}) }
     try {
       if (editing) {
         const check = await api<TermCheck>('POST', `/admin/v1/buyers-lists/${editing.id}/term-check`, payload).catch(() => null)
@@ -187,6 +202,12 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
          of detail-less error). Always show a message; add field errors too
          when the API gave them. */
       const detailFields = e instanceof ApiRequestError ? (e.body?.error.details ?? []).filter((d) => d.field) : []
+      /* The API names the override in the reason of a below-floor refusal: ask, and save again with it if the retailer agrees. */
+      const belowFloor = detailFields.filter((d) => (d.field === 'floorCpm' || d.field === 'termTotal') && /belowFloorOverride/.test(d.reason ?? ''))
+      if (!belowFloorOverride && belowFloor.length) {
+        if (await confirmBelowFloor(belowFloor.map((d) => (d.reason ?? '').replace(/ Send belowFloorOverride: true to save it anyway\.$/, '')))) return save(finalise, true)
+        return void setErrors(Object.fromEntries(belowFloor.map((d) => [d.field as string, (d.reason ?? '').replace(/ Send belowFloorOverride: true to save it anyway\.$/, '')])))
+      }
       if (detailFields.length) setErrors(Object.fromEntries(detailFields.map((d) => [d.field as string, d.reason ?? 'Invalid.'])))
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).filter((d) => !d.field).map((d) => d.reason)].join(' ') : 'Could not save this buyers list.')
     } finally {
@@ -378,6 +399,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         />
         {errors.termTotal && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.termTotal}</div>}
         {editing?.termTotal != null && editing.equivalentCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="equivalent-cpm">Equivalent CPM {equivalentCpmText(editing.equivalentCpm)} across the assigned slots</div>}
+        {editing?.belowFloorOverride && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }} data-testid="below-floor-override">Below floor (override){editing.belowFloorOverrideBy ? `: saved by ${editing.belowFloorOverrideBy}` : ''}. Saving it again below the floor asks for the override again.</div>}
         <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="rate-type">Rate type: {rateTypeOf(draft.dealType, draft.termTotal ?? 0)}</div>
       </div>
       ) : (

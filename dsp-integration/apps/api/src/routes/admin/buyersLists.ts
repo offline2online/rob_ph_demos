@@ -27,7 +27,7 @@ import { permittedFor, undefinedValues } from '../../domain/variables'
 import type { Access, VariableValues } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { status?: unknown; dealId?: unknown; name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; invitedCategories?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown; termTotal?: unknown; ratePerDay?: unknown }
+type Body = { status?: unknown; dealId?: unknown; name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; invitedCategories?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown; termTotal?: unknown; ratePerDay?: unknown; belowFloorOverride?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -56,9 +56,12 @@ const positionsOfDeal = async (ctx: Context, buyersListId: string) =>
   )
 
 /* A total for the term is refused when, across the slots the deal is assigned to, it is worth less than their floors over the term's forecast impressions. A deal with no slot yet has no forecast to convert against: it is checked again at Share, which needs a slot. */
-const checkTermFloor = async (ctx: Context, listId: string, termTotal: number | null, activeFrom: string | null, activeTo: string | null, errors: { field: string; reason: string }[]) => {
-  if (termTotal == null) return
-  for (const reason of belowFloorReasons(termTotal, await termSlotsOf(ctx, listId), termDaysOf(activeFrom, activeTo))) errors.push({ field: 'termTotal', reason })
+const checkTermFloor = async (ctx: Context, listId: string, termTotal: number | null, activeFrom: string | null, activeTo: string | null, errors: { field: string; reason: string }[], override = false): Promise<boolean> => {
+  if (termTotal == null) return false
+  const reasons = belowFloorReasons(termTotal, await termSlotsOf(ctx, listId), termDaysOf(activeFrom, activeTo))
+  /* With the admin's explicit override the deal is saved below the floor and records it (Rob, 22 Oct 2026); Share trusts that record. */
+  if (!override) for (const reason of reasons) errors.push({ field: 'termTotal', reason: `${reason} Send belowFloorOverride: true to save it anyway.` })
+  return reasons.length > 0 && override
 }
 
 /* Volume lives on the deal, never the open auction (open question 45): a
@@ -89,7 +92,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
      categories; targeting (only variables shared with every invited DSP,
      values from each variable's defined list); the delivery term; committed
      plays (guaranteed only); and the floor, never below the platform's. */
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null, directIds: Set<string> = new Set()): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; termTotal: number | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null, directIds: Set<string> = new Set()): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null; termTotal: number | null; belowFloorOverride: boolean } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -181,9 +184,14 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (b.committedPlays !== null && b.committedPlays !== undefined) errors.push({ field: 'committedPlays', reason: !guaranteedLike ? 'Only a guaranteed deal commits volume; leave it empty for a private auction or preferred deal.' : 'Committed plays is worked out from the slots assigned to the deal, its delivery term and the guarantee buffer; leave it out.' })
     /* Bid floor hierarchy (7 Oct 2026): blank inherits the DSP's floor, else the platform's; a value can raise the floor, never go below the platform floor. */
     let floorCpm: number | null = null
+    /* Below-floor override (Rob, 22 Oct 2026): a Preferred or guaranteed deal may be priced under the platform floor when the admin explicitly overrides the warning. It has to be sent on every save that keeps the deal below the floor; the record notes it. A private auction's rate is only a floor, so it stays a hard limit. */
+    if (b.belowFloorOverride !== undefined && typeof b.belowFloorOverride !== 'boolean') errors.push({ field: 'belowFloorOverride', reason: 'true or false.' })
+    const override = b.belowFloorOverride === true
+    let belowFloorOverride = false
     if (b.floorCpm !== undefined && b.floorCpm !== null) {
       if (typeof b.floorCpm !== 'number' || !Number.isFinite(b.floorCpm) || b.floorCpm <= 0) errors.push({ field: 'floorCpm', reason: 'Floor price (CPM) must be greater than 0, or empty to inherit.' })
-      else if (b.floorCpm < platformFloor) errors.push({ field: 'floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}.` })
+      else if (b.floorCpm < platformFloor && override && (dealType === 'preferred' || guaranteedLike)) { floorCpm = b.floorCpm; belowFloorOverride = true }
+      else if (b.floorCpm < platformFloor) errors.push({ field: 'floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}.${dealType === 'preferred' || guaranteedLike ? ' Send belowFloorOverride: true to save it anyway.' : ''}` })
       else floorCpm = b.floorCpm
     }
     /* Programmatic guaranteed is priced as a fixed CPM (floorCpm) or a total for the whole term (termTotal, USD; 21 Oct 2026), not both. Its equivalent CPM needs the assigned slots' forecast, so the floor is checked once slots exist (checkTermFloor), not here. */
@@ -196,7 +204,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       else termTotal = Math.round(b.termTotal * 100) / 100
     }
     const committedPlays: number | null = null
-    return { name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm, termTotal }
+    return { name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm, termTotal, belowFloorOverride }
   }
 
   const directIdsOf = async () => new Set((await ctx.company.directAdvertisers()).map((d) => d.advertiserId))
@@ -253,7 +261,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       if (list.status === 'shared') return list
       const errors: { field: string; reason: string }[] = []
       if (!(await positionsOfDeal(ctx, list.id)).length) errors.push({ field: 'assignedSlots', reason: 'Assign this deal to at least one slot in Available Inventory before sharing it.' })
-      await checkTermFloor(ctx, list.id, list.termTotal ?? null, list.activeFrom, list.activeTo, errors)
+      await checkTermFloor(ctx, list.id, list.termTotal ?? null, list.activeFrom, list.activeTo, errors, list.belowFloorOverride)
       if (!list.invitedBuyers.length) errors.push({ field: 'invitedBuyers', reason: 'Invite at least one named buyer: a deal that invites only IAB categories has no seat to share it with.' })
       if (errors.length) throw validationFailed(errors)
       /* The volume the buyers accept is the one the slots give today: refreshed first, so the deal is shared with its current figure. */
@@ -274,7 +282,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses, await directIdsOf())
     await dealAudienceErrors(ctx, parsed, errors)
     /* The slots are the existing deal's; a changed deal type is a new deal with none. */
-    if (parsed.dealType === existing.dealType) await checkTermFloor(ctx, existing.id, parsed.termTotal, parsed.activeFrom, parsed.activeTo, errors)
+    if (parsed.dealType === existing.dealType && (await checkTermFloor(ctx, existing.id, parsed.termTotal, parsed.activeFrom, parsed.activeTo, errors, body.belowFloorOverride === true))) parsed.belowFloorOverride = true
     if (errors.length) throw validationFailed(errors)
     /* Committed plays follow the slots and the term: a changed term changes the figure, and that is part of what buyers re-accept. */
     if (parsed.dealType === existing.dealType) parsed.committedPlays = await derivedCommittedPlays(ctx, { id: existing.id, ...parsed })
@@ -360,7 +368,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses, await directIdsOf())
     await dealAudienceErrors(ctx, parsed, errors)
     /* The slots are the existing deal's; a changed deal type is a new deal with none. */
-    if (parsed.dealType === existing.dealType) await checkTermFloor(ctx, existing.id, parsed.termTotal, parsed.activeFrom, parsed.activeTo, errors)
+    if (parsed.dealType === existing.dealType && (await checkTermFloor(ctx, existing.id, parsed.termTotal, parsed.activeFrom, parsed.activeTo, errors, body.belowFloorOverride === true))) parsed.belowFloorOverride = true
     if (errors.length) throw validationFailed(errors)
     /* Committed plays follow the slots and the term (21 Oct 2026). */
     if (parsed.dealType === existing.dealType) parsed.committedPlays = await derivedCommittedPlays(ctx, { id: existing.id, ...parsed })

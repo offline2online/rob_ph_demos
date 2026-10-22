@@ -3263,6 +3263,11 @@ written or add any other reporting on it. As the exchange, disputes resolve agai
 
 ## 8. Data model
 
+> **`buyers_lists` below-floor override (migration 0083, 22 Oct 2026):** `below_floor_override` (0/1, default 0),
+> `below_floor_override_by` and `below_floor_override_at` record that a deal was saved below the platform floor with
+> the admin's explicit override; surfaced as `belowFloorOverride`, `belowFloorOverrideBy`, `belowFloorOverrideAt` on
+> the deal (see the guaranteed-deal pricing rules above).
+
 The display type, playlist and campaign records are the platform's
 **existing** records, with this project's additions kept in clearly separated
 fields. The canonical definition is `app/src/model/schema.js` and
@@ -5181,6 +5186,16 @@ AWS demo can still book one day, as a one-day range.
   unscored slots are left out). It is derived on read, never stored. **Floor:** the total must cover each slot's resolved
   floor over the term (`sum of impressions x floor / 1000`); a lower total is `400` on `termTotal`, checked on every
   save once a slot is assigned and always at **Share**.
+- **Below-floor override (22 Oct 2026; ticket O0nPOgvjA2z89Q5Sy8zo).** A price under the floor is warned about, not
+  blocked, for a Preferred, Programmatic guaranteed or Direct advertiser deal, both price types: a fixed CPM under the
+  platform floor, or a total whose equivalent CPM is under the slots' floors (a private auction's rate stays a hard
+  limit: it is only a floor). The API keeps the `400` (on `floorCpm` / `termTotal`, its reason ending "Send
+  belowFloorOverride: true to save it anyway") unless the request carries `belowFloorOverride: true`; the deal pop-up
+  shows the reason as a warning and a *Save anyway (override)* confirm that resends with it. The deal then records
+  `belowFloorOverride` (with `belowFloorOverrideBy` / `belowFloorOverrideAt`, the admin and time of the latest
+  override) and the Deals table and pop-up show **Below floor (override)**. Every later save that keeps the deal below
+  the floor needs the override again; a save that is back at or above the floor clears the flag. **Share** does not
+  re-ask for a deal that carries the flag. No extra role check: the section is admin-only.
 - **Committed plays are derived, never typed or defaulted.** `committedPlays = floor( sum over the assigned slots of
   forecast plays per day x termDays x (1 - guaranteeBufferPct / 100) )`, where a slot's forecast plays per day is its
   plays per window (loop length, the display type's open hours) x its displays x windows a day. It is `null` until a

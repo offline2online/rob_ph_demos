@@ -1099,6 +1099,32 @@ describe('Advertisers / Inventory', () => {
     expect(puts).toHaveLength(0)
   }, slow(30000))
 
+  it('warns when the price is below the platform floor and saves it again with the override on confirm', async () => {
+    const bodies: Record<string, unknown>[] = []
+    const reason = 'Floor price (CPM) can\'t be below the platform floor of 5 USD. Send belowFloorOverride: true to save it anyway.'
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const path = url.split('?')[0]
+      if (init?.method === 'POST' && path.endsWith('/term-check')) return new Response(JSON.stringify({ error: { code: 'validation_failed', message: 'Invalid.', details: [{ field: 'floorCpm', reason }] } }), { status: 400 })
+      if (init?.method === 'PUT') {
+        const b = JSON.parse(String(init.body)) as Record<string, unknown>
+        bodies.push(b)
+        return b.belowFloorOverride
+          ? new Response(JSON.stringify({ ...PG_LIST, floorCpm: 2, termTotal: null, belowFloorOverride: true }), { status: 200 })
+          : new Response(JSON.stringify({ error: { code: 'validation_failed', message: 'Invalid.', details: [{ field: 'floorCpm', reason }] } }), { status: 400 })
+      }
+      return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [PG_LIST] } })(url)
+    }))
+    const dialog = await openTermsEditor()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save draft' }))
+    const warning = await screen.findByTestId('below-floor-warning')
+    expect(warning).toHaveTextContent('below the platform floor of 5 USD')
+    expect(warning).not.toHaveTextContent('Send belowFloorOverride')
+    fireEvent.click(screen.getByRole('button', { name: 'Save anyway (override)' }))
+    await waitFor(() => expect(bodies).toHaveLength(2))
+    expect(bodies[0]).not.toHaveProperty('belowFloorOverride')
+    expect(bodies[1]).toMatchObject({ belowFloorOverride: true })
+  }, slow(30000))
+
   it('Finalise confirms the slots and terms, and Share deal shares the deal', async () => {
     const calls: { method: string; url: string; body?: unknown }[] = []
     vi.stubGlobal('fetch', draftFetch([{ positionId: 'menu_board.s2', label: 'Menu Board — Long Format' }], calls))
