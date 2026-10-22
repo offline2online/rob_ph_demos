@@ -3270,6 +3270,36 @@ export interface components {
                             personalised: boolean;
                         };
                         /**
+                         * @description Approval state of the tile (ticket
+                         *     S5PZyZ3MFr45LTM0zfAK, 22 Oct 2026). Approval is
+                         *     per campaign. `defaultApproved` is the booked
+                         *     campaign's own approval (its default creative);
+                         *     `defaultRisk` is `secured` when approved, else
+                         *     `at_risk` when this tile's own window starts in
+                         *     `startsInDays` <= 3 (or has started), else
+                         *     `warning`. `localised` / `personalised` count
+                         *     approved of submitted among this advertiser's
+                         *     campaigns booked on this position in the range
+                         *     shown, split by each campaign's own type
+                         *     (interactive counts as localised). There is no
+                         *     per-version approval.
+                         */
+                        approval?: {
+                            defaultApproved: boolean;
+                            /** @enum {string} */
+                            defaultRisk: "secured" | "at_risk" | "warning";
+                            /** @description Days from now to the start of this tile's window; negative once started. */
+                            startsInDays: number;
+                            localised: {
+                                approved: number;
+                                submitted: number;
+                            };
+                            personalised: {
+                                approved: number;
+                                submitted: number;
+                            };
+                        };
+                        /**
                          * @description Only when layers.personalised is true (ticket
                          *     "Booking schedule: personalised trigger icons",
                          *     22 Sep): which trigger mechanism(s) the

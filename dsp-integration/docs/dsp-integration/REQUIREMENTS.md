@@ -2689,6 +2689,18 @@ stores its criteria didn't match unsold to it. That model is retired:
   advertiser's submission also carries, on top of the mandatory default
   base (ticket "Booking schedule: single-advertiser stacking tile" — see
   the booking schedule functional requirement below).
+- **The booking tile shows approval at a glance** (ticket S5PZyZ3MFr45LTM0zfAK,
+  22 Oct 2026, decided by Rob). Approval is per campaign, so there is no
+  per-version approval. The tile is **green with a tick beside DEFAULT** when
+  the booked campaign's default is approved; when it is not approved (or has
+  no creative) the tile is **red** if its own booked window starts within 3
+  days of now (at risk, revenue not secured) and **orange** if further out.
+  The Localised and Personalised counters read *approved/submitted* among the
+  advertiser's campaigns booked on that position in the range shown, split by
+  each campaign's own type, using each campaign's own approval status
+  (orange while any await approval, green when all are approved; hidden when
+  none). The hover card is a two-column list: Booking value, CPM, Reserved
+  CPM and Assumed views, labels left, values right-aligned.
 - Open questions 50 and 51 (below) — the target algorithm for clearing
   overlapping localised bids and billing a part-sold position — are
   **superseded, not answered**: there is no longer a part-sold position for

@@ -160,6 +160,13 @@ const LayerTag = ({ layerKey }: { layerKey: LayerKey }) => (
   <span className="shrink-0" style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color: T.micro }}>{LAYER_ABBR[layerKey]}</span>
 )
 
+/* Approved out of submitted campaigns for a layer (ticket S5PZyZ3MFr45LTM0zfAK, 22 Oct 2026): green when all
+   are approved, orange while some still await approval. Nothing when none were submitted. */
+function ApprovalCount({ count }: { count?: { approved: number; submitted: number } }) {
+  if (!count?.submitted) return null
+  return <span style={{ fontSize: 10, fontWeight: 600, color: count.approved === count.submitted ? T.success : T.warning }}>{count.approved}/{count.submitted}</span>
+}
+
 /* One layer row within a booked tile — only rendered for a layer the
    booking actually carries (`booking.layers[layerKey]`), so the tile's
    height is exactly how many of these are provided (ticket "Booking
@@ -174,6 +181,7 @@ const LayerTag = ({ layerKey }: { layerKey: LayerKey }) => (
    Tooltip on the whole tile (`BookingTile`, below) now covers everything
    this row shows, via `layerLine`; this component is purely visual. */
 function LayerRow({ layerKey, booking }: { layerKey: LayerKey; booking: Booking }) {
+  const count = layerKey === 'default' ? undefined : booking.approval?.[layerKey]
   if (layerKey === 'personalised') {
     const lit = TRIGGER_ORDER.filter((k) => booking.personalisedTriggers?.[k])
     return (
@@ -182,6 +190,7 @@ function LayerRow({ layerKey, booking }: { layerKey: LayerKey; booking: Booking 
         {lit.length === 0
           ? <span style={{ fontSize: 10, color: T.micro }}>Active</span>
           : lit.map((k) => <span key={k} className="flex"><Icon name={TRIGGER_META[k].icon} size={13} style={{ color: BOOKED.colour }} /></span>)}
+        <ApprovalCount count={count} />
       </div>
     )
   }
@@ -189,12 +198,14 @@ function LayerRow({ layerKey, booking }: { layerKey: LayerKey; booking: Booking 
     return (
       <div className="flex items-center gap-1 w-full min-w-0">
         <LayerTag layerKey="localised" />
+        <ApprovalCount count={count} />
       </div>
     )
   }
   return (
     <div className="flex items-center gap-1 w-full min-w-0">
       <LayerTag layerKey="default" />
+      {booking.approval?.defaultApproved && <Icon name="check" size={12} style={{ color: T.success }} />}
     </div>
   )
 }
@@ -219,16 +230,59 @@ function layerLine(k: LayerKey, booking: Booking): string {
    tile visibly expands and contracts with how successful the upsell has
    been with that advertiser (ticket "Booking schedule: single-advertiser
    stacking tile"). */
+/* The tile's colour is the default creative's state (ticket S5PZyZ3MFr45LTM0zfAK, 22 Oct 2026): green when approved,
+   red when it is not and the flight starts within 3 days (revenue not secured), orange when it is not and the
+   start is further out. A snapshot taken before the API sent `approval` keeps the old advertiser colours. */
+const RISK_TONE = {
+  secured: { colour: '#389e0d', bg: '#f6ffed', label: 'Default approved: the slot is secured' },
+  at_risk: { colour: '#cf1322', bg: '#fff1f0', label: 'Default not approved and the flight starts within 3 days: at risk, revenue not secured' },
+  warning: { colour: '#d46b08', bg: '#fff7e6', label: 'Default not approved yet; the flight is more than 3 days away' },
+}
+
+/* The hover card: a two-column list, labels left and values right-aligned (same ticket). */
+function TileCard({ booking, money, tone }: { booking: Booking; money: (n: number) => string; tone?: (typeof RISK_TONE)[keyof typeof RISK_TONE] }) {
+  const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
+  const a = booking.approval
+  const rows: [string, string][] = [
+    ['Booking value', money(booking.bookedRevenue)],
+    ['CPM', booking.type === 'reserve' ? '—' : booking.cpm.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })],
+    ['Reserved CPM', booking.type === 'reserve' ? booking.cpm.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'],
+    ['Assumed views', booking.assumedViews.toLocaleString('en-GB')],
+  ]
+  return (
+    <div style={{ minWidth: 220, fontSize: 12 }}>
+      <div style={{ fontWeight: 600 }}>{booking.advertiserName}</div>
+      <div style={{ opacity: 0.75, marginBottom: 6 }}>
+        {booking.advertiserName.endsWith('(Direct)') ? '' : `via ${booking.partnerName} · `}{booking.type === 'reserve' ? 'Reserved' : 'Won at auction'}
+      </div>
+      {rows.map(([label, value]) => (
+        <div key={label} className="flex justify-between gap-4" style={{ lineHeight: '20px' }}>
+          <span style={{ opacity: 0.75 }}>{label}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{value}</span>
+        </div>
+      ))}
+      {tone && a && <div style={{ marginTop: 6 }}>{tone.label}</div>}
+      {a && (['localised', 'personalised'] as const).filter((k) => a[k].submitted > 0).map((k) => (
+        <div key={k} className="flex justify-between gap-4" style={{ lineHeight: '20px' }}>
+          <span style={{ opacity: 0.75 }}>{k === 'localised' ? 'Localised approved' : 'Personalised approved'}</span>
+          <span style={{ textAlign: 'right' }}>{a[k].approved}/{a[k].submitted}</span>
+        </div>
+      ))}
+      <div style={{ marginTop: 6, opacity: 0.75 }}>{present.map((k) => layerLine(k, booking)).join(' · ')}</div>
+    </div>
+  )
+}
+
 function BookingTile({ booking, money }: { booking: Booking; money: (n: number) => string }) {
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
-  const layersTip = present.map((k) => layerLine(k, booking)).join(' · ')
-  const tip = `${booking.advertiserName}${booking.advertiserName.endsWith('(Direct)') ? '' : ` via ${booking.partnerName}`} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)} · ${layersTip}`
+  const tone = booking.approval ? RISK_TONE[booking.approval.defaultRisk] : undefined
+  const colour = tone?.colour ?? BOOKED.colour
   return (
-    <Tip title={tip}>
-      <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` }}>
+    <Tip title={<TileCard booking={booking} money={money} tone={tone} />}>
+      <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}` }}>
         <div className="flex items-center gap-1 w-full min-w-0">
           <Icon name={booking.type === 'reserve' ? 'bookmark' : 'gavel'} size={12} />
-          <span className="truncate" style={{ fontSize: 11, fontWeight: 600, color: BOOKED.colour }}>{booking.advertiserName}</span>
+          <span className="truncate" style={{ fontSize: 11, fontWeight: 600, color: colour }}>{booking.advertiserName}</span>
         </div>
         {present.map((k) => <LayerRow key={k} layerKey={k} booking={booking} />)}
       </div>
