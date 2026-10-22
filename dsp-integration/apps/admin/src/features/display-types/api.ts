@@ -35,11 +35,14 @@ const referencedPlaylistIds = (d: DisplayType) => new Set([
    what the Playlist Settings panel showed while a display type was being
    created was never sent, and the playlist came out with the server's own
    starting values instead. */
-export async function saveDisplayTypes(draft: DisplayType[], saved: DisplayType[], opts: { extensions: boolean; newPlaylists?: DraftPlaylist[] }) {
+/* Resolves to the number of writes it made, so a caller can tell a partial save from a no-op. */
+export async function saveDisplayTypes(draft: DisplayType[], saved: DisplayType[], opts: { extensions: boolean; newPlaylists?: DraftPlaylist[] }): Promise<number> {
+  let writes = 0
+  const write = (method: 'POST' | 'PUT', path: string, body: unknown) => { writes++; return api(method, path, body) }
   for (const d of draft) {
     const before = saved.find((s) => s.id === d.id)
-    if (!before) await api('POST', '/admin/v1/display-types', recordOf(d))
-    else if (!deepEqual(recordOf(d), recordOf(before))) await api('PUT', `/admin/v1/display-types/${d.id}/record`, recordOf(d))
+    if (!before) await write('POST', '/admin/v1/display-types', recordOf(d))
+    else if (!deepEqual(recordOf(d), recordOf(before))) await write('PUT', `/admin/v1/display-types/${d.id}/record`, recordOf(d))
     const referenced = referencedPlaylistIds(d)
     const zones = (d.multiZone as { enabled?: boolean; zones?: { playlistId?: string }[] } | undefined)?.enabled ? ((d.multiZone as { zones?: { playlistId?: string }[] }).zones ?? []) : []
     if (!before && zones.length) {
@@ -47,28 +50,33 @@ export async function saveDisplayTypes(draft: DisplayType[], saved: DisplayType[
          defined once while creating it (the Playlist Settings panel edits the
          draft default playlist) apply to every zone playlist. */
       const created = (opts.newPlaylists ?? []).find((p) => p.autoCreatedFor === d.id && p.id === `pl_${d.id}`)
-      if (created) for (const z of zones) if (z.playlistId) await api('PUT', `/admin/v1/playlists/${z.playlistId}/settings`, created.playlistSettings ?? {})
+      if (created) for (const z of zones) if (z.playlistId) await write('PUT', `/admin/v1/playlists/${z.playlistId}/settings`, created.playlistSettings ?? {})
       referenced.delete(`pl_${d.id}`)
       for (const z of zones) if (z.playlistId) referenced.delete(z.playlistId)
     }
     for (const p of opts.newPlaylists ?? []) {
-      if (p.autoCreatedFor === d.id && referenced.has(p.id)) await api('PUT', `/admin/v1/playlists/${p.id}/settings`, p.playlistSettings ?? {})
+      if (p.autoCreatedFor === d.id && referenced.has(p.id)) await write('PUT', `/admin/v1/playlists/${p.id}/settings`, p.playlistSettings ?? {})
     }
     if (opts.extensions && d.phExtensions && !deepEqual(d.phExtensions, before?.phExtensions ?? { slots: [] })) {
-      await api('PUT', `/admin/v1/display-types/${d.id}/extensions`, d.phExtensions)
+      await write('PUT', `/admin/v1/display-types/${d.id}/extensions`, d.phExtensions)
     }
   }
+  return writes
 }
 
 /* A playlist's own settings (26 Sep 2026) — everything but Maximum Campaigns
    Played In Rotation and slot assignment, which stay part of the display
    type record above. Rename and delete are immediate elsewhere; only this
    goes through the page's Save changes draft. */
-export async function savePlaylistSettings(draft: Playlist[], saved: Playlist[]) {
+/* Resolves to the number of playlists it saved. */
+export async function savePlaylistSettings(draft: Playlist[], saved: Playlist[]): Promise<number> {
+  let writes = 0
   for (const p of draft) {
     const before = saved.find((s) => s.id === p.id)
     if (before && !deepEqual(p.playlistSettings, before.playlistSettings)) {
       await api('PUT', `/admin/v1/playlists/${p.id}/settings`, p.playlistSettings)
+      writes++
     }
   }
+  return writes
 }

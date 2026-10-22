@@ -105,7 +105,7 @@ const SlotsCell = ({ data, context }: P) => {
       <div style={{ fontWeight: 500 }}>Assigned slots</div>
       {rows.map((r, i) => (
         <div key={i} style={{ marginTop: 4 }}>
-          <div style={{ fontWeight: 500 }}>{r.displayType}{r.orientation ? ` ${r.orientation === 'portrait' ? 'Portrait' : 'Landscape'}` : ''}{r.displayCount != null ? ` (${num(r.displayCount)} display${r.displayCount === 1 ? '' : 's'})` : ''}{r.description ? ` (${r.description})` : ''}</div>
+          <div style={{ fontWeight: 500 }}>{r.displayType}{r.orientation && !r.displayType.toLowerCase().includes(r.orientation) ? ` ${r.orientation === 'portrait' ? 'Portrait' : 'Landscape'}` : ''}{r.displayCount != null ? ` (${num(r.displayCount)} display${r.displayCount === 1 ? '' : 's'})` : ''}{r.description ? ` (${r.description})` : ''}</div>
           <div>{r.playlist || 'No playlist'}{r.zoneName ? ` · ${r.zoneName}` : ''}</div>
           {/* The IAB store zone set on the display type (ticket yZ8BvwUQV4Yc7a0IVwak, 15 Oct 2026). */}
           <div>IAB zone: {storeZoneLabel(r.storeZone) ?? 'Not defined'}</div>

@@ -5356,7 +5356,11 @@ change that would break a commitment (`409 has_dependents`). Every such refusal
 now opens one dialog (`apps/admin/src/shared/BlockedDialog.tsx`, built from
 `describeBlock()`): **what is blocked**, **why** (the booked windows or
 dependents, listed, with their dates), and **what you can do next**. Close is
-the only action. A save that is refused says "Your changes were not saved".
+the only action. A save that is refused says "Your changes were not saved"; on
+Playlist Management, whose Save sends display types and playlist settings
+separately, a refusal of one part while the other saved says "Your other changes
+were saved; this one was not" and the page shows what did save. The "What you
+can do" steps are a bulleted list.
 
 **Audit — every hard block in the Partner/admin API and where the admin shows it**
 
@@ -5369,7 +5373,7 @@ the only action. A save that is refused says "Your changes were not saved".
 | 5 | `DELETE playlists/:id` | Playlist is a display type's default or a zone's | Pre-check dialog on Delete (already); dialog if the delete itself is refused |
 | 6 | `POST buyers-lists/:id/archive` — "This deal can't be archived…" | A slot is still assigned to the deal | Pre-check dialog on Archive; refusal shown inside that dialog |
 | 7 | `PUT available-inventory` — "Slots are sold, so the advertiser can't be removed" | Advertiser taken off a sold slot | Confirm dialog offering "Lock against new sales"; otherwise the block dialog |
-| 8 | `PUT advertisers/:id` — "can't lose …" | Advertiser capability removed while it is in use | Dialog — Advertisers Save |
+| 8 | `PUT advertisers/:id/audiences` — "… can't lose …: … is targeted by the live deal …" | An audience (Visitor Segments value) removed from an advertiser while a live deal targets it | Dialog ("This audience can't be removed") — Edit advertiser pop-up, Save advertiser |
 
 The reason list is the API's own `details` (position, window date, reserved or
 sold), so the API response is unchanged. Validation errors (a missing field, an

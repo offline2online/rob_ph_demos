@@ -12,6 +12,8 @@ export interface Blocked {
   title: string
   /* Whether the user's edits were lost; false for a delete/archive, where nothing was being edited. */
   unsaved: boolean
+  /* A save of several parts where only some were refused: the rest did save (E2E 22 Oct 2026, it said nothing was saved). */
+  partial?: boolean
   reason: string
   items: { kind: string; text: string }[]
   next: string[]
@@ -57,6 +59,12 @@ export function describeBlock(e: unknown, action: Action, subject = 'This change
       reason: 'A slot is still assigned to it, so archiving would leave that slot selling to a deal buyers can no longer see.',
       next: ['Open Advertisers / Inventory and assign each listed slot to another deal, or to no deal.', 'Then archive the deal again.'] }
   }
+  /* An advertiser's audience (Visitor Segments value) that a live deal targets (PUT advertisers/:id/audiences). */
+  if (/can't lose .*targeted by/.test(m)) {
+    return { title: "This audience can't be removed", unsaved, items,
+      reason: `${m.replace(/^.*?:\s*/, '')} Removing it would change who that live deal reaches.`,
+      next: ['Edit the deal in Advertisers / Inventory → Deals and buyers lists and remove the segment from its targeting, then try again.', 'Or wait until the deal has ended and been archived.'] }
+  }
   if (/can.t be removed|can't lose/.test(m)) {
     return { title: "This advertiser can't be removed from the slot", unsaved, items,
       reason: 'The slot is sold, so the advertiser stays on it while the booking runs. Existing bookings continue.',
@@ -86,7 +94,7 @@ export function BlockedDialog({ blocked, onClose }: { blocked: Blocked; onClose:
         <Alert
           className="mb-2.5"
           type="warning"
-          message={<>{blocked.unsaved && <><b>Your changes were not saved.</b>{' '}</>}{blocked.reason}</>}
+          message={<>{blocked.unsaved && <><b>{blocked.partial ? 'Your other changes were saved; this one was not.' : 'Your changes were not saved.'}</b>{' '}</>}{blocked.reason}</>}
         />
         {n > 0 && (
           <ul aria-label="What is holding this" className="m-0 mb-2.5 max-h-[180px] list-none overflow-y-auto rounded-md border p-0" style={{ borderColor: T.borderSubtle }}>
@@ -99,7 +107,8 @@ export function BlockedDialog({ blocked, onClose }: { blocked: Blocked; onClose:
           </ul>
         )}
         <div style={{ fontWeight: 500 }}>What you can do</div>
-        <ul aria-label="What you can do" className="m-0 pl-5">
+        {/* list-disc: Tailwind's base styles drop the bullets, so a wrapped line read as a new step (E2E 22 Oct 2026). */}
+        <ul aria-label="What you can do" className="m-0 list-disc pl-5">
           {blocked.next.map((t, i) => <li key={i}>{t}</li>)}
         </ul>
       </div>

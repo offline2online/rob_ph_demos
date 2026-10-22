@@ -73,6 +73,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
   const [audiences, setAudiences] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [blocked, setBlocked] = useState<Blocked | null>(null)
   const variables = useQuery({ ...Q.targetingVariables, enabled: open })
   const segments = variables.data?.find((v) => v.key === 'visitor.visitor_segments')
   const options = [...new Set([...(segments?.values ?? []), ...(segments?.privateValues ?? []), ...audiences])].map((v) => ({ value: v, label: v }))
@@ -90,7 +91,10 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
       onClose()
       message.success(editing ? 'Advertiser saved' : 'Advertiser added')
     } catch (e) {
-      setError(e instanceof ApiRequestError ? e.message : 'Could not save the advertiser.')
+      /* A hard block (409 has_dependents) is a friendly dialog, never the API's sentence in red (E2E 22 Oct 2026). */
+      const b = describeBlock(e, 'save', 'This advertiser')
+      if (b) setBlocked(b)
+      else setError(e instanceof ApiRequestError ? e.message : 'Could not save the advertiser.')
     } finally {
       setBusy(false)
     }
@@ -126,6 +130,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
         </>
       )}
       {error && !editing && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
+      {blocked && <BlockedDialog blocked={blocked} onClose={() => setBlocked(null)} />}
     </Modal>
   )
 }

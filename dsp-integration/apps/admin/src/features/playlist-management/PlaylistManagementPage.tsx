@@ -377,9 +377,9 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['playlists'] }), qc.invalidateQueries({ queryKey: ['display-types'] })])
   const [blocked, setBlocked] = useState<Blocked | null>(null)
-  const fail = (e: unknown, fallback: string, action: 'save' | 'delete' = 'save') => {
+  const fail = (e: unknown, fallback: string, action: 'save' | 'delete' = 'save', partial = false) => {
     const b = describeBlock(e, action, 'This playlist')
-    if (b) return setBlocked(b)
+    if (b) return setBlocked({ ...b, partial })
     message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : fallback)
   }
   const items = playlists.data ?? []
@@ -390,12 +390,20 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
     if (!draft || !types.data || !playlists.data) return
     setSaving(true)
     try {
-      await Promise.all([
+      /* The two saves are independent: when one is refused the other may still have saved, so the dialog must not
+         say nothing was saved (E2E 22 Oct 2026), and the page refreshes to show what did. */
+      const results = await Promise.allSettled([
         saveDisplayTypes(draft.types, types.data, { extensions: slotAssignment }),
         savePlaylistSettings(draft.playlists, playlists.data),
       ])
-      commitNext()
-      await refresh()
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+      if (failed) {
+        await refresh()
+        fail(failed.reason, 'Could not save changes.', 'save', results.some((r) => r.status === 'fulfilled' && r.value > 0))
+      } else {
+        commitNext()
+        await refresh()
+      }
     } catch (e) {
       fail(e, 'Could not save changes.')
     } finally {
