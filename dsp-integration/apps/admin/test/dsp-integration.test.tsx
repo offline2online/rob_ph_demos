@@ -1382,9 +1382,9 @@ describe('Advertisers / Inventory', () => {
     const ranked = within(cell).getByRole('list', { name: /buyers lists in priority order/ })
     expect(within(ranked).getAllByLabelText(/^Position/).map((n) => n.textContent)).toEqual(['1', '2'])
     expect(within(ranked).queryByText('Coke PG')).toBeNull()
-    const held = within(cell).getByRole('list', { name: /deals reserving the whole slot/ })
-    expect(within(held).getByText('Coke PG')).toBeInTheDocument()
-    expect(within(held).queryByLabelText(/^Position/)).toBeNull()
+    /* Reserving deals are not repeated under the picker: no list, no "Reserves the whole slot" line. */
+    expect(within(cell).queryByRole('list', { name: /deals reserving the whole slot/ })).toBeNull()
+    expect(within(cell).queryByText(/Reserves the whole slot/)).toBeNull()
   }, slow(45000))
 
   /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */

@@ -344,7 +344,7 @@ const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 
 function PriorityList({ label, ids: allIds, reserving, names, cpms, canEdit, onChange, openAuction, globalDeal, openDsps }: { label: string; ids: string[]; reserving: Set<string>; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void; openAuction: boolean; globalDeal: boolean; openDsps: string[] }) {
   /* Only deals that share the slot are ranked (Rob, 22 Oct 2026): Programmatic guaranteed and Direct advertiser deals take the
      whole slot, so they carry no priority, only a flight that must not overlap another's. They are kept ahead of the ranked
-     deals in the saved order and shown apart, unnumbered. */
+     deals in the saved order and not listed again here: the picker above already shows them. */
   const held = allIds.filter((id) => reserving.has(id))
   const ids = allIds.filter((id) => !reserving.has(id))
   const [dragging, setDragging] = useState<number | null>(null)
@@ -361,22 +361,10 @@ function PriorityList({ label, ids: allIds, reserving, names, cpms, canEdit, onC
   /* The open tier is the chosen DSPs and/or the global deal (12 Oct 2026): one pool, every entry bids at once. */
   const openTier = openAuction || globalDeal
   const ranked = ids.length >= 2 || (ids.length === 1 && openTier)
-  if (!ranked && !held.length) return null
   const hidden = showAll || ids.length <= LIMIT ? 0 : ids.length - LIMIT
-  const reservedRows = held.length > 0 && (
-    <div className="mt-2" role="list" aria-label={`${label}: deals reserving the whole slot`}>
-      <div style={{ fontSize: 12, color: T.muted }} className="mb-1">Reserves the whole slot: no priority, flights must not overlap</div>
-      {held.map((id) => (
-        <div key={id} role="listitem" className="mb-1 flex items-center gap-2" style={{ border: '1px solid #d9d9d9', borderRadius: 6, padding: '2px 8px', background: '#fff' }}>
-          <Icon name="lock" size={14} /><span className="flex-1 truncate" style={{ fontSize: 13 }}>{names.get(id) ?? id}</span>
-        </div>
-      ))}
-    </div>
-  )
-  if (!ranked) return reservedRows
+  if (!ranked) return null
   return (
     <>
-    {reservedRows}
     <div className="mt-2" role="list" aria-label={`${label}: buyers lists in priority order`}>
       <div style={{ fontSize: 12, color: T.muted }} className="mb-1">{openTier ? 'Deals: tried top to bottom, resolved ahead of time' : 'Priority: tried top to bottom'}</div>
       {ids.map((id, i) => i >= ids.length - hidden ? null : (

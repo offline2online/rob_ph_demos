@@ -2577,9 +2577,9 @@ rank differently on each.
   and the open auction. Programmatic guaranteed and Direct advertiser deals take
   the whole slot, so priority means nothing for them; the only rule is that
   their flights must not overlap (already enforced, see the 22 Oct 2026 note on
-  reserving deals). Admin shows them in their own unnumbered group, "Reserves
-  the whole slot: no priority, flights must not overlap", with no drag handle or
-  arrows, and numbers only the remaining deals. Stored order is unchanged
+  reserving deals). Admin does not list them again under the Assigned to picker
+  (no "Reserves the whole slot" group, no repeated names: the picker's chips
+  already show them), and numbers only the remaining deals. Stored order is unchanged
   (`buyersListIds`); the UI keeps reserving deals ahead of the ranked ones when
   it reorders. The ranked rows appear once two or more ranked deals (or one
   plus an Open auction) are on the slot.
