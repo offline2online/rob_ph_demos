@@ -165,6 +165,8 @@ describe('hosted API', () => {
     const pre = await h.handle({ method: 'OPTIONS', url: '/api/admin/v1/session', headers: { origin: ORIGIN }, ip: '1.1.1.1' })
     expect(pre.status).toBe(204)
     expect(pre.headers['Access-Control-Allow-Origin']).toBe(ORIGIN)
+    /* Every verb the admin UI sends, PATCH included (renaming a direct advertiser, 23 Oct 2026). */
+    expect(String(pre.headers['Access-Control-Allow-Methods']).split(/,\s*/)).toEqual(expect.arrayContaining(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']))
     expect((await get(h, '/api/admin/v1/session', { origin: 'https://evil.example' })).headers['Access-Control-Allow-Origin']).toBeUndefined()
     const approval = await get(h, '/api/admin/v1/campaigns/c_demo_gatorade_summer/approval')
     expect(approval.body.toString()).toMatch(/"https:\/\/api\.example\/assets\//)

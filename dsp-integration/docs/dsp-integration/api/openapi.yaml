@@ -1676,6 +1676,39 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
   /admin/v1/advertisers/direct/{advertiserId}:
+    patch:
+      tags: [Admin — Advertisers]
+      operationId: renameDirectAdvertiser
+      summary: Rename a direct advertiser (its advertiserId does not change)
+      description: Campaigns, bookings, users and deals key on the advertiserId, so only the name changes. A DSP advertiser is named by its DSP and answers 404. Refused 409 when the name is already another advertiser's, or while the old name is assigned to a slot.
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: advertiserId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 80}
+      responses:
+        '200':
+          description: Renamed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [advertiserId, name]
+                properties:
+                  advertiserId: {type: string}
+                  name: {type: string}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
     delete:
       tags: [Admin — Advertisers]
       operationId: removeDirectAdvertiser

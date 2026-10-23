@@ -61,10 +61,11 @@ function ApprovalCell({ data, context }: P) {
     </span>
   )
 }
-/* Add an advertiser with a direct relationship with the retailer (no DSP), or open any advertiser's details from the
-   same pop-up. Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr), so an existing advertiser has
-   nothing left to change here: its name is fixed and the pop-up only closes. A new direct advertiser is listed as
-   "Name (Direct)". */
+/* Add an advertiser with a direct relationship with the retailer (no DSP), or rename one. Only a direct advertiser
+   opens here to be edited (a DSP advertiser is named by its DSP, so the table gives it no edit button): the name is
+   the one thing to change, saved with PATCH, and its id stays so campaigns, bookings and deals are untouched (ticket
+   usIHp1uhtllLCP29teBu). Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr). A new direct
+   advertiser is listed as "Name (Direct)". */
 function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; editing: Advertiser | null; onClose: () => void; onSaved: () => void }) {
   const { message } = App.useApp()
   const [name, setName] = useState('')
@@ -75,14 +76,15 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
     if (open) { setName(editing?.name ?? ''); setError(null) }
   }, [open, editing])
   const save = async () => {
-    if (editing || !name.trim() || busy) return
+    if (!name.trim() || (editing && name.trim().replace(/\s+/g, ' ') === editing.name) || busy) return
     setBusy(true)
     setError(null)
     try {
-      await api('POST', '/admin/v1/advertisers/direct', { name })
+      if (editing) await api('PATCH', `/admin/v1/advertisers/direct/${encodeURIComponent(editing.advertiserId)}`, { name })
+      else await api('POST', '/admin/v1/advertisers/direct', { name })
       onSaved()
       onClose()
-      message.success('Advertiser added')
+      message.success(editing ? 'Advertiser renamed' : 'Advertiser added')
     } catch (e) {
       /* A hard block (409 has_dependents) is a friendly dialog, never the API's sentence in red (E2E 22 Oct 2026). */
       const b = describeBlock(e, 'save', 'This advertiser')
@@ -95,7 +97,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
   return (
     <Modal
       open={open} width={500} destroyOnHidden confirmLoading={busy} onCancel={onClose} onOk={save}
-      okText="Add advertiser" okButtonProps={{ disabled: !name.trim(), style: editing ? { display: 'none' } : undefined }}
+      okText={editing ? 'Save changes' : 'Add advertiser'} okButtonProps={{ disabled: !name.trim() || (!!editing && name.trim().replace(/\s+/g, ' ') === editing.name) }}
       title={
         <span className="inline-flex items-center gap-2">
           <Icon name="sell" size={20} style={{ color: T.primary }} />
@@ -104,7 +106,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
       }
     >
       <label htmlFor="direct-advertiser-name" className="mb-1 block" style={{ fontSize: 13, fontWeight: 500 }}>Advertiser name</label>
-      <Input id="direct-advertiser-name" aria-label="Advertiser name" maxLength={80} autoFocus={!editing} disabled={!!editing} value={name} status={error ? 'error' : undefined} onChange={(e) => setName(e.target.value)} onPressEnter={save} />
+      <Input id="direct-advertiser-name" aria-label="Advertiser name" maxLength={80} autoFocus={!editing} value={name} status={error ? 'error' : undefined} onChange={(e) => setName(e.target.value)} onPressEnter={save} />
       <div className="mt-1.5" style={{ fontSize: 12, color: T.muted }}>
         {editing ? (editing.direct ? 'A direct advertiser has its own relationship with you, with no DSP in between.' : `Comes through ${editing.via.join(', ')}.`) : 'A direct advertiser has its own relationship with you, with no DSP in between.'}
       </div>
@@ -116,7 +118,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
 const ActionsCell = ({ data, context }: P) =>
   data && context.current.canEdit ? (
     <span className="inline-flex items-center">
-      <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
+      {data.direct && <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />}
       {data.direct && <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />}
     </span>
   ) : null
@@ -344,7 +346,7 @@ const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 
 function PriorityList({ label, ids: allIds, reserving, names, cpms, canEdit, onChange, openAuction, globalDeal, openDsps }: { label: string; ids: string[]; reserving: Set<string>; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void; openAuction: boolean; globalDeal: boolean; openDsps: string[] }) {
   /* Only deals that share the slot are ranked (Rob, 22 Oct 2026): Programmatic guaranteed and Direct advertiser deals take the
      whole slot, so they carry no priority, only a flight that must not overlap another's. They are kept ahead of the ranked
-     deals in the saved order and shown apart, unnumbered. */
+     deals in the saved order and not listed again here: the picker above already shows them. */
   const held = allIds.filter((id) => reserving.has(id))
   const ids = allIds.filter((id) => !reserving.has(id))
   const [dragging, setDragging] = useState<number | null>(null)
@@ -361,22 +363,10 @@ function PriorityList({ label, ids: allIds, reserving, names, cpms, canEdit, onC
   /* The open tier is the chosen DSPs and/or the global deal (12 Oct 2026): one pool, every entry bids at once. */
   const openTier = openAuction || globalDeal
   const ranked = ids.length >= 2 || (ids.length === 1 && openTier)
-  if (!ranked && !held.length) return null
   const hidden = showAll || ids.length <= LIMIT ? 0 : ids.length - LIMIT
-  const reservedRows = held.length > 0 && (
-    <div className="mt-2" role="list" aria-label={`${label}: deals reserving the whole slot`}>
-      <div style={{ fontSize: 12, color: T.muted }} className="mb-1">Reserves the whole slot: no priority, flights must not overlap</div>
-      {held.map((id) => (
-        <div key={id} role="listitem" className="mb-1 flex items-center gap-2" style={{ border: '1px solid #d9d9d9', borderRadius: 6, padding: '2px 8px', background: '#fff' }}>
-          <Icon name="lock" size={14} /><span className="flex-1 truncate" style={{ fontSize: 13 }}>{names.get(id) ?? id}</span>
-        </div>
-      ))}
-    </div>
-  )
-  if (!ranked) return reservedRows
+  if (!ranked) return null
   return (
     <>
-    {reservedRows}
     <div className="mt-2" role="list" aria-label={`${label}: buyers lists in priority order`}>
       <div style={{ fontSize: 12, color: T.muted }} className="mb-1">{openTier ? 'Deals: tried top to bottom, resolved ahead of time' : 'Priority: tried top to bottom'}</div>
       {ids.map((id, i) => i >= ids.length - hidden ? null : (
@@ -785,8 +775,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        the flat position across every zone, when each zone runs its own
        separate playlist and starts at slot 1). Equal to `slot` on a
        single-zone display type. */
-    /* Slot and Position are one column (ticket IkQ23uiIpN8dd6Wh9L27, 22 Oct 2026): the slot, then its name in brackets. minWidth = width so the name isn't cut off on a wide table. */
-    { headerName: 'Slot', width: 300, minWidth: 300, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? slotColumnText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Slot') },
+    /* Slot and Position are one column (ticket IkQ23uiIpN8dd6Wh9L27, 22 Oct 2026): the slot, then its name in brackets. minWidth = width, sized to just fit "Slot 1 (Hero slot)" (a third of the old 300px, 22 Oct 2026); a longer zone or position name truncates with its hover. */
+    { headerName: 'Slot', width: 140, minWidth: 140, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? slotColumnText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Slot') },
     {
       /* minWidth too: sizeColumnsToFit shrinks every column to its minWidth on a wide table, which left this at 300px and cut off its waterfall note (E2E 22 Oct 2026). */
       headerName: 'Assigned to', width: 400, minWidth: 400, cellRenderer: AssignedCell, autoHeight: true,
