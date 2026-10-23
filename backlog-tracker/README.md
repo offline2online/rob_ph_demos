@@ -350,7 +350,9 @@ What the train changes:
   Testing, gets exactly what a person's Failed testing click does — back to
   Backlog, `revertRequested`, its commits reverted off the branch — and is
   rebuilt once (`rebuildAfterRevert`, after the revert, so the rebuild starts
-  from a clean train) with the failing run on its notes. An approved
+  from a clean train) with the failing run on its notes. A red ticket
+  is not sent back when a later ticket on the train, which carries it, has
+  passed (23 Oct 2026: the next ticket had fixed the test it broke). An approved
   culprit is held by the deploy gate until Deploy to Main has actually been
   clicked and parked red on it (`trainStatus: "conflict"` with
   `trainCiRedPr`); then it is ejected and rebuilt the same way, so the rest

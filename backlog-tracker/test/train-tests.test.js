@@ -59,6 +59,10 @@ const cases = [
     return [
       ["culprit: first red after green, in testing", pickRedCulprit(order, [C, A, B], { a: ok, b: red, c: red })?.id, "B"],
       ["all green: nobody", pickRedCulprit(order, [A, B, C], { a: ok, b: ok, c: ok }), null],
+      // 23 Oct 2026: B broke a pinned test, C (built on B) fixed the pin and passed
+      ["red but a later ticket carrying it passed: nobody", pickRedCulprit(order, [A, B, C], { a: ok, b: red, c: ok }), null],
+      ["red, later ticket still running: B is still the culprit", pickRedCulprit(order, [A, B, C], { a: ok, b: red, c: { status: "in_progress" } })?.id, "B"],
+      ["red, later ticket's pass is stale (skipped): B is still the culprit", pickRedCulprit(order, [A, B, C], { a: ok, b: red, c: ok }, { skip: new Set(["c"]) })?.id, "B"],
       ["first red is approved: never ejected", pickRedCulprit(order, [A, B, C], { a: red, b: red, c: red }), null],
       ["a run before it still going: wait", pickRedCulprit(order, [A, B, C], { a: { status: "in_progress" }, b: red }), null],
       ["a run before it missing: wait", pickRedCulprit(order, [A, B, C], { b: red }), null],

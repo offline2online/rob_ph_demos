@@ -2254,6 +2254,11 @@ function readTrainTestGate(deployBranch) {
 // tickets sat behind a red deploy overnight). An approved culprit is only
 // ejected with a green commit before it on the train, so a check that is
 // red on main itself never sends the train's first ticket back.
+// Nor is a red ticket sent back when a later ticket's commit, which carries
+// it, has passed: the train is green again from there and ships as one PR.
+// On 23 Oct 2026 ticket ByeH6mIkaRqOJjnHu31z changed a line a guard test
+// pins, the next ticket updated the pin and passed, and the eject would have
+// reverted the first commit from under the second and stalled the train.
 //
 // Pure, for test/train-tests.test.js.
 //   order: the train's commits, oldest first
@@ -2275,6 +2280,8 @@ function pickRedCulprit(order, cards, runs, opts = {}) {
     const concl = String(r.conclusion).toLowerCase();
     if (concl === "success") { greenBefore = true; continue; }
     if (!["failure", "timed_out"].includes(concl)) return null; // cancelled etc.: no verdict on this ticket
+    const later = onTrain.slice(onTrain.indexOf(card) + 1).filter((c) => !(opts.skip && opts.skip.has(c.deployCommit)));
+    if (later.some((c) => { const lr = (runs || {})[c.deployCommit]; return lr && String(lr.status).toLowerCase() === "completed" && String(lr.conclusion).toLowerCase() === "success"; })) return null; // fixed further up the train
     if (card.status === "ready-for-testing") return card;
     return opts.deployParkedRed && greenBefore ? card : null;
   }
