@@ -225,7 +225,7 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
   function cors(origin: string | undefined): Record<string, string> {
     if (!origin || !ALLOWED_ORIGINS.some((re) => re.test(origin))) return { Vary: 'Origin' }
     return {
-      'Access-Control-Allow-Origin': origin, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+      'Access-Control-Allow-Origin': origin, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'content-type, authorization', 'Access-Control-Max-Age': '600',
     }
   }

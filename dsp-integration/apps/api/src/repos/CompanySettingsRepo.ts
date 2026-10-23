@@ -52,8 +52,6 @@ export interface CompanySettingsRepo {
   /* Advertisers with a direct relationship with the retailer (no DSP), by name. */
   directAdvertisers(): Awaitable<DirectAdvertiserRecord[]>
   addDirectAdvertiser(advertiserId: string, name: string): Awaitable<void>
-  /* A new display name only: the advertiserId stays the key everything else holds. */
-  renameDirectAdvertiser(advertiserId: string, name: string): Awaitable<void>
   removeDirectAdvertiser(advertiserId: string, opts?: { keepSettings?: boolean }): Awaitable<void>
   /* The DSP seats each PH advertiser bids under, by advertiserId. */
   advertiserSeats(): Awaitable<Record<string, AdvertiserSeatRecord[]>>
@@ -181,9 +179,6 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     directAdvertisers: () => (prepared(db, 'SELECT advertiser_id, name FROM direct_advertisers ORDER BY name').all() as { advertiser_id: string; name: string }[]).map((r) => ({ advertiserId: r.advertiser_id, name: r.name })),
     addDirectAdvertiser(advertiserId, name) {
       prepared(db, 'INSERT INTO direct_advertisers (advertiser_id, name, created_at) VALUES (?, ?, ?) ON CONFLICT (advertiser_id) DO NOTHING').run(advertiserId, name, now())
-    },
-    renameDirectAdvertiser(advertiserId, name) {
-      prepared(db, 'UPDATE direct_advertisers SET name = ? WHERE advertiser_id = ?').run(name, advertiserId)
     },
     removeDirectAdvertiser(advertiserId, opts) {
       prepared(db, 'DELETE FROM direct_advertisers WHERE advertiser_id = ?').run(advertiserId)

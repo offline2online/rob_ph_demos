@@ -743,8 +743,7 @@ describe('Advertisers / Inventory', () => {
 
   it('lists a direct advertiser as "Direct advertiser" in Via and and is not offered in the Assigned to options, and lets an admin add one', async () => {
     const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
-    const fetchMock = vi.fn(fakeFetch(page))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
     expect(await within(advertisers).findByText('Direct advertiser')).toBeInTheDocument()
@@ -760,21 +759,17 @@ describe('Advertisers / Inventory', () => {
     /* Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr). */
     expect(within(dialog).queryByText('Audiences')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-    /* Only a direct advertiser can be edited or deleted (Rob, 23 Oct 2026): a DSP's advertiser has neither. */
-    expect(within(advertisers).getAllByRole('button', { name: /^Edit / })).toHaveLength(1)
-    expect(within(advertisers).getAllByRole('button', { name: /^Delete / })).toHaveLength(1)
-    expect(within(advertisers).getByRole('button', { name: 'Delete Acme Foods' })).toBeInTheDocument()
-    /* Edit renames it: the name is editable, and Save changes waits for a different name. */
+    /* Every advertiser row, DSP or direct, has an Edit action opening the same form. */
     fireEvent.click(within(advertisers).getByRole('button', { name: 'Edit Acme Foods' }))
     const edit = await screen.findByRole('dialog')
-    const nameField = within(edit).getByLabelText('Advertiser name')
-    expect(nameField).toBeEnabled()
-    expect(within(edit).getByRole('button', { name: 'Save changes' })).toBeDisabled()
+    expect(within(edit).queryByRole('button', { name: 'Save advertiser' })).not.toBeInTheDocument()
+    expect(within(edit).getByLabelText('Advertiser name')).toBeDisabled()
     expect(within(edit).queryByText('Audiences')).not.toBeInTheDocument()
-    fireEvent.change(nameField, { target: { value: 'Acme Fresh Foods' } })
-    fireEvent.click(within(edit).getByRole('button', { name: 'Save changes' }))
-    const calls = () => fetchMock.mock.calls as unknown as [string, RequestInit | undefined][]
-    await waitFor(() => expect(calls().some(([url, init]) => url === '/api/admin/v1/advertisers/direct/acme-foods' && init?.method === 'PATCH' && init.body === JSON.stringify({ name: 'Acme Fresh Foods' }))).toBe(true))
+    fireEvent.click(within(edit).getByRole('button', { name: 'Cancel' }))
+    expect(within(advertisers).getAllByRole('button', { name: /^Edit / }).length).toBeGreaterThan(1)
+    /* Only a direct advertiser can be deleted. */
+    expect(within(advertisers).getByRole('button', { name: 'Delete Acme Foods' })).toBeInTheDocument()
+    expect(within(advertisers).getAllByRole('button', { name: /^Delete / })).toHaveLength(1)
   })
 
   it('filters both tables by column, and shows who may buy each slot', async () => {

@@ -1164,11 +1164,7 @@ export interface paths {
         delete: operations["removeDirectAdvertiser"];
         options?: never;
         head?: never;
-        /**
-         * Rename a direct advertiser (its advertiserId does not change)
-         * @description Only the display name changes; its deals, campaigns, bookings and users stay with the same advertiserId. An advertiser that comes through a DSP takes its name from the DSP and answers 404 here. 409 when another advertiser already has the name.
-         */
-        patch: operations["renameDirectAdvertiser"];
+        patch?: never;
         trace?: never;
     };
     "/admin/v1/users": {
@@ -5992,42 +5988,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            401: components["responses"]["Unauthorised"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-        };
-    };
-    renameDirectAdvertiser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                advertiserId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    name: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Renamed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        advertiserId: string;
-                        name: string;
-                    };
-                };
-            };
-            400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

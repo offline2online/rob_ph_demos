@@ -52,37 +52,6 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(((await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string }[]).some((a) => a.advertiserId === 'acme-foods')).toBe(false)
   })
 
-  it('renames a direct advertiser, keeping its id so its deals and users follow (Rob, 23 Oct 2026)', async () => {
-    const ctx = await testContext()
-    const app = buildApp(ctx)
-    await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })
-    await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Own Brand' } })
-    const rename = (id: string, name: unknown) => app.inject({ method: 'PATCH', url: `/api/admin/v1/advertisers/direct/${id}`, payload: { name } })
-    const res = await rename('acme-foods', '  Acme   Fresh Foods ')
-    expect(res.statusCode).toBe(200)
-    expectMatchesContract('PATCH', '/admin/v1/advertisers/direct/{advertiserId}', 200, res.json())
-    expect(res.json()).toEqual({ advertiserId: 'acme-foods', name: 'Acme Fresh Foods' })
-    const items = (await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string; name: string; direct: boolean }[]
-    expect(items.find((a) => a.advertiserId === 'acme-foods')).toMatchObject({ name: 'Acme Fresh Foods', direct: true })
-    expect((await ctx.company.directAdvertisers()).find((d) => d.advertiserId === 'acme-foods')?.name).toBe('Acme Fresh Foods')
-    /* Same name again, or only its case: fine. Another advertiser's name, or its old id's name: refused. */
-    expect((await rename('acme-foods', 'acme fresh foods')).statusCode).toBe(200)
-    expect((await rename('acme-foods', 'Own Brand')).statusCode).toBe(409)
-    expect((await rename('acme-foods', 'Swisse')).statusCode).toBe(409)
-    expect((await rename('own-brand', 'Acme Fresh Foods')).statusCode).toBe(409)
-    /* The renamed one still holds its old id, so a new advertiser can't take the name it now shows. */
-    expect((await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Fresh Foods' } })).statusCode).toBe(409)
-    expect((await rename('acme-foods', '')).statusCode).toBe(400)
-    expect((await rename('acme-foods', '!!!')).statusCode).toBe(400)
-    /* A DSP advertiser takes its name from the DSP; an unknown id is not found. */
-    const dsp = await rename('swisse', 'Swisse Wellness')
-    expect(dsp.statusCode).toBe(404)
-    expect(dsp.json().error.message).toMatch(/comes through a DSP/)
-    expect((await rename('nobody', 'Nobody')).statusCode).toBe(404)
-    const marketing = buildApp(await testContext({ role: 'hq_marketing' }))
-    expect((await marketing.inject({ method: 'PATCH', url: '/api/admin/v1/advertisers/direct/acme-foods', payload: { name: 'X' } })).statusCode).toBe(403)
-  })
-
   it('treats a direct record shadowed by a DSP seat as a direct advertiser, not "Not a direct advertiser"', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
