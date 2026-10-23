@@ -70,7 +70,7 @@ describe('GET /admin/v1/booking-schedule/capacity', () => {
     return { ctx, get: (q = '?from=2026-09-21&to=2026-09-23') => app.inject({ method: 'GET', url: `/api/admin/v1/booking-schedule/capacity${q}` }) }
   }
   const slot = (body: { positions: { positionId: string }[] }) => body.positions.find((p) => p.positionId === 'menu_board.s2') as unknown as {
-    screens: number; windowHours: number; days: { date: string; totalPlays: number; firmPlays: number; availableToBid: number; deals: { plays: number }[]; segments: { segment: string; screens: number; totalPlays: number; firmPlays: number; availableToBid: number }[] }[]
+    screens: number; windowHours: number; playbackWindow: string; days: { date: string; totalPlays: number; firmPlays: number; availableToBid: number; deals: { plays: number }[]; segments: { segment: string; screens: number; totalPlays: number; firmPlays: number; availableToBid: number }[] }[]
   }
 
   it('rolls plays per day up from the windows in operating hours, one per screen', async () => {
@@ -80,6 +80,8 @@ describe('GET /admin/v1/booking-schedule/capacity', () => {
     expectMatchesContract('GET', '/admin/v1/booking-schedule/capacity', 200, res.json())
     const s = slot(res.json())
     expect(s.windowHours).toBe(8)
+    /* The label is the display type's Operating hours, not its billing unit. */
+    expect(['24 hours', 'Store hours']).toContain(s.playbackWindow)
     /* Always-open by default: 3 windows x 480 plays (60s x slots in rotation) per screen. */
     const perScreenDay = s.days[0].totalPlays / s.screens
     expect(Number.isInteger(perScreenDay) && perScreenDay > 0).toBe(true)

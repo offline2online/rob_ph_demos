@@ -412,7 +412,7 @@ function PlaysPerDay({ data }: { data: BookingCapacity }) {
                       <span>{p.displayTypeName}</span>
                     </button>
                     <div style={{ fontSize: 10.5, color: T.muted, paddingLeft: 18 }}>
-                      Slot {p.slot} · {p.screens} screens · {p.windowHours}h window{p.realtime ? ' · real time' : ''}
+                      Slot {p.slot} · {p.screens} screens · {p.playbackWindow} playback{p.realtime ? ' · real time' : ''}
                     </div>
                   </td>
                   {p.days.map((d) => (
