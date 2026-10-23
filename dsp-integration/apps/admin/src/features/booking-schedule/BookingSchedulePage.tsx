@@ -2,7 +2,7 @@
    Available Inventory or from an advertiser. Every advertiser-owned slot
    across its play windows — booked (advertiser, DSP, campaign type, the CPM
    it was booked at, booking revenue), available or unavailable — with the
-   booking revenue per display type and per campaign type, filters for one
+   booking revenue per display type (the by-campaign-type breakdown was removed, Rob, 23 Oct), filters for one
    advertiser or one DSP, and daily, weekly or monthly views. Read-only.
 
    Single-advertiser stacking tile (ticket "Booking schedule:
@@ -655,21 +655,6 @@ export function BookingSchedulePage() {
             defaultColDef={{ sortable: false, wrapHeaderText: true, autoHeaderHeight: true }}
             pinnedBottomRowData={[{ displayTypeId: 'total', displayTypeName: 'Total', ...data.totals, total: true }]}
           />
-
-          <SectionLabel><WithTip tip="What is selling: every campaign clears the floor and bills at its committed CPM whatever version plays.">By campaign type</WithTip></SectionLabel>
-          {data.byPricingType.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: T.muted }}>Nothing booked in this period yet.</div>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {data.byPricingType.map((t) => (
-                <div key={t.pricingType} className="rounded-md px-3 py-2" style={{ border: `1px solid ${T.borderSubtle}`, minWidth: 150 }}>
-                  <div style={{ fontSize: 11, color: T.micro, textTransform: 'capitalize' }}>{t.pricingType}</div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{money(t.bookedRevenue)}</div>
-                  <div style={{ fontSize: 11, color: T.muted }}>{t.bookedWindows} window{t.bookedWindows === 1 ? '' : 's'}</div>
-                </div>
-              ))}
-            </div>
-          )}
         </>
       )}
     </div>

@@ -4485,8 +4485,8 @@ playback analytics.**
   pXz9hpWIONwucHGJijsF's.
 - **Booking schedule tab**: every advertiser position across its play
   windows, booked / available / unavailable, **at the top of the tab**,
-  with booking revenue per display type and then what sold by campaign
-  type below it (Rob, 21 Sep: the schedule is what the page is for; the
+  with booking revenue per display type below it, and no by-campaign-type
+  breakdown (removed, Rob, 23 Oct 2026: not relevant to this page) (Rob, 21 Sep: the schedule is what the page is for; the
   money reads as its summary), and no second "Schedule" section header
   repeating the page's own title immediately above the table. Its DSP and
   advertiser filters are column
