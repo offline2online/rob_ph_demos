@@ -49,13 +49,19 @@ try {
       await page.click("#wb-copy");
       await until(async () => /copied/i.test(await page.innerText("#wb-copy-msg")), "Link copied.");
       if (width === 1280) assert.strictEqual(await page.evaluate(() => navigator.clipboard.readText()), link, "clipboard holds the link");
+      // The logo is top left, links back to the console, and never overlaps the tool bar.
+      assert.strictEqual(await page.getAttribute("#wb-home", "href"), "./", "logo links to the console");
+      const logo = await page.locator("#wb-home").boundingBox(), bar = await page.locator("#wb-toolbar").boundingBox();
+      assert.ok(logo.x < 40 && logo.y < 40, "logo is in the top left corner");
+      assert.ok(logo.x + logo.width <= bar.x || logo.y + logo.height <= bar.y, "logo does not overlap the tool bar");
       await page.click("#wb-share-close");
       await page.waitForSelector("#wb-share", { state: "hidden" });
       await page.click("#wb-share-open");
       await page.waitForSelector("#wb-share", { state: "visible" });
       await page.click("#wb-share-close");
 
-      // Draw: a stroke is saved.
+      // Draw: a stroke is saved. Auto-fit would rescale the view under the pointer as strokes land, so switch it off.
+      await page.click("#wb-fit");
       const box = await page.locator("#wb-canvas").boundingBox();
       const cx = box.x + box.width / 2, cy = box.y + box.height / 2 + 60;
       await page.mouse.move(cx - 60, cy); await page.mouse.down();
