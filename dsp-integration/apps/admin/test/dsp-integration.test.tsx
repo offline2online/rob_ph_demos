@@ -471,10 +471,10 @@ describe('Campaign Status stand-in', () => {
     fireEvent.click(await screen.findByRole('link', { name: /Open NoBrand \(Direct\) in Campaign Approval/ }, { timeout: 10000 }))
     expect(await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })).toBeInTheDocument()
     expect(new URLSearchParams(router.state.location.search).get('advertiserId')).toBe('nobrand')
-    expect(await screen.findByText('NoBrand (Direct) has no campaigns submitted yet.', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(await screen.findByText('NoBrand (Direct) has not yet provided creative for these slots.', {}, { timeout: 10000 })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show all campaigns' }))
     await waitFor(() => expect(router.state.location.search).toBe('?tab=campaign-status'), { timeout: 10000 })
-    expect(screen.queryByText(/has no campaigns submitted yet/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/has not yet provided creative/)).not.toBeInTheDocument()
   }, slow(45000))
 
   /* The Status column's own funnel is the only status filter (ticket dinPPBl9Rk95UbrXoRbt);

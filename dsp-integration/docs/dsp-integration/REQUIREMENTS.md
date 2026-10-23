@@ -2763,8 +2763,14 @@ stores its criteria didn't match unsold to it. That model is retired:
   Direct deal window whose advertiser has no campaign that fits the slot (one
   for its display type with no deal ID or this deal's) reads not approved,
   and used to do nothing when clicked. It opens Campaign Approval filtered to
-  the advertiser instead, with a notice saying it has no campaigns submitted,
-  or none that fits that display type, and a "Show all campaigns" action.
+  the advertiser instead, with a one-line notice saying the advertiser has
+  not yet provided creative for these slots, and a "Show all campaigns" action.
+  **On a tablet (no hover; 23 Oct 2026)** the tile is larger and split: tapping
+  the advertiser's name opens Campaign Approval filtered to that advertiser
+  only (cleared from the Advertiser column filter, with the same one-line
+  notice while the advertiser has no creative); tapping anywhere else opens
+  the hover details card, which carries an "Open campaign in Campaign
+  Approval" link. A mouse keeps the one-click tile.
   Its hover card says no campaign fits the slot yet. Only a booking with no
   advertiser either is not a link.
 - Open questions 50 and 51 (below) — the target algorithm for clearing

@@ -22,7 +22,7 @@
    icons"), from broadest/most-frequent to narrowest/rarest: computer
    vision, aggregate store-level, individual. */
 import { useQuery } from '@tanstack/react-query'
-import { Alert, DatePicker, Segmented, Spin } from 'antd'
+import { Alert, Button, DatePicker, Segmented, Spin } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { SLOT_OWNERS, type BookingCapacity, type BookingSchedule as Schedule } from '@ph-dsp/types'
@@ -33,6 +33,7 @@ import { api } from '../../api/client'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
+import { isTouch } from '../../shared/Tip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { externalSetColumn } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
@@ -241,7 +242,7 @@ const RISK_TONE = {
 }
 
 /* The hover card: a two-column list, labels left and values right-aligned (same ticket). */
-function TileCard({ booking, money, tone }: { booking: Booking; money: (n: number) => string; tone?: (typeof RISK_TONE)[keyof typeof RISK_TONE] }) {
+function TileCard({ booking, money, tone, onOpen }: { booking: Booking; money: (n: number) => string; tone?: (typeof RISK_TONE)[keyof typeof RISK_TONE]; onOpen?: () => void }) {
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
   const a = booking.approval
   const rows: [string, string][] = [
@@ -270,6 +271,7 @@ function TileCard({ booking, money, tone }: { booking: Booking; money: (n: numbe
         </div>
       ))}
       <div style={{ marginTop: 6, opacity: 0.75 }}>{present.map((k) => layerLine(k, booking)).join(' · ')}</div>
+      {onOpen && <Button size="small" type="link" style={{ padding: 0, marginTop: 6 }} onClick={onOpen}>Open campaign in Campaign Approval</Button>}
     </div>
   )
 }
@@ -285,16 +287,23 @@ function BookingTile({ booking, money, slot }: { booking: Booking; money: (n: nu
     : booking.advertiserId ? `${base}&advertiserId=${encodeURIComponent(booking.advertiserId)}&advertiserName=${encodeURIComponent(booking.advertiserName)}&slot=${encodeURIComponent(slot ?? '')}`
       : null
   const open = href ? () => navigate(href) : undefined
+  /* On a tablet (no hover) the tile is bigger and splits in two (ticket 1bwcorzMLhgd5p1TVlnH, 23 Oct 2026): tapping the advertiser's
+     name opens Campaign Approval filtered to that advertiser and nothing more (the filter can be cleared there); tapping anywhere else
+     opens the same details card the hover shows, which carries a link to the campaign. A mouse keeps the one-click tile. */
+  const touch = isTouch()
+  const byAdvertiser = touch && booking.advertiserId ? () => navigate(`${base}&advertiserId=${encodeURIComponent(booking.advertiserId!)}`) : undefined
+  const tileOpen = touch ? undefined : open
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
   const tone = booking.approval ? RISK_TONE[booking.approval.defaultRisk] : undefined
   const colour = tone?.colour ?? BOOKED.colour
   return (
-    <Tip title={<TileCard booking={booking} money={money} tone={tone} />}>
-      <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}`, cursor: open ? 'pointer' : undefined }}
-        {...(open ? { role: 'link', tabIndex: 0, 'aria-label': `Open ${booking.advertiserName} in Campaign Approval`, onClick: open, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() } } } : {})}>
-        <div className="flex items-center gap-1 w-full min-w-0">
-          <Icon name={booking.type === 'reserve' ? 'bookmark' : 'gavel'} size={12} />
-          <span className="truncate" style={{ fontSize: 11, fontWeight: 600, color: colour }}>{booking.advertiserName}</span>
+    <Tip title={<TileCard booking={booking} money={money} tone={tone} onOpen={touch ? open : undefined} />}>
+      <div className={`flex w-full min-w-0 flex-col gap-0.5 rounded px-1 ${touch ? 'py-1.5' : 'py-0.5'}`} style={{ background: tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}`, cursor: tileOpen ? 'pointer' : undefined, minHeight: touch ? 64 : undefined }}
+        {...(tileOpen ? { role: 'link', tabIndex: 0, 'aria-label': `Open ${booking.advertiserName} in Campaign Approval`, onClick: tileOpen, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tileOpen() } } } : {})}>
+        <div className="flex items-center gap-1 w-full min-w-0" style={touch ? { minHeight: 32 } : undefined}
+          {...(byAdvertiser ? { role: 'link', tabIndex: 0, 'aria-label': `Show ${booking.advertiserName} in Campaign Approval`, onClick: (e: React.MouseEvent) => { e.stopPropagation(); byAdvertiser() } } : {})}>
+          <Icon name={booking.type === 'reserve' ? 'bookmark' : 'gavel'} size={touch ? 14 : 12} />
+          <span className="truncate" style={{ fontSize: touch ? 13 : 11, fontWeight: 600, color: colour, textDecoration: byAdvertiser ? 'underline' : undefined }}>{booking.advertiserName}</span>
         </div>
         {present.map((k) => <LayerRow key={k} layerKey={k} booking={booking} />)}
       </div>
@@ -633,7 +642,7 @@ export function BookingSchedulePage() {
               columns={columns}
               context={ctx}
               getRowId={(r) => r.position.positionId}
-              rowHeight={92}
+              rowHeight={isTouch() ? 120 : 92}
               headerHeight={40}
               floatingFiltersHeight={40}
               suppressHorizontalScroll={false}

@@ -493,15 +493,12 @@ export function CampaignStatusPage() {
           </section>
         )}
       </div>
-      {/* Opened from a Booking Schedule tile with no campaign behind it (23 Oct 2026): say why nothing here plays in that slot
-          rather than show an empty list, or this advertiser's campaigns for other slots with no explanation. */}
-      {advertiserId && slotParam !== null && (
-        <Alert className="mb-3" type="info" showIcon
-          message={all.some((c) => c.advertiserId === advertiserId)
-            ? `None of ${advertiserLabel}’s campaigns fits ${slotParam || 'this slot'}.`
-            : `${advertiserLabel} has no campaigns submitted yet.`}
-          description="A Direct deal window plays a campaign for the slot’s display type with no deal ID or this deal’s. Until one is submitted and approved, the Booking Schedule shows these windows as not approved."
-          action={<Button size="small" type="link" onClick={clearFromTile}>Show all campaigns</Button>} />
+      {/* Opened from a Booking Schedule tile (23 Oct 2026): one line saying the advertiser has not yet provided creative for the slots,
+          shown when none of the advertiser's campaigns fits the slot or carries a creative (ticket 1bwcorzMLhgd5p1TVlnH). */}
+      {advertiserId && (slotParam !== null || !all.some((c) => c.advertiserId === advertiserId && approvals[c.campaignId]?.creativeId)) && (
+        <Alert className="mb-3" type="info" showIcon banner
+          message={`${advertiserLabel === 'This advertiser' ? (all.find((c) => c.advertiserId === advertiserId)?.advertiserName ?? advertiserLabel) : advertiserLabel} has not yet provided creative for these slots.`}
+          action={slotParam !== null ? <Button size="small" type="link" onClick={clearFromTile}>Show all campaigns</Button> : undefined} />
       )}
       <Grid<Row>
         label="Campaign Status"
