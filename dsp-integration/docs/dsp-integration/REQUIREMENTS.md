@@ -983,9 +983,16 @@ Marketing share brand-specific (new-to-brand) audiences privately with one adver
 
 - **Removed from the admin screens (22 Oct 2026, ticket GknBt80ENeXkt0EEyDwr):** audiences are no longer part of
   the platform's admin. The Advertisers table has **no Audiences column**, and the Edit advertiser pop-up has
-  **no Audiences section**: it shows the advertiser's name and how it reaches the retailer, with a Cancel button
-  and nothing to save. "Add new Advertiser" is unchanged. The API and `advertiser_audiences` table are left in
+  **no Audiences section**. "Add new Advertiser" is unchanged. The API and `advertiser_audiences` table are left in
   place for now and are not reachable from the admin UI.
+- **Edit and delete are for direct advertisers only; Edit renames (23 Oct 2026, Rob, ticket
+  usIHp1uhtllLCP29teBu):** in the Advertisers table only a direct advertiser has the edit and delete icons. An
+  advertiser that comes through a DSP has neither: the DSP names it and removes it. Edit advertiser lets the
+  retailer change a direct advertiser's name (**Save changes**, enabled once the name differs) through
+  `PATCH /admin/v1/advertisers/direct/{advertiserId}`. Only the display name changes: the `advertiserId` stays the
+  key its deals, campaigns, bookings and advertiser users hold, so all of them show the new name (e.g. "Red Bull
+  Energy (Direct)" on the Booking schedule). Same rules as adding one (1–80 characters with a letter or digit);
+  `409` when another advertiser already answers to the name, by id or by name; `404` for a DSP advertiser.
 - Options are the Visitor Segments values defined in Shared Targeting Variables (§6) and any already private to
   another advertiser. A selected segment is **private to that advertiser**; it is private to more than one
   advertiser only if the retailer adds it to each. Stored in `advertiser_audiences` (migration 0078).

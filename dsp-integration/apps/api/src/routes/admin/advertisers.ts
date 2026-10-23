@@ -85,6 +85,19 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   return out
 }
 
+/* A direct advertiser's name as typed: trimmed, inner spaces collapsed, 1 to 80 characters with a letter or digit. */
+function directName(raw: unknown) {
+  const name = typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : ''
+  if (!name || name.length > 80) throw validationFailed([{ field: 'name', reason: 'A name of 1 to 80 characters is required.' }])
+  if (!advertiserSlug(name)) throw validationFailed([{ field: 'name', reason: 'The name needs at least one letter or digit.' }])
+  return name
+}
+/* Another advertiser already answers to this name: by id, or by its own name (a renamed direct advertiser keeps its old id). */
+async function nameTaken(ctx: Context, name: string, except?: string) {
+  const slug = advertiserSlug(name)
+  return (await listAdvertisers(ctx)).some((a) => a.advertiserId !== except && (a.advertiserId === slug || advertiserSlug(a.name) === slug))
+}
+
 export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   app.get('/advertisers', async (req) => {
     guards.flagged()
@@ -97,15 +110,28 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
   app.post<{ Body: { name?: unknown; audiences?: unknown } }>('/advertisers/direct', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const name = typeof req.body?.name === 'string' ? req.body.name.trim().replace(/\s+/g, ' ') : ''
-    if (!name || name.length > 80) throw validationFailed([{ field: 'name', reason: 'A name of 1 to 80 characters is required.' }])
+    const name = directName(req.body?.name)
     const advertiserId = advertiserSlug(name)
-    if (!advertiserId) throw validationFailed([{ field: 'name', reason: 'The name needs at least one letter or digit.' }])
-    if ((await listAdvertisers(ctx)).some((a) => a.advertiserId === advertiserId)) throw conflict(`${name} is already an advertiser.`)
+    if (await nameTaken(ctx, name)) throw conflict(`${name} is already an advertiser.`)
     const audiences = req.body?.audiences === undefined ? [] : await validateAudiences(ctx, req.body.audiences)
     await ctx.company.addDirectAdvertiser(advertiserId, name)
     if (audiences.length) await ctx.company.saveAdvertiserAudiences(advertiserId, audiences, req.session.userId)
     return reply.status(201).send({ advertiserId, name, audiences })
+  })
+
+  /* Rename a direct advertiser (Rob, 23 Oct 2026). Only the display name changes: its advertiserId stays the key its
+     deals, campaigns, bookings and users hold, so they all follow the new name. An advertiser that comes through a DSP
+     takes its name from the DSP and is never renamed here. */
+  app.patch<{ Params: { advertiserId: string }; Body: { name?: unknown } }>('/advertisers/direct/:advertiserId', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'admin')
+    const record = (await ctx.company.directAdvertisers()).find((d) => d.advertiserId === req.params.advertiserId)
+    const a = (await listAdvertisers(ctx)).find((x) => x.advertiserId === req.params.advertiserId)
+    if (!record || !a?.direct) throw notFound(a ? `${a.name} comes through a DSP, so it can't be renamed here.` : 'Not a direct advertiser.')
+    const name = directName(req.body?.name)
+    if (await nameTaken(ctx, name, record.advertiserId)) throw conflict(`${name} is already an advertiser.`)
+    await ctx.company.renameDirectAdvertiser(record.advertiserId, name)
+    return { advertiserId: record.advertiserId, name }
   })
 
   /* Remove a direct advertiser. Refused while it has campaigns or bookings, has users, or is held on a slot. */

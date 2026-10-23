@@ -61,10 +61,10 @@ function ApprovalCell({ data, context }: P) {
     </span>
   )
 }
-/* Add an advertiser with a direct relationship with the retailer (no DSP), or open any advertiser's details from the
-   same pop-up. Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr), so an existing advertiser has
-   nothing left to change here: its name is fixed and the pop-up only closes. A new direct advertiser is listed as
-   "Name (Direct)". */
+/* Add an advertiser with a direct relationship with the retailer (no DSP), or rename one from the same pop-up (Rob,
+   23 Oct 2026). Only a direct advertiser is edited here: one that comes through a DSP takes its name from the DSP, so
+   it has no edit or delete action. Renaming keeps its advertiserId, so its deals, campaigns, bookings and users follow
+   the new name. A direct advertiser is listed as "Name (Direct)". */
 function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; editing: Advertiser | null; onClose: () => void; onSaved: () => void }) {
   const { message } = App.useApp()
   const [name, setName] = useState('')
@@ -74,15 +74,17 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
   useEffect(() => {
     if (open) { setName(editing?.name ?? ''); setError(null) }
   }, [open, editing])
+  const unchanged = !!editing && name.trim().replace(/\s+/g, ' ') === editing.name
   const save = async () => {
-    if (editing || !name.trim() || busy) return
+    if (!name.trim() || unchanged || busy) return
     setBusy(true)
     setError(null)
     try {
-      await api('POST', '/admin/v1/advertisers/direct', { name })
+      if (editing) await api('PATCH', `/admin/v1/advertisers/direct/${encodeURIComponent(editing.advertiserId)}`, { name })
+      else await api('POST', '/admin/v1/advertisers/direct', { name })
       onSaved()
       onClose()
-      message.success('Advertiser added')
+      message.success(editing ? 'Advertiser renamed' : 'Advertiser added')
     } catch (e) {
       /* A hard block (409 has_dependents) is a friendly dialog, never the API's sentence in red (E2E 22 Oct 2026). */
       const b = describeBlock(e, 'save', 'This advertiser')
@@ -95,7 +97,7 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
   return (
     <Modal
       open={open} width={500} destroyOnHidden confirmLoading={busy} onCancel={onClose} onOk={save}
-      okText="Add advertiser" okButtonProps={{ disabled: !name.trim(), style: editing ? { display: 'none' } : undefined }}
+      okText={editing ? 'Save changes' : 'Add advertiser'} okButtonProps={{ disabled: !name.trim() || unchanged }}
       title={
         <span className="inline-flex items-center gap-2">
           <Icon name="sell" size={20} style={{ color: T.primary }} />
@@ -104,20 +106,21 @@ function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; e
       }
     >
       <label htmlFor="direct-advertiser-name" className="mb-1 block" style={{ fontSize: 13, fontWeight: 500 }}>Advertiser name</label>
-      <Input id="direct-advertiser-name" aria-label="Advertiser name" maxLength={80} autoFocus={!editing} disabled={!!editing} value={name} status={error ? 'error' : undefined} onChange={(e) => setName(e.target.value)} onPressEnter={save} />
+      <Input id="direct-advertiser-name" aria-label="Advertiser name" maxLength={80} autoFocus value={name} status={error ? 'error' : undefined} onChange={(e) => setName(e.target.value)} onPressEnter={save} />
       <div className="mt-1.5" style={{ fontSize: 12, color: T.muted }}>
-        {editing ? (editing.direct ? 'A direct advertiser has its own relationship with you, with no DSP in between.' : `Comes through ${editing.via.join(', ')}.`) : 'A direct advertiser has its own relationship with you, with no DSP in between.'}
+        {editing ? 'Renaming keeps its deals, campaigns, bookings and users; they all show the new name.' : 'A direct advertiser has its own relationship with you, with no DSP in between.'}
       </div>
       {error && <div className="mt-1.5" style={{ fontSize: 12, color: T.error }}>{error}</div>}
       {blocked && <BlockedDialog blocked={blocked} onClose={() => setBlocked(null)} />}
     </Modal>
   )
 }
+/* Edit and delete are for direct advertisers only (Rob, 23 Oct 2026): a DSP's advertiser is named and removed by its DSP. */
 const ActionsCell = ({ data, context }: P) =>
-  data && context.current.canEdit ? (
+  data && data.direct && context.current.canEdit ? (
     <span className="inline-flex items-center">
       <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
-      {data.direct && <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />}
+      <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />
     </span>
   ) : null
 
