@@ -1167,6 +1167,17 @@ once a campaign is *Approved*.
   submission. Same permission as approve/reject (open question 39). The
   reversal is recorded in the audit trail like any other decision (who, when
   and, optionally, why); the prior rejection reason stays in that history.
+- **Revert approval** (ticket x2yp5hewCO44TYMbZ8Cf, 23 Oct 2026). A mistaken
+  approval — or one undone to test again — can be taken back: **Revert
+  approval**, in the campaign's options menu and on the campaign page, is
+  available on an **Approved** campaign and moves it back to *Awaiting
+  approval* for a fresh decision (`POST /admin/v1/campaigns/{id}/revert-approval`,
+  audit action `approval_reverted`). It never auto-approves. Same permission
+  as approve/reject (open question 39). Until it is approved again the
+  campaign is not eligible. Campaign Approval and the Booking Schedule read
+  the same status, so the campaign's tile turns red (flight starts within
+  3 days) or orange as soon as the approval is reverted, and green once it
+  is approved again.
 
 ### Retailer review — the existing Campaigns section
 

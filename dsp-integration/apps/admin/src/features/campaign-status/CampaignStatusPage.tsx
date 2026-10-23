@@ -75,6 +75,7 @@ interface Ctx {
   groupIds: ReadonlyMap<string, string[]>
   displayTypeNames: ReadonlyMap<string, string>
   unreject: (a: Approval) => Promise<void>
+  revert: (a: Approval) => Promise<void>
   activate: (c: Campaign, enabled: boolean) => Promise<void>
   now: number
 }
@@ -203,12 +204,15 @@ function RowMenu({ data, context }: P) {
     { key: 'open', icon: <Icon name="open_in_new" size={15} />, label: 'Open campaign' },
     /* Undo a mistaken rejection (ticket, 22 Sep): back to Awaiting approval, never auto-approved. Same permission as approve/reject. */
     { key: 'unreject', icon: <Icon name="undo" size={15} />, label: 'Undo rejection', disabled: !rejected || !c.canApprove },
+    /* Take back an approval (ticket x2yp5hewCO44TYMbZ8Cf): back to Awaiting approval; the Booking Schedule tile follows. */
+    { key: 'revert', icon: <Icon name="undo" size={15} />, label: 'Revert approval', disabled: !approved || !c.canApprove },
     { type: 'divider' as const },
     { key: 'activation', icon: <Icon name="power_settings_new" size={15} />, label: data.activation.enabled ? 'Deactivate' : 'Activate', disabled: !approved },
   ]
   const onClick = ({ key }: { key: string }) => {
     if (key === 'open') c.open(data.campaignId)
     if (key === 'unreject') void c.unreject(a!)
+    if (key === 'revert') void c.revert(a!)
     if (key === 'activation') void c.activate(data, !data.activation.enabled)
   }
   return (
@@ -246,7 +250,7 @@ export function CampaignStatusPage() {
   const displayTypeNames = useMemo(() => new Map((displayTypes.data ?? []).map((d) => [d.id, d.name] as const)), [displayTypes.data])
   /* Only what came in through a DSP or the Partner API. */
   const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq' || c.campaignId === campaignFilter), [campaigns.data, campaignFilter])
-  const { approvals, canApprove, busy, approveAssign, assignCreativeId, rejectMany, unreject, activate, activateMany } = useCampaignActions(nonHq.map((c) => c.campaignId))
+  const { approvals, canApprove, busy, approveAssign, assignCreativeId, rejectMany, unreject, revert, activate, activateMany } = useCampaignActions(nonHq.map((c) => c.campaignId))
   /* Draft never surfaces in a retailer-facing view (ticket, 22 Sep, §3):
      the retailer only ever sees a campaign once it has been submitted. */
   /* Except the one a Booking Schedule tile opened (`?campaignId=`): the tile shows it, so it must be here (ticket ByeH6mIkaRqOJjnHu31z). */
@@ -364,7 +368,7 @@ export function CampaignStatusPage() {
   }, [picking, deal, originals.size, choice, creativeIds.data])
 
   const ctx: Ctx = {
-    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, activate, selected, toggle, toggleGroup, groupIds, displayTypeNames,
+    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, revert, activate, selected, toggle, toggleGroup, groupIds, displayTypeNames,
   }
   const values = (of: (c: Campaign) => string) => () => all.map(of).filter((v) => v && v !== '—')
   const advertiserOptions = useMemo(() => [...new Map(

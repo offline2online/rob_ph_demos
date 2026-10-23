@@ -101,6 +101,7 @@ export function useCampaignActions(campaignIds: string[]) {
       return `${changing.length === 1 ? '1 campaign' : `${changing.length} campaigns`} ${enabled ? 'activated' : 'deactivated'}.`
     }),
     unreject: (a: Approval, reason?: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/unreject`, { assetVersion: a.assetVersion, reason })),
+    revert: (a: Approval, reason?: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/revert-approval`, { assetVersion: a.assetVersion, reason })),
     activate: (c: Campaign, enabled: boolean) => act(c.campaignId, () => api('PUT', `/admin/v1/campaigns/${c.campaignId}/activation`, { enabled })),
   }
 }
