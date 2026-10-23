@@ -918,6 +918,13 @@ Gatorade", with flights that follow each other (reserving deals never overlap on
 a slot): Red Bull 1 Sep to 31 Dec 2026 at 180 CPM, Gatorade 1 Jan to 31 Mar 2027
 at 150 CPM, each booking its own approved Portrait campaign, so they play
 through their deals.
+Since 23 Oct 2026 the seed also adds a current Gatorade deal and five more
+Direct advertisers (Frucor Suntory, Smith’s Snackfood Co, Bundaberg Brewed
+Drinks, Arnott’s, Dare Iced Coffee) on two further Portrait slots, as
+back-to-back five-day flights from the day of seeding, each with campaigns in a
+mix of approved, awaiting, rejected and draft states. A Booking Schedule tile
+is red when its campaign is not approved, so both states show in the schedule
+and in Campaign Approval.
 
 **Migration 0086 clears every named advertiser (22 Oct 2026, ticket
 QdMaGvVhMZgcdcmIAalT).** The same pattern as 0082, for every advertiser named in

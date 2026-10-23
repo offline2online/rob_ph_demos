@@ -67,7 +67,30 @@ const DEMO_DIRECT_DEALS = [
   { id: 'bl_demo_direct_redbull', advertiser: 'Red Bull', floorCpm: 180, activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2026-12-31T23:59:59.999Z', campaignId: 'c_demo_redbull_portrait' },
   { id: 'bl_demo_direct_gatorade', advertiser: 'Gatorade', floorCpm: 150, activeFrom: '2027-01-01T00:00:00.000Z', activeTo: '2027-03-31T23:59:59.999Z', campaignId: 'c_demo_gatorade_portrait' },
 ]
-const DIRECT_DEAL_IDS = new Set(DEMO_DIRECT_DEALS.map((d) => d.id))
+
+/* More Direct advertisers that plausibly supply a convenience retailer like 7-Eleven (23 Oct 2026, ticket 5BWqiE6bHZQj01xxEril), plus a
+   current Gatorade deal, so the Booking Schedule and Campaign Approval have bookings now in a mix of approved and not-approved states
+   (a deal booking whose campaign is not approved shows red). Each chain shares one new Portrait slot with back-to-back five-day
+   flights from today (reserving deals never overlap on a slot), so all of them fall inside the schedule's two weeks. */
+const CHAIN_DAY_MS = 86_400_000
+const DEMO_SEVEN_ELEVEN_CHAINS = [
+  { label: 'Direct deals: Gatorade & snacks', deals: [
+    { id: 'bl_demo_direct_gatorade_now', advertiser: 'Gatorade', floorCpm: 155, campaignId: 'c_demo_gatorade_zero' },
+    { id: 'bl_demo_direct_frucor', advertiser: 'Frucor Suntory', floorCpm: 165, campaignId: 'c_demo_frucor_vcan' },
+    { id: 'bl_demo_direct_smiths', advertiser: 'Smith’s Snackfood Co', floorCpm: 135, campaignId: 'c_demo_smiths_crinkle' },
+  ] },
+  { label: 'Direct deals: 7-Eleven suppliers', deals: [
+    { id: 'bl_demo_direct_bundaberg', advertiser: 'Bundaberg Brewed Drinks', floorCpm: 145, campaignId: 'c_demo_bundaberg_ginger' },
+    { id: 'bl_demo_direct_arnotts', advertiser: 'Arnott’s', floorCpm: 130, campaignId: 'c_demo_arnotts_tim' },
+    { id: 'bl_demo_direct_dare', advertiser: 'Dare Iced Coffee', floorCpm: 140, campaignId: 'c_demo_dare_iced' },
+  ] },
+]
+const chainFlight = (now: Date, k: number) => {
+  const from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) + k * 5 * CHAIN_DAY_MS
+  return { activeFrom: new Date(from).toISOString(), activeTo: new Date(from + 5 * CHAIN_DAY_MS - 1).toISOString() }
+}
+const CHAIN_DEALS = DEMO_SEVEN_ELEVEN_CHAINS.flatMap((c) => c.deals)
+const DIRECT_DEAL_IDS = new Set([...DEMO_DIRECT_DEALS.map((d) => d.id), ...CHAIN_DEALS.map((d) => d.id)])
 
 /* Nestlé's hold on Landscape's fourth slot is a Programmatic guaranteed deal with its Google DSP seat (22 Oct 2026, ticket
    QdMaGvVhMZgcdcmIAalT): a buyer is never named on a slot. A one-week flight that starts today, so the demo shows it live. */
@@ -125,7 +148,7 @@ const DEMO_SEATS: Record<string, { id: string; name: string; domain: string }[]>
 }
 
 /* Advertisers that deal with the retailer directly, with no DSP. */
-const DEMO_DIRECT = ['Red Bull', 'Gatorade']
+const DEMO_DIRECT = ['Red Bull', 'Gatorade', ...CHAIN_DEALS.map((d) => d.advertiser).filter((n) => n !== 'Gatorade')]
 const DIRECT_PARTNER = 'direct'
 
 /* Advertisers whitelisted on each demo DSP, by seat name. */
@@ -145,6 +168,11 @@ const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean }> = 
   [advertiserSlug('The Hershey Company')]: { approvalRequired: true },
   [advertiserSlug('Kellanova')]: { approvalRequired: true },
   [advertiserSlug('Frito-Lay')]: { approvalRequired: false },
+  [advertiserSlug('Frucor Suntory')]: { approvalRequired: true },
+  [advertiserSlug('Smith’s Snackfood Co')]: { approvalRequired: false },
+  [advertiserSlug('Bundaberg Brewed Drinks')]: { approvalRequired: false },
+  [advertiserSlug('Arnott’s')]: { approvalRequired: true },
+  [advertiserSlug('Dare Iced Coffee')]: { approvalRequired: false },
 }
 
 /* ---------------------------------------------------------- the campaigns */
@@ -236,6 +264,38 @@ const DEMO_CAMPAIGNS: DemoCampaign[] = [
     targeting: personalised(['Snacker', 'Value seeker']), brief: brief('Personalised for the snacker and value-seeker segments.', { promotedProducts: ['Doritos Nacho Cheese 170g'] }) },
   { id: 'c_demo_hershey_reeses', name: 'The Hershey Company — Reese’s Cups', advertiser: 'The Hershey Company', partnerId: 'p_amazon', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#6d4c41', line: 'Reese’s Cups', createdAt: '2026-09-18T10:00:00.000Z',
     targeting: LOCALISED, brief: brief('Reese’s launch at the checkout.'), rejectReason: 'Creative is 1280×720; the Landscape canvas is 1920×1080.' },
+  /* Ticket 5BWqiE6bHZQj01xxEril (23 Oct 2026): more Gatorade, and Direct advertisers for a convenience retailer, in a mix of approved and
+     not-approved states. The ones named in a deal above are what the Booking Schedule books. */
+  { id: 'c_demo_gatorade_zero', name: 'Gatorade — Zero Sugar', advertiser: 'Gatorade', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'approved', png: true, colour: '#e65100', line: 'Zero sugar. Full effort.', createdAt: '2026-10-01T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Booked direct through a current Direct advertiser deal on the chiller screens.', { promotedProducts: ['Gatorade Zero Glacier Freeze 600ml'] }) },
+  { id: 'c_demo_gatorade_fast', name: 'Gatorade — Fast Twitch', advertiser: 'Gatorade', partnerId: DIRECT_PARTNER, displayTypeId: 'landscape', pricingType: 'localised', state: 'awaiting', colour: '#bf360c', line: 'Fast Twitch', createdAt: '2026-10-12T09:00:00.000Z',
+    targeting: metro('localised'), brief: brief('Pre-workout energy chew-and-sip range, metro stores first.', { promotedProducts: ['Gatorade Fast Twitch 355ml'] }) },
+  { id: 'c_demo_gatorade_rush', name: 'Gatorade — Thirst Rush', advertiser: 'Gatorade', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', colour: '#ef6c00', line: 'Rush to rehydrate', createdAt: '2026-10-14T11:00:00.000Z',
+    targeting: states('NSW', 'QLD'), brief: brief('Summer rehydration push for the east coast.', { promotedProducts: ['Gatorade Thirst Rush 1L'] }) },
+  { id: 'c_demo_gatorade_cool', name: 'Gatorade — Cool Blue', advertiser: 'Gatorade', partnerId: DIRECT_PARTNER, displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#0277bd', line: 'Cool Blue', createdAt: '2026-10-06T10:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Cool Blue launch at the checkout.'), rejectReason: 'Creative is 1280×720; the Landscape canvas is 1920×1080.' },
+  { id: 'c_demo_gatorade_training', name: 'Gatorade — Back to Training', advertiser: 'Gatorade', partnerId: DIRECT_PARTNER, displayTypeId: 'landscape', pricingType: 'localised', state: 'approved', colour: '#e65100', line: 'Back to training', createdAt: '2026-10-08T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Always-on sports-drink reminder on the entrance screens.', { promotedProducts: ['Gatorade Lemon-Lime 600ml', 'Gatorade Orange 600ml'] }) },
+  { id: 'c_demo_frucor_vcan', name: 'Frucor Suntory — V Energy Can', advertiser: 'Frucor Suntory', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', png: true, colour: '#2e7d32', line: 'Get the V', createdAt: '2026-10-15T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Energy drink on the chiller screens, waiting on HQ sign-off.', { promotedProducts: ['V Energy Original 500ml'] }) },
+  { id: 'c_demo_frucor_vblue', name: 'Frucor Suntory — V Blue Launch', advertiser: 'Frucor Suntory', partnerId: DIRECT_PARTNER, displayTypeId: 'landscape', pricingType: 'localised', state: 'approved', colour: '#1565c0', line: 'Blue is here', createdAt: '2026-10-05T09:00:00.000Z',
+    targeting: metro('localised'), brief: brief('New flavour launch, metro stores.', { promotedProducts: ['V Blue 250ml'] }) },
+  { id: 'c_demo_smiths_crinkle', name: 'Smith’s — Crinkle Cut Night In', advertiser: 'Smith’s Snackfood Co', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'approved', png: true, colour: '#c62828', line: 'Crinkle your night', createdAt: '2026-10-02T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Booked direct on the chiller screens.', { promotedProducts: ['Smith’s Crinkle Cut Original 170g'] }) },
+  { id: 'c_demo_smiths_thin', name: 'Smith’s — Thinly Cut Sharing', advertiser: 'Smith’s Snackfood Co', partnerId: DIRECT_PARTNER, displayTypeId: 'landscape', pricingType: 'localised', state: 'awaiting', colour: '#6a1b9a', line: 'Share the crunch', createdAt: '2026-10-13T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Sharing bags at the front of store.', { promotedProducts: ['Smith’s Thinly Cut Sour Cream 175g'] }) },
+  { id: 'c_demo_bundaberg_ginger', name: 'Bundaberg — Ginger Beer', advertiser: 'Bundaberg Brewed Drinks', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'approved', png: true, colour: '#8d6e63', line: 'Brewed the old-fashioned way', createdAt: '2026-10-03T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Booked direct on the chiller screens.', { promotedProducts: ['Bundaberg Ginger Beer 375ml'] }) },
+  { id: 'c_demo_bundaberg_lemon', name: 'Bundaberg — Lemon Lime & Bitters', advertiser: 'Bundaberg Brewed Drinks', partnerId: DIRECT_PARTNER, displayTypeId: 'landscape', pricingType: 'localised', state: 'awaiting', colour: '#9e9d24', line: 'A twist on the classic', createdAt: '2026-10-16T09:00:00.000Z',
+    targeting: states('VIC', 'SA'), brief: brief('Southern states trial.', { promotedProducts: ['Bundaberg Lemon Lime & Bitters 375ml'] }) },
+  { id: 'c_demo_arnotts_tim', name: 'Arnott’s — Tim Tam Sharing', advertiser: 'Arnott’s', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', png: true, colour: '#4e342e', line: 'Share the Tim Tam', createdAt: '2026-10-17T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Sharing packs on the chiller screens, waiting on HQ sign-off.', { promotedProducts: ['Tim Tam Original 175g'] }) },
+  { id: 'c_demo_arnotts_shapes', name: 'Arnott’s — Shapes Game Day', advertiser: 'Arnott’s', partnerId: DIRECT_PARTNER, displayTypeId: 'landscape', pricingType: 'localised', state: 'approved', colour: '#e65100', line: 'Game day snacking', createdAt: '2026-10-04T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Game-day snacking on the entrance screens.', { promotedProducts: ['Shapes Pizza 190g'] }) },
+  { id: 'c_demo_dare_iced', name: 'Dare — Iced Coffee Mocha', advertiser: 'Dare Iced Coffee', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'approved', png: true, colour: '#3e2723', line: 'Own your day', createdAt: '2026-10-07T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Booked direct on the chiller screens.', { promotedProducts: ['Dare Iced Coffee Mocha 500ml'] }) },
+  { id: 'c_demo_dare_double', name: 'Dare — Double Espresso', advertiser: 'Dare Iced Coffee', partnerId: DIRECT_PARTNER, displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#212121', line: 'Double up', createdAt: '2026-10-09T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Double Espresso launch.'), rejectReason: 'Creative is 1280×720; the Landscape canvas is 1920×1080.' },
 ]
 
 const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
@@ -383,6 +443,18 @@ export async function seedDemo(ctx: Context) {
       })
     }
 
+    /* The 7-Eleven-supplier Direct advertiser deals: back-to-back five-day flights from today, two chains of three. */
+    for (const chain of DEMO_SEVEN_ELEVEN_CHAINS) {
+      for (const [k, d] of chain.deals.entries()) {
+        if (await ctx.buyersLists.get(d.id)) continue
+        await ctx.buyersLists.insert({
+          id: d.id, name: `${d.advertiser} direct`, description: `${d.advertiser} books the retailer directly, with no DSP: its own five-day flight on the slot at a fixed CPM.`, dealType: 'direct',
+          invitedBuyers: [{ partnerId: DIRECT_PARTNER, seatId: advertiserSlug(d.advertiser) }], floorCpm: d.floorCpm,
+          ...chainFlight(ctx.clock(), k), auctionCloses: null,
+        })
+      }
+    }
+
     /* Slots: only on a display type that has no sellable position yet, so a
        hand-edited estate is never overwritten. */
     for (const [id, spec] of Object.entries(DEMO_SLOTS)) {
@@ -397,9 +469,32 @@ export async function seedDemo(ctx: Context) {
       await ctx.displayTypes.saveExtensions(id, ext)
       report.slots += spec.slots.length
     }
+
+    /* The two chain slots go on Portrait whether or not its slots were just written, so an estate seeded earlier gains them without
+       losing a hand-made setup: each is appended only when no slot has its label, and the rotation cap and loop change only if they
+       are still the seed's (3 and 24s). */
+    const portrait = await ctx.displayTypes.get('portrait')
+    if (portrait) {
+      const have = portrait.phExtensions?.slots ?? []
+      const add = DEMO_SEVEN_ELEVEN_CHAINS.filter((c) => !have.some((s) => s.label === c.label))
+        .map((c) => slot(c.label, { partnerIds: [], listMode: 'deal', buyersListId: c.deals[0].id, buyersListIds: c.deals.map((d) => d.id) }))
+      if (add.length) {
+        const slots = [...have, ...add]
+        const settings = portrait.playlistSettings as { maximumCampaignsPlayedInRotation?: number }
+        const seedLoop = portrait.phExtensions?.venue?.loopLengthSec === 24 && settings?.maximumCampaignsPlayedInRotation === 3
+        const advertiserSlots = slots.filter((s) => s.owner === 'advertiser').length
+        await ctx.displayTypes.saveRecord('portrait', { ...portrait, playlistSettings: { ...settings, maximumCampaignsPlayedInRotation: Math.max(settings?.maximumCampaignsPlayedInRotation ?? 0, advertiserSlots) } })
+        await ctx.displayTypes.saveExtensions('portrait', {
+          ...(portrait.phExtensions ?? { slots: [] }),
+          slots,
+          venue: { ...(portrait.phExtensions?.venue ?? {}), loopLengthSec: seedLoop ? 30 : portrait.phExtensions?.venue?.loopLengthSec },
+        })
+        report.slots += add.length
+      }
+    }
   })
   /* Their committed plays are derived from the slots they hold, which were only just written (E2E 21 Oct 2026: they were null). */
-  await refreshCommittedPlays(ctx, [...DEMO_DIRECT_DEALS.map((d) => d.id), NESTLE_PG.id], 'Demo seed')
+  await refreshCommittedPlays(ctx, [...DIRECT_DEAL_IDS, NESTLE_PG.id], 'Demo seed')
 
   /* Campaigns in every state. */
   const insertCampaign = ctx.db.prepare(
@@ -425,7 +520,15 @@ export async function seedDemo(ctx: Context) {
     report.campaigns++
     if (c.state === 'draft') continue
     const checks = CHECKS(width, height).map((k) => (k.name === 'dimensions' && (w !== width || h !== height) ? { ...k, passed: false, detail: `${w}×${h} does not match the ${width}×${height} canvas` } : k))
-    await ctx.approvals.submit(c.id, checks, partner?.name ?? c.advertiser)
+    /* An advertiser that needs no approval has every submission approved on the spot, so a campaign meant to be awaiting or rejected
+       (Gatorade's, Red Bull's) was approved by the seed and could never show a not-approved state. Its setting is turned on for the
+       submit and put back as it was (ticket 5BWqiE6bHZQj01xxEril). */
+    const slug = advertiserSlug(c.advertiser)
+    const waived = (c.state === 'awaiting' || c.state === 'rejected') && !(await ctx.company.advertiserSetting(slug)).approvalRequired
+    if (waived) await ctx.company.saveAdvertiserSettings({ [slug]: { approvalRequired: true } })
+    try { await ctx.approvals.submit(c.id, checks, partner?.name ?? c.advertiser) } finally {
+      if (waived) await ctx.company.saveAdvertiserSettings({ [slug]: { approvalRequired: false } })
+    }
     const status = await ctx.approvals.statusOf(c.id)
     if (c.state === 'rejected') {
       if (status === 'awaiting_approval') await ctx.approvals.reject(c.id, 'v1', 'HQ Admin (POC)', c.rejectReason ?? 'Rejected.')
@@ -574,6 +677,35 @@ async function seedDemoBookings(ctx: Context) {
       })
       await ctx.campaigns.bookSlot({ id: `bk_demo_direct_${advertiserId}_${k}`, campaignId: d.campaignId, displayTypeId: position.displayType.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
       written++
+    }
+  }
+
+  /* The 7-Eleven-supplier deals: a booking for each day of its five-day flight, as the exchange books them. */
+  for (const chain of DEMO_SEVEN_ELEVEN_CHAINS) {
+    const position = positions.find((p) => (p.def.buyersListIds ?? []).includes(chain.deals[0].id))
+    if (!position) continue
+    const { len, first } = await gridOf(position)
+    for (const d of chain.deals) {
+      if (!(await ctx.campaigns.getCampaign(d.campaignId))) continue
+      const deal = await ctx.buyersLists.get(d.id)
+      if (!deal?.activeFrom || !deal.activeTo) continue
+      const advertiserId = advertiserSlug(d.advertiser)
+      const from = Math.max(first, Math.ceil((Date.parse(deal.activeFrom) - first) / len) * len + first)
+      for (let k = 0; k < 5; k++) {
+        const start = new Date(from + k * len).toISOString()
+        if (Date.parse(start) + len > Date.parse(deal.activeTo) + 1) break
+        const id = `res_demo_${d.id}_${k}`
+        if (await ctx.reservations.get(id)) continue
+        if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
+        await ctx.reservations.insert({
+          id, partnerId: DIRECT_PARTNER, advertiserId, campaignId: d.campaignId, positionId: position.positionId, windowStart: start,
+          type: 'reserve', channel: 'api', bidCpm: d.floorCpm, currency, status: 'reserved', clearingCpm: d.floorCpm,
+          reason: `Reserved: ${deal.name} (${deal.dealId}), a Direct advertiser deal, booked for its whole flight with no auction.`,
+          testMode: false, pricingType: 'localised', handedOffAt: new Date().toISOString(), dealType: 'guaranteed',
+        })
+        await ctx.campaigns.bookSlot({ id: `bk_demo_${d.id}_${k}`, campaignId: d.campaignId, displayTypeId: position.displayType.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
+        written++
+      }
     }
   }
 
