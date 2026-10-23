@@ -329,7 +329,15 @@ What the train changes:
   holds with `trainHold: "tests-red"` ("Tests failing") and carries on by
   itself once a fix on the train passes, with no second click. e2e-quick
   runs dispatched per ticket no longer cancel each other, so a red run
-  names the ticket that broke it. **Each card shows its own run** (19 Oct
+  names the ticket that broke it; the Staff Kanban suite does the same
+  since 23 Oct 2026 (it used to cancel the previous ticket's run, which then
+  read "not run" for good). **Faster DSP deploys** (23 Oct 2026, PR #462 took
+  ~90 minutes): the `APP_VERSION` bump alone starts no train test
+  (`trainTestsFor`, and `firestore-rules-test.yml`'s PR paths exclude
+  `version.js`); while this gate waits, held runs on an open train PR's head
+  are approved at once (`approveHeldRuns`) so they run alongside it; and
+  `e2e-quick` passes a PR head that only rebuilds the hosted prototype on a
+  parent that already passed it and already contains main. **Each card shows its own run** (19 Oct
   2026): `trainTest` on the card (starting / running / passed / failed /
   not-run) renders as a chip, `recordCardTrainTests` keeps it current each
   sweep, and approving a ticket that isn't green opens an "Approve before

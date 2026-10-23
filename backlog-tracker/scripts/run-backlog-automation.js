@@ -1805,8 +1805,11 @@ const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 
 // The test workflows a change to these paths needs run. Generated build
 // output alone (a prototype rebuild) starts nothing: its source already did.
+// The version bump alone (Deploy to Main writes it on every project's train)
+// starts nothing either: it held each DSP deploy ~16 minutes for the console
+// and Staff Kanban suites on 23 Oct 2026, testing nothing they read.
 function trainTestsFor(paths) {
-  const changed = (paths || []).filter((p) => typeof p === "string" && !isGeneratedOutput(p));
+  const changed = (paths || []).filter((p) => typeof p === "string" && !isGeneratedOutput(p) && p !== VERSION_JS);
   // A board-docs.json (any project's) is checked by the console tests: its
   // validator lives in test:train-lock, and a bad manifest must not reach main.
   const manifestChanged = changed.some((p) => p.split("/").pop() === "board-docs.json");
@@ -5257,7 +5260,15 @@ async function processDeployTrain(project) {
     const red = gate.state === "red";
     const what = gate.workflows.map((w) => `${w.label} ${w.state === "red" ? `failed${w.url ? ` (${w.url})` : ""}` : w.state === "pending" ? "is still running" : "has not run on this commit yet — started it"}`).join("; ");
     console.log(`[deploy-train] ${project.id}: holding the deploy — train tests ${gate.state} on ${gate.head.slice(0, 7)}: ${what}`);
-    if (gate.state === "pending" || gate.state === "missing") followUpReasons.push(`${project.id}: deploy waiting on the train's tests`);
+    if (gate.state === "pending" || gate.state === "missing") {
+      followUpReasons.push(`${project.id}: deploy waiting on the train's tests`);
+      // An open train PR's runs on this head are held as action_required
+      // until approved, and used to be approved only once this gate went
+      // green, so the PR's checks started from scratch after it (PR #462:
+      // 46 minutes held, then 25 more running). Approving them now runs them
+      // alongside the train's own tests.
+      if (project.trainPrNumber) approveHeldRuns(gate.head);
+    }
     let redNote = `Deploy held, nothing merged: ${what}. Fix it on ${deployBranch} (or send the ticket that broke it back with Failed testing) — the approved deploy carries on by itself once the tests pass.`;
     if (red) {
       const redWorkflows = gate.workflows.filter((w) => w.state === "red");
