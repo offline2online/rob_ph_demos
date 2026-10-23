@@ -246,6 +246,15 @@ word of their console name, or the "Shown as" name an admin sets in Kanban
 settings → Team (for names where the given name comes last, e.g. Lê Quang Huy → Huy).
 Members come from `memberDirectory`, a copy of `consoleUsers` without roles kept
 by a Cloud Function, since the full member list is admin-only.
+**KB-PPL-3** One person, one entry. An alias (`PERSON_ALIASES` in
+`kanban-core.js`: today `rob@personalisationhub.com` → `rob@offline2online.com`)
+is a second address the same person signs in with. It has no member row or
+directory entry, is never listed or offered as a person, and anything that
+names it (assignee, reporter, a mention, an agent signed in as it, "me")
+means its owner. The deploy folds existing data across
+(`backlog-tracker/scripts/apply-person-aliases.js`). The voice fill knows who
+is speaking (from the sign-in token), so "for me", "I need to" or "remind me"
+assigns the ticket to the speaker.
 **KB-PPL-2** Profile photos (shared console feature, ticket
 `cQZRViGdvsqJrnNk00GF` on Backlog Tracker & FAQs): uploaded photo, else Google
 photo, else initial — used on cards, filters, lanes, comments, mentions and the

@@ -13,6 +13,7 @@ import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
   statusChange, rankBetween, fold, searchTickets, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
+  canonicalEmail, isAliasEmail,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -62,20 +63,22 @@ export function mountStaffKanban(ctx) {
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   // Everyone on the console, by first name (KB-PPL-1): memberDirectory, plus
   // anyone a ticket names who isn't in it (a removed member keeps their name
-  // on old tickets as their address).
+  // on old tickets as their address). An alias address (PERSON_ALIASES) is
+  // never a person of its own: it shows, and is picked, as its owner.
   function people() {
     const named = store.state.settings.firstNames || {};
-    const list = store.state.members.map((m) => {
+    const list = store.state.members.filter((m) => !isAliasEmail(m.email)).map((m) => {
       const name = String(m.displayName || "").trim() || String(m.email).split("@")[0];
       return { id: m.email, first: String(named[m.email] || "").trim() || name.split(/\s+/)[0], full: name, email: m.email, color: colourFor(m.email) };
     });
-    if (!list.some((u) => u.id === me)) {
-      const name = (ctx.auth.currentUser && ctx.auth.currentUser.displayName) || me.split("@")[0];
-      list.push({ id: me, first: name.split(/\s+/)[0], full: name, email: me, color: colourFor(me) });
+    const self = canonicalEmail(me);
+    if (!list.some((u) => u.id === self)) {
+      const name = (ctx.auth.currentUser && ctx.auth.currentUser.displayName) || self.split("@")[0];
+      list.push({ id: self, first: String(named[self] || "").trim() || name.split(/\s+/)[0], full: name, email: self, color: colourFor(self) });
     }
-    return list.sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : a.first.localeCompare(b.first)));
+    return list.sort((a, b) => (a.id === self ? -1 : b.id === self ? 1 : a.first.localeCompare(b.first)));
   }
-  const user = (id) => (id ? people().find((u) => u.id === id) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id) } : null) : null);
+  const user = (id) => (id ? people().find((u) => u.id === canonicalEmail(id)) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id) } : null) : null);
   const firstName = (id) => (user(id) || {}).first || "Unassigned";
   // Console releases, in release order; a release's date is a Kanban setting.
   function releases() {
@@ -1263,6 +1266,8 @@ export function mountStaffKanban(ctx) {
       sprints: sprints().map((s) => ({ id: s.id, name: s.name, start: s.start || "", end: s.end || "" })),
       labels: allLabels(),
       today: isoDay(today()),
+      // Who is talking, so "for me" / "I need to" lands on them.
+      me: canonicalEmail(me),
     };
   }
   async function claudeDraft(transcript, c) {

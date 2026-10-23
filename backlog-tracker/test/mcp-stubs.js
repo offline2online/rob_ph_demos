@@ -121,6 +121,7 @@ function makeDb(store) {
       return {
         set: (ref, data, opts) => ops.push(() => ref.set(data, opts)),
         update: (ref, data) => ops.push(() => ref.update(data)),
+        delete: (ref) => ops.push(() => ref.delete()),
         commit: async () => { for (const op of ops) await op(); },
       };
     },

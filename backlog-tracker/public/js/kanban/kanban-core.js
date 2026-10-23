@@ -159,6 +159,19 @@ export function rankBetween(prev, next) {
   return (prev + next) / 2;
 }
 
+// ── People: one person, several sign-in addresses ────────────────────────
+// An alias is a second address the same person signs in with. The board
+// never lists it as a person of its own: anything that names it (assignee,
+// reporter, a mention, the signed-in agent) means the canonical address.
+// rob@personalisationhub.com is still an owner account in firestore.rules,
+// so it can sign in, but on the Staff Kanban it is Rob.
+export const PERSON_ALIASES = { "rob@personalisationhub.com": "rob@offline2online.com" };
+export function canonicalEmail(e) {
+  const v = String(e == null ? "" : e).trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(PERSON_ALIASES, v) ? PERSON_ALIASES[v] : v;
+}
+export const isAliasEmail = (e) => Object.prototype.hasOwnProperty.call(PERSON_ALIASES, String(e == null ? "" : e).trim().toLowerCase());
+
 // ── Status changes: the one place the testing hand-off happens ───────────
 // Returns null when nothing changes, else { patch, note, activity } where
 // patch holds the fields to write and activity is the line for the log.
@@ -310,7 +323,7 @@ export function releaseReport(tasks, f, { people = [], releaseDate = "", release
 // people usually say out loud and writes a short title and a tidy
 // description. ctx: { users: [{id, first}], epics: [{key, title}],
 // releases: [{id, name, version}] in order, currentRelease, sprints:
-// [{id, start, end}], today: Date }.
+// [{id, start, end}], today: Date, me: the speaker's id }.
 const NUM = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, half: 0.5, couple: 2 };
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export const AGENT_LABELS = [["menu-boards", /menu ?boards?|local offers?|offer/], ["dsp", /\bdsp\b|partner api|exchange|display types?|playlist|advertis/], ["help-centre", /help cent(re|er)|faq|freshdesk/], ["retail-admin", /retail admin|queue|appointment|store hours/], ["hq-admin", /hq admin|product assets|stockists|pricing page/], ["visitor-profile", /visitor profile|personali[sz]ation attribute|attribute/], ["performance", /slow|performance|latency|speed/], ["accessibility", /accessib|screen reader|wcag|contrast/], ["security", /security|permission|consent|rate.?limit/], ["api", /\bapi\b|endpoint|webhook/]];
@@ -326,6 +339,9 @@ export function agentDraft(raw, ctx = {}) {
     if (!n) continue;
     if (new RegExp(`\\b(assign(ed)?( it| this)? to|give (it|this) to|for|ask) ${n}\\b|\\b${n} (should|can|could|to) (pick|take|do|look)`).test(low)) { out.assignee = u.id; break; }
   }
+  // "for me", "assign it to myself", "I need to…": the speaker (ctx.me),
+  // so a note someone dictates for themselves lands on their own name.
+  if (!out.assignee && ctx.me && /\b(assign(ed)?( it| this)? to (me|myself)|give (it|this) to me|for me to|for myself|(it'?s|this is) for me|remind me|note to self|my (own )?(task|job|todo|to-do)|i (need|have|want|must|ought) to|i should|i'?ll|i will)\b/.test(low)) out.assignee = canonicalEmail(ctx.me);
   if (/\b(urgent|asap|as soon as possible|critical|blocker|blocking|show ?stopper|top priority|highest priority)\b/.test(low)) out.priority = "highest";
   else if (/\b(high priority|important|quite urgent|soon as we can)\b/.test(low)) out.priority = "high";
   else if (/\b(lowest priority)\b/.test(low)) out.priority = "lowest";
@@ -372,8 +388,9 @@ export function agentDraft(raw, ctx = {}) {
   // Description: the transcript, minus the routing talk, in tidy sentences.
   const ROUTING = /\b(assign(ed)? (it |this )?to \S+|give (it|this) to \S+|(it'?s |this is |make it )?(urgent|high priority|low priority|medium priority|top priority|nice to have|no rush)|((for|in) )?(the )?(next|this|current) (release|sprint)|(it )?(should|will|might) take (about |around |roughly )?\S+ (hours?|days?|minutes?)|by (tomorrow|end of (the )?week|monday|tuesday|wednesday|thursday|friday)|(maybe|about|around|roughly|probably|approximately) (\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|half an?|a couple of) (hours?|days?|minutes?))\b[,.]?/gi;
   const sentences = text.split(/(?<=[.!?])\s+|\s+(?:and then|also|and also)\s+/i).map((x) => x.replace(ROUTING, "").replace(/\s+([,.])/g, "$1").replace(/^[\s,]*(and|so|um+|uh+|okay|ok|right)[\s,]+/i, "").trim()).filter((x) => x.replace(/[^a-z]/gi, "").length > 3);
-  if (out.assignee) {
-    const u = users.find((x) => x.id === out.assignee);
+  const assigned = out.assignee && users.find((x) => x.id === out.assignee);
+  if (assigned) {
+    const u = assigned;
     const names = Array.from(new Set([u.first, fold(u.first)])).map(reEsc).join("|");
     const re = new RegExp(`\\b((this is|it'?s) )?(for|ask) (${names})( to (do|pick up|look at|take))?\\b[,.]?|\\b(${names}) (should|can|could) (pick (it|this) up|take (it|this)|do (it|this)|look at (it|this))\\b[,.]?`, "gi");
     for (let i = 0; i < sentences.length; i++) sentences[i] = sentences[i].replace(re, "").replace(/\s+([,.])/g, "$1").trim();

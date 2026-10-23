@@ -147,6 +147,16 @@ jobs:
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
         run: node ensure-automation-user.js
 
+      # A second address one person signs in with (PERSON_ALIASES in
+      # public/js/kanban/kanban-core.js) is folded into its owner: no member
+      # row of its own, and the Staff Kanban names the owner instead.
+      - name: Fold alias addresses into their owners
+        if: steps.dedupe.outputs.skip != 'true'
+        working-directory: backlog-tracker/scripts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node apply-person-aliases.js
+
       # The board keeps its own copy of this project's README and
       # Requirements (projects/{id}.readmeMd / requirementsMd) for the Docs
       # page. The repo files are the source of truth; root CLAUDE.md asks
