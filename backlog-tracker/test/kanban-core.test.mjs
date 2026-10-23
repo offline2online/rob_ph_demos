@@ -65,6 +65,25 @@ t("local agent fill reads people, priority, estimate, release and type", () => {
   assert.deepEqual([out.type, out.priority, out.assignee, out.estimate, out.release], ["bug", "highest", "huy@x", 4, "r2"]);
   assert.match(out.title, /^Preview shows the wrong price/);
 });
+t("an alias address is its owner", () => {
+  assert.equal(k.canonicalEmail(" Rob@PersonalisationHub.com "), "rob@offline2online.com");
+  assert.equal(k.canonicalEmail("huy@x"), "huy@x");
+  assert.equal(k.canonicalEmail(""), "");
+  assert.equal(k.isAliasEmail("rob@personalisationhub.com"), true);
+  assert.equal(k.isAliasEmail("rob@offline2online.com"), false);
+});
+t("local agent fill gives a note the speaker means for themselves to the speaker", () => {
+  const users = [{ id: "rob@offline2online.com", first: "Rob" }, { id: "huy@x", first: "Huy" }];
+  const today = new Date("2026-10-21T12:00:00");
+  for (const note of ["I need to send the release notes to the client", "remind me to chase the DSP contract", "add a task for myself to review the FAQ", "assign it to me: review the pricing page"]) {
+    assert.equal(k.agentDraft(note, { users, me: "rob@offline2online.com", today }).assignee, "rob@offline2online.com", note);
+  }
+  // signed in as the alias, it is still the owner
+  assert.equal(k.agentDraft("I need to call the printer", { users, me: "rob@personalisationhub.com", today }).assignee, "rob@offline2online.com");
+  // someone named wins, and without a speaker nothing is guessed
+  assert.equal(k.agentDraft("I need Huy to look at this, assign it to Huy", { users, me: "rob@offline2online.com", today }).assignee, "huy@x");
+  assert.equal(k.agentDraft("I need to call the printer", { users, today }).assignee, undefined);
+});
 t("field validation names what's wrong", () => {
   const { errors, value } = k.cleanTaskFields({ title: "x", estimate: "1d", assignee: "Huy", labels: ["Menu Boards", "menu-boards"] });
   assert.deepEqual(errors, ["assignee must be an email"]); assert.equal(value.estimate, 8); assert.deepEqual(value.labels, ["menu-boards"]);

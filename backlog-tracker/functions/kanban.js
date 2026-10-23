@@ -27,8 +27,10 @@ const TASKS = "kanbanTasks";
 // ── Member directory ──────────────────────────────────────────────────────
 // The console's bootstrap admins (mcp-server.js STATIC_ADMINS, firestore.rules)
 // are members without a consoleUsers row, so the sync below would otherwise
-// leave them off every assignee list.
-const BOOTSTRAP_ADMINS = ["rob@offline2online.com", "rob@personalisationhub.com"];
+// leave them off every assignee list. The other owner account,
+// rob@personalisationhub.com, is an alias of this one (core.PERSON_ALIASES):
+// an alias never gets an entry, its owner stands for it on the board.
+const BOOTSTRAP_ADMINS = ["rob@offline2online.com"];
 function directoryEntry(email, row) {
   return {
     email,
@@ -43,6 +45,7 @@ async function syncMemberDirectoryWrite(event) {
   if (!email) return;
   const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
   const ref = db().collection("memberDirectory").doc(email);
+  if (core.isAliasEmail(email)) { await ref.delete(); return; }
   if (!after) {
     if (BOOTSTRAP_ADMINS.includes(email)) await ref.set(directoryEntry(email, {})); else await ref.delete();
     return;
@@ -65,6 +68,7 @@ async function syncWholeDirectory() {
   let writes = 0;
   users.forEach((d) => {
     const email = d.id.toLowerCase();
+    if (core.isAliasEmail(email)) return;
     want.add(email);
     b.set(db().collection("memberDirectory").doc(email), directoryEntry(email, d.data() || {}));
     writes++;
@@ -106,6 +110,7 @@ const AGENT_SYSTEM = [
   "Write a short title and a clear description in British English. Keep the speaker's meaning; drop filler and the routing talk (who should do it, how urgent, how long, which release), which goes in the fields instead.",
   "Fill a field only when the note says it, or clearly implies it. Choose people, releases, sprints and epics only from the lists given, by id. Leave anything else empty.",
   "A bug is something broken or wrong; an epic is a larger body of work; anything else is a task.",
+  "The board context names the speaker (me, one of the people ids). When the note gives the work to the speaker (\"for me\", \"assign it to myself\", \"I need to\", \"remind me\"), the assignee is that id.",
 ].join(" ");
 
 // Returns the draft in the page's shape, or null.
@@ -138,7 +143,7 @@ function draftFromClaude(o, c) {
     description: String(o.description || "").trim().slice(0, 20000),
     type: ["task", "bug", "epic"].includes(o.type) ? o.type : "task",
     priority: ["highest", "high", "medium", "low", "lowest"].includes(o.priority) ? o.priority : "",
-    assignee: pick(o.assignee, ids(c.users)),
+    assignee: pick(core.canonicalEmail(o.assignee), ids(c.users)),
     release: pick(o.release, ids(c.releases)),
     sprint: pick(o.sprint, ids(c.sprints)),
     epic: pick(o.epic, ids(c.epics, "key")),
@@ -156,7 +161,8 @@ function cleanContext(c) {
   const s = (v, n = 200) => String(v == null ? "" : v).slice(0, n);
   return {
     today: /^\d{4}-\d{2}-\d{2}$/.test(c.today || "") ? c.today : new Date().toISOString().slice(0, 10),
-    users: arr(c.users, 200).map((u) => ({ id: s(u.id), first: s(u.first, 60), full: s(u.full, 120) })),
+    users: arr(c.users, 200).filter((u) => !core.isAliasEmail(u && u.id)).map((u) => ({ id: s(u.id), first: s(u.first, 60), full: s(u.full, 120) })),
+    me: core.canonicalEmail(s(c.me)),
     epics: arr(c.epics, 300).map((e) => ({ key: s(e.key, 20), title: s(e.title) })),
     releases: arr(c.releases, 100).map((r) => ({ id: s(r.id, 100), name: s(r.name, 120), version: s(r.version, 40), released: !!r.released })),
     currentRelease: s(c.currentRelease, 100),
@@ -178,7 +184,9 @@ async function handleAgentFill(req, res, h) {
   // 200 with no draft, not an error status: the page falls back quietly.
   if (!key || key === "unset") { res.status(200).json({ draft: null, reason: "not-configured" }); return; }
   try {
-    const draft = await claudeDraft(key, transcript, cleanContext(body.context || {}), { Anthropic: h.Anthropic });
+    // The speaker is whoever the token says, never what the page claims.
+    const context = cleanContext(Object.assign({}, body.context || {}, { me: who.user.email }));
+    const draft = await claudeDraft(key, transcript, context, { Anthropic: h.Anthropic });
     res.status(200).json(draft ? { draft, source: "claude" } : { draft: null, reason: "no-draft" });
   } catch (err) {
     logger.warn("kanban agent fill failed", { email: who.user.email, error: String(err && err.message ? err.message : err) });
@@ -211,14 +219,16 @@ function kanbanTools(h) {
   // consoleUsers row (so no directory entry yet).
   async function people(session) {
     const snap = await db().collection("memberDirectory").get();
-    const list = snap.docs.map((d) => d.data() || {}).filter((m) => !m.disabled);
-    const have = new Set(snap.docs.map((d) => String(d.data().email || d.id).toLowerCase()));
+    const list = snap.docs.map((d) => d.data() || {}).filter((m) => !m.disabled && !core.isAliasEmail(m.email));
+    const have = new Set(list.map((m) => String(m.email || "").toLowerCase()));
     for (const email of [...BOOTSTRAP_ADMINS, session && session.email]) {
       const e = String(email || "").toLowerCase();
       if (e && !have.has(e)) { have.add(e); list.push(directoryEntry(e, session && e === session.email ? { displayName: session.displayName } : {})); }
     }
     return list;
   }
+  // The board's first name for someone, as the page shows it.
+  const firstOf = (p, s) => String((s.firstNames || {})[p.email] || "").trim() || String(p.displayName || "").trim().split(/\s+/)[0] || String(p.email).split("@")[0];
   // "me" means the authenticated member.
   const meOr = (v, session) => (String(v || "").trim().toLowerCase() === "me" ? session.email : v);
   const resolveMe = (args, session) => {
@@ -228,8 +238,8 @@ function kanbanTools(h) {
   };
   async function firstNamer() {
     const [ppl, s] = await Promise.all([people(), settings()]);
-    const map = new Map(ppl.map((p) => [p.email, (s.firstNames || {})[p.email] || String(p.displayName || p.email).split(/\s+/)[0]]));
-    return (e) => (e ? map.get(e) || String(e).split("@")[0] : "Unassigned");
+    const map = new Map(ppl.map((p) => [p.email, firstOf(p, s)]));
+    return (e) => (e ? map.get(core.canonicalEmail(e)) || String(e).split("@")[0] : "Unassigned");
   }
   async function getTask(key) {
     const snap = await tasks().doc(key).get();
@@ -287,7 +297,7 @@ function kanbanTools(h) {
     return null;
   }
 
-  return [
+  const tools = [
     {
       name: "kanban_list_people",
       description: "Staff Kanban: who's on the board (email and the first name the board shows), the releases and sprints tickets can belong to, the current release and the tester Ready for Testing hands tickets to.",
@@ -296,7 +306,7 @@ function kanbanTools(h) {
       async run(args, session) {
         const [ppl, s, rel, spr] = await Promise.all([people(session), settings(), db().collection("releases").get(), db().collection("kanbanSprints").get()]);
         return textResult({
-          people: ppl.map((p) => ({ email: p.email, name: (s.firstNames || {})[p.email] || String(p.displayName || p.email).split(/\s+/)[0], fullName: p.displayName || null })),
+          people: ppl.map((p) => ({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null })),
           releases: rel.docs.map((d) => ({ id: d.id, name: d.data().name, version: d.data().version || null, live: d.data().status === "live", date: s.releaseDates[d.id] || null })),
           sprints: spr.docs.map((d) => ({ id: d.id, name: d.data().name, start: d.data().start || null, end: d.data().end || null })),
           currentRelease: s.currentRelease || null, tester: s.tester || null,
@@ -559,6 +569,18 @@ function kanbanTools(h) {
       },
     },
   ];
+  // An alias signs in as its owner (core.PERSON_ALIASES): the session, and
+  // every person an argument names, resolve to the canonical address before
+  // a tool runs, so the alias is never assigned, notified or credited.
+  const asPerson = (v) => (typeof v === "string" && v.includes("@") ? core.canonicalEmail(v) : v);
+  return tools.map((t) => Object.assign({}, t, {
+    run(args, session) {
+      const a = Object.assign({}, args);
+      for (const k of ["assignee", "reporter"]) if (k in a) a[k] = asPerson(a[k]);
+      if (Array.isArray(a.mention)) a.mention = a.mention.map(asPerson);
+      return t.run(a, session && Object.assign({}, session, { email: core.canonicalEmail(session.email) }));
+    },
+  }));
 }
 
 module.exports = { syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, kanbanTools, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };

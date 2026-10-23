@@ -220,11 +220,13 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     env.store.col("memberDirectory").clear();
     const r = await call({ method: "POST", path: "/mcp/kanban/directory-sync", headers: { "X-Firebase-ID-Token": signIn(KIT) } });
     assert.strictEqual(r.statusCode, 200);
-    // The bootstrap admins have no consoleUsers row but are members all the same.
+    // The bootstrap admin has no consoleUsers row but is a member all the
+    // same; its alias (rob@personalisationhub.com) is not a member of its own.
     const ids = [...env.store.col("consoleUsers").keys()];
-    for (const b of ["rob@offline2online.com", "rob@personalisationhub.com"]) if (!ids.includes(b)) ids.push(b);
+    for (const b of ["rob@offline2online.com"]) if (!ids.includes(b)) ids.push(b);
     assert.strictEqual(env.store.col("memberDirectory").size, ids.length);
     assert.ok(env.store.col("memberDirectory").has("rob@offline2online.com"));
+    assert.ok(!env.store.col("memberDirectory").has("rob@personalisationhub.com"));
     const out = await call({ method: "POST", path: "/mcp/kanban/directory-sync", headers: { "X-Firebase-ID-Token": signIn("nobody@example.com") } });
     assert.strictEqual(out.statusCode, 403);
   });
@@ -323,6 +325,62 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const u = await tool(sam, "kanban_update_task", { key: r.json.key, release: "r412" });
     assert.ok(!u.isError, u.text);
     assert.strictEqual(task(r.json.key).release, "r412");
+  });
+
+  // ── aliases (core.PERSON_ALIASES) ─────────────────────────────────────
+  await test("an alias is never a person of its own: not listed, and folds into its owner", async () => {
+    const ALIAS = "rob@personalisationhub.com";
+    env.store.col("memberDirectory").set(ALIAS, { email: ALIAS, displayName: "", photoUrl: "", disabled: false });
+    const ppl = await tool(sam, "kanban_list_people");
+    const emails = ppl.json.people.map((p) => p.email);
+    assert.ok(emails.includes(ROB) && !emails.includes(ALIAS), emails.join(", "));
+    assert.strictEqual(ppl.json.people.find((p) => p.email === ROB).name.includes("@"), false, "named, not shown as an address");
+    // assigning, reporting and mentioning by the alias all land on the owner
+    const made = await tool(sam, "kanban_create_task", { title: "Alias assignee", assignee: ALIAS, reporter: ALIAS });
+    assert.ok(!made.isError, made.text);
+    assert.strictEqual(task(made.json.key).assignee, ROB);
+    assert.strictEqual(task(made.json.key).reporter, ROB);
+    const a = await tool(sam, "kanban_assign_task", { key: made.json.key, assignee: ALIAS });
+    assert.ok(!a.isError, a.text);
+    assert.strictEqual(task(made.json.key).assignee, ROB);
+    const c = await tool(sam, "kanban_comment", { key: made.json.key, text: "over to you", mention: [ALIAS] });
+    assert.deepStrictEqual(c.json.notified, [ROB]);
+    const mine = await tool(sam, "kanban_list_tasks", { assignee: ALIAS });
+    assert.ok(mine.json.tasks.some((t) => t.key === made.json.key));
+  });
+  await test("an agent signed in as the alias works as its owner: \"me\" and authorship", async () => {
+    const ALIAS = "rob@personalisationhub.com";
+    const alias = await connect(ALIAS);
+    const who = await tool(alias, "kanban_create_task", { title: "Note to self", assignee: "me" });
+    assert.ok(!who.isError, who.text);
+    const t = task(who.json.key);
+    assert.strictEqual(t.assignee, ROB);
+    assert.strictEqual(t.createdBy, ROB);
+    const mine = await tool(alias, "kanban_list_tasks", { assignee: "me" });
+    assert.ok(mine.json.tasks.some((x) => x.key === who.json.key));
+  });
+  await test("the directory never keeps an entry for an alias", async () => {
+    const ALIAS = "rob@personalisationhub.com";
+    env.store.col("consoleUsers").set(ALIAS, { email: ALIAS, role: "admin" });
+    await kanban.syncWholeDirectory();
+    assert.strictEqual(env.store.col("memberDirectory").get(ALIAS), undefined);
+    env.store.col("memberDirectory").set(ALIAS, { email: ALIAS });
+    await kanban.syncMemberDirectoryWrite({ params: { userEmail: ALIAS }, data: { before: null, after: { exists: true, data: () => ({ email: ALIAS, role: "admin" }) } } });
+    assert.strictEqual(env.store.col("memberDirectory").get(ALIAS), undefined);
+    env.store.col("consoleUsers").delete(ALIAS);
+  });
+  await test("agent fill tells Claude who is speaking, from the token, and folds an alias answer", async () => {
+    const c = kanban.cleanContext({ users: [{ id: ROB, first: "Rob" }, { id: "rob@personalisationhub.com", first: "rob" }, { id: HUY, first: "Huy" }], me: "rob@personalisationhub.com" });
+    assert.deepStrictEqual(c.users.map((u) => u.id), [ROB, HUY]);
+    assert.strictEqual(c.me, ROB);
+    const d = kanban.draftFromClaude({ title: "Chase the printer", assignee: "rob@personalisationhub.com" }, c);
+    assert.strictEqual(d.assignee, ROB);
+    let sent = null;
+    class Spy { constructor() { this.beta = { messages: { create: async (req) => { sent = req; return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({ title: "Chase the printer", assignee: ROB }) }] }; } } }; } }
+    const out = await kanban.claudeDraft("k", "remind me to chase the printer", kanban.cleanContext({ users: [{ id: ROB, first: "Rob" }], me: ROB }), { Anthropic: Spy });
+    assert.strictEqual(out.assignee, ROB);
+    assert.match(sent.messages[0].content, /"me":"rob@offline2online.com"/);
+    assert.match(sent.system, /speaker/);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
