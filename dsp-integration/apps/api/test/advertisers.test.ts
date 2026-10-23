@@ -65,6 +65,9 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(items.find((a) => a.advertiserId === 'acme-foods')).toMatchObject({ name: 'Acme Foods Ltd', direct: true })
     expect(items.some((a) => a.name === 'Acme Foods')).toBe(false)
     expect((await patch('acme-foods', 'Beta Drinks')).statusCode).toBe(409)
+    /* A renamed advertiser keeps its old id: nobody else may take that, nor the name it now shows. */
+    expect((await patch('beta-drinks', 'Acme Foods')).statusCode).toBe(409)
+    expect((await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods Ltd' } })).statusCode).toBe(409)
     expect((await patch('acme-foods', 'Nestlé')).statusCode).toBe(409)
     expect((await patch('nestle', 'Nestle Foods')).statusCode).toBe(404)
     expect((await patch('nobody', 'X')).statusCode).toBe(404)

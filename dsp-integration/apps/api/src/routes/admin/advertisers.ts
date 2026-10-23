@@ -112,7 +112,8 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (!name || name.length > 80) throw validationFailed([{ field: 'name', reason: 'A name of 1 to 80 characters is required.' }])
     const advertiserId = advertiserSlug(name)
     if (!advertiserId) throw validationFailed([{ field: 'name', reason: 'The name needs at least one letter or digit.' }])
-    if ((await listAdvertisers(ctx)).some((a) => a.advertiserId === advertiserId)) throw conflict(`${name} is already an advertiser.`)
+    /* By id or by name: a renamed direct advertiser keeps its old id, so its new name is checked too. */
+    if ((await listAdvertisers(ctx)).some((a) => a.advertiserId === advertiserId || advertiserSlug(a.name) === advertiserId)) throw conflict(`${name} is already an advertiser.`)
     const audiences = req.body?.audiences === undefined ? [] : await validateAudiences(ctx, req.body.audiences)
     await ctx.company.addDirectAdvertiser(advertiserId, name)
     if (audiences.length) await ctx.company.saveAdvertiserAudiences(advertiserId, audiences, req.session.userId)
@@ -134,7 +135,7 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const record = (await ctx.company.directAdvertisers()).find((d) => d.advertiserId === advertiserId)
     if (!a) throw notFound('Not an advertiser.')
     if (!record || !a.direct) throw notFound(`${a.name} comes through a DSP, so it can't be renamed here.`)
-    if (all.some((x) => x.advertiserId !== advertiserId && advertiserSlug(x.name) === advertiserSlug(name))) throw conflict(`${name} is already an advertiser.`)
+    if (all.some((x) => x.advertiserId !== advertiserId && (advertiserSlug(x.name) === advertiserSlug(name) || x.advertiserId === advertiserSlug(name)))) throw conflict(`${name} is already an advertiser.`)
     if (name === record.name) return { advertiserId, name }
     const held = await slotsHolding(ctx, record.name)
     if (held.length) throw conflict(`${record.name} is assigned to ${held.length === 1 ? 'a slot' : `${held.length} slots`} on Available Inventory: ${held.join('; ')}. Remove it from ${held.length === 1 ? 'that slot' : 'those slots'} before renaming it.`)
