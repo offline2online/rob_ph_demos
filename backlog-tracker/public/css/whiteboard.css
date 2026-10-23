@@ -22,6 +22,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--primary); o
 #wb-canvas[data-tool="pan"].is-panning { cursor: grabbing; }
 #wb-canvas[data-tool="eraser"] { cursor: cell; }
 
+.wb-home {
+  position: fixed; top: calc(12px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); z-index: 5;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 6px 10px; background: var(--surface); border-radius: 14px;
+  box-shadow: var(--shadow), 0 0 0 .5px rgba(0, 0, 0, .1);
+}
+.wb-home:hover { background: #f7f8f8; }
+.wb-home img { display: block; height: 32px; width: auto; }
+
 .wb-toolbar {
   position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 5;
   /* Never scrolls sideways: labels drop out where they don't fit (below), and
@@ -46,6 +54,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--primary); o
 .wb-size[aria-pressed="true"] { background: var(--primary-tint); }
 .wb-share-btn { background: var(--primary); color: #fff; font-weight: 600; padding: 0 14px; }
 .wb-share-btn:hover { background: #09759c; }
+
+.wb-zoom {
+  position: fixed; right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 4;
+  display: flex; align-items: center; gap: 2px; padding: 4px; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow), 0 0 0 .5px rgba(0, 0, 0, .1);
+}
 
 .wb-status { position: fixed; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 4; padding: 6px 12px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); font-size: 13px; color: var(--text-muted); }
 .wb-status:empty { display: none; }
@@ -82,6 +95,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--primary); o
 @media (max-width: 1199px) {
   .wb-tool .wb-label { display: none; }
   .wb-tool { padding: 0; }
+}
+/* The logo sits top left, so the bar drops below it before the two could meet. */
+@media (max-width: 1480px) {
+  .wb-toolbar { top: calc(68px + env(safe-area-inset-top)); }
 }
 @media (max-width: 820px) {
   .wb-sep { display: none; }

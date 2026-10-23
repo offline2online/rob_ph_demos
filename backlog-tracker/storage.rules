@@ -63,7 +63,10 @@ service firebase.storage {
     }
 
     match /avatars/{fileName} {
-      allow read: if isEditor() || (request.auth != null && request.auth.token.consoleRole in ["admin", "editor", "viewer"]);
+      // The owner can always read their own file: getDownloadURL() right after
+      // an upload is a read, and a member whose token has no console claim yet
+      // would otherwise upload fine and then fail with "insufficient permissions".
+      allow read: if isAvatarOwner(fileName) || isEditor() || (request.auth != null && request.auth.token.consoleRole in ["admin", "editor", "viewer"]);
       allow write: if (isAvatarOwner(fileName) || isAdminClaim())
         && request.resource.size < 2 * 1024 * 1024
         && request.resource.contentType == 'image/jpeg';

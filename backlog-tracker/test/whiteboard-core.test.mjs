@@ -3,7 +3,7 @@
 import assert from "node:assert";
 import {
   newBoardId, isValidBoardId, boardUrl, zoomAt, toWorld, chunkCoords, strokeHit, lastOwnGesture, boundsOf,
-  clampZoom, MIN_ZOOM, MAX_ZOOM,
+  clampZoom, MIN_ZOOM, MAX_ZOOM, fitView,
 } from "../public/js/whiteboard-core.js";
 
 // ids: 20 characters of letters and digits, never repeated, and the validator agrees
@@ -48,4 +48,12 @@ assert.strictEqual(lastOwnGesture(["a"], []), null);
 // bounds
 assert.strictEqual(boundsOf([]), null);
 assert.deepStrictEqual(boundsOf([{ pts: [1, 5, 9, -2] }, { pts: [4, 4] }]), { minX: 1, minY: -2, maxX: 9, maxY: 5 });
+// fitView: centred, inside the padded area below the toolbar, capped at 2x
+assert.deepStrictEqual(fitView([], 800, 600, 64), { x: 0, y: 0, k: 1 });
+const fv = fitView([{ pts: [0, 0, 100, 50] }], 1000, 800, 100);
+assert.strictEqual(fv.k, 2, "a small drawing is not blown up past 2x");
+assert.ok(Math.abs((50 * fv.k + fv.x) - 500) < 1e-9 && Math.abs((25 * fv.k + fv.y) - 450) < 1e-9, "centre of the drawing is the centre of the free area");
+const big = fitView([{ pts: [0, 0, 5000, 4000] }], 1000, 800, 100);
+assert.ok(big.k < 0.2 && 5000 * big.k + big.x <= 940 + 1e-6 && 4000 * big.k + big.y <= 740 + 1e-6 && big.y >= 160 - 1e-6, "a large drawing zooms out to stay inside the padding");
+assert.strictEqual(fitView([{ pts: [0, 0, 1e7, 1e7] }], 1000, 800).k, MIN_ZOOM, "never zooms out past the minimum");
 console.log("whiteboard-core: all assertions passed");

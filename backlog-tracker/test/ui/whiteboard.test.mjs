@@ -31,8 +31,9 @@ try {
       if (width <= 640) await page.click('#tabbar .tab[data-tab="build"]');
       const last = await page.evaluate(() => [...document.querySelectorAll('[data-nav-group="build"] .nav-drawer-item')].pop().id);
       assert.strictEqual(last, "whiteboard-btn", "Whiteboard is the last Build item");
-      await page.click("#whiteboard-btn");
-      await page.waitForURL(/whiteboard\.html\?b=[A-Za-z0-9]{20}&new=1$/);
+      const [board] = await Promise.all([page.context().waitForEvent("page"), page.click("#whiteboard-btn")]);
+      await board.waitForURL(/whiteboard\.html\?b=[A-Za-z0-9]{20}&new=1$/);
+      assert.ok(!/whiteboard\.html/.test(page.url()), "the console stays where it was; the board opens in a new tab");
       assert.deepStrictEqual(o.problems, [], `no problems at ${width}px`);
     } catch (e) { fail(`console nav at ${width}px`, e); }
     await o.close();
@@ -49,13 +50,19 @@ try {
       await page.click("#wb-copy");
       await until(async () => /copied/i.test(await page.innerText("#wb-copy-msg")), "Link copied.");
       if (width === 1280) assert.strictEqual(await page.evaluate(() => navigator.clipboard.readText()), link, "clipboard holds the link");
+      // The logo is top left, links back to the console, and never overlaps the tool bar.
+      assert.strictEqual(await page.getAttribute("#wb-home", "href"), "./", "logo links to the console");
+      const logo = await page.locator("#wb-home").boundingBox(), bar = await page.locator("#wb-toolbar").boundingBox();
+      assert.ok(logo.x < 40 && logo.y < 40, "logo is in the top left corner");
+      assert.ok(logo.x + logo.width <= bar.x || logo.y + logo.height <= bar.y, "logo does not overlap the tool bar");
       await page.click("#wb-share-close");
       await page.waitForSelector("#wb-share", { state: "hidden" });
       await page.click("#wb-share-open");
       await page.waitForSelector("#wb-share", { state: "visible" });
       await page.click("#wb-share-close");
 
-      // Draw: a stroke is saved.
+      // Draw: a stroke is saved. Auto-fit would rescale the view under the pointer as strokes land, so switch it off.
+      await page.click("#wb-fit");
       const box = await page.locator("#wb-canvas").boundingBox();
       const cx = box.x + box.width / 2, cy = box.y + box.height / 2 + 60;
       await page.mouse.move(cx - 60, cy); await page.mouse.down();
@@ -87,7 +94,17 @@ try {
       // Zoom and reset do not throw.
       await page.mouse.move(cx, cy);
       await page.keyboard.down("Control"); await page.mouse.wheel(0, -200); await page.keyboard.up("Control");
+      // Zoom buttons switch auto-fit off; Reset view and the fit button switch it back on.
       await page.click("#wb-reset");
+      assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "true", "Reset view turns auto-fit on");
+      await page.click("#wb-zoom-in");
+      assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "false", "zoom in turns auto-fit off");
+      await page.click("#wb-zoom-out");
+      await page.click("#wb-fit");
+      assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "true", "fit button turns auto-fit on");
+      await page.click("#wb-zoom-out");
+      await page.click("#wb-reset");
+      assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "true", "Reset view turns auto-fit on");
       assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll");
       assert.deepStrictEqual(o.problems, [], `no problems on the board at ${width}px`);
     } catch (e) { fail(`board at ${width}px`, e); }

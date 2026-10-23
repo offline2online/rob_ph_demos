@@ -759,14 +759,16 @@ describe('Advertisers / Inventory', () => {
     /* Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr). */
     expect(within(dialog).queryByText('Audiences')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-    /* Every advertiser row, DSP or direct, has an Edit action opening the same form. */
+    /* Only a direct advertiser has Edit (ticket usIHp1uhtllLCP29teBu): its name can be changed and saved. */
+    expect(within(advertisers).getAllByRole('button', { name: /^Edit / })).toHaveLength(1)
     fireEvent.click(within(advertisers).getByRole('button', { name: 'Edit Acme Foods' }))
     const edit = await screen.findByRole('dialog')
-    expect(within(edit).queryByRole('button', { name: 'Save advertiser' })).not.toBeInTheDocument()
-    expect(within(edit).getByLabelText('Advertiser name')).toBeDisabled()
+    expect(within(edit).getByLabelText('Advertiser name')).toBeEnabled()
+    expect(within(edit).getByRole('button', { name: 'Save changes' })).toBeDisabled()
     expect(within(edit).queryByText('Audiences')).not.toBeInTheDocument()
+    fireEvent.change(within(edit).getByLabelText('Advertiser name'), { target: { value: 'Acme Foods Ltd' } })
+    expect(within(edit).getByRole('button', { name: 'Save changes' })).toBeEnabled()
     fireEvent.click(within(edit).getByRole('button', { name: 'Cancel' }))
-    expect(within(advertisers).getAllByRole('button', { name: /^Edit / }).length).toBeGreaterThan(1)
     /* Only a direct advertiser can be deleted. */
     expect(within(advertisers).getByRole('button', { name: 'Delete Acme Foods' })).toBeInTheDocument()
     expect(within(advertisers).getAllByRole('button', { name: /^Delete / })).toHaveLength(1)
@@ -1382,9 +1384,9 @@ describe('Advertisers / Inventory', () => {
     const ranked = within(cell).getByRole('list', { name: /buyers lists in priority order/ })
     expect(within(ranked).getAllByLabelText(/^Position/).map((n) => n.textContent)).toEqual(['1', '2'])
     expect(within(ranked).queryByText('Coke PG')).toBeNull()
-    const held = within(cell).getByRole('list', { name: /deals reserving the whole slot/ })
-    expect(within(held).getByText('Coke PG')).toBeInTheDocument()
-    expect(within(held).queryByLabelText(/^Position/)).toBeNull()
+    /* Reserving deals are not repeated under the picker: no list, no "Reserves the whole slot" line. */
+    expect(within(cell).queryByRole('list', { name: /deals reserving the whole slot/ })).toBeNull()
+    expect(within(cell).queryByText(/Reserves the whole slot/)).toBeNull()
   }, slow(45000))
 
   /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */

@@ -879,7 +879,17 @@ migration 0063) from the **Add new Advertiser** button at the top right of the
 page, which opens a pop-up asking for the name (no inline field), and removed
 with the delete icon beside it in the Advertisers table
 (`DELETE /admin/v1/advertisers/direct/{id}`, refused while it has campaigns or
-bookings; DSP advertisers have no delete icon). It is listed with the DSP
+bookings; DSP advertisers have no delete icon). **Only a direct advertiser has
+an edit (pencil) icon, and editing renames it (23 Oct 2026, ticket
+usIHp1uhtllLCP29teBu):** the pop-up's name field is enabled and **Save changes**
+(disabled while the name is empty or unchanged) calls
+`PATCH /admin/v1/advertisers/direct/{id}` with `{ name }` (admin; same
+validation as the add: trimmed, spaces collapsed, 1–80 characters, a letter or
+digit). The advertiserId never changes, so campaigns, bookings, users and deals
+keep pointing at it and only `direct_advertisers.name` is updated. 409 when the
+new name is another advertiser's (direct or a DSP seat) or the old name is
+assigned to a slot; 404 for an unknown id or a DSP advertiser. A DSP advertiser
+is named by its DSP: no edit icon, no delete icon. It is listed with the DSP
 advertisers (`direct: true`, empty `via`) and takes the same approval and floor
 settings. Wherever a DSP name would accompany an advertiser it reads
 **"Name (Direct)"**: the Via column and the booking schedule (its advertiser
@@ -2577,9 +2587,9 @@ rank differently on each.
   and the open auction. Programmatic guaranteed and Direct advertiser deals take
   the whole slot, so priority means nothing for them; the only rule is that
   their flights must not overlap (already enforced, see the 22 Oct 2026 note on
-  reserving deals). Admin shows them in their own unnumbered group, "Reserves
-  the whole slot: no priority, flights must not overlap", with no drag handle or
-  arrows, and numbers only the remaining deals. Stored order is unchanged
+  reserving deals). Admin does not list them again under the Assigned to picker
+  (no "Reserves the whole slot" group, no repeated names: the picker's chips
+  already show them), and numbers only the remaining deals. Stored order is unchanged
   (`buyersListIds`); the UI keeps reserving deals ahead of the ranked ones when
   it reorders. The ranked rows appear once two or more ranked deals (or one
   plus an Open auction) are on the slot.

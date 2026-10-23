@@ -42,6 +42,20 @@ async function directDealCampaigns(ctx: Context, p: PositionRef, list: BuyersLis
   return [...mine.filter((c) => c.dealId === list.dealId), ...mine.filter((c) => !c.dealId)]
 }
 
+/* The campaign a planned (not yet written) Direct deal booking shows: the one the exchange will book, i.e. the first in booking order
+   that is approved, activated and fits the slot; failing that the first approved one (so the booking schedule tile agrees with the
+   Campaign Approval list, ticket c5FA0T54eSU4PAroz8w5, 22 Oct 2026), failing that the first eligible. */
+async function plannedCampaign(ctx: Context, p: PositionRef, list: BuyersList, advertiserId: string) {
+  const ordered = await directDealCampaigns(ctx, p, list, advertiserId)
+  let ready, approved
+  for (const c of ordered) {
+    if (!approved && (await ctx.approvals.statusOf(c.campaignId)) === 'approved') approved = c
+    if (!ready && !(await checkCampaign(ctx, c.campaignId)) && !checkTargeting(p, c.pricingType, true)) { ready = c; break }
+  }
+  const c = ready ?? approved ?? ordered[0]
+  return c ? { campaignId: c.campaignId, pricingType: c.pricingType ?? null } : null
+}
+
 /* The bookings a finalised Direct advertiser deal holds on its slots before the exchange has written them (ticket TWJmiwQpPu9Y4tAUjncC,
    22 Oct 2026). The exchange books a deal's window one window ahead, but the deal reserves every window of its flight from the moment it is
    finalised, so the booking schedule, its revenue tables and plays per day read each unbooked window as the deal's booking: the advertiser,
@@ -74,7 +88,7 @@ export async function plannedDirectBookings(ctx: Context, positions: PositionRef
       const advertiserId = list.invitedBuyers[0].seatId as string
       if (!rates.has(list.id)) rates.set(list.id, await rateOf(ctx, list))
       const key = `${list.id}|${p.positionId}`
-      if (!campaigns.has(key)) campaigns.set(key, directDealCampaigns(ctx, p, list, advertiserId).then((c) => (c[0] ? { campaignId: c[0].campaignId, pricingType: c[0].pricingType ?? null } : null)))
+      if (!campaigns.has(key)) campaigns.set(key, plannedCampaign(ctx, p, list, advertiserId))
       const campaign = await campaigns.get(key) ?? null
       const rate = rates.get(list.id) as number
       out.push({
