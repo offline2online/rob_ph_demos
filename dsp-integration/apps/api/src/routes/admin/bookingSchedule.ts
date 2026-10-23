@@ -234,12 +234,15 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
          and the table shows a dash. */
       if (first && hasDisplays && !realTime && start.getTime() >= firstSellable) rev.sellableWindows++
       const x = live.get(`${p.positionId}|${start.toISOString()}`)
-      const r = x && (!f.campaignId || x.campaignId === f.campaignId) && (!f.advertiserId || x.advertiserId === f.advertiserId) && (!f.partnerId || x.partnerId === f.partnerId) ? x : undefined
+      const r = x && (!f.campaignId || x.campaignId === f.campaignId) && (!f.partnerId || x.partnerId === f.partnerId) ? x : undefined
+      /* With an advertiser filter the other advertisers' tiles stay on the grid, named, so the page can grey them out
+         (ticket zebMTdEEJFkVG5AVGiET); they are left out of every total below, which read the filtered advertiser only. */
+      const inFilter = !f.advertiserId || r?.advertiserId === f.advertiserId
       if (r) {
         const bookedRevenue = round2((views / 1000) * (r.clearingCpm as number))
         const bill = billed.get(r.id) ?? null
         const type = (r.pricingType ?? 'default') as BookingSchedule['byPricingType'][number]['pricingType']
-        if (first) {
+        if (first && inFilter) {
           rev.bookedWindows++
           rev.bookedRevenue = round2(rev.bookedRevenue + bookedRevenue)
           rev.billedRevenue = round2(rev.billedRevenue + (bill ?? 0))

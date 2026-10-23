@@ -75,7 +75,7 @@ const TRIGGER_META: Record<keyof Triggers, { icon: string; label: string; tip: s
   individual: { icon: 'how_to_reg', label: 'Individual (identified)', tip: 'Highest value, lowest frequency: requires the customer to be identified or checked in.' },
 }
 
-interface Ctx { current: { money: (n: number) => string; view: View } }
+interface Ctx { current: { money: (n: number) => string; view: View; advertiserId?: string } }
 
 const BOOKED = SLOT_OWNERS.advertiser
 const DAY = 86_400_000
@@ -280,7 +280,7 @@ function TileCard({ booking, money, tone, onOpen }: { booking: Booking; money: (
    colour was worked out from, approved or not, so the two never disagree. A Direct deal window whose advertiser has no campaign
    that fits the slot has no campaign behind it and reads not approved; it opens Campaign Approval on that advertiser instead,
    which says it has nothing submitted (23 Oct 2026: those red tiles did nothing when clicked). */
-function BookingTile({ booking, money, slot }: { booking: Booking; money: (n: number) => string; slot?: string }) {
+function BookingTile({ booking, money, slot, dimmed }: { booking: Booking; money: (n: number) => string; slot?: string; dimmed?: boolean }) {
   const navigate = useNavigate()
   const base = `${BOOKING_SCHEDULE_PATH}?tab=${CAMPAIGN_APPROVAL_TAB}`
   const href = booking.campaignId ? `${base}&campaignId=${encodeURIComponent(booking.campaignId)}`
@@ -295,10 +295,11 @@ function BookingTile({ booking, money, slot }: { booking: Booking; money: (n: nu
   const tileOpen = touch ? undefined : open
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
   const tone = booking.approval ? RISK_TONE[booking.approval.defaultRisk] : undefined
-  const colour = tone?.colour ?? BOOKED.colour
+  /* Another advertiser's booking while the schedule is filtered to one: still named, greyed out. */
+  const colour = dimmed ? T.muted : tone?.colour ?? BOOKED.colour
   return (
     <Tip title={<TileCard booking={booking} money={money} tone={tone} onOpen={touch ? open : undefined} />}>
-      <div className={`flex w-full min-w-0 flex-col gap-0.5 rounded px-1 ${touch ? 'py-1.5' : 'py-0.5'}`} style={{ background: tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}`, cursor: tileOpen ? 'pointer' : undefined, minHeight: touch ? 64 : undefined }}
+      <div className={`flex w-full min-w-0 flex-col gap-0.5 rounded px-1 ${touch ? 'py-1.5' : 'py-0.5'}`} style={{ background: dimmed ? T.surfaceAlt : tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}`, opacity: dimmed ? 0.7 : undefined, cursor: tileOpen ? 'pointer' : undefined, minHeight: touch ? 64 : undefined }}
         {...(tileOpen ? { role: 'link', tabIndex: 0, 'aria-label': `Open ${booking.advertiserName} in Campaign Approval`, onClick: tileOpen, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tileOpen() } } } : {})}>
         <div className="flex items-center gap-1 w-full min-w-0" style={touch ? { minHeight: 32 } : undefined}
           {...(byAdvertiser ? { role: 'link', tabIndex: 0, 'aria-label': `Show ${booking.advertiserName} in Campaign Approval`, onClick: (e: React.MouseEvent) => { e.stopPropagation(); byAdvertiser() } } : {})}>
@@ -316,12 +317,12 @@ function BookingTile({ booking, money, slot }: { booking: Booking; money: (n: nu
    (ticket "Booking schedule: single-advertiser stacking tile" retires the
    earlier "Sold — other layer" model along with the fallback-optional,
    part-sold submission it depended on). */
-function DailyCell({ cell, money, slot }: { cell: Cell; money: (n: number) => string; slot?: string }) {
+function DailyCell({ cell, money, slot, advertiserId }: { cell: Cell; money: (n: number) => string; slot?: string; advertiserId?: string }) {
   if (cell.status === 'unavailable') return <span style={{ fontSize: 11, color: T.micro }}>—</span>
   /* Inside a live Direct advertiser deal's flight: held for its advertiser, not on sale to anyone else. */
   if (cell.status === 'reserved') return <span style={{ fontSize: 11, color: T.muted }}>Reserved · Direct</span>
   if (!cell.booking) return <span style={{ fontSize: 11, color: T.success }}>Available</span>
-  return <BookingTile booking={cell.booking} money={money} slot={slot} />
+  return <BookingTile booking={cell.booking} money={money} slot={slot} dimmed={!!advertiserId && cell.booking.advertiserId !== advertiserId} />
 }
 
 /* A week or a month: how many windows were booked at all, and — of those —
@@ -329,8 +330,9 @@ function DailyCell({ cell, money, slot }: { cell: Cell; money: (n: number) => st
    glance" the daily tile gives shows up in the rolled-up views too. The
    default layer is omitted here since it is on every booking and so adds
    nothing the "N of M booked" line doesn't already say. */
-function GroupedCell({ cells, money }: { cells: Cell[]; money: (n: number) => string }) {
-  const booked = cells.filter((c) => c.booking)
+function GroupedCell({ cells, money, advertiserId }: { cells: Cell[]; money: (n: number) => string; advertiserId?: string }) {
+  /* Filtered to one advertiser: only its own windows count (the others are greyed out on the daily view only). */
+  const booked = cells.filter((c) => c.booking && (!advertiserId || c.booking.advertiserId === advertiserId))
   const sellable = cells.filter((c) => c.status === 'available').length
   const names = [...new Set(booked.map((c) => c.booking!.advertiserName))]
   const revenue = booked.reduce((n, c) => n + c.booking!.bookedRevenue, 0)
@@ -357,12 +359,12 @@ function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ct
   if (!value?.cells.length) return null
   /* Real-time inventory is sold per impression: no booked / available grid. */
   if (data?.position.realTime && !value.cells.some((c) => c.booking)) return <span style={{ fontSize: 11, color: T.micro }}>—</span>
-  const { money, view } = context.current
+  const { money, view, advertiserId } = context.current
   return (
     <div className="flex w-full min-w-0 flex-col justify-center gap-0.5 py-1">
       {view === 'Daily'
-        ? <DailyCell cell={value.cells[0]} money={money} slot={data?.position.displayTypeName} />
-        : <GroupedCell cells={value.cells} money={money} />}
+        ? <DailyCell cell={value.cells[0]} money={money} slot={data?.position.displayTypeName} advertiserId={advertiserId} />
+        : <GroupedCell cells={value.cells} money={money} advertiserId={advertiserId} />}
     </div>
   )
 }
@@ -592,7 +594,7 @@ export function BookingSchedulePage() {
       headerName: 'Estimated revenue', field: 'bookedRevenue', width: 170, cellRenderer: NumberCell,
     },
   ], [])
-  const ctx: Ctx['current'] = { money, view }
+  const ctx: Ctx['current'] = { money, view, advertiserId }
 
   return (
     <div>

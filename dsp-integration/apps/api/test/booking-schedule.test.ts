@@ -185,7 +185,9 @@ describe('GET /admin/v1/booking-schedule', () => {
     await ctx.reservations.insert(booking({}))
     const swisse = await get('?advertiserId=swisse&from=2026-09-15&to=2026-09-23')
     expect(swisse.json().totals.bookedWindows).toBe(1)
-    expect(swisse.json().positions[0].windows.find((w: { start: string }) => w.start.startsWith('2026-09-15')).status).toBe('unavailable')
+    /* Another advertiser's booking stays on the grid, named, but is in none of the totals (ticket zebMTdEEJFkVG5AVGiET). */
+    const other = swisse.json().positions[0].windows.find((w: { start: string }) => w.start.startsWith('2026-09-15'))
+    expect(other).toMatchObject({ status: 'booked', booking: { advertiserId: 'nestle', advertiserName: 'Nestlé' } })
     const amazon = await get('?partnerId=p_amazon&from=2026-09-15&to=2026-09-23')
     expect(amazon.json().totals).toEqual({ bookedWindows: 0, sellableWindows: 3, bookedRevenue: 0, billedRevenue: 0 })
   })
