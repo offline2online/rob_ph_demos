@@ -110,3 +110,13 @@ shape.
   merge a performance regression that the next night then reports. If that
   delay matters, run `npm run bench -- --assert --shapes=C --seconds=1`
   (about 4 minutes) in the deploy PR's checks.
+
+## 23 Oct 2026 — booking schedule: partner names read once per request
+
+The nightly gate flagged shape C and T (ticket S7CtyolTpstRSKAfjO6N): the
+booking schedule's per-position partner names called `effectivePartnerIds`
+without the partners or buyers lists the request had already read, so every
+position re-read the partner list and each of its buyers lists. The schedule
+now passes both (`effectivePartnerIds` takes an optional list reader).
+Shape T on the same machine: default 525 → 378 ms p50, 92 days
+1,429 → 1,039 ms.

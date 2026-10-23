@@ -3880,7 +3880,7 @@ components:
           type: array
           items:
             type: object
-            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, realtime, screens, windowHours, days]
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, realtime, screens, windowHours, playbackWindow, days]
             properties:
               positionId: {type: string}
               displayTypeId: {type: string}
@@ -3890,6 +3890,7 @@ components:
               realtime: {type: boolean, description: Sold per impression, never pre-booked, so its firm layer is always 0.}
               screens: {type: integer, description: Displays the slot plays on.}
               windowHours: {type: number, description: The slot's billing unit.}
+              playbackWindow: {type: string, description: "When the display type plays, as set on its Operating hours: '24 hours', 'Store hours' or a custom 'HH:MM–HH:MM'."}
               days:
                 type: array
                 items:

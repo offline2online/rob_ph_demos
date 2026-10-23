@@ -3199,6 +3199,8 @@ export interface components {
                 screens: number;
                 /** @description The slot's billing unit. */
                 windowHours: number;
+                /** @description When the display type plays, as set on its Operating hours: '24 hours', 'Store hours' or a custom 'HH:MM–HH:MM'. */
+                playbackWindow: string;
                 days: {
                     /** Format: date */
                     date: string;

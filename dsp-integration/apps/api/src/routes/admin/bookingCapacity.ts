@@ -12,7 +12,7 @@ import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { allPositions, isRealtime, maxPlayLengthSecFor, windowMs, windowStartOf } from '../../domain/positions'
-import { operatingHours, playsForGroups, screensOf, segmentsTargeted, type ScreenGroup } from '../../domain/dailyCapacity'
+import { operatingHours, playbackWindowLabel, playsForGroups, screensOf, segmentsTargeted, type ScreenGroup } from '../../domain/dailyCapacity'
 import { rotationSizeOf } from '../../domain/slots'
 import { plannedDirectBookings } from '../../exchange/directDeal'
 import { TAKEN } from '../../repos/ReservationRepo'
@@ -87,7 +87,7 @@ export async function bookingCapacity(ctx: Context, days: Date[]): Promise<Booki
     })
     positions.push({
       positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label,
-      realtime: isRealtime(p), screens: screensOf(estate), windowHours: len / 3_600_000, days: perDay,
+      realtime: isRealtime(p), screens: screensOf(estate), windowHours: len / 3_600_000, playbackWindow: playbackWindowLabel(p.displayType.phExtensions), days: perDay,
     })
   }
   return { days: days.map((d) => d.toISOString().slice(0, 10)), positions }

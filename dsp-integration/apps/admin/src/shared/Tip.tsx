@@ -3,7 +3,7 @@
    opens on tap and stays open until the next tap elsewhere. */
 import { Popover, Tooltip, type PopoverProps, type TooltipProps } from 'antd'
 
-const isTouch = () => typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none)').matches
+export const isTouch = () => typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none)').matches
 
 export const touchTrigger = (): TooltipProps['trigger'] => (isTouch() ? ['click'] : ['hover', 'focus'])
 

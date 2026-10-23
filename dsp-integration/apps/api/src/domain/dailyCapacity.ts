@@ -67,6 +67,12 @@ export function operatingHours(src: OperatingSource, store: { openHour: number; 
   return { open: store?.openHour ?? 0, close: store?.closeHour ?? 24 }
 }
 
+/* The display type's playback window as people read it on its Operating hours: '24 hours', 'Store hours' or 'HH:MM–HH:MM'. */
+export function playbackWindowLabel(src: OperatingSource): string {
+  const s = settingOf(src)
+  return s.mode === '24h' ? '24 hours' : s.mode === 'store' ? 'Store hours' : `${s.start}–${s.end}`
+}
+
 /* Milliseconds of [a, b) the store is open. */
 export function openMsIn(a: number, b: number, h: Hours): number {
   let ms = 0
