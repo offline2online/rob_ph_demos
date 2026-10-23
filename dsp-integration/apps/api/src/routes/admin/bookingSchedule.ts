@@ -101,6 +101,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
   /* Advertiser names come from the DSPs' seats, keyed by their slug. */
   const direct = await ctx.company.directAdvertisers()
   const advertiserName = new Map([...direct.map((d) => [d.advertiserId, directLabel(d.name)] as const), ...partners.flatMap((p) => p.seats.map((s) => [advertiserSlug(s.name), s.name] as const))])
+  const partnerName = new Map(partners.map((x) => [x.id, x.name] as const))
   const revenue = new Map<string, BookingSchedule['revenue'][number]>()
   const byType = new Map<string, BookingSchedule['byPricingType'][number]>()
 
@@ -260,7 +261,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
           booking: {
             reservationId: r.id, campaignId: r.campaignId ?? '', advertiserId: r.advertiserId, partnerId: r.partnerId,
             pricingType: type, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
-            partnerName: r.partnerId === DIRECT_PARTNER_ID ? DIRECT_LABEL : partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
+            partnerName: r.partnerId === DIRECT_PARTNER_ID ? DIRECT_LABEL : partnerName.get(r.partnerId) ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
             layers, personalisedTriggers: triggersOf(targeted, layers.personalised), approval,
           },
         })
@@ -278,7 +279,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       /* Multi-zone: "Zone n / Slot m", as Available Inventory numbers it
          (A0GyTNsA, 1 Oct 2026); positionId stays the flat index. */
       zoneName: zonePlaceOf(p.displayType, p.slot)?.zoneName ?? null, zoneSlot: zonePlaceOf(p.displayType, p.slot)?.zoneSlot ?? p.slot,
-      partnerNames: ((await effectivePartnerIds(ctx, p.def, partners, buyersList)) ?? []).map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), realTime, recentPlays: realTime ? (recentPlays.get(p.positionId) ?? 0) : null, windows,
+      partnerNames: ((await effectivePartnerIds(ctx, p.def, partners, buyersList)) ?? []).map((id) => partnerName.get(id) ?? id), assignment: assignmentOf(p.def), realTime, recentPlays: realTime ? (recentPlays.get(p.positionId) ?? 0) : null, windows,
     })
   }
   /* One advertiser selected: only the positions it actually holds (Rob, 20 Sep). */
