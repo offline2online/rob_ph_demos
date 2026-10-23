@@ -165,12 +165,12 @@ export function callerOf(partner: PartnerRecord, advertiserId: string | undefine
    `partners` lets a caller that asks for many positions read the partner
    list once instead of once per deal. Sync-first (db.ts andThen): it runs
    once per position on every inventory read. */
-export function effectivePartnerIds(ctx: Context, def: Slot, partners?: Awaitable<PartnerRecord[]>): Awaitable<string[] | null> {
+export function effectivePartnerIds(ctx: Context, def: Slot, partners?: Awaitable<PartnerRecord[]>, listOf: (id: string) => ReturnType<Context['buyersLists']['get']> = (id) => ctx.buyersLists.get(id)): Awaitable<string[] | null> {
   const a = assignedCached(def)
   if (a.buyersListIds.length) {
     /* A waterfall: any tier's invited DSPs may see the position; each tier's own bid request goes only to its own (auction.ts). An Open auction tier below the deals adds its own DSPs (none chosen = All DSPs, so unrestricted). */
     if ((a.openAuction || slotInGlobalDeal(def)) && !a.partnerIds.length) return null
-    return andThen(allOf(a.buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
+    return andThen(allOf(a.buyersListIds.map(listOf)), (lists) =>
       andThen(partners ?? ctx.partners.list(), (all) => [...new Set([...lists.flatMap((l) => (l ? invitedPartnerIds(l, all) : [])), ...(a.openAuction ? a.partnerIds : [])])]))
   }
   return a.partnerIds.length ? a.partnerIds : null

@@ -278,7 +278,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       /* Multi-zone: "Zone n / Slot m", as Available Inventory numbers it
          (A0GyTNsA, 1 Oct 2026); positionId stays the flat index. */
       zoneName: zonePlaceOf(p.displayType, p.slot)?.zoneName ?? null, zoneSlot: zonePlaceOf(p.displayType, p.slot)?.zoneSlot ?? p.slot,
-      partnerNames: ((await effectivePartnerIds(ctx, p.def)) ?? []).map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), realTime, recentPlays: realTime ? (recentPlays.get(p.positionId) ?? 0) : null, windows,
+      partnerNames: ((await effectivePartnerIds(ctx, p.def, partners, buyersList)) ?? []).map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), realTime, recentPlays: realTime ? (recentPlays.get(p.positionId) ?? 0) : null, windows,
     })
   }
   /* One advertiser selected: only the positions it actually holds (Rob, 20 Sep). */
