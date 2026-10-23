@@ -10355,7 +10355,7 @@ document.getElementById("staff-kanban-btn").addEventListener("click", () => { cl
 document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
 
 // Whiteboard: each click starts a new board with its own 20-character id and
-// opens it full screen with the share panel showing (public/whiteboard.html).
+// opens it full screen in a new tab with the share panel showing (public/whiteboard.html).
 // The board page reads the board from the server, so this waits for the write
 // to land, but not forever: a write still pending after WHITEBOARD_CREATE_MS
 // says so instead of leaving the tap looking dead.
@@ -10364,15 +10364,23 @@ document.getElementById("whiteboard-btn").addEventListener("click", async (e) =>
   const btn = e.currentTarget;
   if (btn.disabled) return;
   btn.disabled = true;
+  // The board opens in a new tab. The tab has to be opened now, while the tap is still
+  // a user gesture (popup blockers and iPad Safari refuse one opened after the write),
+  // and pointed at the board once it exists. A blocked popup falls back to this tab.
+  const tab = window.open("", "_blank");
+  if (tab) { try { tab.opener = null; } catch {} }
   try {
     const id = newBoardId();
     let timer;
     const tooSlow = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("whiteboard create timed out")), WHITEBOARD_CREATE_MS); });
     await Promise.race([setDoc(doc(db, "whiteboards", id), { shared: true, createdAt: serverTimestamp() }), tooSlow]).finally(() => clearTimeout(timer));
     closeNavDrawer();
-    location.href = boardUrl(id, location.href) + "&new=1";
+    const url = boardUrl(id, location.href) + "&new=1";
+    if (tab) tab.location.href = url; else location.href = url;
+    btn.disabled = false;
   } catch (err) {
     console.warn("whiteboard create:", err);
+    if (tab) tab.close();
     alert("Couldn't start a whiteboard. Check your connection and try again.");
     btn.disabled = false;
   }

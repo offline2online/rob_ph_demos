@@ -31,8 +31,9 @@ try {
       if (width <= 640) await page.click('#tabbar .tab[data-tab="build"]');
       const last = await page.evaluate(() => [...document.querySelectorAll('[data-nav-group="build"] .nav-drawer-item')].pop().id);
       assert.strictEqual(last, "whiteboard-btn", "Whiteboard is the last Build item");
-      await page.click("#whiteboard-btn");
-      await page.waitForURL(/whiteboard\.html\?b=[A-Za-z0-9]{20}&new=1$/);
+      const [board] = await Promise.all([page.context().waitForEvent("page"), page.click("#whiteboard-btn")]);
+      await board.waitForURL(/whiteboard\.html\?b=[A-Za-z0-9]{20}&new=1$/);
+      assert.ok(!/whiteboard\.html/.test(page.url()), "the console stays where it was; the board opens in a new tab");
       assert.deepStrictEqual(o.problems, [], `no problems at ${width}px`);
     } catch (e) { fail(`console nav at ${width}px`, e); }
     await o.close();
