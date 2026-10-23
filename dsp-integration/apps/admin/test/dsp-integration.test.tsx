@@ -405,10 +405,10 @@ describe('Campaign Status stand-in', () => {
     /* And a row menu for opening, undoing a rejection, or switching a campaign on — approving and rejecting are by selection. */
     expect(within(grid).getByLabelText('Swisse spring: options')).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))
-    /* Awaiting approval, not Rejected, so Undo rejection is offered but disabled. */
+    /* Awaiting approval, not Rejected, so Undo rejection is offered but disabled; the decide actions are offered (ticket jPQSz9EBmt0P2geHXp6l). */
     expect(await screen.findByRole('menuitem', { name: /Undo rejection/ }, { timeout: 10000 })).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.queryByRole('menuitem', { name: /^Approve$/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: /Reject/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Approve campaign' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Reject campaign' })).toBeInTheDocument()
   })
 
   /* Ticket BGxKMB89DIOgWuwgfrej: the two tabs are back (removed 13 Oct 2026 by BG4LKXiqTMYNm8jRNFDk). */
@@ -699,6 +699,22 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     expect(cta('Reject Selected')).toBeInTheDocument()
     tick(grid, 'Nestlé winter')
     expect(await screen.findByRole('button', { name: 'Approve Selected' })).toBeInTheDocument()
+  }, slow(45000))
+
+  it('approves one campaign from its row menu, leaving the others alone (ticket jPQSz9EBmt0P2geHXp6l)', async () => {
+    const grid = await open()
+    fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Approve campaign' }))
+    await waitFor(() => expect(posts.map((p) => p.url)).toEqual(['/api/admin/v1/approvals/approve-assign']))
+    expect(posts[0].body).toEqual({ items: [{ campaignId: 'c1', assetVersion: 'v1' }] })
+  }, slow(45000))
+
+  it('rejects one campaign from its row menu', async () => {
+    const grid = await open()
+    fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reject campaign' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Reject Swisse spring?')).toBeInTheDocument()
   }, slow(45000))
 
   it('approves the ticked campaigns into a new creative ID', async () => {

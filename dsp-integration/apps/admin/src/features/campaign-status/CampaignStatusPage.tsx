@@ -77,6 +77,14 @@ interface Ctx {
   unreject: (a: Approval) => Promise<void>
   revert: (a: Approval) => Promise<void>
   activate: (c: Campaign, enabled: boolean) => Promise<void>
+  /* The row menu's one-campaign versions of the selection actions (ticket jPQSz9EBmt0P2geHXp6l). */
+  approveOne: (a: Approval) => void
+  approveOneIntoExisting: (c: Campaign, a: Approval) => void
+  rejectOne: (c: Campaign) => void
+  assignOne: (a: Approval) => void
+  assignOneToExisting: (c: Campaign, a: Approval) => void
+  /* A creative ID needs an advertiser, and another of its campaigns to share an existing one with. */
+  hasSibling: (c: Campaign) => boolean
   now: number
 }
 /* An advertiser's group row sits above its campaigns; its one box ticks them all.
@@ -193,15 +201,30 @@ const ReceivedCell = ({ data, context }: P) => {
 const LastUsedCell = ({ data }: P) =>
   data?.group ? null : data?.lastPlayedAt ? <span className="block truncate">{fmtUtc(data.lastPlayedAt)}</span> : <span style={{ color: T.micro }}>—</span>
 
-/* Open a campaign, undo a rejection, or switch a campaign on from the table. Approving and rejecting are by selection above the table. */
+/* Every action the selection above the table offers, for this one campaign — approve, approve into an existing creative ID,
+   reject, and for an auto-approved campaign the creative ID actions — plus open, undo rejection, revert approval and
+   activation (ticket jPQSz9EBmt0P2geHXp6l). The decide actions follow the same status rules as the selection's: shown
+   for Awaiting approval and Rejected, never for an Approved row. */
 function RowMenu({ data, context }: P) {
   if (!data || data.group) return null
   const c = context.current
   const a = c.approvals[data.campaignId]
   const approved = a?.status === 'approved'
   const rejected = a?.status === 'rejected'
+  const decidable = !!a && DECIDABLE.includes(a.status) && c.canApprove
+  const grouping = isAutoApproved(a) && c.canApprove && !!data.advertiserId
+  const sibling = c.hasSibling(data)
   const items = [
     { key: 'open', icon: <Icon name="open_in_new" size={15} />, label: 'Open campaign' },
+    ...(decidable ? [
+      { key: 'approve', icon: <Icon name="check_circle" size={15} />, label: 'Approve campaign', disabled: !data.advertiserId },
+      ...(sibling ? [{ key: 'approveExisting', icon: <Icon name="playlist_add_check" size={15} />, label: 'Approve and add to existing creative ID' }] : []),
+      { key: 'reject', icon: <Icon name="cancel" size={15} />, label: 'Reject campaign', danger: true },
+    ] : []),
+    ...(grouping ? [
+      { key: 'assign', icon: <Icon name="label" size={15} />, label: 'Generate creative ID' },
+      ...(sibling ? [{ key: 'assignExisting', icon: <Icon name="playlist_add_check" size={15} />, label: 'Assign to existing creative ID' }] : []),
+    ] : []),
     /* Undo a mistaken rejection (ticket, 22 Sep): back to Awaiting approval, never auto-approved. Same permission as approve/reject. */
     { key: 'unreject', icon: <Icon name="undo" size={15} />, label: 'Undo rejection', disabled: !rejected || !c.canApprove },
     /* Take back an approval (ticket x2yp5hewCO44TYMbZ8Cf): back to Awaiting approval; the Booking Schedule tile follows. */
@@ -211,6 +234,11 @@ function RowMenu({ data, context }: P) {
   ]
   const onClick = ({ key }: { key: string }) => {
     if (key === 'open') c.open(data.campaignId)
+    if (key === 'approve') c.approveOne(a!)
+    if (key === 'approveExisting') c.approveOneIntoExisting(data, a!)
+    if (key === 'reject') c.rejectOne(data)
+    if (key === 'assign') c.assignOne(a!)
+    if (key === 'assignExisting') c.assignOneToExisting(data, a!)
     if (key === 'unreject') void c.unreject(a!)
     if (key === 'revert') void c.revert(a!)
     if (key === 'activation') void c.activate(data, !data.activation.enabled)
@@ -356,10 +384,15 @@ export function CampaignStatusPage() {
   })
   /* A resubmitted creative goes back to the ID it originally belonged to. */
   const originals = new Set(selectedApprovals.map((a) => a.creativeId).filter((id): id is string => !!id))
-  const openPicker = () => {
-    setChoice(originals.size === 1 ? [...originals][0] : null)
+  const openPicker = (as: Approval[] = selectedApprovals) => {
+    const own = new Set(as.map((a) => a.creativeId).filter((id): id is string => !!id))
+    setChoice(own.size === 1 ? [...own][0] : null)
     setPicking(true)
   }
+  /* The row menu acts on one campaign: it becomes the whole selection (so the picker and the reject dialog, which read the
+     selection, work unchanged), and the actions that need no dialog run straight away. */
+  const only = (c: Campaign) => setTicked(new Set([c.campaignId]))
+  const hasSibling = (c: Campaign) => !!c.advertiserId && all.some((o) => o.advertiserId === c.advertiserId && o.campaignId !== c.campaignId)
   /* Anchored by the deal (REQUIREMENTS.md, Flow B step 5): a deal campaign with no ID of its own
      (rejected, now fixed) is offered the deal's one creative ID, pre-highlighted. With several IDs
      in the deal the anchor is ambiguous, so nothing is pre-highlighted and HQ chooses. */
@@ -368,7 +401,12 @@ export function CampaignStatusPage() {
   }, [picking, deal, originals.size, choice, creativeIds.data])
 
   const ctx: Ctx = {
-    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, revert, activate, selected, toggle, toggleGroup, groupIds, displayTypeNames,
+    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, revert, activate, selected, toggle, toggleGroup, groupIds, displayTypeNames, hasSibling,
+    approveOne: (a) => void approveAssign([a]).then((ok) => ok && toggle(a.campaignId, false)),
+    approveOneIntoExisting: (c, a) => { only(c); openPicker([a]) },
+    rejectOne: (c) => { only(c); setReason(''); setReasonCode(undefined); setRejecting(true) },
+    assignOne: (a) => void assignCreativeId([a]).then((ok) => ok && toggle(a.campaignId, false)),
+    assignOneToExisting: (c, a) => { only(c); openPicker([a]) },
   }
   const values = (of: (c: Campaign) => string) => () => all.map(of).filter((v) => v && v !== '—')
   const advertiserOptions = useMemo(() => [...new Map(
@@ -473,14 +511,14 @@ export function CampaignStatusPage() {
                 {autoOnly && oneAdvertiser && (
                   <>
                     <Button type="primary" size="small" ghost loading={busy === 'batch'} onClick={() => void done(assignCreativeId(selectedApprovals))}>Generate creative ID</Button>
-                    {hasOtherCampaigns && <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Assign to existing creative ID</Button>}
+                    {hasOtherCampaigns && <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={() => openPicker()}>Assign to existing creative ID</Button>}
                   </>
                 )}
               </>
             ) : oneAdvertiser ? (
               <>
                 <Button type="primary" size="small" loading={busy === 'batch'} onClick={() => void done(approveAssign(selectedApprovals))}>Approve Selected</Button>
-                {hasOtherCampaigns && <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Approve and add to existing creative ID</Button>}
+                {hasOtherCampaigns && <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={() => openPicker()}>Approve and add to existing creative ID</Button>}
                 <Button size="small" danger onClick={() => { setReason(''); setReasonCode(undefined); setRejecting(true) }}>Reject Selected</Button>
               </>
             ) : (

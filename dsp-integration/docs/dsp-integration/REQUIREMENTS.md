@@ -1448,6 +1448,16 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
     appear for an unapproved row.
   - **A mix of the two** → no action is shown, since none is valid across
     the whole selection.
+- **Row menu (ticket jPQSz9EBmt0P2geHXp6l, 23 Oct 2026).** The three-dot
+  menu on a campaign row offers every selection action for that one
+  campaign, so campaigns can be decided one by one: **Approve campaign**,
+  **Approve and add to existing creative ID** (only when the advertiser has
+  another campaign to share an ID with) and **Reject campaign** on an
+  Awaiting approval or Rejected row; **Generate creative ID** and **Assign to
+  existing creative ID** on an auto-approved row; plus Open campaign, Undo
+  rejection, Revert approval and Activate / Deactivate. An Approved row
+  never offers Approve campaign. Only that campaign changes; the other rows
+  and their ticks are left as they are.
 - **A creative ID spans one advertiser's campaigns only.** The two assign
   actions appear **only when every ticked campaign belongs to one
   advertiser**; if the selection spans advertisers they are hidden (a hint
