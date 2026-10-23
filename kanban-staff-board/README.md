@@ -11,7 +11,7 @@ Promoted from the Concept Incubator concept `vmhUoPiogxiJq1YmtJph`
 | Prototype | [`prototype/`](prototype/), live at <https://offline2online.github.io/rob_ph_demos/kanban-staff-board/prototype/>. Front-end only, mock data |
 | Tests | [`test/`](test/): Playwright end-to-end suite, one case per test-plan row, run in every profile of the viewport matrix (desktop, tablet, phone; mouse and touch; Chromium, Firefox, WebKit). `cd test && npm install && npx playwright install chromium firefox webkit && npm test` |
 | Test plan | [`docs/E2E-TEST-PLAN.md`](docs/E2E-TEST-PLAN.md) (TC-01 to TC-66); runs: [prototype, 25/25](docs/E2E-REPORT-2026-10-21.md), [console, 30/30](docs/E2E-REPORT-2026-10-21-console.md), [console and prototype across the viewport matrix](docs/E2E-REPORT-2026-10-21-console-matrix.md) |
-| CI | `.github/workflows/kanban-staff-board-tests.yml` on pull requests touching this folder, and on demand |
+| CI | `.github/workflows/kanban-staff-board-tests.yml` on pull requests touching this folder, and on demand (the backlog automation dispatches it per train commit: one run per commit, 30-minute limit) |
 | Deploy | The prototype is GitHub Pages: live on merge to `main`. The production build lives in `backlog-tracker/` and deploys with the console (`deploy-backlog-tracker.yml`) when its train merges |
 | Console tests | `backlog-tracker/test/ui/staff-kanban.test.mjs` (the same cases against the console), `kanban-mcp.test.js`, `kanban-rules.test.js` |
 

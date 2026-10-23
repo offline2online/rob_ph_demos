@@ -1805,8 +1805,11 @@ const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 
 // The test workflows a change to these paths needs run. Generated build
 // output alone (a prototype rebuild) starts nothing: its source already did.
+// The version bump alone (Deploy to Main writes it on every project's train)
+// starts nothing either: it held each DSP deploy ~16 minutes for the console
+// and Staff Kanban suites on 23 Oct 2026, testing nothing they read.
 function trainTestsFor(paths) {
-  const changed = (paths || []).filter((p) => typeof p === "string" && !isGeneratedOutput(p));
+  const changed = (paths || []).filter((p) => typeof p === "string" && !isGeneratedOutput(p) && p !== VERSION_JS);
   // A board-docs.json (any project's) is checked by the console tests: its
   // validator lives in test:train-lock, and a bad manifest must not reach main.
   const manifestChanged = changed.some((p) => p.split("/").pop() === "board-docs.json");
@@ -2251,6 +2254,11 @@ function readTrainTestGate(deployBranch) {
 // tickets sat behind a red deploy overnight). An approved culprit is only
 // ejected with a green commit before it on the train, so a check that is
 // red on main itself never sends the train's first ticket back.
+// Nor is a red ticket sent back when a later ticket's commit, which carries
+// it, has passed: the train is green again from there and ships as one PR.
+// On 23 Oct 2026 ticket ByeH6mIkaRqOJjnHu31z changed a line a guard test
+// pins, the next ticket updated the pin and passed, and the eject would have
+// reverted the first commit from under the second and stalled the train.
 //
 // Pure, for test/train-tests.test.js.
 //   order: the train's commits, oldest first
@@ -2272,6 +2280,8 @@ function pickRedCulprit(order, cards, runs, opts = {}) {
     const concl = String(r.conclusion).toLowerCase();
     if (concl === "success") { greenBefore = true; continue; }
     if (!["failure", "timed_out"].includes(concl)) return null; // cancelled etc.: no verdict on this ticket
+    const later = onTrain.slice(onTrain.indexOf(card) + 1).filter((c) => !(opts.skip && opts.skip.has(c.deployCommit)));
+    if (later.some((c) => { const lr = (runs || {})[c.deployCommit]; return lr && String(lr.status).toLowerCase() === "completed" && String(lr.conclusion).toLowerCase() === "success"; })) return null; // fixed further up the train
     if (card.status === "ready-for-testing") return card;
     return opts.deployParkedRed && greenBefore ? card : null;
   }
@@ -5257,7 +5267,15 @@ async function processDeployTrain(project) {
     const red = gate.state === "red";
     const what = gate.workflows.map((w) => `${w.label} ${w.state === "red" ? `failed${w.url ? ` (${w.url})` : ""}` : w.state === "pending" ? "is still running" : "has not run on this commit yet — started it"}`).join("; ");
     console.log(`[deploy-train] ${project.id}: holding the deploy — train tests ${gate.state} on ${gate.head.slice(0, 7)}: ${what}`);
-    if (gate.state === "pending" || gate.state === "missing") followUpReasons.push(`${project.id}: deploy waiting on the train's tests`);
+    if (gate.state === "pending" || gate.state === "missing") {
+      followUpReasons.push(`${project.id}: deploy waiting on the train's tests`);
+      // An open train PR's runs on this head are held as action_required
+      // until approved, and used to be approved only once this gate went
+      // green, so the PR's checks started from scratch after it (PR #462:
+      // 46 minutes held, then 25 more running). Approving them now runs them
+      // alongside the train's own tests.
+      if (project.trainPrNumber) approveHeldRuns(gate.head);
+    }
     let redNote = `Deploy held, nothing merged: ${what}. Fix it on ${deployBranch} (or send the ticket that broke it back with Failed testing) — the approved deploy carries on by itself once the tests pass.`;
     if (red) {
       const redWorkflows = gate.workflows.filter((w) => w.state === "red");
