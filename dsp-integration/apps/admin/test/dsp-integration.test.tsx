@@ -759,14 +759,16 @@ describe('Advertisers / Inventory', () => {
     /* Audiences were removed from the platform (ticket GknBt80ENeXkt0EEyDwr). */
     expect(within(dialog).queryByText('Audiences')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-    /* Every advertiser row, DSP or direct, has an Edit action opening the same form. */
+    /* Only a direct advertiser has Edit (ticket usIHp1uhtllLCP29teBu): its name can be changed and saved. */
+    expect(within(advertisers).getAllByRole('button', { name: /^Edit / })).toHaveLength(1)
     fireEvent.click(within(advertisers).getByRole('button', { name: 'Edit Acme Foods' }))
     const edit = await screen.findByRole('dialog')
-    expect(within(edit).queryByRole('button', { name: 'Save advertiser' })).not.toBeInTheDocument()
-    expect(within(edit).getByLabelText('Advertiser name')).toBeDisabled()
+    expect(within(edit).getByLabelText('Advertiser name')).toBeEnabled()
+    expect(within(edit).getByRole('button', { name: 'Save changes' })).toBeDisabled()
     expect(within(edit).queryByText('Audiences')).not.toBeInTheDocument()
+    fireEvent.change(within(edit).getByLabelText('Advertiser name'), { target: { value: 'Acme Foods Ltd' } })
+    expect(within(edit).getByRole('button', { name: 'Save changes' })).toBeEnabled()
     fireEvent.click(within(edit).getByRole('button', { name: 'Cancel' }))
-    expect(within(advertisers).getAllByRole('button', { name: /^Edit / }).length).toBeGreaterThan(1)
     /* Only a direct advertiser can be deleted. */
     expect(within(advertisers).getByRole('button', { name: 'Delete Acme Foods' })).toBeInTheDocument()
     expect(within(advertisers).getAllByRole('button', { name: /^Delete / })).toHaveLength(1)

@@ -879,7 +879,17 @@ migration 0063) from the **Add new Advertiser** button at the top right of the
 page, which opens a pop-up asking for the name (no inline field), and removed
 with the delete icon beside it in the Advertisers table
 (`DELETE /admin/v1/advertisers/direct/{id}`, refused while it has campaigns or
-bookings; DSP advertisers have no delete icon). It is listed with the DSP
+bookings; DSP advertisers have no delete icon). **Only a direct advertiser has
+an edit (pencil) icon, and editing renames it (23 Oct 2026, ticket
+usIHp1uhtllLCP29teBu):** the pop-up's name field is enabled and **Save changes**
+(disabled while the name is empty or unchanged) calls
+`PATCH /admin/v1/advertisers/direct/{id}` with `{ name }` (admin; same
+validation as the add: trimmed, spaces collapsed, 1–80 characters, a letter or
+digit). The advertiserId never changes, so campaigns, bookings, users and deals
+keep pointing at it and only `direct_advertisers.name` is updated. 409 when the
+new name is another advertiser's (direct or a DSP seat) or the old name is
+assigned to a slot; 404 for an unknown id or a DSP advertiser. A DSP advertiser
+is named by its DSP: no edit icon, no delete icon. It is listed with the DSP
 advertisers (`direct: true`, empty `via`) and takes the same approval and floor
 settings. Wherever a DSP name would accompany an advertiser it reads
 **"Name (Direct)"**: the Via column and the booking schedule (its advertiser

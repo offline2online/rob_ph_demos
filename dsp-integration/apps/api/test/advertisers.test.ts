@@ -52,6 +52,29 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(((await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string }[]).some((a) => a.advertiserId === 'acme-foods')).toBe(false)
   })
 
+  it('renames a direct advertiser, keeping its id; refuses a DSP advertiser, a taken name and a bad name', async () => {
+    const app = buildApp(await testContext())
+    await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })
+    await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Beta Drinks' } })
+    const patch = (id: string, name: unknown) => app.inject({ method: 'PATCH', url: `/api/admin/v1/advertisers/direct/${id}`, payload: { name } })
+    const ok = await patch('acme-foods', '  Acme   Foods Ltd ')
+    expect(ok.statusCode).toBe(200)
+    expectMatchesContract('PATCH', '/admin/v1/advertisers/direct/{advertiserId}', 200, ok.json())
+    expect(ok.json()).toEqual({ advertiserId: 'acme-foods', name: 'Acme Foods Ltd' })
+    const items = (await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string; name: string; direct: boolean }[]
+    expect(items.find((a) => a.advertiserId === 'acme-foods')).toMatchObject({ name: 'Acme Foods Ltd', direct: true })
+    expect(items.some((a) => a.name === 'Acme Foods')).toBe(false)
+    expect((await patch('acme-foods', 'Beta Drinks')).statusCode).toBe(409)
+    expect((await patch('acme-foods', 'Nestlé')).statusCode).toBe(409)
+    expect((await patch('nestle', 'Nestle Foods')).statusCode).toBe(404)
+    expect((await patch('nobody', 'X')).statusCode).toBe(404)
+    expect((await patch('acme-foods', '   ')).statusCode).toBe(400)
+    expect((await patch('acme-foods', '!!!')).statusCode).toBe(400)
+    expect((await patch('acme-foods', 'x'.repeat(81))).statusCode).toBe(400)
+    const nonAdmin = await buildApp(await testContext({ role: 'hq_marketing' })).inject({ method: 'PATCH', url: '/api/admin/v1/advertisers/direct/acme-foods', payload: { name: 'Z' } })
+    expect(nonAdmin.statusCode).toBe(403)
+  })
+
   it('treats a direct record shadowed by a DSP seat as a direct advertiser, not "Not a direct advertiser"', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
