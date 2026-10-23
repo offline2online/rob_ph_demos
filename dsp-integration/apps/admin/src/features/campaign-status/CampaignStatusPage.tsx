@@ -245,11 +245,12 @@ export function CampaignStatusPage() {
   const displayTypes = useQuery(Q.displayTypes)
   const displayTypeNames = useMemo(() => new Map((displayTypes.data ?? []).map((d) => [d.id, d.name] as const)), [displayTypes.data])
   /* Only what came in through a DSP or the Partner API. */
-  const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq'), [campaigns.data])
+  const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq' || c.campaignId === campaignFilter), [campaigns.data, campaignFilter])
   const { approvals, canApprove, busy, approveAssign, assignCreativeId, rejectMany, unreject, activate, activateMany } = useCampaignActions(nonHq.map((c) => c.campaignId))
   /* Draft never surfaces in a retailer-facing view (ticket, 22 Sep, §3):
      the retailer only ever sees a campaign once it has been submitted. */
-  const all = useMemo(() => nonHq.filter((c) => approvals[c.campaignId]?.status !== 'draft'), [nonHq, approvals])
+  /* Except the one a Booking Schedule tile opened (`?campaignId=`): the tile shows it, so it must be here (ticket ByeH6mIkaRqOJjnHu31z). */
+  const all = useMemo(() => nonHq.filter((c) => c.campaignId === campaignFilter || approvals[c.campaignId]?.status !== 'draft'), [nonHq, approvals, campaignFilter])
   /* Taken once when the page loads: the elapsed figure does not tick. */
   const [now] = useState(() => Date.now())
   const campaignRows = useMemo(() => byAdvertiserDeal(triageOrder(all.filter((c) => {

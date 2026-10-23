@@ -38,6 +38,7 @@ export function useCampaignActions(campaignIds: string[]) {
       await fn()
       await qc.invalidateQueries({ queryKey: ['poc-campaigns'] })
       await qc.invalidateQueries({ queryKey: ['approval-summary'] })
+      await qc.invalidateQueries({ queryKey: ['booking-schedule'] })
       await reload()
     } catch (e) {
       message.error(e instanceof ApiRequestError ? e.message : 'Something went wrong.')
@@ -60,6 +61,7 @@ export function useCampaignActions(campaignIds: string[]) {
       await qc.invalidateQueries({ queryKey: ['poc-campaigns'] })
       await qc.invalidateQueries({ queryKey: ['creative-ids'] })
       await qc.invalidateQueries({ queryKey: ['approval-summary'] })
+      await qc.invalidateQueries({ queryKey: ['booking-schedule'] })
       await reload()
       setBusy(null)
     }

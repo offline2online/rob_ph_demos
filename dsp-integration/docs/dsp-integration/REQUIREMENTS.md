@@ -2741,6 +2741,14 @@ stores its criteria didn't match unsold to it. That model is retired:
   (orange while any await approval, green when all are approved; hidden when
   none). The hover card is a two-column list: Booking value, CPM, Reserved
   CPM and Assumed views, labels left, values right-aligned.
+- **A booking tile opens its campaign in Campaign Approval** (ticket
+  ByeH6mIkaRqOJjnHu31z, 23 Oct 2026). Clicking a tile (or Enter on it)
+  switches the Advertiser Bookings page to the Campaign Approval tab filtered
+  to the tile's `campaignId`: the same record the tile's colour came from,
+  approved or not. That campaign is shown even when the list would normally
+  hide it (an HQ campaign, or a Draft). A booking with no campaign is not a
+  link. Approving, rejecting or undoing in Campaign Approval refreshes the
+  schedule, so the tile colour matches when the user goes back.
 - Open questions 50 and 51 (below) — the target algorithm for clearing
   overlapping localised bids and billing a part-sold position — are
   **superseded, not answered**: there is no longer a part-sold position for
