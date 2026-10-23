@@ -530,7 +530,8 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 #projects-root { display: flex; flex-direction: column; gap: 20px; }
 .project { border: 1px solid var(--border); border-radius: 10px; padding: 16px 16px 18px; background: var(--bg); }
 .project-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.project-collapse-btn { border: none; background: transparent; cursor: pointer; font-size: 16px; color: var(--text-muted); padding: 2px 6px; flex-shrink: 0; }
+/* Large, left of the name: a 44px target whose chevron is big enough to read as expanded vs collapsed at a glance. */
+.project-collapse-btn { border: none; background: var(--surface-2); border-radius: 8px; cursor: pointer; font-size: 26px; line-height: 1; color: var(--text); width: 44px; height: 44px; padding: 0; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
 .project-collapse-btn:hover { color: var(--text); }
 .project-title-wrap { flex: 1 1 280px; min-width: 240px; }
 /* One tidy row: star, name (+count), pencil, badge. A long name wraps inside
@@ -550,7 +551,8 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .project-rename-btn { border: none; background: transparent; cursor: pointer; font-size: 13px; color: var(--text-muted); padding: 2px 6px; }
 .project-rename-btn:hover { color: var(--text); }
-.project-star-btn { border: none; background: transparent; cursor: pointer; font-size: 20px; line-height: 1; color: var(--text-muted); padding: 2px 6px 2px 0; }
+/* Right-hand end of the title row, away from the collapse control, so a tap meant to collapse never favourites. */
+.project-star-btn { border: none; background: transparent; cursor: pointer; font-size: 20px; line-height: 1; color: var(--text-muted); padding: 2px 6px; margin-left: auto; }
 .project-star-btn:hover { color: #f5a623; }
 .project-star-btn.starred { color: #f5a623; }
 .project-name-input {
@@ -935,6 +937,11 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   flex: 1; min-width: 0; font-size: 13px; font-weight: 700;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.mobile-action-bar-collapse {
+  border: none; background: var(--surface-2); border-radius: 8px; cursor: pointer;
+  font-size: 26px; line-height: 1; color: var(--text); width: 44px; height: 44px;
+  padding: 0; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+}
 .mobile-action-bar-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 /* ── Mobile ──────────────────────────────────────────────────────────────
@@ -994,7 +1001,8 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 
   .project { padding: 14px 12px 16px; }
   .project-header { flex-wrap: wrap; }
-  .project-title-wrap { flex-basis: 100%; }
+  /* Beside the 44px collapse control, not under it; the actions row below still takes a full line. */
+  .project-title-wrap { flex: 1 1 0; min-width: 0; }
   /* Desktop right-aligns the CTAs beside the title; on a phone they are full-width rows starting at the left edge,
      so Ready for Dev / Approved / Deploy to Main line up with + New backlog item below them. */
   .project-header-actions { flex-basis: 100%; flex-wrap: wrap; justify-content: flex-start; margin-left: 0; }

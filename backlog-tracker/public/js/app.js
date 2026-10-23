@@ -22,6 +22,7 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { newBoardId, boardUrl } from "./whiteboard-core.js";
 import { APP_VERSION } from "./version.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
@@ -2254,15 +2255,16 @@ function projectSectionHTML(project) {
 
   const nameRow = editingProjectId === project.id
     ? `<div class="project-name-row"><input type="text" class="project-name-input" id="pname-input-${escapeHTML(project.id)}" data-project-id="${escapeHTML(project.id)}" value="${escapeHTML(project.name)}" maxlength="80"></div>`
-    : `<div class="project-name-row"><button type="button" class="project-star-btn${isProjectStarred(project.id) ? " starred" : ""}" data-project-id="${escapeHTML(project.id)}" aria-pressed="${isProjectStarred(project.id)}" title="${isProjectStarred(project.id) ? "Unstar project (unpin from top)" : "Star project (pin to top)"}">${isProjectStarred(project.id) ? "&#9733;" : "&#9734;"}</button><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
+    : `<div class="project-name-row"><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
          <button type="button" class="project-rename-btn" data-project-id="${escapeHTML(project.id)}" title="Rename project">&#9998;</button>
          ${projectReleaseBadgeHTML(project)}
+         <button type="button" class="project-star-btn${isProjectStarred(project.id) ? " starred" : ""}" data-project-id="${escapeHTML(project.id)}" aria-pressed="${isProjectStarred(project.id)}" title="${isProjectStarred(project.id) ? "Unstar project (unpin from top)" : "Star project (pin to top)"}">${isProjectStarred(project.id) ? "&#9733;" : "&#9734;"}</button>
        </div>`;
 
   return `
     <section class="project${collapsed ? " collapsed" : ""}" data-project-id="${escapeHTML(project.id)}">
       <div class="project-header">
-        <button type="button" class="project-collapse-btn" data-project-id="${escapeHTML(project.id)}" title="${collapsed ? "Expand" : "Collapse"}">${collapsed ? "&#9656;" : "&#9662;"}</button>
+        <button type="button" class="project-collapse-btn" data-project-id="${escapeHTML(project.id)}" title="${collapsed ? "Expand" : "Collapse"}" aria-expanded="${!collapsed}" aria-label="${collapsed ? "Expand project" : "Collapse project"}">${collapsed ? "&#9656;" : "&#9662;"}</button>
         <div class="project-title-wrap">
           ${nameRow}
         </div>
@@ -2620,7 +2622,7 @@ function syncMobileActionBar() {
   // every scroll frame, and re-parsing identical HTML would throw away the
   // pressed state of a button mid-tap.
   const signature = pid + "|" + (actions ? actions.innerHTML.length : 0) +
-    "|" + (actions ? actions.textContent.trim() : "");
+    "|" + (actions ? actions.textContent.trim() : "") + "|" + (section.classList.contains("collapsed") ? "c" : "o");
   if (signature !== mobileBarProjectId) {
     mobileBarProjectId = signature;
     const name = section.querySelector(".project-name");
@@ -2628,7 +2630,9 @@ function syncMobileActionBar() {
       ? [...actions.children].filter((el) => !el.classList.contains("project-options"))
           .map((el) => el.outerHTML).join("")
       : "";
+    const isCollapsed = section.classList.contains("collapsed");
     mobileActionBar.innerHTML =
+      `<button type="button" class="mobile-action-bar-collapse" data-project-id="${escapeHTML(pid)}" aria-expanded="${!isCollapsed}" aria-label="${isCollapsed ? "Expand project" : "Collapse project"}">${isCollapsed ? "&#9656;" : "&#9662;"}</button>` +
       `<span class="mobile-action-bar-name">${escapeHTML(name ? name.childNodes[0].textContent.trim() : "")}</span>` +
       `<div class="mobile-action-bar-actions">${buttons}</div>`;
   }
@@ -2645,6 +2649,25 @@ const MOBILE_BAR_ACTIONS = ["project-notify-btn", "deploy-to-feature-btn", "depl
 mobileActionBar && mobileActionBar.addEventListener("click", (e) => {
   const btn = e.target.closest("button, a");
   if (!btn) return;
+  // The pinned bar's own collapse/expand control: toggles the project the
+  // bar is showing. Collapsing from deep inside a long project would leave
+  // the page scrolled past a section that just got short, so bring the
+  // project's header back to the top of the screen afterwards.
+  if (btn.classList.contains("mobile-action-bar-collapse") && btn.dataset.projectId) {
+    const pid = btn.dataset.projectId;
+    const sel = `.project[data-project-id="${CSS.escape(pid)}"]`;
+    const wasCollapsed = isProjectCollapsed(pid);
+    toggleProjectCollapsed(pid);
+    if (!wasCollapsed) {
+      requestAnimationFrame(() => {
+        const sec = document.querySelector(sel);
+        if (sec) window.scrollTo({ top: Math.max(0, window.scrollY + sec.getBoundingClientRect().top - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sticky-topbar-h")) || 0) - 8) });
+        queueMobileBarSync();
+      });
+    }
+    e.preventDefault();
+    return;
+  }
   const action = MOBILE_BAR_ACTIONS.find((c) => btn.classList.contains(c));
   const pid = btn.dataset.projectId;
   if (!action || !pid) return;
@@ -10343,6 +10366,33 @@ document.getElementById("faq-articles-btn").addEventListener("click", () => { cl
 document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
 document.getElementById("staff-kanban-btn").addEventListener("click", () => { closeNavDrawer(); openStaffKanbanPage(""); });
 document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
+
+// Whiteboard: each click starts a new board with its own 20-character id and
+// opens it full screen with the share panel showing (public/whiteboard.html).
+// The board page reads the board from the server, so this waits for the write
+// to land, but not forever: a write still pending after WHITEBOARD_CREATE_MS
+// says so instead of leaving the tap looking dead.
+const WHITEBOARD_CREATE_MS = 15000;
+document.getElementById("whiteboard-btn").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    const id = newBoardId();
+    let timer;
+    const tooSlow = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("whiteboard create timed out")), WHITEBOARD_CREATE_MS); });
+    await Promise.race([setDoc(doc(db, "whiteboards", id), { shared: true, createdAt: serverTimestamp() }), tooSlow]).finally(() => clearTimeout(timer));
+    closeNavDrawer();
+    location.href = boardUrl(id, location.href) + "&new=1";
+  } catch (err) {
+    console.warn("whiteboard create:", err);
+    alert("Couldn't start a whiteboard. Check your connection and try again.");
+    btn.disabled = false;
+  }
+});
+// Back from a board: iPad browsers restore the console from the back-forward
+// cache exactly as it was left, the button still disabled mid-tap.
+window.addEventListener("pageshow", (e) => { if (e.persisted) document.getElementById("whiteboard-btn").disabled = false; });
 
 // Command-K: one flat list of everything a person might want to jump to.
 function navEntries() {

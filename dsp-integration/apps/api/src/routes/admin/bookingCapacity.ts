@@ -14,6 +14,7 @@ import { validationFailed } from '../../http/errors'
 import { allPositions, isRealtime, maxPlayLengthSecFor, windowMs, windowStartOf } from '../../domain/positions'
 import { operatingHours, playsForGroups, screensOf, segmentsTargeted, type ScreenGroup } from '../../domain/dailyCapacity'
 import { rotationSizeOf } from '../../domain/slots'
+import { plannedDirectBookings } from '../../exchange/directDeal'
 import { TAKEN } from '../../repos/ReservationRepo'
 import { advertiserSlug, directLabel } from '@ph-dsp/types'
 
@@ -28,11 +29,17 @@ export async function bookingCapacity(ctx: Context, days: Date[]): Promise<Booki
   const targetedSegments = [...new Set((await ctx.campaigns.listCampaigns()).flatMap((c) => segmentsTargeted(c.targeting)))].sort()
   const first = days[0].getTime()
   const last = days[days.length - 1].getTime() + DAY
-  const taken = (await ctx.reservations.byStatus(TAKEN, new Date(first - 92 * DAY).toISOString(), new Date(last).toISOString())).filter((r) => !r.testMode && r.type === 'reserve')
+  const live = (await ctx.reservations.byStatus(TAKEN, new Date(first - 92 * DAY).toISOString(), new Date(last).toISOString())).filter((r) => !r.testMode)
+  const estate = await allPositions(ctx)
+  const lenOf = new Map<string, number>()
+  for (const p of estate) lenOf.set(p.positionId, await windowMs(ctx, p))
+  /* A finalised Direct advertiser deal holds every window of its flight, booked by the exchange only a window ahead: its plays are pre-booked too (ticket TWJmiwQpPu9Y4tAUjncC). */
+  const planned = await plannedDirectBookings(ctx, estate, (p) => lenOf.get(p.positionId) as number, first, last, new Set(live.map((r) => `${r.positionId}|${r.windowStart}`)))
+  const taken = [...live, ...planned].filter((r) => r.type === 'reserve')
 
   const positions: BookingCapacity['positions'] = []
-  for (const p of await allPositions(ctx)) {
-    const len = await windowMs(ctx, p)
+  for (const p of estate) {
+    const len = lenOf.get(p.positionId) as number
     const loopSec = maxPlayLengthSecFor(company.maxPlayLengthSec, p) * Math.max(1, rotationSizeOf(p.displayType, p.slot))
     /* Displays grouped by store, then by operating hours (zone-based: external zones 24h, internal follow the store), whole estate and per segment. */
     const perStore = new Map<string, number>()

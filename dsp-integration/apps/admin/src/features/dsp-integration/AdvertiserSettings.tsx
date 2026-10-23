@@ -121,7 +121,7 @@ export function AdvertiserSettings() {
 
       {/* Reach setting (9 Oct 2026, moved from Exchange settings): its own line, not part of Play configuration. */}
       <SectionLabel><WithTip tip={GLOBAL_DEAL_TIP}>Reach</WithTip></SectionLabel>
-      <div className="mb-3.5 flex items-center justify-between border-b py-3" style={{ borderColor: T.divider }}>
+      <div className="mb-3.5 flex items-center gap-6 border-b py-3" style={{ borderColor: T.divider }}>
         <label htmlFor="globalDealEnabled" className="flex items-center gap-[5px]" style={{ fontSize: 14, color: T.text }}>
           Enable global deal
           <InfoTip text={`Deal ID ${GLOBAL_DEAL_ID}: give this to a DSP that only transacts on deals.`} />

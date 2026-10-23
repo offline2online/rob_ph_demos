@@ -14,7 +14,8 @@ import { isUniqueViolation } from '../db/db'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { isActiveAt } from '../billing/term'
 import { equivalentCpmOf, termDaysOf, termSlotsOf } from '../domain/termPrice'
-import type { PositionRef } from '../domain/positions'
+import { isRealtime, nextWindow, windowStartOf, type PositionRef } from '../domain/positions'
+import type { ReservationRecord } from '../repos/ReservationRepo'
 import type { PositionOutcome } from './auction'
 import { checkCampaign, checkTargeting } from './enforcement'
 import { handOff } from './handoff'
@@ -30,17 +31,81 @@ export async function directDealAt(ctx: Context, p: PositionRef, start: string):
 }
 
 /* The deal's price per thousand views: its fixed CPM, or the equivalent CPM of its total for the term over the slots it is on. */
-async function rateOf(ctx: Context, list: BuyersList): Promise<number> {
+export async function rateOf(ctx: Context, list: BuyersList): Promise<number> {
   if (list.floorCpm != null) return list.floorCpm
   return list.termTotal != null ? equivalentCpmOf(list.termTotal, await termSlotsOf(ctx, list.id), termDaysOf(list.activeFrom, list.activeTo)) ?? 0 : 0
+}
+
+/* The advertiser's campaigns that may play on this position under the deal, in booking order. */
+async function directDealCampaigns(ctx: Context, p: PositionRef, list: BuyersList, advertiserId: string) {
+  const mine = (await ctx.campaigns.listCampaigns({ advertiserId })).filter((c) => (!c.dealId || c.dealId === list.dealId) && (!c.displayTypeId || c.displayTypeId === p.displayType.id))
+  return [...mine.filter((c) => c.dealId === list.dealId), ...mine.filter((c) => !c.dealId)]
+}
+
+/* The campaign a planned (not yet written) Direct deal booking shows: the one the exchange will book, i.e. the first in booking order
+   that is approved, activated and fits the slot; failing that the first approved one (so the booking schedule tile agrees with the
+   Campaign Approval list, ticket c5FA0T54eSU4PAroz8w5, 22 Oct 2026), failing that the first eligible. */
+async function plannedCampaign(ctx: Context, p: PositionRef, list: BuyersList, advertiserId: string) {
+  const ordered = await directDealCampaigns(ctx, p, list, advertiserId)
+  let ready, approved
+  for (const c of ordered) {
+    if (!approved && (await ctx.approvals.statusOf(c.campaignId)) === 'approved') approved = c
+    if (!ready && !(await checkCampaign(ctx, c.campaignId)) && !checkTargeting(p, c.pricingType, true)) { ready = c; break }
+  }
+  const c = ready ?? approved ?? ordered[0]
+  return c ? { campaignId: c.campaignId, pricingType: c.pricingType ?? null } : null
+}
+
+/* The bookings a finalised Direct advertiser deal holds on its slots before the exchange has written them (ticket TWJmiwQpPu9Y4tAUjncC,
+   22 Oct 2026). The exchange books a deal's window one window ahead, but the deal reserves every window of its flight from the moment it is
+   finalised, so the booking schedule, its revenue tables and plays per day read each unbooked window as the deal's booking: the advertiser,
+   the campaign that will play (the first eligible, approved or not) and the deal's rate. Nothing is stored; `taken` keys (`position|windowStart`)
+   are windows that already have a live row, which wins. Real-time and sales-locked positions are never booked ahead. */
+export async function plannedDirectBookings(ctx: Context, positions: PositionRef[], lenOf: (p: PositionRef) => number, fromMs: number, toMs: number, taken: Set<string>): Promise<ReservationRecord[]> {
+  const out: ReservationRecord[] = []
+  const lists = new Map<string, BuyersList | null>()
+  const rates = new Map<string, number>()
+  const campaigns = new Map<string, Promise<{ campaignId: string; pricingType: string | null } | null>>()
+  for (const p of positions) {
+    if (isRealtime(p) || p.def.salesLocked) continue
+    const ids = assignedOf(p.def).buyersListIds
+    if (!ids.length) continue
+    const deals: BuyersList[] = []
+    for (const id of ids) {
+      if (!lists.has(id)) lists.set(id, (await ctx.buyersLists.get(id)) ?? null)
+      const l = lists.get(id)
+      if (l && l.dealType === 'direct' && l.status === 'shared' && l.invitedBuyers[0]?.seatId) deals.push(l)
+    }
+    if (!deals.length) continue
+    if (!(await ctx.displays.summaryByDisplayType(p.displayType.id)).displays) continue
+    const len = lenOf(p)
+    const firstSellable = (await nextWindow(ctx, len)).getTime()
+    for (let t = Math.max(windowStartOf(new Date(fromMs), len).getTime(), firstSellable); t < toMs; t += len) {
+      const start = new Date(t).toISOString()
+      if (taken.has(`${p.positionId}|${start}`)) continue
+      const list = deals.find((l) => isActiveAt(l, start))
+      if (!list) continue
+      const advertiserId = list.invitedBuyers[0].seatId as string
+      if (!rates.has(list.id)) rates.set(list.id, await rateOf(ctx, list))
+      const key = `${list.id}|${p.positionId}`
+      if (!campaigns.has(key)) campaigns.set(key, plannedCampaign(ctx, p, list, advertiserId))
+      const campaign = await campaigns.get(key) ?? null
+      const rate = rates.get(list.id) as number
+      out.push({
+        id: `deal_${list.id}_${p.positionId}_${t}`, partnerId: DIRECT_PARTNER_ID, advertiserId, campaignId: campaign?.campaignId ?? null, positionId: p.positionId, windowStart: start,
+        type: 'reserve', channel: 'api', bidCpm: rate, currency: TRANSACTING_CURRENCY, status: 'reserved', clearingCpm: rate,
+        reason: `Reserved: ${list.name} (${list.dealId}), a Direct advertiser deal.`, testMode: false, pricingType: campaign?.pricingType ?? null, handedOffAt: null, dealType: 'guaranteed',
+      })
+    }
+  }
+  return out
 }
 
 export async function bookDirectDealWindow(ctx: Context, p: PositionRef, start: string, list: BuyersList, out: PositionOutcome): Promise<PositionOutcome> {
   await settlePending(ctx, p.positionId, start, `The slot is reserved for ${list.name}, a Direct advertiser deal; no other bid takes this window.`)
   const advertiserId = list.invitedBuyers[0]?.seatId
   if (!advertiserId) return { ...out, skipped: `Reserved for ${list.name}: the deal has no advertiser, so nothing is booked.` }
-  const mine = (await ctx.campaigns.listCampaigns({ advertiserId })).filter((c) => (!c.dealId || c.dealId === list.dealId) && (!c.displayTypeId || c.displayTypeId === p.displayType.id))
-  const ordered = [...mine.filter((c) => c.dealId === list.dealId), ...mine.filter((c) => !c.dealId)]
+  const ordered = await directDealCampaigns(ctx, p, list, advertiserId)
   const rate = await rateOf(ctx, list)
   /* Why the last eligible campaign could not take the window, so the outcome names the real cause (E2E 21 Oct 2026: a failed hand-off read as "not approved"). */
   let notHanded: string | null = null

@@ -1164,7 +1164,11 @@ export interface paths {
         delete: operations["removeDirectAdvertiser"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename a direct advertiser (its advertiserId does not change)
+         * @description Campaigns, bookings, users and deals key on the advertiserId, so only the name changes. A DSP advertiser is named by its DSP and answers 404. Refused 409 when the name is already another advertiser's, or while the old name is assigned to a slot.
+         */
+        patch: operations["renameDirectAdvertiser"];
         trace?: never;
     };
     "/admin/v1/users": {
@@ -5988,6 +5992,42 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    renameDirectAdvertiser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                advertiserId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Renamed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        advertiserId: string;
+                        name: string;
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

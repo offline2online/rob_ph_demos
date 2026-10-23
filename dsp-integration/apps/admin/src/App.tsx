@@ -14,6 +14,8 @@ import { useFeatures } from './api/features'
 import { Q } from './api/queries'
 import { type Flags, envFlags } from './flags'
 import { AdvertisersPage } from './features/advertisers/AdvertisersPage'
+import { ArchivedDealsPage } from './features/advertisers/ArchivedDealsPage'
+import { ARCHIVED_DEALS_PATH } from './features/advertisers/archivedPath'
 import { CampaignDetail } from './features/campaign-status/CampaignDetail'
 import { DisplayTypesPage } from './features/display-types/DisplayTypesPage'
 import { PlaylistManagementPage } from './features/playlist-management/PlaylistManagementPage'
@@ -112,6 +114,8 @@ function featureRoutes(flags: Flags): RouteObject[] {
           handle: { title: 'Advertisers / Inventory', tip: 'Every advertiser using the platform, across all DSPs, and the inventory they can buy: every advertiser-owned slot across the estate.' } satisfies RouteHandle,
           element: <AdvertisersPage flags={flags} />,
         },
+        /* Archived deals: a full-screen page of its own (ticket cy45L5xGDqKwzt4diBBa), reached from View Archived Deals; no section nav beside it. */
+        { path: ARCHIVED_DEALS_PATH.slice(1), handle: { title: 'Archived deals', hideNav: true } satisfies RouteHandle, element: <ArchivedDealsPage /> },
         /* Its own page, opened in a new tab from Available Inventory or an advertiser
            (Rob, 20 Sep) — just the schedule, so no Display Types / DSP Integration
            nav beside it (Rob, 21 Sep). Given a second tab hosting the full Campaign
