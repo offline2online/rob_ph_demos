@@ -241,37 +241,39 @@ const RISK_TONE = {
   warning: { colour: '#d46b08', bg: '#fff7e6', label: 'Default not approved yet; the flight is more than 3 days away' },
 }
 
-/* The hover card: a two-column list, labels left and values right-aligned (same ticket). */
-function TileCard({ booking, money, tone, onOpen }: { booking: Booking; money: (n: number) => string; tone?: (typeof RISK_TONE)[keyof typeof RISK_TONE]; onOpen?: () => void }) {
-  const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
+/* The hover card (ticket 53EvxhdKrShqDt1OIFMq, 23 Oct 2026): fixed, data-driven lines only, in this order: Default, Localised,
+   Personalised, Booking value. Default is Approved / Awaiting approval / No creative (an unapproved tile at risk, red or orange,
+   adds the booked window's start date); Localised and Personalised read "X of Y approved" and are hidden when nothing was submitted.
+   An advertiser with no campaign behind the slot reads "No campaigns submitted by this advertiser yet" and shows no counters. */
+function TileCard({ booking, money, start, onViewAll }: { booking: Booking; money: (n: number) => string; start?: string; onViewAll?: () => void }) {
   const a = booking.approval
-  const rows: [string, string][] = [
-    ['Booking value', money(booking.bookedRevenue)],
-    ['CPM', booking.type === 'reserve' ? '—' : booking.cpm.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })],
-    ['Reserved CPM', booking.type === 'reserve' ? booking.cpm.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'],
-    ['Assumed views', booking.assumedViews.toLocaleString('en-GB')],
-  ]
+  const noCampaigns = !booking.campaignId
+  let defaultLine: string | null = null
+  if (noCampaigns) defaultLine = 'No campaigns submitted by this advertiser yet'
+  else if (!a) defaultLine = 'No creative'
+  else if (a.defaultApproved) defaultLine = 'Approved'
+  else {
+    defaultLine = 'Awaiting approval'
+    if (start) defaultLine += ` · starts ${fmt(new Date(start), { day: 'numeric', month: 'short', year: 'numeric' })}`
+  }
+  const rows: [string, string][] = []
+  if (defaultLine) rows.push(['Default', defaultLine])
+  if (a && !noCampaigns) {
+    for (const k of ['localised', 'personalised'] as const) {
+      if (a[k].submitted > 0) rows.push([k === 'localised' ? 'Localised' : 'Personalised', `${a[k].approved} of ${a[k].submitted} approved`])
+    }
+  }
+  rows.push(['Booking value', money(booking.bookedRevenue)])
   return (
     <div style={{ minWidth: 220, fontSize: 12 }}>
-      <div style={{ fontWeight: 600 }}>{booking.advertiserName}</div>
-      <div style={{ opacity: 0.75, marginBottom: 6 }}>
-        {booking.advertiserName.endsWith('(Direct)') ? '' : `via ${booking.partnerName} · `}{booking.type === 'reserve' ? 'Reserved' : 'Won at auction'}
-      </div>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{booking.advertiserName}</div>
       {rows.map(([label, value]) => (
         <div key={label} className="flex justify-between gap-4" style={{ lineHeight: '20px' }}>
           <span style={{ opacity: 0.75 }}>{label}</span>
           <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{value}</span>
         </div>
       ))}
-      {tone && a && <div style={{ marginTop: 6 }}>{booking.campaignId ? tone.label : 'No campaign fits this slot yet, so nothing approved can play. Click to see this advertiser’s campaigns.'}</div>}
-      {a && (['localised', 'personalised'] as const).filter((k) => a[k].submitted > 0).map((k) => (
-        <div key={k} className="flex justify-between gap-4" style={{ lineHeight: '20px' }}>
-          <span style={{ opacity: 0.75 }}>{k === 'localised' ? 'Localised approved' : 'Personalised approved'}</span>
-          <span style={{ textAlign: 'right' }}>{a[k].approved}/{a[k].submitted}</span>
-        </div>
-      ))}
-      <div style={{ marginTop: 6, opacity: 0.75 }}>{present.map((k) => layerLine(k, booking)).join(' · ')}</div>
-      {onOpen && <Button size="small" type="link" style={{ padding: 0, marginTop: 6 }} onClick={onOpen}>Open campaign in Campaign Approval</Button>}
+      {onViewAll && <Button size="small" type="link" style={{ padding: 0, marginTop: 6 }} onClick={onViewAll}>View all campaigns from this advertiser</Button>}
     </div>
   )
 }
@@ -280,7 +282,7 @@ function TileCard({ booking, money, tone, onOpen }: { booking: Booking; money: (
    colour was worked out from, approved or not, so the two never disagree. A Direct deal window whose advertiser has no campaign
    that fits the slot has no campaign behind it and reads not approved; it opens Campaign Approval on that advertiser instead,
    which says it has nothing submitted (23 Oct 2026: those red tiles did nothing when clicked). */
-function BookingTile({ booking, money, slot, dimmed }: { booking: Booking; money: (n: number) => string; slot?: string; dimmed?: boolean }) {
+function BookingTile({ booking, money, slot, dimmed, start }: { booking: Booking; money: (n: number) => string; slot?: string; dimmed?: boolean; start?: string }) {
   const navigate = useNavigate()
   const base = `${BOOKING_SCHEDULE_PATH}?tab=${CAMPAIGN_APPROVAL_TAB}`
   const href = booking.campaignId ? `${base}&campaignId=${encodeURIComponent(booking.campaignId)}`
@@ -291,20 +293,22 @@ function BookingTile({ booking, money, slot, dimmed }: { booking: Booking; money
      name opens Campaign Approval filtered to that advertiser and nothing more (the filter can be cleared there); tapping anywhere else
      opens the same details card the hover shows, which carries a link to the campaign. A mouse keeps the one-click tile. */
   const touch = isTouch()
-  const byAdvertiser = touch && booking.advertiserId ? () => navigate(`${base}&advertiserId=${encodeURIComponent(booking.advertiserId!)}`) : undefined
+  /* Ticket 53EvxhdKrShqDt1OIFMq (23 Oct 2026): the advertiser's name does this on a mouse as well, and so does the hover card's
+     "View all campaigns from this advertiser" link. */
+  const byAdvertiser = booking.advertiserId ? () => navigate(`${base}&advertiserId=${encodeURIComponent(booking.advertiserId!)}&advertiserName=${encodeURIComponent(booking.advertiserName)}${booking.campaignId ? '' : `&slot=${encodeURIComponent(slot ?? '')}`}`) : undefined
   const tileOpen = touch ? undefined : open
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
   const tone = booking.approval ? RISK_TONE[booking.approval.defaultRisk] : undefined
   /* Another advertiser's booking while the schedule is filtered to one: still named, greyed out. */
   const colour = dimmed ? T.muted : tone?.colour ?? BOOKED.colour
   return (
-    <Tip title={<TileCard booking={booking} money={money} tone={tone} onOpen={touch ? open : undefined} />}>
+    <Tip title={<TileCard booking={booking} money={money} start={tone && booking.approval?.defaultRisk !== 'secured' ? start : undefined} onViewAll={byAdvertiser} />}>
       <div className={`flex w-full min-w-0 flex-col gap-0.5 rounded px-1 ${touch ? 'py-1.5' : 'py-0.5'}`} style={{ background: dimmed ? T.surfaceAlt : tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}`, opacity: dimmed ? 0.7 : undefined, cursor: tileOpen ? 'pointer' : undefined, minHeight: touch ? 64 : undefined }}
         {...(tileOpen ? { role: 'link', tabIndex: 0, 'aria-label': `Open ${booking.advertiserName} in Campaign Approval`, onClick: tileOpen, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tileOpen() } } } : {})}>
         <div className="flex items-center gap-1 w-full min-w-0" style={touch ? { minHeight: 32 } : undefined}
           {...(byAdvertiser ? { role: 'link', tabIndex: 0, 'aria-label': `Show ${booking.advertiserName} in Campaign Approval`, onClick: (e: React.MouseEvent) => { e.stopPropagation(); byAdvertiser() } } : {})}>
           <Icon name={booking.type === 'reserve' ? 'bookmark' : 'gavel'} size={touch ? 14 : 12} />
-          <span className="truncate" style={{ fontSize: touch ? 13 : 11, fontWeight: 600, color: colour, textDecoration: byAdvertiser ? 'underline' : undefined }}>{booking.advertiserName}</span>
+          <span className="truncate" style={{ fontSize: touch ? 13 : 11, fontWeight: 600, color: colour, textDecoration: byAdvertiser ? 'underline' : undefined, cursor: byAdvertiser ? 'pointer' : undefined }}>{booking.advertiserName}</span>
         </div>
         {present.map((k) => <LayerRow key={k} layerKey={k} booking={booking} />)}
       </div>
@@ -322,7 +326,7 @@ function DailyCell({ cell, money, slot, advertiserId }: { cell: Cell; money: (n:
   /* Inside a live Direct advertiser deal's flight: held for its advertiser, not on sale to anyone else. */
   if (cell.status === 'reserved') return <span style={{ fontSize: 11, color: T.muted }}>Reserved · Direct</span>
   if (!cell.booking) return <span style={{ fontSize: 11, color: T.success }}>Available</span>
-  return <BookingTile booking={cell.booking} money={money} slot={slot} dimmed={!!advertiserId && cell.booking.advertiserId !== advertiserId} />
+  return <BookingTile booking={cell.booking} money={money} slot={slot} start={cell.start} dimmed={!!advertiserId && cell.booking.advertiserId !== advertiserId} />
 }
 
 /* A week or a month: how many windows were booked at all, and — of those —

@@ -477,6 +477,28 @@ describe('Campaign Status stand-in', () => {
     expect(screen.queryByText(/has not yet provided creative/)).not.toBeInTheDocument()
   }, slow(45000))
 
+  /* Ticket 53EvxhdKrShqDt1OIFMq: the advertiser's name on a tile opens Campaign Approval filtered to that advertiser, on a mouse too. */
+  it('opens Campaign Approval filtered to the advertiser from the name on a tile', async () => {
+    const start = new Date().toISOString()
+    const booking = {
+      reservationId: 'r_z', campaignId: 'c_zinger', advertiserId: 'zinger', partnerId: 'direct', pricingType: 'default', type: 'reserve', advertiserName: 'Zinger Direct', partnerName: 'Direct', cpm: 5, assumedViews: 1000, bookedRevenue: 5, billedRevenue: null,
+      layers: { default: true, localised: false, personalised: false }, personalisedTriggers: null,
+      approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
+    }
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0 },
+      positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
+        windows: [{ start, status: 'booked', booking }] }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule })))
+    const router = renderAt('/booking-schedule')
+    fireEvent.click(await screen.findByRole('link', { name: /Show Zinger Direct in Campaign Approval/ }, { timeout: 10000 }))
+    expect(await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })).toBeInTheDocument()
+    const q = new URLSearchParams(router.state.location.search)
+    expect(q.get('advertiserId')).toBe('zinger')
+    expect(q.get('campaignId')).toBeNull()
+  }, slow(45000))
+
   /* The Status column's own funnel is the only status filter (ticket dinPPBl9Rk95UbrXoRbt);
      it stays on until cleared from that funnel. */
   it('filters by status from the Status column funnel, until the filter is cleared', async () => {

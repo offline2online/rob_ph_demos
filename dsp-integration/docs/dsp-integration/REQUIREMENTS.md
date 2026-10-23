@@ -2751,8 +2751,15 @@ stores its criteria didn't match unsold to it. That model is retired:
   advertiser's campaigns booked on that position in the range shown, split by
   each campaign's own type, using each campaign's own approval status
   (orange while any await approval, green when all are approved; hidden when
-  none). The hover card is a two-column list: Booking value, CPM, Reserved
-  CPM and Assumed views, labels left, values right-aligned.
+  none). **The hover card is structured and shows only fixed, data-driven
+  lines** (ticket 53EvxhdKrShqDt1OIFMq, 23 Oct 2026), labels left and values
+  right-aligned, in this order: *Default* (Approved / Awaiting approval / No
+  creative; an unapproved tile appends the booked window's start date),
+  *Localised* and *Personalised* ("X of Y approved", hidden when none were
+  submitted) and *Booking value*. There is no CPM, Reserved CPM, Assumed views
+  or explanatory sentence. When the advertiser has no campaign behind the slot
+  the Default line reads "No campaigns submitted by this advertiser yet" and
+  the counters are hidden.
 - **A booking tile opens its campaign in Campaign Approval** (ticket
   ByeH6mIkaRqOJjnHu31z, 23 Oct 2026). Clicking a tile (or Enter on it)
   switches the Advertiser Bookings page to the Campaign Approval tab filtered
@@ -2770,10 +2777,12 @@ stores its criteria didn't match unsold to it. That model is retired:
   the advertiser's name opens Campaign Approval filtered to that advertiser
   only (cleared from the Advertiser column filter, with the same one-line
   notice while the advertiser has no creative); tapping anywhere else opens
-  the hover details card, which carries an "Open campaign in Campaign
-  Approval" link. A mouse keeps the one-click tile.
-  Its hover card says no campaign fits the slot yet. Only a booking with no
-  advertiser either is not a link.
+  the hover details card. A mouse keeps the one-click tile.
+  **The hover card's link and the advertiser's name** (ticket
+  53EvxhdKrShqDt1OIFMq): "View all campaigns from this advertiser" in the card,
+  and clicking or tapping the advertiser's name on the tile (mouse or tablet),
+  both open Campaign Approval filtered to that advertiser. Only a booking with
+  no advertiser is not a link.
 - Open questions 50 and 51 (below) — the target algorithm for clearing
   overlapping localised bids and billing a part-sold position — are
   **superseded, not answered**: there is no longer a part-sold position for
