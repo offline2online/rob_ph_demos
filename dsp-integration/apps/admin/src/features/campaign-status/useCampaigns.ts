@@ -38,6 +38,7 @@ export function useCampaignActions(campaignIds: string[]) {
       await fn()
       await qc.invalidateQueries({ queryKey: ['poc-campaigns'] })
       await qc.invalidateQueries({ queryKey: ['approval-summary'] })
+      await qc.invalidateQueries({ queryKey: ['booking-schedule'] })
       await reload()
     } catch (e) {
       message.error(e instanceof ApiRequestError ? e.message : 'Something went wrong.')
@@ -60,6 +61,7 @@ export function useCampaignActions(campaignIds: string[]) {
       await qc.invalidateQueries({ queryKey: ['poc-campaigns'] })
       await qc.invalidateQueries({ queryKey: ['creative-ids'] })
       await qc.invalidateQueries({ queryKey: ['approval-summary'] })
+      await qc.invalidateQueries({ queryKey: ['booking-schedule'] })
       await reload()
       setBusy(null)
     }
@@ -99,6 +101,7 @@ export function useCampaignActions(campaignIds: string[]) {
       return `${changing.length === 1 ? '1 campaign' : `${changing.length} campaigns`} ${enabled ? 'activated' : 'deactivated'}.`
     }),
     unreject: (a: Approval, reason?: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/unreject`, { assetVersion: a.assetVersion, reason })),
+    revert: (a: Approval, reason?: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/revert-approval`, { assetVersion: a.assetVersion, reason })),
     activate: (c: Campaign, enabled: boolean) => act(c.campaignId, () => api('PUT', `/admin/v1/campaigns/${c.campaignId}/activation`, { enabled })),
   }
 }

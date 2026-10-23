@@ -135,6 +135,21 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(loc.startsInDays).toBeLessThan(pers.startsInDays)
   })
 
+  /* Ticket x2yp5hewCO44TYMbZ8Cf: reverting or giving an approval changes the tile at once. */
+  it('turns the tile red or orange when its approval is reverted, and green when approved again', async () => {
+    const { ctx, get } = await setup()
+    await ctx.reservations.insert(booking({ id: 'r_local', campaignId: 'c_api_swisse', pricingType: 'localised' }))
+    const tile = async () => (await get('?from=2026-09-15&to=2026-09-23')).json().positions[0].windows.find((w: { start: string }) => w.start.startsWith('2026-09-22')).booking.approval
+    const app = buildApp(ctx)
+    const act = (what: string) => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/c_api_swisse/${what}`, payload: { assetVersion: 'v1' } })
+    if ((await ctx.approvals.statusOf('c_api_swisse')) !== 'approved') expect((await act('approve')).statusCode).toBe(200)
+    expect(await tile()).toMatchObject({ defaultApproved: true, defaultRisk: 'secured' })
+    expect((await act('revert-approval')).statusCode).toBe(200)
+    expect(await tile()).toMatchObject({ defaultApproved: false, defaultRisk: 'at_risk' })
+    expect((await act('approve')).statusCode).toBe(200)
+    expect(await tile()).toMatchObject({ defaultApproved: true, defaultRisk: 'secured' })
+  })
+
   /* The reach-count API left this build's scope on 30 Sep: a booking has no
      reach, and a position's displayCount is plain sizing. */
   it('carries no reach on any booking, and displayCount on every position', async () => {

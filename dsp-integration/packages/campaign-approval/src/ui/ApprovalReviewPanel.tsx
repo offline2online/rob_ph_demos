@@ -39,7 +39,7 @@ function OnCanvas({ approval }: { approval: Approval }) {
   )
 }
 
-export function ApprovalReviewPanel({ approval, canApprove = true, busy, onApprove, onReject, onUnreject, onClose }: {
+export function ApprovalReviewPanel({ approval, canApprove = true, busy, onApprove, onReject, onUnreject, onRevert, onClose }: {
   approval: Approval
   canApprove?: boolean
   busy?: boolean
@@ -48,10 +48,13 @@ export function ApprovalReviewPanel({ approval, canApprove = true, busy, onAppro
   /* Undo a mistaken rejection back to Awaiting approval (spec §3). Omit to
      leave the "options/overflow menu" as the only place a host offers it. */
   onUnreject?: () => void | Promise<unknown>
+  /* Take back an approval, back to Awaiting approval. Omit to hide the button. */
+  onRevert?: () => void | Promise<unknown>
   onClose?: () => void
 }) {
   const awaiting = approval.status === 'awaiting_approval'
   const rejected = approval.status === 'rejected'
+  const approved = approval.status === 'approved'
   return (
     <section aria-label={`Review ${approval.campaignName ?? approval.campaignId}`} style={{ border: `1px solid ${C.subtle}`, borderRadius: 8, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: C.alt, borderBottom: `1px solid ${C.subtle}` }}>
@@ -123,6 +126,14 @@ export function ApprovalReviewPanel({ approval, canApprove = true, busy, onAppro
           <div style={{ marginTop: 20 }}>
             <Tooltip title={canApprove ? undefined : 'Only HQ Admin can undo a rejection'}>
               <Button disabled={!canApprove} loading={busy} icon={<Icon name="undo" size={16} />} onClick={() => onUnreject()}>Undo rejection</Button>
+            </Tooltip>
+          </div>
+        )}
+
+        {approved && onRevert && (
+          <div style={{ marginTop: 20 }}>
+            <Tooltip title={canApprove ? undefined : 'Only HQ Admin can revert an approval'}>
+              <Button disabled={!canApprove} loading={busy} icon={<Icon name="undo" size={16} />} onClick={() => onRevert()}>Revert approval</Button>
             </Tooltip>
           </div>
         )}

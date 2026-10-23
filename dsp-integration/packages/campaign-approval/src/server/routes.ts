@@ -93,4 +93,12 @@ export const approvalRoutes = (service: ApprovalService, hooks: ApprovalRouteHoo
     hooks.requireApprover(req)
     try { return await service.unreject(req.params.id, req.body?.assetVersion ?? '', hooks.reviewer(req), req.body?.reason) } catch (e) { return send(reply, e) }
   })
+
+  /* Take back an approval: Approved → Awaiting approval. Same permission as
+     approve/reject (Q39); a reason is optional. */
+  app.post<{ Params: { id: string }; Body: { assetVersion?: string; reason?: string } }>('/campaigns/:id/revert-approval', async (req, reply) => {
+    hooks.guard(req)
+    hooks.requireApprover(req)
+    try { return await service.revertApproval(req.params.id, req.body?.assetVersion ?? '', hooks.reviewer(req), req.body?.reason) } catch (e) { return send(reply, e) }
+  })
 }

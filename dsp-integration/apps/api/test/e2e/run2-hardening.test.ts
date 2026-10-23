@@ -507,7 +507,7 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
       expect(byStatus.items.map((a: { campaignId: string }) => a.campaignId), status).not.toContain(draft)
     }
     const page = readFileSync(new URL('../../../admin/src/features/campaign-status/CampaignStatusPage.tsx', import.meta.url), 'utf8')
-    expect(page).toMatch(/const all = useMemo\(\(\) => nonHq\.filter\(\(c\) => approvals\[c\.campaignId\]\?\.status !== 'draft'\)/)
+    expect(page).toMatch(/const all = useMemo\(\(\) => nonHq\.filter\(\(c\) => c\.campaignId === campaignFilter \|\| approvals\[c\.campaignId\]\?\.status !== 'draft'\)/)
     expect(page).toMatch(/for \(const row of all\)/)
   })
 })

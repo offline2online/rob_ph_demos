@@ -2134,6 +2134,29 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/campaigns/{campaignId}/revert-approval:
+    post:
+      tags: [Admin — Campaign approval]
+      operationId: revertCampaignApproval
+      summary: Take back an approval — Approved → Awaiting approval. Never auto-approves.
+      security: [{adminSession: [approver]}]
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetVersion]
+              properties:
+                assetVersion: {type: string, description: The approved version; rejected with 409 if it has changed.}
+                reason: {type: string, description: Optional — why the approval is being reverted. Recorded in the audit trail.}
+      responses:
+        '200': {description: Back to Awaiting approval, content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
 
   /admin/v1/display-types/{displayTypeId}/extensions:
     put:
@@ -4336,7 +4359,7 @@ components:
             required: [at, action]
             properties:
               at: {type: string, format: date-time}
-              action: {type: string, enum: [submitted, auto_approved, approved, rejected, returned_for_review, unrejected, edit_discarded, reused_clearance]}
+              action: {type: string, enum: [submitted, auto_approved, approved, rejected, returned_for_review, unrejected, approval_reverted, edit_discarded, reused_clearance]}
               by: {type: [string, 'null']}
               reason: {type: [string, 'null']}
               reasonCode: {$ref: '#/components/schemas/RejectionCode'}

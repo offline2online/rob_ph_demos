@@ -104,6 +104,30 @@ describe('Campaign approval API (contract: Admin — Campaign approval)', () => 
     expect(forbidden.statusCode).toBe(403)
   })
 
+  /* Ticket x2yp5hewCO44TYMbZ8Cf: an approval can be taken back, and the Booking Schedule tile follows at once. */
+  it('revert-approval takes an approved campaign back to Awaiting approval, and the Booking Schedule agrees', async () => {
+    const ctx = await testContext({ clock: () => NOW })
+    const app = buildApp(ctx)
+    const url = '/api/admin/v1/campaigns/c_api_swisse/revert-approval'
+    const post = (payload: object) => app.inject({ method: 'POST', url, payload })
+    /* Not approved yet: nothing to revert. */
+    expect((await post({ assetVersion: 'v1' })).statusCode).toBe(409)
+    expect((await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })).statusCode).toBe(200)
+    const user = buildApp(await testContext({ role: 'hq_marketing' }))
+    expect((await user.inject({ method: 'POST', url, payload: { assetVersion: 'v1' } })).statusCode).toBe(403)
+    expect((await post({ assetVersion: 'v0' })).statusCode).toBe(409)
+    const back = await post({ assetVersion: 'v1', reason: 'Approved by mistake' })
+    expect(back.statusCode).toBe(200)
+    expectMatchesContract('POST', '/admin/v1/campaigns/{campaignId}/revert-approval', 200, back.json())
+    expect(back.json()).toMatchObject({ status: 'awaiting_approval', mode: 'manual', reviewedBy: null, liveAssetVersion: null })
+    expect(back.json().audit.map((a: { action: string }) => a.action).slice(-2)).toEqual(['approved', 'approval_reverted'])
+    expect(await ctx.approvals.isCampaignEligible('c_api_swisse')).toBe(false)
+    expect((await post({ assetVersion: 'v1' })).statusCode).toBe(409)
+    /* Approving it again puts it back. */
+    expect((await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })).statusCode).toBe(200)
+    expect(await ctx.approvals.statusOf('c_api_swisse')).toBe('approved')
+  })
+
   it('the stand-in campaign list carries approval-free fields only', async () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/campaigns' })
     expectMatchesContract('GET', '/admin/v1/campaigns', 200, res.json())

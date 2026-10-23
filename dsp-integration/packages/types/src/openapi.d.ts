@@ -1428,6 +1428,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/campaigns/{campaignId}/revert-approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take back an approval — Approved → Awaiting approval. Never auto-approves. */
+        post: operations["revertCampaignApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/display-types/{displayTypeId}/extensions": {
         parameters: {
             query?: never;
@@ -3618,7 +3635,7 @@ export interface components {
                 /** Format: date-time */
                 at: string;
                 /** @enum {string} */
-                action: "submitted" | "auto_approved" | "approved" | "rejected" | "returned_for_review" | "unrejected" | "edit_discarded" | "reused_clearance";
+                action: "submitted" | "auto_approved" | "approved" | "rejected" | "returned_for_review" | "unrejected" | "approval_reverted" | "edit_discarded" | "reused_clearance";
                 by?: string | null;
                 reason?: string | null;
                 reasonCode?: components["schemas"]["RejectionCode"];
@@ -6479,6 +6496,41 @@ export interface operations {
                     /** @description The rejected version; rejected with 409 if it has changed. */
                     assetVersion: string;
                     /** @description Optional — why the rejection is being reversed. Recorded in the audit trail alongside the original rejection reason */
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Back to Awaiting approval */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Approval"];
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    revertCampaignApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The approved version; rejected with 409 if it has changed. */
+                    assetVersion: string;
+                    /** @description Optional — why the approval is being reverted. Recorded in the audit trail */
                     reason?: string;
                 };
             };

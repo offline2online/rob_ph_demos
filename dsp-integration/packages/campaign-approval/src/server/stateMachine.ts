@@ -1,6 +1,7 @@
 /* Approval state machine (spec §3):
      Draft → Awaiting approval → Approved | Rejected
      Rejected → Awaiting approval (un-reject: a mistaken rejection, undone)
+     Approved → Awaiting approval (revert: an approval taken back)
      asset or targeting change on an approved campaign → Awaiting approval
        (a pending edit: the approved version keeps running meanwhile, Q38 —
        the service, not this machine, decides what runs)
@@ -14,6 +15,7 @@ export type ApprovalEvent =
   | { type: 'approve' }
   | { type: 'reject'; reason: string; reasonCode?: RejectionCode; assetReasons?: AssetRejection[] }
   | { type: 'unreject'; reason?: string }
+  | { type: 'revert'; reason?: string }
   | { type: 'change'; requiresApproval: boolean; preCleared?: boolean }
 
 export interface Transition { status: ApprovalStatus; mode: ApprovalMode | null; audit: AuditAction[] }
@@ -42,6 +44,11 @@ export function transition(from: ApprovalStatus, e: ApprovalEvent): Transition {
          submission. */
       if (from !== 'rejected') throw new TransitionError('Only a rejected campaign can be un-rejected.')
       return { status: 'awaiting_approval', mode: 'manual', audit: ['unrejected'] }
+    case 'revert':
+      /* Takes back an approval (given by mistake, or to test again): the version goes back to Awaiting approval for a fresh
+         decision. Never auto-approves, same as unreject. */
+      if (from !== 'approved') throw new TransitionError('Only an approved campaign can have its approval reverted.')
+      return { status: 'awaiting_approval', mode: 'manual', audit: ['approval_reverted'] }
     case 'change':
       /* A change to an approved campaign's assets or targeting needs a fresh decision. */
       if (from === 'approved' || from === 'awaiting_approval') {
