@@ -85,6 +85,17 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   return out
 }
 
+/* Each slot (as "Display type – slot N (label)") that still names this advertiser. Slots hold the name, not the id. */
+async function slotsHolding(ctx: Context, name: string): Promise<string[]> {
+  const held: string[] = []
+  for (const t of await ctx.displayTypes.list()) {
+    for (const [i, s] of (t.phExtensions?.slots ?? []).entries()) {
+      if (s.owner === 'advertiser' && (s.advertisers ?? []).includes(name)) held.push(`${t.name} – slot ${i + 1}${s.label ? ` (${s.label})` : ''}`)
+    }
+  }
+  return held
+}
+
 export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   app.get('/advertisers', async (req) => {
     guards.flagged()
@@ -101,11 +112,35 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (!name || name.length > 80) throw validationFailed([{ field: 'name', reason: 'A name of 1 to 80 characters is required.' }])
     const advertiserId = advertiserSlug(name)
     if (!advertiserId) throw validationFailed([{ field: 'name', reason: 'The name needs at least one letter or digit.' }])
-    if ((await listAdvertisers(ctx)).some((a) => a.advertiserId === advertiserId)) throw conflict(`${name} is already an advertiser.`)
+    /* By id or by name: a renamed direct advertiser keeps its old id, so its new name is checked too. */
+    if ((await listAdvertisers(ctx)).some((a) => a.advertiserId === advertiserId || advertiserSlug(a.name) === advertiserId)) throw conflict(`${name} is already an advertiser.`)
     const audiences = req.body?.audiences === undefined ? [] : await validateAudiences(ctx, req.body.audiences)
     await ctx.company.addDirectAdvertiser(advertiserId, name)
     if (audiences.length) await ctx.company.saveAdvertiserAudiences(advertiserId, audiences, req.session.userId)
     return reply.status(201).send({ advertiserId, name, audiences })
+  })
+
+  /* Rename a direct advertiser (ticket usIHp1uhtllLCP29teBu). The advertiserId stays: campaigns, bookings, users and
+     deals all key on it and look the name up, so only direct_advertisers.name changes. A DSP advertiser is named by
+     its DSP and can't be renamed here. */
+  app.patch<{ Params: { advertiserId: string }; Body: { name?: unknown } }>('/advertisers/direct/:advertiserId', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'admin')
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim().replace(/\s+/g, ' ') : ''
+    if (!name || name.length > 80) throw validationFailed([{ field: 'name', reason: 'A name of 1 to 80 characters is required.' }])
+    if (!advertiserSlug(name)) throw validationFailed([{ field: 'name', reason: 'The name needs at least one letter or digit.' }])
+    const { advertiserId } = req.params
+    const all = await listAdvertisers(ctx)
+    const a = all.find((x) => x.advertiserId === advertiserId)
+    const record = (await ctx.company.directAdvertisers()).find((d) => d.advertiserId === advertiserId)
+    if (!a) throw notFound('Not an advertiser.')
+    if (!record || !a.direct) throw notFound(`${a.name} comes through a DSP, so it can't be renamed here.`)
+    if (all.some((x) => x.advertiserId !== advertiserId && (advertiserSlug(x.name) === advertiserSlug(name) || x.advertiserId === advertiserSlug(name)))) throw conflict(`${name} is already an advertiser.`)
+    if (name === record.name) return { advertiserId, name }
+    const held = await slotsHolding(ctx, record.name)
+    if (held.length) throw conflict(`${record.name} is assigned to ${held.length === 1 ? 'a slot' : `${held.length} slots`} on Available Inventory: ${held.join('; ')}. Remove it from ${held.length === 1 ? 'that slot' : 'those slots'} before renaming it.`)
+    await ctx.company.renameDirectAdvertiser(advertiserId, name)
+    return { advertiserId, name }
   })
 
   /* Remove a direct advertiser. Refused while it has campaigns or bookings, has users, or is held on a slot. */
@@ -127,12 +162,7 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (users.length) throw conflict(`${a.name} has ${users.length === 1 ? 'a user' : `${users.length} users`} associated with it: ${users.map((u) => u.email).join(', ')}. Remove ${users.length === 1 ? 'that user' : 'those users'} in Company Settings → Users before deleting the brand and advertiser.`)
     /* A slot that still holds the advertiser would be left pointing at nobody, so name each one
        and refuse until it is removed from them (Rob, 10 Oct 2026). */
-    const held: string[] = []
-    for (const t of await ctx.displayTypes.list()) {
-      for (const [i, s] of (t.phExtensions?.slots ?? []).entries()) {
-        if (s.owner === 'advertiser' && (s.advertisers ?? []).includes(a.name)) held.push(`${t.name} – slot ${i + 1}${s.label ? ` (${s.label})` : ''}`)
-      }
-    }
+    const held = await slotsHolding(ctx, a.name)
     if (held.length) throw conflict(`${a.name} is assigned to ${held.length === 1 ? 'a slot' : `${held.length} slots`} on Available Inventory: ${held.join('; ')}. Remove it from ${held.length === 1 ? 'that slot' : 'those slots'} before deleting it.`)
     /* Shadowed by a DSP seat: that advertiser lives on, so keep its seat mapping and audiences. */
     await ctx.company.removeDirectAdvertiser(a.advertiserId, { keepSettings: !a.direct })
