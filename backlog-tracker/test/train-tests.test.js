@@ -21,6 +21,10 @@ const cases = [
   ["a faq-only or other project's change doesn't", touchesConsoleTests(["faq/index.html", "dsp-integration/x.ts"]), false],
   ["a dsp-integration source change starts e2e-quick", trainTestsFor(["dsp-integration/apps/api/src/exchange/openrtb.ts"]).map((t) => t.workflow), ["e2e-quick.yml"]],
   ["a prototype rebuild alone starts nothing", trainTestsFor(["dsp-integration/prototype/assets/index.js", "dsp-integration/prototype/build-info.json"]), []],
+  // Deploy to Main's version bump on a DSP train (PR #462, 23 Oct 2026)
+  ["the version bump alone starts nothing", trainTestsFor(["backlog-tracker/public/js/version.js"]), []],
+  ["a DSP train with its version bump starts only e2e-quick", trainTestsFor(["dsp-integration/apps/admin/src/x.tsx", "backlog-tracker/public/js/version.js"]).map((t) => t.workflow), ["e2e-quick.yml"]],
+  ["a console change with its version bump still starts the console suites", trainTestsFor(["backlog-tracker/public/js/app.js", "backlog-tracker/public/js/version.js"]).map((t) => t.workflow), ["firestore-rules-test.yml", "kanban-staff-board-tests.yml"]],
   ["a change to both projects starts both", trainTestsFor(["backlog-tracker/x.js", "dsp-integration/y.ts"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml", "kanban-staff-board-tests.yml"]],
   // board-docs.json (any project) is validated by the console tests
   ["a dsp-integration board-docs.json starts the console tests and e2e-quick", trainTestsFor(["dsp-integration/board-docs.json"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml"]],
@@ -55,6 +59,10 @@ const cases = [
     return [
       ["culprit: first red after green, in testing", pickRedCulprit(order, [C, A, B], { a: ok, b: red, c: red })?.id, "B"],
       ["all green: nobody", pickRedCulprit(order, [A, B, C], { a: ok, b: ok, c: ok }), null],
+      // 23 Oct 2026: B broke a pinned test, C (built on B) fixed the pin and passed
+      ["red but a later ticket carrying it passed: nobody", pickRedCulprit(order, [A, B, C], { a: ok, b: red, c: ok }), null],
+      ["red, later ticket still running: B is still the culprit", pickRedCulprit(order, [A, B, C], { a: ok, b: red, c: { status: "in_progress" } })?.id, "B"],
+      ["red, later ticket's pass is stale (skipped): B is still the culprit", pickRedCulprit(order, [A, B, C], { a: ok, b: red, c: ok }, { skip: new Set(["c"]) })?.id, "B"],
       ["first red is approved: never ejected", pickRedCulprit(order, [A, B, C], { a: red, b: red, c: red }), null],
       ["a run before it still going: wait", pickRedCulprit(order, [A, B, C], { a: { status: "in_progress" }, b: red }), null],
       ["a run before it missing: wait", pickRedCulprit(order, [A, B, C], { b: red }), null],
@@ -92,7 +100,8 @@ const cases = [
       const on = (text.match(/^on:\n([\s\S]*?)^\S/m) || [])[1] || "";
       const pr = (on.match(/^ {2}pull_request:\n((?: {4,}.*\n)*)/m) || [])[1] || "";
       if (!pr || !/^ {2}workflow_dispatch:/m.test(on)) continue;
-      const folders = new Set([...pr.matchAll(/'([^'./][^'/]*)\/[^']*'/g)].map((m) => m[1]));
+      // A '!…' exclusion names nothing the workflow tests.
+      const folders = new Set([...pr.matchAll(/'([^'./!][^'/]*)\/[^']*'/g)].map((m) => m[1]));
       for (const f of folders) out.push([`${file} tests ${f}/ on PRs, so it runs on that train`, TRAIN_TEST_WORKFLOWS.some((t) => t.workflow === file && t.prefix === `${f}/`), true]);
     }
     for (const t of TRAIN_TEST_WORKFLOWS) {

@@ -136,7 +136,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       assetReasons: e.type === 'reject' ? (e.assetReasons ?? []) : [],
       checks: patch.checks ?? prev?.checks ?? [],
     }, at)
-    const auditReason = e.type === 'reject' ? e.reason.trim() : e.type === 'unreject' && e.reason?.trim() ? e.reason.trim() : null
+    const auditReason = e.type === 'reject' ? e.reason.trim() : (e.type === 'unreject' || e.type === 'revert') && e.reason?.trim() ? e.reason.trim() : null
     const auditAssetReasons = e.type === 'reject' ? e.assetReasons : undefined
     for (const action of t.audit) await store.audit(c.campaignId, c.assetVersion, action, action === 'auto_approved' || action === 'reused_clearance' ? null : actor, auditReason, at, auditAssetReasons, e.type === 'reject' ? e.reasonCode ?? 'other' : undefined)
     return t
@@ -452,6 +452,20 @@ export function createApprovalService(o: ApprovalServiceOptions) {
         const c = await campaign(id)
         if (assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', 'The creative changed after you opened it. Review the new version.')
         await apply(c, { type: 'unreject', reason }, reviewer)
+        return toView(c, true)
+      })
+    },
+
+    /* Take back an approval: the version goes back to Awaiting approval for a
+       fresh decision, never auto-approved. Same permission as approve/reject
+       (Q39). The campaign stops being eligible until it is approved again
+       (no other version is live), and the Booking Schedule reads the same
+       status, so its tile turns red/orange at once. */
+    async revertApproval(id: string, assetVersion: string, reviewer: string, reason?: string) {
+      return transaction(async () => {
+        const c = await campaign(id)
+        if (assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', 'The creative changed after you opened it. Review the new version.')
+        await apply(c, { type: 'revert', reason }, reviewer)
         return toView(c, true)
       })
     },

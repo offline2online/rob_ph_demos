@@ -36,10 +36,13 @@ jobs:
     # reports that limit as "cancelled", which the backlog automation reads
     # as "nothing tested this commit" and dispatches again, so every run
     # that hit the limit was retried and hit it again.
-    timeout-minutes: 30
+    # 45, not 30 (23 Oct 2026): the full suites alone took 25m45s on main
+    # d570da38 and the run was cancelled installing Chromium after them.
+    timeout-minutes: 45
     permissions:
       contents: read
       pull-requests: read   # the scope step lists the PR's files
+      actions: read         # ...and reads the e2e-quick runs on the head's parent
     defaults:
       run:
         working-directory: dsp-integration
@@ -57,11 +60,47 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate -q '.[].filename')
-          if echo "$files" | grep -qE '^(dsp-integration/|\.github/workflows/e2e-quick\.yml$)'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
+          if ! echo "$files" | grep -qE '^(dsp-integration/|\.github/workflows/e2e-quick\.yml$)'; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No dsp-integration/ changes in this PR, so e2e-quick passes without running."
+            exit 0
+          fi
+          # The DSP train PR's head is nearly always "Rebuild the hosted
+          # prototype", pushed by dsp-prototype.yml on top of the commit the
+          # train already tested. Running the whole suite again on it held
+          # every DSP deploy for another ~27 minutes (PR #462, 23 Oct 2026)
+          # for a commit that changes no code the suite runs. It passes
+          # without running only when ALL of these hold, else it runs as usual:
+          #   - the head has one parent and changes only generated build
+          #     output (dsp-integration/prototype/, apps/admin/public/demo/);
+          #   - the parent already contains this PR's base, so the merge
+          #     being checked is the parent's tree plus that output;
+          #   - e2e-quick passed on the parent in a push or dispatched run
+          #     (those always run the full suite).
+          R="${{ github.repository }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          rebuild_of_tested_parent() {
+            local parents parent changed count status passed
+            parents=$(gh api "repos/$R/commits/$HEAD_SHA" -q '.parents | length') || return 1
+            [ "$parents" = "1" ] || return 1
+            parent=$(gh api "repos/$R/commits/$HEAD_SHA" -q '.parents[0].sha') || return 1
+            changed=$(gh api "repos/$R/compare/$parent...$HEAD_SHA" -q '.files[].filename') || return 1
+            count=$(echo "$changed" | grep -c . || true)
+            # The compare API lists at most 300 files: a longer list can't be checked.
+            [ "$count" -gt 0 ] && [ "$count" -lt 300 ] || return 1
+            ! echo "$changed" | grep -qvE '^dsp-integration/(prototype/|apps/admin/public/demo/)' || return 1
+            status=$(gh api "repos/$R/compare/$BASE_SHA...$parent" -q '.status') || return 1
+            case "$status" in ahead|identical) ;; *) return 1 ;; esac
+            passed=$(gh api "repos/$R/actions/workflows/e2e-quick.yml/runs?head_sha=$parent&status=success&per_page=20" \
+              -q '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")] | length') || return 1
+            [ "${passed:-0}" -gt 0 ] || return 1
+            echo "::notice::The head ${HEAD_SHA:0:7} only rebuilds the hosted prototype on ${parent:0:7}, which already passed e2e-quick and contains main, so this passes without running again."
+          }
+          if rebuild_of_tested_parent; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@v4
         if: steps.scope.outputs.run == 'true'

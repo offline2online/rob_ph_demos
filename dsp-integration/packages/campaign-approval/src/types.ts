@@ -5,7 +5,7 @@ export type ApprovalMode = 'manual' | 'auto'
    was thrown away and the approved version carries on. reused_clearance
    (Q40, 29 Sep 2026): every asset of the version was byte-identical to one
    a human already cleared, so it was approved without another review. */
-export type AuditAction = 'submitted' | 'auto_approved' | 'approved' | 'rejected' | 'returned_for_review' | 'unrejected' | 'edit_discarded' | 'reused_clearance'
+export type AuditAction = 'submitted' | 'auto_approved' | 'approved' | 'rejected' | 'returned_for_review' | 'unrejected' | 'approval_reverted' | 'edit_discarded' | 'reused_clearance'
 /* dsp_audit and previously_cleared are advisory (Q40): recorded for the
    reviewer, never a gate and never an approval on their own. */
 export type CheckName = 'file_type' | 'file_size' | 'bitrate' | 'dimensions' | 'aspect_ratio' | 'duration' | 'default_present' | 'targeting_permitted' | 'dsp_audit' | 'previously_cleared'

@@ -2,6 +2,9 @@
    so it can be left open beside the rest of HQ Admin. */
 export const BOOKING_SCHEDULE_PATH = '/booking-schedule'
 
+/* `?tab=` value that opens Campaign Approval on that page. */
+export const CAMPAIGN_APPROVAL_TAB = 'campaign-status'
+
 /* A route as a URL for a new tab. The app's own links go through the router,
    which knows where it is mounted; window.open does not. The hosted
    prototype routes in the hash and sits under a base path, so opening a bare

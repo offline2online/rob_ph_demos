@@ -14,8 +14,14 @@ on:
       - '.github/workflows/kanban-staff-board-tests.yml'
   workflow_dispatch:
 
+# A run the backlog automation dispatches when a ticket lands on a train gets
+# its own group (per commit), like e2e-quick, firestore-rules-test and the
+# Retail Media Insights suite. Keyed on the branch alone (until 23 Oct 2026),
+# the next ticket landing cancelled the previous ticket's run, and that card
+# read "Staff Kanban tests: not run" for good: nothing re-runs a cancelled
+# run, and approving it then needed acknowledgeTests.
 concurrency:
-  group: kanban-staff-board-tests-${{ github.ref }}
+  group: kanban-staff-board-tests-${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -25,7 +31,10 @@ jobs:
   test:
     name: kanban-staff-board-tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 30, not 15 (23 Oct 2026): green runs take 10-12 minutes (setup plus six
+    # Chromium profiles, four at a time) and a slow runner went past 15. GitHub
+    # reports that limit as "cancelled", which the board reads as "not run".
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: kanban-staff-board/test

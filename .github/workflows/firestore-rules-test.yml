@@ -35,6 +35,10 @@ on:
       - 'backlog-tracker/functions/mcp-server.js'
       - 'backlog-tracker/functions/index.js'
       - 'backlog-tracker/public/**'
+      # The version number Deploy to Main bumps on every project's train. On
+      # its own (a DSP or Retail Media Insights train) it tests nothing the
+      # suite reads, and a 15-20 minute run held those deploys for it.
+      - '!backlog-tracker/public/js/version.js'
       - 'backlog-tracker/test/**'
       - 'backlog-tracker/scripts/run-backlog-automation.js'
       - '.github/workflows/firestore-rules-test.yml'

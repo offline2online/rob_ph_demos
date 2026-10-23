@@ -9,8 +9,9 @@ import { Tabs } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 import { CampaignStatusPage } from '../campaign-status/CampaignStatusPage'
 import { BookingSchedulePage } from './BookingSchedulePage'
+import { CAMPAIGN_APPROVAL_TAB } from './path'
 
-export const CAMPAIGN_APPROVAL_TAB = 'campaign-status'
+export { CAMPAIGN_APPROVAL_TAB }
 
 export function CampaignSchedulePage() {
   const [params, setParams] = useSearchParams()

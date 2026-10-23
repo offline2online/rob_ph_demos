@@ -47,7 +47,7 @@
 
    The Status filter lives in the URL (`status`), like the Advertiser filter. */
 import { useQuery } from '@tanstack/react-query'
-import { Button, Checkbox, Dropdown, Input, Modal, Radio, Spin, Switch, Tag } from 'antd'
+import { Alert, Button, Checkbox, Dropdown, Input, Modal, Radio, Spin, Switch, Tag } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalStatusBadge, RejectionCodeSelect, STATUS_LABELS, isRejectionCode, rejectionLabel, type Approval, type ApprovalStatus, type RejectionCode } from '@ph-dsp/campaign-approval/ui'
@@ -75,6 +75,7 @@ interface Ctx {
   groupIds: ReadonlyMap<string, string[]>
   displayTypeNames: ReadonlyMap<string, string>
   unreject: (a: Approval) => Promise<void>
+  revert: (a: Approval) => Promise<void>
   activate: (c: Campaign, enabled: boolean) => Promise<void>
   now: number
 }
@@ -203,12 +204,15 @@ function RowMenu({ data, context }: P) {
     { key: 'open', icon: <Icon name="open_in_new" size={15} />, label: 'Open campaign' },
     /* Undo a mistaken rejection (ticket, 22 Sep): back to Awaiting approval, never auto-approved. Same permission as approve/reject. */
     { key: 'unreject', icon: <Icon name="undo" size={15} />, label: 'Undo rejection', disabled: !rejected || !c.canApprove },
+    /* Take back an approval (ticket x2yp5hewCO44TYMbZ8Cf): back to Awaiting approval; the Booking Schedule tile follows. */
+    { key: 'revert', icon: <Icon name="undo" size={15} />, label: 'Revert approval', disabled: !approved || !c.canApprove },
     { type: 'divider' as const },
     { key: 'activation', icon: <Icon name="power_settings_new" size={15} />, label: data.activation.enabled ? 'Deactivate' : 'Activate', disabled: !approved },
   ]
   const onClick = ({ key }: { key: string }) => {
     if (key === 'open') c.open(data.campaignId)
     if (key === 'unreject') void c.unreject(a!)
+    if (key === 'revert') void c.revert(a!)
     if (key === 'activation') void c.activate(data, !data.activation.enabled)
   }
   return (
@@ -245,11 +249,12 @@ export function CampaignStatusPage() {
   const displayTypes = useQuery(Q.displayTypes)
   const displayTypeNames = useMemo(() => new Map((displayTypes.data ?? []).map((d) => [d.id, d.name] as const)), [displayTypes.data])
   /* Only what came in through a DSP or the Partner API. */
-  const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq'), [campaigns.data])
-  const { approvals, canApprove, busy, approveAssign, assignCreativeId, rejectMany, unreject, activate, activateMany } = useCampaignActions(nonHq.map((c) => c.campaignId))
+  const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq' || c.campaignId === campaignFilter), [campaigns.data, campaignFilter])
+  const { approvals, canApprove, busy, approveAssign, assignCreativeId, rejectMany, unreject, revert, activate, activateMany } = useCampaignActions(nonHq.map((c) => c.campaignId))
   /* Draft never surfaces in a retailer-facing view (ticket, 22 Sep, §3):
      the retailer only ever sees a campaign once it has been submitted. */
-  const all = useMemo(() => nonHq.filter((c) => approvals[c.campaignId]?.status !== 'draft'), [nonHq, approvals])
+  /* Except the one a Booking Schedule tile opened (`?campaignId=`): the tile shows it, so it must be here (ticket ByeH6mIkaRqOJjnHu31z). */
+  const all = useMemo(() => nonHq.filter((c) => c.campaignId === campaignFilter || approvals[c.campaignId]?.status !== 'draft'), [nonHq, approvals, campaignFilter])
   /* Taken once when the page loads: the elapsed figure does not tick. */
   const [now] = useState(() => Date.now())
   const campaignRows = useMemo(() => byAdvertiserDeal(triageOrder(all.filter((c) => {
@@ -363,7 +368,7 @@ export function CampaignStatusPage() {
   }, [picking, deal, originals.size, choice, creativeIds.data])
 
   const ctx: Ctx = {
-    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, activate, selected, toggle, toggleGroup, groupIds, displayTypeNames,
+    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, revert, activate, selected, toggle, toggleGroup, groupIds, displayTypeNames,
   }
   const values = (of: (c: Campaign) => string) => () => all.map(of).filter((v) => v && v !== '—')
   const advertiserOptions = useMemo(() => [...new Map(
@@ -379,6 +384,14 @@ export function CampaignStatusPage() {
     const next = new URLSearchParams(params)
     if (keys.length) next.set('status', keys.join(','))
     else next.delete('status')
+    setParams(next, { replace: true })
+  }
+  /* Set by a Booking Schedule tile that has no campaign behind it (see the notice above the grid). */
+  const slotParam = params.get('slot')
+  const advertiserLabel = params.get('advertiserName') ?? 'This advertiser'
+  const clearFromTile = () => {
+    const next = new URLSearchParams(params)
+    for (const k of ['advertiserId', 'advertiserName', 'slot']) next.delete(k)
     setParams(next, { replace: true })
   }
   const clearFocus = () => {
@@ -480,6 +493,16 @@ export function CampaignStatusPage() {
           </section>
         )}
       </div>
+      {/* Opened from a Booking Schedule tile with no campaign behind it (23 Oct 2026): say why nothing here plays in that slot
+          rather than show an empty list, or this advertiser's campaigns for other slots with no explanation. */}
+      {advertiserId && slotParam !== null && (
+        <Alert className="mb-3" type="info" showIcon
+          message={all.some((c) => c.advertiserId === advertiserId)
+            ? `None of ${advertiserLabel}’s campaigns fits ${slotParam || 'this slot'}.`
+            : `${advertiserLabel} has no campaigns submitted yet.`}
+          description="A Direct deal window plays a campaign for the slot’s display type with no deal ID or this deal’s. Until one is submitted and approved, the Booking Schedule shows these windows as not approved."
+          action={<Button size="small" type="link" onClick={clearFromTile}>Show all campaigns</Button>} />
+      )}
       <Grid<Row>
         label="Campaign Status"
         rows={rows}

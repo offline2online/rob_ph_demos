@@ -135,6 +135,15 @@ describe('ApprovalReviewPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Undo rejection' }))
     expect(onUnreject).toHaveBeenCalled()
   })
+
+  it('Approved: Revert approval only when the host passes onRevert', () => {
+    const { rerender } = render(<ApprovalReviewPanel approval={approval({ status: 'approved' })} onApprove={() => {}} onReject={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Revert approval' })).not.toBeInTheDocument()
+    const onRevert = vi.fn()
+    rerender(<ApprovalReviewPanel approval={approval({ status: 'approved' })} onApprove={() => {}} onReject={() => {}} onRevert={onRevert} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Revert approval' }))
+    expect(onRevert).toHaveBeenCalled()
+  })
 })
 
 describe('useCampaignApprovals', () => {

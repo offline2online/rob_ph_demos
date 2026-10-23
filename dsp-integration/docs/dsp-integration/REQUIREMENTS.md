@@ -918,6 +918,13 @@ Gatorade", with flights that follow each other (reserving deals never overlap on
 a slot): Red Bull 1 Sep to 31 Dec 2026 at 180 CPM, Gatorade 1 Jan to 31 Mar 2027
 at 150 CPM, each booking its own approved Portrait campaign, so they play
 through their deals.
+Since 23 Oct 2026 the seed also adds a current Gatorade deal and five more
+Direct advertisers (Frucor Suntory, Smith’s Snackfood Co, Bundaberg Brewed
+Drinks, Arnott’s, Dare Iced Coffee) on two further Portrait slots, as
+back-to-back five-day flights from the day of seeding, each with campaigns in a
+mix of approved, awaiting, rejected and draft states. A Booking Schedule tile
+is red when its campaign is not approved, so both states show in the schedule
+and in Campaign Approval.
 
 **Migration 0086 clears every named advertiser (22 Oct 2026, ticket
 QdMaGvVhMZgcdcmIAalT).** The same pattern as 0082, for every advertiser named in
@@ -1160,6 +1167,17 @@ once a campaign is *Approved*.
   submission. Same permission as approve/reject (open question 39). The
   reversal is recorded in the audit trail like any other decision (who, when
   and, optionally, why); the prior rejection reason stays in that history.
+- **Revert approval** (ticket x2yp5hewCO44TYMbZ8Cf, 23 Oct 2026). A mistaken
+  approval — or one undone to test again — can be taken back: **Revert
+  approval**, in the campaign's options menu and on the campaign page, is
+  available on an **Approved** campaign and moves it back to *Awaiting
+  approval* for a fresh decision (`POST /admin/v1/campaigns/{id}/revert-approval`,
+  audit action `approval_reverted`). It never auto-approves. Same permission
+  as approve/reject (open question 39). Until it is approved again the
+  campaign is not eligible. Campaign Approval and the Booking Schedule read
+  the same status, so the campaign's tile turns red (flight starts within
+  3 days) or orange as soon as the approval is reverted, and green once it
+  is approved again.
 
 ### Retailer review — the existing Campaigns section
 
@@ -2734,6 +2752,21 @@ stores its criteria didn't match unsold to it. That model is retired:
   (orange while any await approval, green when all are approved; hidden when
   none). The hover card is a two-column list: Booking value, CPM, Reserved
   CPM and Assumed views, labels left, values right-aligned.
+- **A booking tile opens its campaign in Campaign Approval** (ticket
+  ByeH6mIkaRqOJjnHu31z, 23 Oct 2026). Clicking a tile (or Enter on it)
+  switches the Advertiser Bookings page to the Campaign Approval tab filtered
+  to the tile's `campaignId`: the same record the tile's colour came from,
+  approved or not. That campaign is shown even when the list would normally
+  hide it (an HQ campaign, or a Draft). Approving, rejecting or undoing in
+  Campaign Approval refreshes the schedule, so the tile colour matches when
+  the user goes back. **A tile with no campaign behind it** (23 Oct 2026): a
+  Direct deal window whose advertiser has no campaign that fits the slot (one
+  for its display type with no deal ID or this deal's) reads not approved,
+  and used to do nothing when clicked. It opens Campaign Approval filtered to
+  the advertiser instead, with a notice saying it has no campaigns submitted,
+  or none that fits that display type, and a "Show all campaigns" action.
+  Its hover card says no campaign fits the slot yet. Only a booking with no
+  advertiser either is not a link.
 - Open questions 50 and 51 (below) — the target algorithm for clearing
   overlapping localised bids and billing a part-sold position — are
   **superseded, not answered**: there is no longer a part-sold position for

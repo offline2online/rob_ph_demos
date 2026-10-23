@@ -17,11 +17,11 @@ describe('demo estate', () => {
 
     const positions = await allPositions(ctx)
     expect(positions.filter((p) => p.displayType.id === 'landscape').map((p) => p.def.label)).toEqual(['Hero slot', 'Supplier slot', 'Whitelist slot', 'Nestlé: guaranteed deal'])
-    expect(positions.filter((p) => p.displayType.id === 'portrait')).toHaveLength(3)
+    expect(positions.filter((p) => p.displayType.id === 'portrait')).toHaveLength(5)
     expect(positions.filter((p) => p.displayType.id === 'menu_board')).toHaveLength(1)
     /* The rotation cap is the slot count, and the loop divides cleanly. */
     expect((await ctx.displayTypes.get('landscape'))!.playlistSettings).toMatchObject({ maximumCampaignsPlayedInRotation: 4 })
-    expect((await ctx.displayTypes.get('portrait'))!.phExtensions?.venue?.loopLengthSec).toBe(24)
+    expect((await ctx.displayTypes.get('portrait'))!.phExtensions?.venue?.loopLengthSec).toBe(30)
     /* Floor CPM: the hero slot carries its own, the others inherit the platform floor. */
     const landscape = (await ctx.displayTypes.get('landscape'))!.phExtensions!
     expect(landscape.slots[0].floorCpm).toBe(220)
@@ -41,7 +41,7 @@ describe('demo estate', () => {
     expect(names).not.toContain("L'Oréal")
     expect(names).not.toContain('Unilever')
     expect(names).not.toContain('Blackmores')
-    expect(advertisers.filter((a) => a.direct).map((a) => a.name).sort()).toEqual(['Gatorade', 'Red Bull'])
+    expect(advertisers.filter((a) => a.direct).map((a) => a.name).sort()).toEqual(['Arnott’s', 'Bundaberg Brewed Drinks', 'Dare Iced Coffee', 'Frucor Suntory', 'Gatorade', 'Red Bull', 'Smith’s Snackfood Co'])
     /* Direct advertisers hold a slot only through their Direct advertiser deals (22 Oct 2026), each with a flight and a price. */
     const portrait = (await ctx.displayTypes.get('portrait'))!.phExtensions!
     expect(portrait.slots.flatMap((s) => s.advertisers)).not.toContain('Red Bull')
@@ -81,7 +81,7 @@ describe('demo estate', () => {
 
     const schedule = await app.inject({ method: 'GET', url: '/api/admin/v1/booking-schedule?from=2026-09-21&to=2026-10-31' })
     expect(schedule.statusCode).toBe(200)
-    expect(schedule.json().positions.map((p: { positionId: string }) => p.positionId)).toHaveLength(8)
+    expect(schedule.json().positions.map((p: { positionId: string }) => p.positionId)).toHaveLength(10)
     const layers = new Set(schedule.json().positions.flatMap((p: { windows: { booking: { pricingType: string } | null }[] }) => p.windows.map((w) => w.booking?.pricingType)).filter(Boolean))
     expect(layers).toEqual(new Set(['localised', 'personalised']))
   })
@@ -112,7 +112,7 @@ describe('demo estate', () => {
     const ctx = await testContext({ bookings: true, demo: true, clock: () => NOW })
     const booked = (await ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString())).filter((r) => !r.testMode)
     /* Direct advertisers book nowhere else, and nobody else books inside a Direct deal's flight on its slot. */
-    for (const r of booked.filter((x) => x.partnerId === 'direct')) expect(r.positionId).toBe('portrait.s3')
+    for (const r of booked.filter((x) => x.partnerId === 'direct')) expect(['portrait.s3', 'portrait.s4', 'portrait.s5']).toContain(r.positionId)
     const onSlot = booked.filter((r) => r.positionId === 'portrait.s3')
     expect(onSlot.length).toBeGreaterThan(0)
     for (const r of onSlot) {
@@ -125,6 +125,26 @@ describe('demo estate', () => {
     expect(out.bidRequests).toBe(0)
     expect(out.winner).toMatchObject({ advertiserId: 'red-bull', partnerId: 'direct', clearingCpm: 180 })
     expect((await ctx.reservations.get(out.winner!.reservationId))!.handedOffAt).not.toBeNull()
+  })
+
+  /* Ticket 5BWqiE6bHZQj01xxEril (23 Oct 2026): more Direct advertisers, with approved and not-approved campaigns, and the Booking Schedule tile agrees with Campaign Approval. */
+  it('books Gatorade and the 7-Eleven Direct advertisers now, in a mix of approved and not-approved campaigns that the schedule tile matches', async () => {
+    const ctx = await testContext({ bookings: true, demo: true, clock: () => NOW })
+    const app = buildApp(ctx)
+    const res = await app.inject({ method: 'GET', url: '/api/admin/v1/booking-schedule?from=2026-09-20&to=2026-10-10' })
+    expect(res.statusCode).toBe(200)
+    type Booking = { campaignId: string; advertiserName: string; approval: { defaultApproved: boolean; defaultRisk: string } }
+    const tiles = (res.json().positions as { windows: { booking: Booking | null }[] }[]).flatMap((p) => p.windows.map((w) => w.booking)).filter((b): b is Booking => !!b)
+    const direct = tiles.filter((b) => /Gatorade|Frucor|Smith|Bundaberg|Arnott|Dare/.test(b.advertiserName))
+    expect(new Set(direct.map((b) => b.advertiserName.replace(/ \(?Direct\)?$/, ''))).size).toBeGreaterThanOrEqual(6)
+    expect(direct.some((b) => b.approval.defaultApproved)).toBe(true)
+    expect(direct.some((b) => !b.approval.defaultApproved)).toBe(true)
+    for (const b of direct) expect(b.approval.defaultApproved, b.campaignId).toBe((await ctx.approvals.statusOf(b.campaignId)) === 'approved')
+    /* Gatorade has campaigns in every state, and the approved booking is not red. */
+    const states = new Set<string>()
+    for (const id of ['c_demo_gatorade_zero', 'c_demo_gatorade_fast', 'c_demo_gatorade_cool', 'c_demo_gatorade_training', 'c_demo_gatorade_summer']) states.add(String(await ctx.approvals.statusOf(id)))
+    expect(states).toEqual(new Set(['approved', 'awaiting_approval', 'rejected']))
+    expect(direct.find((b) => b.campaignId === 'c_demo_gatorade_zero')?.approval).toMatchObject({ defaultApproved: true, defaultRisk: 'secured' })
   })
 
   it('is idempotent', async () => {

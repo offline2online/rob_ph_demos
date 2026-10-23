@@ -112,3 +112,22 @@
   bottom: 0;
   padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
 }
+/* Pop-ups opened from a date/time picker, a drop-down or a modal (ticket
+   EaqjQcujKZEUQL1V2kEv, 23 Oct 2026). Their own lists scroll without handing
+   the swipe on to the page (shared/popupTouchGuard.ts locks the page behind
+   them for Safari, which ignores overscroll-behavior before 16), and a pop-up
+   never runs off the side of a narrow screen. */
+.ant-picker-time-panel-column,
+.ant-select-dropdown .rc-virtual-list-holder,
+.ant-select-dropdown .ant-select-item-empty,
+.ant-cascader-menu {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+.ant-select-dropdown,
+.ant-picker-dropdown,
+.ant-dropdown { max-width: calc(100vw - 16px); }
+@media (hover: none) and (pointer: coarse) {
+  .ant-picker-time-panel-column > li.ant-picker-time-panel-cell .ant-picker-time-panel-cell-inner { min-height: 32px; line-height: 32px; }
+}

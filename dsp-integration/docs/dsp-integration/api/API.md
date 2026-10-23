@@ -464,9 +464,10 @@ booked or bid by window.
 | GET | `/admin/v1/creative-ids?advertiserId=&dealId=` | Creative IDs with their member campaigns (`campaignId`, `name`, `touchPoints`, `dealIds`) and the creative's own `dealIds` / `direct` — what the existing-ID picker shows. `dealId` resolves per deal (a creative in three deals is listed under each); empty lists IDs with a direct arrangement. |
 | PUT | `/admin/v1/campaigns/{id}/deals` | Retailer sets `dealIds` on a campaign beyond its authored deal (approver scope). |
 | POST | `/admin/v1/campaigns/{id}/unreject` | Undo a mistaken rejection: `Rejected` → `Awaiting approval` (`conflict` if not currently Rejected, or if `assetVersion` changed since). Takes `assetVersion` and an optional `reason`; never auto-approves. Same permission as approve/reject. |
+| POST | `/admin/v1/campaigns/{id}/revert-approval` | Take back an approval: `Approved` → `Awaiting approval` (`conflict` if not currently Approved, or if `assetVersion` changed since). Takes `assetVersion` and an optional `reason`; never auto-approves. The campaign is not eligible until approved again, and the Booking Schedule reads the same status. Same permission as approve/reject. |
 
 Audit actions: `submitted`, `auto_approved`, `approved`, `rejected`,
-`returned_for_review`, `unrejected`, `edit_discarded` (a rejected edit was
+`returned_for_review`, `unrejected`, `approval_reverted`, `edit_discarded` (a rejected edit was
 thrown away, Q38), `reused_clearance` (approved without review, every asset
 already human-cleared, Q40). Every view also carries `liveAssetVersion`
 and `pendingEdit`. These back the drop-in approval module

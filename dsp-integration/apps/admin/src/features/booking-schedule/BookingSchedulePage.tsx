@@ -28,7 +28,7 @@ import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { SLOT_OWNERS, type BookingCapacity, type BookingSchedule as Schedule } from '@ph-dsp/types'
 import dayjs, { type Dayjs } from 'dayjs'
 import { Fragment, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
@@ -36,6 +36,7 @@ import { WithTip } from '../../shared/InfoTip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { externalSetColumn } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
+import { BOOKING_SCHEDULE_PATH, CAMPAIGN_APPROVAL_TAB } from './path'
 /* The hosted build's read-only snapshot (see src/demo/staticApi.ts). */
 import { isSnapshotDemo } from '../../demo/mode'
 
@@ -261,7 +262,7 @@ function TileCard({ booking, money, tone }: { booking: Booking; money: (n: numbe
           <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{value}</span>
         </div>
       ))}
-      {tone && a && <div style={{ marginTop: 6 }}>{tone.label}</div>}
+      {tone && a && <div style={{ marginTop: 6 }}>{booking.campaignId ? tone.label : 'No campaign fits this slot yet, so nothing approved can play. Click to see this advertiser’s campaigns.'}</div>}
       {a && (['localised', 'personalised'] as const).filter((k) => a[k].submitted > 0).map((k) => (
         <div key={k} className="flex justify-between gap-4" style={{ lineHeight: '20px' }}>
           <span style={{ opacity: 0.75 }}>{k === 'localised' ? 'Localised approved' : 'Personalised approved'}</span>
@@ -273,13 +274,24 @@ function TileCard({ booking, money, tone }: { booking: Booking; money: (n: numbe
   )
 }
 
-function BookingTile({ booking, money }: { booking: Booking; money: (n: number) => string }) {
+/* A tile opens its campaign in Campaign Approval (ticket ByeH6mIkaRqOJjnHu31z, 23 Oct 2026): the same campaign record the tile's
+   colour was worked out from, approved or not, so the two never disagree. A Direct deal window whose advertiser has no campaign
+   that fits the slot has no campaign behind it and reads not approved; it opens Campaign Approval on that advertiser instead,
+   which says it has nothing submitted (23 Oct 2026: those red tiles did nothing when clicked). */
+function BookingTile({ booking, money, slot }: { booking: Booking; money: (n: number) => string; slot?: string }) {
+  const navigate = useNavigate()
+  const base = `${BOOKING_SCHEDULE_PATH}?tab=${CAMPAIGN_APPROVAL_TAB}`
+  const href = booking.campaignId ? `${base}&campaignId=${encodeURIComponent(booking.campaignId)}`
+    : booking.advertiserId ? `${base}&advertiserId=${encodeURIComponent(booking.advertiserId)}&advertiserName=${encodeURIComponent(booking.advertiserName)}&slot=${encodeURIComponent(slot ?? '')}`
+      : null
+  const open = href ? () => navigate(href) : undefined
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
   const tone = booking.approval ? RISK_TONE[booking.approval.defaultRisk] : undefined
   const colour = tone?.colour ?? BOOKED.colour
   return (
     <Tip title={<TileCard booking={booking} money={money} tone={tone} />}>
-      <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}` }}>
+      <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}`, cursor: open ? 'pointer' : undefined }}
+        {...(open ? { role: 'link', tabIndex: 0, 'aria-label': `Open ${booking.advertiserName} in Campaign Approval`, onClick: open, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() } } } : {})}>
         <div className="flex items-center gap-1 w-full min-w-0">
           <Icon name={booking.type === 'reserve' ? 'bookmark' : 'gavel'} size={12} />
           <span className="truncate" style={{ fontSize: 11, fontWeight: 600, color: colour }}>{booking.advertiserName}</span>
@@ -295,12 +307,12 @@ function BookingTile({ booking, money }: { booking: Booking; money: (n: number) 
    (ticket "Booking schedule: single-advertiser stacking tile" retires the
    earlier "Sold — other layer" model along with the fallback-optional,
    part-sold submission it depended on). */
-function DailyCell({ cell, money }: { cell: Cell; money: (n: number) => string }) {
+function DailyCell({ cell, money, slot }: { cell: Cell; money: (n: number) => string; slot?: string }) {
   if (cell.status === 'unavailable') return <span style={{ fontSize: 11, color: T.micro }}>—</span>
   /* Inside a live Direct advertiser deal's flight: held for its advertiser, not on sale to anyone else. */
   if (cell.status === 'reserved') return <span style={{ fontSize: 11, color: T.muted }}>Reserved · Direct</span>
   if (!cell.booking) return <span style={{ fontSize: 11, color: T.success }}>Available</span>
-  return <BookingTile booking={cell.booking} money={money} />
+  return <BookingTile booking={cell.booking} money={money} slot={slot} />
 }
 
 /* A week or a month: how many windows were booked at all, and — of those —
@@ -340,7 +352,7 @@ function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ct
   return (
     <div className="flex w-full min-w-0 flex-col justify-center gap-0.5 py-1">
       {view === 'Daily'
-        ? <DailyCell cell={value.cells[0]} money={money} />
+        ? <DailyCell cell={value.cells[0]} money={money} slot={data?.position.displayTypeName} />
         : <GroupedCell cells={value.cells} money={money} />}
     </div>
   )
