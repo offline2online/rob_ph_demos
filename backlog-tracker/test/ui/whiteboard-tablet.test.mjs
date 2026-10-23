@@ -66,8 +66,8 @@ try {
         await page.waitForSelector("#total-summary", { state: "attached" });
         await page.waitForTimeout(500);
         if (await page.locator("#nav-open-btn").isVisible()) { await page.tap("#nav-open-btn"); await page.waitForTimeout(450); }
-        await page.tap("#whiteboard-btn");
-        await page.waitForURL(BOARD_URL, { timeout: 8000 });
+        const [board] = await Promise.all([page.context().waitForEvent("page"), page.tap("#whiteboard-btn")]);
+        await board.waitForURL(BOARD_URL, { timeout: 8000 });
         assert.deepStrictEqual(o.problems, []);
       } finally { await o.close(); }
     });
@@ -78,27 +78,27 @@ try {
     try {
       await o.page.waitForSelector("#total-summary", { state: "attached" });
       await o.page.waitForTimeout(500);
-      await droppedClickTap(o.page, "#whiteboard-btn");
-      await o.page.waitForURL(BOARD_URL, { timeout: 8000 });
+      const [board] = await Promise.all([o.page.context().waitForEvent("page"), droppedClickTap(o.page, "#whiteboard-btn")]);
+      await board.waitForURL(BOARD_URL, { timeout: 8000 });
       assert.deepStrictEqual(o.problems, []);
     } finally { await o.close(); }
   });
 
-  await scenario("console 1180x820: after Back from a board, tapping Whiteboard opens another board", async () => {
+  await scenario("console 1180x820: tapping Whiteboard again opens another board in another tab", async () => {
     const o = await h.open({ seed: consoleSeed, width: 1180, height: 820, contextOptions: touchCtx });
     const { page } = o;
     try {
       await page.waitForSelector("#total-summary", { state: "attached" });
       await page.waitForTimeout(500);
-      await page.tap("#whiteboard-btn");
-      await page.waitForURL(BOARD_URL);
-      const first = page.url().match(BOARD_URL)[1];
-      await page.goBack();
-      await page.waitForSelector("#whiteboard-btn", { state: "visible" });
+      const [b1] = await Promise.all([page.context().waitForEvent("page"), page.tap("#whiteboard-btn")]);
+      await b1.waitForURL(BOARD_URL);
+      const first = b1.url().match(BOARD_URL)[1];
+      await page.bringToFront();
       await page.waitForTimeout(500);
-      await page.tap("#whiteboard-btn");
-      await page.waitForURL(BOARD_URL, { timeout: 8000 });
-      assert.notStrictEqual(page.url().match(BOARD_URL)[1], first, "a new board, not the first one");
+      assert.strictEqual(await page.locator("#whiteboard-btn").isDisabled(), false, "the console is still usable");
+      const [b2] = await Promise.all([page.context().waitForEvent("page"), page.tap("#whiteboard-btn")]);
+      await b2.waitForURL(BOARD_URL, { timeout: 8000 });
+      assert.notStrictEqual(b2.url().match(BOARD_URL)[1], first, "a new board, not the first one");
     } finally { await o.close(); }
   });
 
@@ -145,6 +145,10 @@ try {
         await page.tap("#wb-share-close");
         await page.waitForSelector("#wb-share", { state: "hidden" });
 
+        // Auto-fit rescales the view as strokes land, and strokes store their size in world units;
+        // switch it off so this scenario checks the stored size at a 1:1 view.
+        await page.tap("#wb-fit");
+        assert.strictEqual(await page.getAttribute("#wb-fit", "aria-pressed"), "false", "fit button toggles auto-fit off by touch");
         const cdp = await page.context().newCDPSession(page);
         const cx = w / 2, cy = ht / 2 + 40;
 

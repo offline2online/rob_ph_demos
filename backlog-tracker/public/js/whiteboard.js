@@ -12,7 +12,7 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import {
   COLORS, SIZES, isValidBoardId, boardUrl, toWorld, zoomAt, clampZoom, chunkCoords, strokeHit,
-  gestureMembers, lastOwnGesture, boundsOf, MAX_COORDS_PER_STROKE,
+  gestureMembers, lastOwnGesture, fitView, MAX_COORDS_PER_STROKE,
 } from "./whiteboard-core.js";
 import { clickOnTouchTap } from "./touch-click.js";
 
@@ -65,6 +65,7 @@ async function start() {
   const mine = [];                  // gesture ids this window drew, oldest first
   let tool = "pen", color = COLORS[0], size = SIZES[1];
   let view = { x: 0, y: 0, k: 1 };
+  let autoFit = true;               // frame the drawing for everyone until someone moves the view by hand
   let live = null;                  // the stroke being drawn: {g, color, size, coords, flushed}
   let dirty = true, spaceDown = false, panning = null, erasing = false, flushTimer = null;
   const pointers = new Map();       // active touch pointers, for pinch
@@ -89,6 +90,26 @@ async function start() {
     for (let i = 2; i + 1 < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]);
     ctx.stroke();
   }
+  // Auto-fit eases the view toward the framed drawing. It holds still while this
+  // window is mid-gesture, so the board never moves under the pen.
+  const gestureActive = () => !!(live || erasing || panning || pinch);
+  function easeToFit() {
+    if (!autoFit || gestureActive()) return;
+    const t = fitView(strokes.filter((s) => !hidden.has(s.id)), innerWidth, innerHeight, barBottom());
+    const near = (a, b, e) => Math.abs(a - b) < e;
+    if (near(view.x, t.x, 0.5) && near(view.y, t.y, 0.5) && near(view.k, t.k, 0.0005)) {
+      if (view.x !== t.x || view.y !== t.y || view.k !== t.k) view = t;
+      return;
+    }
+    const f = 0.18;
+    view = { k: view.k + (t.k - view.k) * f, x: view.x + (t.x - view.x) * f, y: view.y + (t.y - view.y) * f };
+    dirty = true;
+  }
+  function setAutoFit(on) {
+    autoFit = on;
+    $("wb-fit").setAttribute("aria-pressed", String(on));
+    dirty = true;
+  }
   function render() {
     dirty = false;
     const dpr = window.devicePixelRatio || 1;
@@ -102,7 +123,7 @@ async function start() {
     canvas.style.backgroundPosition = `${view.x}px ${view.y}px`;
     canvas.style.backgroundSize = `${24 * view.k}px ${24 * view.k}px`;
   }
-  (function frame() { if (dirty) render(); requestAnimationFrame(frame); })();
+  (function frame() { easeToFit(); if (dirty) render(); requestAnimationFrame(frame); })();
   addEventListener("resize", resize);
   resize();
 
@@ -160,11 +181,13 @@ async function start() {
     pointers.set(e.pointerId, pt(e));
     if (e.pointerType === "touch" && pointers.size === 2) {   // second finger: cancel the stroke, start pinch
       live = null; erasing = false; panning = null;
+      setAutoFit(false);
       const [a, b] = [...pointers.values()];
       pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), view: { ...view }, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
       dirty = true; return;
     }
     if (e.button === 1 || e.button === 2 || activeTool() === "pan") {
+      setAutoFit(false);
       panning = { sx: e.clientX, sy: e.clientY, x: view.x, y: view.y };
       canvas.classList.add("is-panning"); return;
     }
@@ -217,6 +240,7 @@ async function start() {
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
+    setAutoFit(false);
     if (e.ctrlKey || e.metaKey) { view = zoomAt(view, e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01)); }
     else view = { ...view, x: view.x - e.deltaX, y: view.y - e.deltaY };
     dirty = true;
@@ -258,14 +282,15 @@ async function start() {
     deleteGestures(new Set([g]));
   }
   $("wb-undo").addEventListener("click", undo);
-  $("wb-reset").addEventListener("click", () => {
-    const b = boundsOf(strokes);
-    if (!b) { view = { x: 0, y: 0, k: 1 }; dirty = true; return; }
-    const pad = 60, top = barBottom(), w = Math.max(1, b.maxX - b.minX), h = Math.max(1, b.maxY - b.minY);
-    const k = clampZoom(Math.min((innerWidth - pad * 2) / w, (innerHeight - pad * 2 - top) / h, 2));
-    view = { k, x: (innerWidth - w * k) / 2 - b.minX * k, y: (innerHeight + top - h * k) / 2 - b.minY * k };
-    dirty = true;
-  });
+  $("wb-reset").addEventListener("click", () => setAutoFit(true));
+  $("wb-fit").addEventListener("click", () => setAutoFit(!autoFit));
+  // Zoom about the middle of the board area; doing it by hand switches auto-fit off.
+  function zoomButton(factor) {
+    setAutoFit(false);
+    view = zoomAt(view, innerWidth / 2, (innerHeight + barBottom()) / 2, factor);
+  }
+  $("wb-zoom-in").addEventListener("click", () => zoomButton(1.25));
+  $("wb-zoom-out").addEventListener("click", () => zoomButton(0.8));
   const confirmEl = $("wb-confirm");
   $("wb-clear").addEventListener("click", () => { confirmEl.hidden = false; $("wb-confirm-no").focus(); });
   $("wb-confirm-no").addEventListener("click", () => { confirmEl.hidden = true; });
