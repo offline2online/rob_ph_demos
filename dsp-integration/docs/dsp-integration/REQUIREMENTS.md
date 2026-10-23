@@ -2757,9 +2757,16 @@ stores its criteria didn't match unsold to it. That model is retired:
   switches the Advertiser Bookings page to the Campaign Approval tab filtered
   to the tile's `campaignId`: the same record the tile's colour came from,
   approved or not. That campaign is shown even when the list would normally
-  hide it (an HQ campaign, or a Draft). A booking with no campaign is not a
-  link. Approving, rejecting or undoing in Campaign Approval refreshes the
-  schedule, so the tile colour matches when the user goes back.
+  hide it (an HQ campaign, or a Draft). Approving, rejecting or undoing in
+  Campaign Approval refreshes the schedule, so the tile colour matches when
+  the user goes back. **A tile with no campaign behind it** (23 Oct 2026): a
+  Direct deal window whose advertiser has no campaign that fits the slot (one
+  for its display type with no deal ID or this deal's) reads not approved,
+  and used to do nothing when clicked. It opens Campaign Approval filtered to
+  the advertiser instead, with a notice saying it has no campaigns submitted,
+  or none that fits that display type, and a "Show all campaigns" action.
+  Its hover card says no campaign fits the slot yet. Only a booking with no
+  advertiser either is not a link.
 - Open questions 50 and 51 (below) — the target algorithm for clearing
   overlapping localised bids and billing a part-sold position — are
   **superseded, not answered**: there is no longer a part-sold position for

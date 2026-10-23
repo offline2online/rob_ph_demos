@@ -452,6 +452,31 @@ describe('Campaign Status stand-in', () => {
     await waitFor(() => expect(within(screen.getByLabelText('Campaign Status')).getByText('Zinger Box — hero')).toBeInTheDocument(), { timeout: 10000 })
   }, slow(45000))
 
+  /* 23 Oct 2026: a Direct deal window whose advertiser has no campaign that fits the slot is red with no campaign behind it,
+     and did nothing when clicked. It opens Campaign Approval on the advertiser, which says why nothing plays there. */
+  it('opens Campaign Approval on the advertiser from a tile with no campaign, and says it has none', async () => {
+    const start = new Date().toISOString()
+    const booking = {
+      reservationId: 'deal_x', campaignId: '', advertiserId: 'nobrand', partnerId: 'direct', pricingType: 'default', type: 'reserve', advertiserName: 'NoBrand (Direct)', partnerName: 'Direct', cpm: 5, assumedViews: 1000, bookedRevenue: 5, billedRevenue: null,
+      layers: { default: true, localised: false, personalised: false }, personalisedTriggers: null,
+      approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
+    }
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0 },
+      positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
+        windows: [{ start, status: 'booked', booking }] }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule })))
+    const router = renderAt('/booking-schedule')
+    fireEvent.click(await screen.findByRole('link', { name: /Open NoBrand \(Direct\) in Campaign Approval/ }, { timeout: 10000 }))
+    expect(await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(new URLSearchParams(router.state.location.search).get('advertiserId')).toBe('nobrand')
+    expect(await screen.findByText('NoBrand (Direct) has no campaigns submitted yet.', {}, { timeout: 10000 })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show all campaigns' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?tab=campaign-status'), { timeout: 10000 })
+    expect(screen.queryByText(/has no campaigns submitted yet/)).not.toBeInTheDocument()
+  }, slow(45000))
+
   /* The Status column's own funnel is the only status filter (ticket dinPPBl9Rk95UbrXoRbt);
      it stays on until cleared from that funnel. */
   it('filters by status from the Status column funnel, until the filter is cleared', async () => {

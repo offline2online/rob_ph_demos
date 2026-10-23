@@ -47,7 +47,7 @@
 
    The Status filter lives in the URL (`status`), like the Advertiser filter. */
 import { useQuery } from '@tanstack/react-query'
-import { Button, Checkbox, Dropdown, Input, Modal, Radio, Spin, Switch, Tag } from 'antd'
+import { Alert, Button, Checkbox, Dropdown, Input, Modal, Radio, Spin, Switch, Tag } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalStatusBadge, RejectionCodeSelect, STATUS_LABELS, isRejectionCode, rejectionLabel, type Approval, type ApprovalStatus, type RejectionCode } from '@ph-dsp/campaign-approval/ui'
@@ -386,6 +386,14 @@ export function CampaignStatusPage() {
     else next.delete('status')
     setParams(next, { replace: true })
   }
+  /* Set by a Booking Schedule tile that has no campaign behind it (see the notice above the grid). */
+  const slotParam = params.get('slot')
+  const advertiserLabel = params.get('advertiserName') ?? 'This advertiser'
+  const clearFromTile = () => {
+    const next = new URLSearchParams(params)
+    for (const k of ['advertiserId', 'advertiserName', 'slot']) next.delete(k)
+    setParams(next, { replace: true })
+  }
   const clearFocus = () => {
     const next = new URLSearchParams(params)
     next.delete('campaignId'); next.delete('reason')
@@ -485,6 +493,16 @@ export function CampaignStatusPage() {
           </section>
         )}
       </div>
+      {/* Opened from a Booking Schedule tile with no campaign behind it (23 Oct 2026): say why nothing here plays in that slot
+          rather than show an empty list, or this advertiser's campaigns for other slots with no explanation. */}
+      {advertiserId && slotParam !== null && (
+        <Alert className="mb-3" type="info" showIcon
+          message={all.some((c) => c.advertiserId === advertiserId)
+            ? `None of ${advertiserLabel}’s campaigns fits ${slotParam || 'this slot'}.`
+            : `${advertiserLabel} has no campaigns submitted yet.`}
+          description="A Direct deal window plays a campaign for the slot’s display type with no deal ID or this deal’s. Until one is submitted and approved, the Booking Schedule shows these windows as not approved."
+          action={<Button size="small" type="link" onClick={clearFromTile}>Show all campaigns</Button>} />
+      )}
       <Grid<Row>
         label="Campaign Status"
         rows={rows}
