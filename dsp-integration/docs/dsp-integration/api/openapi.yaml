@@ -1460,19 +1460,6 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {description: 'error.code = conflict. A Programmatic guaranteed or Direct advertiser deal whose new delivery term overlaps another such deal on any slot it is assigned to (reserving deals never overlap on a slot, Rob, 22 Oct 2026). The message names the other deal, its advertiser, the slot and the overlapping dates; nothing is saved.', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    delete:
-      tags: [Admin — Advertiser settings]
-      operationId: deleteBuyersList
-      summary: Permanently delete a deal that was never finalised and shared (a draft); 409 otherwise
-      description: |
-        Only a `draft` deal (programmatic guaranteed, preferred, private auction or Direct advertiser) can be deleted: the row, its deal IDs, term versions and acceptances go. A deal that has been shared with a buyer, or is live (a finalised Direct advertiser deal), or is archived answers 409 `conflict` and can only be archived. Also 409 `has_dependents` while a slot is assigned to the draft. Recorded in the SSP change history as a deleted deal.
-      security: [{adminSession: [admin]}]
-      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
-      responses:
-        '204': {description: Deleted}
-        '401': {$ref: '#/components/responses/Unauthorised'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        '409': {$ref: '#/components/responses/HasDependents'}
 
   /admin/v1/buyers-lists/{buyersListId}/archive:
     post:

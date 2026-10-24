@@ -27,7 +27,7 @@ type Capacity = Map<string, { plays: number; displayTypes: number; positions: nu
 type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; orientation?: 'landscape' | 'portrait' | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }
 /* Secondary text inside a Tip (dark background). */
 const TIP_MUTED = 'rgba(255,255,255,0.65)'
-export type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onArchive: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
+export type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onArchive: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
 export type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* One line per targeting rule, in the words of the criteria picker: "State: includes selected NSW, VIC". */
@@ -201,8 +201,6 @@ const ActionsCell = ({ data, context }: P) =>
     <span className="inline-flex gap-1">
       {data.status === 'shared' && data.dealType !== 'direct' && <Button type="text" size="small" aria-label={`Deal sheet for ${data.name}`} icon={<Icon name="ios_share" size={15} />} onClick={() => context.current.onShare(data)} />}
       <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
-      {/* Delete is for a deal that was never finalised and shared (a draft, either kind); anything shared can only be archived. */}
-      {data.status === 'draft' && <Button type="text" size="small" aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />}
       <Button type="text" size="small" aria-label={`Archive ${data.name}`} icon={<Icon name="archive" size={15} />} onClick={() => context.current.onArchive(data)} />
     </span>
   ) : null
@@ -225,8 +223,6 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
   /* Read the open list from the live rows, so slots assigned while it is open (or since it was last opened) enable Finalise at once. */
   const editing = editingSnapshot ? lists.find((l) => l.id === editingSnapshot.id) ?? editingSnapshot : null
   const [deleting, setDeleting] = useState<BuyersList | null>(null)
-  /* Whether the open dialog deletes the draft for good or archives the deal. */
-  const [removal, setRemoval] = useState<'archive' | 'delete'>('archive')
   const [sharing, setSharing] = useState<BuyersList | null>(null)
   const [deleteError, setDeleteError] = useState<ApiRequestError | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
@@ -244,7 +240,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []) },
     /* Start and end each carry a time now (ticket yOginusgiFgFkwVHTRFH): wide enough not to clip the end time (E2E 22 Oct 2026). */
     { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
-    ...(canEdit ? [{ headerName: '', width: 150, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
+    ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ], [canEdit])
   const context = {
     canEdit, showTargeting, bufferPct, capacity, slots, dspName, seatName,
@@ -254,12 +250,6 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     },
     onShare: (l: BuyersList) => setSharing(l),
     onArchive: (l: BuyersList) => {
-      setRemoval('archive')
-      setDeleting(l)
-      setDeleteError(null)
-    },
-    onDelete: (l: BuyersList) => {
-      setRemoval('delete')
       setDeleting(l)
       setDeleteError(null)
     },
@@ -269,8 +259,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     if (!deleting) return
     setDeleteBusy(true)
     try {
-      if (removal === 'delete') await api('DELETE', `/admin/v1/buyers-lists/${deleting.id}`)
-      else await api('POST', `/admin/v1/buyers-lists/${deleting.id}/archive`)
+      await api('POST', `/admin/v1/buyers-lists/${deleting.id}/archive`)
       setDeleting(null)
       onChanged()
     } catch (e) {
@@ -285,7 +274,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
   const assigned = deleting ? slots.get(deleting.id) ?? [] : []
   const slotLine = (r: SlotInfo) => `${r.displayType}${r.description ? ` (${r.description})` : ''} · ${r.playlist || 'No playlist'} · ${r.position} (slot ${r.slot})`
   const blockedMessage = deleting && (assigned.length
-    ? `“${deleting.name}” can’t be ${removal === 'delete' ? 'deleted' : 'archived'} because it is assigned to ${assigned.length} slot${assigned.length === 1 ? '' : 's'}.`
+    ? `“${deleting.name}” can’t be archived because it is assigned to ${assigned.length} slot${assigned.length === 1 ? '' : 's'}.`
     : deleteError?.message)
 
   return (
@@ -319,19 +308,19 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
       {deleting && (
         <DeleteDialog
           open={!!deleting} name={deleting.name}
-          blockedReason={blockedMessage} action={removal === 'delete' ? 'Delete' : 'Archive'} icon={removal === 'delete' ? 'delete' : 'archive'}
+          blockedReason={blockedMessage} action="Archive" icon="archive"
           deleting={deleteBusy} onDelete={confirmDelete} onClose={() => setDeleting(null)}
         >
           {assigned.length ? (
             <>
-              <div>{blockedMessage} Unassign it from each slot below in Available Inventory (the Assigned to column), then {removal === 'delete' ? 'delete' : 'archive'} it.</div>
+              <div>{blockedMessage} Unassign it from each slot below in Available Inventory (the Assigned to column), then archive it.</div>
               <ul className="mt-2 mb-0 pl-[18px]">
                 {assigned.map((r, i) => <li key={i}>{slotLine(r)}</li>)}
               </ul>
             </>
           ) : (
             <>
-              {deleteError ? <div>{deleteError.message}</div> : removal === 'delete' ? 'This deal has not been finalised and shared with a buyer, so it can be deleted permanently. Its deal ID and terms are removed and cannot be restored.' : 'This moves the deal to View Archived Deals. It leaves this table and the Assigned to picker, takes no new bookings or bids and becomes read-only; its deal ID, terms, campaigns, bookings and billing stay.'}
+              {deleteError ? <div>{deleteError.message}</div> : 'This moves the deal to View Archived Deals. It leaves this table and the Assigned to picker, takes no new bookings or bids and becomes read-only; its deal ID, terms, campaigns, bookings and billing stay.'}
               {deleteError?.body?.error.details?.length ? (
                 <ul className="mt-2 mb-0 pl-[18px]">
                   {deleteError.body.error.details.map((d, i) => <li key={i}>{d.reason}</li>)}

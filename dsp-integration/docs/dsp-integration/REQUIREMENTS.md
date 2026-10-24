@@ -342,15 +342,7 @@ the same dialog for both.
   **Close**.
 - A confirmed delete takes effect immediately; it is not held for Save
   changes. Any other unsaved changes on the page are left as they were.
-- **A draft deal can be deleted** (Advertisers / Inventory; ticket
-  ROSvBDdeLr3jCHgqRcUR, 24 Oct 2026). A deal that has not been finalised and
-  shared with a buyer (status Draft: programmatic guaranteed, preferred,
-  private auction or Direct advertiser) shows a **Delete** icon beside Archive.
-  Delete is permanent: the deal, its deal IDs and terms are removed. A shared
-  or live deal has no Delete, and the API refuses it (`409 conflict`); a draft
-  still assigned to a slot is refused with `409 has_dependents`. The SSP change
-  history records it as a deleted deal.
-- **Shared deals are archived, never deleted** (Advertisers / Inventory; ticket
+- **Deals are archived, never deleted** (Advertisers / Inventory; ticket
   bCcJ2e00CRLxtd98Utlr, 22 Oct 2026). The row's action is **Archive** and uses
   the same confirmation dialog. A deal assigned to one or more slots can't be
   archived: the dialog opens already saying so ("can't be archived because it

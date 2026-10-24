@@ -417,19 +417,4 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     })
     return withDelivery(ctx, archived)
   })
-
-  /* A deal that was never finalised and shared can be deleted for good (ticket ROSvBDdeLr3jCHgqRcUR); once shared with a buyer (or live, for a Direct advertiser deal) it can only be archived. Refused while a slot is assigned to it; the checks and the delete are one transaction. The change history records it as a deleted deal. */
-  app.delete<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId', async (req, reply) => {
-    guards.flagged()
-    guards.requireScope(req, 'admin')
-    await tx(ctx.db, async () => {
-      const list = await ctx.buyersLists.get(req.params.buyersListId)
-      if (!list) throw notFound()
-      if (list.status !== 'draft') throw conflict('Only a deal that has not been finalised and shared can be deleted. Archive this one instead.', [{ field: 'status', reason: list.status === 'archived' ? 'Archived deals are kept.' : 'This deal has been shared, so it can only be archived.' }])
-      const dependents = await dependentSlots(ctx, list.id)
-      if (dependents.length) throw hasDependents("This deal can't be deleted while a slot is assigned to it.", dependents.map((reason) => ({ field: 'slots', reason })))
-      await ctx.buyersLists.delete(list.id)
-    })
-    return reply.status(204).send()
-  })
 }

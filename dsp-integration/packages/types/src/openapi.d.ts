@@ -1019,11 +1019,7 @@ export interface paths {
          */
         put: operations["updateBuyersList"];
         post?: never;
-        /**
-         * Permanently delete a deal that was never finalised and shared (a draft); 409 otherwise
-         * @description Only a `draft` deal (programmatic guaranteed, preferred, private auction or Direct advertiser) can be deleted: the row, its deal IDs, term versions and acceptances go. A deal that has been shared with a buyer, or is live (a finalised Direct advertiser deal), or is archived answers 409 `conflict` and can only be archived. Also 409 `has_dependents` while a slot is assigned to the draft. Recorded in the SSP change history as a deleted deal.
-         */
-        delete: operations["deleteBuyersList"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5768,29 +5764,6 @@ export interface operations {
             };
         };
     };
-    deleteBuyersList: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                buyersListId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            401: components["responses"]["Unauthorised"];
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["HasDependents"];
-        };
-    };
     archiveBuyersList: {
         parameters: {
             query?: never;
@@ -6559,7 +6532,7 @@ export interface operations {
                 "application/json": {
                     /** @description The approved version; rejected with 409 if it has changed. */
                     assetVersion: string;
-                    /** @description Optional — why the approval is being reverted. Recorded in the audit trail. */
+                    /** @description Optional — why the approval is being reverted. Recorded in the audit trail */
                     reason?: string;
                 };
             };
