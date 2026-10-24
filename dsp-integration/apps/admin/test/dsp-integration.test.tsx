@@ -1396,6 +1396,10 @@ describe('Advertisers / Inventory', () => {
     expect(within(archive).getByText('PH-OLD0000001')).toBeInTheDocument()
     expect(within(archive).getByText('system')).toBeInTheDocument()
     expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(7)
+    /* One page header, with the back link beside it and the explanation in its tooltip. */
+    expect(screen.getAllByText('Archived deals')).toHaveLength(1)
+    expect(screen.getByRole('link', { name: /Advertisers \/ Inventory/ })).toHaveAttribute('href', '/advertisers')
+    expect(screen.queryByText(/Deals are archived, never deleted/)).toBeNull()
   }, slow(45000))
 
   /* Ticket Zxw7VRUSytMAovkbDFKt: with the dealTargeting flag off (the default) a deal's tooltip shows no targeting. */

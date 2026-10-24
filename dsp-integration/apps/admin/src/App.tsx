@@ -37,7 +37,7 @@ import { T, phTheme } from './theme/phTheme'
 /* A page title may carry a tooltip saying what the page covers (spec Help text).
    hideNav: this route stands alone (opened in its own tab) and shouldn't show
    the Display Types / DSP Integration nav beside it (ticket, 21 Sep). */
-export interface RouteHandle { title: string; tip?: string; hideNav?: boolean }
+export interface RouteHandle { title: string; tip?: string; hideNav?: boolean; back?: { label: string; to: string } }
 
 /* Navigation order (Rob, 24 Sep 2026; Campaign Status folded into Campaign
    schedule's own second tab, 26 Sep 2026 — it is no longer a nav item of its
@@ -115,7 +115,7 @@ function featureRoutes(flags: Flags): RouteObject[] {
           element: <AdvertisersPage flags={flags} />,
         },
         /* Archived deals: a full-screen page of its own (ticket cy45L5xGDqKwzt4diBBa), reached from View Archived Deals; no section nav beside it. */
-        { path: ARCHIVED_DEALS_PATH.slice(1), handle: { title: 'Archived deals', hideNav: true } satisfies RouteHandle, element: <ArchivedDealsPage /> },
+        { path: ARCHIVED_DEALS_PATH.slice(1), handle: { title: 'Archived deals', tip: 'Deals are archived, never deleted. An archived deal is read only and takes no new bookings or bids, but its deal ID, terms, campaigns, bookings and billing remain. A deal whose flight has ended and whose last window is billed is archived automatically, by system. Use the filter under each column heading to find a deal from the past.', hideNav: true, back: { label: 'Advertisers / Inventory', to: '/advertisers' } } satisfies RouteHandle, element: <ArchivedDealsPage /> },
         /* Its own page, opened in a new tab from Available Inventory or an advertiser
            (Rob, 20 Sep) — just the schedule, so no Display Types / DSP Integration
            nav beside it (Rob, 21 Sep). Given a second tab hosting the full Campaign
@@ -174,7 +174,7 @@ function Root({ flags }: { flags: Flags }) {
   const title = handle?.tip ? <WithTip tip={handle.tip}>{handle.title}</WithTip> : (handle?.title ?? '')
   return (
     <UnsavedChangesProvider>
-      <AppShell title={title} nav={handle?.hideNav ? [] : navFor(flags, session.data, features.data?.dspIntegration)}>
+      <AppShell title={title} nav={handle?.hideNav ? [] : navFor(flags, session.data, features.data?.dspIntegration)} back={handle?.back}>
         <Outlet />
       </AppShell>
     </UnsavedChangesProvider>

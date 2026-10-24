@@ -3,7 +3,7 @@
    for a route that stands alone in its own tab). No platform header, sidebar
    or breadcrumb — HQ Admin iframes this page (ph-designer prototyping.md). */
 import { useRef, type ReactNode } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { T } from '../theme/phTheme'
 import { Icon } from './Icon'
 import { useStickyTop } from './useStickyTop'
@@ -31,13 +31,16 @@ const Static = ({ children }: { children: ReactNode }) => <div className="trunca
    (useStickyTop lifts it if it is taller than the screen) — see
    .ph-sticky-pane in theme/index.css for why.
    An empty `nav` (a route that stands alone in its own tab) has no menu. */
-export function AppShell({ title, nav, children }: { title: ReactNode; nav: NavItem[]; children: ReactNode }) {
+export function AppShell({ title, nav, back, children }: { title: ReactNode; nav: NavItem[]; back?: { label: string; to: string }; children: ReactNode }) {
   const collapsed = useViewportWidth() < NAV_COLLAPSE_BELOW
   const navRef = useRef<HTMLElement>(null)
   useStickyTop(navRef)
   const header = (
     <>
-      <div className="truncate text-xl font-bold">{title}</div>
+      <div className="flex items-center gap-3">
+        {back && <Link to={back.to} className="inline-flex shrink-0 items-center gap-1 no-underline" style={{ fontSize: 14, color: T.primary }}><Icon name="arrow_back" size={16} />{back.label}</Link>}
+        <div className="min-w-0 truncate text-xl font-bold">{title}</div>
+      </div>
       <div className="my-4 h-px" style={{ background: T.divider }} />
     </>
   )

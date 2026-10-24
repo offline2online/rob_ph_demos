@@ -3,12 +3,10 @@
    / Inventory). Deals are archived, never deleted, so each keeps its deal ID,
    terms and history; the page is read only. Every column has a filter (a search
    box, or a set for Archived by) so a deal from the past is quick to find. */
-import { Button } from 'antd'
 import type { ColDef } from 'ag-grid-community'
 import type { BuyersList } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Q } from '../../api/queries'
 import { Grid } from '../../shared/Grid'
@@ -25,7 +23,6 @@ const ArchivedAtCell = ({ data }: P) => (data?.archivedAt ? <span style={{ fontS
 const ArchivedByCell = ({ data }: P) => (data?.archivedBy ? <span style={{ fontSize: 12.5 }}>{data.archivedBy}</span> : null)
 
 export function ArchivedDealsPage() {
-  const navigate = useNavigate()
   const { dspName, seatName } = useDealNames()
   const bufferPct = useQuery(Q.advertiserSettings).data?.guaranteeBufferPct ?? 10
   const q = useQuery({ queryKey: ['buyers-lists', 'archived'], queryFn: () => api<{ items: BuyersList[] }>('GET', '/admin/v1/buyers-lists?archived=true') })
@@ -45,9 +42,6 @@ export function ArchivedDealsPage() {
   const context: Ctx['current'] = { canEdit: false, showTargeting: false, bufferPct, capacity: new Map(), slots: new Map(), dspName, seatName, onEdit: () => {}, onShare: () => {}, onArchive: () => {} }
   return (
     <div>
-      <Button color="primary" variant="text" className="mb-2 px-0" icon={<Icon name="arrow_back" size={16} />} onClick={() => navigate('/advertisers')}>Advertisers / Inventory</Button>
-      <div className="mb-1 inline-flex items-center gap-2.5" style={{ fontSize: 16, fontWeight: 500 }}><Icon name="inventory_2" size={20} />Archived deals</div>
-      <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 12 }}>Deals are archived, never deleted. An archived deal is read only and takes no new bookings or bids, but its deal ID, terms, campaigns, bookings and billing remain. A deal whose flight has ended and whose last window is billed is archived automatically, by system. Use the filter under each column heading to find a deal from the past.</div>
       {q.isError ? <div style={{ fontSize: 12.5, color: T.error }}>Archived deals could not be loaded.</div>
         : q.data && rows.length === 0 ? <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="inventory_2" size={18} /><span>No archived deals yet.</span></div>
         : <>
