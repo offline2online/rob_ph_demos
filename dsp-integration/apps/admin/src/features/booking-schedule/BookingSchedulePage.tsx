@@ -656,11 +656,11 @@ export function BookingSchedulePage() {
             />
           )}
 
-          <SectionLabel><WithTip tip={PLAYS_TIP}>Plays per day</WithTip></SectionLabel>
-          {capacity.isError && <Alert className="mb-4" type="error" showIcon message="Plays per day couldn’t be loaded." />}
-          {capacity.data ? <PlaysPerDay data={capacity.data} /> : !capacity.isError && <Spin />}
-
-          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip></SectionLabel>
+          {/* Booking revenue follows the Daily / Weekly / Monthly view and date range
+              above, so it sits directly under the schedule and names the period it
+              covers; Plays per day does not follow the view, so it goes last
+              (ticket LFloWVCY1ii2ikrjOx8M, 24 Oct 2026). */}
+          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip><span style={{ fontWeight: 400, color: T.muted }}> · {view}: {dayjs(from).format('D MMM YYYY')} – {dayjs(to).format('D MMM YYYY')}</span></SectionLabel>
           <Grid<RevenueRow>
             label="Booking revenue"
             rows={data.revenue}
@@ -670,6 +670,10 @@ export function BookingSchedulePage() {
             defaultColDef={{ sortable: false, wrapHeaderText: true, autoHeaderHeight: true }}
             pinnedBottomRowData={[{ displayTypeId: 'total', displayTypeName: 'Total', ...data.totals, total: true }]}
           />
+
+          <SectionLabel><WithTip tip={PLAYS_TIP}>Plays per day</WithTip></SectionLabel>
+          {capacity.isError && <Alert className="mb-4" type="error" showIcon message="Plays per day couldn’t be loaded." />}
+          {capacity.data ? <PlaysPerDay data={capacity.data} /> : !capacity.isError && <Spin />}
         </>
       )}
     </div>
