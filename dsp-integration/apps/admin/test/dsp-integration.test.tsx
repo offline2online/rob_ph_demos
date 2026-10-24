@@ -405,10 +405,10 @@ describe('Campaign Status stand-in', () => {
     /* And a row menu for opening, undoing a rejection, or switching a campaign on — approving and rejecting are by selection. */
     expect(within(grid).getByLabelText('Swisse spring: options')).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))
-    /* Awaiting approval, not Rejected, so Undo rejection is offered but disabled. */
+    /* Awaiting approval, not Rejected, so Undo rejection is offered but disabled; the decide actions are offered (ticket jPQSz9EBmt0P2geHXp6l). */
     expect(await screen.findByRole('menuitem', { name: /Undo rejection/ }, { timeout: 10000 })).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.queryByRole('menuitem', { name: /^Approve$/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: /Reject/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Approve campaign' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Reject campaign' })).toBeInTheDocument()
   })
 
   /* Ticket BGxKMB89DIOgWuwgfrej: the two tabs are back (removed 13 Oct 2026 by BG4LKXiqTMYNm8jRNFDk). */
@@ -475,6 +475,28 @@ describe('Campaign Status stand-in', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show all campaigns' }))
     await waitFor(() => expect(router.state.location.search).toBe('?tab=campaign-status'), { timeout: 10000 })
     expect(screen.queryByText(/has not yet provided creative/)).not.toBeInTheDocument()
+  }, slow(45000))
+
+  /* Ticket 53EvxhdKrShqDt1OIFMq: the advertiser's name on a tile opens Campaign Approval filtered to that advertiser, on a mouse too. */
+  it('opens Campaign Approval filtered to the advertiser from the name on a tile', async () => {
+    const start = new Date().toISOString()
+    const booking = {
+      reservationId: 'r_z', campaignId: 'c_zinger', advertiserId: 'zinger', partnerId: 'direct', pricingType: 'default', type: 'reserve', advertiserName: 'Zinger Direct', partnerName: 'Direct', cpm: 5, assumedViews: 1000, bookedRevenue: 5, billedRevenue: null,
+      layers: { default: true, localised: false, personalised: false }, personalisedTriggers: null,
+      approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
+    }
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0 },
+      positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
+        windows: [{ start, status: 'booked', booking }] }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule })))
+    const router = renderAt('/booking-schedule')
+    fireEvent.click(await screen.findByRole('link', { name: /Show Zinger Direct in Campaign Approval/ }, { timeout: 10000 }))
+    expect(await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })).toBeInTheDocument()
+    const q = new URLSearchParams(router.state.location.search)
+    expect(q.get('advertiserId')).toBe('zinger')
+    expect(q.get('campaignId')).toBeNull()
   }, slow(45000))
 
   /* The Status column's own funnel is the only status filter (ticket dinPPBl9Rk95UbrXoRbt);
@@ -677,6 +699,22 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     expect(cta('Reject Selected')).toBeInTheDocument()
     tick(grid, 'Nestlé winter')
     expect(await screen.findByRole('button', { name: 'Approve Selected' })).toBeInTheDocument()
+  }, slow(45000))
+
+  it('approves one campaign from its row menu, leaving the others alone (ticket jPQSz9EBmt0P2geHXp6l)', async () => {
+    const grid = await open()
+    fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Approve campaign' }))
+    await waitFor(() => expect(posts.map((p) => p.url)).toEqual(['/api/admin/v1/approvals/approve-assign']))
+    expect(posts[0].body).toEqual({ items: [{ campaignId: 'c1', assetVersion: 'v1' }] })
+  }, slow(45000))
+
+  it('rejects one campaign from its row menu', async () => {
+    const grid = await open()
+    fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reject campaign' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Reject Swisse spring?')).toBeInTheDocument()
   }, slow(45000))
 
   it('approves the ticked campaigns into a new creative ID', async () => {

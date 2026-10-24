@@ -14,6 +14,7 @@ record.
 - **22 Oct 2026** — **No buyer of any kind is named on a slot; slots are sold only through deals** (Rob; ticket QdMaGvVhMZgcdcmIAalT, extending mpbRDjAPS4uIagi2IVsz and z7kRMUflMRwkyBdEWxbn). Assigned to no longer offers an **Advertisers** group: neither a direct advertiser nor a DSP's advertiser (Nestlé via Google DSP) can be picked. `PUT /admin/v1/available-inventory` refuses any name in `assignedTo.advertisers` with 400, pointing to deals (a name a sold slot already holds is tolerated on resave until its lock releases). **DSPs (open auction), Deals and buyers lists, Whitelist only and the Global deal stay**: they sell to anyone eligible, not to a named buyer. Migration 0086 clears every named advertiser; the demo seed sells Landscape slot 4 to Nestlé through a Programmatic guaranteed deal. This supersedes the "DSP named advertisers are unchanged" sentence under migration 0082 below.
 - **22 Oct 2026** — **A deal's touch points, and the Red Bull end-to-end flow** (Rob; ticket dmcbOIDGV3FnBQ66KYIb). A deal's touch points are those of the display types of the slots it is assigned to; `GET /admin/v1/advertisers/{id}/deals` returns them as `touchPoints` and a campaign whose brief names another is refused 400. Visitor segments for a play are a stated interface (`shared/interface-contract.md` row 6). The whole flow is E2E-TEST-SPEC.md Run 12 and AWS-DEMO-TEST-FLOW.md section G.
 - **22 Oct 2026** — **Direct advertisers reach a slot only through a Direct advertiser deal** (Rob; tickets krIPF8rPnMwVOmynHNRh, knqu0B2PGTF9PG1EUWYD, mpbRDjAPS4uIagi2IVsz, OMwDvy3OUmY9raBtTf7v, EipHu2GUdlbZMpPGCTjF, z7kRMUflMRwkyBdEWxbn and H8YNT4aXwSqD6gffTkAz, the 7-ticket series). A deal has an internal PH deal ID, flight dates and a price. Three earlier statements are **superseded**: (1) a direct advertiser named in a slot's **Assigned to** (refused since 21 Oct; migration 0082 clears existing ones); (2) "no deal ID for a direct advertiser" (it now carries its own PH deal ID on its campaigns); (3) "no billing through the platform" (the revenue is **recorded and reported** like DSP revenue, but never invoiced, because a direct advertiser is billed outside PH). Spec: "Direct advertisers" under Advertisers, "Billing", and the deal-type entries under Programmatic guaranteed. Walkthrough: AWS-DEMO-TEST-FLOW.md section F; tests: E2E-TEST-SPEC.md Run 10 X and `apps/api/test/e2e/run10-direct-deals.test.ts`.
+- **23 Oct 2026** — **Filtering the Booking schedule to one advertiser highlights it and greys out the rest** (Rob; ticket zebMTdEEJFkVG5AVGiET). The other advertisers' tiles stay on the grid with their names (e.g. "Red Bull (Direct)"), greyed; no tile reads a bare "Reserved · Direct". Only the filtered advertiser counts in the totals, Booking revenue and the weekly / monthly "N of M booked".
 - **22 Oct 2026** — **A finalised Direct advertiser deal reads as booked on every window of its flight** (Rob; ticket TWJmiwQpPu9Y4tAUjncC). The exchange writes a deal's booking one window ahead, but the Booking schedule no longer shows the later windows as a bare "Reserved · Direct": each is the advertiser's booking (named, with Default / Localised / Personalised layers, approval state, the deal's CPM) and counts in Booking revenue, % sold, revenue by pricing type and Plays per day as pre-booked. Derived at read time (`plannedDirectBookings`, `exchange/directDeal.ts`); a window the exchange has booked shows that row instead. Nothing is stored.
 - **20 Oct 2026** — The AWS POC is scoped to **three demand paths** (ticket JNSjYNvGcgwdzFvaPHlk). See "AWS POC demand paths" below the changelog.
 - **17 Oct 2026** — Available Inventory's **Reserve price** is replaced by an
@@ -1447,6 +1448,16 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
     appear for an unapproved row.
   - **A mix of the two** → no action is shown, since none is valid across
     the whole selection.
+- **Row menu (ticket jPQSz9EBmt0P2geHXp6l, 23 Oct 2026).** The three-dot
+  menu on a campaign row offers every selection action for that one
+  campaign, so campaigns can be decided one by one: **Approve campaign**,
+  **Approve and add to existing creative ID** (only when the advertiser has
+  another campaign to share an ID with) and **Reject campaign** on an
+  Awaiting approval or Rejected row; **Generate creative ID** and **Assign to
+  existing creative ID** on an auto-approved row; plus Open campaign, Undo
+  rejection, Revert approval and Activate / Deactivate. An Approved row
+  never offers Approve campaign. Only that campaign changes; the other rows
+  and their ticks are left as they are.
 - **A creative ID spans one advertiser's campaigns only.** The two assign
   actions appear **only when every ticked campaign belongs to one
   advertiser**; if the selection spans advertisers they are hidden (a hint
@@ -2750,8 +2761,15 @@ stores its criteria didn't match unsold to it. That model is retired:
   advertiser's campaigns booked on that position in the range shown, split by
   each campaign's own type, using each campaign's own approval status
   (orange while any await approval, green when all are approved; hidden when
-  none). The hover card is a two-column list: Booking value, CPM, Reserved
-  CPM and Assumed views, labels left, values right-aligned.
+  none). **The hover card is structured and shows only fixed, data-driven
+  lines** (ticket 53EvxhdKrShqDt1OIFMq, 23 Oct 2026), labels left and values
+  right-aligned, in this order: *Default* (Approved / Awaiting approval / No
+  creative; an unapproved tile appends the booked window's start date),
+  *Localised* and *Personalised* ("X of Y approved", hidden when none were
+  submitted) and *Booking value*. There is no CPM, Reserved CPM, Assumed views
+  or explanatory sentence. When the advertiser has no campaign behind the slot
+  the Default line reads "No campaigns submitted by this advertiser yet" and
+  the counters are hidden.
 - **A booking tile opens its campaign in Campaign Approval** (ticket
   ByeH6mIkaRqOJjnHu31z, 23 Oct 2026). Clicking a tile (or Enter on it)
   switches the Advertiser Bookings page to the Campaign Approval tab filtered
@@ -2769,10 +2787,12 @@ stores its criteria didn't match unsold to it. That model is retired:
   the advertiser's name opens Campaign Approval filtered to that advertiser
   only (cleared from the Advertiser column filter, with the same one-line
   notice while the advertiser has no creative); tapping anywhere else opens
-  the hover details card, which carries an "Open campaign in Campaign
-  Approval" link. A mouse keeps the one-click tile.
-  Its hover card says no campaign fits the slot yet. Only a booking with no
-  advertiser either is not a link.
+  the hover details card. A mouse keeps the one-click tile.
+  **The hover card's link and the advertiser's name** (ticket
+  53EvxhdKrShqDt1OIFMq): "View all campaigns from this advertiser" in the card,
+  and clicking or tapping the advertiser's name on the tile (mouse or tablet),
+  both open Campaign Approval filtered to that advertiser. Only a booking with
+  no advertiser is not a link.
 - Open questions 50 and 51 (below) — the target algorithm for clearing
   overlapping localised bids and billing a part-sold position — are
   **superseded, not answered**: there is no longer a part-sold position for
