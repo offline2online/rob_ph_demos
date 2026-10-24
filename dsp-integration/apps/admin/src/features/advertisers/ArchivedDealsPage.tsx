@@ -39,7 +39,7 @@ export function ArchivedDealsPage() {
     { headerName: 'Archived by', width: 140, minWidth: 120, cellRenderer: ArchivedByCell, valueGetter: (p) => p.data?.archivedBy ?? '', ...setColumn<BuyersList>('Archived by', () => rows.map((l) => l.archivedBy ?? '')) },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [rows])
-  const context: Ctx['current'] = { canEdit: false, showTargeting: false, bufferPct, capacity: new Map(), slots: new Map(), dspName, seatName, onEdit: () => {}, onShare: () => {}, onArchive: () => {} }
+  const context: Ctx['current'] = { canEdit: false, showTargeting: false, bufferPct, capacity: new Map(), slots: new Map(), dspName, seatName, onEdit: () => {}, onShare: () => {}, onArchive: () => {}, onDelete: () => {} }
   return (
     <div>
       {q.isError ? <div style={{ fontSize: 12.5, color: T.error }}>Archived deals could not be loaded.</div>
