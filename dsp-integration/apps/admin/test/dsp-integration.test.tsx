@@ -1367,10 +1367,35 @@ describe('Advertisers / Inventory', () => {
     expect(tip).toHaveTextContent('State: includes selected QLD')
   }, slow(45000))
 
+  /* Ticket ROSvBDdeLr3jCHgqRcUR: a deal never finalised and shared (a draft, programmatic guaranteed or Direct advertiser) can be deleted for good; a shared one only archived. */
+  it('deletes a draft deal from its row, and offers no Delete on a shared deal', async () => {
+    const base = { invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, description: '' }
+    const draft = { ...base, status: 'draft', dealType: 'guaranteed', id: 'bl_1', dealId: 'PH-DRAFT00001', name: 'Draft PG deal' }
+    const direct = { ...base, status: 'draft', dealType: 'direct', id: 'bl_3', dealId: 'PH-DIRECT0001', name: 'Draft direct deal' }
+    const shared = { ...base, status: 'shared', dealType: 'guaranteed', id: 'bl_2', dealId: 'PH-SHARED0001', name: 'Shared PG deal' }
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        calls.push(url)
+        return new Response(null, { status: 204 })
+      }
+      return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [draft, direct, shared] } })(url)
+    }))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    expect(await within(table).findByLabelText('Delete Draft direct deal')).toBeInTheDocument()
+    expect(within(table).queryByLabelText('Delete Shared PG deal')).toBeNull()
+    fireEvent.click(within(table).getByLabelText('Delete Draft PG deal'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Delete Draft PG deal?')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(calls).toEqual(['/api/admin/v1/buyers-lists/bl_1']))
+  }, slow(45000))
+
   /* Ticket bCcJ2e00CRLxtd98Utlr: deals are archived, never deleted. The row action is Archive; View Archived Deals is an AG Grid table with a filter on every column. */
   it('archives a deal from its row and lists archived deals under View Archived Deals', async () => {
     const base = { invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', description: '', status: 'draft' }
-    const live = { ...base, id: 'bl_1', dealId: 'PH-LIVE000001', name: 'Live deal' }
+    const live = { ...base, status: 'shared', id: 'bl_1', dealId: 'PH-LIVE000001', name: 'Live deal' }
     const old = { ...base, id: 'bl_2', dealId: 'PH-OLD0000001', name: 'Ended deal', status: 'archived', archivedAt: '2026-10-01T00:00:00.000Z', archivedBy: 'system' }
     const calls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {

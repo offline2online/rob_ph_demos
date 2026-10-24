@@ -36,6 +36,8 @@ export interface BuyersListRepo {
   /* Deals are never deleted. Archiving keeps the row, its deal IDs, terms and history; `by` is the person's name, or 'system' at the end of flight. Idempotent (an archived deal keeps its first archive). Null if the list doesn't exist. */
   /* `at`: when it was archived; the scheduler passes its own clock so a test clock is honoured. Default now. */
   archive(id: string, by: string, at?: string): Awaitable<BuyersList | null>
+  /* Permanently removes a deal that was never shared (a draft): the row, its per-DSP deal IDs, term versions and acceptances. The route has already refused a shared or archived deal. False if the list doesn't exist. */
+  delete(id: string): Awaitable<boolean>
   /* Shares a draft deal with its invited buyers: stamps shared_at. From here its term changes ask buyers to re-accept. Idempotent (a shared deal keeps its first shared_at). Null if the list doesn't exist. */
   share(id: string): Awaitable<BuyersList | null>
   /* Records that a named invited buyer accepted the deal's current terms. Null if the list doesn't exist; the route has already checked the seat is invited. */
@@ -182,6 +184,12 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
         prepared(db, 'UPDATE buyers_lists SET archived_at = ?, archived_by = ?, updated_at = ? WHERE id = ?').run(now, by, now, id)
       }
       return toRecord(row(id) as Row)
+    },
+    delete(id) {
+      if (!row(id)) return false
+      for (const t of ['buyers_list_acceptances', 'buyers_list_term_versions', 'buyers_list_deals']) prepared(db, `DELETE FROM ${t} WHERE list_id = ?`).run(id)
+      prepared(db, 'DELETE FROM buyers_lists WHERE id = ?').run(id)
+      return true
     },
     lockWin(id, win) {
       const r = row(id)

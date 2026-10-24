@@ -43,7 +43,7 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     expect((await app.inject({ method: 'PUT', url: `/api/admin/v1/buyers-lists/${id}`, payload: list })).statusCode).toBe(409)
     expect((await app.inject({ method: 'POST', url: `/api/admin/v1/buyers-lists/${id}/share` })).statusCode).toBe(409)
     expect((await app.inject({ method: 'POST', url: `/api/admin/v1/buyers-lists/${id}/acceptances`, payload: { partnerId: 'p_google', seatId: '5130001' } })).statusCode).toBe(409)
-    expect((await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${id}` })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${id}` })).statusCode).toBe(409)
   })
 
   it('rejects an empty name, no invited buyers, an unknown DSP, a seat the DSP never synced, a DSP that is not connected, and an active window the wrong way round', async () => {
@@ -67,6 +67,24 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     const app = buildApp(await testContext())
     expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/buyers-lists/bl_nope', payload: list })).statusCode).toBe(404)
     expect((await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists/bl_nope/archive' })).statusCode).toBe(404)
+  })
+
+  it('deletes a draft deal for good, but not a shared one', async () => {
+    const app = buildApp(await testContext())
+    const draft = (await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, status: 'draft' } })).json()
+    expect(draft.status).toBe('draft')
+    const del = await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${draft.id}` })
+    expect(del.statusCode).toBe(204)
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists' })).json().items).toHaveLength(0)
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists?archived=true' })).json().items).toHaveLength(0)
+    expect((await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${draft.id}` })).statusCode).toBe(404)
+
+    const shared = (await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: list })).json()
+    expect(shared.status).toBe('shared')
+    const refused = await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${shared.id}` })
+    expect(refused.statusCode).toBe(409)
+    expectMatchesContract('DELETE', '/admin/v1/buyers-lists/{buyersListId}', 409, refused.json())
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists' })).json().items).toHaveLength(1)
   })
 
   it("can't be archived while a slot is assigned to it, and can be assigned from Available Inventory", async () => {
