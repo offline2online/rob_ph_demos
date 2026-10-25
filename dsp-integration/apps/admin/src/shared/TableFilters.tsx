@@ -16,7 +16,7 @@
    the filter model and everything else in the grid behave as usual. */
 import { Button, Checkbox, Dropdown, Input } from 'antd'
 import type { ColDef, IFloatingFilterParams, TextMatcherParams } from 'ag-grid-community'
-import { forwardRef, useImperativeHandle, useMemo, useState } from 'react'
+import { forwardRef, useImperativeHandle, useState } from 'react'
 import { Icon } from './Icon'
 import { T } from '../theme/phTheme'
 
@@ -74,7 +74,8 @@ const SearchFilter = forwardRef<unknown, Params>(function SearchFilter(props, re
    wherever it is kept: AG Grid's filter model, or the page's own URL. */
 export function Funnel({ label, values, chosen, onChange, single }: {
   label: string
-  values: string[]
+  /* A function is read each time the funnel renders (it re-renders when opened), for a list that fills in after the grid mounts. */
+  values: string[] | (() => string[])
   chosen: string[]
   onChange: (next: string[]) => void
   /* One value at a time, for a filter the server applies (the booking schedule). */
@@ -82,6 +83,7 @@ export function Funnel({ label, values, chosen, onChange, single }: {
 }) {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
+  values = typeof values === 'function' ? [...new Set(values().filter(Boolean))] : values
   const shown = values.filter((v) => v.toLowerCase().includes(search.trim().toLowerCase()))
   const apply = onChange
   const menu = (
@@ -126,11 +128,10 @@ export function Funnel({ label, values, chosen, onChange, single }: {
 const SetFilter = forwardRef<unknown, Params>(function SetFilter(props, ref) {
   const [chosen, setChosen] = useState<string[]>(() => parse(modelText(props.currentParentModel())))
   useImperativeHandle(ref, () => ({ onParentModelChanged: (model: { filter?: string | null } | null) => setChosen(parse(modelText(model))) }))
-  const values = useMemo(() => [...new Set((props.values?.() ?? []).filter(Boolean))], [props])
   return (
     <Funnel
       label={props.label}
-      values={values}
+      values={() => props.values?.() ?? []}
       chosen={chosen}
       onChange={(next) => {
         setChosen(next)
