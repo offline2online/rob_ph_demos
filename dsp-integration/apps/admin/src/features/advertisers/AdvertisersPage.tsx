@@ -31,6 +31,7 @@ import { ConflictCallout, dealRangeLabel, useSlotConflicts } from './reservingCo
 import { BuyersListsTable } from './BuyersListsTable'
 import { BlockedDialog, describeBlock, type Blocked } from '../../shared/BlockedDialog'
 import { positionText, slotColumnText } from './slotLine'
+import { BOOKING_SCHEDULE_PATH, CAMPAIGN_APPROVAL_TAB, externalUrl } from '../booking-schedule/path'
 export { positionText }
 import { type Flags, envFlags } from '../../flags'
 
@@ -1144,6 +1145,14 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const addAdvertiserButton = canEdit
     ? <Button type="primary" icon={<Icon name="add" size={16} />} onClick={() => setAddingAdvertiser(true)}>Add new Advertiser</Button>
     : null
+  /* View campaign approvals sits immediately left of Add new Advertiser and opens the Campaign Approval table in a new tab
+     (ticket CcPh14VeSzSMZHO35d0s). Shown to read-only users too: it only reads. */
+  const tableActions = (
+    <div className="flex items-center gap-2">
+      <Button onClick={() => window.open(externalUrl(`${BOOKING_SCHEDULE_PATH}?tab=${CAMPAIGN_APPROVAL_TAB}`), '_blank', 'noopener')}>View campaign approvals</Button>
+      {addAdvertiserButton}
+    </div>
+  )
 
   return (
     <div>
@@ -1194,13 +1203,13 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       {data.items.length === 0 ? (
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
-          {addAdvertiserButton}
+          {tableActions}
         </div>
       ) : (
         <>
           <div className="mb-2 flex items-center justify-between gap-3">
             <div style={{ fontSize: 13 }}>{showingCount(shown ?? data.items.length, data.items.length, `advertiser${data.items.length === 1 ? '' : 's'}`)}</div>
-            {addAdvertiserButton}
+            {tableActions}
           </div>
           <Grid<Advertiser>
             label="Advertisers" rows={data.items} columns={columns} context={context} getRowId={(a) => a.advertiserId}

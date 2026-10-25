@@ -890,7 +890,10 @@ and API.
 with the retailer, not brought by any DSP, is added on this page (admin only,
 saved at once; `POST /admin/v1/advertisers/direct`, table `direct_advertisers`,
 migration 0063) from the **Add new Advertiser** button at the top right of the
-page, which opens a pop-up asking for the name (no inline field), and removed
+page, which opens a pop-up asking for the name (no inline field); a **View
+campaign approvals** button immediately to its left opens the Campaign Approval
+table (`/booking-schedule?tab=campaign-status`) in a new tab (ticket
+CcPh14VeSzSMZHO35d0s, 25 Oct 2026); an advertiser is removed
 with the delete icon beside it in the Advertisers table
 (`DELETE /admin/v1/advertisers/direct/{id}`, refused while it has campaigns or
 bookings; DSP advertisers have no delete icon). **Only a direct advertiser has

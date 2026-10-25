@@ -838,6 +838,13 @@ describe('Advertisers / Inventory', () => {
     expect([...acme.querySelectorAll('[role="gridcell"]')][2].textContent).toBe('0')
     /* No inline add field any more: a top-right CTA opens a pop-up (ticket d4q91vrL5z4gLHBKypHo). */
     expect(screen.queryByLabelText('Direct advertiser name')).not.toBeInTheDocument()
+    /* View campaign approvals sits immediately left of Add new Advertiser and opens Campaign Approval in a new tab (ticket CcPh14VeSzSMZHO35d0s). */
+    const approvals = screen.getByRole('button', { name: 'View campaign approvals' })
+    expect(approvals.nextElementSibling).toBe(screen.getByRole('button', { name: /Add new Advertiser/ }))
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    fireEvent.click(approvals)
+    expect(open).toHaveBeenCalledWith(expect.stringContaining('/booking-schedule?tab=campaign-status'), '_blank', 'noopener')
+    open.mockRestore()
     fireEvent.click(screen.getByRole('button', { name: /Add new Advertiser/ }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByLabelText('Advertiser name')).toBeInTheDocument()
