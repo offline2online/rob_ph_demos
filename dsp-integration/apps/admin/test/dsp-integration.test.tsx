@@ -263,7 +263,7 @@ describe('Shared Targeting Variables page', () => {
     expect(await screen.findByRole('heading', { name: /Shared Targeting Variables/ })).toBeInTheDocument()
     expect(screen.getByText('Localisation Variables')).toBeInTheDocument()
     expect(screen.getByText('Personalisation Variables')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Variables shared through the API/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Variables advertisers can use to localise and target campaigns/ })).toBeInTheDocument()
   })
 
   it('has a Values column: inactive until the variable is shared, then a multi-select with a Free text tick', async () => {
