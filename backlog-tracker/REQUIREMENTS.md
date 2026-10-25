@@ -516,7 +516,15 @@ answer is `retrying`: the sweep (`sweepRebuildRequests`) re-requests it once
 `failed` immediately. Fires are spaced 1.5 s apart and, after a 429, the rest
 of the batch is deferred (up to 6 deferrals) rather than fired into it. Each
 sweep, a Backlog card whose `rebuildRequestedAt` is over 30 minutes old with
-no session started since and no patch handed over gets one note — "The
+no session started since and no patch handed over is first asked for again
+(up to `REBUILD_START_RETRIES` = 2, counted in `rebuildStartRetries`; 25 Oct
+2026). A started session that never reports back (no `buildSession`, patch or
+blocker 90 minutes after `lastFire.at`) is restarted once
+(`buildSessionRetries`), then marked `buildSession.status: "error"` with a
+note, which releases the project's hand-off (`sweepSilentBuildSessions`). A
+dispatched baseline check on main that is still running after
+`BASE_CHECK_GIVE_UP_MS` is treated as never run and the culprit is sent back.
+Only then does a card get one note — "The
 automatic rebuild requested at <time> never started (<error>). Click Ready
 for Dev to build it again." — and `rebuildRequestedAt` is cleared, so it is
 posted once. Tests: `test/rebuild-requests.test.js` (which cards are

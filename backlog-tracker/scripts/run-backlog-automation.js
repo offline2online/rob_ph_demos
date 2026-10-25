@@ -850,6 +850,10 @@ async function flushBuildRequests() {
 // The function stamps the card's `lastFire` with the session or the error;
 // the sweep below turns what it finds into either a retry or one honest note.
 const REBUILD_NEVER_STARTED_MS = 30 * 60 * 1000;
+// A request that never started is asked for again this many times before the
+// card is noted for a person (25 Oct 2026: a rebuild requested after a merge
+// conflict never started and nothing tried again).
+const REBUILD_START_RETRIES = 2;
 function timeMs(v) {
   if (v == null) return NaN;
   if (v instanceof Date) return v.getTime();
@@ -865,7 +869,29 @@ function rebuildRequestOutcome(item, now = Date.now()) {
   const fire = item.lastFire;
   const started = !!(fire && fire.sessionId && timeMs(fire.at) >= requested);
   if (item.status !== "backlog" || item.patchReady || started) return "clear";
-  return now - requested >= REBUILD_NEVER_STARTED_MS ? "note" : "wait";
+  if (now - requested < REBUILD_NEVER_STARTED_MS) return "wait";
+  const blocked = !!(item.blocked && item.blocked.reason);
+  return !blocked && (Number(item.rebuildStartRetries) || 0) < REBUILD_START_RETRIES ? "retry" : "note";
+}
+
+// ── Build sessions that never report back ─────────────────────────────────
+// A session that started (lastFire.sessionId) but never wrote buildSession,
+// patchReady or a blocker leaves the card in Backlog and holds the project's
+// hand-off. After BUILD_SESSION_SILENT_MS it is started once more; if that one
+// goes quiet too the card is marked errored (which releases the hand-off) with
+// a note, so a person is told instead of finding it later. Pure.
+const BUILD_SESSION_SILENT_MS = 90 * 60 * 1000;
+const BUILD_SESSION_RETRIES = 1;
+function silentBuildSessionAction(item, now = Date.now()) {
+  if (!item || item.status !== "backlog" || item.patchReady || (item.blocked && item.blocked.reason)) return null;
+  const fire = item.lastFire;
+  if (!fire || !fire.sessionId) return null;
+  const fired = timeMs(fire.at);
+  if (Number.isNaN(fired) || now - fired < BUILD_SESSION_SILENT_MS) return null;
+  const bs = item.buildSession;
+  const reported = bs ? Math.max(timeMs(bs.reportedAt) || 0, timeMs(bs.finishedAt) || 0) : 0;
+  if (reported >= fired) return null; // it did report (done, or error)
+  return (Number(item.buildSessionRetries) || 0) < BUILD_SESSION_RETRIES ? "retry" : "escalate";
 }
 function rebuildNeverStartedNote(item) {
   const err = item.lastFire && item.lastFire.error;
@@ -888,7 +914,15 @@ async function sweepRebuildRequests() {
     const outcome = rebuildRequestOutcome(item);
     if (outcome === "wait") continue;
     try {
-      if (outcome === "note") {
+      if (outcome === "retry") {
+        const project = await getProject(item.projectId).catch(() => null);
+        if (!project || project.trainLocked) continue; // asked again once the release has merged
+        const n = (Number(item.rebuildStartRetries) || 0) + 1;
+        const notes = await appendNote(item, `The automatic rebuild requested at ${new Date(timeMs(item.rebuildRequestedAt)).toISOString()} never started. Requesting it again (attempt ${n} of ${REBUILD_START_RETRIES}).`);
+        await patchItem(item.id, { rebuildStartRetries: n, notes, updatedAt: new Date().toISOString() });
+        queueBuildRequest(project, item.id); // fresh: restarts the card's clock
+        console.log(`[rebuild] ${item.id}: requested rebuild never started — asking again (${n}/${REBUILD_START_RETRIES})`);
+      } else if (outcome === "note") {
         const notes = await appendNote(item, rebuildNeverStartedNote(item));
         await patchItem(item.id, { rebuildRequestedAt: null, notes, updatedAt: new Date().toISOString() });
         console.log(`[rebuild] ${item.id}: requested rebuild never started — noted`);
@@ -942,6 +976,36 @@ async function sweepUnbuiltReports(now = Date.now()) {
       }
     } catch (err) {
       console.error(`[unbuilt] ${item.id}: ${err.message}`);
+    }
+  }
+}
+
+async function sweepSilentBuildSessions(now = Date.now()) {
+  const started = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { compositeFilter: { op: "AND", filters: [
+      { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "backlog" } } },
+      { fieldFilter: { field: { fieldPath: "lastFire.status" }, op: "EQUAL", value: { stringValue: "started" } } },
+    ] } },
+  });
+  for (const item of started) {
+    const next = silentBuildSessionAction(item, now);
+    if (!next) continue;
+    try {
+      const project = await getProject(item.projectId).catch(() => null);
+      if (next === "retry") {
+        if (!project || project.trainLocked) continue;
+        const notes = await appendNote(item, `The build session started at ${new Date(timeMs(item.lastFire.at)).toISOString()} never reported back. Starting it again.`);
+        await patchItem(item.id, { buildSessionRetries: (Number(item.buildSessionRetries) || 0) + 1, notes, updatedAt: new Date().toISOString() });
+        queueBuildRequest(project, item.id);
+        console.log(`[silent-build] ${item.id}: session never reported — rebuild requested`);
+      } else {
+        const notes = await appendNote(item, `The build session never reported back, and neither did its second attempt. Marked as errored so the project is not left waiting on it; click Ready for Dev to build it again.`);
+        await patchItem(item.id, { buildSession: { status: "error", errorMessage: "Build session never reported back", finishedAt: new Date(now).toISOString() }, notes, updatedAt: new Date().toISOString() });
+        console.log(`[silent-build] ${item.id}: session never reported after a retry — marked errored`);
+      }
+    } catch (err) {
+      console.error(`[silent-build] ${item.id}: ${err.message}`);
     }
   }
 }
@@ -2442,9 +2506,12 @@ function baseCheckAction({ workflow, baseSha, baseRun, keys, nowMs }) {
   if (v === "passed") return { act: "eject", why: "base-green" };
   if (v === "failed") return { act: "hold" };
   if (v === "rerun") return { act: "rerun-base" };
-  if (v === "running") return { act: "wait" };
   const prefix = baseKeyPrefix(workflow, baseSha);
   const sent = (keys || []).filter((k) => k.startsWith(prefix)).map((k) => Number(k.slice(prefix.length))).filter(Number.isFinite);
+  // A run on main that was started for this check and is still going after
+  // the give-up window is stuck (25 Oct 2026: the DSP train waited on one
+  // for hours): judge as if it never ran rather than wait for ever.
+  if (v === "running") return sent.length && nowMs - Math.max(...sent) >= BASE_CHECK_GIVE_UP_MS ? { act: "eject", why: "base-never-ran" } : { act: "wait" };
   if (!sent.length) return { act: "dispatch" };
   return nowMs - Math.max(...sent) >= BASE_CHECK_GIVE_UP_MS ? { act: "eject", why: "base-never-ran" } : { act: "wait" };
 }
@@ -6395,6 +6462,11 @@ async function main() {
   } catch (err) {
     console.error(`[unbuilt] sweep failed: ${err.message}`);
   }
+  try {
+    await sweepSilentBuildSessions();
+  } catch (err) {
+    console.error(`[silent-build] sweep failed: ${err.message}`);
+  }
   await flushBuildRequests();
   await requestReadyForTestingNotify();
   try {
@@ -6593,7 +6665,8 @@ module.exports = {
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/rebuild-requests.test.js — a requested rebuild either starts or the card says it didn't
-  rebuildRequestOutcome, rebuildNeverStartedNote, fireRetryDue, REBUILD_NEVER_STARTED_MS,
+  rebuildRequestOutcome, rebuildNeverStartedNote, fireRetryDue, REBUILD_NEVER_STARTED_MS, REBUILD_START_RETRIES,
+  silentBuildSessionAction, BUILD_SESSION_SILENT_MS,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
   followUpDue, FOLLOW_UP_MAX_WAIT_MS, dispatchFollowUpRun, followUpReasons,
   // test/preview-build-state.test.js — "Rebuilding test link…" until the bundle includes the ticket

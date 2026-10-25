@@ -155,6 +155,13 @@ async function test(name, fn) {
     assert.deepStrictEqual(at({ baseSha: "" }), { act: "eject", why: "no-base" });
   });
 
+  await test("baseCheckAction: a dispatched run on main that never finishes is given up after an hour", async () => {
+    const keys = [`${WF}@${X}:base:1000000000000`];
+    const running = { status: "in_progress", conclusion: null, attempt: 1 };
+    assert.deepStrictEqual(baseCheckAction({ workflow: WF, baseSha: X, baseRun: running, keys, nowMs: 1e12 + 60000 }), { act: "wait" });
+    assert.deepStrictEqual(baseCheckAction({ workflow: WF, baseSha: X, baseRun: running, keys, nowMs: 1e12 + BASE_CHECK_GIVE_UP_MS }), { act: "eject", why: "base-never-ran" });
+    assert.deepStrictEqual(baseCheckAction({ workflow: WF, baseSha: X, baseRun: running, keys: [], nowMs: 1e12 + BASE_CHECK_GIVE_UP_MS }), { act: "wait" }, "a run main started itself is not ours to give up on");
+  });
   await test("baseCheckAction: no run on main yet is dispatched once, waited on, and given up after an hour", async () => {
     assert.deepStrictEqual(baseCheckAction({ workflow: WF, baseSha: X, baseRun: null, keys: [], nowMs: 1e12 }), { act: "dispatch" });
     const keys = [`${WF}@${X}:base:${1e12}`];

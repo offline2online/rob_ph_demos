@@ -8,7 +8,7 @@
 // Run with:  node test/rebuild-requests.test.js
 "use strict";
 const assert = require("assert");
-const { rebuildRequestOutcome, rebuildNeverStartedNote, fireRetryDue, REBUILD_NEVER_STARTED_MS } = require("../scripts/run-backlog-automation.js");
+const { rebuildRequestOutcome, rebuildNeverStartedNote, fireRetryDue, REBUILD_NEVER_STARTED_MS, REBUILD_START_RETRIES, silentBuildSessionAction, BUILD_SESSION_SILENT_MS } = require("../scripts/run-backlog-automation.js");
 
 let passed = 0; const failures = [];
 function test(name, fn) {
@@ -24,23 +24,38 @@ test("a fresh request (under 30 minutes) waits", () => {
   assert.strictEqual(rebuildRequestOutcome(card({ rebuildRequestedAt: iso(10) }), NOW), "wait");
   assert.strictEqual(rebuildRequestOutcome(card({ rebuildRequestedAt: iso(29) }), NOW), "wait");
 });
-test("a stale request with no session gets the note", () => {
-  assert.strictEqual(rebuildRequestOutcome(card(), NOW), "note");
-  assert.strictEqual(rebuildRequestOutcome(card({ rebuildRequestedAt: new Date(NOW - REBUILD_NEVER_STARTED_MS).toISOString() }), NOW), "note");
+test("a stale request with no session is asked for again, then gets the note", () => {
+  assert.strictEqual(rebuildRequestOutcome(card(), NOW), "retry");
+  assert.strictEqual(rebuildRequestOutcome(card({ rebuildRequestedAt: new Date(NOW - REBUILD_NEVER_STARTED_MS).toISOString() }), NOW), "retry");
+  assert.strictEqual(rebuildRequestOutcome(card({ rebuildStartRetries: REBUILD_START_RETRIES - 1 }), NOW), "retry");
+  assert.strictEqual(rebuildRequestOutcome(card({ rebuildStartRetries: REBUILD_START_RETRIES }), NOW), "note");
+  assert.strictEqual(rebuildRequestOutcome(card({ blocked: { reason: "waiting-on-input" } }), NOW), "note");
 });
-test("a stale request that failed to fire still gets the note", () => {
+test("a stale request that failed to fire is asked for again too", () => {
   const c = card({ lastFire: { status: "failed", sessionId: null, error: "status 429", at: iso(44) } });
-  assert.strictEqual(rebuildRequestOutcome(c, NOW), "note");
+  assert.strictEqual(rebuildRequestOutcome(c, NOW), "retry");
 });
 test("a request with a session started since is just cleared", () => {
   assert.strictEqual(rebuildRequestOutcome(card({ lastFire: { status: "started", sessionId: "s1", at: iso(44) } }), NOW), "clear");
 });
 test("a session from an earlier request does not count", () => {
-  assert.strictEqual(rebuildRequestOutcome(card({ lastFire: { status: "started", sessionId: "s0", at: iso(300) } }), NOW), "note");
+  assert.strictEqual(rebuildRequestOutcome(card({ lastFire: { status: "started", sessionId: "s0", at: iso(300) } }), NOW), "retry");
 });
 test("a card no longer in Backlog, or already handed over, gets no note", () => {
   assert.strictEqual(rebuildRequestOutcome(card({ status: "ready-for-testing" }), NOW), "clear");
   assert.strictEqual(rebuildRequestOutcome(card({ patchReady: true }), NOW), "clear");
+});
+test("a build session that never reports back is restarted once, then marked errored", () => {
+  const silent = (over = {}) => ({ id: "t", status: "backlog", lastFire: { status: "started", sessionId: "s1", at: iso(100) }, ...over });
+  assert.strictEqual(silentBuildSessionAction(silent(), NOW), "retry");
+  assert.strictEqual(silentBuildSessionAction(silent({ buildSessionRetries: 1 }), NOW), "escalate");
+  assert.strictEqual(silentBuildSessionAction(silent({ lastFire: { status: "started", sessionId: "s1", at: iso(30) } }), NOW), null, "still within the window");
+  assert.strictEqual(silentBuildSessionAction(silent({ buildSession: { status: "done", reportedAt: iso(20) } }), NOW), null, "it reported");
+  assert.strictEqual(silentBuildSessionAction(silent({ buildSession: { status: "done", reportedAt: iso(500) } }), NOW), "retry", "an old report is not this session's");
+  assert.strictEqual(silentBuildSessionAction(silent({ patchReady: true }), NOW), null);
+  assert.strictEqual(silentBuildSessionAction(silent({ blocked: { reason: "waiting-on-input" } }), NOW), null);
+  assert.strictEqual(silentBuildSessionAction(silent({ status: "ready-for-testing" }), NOW), null);
+  assert.ok(BUILD_SESSION_SILENT_MS > 0);
 });
 test("a card with no request is left alone", () => {
   assert.strictEqual(rebuildRequestOutcome({ id: "t", status: "backlog" }, NOW), "wait");
