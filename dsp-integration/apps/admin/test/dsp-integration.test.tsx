@@ -1336,6 +1336,24 @@ describe('Advertisers / Inventory', () => {
     expect(within(table).getByTestId('status-bl_2')).toHaveTextContent('Shared · Pending · re-acceptance required')
   })
 
+  /* Ticket NVW5Dvyg60QeYQbEPBZM: the Deals table filters in its column headers like the other tables: Buyer(s) and Slots pick from a list, name and Deal ID are free text. */
+  it('filters the deals table from its column headers: a buyer list, a slot list and free-text name and Deal ID', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-AAAAAAAAAA', name: 'Floor deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', status: 'shared', termVersion: 1 }] },
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    expect(await within(table).findByText('Floor deal')).toBeInTheDocument()
+    expect(within(table).getByLabelText('Buyer(s) filter')).toBeInTheDocument()
+    expect(within(table).getByLabelText('Slots filter')).toBeInTheDocument()
+    expect(within(table).queryByLabelText('Buyer(s) search')).toBeNull()
+    expect(within(table).getByLabelText('Deals and buyers lists search')).toBeInTheDocument()
+    expect(within(table).getByLabelText('Deal ID search')).toBeInTheDocument()
+    fireEvent.click(within(table).getByLabelText('Buyer(s) filter'))
+    expect((await screen.findAllByRole('checkbox')).length).toBeGreaterThan(0)
+  })
+
   /* Ticket 2DfVi3PvWSKARQXoWtGy: hovering Invited buyers lists them; hovering Deal ID names each DSP's deal. */
   it('shows the invited buyers and each DSP deal ID on hover', async () => {
     const deals = [{ partnerId: 'p_google', dealId: 'PH-AAAAAAAAAA', retiredAt: null }, { partnerId: 'p_ttd', dealId: 'PH-BBBBBBBBBB', retiredAt: null }]

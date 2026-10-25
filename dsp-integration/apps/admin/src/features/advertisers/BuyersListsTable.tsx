@@ -6,7 +6,7 @@ import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { DIRECT_PARTNER_ID, isGuaranteedLike, OPERATOR_LABELS, TARGETING_VARIABLES, storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Q } from '../../api/queries'
 import { api, ApiRequestError } from '../../api/client'
@@ -213,8 +213,15 @@ export function useDealNames() {
   const advertisers = useQuery({ queryKey: Q.advertisers.queryKey, queryFn: () => api<{ items: { advertiserId: string; name: string }[] }>('GET', '/admin/v1/advertisers') })
   const dspName = (id: string) => (id === DIRECT_PARTNER_ID ? 'Direct' : (partners.data ?? []).find((p) => p.id === id)?.name ?? id)
   const seatName = (pid: string, sid: string) => (pid === DIRECT_PARTNER_ID ? (advertisers.data?.items ?? []).find((a) => a.advertiserId === sid)?.name : (partners.data ?? []).find((p) => p.id === pid)?.seats?.find((x) => x.id === sid)?.name) ?? sid
-  return { dspName, seatName }
+  /* Every buyer the platform knows, by name: each DSP seat and each direct advertiser. */
+  const buyerNames = () => [...(partners.data ?? []).flatMap((p) => (p.seats ?? []).map((x) => x.name)), ...(advertisers.data?.items ?? []).map((a) => a.name)]
+  return { dspName, seatName, buyerNames }
 }
+
+/* The Buyer(s) and Slots filters' tokens: the set filter splits a row's text on ", ", so a name never carries one. */
+const token = (s: string) => s.replace(/, /g, ' ')
+const categoryToken = (c: string) => token(`Category: ${c}`)
+const slotLabel = (r: SlotInfo) => token(`${r.displayType}${r.description ? ` (${r.description})` : ''} · ${r.playlist || 'No playlist'} · ${r.position} (slot ${r.slot})`)
 
 /* Orders the Flight dates column's `${activeFrom}|${activeTo}` values: start, then end, a missing date first. */
 export const compareFlights = (a: string, b: string): number => {
@@ -225,7 +232,7 @@ export const compareFlights = (a: string, b: string): number => {
 
 export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, showTargeting = false }: { showTargeting?: boolean; lists: BuyersList[]; canEdit: boolean; capacity: Capacity; slots: Map<string, SlotInfo[]>; onChanged: () => void }) {
   const bufferPct = useQuery(Q.advertiserSettings).data?.guaranteeBufferPct ?? 10
-  const { dspName, seatName } = useDealNames()
+  const { dspName, seatName, buyerNames } = useDealNames()
   const navigate = useNavigate()
   const [modalOpen, setModalOpen] = useState(false)
   const [editingSnapshot, setEditing] = useState<BuyersList | null>(null)
@@ -238,6 +245,12 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
   const [deleteError, setDeleteError] = useState<ApiRequestError | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
 
+  /* The Buyer(s) and Slots funnels list every buyer and every slot; read through a ref so the memoised columns see what has loaded since. */
+  const filterValues = useRef({ buyers: () => [] as string[], slots: () => [] as string[] })
+  filterValues.current = {
+    buyers: () => [...buyerNames(), ...lists.flatMap((l) => l.invitedBuyers.map((b) => seatName(b.partnerId, b.seatId))), ...lists.flatMap((l) => (l.invitedCategories ?? []).map(categoryToken))].map(token),
+    slots: () => [...slots.values()].flat().map(slotLabel),
+  }
   /* Memoised: a new array each render makes AG Grid reload its columns and remount every cell,
      so a late re-render (the partners query resolving) swapped the cells out from under a click.
      Cells read anything that changes (names, capacity, handlers) through context.current. */
@@ -247,12 +260,14 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Details', width: 300, minWidth: 240, cellRenderer: DetailsCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.termTotal, p.data?.belowFloorOverride, p.data?.activeFrom, p.data?.activeTo, p.data?.dealId, p.data?.invitedBuyers ?? [], p.context.current.slots.get(p.data?.id ?? '') ?? []]) },
-    { headerName: 'Buyer(s)', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]), ...searchColumn<BuyersList>('Buyer(s)'),
-      /* What the cell shows and its hover lists: every seat by name, and the IAB categories. */
-      filterValueGetter: (p) => [...(p.data?.invitedBuyers ?? []).map((b) => `${p.context.current.seatName(b.partnerId, b.seatId)} ${p.context.current.dspName(b.partnerId)}`), ...(p.data?.invitedCategories ?? [])].join(', ') },
-    { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []), ...searchColumn<BuyersList>('Slots'),
+    { headerName: 'Buyer(s)', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]),
+      ...setColumn<BuyersList>('Buyer(s)', () => filterValues.current.buyers()),
+      /* What the cell's hover lists: every seat by name, and the IAB categories. */
+      filterValueGetter: (p) => [...(p.data?.invitedBuyers ?? []).map((b) => token(p.context.current.seatName(b.partnerId, b.seatId))), ...(p.data?.invitedCategories ?? []).map(categoryToken)].join(', ') },
+    { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []),
+      ...setColumn<BuyersList>('Slots', () => filterValues.current.slots()),
       /* The hover's wording: display type, playlist, position and slot number. */
-      filterValueGetter: (p) => (p.context.current.slots.get(p.data?.id ?? '') ?? []).map((r: SlotInfo) => `${r.displayType} ${r.description ?? ''} ${r.playlist} ${r.zoneName ?? ''} ${r.position} slot ${r.slot}`).join(', ') },
+      filterValueGetter: (p) => (p.context.current.slots.get(p.data?.id ?? '') ?? []).map(slotLabel).join(', ') },
     /* Start and end each carry a time now (ticket yOginusgiFgFkwVHTRFH): wide enough not to clip the end time (E2E 22 Oct 2026). */
     { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}`,
       /* Sort by start, then end; ISO text sorts in date order. A missing date (always active, no start) sorts first. */
