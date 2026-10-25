@@ -284,5 +284,8 @@ describe('Deal flights: times and a time zone mode', () => {
     expect(refused.json().error.message).toContain('2026-11-10 11:30 to 2026-11-10 12:00')
     const ask = await app.inject({ method: 'POST', url: '/api/admin/v1/reserving-conflicts', payload: { displayTypeId: 'portrait', slot: 1, buyersListIds: [direct.id, clash.id] } })
     expect(ask.json().conflicts[0]).toMatchObject({ overlapFromAt: '2026-11-10T11:30:00.000Z', overlapToAt: '2026-11-10T12:00:00.000Z' })
+    /* The warning names the holding deal's own flight, not only the span shared with it (ticket 2uQgz45VImhc0F5gFtKD). */
+    expect(ask.json().conflicts[0]).toMatchObject({ dealFromAt: '2026-11-10T08:00:00.000Z', dealToAt: '2026-11-10T12:00:00.000Z' })
+    expect(ask.json().conflicts[0].message).toContain('that deal runs 2026-11-10 08:00 to 2026-11-10 12:00')
   })
 })

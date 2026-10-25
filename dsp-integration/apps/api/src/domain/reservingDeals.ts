@@ -53,7 +53,8 @@ export async function slotConflicts(ctx: Context, deal: { id: string } & Flight,
       dealId: other.id, dealName: other.name, dealCode: other.dealId, advertiser,
       displayTypeId: dt.id, playlist: dt.name, slot, slotLabel: label || null, positionId: positionIdOf(dt.id, slot),
       overlapFrom: over.from, overlapTo: over.to, overlapFromAt: over.fromAt, overlapToAt: over.toAt,
-      message: `${other.name} (${advertiser}) already holds ${dt.name}, slot ${slot}${label ? ` (${label})` : ''}: this slot is already sold for ${rangeText(over.from, over.to, over.fromAt, over.toAt)}. Change the dates or the slot.`,
+      dealFromAt: other.activeFrom ?? null, dealToAt: other.activeTo ?? null,
+      message: `${other.name} (${advertiser}) already holds ${dt.name}, slot ${slot}${label ? ` (${label})` : ''}: that deal runs ${rangeText(other.activeFrom?.slice(0, 10) ?? null, other.activeTo?.slice(0, 10) ?? null, other.activeFrom ?? null, other.activeTo ?? null)}, which overlaps these dates (${rangeText(over.from, over.to, over.fromAt, over.toAt)}). Change the dates or the slot.`,
     })
   }
   return out

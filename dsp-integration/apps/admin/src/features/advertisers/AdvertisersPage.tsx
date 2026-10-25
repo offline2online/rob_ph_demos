@@ -27,7 +27,7 @@ import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
-import { ConflictCallout, rangeLabel, useSlotConflicts } from './reservingConflicts'
+import { ConflictCallout, dealRangeLabel, useSlotConflicts } from './reservingConflicts'
 import { BuyersListsTable } from './BuyersListsTable'
 import { BlockedDialog, describeBlock, type Blocked } from '../../shared/BlockedDialog'
 import { positionText, slotColumnText } from './slotLine'
@@ -446,7 +446,7 @@ function AssignedCell({ data, context }: IP) {
          list of DSP's"). */
       label: 'Deals and buyers lists',
       options: [
-        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [overlaps.candidates[l.id] ? `Overlaps ${overlaps.candidates[l.id][0].dealName} (${rangeLabel(overlaps.candidates[l.id][0])}): slot already sold` : '', l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
+        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [overlaps.candidates[l.id] ? `Overlaps ${overlaps.candidates[l.id][0].dealName} (${dealRangeLabel(overlaps.candidates[l.id][0])}): slot already sold` : '', l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
         { value: ADD_BUYERS_LIST, label: '+ Add new deal and buyers list…' },
       ],
     },
