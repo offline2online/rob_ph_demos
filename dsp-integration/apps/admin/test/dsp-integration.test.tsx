@@ -903,6 +903,22 @@ describe('Advertisers / Inventory', () => {
 
   })
 
+  /* Ticket zEGSLHFUWdogfU77KljK (25 Oct 2026): the Assigned to funnel offers only DSP names, buyers lists and Whitelist only, and filters by them. */
+  it('filters Available Inventory by Assigned to using only DSP names, buyers lists and Whitelist only', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    fireEvent.click(await within(inventory).findByLabelText('Assigned to filter', {}, { timeout: 10000 }))
+    const options = (await screen.findAllByRole('checkbox')).map((c) => c.getAttribute('aria-label') ?? c.closest('label')?.textContent ?? '')
+    expect(options).toContain('Google DSP')
+    expect(options).toContain('Whitelist only')
+    for (const legacy of ['Included in global deals', 'Unassigned', 'Nestlé']) expect(options).not.toContain(legacy)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Whitelist only' }))
+    await waitFor(() => expect(within(screen.getByLabelText('Available Inventory')).queryAllByLabelText(/slot 2: assigned to/)).toHaveLength(0), { timeout: 10000 })
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear Filter' }))
+    await waitFor(() => expect(within(screen.getByLabelText('Available Inventory')).getAllByLabelText(/slot 2: assigned to/).length).toBeGreaterThan(0), { timeout: 10000 })
+  }, slow(45000))
+
   /* "Unassigned": the display type has advertiser slots but no physical
      display is playing them (ticket "Available Inventory: playlist-primary
      table (drop Display type column) with Unassigned indicator", 27 Sep

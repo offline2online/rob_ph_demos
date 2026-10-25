@@ -350,6 +350,8 @@ const ADD_BUYERS_LIST = '__add_buyers_list__'
 /* Global deal membership as a chip (9 Oct 2026), backed by Slot.inGlobalDeal; on a buyers-list slot it sits in the open tier beneath the numbered lists (12 Oct 2026). */
 const GLOBAL_CHIP = '__global_deal__'
 const GLOBAL_CHIP_LABEL = 'Included in global deals'
+const WHITELIST_FILTER = 'Whitelist only'
+const BUYERS_LIST_FILTER_PREFIX = 'Buyers list: '
 /* The slot's buyers lists in priority order (7 Oct 2026): the waterfall. */
 const tiersOf = (a: { buyersListId: string | null; buyersListIds?: string[] }): string[] => a.buyersListIds ?? (a.buyersListId ? [a.buyersListId] : [])
 /* "All DSPs" (9 Oct 2026): the open auction across every connected DSP, an explicit choice rather than an empty list. */
@@ -808,11 +810,22 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           buyersListNames: tiersOf(a).map((id) => buyersLists.data?.items.find((l) => l.id === id)?.name ?? id),
         }).concat(edited((p.context as InvCtx).current, p.data).inGlobalDeal !== false ? [GLOBAL_CHIP_LABEL] : []).join(', ') || 'Unassigned'
       },
+      /* Filter on the values the field supports (25 Oct 2026): DSP names, buyers lists and Whitelist only. The cell's own text also names legacy advertisers, numbers each list and adds the global chip, none of which a tester can pick, so the filter reads its own tokens. */
+      filterValueGetter: (p) => {
+        if (!p.data) return ''
+        const a = edited((p.context as InvCtx).current, p.data).assignedTo
+        return [
+          ...(a.whitelistOnly ? [WHITELIST_FILTER] : []),
+          ...tiersOf(a).map((id) => `${BUYERS_LIST_FILTER_PREFIX}${buyersLists.data?.items.find((l) => l.id === id)?.name ?? id}`),
+          ...a.partnerIds.map((id) => inventory.data?.dsps.find((d) => d.partnerId === id)?.name ?? id),
+          ...(a.openAuction && !a.partnerIds.length ? [ALL_DSPS_LABEL] : []),
+        ].join(', ')
+      },
       ...setColumn<AvailableInventoryRow>('Assigned to', () => [
-        GLOBAL_CHIP_LABEL, 'Unassigned', 'Whitelist only', ALL_DSPS_LABEL,
-        ...(inventory.data?.dsps ?? []).flatMap((d) => [d.name, ...d.advertisers.map((a) => a.name)]),
-        ...(q.data?.items ?? []).filter((a) => a.direct).map((a) => a.name),
-        ...(buyersLists.data?.items ?? []).map((l) => `Buyers list: ${l.name}`),
+        ...(inventory.data?.dsps ?? []).map((d) => d.name),
+        ALL_DSPS_LABEL,
+        ...(buyersLists.data?.items ?? []).map((l) => `${BUYERS_LIST_FILTER_PREFIX}${l.name}`),
+        WHITELIST_FILTER,
       ]),
     },
     {
