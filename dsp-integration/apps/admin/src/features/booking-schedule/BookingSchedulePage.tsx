@@ -244,12 +244,13 @@ const RISK_TONE = {
 /* The hover card (ticket 53EvxhdKrShqDt1OIFMq, 23 Oct 2026): fixed, data-driven lines only, in this order: Default, Localised,
    Personalised, Booking value. Default is Approved / Awaiting approval / No creative (an unapproved tile at risk, red or orange,
    adds the booked window's start date); Localised and Personalised read "X of Y approved" and are hidden when nothing was submitted.
-   An advertiser with no campaign behind the slot reads "No campaigns submitted by this advertiser yet" and shows no counters. */
-function TileCard({ booking, money, start, onViewAll }: { booking: Booking; money: (n: number) => string; start?: string; onViewAll?: () => void }) {
+   An advertiser with no campaign behind the slot reads "No campaigns submitted by this advertiser yet for <display type>" and shows no counters.
+   The link wraps inside the card (ticket 0pVGzIDFxivFAexFpi10): an antd link button is nowrap by default and ran out of the card. */
+function TileCard({ booking, money, start, slot, onViewAll }: { booking: Booking; money: (n: number) => string; start?: string; slot?: string; onViewAll?: () => void }) {
   const a = booking.approval
   const noCampaigns = !booking.campaignId
   let defaultLine: string | null = null
-  if (noCampaigns) defaultLine = 'No campaigns submitted by this advertiser yet'
+  if (noCampaigns) defaultLine = slot ? `No campaigns submitted by this advertiser yet for ${slot}` : 'No campaigns submitted by this advertiser yet for this slot'
   else if (!a) defaultLine = 'No creative'
   else if (a.defaultApproved) defaultLine = 'Approved'
   else {
@@ -265,15 +266,15 @@ function TileCard({ booking, money, start, onViewAll }: { booking: Booking; mone
   }
   rows.push(['Booking value', money(booking.bookedRevenue)])
   return (
-    <div style={{ minWidth: 220, fontSize: 12 }}>
+    <div style={{ minWidth: 220, maxWidth: 280, fontSize: 12 }}>
       <div style={{ fontWeight: 600, marginBottom: 6 }}>{booking.advertiserName}</div>
       {rows.map(([label, value]) => (
         <div key={label} className="flex justify-between gap-4" style={{ lineHeight: '20px' }}>
           <span style={{ opacity: 0.75 }}>{label}</span>
-          <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{value}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{value}</span>
         </div>
       ))}
-      {onViewAll && <Button size="small" type="link" style={{ padding: 0, marginTop: 6 }} onClick={onViewAll}>View all campaigns from this advertiser</Button>}
+      {onViewAll && <Button size="small" type="link" style={{ padding: 0, marginTop: 6, height: 'auto', whiteSpace: 'normal', textAlign: 'left' }} onClick={onViewAll}>View all campaigns from this advertiser</Button>}
     </div>
   )
 }
@@ -302,7 +303,7 @@ function BookingTile({ booking, money, slot, dimmed, start }: { booking: Booking
   /* Another advertiser's booking while the schedule is filtered to one: still named, greyed out. */
   const colour = dimmed ? T.muted : tone?.colour ?? BOOKED.colour
   return (
-    <Tip title={<TileCard booking={booking} money={money} start={tone && booking.approval?.defaultRisk !== 'secured' ? start : undefined} onViewAll={byAdvertiser} />}>
+    <Tip title={<TileCard booking={booking} money={money} start={tone && booking.approval?.defaultRisk !== 'secured' ? start : undefined} slot={slot} onViewAll={byAdvertiser} />}>
       <div className={`flex w-full min-w-0 flex-col gap-0.5 rounded px-1 ${touch ? 'py-1.5' : 'py-0.5'}`} style={{ background: dimmed ? T.surfaceAlt : tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}`, opacity: dimmed ? 0.7 : undefined, cursor: tileOpen ? 'pointer' : undefined, minHeight: touch ? 64 : undefined }}
         {...(tileOpen ? { role: 'link', tabIndex: 0, 'aria-label': `Open ${booking.advertiserName} in Campaign Approval`, onClick: tileOpen, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tileOpen() } } } : {})}>
         <div className="flex items-center gap-1 w-full min-w-0" style={touch ? { minHeight: 32 } : undefined}

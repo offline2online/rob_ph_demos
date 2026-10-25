@@ -2792,7 +2792,8 @@ stores its criteria didn't match unsold to it. That model is retired:
   *Localised* and *Personalised* ("X of Y approved", hidden when none were
   submitted) and *Booking value*. There is no CPM, Reserved CPM, Assumed views
   or explanatory sentence. When the advertiser has no campaign behind the slot
-  the Default line reads "No campaigns submitted by this advertiser yet" and
+  the Default line reads "No campaigns submitted by this advertiser yet for
+  <display type>" (ticket 0pVGzIDFxivFAexFpi10; the link wraps inside the card) and
   the counters are hidden.
 - **A booking tile opens its campaign in Campaign Approval** (ticket
   ByeH6mIkaRqOJjnHu31z, 23 Oct 2026). Clicking a tile (or Enter on it)
