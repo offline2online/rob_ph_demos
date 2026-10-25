@@ -537,33 +537,36 @@ export function BookingSchedulePage() {
     return [...new Map([...chosen.flatMap((d) => d.advertisers), ...direct].map((a) => [a.advertiserId, a.name] as const)).entries()]
       .map(([value, label]) => ({ value, label }))
   }, [dsps, partnerId, data?.directAdvertisers])
-  const setFilter = (key: 'advertiserId' | 'partnerId', value?: string, currentAdvertiser?: string) => {
-    const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
-    else next.delete(key)
-    /* Changing the DSP drops an advertiser it doesn't bring. */
-    if (key === 'partnerId' && currentAdvertiser && !(dsps.find((d) => d.partnerId === value)?.advertisers ?? []).some((a) => a.advertiserId === currentAdvertiser)) {
-      if (value) next.delete('advertiserId')
-    }
-    setParams(next, { replace: true })
-  }
-
   const columns = useMemo<ColDef<Row>[]>(() => [
-    /* Advertiser, then the DSP it came in via, then Position (ticket, 21 Sep —
-       previously Position, DSP, Advertiser). Filtered like every other table:
-       a funnel in the filter row. The server applies these two, so they
+    /* Advertiser / DSP, then Position. Filtered like every other table:
+       a funnel in the filter row. The server applies these, so they
        narrow every window, not only the rows here. */
     {
-      headerName: 'Advertiser', width: 160, minWidth: 140, pinned: 'left', cellStyle: { color: T.muted },
-      valueGetter: (p) => (p.data ? advertisersIn(p.data.position).join(', ') || '—' : ''),
-      ...externalSetColumn<Row>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
-        (name) => setFilter('advertiserId', advertiserOptions.find((a) => a.label === name)?.value)),
-    },
-    {
-      headerName: 'DSP', width: 175, minWidth: 150, pinned: 'left', cellStyle: { color: T.muted },
-      valueGetter: (p) => (p.data ? partnersIn(p.data.position).join(', ') || 'Any connected DSP' : ''),
-      ...externalSetColumn<Row>('DSP', dsps.map((d) => d.name), dsps.find((d) => d.partnerId === partnerId)?.name,
-        (name) => setFilter('partnerId', dsps.find((d) => d.name === name)?.partnerId, advertiserId)),
+      /* One column for both (ticket hhdGMEST6sCwXC4Cw5yR, 25 Oct 2026): the advertiser
+         when the row has one — hover for the DSP(s) that brought it — otherwise the
+         DSP(s) the slot is assigned to. The funnel offers DSPs and advertisers together. */
+      headerName: 'Advertiser / DSP', width: 200, minWidth: 160, pinned: 'left', cellStyle: { color: T.muted },
+      valueGetter: (p) => {
+        if (!p.data) return ''
+        const advertisers = advertisersIn(p.data.position)
+        return advertisers.length ? advertisers.join(', ') : p.data.position.partnerNames.join(', ') || '—'
+      },
+      cellRenderer: (p: { data?: Row; value?: string }) => {
+        const dsps = p.data && advertisersIn(p.data.position).length ? partnersIn(p.data.position).join(', ') : ''
+        return dsps ? <Tip title={`DSP: ${dsps}`}><span>{p.value}</span></Tip> : <span>{p.value}</span>
+      },
+      ...externalSetColumn<Row>('Advertiser / DSP', [...new Set([...dsps.map((d) => d.name), ...advertiserOptions.map((a) => a.label)])],
+        advertiserOptions.find((a) => a.value === advertiserId)?.label ?? dsps.find((d) => d.partnerId === partnerId)?.name,
+        (name) => {
+          const dsp = dsps.find((d) => d.name === name)
+          const advertiser = advertiserOptions.find((a) => a.label === name)
+          const next = new URLSearchParams(params)
+          next.delete('advertiserId')
+          next.delete('partnerId')
+          if (advertiser) next.set('advertiserId', advertiser.value)
+          else if (dsp) next.set('partnerId', dsp.partnerId)
+          setParams(next, { replace: true })
+        }),
     },
     {
       /* Wider than before (ticket "remove the Displays column … show that
