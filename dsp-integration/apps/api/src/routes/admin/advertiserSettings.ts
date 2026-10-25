@@ -10,7 +10,7 @@ import { resolveBaseFloor } from '../../domain/pricing'
 import { billingChangeApplied, changePending, globalDealSuppressedBy, nextWindowFor, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
 import { playsPerWindowOpenOf } from '../../domain/plays'
-import { openHoursPerDayOf, positionHourGroups } from '../../domain/operatingGate'
+import { openHoursPerDayOf, operatingHoursExt, positionHourGroups } from '../../domain/operatingGate'
 import { assignedToSlot, rotationSizeOf, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
@@ -121,7 +121,12 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const displayCount = (await ctx.displays.summaryByDisplayType(t.id)).displays
       /* Zone-based operating hours (17 Oct 2026): external zones count 24 hours, internal ones the average trading hours of the stores with displays on this display type.
          Read through positionHourGroups' one-second cache, the same groups the bid path uses, not by listing the type's displays here (review, 18 Oct 2026). */
-      const openHoursPerDay = openHoursPerDayOf(await positionHourGroups(ctx, { displayType: t }))
+      const hourGroups = await positionHourGroups(ctx, { displayType: t })
+      const openHoursPerDay = openHoursPerDayOf(hourGroups)
+      /* Billing period basis and its actual times for the Plays per window hover (25 Oct 2026): 24 hours, Store hours or Custom hours, with the open-close range
+         (several ranges when stores differ, the average is what is counted). */
+      const operating = operatingHoursExt(t.phExtensions, hourGroups)
+      const operatingTimes = operating.mode === '24h' || !operating.screens.length ? '00:00–24:00' : [...new Set(operating.screens.map((g) => `${g.open}–${g.close}`))].join(', ')
       const unassigned = displayCount === 0
       /* zoneSlot: this slot's 1-based position within its own zone's segment
          of the list, rather than `slot`'s flat position across every zone
@@ -179,6 +184,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           slotCount,
           displayCount,
           openHoursPerDay,
+          operatingMode: operating.mode,
+          operatingTimes,
           playsPerWindow: playsPerWindowOpenOf(billingUnitHoursOf(t, s) * 3_600_000, maxPlayLengthSecOf(t, s, company.maxPlayLengthSec), slotCount, openHoursPerDay),
         })
       }

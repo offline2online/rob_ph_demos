@@ -938,6 +938,23 @@ describe('Advertisers / Inventory', () => {
     expect(within(inventory).getByText('(23,040)')).toBeInTheDocument()
   })
 
+  /* 25 Oct 2026: the Plays per window hover names the billing period basis, its times and the calculation. */
+  it('shows the billing period basis, its times and the calculation on the Plays per window hover', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/available-inventory': {
+        ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'],
+        items: [{ ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'].items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15, openHoursPerDay: 13, operatingMode: 'store', operatingTimes: '08:00–21:00', playsPerWindow: 1040 }],
+      },
+    })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    fireEvent.mouseOver(await within(inventory).findByText('1,040'))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('Billing period: Store hours, 08:00–21:00 (13 open hours a day).')
+    expect(tip).toHaveTextContent('24 h billing unit × 13 ÷ 24 open hours = 13 open h; ÷ (15 s max play length × 3 slots playing = 45 s loop) = 1,040 plays (rounded down).')
+  }, slow(45000))
+
   /* Ticket NPs6MBZQ6CfhFPHmBuGp (14 Oct 2026): hovering the playlist names it plus each assigned display type and its description. */
   it('shows the playlist name with its assigned display types and their descriptions on hover', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']

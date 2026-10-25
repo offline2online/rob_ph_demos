@@ -3662,7 +3662,7 @@ components:
         storeZone: {type: [string, 'null'], enum: [exterior, entrance, checkout, aisles, other, null], description: That display type's IAB store zone; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, scored, unsellableReason, salesLocked, inGlobalDeal, globalDealSuppressedBy, slot, zoneSlot, position, assignedTo, qrControl, visionAi, floorCpm, floorCpmOverride, platformFloorCpm, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns, maxPlayLengthSec, maxPlayLengthSecOverride, displayTypeMaxPlayLengthSec, companyMaxPlayLengthSec, slotCount, displayCount, openHoursPerDay, playsPerWindow]
+      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, scored, unsellableReason, salesLocked, inGlobalDeal, globalDealSuppressedBy, slot, zoneSlot, position, assignedTo, qrControl, visionAi, floorCpm, floorCpmOverride, platformFloorCpm, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns, maxPlayLengthSec, maxPlayLengthSecOverride, displayTypeMaxPlayLengthSec, companyMaxPlayLengthSec, slotCount, displayCount, openHoursPerDay, operatingMode, operatingTimes, playsPerWindow]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -3882,6 +3882,13 @@ components:
           minimum: 0
           maximum: 24
           description: Hours per day the display type's displays are open for plays (its operating hours setting). 24 for 24 hours; the custom range's length for Custom; for Store hours, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only.
+        operatingMode:
+          type: string
+          enum: ['24h', 'store', 'custom']
+          description: The display type's operating hours setting, the basis of the open hours plays are counted over. Read-only.
+        operatingTimes:
+          type: string
+          description: The actual times for operatingMode as HH:MM–HH:MM (UTC), comma-separated when stores' trading hours differ. 00:00–24:00 for 24 hours. Read-only.
         playsPerWindow:
           type: integer
           description: Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change.

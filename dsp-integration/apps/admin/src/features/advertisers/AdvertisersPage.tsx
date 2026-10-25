@@ -325,6 +325,23 @@ const effectivePlaysPerWindow = (c: InvCtx['current'], r: AvailableInventoryRow)
   return loopSec > 0 ? Math.floor((effectiveBillingUnitHours(c, r) * 3600 * openShare) / loopSec) : 0
 }
 
+/* The Plays per window hover (25 Oct 2026): the billing period basis (Store hours, 24 hours or Custom hours), its actual times, and the calculation
+   with the same values the figure was derived from, so it updates with the draft's billing unit and max play length. */
+const OPERATING_BASIS: Record<AvailableInventoryRow['operatingMode'], string> = { '24h': '24 hours', store: 'Store hours', custom: 'Custom hours' }
+const playsPerWindowTip = (c: InvCtx['current'], r: AvailableInventoryRow, per: number, fleet: number | null): string => {
+  const unitHours = effectiveBillingUnitHours(c, r)
+  const playSec = effectiveMaxPlayLength(c, r)
+  const slots = Math.max(1, r.slotCount)
+  const open = Math.min(24, Math.max(0, r.openHoursPerDay ?? 24))
+  const n = (v: number) => (Math.round(v * 100) / 100).toLocaleString('en-US')
+  const lines = [
+    `Billing period: ${OPERATING_BASIS[r.operatingMode] ?? 'Store hours'}, ${r.operatingTimes ?? '00:00–24:00'} (${n(open)} open hours a day).`,
+    `Calculation: ${n(unitHours)} h billing unit × ${n(open)} ÷ 24 open hours = ${n((unitHours * open) / 24)} open h; ÷ (${playSec} s max play length × ${slots} slot${slots === 1 ? '' : 's'} playing = ${playSec * slots} s loop) = ${per.toLocaleString('en-US')} plays (rounded down).`,
+  ]
+  if (fleet !== null) lines.push(`${per.toLocaleString('en-US')} plays per display; (${fleet.toLocaleString('en-US')}) across all ${r.displayCount} display${r.displayCount === 1 ? '' : 's'} registered to ${r.displayTypeName}.`)
+  return lines.join('\n')
+}
+
 /* Who may buy this position (Rob, 20 Sep; buyers lists/private auctions
    added 23 Sep): DSPs, named advertisers, a buyers list's private auction,
    or the whitelist. Nothing chosen means any connected DSP. */
@@ -820,14 +837,14 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       headerName: 'Plays per window', width: 150, minWidth: 135,
       headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit on ONE display: open hours in the billing unit ÷ (max slot length × slots playing). External displays (Exterior, Entrance) count 24 hours; internal displays (In aisles, Checkout, Other & connected store, or no zone) count the average store trading hours of the stores with displays on this display type. The figure in brackets is the fleet total: that per-display figure × the displays registered to this display type in PH Core (the count in brackets after the playlist name). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
       valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
-      cellRenderer: ({ value, data }: ICellRendererParams<AvailableInventoryRow>) => {
+      cellRenderer: ({ value, data, context }: ICellRendererParams<AvailableInventoryRow>) => {
         const per = Number(value)
         const fleet = typeof data?.displayCount === 'number' ? per * data.displayCount : null
-        return fleet === null ? <span>{per.toLocaleString('en-US')}</span> : (
-          <Tip title={`${per.toLocaleString('en-US')} plays per display; (${fleet.toLocaleString('en-US')}) across all ${data!.displayCount} display${data!.displayCount === 1 ? '' : 's'} registered to ${data!.displayTypeName}.`}>
-            <span>{per.toLocaleString('en-US')} <span style={{ color: T.muted }}>({fleet.toLocaleString('en-US')})</span></span>
+        return data ? (
+          <Tip title={playsPerWindowTip((context as InvCtx).current, data, per, fleet)} styles={{ body: { whiteSpace: 'pre-line' } }}>
+            <span>{per.toLocaleString('en-US')}{fleet !== null && <span style={{ color: T.muted }}> ({fleet.toLocaleString('en-US')})</span>}</span>
           </Tip>
-        )
+        ) : <span>{per.toLocaleString('en-US')}</span>
       },
     },
     {

@@ -2415,6 +2415,14 @@ plays per window = floor(open hours within the billing unit / loop length)
   Entrance display type left on 24 hours holds 24 h / loop length plays, and on
   an In-aisles display type with stores open 08:00-20:00 on average, 12 h / loop
   length.
+- **The hover on Plays per window** (25 Oct 2026) states how the figure was
+  reached: the billing period basis (**Store hours**, **24 hours** or **Custom
+  hours**, `operatingMode` on the row), its actual times (`operatingTimes`,
+  e.g. 08:00-21:00, several ranges when stores differ), and the calculation
+  with the row's own values (billing unit x open hours / 24, divided by max
+  play length x slots playing, rounded down) equal to the displayed plays. It
+  is built from the draft, so changing a slot's billing unit or max play
+  length updates it before save.
 - **One calculation**: `playsPerWindowOpenOf()` in `domain/plays.ts` feeds
   the Available Inventory column, the editor's live recalculation and the
   Estimated volume on the Deals and buyers lists and the deal sheet (fleet
