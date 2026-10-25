@@ -263,7 +263,7 @@ describe('Shared Targeting Variables page', () => {
     expect(await screen.findByRole('heading', { name: /Shared Targeting Variables/ })).toBeInTheDocument()
     expect(screen.getByText('Localisation Variables')).toBeInTheDocument()
     expect(screen.getByText('Personalisation Variables')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Variables shared through the API/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Variables advertisers can use to localise and target campaigns/ })).toBeInTheDocument()
   })
 
   it('has a Values column: inactive until the variable is shared, then a multi-select with a Free text tick', async () => {
@@ -806,10 +806,11 @@ describe('Advertisers / Inventory', () => {
   })
 
   it('shows buyers list and campaign counts on the Advertisers table, in the specified column order', async () => {
-    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [
+    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/partners': { items: [{ id: 'p_google', name: 'Google DSP', status: 'connected', seats: [{ id: 'seat-swisse', name: 'Swisse' }] }] }, '/api/admin/v1/buyers-lists': { items: [
       { id: 'l1', name: 'List one', invitedBuyers: [{ partnerId: 'p_google', seatId: 'seat-nestle' }], invitedCategories: [] },
       { id: 'l2', name: 'List two', invitedBuyers: [{ partnerId: 'p_google', seatId: 'seat-nestle' }, { partnerId: 'p_other', seatId: 'x' }], invitedCategories: [] },
-      { id: 'l3', name: 'List three', invitedBuyers: [{ partnerId: 'p_other', seatId: 'x' }], invitedCategories: [] },
+      { id: 'l3', name: 'List three', invitedBuyers: [{ partnerId: 'p_other', seatId: 'x' }, { partnerId: 'p_google', seatId: 'seat-swisse' }], invitedCategories: [] },
+      { id: 'l4', name: 'Direct deal', invitedBuyers: [{ partnerId: 'direct', seatId: 'acme-foods' }], invitedCategories: [] },
     ] } }
     vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
     renderAt('/advertisers')
@@ -821,9 +822,9 @@ describe('Advertisers / Inventory', () => {
       const cells = [...row.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent)
       expect(cells.slice(2, 3).concat(cells.slice(4, 8))).toEqual(['2', '3', '1', '2', '0'])
     })
-    /* Swisse: draft campaigns are not counted, and it is on no list. */
+    /* Swisse: draft campaigns are not counted; it has no mapped seat but a synced seat of its name is invited on l3. */
     const swisse = advertisers.querySelector('.ag-center-cols-container [row-id="swisse"]')!
-    expect([...swisse.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent).filter((_, i) => i === 2 || (i >= 4 && i <= 7))).toEqual(['0', '0', '0', '0', '0'])
+    expect([...swisse.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent).filter((_, i) => i === 2 || (i >= 4 && i <= 7))).toEqual(['1', '0', '0', '0', '0'])
   })
 
   it('lists a direct advertiser as "Direct advertiser" in Via and and is not offered in the Assigned to options, and lets an admin add one', async () => {
@@ -832,9 +833,9 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
     expect(await within(advertisers).findByText('Direct advertiser')).toBeInTheDocument()
-    /* A direct advertiser has no DSP seat, so the Buyers list column reads N/A rather than 0. */
+    /* A direct advertiser on no buyers list reads 0 (it can be the named buyer of a direct deal, so never N/A). */
     const acme = advertisers.querySelector('.ag-center-cols-container [row-id="acme-foods"]')!
-    expect([...acme.querySelectorAll('[role="gridcell"]')][2].textContent).toBe('N/A')
+    expect([...acme.querySelectorAll('[role="gridcell"]')][2].textContent).toBe('0')
     /* No inline add field any more: a top-right CTA opens a pop-up (ticket d4q91vrL5z4gLHBKypHo). */
     expect(screen.queryByLabelText('Direct advertiser name')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Add new Advertiser/ }))
@@ -903,6 +904,22 @@ describe('Advertisers / Inventory', () => {
 
   })
 
+  /* Ticket zEGSLHFUWdogfU77KljK (25 Oct 2026): the Assigned to funnel offers only DSP names, buyers lists and Whitelist only, and filters by them. */
+  it('filters Available Inventory by Assigned to using only DSP names, buyers lists and Whitelist only', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    fireEvent.click(await within(inventory).findByLabelText('Assigned to filter', {}, { timeout: 10000 }))
+    const options = (await screen.findAllByRole('checkbox')).map((c) => c.getAttribute('aria-label') ?? c.closest('label')?.textContent ?? '')
+    expect(options).toContain('Google DSP')
+    expect(options).toContain('Whitelist only')
+    for (const legacy of ['Included in global deals', 'Unassigned', 'Nestlé']) expect(options).not.toContain(legacy)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Whitelist only' }))
+    await waitFor(() => expect(within(screen.getByLabelText('Available Inventory')).queryAllByLabelText(/slot 2: assigned to/)).toHaveLength(0), { timeout: 10000 })
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear Filter' }))
+    await waitFor(() => expect(within(screen.getByLabelText('Available Inventory')).getAllByLabelText(/slot 2: assigned to/).length).toBeGreaterThan(0), { timeout: 10000 })
+  }, slow(45000))
+
   /* "Unassigned": the display type has advertiser slots but no physical
      display is playing them (ticket "Available Inventory: playlist-primary
      table (drop Display type column) with Unassigned indicator", 27 Sep
@@ -937,6 +954,23 @@ describe('Advertisers / Inventory', () => {
     expect(within(inventory).getByText('1,920')).toBeInTheDocument()
     expect(within(inventory).getByText('(23,040)')).toBeInTheDocument()
   })
+
+  /* 25 Oct 2026: the Plays per window hover names the billing period basis, its times and the calculation. */
+  it('shows the billing period basis, its times and the calculation on the Plays per window hover', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/available-inventory': {
+        ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'],
+        items: [{ ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'].items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15, openHoursPerDay: 13, operatingMode: 'store', operatingTimes: '08:00–21:00', playsPerWindow: 1040 }],
+      },
+    })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    fireEvent.mouseOver(await within(inventory).findByText('1,040'))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('Billing period: Store hours, 08:00–21:00 (13 open hours a day).')
+    expect(tip).toHaveTextContent('24 h billing unit × 13 ÷ 24 open hours = 13 open h; ÷ (15 s max play length × 3 slots playing = 45 s loop) = 1,040 plays (rounded down).')
+  }, slow(45000))
 
   /* Ticket NPs6MBZQ6CfhFPHmBuGp (14 Oct 2026): hovering the playlist names it plus each assigned display type and its description. */
   it('shows the playlist name with its assigned display types and their descriptions on hover', async () => {

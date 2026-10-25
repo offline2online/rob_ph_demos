@@ -321,7 +321,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
       {/* Wraps on a phone: with View Archived Deals beside it the primary button was pushed off a 390px screen (E2E 22 Oct 2026). */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <SectionLabel style={{ margin: 0 }}>
-          <WithTip tip="Deals and buyers lists decide who can buy your advertiser slots, and on what terms. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), the buyers, the flight dates and the rate. To set one up: 1. Create a buyers list. 2. Assign it to slots in Available Inventory's Assigned to column. 3. Finalise the deal terms, then confirm and share the deal with the DSPs.">
+          <WithTip tip="Deals and buyers lists decide who can buy your advertiser slots, and on what terms. Each list sets the deal type (private auction, preferred deal, programmatic guaranteed or direct advertiser), the buyers, the flight dates and the rate. To set one up: 1. Create a buyers list. 2. Assign it to slots in Available Inventory's Assigned to column. 3. Finalise the deal terms, then confirm and share the deal with the DSPs.">
             Deals and buyers lists
           </WithTip>
         </SectionLabel>

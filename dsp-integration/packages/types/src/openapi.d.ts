@@ -3196,6 +3196,10 @@ export interface components {
             displayCount: number;
             /** @description Hours per day the display type's displays are open for plays (its operating hours setting). 24 for 24 hours; the custom range's length for Custom; for Store hours, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
             openHoursPerDay: number;
+            /** @description The display type's operating hours setting, the basis of the open hours plays are counted over. Read-only. */
+            operatingMode: "24h" | "store" | "custom";
+            /** @description The actual times for operatingMode as HH:MM–HH:MM (UTC), comma-separated when stores' trading hours differ. 00:00–24:00 for 24 hours. Read-only. */
+            operatingTimes: string;
             /** @description Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change. */
             playsPerWindow: number;
         };

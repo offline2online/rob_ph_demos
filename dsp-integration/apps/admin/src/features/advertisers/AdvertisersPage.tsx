@@ -8,7 +8,7 @@ import { App, Button, Input, InputNumber, Modal, Select, Spin, Switch } from 'an
 import { Tip } from '../../shared/Tip'
 import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, advertiserSlug, DIRECT_PARTNER_ID, type Partner, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -325,6 +325,23 @@ const effectivePlaysPerWindow = (c: InvCtx['current'], r: AvailableInventoryRow)
   return loopSec > 0 ? Math.floor((effectiveBillingUnitHours(c, r) * 3600 * openShare) / loopSec) : 0
 }
 
+/* The Plays per window hover (25 Oct 2026): the billing period basis (Store hours, 24 hours or Custom hours), its actual times, and the calculation
+   with the same values the figure was derived from, so it updates with the draft's billing unit and max play length. */
+const OPERATING_BASIS: Record<AvailableInventoryRow['operatingMode'], string> = { '24h': '24 hours', store: 'Store hours', custom: 'Custom hours' }
+const playsPerWindowTip = (c: InvCtx['current'], r: AvailableInventoryRow, per: number, fleet: number | null): string => {
+  const unitHours = effectiveBillingUnitHours(c, r)
+  const playSec = effectiveMaxPlayLength(c, r)
+  const slots = Math.max(1, r.slotCount)
+  const open = Math.min(24, Math.max(0, r.openHoursPerDay ?? 24))
+  const n = (v: number) => (Math.round(v * 100) / 100).toLocaleString('en-US')
+  const lines = [
+    `Billing period: ${OPERATING_BASIS[r.operatingMode] ?? 'Store hours'}, ${r.operatingTimes ?? '00:00–24:00'} (${n(open)} open hours a day).`,
+    `Calculation: ${n(unitHours)} h billing unit × ${n(open)} ÷ 24 open hours = ${n((unitHours * open) / 24)} open h; ÷ (${playSec} s max play length × ${slots} slot${slots === 1 ? '' : 's'} playing = ${playSec * slots} s loop) = ${per.toLocaleString('en-US')} plays (rounded down).`,
+  ]
+  if (fleet !== null) lines.push(`${per.toLocaleString('en-US')} plays per display; (${fleet.toLocaleString('en-US')}) across all ${r.displayCount} display${r.displayCount === 1 ? '' : 's'} registered to ${r.displayTypeName}.`)
+  return lines.join('\n')
+}
+
 /* Who may buy this position (Rob, 20 Sep; buyers lists/private auctions
    added 23 Sep): DSPs, named advertisers, a buyers list's private auction,
    or the whitelist. Nothing chosen means any connected DSP. */
@@ -333,6 +350,8 @@ const ADD_BUYERS_LIST = '__add_buyers_list__'
 /* Global deal membership as a chip (9 Oct 2026), backed by Slot.inGlobalDeal; on a buyers-list slot it sits in the open tier beneath the numbered lists (12 Oct 2026). */
 const GLOBAL_CHIP = '__global_deal__'
 const GLOBAL_CHIP_LABEL = 'Included in global deals'
+const WHITELIST_FILTER = 'Whitelist only'
+const BUYERS_LIST_FILTER_PREFIX = 'Buyers list: '
 /* The slot's buyers lists in priority order (7 Oct 2026): the waterfall. */
 const tiersOf = (a: { buyersListId: string | null; buyersListIds?: string[] }): string[] => a.buyersListIds ?? (a.buyersListId ? [a.buyersListId] : [])
 /* "All DSPs" (9 Oct 2026): the open auction across every connected DSP, an explicit choice rather than an empty list. */
@@ -727,8 +746,12 @@ const MAX_CAMPAIGNS_HEADER = 'Max campaigns'
 /* Numeric columns (ticket D3D4iQaQnGQ0cVA6WR4T): narrow, counts centred in the column under a centred header (ticket ACnS3x2Hrdt9Kk4RMVi5). */
 const COUNT_COLUMN: Partial<ColDef<Advertiser>> = { cellStyle: { textAlign: 'center' }, headerClass: 'ag-center-aligned-header' }
 /* A seat is the { partnerId, seatId } pair an invited buyer on a buyers list carries. */
-const buyersListCount = (a: Advertiser, lists: BuyersList[]) => {
+/* An advertiser is listed because a DSP synced a seat under its name, so its seats are the mapped ones plus every
+   synced seat whose slugged name is its id. A direct advertiser is the buyer { DIRECT_PARTNER_ID, advertiserId } (Direct advertiser deals). */
+const buyersListCount = (a: Advertiser, lists: BuyersList[], partners: Partner[]) => {
   const seats = new Set((a.dspSeats ?? []).map((s) => `${s.partnerId}\u0000${s.seatId}`))
+  if (a.direct) seats.add(`${DIRECT_PARTNER_ID}\u0000${a.advertiserId}`)
+  else for (const p of partners) for (const s of p.seats ?? []) if (advertiserSlug(s.name) === a.advertiserId) seats.add(`${p.id}\u0000${s.id}`)
   return lists.filter((l) => l.invitedBuyers.some((b) => seats.has(`${b.partnerId}\u0000${b.seatId}`))).length
 }
 /* Drafts are left out (Campaign Status does the same), so Campaigns is always the sum of the three that follow it. */
@@ -754,6 +777,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
      its own real-timer waitFor budget in this sandbox — root-caused via
      `git worktree` A/B runs of the full suite, not assumed). */
   const buyersLists = useQuery({ queryKey: ['buyers-lists'], queryFn: () => api<{ items: BuyersList[] }>('GET', '/admin/v1/buyers-lists'), retry: false })
+  const partners = useQuery(Q.partners)
   const invRows = inventory.data?.items ?? []
   /* Set when the "+ Add new buyers list…" picker action is chosen for a
      row: on save, the new list is assigned straight to that slot (Rob, 23 Sep). */
@@ -791,11 +815,22 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           buyersListNames: tiersOf(a).map((id) => buyersLists.data?.items.find((l) => l.id === id)?.name ?? id),
         }).concat(edited((p.context as InvCtx).current, p.data).inGlobalDeal !== false ? [GLOBAL_CHIP_LABEL] : []).join(', ') || 'Unassigned'
       },
+      /* Filter on the values the field supports (25 Oct 2026): DSP names, buyers lists and Whitelist only. The cell's own text also names legacy advertisers, numbers each list and adds the global chip, none of which a tester can pick, so the filter reads its own tokens. */
+      filterValueGetter: (p) => {
+        if (!p.data) return ''
+        const a = edited((p.context as InvCtx).current, p.data).assignedTo
+        return [
+          ...(a.whitelistOnly ? [WHITELIST_FILTER] : []),
+          ...tiersOf(a).map((id) => `${BUYERS_LIST_FILTER_PREFIX}${buyersLists.data?.items.find((l) => l.id === id)?.name ?? id}`),
+          ...a.partnerIds.map((id) => inventory.data?.dsps.find((d) => d.partnerId === id)?.name ?? id),
+          ...(a.openAuction && !a.partnerIds.length ? [ALL_DSPS_LABEL] : []),
+        ].join(', ')
+      },
       ...setColumn<AvailableInventoryRow>('Assigned to', () => [
-        GLOBAL_CHIP_LABEL, 'Unassigned', 'Whitelist only', ALL_DSPS_LABEL,
-        ...(inventory.data?.dsps ?? []).flatMap((d) => [d.name, ...d.advertisers.map((a) => a.name)]),
-        ...(q.data?.items ?? []).filter((a) => a.direct).map((a) => a.name),
-        ...(buyersLists.data?.items ?? []).map((l) => `Buyers list: ${l.name}`),
+        ...(inventory.data?.dsps ?? []).map((d) => d.name),
+        ALL_DSPS_LABEL,
+        ...(buyersLists.data?.items ?? []).map((l) => `${BUYERS_LIST_FILTER_PREFIX}${l.name}`),
+        WHITELIST_FILTER,
       ]),
     },
     {
@@ -820,14 +855,14 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       headerName: 'Plays per window', width: 150, minWidth: 135,
       headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit on ONE display: open hours in the billing unit ÷ (max slot length × slots playing). External displays (Exterior, Entrance) count 24 hours; internal displays (In aisles, Checkout, Other & connected store, or no zone) count the average store trading hours of the stores with displays on this display type. The figure in brackets is the fleet total: that per-display figure × the displays registered to this display type in PH Core (the count in brackets after the playlist name). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
       valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
-      cellRenderer: ({ value, data }: ICellRendererParams<AvailableInventoryRow>) => {
+      cellRenderer: ({ value, data, context }: ICellRendererParams<AvailableInventoryRow>) => {
         const per = Number(value)
         const fleet = typeof data?.displayCount === 'number' ? per * data.displayCount : null
-        return fleet === null ? <span>{per.toLocaleString('en-US')}</span> : (
-          <Tip title={`${per.toLocaleString('en-US')} plays per display; (${fleet.toLocaleString('en-US')}) across all ${data!.displayCount} display${data!.displayCount === 1 ? '' : 's'} registered to ${data!.displayTypeName}.`}>
-            <span>{per.toLocaleString('en-US')} <span style={{ color: T.muted }}>({fleet.toLocaleString('en-US')})</span></span>
+        return data ? (
+          <Tip title={playsPerWindowTip((context as InvCtx).current, data, per, fleet)} styles={{ body: { whiteSpace: 'pre-line' } }}>
+            <span>{per.toLocaleString('en-US')}{fleet !== null && <span style={{ color: T.muted }}> ({fleet.toLocaleString('en-US')})</span>}</span>
           </Tip>
-        )
+        ) : <span>{per.toLocaleString('en-US')}</span>
       },
     },
     {
@@ -895,10 +930,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       /* Buyers list count (ticket D3D4iQaQnGQ0cVA6WR4T, 15 Oct 2026): the lists whose invited buyers include one of this
          advertiser's DSP seats (the same { partnerId, seatId } pair). Category invites are a bid-time filter, not membership. */
       headerName: 'Buyers list', width: 105, suppressSizeToFit: true, ...COUNT_COLUMN,
-      headerComponent: header('Buyers list', 'How many buyers lists this advertiser is currently included in, by one of its DSP seats being an invited buyer. A direct advertiser has no DSP seat, so is never on one.'),
-      /* A direct advertiser has no DSP seat so can never be on a buyers list: N/A, not 0 (ticket vX0B3zmwiwUJWaRjUjCw, 15 Oct 2026). */
-      valueGetter: (p) => (p.data ? (p.data.direct ? 'N/A' : buyersListCount(p.data, buyersLists.data?.items ?? [])) : 0),
-      comparator: (x, y) => (x === 'N/A' ? -1 : 0) - (y === 'N/A' ? -1 : 0) || (typeof x === 'number' && typeof y === 'number' ? x - y : 0),
+      headerComponent: header('Buyers list', 'How many buyers lists this advertiser is currently included in, by one of its DSP seats being an invited buyer, or, for a direct advertiser, as the named buyer.'),
+      valueGetter: (p) => (p.data ? buyersListCount(p.data, buyersLists.data?.items ?? [], partners.data ?? []) : 0),
     },
     {
       headerName: 'Campaign approval', width: 160, suppressSizeToFit: true, cellRenderer: ApprovalCell,
@@ -930,7 +963,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        already covered in Campaign Status and the booking schedule, their
        own operational sections. */
     ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
-  ] : [], [data, canEdit, buyersLists.data])
+  ] : [], [data, canEdit, buyersLists.data, partners.data])
 
   if (q.error) return <Callout tone="error" icon="block">{q.error instanceof ApiRequestError ? q.error.message : 'Could not load advertisers.'}</Callout>
   if (!data || !draft) return <Spin />
