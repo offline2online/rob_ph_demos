@@ -3445,6 +3445,8 @@ components:
         overlapTo: {type: [string, 'null'], description: 'YYYY-MM-DD; null = open-ended.'}
         overlapFromAt: {type: [string, 'null'], format: date-time, description: 'The exact moment the shared span starts (22 Oct 2026); null = open-ended.'}
         overlapToAt: {type: [string, 'null'], format: date-time, description: 'The exact moment the shared span ends; null = open-ended.'}
+        dealFromAt: {type: [string, 'null'], format: date-time, description: 'When the conflicting deal itself starts (its own flight, not the shared span); null = open-ended.'}
+        dealToAt: {type: [string, 'null'], format: date-time, description: 'When the conflicting deal itself ends; null = open-ended.'}
         message: {type: string, description: A ready-to-show sentence naming the deal, advertiser, slot and dates.}
     TermCheck:
       type: object

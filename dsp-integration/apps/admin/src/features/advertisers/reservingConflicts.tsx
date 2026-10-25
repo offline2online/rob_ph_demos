@@ -39,6 +39,10 @@ export const rangeLabel = (c: Pick<ReservingConflict, 'overlapFrom' | 'overlapTo
     ? `${flightMoment(c.overlapFromAt ?? null) ?? 'the start'} to ${flightMoment(c.overlapToAt ?? null) ?? 'no end date'}`
     : c.overlapFrom && c.overlapFrom === c.overlapTo ? c.overlapFrom : `${date(c.overlapFrom, 'the start')} to ${date(c.overlapTo, 'no end date')}`
 
+/* The clashing deal's own flight (ticket 2uQgz45VImhc0F5gFtKD): the warning names the dates of the deal that holds the slot, not only the span the two share. Older API answers have no dealFromAt/dealToAt, so they fall back to the shared span. */
+export const dealRangeLabel = (c: Pick<ReservingConflict, 'overlapFrom' | 'overlapTo' | 'overlapFromAt' | 'overlapToAt' | 'dealFromAt' | 'dealToAt'>) =>
+  'dealFromAt' in c ? `${flightMoment(c.dealFromAt ?? null) ?? 'the start'} to ${flightMoment(c.dealToAt ?? null) ?? 'no end date'}` : rangeLabel(c)
+
 export function ConflictCallout({ conflicts, testId }: { conflicts: ReservingConflict[]; testId?: string }) {
   if (!conflicts.length) return null
   return (
@@ -46,7 +50,7 @@ export function ConflictCallout({ conflicts, testId }: { conflicts: ReservingCon
     <div className="mt-2 flex flex-col gap-2" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.4 }} data-testid={testId ?? 'reserving-conflict'}>
       {conflicts.map((c) => (
         <Callout key={`${c.dealId}/${c.positionId}`} tone="warning" icon="event_busy">
-          <strong>{c.dealName}</strong> ({c.advertiser}) already holds <strong>{c.playlist}, slot {c.slot}{c.slotLabel ? ` (${c.slotLabel})` : ''}</strong>: the slot is already sold for {rangeLabel(c)}. Change the dates or the slot to save.
+          <strong>{c.dealName}</strong> ({c.advertiser}) already holds <strong>{c.playlist}, slot {c.slot}{c.slotLabel ? ` (${c.slotLabel})` : ''}</strong>: that deal runs {dealRangeLabel(c)}, which overlaps these dates ({rangeLabel(c)}). Change the dates or the slot to save.
         </Callout>
       ))}
     </div>

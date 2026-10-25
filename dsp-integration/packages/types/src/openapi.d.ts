@@ -2745,6 +2745,16 @@ export interface components {
              * @description The exact moment the shared span ends; null = open-ended.
              */
             overlapToAt?: string | null;
+            /**
+             * Format: date-time
+             * @description When the conflicting deal itself starts (its own flight, not the shared span); null = open-ended.
+             */
+            dealFromAt?: string | null;
+            /**
+             * Format: date-time
+             * @description When the conflicting deal itself ends; null = open-ended.
+             */
+            dealToAt?: string | null;
             /** @description A ready-to-show sentence naming the deal */
             message: string;
         };
