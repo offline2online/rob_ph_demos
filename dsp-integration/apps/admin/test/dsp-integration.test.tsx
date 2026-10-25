@@ -806,10 +806,11 @@ describe('Advertisers / Inventory', () => {
   })
 
   it('shows buyers list and campaign counts on the Advertisers table, in the specified column order', async () => {
-    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [
+    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/partners': { items: [{ id: 'p_google', name: 'Google DSP', status: 'connected', seats: [{ id: 'seat-swisse', name: 'Swisse' }] }] }, '/api/admin/v1/buyers-lists': { items: [
       { id: 'l1', name: 'List one', invitedBuyers: [{ partnerId: 'p_google', seatId: 'seat-nestle' }], invitedCategories: [] },
       { id: 'l2', name: 'List two', invitedBuyers: [{ partnerId: 'p_google', seatId: 'seat-nestle' }, { partnerId: 'p_other', seatId: 'x' }], invitedCategories: [] },
-      { id: 'l3', name: 'List three', invitedBuyers: [{ partnerId: 'p_other', seatId: 'x' }], invitedCategories: [] },
+      { id: 'l3', name: 'List three', invitedBuyers: [{ partnerId: 'p_other', seatId: 'x' }, { partnerId: 'p_google', seatId: 'seat-swisse' }], invitedCategories: [] },
+      { id: 'l4', name: 'Direct deal', invitedBuyers: [{ partnerId: 'direct', seatId: 'acme-foods' }], invitedCategories: [] },
     ] } }
     vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
     renderAt('/advertisers')
@@ -821,9 +822,9 @@ describe('Advertisers / Inventory', () => {
       const cells = [...row.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent)
       expect(cells.slice(2, 3).concat(cells.slice(4, 8))).toEqual(['2', '3', '1', '2', '0'])
     })
-    /* Swisse: draft campaigns are not counted, and it is on no list. */
+    /* Swisse: draft campaigns are not counted; it has no mapped seat but a synced seat of its name is invited on l3. */
     const swisse = advertisers.querySelector('.ag-center-cols-container [row-id="swisse"]')!
-    expect([...swisse.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent).filter((_, i) => i === 2 || (i >= 4 && i <= 7))).toEqual(['0', '0', '0', '0', '0'])
+    expect([...swisse.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent).filter((_, i) => i === 2 || (i >= 4 && i <= 7))).toEqual(['1', '0', '0', '0', '0'])
   })
 
   it('lists a direct advertiser as "Direct advertiser" in Via and and is not offered in the Assigned to options, and lets an admin add one', async () => {
@@ -832,9 +833,9 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
     expect(await within(advertisers).findByText('Direct advertiser')).toBeInTheDocument()
-    /* A direct advertiser has no DSP seat, so the Buyers list column reads N/A rather than 0. */
+    /* A direct advertiser on no buyers list reads 0 (it can be the named buyer of a direct deal, so never N/A). */
     const acme = advertisers.querySelector('.ag-center-cols-container [row-id="acme-foods"]')!
-    expect([...acme.querySelectorAll('[role="gridcell"]')][2].textContent).toBe('N/A')
+    expect([...acme.querySelectorAll('[role="gridcell"]')][2].textContent).toBe('0')
     /* No inline add field any more: a top-right CTA opens a pop-up (ticket d4q91vrL5z4gLHBKypHo). */
     expect(screen.queryByLabelText('Direct advertiser name')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Add new Advertiser/ }))
