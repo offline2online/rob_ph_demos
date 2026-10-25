@@ -216,6 +216,13 @@ export function useDealNames() {
   return { dspName, seatName }
 }
 
+/* Orders the Flight dates column's `${activeFrom}|${activeTo}` values: start, then end, a missing date first. */
+export const compareFlights = (a: string, b: string): number => {
+  const [af, at] = a.split('|').map((x) => (x === 'null' || x === 'undefined' ? '' : x))
+  const [bf, bt] = b.split('|').map((x) => (x === 'null' || x === 'undefined' ? '' : x))
+  return af.localeCompare(bf) || at.localeCompare(bt)
+}
+
 export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, showTargeting = false }: { showTargeting?: boolean; lists: BuyersList[]; canEdit: boolean; capacity: Capacity; slots: Map<string, SlotInfo[]>; onChanged: () => void }) {
   const bufferPct = useQuery(Q.advertiserSettings).data?.guaranteeBufferPct ?? 10
   const { dspName, seatName } = useDealNames()
@@ -235,15 +242,21 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
      so a late re-render (the partners query resolving) swapped the cells out from under a click.
      Cells read anything that changes (names, capacity, handlers) through context.current. */
   const columns = useMemo<ColDef<BuyersList>[]>(() => [
-    { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${JSON.stringify(p.data?.targeting ?? [])}|${p.data?.status}|${p.data?.dealType}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}` },
-    { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
+    { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${JSON.stringify(p.data?.targeting ?? [])}|${p.data?.status}|${p.data?.dealType}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}`, ...searchColumn<BuyersList>('Deals and buyers lists'), filterValueGetter: (p) => p.data?.name ?? '' },
+    { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell, ...searchColumn<BuyersList>('Deal ID'), filterValueGetter: (p) => (p.data?.deals ?? []).filter((d) => !d.retiredAt).map((d) => d.dealId).join(', ') || p.data?.dealId || '' },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Details', width: 300, minWidth: 240, cellRenderer: DetailsCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm, p.data?.termTotal, p.data?.belowFloorOverride, p.data?.activeFrom, p.data?.activeTo, p.data?.dealId, p.data?.invitedBuyers ?? [], p.context.current.slots.get(p.data?.id ?? '') ?? []]) },
-    { headerName: 'Buyer(s)', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
-    { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []) },
+    { headerName: 'Buyer(s)', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]), ...searchColumn<BuyersList>('Buyer(s)'),
+      /* What the cell shows and its hover lists: every seat by name, and the IAB categories. */
+      filterValueGetter: (p) => [...(p.data?.invitedBuyers ?? []).map((b) => `${p.context.current.seatName(b.partnerId, b.seatId)} ${p.context.current.dspName(b.partnerId)}`), ...(p.data?.invitedCategories ?? [])].join(', ') },
+    { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []), ...searchColumn<BuyersList>('Slots'),
+      /* The hover's wording: display type, playlist, position and slot number. */
+      filterValueGetter: (p) => (p.context.current.slots.get(p.data?.id ?? '') ?? []).map((r: SlotInfo) => `${r.displayType} ${r.description ?? ''} ${r.playlist} ${r.zoneName ?? ''} ${r.position} slot ${r.slot}`).join(', ') },
     /* Start and end each carry a time now (ticket yOginusgiFgFkwVHTRFH): wide enough not to clip the end time (E2E 22 Oct 2026). */
-    { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
+    { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}`,
+      /* Sort by start, then end; ISO text sorts in date order. A missing date (always active, no start) sorts first. */
+      sortable: true, comparator: compareFlights, ...searchColumn<BuyersList>('Flight dates'), filterValueGetter: (p) => `${flightMoment(p.data?.activeFrom ?? null) ?? ''} ${flightMoment(p.data?.activeTo ?? null) ?? ''}` },
     ...(canEdit ? [{ headerName: '', width: 150, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ], [canEdit])
   const context = {
