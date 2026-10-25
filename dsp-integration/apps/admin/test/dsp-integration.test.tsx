@@ -413,6 +413,19 @@ describe('Campaign Status stand-in', () => {
     expect(screen.getByRole('menuitem', { name: 'Reject campaign' })).toBeInTheDocument()
   }, slow(45000))
 
+  /* Ticket gtkZHpDXBXqYk1GFL2Mf: hovering Rejected shows why. */
+  it('shows the rejection details when hovering a Rejected status', async () => {
+    const rejected = { ...approval, status: 'rejected', reasonCode: 'other', reason: 'Logo is blurry', reviewedBy: 'hq@retailer.test', reviewedAt: '2026-10-20T01:00:00.000Z' }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/campaigns/c1/approval': rejected })))
+    renderAt('/booking-schedule?tab=campaign-status')
+    const grid = await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })
+    await new Promise((r) => setTimeout(r, 300))
+    fireEvent.mouseEnter(within(grid).getByTestId('rejection-hover'))
+    await new Promise((r) => setTimeout(r, 800))
+    expect(document.body.textContent).toContain('Logo is blurry')
+    expect(document.body.textContent).toContain('hq@retailer.test')
+  })
+
   /* Ticket BGxKMB89DIOgWuwgfrej: the two tabs are back (removed 13 Oct 2026 by BG4LKXiqTMYNm8jRNFDk). */
   it('has Booking schedule and Campaign Approval tabs, Booking schedule first', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))

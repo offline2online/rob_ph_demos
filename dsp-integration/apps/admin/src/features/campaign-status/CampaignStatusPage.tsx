@@ -110,7 +110,20 @@ const DECIDABLE = ['awaiting_approval', 'rejected']
 
 const StatusCell = ({ data, context }: P) => {
   const a = data && !data.group && context.current.approvals[data.campaignId]
-  return a ? <ApprovalStatusBadge status={a.status} mode={a.mode} /> : null
+  if (!a) return null
+  const badge = <ApprovalStatusBadge status={a.status} mode={a.mode} />
+  if (a.status !== 'rejected') return badge
+  /* Hover on Rejected shows the rejection details: the coded reason, the reviewer's words, any per-asset reasons, who and when. */
+  const lines: Array<[string, string]> = [['Reason', rejectionLabel(a.reasonCode)]]
+  if (a.reason) lines.push(['Details', a.reason])
+  for (const r of a.assetReasons ?? []) lines.push([`Asset ${r.assetId}`, r.code && r.code !== 'other' ? `${rejectionLabel(r.code)}: ${r.reason}` : r.reason])
+  if (a.reviewedBy) lines.push(['Rejected by', a.reviewedBy])
+  if (a.reviewedAt) lines.push(['Rejected on', new Date(a.reviewedAt).toLocaleString()])
+  return (
+    <Tip title={<div>{lines.map(([k, v]) => <div key={k}><b>{k}:</b> {v}</div>)}</div>}>
+      <span style={{ display: 'inline-block' }} data-testid="rejection-hover">{badge}</span>
+    </Tip>
+  )
 }
 const PRICING_LABELS: Record<string, string> = { localised: 'Localised', personalised: 'Personalised', targeted: 'Targeted' }
 const pricingLabel = (c: Campaign) => (c.pricingType ? PRICING_LABELS[c.pricingType] ?? c.pricingType : '—')

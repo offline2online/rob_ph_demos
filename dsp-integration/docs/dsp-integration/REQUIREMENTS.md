@@ -1176,6 +1176,10 @@ once a campaign is *Approved*.
   counts (below) show and count only **Awaiting approval**, **Approved**
   and **Rejected**; a still-Draft campaign is not a row in that table at
   all, not merely filtered out of one status.
+- **Rejection details on hover.** In the campaign approval table, hovering
+  **Rejected** in the Status column shows why: the coded reason, the
+  reviewer's written reason, any per-asset reasons, and who rejected it and
+  when. Touch screens open it on tap.
 - **Undo rejection.** A mistaken rejection can be reversed: an **Undo
   rejection** action, in the campaign's options/overflow menu, is available
   on a **Rejected** campaign and moves it back to *Awaiting approval* for a
