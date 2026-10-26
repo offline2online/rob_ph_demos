@@ -506,6 +506,31 @@ describe('Campaign Status stand-in', () => {
     await waitFor(() => expect(within(screen.getByLabelText('Campaign Status')).getByText('Zinger Box — hero')).toBeInTheDocument(), { timeout: 10000 })
   }, slow(45000))
 
+  /* 26 Oct 2026 (ivtzBF4eaaW7BnS0ooI8): the first pinned column reads Advertiser / Deal; hovering the advertiser lists its DSP and slots,
+     hovering the position shows zone and operating times. */
+  it('names the first column Advertiser / Deal and hovers deal and position details', async () => {
+    const start = new Date().toISOString()
+    const booking = {
+      reservationId: 'r_h', campaignId: 'c_h', advertiserId: 'a', partnerId: 'direct', pricingType: 'default', type: 'reserve', advertiserName: 'Hover Brand', partnerName: 'Direct', cpm: 5, assumedViews: 1000, bookedRevenue: 5, billedRevenue: null,
+      layers: { default: true, localised: false, personalised: false }, personalisedTriggers: null,
+      approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
+    }
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
+      positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, playbackWindow: 'Store hours', zoneName: 'Zone A', zoneSlot: 1, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
+        windows: [{ start, status: 'booked', booking }] }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule })))
+    renderAt('/booking-schedule')
+    expect(await screen.findByText('Advertiser / Deal', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.queryByText('Advertiser / DSP')).not.toBeInTheDocument()
+    fireEvent.mouseEnter((await screen.findAllByText('Hover Brand'))[0])
+    expect(await screen.findByText(/DSP: Direct/, {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.getByText(/Portrait · Zone A \/ Slot 1 · 1 window/)).toBeInTheDocument()
+    fireEvent.mouseEnter(screen.getAllByText('Portrait', { selector: '.truncate' })[0])
+    expect(await screen.findByText('Store hours', {}, { timeout: 5000 })).toBeInTheDocument()
+  }, slow(45000))
+
   /* 23 Oct 2026: a Direct deal window whose advertiser has no campaign that fits the slot is red with no campaign behind it,
      and did nothing when clicked. It opens Campaign Approval on the advertiser, which says why nothing plays there. */
   it('opens Campaign Approval on the advertiser from a tile with no campaign, and says it has none', async () => {

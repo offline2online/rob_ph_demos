@@ -3957,7 +3957,7 @@ components:
           type: array
           items:
             type: object
-            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, zoneName, zoneSlot, partnerNames, assignment, realTime, recentPlays, displayCount, windows]
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, zoneName, zoneSlot, partnerNames, assignment, realTime, recentPlays, displayCount, playbackWindow, windows]
             properties:
               positionId: {type: string}
               displayTypeId: {type: string}
@@ -3987,6 +3987,9 @@ components:
                   prototype has no narrower per-slot store scope for an
                   advertiser position, so it is also what "the slot's store
                   scope" resolves to here.
+              playbackWindow:
+                type: string
+                description: The display type's playback window as its Operating hours read - `24 hours`, `Store hours` or `HH:MM–HH:MM`. Shown in the Position hover.
               windows:
                 type: array
                 description: One per schedule window, in the same order.

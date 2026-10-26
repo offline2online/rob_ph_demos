@@ -3284,6 +3284,8 @@ export interface components {
                  *     scope" resolves to here.
                  */
                 displayCount: number;
+                /** @description The display type's playback window as its Operating hours read - `24 hours`, `Store hours` or `HH:MM–HH:MM`. Shown in the Position hover. */
+                playbackWindow: string;
                 /** @description One per schedule window, in the same order. */
                 windows: {
                     /** Format: date-time */

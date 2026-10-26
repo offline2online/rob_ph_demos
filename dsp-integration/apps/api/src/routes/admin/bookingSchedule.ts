@@ -32,6 +32,7 @@ import { isActiveAt } from '../../billing/term'
 import { baseFloorFor } from '../../exchange/enforcement'
 import { plannedDirectBookings } from '../../exchange/directDeal'
 import { zonePlaceOf } from '../../domain/displayTypes'
+import { playbackWindowLabel } from '../../domain/dailyCapacity'
 import { DIRECT_PARTNER_ID, advertiserSlug, directLabel } from '@ph-dsp/types'
 
 /* What a Direct advertiser deal's booking reads as in the DSP column: it has no DSP (ticket EipHu2GUdlbZMpPGCTjF). */
@@ -327,7 +328,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       windows.push({ start: column.toISOString(), status: reserved ? ('reserved' as const) : open ? ('available' as const) : ('unavailable' as const), assumedViews: open ? columnViews : null, booking: null })
     }
     positions.push({
-      positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label, displayCount,
+      positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label, displayCount, playbackWindow: playbackWindowLabel(p.displayType.phExtensions),
       /* Multi-zone: "Zone n / Slot m", as Available Inventory numbers it
          (A0GyTNsA, 1 Oct 2026); positionId stays the flat index. */
       zoneName: zonePlaceOf(p.displayType, p.slot)?.zoneName ?? null, zoneSlot: zonePlaceOf(p.displayType, p.slot)?.zoneSlot ?? p.slot,

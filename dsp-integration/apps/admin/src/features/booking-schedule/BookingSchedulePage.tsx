@@ -123,7 +123,17 @@ function windowSummaryOf(position: Position) {
 function PositionCell({ data }: ICellRendererParams<Row>) {
   if (!data) return null
   const { booked, total, upsells } = windowSummaryOf(data.position)
+  const p = data.position
+  /* Hover (ticket ivtzBF4eaaW7BnS0ooI8, 26 Oct 2026): the display details, zone and operating times. */
+  const details: [string, string][] = [
+    ['Display type', p.displayTypeName],
+    ['Zone', p.zoneName ?? '—'],
+    ['Slot', p.zoneName ? `${p.zoneName} / Slot ${p.zoneSlot} · ${p.slotLabel}` : `Slot ${p.slot} · ${p.slotLabel}`],
+    ['Operating times', p.playbackWindow],
+    ['Displays', String(p.displayCount)],
+  ]
   return (
+    <Tip title={<dl className="m-0" aria-label={`${p.displayTypeName} details`}>{details.map(([k, v]) => <div key={k}><dt style={{ display: 'inline', fontWeight: 600 }}>{k}: </dt><dd style={{ display: 'inline', margin: 0 }}>{v}</dd></div>)}</dl>}>
     <div className="min-w-0 py-1.5">
       <div className="truncate">
         {data.position.displayTypeName} <span style={{ color: T.micro }}>({data.position.displayCount})</span>
@@ -144,6 +154,7 @@ function PositionCell({ data }: ICellRendererParams<Row>) {
         ))}
       </div>
     </div>
+    </Tip>
   )
 }
 
@@ -152,6 +163,23 @@ const advertisersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.b
 /* Which DSP(s) actually brought those bookings — not `position.partnerNames`
    (who is merely *eligible* to buy the slot), so the DSP shown always lines
    up with the advertiser next to it (ticket, 21 Sep). */
+/* Per advertiser, every position it is booked on (display type, zone / slot, booked windows)
+   across the whole schedule, for the Advertiser / Deal hover. */
+function dealsByAdvertiser(positions: Position[]) {
+  const out = new Map<string, { dsps: Set<string>; slots: Map<string, { label: string; windows: number }> }>()
+  for (const p of positions) {
+    const label = `${p.displayTypeName} · ${p.zoneName ? `${p.zoneName} / Slot ${p.zoneSlot}` : `Slot ${p.slot}`}`
+    for (const w of p.windows) {
+      if (!w.booking) continue
+      const e = out.get(w.booking.advertiserName) ?? { dsps: new Set<string>(), slots: new Map() }
+      e.dsps.add(w.booking.partnerName)
+      const prev = e.slots.get(p.positionId)
+      e.slots.set(p.positionId, { label, windows: (prev?.windows ?? 0) + 1 })
+      out.set(w.booking.advertiserName, e)
+    }
+  }
+  return out
+}
 const partnersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.partnerName] : [])))]
 
 /* One layer's pill within a window column — always rendered alongside the
@@ -564,6 +592,7 @@ export function BookingSchedulePage() {
     return [...new Map([...chosen.flatMap((d) => d.advertisers), ...direct].map((a) => [a.advertiserId, a.name] as const)).entries()]
       .map(([value, label]) => ({ value, label }))
   }, [dsps, partnerId, data?.directAdvertisers])
+  const deals = useMemo(() => dealsByAdvertiser(data?.positions ?? []), [data])
   const columns = useMemo<ColDef<Row>[]>(() => [
     /* Advertiser / DSP, then Position. Filtered like every other table:
        a funnel in the filter row. The server applies these, so they
@@ -572,17 +601,29 @@ export function BookingSchedulePage() {
       /* One column for both (ticket hhdGMEST6sCwXC4Cw5yR, 25 Oct 2026): the advertiser
          when the row has one — hover for the DSP(s) that brought it — otherwise the
          DSP(s) the slot is assigned to. The funnel offers DSPs and advertisers together. */
-      headerName: 'Advertiser / DSP', width: 200, minWidth: 160, pinned: 'left', cellStyle: { color: T.muted },
+      headerName: 'Advertiser / Deal', width: 200, minWidth: 160, pinned: 'left', cellStyle: { color: T.muted },
       valueGetter: (p) => {
         if (!p.data) return ''
         const advertisers = advertisersIn(p.data.position)
         return advertisers.length ? advertisers.join(', ') : p.data.position.partnerNames.join(', ') || '—'
       },
       cellRenderer: (p: { data?: Row; value?: string }) => {
-        const dsps = p.data && advertisersIn(p.data.position).length ? partnersIn(p.data.position).join(', ') : ''
-        return dsps ? <Tip title={`DSP: ${dsps}`}><span>{p.value}</span></Tip> : <span>{p.value}</span>
+        const names = p.data ? advertisersIn(p.data.position) : []
+        if (!names.length) return <span>{p.value}</span>
+        return (
+          <Tip title={<div aria-label="Deal details">{names.map((n) => {
+            const d = deals.get(n)
+            return (
+              <div key={n} style={{ marginBottom: 4 }}>
+                <div style={{ fontWeight: 600 }}>{n}</div>
+                <div>DSP: {d ? [...d.dsps].join(', ') : '—'}</div>
+                {d && [...d.slots.values()].map((sl) => <div key={sl.label}>{sl.label} · {sl.windows} window{sl.windows === 1 ? '' : 's'}</div>)}
+              </div>
+            )
+          })}</div>}><span>{p.value}</span></Tip>
+        )
       },
-      ...externalSetColumn<Row>('Advertiser / DSP', [...new Set([...dsps.map((d) => d.name), ...advertiserOptions.map((a) => a.label)])],
+      ...externalSetColumn<Row>('Advertiser / Deal', [...new Set([...dsps.map((d) => d.name), ...advertiserOptions.map((a) => a.label)])],
         advertiserOptions.find((a) => a.value === advertiserId)?.label ?? dsps.find((d) => d.partnerId === partnerId)?.name,
         (name) => {
           const dsp = dsps.find((d) => d.name === name)
@@ -626,7 +667,7 @@ export function BookingSchedulePage() {
         ) : null
       },
     })),
-  ], [groups, view, dsps, advertiserOptions, partnerId, advertiserId, playTotals])
+  ], [groups, view, dsps, advertiserOptions, partnerId, advertiserId, playTotals, deals])
   /* The header's own "N play windows" line gets the same booked/available
      read every row already carries (ticket "Also for the play windows …
      anytime you use the word Windows please show a representation of how
