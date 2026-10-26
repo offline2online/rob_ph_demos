@@ -152,6 +152,8 @@ async function click(db, mod, extra = {}) {
       assert.ok(text.includes("has 1 item in Backlog"), "keeps the default-flow prompt shape");
       assert.ok(text.includes("each of the others is being built right now by its own parallel session"));
       assert.ok(text.includes(`PATCH backlogItems/${id} with buildSession.status`), "reports on its own card");
+      assert.ok(text.includes("Before setting patchReady, run your project's full test command") && text.includes("Retail-media-insights && npm run test:ci") && text.includes("/opt/pw-browsers/chromium"),
+        "every build is told to run its project's whole suite, and that a browser is there");
       assert.ok(!text.includes("PATCH projects/proj1 with notifyRoutine.status"), "never flips the project's spinner itself");
     }
     const r = db.__state.projects[PID].notifyRoutine;

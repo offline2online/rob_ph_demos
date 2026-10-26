@@ -1,13 +1,13 @@
 'use strict';
 // Browser smoke test (npm run test:ui): loads index.html as a retailer and as an advertiser at desktop and phone widths
-// and checks the page end to end. Chromium comes from PLAYWRIGHT_BROWSERS_PATH (/opt/pw-browsers in the cloud sandbox);
+// and checks the page end to end. Chromium comes from ./browser.js (the sandbox's /opt/pw-browsers build when Playwright's own is missing);
 // Google Fonts are stubbed so the run needs no network.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { chromium } = require('playwright');
+const { launchChromium } = require('./browser');
 
 const ROOT = path.join(__dirname, '..', '..');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
@@ -24,7 +24,7 @@ test.before(async () => {
   });
   await new Promise((r) => server.listen(0, r));
   base = `http://127.0.0.1:${server.address().port}`;
-  browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
+  browser = await launchChromium();
 });
 test.after(async () => { if (browser) await browser.close(); if (server) server.close(); });
 

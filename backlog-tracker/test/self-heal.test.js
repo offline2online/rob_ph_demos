@@ -245,6 +245,74 @@ async function test(name, fn) {
     assert.strictEqual(card("c1").status, "ready-for-testing");
   });
 
+  // 26 Oct 2026, Retail Media Insights: B was ejected and reverted as E; C and
+  // D only ever ran with B under them, and D's evidence (the run on E) is red.
+  // C must be tested again without B before D is blamed.
+  const D = sha("d"), E = sha("9"), S = sha("5");
+  const rejudgeTrain = (bySha, c2 = {}) => reset([
+    { id: "c0", status: "ready-for-testing", deployCommit: A, deployCommits: [A], title: "green" },
+    { id: "c2", status: "ready-for-testing", deployCommit: C, deployCommits: [C], title: "stale", trainTestReruns: [`rejudge@${C.slice(0, 12)}:${B.slice(0, 7)}=${S}`], ...c2 },
+    { id: "c3", status: "ready-for-testing", deployCommit: D, deployCommits: [D], title: "blamed before", trainTestReruns: [`${WF}@${E}:rerun:31`] },
+  ], {
+    commits: [{ sha: A, message: "Backlog item: c0" }, { sha: B, message: "Backlog item: cB" }, { sha: C, message: "Backlog item: c2" }, { sha: D, message: "Backlog item: c3" }, { sha: E, message: `Revert "x"\n\nThis reverts commit ${B}.` }],
+    base: { [A]: X, [S]: X, [E]: X }, mainHead: X, failedLog: "",
+    bySha: { [WF]: { [A]: [green(10, A)], [C]: [redTwice(30, C)], [D]: [redTwice(31, D)], [E]: [redTwice(32, E)], ...bySha } },
+  });
+
+  await test("a red run that also held an unjudged ticket blames nobody: that ticket is tested again without the reverted one", async () => {
+    rejudgeTrain({});
+    assert.deepStrictEqual(await auto.ejectRedCulprits(runsFrom()), [], "D is not sent back");
+    assert.ok(ghCalls().some((c) => c === `workflow run ${WF} --repo offline2online/rob_ph_demos --ref train-rejudge/${C.slice(0, 12)}`), "C's re-test started on its own branch");
+    assert.match(notes("c2").pop(), /Testing this ticket again without that change \(5555555\); no ticket is sent back until it reports/);
+    assert.ok(card("c2").trainTestReruns.some((k) => k.startsWith(`${WF}@${S}:rejudge:`)));
+    assert.strictEqual(card("c3").status, "ready-for-testing");
+    // Started once: the next sweep, with no run on the re-test yet, starts nothing.
+    fs.writeFileSync(logFile, "");
+    const keys = card("c2").trainTestReruns;
+    rejudgeTrain({}, { trainTestReruns: keys });
+    assert.deepStrictEqual(await auto.ejectRedCulprits(runsFrom()), []);
+    assert.ok(!ghCalls().some((c) => /workflow run/.test(c)), "not dispatched twice");
+  });
+
+  await test("the re-test fails twice: the unjudged ticket is the culprit, and its note says what it was tested without", async () => {
+    rejudgeTrain({ [S]: [redTwice(40, S)] });
+    assert.deepStrictEqual(await auto.ejectRedCulprits(runsFrom()), ["c2"]);
+    assert.strictEqual(card("c3").status, "ready-for-testing", "the ticket above it stays");
+    assert.match(card("c2").lastFailureReason.text, new RegExp(`own commit ${C.slice(0, 7)} \\(re-tested without the reverted ${B.slice(0, 7)}, which its earlier runs held\\)`));
+    assert.match(card("c2").lastFailureReason.text, /c0's run passed just before it/);
+  });
+
+  await test("the re-test passes: the ticket above it is the culprit after all", async () => {
+    rejudgeTrain({ [S]: [green(40, S)] });
+    assert.deepStrictEqual(await auto.ejectRedCulprits(runsFrom()), ["c3"]);
+    assert.strictEqual(card("c2").status, "ready-for-testing");
+  });
+
+  await test("a re-test that can't be built passes the ticket over as before, so the train never strands", async () => {
+    rejudgeTrain({}, { trainTestReruns: [`rejudge@${C.slice(0, 12)}:${B.slice(0, 7)}=none`] });
+    assert.deepStrictEqual(await auto.ejectRedCulprits(runsFrom()), ["c3"]);
+  });
+
+  await test("a card whose own run is red shows the pass of the newer run up the train that holds it", async () => {
+    const RMI = "retail-media-insights-tests.yml";
+    const setup = (head) => reset([
+      { id: "c1", status: "ready-for-testing", deployCommit: B, deployCommits: [B], title: "own run red, fixed by c2" },
+      { id: "c2", status: "ready-for-testing", deployCommit: C, deployCommits: [C], title: "fixes c1's tests" },
+    ], {
+      commits: [{ sha: B, message: "Backlog item: c1" }, { sha: C, message: "Backlog item: c2" }],
+      files: { [B]: ["Retail-media-insights/frontend/revenue-deals.js"], [C]: ["Retail-media-insights/test/ui/smoke.test.js"] },
+      bySha: { [RMI]: { [B]: [redTwice(50, B)], [C]: [head] } },
+    });
+    setup(green(51, C));
+    await auto.recordCardTrainTests(runsFrom());
+    assert.strictEqual(card("c1").trainTest.state, "passed");
+    assert.strictEqual(card("c1").trainTest.workflows[0].runUrl, "https://gh/run/51", "links the run that passed");
+    assert.strictEqual(card("c2").trainTest.state, "passed");
+    setup(run_(51, C, 1, "in_progress", ""));
+    await auto.recordCardTrainTests(runsFrom());
+    assert.strictEqual(card("c1").trainTest.state, "failed", "nothing newer has passed yet");
+  });
+
   await test("resolveRevertDocConflict: drops the reverted ticket's lines, keeps the later ones, refuses anything else", async () => {
     const hunk = (ours, theirs) => ["# Log", "<<<<<<< HEAD", ...ours, "=======", ...theirs, ">>>>>>> parent of 457b2b0 (x)", "tail"].join("\n");
     assert.strictEqual(auto.resolveRevertDocConflict(hunk(["- later ticket", "- reverted ticket"], []), ["- reverted ticket"]), "# Log\n- later ticket\ntail");
