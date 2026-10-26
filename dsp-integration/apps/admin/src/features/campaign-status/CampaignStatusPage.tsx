@@ -15,8 +15,8 @@
    authors campaigns one at a time and submits each for approval, so each
    lands here as its own row, grouped by advertiser. A campaign's layers
    (the mandatory default plus its optional localised/personalised upsells,
-   spec §6) are still one Campaign record, summarised in the two variable
-   columns.
+   spec §6) are still one Campaign record, summarised in the Playback Strategy
+   column.
 
    Approval is by selection, not per row: tick the Awaiting-approval
    campaigns of ONE advertiser and approve them into a creative ID — the
@@ -50,6 +50,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Alert, Button, Checkbox, Dropdown, Input, Modal, Radio, Spin, Switch, Tag } from 'antd'
 import { Tip } from '../../shared/Tip'
+import { PlaybackStrategyPills, type PlaybackStrategyRules } from '../../shared/PlaybackStrategyPills'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalStatusBadge, RejectionCodeSelect, STATUS_LABELS, isRejectionCode, rejectionLabel, type Approval, type ApprovalStatus, type RejectionCode } from '@ph-dsp/campaign-approval/ui'
 import type { Campaign } from '@ph-dsp/types'
@@ -201,19 +202,24 @@ const CreativeIdCell = ({ data, context }: P) => {
   return <span className="block truncate">{a.creativeId}{a.status === 'awaiting_approval' && <span style={{ color: T.micro }}> (resubmission)</span>}</span>
 }
 
-/* A high-level summary in the cell (the variables targeted, deduped), the
-   exact rules behind it on hover — one consolidated view of everything this
-   advertiser targets on this playlist's localised/personalised layer(s). */
-const VariablesCell = ({ variables, ruleLines }: { variables: string[]; ruleLines: string[] }) => {
-  if (!variables.length) return <span style={{ color: T.micro }}>—</span>
-  return (
-    <Tip title={ruleLines.join(' · ')}>
-      <span className="block truncate">{variables.join(', ')}</span>
-    </Tip>
-  )
+/* Playback Strategy (ticket WwmSYO8Ku1zvuB4G5f1K): one pill per targeting
+   strategy the campaign uses, replacing the Localised / Personalised
+   variables columns. Each pill's hover holds the rule lines those columns
+   used to show; SCHEDULED shows what the booking holds (the campaign carries
+   no flight dates or day-parting of its own, only its booked windows). */
+const STRATEGY_LABELS = ['LOCALISED', 'PERSONALISED', 'SCHEDULED']
+const strategyRules = (c: Campaign): PlaybackStrategyRules => ({
+  localised: c.localisedRuleLines.length ? c.localisedRuleLines : c.localisedVariables,
+  personalised: c.personalisedRuleLines.length ? c.personalisedRuleLines : c.personalisedVariables,
+  scheduled: c.schedule.bookedWindows > 0
+    ? [`Booked windows: ${c.schedule.bookedWindows}`, ...(c.schedule.nextWindowStart ? [`Next window: ${new Date(c.schedule.nextWindowStart).toLocaleString()}`] : [])]
+    : [],
+})
+const strategiesOf = (c: Campaign) => {
+  const r = strategyRules(c)
+  return [r.localised?.length && 'LOCALISED', r.personalised?.length && 'PERSONALISED', r.scheduled?.length && 'SCHEDULED'].filter(Boolean).join(', ')
 }
-const LocalisedVariablesCell = ({ data }: P) => (data && !data.group ? <VariablesCell variables={data.localisedVariables} ruleLines={data.localisedRuleLines} /> : null)
-const PersonalisedVariablesCell = ({ data }: P) => (data && !data.group ? <VariablesCell variables={data.personalisedVariables} ruleLines={data.personalisedRuleLines} /> : null)
+const PlaybackStrategyCell = ({ data }: P) => (data && !data.group ? <PlaybackStrategyPills rules={strategyRules(data)} /> : null)
 /* When the creative's approval request was received, with the time since in
    brackets — a snapshot taken when the page loaded, never ticking (Rob, 8 Oct
    2026). Only while the row is Awaiting approval: once decided there is no
@@ -487,18 +493,15 @@ export function CampaignStatusPage() {
       ...searchFunnelColumn<Row>('Advertiser / Campaign name', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
         (name) => setAdvertiserFilter(advertiserOptions.find((a) => a.label === name)?.value)),
     },
-    { headerName: 'Touch points', width: 170, minWidth: 140, cellRenderer: TouchPointsCell, valueGetter: (p) => joined(p, (c) => touchPointsOf(c).join(', '), (g) => g.touchPoints), ...setColumn<Row>('Touch points', () => all.flatMap(touchPointsOf)) },
-    { headerName: 'Display types', width: 160, minWidth: 130, cellRenderer: DisplayTypesCell, valueGetter: (p) => joined(p, (c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''), (g) => g.displayTypes), ...setColumn<Row>('Display types', () => all.map((c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''))) },
+    { headerName: 'Touch point(s)', width: 170, minWidth: 140, cellRenderer: TouchPointsCell, valueGetter: (p) => joined(p, (c) => touchPointsOf(c).join(', '), (g) => g.touchPoints), ...setColumn<Row>('Touch points', () => all.flatMap(touchPointsOf)) },
+    { headerName: 'Display type(s)', width: 160, minWidth: 130, cellRenderer: DisplayTypesCell, valueGetter: (p) => joined(p, (c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''), (g) => g.displayTypes), ...setColumn<Row>('Display types', () => all.map((c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''))) },
     { headerName: 'Creative ID', width: 170, minWidth: 140, cellRenderer: CreativeIdCell, valueGetter: (p) => (p.data?.group ? p.data.group.creativeIds : p.data ? approvals[p.data.campaignId]?.creativeId ?? '' : ''), ...searchColumn<Row>('Creative ID') },
     /* Deal ID (private auctions): the advertiser's own grouping, set at authoring. Empty for a direct campaign. */
     { headerName: 'Deal ID', width: 150, minWidth: 130, cellRenderer: DealCell, valueGetter: (p) => joined(p, (c) => c.dealId ?? '', (g) => g.deals), ...searchColumn<Row>('Deal ID') },
     {
-      headerName: 'Localised variables', width: 200, minWidth: 160, cellRenderer: LocalisedVariablesCell,
-      valueGetter: (p) => p.data?.localisedVariables.join(', ') ?? '',
-    },
-    {
-      headerName: 'Personalised variables', width: 200, minWidth: 160, cellRenderer: PersonalisedVariablesCell,
-      valueGetter: (p) => p.data?.personalisedVariables.join(', ') ?? '',
+      headerName: 'Playback Strategy', width: 300, minWidth: 240, cellRenderer: PlaybackStrategyCell,
+      valueGetter: (p) => (p.data && !p.data.group ? strategiesOf(p.data) : ''),
+      ...setColumn<Row>('Playback Strategy', () => STRATEGY_LABELS),
     },
     /* Received replaces Schedule (Rob, 8 Oct 2026): the forward schedule is no longer relevant on the real-time path. */
     {
