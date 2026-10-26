@@ -2164,7 +2164,7 @@ async function evidenceRunsFor(workflow, card, commits, runsFor, opts = {}) {
 async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles), gh = (args) => run("gh", args)) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["deployBranch", "deployCommit", "trainTest", "revertRequested", "trainTestReruns", "notes"].map((fieldPath) => ({ fieldPath })) },
+    select: { fields: ["deployBranch", "deployCommit", "trainTest", "revertRequested", "trainTestReruns"].map((fieldPath) => ({ fieldPath })) },
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
   });
   const trainCards = (branch) => cards.filter((c) => c.deployBranch === branch && c.deployCommit && !c.revertRequested).map((c) => c.deployCommit);
