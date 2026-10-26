@@ -114,24 +114,8 @@
   function bracketed(name, n) { return has(n) ? name + ' (' + fmtInt(n) + ')' : name; }
 
   // ---------- hover models: { title, desc, sections: [{ rows: [[label, value]], note }], text } ----------
-  // Every display type hover leads with how the type runs: 24 hours, store opening hours or custom hours. Anything else the back
-  // end might send could be a specific time, so it is never shown.
-  function hoursText(v) {
-    var m = /^\s*(24 hours|store opening hours|custom hours)\s*$/i.exec(v || '');
-    return m ? { '24 hours': '24 hours', 'store opening hours': 'Store opening hours', 'custom hours': 'Custom hours' }[m[1].toLowerCase()] : null;
-  }
-  function withHours(model, src) {
-    var t = src && hoursText(src.operatingHours);
-    if (!t) return model;
-    var row = ['Operating hours', t];
-    var first = model.sections && model.sections[0];
-    if (first && !first.lead) model.sections[0] = { rows: [row].concat(first.rows), note: first.note, lead: true };
-    else model.sections = [{ rows: [row], lead: true }].concat(model.sections || []);
-    return model;
-  }
-
-  // The shared display type card (the back end's hover card): the description, the operating hours and the labelled averages.
-  // Connected displays, IAB zone, Touch Point, canvas size, orientation and creative formats are deliberately not shown in these hovers.
+  // The shared display type card (the back end's hover card): the description and the labelled averages. Connected displays, IAB zone,
+  // operating hours, Touch Point, canvas size, orientation and creative formats are deliberately not shown in these hovers.
   function displayTypeCard(dt, meta, opts) {
     opts = opts || {};
     var vac = [];
@@ -145,7 +129,7 @@
     }
     var sections = [];
     if (vac.length) sections.push({ rows: vac, note: a.averagesCover && a.averagesCover.label ? a.averagesCover.label : null });
-    return withHours({ title: dt.name, desc: has(dt.description) ? dt.description : null, sections: sections.filter(function (x) { return x.rows.length; }) }, dt);
+    return { title: dt.name, desc: has(dt.description) ? dt.description : null, sections: sections.filter(function (x) { return x.rows.length; }) };
   }
 
   // The value hovers (over a number) carry the figures only, under the display type's name; the description and averages are the
@@ -173,7 +157,7 @@
     }
     if (has(row.advertiserSlotsSoldShare)) rows.push(['Fill', Math.round(row.advertiserSlotsSoldShare * 100) + '% of advertiser slot capacity earned (settled billing)']);
     var sec = { rows: rows, note: 'Revenue per available slot = effective CPM × average assumed views per slot per day ÷ 1,000 × fill.' };
-    return withHours(valuesOnly(row.name, [sec]), row);
+    return valuesOnly(row.name, [sec]);
   }
 
   function loopLine(part) {
@@ -181,7 +165,7 @@
   }
   // kind: 'loop' | 'advertiser' | 'own'. row is a /slot-allocation row; every percentage is the back end's.
   // A row's third element marks the value as emphasised.
-  function allocationHover(row, kind, dt) {
+  function allocationHover(row, kind) {
     var rows = [];
     var title = row.name ? row.name + ': ' + (kind === 'loop' ? 'loop' : kind === 'advertiser' ? 'advertiser slots' : 'own-content slots') : null;
     if (kind === 'loop') {
@@ -197,7 +181,7 @@
       rows.push(['Time in the loop', part.count + ' × ' + part.avgSeconds + 's = ' + part.totalSeconds + 's of the ' + row.loopSeconds + 's loop (' + pct(part.percentOfLoop) + ')']);
       rows.push(['Share of loop per slot', part.avgSeconds + 's ÷ ' + row.loopSeconds + 's = ' + pct(part.slotShareOfLoopPercent)]);
     }
-    return withHours({ title: title, desc: null, sections: [{ rows: rows }] }, dt);
+    return { title: title, desc: null, sections: [{ rows: rows }] };
   }
 
   // Missed revenue & fill follows the Slot value order (like Slot allocation) so the charts compare row for row.
@@ -239,7 +223,7 @@
       (has(cd.stores) ? ' in ' + plural(cd.stores, 'store') : '') + (range ? ', ' + range : '') + '.';
     var sec = { rows: rows, note: note };
     if (isTotal || !dt) return { title: isTotal ? 'All display types' : null, desc: null, sections: [sec] };
-    return withHours(valuesOnly(dt.name, [sec]), dt);
+    return valuesOnly(dt.name, [sec]);
   }
 
   function hourLabel(h) { return (h < 10 ? '0' : '') + h + ':00'; }
@@ -274,7 +258,7 @@
     ];
     var note = 'Totals across all ' + fmtInt(cd.displays) + ' connected ' + (dt ? dt.name + ' ' : '') + 'displays' +
       (has(cd.stores) ? ' in ' + plural(cd.stores, 'store') : '') + (range ? ', ' + range : '') + '.';
-    return withHours(valuesOnly(dt ? dt.name : row.name, [{ rows: rows, note: note }]), dt);
+    return valuesOnly(dt ? dt.name : row.name, [{ rows: rows, note: note }]);
   }
 
   // Only DSPs with delivery, highest effective CPM first (ties keep the DSP order).
@@ -309,7 +293,7 @@
     fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct, orientationText: orientationText,
     journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, yieldRows: yieldRows, yieldRevenueShare: yieldRevenueShare, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
     DSP_COLOURS: DSP_COLOURS, ALL_DEAL_TYPES: ALL_DEAL_TYPES, typesById: typesById, missedParts: missedParts,
-    displayTypeCard: displayTypeCard, hoursText: hoursText, slotValueHover: slotValueHover, allocationHover: allocationHover,
+    displayTypeCard: displayTypeCard, slotValueHover: slotValueHover, allocationHover: allocationHover,
     missedHover: missedHover, yieldHover: yieldHover,
     hourlyHover: hourlyHover, hourlyShade: hourlyShade, hourlyCellText: hourlyCellText, hourlyMax: hourlyMax, hourRange: hourRange
   };
@@ -517,7 +501,7 @@
         function numTd(v, kind) {
           var secs = kind === 'loop' ? r.loopSeconds : kind === 'advertiser' ? r.advertiserSlots.totalSeconds : r.ownContentSlots.totalSeconds;
           var td = h('td', { class: 'sc-num', text: String(v) + ' (' + secs + 's)' });
-          return hoverable(td, function () { return allocationHover(r, kind, dt); });
+          return hoverable(td, function () { return allocationHover(r, kind); });
         }
         var soldTd = h('td', { class: 'sc-sold' }, [
           h('span', { class: 'sc-sold-n', text: pct(sold) }),

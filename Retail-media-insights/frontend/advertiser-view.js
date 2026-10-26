@@ -158,7 +158,6 @@
   function hoursText(v) {
     if (/^\s*24 hours\s*$/i.test(v || '')) return '24 hours';
     if (/^\s*store opening hours\s*$/i.test(v || '')) return 'Store opening hours';
-    if (/^\s*custom hours\s*$/i.test(v || '')) return 'Custom hours';
     return null; // anything else could be a specific time, so it is never shown
   }
   // The same card as the retailer view's display type hover; facts only, and only fields that are stored.

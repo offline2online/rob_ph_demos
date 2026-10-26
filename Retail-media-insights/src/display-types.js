@@ -103,7 +103,7 @@ function hoverCard(t) {
     id: t.id, name: d.name, description: d.description,
     connectedDisplays: { displays: t.displays.length, stores: t.storeCount },
     iabZone: d.zone,
-    operatingHours: calc.hoursMode(d),
+    operatingHours: calc.runsAllDay(d) ? '24 hours' : 'Store opening hours',
     touchPoint: d.touchPoint,
     canvas: d.canvas && { width: d.canvas.width, height: d.canvas.height, label: `${d.canvas.width} × ${d.canvas.height} px` },
     displayOrientation: d.orientation,
