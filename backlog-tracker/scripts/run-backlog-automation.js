@@ -2161,10 +2161,10 @@ async function evidenceRunsFor(workflow, card, commits, runsFor, opts = {}) {
 
 // Once per sweep, just before ejectRedCulprits: keep every train card's
 // trainTest current, writing only when something changed.
-async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles)) {
+async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles), gh = (args) => run("gh", args)) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["deployBranch", "deployCommit", "trainTest", "revertRequested", "trainTestReruns"].map((fieldPath) => ({ fieldPath })) },
+    select: { fields: ["deployBranch", "deployCommit", "trainTest", "revertRequested", "trainTestReruns", "notes"].map((fieldPath) => ({ fieldPath })) },
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
   });
   const trainCards = (branch) => cards.filter((c) => c.deployBranch === branch && c.deployCommit && !c.revertRequested).map((c) => c.deployCommit);
@@ -2183,10 +2183,54 @@ async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha),
       for (const t of trainTestWorkflowsFor(card, files)) runsByWorkflow[t.workflow] = commits ? await evidenceRunsFor(t.workflow, card, commits, runsFor, { borrow: true }) : await runsFor(t.workflow, card.deployCommit);
       const next = nextCardTrainTest(card, runsByWorkflow, Date.now(), files);
       if (next) await patchItem(card.id, { trainTest: next });
+      await retestUnrunWorkflows(card, next || rec, gh);
     } catch (err) {
       console.log(`[card-tests] ${card.id}: couldn't record its test state (${scrubSecrets(err.message)})`);
     }
   }
+}
+
+// ── A test run that never reached a result is started again ──────────────
+// A card whose run was cancelled (a timeout, the concurrency group, GitHub
+// itself) or never started read "not-run" for good: nothing re-ran it, the
+// culprit scan stopped at it, and a person had to approve it "with tests
+// acknowledged" (s8kRVURn, 23 Oct 2026: 2h51m). Each workflow is started
+// again once on the card's own commit, through a throwaway
+// train-retest/<sha> branch like the check on main; the branch is deleted
+// once that run has a result. Pure part: which workflows to start / clean up.
+const retestRef = (sha) => `train-retest/${String(sha).slice(0, 12)}`;
+function retestPlan(card, trainTest) {
+  const keys = (card && card.trainTestReruns) || [];
+  const sha = card && card.deployCommit;
+  const out = { start: [], cleanup: [] };
+  if (!sha || !trainTest || trainTest.sha !== sha || !Array.isArray(trainTest.workflows)) return out;
+  for (const w of trainTest.workflows) {
+    const started = keys.includes(`${w.workflow}@${sha}:retest`);
+    if (w.state === "not-run" && !started && !keys.includes(`${w.workflow}@${sha}:retested`)) out.start.push(w);
+    else if (started && (w.state === "passed" || w.state === "failed")) out.cleanup.push(w);
+  }
+  return out;
+}
+async function retestUnrunWorkflows(card, trainTest, gh = (args) => run("gh", args)) {
+  const plan = retestPlan(card, trainTest);
+  if (!plan.start.length && !plan.cleanup.length) return;
+  const sha = card.deployCommit;
+  let keys = card.trainTestReruns || [];
+  let notes = null;
+  for (const w of plan.start) {
+    if (!dispatchOnSha(w.workflow, sha, gh, retestRef(sha))) continue;
+    keys = withKey(keys, `${w.workflow}@${sha}:retest`);
+    notes = await appendNote(card, `The ${w.label || w.workflow} never reached a result on this ticket's commit ${sha.slice(0, 7)} (cancelled or never started), so it was started again. Nothing to do.`);
+    console.log(`[card-tests] ${card.id}: ${w.workflow} never ran to a result on ${sha.slice(0, 7)} — started it again`);
+  }
+  for (const w of plan.cleanup) {
+    keys = withKey(keys.filter((k) => k !== `${w.workflow}@${sha}:retest`), `${w.workflow}@${sha}:retested`);
+  }
+  if (plan.cleanup.length && !keys.some((k) => k.endsWith(`@${sha}:retest`))) {
+    try { gh(["api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${retestRef(sha)}`]); } catch { /* already gone */ }
+  }
+  card.trainTestReruns = keys;
+  await patchItem(card.id, { trainTestReruns: keys, ...(notes ? { notes, updatedAt: new Date().toISOString() } : {}) });
 }
 
 // Which of a train's Ready for Testing cards to tell about a failed run.
@@ -2771,8 +2815,7 @@ function mainHeadSha(gh) {
 // Starts `workflow` on exactly `sha`: workflow_dispatch takes a ref, so a
 // throwaway train-base/<sha> branch is pointed at it (no workflow runs on a
 // push there). Never throws.
-function dispatchOnSha(workflow, sha, gh) {
-  const ref = baseCheckRef(sha);
+function dispatchOnSha(workflow, sha, gh, ref = baseCheckRef(sha)) {
   try { gh(["api", "-X", "POST", `repos/${REPO}/git/refs`, "-f", `ref=refs/heads/${ref}`, "-f", `sha=${sha}`]); } catch { /* already there */ }
   try {
     gh(["workflow", "run", workflow, "--repo", REPO, "--ref", ref]);
@@ -6860,7 +6903,7 @@ if (require.main === module) {
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   selfHealPlan, escalationBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
-  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain,
+  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, retestPlan, retestUnrunWorkflows,
   closeNotifyRoutines,
   // test/notes-append.test.js — notes are only ever appended, atomically
   notesCommitWrite, appendNote, patchItem,

@@ -464,6 +464,14 @@ busy. Now:
   revert only takes lines away (`resolveRevertDocConflict`: the current text
   minus the reverted commit's added lines); any other conflict, and any code
   file, still stops with `revertBlockedBy`.
+- **A test run that never reached a result is started again**: a card
+  whose run was cancelled or never started read "not-run" for good, held
+  the culprit scan and waited for someone to approve it "with tests
+  acknowledged". `retestUnrunWorkflows` (from `recordCardTrainTests`)
+  starts each such workflow once more on the card's own commit through a
+  throwaway `train-retest/<sha>` branch, notes the card, and deletes the
+  branch once the run has a result (`trainTestReruns` keys
+  `<workflow>@<sha>:retest` → `:retested`).
 - **Build sessions run what CI runs**: `npm run test:offline` in
   `backlog-tracker/test` is the console tests without the emulator, kept
   equal to CI by `ci-coverage.test.js`.

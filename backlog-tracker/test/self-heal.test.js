@@ -283,6 +283,33 @@ async function test(name, fn) {
     try { assert.deepStrictEqual(auto.tryAutoResolveRevertConflict(["app.js"], three), { resolved: false }); } finally { process.chdir(cwd); }
   });
 
+  await test("retestPlan: a workflow that never reached a result is started again once, and its branch cleaned up after", async () => {
+    const tt = (state) => ({ sha: A, workflows: [{ workflow: WF, label: "console tests", state }] });
+    assert.deepStrictEqual(auto.retestPlan({ deployCommit: A }, tt("not-run")).start.map((w) => w.workflow), [WF]);
+    assert.deepStrictEqual(auto.retestPlan({ deployCommit: A, trainTestReruns: [`${WF}@${A}:retest`] }, tt("not-run")).start, [], "once");
+    assert.deepStrictEqual(auto.retestPlan({ deployCommit: A, trainTestReruns: [`${WF}@${A}:retested`] }, tt("not-run")).start, [], "never twice");
+    assert.deepStrictEqual(auto.retestPlan({ deployCommit: A, trainTestReruns: [`${WF}@${A}:retest`] }, tt("passed")).cleanup.map((w) => w.workflow), [WF]);
+    assert.deepStrictEqual(auto.retestPlan({ deployCommit: A }, tt("running")), { start: [], cleanup: [] });
+    assert.deepStrictEqual(auto.retestPlan({ deployCommit: B }, tt("not-run")), { start: [], cleanup: [] }, "a record for another commit");
+  });
+
+  await test("retestUnrunWorkflows: starts the run on the card's own commit, notes it, then deletes the branch", async () => {
+    reset([{ id: "c1", status: "ready-for-testing", deployCommit: A, deployCommits: [A], title: "cancelled run" }], {});
+    const calls = [];
+    const gh = (a) => { calls.push(a.join(" ")); return ""; };
+    const c = card("c1"); c.id = "c1";
+    await auto.retestUnrunWorkflows(c, { sha: A, workflows: [{ workflow: WF, label: "console tests", state: "not-run" }] }, gh);
+    assert.ok(calls.some((x) => x.includes(`ref=refs/heads/train-retest/${A.slice(0, 12)}`) && x.includes(`sha=${A}`)), calls.join("\n"));
+    assert.ok(calls.some((x) => x === `workflow run ${WF} --repo offline2online/rob_ph_demos --ref train-retest/${A.slice(0, 12)}`), calls.join("\n"));
+    assert.deepStrictEqual(card("c1").trainTestReruns, [`${WF}@${A}:retest`]);
+    assert.match(notes("c1").pop(), /never reached a result .* started again\. Nothing to do\./);
+    calls.length = 0;
+    const again = card("c1"); again.id = "c1";
+    await auto.retestUnrunWorkflows(again, { sha: A, workflows: [{ workflow: WF, label: "console tests", state: "passed" }] }, gh);
+    assert.deepStrictEqual(calls, [`api -X DELETE repos/offline2online/rob_ph_demos/git/refs/heads/train-retest/${A.slice(0, 12)}`]);
+    assert.deepStrictEqual(card("c1").trainTestReruns, [`${WF}@${A}:retested`]);
+  });
+
   if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
   console.log("\nself-heal: all passed");
 })();
