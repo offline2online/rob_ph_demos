@@ -4460,7 +4460,7 @@ components:
             required: [label, owner]
             properties:
               label: {type: string}
-              owner: {type: string, enum: [internal, advertiser, retail]}
+              owner: {type: string, enum: [headquarters, advertiser]}
               zoneId:
                 type: [string, 'null']
                 description: |

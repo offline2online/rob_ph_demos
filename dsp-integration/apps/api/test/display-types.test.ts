@@ -82,7 +82,7 @@ describe('display types — POC stand-in endpoints', () => {
     const { app, ctx } = await setup()
     const landscape = (await ctx.displayTypes.get('landscape')) as DisplayType
     const payload = {
-      ...landscape, name: 'Landscape HD', phExtensions: { slots: [{ label: 'x', owner: 'internal' as const }] },
+      ...landscape, name: 'Landscape HD', phExtensions: { slots: [{ label: 'x', owner: 'headquarters' as const }] },
       multiZone: { enabled: true, zones: [{ id: 'z1', name: 'Zone 1', x: 0, y: 0, width: 50, height: 100, playlistId: 'pl_zone_landscape_1' }] },
     }
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/landscape/record', payload })
@@ -137,17 +137,17 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
      (28 Sep 2026), so each carries that zone's id. */
   const menuSlots = (second: Record<string, unknown> = {}) => ({
     slots: [
-      { label: 'Priority 1', owner: 'internal', zoneId: 'z1' },
+      { label: 'Priority 1', owner: 'headquarters', zoneId: 'z1' },
       { label: 'Supplier slot', owner: 'advertiser', zoneId: 'z1', ...second },
-      { label: 'Store choice', owner: 'internal', zoneId: 'z1' },
+      { label: 'Store choice', owner: 'headquarters', zoneId: 'z1' },
     ],
   })
 
-  it('refuses a Stores-owned slot server-side, naming the slot (release 1)', async () => {
+  it('refuses a slot owner other than Headquarters or Advertiser (Stores is not an owner in this release)', async () => {
     const { app } = await setup()
-    const res = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal', zoneId: 'z1' }, { label: 'Supplier slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'retail', zoneId: 'z1' }] })
+    const res = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'headquarters', zoneId: 'z1' }, { label: 'Supplier slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'retail', zoneId: 'z1' }] })
     expect(res.statusCode).toBe(400)
-    expect(res.json().error.details).toEqual([{ field: 'slots[2].owner', reason: expect.stringContaining('Slot 3') }])
+    expect(res.json().error.details).toEqual([{ field: 'slots[2].owner', reason: 'One of: headquarters, advertiser.' }])
   })
 
   it('returns 404 with the flag off', async () => {
@@ -161,7 +161,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 200, res.json())
     expect(res.json().slots.map((s: { label: string; owner: string }) => [s.owner, s.label]))
-      .toEqual([['internal', 'Priority 1'], ['advertiser', 'Brand slot'], ['internal', 'Store choice']])
+      .toEqual([['headquarters', 'Priority 1'], ['advertiser', 'Brand slot'], ['headquarters', 'Store choice']])
     expect((await ctx.displayTypes.get('menu_board'))?.phExtensions?.venue).toMatchObject({ orientation: 'landscape' })
   })
 
@@ -171,11 +171,11 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     const kept = await put(app, 'menu_board', menuSlots({ label: 'Brand slot' }))
     expect(kept.json().slots[1]).toMatchObject({ advertisers: [], partnerIds: ['p_google'] })
     /* Owner changed: it is no longer sellable inventory, so the assignment goes. */
-    const dropped = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal', zoneId: 'z1' }, { label: 'Brand slot', owner: 'internal', zoneId: 'z1' }, { label: 'Store choice', owner: 'internal', zoneId: 'z1' }] })
+    const dropped = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'headquarters', zoneId: 'z1' }, { label: 'Brand slot', owner: 'headquarters', zoneId: 'z1' }, { label: 'Store choice', owner: 'headquarters', zoneId: 'z1' }] })
     expect(dropped.json().slots[1]).toMatchObject({ advertisers: [], partnerIds: [], listMode: null })
   })
 
-  it('ignores an assignment sent with the slots, and gives a Stores slot the default scope', async () => {
+  it('ignores an assignment sent with the slots, and sends no store scope', async () => {
     const { app } = await setup()
     const res = await put(app, 'menu_board', menuSlots({ partnerIds: ['p_amazon'], advertisers: ['Swisse'] }))
     expect(res.statusCode).toBe(200)
@@ -193,19 +193,19 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expect(kept.statusCode).toBe(200)
     expect(kept.json().slots[1]).toMatchObject({ owner: 'advertiser', partnerIds: ['p_google'] })
     /* Slot 1 becoming Advertiser is a new one: refused, and nothing saved. */
-    const added = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'internal', zoneId: 'z1' }] })
+    const added = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'headquarters', zoneId: 'z1' }] })
     expect(added.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, added.json())
     expect(added.json().error.details).toEqual([{ field: 'slots[0].owner', reason: expect.stringContaining('Switch on DSP integration') }])
-    expect((await ctx.displayTypes.get('menu_board'))?.phExtensions?.slots[0].owner).toBe('internal')
+    expect((await ctx.displayTypes.get('menu_board'))?.phExtensions?.slots[0].owner).toBe('headquarters')
     /* Switched back on, it can be. */
     await ctx.exchange.save({ ...(await ctx.exchange.get()), enabled: true })
-    expect((await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'internal', zoneId: 'z1' }] })).statusCode).toBe(200)
+    expect((await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'headquarters', zoneId: 'z1' }] })).statusCode).toBe(200)
   })
 
   it('requires one slot per rotation position, and a label on each', async () => {
     const { app } = await setup()
-    const res = await put(app, 'menu_board', { slots: [{ label: 'Only one', owner: 'internal', zoneId: 'z1' }] })
+    const res = await put(app, 'menu_board', { slots: [{ label: 'Only one', owner: 'headquarters', zoneId: 'z1' }] })
     expect(res.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, res.json())
     expect(res.json().error.details[0]).toMatchObject({ field: 'slots', reason: expect.stringContaining('Expected 3 slots across 3 zones') })
@@ -232,12 +232,12 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expect(short.statusCode).toBe(400)
     expect(short.json().error.details[0]).toMatchObject({ field: 'slots', reason: expect.stringContaining('Expected 5 slots across 3 zones') })
 
-    const wrongZone = await put(app, 'menu_board', { slots: [...menuSlots().slots, { label: 'Slot 1', owner: 'internal', zoneId: 'z3' }, { label: 'Slot 2', owner: 'advertiser', zoneId: 'z2' }] })
+    const wrongZone = await put(app, 'menu_board', { slots: [...menuSlots().slots, { label: 'Slot 1', owner: 'headquarters', zoneId: 'z3' }, { label: 'Slot 2', owner: 'advertiser', zoneId: 'z2' }] })
     expect(wrongZone.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, wrongZone.json())
     expect(wrongZone.json().error.details).toEqual([{ field: 'slots[3].zoneId', reason: expect.stringContaining("Slot 4 is Zone 2's") }])
 
-    const ok = await put(app, 'menu_board', { slots: [...menuSlots().slots, { label: 'Slot 1', owner: 'internal', zoneId: 'z2' }, { label: 'Slot 2', owner: 'advertiser', zoneId: 'z2' }] })
+    const ok = await put(app, 'menu_board', { slots: [...menuSlots().slots, { label: 'Slot 1', owner: 'headquarters', zoneId: 'z2' }, { label: 'Slot 2', owner: 'advertiser', zoneId: 'z2' }] })
     expect(ok.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 200, ok.json())
     expect(ok.json().slots.map((s: { zoneId: string | null }) => s.zoneId)).toEqual(['z1', 'z1', 'z1', 'z2', 'z2'])
@@ -245,9 +245,9 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     /* A single-zone display type's slots belong to no zone. */
     const landscape = (await ctx.displayTypes.get('landscape')) as DisplayType
     await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/landscape/record', payload: { ...landscape, playlistSettings: { ...landscape.playlistSettings, maximumCampaignsPlayedInRotation: 1 } } })
-    const stray = await put(app, 'landscape', { slots: [{ label: 'Only', owner: 'internal', zoneId: 'z1' }] })
+    const stray = await put(app, 'landscape', { slots: [{ label: 'Only', owner: 'headquarters', zoneId: 'z1' }] })
     expect(stray.json().error.details).toEqual([{ field: 'slots[0].zoneId', reason: 'Unknown zone.' }])
-    expect((await put(app, 'landscape', { slots: [{ label: 'Only', owner: 'internal' }] })).statusCode).toBe(200)
+    expect((await put(app, 'landscape', { slots: [{ label: 'Only', owner: 'headquarters' }] })).statusCode).toBe(200)
   })
 
   /* A multi-zone display type saved before zones had caps of their own
@@ -268,13 +268,13 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
 
 /* Ticket 0jviesctpWGyOYtK20tg (Rob, 7 Oct 2026): Website and Mobile App slots
    are validated exactly like Digital Signage — Headquarters and Advertiser
-   (advance or real-time) are accepted, Stores is still refused
+   (advance or real-time) are accepted, any other owner is refused
    (rtb-web-app-slots.test.ts covers the bid request). */
 describe('PUT /admin/v1/display-types/{id}/extensions — Website/Mobile App follow digital signage', () => {
   const put = (app: ReturnType<typeof buildApp>, id: string, payload: unknown) =>
     app.inject({ method: 'PUT', url: `/api/admin/v1/display-types/${id}/extensions`, payload: payload as object })
 
-  it.each(['Website', 'Mobile App'])('accepts Headquarters and Advertiser slots and refuses a Stores slot for %s', async (touchPoint) => {
+  it.each(['Website', 'Mobile App'])('accepts Headquarters and Advertiser slots and refuses any other owner for %s', async (touchPoint) => {
     const { app, ctx } = await setup()
     const created = await app.inject({
       method: 'POST', url: '/api/admin/v1/display-types',
@@ -282,11 +282,11 @@ describe('PUT /admin/v1/display-types/{id}/extensions — Website/Mobile App fol
     })
     expect(created.statusCode).toBe(201)
 
-    const mixed = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'internal' }, { label: 'Slot 2', owner: 'advertiser' }] })
+    const mixed = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'headquarters' }, { label: 'Slot 2', owner: 'advertiser' }] })
     expect(mixed.statusCode).toBe(200)
-    expect((await ctx.displayTypes.get(`dt_${touchPoint}`))?.phExtensions?.slots).toMatchObject([{ owner: 'internal' }, { owner: 'advertiser' }])
+    expect((await ctx.displayTypes.get(`dt_${touchPoint}`))?.phExtensions?.slots).toMatchObject([{ owner: 'headquarters' }, { owner: 'advertiser' }])
 
-    const retail = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'retail' }, { label: 'Slot 2', owner: 'internal' }] })
+    const retail = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'retail' }, { label: 'Slot 2', owner: 'headquarters' }] })
     expect(retail.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, retail.json())
   })

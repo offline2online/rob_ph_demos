@@ -57,7 +57,7 @@ describe('the position index', () => {
     const before = (await allPositions(ctx)).map((p) => p.positionId)
     expect(before).toContain('menu_board.s2')
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
-    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, owner: 'internal' as const } : s)) })
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, owner: 'headquarters' as const } : s)) })
     expect(await findPosition(ctx, 'menu_board.s2')).toBeNull()
     expect((await allPositions(ctx)).map((p) => p.positionId)).toEqual(before.filter((id) => id !== 'menu_board.s2'))
   })

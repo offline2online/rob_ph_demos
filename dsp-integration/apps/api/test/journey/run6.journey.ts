@@ -190,7 +190,7 @@ async function main() {
   const ext = await admin('PUT', `/display-types/${dtId}/extensions`, {
     slots: [
       { label: 'Advertiser slot', owner: 'advertiser', partnerIds: [PARTNER], advertisers: [], listMode: 'rtb', storeScope: null, quota: null },
-      { label: 'HQ slot', owner: 'internal', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null },
+      { label: 'HQ slot', owner: 'headquarters', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null },
     ],
     venue: { openOohVenueType: 'retail.convenience', orientation: 'landscape', loopLengthSec: 30 },
   })

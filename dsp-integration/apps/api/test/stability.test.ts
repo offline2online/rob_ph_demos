@@ -451,7 +451,7 @@ describe('what a partner can send to POST /v1/reservations', () => {
     const { reserve, ready, setSlot, rows, tick } = await setup(() => t)
     await ready()
     expect((await reserve(SWISSE)).statusCode).toBe(201)
-    await setSlot({ owner: 'internal' } as Partial<Slot>)
+    await setSlot({ owner: 'headquarters' } as Partial<Slot>)
     t = AT_CUTOFF
     await tick()
     expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(1)

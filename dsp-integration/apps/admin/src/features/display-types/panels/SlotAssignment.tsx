@@ -12,10 +12,9 @@
    they are, and no new one can be set up (Rob, 24 Sep 2026). The API
    enforces the same.
 
-   Owners offered: Headquarters and Advertiser only for the first release
-   (ticket, 27 Sep 2026) — Stores is not supported yet. A slot already saved
-   as Stores still reads as Stores (greyed out in the list) until someone
-   changes it. Website and Mobile App use this same editor, owner list and
+   Owners: Headquarters and Advertiser only (ticket, 27 Sep 2026; Duy and
+   Thuc, 26 Oct 2026). Stores is not a slot owner in this release; it will
+   be added later as its own value. Website and Mobile App use this same editor, owner list and
    Advertiser assignment as Digital Signage (ticket 0jviesctpWGyOYtK20tg,
    Rob 7 Oct 2026); that replaced their HQ-only rule and the "Available for
    RTB" switch. Their bid requests still go out as OpenRTB site / app objects.
@@ -36,27 +35,22 @@ import { ownerAssignment, ownerChange } from '../model'
 
 const ADVERTISER_COLOUR = SLOT_OWNERS.advertiser.colour
 
-/* The owners a slot can be given in this release (ticket, 27 Sep 2026). */
-const RELEASE_OWNERS: SlotOwner[] = ['internal', 'advertiser']
-/* Website and Mobile App are HQ-only (ticket, 28 Sep 2026). Only Headquarters
-   is selectable, but — unlike Stores, which stays off the list release-wide
-   unless a slot already has it — Advertiser and Stores are always shown,
-   greyed out, with their own tooltip ("Advertiser and Stores greyed out
-   with a tooltip saying advertising isn't available for this touch point"). */
-const HQ_ONLY_OWNERS: SlotOwner[] = ['internal']
-const ALL_OWNERS: SlotOwner[] = ['internal', 'advertiser', 'retail']
+/* The owners a slot can be given (ticket, 27 Sep 2026; 26 Oct 2026). */
+const RELEASE_OWNERS: SlotOwner[] = ['headquarters', 'advertiser']
+/* Where advertising isn't allowed only Headquarters is selectable (ticket,
+   28 Sep 2026); Advertiser is still shown, greyed out, with a tooltip saying
+   advertising isn't available for this touch point. */
+const HQ_ONLY_OWNERS: SlotOwner[] = ['headquarters']
 
 interface Ctx {
   partners: Partner[]
   advertiserOpen: (i: number) => boolean
   setSlot: (i: number, patch: Partial<Slot>) => void
   /* The owners this display type's touch point actually allows picking —
-     narrower than `listedOwners` for Website/Mobile App, where Advertiser
-     and Stores are shown but disabled rather than left off the list. */
+     narrower than `listedOwners` where advertising isn't allowed: Advertiser
+     is shown but disabled rather than left off the list. */
   offeredOwners: SlotOwner[]
-  /* The owners shown in the dropdown at all, before a slot already saved
-     with an owner outside that list (e.g. a legacy Stores slot) is added
-     back so it keeps reading correctly. */
+  /* The owners shown in the dropdown at all. */
   listedOwners: SlotOwner[]
   unsupportedTip: (k: SlotOwner) => string
 }
@@ -97,8 +91,7 @@ function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
   if (!data) return null
   const context = grid.current
   const o = SLOT_OWNERS[data.slot.owner]
-  /* A slot saved as Stores before this release dropped it keeps showing it, greyed out. */
-  const owners = context.listedOwners.includes(data.slot.owner) ? context.listedOwners : [...context.listedOwners, data.slot.owner]
+  const owners = context.listedOwners
   return (
     <div className="w-full min-w-0">
     <Select
@@ -140,7 +133,7 @@ export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFi
 }) {
   const hqOnly = !allowsAdvertising(touchPoint)
   const offeredOwners = hqOnly ? HQ_ONLY_OWNERS : RELEASE_OWNERS
-  const listedOwners = hqOnly ? ALL_OWNERS : RELEASE_OWNERS
+  const listedOwners = RELEASE_OWNERS
   const unsupportedTip = (k: SlotOwner) => (hqOnly ? 'Advertising isn’t available for this touch point.' : `${SLOT_OWNERS[k].label} slots aren’t supported in this release.`)
   const ctx: Ctx = { partners, advertiserOpen, setSlot: (i, patch) => setSlots((prev) => prev.map((s, k) => (k === i ? { ...s, ...patch } : s))), offeredOwners, listedOwners, unsupportedTip }
   const rows = useMemo(() => slots.map((slot, i) => ({ i, slot })), [slots])

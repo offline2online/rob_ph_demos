@@ -31,7 +31,7 @@ const qrControl = (over: { phantom?: { width?: number; height?: number } } = {})
 const playlistSettings = (cap: number | null = null) => ({
   assetPosition: null, assetFill: null, maximumCampaignsPlayedInRotation: cap, campaignTransition: null, campaignAutoRotation: null, campaignAutoPlay: null,
 })
-const slot = (label: string, owner: 'internal' | 'advertiser' | 'retail', over: Record<string, unknown> = {}) => ({
+const slot = (label: string, owner: 'headquarters' | 'advertiser', over: Record<string, unknown> = {}) => ({
   label, owner, partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null, ...over,
 })
 
@@ -80,9 +80,9 @@ export const SEED_DISPLAY_TYPES = [
     ] },
     phExtensions: {
       slots: [
-        slot('Priority 1', 'internal', { zoneId: 'z1' }),
+        slot('Priority 1', 'headquarters', { zoneId: 'z1' }),
         slot('Supplier slot', 'advertiser', { partnerIds: ['p_google'], listMode: 'rtb', zoneId: 'z1' }),
-        slot('Store choice', 'retail', { storeScope: 'Store staff', zoneId: 'z1' }),
+        slot('Store choice', 'headquarters', { zoneId: 'z1' }),
       ],
       venue: { openOohVenueType: 'retail.grocery', orientation: 'landscape' as const, loopLengthSec: 45 },
     },

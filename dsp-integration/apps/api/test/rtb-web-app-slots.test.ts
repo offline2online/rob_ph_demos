@@ -27,9 +27,9 @@ async function setup(touchPoint: 'Website' | 'Mobile App') {
 }
 
 describe.each([['Website', 'site', OPENRTB_26_SITE_REQUEST], ['Mobile App', 'app', OPENRTB_26_APP_REQUEST]] as const)('%s slots follow digital signage, with a site/app bid request', (touchPoint, object, schema) => {
-  const slots = [{ label: 'Header', owner: 'internal' }, { label: 'Sidebar', owner: 'advertiser' }]
+  const slots = [{ label: 'Header', owner: 'headquarters' }, { label: 'Sidebar', owner: 'advertiser' }]
 
-  it('accepts Advertiser slots like digital signage (open ones are real time), ignores a legacy bidMode, and refuses Stores', async () => {
+  it('accepts Advertiser slots like digital signage (open ones are real time), ignores a legacy bidMode, and refuses any other owner', async () => {
     const { put, ctx, id } = await setup(touchPoint)
     const ok = await put(slots)
     expect(ok.statusCode).toBe(200)

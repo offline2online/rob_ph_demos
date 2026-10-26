@@ -623,7 +623,7 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
     const h = await harness()
     const id = await h.readyApiCampaign('Swisse — H8')
     expect((await h.partner.bid(id, day(0), 200)).statusCode).toBe(201)
-    await h.admin.slot({ owner: 'internal', partnerIds: [], listMode: null })
+    await h.admin.slot({ owner: 'headquarters', partnerIds: [], listMode: null })
     h.setNow(cutoffOf(day(0)))
     await tick(h)
     h.setNow(new Date(day(0).getTime() + 60_000))

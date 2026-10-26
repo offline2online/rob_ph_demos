@@ -1,5 +1,5 @@
 /* Sellable positions (spec §5): every slot owned by Advertiser on a display
-   type, across the stores and displays using it. HQ and Stores slots are
+   type, across the stores and displays using it. Headquarters slots are
    never exposed. A caller sees only positions it could actually buy:
    permissioning is a smaller list, never a rejected request. */
 import type { DisplayType, Slot } from '@ph-dsp/types'
