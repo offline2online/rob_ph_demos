@@ -24,14 +24,14 @@ async function get(path, authenticate = admin, st = store) {
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
 
-test('the example retailer: five named stores, eleven advertisers, nine deals, four display types', async () => {
+test('the example retailer: five named stores, eleven advertisers, ten deals, four display types', async () => {
   const f = (await get('/filter-options')).body;
   assert.deepEqual(f.stores.map((s) => s.id), ['store-3', 'store-5', 'store-4', 'store-1', 'store-2'], 'listed by name');
   assert.deepEqual(ctx.stores['store-1'].name, 'London Oxford St');
   assert.deepEqual(Object.values(ctx.stores).map((s) => s.name), ['London Oxford St', 'Manchester Arndale', 'Bristol Cabot Circus', 'Leeds Trinity', 'Glasgow Buchanan St']);
   assert.equal(f.advertisers.length, 11);
   assert.ok(!f.advertisers.some((a) => ['Acme', 'Nova'].includes(a.name)));
-  assert.equal(Object.values(ctx.dealCatalog).filter((d) => d.dealType !== 'Open auction').length, 9);
+  assert.equal(Object.values(ctx.dealCatalog).filter((d) => d.dealType !== 'Open auction').length, 10);
   const t = ctx.displayTypes;
   assert.deepEqual(Object.values(t).map((x) => [x.name, x.slots.advertiser.count, x.slots.advertiser.avgSeconds, x.slots.ownContent.count, x.slots.ownContent.avgSeconds, x.floorCpm, x.visibility]),
     [['Window Portrait', 8, 6, 4, 3, 7.5, 0.55], ['Endcap Shelf-edge', 6, 5, 2, 5, 6, 0.35], ['Queue Screen', 3, 6, 3, 4, 5.5, 0.7], ['Dispensary Screen', 6, 5, 4, 5, 7, 0.6]]);
@@ -53,13 +53,15 @@ test('deals: PG deals have flights and buffers; the rest are fixed or floor pric
   const d = ctx.dealCatalog;
   assert.deepEqual([d.d1.flight, d.d1.buffer], [{ start: '2026-09-15', end: '2026-11-15' }, 0.1]);
   assert.deepEqual([d.d2.flight, d.d2.buffer], [{ start: '2026-08-01', end: '2026-12-31' }, 0.1]);
-  assert.deepEqual(['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9'].map((id) => d[id].cpm), [9.5, 8, 8.8, 8.2, 7.5, 7, 6, 5.5, 6.5]);
+  assert.deepEqual(['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9', 'd11'].map((id) => d[id].cpm), [9.5, 8, 8.8, 8.2, 7.5, 7, 6, 5.5, 6.5, 6]);
   for (const id of ['d5', 'd6', 'd7', 'd8', 'd9']) assert.equal(d[id].floorCpm, d[id].cpm);
   assert.deepEqual(d.d6.slots.map((s) => `${s.displayTypeId}${s.position}`), ['dispensary2', 'dispensary3', 'dispensary4']);
-  assert.deepEqual(d.d9.slots.map((s) => `${s.displayTypeId}${s.position}`), ['dispensary5', 'endcap5']);
+  assert.deepEqual(d.d9.slots.map((s) => `${s.displayTypeId}${s.position}`), ['endcap5']);
+  assert.deepEqual(d.d11.slots.map((s) => `${s.displayTypeId}${s.position}`), ['dispensary5']);
+  assert.deepEqual(d.d11.dealIds, {}, 'a direct advertiser deal has no DSP and so no deal ID');
   assert.equal(d.d4.description, 'First look for Kenvue on Dispensary Screen slots at a fixed CPM.');
   for (const deal of Object.values(d).filter((x) => x.dealType !== 'Open auction')) {
-    assert.deepEqual(Object.keys(deal.dealIds).sort(), [...new Set(deal.buyers.map((b) => b.dsp))].sort(), deal.name);
+    assert.deepEqual(Object.keys(deal.dealIds).sort(), [...new Set(deal.buyers.map((b) => b.dsp))].filter((x) => x !== 'Direct').sort(), deal.name);
     for (const id of Object.values(deal.dealIds)) assert.match(id, /^PH-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$/);
   }
   const allDealIds = Object.values(d).flatMap((deal) => Object.values(deal.dealIds || {}));
@@ -148,7 +150,7 @@ test('/my-summary: spend and plays won equal Delivery\'s totals; dealsOn counts 
   const dealsOn = async (id, range = Q) => (await get(`/my-summary?${range}`, advertiser(id))).body.dealsOn;
   assert.equal(await dealsOn('adv-blackmores'), 3);
   assert.equal(await dealsOn('adv-haleon'), 4);
-  assert.equal(await dealsOn('adv-perrigo'), 2);
+  assert.equal(await dealsOn('adv-perrigo'), 1, 'Perrigo is direct: its one direct deal');
   assert.equal(await dealsOn('adv-blackmores', 'dateFrom=2026-06-14&dateTo=2026-09-01'), 2, 'Immune — winter launch has not started');
   assert.equal(await dealsOn('adv-blackmores', 'dateFrom=2026-11-20&dateTo=2026-11-30'), 2, 'Immune — winter launch has ended');
   // Pinned server-side: another advertiser's id is ignored; a retailer must name exactly one advertiser.

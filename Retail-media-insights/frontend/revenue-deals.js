@@ -10,10 +10,15 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var DSP_ORDER = ['DV360', 'The Trade Desk', 'Amazon DSP'];
-  var DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
-  // One colour family per DSP, four shades each: darkest = Programmatic guaranteed, lightest = Open auction.
+  // The sources of revenue: the connected DSPs, then Direct (the retailer's own direct advertisers, billed through PH with no DSP).
+  var DSP_ORDER = ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct'];
+  var DIRECT = 'Direct';
+  var DIRECT_TYPE = 'Direct advertiser';
+  var DSP_DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
+  var DEAL_TYPES = [DIRECT_TYPE].concat(DSP_DEAL_TYPES);
+  // One colour family per DSP, four shades each: darkest = Programmatic guaranteed, lightest = Open auction. Direct has one shade: it only has direct deals.
   var DSP_SHADES = {
+    'Direct': ['#6b3fa0'],
     'DV360': ['#9c3d14', '#eb6834', '#f29a74', '#f9cfbb'],
     'The Trade Desk': ['#174a8c', '#2a78d6', '#6aa7e0', '#b3d1f2'],
     'Amazon DSP': ['#0d6b49', '#1baf7a', '#5fcaa3', '#b0e6d1']
@@ -23,7 +28,8 @@
   var GRANULARITIES = [['day', 'Day'], ['week', 'Week'], ['month', 'Month']];
 
   var TIPS = {
-    revenue: 'Earned revenue from billing line items, stacked by connected DSP and deal type. Each DSP has four shades: darkest = programmatic guaranteed, then preferred deal, private auction, and lightest = open auction. ' +
+    revenue: 'Earned revenue from billing line items, stacked by source and deal type. Each connected DSP has four shades: darkest = programmatic guaranteed, then preferred deal, private auction, and lightest = open auction. ' +
+      'Direct (purple) = direct advertisers the retailer sells to straight through PH, with no DSP; it has the one deal type, Direct advertiser. ' +
       'Estimated = reservations booked ahead that have not played yet, mainly programmatic guaranteed.',
     deals: 'One row per deal. Hover a deal name for its description and its deal ID on each DSP (as on Deals & buyers lists). ' +
       'Slots = the slots the deal is assigned to (Available Inventory’s Assigned to column); hover for each slot’s display type, playlist, IAB zone, position and plays per window. ' +
@@ -57,6 +63,8 @@
   // ---------- ordering ----------
   function dspRank(d) { var i = DSP_ORDER.indexOf(d); return i < 0 ? DSP_ORDER.length : i; }
   function typeRank(t) { var i = DEAL_TYPES.indexOf(typeName(t)); return i < 0 ? DEAL_TYPES.length : i; }
+  // The deal types a source can have: Direct only has direct deals; a DSP has the four deal types.
+  function dealTypesFor(dsp) { return dsp === DIRECT ? [DIRECT_TYPE] : DSP_DEAL_TYPES; }
   function sortDsps(list) { return list.slice().sort(function (a, b) { return dspRank(a) - dspRank(b) || (a < b ? -1 : a > b ? 1 : 0); }); }
 
   // ---------- Revenue model ----------
@@ -101,7 +109,7 @@
   function shadeColour(dsp, dealType) {
     var shades = DSP_SHADES[dsp];
     if (!shades) return '#8c8c8c';
-    return shades[Math.max(0, DEAL_TYPES.indexOf(typeName(dealType)))];
+    return shades[Math.max(0, dealTypesFor(dsp).indexOf(typeName(dealType)))] || shades[0];
   }
   // Days from `iso` to 31 Dec of its year (a month chart runs through December), within the API's 120-day ceiling.
   function daysToYearEnd(iso) {
@@ -115,7 +123,7 @@
   function legendEntries(dsps, dealType) {
     var out = [];
     sortDsps(dsps).forEach(function (d) {
-      DEAL_TYPES.forEach(function (t) { if (!dealType || dealType === t) out.push({ label: d + ' · ' + t, colour: shadeColour(d, t) }); });
+      dealTypesFor(d).forEach(function (t) { if (!dealType || dealType === t) out.push({ label: d + ' · ' + t, colour: shadeColour(d, t) }); });
     });
     return out;
   }
@@ -274,7 +282,7 @@
     }
 
     // ----- Revenue -----
-    var chips = h('div', { class: 'rd-chips', role: 'group', 'aria-label': 'DSP' });
+    var chips = h('div', { class: 'rd-chips', role: 'group', 'aria-label': 'DSP or direct' });
     var chipsRow = h('div', { class: 'rd-chips-row' }, [h('span', { class: 'rd-chips-label', text: 'DSP' }), chips]);
     var seg = h('div', { class: 'rd-seg', role: 'group', 'aria-label': 'Granularity' });
     var revType = h('span', { class: 'rd-ctl' });
@@ -285,7 +293,7 @@
       chips.textContent = '';
       DSP_ORDER.forEach(function (d) {
         var on = sel.dsps.indexOf(d) >= 0;
-        var b = h('button', { type: 'button', class: 'rd-chip' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false' }, [h('span', { class: 'rd-swatch', style: 'background:' + shadeColour(d, 'Preferred deal') }), document.createTextNode(d)]);
+        var b = h('button', { type: 'button', class: 'rd-chip' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false' }, [h('span', { class: 'rd-swatch', style: 'background:' + shadeColour(d, d === DIRECT ? DIRECT_TYPE : 'Preferred deal') }), document.createTextNode(d)]);
         b.onclick = function () {
           sel.dsps = on ? sel.dsps.filter(function (x) { return x !== d; }) : sel.dsps.concat(d);
           drawControls(); loadRevenue();
@@ -437,7 +445,7 @@
     }
     function drawDealsFilter() {
       dealsTypeWrap.textContent = '';
-      dealsTypeWrap.appendChild(typeSelect('All deal types', DEAL_TYPES.slice(0, 3), sel.dealsType, function (v) { sel.dealsType = v; loadDeals(); }));
+      dealsTypeWrap.appendChild(typeSelect('All deal types', DEAL_TYPES.filter(function (t) { return t !== 'Open auction'; }), sel.dealsType, function (v) { sel.dealsType = v; loadDeals(); }));
     }
 
     root.appendChild(rev.el); root.appendChild(deals.el);

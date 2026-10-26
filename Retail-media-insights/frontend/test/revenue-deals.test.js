@@ -17,7 +17,7 @@ test('bars stack DSP order then Programmatic guaranteed → Open auction; the ea
 });
 
 test('Revenue total with every DSP on equals the summary’s earned revenue', async () => {
-  const all = await get('/revenue', { dsps: ['DV360', 'The Trade Desk', 'Amazon DSP'] });
+  const all = await get('/revenue', { dsps: ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct'] });
   const summary = await get('/summary');
   assert.strictEqual(Math.round(RD.revenueTotals(all).earned), Math.round(summary.earnedRevenue));
 });
@@ -132,7 +132,7 @@ test('colour families: four shades per DSP, legend per DSP × deal type', () => 
 test('CPM note and deal columns', async () => {
   assert.strictEqual(RD.cpmNote({ value: 9.5, kind: 'fixed' }), 'fixed');
   assert.strictEqual(RD.cpmNote({ value: 9.5, kind: 'floor' }), 'floor');
-  const pg = (await get('/deals')).rows[0];
+  const pg = (await get('/deals')).rows.find((r) => r.dealType === 'Programmatic guaranteed');
   assert.ok(Object.fromEntries(RD.pacingTooltip(pg.pacing).rows)['Guaranteed, whole flight']);
 });
 
@@ -171,4 +171,13 @@ test('bar hover shows the number of advertisers in brackets beside each DSP × d
   bar.stacks.forEach((s, i) => assert.strictEqual(t.rows[i + 1][1], RD.fmtMoney(s.amount) + ' (' + s.advertisers + ')'));
   const week = RD.revenueBars(await get('/revenue', { dsps: ['DV360'], granularity: 'week' }))[1];
   assert.ok(week.stacks.every((s) => s.advertisers >= 1), 'a week counts distinct advertisers across its days');
+});
+
+test('Direct is a source beside the DSPs: one purple shade, one legend entry, last in the order', () => {
+  assert.deepStrictEqual(RD.DSP_ORDER, ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct']);
+  assert.deepStrictEqual(RD.DEAL_TYPES, ['Direct advertiser', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
+  assert.deepStrictEqual(RD.legendEntries(['Direct'], '').map((e) => e.label), ['Direct · Direct advertiser']);
+  assert.strictEqual(RD.legendEntries(['DV360', 'Direct'], '').length, 5);
+  assert.deepStrictEqual(RD.legendEntries(['DV360'], 'Direct advertiser'), [], 'a DSP has no direct deals');
+  assert.deepStrictEqual(RD.legendEntries(['The Trade Desk', 'Direct'], 'Direct advertiser').map((e) => e.label), ['Direct · Direct advertiser']);
 });

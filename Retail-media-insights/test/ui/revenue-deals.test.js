@@ -58,6 +58,11 @@ for (const width of [1163, 390]) {
       await page.click('.rd-chip:has-text("Amazon DSP")');
       await page.waitForFunction(() => document.querySelectorAll('.rd-legend-item').length === 13);
       assert.match(await page.textContent('.rd-legend'), /The Trade Desk · Preferred deal/);
+      // Direct is a source beside the DSPs: one chip, one legend entry (its only deal type), its own colour.
+      await page.click('.rd-chip:has-text("Direct")');
+      await page.waitForFunction(() => document.querySelectorAll('.rd-legend-item').length === 14);
+      assert.match(await page.textContent('.rd-legend'), /Direct · Direct advertiser/);
+      assert.ok((await page.$$eval('.rd-seg-fill', (e) => e.map((x) => getComputedStyle(x).backgroundColor))).includes('rgb(107, 63, 160)'), 'Direct draws in its purple');
       const fills = await page.$$eval('.rd-seg-fill', (e) => new Set(e.map((x) => getComputedStyle(x).backgroundColor)).size);
       assert.ok(fills > 4, `several colour families drawn: ${fills}`);
 
@@ -75,7 +80,7 @@ for (const width of [1163, 390]) {
     const { page, context, problems } = await open(width);
     try {
       const rows = await page.$$eval('.rd-table tbody tr', (r) => r.map((x) => [...x.children].map((c) => c.innerText.replace(/\s+/g, ' ').trim())));
-      assert.equal(rows.length, 9);
+      assert.equal(rows.length, 10);
       // Rows are sorted by Revenue, highest first, by default; look rows up by deal name so a sort change
       // doesn't silently re-point every assertion at a different deal.
       const money = (s) => Number(s.replace(/[^0-9.]/g, ''));

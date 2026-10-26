@@ -151,7 +151,7 @@ test('deal IDs: PH- plus 10 upper-case alphanumerics, one per DSP with an invite
   const labels = { DV360: 'Google DSP (DV360)', 'The Trade Desk': 'The Trade Desk', 'Amazon DSP': 'Amazon Ads DSP' };
   for (const row of run('deals').rows) {
     const deal = ctx.dealCatalog[row.id];
-    assert.deepEqual(row.dealIds.map((x) => x.dsp), calc.compareDsps ? [...new Set(deal.buyers.map((b) => b.dsp))].sort(calc.compareDsps) : []);
+    assert.deepEqual(row.dealIds.map((x) => x.dsp), [...new Set(deal.buyers.map((b) => b.dsp))].filter((d) => d !== 'Direct').sort(calc.compareDsps));
     for (const x of row.dealIds) {
       assert.match(x.dealId, /^PH-[A-Z0-9]{10}$/);
       assert.equal(x.dealId, deal.dealIds[x.dsp]);

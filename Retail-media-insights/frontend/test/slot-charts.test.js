@@ -144,15 +144,15 @@ test('yield: all deal types by default, only DSPs with delivery, highest effecti
   const rows = SC.yieldRows(d.rows.slice().reverse());
   assert.ok(rows.length >= 1 && rows.every((r) => r.effectiveCpm !== null));
   assert.deepStrictEqual(rows.map((r) => r.effectiveCpm), rows.map((r) => r.effectiveCpm).sort((a, b) => b - a));
-  assert.deepStrictEqual(SC.DSP_COLOURS, { 'DV360': '#eb6834', 'The Trade Desk': '#2a78d6', 'Amazon DSP': '#1baf7a' });
+  assert.deepStrictEqual(SC.DSP_COLOURS, { 'DV360': '#eb6834', 'The Trade Desk': '#2a78d6', 'Amazon DSP': '#1baf7a', 'Direct': '#6b3fa0' });
   assert.strictEqual(val(SC.yieldHover(rows[0], SC.ALL_DEAL_TYPES, RANGE), 'Deal type'), 'All deal types');
   const pg = await get('/yield', { dealType: 'Programmatic guaranteed' });
   assert.ok(SC.yieldRows(pg.rows).length < pg.rows.length, 'a DSP with no programmatic guaranteed delivery is left out');
 });
 
-test('yield: DSPs read DV360, The Trade Desk, Amazon DSP; a DSP with no delivery shows "No delivery", never NaN', async () => {
+test('yield: DSPs read DV360, The Trade Desk, Amazon DSP, then Direct; a DSP with no delivery shows "No delivery", never NaN', async () => {
   const d = await get('/yield', { dealType: 'Programmatic guaranteed' });
-  assert.deepStrictEqual(SC.dspOrder(d.rows.slice().reverse()).map((r) => r.dsp), ['DV360', 'The Trade Desk', 'Amazon DSP']);
+  assert.deepStrictEqual(SC.dspOrder(d.rows.slice().reverse()).map((r) => r.dsp), ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct']);
   const none = d.rows.find((r) => r.effectiveCpm === null);
   assert.ok(none, 'the test retailer has a DSP with no Programmatic guaranteed delivery');
   const m = SC.yieldHover(none, 'Programmatic guaranteed', RANGE);
@@ -160,12 +160,12 @@ test('yield: DSPs read DV360, The Trade Desk, Amazon DSP; a DSP with no delivery
   assert.ok(!/NaN|null|undefined/.test(JSON.stringify(m.sections)));
   const live = SC.yieldHover(d.rows.find((r) => r.effectiveCpm !== null), 'Programmatic guaranteed', RANGE);
   assert.match(val(live, 'Effective CPM'), /^\$9\.50$/);
-  assert.deepStrictEqual(SC.DEAL_TYPES, ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
+  assert.deepStrictEqual(SC.DEAL_TYPES, ['Direct advertiser', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
 });
 
 test('the Missed revenue & fill and Yield ⓘ explain the new bars', () => {
   assert.match(SC.TIPS.missed, /^Fill = advertiser slots sold ÷ all advertiser slots, across all deal types/);
-  assert.match(SC.TIPS.yield, /^Effective CPM for each connected DSP: cleared revenue per 1,000 assumed views \(VAC-d\), from billing line items and reservations\./);
+  assert.match(SC.TIPS.yield, /^Effective CPM for each connected DSP and for Direct \(the retailer’s direct advertisers, billed through PH with no DSP\): cleared revenue per 1,000 assumed views \(VAC-d\), from billing line items and reservations\./);
 });
 
 test('the Yield and Missed revenue ⓘ carry the VAC-d explanation and the worked example', () => {

@@ -1,5 +1,5 @@
 'use strict';
-const { DEAL_TYPES, DSPS, normaliseDealType } = require('../constants');
+const { DEAL_TYPES, SOURCES, normaliseDealType } = require('../constants');
 const { FilterError } = require('../filters');
 
 // Chart-level filters shared by summary, revenue and yield. Accepts `dsps=a,b`, `dsps=a&dsps=b` and `dsps[]=a`.
@@ -32,4 +32,4 @@ function chartFilter(params) {
 // Rounded to the cent after settling float noise (1e-6), so the order a sum was added in never decides a half cent.
 const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
 
-module.exports = { chartFilter, listParam, cents, DSPS };
+module.exports = { chartFilter, listParam, cents, DSPS: SOURCES };

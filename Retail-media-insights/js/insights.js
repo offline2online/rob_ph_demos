@@ -307,7 +307,7 @@
       var dsps = d.connectedDsps;
       var p = d.previous || {};
       var vsPeriod = 'vs previous period';
-      grid.appendChild(tile('earned', 'Earned revenue', { raw: d.earnedRevenue, text: fmtMoneyK(d.earnedRevenue) }, 'via ' + dsps + ' connected DSP' + (dsps === 1 ? '' : 's'), null, delta(d.earnedRevenue, p.earnedRevenue, 'pct', vsPeriod)));
+      grid.appendChild(tile('earned', 'Earned revenue', { raw: d.earnedRevenue, text: fmtMoneyK(d.earnedRevenue) }, 'via ' + dsps + ' connected DSP' + (dsps === 1 ? '' : 's') + (d.direct && d.direct.earnedRevenue > 0 ? ' + direct (' + (d.direct.sharePercent == null ? 0 : d.direct.sharePercent) + '%)' : ''), null, delta(d.earnedRevenue, p.earnedRevenue, 'pct', vsPeriod)));
       grid.appendChild(tile('estimated', 'Estimated revenue', { raw: d.estimatedRevenue, text: fmtMoneyK(d.estimatedRevenue) }, 'booked for the next ' + days + ' days', null, delta(d.estimatedRevenue, p.estimatedRevenue, 'pct', 'vs previous ' + days + ' days')));
       grid.appendChild(tile('cpm', 'Effective CPM', { raw: d.effectiveCpm, text: d.effectiveCpm == null ? '–' : '$' + d.effectiveCpm.toFixed(2) }, d.effectiveCpm == null ? 'No delivery' : 'per 1,000 assumed views (VAC-d)', null, delta(d.effectiveCpm, p.effectiveCpm, 'pct', vsPeriod)));
       grid.appendChild(tile('sold', 'Inventory sold', { raw: s.percent, text: s.percent + '%' }, fmtInt(s.slotsSold) + ' sold · ' + fmtInt(s.slotsAvailable) + ' available', SOLD_TIP, delta(s.percent, p.inventorySoldPercent, 'pts', vsPeriod)));

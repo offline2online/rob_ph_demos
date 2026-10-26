@@ -8,13 +8,19 @@
   "src/constants.js": function (module, exports, require) {
 
 // Standard orderings (REQUIREMENTS.md section 3.2).
-const DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
+// 'Direct advertiser' (an owned slot sold by the retailer through PH, no DSP, no bidding) ranks first: it takes its slots before any deal.
+const DIRECT_DEAL_TYPE = 'Direct advertiser';
+const DEAL_TYPES = [DIRECT_DEAL_TYPE, 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
 // The old label's casing, accepted on input for one release only; every response uses DEAL_TYPES.
 const LEGACY_DEAL_TYPES = { 'Programmatic Guaranteed': 'Programmatic guaranteed' };
 const normaliseDealType = (t) => LEGACY_DEAL_TYPES[t] || t;
 const DSPS = ['DV360', 'The Trade Desk', 'Amazon DSP'];
+// Where a billing line came from: a connected DSP, or 'Direct' (the retailer's own direct advertisers, no DSP seat). The DSP columns,
+// filters and breakdowns list every source, in this order, with Direct after the DSPs.
+const DIRECT = 'Direct';
+const SOURCES = [...DSPS, DIRECT];
 // How each DSP is named on DSP Integration's Deals & buyers lists (README "Deals are named, not coded").
-const DSP_LABELS = { DV360: 'Google DSP (DV360)', 'The Trade Desk': 'The Trade Desk', 'Amazon DSP': 'Amazon Ads DSP' };
+const DSP_LABELS = { DV360: 'Google DSP (DV360)', 'The Trade Desk': 'The Trade Desk', 'Amazon DSP': 'Amazon Ads DSP', [DIRECT]: 'Direct (no DSP)' };
 // The five IAB / IAB Europe In-Store Retail Media Standards zones, in shopper-journey order.
 const ZONES = ['Exterior', 'Entrance & out of category', 'In aisles', 'Checkout', 'Other & connected store'];
 const MATURITY_LEVELS = ['Default only', 'Localised', 'Personalised'];
@@ -58,13 +64,13 @@ const NEVER_OPEN = Object.freeze({ open: 0, close: 0 });
 // The scope every non-public route needs (DSP Integration section 9.5).
 const READ_SCOPE = 'insights:read';
 
-module.exports = { DEAL_TYPES, normaliseDealType, DSPS, DSP_LABELS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, NEVER_OPEN, READ_SCOPE, MIN_OTHER_BUYERS_FOR_WINNING_CPM, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES };
+module.exports = { DEAL_TYPES, DIRECT_DEAL_TYPE, normaliseDealType, DSPS, DIRECT, SOURCES, DSP_LABELS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, NEVER_OPEN, READ_SCOPE, MIN_OTHER_BUYERS_FOR_WINNING_CPM, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES };
   },
   "src/calc/index.js": function (module, exports, require) {
 // The one shared calculation library: every rule in REQUIREMENTS.md section 3.2.
 // Pure functions, no I/O. Money is USD; percentages are whole numbers.
 
-const { DEAL_TYPES, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, NEVER_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES } = require('../constants');
+const { DEAL_TYPES, SOURCES, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, NEVER_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES } = require('../constants');
 
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
@@ -270,7 +276,7 @@ const orderBy = (list) => (a, b) => {
   return (ia < 0 ? list.length : ia) - (ib < 0 ? list.length : ib) || String(a).localeCompare(String(b));
 };
 const compareDealTypes = orderBy(DEAL_TYPES);
-const compareDsps = orderBy(DSPS);
+const compareDsps = orderBy(SOURCES);
 const compareZones = orderBy(ZONES);
 
 module.exports = {
@@ -1065,7 +1071,7 @@ const FOOTFALL_FACTORS = [1.6, 1.2, 0.9, 0.8, 1.0];
 const loopSecondsOf = (type) => type.slots.advertiser.count * type.slots.advertiser.avgSeconds + type.slots.ownContent.count * type.slots.ownContent.avgSeconds;
 const loopsPerHourOf = (type) => Math.round(3600 / loopSecondsOf(type));
 
-// The retailer's advertisers: the DSP each buys through, its share of revenue on a deal (weight) and how readily it bids in the open auction.
+// The retailer's advertisers: the DSP each buys through ('Direct' = the retailer's own direct advertiser, no DSP), its share of revenue on a deal (weight) and how readily it bids in the open auction.
 const ADVERTISER_PROFILES = [
   { id: 'adv-blackmores', name: 'Blackmores', dsp: 'DV360', weight: 0.15, open: 0.20 },
   { id: 'adv-haleon', name: 'Haleon', dsp: 'The Trade Desk', weight: 0.14, open: 0.45 },
@@ -1077,7 +1083,7 @@ const ADVERTISER_PROFILES = [
   { id: 'adv-procter-gamble', name: 'Procter & Gamble', dsp: 'The Trade Desk', weight: 0.07, open: 0.60 },
   { id: 'adv-unilever', name: 'Unilever', dsp: 'Amazon DSP', weight: 0.06, open: 0.80 },
   { id: 'adv-nestle-health-science', name: 'Nestlé Health Science', dsp: 'DV360', weight: 0.06, open: 0.05 },
-  { id: 'adv-perrigo', name: 'Perrigo', dsp: 'The Trade Desk', weight: 0.05, open: 0.80 },
+  { id: 'adv-perrigo', name: 'Perrigo', dsp: 'Direct', weight: 0.05, open: 0.80 },
 ];
 const ADVERTISERS = ADVERTISER_PROFILES.map((a) => a.id);
 const ADVERTISER_META = Object.fromEntries(ADVERTISER_PROFILES.map((a) => [a.id, { name: a.name, dsp: a.dsp }]));
@@ -1145,10 +1151,14 @@ const DEAL_SPECS = [
     'Health brands bidding on Dispensary Screen slots beside the pharmacy counter.'],
   ['d7', 'Beauty endcaps', 'Private auction', 6, ['adv-loreal-paris', 'adv-kenvue'], slotsOf('endcap', [3, 4]), 0.52,
     'Beauty brands bidding on Endcap Shelf-edge slots at the gondola ends.'],
-  ['d8', 'Queue screens', 'Private auction', 5.5, ['adv-haleon', 'adv-procter-gamble', 'adv-unilever', 'adv-perrigo'], slotsOf('queue', [2]), 0.9,
+  ['d8', 'Queue screens', 'Private auction', 5.5, ['adv-haleon', 'adv-procter-gamble', 'adv-unilever'], slotsOf('queue', [2]), 0.9,
     'Everyday brands bidding on Queue Screen slots at the checkout.'],
-  ['d9', 'Store-wide wellness', 'Private auction', 6.5, ['adv-vitabiotics', 'adv-nestle-health-science', 'adv-perrigo'], [...slotsOf('dispensary', [5]), ...slotsOf('endcap', [5])], 0.56,
-    'Wellness brands bidding across Dispensary Screen and Endcap Shelf-edge slots.'],
+  ['d9', 'Store-wide wellness', 'Private auction', 6.5, ['adv-vitabiotics', 'adv-nestle-health-science'], slotsOf('endcap', [5]), 0.56,
+    'Wellness brands bidding on Endcap Shelf-edge slots across the store.'],
+  // A direct advertiser (README "Direct advertisers"): the retailer sells the slot straight to the brand through PH, so there is no DSP,
+  // no seat and no deal ID. Revenue is billed at the agreed CPM and counted as 'Direct' in every DSP breakdown.
+  ['d11', 'Perrigo — pharmacy takeover', 'Direct advertiser', 6, ['adv-perrigo'], slotsOf('dispensary', [5]), 0.56,
+    'Dispensary Screen slot owned by Perrigo, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
 ];
 // Fill of the positions no deal assigns (the open auction), set so each type's overall sell-through lands on its target:
 // Window and Queue about 89% (amber), Dispensary about 61%, Endcap about 56%.
@@ -1173,7 +1183,7 @@ const mintRand = rng(2026);
 const DEAL_CATALOG = Object.fromEntries(DEAL_SPECS.map(([id, name, dealType, cpm, buyers, slots, , description], i) => {
   const buyerList = buyers.map((advertiserId) => ({ advertiserId, dsp: PROFILE[advertiserId].dsp }));
   const dspsInOrder = DSPS_ORDER.filter((d) => buyerList.some((b) => b.dsp === d));
-  const deal = { name, description, dealType, phId: `PH-D${i + 1}`, cpm, dealIds: mintDealIds(dspsInOrder, mintRand), buyers: buyerList, slots };
+  const deal = { name, description, dealType, phId: `PH-${id.toUpperCase()}`, cpm, dealIds: mintDealIds(dspsInOrder, mintRand), buyers: buyerList, slots };
   if (dealType === 'Private auction') deal.floorCpm = cpm;
   if (FLIGHTS[id]) { deal.flight = { start: FLIGHTS[id].start, end: FLIGHTS[id].end }; deal.forecast = 100000; deal.buffer = 0.1; }
   return [id, deal];
@@ -1283,7 +1293,7 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
   // Billed buyers of a deal (its buyers list, each on its own DSP seat) with the weight each carries; the open auction is open to
   // everyone, but bills an advertiser only on the display types its campaigns target, in proportion to how readily it bids there.
   const buyersOf = (dealId, typeId) => (dealId === OPEN_AUCTION_DEAL
-    ? ADVERTISERS.filter((advertiserId) => CAMPAIGN_PLAN[advertiserId].types.includes(typeId))
+    ? ADVERTISERS.filter((advertiserId) => PROFILE[advertiserId].dsp !== 'Direct' && CAMPAIGN_PLAN[advertiserId].types.includes(typeId))
       .map((advertiserId) => ({ advertiserId, dsp: PROFILE[advertiserId].dsp, weight: PROFILE[advertiserId].open + 0.05 }))
     : dealCatalog[dealId].buyers.map((b) => ({ ...b, weight: PROFILE[b.advertiserId].weight })));
   // Cleared price: fixed deals bill their CPM; auctions clear above their floor (strictly, so rounding never lands below it).
@@ -2853,7 +2863,7 @@ module.exports = {
 };
   },
   "src/routes/params.js": function (module, exports, require) {
-const { DEAL_TYPES, DSPS, normaliseDealType } = require('../constants');
+const { DEAL_TYPES, SOURCES, normaliseDealType } = require('../constants');
 const { FilterError } = require('../filters');
 
 // Chart-level filters shared by summary, revenue and yield. Accepts `dsps=a,b`, `dsps=a&dsps=b` and `dsps[]=a`.
@@ -2886,7 +2896,7 @@ function chartFilter(params) {
 // Rounded to the cent after settling float noise (1e-6), so the order a sum was added in never decides a half cent.
 const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
 
-module.exports = { chartFilter, listParam, cents, DSPS };
+module.exports = { chartFilter, listParam, cents, DSPS: SOURCES };
   },
   "src/routes/revenue.js": function (module, exports, require) {
 const calc = require('../calc');
@@ -3114,6 +3124,7 @@ module.exports = {
 const calc = require('../calc');
 const { chartFilter, cents } = require('./params');
 const { addDays } = require('../dealing');
+const { DIRECT } = require('../constants');
 
 // Estimated revenue is Programmatic guaranteed reservations booked ahead: the next 30 days after the last played day.
 const ESTIMATED_DAYS = 30;
@@ -3124,7 +3135,7 @@ const ESTIMATED_DAYS = 30;
 // cents, as in /revenue, so the two reconcile. Earned revenue follows the date range; estimated revenue is the reservations
 // for the 30 days after the last played day (`estimatedWindow`), whatever the range, under the same store, display type,
 // advertiser and chart filters. `effectiveCpm` is earned revenue / earned views x 1,000 (null with no views); `connectedDsps`
-// counts the DSPs with a connected seat.
+// counts the DSPs with a connected seat; `direct` is the part of earned revenue from direct advertisers.
 //
 // `previous` carries the same four figures for the period before, so the page can show up/down: earned revenue, effective CPM and
 // inventory sold over the equal-length period ending the day before the range starts; estimated revenue is the revenue
@@ -3137,9 +3148,11 @@ module.exports = {
   handler({ store, filters, params }) {
     const keep = chartFilter(params);
     let earned = 0; let earnedViews = 0;
+    let directEarned = 0; const directAdvertisers = new Set();
     store.scanDelivery(filters, (r) => {
       if (keep && !keep(r)) return;
       earned += r.earned; earnedViews += r.earnedViews;
+      if (r.dsp === DIRECT) { directEarned += r.earned; if (r.earned > 0) directAdvertisers.add(r.advertiserId); }
     });
     const last = store.lastPlayedDay;
     const estimatedWindow = last ? { dateFrom: addDays(last, 1), dateTo: addDays(last, ESTIMATED_DAYS) } : { dateFrom: null, dateTo: null };
@@ -3182,6 +3195,8 @@ module.exports = {
       estimatedRevenue: cents(estimated),
       estimatedWindow,
       effectiveCpm: earnedViews > 0 ? cents(calc.effectiveCpm(earned, earnedViews)) : null,
+      // The direct advertisers' share of earned revenue (the retailer's own direct sales, no DSP), part of earnedRevenue and not on top of it.
+      direct: { earnedRevenue: cents(directEarned), sharePercent: earned > 0 ? Math.round((directEarned / earned) * 100) : null, advertisers: directAdvertisers.size },
       connectedDsps: ((store.catalog && store.catalog.connectedDsps) || []).length,
       inventorySold: { percent: calc.fillPercent(sold, unsold, offline), slotsSold: sold, slotsAvailable: unsold, slotsOffline: offline },
     };

@@ -12,10 +12,11 @@
   'use strict';
 
   var ZONE_ORDER = ['Exterior', 'Entrance & out of category', 'In aisles', 'Checkout', 'Other & connected store'];
-  var DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
-  var DSP_ORDER = ['DV360', 'The Trade Desk', 'Amazon DSP'];
+  var DEAL_TYPES = ['Direct advertiser', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
+  // Connected DSPs, then Direct (the retailer's own direct advertisers, no DSP).
+  var DSP_ORDER = ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct'];
   // Each DSP's Preferred shade, the same families as the Revenue chart.
-  var DSP_COLOURS = { 'DV360': '#eb6834', 'The Trade Desk': '#2a78d6', 'Amazon DSP': '#1baf7a' };
+  var DSP_COLOURS = { 'DV360': '#eb6834', 'The Trade Desk': '#2a78d6', 'Amazon DSP': '#1baf7a', 'Direct': '#6b3fa0' };
   var ALL_DEAL_TYPES = 'All deal types';
   var AMBER_AT = 85;
   var ORIENTATIONS = ['Not set', '90°', '180°', '270°'];
@@ -37,7 +38,7 @@
       'Effective CPM = revenue ÷ (assumed views (VAC-d) ÷ 1,000). Only hours inside each display type’s operating hours are inventory and shown: outside screens and windows run 24 hours, in-store screens follow store opening hours. ' +
       'Until the hourly impression multiplier ships, assumed views per hour = the day’s assumed views spread by each hour’s share of the day’s slots played, and revenue is spread the same way. ' +
       'The number in brackets is connected displays (PH Core).',
-    yield: 'Effective CPM for each connected DSP: cleared revenue per 1,000 assumed views (VAC-d), from billing line items and reservations. ' + VAC_TEXT
+    yield: 'Effective CPM for each connected DSP and for Direct (the retailer\u2019s direct advertisers, billed through PH with no DSP): cleared revenue per 1,000 assumed views (VAC-d), from billing line items and reservations. ' + VAC_TEXT
   };
   // Column definitions for the Slot allocation table (an ⓘ beside each heading).
   var COLUMN_TIPS = {

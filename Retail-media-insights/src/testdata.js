@@ -72,7 +72,7 @@ const FOOTFALL_FACTORS = [1.6, 1.2, 0.9, 0.8, 1.0];
 const loopSecondsOf = (type) => type.slots.advertiser.count * type.slots.advertiser.avgSeconds + type.slots.ownContent.count * type.slots.ownContent.avgSeconds;
 const loopsPerHourOf = (type) => Math.round(3600 / loopSecondsOf(type));
 
-// The retailer's advertisers: the DSP each buys through, its share of revenue on a deal (weight) and how readily it bids in the open auction.
+// The retailer's advertisers: the DSP each buys through ('Direct' = the retailer's own direct advertiser, no DSP), its share of revenue on a deal (weight) and how readily it bids in the open auction.
 const ADVERTISER_PROFILES = [
   { id: 'adv-blackmores', name: 'Blackmores', dsp: 'DV360', weight: 0.15, open: 0.20 },
   { id: 'adv-haleon', name: 'Haleon', dsp: 'The Trade Desk', weight: 0.14, open: 0.45 },
@@ -84,7 +84,7 @@ const ADVERTISER_PROFILES = [
   { id: 'adv-procter-gamble', name: 'Procter & Gamble', dsp: 'The Trade Desk', weight: 0.07, open: 0.60 },
   { id: 'adv-unilever', name: 'Unilever', dsp: 'Amazon DSP', weight: 0.06, open: 0.80 },
   { id: 'adv-nestle-health-science', name: 'Nestlé Health Science', dsp: 'DV360', weight: 0.06, open: 0.05 },
-  { id: 'adv-perrigo', name: 'Perrigo', dsp: 'The Trade Desk', weight: 0.05, open: 0.80 },
+  { id: 'adv-perrigo', name: 'Perrigo', dsp: 'Direct', weight: 0.05, open: 0.80 },
 ];
 const ADVERTISERS = ADVERTISER_PROFILES.map((a) => a.id);
 const ADVERTISER_META = Object.fromEntries(ADVERTISER_PROFILES.map((a) => [a.id, { name: a.name, dsp: a.dsp }]));
@@ -152,10 +152,14 @@ const DEAL_SPECS = [
     'Health brands bidding on Dispensary Screen slots beside the pharmacy counter.'],
   ['d7', 'Beauty endcaps', 'Private auction', 6, ['adv-loreal-paris', 'adv-kenvue'], slotsOf('endcap', [3, 4]), 0.52,
     'Beauty brands bidding on Endcap Shelf-edge slots at the gondola ends.'],
-  ['d8', 'Queue screens', 'Private auction', 5.5, ['adv-haleon', 'adv-procter-gamble', 'adv-unilever', 'adv-perrigo'], slotsOf('queue', [2]), 0.9,
+  ['d8', 'Queue screens', 'Private auction', 5.5, ['adv-haleon', 'adv-procter-gamble', 'adv-unilever'], slotsOf('queue', [2]), 0.9,
     'Everyday brands bidding on Queue Screen slots at the checkout.'],
-  ['d9', 'Store-wide wellness', 'Private auction', 6.5, ['adv-vitabiotics', 'adv-nestle-health-science', 'adv-perrigo'], [...slotsOf('dispensary', [5]), ...slotsOf('endcap', [5])], 0.56,
-    'Wellness brands bidding across Dispensary Screen and Endcap Shelf-edge slots.'],
+  ['d9', 'Store-wide wellness', 'Private auction', 6.5, ['adv-vitabiotics', 'adv-nestle-health-science'], slotsOf('endcap', [5]), 0.56,
+    'Wellness brands bidding on Endcap Shelf-edge slots across the store.'],
+  // A direct advertiser (README "Direct advertisers"): the retailer sells the slot straight to the brand through PH, so there is no DSP,
+  // no seat and no deal ID. Revenue is billed at the agreed CPM and counted as 'Direct' in every DSP breakdown.
+  ['d11', 'Perrigo — pharmacy takeover', 'Direct advertiser', 6, ['adv-perrigo'], slotsOf('dispensary', [5]), 0.56,
+    'Dispensary Screen slot owned by Perrigo, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
 ];
 // Fill of the positions no deal assigns (the open auction), set so each type's overall sell-through lands on its target:
 // Window and Queue about 89% (amber), Dispensary about 61%, Endcap about 56%.
@@ -180,7 +184,7 @@ const mintRand = rng(2026);
 const DEAL_CATALOG = Object.fromEntries(DEAL_SPECS.map(([id, name, dealType, cpm, buyers, slots, , description], i) => {
   const buyerList = buyers.map((advertiserId) => ({ advertiserId, dsp: PROFILE[advertiserId].dsp }));
   const dspsInOrder = DSPS_ORDER.filter((d) => buyerList.some((b) => b.dsp === d));
-  const deal = { name, description, dealType, phId: `PH-D${i + 1}`, cpm, dealIds: mintDealIds(dspsInOrder, mintRand), buyers: buyerList, slots };
+  const deal = { name, description, dealType, phId: `PH-${id.toUpperCase()}`, cpm, dealIds: mintDealIds(dspsInOrder, mintRand), buyers: buyerList, slots };
   if (dealType === 'Private auction') deal.floorCpm = cpm;
   if (FLIGHTS[id]) { deal.flight = { start: FLIGHTS[id].start, end: FLIGHTS[id].end }; deal.forecast = 100000; deal.buffer = 0.1; }
   return [id, deal];
@@ -290,7 +294,7 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
   // Billed buyers of a deal (its buyers list, each on its own DSP seat) with the weight each carries; the open auction is open to
   // everyone, but bills an advertiser only on the display types its campaigns target, in proportion to how readily it bids there.
   const buyersOf = (dealId, typeId) => (dealId === OPEN_AUCTION_DEAL
-    ? ADVERTISERS.filter((advertiserId) => CAMPAIGN_PLAN[advertiserId].types.includes(typeId))
+    ? ADVERTISERS.filter((advertiserId) => PROFILE[advertiserId].dsp !== 'Direct' && CAMPAIGN_PLAN[advertiserId].types.includes(typeId))
       .map((advertiserId) => ({ advertiserId, dsp: PROFILE[advertiserId].dsp, weight: PROFILE[advertiserId].open + 0.05 }))
     : dealCatalog[dealId].buyers.map((b) => ({ ...b, weight: PROFILE[b.advertiserId].weight })));
   // Cleared price: fixed deals bill their CPM; auctions clear above their floor (strictly, so rounding never lands below it).
