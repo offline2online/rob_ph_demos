@@ -404,7 +404,18 @@ board:
   `revertRequested`, and the automation reverts that card's commits. A card
   in Backlog must never have live commits on a train. If a later ticket
   built on top of it the revert conflicts, nothing is force-pushed and
-  `revertBlockedBy` names who a human has to decide about.
+  `revertBlockedBy` names who a human has to decide about (a conflict only
+  in a Markdown list, the usual one, is resolved by itself).
+- **A failed ticket heals itself or asks (26 Oct 2026)**: Failed testing,
+  `fail_testing` and an automatic send-back rebuild the ticket once its
+  commits are off the train, with the failure as its brief (not for "Blocking
+  a release, not a rebuild"; while a release is closing the rebuild follows
+  the merge, `buildAfterTrain`). After 3 automatic rebuilds, or when a build
+  can't be started at all, the card is flagged waiting on your answer with
+  the reason and an Answer button. Every train test workflow starts the
+  automation when it finishes (`wake-automation`), so nothing waits on
+  GitHub's throttled schedule. See `backlog-tracker/REQUIREMENTS.md` → "A
+  failing ticket heals itself or asks a person".
 - **Deploy to Main appears only when the whole train is approved** —
   merging the branch ships everything on it, so Ready for Testing has to be
   empty for that project first.
