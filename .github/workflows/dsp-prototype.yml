@@ -62,6 +62,8 @@ permissions:
 jobs:
   rebuild:
     runs-on: ubuntu-latest
+    outputs:
+      pushed_train: ${{ steps.rebuild.outputs.pushed_train }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,6 +76,7 @@ jobs:
           cache-dependency-path: dsp-integration/package-lock.json
 
       - name: Rebuild each branch whose source moved
+        id: rebuild
         env:
           BRANCHES: ${{ github.event_name == 'push' && github.ref_name || (inputs.branch != '' && inputs.branch || 'main deploy/dsp-integration') }}
           FORCE: ${{ inputs.force == true && '--force' || '' }}
@@ -113,6 +116,7 @@ jobs:
                 # bundle. A commit URL is immutable, so caching it is correct.
                 # Re-point this train's testing cards at the commit just pushed.
                 case "$branch" in deploy/*)
+                  echo "pushed_train=true" >> "$GITHUB_OUTPUT"
                   (cd dsp-integration && node scripts/board-tickets.mjs --relink-prototype "$(git rev-parse HEAD)" --branch "$branch" --yes) \
                     || echo "::warning::could not re-point the board's test links at $(git rev-parse --short HEAD); they still point at $branch, which githack caches"
                   ;;
@@ -132,3 +136,20 @@ jobs:
               fi
             done
           done
+
+  # A train card's test link reads "Rebuilding test link…" until the backlog
+  # automation sees this rebuild, and its Ready for Testing hand-off waits on
+  # it. Start the automation as soon as a train bundle is pushed rather than
+  # on GitHub's throttled schedule (see e2e-quick.yml's job of the same name).
+  wake-automation:
+    needs: rebuild
+    if: needs.rebuild.outputs.pushed_train == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start the backlog automation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run backlog-automation.yml --repo "$GITHUB_REPOSITORY" --ref main || echo "::warning::Couldn't start the backlog automation; its schedule picks this rebuild up instead."

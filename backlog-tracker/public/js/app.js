@@ -3281,7 +3281,7 @@ async function failTestingNow(id, item) {
   // the machine-readable one a re-fired investigation reads directly.
   const result = await showFieldDialog({
     title: "Failed testing",
-    message: "Something's wrong — send it back: the ticket goes to Backlog and its commit comes off the train, so a fresh Ready for Dev re-patches it. " +
+    message: "Something's wrong — send it back: the ticket goes to Backlog, its commit comes off the train, and it is rebuilt automatically with your Details as the brief (choose \"Blocking a release, not a rebuild\" to only take it off). " +
       "It works, but I want something more: the ticket stays in Ready for Testing on the train (you can still approve it) and your Details become a new Backlog ticket." +
       (failTestingStaleWarning(item) ? ` ${failTestingStaleWarning(item)}` : ""),
     fields: [
@@ -3304,6 +3304,7 @@ async function failTestingNow(id, item) {
   await updateDoc(doc(db, "backlogItems", id), {
     status: send.status,
     revertRequested: send.revertRequested,
+    rebuildAfterRevert: send.rebuildAfterRevert,
     lastFailureReason: send.lastFailureReason,
     notes: arrayUnion(send.note),
     updatedAt: serverTimestamp(),
@@ -4937,15 +4938,18 @@ async function submitResolveAnswer() {
   try {
     if (section.key === ANSWER_STEP_KEY) {
       const me = (auth.currentUser && auth.currentUser.email) || "viewer";
+      const pid = item.projectId || GENERAL_PROJECT_ID;
+      const project = projects.find((p) => p.id === pid);
+      const locked = isTrainLocked(project);
       await updateDoc(doc(db, "backlogItems", resolveItemId), {
         notes: arrayUnion({ author: me, text: `Answer to the build's question: ${text}`, at: new Date() }),
         blocked: null,
         blockedClearedAt: serverTimestamp(),
+        // A closing release holds the build; the automation starts it as soon
+        // as that train has merged (sweepDeferredBuilds), not on a later click.
+        ...(locked ? { buildAfterTrain: true } : {}),
         updatedAt: serverTimestamp(),
       });
-      const pid = item.projectId || GENERAL_PROJECT_ID;
-      const project = projects.find((p) => p.id === pid);
-      const locked = isTrainLocked(project);
       if (project && !locked) {
         notifyOptimisticClicks[pid] = Date.now();
         render();
@@ -4955,7 +4959,7 @@ async function submitResolveAnswer() {
       rsInput.value = "";
       rsInput.dispatchEvent(new Event("input"));
       resolveQueue = resolveQueue.slice(1);
-      rsSay("agent", locked ? "Saved and unblocked. This release is already closing, so the ticket will be built once the train merges." : "Saved — the build for this ticket is starting again.");
+      rsSay("agent", locked ? "Saved and unblocked. This release is already closing, so the ticket is built automatically as soon as the train merges." : "Saved — the build for this ticket is starting again.");
       if (resolveQueue.length) {
         rsSay("agent", `This ticket is also missing: ${resolveQueue.map((s) => s.heading).join(", ")}.`);
         rsAsk();

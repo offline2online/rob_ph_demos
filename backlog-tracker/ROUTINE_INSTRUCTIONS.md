@@ -565,13 +565,17 @@ ticket once automatically.
      update the named document in the same patch, or set `patchDocsImpact`.
    - **Before setting `patchReady`, run the console's offline tests** if
      the patch touches `backlog-tracker/` (no credentials or network
-     needed): `cd backlog-tracker/test && npm ci && npm run test:app-boots
-     && npm run test:auth-gate && npm run test:mcp && npm run test:client
-     && npm run test:train-lock`. They are the train PR's required `rules`
-     check, and a red one stops Deploy to Main for every ticket on the
-     train (PR #301, 3 Oct 2026). The automation also starts that check on
-     the train when your ticket lands and notes a failure on the card, but
-     catching it here costs nobody a testing round.
+     needed): `cd backlog-tracker/test && npm ci && npm run test:offline`.
+     That is every step of the train's console tests except the Firestore
+     emulator (which needs Java); `ci-coverage.test.js` keeps it equal to
+     CI. Run that one command, not a subset you pick: on 26 Oct 2026 a
+     build ran `test:mcp` and `test:train-lock`, handed back a new MCP tool
+     without adding it to `mcp-client.test.mjs`'s pinned tool list, and the
+     ticket went red, was sent back and rebuilt. A red console check stops
+     Deploy to Main for every ticket on the train (PR #301, 3 Oct 2026). The
+     automation also starts that check on the train when your ticket lands
+     and sends the ticket back on a failure, but catching it here costs
+     nobody a testing round.
      `test:app-boots` now ends with the Chromium click-through suite
      (`npm run test:ui`), so it needs a Chromium: a cloud session has one
      (`/opt/pw-browsers`). A ticket that changes console UI adds or updates
@@ -588,8 +592,9 @@ ticket once automatically.
      without it the heavy admin tests time out and look like a hang — the
      reason builds on 7–8 Oct 2026 reported "the admin vitest file hung"
      and handed back patches that then turned the train red. With `CI=1`
-     the admin suite passes in about 8 minutes: give the command a 15-minute
-     timeout and wait for it rather than killing it.
+     the admin suite passes in about 5 minutes (25 before the selector cache
+     in `apps/admin/test/setup.ts`, 26 Oct 2026): give the command a
+     15-minute timeout and wait for it rather than killing it.
      `test:layout` needs Chromium — `npx playwright install chromium`, or in
      a Claude Code cloud session point it at the preinstalled
      `/opt/pw-browsers`. **The layout check fails on any admin change that
