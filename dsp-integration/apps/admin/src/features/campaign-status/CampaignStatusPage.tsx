@@ -487,8 +487,8 @@ export function CampaignStatusPage() {
       ...searchFunnelColumn<Row>('Advertiser / Campaign name', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
         (name) => setAdvertiserFilter(advertiserOptions.find((a) => a.label === name)?.value)),
     },
-    { headerName: 'Touch points', width: 170, minWidth: 140, cellRenderer: TouchPointsCell, valueGetter: (p) => joined(p, (c) => touchPointsOf(c).join(', '), (g) => g.touchPoints), ...setColumn<Row>('Touch points', () => all.flatMap(touchPointsOf)) },
-    { headerName: 'Display types', width: 160, minWidth: 130, cellRenderer: DisplayTypesCell, valueGetter: (p) => joined(p, (c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''), (g) => g.displayTypes), ...setColumn<Row>('Display types', () => all.map((c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''))) },
+    { headerName: 'Touch point(s)', width: 170, minWidth: 140, cellRenderer: TouchPointsCell, valueGetter: (p) => joined(p, (c) => touchPointsOf(c).join(', '), (g) => g.touchPoints), ...setColumn<Row>('Touch points', () => all.flatMap(touchPointsOf)) },
+    { headerName: 'Display type(s)', width: 160, minWidth: 130, cellRenderer: DisplayTypesCell, valueGetter: (p) => joined(p, (c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''), (g) => g.displayTypes), ...setColumn<Row>('Display types', () => all.map((c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''))) },
     { headerName: 'Creative ID', width: 170, minWidth: 140, cellRenderer: CreativeIdCell, valueGetter: (p) => (p.data?.group ? p.data.group.creativeIds : p.data ? approvals[p.data.campaignId]?.creativeId ?? '' : ''), ...searchColumn<Row>('Creative ID') },
     /* Deal ID (private auctions): the advertiser's own grouping, set at authoring. Empty for a direct campaign. */
     { headerName: 'Deal ID', width: 150, minWidth: 130, cellRenderer: DealCell, valueGetter: (p) => joined(p, (c) => c.dealId ?? '', (g) => g.deals), ...searchColumn<Row>('Deal ID') },

@@ -396,7 +396,7 @@ describe('Campaign Status stand-in', () => {
        (ticket IDGsyELBJsjlAYjizSqT), grouped by advertiser. Order per ticket
        dinPPBl9Rk95UbrXoRbt: Activation sits left of Last used, Received left of Activation. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      '', 'Status', 'Advertiser / Campaign name', 'Touch points', 'Display types', 'Creative ID', 'Deal ID', 'Localised variables', 'Personalised variables', 'Received', 'Activation', 'Last used', '',
+      '', 'Status', 'Advertiser / Campaign name', 'Touch point(s)', 'Display type(s)', 'Creative ID', 'Deal ID', 'Localised variables', 'Personalised variables', 'Received', 'Activation', 'Last used', '',
     ])
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* The touch points it runs on, and the high-level variable summary. */
