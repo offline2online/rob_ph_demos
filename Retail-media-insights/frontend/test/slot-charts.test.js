@@ -158,8 +158,12 @@ test('yield: DSPs read DV360, The Trade Desk, Amazon DSP, then Direct; a DSP wit
   const m = SC.yieldHover(none, 'Programmatic guaranteed', RANGE);
   assert.strictEqual(val(m, 'Effective CPM'), 'No delivery');
   assert.ok(!/NaN|null|undefined/.test(JSON.stringify(m.sections)));
-  const live = SC.yieldHover(d.rows.find((r) => r.effectiveCpm !== null), 'Programmatic guaranteed', RANGE);
+  const live = SC.yieldHover(d.rows.find((r) => r.effectiveCpm !== null), 'Programmatic guaranteed', RANGE, d.rows);
   assert.match(val(live, 'Effective CPM'), /^\$9\.50$/);
+  assert.match(val(live, 'Share of total revenue'), /^\d+% of Programmatic guaranteed revenue$/);
+  const all = await get('/yield');
+  const shares = SC.yieldRows(all.rows).map((r) => parseInt(val(SC.yieldHover(r, SC.ALL_DEAL_TYPES, RANGE, all.rows), 'Share of total revenue'), 10));
+  assert.ok(shares.every((n) => n >= 0 && n <= 100) && Math.abs(shares.reduce((a, b) => a + b, 0) - 100) <= shares.length, 'shares add to ~100%');
   assert.deepStrictEqual(SC.DEAL_TYPES, ['Direct advertiser', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
 });
 

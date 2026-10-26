@@ -268,7 +268,14 @@
       .sort(function (a, b) { return b.r.effectiveCpm - a.r.effectiveCpm || a.i - b.i; }).map(function (x) { return x.r; });
   }
 
-  function yieldHover(row, dealType, meta) {
+  // Share of the revenue cleared in scope (every DSP and Direct on this deal type), whole percent.
+  function yieldRevenueShare(row, allRows) {
+    var total = (allRows || []).reduce(function (t, r) { return t + (has(r.earnedRevenue) ? r.earnedRevenue : 0); }, 0);
+    if (!(total > 0) || !has(row.earnedRevenue)) return null;
+    return pct(100 * row.earnedRevenue / total);
+  }
+
+  function yieldHover(row, dealType, meta, allRows) {
     if (row.effectiveCpm === null || row.effectiveCpm === undefined) {
       return { title: row.dsp, desc: null, sections: [{ rows: [['Deal type', dealType], ['Effective CPM', 'No delivery']], note: 'No settled billing for this DSP and deal type in the selected period.' }] };
     }
@@ -276,13 +283,15 @@
     if (has(row.earnedRevenue) && has(row.assumedViews)) {
       rows.push(['Earned', fmtMoney(row.earnedRevenue, 2) + ' on ' + fmtCompact(row.assumedViews) + ' assumed views' + (dateRange(meta) ? ', ' + dateRange(meta) : '')]);
     }
+    var share = yieldRevenueShare(row, allRows);
+    if (share) rows.push(['Share of total revenue', share + (dealType !== ALL_DEAL_TYPES ? ' of ' + dealType + ' revenue' : '')]);
     return { title: row.dsp, desc: null, sections: [{ rows: rows }] };
   }
 
   var pure = {
     ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, AMBER_AT: AMBER_AT, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
     fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct, orientationText: orientationText,
-    journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, yieldRows: yieldRows, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
+    journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, yieldRows: yieldRows, yieldRevenueShare: yieldRevenueShare, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
     DSP_COLOURS: DSP_COLOURS, ALL_DEAL_TYPES: ALL_DEAL_TYPES, typesById: typesById, missedParts: missedParts,
     displayTypeCard: displayTypeCard, slotValueHover: slotValueHover, allocationHover: allocationHover,
     missedHover: missedHover, yieldHover: yieldHover,
@@ -556,7 +565,7 @@
           h('div', { class: 'sc-track' }, [h('div', { class: 'sc-track-in' }, [bar])]),
           h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(r.effectiveCpm) }), ' eCPM'])
         ]);
-        hoverable(row, function () { return yieldHover(r, d.dealType || ALL_DEAL_TYPES, filters); });
+        hoverable(row, function () { return yieldHover(r, d.dealType || ALL_DEAL_TYPES, filters, d.rows); });
         list.appendChild(row);
       });
       pY.body.appendChild(list);
