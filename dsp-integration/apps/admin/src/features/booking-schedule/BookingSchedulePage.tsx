@@ -484,23 +484,23 @@ export function BookingSchedulePage() {
      Plays per day table, summed over the positions on screen and rolled up to the
      day, week or month of the view. Asked for the whole range, not the table's
      first fortnight. */
-  const totalsQ = useQuery({ queryKey: ['booking-capacity', from, to], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${to}`) })
+  const totalsQ = useQuery({ queryKey: ['booking-capacity', from, to, partnerId ?? ''], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${to}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`) })
   const playTotals = useMemo(() => {
-    if (!totalsQ.data || !Array.isArray(totalsQ.data.positions) || !data) return []
-    const shown = new Set(data.positions.map((p) => p.positionId))
-    const out = new Map<string, { key: string; label: string; total: number; available: number }>()
+    if (!totalsQ.data || !Array.isArray(totalsQ.data.positions)) return []
+    /* Estate capacity: the endpoint applies the DSP filter; the advertiser filter does not apply. */
+    const out = new Map<string, { key: string; label: string; total: number; available: number; first: string }>()
     for (const p of totalsQ.data.positions) {
-      if (!shown.has(p.positionId)) continue
       for (const d of p.days ?? []) {
         const g = view === 'Daily' ? { key: d.date, label: fmt(new Date(d.date), { weekday: 'short', day: 'numeric', month: 'short' }) } : groupOf(view, d.date)
-        const e = out.get(g.key) ?? { ...g, total: 0, available: 0 }
+        const e = out.get(g.key) ?? { ...g, total: 0, available: 0, first: d.date }
+        if (d.date < e.first) e.first = d.date
         e.total += d.totalPlays
         e.available += d.availableToBid
         out.set(g.key, e)
       }
     }
-    return [...out.values()].sort((a, b) => a.key.localeCompare(b.key))
-  }, [totalsQ.data, data, view])
+    return [...out.values()].sort((a, b) => a.first.localeCompare(b.first))
+  }, [totalsQ.data, view])
   /* Every amount here is a booked CPM x assumed views, and the exchange books in
      USD whatever the instance reports in (spec section 4: one instance, one
      currency, no conversion), so never format with company.currency or a

@@ -11,7 +11,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
-import { allPositions, isRealtime, maxPlayLengthSecFor, windowMs, windowStartOf } from '../../domain/positions'
+import { allPositions, effectivePartnerIds, isRealtime, maxPlayLengthSecFor, windowMs, windowStartOf } from '../../domain/positions'
 import { operatingHours, playbackWindowLabel, playsForGroups, screensOf, segmentsTargeted, type ScreenGroup } from '../../domain/dailyCapacity'
 import { rotationSizeOf } from '../../domain/slots'
 import { plannedDirectBookings } from '../../exchange/directDeal'
@@ -20,7 +20,17 @@ import { advertiserSlug, directLabel } from '@ph-dsp/types'
 
 const DAY = 86_400_000
 
-export async function bookingCapacity(ctx: Context, days: Date[]): Promise<BookingCapacity> {
+async function keepForPartner(ctx: Context, all: Awaited<ReturnType<typeof allPositions>>, partnerId: string, partners: Awaited<ReturnType<Context['partners']['list']>>) {
+  const out: typeof all = []
+  for (const p of all) {
+    const allowed = await effectivePartnerIds(ctx, p.def, partners)
+    if (!allowed || allowed.includes(partnerId)) out.push(p)
+  }
+  return out
+}
+
+/* partnerId keeps only the positions that DSP is assigned to; a position open to all DSPs counts for each. */
+export async function bookingCapacity(ctx: Context, days: Date[], partnerId?: string): Promise<BookingCapacity> {
   const company = await ctx.company.get()
   const stores = new Map((await ctx.stores.list()).map((s) => [s.id, s]))
   const partners = await ctx.partners.list()
@@ -30,7 +40,8 @@ export async function bookingCapacity(ctx: Context, days: Date[]): Promise<Booki
   const first = days[0].getTime()
   const last = days[days.length - 1].getTime() + DAY
   const live = (await ctx.reservations.byStatus(TAKEN, new Date(first - 92 * DAY).toISOString(), new Date(last).toISOString())).filter((r) => !r.testMode)
-  const estate = await allPositions(ctx)
+  const everyPosition = await allPositions(ctx)
+  const estate = partnerId ? await keepForPartner(ctx, everyPosition, partnerId, partners) : everyPosition
   const lenOf = new Map<string, number>()
   for (const p of estate) lenOf.set(p.positionId, await windowMs(ctx, p))
   /* A finalised Direct advertiser deal holds every window of its flight, booked by the exchange only a window ahead: its plays are pre-booked too (ticket TWJmiwQpPu9Y4tAUjncC). */
@@ -94,7 +105,7 @@ export async function bookingCapacity(ctx: Context, days: Date[]): Promise<Booki
 }
 
 export const bookingCapacityRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  app.get<{ Querystring: { from?: string; to?: string } }>('/booking-schedule/capacity', async (req) => {
+  app.get<{ Querystring: { from?: string; to?: string; partnerId?: string } }>('/booking-schedule/capacity', async (req) => {
     guards.flagged()
     const today = windowStartOf(ctx.clock(), DAY)
     const from = req.query.from ?? today.toISOString().slice(0, 10)
@@ -105,6 +116,6 @@ export const bookingCapacityRoutes = (ctx: Context, guards: Guards): FastifyPlug
       throw validationFailed([{ field: 'from', reason: 'from and to are dates (YYYY-MM-DD), from ≤ to, at most 92 days apart.' }])
     }
     const days = Array.from({ length: Math.round((b - a) / DAY) + 1 }, (_, i) => new Date(a + i * DAY))
-    return bookingCapacity(ctx, days)
+    return bookingCapacity(ctx, days, req.query.partnerId || undefined)
   })
 }

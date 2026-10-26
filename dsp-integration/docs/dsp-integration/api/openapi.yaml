@@ -1044,6 +1044,7 @@ paths:
       parameters:
         - {name: from, in: query, schema: {type: string, format: date}}
         - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from.'}
+        - {name: partnerId, in: query, schema: {type: string}, description: 'Only the positions this DSP is assigned to (a position open to all DSPs counts for each).'}
       responses:
         '200': {description: Capacity, content: {application/json: {schema: {$ref: '#/components/schemas/BookingCapacity'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
