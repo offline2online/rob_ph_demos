@@ -48,19 +48,17 @@ for (const width of [1163, 390]) {
       assert.equal(await page.textContent('.rd-today-label'), 'Today');
       assert.equal(await page.$$eval('.rd-cols > .rd-today ~ .rd-col', (c) => c.length), 14, '14 booked-ahead bars follow the marker');
       assert.equal(await page.$$eval('.rd-cols > .rd-today ~ .rd-col .rd-seg-fill', (c) => c.length), 0, 'booked-ahead bars carry no earned segments');
-      assert.match(await page.textContent('.rd-legend'), /DV360 · Programmatic guaranteed.*Estimated \(booked ahead, not yet played\)/);
-      assert.equal(await page.$$eval('.rd-legend-item', (c) => c.length), 5);
+      assert.match(await page.textContent('.rd-legend'), /Direct · Direct advertiser.*DV360 · Programmatic guaranteed.*Estimated \(booked ahead, not yet played\)/);
+      assert.equal(await page.$$eval('.rd-legend-item', (c) => c.length), 6, 'Direct (1) + DV360 (4) + the estimated entry');
       assert.equal(await page.textContent('.rd-total'), (await page.textContent('.rd-total')).replace(/ · .*/, ''), 'the total is earned only');
       const est = await page.$eval('.rd-seg-est', (e) => { const s = getComputedStyle(e); return [s.backgroundColor, s.borderTopColor]; });
       assert.deepEqual(est, ['rgb(238, 244, 250)', 'rgb(122, 167, 214)']);
 
       await page.click('.rd-chip:has-text("The Trade Desk")');
       await page.click('.rd-chip:has-text("Amazon DSP")');
-      await page.waitForFunction(() => document.querySelectorAll('.rd-legend-item').length === 13);
-      assert.match(await page.textContent('.rd-legend'), /The Trade Desk · Preferred deal/);
-      // Direct is a source beside the DSPs: one chip, one legend entry (its only deal type), its own colour.
-      await page.click('.rd-chip:has-text("Direct")');
       await page.waitForFunction(() => document.querySelectorAll('.rd-legend-item').length === 14);
+      assert.match(await page.textContent('.rd-legend'), /The Trade Desk · Preferred deal/);
+      // Direct is a source beside the DSPs and is on by default: one chip, one legend entry (its only deal type), its own colour.
       assert.match(await page.textContent('.rd-legend'), /Direct · Direct advertiser/);
       assert.ok((await page.$$eval('.rd-seg-fill', (e) => e.map((x) => getComputedStyle(x).backgroundColor))).includes('rgb(107, 63, 160)'), 'Direct draws in its purple');
       const fills = await page.$$eval('.rd-seg-fill', (e) => new Set(e.map((x) => getComputedStyle(x).backgroundColor)).size);

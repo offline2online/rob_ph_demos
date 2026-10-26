@@ -15,14 +15,16 @@ test('display types read in shopper-journey order from the back end’s iabZone'
   assert.deepStrictEqual(SC.journeyOrder([{ id: 'x' }, { id: 'window' }], (r) => ({ x: { iabZone: undefined }, window: types.window })[r.id]).map((r) => r.id), ['window', 'x']);
 });
 
-test('display type card shows the description and labelled averages only; facts about the display type are not repeated in the hover', async () => {
+test('display type card shows the description, operating hours and labelled averages only; other facts are not repeated in the hover', async () => {
   const types = await typesP;
   const full = SC.displayTypeCard(types.window, RANGE);
-  ['Connected displays', 'IAB store zone', 'Operating hours', 'Touch Point', 'Display canvas size (resolution)', 'Display orientation', 'Creative formats'].forEach((k) => assert.strictEqual(val(full, k), undefined, k));
+  ['Connected displays', 'IAB store zone', 'Touch Point', 'Display canvas size (resolution)', 'Display orientation', 'Creative formats'].forEach((k) => assert.strictEqual(val(full, k), undefined, k));
+  assert.strictEqual(val(full, 'Operating hours'), '24 hours');
   assert.strictEqual(val(full, 'Share of loop time'), '6s advertiser slot ÷ 60s loop = 10%');
   assert.match(text(full), /Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct\./);
   const sparse = SC.displayTypeCard({ id: 's', name: 'Sparse', iabZone: 'Checkout', operatingHours: '08:00-22:00' }, RANGE);
-  assert.deepStrictEqual(sparse.sections, []);
+  assert.deepStrictEqual(sparse.sections, []); // a specific time is never shown
+  assert.deepStrictEqual(SC.displayTypeCard({ id: 's', name: 'S', operatingHours: 'Custom hours' }, RANGE).sections, [{ rows: [['Operating hours', 'Custom hours']], lead: true }]);
   ['Not set', '90°', '180°', '270°'].forEach((o) => assert.strictEqual(SC.orientationText(o), o));
   assert.strictEqual(SC.orientationText('45°'), 'Not set');
 });
@@ -177,6 +179,21 @@ test('the Yield and Missed revenue ⓘ carry the VAC-d explanation and the worke
     assert.match(SC.TIPS[k], /VAC-d/);
     assert.match(SC.TIPS[k], /Example: 4,000 footfall × 0\.5 visibility × 1\/10 of the loop = 200/);
   }
+});
+
+test('every display type hover carries the operating hours', async () => {
+  const types = await typesP;
+  const w = types.window, q = types.queue || Object.values(types).find((t) => t.operatingHours === 'Store opening hours');
+  assert.strictEqual(q.operatingHours, 'Store opening hours');
+  const sv = (await get('/slot-value')).rows.find((r) => r.id === 'window');
+  const sa = (await get('/slot-allocation')).rows.find((r) => r.id === 'window');
+  const mr = (await get('/missed-revenue')).rows.find((r) => r.id === 'window');
+  const hr = (await get('/hourly')).rows.find((r) => r.id === 'window');
+  for (const m of [SC.slotValueHover(sv, RANGE), SC.allocationHover(sa, 'loop', w), SC.missedHover(mr, w, RANGE, false), SC.hourlyHover(hr, hr.hours[9], w, RANGE)]) {
+    assert.strictEqual(val(m, 'Operating hours'), '24 hours', m.title);
+  }
+  assert.strictEqual(SC.hoursText('Custom hours'), 'Custom hours');
+  assert.strictEqual(SC.hoursText('08:00-22:00'), null);
 });
 
 test('no hover names a specific opening time', async () => {
