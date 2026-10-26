@@ -14,7 +14,6 @@
 .rd-root :focus-visible { outline: 2px solid var(--rd-primary); outline-offset: 2px; border-radius: 4px; }
 .rd-controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
 .rd-chips-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.rd-chips-label { color: var(--rd-muted); }
 .rd-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .rd-chip { display: inline-flex; align-items: center; gap: 6px; }
 .rd-chip { font: inherit; height: 32px; padding: 0 12px; border: 1px solid #d9d9d9; border-radius: 9999px; background: #fff; color: var(--rd-text); cursor: pointer; }

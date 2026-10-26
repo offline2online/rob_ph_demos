@@ -10,8 +10,8 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  // The sources of revenue: the connected DSPs, then Direct (the retailer's own direct advertisers, billed through PH with no DSP).
-  var DSP_ORDER = ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct'];
+  // The sources of revenue: Direct first (the retailer's own direct advertisers, billed through PH with no DSP), then the connected DSPs.
+  var DSP_ORDER = ['Direct', 'DV360', 'The Trade Desk', 'Amazon DSP'];
   var DIRECT = 'Direct';
   var DIRECT_TYPE = 'Direct advertiser';
   var DSP_DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
@@ -221,7 +221,7 @@
     if (typeof document === 'undefined') throw new Error('RevenueDeals.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = {};
-    var sel = { dsps: ['DV360'], dealType: '', granularity: 'day', dealsType: '', dealsSort: null };
+    var sel = { dsps: ['Direct', 'DV360'], dealType: '', granularity: 'day', dealsType: '', dealsSort: null };
     var lastDeals = null;
     var seq = { revenue: 0, deals: 0 };
 
@@ -283,7 +283,7 @@
 
     // ----- Revenue -----
     var chips = h('div', { class: 'rd-chips', role: 'group', 'aria-label': 'DSP or direct' });
-    var chipsRow = h('div', { class: 'rd-chips-row' }, [h('span', { class: 'rd-chips-label', text: 'DSP' }), chips]);
+    var chipsRow = h('div', { class: 'rd-chips-row' }, [chips]);
     var seg = h('div', { class: 'rd-seg', role: 'group', 'aria-label': 'Granularity' });
     var revType = h('span', { class: 'rd-ctl' });
     var revControls = h('div', { class: 'rd-controls' }, [chipsRow, revType, seg]);
