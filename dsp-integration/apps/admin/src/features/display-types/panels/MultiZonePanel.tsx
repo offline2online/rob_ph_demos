@@ -67,7 +67,7 @@ export function MultiZonePanel({ d, update, open, onToggle, playlistOptions, zon
                 <span className="h-2.5 w-2.5 rounded-sm" style={{ background: ZONE_COLOURS[i % 6] }} />
                 <Input size="small" aria-label="Zone name" value={z.name} onChange={(e) => setZone(i, { name: e.target.value })} className="flex-1" />
                 {zones.length > 1 && (
-                  <Button type="text" size="small" aria-label={`Remove ${z.name}`} icon={<Icon name="close" size={16} style={{ color: T.muted }} />} onClick={() => setZones(zones.filter((_, k) => k !== i))} />
+                  <Button type="text" size="small" danger aria-label={`Remove ${z.name}`} icon={<Icon name="delete" size={15} />} onClick={() => setZones(zones.filter((_, k) => k !== i))} />
                 )}
               </div>
               <div className="mb-2 grid grid-cols-4 gap-1.5">

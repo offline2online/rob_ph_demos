@@ -201,9 +201,9 @@ const ActionsCell = ({ data, context }: P) =>
     <span className="inline-flex gap-1">
       {data.status === 'shared' && data.dealType !== 'direct' && <Button type="text" size="small" aria-label={`Deal sheet for ${data.name}`} icon={<Icon name="ios_share" size={15} />} onClick={() => context.current.onShare(data)} />}
       <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
-      {/* Delete is for a deal that was never finalised and shared (a draft, either kind); anything shared can only be archived. */}
-      {data.status === 'draft' && <Button type="text" size="small" aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />}
       <Button type="text" size="small" aria-label={`Archive ${data.name}`} icon={<Icon name="archive" size={15} />} onClick={() => context.current.onArchive(data)} />
+      {/* Delete (red, always the rightmost icon) is for a deal that was never finalised and shared (a draft, either kind); anything shared can only be archived. */}
+      {data.status === 'draft' && <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />}
     </span>
   ) : null
 
