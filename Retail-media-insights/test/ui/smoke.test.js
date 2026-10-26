@@ -84,7 +84,7 @@ for (const width of [1163, 390]) {
       assert.match(await page.textContent('.dc-total th'), /^Total \(top 10\)$/, 'ten of the eleven advertisers by default');
       await page.click('.dc-btn:has-text("Show all")');
       await page.waitForFunction(() => /^Total$/.test((document.querySelector('.dc-total th') || {}).textContent || ''));
-      const adv = money(await page.textContent('.dc-total td:nth-child(3)'));
+      const adv = money(await page.textContent('.dc-total td:nth-child(2)'));
       assert.equal(Math.round(chart), Math.round(earned), 'Revenue chart total = summary earned');
       assert.equal(Math.round(adv), Math.round(earned), 'Advertisers total = summary earned');
 
@@ -146,7 +146,7 @@ test('changing the Store and applying updates every module; resetting hides Rese
     assert.equal(await page.isVisible('#reset'), false);
     assert.equal(await page.isVisible('#apply'), false);
     const before = await page.getAttribute('[data-tile="earned"] .val', 'data-value');
-    const beforeAdv = await page.textContent('.dc-total td:nth-child(3)');
+    const beforeAdv = await page.textContent('.dc-total td:nth-child(2)');
     await page.selectOption('#f-store', 'store-1');
     assert.equal(await page.isVisible('#apply'), true);
     assert.equal(await page.isVisible('#reset'), false, 'Reset only once a non-default filter is applied');
@@ -155,7 +155,7 @@ test('changing the Store and applying updates every module; resetting hides Rese
     await page.selectOption('#f-store', 'store-1');
     await page.click('#apply');
     await page.waitForFunction((b) => (document.querySelector('[data-tile="earned"] .val') || { getAttribute() {} }).getAttribute('data-value') !== b, before);
-    await page.waitForFunction((b) => (document.querySelector('.dc-total td:nth-child(3)') || {}).textContent !== b, beforeAdv);
+    await page.waitForFunction((b) => (document.querySelector('.dc-total td:nth-child(2)') || {}).textContent !== b, beforeAdv);
     await page.waitForSelector('.rd-total');
     assert.equal(await page.isVisible('#reset'), true);
     assert.equal(await page.isVisible('#apply'), false);
