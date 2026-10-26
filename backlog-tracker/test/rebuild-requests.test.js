@@ -63,9 +63,9 @@ test("a card with no request is left alone", () => {
 });
 test("the note names when it was requested, the error if recorded, and what to do", () => {
   const withErr = rebuildNeverStartedNote(card({ rebuildRequestedAt: "2026-10-19T04:19:00.000Z", lastFire: { error: "Routine fire endpoint responded with status 429" } }));
-  assert.strictEqual(withErr, "The automatic rebuild requested at 2026-10-19T04:19:00.000Z never started (Routine fire endpoint responded with status 429). Click Ready for Dev to build it again.");
+  assert.strictEqual(withErr, "The automatic rebuild requested at 2026-10-19T04:19:00.000Z never started (Routine fire endpoint responded with status 429), after 2 more requests. Flagged as waiting on your answer: answer on the card (Answer button) and it is built again.");
   const bare = rebuildNeverStartedNote(card({ rebuildRequestedAt: "2026-10-19T04:19:00.000Z" }));
-  assert.strictEqual(bare, "The automatic rebuild requested at 2026-10-19T04:19:00.000Z never started. Click Ready for Dev to build it again.");
+  assert.strictEqual(bare, "The automatic rebuild requested at 2026-10-19T04:19:00.000Z never started, after 2 more requests. Flagged as waiting on your answer: answer on the card (Answer button) and it is built again.");
 });
 test("a failed fire marked for retry is re-requested only once its time has come", () => {
   const retrying = (nextAttemptAt, over = {}) => card({ lastFire: { status: "retrying", nextAttemptAt }, ...over });
@@ -74,6 +74,15 @@ test("a failed fire marked for retry is re-requested only once its time has come
   assert.strictEqual(fireRetryDue(retrying(iso(1), { status: "ready-for-testing" }), NOW), false);
   assert.strictEqual(fireRetryDue(retrying(iso(1), { blocked: { reason: "waiting-on-input" } }), NOW), false);
   assert.strictEqual(fireRetryDue(card({ lastFire: { status: "failed", nextAttemptAt: null } }), NOW), false);
+});
+
+test("a build that never ran is flagged waiting-on-input with the reason, so the board shows an Answer button", () => {
+  const { buildNeverRanBlock } = require("../scripts/run-backlog-automation.js");
+  const b = buildNeverRanBlock("two sessions never reported back", "2026-10-26T01:00:00.000Z");
+  assert.strictEqual(b.reason, "waiting-on-input");
+  assert.strictEqual(b.setBy, "self-heal");
+  assert.strictEqual(b.setAt, "2026-10-26T01:00:00.000Z");
+  assert.ok(b.note.startsWith("two sessions never reported back") && /Answer button/.test(b.note));
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

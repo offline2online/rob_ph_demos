@@ -482,6 +482,13 @@ busy. Now:
   a deploy held on a duplicate after the PR's run had passed (PR #474).
   `gateRunFor` takes the newest completed run on the head commit when the
   newest run is still going and that one passed.
+- **When a build can't be started at all, the card asks for an answer**: a
+  rebuild that never started after its retries (`sweepRebuildRequests`), or
+  two build sessions that never reported back (`sweepSilentBuildSessions`),
+  now set `blocked` waiting-on-input (`buildNeverRanBlock`) instead of a
+  note asking for a click, so the card shows under "waiting on your answer"
+  with the reason and an Answer button that builds it again. The retry
+  counters reset once a rebuild starts or the ticket is flagged.
 - **Build sessions run what CI runs**: `npm run test:offline` in
   `backlog-tracker/test` is the console tests without the emulator, kept
   equal to CI by `ci-coverage.test.js`.

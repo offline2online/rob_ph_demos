@@ -958,7 +958,15 @@ function silentBuildSessionAction(item, now = Date.now()) {
 function rebuildNeverStartedNote(item) {
   const err = item.lastFire && item.lastFire.error;
   return `The automatic rebuild requested at ${new Date(timeMs(item.rebuildRequestedAt)).toISOString()} never started` +
-    `${err ? ` (${err})` : ""}. Click Ready for Dev to build it again.`;
+    `${err ? ` (${err})` : ""}, after ${REBUILD_START_RETRIES} more requests. Flagged as waiting on your answer: answer on the card (Answer button) and it is built again.`;
+}
+// The flag a ticket gets when the automation has run out of ways to start
+// its build (a fire that never started, sessions that never reported): on the
+// board it shows under "waiting on your answer" with the reason and an Answer
+// button that builds it again, instead of a note asking for a click nobody
+// sees. Pure.
+function buildNeverRanBlock(text, nowIso = new Date().toISOString()) {
+  return { reason: "waiting-on-input", note: `${text}\n\nAnswer on the card (Answer button) — anything the build should know, or just "try again" — and it is built again.`, setBy: "self-heal", setAt: nowIso };
 }
 // A fire the function could not make (429 or 5xx) is marked "retrying" with
 // the time to try again; the sweep re-requests it once that time has passed.
@@ -985,11 +993,13 @@ async function sweepRebuildRequests() {
         queueBuildRequest(project, item.id); // fresh: restarts the card's clock
         console.log(`[rebuild] ${item.id}: requested rebuild never started — asking again (${n}/${REBUILD_START_RETRIES})`);
       } else if (outcome === "note") {
-        const notes = await appendNote(item, rebuildNeverStartedNote(item));
-        await patchItem(item.id, { rebuildRequestedAt: null, notes, updatedAt: new Date().toISOString() });
-        console.log(`[rebuild] ${item.id}: requested rebuild never started — noted`);
+        const text = rebuildNeverStartedNote(item);
+        const notes = await appendNote(item, text);
+        await patchItem(item.id, { rebuildRequestedAt: null, rebuildStartRetries: 0, blocked: buildNeverRanBlock(text), notes, updatedAt: new Date().toISOString() });
+        console.log(`[rebuild] ${item.id}: requested rebuild never started — flagged for an answer`);
       } else {
-        await patchItem(item.id, { rebuildRequestedAt: null });
+        // Answered: the next request gets its own retries.
+        await patchItem(item.id, { rebuildRequestedAt: null, ...(item.rebuildStartRetries ? { rebuildStartRetries: 0 } : {}) });
       }
     } catch (err) {
       console.error(`[rebuild] ${item.id}: ${err.message}`);
@@ -1107,8 +1117,12 @@ async function sweepSilentBuildSessions(now = Date.now()) {
         queueBuildRequest(project, item.id);
         console.log(`[silent-build] ${item.id}: session never reported — rebuild requested`);
       } else {
-        const notes = await appendNote(item, `The build session never reported back, and neither did its second attempt. Marked as errored so the project is not left waiting on it; click Ready for Dev to build it again.`);
-        await patchItem(item.id, { buildSession: { status: "error", errorMessage: "Build session never reported back", finishedAt: new Date(now).toISOString() }, notes, updatedAt: new Date().toISOString() });
+        const text = `The build session never reported back, and neither did its second attempt (last started ${new Date(timeMs(item.lastFire.at)).toISOString()}${item.lastFire.sessionUrl ? `, ${item.lastFire.sessionUrl}` : ""}). Marked as errored so the project is not left waiting on it.`;
+        const notes = await appendNote(item, text);
+        await patchItem(item.id, {
+          buildSession: { status: "error", errorMessage: "Build session never reported back", finishedAt: new Date(now).toISOString() },
+          buildSessionRetries: 0, blocked: buildNeverRanBlock(text, new Date(now).toISOString()), notes, updatedAt: new Date().toISOString(),
+        });
         console.log(`[silent-build] ${item.id}: session never reported after a retry — marked errored`);
       }
     } catch (err) {
@@ -6925,7 +6939,7 @@ if (require.main === module) {
 // this module loads if not guarded — see the require.main check).
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
-  selfHealPlan, escalationBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
+  selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
   // test/notes-append.test.js — notes are only ever appended, atomically
