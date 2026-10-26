@@ -42,8 +42,9 @@ Private auction and preferred deal are greyed out and not demoed; targeting on d
 ## A. The table (both flows land here)
 
 1. Open Upcoming Campaign Approval. **Expect:** one row per campaign; columns
-   Activation, Advertiser, Received, Status, **Campaign name**, **Touch
-   points**, Creative ID, DSP, Localised variables, Personalised variables,
+   Status, **Advertiser / Campaign name** (advertiser, campaign beneath it;
+   hover the advertiser for the DSP; no separate DSP column), **Touch
+   points**, Creative ID, Localised variables, Personalised variables,
    Last used; no *No. of campaigns* column; rows grouped by advertiser A–Z.
 2. Hover a campaign name. **Expect:** a tooltip with advertiser, DSP, touch
    points, pricing and variables. Click it: the campaign page opens.

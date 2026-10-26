@@ -244,12 +244,13 @@ const RISK_TONE = {
 /* The hover card (ticket 53EvxhdKrShqDt1OIFMq, 23 Oct 2026): fixed, data-driven lines only, in this order: Default, Localised,
    Personalised, Booking value. Default is Approved / Awaiting approval / No creative (an unapproved tile at risk, red or orange,
    adds the booked window's start date); Localised and Personalised read "X of Y approved" and are hidden when nothing was submitted.
-   An advertiser with no campaign behind the slot reads "No campaigns submitted by this advertiser yet" and shows no counters. */
-function TileCard({ booking, money, start, onViewAll }: { booking: Booking; money: (n: number) => string; start?: string; onViewAll?: () => void }) {
+   An advertiser with no campaign behind the slot reads "No campaigns submitted by this advertiser yet for <display type>" and shows no counters.
+   The link wraps inside the card (ticket 0pVGzIDFxivFAexFpi10): an antd link button is nowrap by default and ran out of the card. */
+function TileCard({ booking, money, start, slot, onViewAll }: { booking: Booking; money: (n: number) => string; start?: string; slot?: string; onViewAll?: () => void }) {
   const a = booking.approval
   const noCampaigns = !booking.campaignId
   let defaultLine: string | null = null
-  if (noCampaigns) defaultLine = 'No campaigns submitted by this advertiser yet'
+  if (noCampaigns) defaultLine = slot ? `No campaigns submitted by this advertiser yet for ${slot}` : 'No campaigns submitted by this advertiser yet for this slot'
   else if (!a) defaultLine = 'No creative'
   else if (a.defaultApproved) defaultLine = 'Approved'
   else {
@@ -265,15 +266,15 @@ function TileCard({ booking, money, start, onViewAll }: { booking: Booking; mone
   }
   rows.push(['Booking value', money(booking.bookedRevenue)])
   return (
-    <div style={{ minWidth: 220, fontSize: 12 }}>
+    <div style={{ minWidth: 220, maxWidth: 280, fontSize: 12 }}>
       <div style={{ fontWeight: 600, marginBottom: 6 }}>{booking.advertiserName}</div>
       {rows.map(([label, value]) => (
         <div key={label} className="flex justify-between gap-4" style={{ lineHeight: '20px' }}>
           <span style={{ opacity: 0.75 }}>{label}</span>
-          <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{value}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{value}</span>
         </div>
       ))}
-      {onViewAll && <Button size="small" type="link" style={{ padding: 0, marginTop: 6 }} onClick={onViewAll}>View all campaigns from this advertiser</Button>}
+      {onViewAll && <Button size="small" type="link" style={{ padding: 0, marginTop: 6, height: 'auto', whiteSpace: 'normal', textAlign: 'left' }} onClick={onViewAll}>View all campaigns from this advertiser</Button>}
     </div>
   )
 }
@@ -302,7 +303,7 @@ function BookingTile({ booking, money, slot, dimmed, start }: { booking: Booking
   /* Another advertiser's booking while the schedule is filtered to one: still named, greyed out. */
   const colour = dimmed ? T.muted : tone?.colour ?? BOOKED.colour
   return (
-    <Tip title={<TileCard booking={booking} money={money} start={tone && booking.approval?.defaultRisk !== 'secured' ? start : undefined} onViewAll={byAdvertiser} />}>
+    <Tip title={<TileCard booking={booking} money={money} start={tone && booking.approval?.defaultRisk !== 'secured' ? start : undefined} slot={slot} onViewAll={byAdvertiser} />}>
       <div className={`flex w-full min-w-0 flex-col gap-0.5 rounded px-1 ${touch ? 'py-1.5' : 'py-0.5'}`} style={{ background: dimmed ? T.surfaceAlt : tone?.bg ?? BOOKED.bg, borderLeft: `3px solid ${colour}`, opacity: dimmed ? 0.7 : undefined, cursor: tileOpen ? 'pointer' : undefined, minHeight: touch ? 64 : undefined }}
         {...(tileOpen ? { role: 'link', tabIndex: 0, 'aria-label': `Open ${booking.advertiserName} in Campaign Approval`, onClick: tileOpen, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tileOpen() } } } : {})}>
         <div className="flex items-center gap-1 w-full min-w-0" style={touch ? { minHeight: 32 } : undefined}
@@ -479,6 +480,27 @@ export function BookingSchedulePage() {
   /* Plays per day reads the first fortnight of the range: a column per day. */
   const capacityTo = dayjs(from).add(13, 'day').isBefore(dayjs(to)) ? dayjs(from).add(13, 'day').format('YYYY-MM-DD') : to
   const capacity = useQuery({ queryKey: ['booking-capacity', from, capacityTo], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${capacityTo}`) })
+  /* The filter-row totals (ticket UpXXSjStQvktD3rqWNOM): the same per-day plays as the
+     Plays per day table, summed over the positions on screen and rolled up to the
+     day, week or month of the view. Asked for the whole range, not the table's
+     first fortnight. */
+  const totalsQ = useQuery({ queryKey: ['booking-capacity', from, to], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${to}`) })
+  const playTotals = useMemo(() => {
+    if (!totalsQ.data || !Array.isArray(totalsQ.data.positions) || !data) return []
+    const shown = new Set(data.positions.map((p) => p.positionId))
+    const out = new Map<string, { key: string; label: string; total: number; available: number }>()
+    for (const p of totalsQ.data.positions) {
+      if (!shown.has(p.positionId)) continue
+      for (const d of p.days ?? []) {
+        const g = view === 'Daily' ? { key: d.date, label: fmt(new Date(d.date), { weekday: 'short', day: 'numeric', month: 'short' }) } : groupOf(view, d.date)
+        const e = out.get(g.key) ?? { ...g, total: 0, available: 0 }
+        e.total += d.totalPlays
+        e.available += d.availableToBid
+        out.set(g.key, e)
+      }
+    }
+    return [...out.values()].sort((a, b) => a.key.localeCompare(b.key))
+  }, [totalsQ.data, data, view])
   /* Every amount here is a booked CPM x assumed views, and the exchange books in
      USD whatever the instance reports in (spec section 4: one instance, one
      currency, no conversion), so never format with company.currency or a
@@ -515,33 +537,36 @@ export function BookingSchedulePage() {
     return [...new Map([...chosen.flatMap((d) => d.advertisers), ...direct].map((a) => [a.advertiserId, a.name] as const)).entries()]
       .map(([value, label]) => ({ value, label }))
   }, [dsps, partnerId, data?.directAdvertisers])
-  const setFilter = (key: 'advertiserId' | 'partnerId', value?: string, currentAdvertiser?: string) => {
-    const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
-    else next.delete(key)
-    /* Changing the DSP drops an advertiser it doesn't bring. */
-    if (key === 'partnerId' && currentAdvertiser && !(dsps.find((d) => d.partnerId === value)?.advertisers ?? []).some((a) => a.advertiserId === currentAdvertiser)) {
-      if (value) next.delete('advertiserId')
-    }
-    setParams(next, { replace: true })
-  }
-
   const columns = useMemo<ColDef<Row>[]>(() => [
-    /* Advertiser, then the DSP it came in via, then Position (ticket, 21 Sep —
-       previously Position, DSP, Advertiser). Filtered like every other table:
-       a funnel in the filter row. The server applies these two, so they
+    /* Advertiser / DSP, then Position. Filtered like every other table:
+       a funnel in the filter row. The server applies these, so they
        narrow every window, not only the rows here. */
     {
-      headerName: 'Advertiser', width: 160, minWidth: 140, pinned: 'left', cellStyle: { color: T.muted },
-      valueGetter: (p) => (p.data ? advertisersIn(p.data.position).join(', ') || '—' : ''),
-      ...externalSetColumn<Row>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
-        (name) => setFilter('advertiserId', advertiserOptions.find((a) => a.label === name)?.value)),
-    },
-    {
-      headerName: 'DSP', width: 175, minWidth: 150, pinned: 'left', cellStyle: { color: T.muted },
-      valueGetter: (p) => (p.data ? partnersIn(p.data.position).join(', ') || 'Any connected DSP' : ''),
-      ...externalSetColumn<Row>('DSP', dsps.map((d) => d.name), dsps.find((d) => d.partnerId === partnerId)?.name,
-        (name) => setFilter('partnerId', dsps.find((d) => d.name === name)?.partnerId, advertiserId)),
+      /* One column for both (ticket hhdGMEST6sCwXC4Cw5yR, 25 Oct 2026): the advertiser
+         when the row has one — hover for the DSP(s) that brought it — otherwise the
+         DSP(s) the slot is assigned to. The funnel offers DSPs and advertisers together. */
+      headerName: 'Advertiser / DSP', width: 200, minWidth: 160, pinned: 'left', cellStyle: { color: T.muted },
+      valueGetter: (p) => {
+        if (!p.data) return ''
+        const advertisers = advertisersIn(p.data.position)
+        return advertisers.length ? advertisers.join(', ') : p.data.position.partnerNames.join(', ') || '—'
+      },
+      cellRenderer: (p: { data?: Row; value?: string }) => {
+        const dsps = p.data && advertisersIn(p.data.position).length ? partnersIn(p.data.position).join(', ') : ''
+        return dsps ? <Tip title={`DSP: ${dsps}`}><span>{p.value}</span></Tip> : <span>{p.value}</span>
+      },
+      ...externalSetColumn<Row>('Advertiser / DSP', [...new Set([...dsps.map((d) => d.name), ...advertiserOptions.map((a) => a.label)])],
+        advertiserOptions.find((a) => a.value === advertiserId)?.label ?? dsps.find((d) => d.partnerId === partnerId)?.name,
+        (name) => {
+          const dsp = dsps.find((d) => d.name === name)
+          const advertiser = advertiserOptions.find((a) => a.label === name)
+          const next = new URLSearchParams(params)
+          next.delete('advertiserId')
+          next.delete('partnerId')
+          if (advertiser) next.set('advertiserId', advertiser.value)
+          else if (dsp) next.set('partnerId', dsp.partnerId)
+          setParams(next, { replace: true })
+        }),
     },
     {
       /* Wider than before (ticket "remove the Displays column … show that
@@ -621,6 +646,17 @@ export function BookingSchedulePage() {
           <DatePicker.RangePicker aria-label="Dates" value={[dayjs(from), dayjs(to)]} allowClear={false} disabled={isSnapshotDemo()}
             onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
         </Tip>
+        {playTotals.length > 0 && (
+          <div className="flex w-full flex-wrap gap-2" aria-label={`Plays and plays available to bid, per ${view === 'Daily' ? 'day' : view === 'Weekly' ? 'week' : 'month'}`}>
+            {playTotals.map((t) => (
+              <div key={t.key} style={{ fontSize: 11.5, border: `1px solid ${T.borderSubtle}`, borderRadius: 6, padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                <div style={{ color: T.micro, fontWeight: 600 }}>{t.label}</div>
+                <span style={{ fontWeight: 600 }}>{plays(t.total)} plays</span>
+                <span style={{ color: T.success }}> · {plays(t.available)} available to bid</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {schedule.isError && <Alert className="mb-4" type="error" showIcon message="The booking schedule couldn’t be loaded." />}
