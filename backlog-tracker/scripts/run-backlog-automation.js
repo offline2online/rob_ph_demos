@@ -4425,6 +4425,60 @@ async function processApplyPatch(item) {
 // only rewinds work that has not shipped yet.
 // The commit on HEAD's history after `sha` whose message says it reverts `sha`
 // ("This reverts commit <sha>.", what `git revert` writes), or null.
+// ── A revert that only collides in a document resolves itself ────────────
+// Taking a ticket off a train reverts its commit on top of the tickets that
+// landed after it. Their code rarely overlaps, but they all add a line to the
+// same dated list in REQUIREMENTS.md or README.md, so the revert conflicted
+// there and the train waited for a person to fix the branch (UpXXSjSt, 26 Oct
+// 2026: BookingSchedulePage.tsx reverted cleanly, REQUIREMENTS.md did not).
+// In each conflict hunk the revert side ("theirs") must hold only lines the
+// current side ("ours") also has — the revert is only taking lines away — and
+// the result is the current side minus the lines the reverted commit added.
+// Anything else, and any file that isn't Markdown, is left for a person.
+// Pure, for test/self-heal.test.js. Returns the resolved text, or null.
+function resolveRevertDocConflict(text, addedLines) {
+  const added = new Set((addedLines || []).map((l) => l.replace(/\s+$/, "")));
+  const out = [];
+  const lines = String(text).split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith("<<<<<<< ")) { out.push(lines[i]); continue; }
+    const ours = [], theirs = [];
+    let side = ours, j = i + 1;
+    for (; j < lines.length && !lines[j].startsWith(">>>>>>> "); j++) {
+      if (lines[j].startsWith("||||||| ")) { side = null; continue; }
+      if (lines[j] === "=======") { side = theirs; continue; }
+      if (side) side.push(lines[j]);
+    }
+    if (j >= lines.length) return null;
+    const norm = (l) => l.replace(/\s+$/, "");
+    const oursSet = new Set(ours.map(norm));
+    if (!theirs.every((l) => !norm(l) || oursSet.has(norm(l)))) return null;
+    const kept = ours.filter((l) => !added.has(norm(l)) || theirs.some((t) => norm(t) === norm(l)));
+    if (kept.length === ours.length) return null; // nothing of the reverted commit in it: not this shape
+    out.push(...kept);
+    i = j;
+  }
+  return out.join("\n");
+}
+function tryAutoResolveRevertConflict(conflicted, sha) {
+  if (!conflicted.length || !conflicted.every((p) => /\.md$/i.test(p))) return { resolved: false };
+  const resolved = [];
+  for (const p of conflicted) {
+    let added = [];
+    try {
+      added = run("git", ["show", "--format=", sha, "--", p], { maxBuffer: 64 * 1024 * 1024 })
+        .split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).map((l) => l.slice(1));
+    } catch { return { resolved: false }; }
+    const file = path.join(process.cwd(), p);
+    const text = resolveRevertDocConflict(fs.readFileSync(file, "utf8"), added);
+    if (text === null) return { resolved: false };
+    fs.writeFileSync(file, text);
+    resolved.push(p);
+  }
+  run("git", ["add", "--", ...resolved]);
+  return { resolved: true, paths: resolved };
+}
+
 function revertCommitFor(sha) {
   try {
     const out = run("git", ["log", "--format=%H", "--fixed-strings", `--grep=This reverts commit ${sha}`, `${sha}..HEAD`]);
@@ -4509,8 +4563,17 @@ async function processRevertFromTrain(item) {
     }
     const mainline = parentCount(sha) >= 2 ? ["-m", "1"] : [];
     try {
-      run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
-        "revert", "--no-edit", ...mainline, sha]);
+      try {
+        run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+          "revert", "--no-edit", ...mainline, sha]);
+      } catch (err) {
+        // Only a dated list in a document collided: finish the revert.
+        const docs = tryAutoResolveRevertConflict(conflictedPaths(), sha);
+        if (!docs.resolved) throw err;
+        run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+          "-c", "core.editor=true", "revert", "--continue"]);
+        console.log(`[train-revert] ${item.id}: revert of ${sha.slice(0, 7)} collided only in ${docs.paths.join(", ")} — kept the later tickets' lines, dropped this one's`);
+      }
       reverted.push(headSha());
       revertedOriginals.push(sha);
     } catch (err) {
@@ -6797,6 +6860,7 @@ if (require.main === module) {
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   selfHealPlan, escalationBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
+  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain,
   closeNotifyRoutines,
   // test/notes-append.test.js — notes are only ever appended, atomically
   notesCommitWrite, appendNote, patchItem,

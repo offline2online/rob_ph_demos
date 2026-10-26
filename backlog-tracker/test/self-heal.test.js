@@ -245,6 +245,44 @@ async function test(name, fn) {
     assert.strictEqual(card("c1").status, "ready-for-testing");
   });
 
+  await test("resolveRevertDocConflict: drops the reverted ticket's lines, keeps the later ones, refuses anything else", async () => {
+    const hunk = (ours, theirs) => ["# Log", "<<<<<<< HEAD", ...ours, "=======", ...theirs, ">>>>>>> parent of 457b2b0 (x)", "tail"].join("\n");
+    assert.strictEqual(auto.resolveRevertDocConflict(hunk(["- later ticket", "- reverted ticket"], []), ["- reverted ticket"]), "# Log\n- later ticket\ntail");
+    assert.strictEqual(auto.resolveRevertDocConflict(hunk(["- later", "- reverted", "- older"], ["- older"]), ["- reverted"]), "# Log\n- later\n- older\ntail");
+    assert.strictEqual(auto.resolveRevertDocConflict(hunk(["- later"], ["- something else"]), ["- reverted"]), null, "the revert side brings back text the current side lacks");
+    assert.strictEqual(auto.resolveRevertDocConflict(hunk(["- later"], []), ["- reverted"]), null, "nothing of the reverted commit in the hunk");
+    assert.strictEqual(auto.resolveRevertDocConflict("<<<<<<< HEAD\n- a\n=======\n", ["- a"]), null, "unterminated");
+  });
+
+  await test("a revert that collides only in REQUIREMENTS.md completes in a real repository; one in code does not", async () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "revert-doc-"));
+    const git = (...a) => require("child_process").execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    const write = (f, t) => { fs.mkdirSync(path.dirname(path.join(repo, f)), { recursive: true }); fs.writeFileSync(path.join(repo, f), t); };
+    git("init", "-q", "-b", "main");
+    write("REQUIREMENTS.md", "# Changes\n- base\n"); write("app.js", "a\nb\nc\n");
+    git("add", "-A"); git("commit", "-qm", "base");
+    write("REQUIREMENTS.md", "# Changes\n- base\n- ticket one\n"); write("app.js", "a\nONE\nb\nc\n");
+    git("commit", "-qam", "one"); const one = git("rev-parse", "HEAD");
+    write("REQUIREMENTS.md", "# Changes\n- base\n- ticket one\n- ticket two\n"); write("app.js", "a\nONE\nb\nc\nTWO\n");
+    git("commit", "-qam", "two");
+    assert.throws(() => git("revert", "--no-edit", one));
+    const cwd = process.cwd();
+    process.chdir(repo);
+    try {
+      const r = auto.tryAutoResolveRevertConflict(git("diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean), one);
+      assert.deepStrictEqual(r, { resolved: true, paths: ["REQUIREMENTS.md"] });
+    } finally { process.chdir(cwd); }
+    git("-c", "core.editor=true", "revert", "--continue");
+    assert.strictEqual(fs.readFileSync(path.join(repo, "REQUIREMENTS.md"), "utf8"), "# Changes\n- base\n- ticket two\n");
+    assert.strictEqual(fs.readFileSync(path.join(repo, "app.js"), "utf8"), "a\nb\nc\nTWO\n");
+    // The same shape in code is a person's call.
+    write("app.js", "a\nb\nTHREE\nc\nTWO\n"); git("commit", "-qam", "three"); const three = git("rev-parse", "HEAD");
+    write("app.js", "a\nb\nTHREE\nFOUR\nc\nTWO\n"); git("commit", "-qam", "four");
+    assert.throws(() => git("revert", "--no-edit", three));
+    process.chdir(repo);
+    try { assert.deepStrictEqual(auto.tryAutoResolveRevertConflict(["app.js"], three), { resolved: false }); } finally { process.chdir(cwd); }
+  });
+
   if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
   console.log("\nself-heal: all passed");
 })();

@@ -456,6 +456,14 @@ busy. Now:
   instead of a false "Not built … could not be carried" and a needless
   rebuild. A deliberate re-patch reads the branch after the card's commit and
   lands as before.
+- **A revert that collides only in a document completes**: tickets on a
+  train each add a line to the same dated list in REQUIREMENTS.md or
+  README.md, so taking an earlier one off conflicted there even when its
+  code reverted cleanly, and the train waited for a person.
+  `tryAutoResolveRevertConflict` resolves a Markdown-only conflict where the
+  revert only takes lines away (`resolveRevertDocConflict`: the current text
+  minus the reverted commit's added lines); any other conflict, and any code
+  file, still stops with `revertBlockedBy`.
 - **Build sessions run what CI runs**: `npm run test:offline` in
   `backlog-tracker/test` is the console tests without the emulator, kept
   equal to CI by `ci-coverage.test.js`.
