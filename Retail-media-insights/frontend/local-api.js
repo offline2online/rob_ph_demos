@@ -138,7 +138,20 @@ function perSlotPerDay(revenue, slots, days) {
  */
 function operatingWindow(displayType, storeHours) {
   if (runsAllDay(displayType)) return ALWAYS_OPEN;
+  if (hasCustomHours(displayType)) return displayType.customHours;
   return storeHours || NEVER_OPEN;
+}
+
+/** True when the type has its own {open, close} hours (not 24 hours, not the store's). */
+function hasCustomHours(displayType) {
+  const c = displayType.customHours;
+  return !!c && Number.isFinite(c.open) && Number.isFinite(c.close);
+}
+
+/** The label hovers show for a type's hours. Never the times themselves. */
+function hoursMode(displayType) {
+  if (runsAllDay(displayType)) return '24 hours';
+  return hasCustomHours(displayType) ? 'Custom hours' : 'Store opening hours';
 }
 
 /** True when the type runs 24 hours: its flag if set, else the zone default (Exterior). */
@@ -282,7 +295,7 @@ const compareZones = orderBy(ZONES);
 module.exports = {
   assumedViewsPerSlotPerDay, averageAssumedViews, shareOfLoop,
   revenueAtCpm, effectiveCpm, perSlotPerDay, perSlotPerDayPerDisplay,
-  operatingWindow, runsAllDay, insideOperatingHours, classifySlot, fillPercent,
+  operatingWindow, runsAllDay, hasCustomHours, hoursMode, insideOperatingHours, classifySlot, fillPercent,
   unsoldValueAtFloor, missedRevenue,
   guaranteedVolume, pgPacing, maturityLevel, sharedVariables, campaignLevel,
   wholePercent, roundParts, roundToTotal, percentSplit, formatUsd,
@@ -1785,7 +1798,7 @@ function hoverCard(t) {
     id: t.id, name: d.name, description: d.description,
     connectedDisplays: { displays: t.displays.length, stores: t.storeCount },
     iabZone: d.zone,
-    operatingHours: calc.runsAllDay(d) ? '24 hours' : 'Store opening hours',
+    operatingHours: calc.hoursMode(d),
     touchPoint: d.touchPoint,
     canvas: d.canvas && { width: d.canvas.width, height: d.canvas.height, label: `${d.canvas.width} × ${d.canvas.height} px` },
     displayOrientation: d.orientation,

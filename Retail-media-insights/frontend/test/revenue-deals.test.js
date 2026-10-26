@@ -173,8 +173,8 @@ test('bar hover shows the number of advertisers in brackets beside each DSP × d
   assert.ok(week.stacks.every((s) => s.advertisers >= 1), 'a week counts distinct advertisers across its days');
 });
 
-test('Direct is a source beside the DSPs: one purple shade, one legend entry, last in the order', () => {
-  assert.deepStrictEqual(RD.DSP_ORDER, ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct']);
+test('Direct is a source beside the DSPs: one purple shade, one legend entry, first in the order', () => {
+  assert.deepStrictEqual(RD.DSP_ORDER, ['Direct', 'DV360', 'The Trade Desk', 'Amazon DSP']);
   assert.deepStrictEqual(RD.DEAL_TYPES, ['Direct advertiser', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
   assert.deepStrictEqual(RD.legendEntries(['Direct'], '').map((e) => e.label), ['Direct · Direct advertiser']);
   assert.strictEqual(RD.legendEntries(['DV360', 'Direct'], '').length, 5);

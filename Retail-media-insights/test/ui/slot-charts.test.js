@@ -109,6 +109,11 @@ test('Slot allocation hover headings and the 90px sold bar; Slot value legend an
     assert.deepEqual(await sv.locator('.sc-legend-item').allTextContents(), ['Effective CPM', 'Floor CPM']);
     assert.match(await sv.locator('.sc-value').first().textContent(), /^\$\d+\.\d\d CPM$/);
     assert.equal(await sv.locator('.sc-floor-mark').first().evaluate((e) => getComputedStyle(e).borderLeftColor), 'rgb(237, 161, 0)');
+    await sv.locator('.sc-track-in').first().hover();
+    assert.match(await tip.textContent(), /Effective CPM/, 'hovering the bar shows the same card as the value');
+    await page.mouse.move(0, 0);
+    await sv.locator('.sc-value').first().hover();
+    assert.match(await tip.textContent(), /Effective CPM/);
     await sv.locator('.sc-seg-btn[data-mode="per"]').click();
     assert.deepEqual(await sv.locator('.sc-legend-item').allTextContents(), ['Earned revenue per advertiser slot per day']);
     assert.match(await sv.locator('.sc-value').first().textContent(), /^\$\d+\.\d\d per available slot per day$/);

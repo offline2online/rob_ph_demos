@@ -21,9 +21,6 @@
       'Better targeting and scheduling mean better campaigns, more spend and more inventory sold.',
     advertisers: 'Top 10 by revenue. Deals on = deals the advertiser is on (buyers lists), any deal type; hover to list them. Slots covered = slots across those deals. ' +
       'Slots won = share of covered slot opportunities the advertiser won. Effective CPM is per 1,000 assumed views (VAC-d).',
-    seats: 'The DSP seats that bought this advertiser\u2019s plays. A seat is the buying account inside a DSP, usually held by the advertiser\u2019s agency or trading desk. Seats come from each connected DSP when it syncs, and every winning bid names its seat, so spend is attributed exactly. Expand the row to see each seat\u2019s spend. Direct advertisers buy without a DSP, so they have no seat.',
-    seatExpand: 'Show spend by DSP seat.',
-    seatGone: 'This seat no longer appears in the DSP\u2019s account list. Its past spend is still shown.',
     iroas: 'Incremental return on ad spend. For each advertiser, the extra sales of their campaigns\u2019 products in stores where the campaigns played, compared with your Control stores segment, divided by what they spent on those campaigns. 2.5 means every $1 of spend drove $2.50 of extra sales. ' +
       'Only campaigns that excluded the Control stores segment are measured; others are left out of both sales and spend. Products come from the SKU or product name on each campaign, via campaign playback analytics. ' +
       'Sales come from your POS through the Personalisation Hub Transaction API, which needs a custom POS integration. Same calculation as the Sales uplift chart.',
@@ -87,36 +84,6 @@
   // Sum of the back end's rounded revenue figures, in whole cents, so the total never drifts from the rows above it.
   function revenueTotal(rows) { return rows.reduce(function (n, a) { return n + Math.round(a.revenue * 100); }, 0) / 100; }
 
-  // One DSP seat under an advertiser: the parent's columns with that seat's figures. iROAS is measured per campaign, not per seat.
-  function seatRow(x, a) {
-    return {
-      seatId: x.seatId, label: x.name + (has(x.dsp) ? ' \u00b7 ' + x.dsp : ''), synced: x.synced !== false,
-      revenue: fmtMoney(x.revenue), share: pct(x.share), dealsText: plural(x.dealsOn ? x.dealsOn.length : 0, 'deal'),
-      dealsOn: x.dealsOn ? x.dealsOn.length : 0, playsText: plural(x.plays || 0, 'play'),
-      effectiveCpm: has(x.effectiveCpm) ? fmtMoney(x.effectiveCpm, 2) : '\u2013', src: x, advertiser: a
-    };
-  }
-  // Hover on a seat sub-row: who and where it is, how many advertisers it bought for, when it won, and its share of the advertiser's spend.
-  function seatHover(r) {
-    var x = r.src;
-    var rows = [['Seat', x.name], ['DSP', has(x.dsp) ? x.dsp : '\u2013'], ['Seat ID', x.seatId],
-      ['Advertisers bought for', fmtInt(x.advertisersBought || 0)], ['First win', x.firstWin], ['Last win', x.lastWin],
-      ['Share of ' + r.advertiser.name + '\u2019s spend', pct(x.share)]];
-    var sections = [{ rows: rows }];
-    if ((x.advertiserNames || []).length) sections.push({ rows: x.advertiserNames.map(function (n) { return [n, '']; }) });
-    return { title: r.label, sections: sections };
-  }
-
-  // The seats of one advertiser, their whole-dollar spend adjusted (largest remainder) so the sub-rows add up to the row above.
-  function seatRows(a) {
-    var seats = a.seats || [];
-    var whole = seats.map(function (x) { return Math.floor(x.revenue); });
-    var left = Math.round(a.revenue) - whole.reduce(function (n, v) { return n + v; }, 0);
-    seats.map(function (x, i) { return [x.revenue - whole[i], i]; }).sort(function (p, q) { return q[0] - p[0] || p[1] - q[1]; })
-      .forEach(function (e) { if (left > 0) { whole[e[1]] += 1; left -= 1; } });
-    return seats.map(function (x, i) { var r = seatRow(x, a); r.revenue = fmtMoney(whole[i]); return r; });
-  }
-
   function advertiserRows(data, showAll) {
     var rows = (showAll ? data.all : data.top) || [];
     return rows.map(function (a) {
@@ -124,9 +91,6 @@
         advertiserId: a.advertiserId, name: a.name, dsp: a.dsp, label: a.name,
         revenue: fmtMoney(a.revenue),
         share: pct(a.share),
-        seatsText: a.direct ? 'Direct' : fmtInt(a.seatCount || 0),
-        seatCount: a.direct ? null : (a.seatCount || 0),
-        seats: seatRows(a),
         dealsOn: a.dealsOn ? a.dealsOn.length : 0,
         dealsText: plural(a.dealsOn ? a.dealsOn.length : 0, 'deal'),
         slotsCovered: has(a.slotsCovered) ? fmtInt(a.slotsCovered) : '–',
@@ -141,7 +105,6 @@
   // Advertisers table columns: header text, the raw value each sorts by, and the direction a first click uses.
   var ADV_COLS = [
     { key: 'name', label: 'Advertiser', first: 'asc', value: function (r) { return r.name; } },
-    { key: 'seats', label: 'Seats', first: 'desc', info: 'seats', value: function (r) { return r.seatCount; } },
     { key: 'revenue', label: 'Revenue', first: 'desc', value: function (r) { return r.src.revenue; } },
     { key: 'share', label: 'Share of total revenue', first: 'desc', value: function (r) { return r.src.share; } },
     { key: 'dealsOn', label: 'Deals on', first: 'desc', value: function (r) { return r.dealsOn; } },
@@ -268,7 +231,7 @@
 
   var pure = {
     LEVELS: LEVELS, TOP_N: TOP_N, TIPS: TIPS, advName: advName, isDaypart: isDaypart, targetingVars: targetingVars,
-    advertiserRows: advertiserRows, seatHover: seatHover, dealsOnHover: dealsOnHover, iroasHover: iroasHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
+    advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, iroasHover: iroasHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
     schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
     activeFilters: activeFilters, ADV_COLS: ADV_COLS, MAT_COLS: MAT_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
@@ -279,7 +242,7 @@
     if (typeof document === 'undefined') throw new Error('DemandCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { showAll: false, expanded: {}, advSort: { key: '', dir: 'desc' }, matSort: { key: 'revenue', dir: 'desc' }, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
+    var state = { showAll: false, advSort: { key: '', dir: 'desc' }, matSort: { key: 'revenue', dir: 'desc' }, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
     var gen = { adv: 0, mat: 0 };
     var advData = null, matData = null, knownVars = [], resizeTimer = null;
     var alive = true;
@@ -456,7 +419,7 @@
       var total = revenueTotal(shown);
       return h('tr', { class: 'dc-total', 'data-total': String(total) }, [
         h('th', { scope: 'row', class: 'dc-name', text: partial ? 'Total (top ' + TOP_N + ')' : 'Total' }),
-        h('td'), h('td', { class: 'dc-num', text: fmtMoney(total) }),
+        h('td', { class: 'dc-num', text: fmtMoney(total) }),
         h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td'), h('td')
       ]);
     }
@@ -481,7 +444,7 @@
       }
       var table = h('table', { class: 'dc-table dc-adv' }, [
         h('thead', {}, [h('tr', {}, ADV_COLS.map(sortHead))]),
-        h('tbody', {}, [].concat.apply([], rows.map(function (r) {
+        h('tbody', {}, rows.map(function (r) {
           var a = r.src;
           var dealsTd = h('td', { class: 'dc-num', text: r.dealsText });
           if (r.dealsOn) { dealsTd.classList.add('dc-dotted'); hoverable(dealsTd, function () { return dealsOnHover(a); }); }
@@ -489,37 +452,12 @@
           if (d.slotsWon && d.slotsWon.complete === false) hoverable(wonTd, function () { return slotsWonHover(a, d.slotsWon); });
           var iroasTd = h('td', { class: 'dc-num dc-dotted', text: r.iroas });
           hoverable(iroasTd, function () { return iroasHover(a); });
-          var open = !!state.expanded[r.advertiserId] && r.seats.length > 0;
-          var nameKids = [];
-          if (r.seats.length) {
-            var chev = h('button', { type: 'button', class: 'dc-expand', 'aria-expanded': String(open), 'aria-label': 'Show spend by DSP seat for ' + r.name }, [icon(open ? 'expand_more' : 'chevron_right')]);
-            chev.addEventListener('click', function () { state.expanded[r.advertiserId] = !open; drawAdvertisers(); });
-            hoverable(chev, function () { return { text: TIPS.seatExpand }; });
-            nameKids.push(chev);
-          }
-          nameKids.push(document.createTextNode(r.label));
-          var parent = h('tr', { 'data-advertiser': r.advertiserId }, [
-            h('th', { scope: 'row', class: 'dc-name' }, nameKids), h('td', { class: 'dc-num', text: r.seatsText }),
+          return h('tr', { 'data-advertiser': r.advertiserId }, [
+            h('th', { scope: 'row', class: 'dc-name', text: r.label }),
             h('td', { class: 'dc-num', text: r.revenue }), h('td', { class: 'dc-num', text: r.share }),
             dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm }), iroasTd
           ]);
-          var out = [parent];
-          if (open) r.seats.forEach(function (x) {
-            var nameTh = h('th', { scope: 'row', class: 'dc-name dc-seat-name' }, [document.createTextNode(x.label)]);
-            hoverable(nameTh, function () { return seatHover(x); });
-            if (!x.synced) {
-              var gone = h('span', { class: 'dc-seat-gone', text: ' (no longer synced)' });
-              hoverable(gone, function () { return { text: TIPS.seatGone }; });
-              nameTh.appendChild(gone);
-            }
-            out.push(h('tr', { class: 'dc-seat', 'data-seat': x.seatId }, [
-              nameTh, h('td'), h('td', { class: 'dc-num', text: x.revenue }), h('td', { class: 'dc-num', text: x.share }),
-              h('td', { class: 'dc-num', text: x.dealsText }), h('td', { class: 'dc-num', text: '\u2013' }), h('td', { class: 'dc-num', text: x.playsText }),
-              h('td', { class: 'dc-num', text: x.effectiveCpm }), h('td', { class: 'dc-num', text: '\u2014' })
-            ]));
-          });
-          return out;
-        }))),
+        })),
         h('tfoot', {}, [totalRow(d, rows)])
       ]);
       pAdv.body.removeAttribute('aria-busy');
