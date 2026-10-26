@@ -1015,17 +1015,10 @@ paths:
         display type: booked (CPM × assumed views ÷ 1000) and billed (billing
         line items, once the window has played). Test-mode wins are never
         counted. Without dates: the current window and the 13 after it.
-
-        `view=monthly` rolls the grid up on the server (26 Oct 2026): one
-        column per calendar month and, on each position, one cell per month
-        carrying a `rollup` (booked / open windows, revenue, advertisers)
-        instead of one cell per window. It may look up to 365 days ahead;
-        without it the range is at most 92 days.
       security: [{adminSession: []}]
       parameters:
         - {name: from, in: query, schema: {type: string, format: date}}
-        - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from; with view=monthly, at most 365.'}
-        - {name: view, in: query, schema: {type: string, enum: [monthly]}, description: 'monthly: one column per calendar month, pre-aggregated.'}
+        - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from.'}
         - {name: campaignId, in: query, schema: {type: string}, description: 'Only this campaign''s bookings; without dates, the range covers all of them.'}
         - {name: advertiserId, in: query, schema: {type: string}, description: Only this advertiser's bookings.}
         - {name: partnerId, in: query, schema: {type: string}, description: Only this DSP's bookings.}
@@ -4083,21 +4076,6 @@ components:
                         assumedViews: {type: integer}
                         bookedRevenue: {type: number}
                         billedRevenue: {type: [number, 'null'], description: From billing once the window has played; null before.}
-                    rollup:
-                      type: object
-                      description: Only with view=monthly, where this cell is a whole calendar month (and `booking` is null). Counts of this position's own windows starting in the month; with an advertiser filter only that advertiser's bookings count as booked.
-                      required: [windows, booked, open, reserved, bookedRevenue, localised, personalised, advertiserIds, advertiserNames, partnerNames]
-                      properties:
-                        windows: {type: integer, description: This position's windows in the month.}
-                        booked: {type: integer}
-                        open: {type: integer, description: Windows still available to bid on.}
-                        reserved: {type: integer, description: Windows held by a live Direct deal the exchange has not booked yet.}
-                        bookedRevenue: {type: number}
-                        localised: {type: integer, description: Of the booked windows, those whose booking carries a localised layer.}
-                        personalised: {type: integer, description: Of the booked windows, those whose booking carries a personalised layer.}
-                        advertiserIds: {type: array, items: {type: string}}
-                        advertiserNames: {type: array, items: {type: string}}
-                        partnerNames: {type: array, items: {type: string}}
         revenue:
           type: array
           description: Per display type with advertiser slots, over the schedule's windows.

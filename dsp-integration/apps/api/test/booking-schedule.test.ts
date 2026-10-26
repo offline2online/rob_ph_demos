@@ -267,42 +267,4 @@ describe('GET /admin/v1/booking-schedule', () => {
     }
     expect((await (await setup(false)).get()).statusCode).toBe(404)
   })
-
-  /* Ticket Hh87Dja2TgYrug606Uq0 (26 Oct 2026): the Monthly view looks a year ahead, rolled up by month on the server. */
-  it('rolls a 12-month range up by calendar month with the same totals as the per-window path', async () => {
-    const { ctx, get } = await setup()
-    await sellByWindow(ctx, 'menu_board', 2)
-    await ctx.reservations.insert(booking({ id: 'r_m1', windowStart: '2026-09-22T00:00:00.000Z' }))
-    await ctx.reservations.insert(booking({ id: 'r_m2', windowStart: '2026-10-05T00:00:00.000Z', advertiserId: 'other' }))
-    const flat = (await get('?from=2026-09-20&to=2026-12-18')).json()
-    const month = await get('?from=2026-09-20&to=2027-09-19&view=monthly')
-    expect(month.statusCode).toBe(200)
-    expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, month.json())
-    const body = month.json()
-    expect(body.windows).toHaveLength(13)
-    expect(body.windows[0].start).toBe('2026-09-20T00:00:00.000Z')
-    const cells = body.positions[0].windows
-    expect(cells).toHaveLength(13)
-    expect(cells.every((c: { booking: unknown; rollup: unknown }) => c.booking === null && c.rollup)).toBe(true)
-    expect(cells[0].rollup).toMatchObject({ booked: 1, advertiserNames: expect.any(Array) })
-    expect(cells[1].rollup.booked).toBe(1)
-    /* Same bookings, same money, whichever way the grid is built. */
-    const sameRange = (await get('?from=2026-09-20&to=2026-12-18&view=monthly')).json()
-    expect(sameRange.totals.bookedWindows).toBe(flat.totals.bookedWindows)
-    expect(sameRange.totals.bookedRevenue).toBe(flat.totals.bookedRevenue)
-    expect(sameRange.totals.sellableWindows).toBe(flat.totals.sellableWindows)
-    expect(sameRange.revenue).toEqual(flat.revenue)
-    /* An advertiser filter counts only that advertiser's windows. */
-    const one = (await get('?from=2026-09-20&to=2027-09-19&view=monthly&advertiserId=other')).json()
-    expect(one.totals.bookedWindows).toBe(1)
-    expect(one.positions[0].windows[1].rollup.booked).toBe(1)
-    expect(one.positions[0].windows[0].rollup.booked).toBe(0)
-  })
-
-  it('keeps the 92-day cap for Daily and Weekly and limits Monthly to a year', async () => {
-    const { get } = await setup()
-    expect((await get('?from=2026-09-20&to=2027-09-19')).statusCode).toBe(400)
-    expect((await get('?from=2026-09-20&to=2027-09-19&view=monthly')).statusCode).toBe(200)
-    expect((await get('?from=2026-09-20&to=2027-09-21&view=monthly')).statusCode).toBe(400)
-  })
 })

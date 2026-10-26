@@ -120,18 +120,3 @@ position re-read the partner list and each of its buyers lists. The schedule
 now passes both (`effectivePartnerIds` takes an optional list reader).
 Shape T on the same machine: default 525 → 378 ms p50, 92 days
 1,429 → 1,039 ms.
-
-## 26 Oct 2026 — booking schedule: a 12-month Monthly view, pre-aggregated
-
-Ticket Hh87Dja2TgYrug606Uq0: sales teams sell six to twelve months ahead, so
-`GET /admin/v1/booking-schedule?view=monthly` accepts up to 365 days
-(Daily and Weekly keep 92). Building a cell per window for a year would be
-four times the 92-day schedule, so the monthly path never builds window
-cells: it indexes the live bookings by position once, counts each window
-length's windows per month once, and gives every position one cell per month
-(`rollup`). Booking revenue, % sold and the totals are the same sums
-(`booking-schedule.test.ts` checks them against the per-window path).
-Shape A, `npm run bench` (4 vCPU sandbox, 32 clients, 3 s): the 12-month
-monthly request 11.1 s p50, against 9.0 s for the default two weeks and
-53.6 s for the 92-day daily one, on the same run. It is not in
-`thresholds.json` yet; add it with the next `--calibrate`.

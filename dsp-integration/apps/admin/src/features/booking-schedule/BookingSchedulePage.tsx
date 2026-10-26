@@ -79,9 +79,8 @@ interface Ctx { current: { money: (n: number) => string; view: View; advertiserI
 
 const BOOKED = SLOT_OWNERS.advertiser
 const DAY = 86_400_000
-/* The server allows 92 days at a time, and a year (12 months) on the Monthly view, which it rolls up itself. */
-const SPAN_DAYS: Record<View, number> = { Daily: 13, Weekly: 83, Monthly: 364 }
-const MAX_SPAN_DAYS: Record<View, number> = { Daily: 92, Weekly: 92, Monthly: 365 }
+/* The server allows 92 days at a time. */
+const SPAN_DAYS: Record<View, number> = { Daily: 13, Weekly: 83, Monthly: 91 }
 
 export const BOOKING_SCHEDULE_TIP =
   'Every advertiser-owned slot across its play windows: which are booked (reserved or won, at the CPM they were booked at), which can still be bid on, and which can no longer be sold. Estimated revenue is the booked CPM × the slot’s assumed views. Test-mode wins are not counted.'
@@ -111,14 +110,6 @@ function groupOf(view: View, start: string) {
    screen. The default layer is omitted, same as `GroupedCell` below: it's
    on every booking, so it adds nothing "N of M booked" doesn't already say. */
 function windowSummaryOf(position: Position) {
-  /* A monthly roll-up carries the counts already (one cell per month, not per window). */
-  if (position.windows.some((w) => w.rollup)) {
-    const r = position.windows.map((w) => w.rollup).filter((x): x is NonNullable<Cell['rollup']> => !!x)
-    const sum = (f: (x: NonNullable<Cell['rollup']>) => number) => r.reduce((n, x) => n + f(x), 0)
-    const booked = sum((x) => x.booked)
-    const upsells = ([['localised', sum((x) => x.localised)], ['personalised', sum((x) => x.personalised)]] as const).filter(([, n]) => n > 0).map(([k, n]) => ({ k, n }))
-    return { booked, total: position.realTime ? booked : sum((x) => x.windows), upsells }
-  }
   const booked = position.windows.filter((w) => w.booking)
   const upsells = (['localised', 'personalised'] as const)
     .map((k) => ({ k, n: booked.filter((w) => w.booking!.layers[k]).length }))
@@ -157,11 +148,11 @@ function PositionCell({ data }: ICellRendererParams<Row>) {
 }
 
 /* Who the row's bookings belong to, over the range on screen. */
-const advertisersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.rollup ? w.rollup.advertiserNames : w.booking ? [w.booking.advertiserName] : [])))]
+const advertisersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.advertiserName] : [])))]
 /* Which DSP(s) actually brought those bookings — not `position.partnerNames`
    (who is merely *eligible* to buy the slot), so the DSP shown always lines
    up with the advertiser next to it (ticket, 21 Sep). */
-const partnersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.rollup ? w.rollup.partnerNames : w.booking ? [w.booking.partnerName] : [])))]
+const partnersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.partnerName] : [])))]
 
 /* One layer's pill within a window column — always rendered alongside the
    other two, and every layer row inside a booked tile: the short prefix
@@ -345,28 +336,6 @@ function DailyCell({ cell, money, slot, advertiserId }: { cell: Cell; money: (n:
    default layer is omitted here since it is on every booking and so adds
    nothing the "N of M booked" line doesn't already say. */
 function GroupedCell({ cells, money, advertiserId }: { cells: Cell[]; money: (n: number) => string; advertiserId?: string }) {
-  /* A month the server has already rolled up: its counts, not cells to count here. */
-  const rolled = cells.length === 1 ? cells[0].rollup : undefined
-  if (rolled) {
-    const names = rolled.advertiserNames
-    const tip = rolled.booked ? `${names.join(', ')} · ${money(rolled.bookedRevenue)}` : 'Nothing booked in this period.'
-    const upsells = ([['localised', rolled.localised], ['personalised', rolled.personalised]] as const).filter(([, n]) => n > 0)
-    return (
-      <Tip title={tip}>
-        <div className="flex w-full min-w-0 flex-col gap-0.5">
-          <span className="truncate" style={{ fontSize: 11, fontWeight: rolled.booked ? 500 : 400, color: rolled.booked ? BOOKED.colour : T.muted }}>
-            {rolled.booked ? `${rolled.booked} of ${rolled.windows} booked` : `${rolled.open} open`}
-          </span>
-          {upsells.map(([k, n]) => (
-            <div key={k} className="flex items-center gap-1">
-              <LayerTag layerKey={k} />
-              <span style={{ fontSize: 10, color: T.micro }}>{n} of {rolled.booked}</span>
-            </div>
-          ))}
-        </div>
-      </Tip>
-    )
-  }
   /* Filtered to one advertiser: only its own windows count (the others are greyed out on the daily view only). */
   const booked = cells.filter((c) => c.booking && (!advertiserId || c.booking.advertiserId === advertiserId))
   const sellable = cells.filter((c) => c.status === 'available').length
@@ -516,8 +485,7 @@ export function BookingSchedulePage() {
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null)
   const from = (range?.[0] ?? dayjs()).format('YYYY-MM-DD')
   const to = (range?.[1] ?? dayjs().add(SPAN_DAYS[view], 'day')).format('YYYY-MM-DD')
-  /* The Monthly view asks the server for a month-by-month roll-up, which is what lets it look 12 months ahead. */
-  const q = `?from=${from}&to=${to}${view === 'Monthly' ? '&view=monthly' : ''}${advertiserId ? `&advertiserId=${encodeURIComponent(advertiserId)}` : ''}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`
+  const q = `?from=${from}&to=${to}${advertiserId ? `&advertiserId=${encodeURIComponent(advertiserId)}` : ''}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`
   const schedule = useQuery({ queryKey: ['booking-schedule', q], queryFn: () => api<Schedule>('GET', `/admin/v1/booking-schedule${q}`) })
   const data = schedule.data
   /* Plays per day reads the first fortnight of the range: a column per day. */
@@ -527,10 +495,9 @@ export function BookingSchedulePage() {
      Plays per day table, summed over the positions on screen and rolled up to the
      day, week or month of the view. Asked for the whole range, not the table's
      first fortnight. */
-  const longRange = dayjs(to).diff(dayjs(from), 'day') > 92
-  const totalsQ = useQuery({ queryKey: ['booking-capacity', from, to, partnerId ?? ''], enabled: !longRange, queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${to}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`) })
+  const totalsQ = useQuery({ queryKey: ['booking-capacity', from, to, partnerId ?? ''], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${to}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`) })
   const playTotals = useMemo(() => {
-    if (longRange || !totalsQ.data || !Array.isArray(totalsQ.data.positions)) return []
+    if (!totalsQ.data || !Array.isArray(totalsQ.data.positions)) return []
     /* Estate capacity: the endpoint applies the DSP filter; the advertiser filter does not apply. */
     const out = new Map<string, { key: string; label: string; total: number; available: number; first: string }>()
     for (const p of totalsQ.data.positions) {
@@ -544,7 +511,7 @@ export function BookingSchedulePage() {
       }
     }
     return [...out.values()].sort((a, b) => a.first.localeCompare(b.first))
-  }, [totalsQ.data, view, longRange])
+  }, [totalsQ.data, view])
   /* Every amount here is a booked CPM x assumed views, and the exchange books in
      USD whatever the instance reports in (spec section 4: one instance, one
      currency, no conversion), so never format with company.currency or a
@@ -707,7 +674,6 @@ export function BookingSchedulePage() {
             so it fixes the dates rather than showing a range it doesn't have. */}
         <Tip title={isSnapshotDemo() ? 'Fixed in the hosted demo: its data is a snapshot. Run the POC locally to pick a range.' : ''}>
           <DatePicker.RangePicker aria-label="Dates" value={[dayjs(from), dayjs(to)]} allowClear={false} disabled={isSnapshotDemo()}
-            disabledDate={(d, info) => !!info.from && d.diff(info.from, 'day') > MAX_SPAN_DAYS[view]}
             onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
         </Tip>
       </div>
