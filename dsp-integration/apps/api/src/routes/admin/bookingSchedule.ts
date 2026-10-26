@@ -29,6 +29,7 @@ import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN, type ReservationRecord } from '../../repos/ReservationRepo'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { isActiveAt } from '../../billing/term'
+import { baseFloorFor } from '../../exchange/enforcement'
 import { plannedDirectBookings } from '../../exchange/directDeal'
 import { zonePlaceOf } from '../../domain/displayTypes'
 import { DIRECT_PARTNER_ID, advertiserSlug, directLabel } from '@ph-dsp/types'
@@ -235,7 +236,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     let firstSellable = firstSellableMemo.get(len)
     if (firstSellable === undefined) firstSellableMemo.set(len, (firstSellable = (await nextWindow(ctx, len)).getTime()))
     const counted = new Set<number>()
-    const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 0, bookedViews: 0, availableViews: 0 }
+    const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 0, bookedViews: 0, availableViews: 0, availableWindows: 0, availableValue: 0 }
     revenue.set(p.displayType.id, rev)
     const realTime = isRealtime(p)
     if (realTime) {
@@ -252,6 +253,9 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     const ownFlat = (await Promise.resolve(audienceOf(ctx.audience, p.displayType, p.slot))).assumedViewsPerWindow
     const ownScored = ownFlat !== (await flatDerived(p))
     const viewsOf = async (column: Date) => ownScored ? Math.round(ownFlat * (columnMs / HOUR / PLATFORM_DEFAULT_BILLING_UNIT_HOURS)) : derivedViews(p, column)
+    /* Available (ticket Ltlu40NbXod3d8NwFF6Z): what is left to sell, at this position's floor CPM (the base floor it clears at, in the
+       exchange currency) x the assumed views of each unbooked column / 1000. */
+    const floor = await baseFloorFor(ctx, { position: p })
     const windows = []
     for (const column of starts) {
 
@@ -268,6 +272,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
          A display type with only real-time positions has no sellable windows
          and the table shows a dash. */
       if (first && hasDisplays && !realTime && start.getTime() >= firstSellable) rev.sellableWindows++
+      const sellable = first && hasDisplays && !realTime && start.getTime() >= firstSellable
       const x = live.get(`${p.positionId}|${start.toISOString()}`)
       const r = x && (!f.campaignId || x.campaignId === f.campaignId) && (!f.partnerId || x.partnerId === f.partnerId) ? x : undefined
       /* With an advertiser filter the other advertisers' tiles stay on the grid, named, so the page can grey them out
@@ -314,7 +319,11 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       const reserved = open && directFlights.some((l) => isActiveAt(l, start.toISOString()))
       /* A window held for a Direct deal counts as booked; with an advertiser filter picked it is nobody's in particular, so it is left out. */
       if (reserved && !f.advertiserId) { rev.bookedViews += columnViews; rev.totalViews += columnViews }
-      else if (open && !reserved) { rev.availableViews += columnViews; rev.totalViews += columnViews }
+      else if (open && !reserved) {
+        rev.availableViews += columnViews; rev.totalViews += columnViews
+        rev.availableValue = round2(rev.availableValue + (floor / 1000) * columnViews)
+        if (sellable) rev.availableWindows++
+      }
       windows.push({ start: column.toISOString(), status: reserved ? ('reserved' as const) : open ? ('available' as const) : ('unavailable' as const), assumedViews: open ? columnViews : null, booking: null })
     }
     positions.push({
@@ -352,6 +361,8 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       totalViews: rows.reduce((n, r) => n + r.totalViews, 0),
       bookedViews: rows.reduce((n, r) => n + r.bookedViews, 0),
       availableViews: rows.reduce((n, r) => n + r.availableViews, 0),
+      availableWindows: rows.reduce((n, r) => n + r.availableWindows, 0),
+      availableValue: round2(rows.reduce((n, r) => n + r.availableValue, 0)),
     },
   }
 }

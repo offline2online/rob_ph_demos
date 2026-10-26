@@ -4113,12 +4113,14 @@ components:
         totals: {$ref: '#/components/schemas/BookingRevenueTotals'}
     BookingRevenueTotals:
       type: object
-      required: [bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled, totalViews, bookedViews, availableViews]
+      required: [bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled, totalViews, bookedViews, availableViews, availableWindows, availableValue]
       properties:
         bookedWindows: {type: integer}
         totalViews: {type: integer, description: Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available.}
         bookedViews: {type: integer, description: Assumed views of the booked cells, windows held for a Direct advertiser deal included (a reserved cell counts as booked unless an advertiser filter is picked, which counts only that advertiser's).}
         availableViews: {type: integer, description: Assumed views of the cells still available to book.}
+        availableWindows: {type: integer, description: Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter, like sellableWindows.}
+        availableValue: {type: number, description: Value of the available cells at each position's floor CPM x assumed views / 1000, in the exchange currency.}
         sellableWindows: {type: integer, description: Sum of every display type's sellableWindows — see BookingRevenue.}
         realtimeOpportunities: {type: integer, description: Sum of every display type's realtimeOpportunities — see BookingRevenue.}
         realtimeFilled: {type: integer, description: Sum of every display type's realtimeFilled — see BookingRevenue.}
@@ -4126,7 +4128,7 @@ components:
         billedRevenue: {type: number}
     BookingRevenue:
       type: object
-      required: [displayTypeId, displayTypeName, bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled, totalViews, bookedViews, availableViews]
+      required: [displayTypeId, displayTypeName, bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled, totalViews, bookedViews, availableViews, availableWindows, availableValue]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -4134,6 +4136,8 @@ components:
         totalViews: {type: integer, description: Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available.}
         bookedViews: {type: integer, description: Assumed views of the booked cells, windows held for a Direct advertiser deal included (a reserved cell counts as booked unless an advertiser filter is picked, which counts only that advertiser's).}
         availableViews: {type: integer, description: Assumed views of the cells still available to book.}
+        availableWindows: {type: integer, description: Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter, like sellableWindows.}
+        availableValue: {type: number, description: Value of the available cells at each position's floor CPM x assumed views / 1000, in the exchange currency.}
         realtimeOpportunities:
           type: integer
           description: |

@@ -394,6 +394,13 @@ const PercentSoldCell = ({ data }: ICellRendererParams<RevenueRow>) => {
   return <span style={{ fontWeight: data.total ? 600 : 400 }}>{pct}%</span>
 }
 
+/* Available (ticket Ltlu40NbXod3d8NwFF6Z): the sellable windows still unbooked and what they are worth at the display type's floor CPM.
+   A snapshot from before this column has no figures, which reads as a dash. */
+const AvailableCell = ({ data, context }: ICellRendererParams<RevenueRow, number, Ctx>) => {
+  if (!data || data.availableWindows == null) return <span style={{ color: T.muted }}>—</span>
+  return <span style={{ fontWeight: data.total ? 600 : 400 }}>{data.availableWindows.toLocaleString('en-GB')} <span style={{ color: T.muted, fontWeight: 400 }}>·</span> {context.current.money(data.availableValue ?? 0)}</span>
+}
+
 /* Expected fill (ticket bhiyhqKpLPBDlySEfGNB): the share of the last week's
    real-time opportunities that were filled, for the display types whose
    positions are sold per impression and so have no % sold. Indicative, never
@@ -644,6 +651,10 @@ export function BookingSchedulePage() {
   const revenueColumns = useMemo<ColDef<RevenueRow>[]>(() => [
     { headerName: 'Display type', field: 'displayTypeName', width: 260, cellStyle: (p) => (p.data?.total ? { fontWeight: 600 } : null) },
     { headerName: 'Booked windows', field: 'bookedWindows', width: 150, cellRenderer: NumberCell },
+    {
+      headerName: 'Available (at floor CPM)', field: 'availableWindows', width: 190, cellRenderer: AvailableCell,
+      headerTooltip: 'Sellable windows still unbooked in the period, and their value at the display type’s floor CPM: floor CPM × their assumed views ÷ 1000. Booked + available = the sellable windows behind % sold (a window held for a Direct deal is neither). It is the unsold market, so it does not change with the advertiser / DSP filter.',
+    },
     {
       /* Ticket "% of slots sold", 22 Sep — booked ÷ sellable windows for
          this display type, over the period shown. */

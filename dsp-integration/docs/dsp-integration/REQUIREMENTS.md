@@ -4683,6 +4683,17 @@ playback analytics.**
   the same in Daily, Weekly and Monthly, and shows a dash when there is no
   history. % sold itself is unchanged. With an advertiser, DSP or campaign
   filter picked, only that buyer's fills count over the same opportunities.
+  **Available (at floor CPM) (26 Oct 2026, ticket
+  Ltlu40NbXod3d8NwFF6Z):** a column after Booked windows shows, per display
+  type and in the Total row, "<windows> · <value>": the sellable windows
+  nobody has booked yet (`availableWindows`) and their value at the floor
+  CPM (`availableValue` = each position's floor CPM × the assumed views
+  (VAC-d) of its unbooked columns ÷ 1,000, in the exchange currency), so a
+  retailer's sales team can see what is left to sell in dollars for forward
+  periods. Booked + available = the sellable windows behind % sold; a window
+  held for a Direct deal is neither. It works in Daily, Weekly and Monthly
+  and, like sellable capacity, ignores the advertiser / DSP filter (it is the
+  unsold market, not one buyer's share). Real-time positions have none.
   Estimated revenue is likewise booked-ahead only; real-time revenue is
   realised per play and is not forecast here. "Booked revenue" is renamed **Estimated revenue** — more
   honest about what it is before a window has actually played: booked CPM ×

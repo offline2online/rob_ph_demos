@@ -36,7 +36,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(body.positions[0]).toMatchObject({ realTime: true, recentPlays: 0 })
     expect(body.positions[0].windows.every((w: { status: string }) => w.status === 'unavailable')).toBe(true)
     /* Ticket 1n6upwMWSLGxszhg5u7k: an open (real-time) position is never pre-booked, so its windows are not "sellable" and % sold is a dash, not 0%. */
-    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 0, bookedViews: 0, availableViews: 0 })
+    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 0, bookedViews: 0, availableViews: 0, availableWindows: 0, availableValue: 0 })
     expect(body.revenue[0]).toMatchObject({ displayTypeId: 'menu_board', bookedWindows: 0, sellableWindows: 0 })
   })
 
@@ -93,7 +93,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     await sellByWindow(ctx, 'menu_board', 2)
     const body = (await get()).json()
     expect(body.positions[0]).toMatchObject({ assignment: 'deal' })
-    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 13, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 16068, bookedViews: 0, availableViews: 16068 })
+    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 13, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 16068, bookedViews: 0, availableViews: 16068, availableWindows: 13, availableValue: 1606.8 })
   })
 
   /* A0GyTNsA (1 Oct 2026): a multi-zone display type's slot is numbered
@@ -130,8 +130,8 @@ describe('GET /admin/v1/booking-schedule', () => {
     /* A Test-mode win is not a booking. */
     expect(at('2026-09-23')).toMatchObject({ status: 'available', booking: null })
     expect(at('2026-09-16').status).toBe('unavailable')
-    expect(res.json().revenue).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 4944, bookedViews: 2472, availableViews: 2472 }])
-    expect(res.json().totals).toEqual({ bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 4944, bookedViews: 2472, availableViews: 2472 })
+    expect(res.json().revenue).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 4944, bookedViews: 2472, availableViews: 2472, availableWindows: 2, availableValue: 247.2 }])
+    expect(res.json().totals).toEqual({ bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 4944, bookedViews: 2472, availableViews: 2472, availableWindows: 2, availableValue: 247.2 })
     /* Both bookings are localised campaigns (Rob, 20 Sep: show what type is selling). */
     expect(res.json().byPricingType).toEqual([{ pricingType: 'localised', bookedWindows: 2, bookedRevenue: 364.62 }])
   })
@@ -150,6 +150,9 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(day(before, '2026-09-22')).toMatchObject({ status: 'booked', assumedViews: 1236 })
     const [row] = before.revenue
     expect(row.bookedViews + row.availableViews).toBe(row.totalViews)
+    /* Available (ticket Ltlu40NbXod3d8NwFF6Z): floor CPM x assumed views / 1000 for every unbooked window, and booked + available = sellable. */
+    expect(row.availableWindows + row.bookedWindows).toBe(row.sellableWindows)
+    expect(row.availableValue).toBe(Math.round((row.availableViews / 1000) * 100 * 100) / 100)
     expect(row.bookedViews).toBe(1236)
     expect(before.totals).toMatchObject({ totalViews: row.totalViews, bookedViews: row.bookedViews, availableViews: row.availableViews })
     /* A display with an hour-of-week profile: its day is the sum of that day's 24 hours. */
@@ -237,7 +240,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
     const booked = res.json().positions[0].windows.filter((w: { status: string }) => w.status === 'booked')
     expect(booked.map((w: { start: string }) => w.start)).toEqual(['2026-11-02T00:00:00.000Z'])
-    expect(res.json().totals).toEqual({ bookedWindows: 1, sellableWindows: 43, bookedRevenue: 216.3, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 53148, bookedViews: 1236, availableViews: 51912 })
+    expect(res.json().totals).toEqual({ bookedWindows: 1, sellableWindows: 43, bookedRevenue: 216.3, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 53148, bookedViews: 1236, availableViews: 51912, availableWindows: 42, availableValue: 5191.2 })
     /* The seeded Nestlé booking belongs to another campaign, so it isn't counted. */
     expect(res.json().windows[0].start).toBe('2026-09-20T00:00:00.000Z')
   })
@@ -252,7 +255,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     const other = swisse.json().positions[0].windows.find((w: { start: string }) => w.start.startsWith('2026-09-15'))
     expect(other).toMatchObject({ status: 'booked', booking: { advertiserId: 'nestle', advertiserName: 'Nestlé' } })
     const amazon = await get('?partnerId=p_amazon&from=2026-09-15&to=2026-09-23')
-    expect(amazon.json().totals).toEqual({ bookedWindows: 0, sellableWindows: 3, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 3708, bookedViews: 0, availableViews: 3708 })
+    expect(amazon.json().totals).toEqual({ bookedWindows: 0, sellableWindows: 3, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 3708, bookedViews: 0, availableViews: 3708, availableWindows: 3, availableValue: 370.8 })
   })
 
   /* The filter is there to find a booking, so it only offers advertisers

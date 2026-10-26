@@ -466,8 +466,8 @@ describe('Campaign Status stand-in', () => {
     const start = new Date().toISOString()
     const schedule = {
       currency: 'AUD', windows: [{ start, end: start }], dsps: [], directAdvertisers: [], byPricingType: [],
-      revenue: [{ displayTypeId: 'portrait', displayTypeName: 'Portrait', bookedWindows: 0, sellableWindows: 1, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 12345, bookedViews: 5000, availableViews: 7345 }],
-      totals: { bookedWindows: 0, sellableWindows: 1, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 12345, bookedViews: 5000, availableViews: 7345 },
+      revenue: [{ displayTypeId: 'portrait', displayTypeName: 'Portrait', bookedWindows: 0, sellableWindows: 1, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 12345, bookedViews: 5000, availableViews: 7345, availableWindows: 3, availableValue: 456.5 }],
+      totals: { bookedWindows: 0, sellableWindows: 1, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 12345, bookedViews: 5000, availableViews: 7345, availableWindows: 3, availableValue: 456.5 },
       positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'deal', realTime: false, recentPlays: null,
         windows: [{ start, status: 'available', booking: null, assumedViews: 4321 }] }],
     }
@@ -477,6 +477,8 @@ describe('Campaign Status stand-in', () => {
     expect(screen.getByText('Total assumed views')).toBeInTheDocument()
     expect(screen.getByText('Booked assumed views')).toBeInTheDocument()
     expect(screen.getByText('Available assumed views')).toBeInTheDocument()
+    expect(screen.getByText('Available (at floor CPM)')).toBeInTheDocument()
+    expect((await screen.findAllByText(/456\.50/)).length).toBeGreaterThan(0)
     expect((await screen.findAllByText('12,345')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('5,000').length).toBeGreaterThan(0)
     expect(screen.getAllByText('7,345').length).toBeGreaterThan(0)

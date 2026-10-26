@@ -3413,6 +3413,10 @@ export interface components {
             bookedViews: number;
             /** @description Assumed views of the cells still available to book. */
             availableViews: number;
+            /** @description Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter, like sellableWindows. */
+            availableWindows: number;
+            /** @description Value of the available cells at each position's floor CPM x assumed views / 1000, in the exchange currency. */
+            availableValue: number;
             /** @description Sum of every display type's sellableWindows — see BookingRevenue. */
             sellableWindows: number;
             /** @description Sum of every display type's realtimeOpportunities — see BookingRevenue. */
@@ -3432,6 +3436,10 @@ export interface components {
             bookedViews: number;
             /** @description Assumed views of the cells still available to book. */
             availableViews: number;
+            /** @description Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter, like sellableWindows. */
+            availableWindows: number;
+            /** @description Value of the available cells at each position's floor CPM x assumed views / 1000, in the exchange currency. */
+            availableValue: number;
             /**
              * @description Live (non-test) impression opportunities on this display type's
              *     real-time (open / whitelist-only) positions in the last 7 days
