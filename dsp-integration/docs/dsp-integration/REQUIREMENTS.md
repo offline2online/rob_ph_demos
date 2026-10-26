@@ -897,7 +897,7 @@ table (`/booking-schedule?tab=campaign-status`) in a new tab (ticket
 CcPh14VeSzSMZHO35d0s, 25 Oct 2026); an advertiser is removed
 with the delete icon beside it in the Advertisers table
 (`DELETE /admin/v1/advertisers/direct/{id}`, refused while it has campaigns or
-bookings; DSP advertisers have no delete icon). **Only a direct advertiser has
+bookings; DSP advertisers have no delete icon). **Every delete control in the admin looks the same (ticket ulhuw0QENMrtKuNT4D0f, 26 Oct 2026):** the Material Symbols `delete` trash can, 15 px, as a red (`danger`), borderless small text button, and always the rightmost icon in its row — after Edit, Share and Archive. This covers Advertisers, Deals and buyers lists (drafts), Playlist Management, the Display Types list, a multi-zone layout's zones and the picture editor's Delete tool; a new delete control copies the Advertisers row. **Only a direct advertiser has
 an edit (pencil) icon, and editing renames it (23 Oct 2026, ticket
 usIHp1uhtllLCP29teBu):** the pop-up's name field is enabled and **Save changes**
 (disabled while the name is empty or unchanged) calls
@@ -1236,14 +1236,14 @@ with a minimal change to the campaign table:
   campaign is active on (its brief's `touchPoints`). **Creative ID** shows
   the ID it is grouped under, or an em dash until it is assigned. **Rows are
   grouped by advertiser** (A–Z), keeping the triage order inside each group.
-- **Localised variables / Personalised variables columns**: a high-level
-  summary in the cell — the deduped Shared Targeting Variable names (§6
-  "Shared Targeting Variables") targeted across that playlist's localised
-  (respectively personalised) layer(s), or an em dash when that submission
-  has none. **On hover, the exact targeting rules behind it** — the
-  specific variable, operator and values from every layer of that pricing
-  type on this playlist, consolidated into one view, not shown per layer
-  separately.
+- **Playback Strategy column** (replaces the Localised / Personalised
+  variables columns, ticket WwmSYO8Ku1zvuB4G5f1K): the shared
+  `PlaybackStrategyPills` — LOCALISED, PERSONALISED and/or SCHEDULED, only
+  those the campaign uses, or an em dash for none. **On hover, only that
+  strategy's rules**: the consolidated localised (respectively personalised)
+  layer rules the old columns showed, and for SCHEDULED the booked windows and
+  the next window (a campaign carries no flight dates or day-parting of its
+  own). The column's funnel filters rows by strategy.
 - **There is no per-row accept or reject** (ticket IDGsyELBJsjlAYjizSqT).
   A campaign **Awaiting approval** has a checkbox instead, and its
   activation toggle is shown disabled until it is approved. Approving and
@@ -1457,8 +1457,8 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
   shows the advertiser and the DSP it runs through, so there is no DSP
   column; its search box matches either the advertiser or the campaign name
   and its funnel picks an advertiser), Touch
-  points, Display types, Creative ID, Deal ID, Localised variables,
-  Personalised variables, Received, Activation, Last used. Every row has
+  points, Display types, Creative ID, Deal ID, Playback Strategy,
+  Received, Activation, Last used. Every row has
   **exactly one** box. Each advertiser is a group row whose single box ticks
   every campaign beneath it (partial when only some are ticked); a campaign
   row's box ticks that campaign. Filtering is **in the columns** — status is
