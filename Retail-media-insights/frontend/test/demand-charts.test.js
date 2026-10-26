@@ -197,11 +197,19 @@ test('iROAS: one decimal, em dash when nothing was measured, sorts with blanks l
   assert.match(m.sections[0].rows[3][1], /^\d+ of \d+ campaigns measured$/);
 });
 
-test('advertiser rows: no Seats column and no per-seat sub-rows (agencies are not supported, advertiser level only)', () => {
+test('advertiser rows: Seats column shows the count, or Direct, and each seat becomes a sub-row model', () => {
   const rows = DC.advertiserRows({ top: [
     { advertiserId: 'a', name: 'A', dsp: 'DV360', revenue: 100, share: 100, seatCount: 2, direct: false, dealsOn: [], iroas: {},
-      seats: [{ seatId: 's1', name: 'GroupM AU', dsp: 'The Trade Desk', synced: true, revenue: 100, share: 100 }] }
+      seats: [{ seatId: 's1', name: 'GroupM AU', dsp: 'The Trade Desk', synced: true, revenue: 60, share: 60, plays: 1200, dealsOn: [{ id: 'd1' }], effectiveCpm: 7.5, firstWin: '2026-09-01', lastWin: '2026-10-01', advertisersBought: 2, advertiserNames: ['A', 'B'] },
+        { seatId: 's2', name: 'Old Seat', dsp: 'DV360', synced: false, revenue: 40, share: 40, plays: 800, dealsOn: [], effectiveCpm: null }] },
+    { advertiserId: 'b', name: 'B', dsp: null, revenue: 0, share: 0, seatCount: 0, direct: true, seats: [], dealsOn: [], iroas: {} }
   ] }, false);
-  assert.equal(rows[0].seats, undefined);
-  assert.ok(!DC.ADV_COLS.some((c) => c.key === 'seats'));
+  assert.equal(rows[0].seatsText, '2');
+  assert.equal(rows[1].seatsText, 'Direct');
+  assert.equal(rows[0].seats[0].label, 'GroupM AU · The Trade Desk');
+  assert.equal(rows[0].seats[1].synced, false);
+  assert.equal(rows[0].seats[1].effectiveCpm, '–');
+  const tip = DC.seatHover(rows[0].seats[0]);
+  assert.ok(tip.sections[0].rows.some((r) => r[0] === 'Seat ID' && r[1] === 's1'));
+  assert.ok(DC.ADV_COLS.some((c) => c.key === 'seats'));
 });
