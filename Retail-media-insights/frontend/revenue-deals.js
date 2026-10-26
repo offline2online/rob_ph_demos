@@ -145,7 +145,7 @@
       var pos = 'Advertiser slot ' + s.advertiserSlot + (s.loopSlot ? ' (' + of + ')' : '');
       if (s.playsPerWindow != null) pos += ' · ' + fmtInt(s.playsPerWindow) + ' plays per window';
       var desc = (s.displayTypeDescription || '').replace(/\.$/, '');
-      rows.push([s.displayType + (desc ? ' (' + desc + ')' : ''), [s.playlistZone || '', s.iabZone ? 'IAB zone: ' + s.iabZone : '', pos].filter(Boolean).join('\n')]);
+      rows.push([s.displayType + (desc ? ' (' + desc + ')' : ''), [s.playlistZone || '', s.iabZone ? 'IAB zone: ' + s.iabZone : '', pos].filter(Boolean).join('\n'), 'rd-tip-stack']);
     });
     return { title: 'Assigned slots', rows: rows };
   }
