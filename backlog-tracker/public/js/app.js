@@ -1437,7 +1437,7 @@ function optionsMenuHTML(project) {
 // longest seen in practice was ~14 minutes) — so a session running an
 // older Routine prompt without that instruction, or one that crashes
 // mid-run, can never wedge the button in a permanent spinning state.
-const NOTIFY_ROUTINE_STALE_MS = 25 * 60 * 1000; // matches STALL_MS in functions/notify-routine.js, which closes the record
+const NOTIFY_ROUTINE_STALE_MS = 75 * 60 * 1000; // matches STALL_MS in functions/notify-routine.js, which closes the record
 // After this long with no report the tooltip says the ticket is "still
 // building" and points at its session.
 const NOTIFY_STILL_BUILDING_MS = 15 * 60 * 1000;
