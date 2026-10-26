@@ -19,8 +19,11 @@ export const DEFAULT_FAILED_TESTING_CHOICE = FAILED_TESTING_CHOICES.SEND_BACK;
 export const DESC_MAX = 10000;
 export const TITLE_MAX_CHARS = 200;
 
-// Today's Failed testing write, moved out of failTestingNow unchanged.
-// `at` is the Date stamped on both lastFailureReason and the note.
+// The one category that means "take it off this release" rather than "fix it".
+export const NO_REBUILD_CATEGORY = "Blocking a release, not a rebuild";
+
+// The Failed testing write. `at` is the Date stamped on both
+// lastFailureReason and the note.
 export function sendBackFields({ category, text, at }) {
   return {
     status: "backlog",
@@ -29,6 +32,12 @@ export function sendBackFields({ category, text, at }) {
     // flag up and reverts the card's commits. A card in Backlog must never
     // have live commits on a train.
     revertRequested: true,
+    // ...and once it is off, it is rebuilt with this reason as its brief
+    // (26 Oct 2026). Before, a failed ticket waited in Backlog for someone to
+    // click Ready for Dev again, and often sat there: a test failure is a fix
+    // to make, not a decision to take. Except when the tester only wants it
+    // off the release.
+    rebuildAfterRevert: category !== NO_REBUILD_CATEGORY,
     lastFailureReason: { category, text, action: "failed-testing", at },
     note: { author: "viewer", text: `Failed testing [${category}]: ${text}`, at },
   };

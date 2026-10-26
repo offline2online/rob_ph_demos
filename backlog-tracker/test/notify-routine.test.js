@@ -39,10 +39,13 @@ const reported = (id, extra = {}) => backlog(id, { buildSession: { status: "done
     const r = notifyRoutineOutcome(routine(), [reported("a"), backlog("b")], FIRED + 24 * MIN);
     assert.deepStrictEqual(r, { outcome: "open", noteCardIds: [] });
   });
-  await test("no report at 26 minutes -> stalled, naming only that card", () => {
-    const r = notifyRoutineOutcome(routine(), [reported("a"), backlog("b")], FIRED + 26 * MIN);
+  await test("no report at 76 minutes -> stalled, naming only that card", () => {
+    const r = notifyRoutineOutcome(routine(), [reported("a"), backlog("b")], FIRED + 76 * MIN);
     assert.deepStrictEqual(r, { outcome: "stalled", noteCardIds: ["b"] });
-    assert.strictEqual(STALL_MS, 25 * MIN);
+    assert.strictEqual(STALL_MS, 75 * MIN);
+  });
+  await test("a healthy DSP build still running at 59 minutes is not called stalled (26 Oct 2026)", () => {
+    assert.strictEqual(notifyRoutineOutcome(routine(), [backlog("b")], FIRED + 59 * MIN).outcome, "open");
   });
   await test("an already-closed record is unchanged", () => {
     for (const status of ["done", "stalled", "error"]) {
@@ -57,7 +60,8 @@ const reported = (id, extra = {}) => backlog(id, { buildSession: { status: "done
   });
   await test("the stalled note names the start time and the session link", () => {
     const text = stalledNoteText({ id: "b", lastFire: { at: new Date(FIRED), sessionUrl: "https://claude.ai/code/cse_x" } }, routine());
-    assert.ok(text.includes("2026-10-19T20:00:00.000Z") && text.includes("https://claude.ai/code/cse_x") && text.includes("never reported back"), text);
+    assert.ok(text.includes("2026-10-19T20:00:00.000Z") && text.includes("https://claude.ai/code/cse_x") && text.includes("hasn't reported back after 75 minutes"), text);
+    assert.ok(!/click Ready for Dev to build it again/.test(text), "never invites a second session");
   });
   await test("reportedAt is stamped on a status change to done/error and on nothing else", () => {
     const run = (b, a) => shouldStampReportedAt({ buildSession: b }, { buildSession: a });

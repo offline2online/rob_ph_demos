@@ -154,3 +154,24 @@ jobs:
 
       - name: Run rules tests against the emulator
         run: npm run test:rules
+
+  # The backlog automation acts on this run's result: a train ticket's
+  # verdict, a check on main before a ticket is sent back. GitHub runs the
+  # automation's */2 schedule as rarely as once an hour when it is busy, so a
+  # finished run starts it straight away (26 Oct 2026: a red ticket's verdict
+  # sat unread for 25 minutes, and a passed one kept its ticket from being
+  # approved). workflow_dispatch is the one event this run's GITHUB_TOKEN may
+  # start. Pull request runs judge no ticket. Its own job, so the tests never
+  # hold a token that can start workflows.
+  wake-automation:
+    needs: rules
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start the backlog automation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run backlog-automation.yml --repo "$GITHUB_REPOSITORY" --ref main || echo "::warning::Couldn't start the backlog automation; its schedule picks this run up instead."

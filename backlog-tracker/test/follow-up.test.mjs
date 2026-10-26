@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "../public/js/follow-up.js";
+import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, NO_REBUILD_CATEGORY, sendBackFields, followUpWrites } from "../public/js/follow-up.js";
 import { parseIntake, missingSections } from "../public/js/ticket-intake.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +17,10 @@ assert.equal(DEFAULT_FAILED_TESTING_CHOICE, FAILED_TESTING_CHOICES.SEND_BACK);
 const sb = sendBackFields({ category: "Other", text: "broken", at });
 assert.equal(sb.status, "backlog");
 assert.equal(sb.revertRequested, true);
+// A failed ticket is rebuilt automatically once its commits are off the train...
+assert.equal(sb.rebuildAfterRevert, true);
+// ...unless the tester only wants it off the release.
+assert.equal(sendBackFields({ category: NO_REBUILD_CATEGORY, text: "not this release", at }).rebuildAfterRevert, false);
 assert.deepEqual(sb.lastFailureReason, { category: "Other", text: "broken", action: "failed-testing", at });
 assert.deepEqual(sb.note, { author: "viewer", text: "Failed testing [Other]: broken", at });
 

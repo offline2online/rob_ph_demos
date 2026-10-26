@@ -83,6 +83,12 @@ if (require.main === module) {
   const real = unreachedTests(wfText, scripts, testFiles, EXCLUDED);
   assert.deepStrictEqual(real, [], "\n" + real.join("\n"));
   assert.deepStrictEqual(EXCLUDED, {}, "EXCLUDED should stay empty unless a test genuinely cannot run in CI");
+  // What a build session runs before handing a patch back (ROUTINE_INSTRUCTIONS.md):
+  // everything CI runs except the emulator, which needs Java. A session that
+  // ran a hand-picked subset handed back 7dVoY12l's patch with
+  // mcp-client.test.mjs red (26 Oct 2026).
+  assert.strictEqual(scripts["test:offline"], scripts.test.replace(/ && npm run test:rules$/, ""),
+    "test:offline must be `test` without its final test:rules step");
 
   // Synthetic input.
   const wf = "steps:\n  - name: a\n    run: npm run t:a\n  - name: b\n    run: npm run t:rules\n";

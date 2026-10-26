@@ -259,8 +259,10 @@ one refusal writes nothing (exit 1 naming each; exit 2 if git can't answer):
   ancestor of `origin/main`, or a commit there carries `Backlog item: <id>`.
 - `--to ready-to-publish` works from Ready for Testing only; it records
   `approvedAt`/`approvedVia` and a note, and locks the train.
-- `--to backlog` from a train card also writes `revertRequested` (Failed
-  testing); `--to archived` is refused for a train card.
+- `--to backlog` from a train card also writes `revertRequested` and
+  `rebuildAfterRevert` (Failed testing: reverted, then rebuilt); `--reason
+  "<what failed>"` (dsp-board.yml's `reason`) records it as the card's
+  `lastFailureReason`. `--to archived` is refused for a train card.
 - `--notify` refuses a blocked ticket and a locked train ("Click Ready for Dev
   once the train has merged"); `--force` overrides the lock only.
 - Notes are appended with one atomic `:commit` write, never read and rewritten.

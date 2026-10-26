@@ -52,8 +52,10 @@
        ancestor of origin/main, or a commit there carries "Backlog item: <id>".
      - --to ready-to-publish works from Ready for Testing only; it records
        approvedAt / approvedVia and a note, and locks the train.
-     - --to backlog from a train card also writes revertRequested (Failed
-       testing); --to archived is refused for a train card.
+     - --to backlog from a train card also writes revertRequested and
+       rebuildAfterRevert (Failed testing: reverted, then rebuilt); with
+       --reason "<what failed>" it records lastFailureReason and the note.
+       --to archived is refused for a train card.
      - --notify refuses blocked tickets and a locked train ("Click Ready for
        Dev once the train has merged"); --force overrides the lock only.
    Notes are appended with one atomic :commit write, never read and rewritten.
@@ -178,7 +180,7 @@ function planMoves(requests) {
   const problems = []
   let exitCode = 1
   for (const r of requests) {
-    const res = checkMove({ card: r.card, to: r.to, deployCommit: r.deployCommit, git, project, actor })
+    const res = checkMove({ card: r.card, to: r.to, deployCommit: r.deployCommit, git, project, actor, reason: value('--reason') })
     if (!res.ok) { problems.push(res.message); if (res.exitCode === 2) exitCode = 2; continue }
     plans.push({ ...r, plan: res })
   }

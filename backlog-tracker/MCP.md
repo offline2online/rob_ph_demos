@@ -169,7 +169,7 @@ rather than `get_project_docs`, say which side wins for a repo-mirrored
 document (the repo file; a board-only edit is lost, except for a project with
 no single folder, whose Requirements and README are not synced), and say that
 release actions stay on the board apart from `send_to_build`,
-`approve_for_deployment` and `approve_deploy_to_main` (all admin) and
+`approve_for_deployment`, `fail_testing` and `approve_deploy_to_main` (all admin) and
 `set_my_routine_binding`. `whoami`'s note and the notes returned by
 `set_project_requirements` / `set_project_readme` say the same from the
 project's own fields. `test/mcp-server.test.js` keeps them in step with the
@@ -283,7 +283,7 @@ as text until Anthropic switches on its MCP Apps host.
 
 | Tickets | Documentation | Help centre | Skills library | Release (admin only) | Your own routine binding |
 | --- | --- | --- | --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `send_to_build`, `approve_for_deployment`, `approve_deploy_to_main` | `set_my_routine_binding` |
+| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
 | `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
 | `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
@@ -360,6 +360,20 @@ logged to `mcpAuditLog` under the caller's email.**
   train) unless `acknowledgeTests` is `true` — the agent must tell the person
   first, because an approved ticket that goes red is not sent back
   automatically.
+
+- **`fail_testing`** (25 Oct 2026; `projectId`, `itemIds`, optional `reason`
+  and `category`) is the board's **Failed testing → "Something's wrong — send
+  it back"**, admin only like the two above. Each named Ready for Testing
+  ticket goes to Backlog with `revertRequested: true` (the automation reverts
+  its commits off the train), `lastFailureReason` `{category, text, action:
+  "failed-testing", at}` and a note, and `rebuildAfterRevert: true`, so a
+  rebuild is queued by itself once the revert has landed (the board button
+  leaves that to a later Ready for Dev). `category` is one of the board's
+  failure categories, default `Other`. It refuses the whole call if a ticket
+  is not in this project's Ready for Testing or is already marked for revert,
+  and logs to `mcpAuditLog` with the reason. It does not offer the dialog's
+  "it works, but I want something more" choice; file that with
+  `create_backlog_item`.
 
 No MCP tool moves a card any other way, and `update_backlog_item` still has
 no `status`.

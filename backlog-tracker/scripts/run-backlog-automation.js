@@ -788,6 +788,16 @@ function stagedAddedPaths() {
 }
 
 // The commit to three-way merge a patch from, or null to write it as given.
+// A patch for a card already on the train, read from a tree that does not
+// contain the card's own commit: a duplicate session's (see processApplyPatch).
+// isAncestor answers true, false, or null when git can't tell — and only a
+// definite "not contained" counts. Pure, for test/self-heal.test.js.
+function latePatchFromDuplicateSession(item, isAncestor) {
+  if (!item || item.status === "backlog" || !item.deployCommit || !SHA_RE.test(String(item.patchBaseSha || ""))) return false;
+  if (item.patchBaseSha === item.deployCommit) return false;
+  return isAncestor(item.deployCommit, item.patchBaseSha) === false;
+}
+
 function patchBaseFor(item, sync, { resolvable = commitResolvable } = {}) {
   const sha = typeof item.patchBaseSha === "string" ? item.patchBaseSha.trim().toLowerCase() : "";
   if (SHA_RE.test(sha) && resolvable(sha)) return sha;
@@ -817,6 +827,58 @@ function buildRequestFields(project, ids) {
     notifyRequestedAt: new Date(),
     notifyItemIds: ids.slice(),
     notifyRequestedByEmail: (project && project.notifyRequestedByEmail) || null,
+  };
+}
+
+// ── Self-healing: rebuild, wait for the release, or ask a person ───────────
+// Every automatic rebuild — a test failure sent back, a patch that conflicted
+// with a sibling, a migration number clash, an intake section or doc left
+// out — used to share one budget of 1. A ticket whose first patch merely
+// conflicted was therefore never rebuilt after a later test failure, and sat
+// in Backlog saying "a person needs to look at it" or "click Ready for Dev
+// again", with no flag on the card (26 Oct 2026 review: 22 conflict notes and
+// 12 send-backs in a week). It is now 3, and a ticket that uses them up is
+// flagged waiting-on-input with the reason, so the board shows the question
+// and an Answer button that rebuilds it. A rebuild that comes due while the
+// project's release is closing (trainLocked) waits for that train to merge
+// (buildAfterTrain, sweepDeferredBuilds) instead of waiting for a click.
+const MAX_AUTO_REBUILDS = 3;
+function escalationBlock(why, used, nowIso = new Date().toISOString()) {
+  const reason = String(why || "The automatic rebuilds did not get this ticket through.").trim();
+  return {
+    reason: "waiting-on-input",
+    note: `${reason.length > 1200 ? `${reason.slice(0, 1200)}…` : reason}\n\n` +
+      `Rebuilt automatically ${used} time${used === 1 ? "" : "s"} and still not through. What should change? Answer on the card (Answer button) and it is rebuilt with your answer.`,
+    setBy: "self-heal",
+    setAt: nowIso,
+  };
+}
+// Pure, for test/self-heal.test.js.
+//   item:    { autoRebuilds }        project: { trainLocked } or null
+//   why:     what went wrong, for the flag a person sees on escalation
+//   ignoreLock: a ticket sent back off a train was part of that release
+// Returns { action: "rebuild" | "defer" | "escalate", fields, sentence }:
+// the fields to write on the card and the sentence its note ends with.
+function selfHealPlan(item, project, why, { ignoreLock = false, nowIso } = {}) {
+  const used = Number(item && item.autoRebuilds) || 0;
+  if (!project || used >= MAX_AUTO_REBUILDS) {
+    return {
+      action: "escalate",
+      fields: { blocked: escalationBlock(why, used, nowIso) },
+      sentence: `It has been rebuilt automatically ${used} time${used === 1 ? "" : "s"} already, so it is flagged for you with the reason: answer on the card (Answer button) and it is rebuilt with your answer.`,
+    };
+  }
+  if (project.trainLocked && !ignoreLock) {
+    return {
+      action: "defer",
+      fields: { autoRebuilds: used + 1, buildAfterTrain: true },
+      sentence: "This project's release is closing (a ticket on its train was approved), so the rebuild starts by itself as soon as that train has merged.",
+    };
+  }
+  return {
+    action: "rebuild",
+    fields: { autoRebuilds: used + 1 },
+    sentence: "A rebuild was requested automatically; this card will say when it starts.",
   };
 }
 async function flushBuildRequests() {
@@ -850,6 +912,10 @@ async function flushBuildRequests() {
 // The function stamps the card's `lastFire` with the session or the error;
 // the sweep below turns what it finds into either a retry or one honest note.
 const REBUILD_NEVER_STARTED_MS = 30 * 60 * 1000;
+// A request that never started is asked for again this many times before the
+// card is noted for a person (25 Oct 2026: a rebuild requested after a merge
+// conflict never started and nothing tried again).
+const REBUILD_START_RETRIES = 2;
 function timeMs(v) {
   if (v == null) return NaN;
   if (v instanceof Date) return v.getTime();
@@ -865,12 +931,42 @@ function rebuildRequestOutcome(item, now = Date.now()) {
   const fire = item.lastFire;
   const started = !!(fire && fire.sessionId && timeMs(fire.at) >= requested);
   if (item.status !== "backlog" || item.patchReady || started) return "clear";
-  return now - requested >= REBUILD_NEVER_STARTED_MS ? "note" : "wait";
+  if (now - requested < REBUILD_NEVER_STARTED_MS) return "wait";
+  const blocked = !!(item.blocked && item.blocked.reason);
+  return !blocked && (Number(item.rebuildStartRetries) || 0) < REBUILD_START_RETRIES ? "retry" : "note";
+}
+
+// ── Build sessions that never report back ─────────────────────────────────
+// A session that started (lastFire.sessionId) but never wrote buildSession,
+// patchReady or a blocker leaves the card in Backlog and holds the project's
+// hand-off. After BUILD_SESSION_SILENT_MS it is started once more; if that one
+// goes quiet too the card is marked errored (which releases the hand-off) with
+// a note, so a person is told instead of finding it later. Pure.
+const BUILD_SESSION_SILENT_MS = 90 * 60 * 1000;
+const BUILD_SESSION_RETRIES = 1;
+function silentBuildSessionAction(item, now = Date.now()) {
+  if (!item || item.status !== "backlog" || item.patchReady || (item.blocked && item.blocked.reason)) return null;
+  const fire = item.lastFire;
+  if (!fire || !fire.sessionId) return null;
+  const fired = timeMs(fire.at);
+  if (Number.isNaN(fired) || now - fired < BUILD_SESSION_SILENT_MS) return null;
+  const bs = item.buildSession;
+  const reported = bs ? Math.max(timeMs(bs.reportedAt) || 0, timeMs(bs.finishedAt) || 0) : 0;
+  if (reported >= fired) return null; // it did report (done, or error)
+  return (Number(item.buildSessionRetries) || 0) < BUILD_SESSION_RETRIES ? "retry" : "escalate";
 }
 function rebuildNeverStartedNote(item) {
   const err = item.lastFire && item.lastFire.error;
   return `The automatic rebuild requested at ${new Date(timeMs(item.rebuildRequestedAt)).toISOString()} never started` +
-    `${err ? ` (${err})` : ""}. Click Ready for Dev to build it again.`;
+    `${err ? ` (${err})` : ""}, after ${REBUILD_START_RETRIES} more requests. Flagged as waiting on your answer: answer on the card (Answer button) and it is built again.`;
+}
+// The flag a ticket gets when the automation has run out of ways to start
+// its build (a fire that never started, sessions that never reported): on the
+// board it shows under "waiting on your answer" with the reason and an Answer
+// button that builds it again, instead of a note asking for a click nobody
+// sees. Pure.
+function buildNeverRanBlock(text, nowIso = new Date().toISOString()) {
+  return { reason: "waiting-on-input", note: `${text}\n\nAnswer on the card (Answer button) — anything the build should know, or just "try again" — and it is built again.`, setBy: "self-heal", setAt: nowIso };
 }
 // A fire the function could not make (429 or 5xx) is marked "retrying" with
 // the time to try again; the sweep re-requests it once that time has passed.
@@ -888,12 +984,22 @@ async function sweepRebuildRequests() {
     const outcome = rebuildRequestOutcome(item);
     if (outcome === "wait") continue;
     try {
-      if (outcome === "note") {
-        const notes = await appendNote(item, rebuildNeverStartedNote(item));
-        await patchItem(item.id, { rebuildRequestedAt: null, notes, updatedAt: new Date().toISOString() });
-        console.log(`[rebuild] ${item.id}: requested rebuild never started — noted`);
+      if (outcome === "retry") {
+        const project = await getProject(item.projectId).catch(() => null);
+        if (!project || project.trainLocked) continue; // asked again once the release has merged
+        const n = (Number(item.rebuildStartRetries) || 0) + 1;
+        const notes = await appendNote(item, `The automatic rebuild requested at ${new Date(timeMs(item.rebuildRequestedAt)).toISOString()} never started. Requesting it again (attempt ${n} of ${REBUILD_START_RETRIES}).`);
+        await patchItem(item.id, { rebuildStartRetries: n, notes, updatedAt: new Date().toISOString() });
+        queueBuildRequest(project, item.id); // fresh: restarts the card's clock
+        console.log(`[rebuild] ${item.id}: requested rebuild never started — asking again (${n}/${REBUILD_START_RETRIES})`);
+      } else if (outcome === "note") {
+        const text = rebuildNeverStartedNote(item);
+        const notes = await appendNote(item, text);
+        await patchItem(item.id, { rebuildRequestedAt: null, rebuildStartRetries: 0, blocked: buildNeverRanBlock(text), notes, updatedAt: new Date().toISOString() });
+        console.log(`[rebuild] ${item.id}: requested rebuild never started — flagged for an answer`);
       } else {
-        await patchItem(item.id, { rebuildRequestedAt: null });
+        // Answered: the next request gets its own retries.
+        await patchItem(item.id, { rebuildRequestedAt: null, ...(item.rebuildStartRetries ? { rebuildStartRetries: 0 } : {}) });
       }
     } catch (err) {
       console.error(`[rebuild] ${item.id}: ${err.message}`);
@@ -908,6 +1014,46 @@ async function sweepRebuildRequests() {
     if (!project || project.trainLocked) continue;
     queueBuildRequest(project, item.id, { retry: true });
     console.log(`[rebuild] ${item.id}: retrying a build session that could not be started`);
+  }
+}
+
+// ── Builds held while a release was closing ───────────────────────────────
+// A rebuild that came due while the project's train was locked (an approval
+// closes the release) used to end "click Ready for Dev once the train has
+// merged", and often nobody did: bCcJ waited 3h35m on 21 Oct 2026. Such a card
+// now carries buildAfterTrain (set by selfHealPlan, releaseDependents,
+// sweepUnbuiltReports or the board's Answer), and the first run after the
+// train has merged starts its build. Pure, for test/self-heal.test.js:
+// "build", "wait" (still locked, or waiting on an answer) or "clear" (it no
+// longer needs one: it left Backlog, has a patch, or its project is gone).
+function deferredBuildOutcome(item, project) {
+  if (!item || item.status !== "backlog" || item.patchReady || !project) return "clear";
+  if (item.blocked && item.blocked.reason) return "wait";
+  return project.trainLocked ? "wait" : "build";
+}
+async function sweepDeferredBuilds() {
+  const held = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "buildAfterTrain" }, op: "EQUAL", value: { booleanValue: true } } },
+  });
+  const projects = new Map();
+  for (const item of held) {
+    if (!projects.has(item.projectId)) projects.set(item.projectId, await getProject(item.projectId).catch(() => null));
+    const project = projects.get(item.projectId);
+    const outcome = deferredBuildOutcome(item, project);
+    if (outcome === "wait") continue;
+    try {
+      if (outcome === "build") {
+        const notes = await appendNote(item, `The release this ticket was waiting on has merged, so its build was started automatically; this card will say when it starts.`);
+        await patchItem(item.id, { buildAfterTrain: false, notes, updatedAt: new Date().toISOString() });
+        queueBuildRequest(project, item.id);
+        console.log(`[deferred-build] ${item.id}: train merged — build requested`);
+      } else {
+        await patchItem(item.id, { buildAfterTrain: false });
+      }
+    } catch (err) {
+      console.error(`[deferred-build] ${item.id}: ${err.message}`);
+    }
   }
 }
 
@@ -933,15 +1079,54 @@ async function sweepUnbuiltReports(now = Date.now()) {
         await patchItem(item.id, { notes, updatedAt: new Date().toISOString() });
         queueBuildRequest(project, item.id);
         console.log(`[unbuilt] ${item.id}: reply found after the build stopped — rebuild requested`);
+      } else if (next.action === "rebuild") {
+        // A release is closing: the reply is used as soon as that train has
+        // merged (sweepDeferredBuilds), not when someone remembers to click.
+        const notes = await appendNote(item, `The last build stopped without a patch, and a reply has been left on the card since. This project's release is closing, so the ticket is rebuilt with that reply as soon as the train has merged.`);
+        await patchItem(item.id, { buildAfterTrain: true, notes, updatedAt: new Date().toISOString() });
+        console.log(`[unbuilt] ${item.id}: reply found, train locked — build deferred until it merges`);
       } else {
         const blocked = { ...next.blocked, setAt: new Date().toISOString() };
-        if (next.action === "rebuild") blocked.note = `The reply on this card will be used once this project's train has merged (a release is closing). ${blocked.note}`;
         const notes = await appendNote(item, `The build stopped without packaging a patch and without flagging the card, so nothing would have moved it on. Flagged as waiting on your input: answer with the Answer button on the card and it rebuilds.`);
         await patchItem(item.id, { blocked, notes, updatedAt: new Date().toISOString() });
         console.log(`[unbuilt] ${item.id}: build stopped without a patch — flagged waiting-on-input`);
       }
     } catch (err) {
       console.error(`[unbuilt] ${item.id}: ${err.message}`);
+    }
+  }
+}
+
+async function sweepSilentBuildSessions(now = Date.now()) {
+  const started = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { compositeFilter: { op: "AND", filters: [
+      { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "backlog" } } },
+      { fieldFilter: { field: { fieldPath: "lastFire.status" }, op: "EQUAL", value: { stringValue: "started" } } },
+    ] } },
+  });
+  for (const item of started) {
+    const next = silentBuildSessionAction(item, now);
+    if (!next) continue;
+    try {
+      const project = await getProject(item.projectId).catch(() => null);
+      if (next === "retry") {
+        if (!project || project.trainLocked) continue;
+        const notes = await appendNote(item, `The build session started at ${new Date(timeMs(item.lastFire.at)).toISOString()} never reported back. Starting it again.`);
+        await patchItem(item.id, { buildSessionRetries: (Number(item.buildSessionRetries) || 0) + 1, notes, updatedAt: new Date().toISOString() });
+        queueBuildRequest(project, item.id);
+        console.log(`[silent-build] ${item.id}: session never reported — rebuild requested`);
+      } else {
+        const text = `The build session never reported back, and neither did its second attempt (last started ${new Date(timeMs(item.lastFire.at)).toISOString()}${item.lastFire.sessionUrl ? `, ${item.lastFire.sessionUrl}` : ""}). Marked as errored so the project is not left waiting on it.`;
+        const notes = await appendNote(item, text);
+        await patchItem(item.id, {
+          buildSession: { status: "error", errorMessage: "Build session never reported back", finishedAt: new Date(now).toISOString() },
+          buildSessionRetries: 0, blocked: buildNeverRanBlock(text, new Date(now).toISOString()), notes, updatedAt: new Date().toISOString(),
+        });
+        console.log(`[silent-build] ${item.id}: session never reported after a retry — marked errored`);
+      }
+    } catch (err) {
+      console.error(`[silent-build] ${item.id}: ${err.message}`);
     }
   }
 }
@@ -987,9 +1172,9 @@ async function releaseDependents(landed) {
         const notes = await appendNote(w,
           `Released: ${deps.join(", ")} ${deps.length === 1 ? "has" : "have"} reached Ready for Testing, so this ticket is no longer blocked. ` +
           (locked
-            ? `This project's train is closing (an approval locked it), so the build was NOT started — click Ready for Dev once the train has merged.`
+            ? `This project's train is closing (an approval locked it), so the build starts by itself as soon as that train has merged.`
             : `A build was requested for it automatically; this card will say when it starts.`));
-        await patchItem(w.id, { blocked: null, notes, updatedAt: new Date().toISOString() });
+        await patchItem(w.id, { blocked: null, notes, updatedAt: new Date().toISOString(), ...(locked ? { buildAfterTrain: true } : {}) });
         if (!locked) queueBuildRequest(project, w.id);
         console.log(`[parallel] ${w.id}: released (waited on ${deps.join(", ")})${locked ? " — train locked, not rebuilt" : ""}`);
       }
@@ -1990,7 +2175,7 @@ async function evidenceRunsFor(workflow, card, commits, runsFor, opts = {}) {
 
 // Once per sweep, just before ejectRedCulprits: keep every train card's
 // trainTest current, writing only when something changed.
-async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles)) {
+async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles), gh = (args) => run("gh", args)) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     select: { fields: ["deployBranch", "deployCommit", "trainTest", "revertRequested", "trainTestReruns"].map((fieldPath) => ({ fieldPath })) },
@@ -2012,10 +2197,54 @@ async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha),
       for (const t of trainTestWorkflowsFor(card, files)) runsByWorkflow[t.workflow] = commits ? await evidenceRunsFor(t.workflow, card, commits, runsFor, { borrow: true }) : await runsFor(t.workflow, card.deployCommit);
       const next = nextCardTrainTest(card, runsByWorkflow, Date.now(), files);
       if (next) await patchItem(card.id, { trainTest: next });
+      await retestUnrunWorkflows(card, next || rec, gh);
     } catch (err) {
       console.log(`[card-tests] ${card.id}: couldn't record its test state (${scrubSecrets(err.message)})`);
     }
   }
+}
+
+// ── A test run that never reached a result is started again ──────────────
+// A card whose run was cancelled (a timeout, the concurrency group, GitHub
+// itself) or never started read "not-run" for good: nothing re-ran it, the
+// culprit scan stopped at it, and a person had to approve it "with tests
+// acknowledged" (s8kRVURn, 23 Oct 2026: 2h51m). Each workflow is started
+// again once on the card's own commit, through a throwaway
+// train-retest/<sha> branch like the check on main; the branch is deleted
+// once that run has a result. Pure part: which workflows to start / clean up.
+const retestRef = (sha) => `train-retest/${String(sha).slice(0, 12)}`;
+function retestPlan(card, trainTest) {
+  const keys = (card && card.trainTestReruns) || [];
+  const sha = card && card.deployCommit;
+  const out = { start: [], cleanup: [] };
+  if (!sha || !trainTest || trainTest.sha !== sha || !Array.isArray(trainTest.workflows)) return out;
+  for (const w of trainTest.workflows) {
+    const started = keys.includes(`${w.workflow}@${sha}:retest`);
+    if (w.state === "not-run" && !started && !keys.includes(`${w.workflow}@${sha}:retested`)) out.start.push(w);
+    else if (started && (w.state === "passed" || w.state === "failed")) out.cleanup.push(w);
+  }
+  return out;
+}
+async function retestUnrunWorkflows(card, trainTest, gh = (args) => run("gh", args)) {
+  const plan = retestPlan(card, trainTest);
+  if (!plan.start.length && !plan.cleanup.length) return;
+  const sha = card.deployCommit;
+  let keys = card.trainTestReruns || [];
+  let notes = null;
+  for (const w of plan.start) {
+    if (!dispatchOnSha(w.workflow, sha, gh, retestRef(sha))) continue;
+    keys = withKey(keys, `${w.workflow}@${sha}:retest`);
+    notes = await appendNote(card, `The ${w.label || w.workflow} never reached a result on this ticket's commit ${sha.slice(0, 7)} (cancelled or never started), so it was started again. Nothing to do.`);
+    console.log(`[card-tests] ${card.id}: ${w.workflow} never ran to a result on ${sha.slice(0, 7)} — started it again`);
+  }
+  for (const w of plan.cleanup) {
+    keys = withKey(keys.filter((k) => k !== `${w.workflow}@${sha}:retest`), `${w.workflow}@${sha}:retested`);
+  }
+  if (plan.cleanup.length && !keys.some((k) => k.endsWith(`@${sha}:retest`))) {
+    try { gh(["api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${retestRef(sha)}`]); } catch { /* already gone */ }
+  }
+  card.trainTestReruns = keys;
+  await patchItem(card.id, { trainTestReruns: keys, ...(notes ? { notes, updatedAt: new Date().toISOString() } : {}) });
 }
 
 // Which of a train's Ready for Testing cards to tell about a failed run.
@@ -2205,6 +2434,20 @@ function trainTestGate(checks) {
 
 // Reads the gate for a train that checkoutTrain() has fetched. Never throws:
 // anything it can't read counts as "missing", and missing tests are started.
+// The run that speaks for the head in the deploy gate. A run still going on
+// the head commit does not hide one of the same workflow on the same commit
+// that already passed: the deploy dispatches its own run while the PR's run
+// tests the very same code (PR #474, 26 Oct 2026: held ~15 minutes on the
+// duplicate after the PR's run had passed). The newest completed run on the
+// head decides, so a later failure still wins. Pure, for test/self-heal.test.js.
+function gateRunFor(runs, head) {
+  const real = (runs || []).filter((r) => newestRealRun([r]));
+  const newest = real[0] || null;
+  if (!newest || !head || newest.headSha !== head || String(newest.status).toLowerCase() === "completed") return newest;
+  const decided = real.find((r) => r.headSha === head && String(r.status).toLowerCase() === "completed");
+  return decided && String(decided.conclusion).toLowerCase() === "success" ? decided : newest;
+}
+
 function readTrainTestGate(deployBranch) {
   let paths = [];
   try {
@@ -2219,8 +2462,8 @@ function readTrainTestGate(deployBranch) {
     let testRun = null;
     let speaksForHead = false;
     try {
-      testRun = newestRealRun(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", deployBranch,
-        "--limit", "10", "--json", "headSha,status,conclusion,url"]) || "[]"));
+      testRun = gateRunFor(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", deployBranch,
+        "--limit", "10", "--json", "headSha,status,conclusion,url"]) || "[]"), head);
       if (testRun && testRun.headSha === head) speaksForHead = true;
       else if (testRun && testRun.headSha) {
         let ancestor = false;
@@ -2286,6 +2529,33 @@ function pickRedCulprit(order, cards, runs, opts = {}) {
     return opts.deployParkedRed && greenBefore ? card : null;
   }
   return null;
+}
+
+// The card whose passing run already proves main green for this workflow on
+// the commit the culprit's run contained: the nearest earlier card on the
+// train whose run passed, with no merge of main between that run's commit and
+// the culprit's. Both runs then held the same main, so a failure only the
+// culprit's run shows is the culprit's (its re-run already ruled out a flake).
+// `commits`: the train's commits oldest first ({ sha, message }); `runs`:
+// { [deployCommit]: evidence run with headSha }. Returns { card, run } or
+// null. Pure, for test/train-base-check.test.js.
+function provenGreenMain(commits, cards, runs, culprit) {
+  const list = commits || [];
+  const at = (sha) => list.findIndex((c) => c && c.sha === sha);
+  const own = culprit && runs && runs[culprit.deployCommit];
+  const end = Math.max(at(culprit && culprit.deployCommit), own && own.headSha ? at(own.headSha) : -1);
+  if (end < 0) return null;
+  let best = null;
+  for (const c of cards || []) {
+    if (!c || !culprit || c.id === culprit.id) continue;
+    const r = (runs || {})[c.deployCommit];
+    if (trainRunVerdict(r) !== "passed") continue;
+    const i = at((r && r.headSha) || c.deployCommit);
+    if (i < 0 || i >= at(culprit.deployCommit)) continue;
+    if (!best || i > best.i) best = { i, card: c, run: r };
+  }
+  if (!best || list.slice(best.i + 1, end + 1).some(isMainMergeCommit)) return null;
+  return { card: best.card, run: best.run };
 }
 
 // ── A failed train test is re-run once before anyone acts on it ─────────────
@@ -2442,9 +2712,12 @@ function baseCheckAction({ workflow, baseSha, baseRun, keys, nowMs }) {
   if (v === "passed") return { act: "eject", why: "base-green" };
   if (v === "failed") return { act: "hold" };
   if (v === "rerun") return { act: "rerun-base" };
-  if (v === "running") return { act: "wait" };
   const prefix = baseKeyPrefix(workflow, baseSha);
   const sent = (keys || []).filter((k) => k.startsWith(prefix)).map((k) => Number(k.slice(prefix.length))).filter(Number.isFinite);
+  // A run on main that was started for this check and is still going after
+  // the give-up window is stuck (25 Oct 2026: the DSP train waited on one
+  // for hours): judge as if it never ran rather than wait for ever.
+  if (v === "running") return sent.length && nowMs - Math.max(...sent) >= BASE_CHECK_GIVE_UP_MS ? { act: "eject", why: "base-never-ran" } : { act: "wait" };
   if (!sent.length) return { act: "dispatch" };
   return nowMs - Math.max(...sent) >= BASE_CHECK_GIVE_UP_MS ? { act: "eject", why: "base-never-ran" } : { act: "wait" };
 }
@@ -2570,8 +2843,7 @@ function mainHeadSha(gh) {
 // Starts `workflow` on exactly `sha`: workflow_dispatch takes a ref, so a
 // throwaway train-base/<sha> branch is pointed at it (no workflow runs on a
 // push there). Never throws.
-function dispatchOnSha(workflow, sha, gh) {
-  const ref = baseCheckRef(sha);
+function dispatchOnSha(workflow, sha, gh, ref = baseCheckRef(sha)) {
   try { gh(["api", "-X", "POST", `repos/${REPO}/git/refs`, "-f", `ref=refs/heads/${ref}`, "-f", `sha=${sha}`]); } catch { /* already there */ }
   try {
     gh(["workflow", "run", workflow, "--repo", REPO, "--ref", ref]);
@@ -2654,6 +2926,7 @@ async function mainIsAlsoRed(t, culprit, r, branch, runsFor, gh, ghLog) {
 }
 
 async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles), gh = (args) => run("gh", args), ghLog = undefined) {
+  const ejected = [];
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested", "trainTestReruns"].map((fieldPath) => ({ fieldPath })) },
@@ -2693,10 +2966,18 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         // A red the Staff Kanban heal loop owns is fixed forward on the train,
         // not by sending its ticket back (processKanbanE2eHeal).
         if (t.kanban && trainProject && trainProject.kanbanE2e && trainProject.kanbanE2e.owned && trainProject.kanbanE2e.owned[t.workflow]) continue;
-        const culprit = pickRedCulprit(order, trainCards, runs, {
-          deployParkedRed,
-          skip: new Set(trainCards.filter((c) => onlyStaleEvidence(commits, c.deployCommit)).map((c) => c.deployCommit)),
-        });
+        // A card this workflow never runs for (a docs- or faq-only ticket on
+        // a console train) has no run, and pickRedCulprit stops at a card
+        // with no run — so every ticket after it went unjudged and a red one
+        // was never sent back. Skipped like a stale one.
+        const skip = new Set(trainCards.filter((c) => onlyStaleEvidence(commits, c.deployCommit)).map((c) => c.deployCommit));
+        for (const c of trainCards) {
+          if (runs[c.deployCommit] || skip.has(c.deployCommit)) continue;
+          let files = null;
+          try { files = await filesFor(c.deployCommit); } catch { /* unreadable: it keeps holding the scan */ }
+          if (files && files.length && !trainTestsFor(files).some((x) => x.workflow === t.workflow)) skip.add(c.deployCommit);
+        }
+        const culprit = pickRedCulprit(order, trainCards, runs, { deployParkedRed, skip });
         if (!culprit) continue;
         const r = runs[culprit.deployCommit];
         const action = culpritAction(r);
@@ -2717,38 +2998,48 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         } else if (action === "wait") {
           continue;
         }
-        const base = await mainIsAlsoRed(t, culprit, r, branch, runsFor, gh, ghLog);
+        // The ticket before it passed this workflow on the same main: main is
+        // proven green, so no run on main is needed (it cost 26–38 minutes
+        // per send-back, 19–26 Oct 2026). Only a merge of main between the
+        // two — the NBQ1 case below — still needs the check.
+        const proven = provenGreenMain(commits, trainCards, runs, culprit);
+        const base = proven ? { eject: true, why: "train-green" } : await mainIsAlsoRed(t, culprit, r, branch, runsFor, gh, ghLog);
         if (!base.eject) continue;
         const wasApproved = culprit.status === "ready-to-publish";
         const project = culprit.projectId === projectId ? trainProject : await getProject(culprit.projectId).catch(() => null);
-        const autoRebuild = !!project && (Number(culprit.autoRebuilds) || 0) < 1;
         const summary = failureSummaryOf(r.id, ghLog);
         const text = `${t.label} (${t.workflow}) failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} while everything before it on ${branch} passed${
-          base.why === "base-green" ? " and main without it passes" : base.why === "base-never-ran" ? " (main without it could not be tested)" : ""}: ${r.url || ""}${
+          base.why === "base-green" ? " and main without it passes"
+            : base.why === "train-green" ? `, on the same main (${proven.card.id}'s run passed just before it)`
+              : base.why === "base-never-ran" ? " (main without it could not be tested)" : ""}: ${r.url || ""}${
           rerunCouldNotStart ? " (the re-run could not start, so this is the first run's result)" : " (it failed again when re-run)"}`;
+        // The rebuild must start from the train WITHOUT this ticket's
+        // commits, so it is queued by processRevertFromTrain once they are
+        // off the branch (rebuildAfterRevert), not here.
+        const plan = selfHealPlan(culprit, project, `${summary ? `${summary}\n` : ""}${text}`, { ignoreLock: true });
         const notes = await appendNote(culprit,
           `Sent back automatically (Failed testing [tests]): ${summary ? `Why: ${summary}\n` : ""}${text}. ` +
           (wasApproved ? `It had been approved, but the approved Deploy to Main was parked red on it, so it is taken off rather than holding the release. ` : "") +
           `Its commits are being reverted off the train so the tickets around it can still ship. ` +
-          (autoRebuild ? `A rebuild was started with this failure on its notes — the build must make that check pass before handing the patch back.` : `It was already rebuilt once automatically; a person needs to look at it.`));
+          (plan.action === "rebuild" ? `A rebuild starts once the revert has landed, with this failure on its notes — the build must make that check pass before handing the patch back.` : plan.sentence));
         await patchItem(culprit.id, {
           status: "backlog",
           revertRequested: true,
           lastFailureReason: { category: "tests", summary: summary || `${t.label} failed`, text, action: "failed-testing", at: new Date() },
           notes,
           updatedAt: new Date().toISOString(),
-          // The rebuild must start from the train WITHOUT this ticket's
-          // commits, so it is queued by processRevertFromTrain once they are
-          // off the branch, not here.
-          ...(autoRebuild ? { autoRebuilds: (Number(culprit.autoRebuilds) || 0) + 1, rebuildAfterRevert: true } : {}),
+          ...plan.fields,
+          ...(plan.action === "rebuild" ? { rebuildAfterRevert: true } : {}),
         });
-        console.log(`[train-eject] ${branch}: ${culprit.id} turned ${t.workflow} red at ${culprit.deployCommit.slice(0, 7)} — sent back to Backlog and off the train${autoRebuild ? ", rebuild follows the revert" : ""}`);
-        break; // one ejection per branch per run; the next run re-reads the train after the revert
+        ejected.push(culprit.id);
+        console.log(`[train-eject] ${branch}: ${culprit.id} turned ${t.workflow} red at ${culprit.deployCommit.slice(0, 7)}${base.why === "train-green" ? " (main proven green by the ticket before it)" : ""} — sent back to Backlog and off the train${plan.action === "rebuild" ? ", rebuild follows the revert" : `, ${plan.action}`}`);
+        break; // one ejection per branch per run; the revert runs straight after this sweep
       }
     } catch (err) {
       console.log(`[train-eject] ${branch}: couldn't check for a red culprit (${scrubSecrets(err.message)})`);
     }
   }
+  return ejected;
 }
 
 // ── Self-healing Staff Kanban E2E loop (21 Oct 2026, ticket 6CScTuviK0lxznLl5FNk) ──
@@ -3797,16 +4088,29 @@ async function processApplyPatch(item) {
   if (hasIntakePlaceholder(item.desc)) {
     console.log(`[apply-patch] ${item.id}: refusing — the description still has an intake section to complete`);
     const project = await getProject(item.projectId).catch(() => null);
-    const autoRebuild = !!project && (Number(item.autoRebuilds) || 0) < 1 && !project.trainLocked;
+    const why = `Not built: this ticket's description still has an unfilled intake section (Test steps, Dependencies or Spec reference). ` +
+      `The build session has to complete them from the code and the spec in the same PATCH as its patch (ROUTINE_INSTRUCTIONS.md → "Complete the intake sections first").`;
+    const plan = selfHealPlan(item, project, why);
+    const notes = await appendNote(item, `${why} ${plan.sentence}`);
+    await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes, ...plan.fields });
+    if (plan.action === "rebuild") queueBuildRequest(project, item.id);
+    return;
+  }
+
+  // A second build session handed back a patch after the first one's patch
+  // had already landed (two sessions for one click, or a session that was
+  // presumed stalled and restarted): its files were read from a tree without
+  // this card's own commit, so carrying them over either conflicts — a false
+  // "Not built" note and a rebuild nobody needed (plQ1, NYwR, hhdG, 21–25 Oct
+  // 2026) — or quietly undoes the landed version. A deliberate re-patch of a
+  // card on the train reads the branch after its commit, so it is kept.
+  if (latePatchFromDuplicateSession(item, isAncestorCommit)) {
+    console.log(`[apply-patch] ${item.id}: discarding a late duplicate patch (base ${String(item.patchBaseSha).slice(0, 7)} predates this card's own commit ${String(item.deployCommit).slice(0, 7)})`);
     const notes = await appendNote(item,
-      `Not built: this ticket's description still has an unfilled intake section (Test steps, Dependencies or Spec reference). ` +
-      `The build session has to complete them from the code and the spec in the same PATCH as its patch (ROUTINE_INSTRUCTIONS.md → "Complete the intake sections first"). ` +
-      (autoRebuild ? `A rebuild was requested automatically; this card will say when it starts.` : `Fill them in (or click Ready for Dev again) to rebuild.`));
-    await patchItem(item.id, {
-      patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
-      ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
-    });
-    if (autoRebuild) queueBuildRequest(project, item.id);
+      `A second build session handed back a patch after this ticket had already landed as ${String(item.deployCommit).slice(0, 7)}. ` +
+      `It was written without that commit, so it was discarded and nothing changed on the train. If the landed version is wrong, use Failed testing.`);
+    await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes });
+    await dropPatchFiles(item.id);
     return;
   }
 
@@ -3956,22 +4260,14 @@ async function processApplyPatch(item) {
       if (rebase.conflicts.length) {
         discardWorkingTree();
         console.log(`[apply-patch] ${item.id}: ${rebase.conflicts.join(", ")} changed on ${deployBranch} since this patch was written and its edits can't be carried over — clearing patchReady`);
-        // One automatic rebuild against the current files; a second clash
-        // goes to a person rather than looping.
-        const autoRebuild = (Number(item.autoRebuilds) || 0) < 1 && !project.trainLocked;
-        const notes = await appendNote(
-          item,
-          `Not built: since this patch was written, ${deployBranch} changed ${rebase.conflicts.join(", ")} in the same places it does ` +
-          `(another ticket landed first, or main was merged in), so its edits could not be carried onto the current file automatically. ` +
-          (autoRebuild
-            ? `A rebuild against the current files was requested automatically; this card will say when it starts.`
-            : `Click Ready for Dev again so the fix is rebuilt against the current files.`)
-        );
-        await patchItem(item.id, {
-          patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
-          ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
-        });
-        if (autoRebuild) queueBuildRequest(project, item.id);
+        // Rebuilt against the current files (selfHealPlan); a ticket that
+        // keeps clashing goes to a person rather than looping.
+        const why = `Not built: since this patch was written, ${deployBranch} changed ${rebase.conflicts.join(", ")} in the same places it does ` +
+          `(another ticket landed first, or main was merged in), so its edits could not be carried onto the current file automatically.`;
+        const plan = selfHealPlan(item, project, why);
+        const notes = await appendNote(item, `${why} ${plan.action === "rebuild" ? "A rebuild against the current files was requested automatically; this card will say when it starts." : plan.sentence}`);
+        await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes, ...plan.fields });
+        if (plan.action === "rebuild") queueBuildRequest(project, item.id);
         return;
       }
       patchedFiles = rebase.files;
@@ -3990,20 +4286,14 @@ async function processApplyPatch(item) {
       (dir) => { try { return fs.readdirSync(path.join(process.cwd(), dir)); } catch { return []; } });
     if (clashes.length) {
       discardWorkingTree();
-      const autoRebuild = (Number(item.autoRebuilds) || 0) < 1 && !project.trainLocked;
       const what = clashes.map((c) => `${c.path} (number ${c.number} is already ${c.takenBy.map((t) => t.split("/").pop()).join(", ")})`).join("; ");
       console.log(`[apply-patch] ${item.id}: migration number clash — ${what}`);
-      const notes = await appendNote(item,
-        `Not built: this patch adds a migration whose number another ticket on ${deployBranch} already uses — ${what}. ` +
-        `Built in parallel, both picked the same "next" number, and the migration runner keys on it, so one of the two would never run. ` +
-        (autoRebuild
-          ? `A rebuild against the current branch (which will pick the next free number) was requested automatically; this card will say when it starts.`
-          : `Click Ready for Dev again so it is rebuilt with the next free number.`));
-      await patchItem(item.id, {
-        patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
-        ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
-      });
-      if (autoRebuild) queueBuildRequest(project, item.id);
+      const why = `Not built: this patch adds a migration whose number another ticket on ${deployBranch} already uses — ${what}. ` +
+        `Built in parallel, both picked the same "next" number, and the migration runner keys on it, so one of the two would never run.`;
+      const plan = selfHealPlan(item, project, why);
+      const notes = await appendNote(item, `${why} ${plan.action === "rebuild" ? "A rebuild against the current branch (which will pick the next free number) was requested automatically; this card will say when it starts." : plan.sentence}`);
+      await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes, ...plan.fields });
+      if (plan.action === "rebuild") queueBuildRequest(project, item.id);
       return;
     }
 
@@ -4018,16 +4308,12 @@ async function processApplyPatch(item) {
     const docsReason = typeof item.patchDocsImpact === "string" ? item.patchDocsImpact.trim() : "";
     if (docsUnmet.length && !docsReason) {
       discardWorkingTree();
-      const autoRebuild = (Number(item.autoRebuilds) || 0) < 1 && !project.trainLocked;
       console.log(`[apply-patch] ${item.id}: docsImpact — ${docsUnmet.length} unmet rule(s)`);
-      const notes = await appendNote(item,
-        docsUnmet.map(docsImpactRefusalNote).join(" ") + " " +
-        (autoRebuild ? `A rebuild was requested automatically; this card will say when it starts.` : `Click Ready for Dev again so it is rebuilt.`));
-      await patchItem(item.id, {
-        patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
-        ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
-      });
-      if (autoRebuild) queueBuildRequest(project, item.id);
+      const why = docsUnmet.map(docsImpactRefusalNote).join(" ");
+      const plan = selfHealPlan(item, project, why);
+      const notes = await appendNote(item, `${why} ${plan.sentence}`);
+      await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes, ...plan.fields });
+      if (plan.action === "rebuild") queueBuildRequest(project, item.id);
       return;
     }
     if (docsUnmet.length) docsImpactWaivers = docsUnmet.map((u) => docsImpactWaiverNote(u, docsReason));
@@ -4210,6 +4496,60 @@ async function processApplyPatch(item) {
 // only rewinds work that has not shipped yet.
 // The commit on HEAD's history after `sha` whose message says it reverts `sha`
 // ("This reverts commit <sha>.", what `git revert` writes), or null.
+// ── A revert that only collides in a document resolves itself ────────────
+// Taking a ticket off a train reverts its commit on top of the tickets that
+// landed after it. Their code rarely overlaps, but they all add a line to the
+// same dated list in REQUIREMENTS.md or README.md, so the revert conflicted
+// there and the train waited for a person to fix the branch (UpXXSjSt, 26 Oct
+// 2026: BookingSchedulePage.tsx reverted cleanly, REQUIREMENTS.md did not).
+// In each conflict hunk the revert side ("theirs") must hold only lines the
+// current side ("ours") also has — the revert is only taking lines away — and
+// the result is the current side minus the lines the reverted commit added.
+// Anything else, and any file that isn't Markdown, is left for a person.
+// Pure, for test/self-heal.test.js. Returns the resolved text, or null.
+function resolveRevertDocConflict(text, addedLines) {
+  const added = new Set((addedLines || []).map((l) => l.replace(/\s+$/, "")));
+  const out = [];
+  const lines = String(text).split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith("<<<<<<< ")) { out.push(lines[i]); continue; }
+    const ours = [], theirs = [];
+    let side = ours, j = i + 1;
+    for (; j < lines.length && !lines[j].startsWith(">>>>>>> "); j++) {
+      if (lines[j].startsWith("||||||| ")) { side = null; continue; }
+      if (lines[j] === "=======") { side = theirs; continue; }
+      if (side) side.push(lines[j]);
+    }
+    if (j >= lines.length) return null;
+    const norm = (l) => l.replace(/\s+$/, "");
+    const oursSet = new Set(ours.map(norm));
+    if (!theirs.every((l) => !norm(l) || oursSet.has(norm(l)))) return null;
+    const kept = ours.filter((l) => !added.has(norm(l)) || theirs.some((t) => norm(t) === norm(l)));
+    if (kept.length === ours.length) return null; // nothing of the reverted commit in it: not this shape
+    out.push(...kept);
+    i = j;
+  }
+  return out.join("\n");
+}
+function tryAutoResolveRevertConflict(conflicted, sha) {
+  if (!conflicted.length || !conflicted.every((p) => /\.md$/i.test(p))) return { resolved: false };
+  const resolved = [];
+  for (const p of conflicted) {
+    let added = [];
+    try {
+      added = run("git", ["show", "--format=", sha, "--", p], { maxBuffer: 64 * 1024 * 1024 })
+        .split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).map((l) => l.slice(1));
+    } catch { return { resolved: false }; }
+    const file = path.join(process.cwd(), p);
+    const text = resolveRevertDocConflict(fs.readFileSync(file, "utf8"), added);
+    if (text === null) return { resolved: false };
+    fs.writeFileSync(file, text);
+    resolved.push(p);
+  }
+  run("git", ["add", "--", ...resolved]);
+  return { resolved: true, paths: resolved };
+}
+
 function revertCommitFor(sha) {
   try {
     const out = run("git", ["log", "--format=%H", "--fixed-strings", `--grep=This reverts commit ${sha}`, `${sha}..HEAD`]);
@@ -4294,8 +4634,17 @@ async function processRevertFromTrain(item) {
     }
     const mainline = parentCount(sha) >= 2 ? ["-m", "1"] : [];
     try {
-      run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
-        "revert", "--no-edit", ...mainline, sha]);
+      try {
+        run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+          "revert", "--no-edit", ...mainline, sha]);
+      } catch (err) {
+        // Only a dated list in a document collided: finish the revert.
+        const docs = tryAutoResolveRevertConflict(conflictedPaths(), sha);
+        if (!docs.resolved) throw err;
+        run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+          "-c", "core.editor=true", "revert", "--continue"]);
+        console.log(`[train-revert] ${item.id}: revert of ${sha.slice(0, 7)} collided only in ${docs.paths.join(", ")} — kept the later tickets' lines, dropped this one's`);
+      }
       reverted.push(headSha());
       revertedOriginals.push(sha);
     } catch (err) {
@@ -4365,7 +4714,9 @@ async function processRevertFromTrain(item) {
     item,
     `Taken off the train: reverted ${commits.length === 1 ? "its commit" : `its ${commits.length} commits`} (${commits.map((s) => s.slice(0, 7)).join(", ")}) off \`${deployBranch}\` ` +
     `as ${reverted.map((s) => s.slice(0, 7)).join(", ")}. This card's change is no longer on the branch, so the next Deploy to Main will not carry it — ` +
-    `it's a plain Backlog ticket again, and a fresh Ready for Dev sweep will rebuild it on top of whatever the branch looks like then.` +
+    (item.rebuildAfterRevert
+      ? `it is rebuilt automatically, on top of the branch as it stands, with the failure above as its brief.`
+      : `it's a plain Backlog ticket again, and a fresh Ready for Dev sweep will rebuild it on top of whatever the branch looks like then.`) +
     (testsStarted.length ? ` The train tests were started again on the new head (${testsStarted.map((t) => t.workflow).join(", ")}).` : "")
   );
   await patchItem(item.id, {
@@ -4379,11 +4730,20 @@ async function processRevertFromTrain(item) {
   });
   console.log(`[train-revert] ${item.id}: reverted ${reverted.length} commit(s) off ${deployBranch}`);
   if (item.rebuildAfterRevert) {
-    // Sent back by ejectRedCulprits: rebuild it now the train is clean.
+    // Sent back (automatically, by Failed testing or fail_testing): rebuild it
+    // now the train is clean — unless the release is closing (a ticket on it
+    // was approved). Then the release ships without it and the rebuild starts
+    // when the train has merged (sweepDeferredBuilds), rather than landing a
+    // fresh ticket on a train that is waiting to deploy.
     const project = await getProject(item.projectId).catch(() => null);
-    if (project) queueBuildRequest(project, item.id);
-    await patchItem(item.id, { rebuildAfterRevert: false, updatedAt: new Date().toISOString() });
-    console.log(`[train-revert] ${item.id}: rebuild queued after the automatic send-back`);
+    const defer = !!(project && project.trainLocked);
+    if (project && !defer) queueBuildRequest(project, item.id);
+    const deferNotes = defer ? await appendNote(item, `This project's release is closing (a ticket on its train is approved), so it ships without this ticket, and this ticket's rebuild starts by itself as soon as that train has merged.`) : null;
+    await patchItem(item.id, {
+      rebuildAfterRevert: false, updatedAt: new Date().toISOString(),
+      ...(defer ? { buildAfterTrain: true, notes: deferNotes } : {}),
+    });
+    console.log(`[train-revert] ${item.id}: ${defer ? "rebuild deferred until the closing train merges" : "rebuild queued after the send-back"}`);
   }
   run("git", ["checkout", "main", "--quiet"]);
 }
@@ -6295,10 +6655,15 @@ async function closeNotifyRoutines(now = Date.now()) {
   for (const project of projects) {
     try {
       const routine = project.notifyRoutine;
-      const cards = await runQuery({
-        from: [{ collectionId: "backlogItems" }],
-        where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: project.id } } },
-      });
+      // Only the tickets the click sent. This runs on every automation run
+      // while a build is open, and reading the whole project — hundreds of
+      // cards, each with its notes — was most of the run's Firestore reads.
+      // A card that couldn't be read leaves the record open until next run;
+      // only a card that is really gone (null) counts as settled.
+      const sent = [...new Set(Array.isArray(routine && routine.sentItemIds) ? routine.sentItemIds : [])];
+      const fetched = await Promise.all(sent.map((id) => getItem(id).catch(() => undefined)));
+      if (fetched.some((c) => c === undefined)) continue;
+      const cards = fetched.filter(Boolean);
       const { outcome, noteCardIds } = notifyRoutineOutcome(routine, cards, now);
       if (outcome === "open" || outcome === "closed") continue;
       if (outcome === "stalled") {
@@ -6394,6 +6759,16 @@ async function main() {
     await sweepUnbuiltReports();
   } catch (err) {
     console.error(`[unbuilt] sweep failed: ${err.message}`);
+  }
+  try {
+    await sweepSilentBuildSessions();
+  } catch (err) {
+    console.error(`[silent-build] sweep failed: ${err.message}`);
+  }
+  try {
+    await sweepDeferredBuilds();
+  } catch (err) {
+    console.error(`[deferred-build] sweep failed: ${err.message}`);
   }
   await flushBuildRequests();
   await requestReadyForTestingNotify();
@@ -6492,11 +6867,28 @@ async function main() {
   } catch (err) {
     console.log(`[kanban-e2e] failed: ${err.message}`);
   }
+  let ejectedIds = [];
   try {
-    await ejectRedCulprits(runsFor);
+    ejectedIds = await ejectRedCulprits(runsFor);
   } catch (err) {
     console.log(`[train-eject] failed: ${err.message}`);
   }
+  // Take what was just sent back off its train in this run. The revert used
+  // to wait for the next run, and the next run waited on GitHub's schedule:
+  // 7dVoY12l was sent back at 00:40 on 26 Oct 2026 and nothing touched it
+  // until a person started a run.
+  for (const id of ejectedIds) {
+    const item = await getItem(id).catch(() => null);
+    if (!item || !item.revertRequested) continue;
+    try {
+      await processRevertFromTrain(item);
+    } catch (err) {
+      console.error(`[train-revert] ${id} failed: ${err.stack || err.message}`);
+      followUpReasons.push(`${id}: revert after send-back failed — retrying`);
+    }
+  }
+  // A revert that conflicted returns on the train branch; the sweeps below read main.
+  if (ejectedIds.length) { try { run("git", ["checkout", "main", "--quiet"]); } catch { /* already there */ } }
   // Rebuilds queued by this run's reverts (rebuildAfterRevert) — the earlier
   // flush ran before the reverts did.
   await flushBuildRequests();
@@ -6546,6 +6938,9 @@ if (require.main === module) {
 // run (main(), above, has real Firestore/GitHub side effects the moment
 // this module loads if not guarded — see the require.main check).
 module.exports = {
+  // test/self-heal.test.js — rebuild, wait for the release, or ask a person
+  selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
+  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
   // test/notes-append.test.js — notes are only ever appended, atomically
   notesCommitWrite, appendNote, patchItem,
@@ -6593,7 +6988,8 @@ module.exports = {
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/rebuild-requests.test.js — a requested rebuild either starts or the card says it didn't
-  rebuildRequestOutcome, rebuildNeverStartedNote, fireRetryDue, REBUILD_NEVER_STARTED_MS,
+  rebuildRequestOutcome, rebuildNeverStartedNote, fireRetryDue, REBUILD_NEVER_STARTED_MS, REBUILD_START_RETRIES,
+  silentBuildSessionAction, BUILD_SESSION_SILENT_MS,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
   followUpDue, FOLLOW_UP_MAX_WAIT_MS, dispatchFollowUpRun, followUpReasons,
   // test/preview-build-state.test.js — "Rebuilding test link…" until the bundle includes the ticket

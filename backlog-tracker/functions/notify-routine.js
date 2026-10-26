@@ -12,7 +12,13 @@
 // clocks. `reportedAt` is the server's clock; the sweep closes the record.
 "use strict";
 
-const STALL_MS = 25 * 60 * 1000;
+// 75 minutes, not 25 (26 Oct 2026): DSP build sessions report back after
+// 28-59 minutes (median 38, 19-26 Oct), so the 25-minute note fired on 17
+// healthy builds in a week and its "click Ready for Dev" started duplicate
+// sessions whose late patches then collided with the landed ones. The
+// automation restarts a session that is still silent at 90 minutes
+// (sweepSilentBuildSessions), so this note only has to say what is going on.
+const STALL_MS = 75 * 60 * 1000;
 
 function millis(v) {
   if (!v) return 0;
@@ -60,7 +66,8 @@ function stalledNoteText(card, routine) {
   const sess = (card && card.lastFire && card.lastFire.sessionUrl)
     || ((routine.sessions || []).find((s) => s && s.itemId === (card && card.id)) || {}).sessionUrl
     || routine.sessionUrl || "no session link";
-  return `The build session started at ${fired ? new Date(fired).toISOString() : "an unknown time"} (${sess}) never reported back. Open the session to see what happened, or click Ready for Dev to build it again.`;
+  return `The build session started at ${fired ? new Date(fired).toISOString() : "an unknown time"} (${sess}) hasn't reported back after ${Math.round(STALL_MS / 60000)} minutes. ` +
+    `If it stays silent it is started again automatically; open the session to see what it is doing. No click is needed (a second Ready for Dev now would build it twice).`;
 }
 
 // Should this write to a backlogItems doc stamp buildSession.reportedAt? Only

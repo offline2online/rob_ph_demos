@@ -162,7 +162,7 @@ function proofOnMain(git, card, sha) {
 /* One card's move. Returns { ok, fields, appendCommit?, notes[], lockTrain,
    exitCode, message }. `fields` are plain values (strings, booleans); the
    caller converts them. Nothing is written here. */
-export function checkMove({ card, to, deployCommit, git, project, actor, now = new Date().toISOString() }) {
+export function checkMove({ card, to, deployCommit, git, project, actor, reason, now = new Date().toISOString() }) {
   const id = card.id
   const fields = {}
   const notes = []
@@ -184,7 +184,14 @@ export function checkMove({ card, to, deployCommit, git, project, actor, now = n
     lockTrain = true
   } else if (to === 'backlog' && isTrainCard(card)) {
     fields.revertRequested = true
-    notes.push('Sent back to Backlog from the script — its commits are reverted off the train (as Failed testing does).')
+    /* As the board's Failed testing (26 Oct 2026): rebuilt once its commits
+       are off the train, with the reason as its brief. */
+    fields.rebuildAfterRevert = true
+    const why = String(reason || '').trim()
+    if (why) fields.lastFailureReason = { category: "Doesn't work as described", text: why, action: 'failed-testing', at: { timestamp: now } }
+    notes.push(why
+      ? `Failed testing [Doesn't work as described]: ${why}`
+      : 'Sent back to Backlog from the script — its commits are reverted off the train (as Failed testing does), and it is rebuilt once they are off.')
   } else if (to === 'archived' && isTrainCard(card)) {
     return refused(`${id}: it is on the train (${card.status}) — send it back with Failed testing first.`)
   }
@@ -235,6 +242,7 @@ export function relinkPlan(cards, sha, branch, now = new Date().toISOString()) {
 export function toValue(v) {
   if (v && typeof v === 'object' && 'timestamp' in v) return { timestampValue: v.timestamp }
   if (typeof v === 'boolean') return { booleanValue: v }
+  if (v && typeof v === 'object') return { mapValue: { fields: toFields(v) } }
   return { stringValue: String(v) }
 }
 export const toFields = (plain) => Object.fromEntries(Object.entries(plain).map(([k, v]) => [k, toValue(v)]))

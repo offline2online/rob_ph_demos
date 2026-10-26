@@ -1708,6 +1708,17 @@ function toolError(message) {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
+// Same list as FAILURE_REASON_CATEGORIES in public/js/app.js.
+const FAILED_TESTING_CATEGORIES = [
+  "Doesn't work as described",
+  "Wrong / unexpected behavior",
+  "Visual or layout issue",
+  "Missing a case the ticket asked for",
+  "Broke something else (regression)",
+  "Blocking a release, not a rebuild",
+  "Other",
+];
+
 async function audit(session, tool, detail) {
   try {
     await db().collection("mcpAuditLog").add(Object.assign({
@@ -1943,7 +1954,7 @@ const TOOLS = [
         routineBindingNudge: hasRoutineBinding
           ? null
           : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token. Call get_routine_setup_instructions to set up your own.",
-        note: "Moving cards, Notify Claude clicks and campaign triggering stay on the board's own buttons. Exceptions, all admin-only and each the same action as the board's own button: send_to_build (Ready for Dev for named Backlog tickets), approve_for_deployment (Ready for Testing to Approved for Deployment for named tickets) and approve_deploy_to_main (fires Deploy to Main once the project's whole train is approved). set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
+        note: "Moving cards, Notify Claude clicks and campaign triggering stay on the board's own buttons. Exceptions, all admin-only and each the same action as the board's own button: send_to_build (Ready for Dev for named Backlog tickets), approve_for_deployment (Ready for Testing to Approved for Deployment for named tickets), fail_testing (Failed testing for named Ready for Testing tickets) and approve_deploy_to_main (fires Deploy to Main once the project's whole train is approved). set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
       });
     },
   },
@@ -2724,6 +2735,69 @@ const TOOLS = [
         approved: true, projectId, count: ids.length, itemIds: ids,
         testsAcknowledged: warnings.length ? warnings : [],
         note: "These tickets are now Approved for Deployment. Nothing has been deployed: once Ready for Testing is empty for this project, approve_deploy_to_main fires Deploy to Main.",
+      });
+    },
+  },
+  {
+    name: "fail_testing",
+    role: "admin",
+    description: "ADMIN ONLY. Send named Ready for Testing tickets back — the same 'Something's wrong — send it back' action as the board's 'Failed testing' button, with a rebuild started for you. Each ticket goes to Backlog, its commits are reverted off the project's train (revertRequested), and the reason is recorded as its lastFailureReason and a note so the rebuild targets what failed. A rebuild is queued automatically once the revert has landed. Takes explicit ticket ids (never 'everything') and works for any project. Refuses the whole call if a ticket is not in this project's Ready for Testing or is already marked for revert. Logged to mcpAuditLog under your email.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Which project (from list_projects)." },
+        itemIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 50, description: "Ids of the Ready for Testing tickets that failed (from get_ready_for_testing_board)." },
+        reason: { type: "string", maxLength: 2000, description: "What failed, recorded on each ticket. Optional but strongly recommended: the rebuild reads it." },
+        category: { type: "string", enum: FAILED_TESTING_CATEGORIES, description: "The kind of miss. Default 'Other'." },
+      },
+      required: ["projectId", "itemIds"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const ids = [...new Set((Array.isArray(args.itemIds) ? args.itemIds : []).map((x) => String(x || "").trim()).filter(Boolean))];
+      if (!ids.length) return toolError("itemIds must name at least one Ready for Testing ticket. This tool never fails 'everything' — get_ready_for_testing_board shows the ids.");
+      if (ids.length > 50) return toolError("At most 50 tickets per call.");
+      const reason = String(args.reason || "").trim().slice(0, 2000);
+      const category = FAILED_TESTING_CATEGORIES.includes(args.category) ? args.category : "Other";
+      const projectSnap = await db().collection("projects").doc(projectId).get();
+      if (!projectSnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+
+      const snap = await db().collection("backlogItems").where("projectId", "==", projectId).get();
+      const byId = new Map();
+      snap.forEach((d) => byId.set(d.id, Object.assign({ id: d.id }, d.data())));
+
+      const problems = [];
+      for (const id of ids) {
+        const it = byId.get(id);
+        if (!it) { problems.push(`${id}: not a ticket of this project`); continue; }
+        const label = `${id} "${it.title || ""}"`;
+        if (it.status !== "ready-for-testing") problems.push(`${label}: is in ${it.status || "backlog"}, not Ready for Testing`);
+        else if (it.revertRequested === true) problems.push(`${label}: is already marked for revert`);
+      }
+      if (problems.length) return toolError(`Nothing was sent back. ${problems.join("; ")}.`);
+
+      const at = new Date();
+      const text = reason || "No reason given.";
+      const batch = db().batch();
+      ids.forEach((id) => {
+        batch.update(db().collection("backlogItems").doc(id), {
+          status: "backlog",
+          revertRequested: true,
+          // The automation queues the rebuild once the revert has landed.
+          rebuildAfterRevert: true,
+          lastFailureReason: { category, text, action: "failed-testing", at },
+          notes: FieldValue.arrayUnion({ author: session.email, text: `Failed testing [${category}] (via MCP): ${text}`, at }),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      });
+      await batch.commit();
+
+      await audit(session, "fail_testing", { projectId, itemIds: ids, count: ids.length, category, reason: reason || null });
+
+      return textResult({
+        sentBack: true, projectId, count: ids.length, itemIds: ids, category,
+        note: "These tickets are back in Backlog and their commits are being reverted off the train; a rebuild starts by itself once that has landed. This call returns before that — watch the board or list_backlog_items.",
       });
     },
   },
@@ -4652,7 +4726,7 @@ const PROMPTS = [
 ];
 
 const SERVER_INSTRUCTIONS = [
-  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has send_to_build, approve_for_deployment, approve_deploy_to_main and set_phase_skill_bindings.",
+  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has the release tools below.",
   "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
   "To take over or catch up on a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in its order. A person can start the same plan with the project_handover prompt.",
   "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full (it can be huge), so set include to the one block you need.",
@@ -4662,7 +4736,7 @@ const SERVER_INSTRUCTIONS = [
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment).",
   "Skills (all projects): list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
-  "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
+  "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {

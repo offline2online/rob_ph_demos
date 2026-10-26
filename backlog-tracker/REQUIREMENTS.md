@@ -168,6 +168,8 @@ deleted by hand).
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
   rebuildRequestedAt?: timestamp | null, // 19 Oct 2026 — when the automation last requested an automatic rebuild of this card; cleared once the request is answered (session started, card moved on) or reported as never started. Automation only
+  buildAfterTrain?: boolean,           // 26 Oct 2026 — a build that came due while this project's release was closing (trainLocked); the automation starts it on the first run after the train merges and clears it (sweepDeferredBuilds). Set by the automation or by the board's Answer
+  rebuildAfterRevert?: boolean,        // queue a rebuild once this card's commits are off the train: automatic send-backs, the board's Failed testing (not "Blocking a release, not a rebuild") and the MCP fail_testing tool
   lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
   previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
   previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
@@ -404,6 +406,94 @@ admin-readable and append-only from the server.
 
 ## The deployment train
 
+**A failing ticket heals itself or asks a person; it never strands (26 Oct
+2026).** From a review of 19–26 Oct (the full history is on the cards):
+send-backs waited 26–38 minutes each for a run on main that the train had
+already answered; one automatic rebuild was shared by every cause, so a
+ticket that had merely conflicted once got "a person needs to look at it"
+after a later test failure; a person's Failed testing waited for someone to
+click Ready for Dev; a rebuild due while a release was closing said "click
+Ready for Dev once the train has merged"; and the automation, which acts only
+when it runs, waited on a GitHub schedule that ran every 20–90 minutes when
+busy. Now:
+- **Every train test run starts the automation when it finishes**: the
+  `wake-automation` job in `e2e-quick.yml`, `firestore-rules-test.yml`,
+  `kanban-staff-board-tests.yml` and `retail-media-insights-tests.yml` (not
+  for pull requests), and in `dsp-prototype.yml` after a train bundle is
+  pushed. The `*/2` schedule stays as the safety net.
+- **No check on main when the train already proves main green**:
+  `provenGreenMain` finds the nearest earlier card whose run passed with no
+  merge of main between it and the culprit; both runs held the same main, so
+  the culprit is sent back at once (`why: "train-green"`). A merge of main
+  in between still runs the check on main below.
+- **The revert happens in the same run as the send-back** (`main()`
+  reverts what `ejectRedCulprits` returns), and the rebuild is queued
+  straight after.
+- **A card the workflow never runs for no longer stops the scan**: a
+  docs- or faq-only ticket has no run of the console tests, and
+  `pickRedCulprit` used to stop there, so a red ticket after it was never
+  sent back. Cards whose commit's files don't need the workflow
+  (`trainTestsFor`) are skipped like stale ones; a card whose run simply
+  hasn't started still holds the tickets after it.
+- **One plan for every automatic rebuild** (`selfHealPlan`): up to
+  `MAX_AUTO_REBUILDS` (3) per ticket across all causes (test failure,
+  same-lines conflict, migration number clash, intake section, docsImpact).
+  Used up, the ticket is flagged `blocked: { reason: "waiting-on-input",
+  setBy: "self-heal" }` with the reason, so the board shows it under
+  "waiting on your answer" with an Answer button that rebuilds it.
+- **A rebuild due while the release is closing waits for the merge, not a
+  click**: the card carries `buildAfterTrain: true` (set by `selfHealPlan`,
+  `releaseDependents`, `sweepUnbuiltReports` or the board's Answer while
+  `trainLocked`), and `sweepDeferredBuilds` requests its build on the first
+  run after the train has merged (`deferredBuildOutcome`).
+- **Failed testing rebuilds automatically**: the board's send-back writes
+  `rebuildAfterRevert: true` (`sendBackFields`), so the ticket is rebuilt
+  with the tester's Details as its brief once its commits are off the
+  train — except for the category "Blocking a release, not a rebuild".
+  When the release is closing (`trainLocked`), `processRevertFromTrain`
+  sets `buildAfterTrain` instead of requesting the build: the release ships
+  without the ticket and its rebuild follows the merge, rather than landing
+  a fresh ticket on a train that is waiting to deploy.
+- **A duplicate session's late patch is discarded**: a patch for a card
+  already on the train whose `patchBaseSha` does not contain the card's own
+  `deployCommit` (`latePatchFromDuplicateSession`) is dropped with one note,
+  instead of a false "Not built … could not be carried" and a needless
+  rebuild. A deliberate re-patch reads the branch after the card's commit and
+  lands as before.
+- **A revert that collides only in a document completes**: tickets on a
+  train each add a line to the same dated list in REQUIREMENTS.md or
+  README.md, so taking an earlier one off conflicted there even when its
+  code reverted cleanly, and the train waited for a person.
+  `tryAutoResolveRevertConflict` resolves a Markdown-only conflict where the
+  revert only takes lines away (`resolveRevertDocConflict`: the current text
+  minus the reverted commit's added lines); any other conflict, and any code
+  file, still stops with `revertBlockedBy`.
+- **A test run that never reached a result is started again**: a card
+  whose run was cancelled or never started read "not-run" for good, held
+  the culprit scan and waited for someone to approve it "with tests
+  acknowledged". `retestUnrunWorkflows` (from `recordCardTrainTests`)
+  starts each such workflow once more on the card's own commit through a
+  throwaway `train-retest/<sha>` branch, notes the card, and deletes the
+  branch once the run has a result (`trainTestReruns` keys
+  `<workflow>@<sha>:retest` → `:retested`).
+- **The deploy gate counts a pass on the head even while a duplicate runs**:
+  Deploy to Main dispatches the train tests on the version-bump commit while
+  the PR runs the same workflows on it; the gate read only the newest run, so
+  a deploy held on a duplicate after the PR's run had passed (PR #474).
+  `gateRunFor` takes the newest completed run on the head commit when the
+  newest run is still going and that one passed.
+- **When a build can't be started at all, the card asks for an answer**: a
+  rebuild that never started after its retries (`sweepRebuildRequests`), or
+  two build sessions that never reported back (`sweepSilentBuildSessions`),
+  now set `blocked` waiting-on-input (`buildNeverRanBlock`) instead of a
+  note asking for a click, so the card shows under "waiting on your answer"
+  with the reason and an Answer button that builds it again. The retry
+  counters reset once a rebuild starts or the ticket is flagged.
+- **Build sessions run what CI runs**: `npm run test:offline` in
+  `backlog-tracker/test` is the console tests without the emulator, kept
+  equal to CI by `ci-coverage.test.js`.
+Tests: `test/self-heal.test.js` (in `test:train-lock`).
+
 **A ticket is never sent back for a failure main already has (20 Oct
 2026).** `kanban-staff-board/` reached main with no line in START-HERE.md's
 deploy map, so `bt-handover-docs.test.js` was red on main itself, unseen
@@ -516,7 +606,15 @@ answer is `retrying`: the sweep (`sweepRebuildRequests`) re-requests it once
 `failed` immediately. Fires are spaced 1.5 s apart and, after a 429, the rest
 of the batch is deferred (up to 6 deferrals) rather than fired into it. Each
 sweep, a Backlog card whose `rebuildRequestedAt` is over 30 minutes old with
-no session started since and no patch handed over gets one note — "The
+no session started since and no patch handed over is first asked for again
+(up to `REBUILD_START_RETRIES` = 2, counted in `rebuildStartRetries`; 25 Oct
+2026). A started session that never reports back (no `buildSession`, patch or
+blocker 90 minutes after `lastFire.at`) is restarted once
+(`buildSessionRetries`), then marked `buildSession.status: "error"` with a
+note, which releases the project's hand-off (`sweepSilentBuildSessions`). A
+dispatched baseline check on main that is still running after
+`BASE_CHECK_GIVE_UP_MS` is treated as never run and the culprit is sent back.
+Only then does a card get one note — "The
 automatic rebuild requested at <time> never started (<error>). Click Ready
 for Dev to build it again." — and `rebuildRequestedAt` is cleared, so it is
 posted once. Tests: `test/rebuild-requests.test.js` (which cards are
@@ -2774,7 +2872,7 @@ review" under "Functional requirements — FAQ / Help Center" below for what
 these two collections' write tools do and don't do; skills library:
 `upload_skill`, `update_skill`, `delete_skill`, `report_skill_miss`,
 `mark_skill_reviewed`; your own routine binding: `set_my_routine_binding`;
-release (admin only, three deliberate exceptions — see below): `send_to_build`, `approve_for_deployment`, `approve_deploy_to_main`.
+release (admin only, deliberate exceptions — see below): `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main`.
 A concept has no `list_backlog_items`-shaped tool of its own — it has no
 `backlogItems` until it's promoted to a real project (see "Concept
 Incubator page" above), which is also why there is no `create_concept` or
@@ -2969,7 +3067,12 @@ train and blocked, packaged, already-building or non-Backlog tickets);
 `approve_for_deployment` moves Ready for Testing tickets to Approved for
 Deployment with the approver stamped and `trainLocked` set (refuses tickets
 not in Ready for Testing or marked for revert, and tickets whose train tests
-are not green unless `acknowledgeTests` is true). Both refuse the whole call
+are not green unless `acknowledgeTests` is true). **`fail_testing`** (25 Oct 2026)
+is the board's Failed testing → send back for named Ready for Testing tickets,
+admin only: status `backlog`, `revertRequested`, `lastFailureReason`, a note
+and `rebuildAfterRevert` (the rebuild queues itself after the revert); it
+refuses any ticket not in Ready for Testing or already reverting, writing
+nothing, and logs the reason to `mcpAuditLog`. These refuse the whole call
 on any failing ticket and log to `mcpAuditLog`; no MCP tool moves a card any
 other way. `approve_deploy_to_main`
 (`board.write` **and the `admin` role**, since 27 Sep 2026) fires the exact same trigger the
