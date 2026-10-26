@@ -1451,13 +1451,8 @@ campaigns that the bid applies to. The retailer assigns it as part of
 approving (ticket IDGsyELBJsjlAYjizSqT).
 
 - **Table layout and selection** (ticket dinPPBl9Rk95UbrXoRbt). Columns,
-  left to right: selection box, Status, **Advertiser / Campaign name**
-  (ticket QstRAlo3YCi7erFD0maN, 25 Oct 2026: one locked column — advertiser
-  on the first line, the campaign name beneath it; hovering the advertiser
-  shows the advertiser and the DSP it runs through, so there is no DSP
-  column; its search box matches either the advertiser or the campaign name
-  and its funnel picks an advertiser), Touch
-  points, Display types, Creative ID, Deal ID, Localised variables,
+  left to right: selection box, Status, Advertiser, Campaign name, Touch
+  points, Display types, Creative ID, Deal ID, DSP, Localised variables,
   Personalised variables, Received, Activation, Last used. Every row has
   **exactly one** box. Each advertiser is a group row whose single box ticks
   every campaign beneath it (partial when only some are ticked); a campaign

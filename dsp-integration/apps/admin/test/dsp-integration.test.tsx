@@ -383,10 +383,8 @@ describe('Campaign Status stand-in', () => {
     /* The status filter is a column filter. */
     expect(grid.querySelectorAll('.ag-floating-filter').length).toBeGreaterThan(0)
     /* The filters name themselves and list what is there (Rob, 20 Sep). */
-    expect((await within(grid).findAllByLabelText('Advertiser / Campaign name filter', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
-    /* One locked Advertiser / Campaign name column: search and funnel; no DSP column (ticket QstRAlo3YCi7erFD0maN). */
-    expect(within(grid).getByLabelText('Advertiser / Campaign name search')).toBeInTheDocument()
-    expect(within(grid).queryByLabelText('DSP filter')).not.toBeInTheDocument()
+    expect((await within(grid).findAllByLabelText('Advertiser filter', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
+    expect(within(grid).getAllByLabelText('DSP filter').length).toBeGreaterThan(0)
     /* Touch points and Display types filter from a list; Creative ID and Deal ID take pasted text. */
     expect(within(grid).getAllByLabelText('Touch points filter').length).toBeGreaterThan(0)
     expect(within(grid).getAllByLabelText('Display types filter').length).toBeGreaterThan(0)
@@ -396,7 +394,7 @@ describe('Campaign Status stand-in', () => {
        (ticket IDGsyELBJsjlAYjizSqT), grouped by advertiser. Order per ticket
        dinPPBl9Rk95UbrXoRbt: Activation sits left of Last used, Received left of Activation. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      '', 'Status', 'Advertiser / Campaign name', 'Touch points', 'Display types', 'Creative ID', 'Deal ID', 'Localised variables', 'Personalised variables', 'Received', 'Activation', 'Last used', '',
+      '', 'Status', 'Advertiser', 'Campaign name', 'Touch points', 'Display types', 'Creative ID', 'Deal ID', 'DSP', 'Localised variables', 'Personalised variables', 'Received', 'Activation', 'Last used', '',
     ])
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* The touch points it runs on, and the high-level variable summary. */
@@ -411,7 +409,7 @@ describe('Campaign Status stand-in', () => {
     expect(await screen.findByRole('menuitem', { name: /Undo rejection/ }, { timeout: 10000 })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByRole('menuitem', { name: 'Approve campaign' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Reject campaign' })).toBeInTheDocument()
-  }, slow(45000))
+  })
 
   /* Ticket gtkZHpDXBXqYk1GFL2Mf: hovering Rejected shows why. */
   it('shows the rejection details when hovering a Rejected status', async () => {
@@ -549,7 +547,7 @@ describe('Campaign Status stand-in', () => {
 
   /* Ticket pHOcPNaBqRDzNTENqnZE (12 Oct 2026): every column filter on the table works,
      not just the Status and Advertiser funnels. */
-  it('filters by every column: advertiser / campaign name, touch points, display types, creative ID and deal ID', async () => {
+  it('filters by every column: campaign name, touch points, display types, creative ID, deal ID and DSP', async () => {
     const other = {
       ...campaign, campaignId: 'c2', name: 'Blackmores autumn', advertiserId: 'blackmores', advertiserName: 'Blackmores',
       partnerId: 'p_ttd', partnerName: 'The Trade Desk', displayTypeId: 'landscape', dealId: 'DEAL-77',
@@ -571,8 +569,7 @@ describe('Campaign Status stand-in', () => {
     await waitFor(() => expect(within(grid()).getByText('CR-AAA')).toBeInTheDocument(), { timeout: 10000 })
 
     for (const [label, text, keep, drop] of [
-      ['Advertiser / Campaign name', 'autumn', 'Blackmores autumn', 'Swisse spring'],
-      ['Advertiser / Campaign name', 'Swisse', 'Swisse spring', 'Blackmores autumn'],
+      ['Campaign name', 'Blackmores', 'Blackmores autumn', 'Swisse spring'],
       ['Creative ID', 'CR-AAA', 'Swisse spring', 'Blackmores autumn'],
       ['Deal ID', 'DEAL-77', 'Blackmores autumn', 'Swisse spring'],
     ] as const) {
@@ -585,6 +582,7 @@ describe('Campaign Status stand-in', () => {
     for (const [label, value, keep, drop] of [
       ['Touch points', 'Mobile', 'Blackmores autumn', 'Swisse spring'],
       ['Display types', 'landscape', 'Blackmores autumn', 'Swisse spring'],
+      ['DSP', 'Google DSP', 'Swisse spring', 'Blackmores autumn'],
     ] as const) {
       fireEvent.click(within(grid()).getAllByLabelText(`${label} filter`)[0])
       const box = await screen.findByRole('checkbox', { name: new RegExp(`^${value}$`, 'i') })

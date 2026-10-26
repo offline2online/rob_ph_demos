@@ -30,9 +30,8 @@
    Retailer review → "Creative IDs".
 
    Column order and selection (ticket dinPPBl9Rk95UbrXoRbt, 10 Oct 2026):
-   selection box, Status, Advertiser / Campaign name (one locked column,
-   ticket QstRAlo3YCi7erFD0maN — the DSP shows on hovering the advertiser), Touch points, Display
-   types, Creative ID, Deal ID, the two variable columns, Received,
+   selection box, Status, Advertiser, Campaign name, Touch points, Display
+   types, Creative ID, Deal ID, DSP, the two variable columns, Received,
    Activation, Last used. Each advertiser is a group row whose ONE box ticks
    every campaign beneath it; each campaign row has its own one box. There is
    no status selector or "select all" above the table — status is filtered
@@ -53,13 +52,13 @@ import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalStatusBadge, RejectionCodeSelect, STATUS_LABELS, isRejectionCode, rejectionLabel, type Approval, type ApprovalStatus, type RejectionCode } from '@ph-dsp/campaign-approval/ui'
 import type { Campaign } from '@ph-dsp/types'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Q } from '../../api/queries'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
-import { pageSetColumn, searchColumn, searchFunnelColumn, setColumn } from '../../shared/TableFilters'
+import { externalSetColumn, pageSetColumn, searchColumn, setColumn } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
 import { CAMPAIGN_STATUS_PATH, useCampaignActions } from './useCampaigns'
 import { byAdvertiserDeal, elapsedSince, triageOrder } from './triage'
@@ -145,22 +144,8 @@ const SelectCell = ({ data, context }: P) => {
   return <Checkbox aria-label={`Select ${data.name}`} checked={c.selected.has(data.campaignId)} onChange={(e) => c.toggle(data.campaignId, e.target.checked)} />
 }
 
-/* One cell for the advertiser and the campaign (ticket QstRAlo3YCi7erFD0maN): the advertiser on the first line, hovering
-   it shows who the advertiser is and the DSP it runs through (there is no DSP column); the campaign's name beneath it
-   opens the campaign. The advertiser's group row above its campaigns keeps the name alone. */
-const AdvertiserTip = ({ advertiser, dsp, children }: { advertiser: string; dsp: string; children: ReactNode }) => (
-  <Tip title={<div><div><b>Advertiser:</b> {advertiser || '—'}</div><div><b>DSP:</b> {dsp || '—'}</div></div>}>{children}</Tip>
-)
-const AdvertiserCell = ({ data, context }: P) => {
-  if (!data) return null
-  if (data.group) return <AdvertiserTip advertiser={data.group.label} dsp={data.group.dsps}><b className="block truncate">{data.group.label || '—'}</b></AdvertiserTip>
-  return (
-    <div className="flex min-w-0 flex-col justify-center leading-tight">
-      <AdvertiserTip advertiser={data.advertiserName ?? ''} dsp={data.partnerName ?? ''}><b className="block truncate">{data.advertiserName ?? '—'}</b></AdvertiserTip>
-      <CampaignNameCell data={data} context={context} />
-    </div>
-  )
-}
+/* Only the group row names the advertiser; the campaigns beneath it sit under it. */
+const AdvertiserCell = ({ data }: P) => (data?.group ? <b className="block truncate" title={data.group.label}>{data.group.label || '—'}</b> : null)
 const DealCell = ({ data }: P) => (data && !data.group && data.dealId ? <span className="block truncate" title={data.dealId}>{data.dealId}</span> : null)
 const DisplayTypesCell = ({ data, context }: P) => {
   if (!data || data.group) return null
@@ -174,12 +159,12 @@ const DisplayTypesCell = ({ data, context }: P) => {
 const CampaignNameCell = ({ data, context }: P) => {
   if (!data || data.group) return null
   const lines: [string, string][] = [
-    ['Touch points', touchPointsOf(data).join(', ') || '—'], ['Pricing', pricingLabel(data)],
+    ['Advertiser', data.advertiserName ?? '—'], ['DSP', data.partnerName ?? '—'], ['Touch points', touchPointsOf(data).join(', ') || '—'], ['Pricing', pricingLabel(data)],
     ['Localised variables', data.localisedVariables.join(', ') || '—'], ['Personalised variables', data.personalisedVariables.join(', ') || '—'],
   ]
   return (
     <Tip title={<div>{lines.map(([k, v]) => <div key={k}><b>{k}:</b> {v}</div>)}</div>}>
-      <Button type="link" className="h-auto px-0 py-0" style={{ color: T.text, maxWidth: '100%' }} onClick={() => context.current.open(data.campaignId)}>
+      <Button type="link" className="px-0" style={{ color: T.text, fontWeight: 700, maxWidth: '100%' }} onClick={() => context.current.open(data.campaignId)}>
         <span className="block truncate">{data.name}</span>
       </Button>
     </Tip>
@@ -436,6 +421,7 @@ export function CampaignStatusPage() {
     assignOne: (a) => void assignCreativeId([a]).then((ok) => ok && toggle(a.campaignId, false)),
     assignOneToExisting: (c, a) => { only(c); openPicker([a]) },
   }
+  const values = (of: (c: Campaign) => string) => () => all.map(of).filter((v) => v && v !== '—')
   const advertiserOptions = useMemo(() => [...new Map(
     all.filter((c): c is Campaign & { advertiserId: string } => !!c.advertiserId).map((c) => [c.advertiserId, c.advertiserName ?? c.advertiserId] as const),
   ).entries()].map(([value, label]) => ({ value, label })), [all])
@@ -480,18 +466,19 @@ export function CampaignStatusPage() {
       ...pageSetColumn<Row>('Status', statusOptions.map((k) => STATUS_LABELS[k]), statusFilter.map((k) => STATUS_LABELS[k]),
         (labels) => setStatusFilter(FILTERABLE_STATUSES.filter((k) => labels.includes(STATUS_LABELS[k])))),
     },
-    /* Advertiser and campaign name in one locked (pinned) column; the search matches either, the funnel picks an advertiser. */
     {
-      headerName: 'Advertiser / Campaign name', width: 260, minWidth: 220, pinned: 'left', lockPinned: true, cellRenderer: AdvertiserCell,
-      valueGetter: (p) => (p.data?.group ? `${p.data.group.label} ${p.data.group.names}` : p.data ? `${p.data.advertiserName ?? ''} ${p.data.name}` : ''),
-      ...searchFunnelColumn<Row>('Advertiser / Campaign name', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
+      headerName: 'Advertiser', width: 190, minWidth: 160, pinned: 'left', cellRenderer: AdvertiserCell, valueGetter: (p) => p.data?.advertiserName ?? '—',
+      ...externalSetColumn<Row>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
         (name) => setAdvertiserFilter(advertiserOptions.find((a) => a.label === name)?.value)),
     },
+    /* The campaign's own name, linking to it; then where it runs, and the creative ID and deal it is grouped under. */
+    { headerName: 'Campaign name', width: 220, minWidth: 180, cellRenderer: CampaignNameCell, valueGetter: (p) => joined(p, (c) => c.name, (g) => g.names), ...searchColumn<Row>('Campaign name') },
     { headerName: 'Touch points', width: 170, minWidth: 140, cellRenderer: TouchPointsCell, valueGetter: (p) => joined(p, (c) => touchPointsOf(c).join(', '), (g) => g.touchPoints), ...setColumn<Row>('Touch points', () => all.flatMap(touchPointsOf)) },
     { headerName: 'Display types', width: 160, minWidth: 130, cellRenderer: DisplayTypesCell, valueGetter: (p) => joined(p, (c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''), (g) => g.displayTypes), ...setColumn<Row>('Display types', () => all.map((c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''))) },
     { headerName: 'Creative ID', width: 170, minWidth: 140, cellRenderer: CreativeIdCell, valueGetter: (p) => (p.data?.group ? p.data.group.creativeIds : p.data ? approvals[p.data.campaignId]?.creativeId ?? '' : ''), ...searchColumn<Row>('Creative ID') },
     /* Deal ID (private auctions): the advertiser's own grouping, set at authoring. Empty for a direct campaign. */
     { headerName: 'Deal ID', width: 150, minWidth: 130, cellRenderer: DealCell, valueGetter: (p) => joined(p, (c) => c.dealId ?? '', (g) => g.deals), ...searchColumn<Row>('Deal ID') },
+    { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => (p.data?.group ? p.data.group.dsps : p.data?.partnerName ?? '—'), ...setColumn<Row>('DSP', values((c) => c.partnerName ?? '')) },
     {
       headerName: 'Localised variables', width: 200, minWidth: 160, cellRenderer: LocalisedVariablesCell,
       valueGetter: (p) => p.data?.localisedVariables.join(', ') ?? '',
