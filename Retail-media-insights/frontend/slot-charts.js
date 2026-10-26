@@ -475,7 +475,7 @@
         if (cpm && has(r.floorCpm)) track.appendChild(h('i', { class: 'sc-floor-mark', style: 'left:' + (100 * r.floorCpm / max).toFixed(2) + '%' }));
         var row = h('div', { class: 'sc-row', role: 'listitem' }, [
           nameLabel(r.name, displaysOf(r), cache.typeMap[r.id]),
-          h('div', { class: 'sc-track' }, [track]),
+          hoverable(h('div', { class: 'sc-track' }, [track]), function () { return slotValueHover(r, filters); }),
           hoverable(h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(vals[i]) }), cpm ? ' CPM' : ' per available slot per day']), function () { return slotValueHover(r, filters); })
         ]);
         list.appendChild(row);
