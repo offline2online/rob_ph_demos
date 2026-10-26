@@ -153,6 +153,29 @@ export const searchColumn = <Row,>(label: string): Partial<ColDef<Row>> => ({
   floatingFilterComponentParams: { label },
 })
 
+/* A column that takes both: the search box and, beside it, a funnel the page owns (its choice kept in the URL).
+   For a merged column such as Campaign Status's "Advertiser / Campaign name", where typing matches either part
+   and the funnel picks an advertiser. */
+interface SearchFunnelParams extends Params { funnel: { values: string[]; chosen: string | undefined; onChange: (value?: string) => void } }
+const SearchFunnelFilter = forwardRef<unknown, SearchFunnelParams>(function SearchFunnelFilter(props, ref) {
+  const { funnel } = props
+  return (
+    <div className="flex h-full w-full items-center gap-1">
+      <div className="min-w-0 flex-1"><SearchFilter ref={ref} {...props} /></div>
+      <div className="h-full w-8 shrink-0"><Funnel label={props.label} values={funnel.values} chosen={funnel.chosen ? [funnel.chosen] : []} single onChange={(next) => funnel.onChange(next[0])} /></div>
+    </div>
+  )
+})
+export const searchFunnelColumn = <Row,>(label: string, values: string[], chosen: string | undefined, onChange: (value?: string) => void): Partial<ColDef<Row>> => ({
+  filter: 'agTextColumnFilter',
+  suppressHeaderMenuButton: true,
+  suppressHeaderFilterButton: true,
+  floatingFilter: true,
+  suppressFloatingFilterButton: true,
+  floatingFilterComponent: SearchFunnelFilter,
+  floatingFilterComponentParams: { label, funnel: { values, chosen, onChange } },
+})
+
 export const setColumn = <Row,>(label: string, values: () => string[]): Partial<ColDef<Row>> => ({
   filter: 'agTextColumnFilter',
   filterParams: { textMatcher: setMatcher, maxNumConditions: 1, filterOptions: ['equals'] },
