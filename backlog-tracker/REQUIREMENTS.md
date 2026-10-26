@@ -476,6 +476,12 @@ busy. Now:
   throwaway `train-retest/<sha>` branch, notes the card, and deletes the
   branch once the run has a result (`trainTestReruns` keys
   `<workflow>@<sha>:retest` → `:retested`).
+- **The deploy gate counts a pass on the head even while a duplicate runs**:
+  Deploy to Main dispatches the train tests on the version-bump commit while
+  the PR runs the same workflows on it; the gate read only the newest run, so
+  a deploy held on a duplicate after the PR's run had passed (PR #474).
+  `gateRunFor` takes the newest completed run on the head commit when the
+  newest run is still going and that one passed.
 - **Build sessions run what CI runs**: `npm run test:offline` in
   `backlog-tracker/test` is the console tests without the emulator, kept
   equal to CI by `ci-coverage.test.js`.

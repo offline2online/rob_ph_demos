@@ -2420,6 +2420,20 @@ function trainTestGate(checks) {
 
 // Reads the gate for a train that checkoutTrain() has fetched. Never throws:
 // anything it can't read counts as "missing", and missing tests are started.
+// The run that speaks for the head in the deploy gate. A run still going on
+// the head commit does not hide one of the same workflow on the same commit
+// that already passed: the deploy dispatches its own run while the PR's run
+// tests the very same code (PR #474, 26 Oct 2026: held ~15 minutes on the
+// duplicate after the PR's run had passed). The newest completed run on the
+// head decides, so a later failure still wins. Pure, for test/self-heal.test.js.
+function gateRunFor(runs, head) {
+  const real = (runs || []).filter((r) => newestRealRun([r]));
+  const newest = real[0] || null;
+  if (!newest || !head || newest.headSha !== head || String(newest.status).toLowerCase() === "completed") return newest;
+  const decided = real.find((r) => r.headSha === head && String(r.status).toLowerCase() === "completed");
+  return decided && String(decided.conclusion).toLowerCase() === "success" ? decided : newest;
+}
+
 function readTrainTestGate(deployBranch) {
   let paths = [];
   try {
@@ -2434,8 +2448,8 @@ function readTrainTestGate(deployBranch) {
     let testRun = null;
     let speaksForHead = false;
     try {
-      testRun = newestRealRun(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", deployBranch,
-        "--limit", "10", "--json", "headSha,status,conclusion,url"]) || "[]"));
+      testRun = gateRunFor(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", deployBranch,
+        "--limit", "10", "--json", "headSha,status,conclusion,url"]) || "[]"), head);
       if (testRun && testRun.headSha === head) speaksForHead = true;
       else if (testRun && testRun.headSha) {
         let ancestor = false;
@@ -6912,7 +6926,7 @@ if (require.main === module) {
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   selfHealPlan, escalationBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
-  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, retestPlan, retestUnrunWorkflows, flushBuildRequests,
+  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
   // test/notes-append.test.js — notes are only ever appended, atomically
   notesCommitWrite, appendNote, patchItem,

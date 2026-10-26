@@ -358,6 +358,17 @@ async function test(name, fn) {
     }
   });
 
+  await test("gateRunFor: a duplicate run still going on the head doesn't hide a pass on the same commit; a later failure wins", async () => {
+    const r = (headSha, status, conclusion) => ({ headSha, status, conclusion });
+    assert.deepStrictEqual(auto.gateRunFor([r(A, "in_progress", ""), r(A, "completed", "success")], A), r(A, "completed", "success"));
+    assert.deepStrictEqual(auto.gateRunFor([r(A, "in_progress", ""), r(A, "completed", "failure")], A), r(A, "in_progress", ""), "a red earlier run is not a verdict while a newer one runs");
+    assert.deepStrictEqual(auto.gateRunFor([r(A, "completed", "failure"), r(A, "completed", "success")], A), r(A, "completed", "failure"), "the newest completed run decides");
+    assert.deepStrictEqual(auto.gateRunFor([r(A, "in_progress", ""), r(B, "completed", "success")], A), r(A, "in_progress", ""), "a pass on another commit doesn't count");
+    assert.deepStrictEqual(auto.gateRunFor([r(B, "completed", "success")], A), r(B, "completed", "success"), "older head: left to testedHeadOf as before");
+    assert.deepStrictEqual(auto.gateRunFor([{ headSha: A, status: "completed", conclusion: "action_required" }, r(A, "completed", "success")], A), r(A, "completed", "success"));
+    assert.strictEqual(auto.gateRunFor([], A), null);
+  });
+
   if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
   console.log("\nself-heal: all passed");
 })();
