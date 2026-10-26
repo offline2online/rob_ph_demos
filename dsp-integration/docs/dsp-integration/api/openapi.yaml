@@ -3992,9 +3992,16 @@ components:
                 description: One per schedule window, in the same order.
                 items:
                   type: object
-                  required: [start, status, booking]
+                  required: [start, status, booking, assumedViews]
                   properties:
                     start: {type: string, format: date-time}
+                    assumedViews:
+                      type: [integer, 'null']
+                      description: |
+                        Assumed views (VAC-d) over this column's span (the schedule's shortest window, a day by default) for a booked, available or
+                        reserved cell; null when unavailable. The sum of the display type's displays' hour-of-week VAC-d profiles
+                        (displays.vacd_profile) over the span, else its default VAC-d spread flat; a slot with its own audience score stays flat.
+                        A Weekly or Monthly cell is the sum of its days.
                     status: {type: string, enum: [booked, available, reserved, unavailable], description: '`reserved`: not booked yet, but inside the flight of a live Direct advertiser deal on this position, so no one else can buy it; the exchange books it for the deal''s advertiser (22 Oct 2026).'}
                     booking:
                       type: [object, 'null']
@@ -4106,9 +4113,12 @@ components:
         totals: {$ref: '#/components/schemas/BookingRevenueTotals'}
     BookingRevenueTotals:
       type: object
-      required: [bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled]
+      required: [bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled, totalViews, bookedViews, availableViews]
       properties:
         bookedWindows: {type: integer}
+        totalViews: {type: integer, description: Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available.}
+        bookedViews: {type: integer, description: Assumed views of the booked cells, windows held for a Direct advertiser deal included (a reserved cell counts as booked unless an advertiser filter is picked, which counts only that advertiser's).}
+        availableViews: {type: integer, description: Assumed views of the cells still available to book.}
         sellableWindows: {type: integer, description: Sum of every display type's sellableWindows — see BookingRevenue.}
         realtimeOpportunities: {type: integer, description: Sum of every display type's realtimeOpportunities — see BookingRevenue.}
         realtimeFilled: {type: integer, description: Sum of every display type's realtimeFilled — see BookingRevenue.}
@@ -4116,11 +4126,14 @@ components:
         billedRevenue: {type: number}
     BookingRevenue:
       type: object
-      required: [displayTypeId, displayTypeName, bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled]
+      required: [displayTypeId, displayTypeName, bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled, totalViews, bookedViews, availableViews]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
         bookedWindows: {type: integer}
+        totalViews: {type: integer, description: Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available.}
+        bookedViews: {type: integer, description: Assumed views of the booked cells, windows held for a Direct advertiser deal included (a reserved cell counts as booked unless an advertiser filter is picked, which counts only that advertiser's).}
+        availableViews: {type: integer, description: Assumed views of the cells still available to book.}
         realtimeOpportunities:
           type: integer
           description: |

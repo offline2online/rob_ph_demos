@@ -325,9 +325,9 @@ function BookingTile({ booking, money, slot, dimmed, start }: { booking: Booking
 function DailyCell({ cell, money, slot, advertiserId }: { cell: Cell; money: (n: number) => string; slot?: string; advertiserId?: string }) {
   if (cell.status === 'unavailable') return <span style={{ fontSize: 11, color: T.micro }}>—</span>
   /* Inside a live Direct advertiser deal's flight: held for its advertiser, not on sale to anyone else. */
-  if (cell.status === 'reserved') return <span style={{ fontSize: 11, color: T.muted }}>Reserved · Direct</span>
-  if (!cell.booking) return <span style={{ fontSize: 11, color: T.success }}>Available</span>
-  return <BookingTile booking={cell.booking} money={money} slot={slot} start={cell.start} dimmed={!!advertiserId && cell.booking.advertiserId !== advertiserId} />
+  if (cell.status === 'reserved') return <><span style={{ fontSize: 11, color: T.muted }}>Reserved · Direct</span><ViewsLine views={cell.assumedViews} /></>
+  if (!cell.booking) return <><span style={{ fontSize: 11, color: T.success }}>Available</span><ViewsLine views={cell.assumedViews} /></>
+  return <><BookingTile booking={cell.booking} money={money} slot={slot} start={cell.start} dimmed={!!advertiserId && cell.booking.advertiserId !== advertiserId} /><ViewsLine views={cell.assumedViews} /></>
 }
 
 /* A week or a month: how many windows were booked at all, and — of those —
@@ -342,6 +342,8 @@ function GroupedCell({ cells, money, advertiserId }: { cells: Cell[]; money: (n:
   const names = [...new Set(booked.map((c) => c.booking!.advertiserName))]
   const revenue = booked.reduce((n, c) => n + c.booking!.bookedRevenue, 0)
   const tip = booked.length ? `${names.join(', ')} · ${money(revenue)}` : 'Nothing booked in this period.'
+  /* The sum of the days it covers (an unavailable day has none). */
+  const views = cells.some((c) => c.assumedViews != null) ? cells.reduce((n, c) => n + (c.assumedViews ?? 0), 0) : null
   const upsells = (['localised', 'personalised'] as const).map((k) => ({ k, n: booked.filter((c) => c.booking!.layers[k]).length })).filter((u) => u.n > 0)
   return (
     <Tip title={tip}>
@@ -355,6 +357,7 @@ function GroupedCell({ cells, money, advertiserId }: { cells: Cell[]; money: (n:
             <span style={{ fontSize: 10, color: T.micro }}>{n} of {booked.length}</span>
           </div>
         ))}
+        <ViewsLine views={views} />
       </div>
     </Tip>
   )
@@ -374,6 +377,9 @@ function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ct
   )
 }
 
+const ViewsCell = ({ value, data }: ICellRendererParams<RevenueRow, number>) => (
+  <span style={{ fontWeight: data?.total ? 600 : 400 }}>{plays(value ?? 0)}</span>
+)
 const NumberCell = ({ value, data, context, colDef }: ICellRendererParams<RevenueRow, number, Ctx>) => (
   <span style={{ fontWeight: data?.total ? 600 : 400 }}>{colDef?.field === 'bookedWindows' ? value : context.current.money(value ?? 0)}</span>
 )
@@ -407,6 +413,9 @@ const ExpectedFillCell = ({ data }: ICellRendererParams<RevenueRow>) => {
    on screens, so they are never added to each other or to the estate figure. */
 const PLAYS_TIP = 'Plays per day = the plays of every billing-unit window running in the stores’ trading hours that day (not a flat 24h ÷ billing unit). Pre-booked = plays committed by deals, netted off firmly. Available to bid = the rest, indicative: the auction decides. Segment cuts overlap on screens, so they do not add up to the total.'
 const plays = (n: number) => n.toLocaleString('en-GB')
+/* Assumed views (VAC-d) under a cell (ticket eNlz3fJab4Ehqg9hbf4C, 26 Oct 2026): the day's figure from the hour-of-week profiles. */
+const ViewsLine = ({ views }: { views: number | null | undefined }) => views == null ? null : <span style={{ fontSize: 10.5, color: T.micro }}>{plays(views)} assumed views</span>
+const VIEWS_TIP = 'Assumed views = VAC-d, the audience the displays are expected to deliver. A day is the sum of its 24 hours, from each display’s hour-of-week profile where it has one, else its display type’s default VAC-d. Sales teams quote forward bookings on this figure.'
 
 function PlaysPerDay({ data }: { data: BookingCapacity }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
@@ -645,6 +654,12 @@ export function BookingSchedulePage() {
       headerName: 'Expected fill (real-time)', field: 'realtimeOpportunities', width: 190, cellRenderer: ExpectedFillCell,
     },
     {
+      /* Assumed views (VAC-d) over the period shown (ticket eNlz3fJab4Ehqg9hbf4C, 26 Oct 2026): booked + available = total. */
+      headerName: 'Total assumed views', field: 'totalViews', width: 150, cellRenderer: ViewsCell, headerTooltip: VIEWS_TIP,
+    },
+    { headerName: 'Booked assumed views', field: 'bookedViews', width: 150, cellRenderer: ViewsCell, headerTooltip: VIEWS_TIP },
+    { headerName: 'Available assumed views', field: 'availableViews', width: 150, cellRenderer: ViewsCell, headerTooltip: VIEWS_TIP },
+    {
       /* Renamed from "Booked revenue" (ticket, 22 Sep) — "estimated" is more
          honest about what this is before a window has actually played:
          booked CPM × assumed views, not confirmed spend. "Billed revenue"
@@ -715,7 +730,7 @@ export function BookingSchedulePage() {
               above, so it sits directly under the schedule and names the period it
               covers; Plays per day does not follow the view, so it goes last
               (ticket LFloWVCY1ii2ikrjOx8M, 24 Oct 2026). */}
-          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash there. Expected fill (real-time) = the share of the last 7 days’ impression opportunities on real-time (open / whitelist-only) positions that were filled: indicative, from recent history, never sold; it is the same in every view and, with an advertiser or DSP picked, counts only that buyer’s fills. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip><span style={{ fontWeight: 400, color: T.muted }}> · {view}: {dayjs(from).format('D MMM YYYY')} – {dayjs(to).format('D MMM YYYY')}</span></SectionLabel>
+          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash there. Expected fill (real-time) = the share of the last 7 days’ impression opportunities on real-time (open / whitelist-only) positions that were filled: indicative, from recent history, never sold; it is the same in every view and, with an advertiser or DSP picked, counts only that buyer’s fills. Total, Booked and Available assumed views are the audience (VAC-d) of those windows over the period, from each display’s hour-of-week profile where it has one, else its type’s default; booked + available = total, and windows held for a Direct deal count as booked. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip><span style={{ fontWeight: 400, color: T.muted }}> · {view}: {dayjs(from).format('D MMM YYYY')} – {dayjs(to).format('D MMM YYYY')}</span></SectionLabel>
           <Grid<RevenueRow>
             label="Booking revenue"
             rows={data.revenue}

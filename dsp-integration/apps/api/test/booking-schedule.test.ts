@@ -3,6 +3,8 @@ import { runBilling } from '../src/exchange/billing'
 import { buildApp } from '../src/http/app'
 import type { ReservationRecord } from '../src/repos/ReservationRepo'
 import { approvalOf } from '../src/routes/admin/bookingSchedule'
+import { defaultVacdOf } from '../src/domain/displayTypes'
+import { HOURS_PER_WEEK } from '../src/domain/vacdProfile'
 import { expectMatchesContract } from './contract'
 import { NOW, sellByWindow, testContext } from './helpers'
 
@@ -34,7 +36,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(body.positions[0]).toMatchObject({ realTime: true, recentPlays: 0 })
     expect(body.positions[0].windows.every((w: { status: string }) => w.status === 'unavailable')).toBe(true)
     /* Ticket 1n6upwMWSLGxszhg5u7k: an open (real-time) position is never pre-booked, so its windows are not "sellable" and % sold is a dash, not 0%. */
-    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 })
+    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 0, bookedViews: 0, availableViews: 0 })
     expect(body.revenue[0]).toMatchObject({ displayTypeId: 'menu_board', bookedWindows: 0, sellableWindows: 0 })
   })
 
@@ -91,7 +93,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     await sellByWindow(ctx, 'menu_board', 2)
     const body = (await get()).json()
     expect(body.positions[0]).toMatchObject({ assignment: 'deal' })
-    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 13, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 })
+    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 13, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 16068, bookedViews: 0, availableViews: 16068 })
   })
 
   /* A0GyTNsA (1 Oct 2026): a multi-zone display type's slot is numbered
@@ -128,10 +130,44 @@ describe('GET /admin/v1/booking-schedule', () => {
     /* A Test-mode win is not a booking. */
     expect(at('2026-09-23')).toMatchObject({ status: 'available', booking: null })
     expect(at('2026-09-16').status).toBe('unavailable')
-    expect(res.json().revenue).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0 }])
-    expect(res.json().totals).toEqual({ bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0 })
+    expect(res.json().revenue).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 4944, bookedViews: 2472, availableViews: 2472 }])
+    expect(res.json().totals).toEqual({ bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 4944, bookedViews: 2472, availableViews: 2472 })
     /* Both bookings are localised campaigns (Rob, 20 Sep: show what type is selling). */
     expect(res.json().byPricingType).toEqual([{ pricingType: 'localised', bookedWindows: 2, bookedRevenue: 364.62 }])
+  })
+
+  /* Ticket eNlz3fJab4Ehqg9hbf4C (26 Oct 2026): assumed views (VAC-d) per cell and per display type. */
+  it('reports assumed views per day and per display type: booked + available = total, and a display profile moves its day', async () => {
+    const { ctx, get } = await setup()
+    await sellByWindow(ctx, 'menu_board', 2)
+    await ctx.reservations.insert(booking({}))
+    const q = '?from=2026-09-21&to=2026-09-24'
+    const before = (await get(q)).json()
+    expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, before)
+    const cells = (b: typeof before) => b.positions[0].windows as { start: string; status: string; assumedViews: number | null }[]
+    const day = (b: typeof before, d: string) => cells(b).find((w) => w.start.startsWith(d))!
+    expect(day(before, '2026-09-21')).toMatchObject({ status: 'available', assumedViews: 1236 })
+    expect(day(before, '2026-09-22')).toMatchObject({ status: 'booked', assumedViews: 1236 })
+    const [row] = before.revenue
+    expect(row.bookedViews + row.availableViews).toBe(row.totalViews)
+    expect(row.bookedViews).toBe(1236)
+    expect(before.totals).toMatchObject({ totalViews: row.totalViews, bookedViews: row.bookedViews, availableViews: row.availableViews })
+    /* A display with an hour-of-week profile: its day is the sum of that day's 24 hours. */
+    expect(day(before, '2026-09-21').assumedViews).toBe(1236)
+    /* The seeded slot has a score of its own, which stays flat; without it the slot follows its displays. */
+    ctx.db.prepare("DELETE FROM audience_vacd WHERE display_type_id = 'menu_board' AND slot = 2").run()
+    await ctx.displayTypes.saveExtensions('menu_board', { ...(await ctx.displayTypes.get('menu_board'))!.phExtensions!, defaultVacd: 240 })
+    const dflt = defaultVacdOf((await ctx.displayTypes.get('menu_board'))!)!
+    expect(dflt).toBe(240)
+    const displays = ctx.db.prepare("SELECT id, vacd_override AS o FROM displays WHERE display_type_id = 'menu_board'").all() as { id: string; o: number | null }[]
+    const derived = displays.reduce((n, x) => n + (x.o ?? dflt), 0)
+    expect(day((await get(q)).json(), '2026-09-21').assumedViews).toBe(Math.round(derived))
+    ctx.db.prepare('UPDATE displays SET vacd_profile = ? WHERE id = ?').run(JSON.stringify(Array<number>(HOURS_PER_WEEK).fill(5)), displays[0].id)
+    const after = (await get(q)).json()
+    expect(day(after, '2026-09-21').assumedViews).toBe(Math.round(derived - (displays[0].o ?? dflt) + 24 * 5))
+    expect(after.revenue[0].bookedViews + after.revenue[0].availableViews).toBe(after.revenue[0].totalViews)
+    /* A day that can no longer be sold has none. */
+    expect(day((await get('?from=2026-09-15&to=2026-09-17')).json(), '2026-09-16')).toMatchObject({ status: 'unavailable', assumedViews: null })
   })
 
   /* Ticket S5PZyZ3MFr45LTM0zfAK (22 Oct 2026): the tile's approval state. */
@@ -201,7 +237,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
     const booked = res.json().positions[0].windows.filter((w: { status: string }) => w.status === 'booked')
     expect(booked.map((w: { start: string }) => w.start)).toEqual(['2026-11-02T00:00:00.000Z'])
-    expect(res.json().totals).toEqual({ bookedWindows: 1, sellableWindows: 43, bookedRevenue: 216.3, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 })
+    expect(res.json().totals).toEqual({ bookedWindows: 1, sellableWindows: 43, bookedRevenue: 216.3, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 53148, bookedViews: 1236, availableViews: 51912 })
     /* The seeded Nestlé booking belongs to another campaign, so it isn't counted. */
     expect(res.json().windows[0].start).toBe('2026-09-20T00:00:00.000Z')
   })
@@ -216,7 +252,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     const other = swisse.json().positions[0].windows.find((w: { start: string }) => w.start.startsWith('2026-09-15'))
     expect(other).toMatchObject({ status: 'booked', booking: { advertiserId: 'nestle', advertiserName: 'Nestlé' } })
     const amazon = await get('?partnerId=p_amazon&from=2026-09-15&to=2026-09-23')
-    expect(amazon.json().totals).toEqual({ bookedWindows: 0, sellableWindows: 3, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 })
+    expect(amazon.json().totals).toEqual({ bookedWindows: 0, sellableWindows: 3, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 3708, bookedViews: 0, availableViews: 3708 })
   })
 
   /* The filter is there to find a booking, so it only offers advertisers

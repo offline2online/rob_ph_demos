@@ -461,6 +461,27 @@ describe('Campaign Status stand-in', () => {
     expect(screen.getAllByText('expected').length).toBeGreaterThan(0)
   }, slow(45000))
 
+  /* Ticket eNlz3fJab4Ehqg9hbf4C: assumed views (VAC-d) under each cell and per display type in the Booking revenue table. */
+  it('shows assumed views under a cell and total, booked and available assumed views per display type', async () => {
+    const start = new Date().toISOString()
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], dsps: [], directAdvertisers: [], byPricingType: [],
+      revenue: [{ displayTypeId: 'portrait', displayTypeName: 'Portrait', bookedWindows: 0, sellableWindows: 1, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 12345, bookedViews: 5000, availableViews: 7345 }],
+      totals: { bookedWindows: 0, sellableWindows: 1, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 12345, bookedViews: 5000, availableViews: 7345 },
+      positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'deal', realTime: false, recentPlays: null,
+        windows: [{ start, status: 'available', booking: null, assumedViews: 4321 }] }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule })))
+    renderAt('/booking-schedule')
+    expect(await screen.findByText('4,321 assumed views', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.getByText('Total assumed views')).toBeInTheDocument()
+    expect(screen.getByText('Booked assumed views')).toBeInTheDocument()
+    expect(screen.getByText('Available assumed views')).toBeInTheDocument()
+    expect((await screen.findAllByText('12,345')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('5,000').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('7,345').length).toBeGreaterThan(0)
+  }, slow(45000))
+
   /* Ticket ByeH6mIkaRqOJjnHu31z: a Booking Schedule tile opens its campaign in Campaign Approval. */
   it('opens a booking tile\'s campaign in Campaign Approval, even one the list normally hides', async () => {
     const start = new Date().toISOString()

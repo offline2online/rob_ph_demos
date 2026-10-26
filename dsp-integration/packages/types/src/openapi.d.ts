@@ -3289,6 +3289,13 @@ export interface components {
                     /** Format: date-time */
                     start: string;
                     /**
+                     * @description Assumed views (VAC-d) over this column's span (the schedule's shortest window, a day by default) for a booked, available or
+                     *     reserved cell; null when unavailable. The sum of the display type's displays' hour-of-week VAC-d profiles
+                     *     (displays.vacd_profile) over the span, else its default VAC-d spread flat; a slot with its own audience score stays flat.
+                     *     A Weekly or Monthly cell is the sum of its days.
+                     */
+                    assumedViews: number | null;
+                    /**
                      * @description `reserved`: not booked yet, but inside the flight of a live Direct advertiser deal on this position, so no one else can buy it; the exchange books it for the deal's advertiser (22 Oct 2026).
                      * @enum {string}
                      */
@@ -3400,6 +3407,12 @@ export interface components {
         };
         BookingRevenueTotals: {
             bookedWindows: number;
+            /** @description Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available. */
+            totalViews: number;
+            /** @description Assumed views of the booked cells */
+            bookedViews: number;
+            /** @description Assumed views of the cells still available to book. */
+            availableViews: number;
             /** @description Sum of every display type's sellableWindows — see BookingRevenue. */
             sellableWindows: number;
             /** @description Sum of every display type's realtimeOpportunities — see BookingRevenue. */
@@ -3413,6 +3426,12 @@ export interface components {
             displayTypeId: string;
             displayTypeName: string;
             bookedWindows: number;
+            /** @description Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available. */
+            totalViews: number;
+            /** @description Assumed views of the booked cells */
+            bookedViews: number;
+            /** @description Assumed views of the cells still available to book. */
+            availableViews: number;
             /**
              * @description Live (non-test) impression opportunities on this display type's
              *     real-time (open / whitelist-only) positions in the last 7 days

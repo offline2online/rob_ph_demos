@@ -4638,7 +4638,18 @@ playback analytics.**
   after hours is a lower share, and an external screen's share
   (`EXTERNAL_QUIET_SHARE`) is street/mall traffic, never zero. A slot with its
   own `audience_vacd` score stays flat. Still to build: an admin editor for the
-  profile and daily VAC-d on the Booking schedule.
+  profile.
+- **Assumed views on the Booking schedule** (ticket eNlz3fJab4Ehqg9hbf4C,
+  26 Oct 2026; `routes/admin/bookingSchedule.ts`): each booked, available or
+  reserved cell carries `assumedViews`, its column's (a day's) VAC-d from the
+  hour-of-week profiles, else the display type's default; an unavailable cell
+  has none. The Daily view shows "N assumed views" under the cell; a Weekly or
+  Monthly cell is the sum of its days. The Booking revenue table (and its
+  total) gains **Total, Booked and Available assumed views** over the period
+  shown, booked + available = total; windows held for a Direct deal count as
+  booked (with an advertiser filter only that advertiser's bookings do). The
+  ⓘ on Booking revenue and the headers explain assumed views = VAC-d. Estimated
+  revenue is unchanged (booked CPM × the slot's flat window figure).
 - **Play-window booked/available summary, wherever the page counts
   "windows"** (ticket "anytime you use the word Windows please show a
   representation of how many are booked versus … localised … personalised
