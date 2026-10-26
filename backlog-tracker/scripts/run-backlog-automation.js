@@ -4687,7 +4687,7 @@ async function processRevertFromTrain(item) {
     `Taken off the train: reverted ${commits.length === 1 ? "its commit" : `its ${commits.length} commits`} (${commits.map((s) => s.slice(0, 7)).join(", ")}) off \`${deployBranch}\` ` +
     `as ${reverted.map((s) => s.slice(0, 7)).join(", ")}. This card's change is no longer on the branch, so the next Deploy to Main will not carry it — ` +
     (item.rebuildAfterRevert
-      ? `it is rebuilt automatically now, on top of the branch as it stands, with the failure above as its brief.`
+      ? `it is rebuilt automatically, on top of the branch as it stands, with the failure above as its brief.`
       : `it's a plain Backlog ticket again, and a fresh Ready for Dev sweep will rebuild it on top of whatever the branch looks like then.`) +
     (testsStarted.length ? ` The train tests were started again on the new head (${testsStarted.map((t) => t.workflow).join(", ")}).` : "")
   );
@@ -4702,11 +4702,20 @@ async function processRevertFromTrain(item) {
   });
   console.log(`[train-revert] ${item.id}: reverted ${reverted.length} commit(s) off ${deployBranch}`);
   if (item.rebuildAfterRevert) {
-    // Sent back by ejectRedCulprits: rebuild it now the train is clean.
+    // Sent back (automatically, by Failed testing or fail_testing): rebuild it
+    // now the train is clean — unless the release is closing (a ticket on it
+    // was approved). Then the release ships without it and the rebuild starts
+    // when the train has merged (sweepDeferredBuilds), rather than landing a
+    // fresh ticket on a train that is waiting to deploy.
     const project = await getProject(item.projectId).catch(() => null);
-    if (project) queueBuildRequest(project, item.id);
-    await patchItem(item.id, { rebuildAfterRevert: false, updatedAt: new Date().toISOString() });
-    console.log(`[train-revert] ${item.id}: rebuild queued after the automatic send-back`);
+    const defer = !!(project && project.trainLocked);
+    if (project && !defer) queueBuildRequest(project, item.id);
+    const deferNotes = defer ? await appendNote(item, `This project's release is closing (a ticket on its train is approved), so it ships without this ticket, and this ticket's rebuild starts by itself as soon as that train has merged.`) : null;
+    await patchItem(item.id, {
+      rebuildAfterRevert: false, updatedAt: new Date().toISOString(),
+      ...(defer ? { buildAfterTrain: true, notes: deferNotes } : {}),
+    });
+    console.log(`[train-revert] ${item.id}: ${defer ? "rebuild deferred until the closing train merges" : "rebuild queued after the send-back"}`);
   }
   run("git", ["checkout", "main", "--quiet"]);
 }
@@ -6903,7 +6912,7 @@ if (require.main === module) {
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   selfHealPlan, escalationBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
-  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, retestPlan, retestUnrunWorkflows,
+  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, retestPlan, retestUnrunWorkflows, flushBuildRequests,
   closeNotifyRoutines,
   // test/notes-append.test.js — notes are only ever appended, atomically
   notesCommitWrite, appendNote, patchItem,

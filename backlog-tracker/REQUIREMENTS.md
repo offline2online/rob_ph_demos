@@ -450,6 +450,10 @@ busy. Now:
   `rebuildAfterRevert: true` (`sendBackFields`), so the ticket is rebuilt
   with the tester's Details as its brief once its commits are off the
   train — except for the category "Blocking a release, not a rebuild".
+  When the release is closing (`trainLocked`), `processRevertFromTrain`
+  sets `buildAfterTrain` instead of requesting the build: the release ships
+  without the ticket and its rebuild follows the merge, rather than landing
+  a fresh ticket on a train that is waiting to deploy.
 - **A duplicate session's late patch is discarded**: a patch for a card
   already on the train whose `patchBaseSha` does not contain the card's own
   `deployCommit` (`latePatchFromDuplicateSession`) is dropped with one note,

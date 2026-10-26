@@ -310,6 +310,54 @@ async function test(name, fn) {
     assert.deepStrictEqual(card("c1").trainTestReruns, [`${WF}@${A}:retested`]);
   });
 
+  // Failed testing on a train where another ticket is already approved: the
+  // release ships without it and its rebuild follows the merge, instead of a
+  // fresh ticket landing on a train that is waiting to deploy.
+  await test("a sent-back ticket is reverted, its doc-only conflict resolved, and rebuilt now, or after a closing release merges", async () => {
+    const sh = (cwd, ...a) => require("child_process").execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    const setup = () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "revert-rebuild-"));
+      const origin = path.join(root, "origin.git"), work = path.join(root, "work");
+      fs.mkdirSync(origin); sh(origin, "init", "--bare", "--quiet");
+      fs.mkdirSync(work); sh(work, "init", "-q", "-b", "main");
+      const write = (f, t) => fs.writeFileSync(path.join(work, f), t);
+      write("REQUIREMENTS.md", "# Changes\n- base\n"); write("app.js", "a\n");
+      sh(work, "add", "-A"); sh(work, "commit", "-qm", "base");
+      sh(work, "remote", "add", "origin", origin); sh(work, "push", "-q", "-u", "origin", "main");
+      sh(work, "checkout", "-q", "-b", "deploy/x");
+      write("REQUIREMENTS.md", "# Changes\n- base\n- failed ticket\n"); write("app.js", "a\nfailed\n");
+      sh(work, "commit", "-qam", "failed ticket\n\nBacklog item: f1"); const failedSha = sh(work, "rev-parse", "HEAD");
+      write("REQUIREMENTS.md", "# Changes\n- base\n- failed ticket\n- good ticket\n"); write("other.js", "good\n");
+      sh(work, "add", "-A"); sh(work, "commit", "-qm", "good ticket\n\nBacklog item: g1");
+      sh(work, "push", "-q", "-u", "origin", "deploy/x"); sh(work, "checkout", "-q", "main");
+      return { work, failedSha };
+    };
+    for (const locked of [false, true]) {
+      const { work, failedSha } = setup();
+      reset([{ id: "f1", status: "backlog", deployCommit: failedSha, deployCommits: [failedSha], revertRequested: true, rebuildAfterRevert: true, title: "failed" }], {}, { trainLocked: locked });
+      const cwd = process.cwd();
+      process.chdir(work);
+      try {
+        await auto.processRevertFromTrain(card("f1") && { id: "f1", ...card("f1") });
+        await auto.flushBuildRequests();
+      } finally { process.chdir(cwd); }
+      const head = sh(work, "show", "origin/deploy/x:REQUIREMENTS.md");
+      assert.strictEqual(head, "# Changes\n- base\n- good ticket", "reverted; the later ticket's line kept");
+      assert.strictEqual(sh(work, "show", "origin/deploy/x:app.js"), "a");
+      const f1 = card("f1");
+      assert.strictEqual(f1.revertRequested, false);
+      assert.strictEqual(f1.rebuildAfterRevert, false);
+      if (locked) {
+        assert.strictEqual(f1.buildAfterTrain, true, "waits for the release to merge");
+        assert.ok(!f1.rebuildRequestedAt, "no build requested onto the closing train");
+        assert.match(notes("f1").pop(), /ships without this ticket/);
+      } else {
+        assert.ok(!f1.buildAfterTrain);
+        assert.ok(f1.rebuildRequestedAt, "rebuild requested straight away");
+      }
+    }
+  });
+
   if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
   console.log("\nself-heal: all passed");
 })();
