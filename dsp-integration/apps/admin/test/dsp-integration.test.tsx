@@ -1925,3 +1925,56 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     expect(within(dialog).getByRole('button', { name: 'Approve and add to CR-DEAL0001' })).toBeInTheDocument()
   }, slow(45000))
 })
+/* Ticket 7eg5M9Z6AT2wA6iKrXrs: the filter-row totals follow the DSP filter, ignore the advertiser filter, and run in date order. */
+describe('booking schedule filter-row totals', () => {
+  const day = (date: string, totalPlays: number, availableToBid: number) => ({ date, totalPlays, firmPlays: totalPlays - availableToBid, availableToBid, deals: [], segments: [] })
+  const position = (positionId: string) => ({ positionId, displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null, windows: [] })
+  const schedule = (dates: string[], ids = ['p1', 'p2']) => ({
+    currency: 'AUD', windows: dates.map((d) => ({ start: `${d}T00:00:00.000Z`, end: `${d}T23:59:59.000Z` })), revenue: [], dsps: [{ partnerId: 'p_google', name: 'Google DSP', advertisers: [] }], directAdvertisers: [], byPricingType: [],
+    totals: { bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 },
+    positions: ids.map((id) => ({ ...position(id), windows: dates.map((d) => ({ start: `${d}T00:00:00.000Z`, status: 'available', booking: null })) })),
+  })
+  /* Each handler sees the query string, which fakeFetch drops. */
+  const stub = (sched: unknown, capacity: (query: URLSearchParams) => unknown) => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push(url)
+      const [path, qs] = url.split('?')
+      if (path === '/api/admin/v1/booking-schedule') return new Response(JSON.stringify(sched), { status: 200 })
+      if (path === '/api/admin/v1/booking-schedule/capacity') return new Response(JSON.stringify(capacity(new URLSearchParams(qs))), { status: 200 })
+      return fakeFetch()(url)
+    }))
+    return calls
+  }
+  const chip = (label: RegExp) => screen.findByLabelText(label, {}, { timeout: 10000 })
+
+  it('asks for the picked DSP only, and returns to the whole estate when it is cleared', async () => {
+    const dates = ['2026-10-27']
+    const calls = stub(schedule(dates), (q) => ({ days: dates, positions: q.get('partnerId') === 'p_google' ? [{ ...position('p1'), days: [day(dates[0], 100, 40)] }] : [{ ...position('p1'), days: [day(dates[0], 100, 40)] }, { ...position('p2'), days: [day(dates[0], 50, 10)] }] }))
+    const router = renderAt('/booking-schedule')
+    expect(await chip(/Plays and plays available to bid, Tue 27 Oct/)).toHaveTextContent('150 plays')
+    router.navigate('/booking-schedule?partnerId=p_google')
+    await waitFor(() => expect(screen.getByLabelText(/Plays and plays available to bid, Tue 27 Oct/)).toHaveTextContent('100 plays'), { timeout: 10000 })
+    expect(calls.some((u) => u.includes('/capacity') && u.includes('partnerId=p_google'))).toBe(true)
+    router.navigate('/booking-schedule')
+    await waitFor(() => expect(screen.getByLabelText(/Plays and plays available to bid, Tue 27 Oct/)).toHaveTextContent('150 plays'), { timeout: 10000 })
+  }, slow(45000))
+
+  it('does not change with the advertiser filter, whatever positions the schedule narrows to', async () => {
+    const dates = ['2026-10-27']
+    const calls = stub(schedule(dates, ['p1']), () => ({ days: dates, positions: [{ ...position('p1'), days: [day(dates[0], 100, 40)] }, { ...position('p2'), days: [day(dates[0], 50, 10)] }] }))
+    renderAt('/booking-schedule?advertiserId=nestle')
+    expect(await chip(/Plays and plays available to bid, Tue 27 Oct/)).toHaveTextContent('150 plays')
+    expect(calls.filter((u) => u.includes('/capacity')).every((u) => !u.includes('advertiserId'))).toBe(true)
+  }, slow(45000))
+
+  it('runs the monthly chips October to January', async () => {
+    const dates = ['2026-10-27', '2026-11-03', '2026-12-01', '2027-01-05']
+    stub(schedule(dates), () => ({ days: dates, positions: [{ ...position('p1'), days: dates.map((d) => day(d, 10, 5)) }] }))
+    renderAt('/booking-schedule')
+    fireEvent.click(await screen.findByText('Monthly', {}, { timeout: 10000 }))
+    await chip(/Plays and plays available to bid, October 2026/)
+    const labels = screen.getAllByLabelText(/Plays and plays available to bid, /).map((e) => e.getAttribute('aria-label')?.replace('Plays and plays available to bid, ', ''))
+    expect(labels).toEqual(['October 2026', 'November 2026', 'December 2026', 'January 2027'])
+  }, slow(45000))
+})

@@ -484,23 +484,23 @@ export function BookingSchedulePage() {
      Plays per day table, summed over the positions on screen and rolled up to the
      day, week or month of the view. Asked for the whole range, not the table's
      first fortnight. */
-  const totalsQ = useQuery({ queryKey: ['booking-capacity', from, to], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${to}`) })
+  const totalsQ = useQuery({ queryKey: ['booking-capacity', from, to, partnerId ?? ''], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${to}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`) })
   const playTotals = useMemo(() => {
-    if (!totalsQ.data || !Array.isArray(totalsQ.data.positions) || !data) return []
-    const shown = new Set(data.positions.map((p) => p.positionId))
-    const out = new Map<string, { key: string; label: string; total: number; available: number }>()
+    if (!totalsQ.data || !Array.isArray(totalsQ.data.positions)) return []
+    /* Estate capacity: the endpoint applies the DSP filter; the advertiser filter does not apply. */
+    const out = new Map<string, { key: string; label: string; total: number; available: number; first: string }>()
     for (const p of totalsQ.data.positions) {
-      if (!shown.has(p.positionId)) continue
       for (const d of p.days ?? []) {
         const g = view === 'Daily' ? { key: d.date, label: fmt(new Date(d.date), { weekday: 'short', day: 'numeric', month: 'short' }) } : groupOf(view, d.date)
-        const e = out.get(g.key) ?? { ...g, total: 0, available: 0 }
+        const e = out.get(g.key) ?? { ...g, total: 0, available: 0, first: d.date }
+        if (d.date < e.first) e.first = d.date
         e.total += d.totalPlays
         e.available += d.availableToBid
         out.set(g.key, e)
       }
     }
-    return [...out.values()].sort((a, b) => a.key.localeCompare(b.key))
-  }, [totalsQ.data, data, view])
+    return [...out.values()].sort((a, b) => a.first.localeCompare(b.first))
+  }, [totalsQ.data, view])
   /* Every amount here is a booked CPM x assumed views, and the exchange books in
      USD whatever the instance reports in (spec section 4: one instance, one
      currency, no conversion), so never format with company.currency or a
@@ -583,8 +583,23 @@ export function BookingSchedulePage() {
          label plus its status text. */
       headerName: g.label, colId: g.key, width: view === 'Daily' ? 182 : 186, suppressSizeToFit: true,
       valueGetter: (p) => p.data?.groups[i], cellRenderer: WindowCell, cellStyle: { alignItems: 'center' },
+      /* Plays and plays available to bid for this column, in the filter row under its
+         header (ticket 1wGUyfLo0XWIufLXc8gq) rather than as cards above the table.
+         Display only: the filter itself is a no-op. */
+      filter: 'agTextColumnFilter', filterParams: { textMatcher: () => true },
+      suppressHeaderMenuButton: true, suppressHeaderFilterButton: true,
+      floatingFilter: true, suppressFloatingFilterButton: true,
+      floatingFilterComponent: () => {
+        const t = playTotals.find((x) => x.key === g.key || (view === 'Daily' && x.key.slice(0, 10) === g.key.slice(0, 10)))
+        return t ? (
+          <div aria-label={`Plays and plays available to bid, ${g.label}`} style={{ fontSize: 11.5, lineHeight: 1.3, whiteSpace: 'nowrap' }}>
+            <div style={{ fontWeight: 600 }}>{plays(t.total)} plays</div>
+            <div style={{ color: T.success }}>{plays(t.available)} available to bid</div>
+          </div>
+        ) : null
+      },
     })),
-  ], [groups, view, dsps, advertiserOptions, partnerId, advertiserId])
+  ], [groups, view, dsps, advertiserOptions, partnerId, advertiserId, playTotals])
   /* The header's own "N play windows" line gets the same booked/available
      read every row already carries (ticket "Also for the play windows …
      anytime you use the word Windows please show a representation of how
@@ -646,17 +661,6 @@ export function BookingSchedulePage() {
           <DatePicker.RangePicker aria-label="Dates" value={[dayjs(from), dayjs(to)]} allowClear={false} disabled={isSnapshotDemo()}
             onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
         </Tip>
-        {playTotals.length > 0 && (
-          <div className="flex w-full flex-wrap gap-2" aria-label={`Plays and plays available to bid, per ${view === 'Daily' ? 'day' : view === 'Weekly' ? 'week' : 'month'}`}>
-            {playTotals.map((t) => (
-              <div key={t.key} style={{ fontSize: 11.5, border: `1px solid ${T.borderSubtle}`, borderRadius: 6, padding: '4px 8px', whiteSpace: 'nowrap' }}>
-                <div style={{ color: T.micro, fontWeight: 600 }}>{t.label}</div>
-                <span style={{ fontWeight: 600 }}>{plays(t.total)} plays</span>
-                <span style={{ color: T.success }}> · {plays(t.available)} available to bid</span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {schedule.isError && <Alert className="mb-4" type="error" showIcon message="The booking schedule couldn’t be loaded." />}

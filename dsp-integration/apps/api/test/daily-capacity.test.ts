@@ -120,6 +120,17 @@ describe('GET /admin/v1/booking-schedule/capacity', () => {
     expect(metro.availableToBid).toBe(day.availableToBid)
   })
 
+  it('keeps only the positions a picked DSP is assigned to', async () => {
+    const { get } = await setup()
+    const all = (await get()).json().positions as { positionId: string }[]
+    const ids = async (q: string) => ((await get(`?from=2026-09-21&to=2026-09-23${q}`)).json().positions as { positionId: string }[]).map((p) => p.positionId)
+    expect(await ids('')).toEqual(all.map((p) => p.positionId))
+    /* A DSP the slots are not assigned to sees only positions open to every DSP, never more than the estate. */
+    const none = await ids('&partnerId=p_nobody')
+    expect(none.length).toBeLessThanOrEqual(all.length)
+    expect(await ids('&partnerId=p_google')).toEqual(expect.arrayContaining(none))
+  })
+
   it('refuses a bad range', async () => {
     const { get } = await setup()
     expect((await get('?from=2026-09-21&to=2026-01-01')).statusCode).toBe(400)

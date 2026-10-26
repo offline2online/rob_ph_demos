@@ -5122,6 +5122,8 @@ export interface operations {
                 from?: string;
                 /** @description At most 92 days after from. */
                 to?: string;
+                /** @description Only the positions this DSP is assigned to (a position open to all DSPs counts for each). */
+                partnerId?: string;
             };
             header?: never;
             path?: never;
