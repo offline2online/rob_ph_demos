@@ -101,3 +101,10 @@ test('standard orderings: deal types, DSPs, shopper-journey zones', () => {
   const z = ['Checkout', 'Exterior', 'In aisles', 'Entrance & out of category'].sort(calc.compareZones);
   assert.deepEqual(z, ['Exterior', 'Entrance & out of category', 'In aisles', 'Checkout']);
 });
+
+test('hoursMode labels 24 hours, custom hours and store opening hours without naming times', () => {
+  assert.strictEqual(calc.hoursMode({ is24Hour: true, customHours: { open: 8, close: 20 } }), '24 hours');
+  assert.strictEqual(calc.hoursMode({ is24Hour: false, customHours: { open: 8, close: 20 } }), 'Custom hours');
+  assert.strictEqual(calc.hoursMode({ is24Hour: false }), 'Store opening hours');
+  assert.deepStrictEqual(calc.operatingWindow({ is24Hour: false, customHours: { open: 8, close: 20 } }, { open: 9, close: 17 }), { open: 8, close: 20 });
+});
