@@ -4662,6 +4662,16 @@ playback analytics.**
   positions are sold per impression and never pre-booked, so they are left
   out of the sellable count; % sold reads over deal and reserved positions
   only, and a display type whose positions are all real-time shows a dash.
+  **Expected fill (real-time) (26 Oct 2026, ticket
+  bhiyhqKpLPBDlySEfGNB):** a fifth column beside % sold gives the display
+  types whose positions are sold per impression a figure of their own: the
+  share of the last 7 days' live (non-test) impression opportunities on
+  their real-time positions that were filled (`realtimeFilled` ÷
+  `realtimeOpportunities` on each revenue row and in the totals). It is
+  labelled "expected" (indicative, from recent history), never "sold", is
+  the same in Daily, Weekly and Monthly, and shows a dash when there is no
+  history. % sold itself is unchanged. With an advertiser, DSP or campaign
+  filter picked, only that buyer's fills count over the same opportunities.
   Estimated revenue is likewise booked-ahead only; real-time revenue is
   realised per play and is not forecast here. "Booked revenue" is renamed **Estimated revenue** — more
   honest about what it is before a window has actually played: booked CPM ×

@@ -34,7 +34,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(body.positions[0]).toMatchObject({ realTime: true, recentPlays: 0 })
     expect(body.positions[0].windows.every((w: { status: string }) => w.status === 'unavailable')).toBe(true)
     /* Ticket 1n6upwMWSLGxszhg5u7k: an open (real-time) position is never pre-booked, so its windows are not "sellable" and % sold is a dash, not 0%. */
-    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 })
+    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 })
     expect(body.revenue[0]).toMatchObject({ displayTypeId: 'menu_board', bookedWindows: 0, sellableWindows: 0 })
   })
 
@@ -59,12 +59,39 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect((await get()).json().positions[0]).toMatchObject({ assignment: 'deal', realTime: false, recentPlays: null })
   })
 
+  /* Ticket bhiyhqKpLPBDlySEfGNB: a display type with only real-time positions shows an expected fill from the last 7 days instead of only a dash. */
+  it('reports the last 7 days\' fill for real-time inventory as an expected fill, narrowed by the advertiser filter', async () => {
+    const { ctx, get } = await setup()
+    const imp = (id: string, over: Record<string, unknown>) => ctx.impressions.insert({
+      id, positionId: 'menu_board.s2', displayId: 'd1', windowStart: '2026-09-20T00:00:00.000Z', requestedAt: NOW.toISOString(), status: 'played', reason: null,
+      partnerId: 'p_google', advertiserId: 'nestle', campaignId: null, crid: null, clearingCpm: 5, currency: 'AUD', testMode: false, assetVersion: null, expiresAt: null,
+      playedAt: NOW.toISOString(), bidRequests: 1, elapsedMs: 1, creativeUrl: null, creativeSource: null, contentHash: null, reviewNote: null, ...over,
+    })
+    await imp('f1', {})
+    await imp('f2', { status: 'filled', playedAt: null, advertiserId: 'swisse' })
+    await imp('f3', { status: 'no_fill', playedAt: null, partnerId: null, advertiserId: null })
+    await imp('f4', { status: 'no_fill', playedAt: null, partnerId: null, advertiserId: null })
+    await imp('f5', { testMode: true })
+    await imp('f6', { requestedAt: new Date(NOW.getTime() - 8 * 86_400_000).toISOString() })
+    const body = (await get()).json()
+    expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, body)
+    /* 2 of 4 live opportunities filled; % sold stays a dash (no sellable windows). */
+    expect(body.revenue[0]).toMatchObject({ sellableWindows: 0, bookedWindows: 0, realtimeOpportunities: 4, realtimeFilled: 2 })
+    expect(body.totals).toMatchObject({ realtimeOpportunities: 4, realtimeFilled: 2 })
+    /* One advertiser: its fills over the same opportunities. */
+    expect((await get('?advertiserId=nestle')).json().revenue[0]).toMatchObject({ realtimeOpportunities: 4, realtimeFilled: 1 })
+    expect((await get('?partnerId=p_google')).json().revenue[0]).toMatchObject({ realtimeOpportunities: 4, realtimeFilled: 2 })
+    /* A deal position is booked ahead: no expected fill. */
+    await sellByWindow(ctx, 'menu_board', 2)
+    expect((await get()).json().revenue[0]).toMatchObject({ realtimeOpportunities: 0, realtimeFilled: 0 })
+  })
+
   it('counts sellable windows only over booked-ahead (deal) positions', async () => {
     const { ctx, get } = await setup()
     await sellByWindow(ctx, 'menu_board', 2)
     const body = (await get()).json()
     expect(body.positions[0]).toMatchObject({ assignment: 'deal' })
-    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 13, bookedRevenue: 0, billedRevenue: 0 })
+    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 13, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 })
   })
 
   /* A0GyTNsA (1 Oct 2026): a multi-zone display type's slot is numbered
@@ -101,8 +128,8 @@ describe('GET /admin/v1/booking-schedule', () => {
     /* A Test-mode win is not a booking. */
     expect(at('2026-09-23')).toMatchObject({ status: 'available', booking: null })
     expect(at('2026-09-16').status).toBe('unavailable')
-    expect(res.json().revenue).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16 }])
-    expect(res.json().totals).toEqual({ bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16 })
+    expect(res.json().revenue).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0 }])
+    expect(res.json().totals).toEqual({ bookedWindows: 2, sellableWindows: 3, bookedRevenue: 364.62, billedRevenue: 74.16, realtimeOpportunities: 0, realtimeFilled: 0 })
     /* Both bookings are localised campaigns (Rob, 20 Sep: show what type is selling). */
     expect(res.json().byPricingType).toEqual([{ pricingType: 'localised', bookedWindows: 2, bookedRevenue: 364.62 }])
   })
@@ -174,7 +201,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
     const booked = res.json().positions[0].windows.filter((w: { status: string }) => w.status === 'booked')
     expect(booked.map((w: { start: string }) => w.start)).toEqual(['2026-11-02T00:00:00.000Z'])
-    expect(res.json().totals).toEqual({ bookedWindows: 1, sellableWindows: 43, bookedRevenue: 216.3, billedRevenue: 0 })
+    expect(res.json().totals).toEqual({ bookedWindows: 1, sellableWindows: 43, bookedRevenue: 216.3, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 })
     /* The seeded Nestlé booking belongs to another campaign, so it isn't counted. */
     expect(res.json().windows[0].start).toBe('2026-09-20T00:00:00.000Z')
   })
@@ -189,7 +216,7 @@ describe('GET /admin/v1/booking-schedule', () => {
     const other = swisse.json().positions[0].windows.find((w: { start: string }) => w.start.startsWith('2026-09-15'))
     expect(other).toMatchObject({ status: 'booked', booking: { advertiserId: 'nestle', advertiserName: 'Nestlé' } })
     const amazon = await get('?partnerId=p_amazon&from=2026-09-15&to=2026-09-23')
-    expect(amazon.json().totals).toEqual({ bookedWindows: 0, sellableWindows: 3, bookedRevenue: 0, billedRevenue: 0 })
+    expect(amazon.json().totals).toEqual({ bookedWindows: 0, sellableWindows: 3, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 })
   })
 
   /* The filter is there to find a booking, so it only offers advertisers

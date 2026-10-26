@@ -446,6 +446,21 @@ describe('Campaign Status stand-in', () => {
     expect(router.state.location.search).toBe('?tab=campaign-status')
   })
 
+  /* Ticket bhiyhqKpLPBDlySEfGNB: the Booking revenue table shows an expected fill for real-time inventory, labelled expected, while % sold stays a dash. */
+  it('shows an expected fill beside % sold in the Booking revenue table', async () => {
+    const start = new Date().toISOString()
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], dsps: [], directAdvertisers: [], byPricingType: [], positions: [],
+      revenue: [{ displayTypeId: 'portrait', displayTypeName: 'Portrait', bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 8, realtimeFilled: 6 }],
+      totals: { bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 8, realtimeFilled: 6 },
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule })))
+    renderAt('/booking-schedule')
+    expect(await screen.findByText('Expected fill (real-time)', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect((await screen.findAllByText('75%', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('expected').length).toBeGreaterThan(0)
+  }, slow(45000))
+
   /* Ticket ByeH6mIkaRqOJjnHu31z: a Booking Schedule tile opens its campaign in Campaign Approval. */
   it('opens a booking tile\'s campaign in Campaign Approval, even one the list normally hides', async () => {
     const start = new Date().toISOString()
@@ -455,7 +470,7 @@ describe('Campaign Status stand-in', () => {
       approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
     })
     const schedule = {
-      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0 },
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
       positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
         windows: [{ start, status: 'booked', booking: tile('c_zinger', 'Zinger Direct') }] }],
     }
@@ -478,7 +493,7 @@ describe('Campaign Status stand-in', () => {
       approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
     }
     const schedule = {
-      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0 },
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
       positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
         windows: [{ start, status: 'booked', booking }] }],
     }
@@ -502,7 +517,7 @@ describe('Campaign Status stand-in', () => {
       approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
     }
     const schedule = {
-      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0 },
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
       positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
         windows: [{ start, status: 'booked', booking }] }],
     }
@@ -1932,7 +1947,7 @@ describe('booking schedule filter-row totals', () => {
   const position = (positionId: string) => ({ positionId, displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null, windows: [] })
   const schedule = (dates: string[], ids = ['p1', 'p2']) => ({
     currency: 'AUD', windows: dates.map((d) => ({ start: `${d}T00:00:00.000Z`, end: `${d}T23:59:59.000Z` })), revenue: [], dsps: [{ partnerId: 'p_google', name: 'Google DSP', advertisers: [] }], directAdvertisers: [], byPricingType: [],
-    totals: { bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 },
+    totals: { bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
     positions: ids.map((id) => ({ ...position(id), windows: dates.map((d) => ({ start: `${d}T00:00:00.000Z`, status: 'available', booking: null })) })),
   })
   /* Each handler sees the query string, which fakeFetch drops. */

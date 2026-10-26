@@ -388,6 +388,17 @@ const PercentSoldCell = ({ data }: ICellRendererParams<RevenueRow>) => {
   return <span style={{ fontWeight: data.total ? 600 : 400 }}>{pct}%</span>
 }
 
+/* Expected fill (ticket bhiyhqKpLPBDlySEfGNB): the share of the last week's
+   real-time opportunities that were filled, for the display types whose
+   positions are sold per impression and so have no % sold. Indicative, never
+   "sold"; a dash when there is no history. A snapshot from before this column
+   has no counts, which reads as a dash too. */
+const ExpectedFillCell = ({ data }: ICellRendererParams<RevenueRow>) => {
+  if (!data?.realtimeOpportunities) return <span style={{ color: T.muted }}>—</span>
+  const pct = Math.round(((data.realtimeFilled ?? 0) / data.realtimeOpportunities) * 100)
+  return <span style={{ fontWeight: data.total ? 600 : 400 }}>{pct}% <span style={{ color: T.muted, fontWeight: 400 }}>expected</span></span>
+}
+
 /* Plays per day (decision Rob 9 Oct 2026): the day is how a retailer reads a
    booking, but the window is what clears, so each figure is the plays of every
    window in the stores' trading hours rolled up to the day. Pre-booked deals
@@ -630,6 +641,10 @@ export function BookingSchedulePage() {
       headerName: '% sold', field: 'sellableWindows', width: 110, cellRenderer: PercentSoldCell,
     },
     {
+      /* Ticket bhiyhqKpLPBDlySEfGNB — real-time inventory, from the last 7 days' fill. */
+      headerName: 'Expected fill (real-time)', field: 'realtimeOpportunities', width: 190, cellRenderer: ExpectedFillCell,
+    },
+    {
       /* Renamed from "Booked revenue" (ticket, 22 Sep) — "estimated" is more
          honest about what this is before a window has actually played:
          booked CPM × assumed views, not confirmed spend. "Billed revenue"
@@ -700,7 +715,7 @@ export function BookingSchedulePage() {
               above, so it sits directly under the schedule and names the period it
               covers; Plays per day does not follow the view, so it goes last
               (ticket LFloWVCY1ii2ikrjOx8M, 24 Oct 2026). */}
-          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip><span style={{ fontWeight: 400, color: T.muted }}> · {view}: {dayjs(from).format('D MMM YYYY')} – {dayjs(to).format('D MMM YYYY')}</span></SectionLabel>
+          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash there. Expected fill (real-time) = the share of the last 7 days’ impression opportunities on real-time (open / whitelist-only) positions that were filled: indicative, from recent history, never sold; it is the same in every view and, with an advertiser or DSP picked, counts only that buyer’s fills. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip><span style={{ fontWeight: 400, color: T.muted }}> · {view}: {dayjs(from).format('D MMM YYYY')} – {dayjs(to).format('D MMM YYYY')}</span></SectionLabel>
           <Grid<RevenueRow>
             label="Booking revenue"
             rows={data.revenue}

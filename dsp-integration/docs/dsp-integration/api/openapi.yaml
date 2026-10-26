@@ -4106,19 +4106,35 @@ components:
         totals: {$ref: '#/components/schemas/BookingRevenueTotals'}
     BookingRevenueTotals:
       type: object
-      required: [bookedWindows, sellableWindows, bookedRevenue, billedRevenue]
+      required: [bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled]
       properties:
         bookedWindows: {type: integer}
         sellableWindows: {type: integer, description: Sum of every display type's sellableWindows — see BookingRevenue.}
+        realtimeOpportunities: {type: integer, description: Sum of every display type's realtimeOpportunities — see BookingRevenue.}
+        realtimeFilled: {type: integer, description: Sum of every display type's realtimeFilled — see BookingRevenue.}
         bookedRevenue: {type: number}
         billedRevenue: {type: number}
     BookingRevenue:
       type: object
-      required: [displayTypeId, displayTypeName, bookedWindows, sellableWindows, bookedRevenue, billedRevenue]
+      required: [displayTypeId, displayTypeName, bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
         bookedWindows: {type: integer}
+        realtimeOpportunities:
+          type: integer
+          description: |
+            Live (non-test) impression opportunities on this display type's
+            real-time (open / whitelist-only) positions in the last 7 days
+            (ticket bhiyhqKpLPBDlySEfGNB). With realtimeFilled it gives the
+            expected fill — an indicative figure from recent history, never
+            "sold". It is the same in every view; 0 means no history, so no
+            percentage is meaningful.
+        realtimeFilled:
+          type: integer
+          description: |
+            How many of realtimeOpportunities were filled. With an
+            advertiser, DSP or campaign filter, only that buyer's fills.
         sellableWindows:
           type: integer
           description: |

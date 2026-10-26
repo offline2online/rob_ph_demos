@@ -184,6 +184,10 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
      a forward grid they report the live plays proved in the last week, read
      in one grouped query. */
   const recentPlays = await ctx.impressions.playedCountsSince(new Date(ctx.clock().getTime() - RECENT_PLAYS_DAYS * DAY).toISOString())
+  /* Expected fill (ticket bhiyhqKpLPBDlySEfGNB): the last week's real-time opportunities and how many were filled, per position. Like the
+     plays above it is history, not a forecast per window, so it is the same in every view. The advertiser / DSP / campaign filter narrows
+     the fills to that buyer's share of the same opportunities. */
+  const fills = await ctx.impressions.fillCountsSince(new Date(ctx.clock().getTime() - RECENT_PLAYS_DAYS * DAY).toISOString(), { advertiserId: f.advertiserId, partnerId: f.partnerId, campaignId: f.campaignId })
 
   /* Only advertisers with something booked in this range are worth filtering
      by (Rob, 20 Sep), so the picker is built before any filter is applied. */
@@ -210,9 +214,15 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     let firstSellable = firstSellableMemo.get(len)
     if (firstSellable === undefined) firstSellableMemo.set(len, (firstSellable = (await nextWindow(ctx, len)).getTime()))
     const counted = new Set<number>()
-    const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
+    const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 }
     revenue.set(p.displayType.id, rev)
     const realTime = isRealtime(p)
+    if (realTime) {
+      const h = fills.get(p.positionId)
+      const filtered = !!(f.advertiserId || f.partnerId || f.campaignId)
+      rev.realtimeOpportunities += h?.opportunities ?? 0
+      rev.realtimeFilled += (filtered ? h?.filledFor : h?.filled) ?? 0
+    }
     /* The flights of the live Direct advertiser deals on this position: a window in one that the exchange has not booked
        yet is reserved for the deal's advertiser, not available to anyone else (E2E 21 Oct 2026: it read Available). */
     const directFlights = (await Promise.all(assignedOf(p.def).buyersListIds.map(buyersList)))
@@ -307,6 +317,8 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       sellableWindows: rows.reduce((n, r) => n + r.sellableWindows, 0),
       bookedRevenue: round2(rows.reduce((n, r) => n + r.bookedRevenue, 0)),
       billedRevenue: round2(rows.reduce((n, r) => n + r.billedRevenue, 0)),
+      realtimeOpportunities: rows.reduce((n, r) => n + r.realtimeOpportunities, 0),
+      realtimeFilled: rows.reduce((n, r) => n + r.realtimeFilled, 0),
     },
   }
 }

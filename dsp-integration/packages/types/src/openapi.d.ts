@@ -3196,7 +3196,10 @@ export interface components {
             displayCount: number;
             /** @description Hours per day the display type's displays are open for plays (its operating hours setting). 24 for 24 hours; the custom range's length for Custom; for Store hours, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
             openHoursPerDay: number;
-            /** @description The display type's operating hours setting, the basis of the open hours plays are counted over. Read-only. */
+            /**
+             * @description The display type's operating hours setting, the basis of the open hours plays are counted over. Read-only.
+             * @enum {string}
+             */
             operatingMode: "24h" | "store" | "custom";
             /** @description The actual times for operatingMode as HH:MM–HH:MM (UTC), comma-separated when stores' trading hours differ. 00:00–24:00 for 24 hours. Read-only. */
             operatingTimes: string;
@@ -3399,6 +3402,10 @@ export interface components {
             bookedWindows: number;
             /** @description Sum of every display type's sellableWindows — see BookingRevenue. */
             sellableWindows: number;
+            /** @description Sum of every display type's realtimeOpportunities — see BookingRevenue. */
+            realtimeOpportunities: number;
+            /** @description Sum of every display type's realtimeFilled — see BookingRevenue. */
+            realtimeFilled: number;
             bookedRevenue: number;
             billedRevenue: number;
         };
@@ -3406,6 +3413,20 @@ export interface components {
             displayTypeId: string;
             displayTypeName: string;
             bookedWindows: number;
+            /**
+             * @description Live (non-test) impression opportunities on this display type's
+             *     real-time (open / whitelist-only) positions in the last 7 days
+             *     (ticket bhiyhqKpLPBDlySEfGNB). With realtimeFilled it gives the
+             *     expected fill — an indicative figure from recent history, never
+             *     "sold". It is the same in every view; 0 means no history, so no
+             *     percentage is meaningful.
+             */
+            realtimeOpportunities: number;
+            /**
+             * @description How many of realtimeOpportunities were filled. With an
+             *     advertiser, DSP or campaign filter, only that buyer's fills.
+             */
+            realtimeFilled: number;
             /**
              * @description Windows this display type could have sold in the period shown —
              *     booked or still available, excluding unavailable (no displays,
