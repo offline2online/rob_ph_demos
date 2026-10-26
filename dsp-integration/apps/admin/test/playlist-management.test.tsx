@@ -11,7 +11,7 @@ const menuBoard = {
   defaultPlaylistId: 'pl_menu',
   playlistSettings: { maximumCampaignsPlayedInRotation: 3 },
   phExtensions: { slots: [
-    { label: 'Priority 1', owner: 'internal' }, { label: 'Supplier slot', owner: 'advertiser', listMode: 'rtb' }, { label: 'Store choice', owner: 'retail', storeScope: 'Store staff' },
+    { label: 'Priority 1', owner: 'headquarters' }, { label: 'Supplier slot', owner: 'advertiser', listMode: 'rtb' }, { label: 'Store choice', owner: 'headquarters' },
   ] },
 }
 const landscape = { ...newDisplayType('landscape'), name: 'Landscape', defaultPlaylistId: 'pl_landscape' }
@@ -202,8 +202,8 @@ describe('Playlist Management page', () => {
     expect(await icons('Seasonal Overflow')).toEqual([])
   })
 
-  /* Ticket, 27 Sep 2026: the first release supports Headquarters and
-     Advertiser slots only — Stores is no longer offered. */
+  /* Ticket, 27 Sep 2026; Duy and Thuc, 26 Oct 2026: Headquarters and
+     Advertiser are the only slot owners — Stores is not offered. */
   it('offers Headquarters and Advertiser as slot owners, and no longer Stores', async () => {
     renderAt('/playlists?displayTypeId=menu_board', true)
     const ownerOptions = async (slot: number) => {
@@ -212,10 +212,7 @@ describe('Playlist Management page', () => {
       return out
     }
     expect(await ownerOptions(1)).toEqual([{ label: 'Headquarters', disabled: false }, { label: 'Advertiser', disabled: false }])
-    /* A slot saved as Stores before still reads as Stores, but can't be picked again. */
-    expect(await ownerOptions(3)).toEqual([
-      { label: 'Headquarters', disabled: false }, { label: 'Advertiser', disabled: false }, { label: 'Stores', disabled: true },
-    ])
+    expect(await ownerOptions(3)).toEqual([{ label: 'Headquarters', disabled: false }, { label: 'Advertiser', disabled: false }])
   })
 
   /* Ticket 0jviesctpWGyOYtK20tg (Rob, 7 Oct 2026): Website and Mobile App use
@@ -223,7 +220,7 @@ describe('Playlist Management page', () => {
      Played In Rotation field and the same owner list with Advertiser
      assignment — replacing the HQ-only rule and the "Available for RTB" switch. */
   it.each(['Website', 'Mobile App'])('gives a %s playlist the same rotation field and owner list as digital signage, and saves an Advertiser slot', async (touchPoint) => {
-    const web = { ...newDisplayType('web_dt'), name: `${touchPoint} display`, touchPoint, defaultPlaylistId: 'pl_web', playlistSettings: { maximumCampaignsPlayedInRotation: 2 }, phExtensions: { slots: [{ label: 'Slot 1', owner: 'internal' }, { label: 'Slot 2', owner: 'internal' }] } }
+    const web = { ...newDisplayType('web_dt'), name: `${touchPoint} display`, touchPoint, defaultPlaylistId: 'pl_web', playlistSettings: { maximumCampaignsPlayedInRotation: 2 }, phExtensions: { slots: [{ label: 'Slot 1', owner: 'headquarters' }, { label: 'Slot 2', owner: 'headquarters' }] } }
     const withWeb: Record<string, unknown> = {
       ...responses,
       '/api/admin/v1/display-types': { items: [landscape, menuBoard, web] },
@@ -244,7 +241,7 @@ describe('Playlist Management page', () => {
     fireEvent.click(screen.getByText('Save changes'))
     await waitFor(() => expect(puts.some((p) => p.url.endsWith('/display-types/web_dt/extensions'))).toBe(true))
     const slots = (puts.find((p) => p.url.endsWith('/display-types/web_dt/extensions'))!.body as { slots: { owner: string }[] }).slots
-    expect(slots.map((x) => x.owner)).toEqual(['internal', 'advertiser'])
+    expect(slots.map((x) => x.owner)).toEqual(['headquarters', 'advertiser'])
   })
 
   /* Ticket, 28 Sep 2026 ("the three zones are still being seen as a single
@@ -259,8 +256,8 @@ describe('Playlist Management page', () => {
       ...menuBoard,
       multiZone: { enabled: true, zones: [zone(1, 2, 0), zone(2, null, 33.3), zone(3, 2, 66.7)] },
       phExtensions: { slots: [
-        { label: 'Slot 1', owner: 'internal', zoneId: 'z1' }, { label: 'Slot 2', owner: 'internal', zoneId: 'z1' },
-        { label: 'Slot 1', owner: 'internal', zoneId: 'z3' }, { label: 'Slot 2', owner: 'advertiser', zoneId: 'z3', listMode: 'rtb' },
+        { label: 'Slot 1', owner: 'headquarters', zoneId: 'z1' }, { label: 'Slot 2', owner: 'headquarters', zoneId: 'z1' },
+        { label: 'Slot 1', owner: 'headquarters', zoneId: 'z3' }, { label: 'Slot 2', owner: 'advertiser', zoneId: 'z3', listMode: 'rtb' },
       ] },
     }
     const zonePlaylist = (n: number) => ({ id: `pl_z${n}`, name: `Menu Board / Zone ${n}`, autoCreatedFor: 'menu_board', playlistSettings: {}, assignments: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', zoneId: `z${n}`, zoneName: `Zone ${n}` }] })
@@ -321,7 +318,7 @@ describe('Playlist Management page', () => {
     /* One segment per zone, in zone order: five Advertiser positions on Available Inventory, two a zone but Zone 3's one. */
     const saved = (puts.find((p) => p.url.endsWith('/display-types/menu_board/extensions'))!.body as { slots: { owner: string; zoneId: string | null }[] }).slots
     expect(saved.map((s) => [s.owner, s.zoneId])).toEqual([
-      ['advertiser', 'z1'], ['advertiser', 'z1'], ['advertiser', 'z2'], ['advertiser', 'z2'], ['internal', 'z3'], ['advertiser', 'z3'],
+      ['advertiser', 'z1'], ['advertiser', 'z1'], ['advertiser', 'z2'], ['advertiser', 'z2'], ['headquarters', 'z3'], ['advertiser', 'z3'],
     ])
   }, slow(120000))
 

@@ -128,7 +128,7 @@ export const capValue = (d: DisplayType): string | null => {
   const v = capOf(d).maximumCampaignsPlayedInRotation
   return v === null || v === undefined ? null : v === UNLIMITED ? 'Unlimited' : String(v)
 }
-export const newSlot = (i: number): Slot => ({ label: `Slot ${i + 1}`, owner: 'internal', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null })
+export const newSlot = (i: number): Slot => ({ label: `Slot ${i + 1}`, owner: 'headquarters', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null })
 /* Resize the slot list to a new cap, keeping what was there. */
 export const resizeSlots = (slots: Slot[], n: number): Slot[] => {
   const next = [...slots]
@@ -230,8 +230,7 @@ export const isBlocked = (seatId: string, lists: Lists) => lists.blockList.some(
 /* One line describing what a slot is assigned to (sellside.js
    ownerAssignment). Read-only here: it is set on Advertisers / Inventory. */
 export function ownerAssignment(sl: Slot, partners: Partner[]): string {
-  if (sl.owner === 'internal') return 'Based on priority'
-  if (sl.owner === 'retail') return sl.storeScope || 'Store staff'
+  if (sl.owner === 'headquarters') return 'Based on priority'
   const a = assignedOf(sl)
   if (a.advertisers.length) return a.advertisers.join(', ')
   const names = a.partnerIds.map((id) => partners.find((x) => x.id === id)?.name ?? id)
@@ -291,7 +290,7 @@ export function capSummary(d: DisplayType, showOwners: boolean, zoneId: string |
   if (capped) {
     chips.push({ key: 'slots', icon: 'view_week', label: `${slots.length} slots`, tone: 'on' })
     if (showOwners) {
-      for (const o of ['internal', 'advertiser', 'retail'] as SlotOwner[]) {
+      for (const o of ['headquarters', 'advertiser'] as SlotOwner[]) {
         const n = slots.filter((x) => x.owner === o).length
         if (n) chips.push({ key: o, icon: SLOT_OWNERS[o].icon, label: `${n} ${SLOT_OWNERS[o].label}`, tone: 'on', colour: SLOT_OWNERS[o].colour })
       }

@@ -294,8 +294,7 @@ describe('real-time (player-triggered) bidding', () => {
     expect((await signal()).statusCode).toBe(409)
     /* The slot editor no longer takes a bidMode: it is ignored, not stored. */
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
-    const base = ext.slots.map((s) => (s.owner === 'retail' ? { ...s, owner: 'internal' as const } : s))
-    const saved = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/menu_board/extensions', payload: { ...ext, slots: base.map((s, i) => (i === 1 ? { ...s, bidMode: 'advance' } : s)) } })
+    const saved = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/menu_board/extensions', payload: { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, bidMode: 'advance' } : s)) } })
     expect(saved.statusCode).toBe(200)
     expect(saved.json().slots[1]).not.toHaveProperty('bidMode')
   })

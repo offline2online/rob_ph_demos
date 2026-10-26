@@ -6,7 +6,7 @@ import {
 
 const base = (over: Partial<DisplayType> = {}): DisplayType => ({ ...newDisplayType('t'), playlistSettings: { maximumCampaignsPlayedInRotation: null }, ...over })
 const playlist = (over: Partial<Playlist> = {}): Playlist => ({ id: 'p', name: 'P', autoCreatedFor: null, assignments: [], playlistSettings: {}, ...over })
-const slot = (over: Partial<Slot>): Slot => ({ label: 'S', owner: 'internal', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null, ...over })
+const slot = (over: Partial<Slot>): Slot => ({ label: 'S', owner: 'headquarters', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null, ...over })
 const labels = (chips: { label: string; tone: string }[]) => chips.map((c) => `${c.label}${c.tone === 'default' ? ' (grey)' : ''}`)
 
 describe('collapsed panel summaries (spec §1)', () => {
@@ -17,9 +17,9 @@ describe('collapsed panel summaries (spec §1)', () => {
   it('Maximum Campaigns Played In Rotation: slot count and one chip per owner when capped', () => {
     const d = base({
       playlistSettings: { maximumCampaignsPlayedInRotation: 3 },
-      phExtensions: { slots: [slot({ owner: 'internal' }), slot({ owner: 'advertiser', listMode: 'rtb' }), slot({ owner: 'retail', storeScope: 'Store staff' })] },
+      phExtensions: { slots: [slot({ owner: 'headquarters' }), slot({ owner: 'advertiser', listMode: 'rtb' }), slot({ owner: 'headquarters' })] },
     })
-    expect(labels(capSummary(d, true))).toEqual(['3 slots', '1 Headquarters', '1 Advertiser', '1 Stores'])
+    expect(labels(capSummary(d, true))).toEqual(['3 slots', '2 Headquarters', '1 Advertiser'])
     expect(labels(capSummary(d, false))).toEqual(['3 slots'])
     const unlimited = base({ playlistSettings: { maximumCampaignsPlayedInRotation: -1 } })
     expect(labels(capSummary(unlimited, true))).toEqual(['Unlimited rotation (grey)'])
@@ -61,8 +61,7 @@ describe('slot ownership helpers', () => {
   const seatsOf = (p: Partner) => seats[p.id]
 
   it('describes each assignment as the prototype does', () => {
-    expect(ownerAssignment(slot({ owner: 'internal' }), partners)).toBe('Based on priority')
-    expect(ownerAssignment(slot({ owner: 'retail', storeScope: 'Franchisee' }), partners)).toBe('Franchisee')
+    expect(ownerAssignment(slot({ owner: 'headquarters' }), partners)).toBe('Based on priority')
     expect(ownerAssignment(slot({ owner: 'advertiser', listMode: 'rtb' }), partners)).toBe('Any connected DSP · RTB')
     expect(ownerAssignment(slot({ owner: 'advertiser', partnerIds: ['p_google', 'p_amazon'], listMode: 'rtb' }), partners)).toBe('Google DSP, Amazon Ads DSP · RTB')
     expect(ownerAssignment(slot({ owner: 'advertiser', partnerIds: ['p_google'], listMode: 'whitelist_only' }), partners)).toBe('Google DSP · whitelist')
@@ -111,7 +110,7 @@ describe('slot ownership helpers', () => {
     /* Added back, at the default cap: no slots until one is picked; at 2, two new Headquarters slots. */
     expect(normaliseSlots({ ...two, multiZone: { enabled: true, zones: [zone(1, 2), zone(2, 2), zone(3, null)] } }).phExtensions?.slots).toHaveLength(4)
     const back = normaliseSlots({ ...two, multiZone: { enabled: true, zones: [zone(1, 2), zone(2, 2), zone(3, 2)] } })
-    expect(back.phExtensions?.slots.map((x) => [x.owner, x.zoneId])).toEqual([['advertiser', 'z1'], ['advertiser', 'z1'], ['advertiser', 'z2'], ['advertiser', 'z2'], ['internal', 'z3'], ['internal', 'z3']])
+    expect(back.phExtensions?.slots.map((x) => [x.owner, x.zoneId])).toEqual([['advertiser', 'z1'], ['advertiser', 'z1'], ['advertiser', 'z2'], ['advertiser', 'z2'], ['headquarters', 'z3'], ['headquarters', 'z3']])
     /* Zones switched off: back to the display type's own cap, slots belong to no zone. */
     const single = normaliseSlots({ ...back, playlistSettings: { maximumCampaignsPlayedInRotation: 3 }, multiZone: { enabled: false, zones: back.multiZone!.zones } })
     expect(single.phExtensions?.slots.map((x) => x.zoneId)).toEqual([null, null, null])
@@ -130,7 +129,7 @@ describe('slot ownership helpers', () => {
     })
     const zoned = normaliseSlots({ ...single, multiZone: { enabled: true, zones: [zone(1), zone(2), zone(3)] } })
     expect((zoned.multiZone as { zones: { maximumCampaignsPlayedInRotation?: number | null }[] }).zones.map((z) => z.maximumCampaignsPlayedInRotation)).toEqual([3, undefined, undefined])
-    expect(zoned.phExtensions?.slots.map((x) => [x.label, x.owner, x.zoneId])).toEqual([['Priority 1', 'internal', 'z1'], ['Supplier slot', 'advertiser', 'z1'], ['Store choice', 'advertiser', 'z1']])
+    expect(zoned.phExtensions?.slots.map((x) => [x.label, x.owner, x.zoneId])).toEqual([['Priority 1', 'headquarters', 'z1'], ['Supplier slot', 'advertiser', 'z1'], ['Store choice', 'advertiser', 'z1']])
     expect(zoned.phExtensions?.slots[1].partnerIds).toEqual(['p_google'])
     /* A first zone that already has its own cap keeps it: extras beyond it are cut, never the cap raised. */
     const capped = normaliseSlots({ ...single, multiZone: { enabled: true, zones: [{ ...zone(1), maximumCampaignsPlayedInRotation: 2 }, zone(2)] } })

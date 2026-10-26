@@ -61,7 +61,7 @@ describe('existing records after this project migrations', () => {
   it("reverting this project's migrations keeps the existing records intact", async () => {
     const db = legacyDb()
     migrateUp(db)
-    await sqliteDisplayTypeSource(db).saveExtensions('legacy', { slots: [{ label: 'Slot 1', owner: 'internal' }] })
+    await sqliteDisplayTypeSource(db).saveExtensions('legacy', { slots: [{ label: 'Slot 1', owner: 'headquarters' }] })
     migrateDown(db, loadMigrations().length - 1)
     const row = db.prepare("SELECT * FROM display_types WHERE id = 'legacy'").get() as Record<string, unknown>
     expect(row).not.toHaveProperty('ph_extensions')

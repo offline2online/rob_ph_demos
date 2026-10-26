@@ -92,7 +92,7 @@ describe('slot lock', () => {
     const dt = (await ctx.displayTypes.get('portrait'))!
     await ctx.displayTypes.saveRecord('portrait', { ...dt, playlistSettings: { ...dt.playlistSettings, maximumCampaignsPlayedInRotation: 1 } } as never)
     await book(ctx, '2026-09-22T00:00:00.000Z')
-    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/portrait/extensions', payload: { slots: (await ctx.displayTypes.get('portrait'))!.phExtensions!.slots.map((x) => ({ ...x, owner: 'internal' })) } })
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/portrait/extensions', payload: { slots: (await ctx.displayTypes.get('portrait'))!.phExtensions!.slots.map((x) => ({ ...x, owner: 'headquarters' })) } })
     expect(res.statusCode).toBe(409)
     expect(res.json().error.code).toBe('has_dependents')
   })

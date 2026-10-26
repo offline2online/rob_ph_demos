@@ -12,7 +12,7 @@ const menuBoard = {
   defaultPlaylistId: 'pl_menu',
   playlistSettings: { maximumCampaignsPlayedInRotation: 3 },
   phExtensions: { slots: [
-    { label: 'Priority 1', owner: 'internal' }, { label: 'Supplier slot', owner: 'advertiser', listMode: 'rtb' }, { label: 'Store choice', owner: 'retail', storeScope: 'Store staff' },
+    { label: 'Priority 1', owner: 'headquarters' }, { label: 'Supplier slot', owner: 'advertiser', listMode: 'rtb' }, { label: 'Store choice', owner: 'headquarters' },
   ] },
 }
 const landscape = { ...newDisplayType('landscape'), name: 'Landscape', defaultPlaylistId: 'pl_landscape' }
@@ -72,7 +72,7 @@ describe('Display Types page', () => {
   })
 
   /* Ticket, 28 Sep 2026: Website and Mobile App added to Touch Point,
-     HQ-only (Advertiser/Stores greyed out — advertiser-settings.test.ts and
+     HQ-only (Advertiser greyed out — advertiser-settings.test.ts and
      playlist-management.test.tsx cover the slot-owner side of that), with
      their own canvas defaults and Multi-Zone Layout / non-QR features
      hidden. Digital Signage and Kiosk must behave exactly as before. */
@@ -232,7 +232,7 @@ describe('Display Types page', () => {
     const post = calls.find((c) => c.method === 'POST' && c.url === '/api/admin/v1/display-types')!
     expect(post.body).toMatchObject({ name: 'Aisle End', playlistSettings: { maximumCampaignsPlayedInRotation: 2 } })
     const ext = calls.find((c) => c.method === 'PUT' && /\/extensions$/.test(c.url))!
-    expect((ext.body as { slots: { owner: string }[] }).slots.map((s) => s.owner)).toEqual(['internal', 'advertiser'])
+    expect((ext.body as { slots: { owner: string }[] }).slots.map((s) => s.owner)).toEqual(['headquarters', 'advertiser'])
     /* The playlist's settings as shown — all default — are sent for the playlist Save created. */
     const settings = calls.find((c) => c.method === 'PUT' && /\/playlists\/pl_dt_\d+\/settings$/.test(c.url))!
     expect(settings.body).toEqual({})

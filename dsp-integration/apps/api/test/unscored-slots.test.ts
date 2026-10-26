@@ -23,7 +23,7 @@ async function setup(loopLengthSec: number | null = 40) {
   }
   expect((await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: dt })).statusCode).toBe(201)
   const slot = (label: string, owner: string) => ({ label, owner, partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null }) as unknown as Slot
-  await ctx.displayTypes.saveExtensions('dt_ui', { slots: [slot('Ad 1', 'advertiser'), slot('Ad 2', 'internal')], ...(loopLengthSec ? { venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait', loopLengthSec } } : {}) } as never)
+  await ctx.displayTypes.saveExtensions('dt_ui', { slots: [slot('Ad 1', 'advertiser'), slot('Ad 2', 'headquarters')], ...(loopLengthSec ? { venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait', loopLengthSec } } : {}) } as never)
   const ins = ctx.db.prepare("INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, 'Kiosk', 'Sydney CBD', 'st_sydney_cbd', 'dt_ui')")
   ins.run('d_ui_1'); ins.run('d_ui_2')
   const get = (url: string) => app.inject({ method: 'GET', url: `/api${url}`, headers: GOOGLE })

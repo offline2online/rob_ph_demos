@@ -120,7 +120,7 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
       /* The editor sets the label and the owner; who the position is assigned
          to and what it supports are edited on Advertisers / Inventory, so they
          are carried over here — and dropped when a slot stops being sellable
-         (Rob, 20 Sep). A Stores slot takes the default scope. */
+         (Rob, 20 Sep). */
       const previous = dt.phExtensions?.slots ?? []
       /* A sold slot stays an Advertiser slot: switching its owner would drop
          the advertiser and strand the booking (30 Sep 2026). */
@@ -150,7 +150,7 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
             buyersListId: kept ? was.buyersListId ?? null : null,
             ...(kept && was.buyersListIds?.length ? { buyersListIds: was.buyersListIds } : {}),
             ...(kept && was.openAuction ? { openAuction: true } : {}),
-            storeScope: s.owner === 'retail' ? was?.storeScope ?? 'Store staff' : null,
+            storeScope: null,
             quota: was?.quota ?? null,
             ...(kept && was.salesLocked ? { salesLocked: true } : {}),
             /* Set from Advertisers / Inventory, not here: kept as saved (absent = in the global deal). */

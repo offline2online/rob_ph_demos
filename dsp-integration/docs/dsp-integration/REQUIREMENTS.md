@@ -11,6 +11,7 @@ record.
 
 **Changelog**
 
+- **26 Oct 2026** — **Slot owners are Headquarters and Advertiser only** (Duy and Thuc, DSP owners). The `owner` values are `headquarters` and `advertiser`: `internal` is renamed `headquarters`, because it didn't match the Headquarters label it showed under, and `retail` (Stores) is removed, because it collided with the DSP term "retailer" (which means Headquarters). Stores is not a slot owner in this release; it will be added later as its own value. Migration 0088 turns every `internal` and `retail` slot into `headquarters` (a former Stores slot loses its store scope). Spec: "Slot ownership" under Display Types.
 - **25 Oct 2026** — **Advertisers Buyers list count fixed; direct advertisers included** (ticket AIAUTytM0ofGIGPvb0nr): the column counted only seats mapped by hand (`dspSeats`), so advertisers listed because a DSP synced a seat under their name read 0 whatever lists invited that seat. It now counts the lists inviting any mapped seat *or* any synced seat whose slugged name is the advertiser's id, and a direct advertiser counts the lists naming it as buyer (`{partnerId: 'direct', seatId: advertiserId}`, Direct advertiser deals); N/A is gone and no lists reads 0. Test: `apps/admin/test/dsp-integration.test.tsx` → "shows buyers list and campaign counts…".
 - **25 Oct 2026** — **Advertiser inventory: Direct advertisers in the Deals and buyers lists tooltip; Assigned to filter fixed** (ticket zEGSLHFUWdogfU77KljK): the section tooltip now lists *direct advertiser* among the deal types. The Available inventory **Assigned to** funnel offers only what the field supports — DSP names, *All DSPs*, *Buyers list: <name>* and *Whitelist only* — and filters on those values (a separate `filterValueGetter`, so the cell's numbered list labels, the global-deal chip and any legacy advertiser name no longer take part). Test: `apps/admin/test/dsp-integration.test.tsx` → "filters Available Inventory by Assigned to…".
 - **25 Oct 2026** — **Deals table: Buyer(s) and Slots filter from a list** (ticket NVW5Dvyg60QeYQbEPBZM): in the column headers, as in the other tables, **Buyer(s)** is now a funnel listing every buyer (each DSP seat and direct advertiser, plus IAB categories on a deal) and **Slots** a funnel listing every assigned slot (display type, playlist, position, slot number); several can be ticked. The deal name and **Deal ID** stay free-text search boxes. No column was added. Test: `apps/admin/test/dsp-integration.test.tsx`.
@@ -522,17 +523,15 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
   - **Headquarters**: filled from eligible HQ campaigns, as today.
   - **Advertiser**: sold through a DSP — RTB by default, whitelist-only, or
     reserved to a named advertiser (§6).
-  - **Stores**: delegated. A campaign is flagged as available to the staff
-    tablet; staff activate it but do not author it. Store-level authoring is
-    out of scope for this release. **Not offered in the first release**
-    (ticket, 27 Sep 2026): the slot editor offers Headquarters and
-    Advertiser only. A slot already saved as Stores still reads as Stores
-    (greyed out in the owner list, with a tooltip saying it isn't supported
-    in this release) until someone changes it; the API is unchanged.
+  - **Stores is not a slot owner in this release** (ticket, 27 Sep 2026;
+    Duy and Thuc, 26 Oct 2026): the owners are `headquarters` and
+    `advertiser`, and anything else is refused. Stores will be added later
+    as its own value; migration 0088 turned every slot saved as Stores into
+    a Headquarters slot.
   - **Website and Mobile App were Headquarters only** (ticket, 28 Sep 2026;
     superseded 7 Oct 2026 — they now offer the same owners as Digital Signage):
-    no advertising at all for these two touch points. Advertiser and Stores
-    stay on the owner list — shown, not hidden, so it's clear the option
+    no advertising at all for these two touch points. Advertiser
+    stays on the owner list — shown, not hidden, so it's clear the option
     exists but doesn't apply here — greyed out with a tooltip saying
     advertising isn't available for this touch point; the API refuses
     anything but Headquarters. No floor CPM, billing unit, max
@@ -562,8 +561,7 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
   **The slot editor sets the label and the owner** (Rob, 20 Sep). Who a
   sellable position is assigned to — DSPs, named advertisers, the whitelist
   — is managed on *Advertisers / Inventory* (§5), and appears here
-  read-only on the slot card. A Stores slot takes the default scope (*Store
-  staff*); its scope is no longer editable anywhere in this build. Changing
+  read-only on the slot card. Changing
   a slot's owner away from *Advertiser* drops the assignment with
   it, since the position is no longer sellable;
   changing anything else keeps them.
@@ -4332,7 +4330,7 @@ playback analytics.**
   signal at render time (PH-CORE-BOUNDARIES.md → "Website and Mobile App
   slots"). *(Display Types → Playlists → Slot assignment)*
 - **Website and Mobile App touch points** (ticket, 28 Sep 2026): offered
-  alongside Digital Signage and Kiosk, HQ-only (no Advertiser/Stores slot,
+  alongside Digital Signage and Kiosk, HQ-only (no Advertiser slot,
   no floor CPM/billing unit/max campaigns/venue metadata, out of
   Advertisers / Inventory, Available Inventory, the Inventory API and bid
   requests), their own canvas defaults (1920×1080 / 330×400) on a new
@@ -4358,8 +4356,9 @@ playback analytics.**
   on demand. A **new display type's own default playlist starts with
   nothing overridden** instead (ticket, 28 Sep 2026).
   *(ensureReferencedPlaylists, API)*
-- **Slot ownership editor**: each slot's label and owner — Headquarters,
-  Advertiser or Stores — and nothing else. With DSP integration switched
+- **Slot ownership editor**: each slot's label and owner — Headquarters or
+  Advertiser (Stores is not an owner in this release; 26 Oct 2026) — and
+  nothing else. With DSP integration switched
   off, Advertiser is greyed out for a slot that isn't one already. Shown
   inside the same expanded row, per assignment, alongside Maximum Campaigns
   Played In Rotation — both stay tied to the display type, since they size

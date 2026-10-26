@@ -371,7 +371,7 @@ export async function fixture(ctx: Context, opts: { second?: boolean } = {}) {
   }
   if (!(await ctx.displayTypes.get(DT))) {
     const mb = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
-    await ctx.displayTypes.saveExtensions('menu_board', { ...mb, slots: mb.slots.map((s) => (s.owner === 'advertiser' ? { ...s, owner: 'internal', partnerIds: [], listMode: null } : s)) })
+    await ctx.displayTypes.saveExtensions('menu_board', { ...mb, slots: mb.slots.map((s) => (s.owner === 'advertiser' ? { ...s, owner: 'headquarters', partnerIds: [], listMode: null } : s)) })
     await addSignage(DT, 'E2E Signage')
   }
   if (opts.second && !(await ctx.displayTypes.get(DT_B))) await addSignage(DT_B, 'E2E Signage B')

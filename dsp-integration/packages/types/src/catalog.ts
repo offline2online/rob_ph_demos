@@ -68,11 +68,9 @@ export const PLATFORM_DEFAULTS = {
    copy-the-current-playlist behaviour. */
 
 export const SLOT_OWNERS: Record<SlotOwner, { label: string; colour: string; bg: string; icon: string }> = {
-  internal: { label: 'Headquarters', colour: '#169bc2', bg: 'rgba(22,155,194,0.10)', icon: 'corporate_fare' },
+  headquarters: { label: 'Headquarters', colour: '#169bc2', bg: 'rgba(22,155,194,0.10)', icon: 'corporate_fare' },
   advertiser: { label: 'Advertiser', colour: '#7c3aed', bg: 'rgba(124,58,237,0.10)', icon: 'sell' },
-  retail: { label: 'Stores', colour: '#faad14', bg: 'rgba(250,173,20,0.14)', icon: 'storefront' },
 }
-export const STORE_SCOPES = ['Store staff', 'Store manager only', 'Regional manager', 'Franchisee'] as const
 
 /* Who may buy a position (Rob, 20 Sep; buyers lists/private auctions added
    23 Sep). One multi-select on Advertisers / Inventory replaced the display
