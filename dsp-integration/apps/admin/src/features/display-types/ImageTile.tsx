@@ -135,8 +135,8 @@ function PictureDialog({ current, aspect, onCancel, onSave }: { current: string 
     onSave(url)
   }
 
-  const tool = (icon: string, label: string, fn: () => void) => (
-    <Button type="text" aria-label={label} title={label} icon={<Icon name={icon} size={20} />} onClick={fn} />
+  const tool = (icon: string, label: string, fn: () => void, danger = false) => (
+    <Button type="text" danger={danger} aria-label={label} title={label} icon={<Icon name={icon} size={20} />} onClick={fn} />
   )
   const picking = removed || !src
 
@@ -181,7 +181,7 @@ function PictureDialog({ current, aspect, onCancel, onSave }: { current: string 
             {tool('zoom_out', 'Zoom out', () => setXf((v) => ({ ...v, zoom: Math.max(1, +(v.zoom - 0.25).toFixed(2)) })))}
             {tool('rotate_left', 'Rotate left', () => setXf((v) => ({ ...v, rot: (v.rot + 270) % 360 })))}
             {tool('rotate_right', 'Rotate right', () => setXf((v) => ({ ...v, rot: (v.rot + 90) % 360 })))}
-            {tool('delete', 'Delete', () => { setRemoved(true); setPicked(false); setSrc(null); setImg(null) })}
+            {tool('delete', 'Delete', () => { setRemoved(true); setPicked(false); setSrc(null); setImg(null) }, true)}
           </div>
         </>
       )}

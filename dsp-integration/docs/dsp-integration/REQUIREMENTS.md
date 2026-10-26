@@ -897,7 +897,7 @@ table (`/booking-schedule?tab=campaign-status`) in a new tab (ticket
 CcPh14VeSzSMZHO35d0s, 25 Oct 2026); an advertiser is removed
 with the delete icon beside it in the Advertisers table
 (`DELETE /admin/v1/advertisers/direct/{id}`, refused while it has campaigns or
-bookings; DSP advertisers have no delete icon). **Only a direct advertiser has
+bookings; DSP advertisers have no delete icon). **Every delete control in the admin looks the same (ticket ulhuw0QENMrtKuNT4D0f, 26 Oct 2026):** the Material Symbols `delete` trash can, 15 px, as a red (`danger`), borderless small text button, and always the rightmost icon in its row — after Edit, Share and Archive. This covers Advertisers, Deals and buyers lists (drafts), Playlist Management, the Display Types list, a multi-zone layout's zones and the picture editor's Delete tool; a new delete control copies the Advertisers row. **Only a direct advertiser has
 an edit (pencil) icon, and editing renames it (23 Oct 2026, ticket
 usIHp1uhtllLCP29teBu):** the pop-up's name field is enabled and **Save changes**
 (disabled while the name is empty or unchanged) calls

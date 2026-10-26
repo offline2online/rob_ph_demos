@@ -40,9 +40,10 @@ export function DisplayTypeList({ types, selectedId, onSelect, onNew, onDelete }
                 <Button
                   type="text"
                   size="small"
+                  danger
                   title="Delete display type"
                   aria-label={`Delete ${t.name || 'display type'}`}
-                  icon={<Icon name="delete" size={16} style={{ color: T.micro }} />}
+                  icon={<Icon name="delete" size={15} />}
                   onClick={(e) => {
                     e.stopPropagation()
                     onDelete(t.id)

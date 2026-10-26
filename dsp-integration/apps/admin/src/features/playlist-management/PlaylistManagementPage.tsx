@@ -240,7 +240,7 @@ function SettingsSummaryCell({ data, context }: Params) {
 
 function DeleteCell({ data, context }: Params) {
   if (!data) return null
-  return <Button danger size="small" title="Delete playlist" aria-label={`Delete ${data.p.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.askDelete(data.p)} />
+  return <Button type="text" danger size="small" title="Delete playlist" aria-label={`Delete ${data.p.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.askDelete(data.p)} />
 }
 
 /* The playlist's own settings, expanded in place: shown once, whether or
