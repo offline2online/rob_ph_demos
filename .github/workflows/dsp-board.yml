@@ -56,6 +56,10 @@ on:
         description: "That ticket's commit on the train branch (the board reads the train by this field)"
         type: string
         default: ''
+      reason:
+        description: "With to = backlog for a train card: what failed (recorded as its lastFailureReason; the card is reverted and rebuilt with it)"
+        type: string
+        default: ''
       project:
         description: "Board project id the ticket/train inputs act on (blank = Display Types & DSP Integration)"
         type: string
@@ -111,6 +115,7 @@ jobs:
         working-directory: dsp-integration
         env:
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+          REASON: ${{ inputs.reason }}
         run: |
           node scripts/board-tickets.mjs \
             ${{ inputs.project != '' && format('--project "{0}"', inputs.project) || '' }} \
@@ -118,6 +123,7 @@ jobs:
             ${{ inputs.to != '' && format('--to "{0}"', inputs.to) || '' }} \
             ${{ inputs.preview != '' && format('--preview "{0}"', inputs.preview) || '' }} \
             ${{ inputs.deploy_commit != '' && format('--deploy-commit "{0}"', inputs.deploy_commit) || '' }} \
+            ${REASON:+--reason "$REASON"} \
             --yes
 
       - name: Move several tickets

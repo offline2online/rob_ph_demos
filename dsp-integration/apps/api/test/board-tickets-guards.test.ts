@@ -169,6 +169,20 @@ describe('status moves', () => {
     expect(r.notes).toHaveLength(1)
     expect(rules.checkMove({ card: card({ status: 'ready-for-testing' }), to: 'backlog', git, project }).fields.revertRequested).toBeUndefined()
   })
+  it('backlog from a train card is rebuilt after the revert, with the reason as lastFailureReason', () => {
+    const { git } = onBranch()
+    const plain = rules.checkMove({ card: card({ status: 'ready-for-testing', deployCommit: FULL }), to: 'backlog', git, project })
+    expect(plain.fields.rebuildAfterRevert).toBe(true)
+    expect(plain.fields.lastFailureReason).toBeUndefined()
+    const r = rules.checkMove({ card: card({ status: 'ready-for-testing', deployCommit: FULL }), to: 'backlog', git, project, reason: ' DSP filter does not narrow the totals ', now: '2026-10-26T02:00:00Z' })
+    expect(r.fields.lastFailureReason).toEqual({ category: "Doesn't work as described", text: 'DSP filter does not narrow the totals', action: 'failed-testing', at: { timestamp: '2026-10-26T02:00:00Z' } })
+    expect(r.notes).toEqual(["Failed testing [Doesn't work as described]: DSP filter does not narrow the totals"])
+    // Written as a Firestore map, with its timestamp as a timestamp.
+    expect(rules.toFields(r.fields).lastFailureReason).toEqual({ mapValue: { fields: {
+      category: { stringValue: "Doesn't work as described" }, text: { stringValue: 'DSP filter does not narrow the totals' },
+      action: { stringValue: 'failed-testing' }, at: { timestampValue: '2026-10-26T02:00:00Z' },
+    } } })
+  })
   it('archived is refused for a train card and allowed from published-live', () => {
     const { git } = onBranch()
     expect(rules.checkMove({ card: card({ status: 'ready-to-publish', deployCommit: FULL }), to: 'archived', git, project }).ok).toBe(false)
