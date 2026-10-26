@@ -394,9 +394,9 @@ describe('Campaign Status stand-in', () => {
     expect(within(grid).getByLabelText('Deal ID search')).toBeInTheDocument()
     /* Pinned left: the selection box, Status and Advertiser; one row is one campaign
        (ticket IDGsyELBJsjlAYjizSqT), grouped by advertiser. Order per ticket
-       dinPPBl9Rk95UbrXoRbt: Activation sits left of Last used, Received left of Activation. */
+       HDh2GwTa7m8jaqidBvBY: Activation sits right of Playback Strategy, Received right of Activation, Last used last. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      '', 'Status', 'Advertiser / Campaign name', 'Touch point(s)', 'Display type(s)', 'Creative ID', 'Deal ID', 'Playback Strategy', 'Received', 'Activation', 'Last used', '',
+      '', 'Status', 'Advertiser / Campaign name', 'Touch point(s)', 'Display type(s)', 'Creative ID', 'Deal ID', 'Playback Strategy', 'Activation', 'Received', 'Last used', '',
     ])
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* The touch points it runs on, and its Playback Strategy pill (the localised layer; hover lists its rules). */

@@ -1458,7 +1458,7 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
   column; its search box matches either the advertiser or the campaign name
   and its funnel picks an advertiser), Touch
   points, Display types, Creative ID, Deal ID, Playback Strategy,
-  Received, Activation, Last used. Every row has
+  Activation, Received, Last used. Every row has
   **exactly one** box. Each advertiser is a group row whose single box ticks
   every campaign beneath it (partial when only some are ticked); a campaign
   row's box ticks that campaign. Filtering is **in the columns** — status is

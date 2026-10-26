@@ -32,8 +32,8 @@
    Column order and selection (ticket dinPPBl9Rk95UbrXoRbt, 10 Oct 2026):
    selection box, Status, Advertiser / Campaign name (one locked column,
    ticket QstRAlo3YCi7erFD0maN — the DSP shows on hovering the advertiser), Touch points, Display
-   types, Creative ID, Deal ID, the two variable columns, Received,
-   Activation, Last used. Each advertiser is a group row whose ONE box ticks
+   types, Creative ID, Deal ID, the two variable columns, Activation,
+   Received, Last used. Each advertiser is a group row whose ONE box ticks
    every campaign beneath it; each campaign row has its own one box. There is
    no status selector or "select all" above the table — status is filtered
    in its column — and the actions at the top right follow the status of the
@@ -503,13 +503,13 @@ export function CampaignStatusPage() {
       valueGetter: (p) => (p.data && !p.data.group ? strategiesOf(p.data) : ''),
       ...setColumn<Row>('Playback Strategy', () => STRATEGY_LABELS),
     },
+    /* Activation sits right of Playback Strategy, left of Received (tickets dinPPBl9Rk95UbrXoRbt, HDh2GwTa7m8jaqidBvBY): switch an approved campaign on. */
+    { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
     /* Received replaces Schedule (Rob, 8 Oct 2026): the forward schedule is no longer relevant on the real-time path. */
     {
       headerName: 'Received', width: 190, minWidth: 160, cellRenderer: ReceivedCell,
       valueGetter: (p) => (p.data && !p.data.group && approvals[p.data.campaignId]?.status === 'awaiting_approval' ? approvals[p.data.campaignId]?.submittedAt ?? '' : ''),
     },
-    /* Activation sits left of Last used (ticket dinPPBl9Rk95UbrXoRbt): switch an approved campaign on. */
-    { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
     { headerName: 'Last used', width: 150, minWidth: 130, cellRenderer: LastUsedCell, valueGetter: (p) => p.data?.lastPlayedAt ?? '' },
     { headerName: '', width: 56, suppressSizeToFit: true, pinned: 'right', cellRenderer: RowMenu },
   ], [approvals, all, advertiserOptions, advertiserId, statusOptions, statusFilter, displayTypeNames])
