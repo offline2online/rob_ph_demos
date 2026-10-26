@@ -609,6 +609,33 @@ ticket once automatically.
      really is unreachable, do not set `patchReady`: say so in a comment on
      the card and stop, because an untested DSP patch is how a whole
      approved train gets stuck at Deploy to Main.
+   - **Before setting `patchReady`, run the Retail Media Insights tests** if
+     the patch touches `Retail-media-insights/` — the same two suites as the
+     train's `retail-media-insights-tests` check:
+     `cd Retail-media-insights && npm run test:ci` (`npm test`, then the
+     Playwright UI suite `npm run test:ui`; about a minute and a half). Both
+     must pass. The UI suite finds the cloud sandbox's Chromium by itself
+     (`test/ui/browser.js` falls back to `/opt/pw-browsers/chromium`), so
+     "no browser here" is not a reason to skip it: on 26 Oct 2026 two
+     builds said exactly that and a third ran only `npm test`; two of those
+     patches changed a table and a chart default without touching
+     `test/ui/`, went red on the train and kept it red for 40 minutes, and
+     a third ticket was sent back for their failure. **A UI change updates
+     `test/ui/` in the same patch** — a removed column, a new default
+     selection or a reordered list breaks the test that reads it
+     (`smoke.test.js` reads cells by position). If the suite already fails
+     on the train head WITHOUT your change, it is another ticket's: when the
+     cause is plain (a test still pinned to behaviour that ticket changed on
+     purpose), fix that test in your patch too and name the ticket in your
+     note — that is what got the 26 Oct train green. Never hand back a
+     patch with a red you saw and left.
+   - **A test you could not run is a blocker, not a footnote.** Every
+     project's checks above run in a cloud session: Chromium is at
+     `/opt/pw-browsers/chromium`, and the npm registry is reachable. If one
+     genuinely can't run, do not set `patchReady`: comment on the card with
+     the exact error and stop. A note saying "tests could not run here"
+     followed by `patchReady: true` is how a ticket fails on the train,
+     comes back for a rebuild and holds every ticket around it.
    - `patchReady: true` (boolean) — this is the signal the automated job
      watches for. Do NOT set `status` to `ready-for-testing` yourself —
      you have no way to confirm a PR actually got opened; leave `status`

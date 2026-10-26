@@ -9,6 +9,7 @@
     "start": "node src/server.js",
     "build:local-api": "node scripts/build-local-api.js",
     "test:ui": "node --test test/ui/*.test.js",
+    "test:ci": "npm test && npm run test:ui",
     "loadtest": "node scripts/loadtest.js"
   },
   "engines": {

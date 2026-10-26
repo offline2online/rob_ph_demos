@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { chromium } = require('playwright');
+const { launchChromium } = require('./browser');
 
 const ROOT = path.join(__dirname, '..', '..');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
@@ -21,7 +21,7 @@ test.before(async () => {
   });
   await new Promise((r) => server.listen(0, r));
   base = `http://127.0.0.1:${server.address().port}`;
-  browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
+  browser = await launchChromium();
 });
 test.after(async () => { if (browser) await browser.close(); if (server) server.close(); });
 

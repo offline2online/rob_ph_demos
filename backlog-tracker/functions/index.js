@@ -217,8 +217,14 @@ function perItemFireText({ item, siblings, projectId, projectName, prefix = "", 
   const siblingBlock = others.length
     ? `\n\nThis ticket is ONE of ${siblings.length} sent together; each of the others is being built right now by its own parallel session, so do not build, edit or re-title them here:\n${others.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\nIf this ticket genuinely cannot be built until one of them has landed (it needs code that ticket adds), do not leave it in Backlog with only a note: set dependsOnItemIds to those ids and blocked to {reason: "waiting-on-input", note: "Waits for <id> to land"} — the automation clears the flag and starts this ticket again by itself the moment they reach Ready for Testing. Read ROUTINE_INSTRUCTIONS.md → "Parallel builds" before packaging.`
     : "";
-  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${siblingBlock}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
+  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${siblingBlock}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
 }
+
+// The rule builds skip most: three of six Retail Media Insights builds on
+// 26 Oct 2026 handed back patches without the UI suite (two said it "could
+// not run here"), and two of those went red on the train. Said here as well
+// as in ROUTINE_INSTRUCTIONS.md, which is long enough for it to be missed.
+const PRE_HANDBACK_TESTS = `\n\nBefore setting patchReady, run your project's full test command from ROUTINE_INSTRUCTIONS.md → "Before setting patchReady" (backlog-tracker/: cd backlog-tracker/test && npm run test:offline; dsp-integration/: the e2e-quick chain listed there; Retail-media-insights/: cd Retail-media-insights && npm run test:ci) and make it pass, updating the tests your change affects (UI tests included) in the same patch. This sandbox has Chromium at /opt/pw-browsers/chromium and npm registry access, so "tests could not run here" is never a reason to hand a patch back: if one really can't run, comment the exact error on the card and do not set patchReady.`;
 
 async function fireRoutine(fireUrl, token, text, fetchImpl = fetch) {
   const res = await fetchImpl(fireUrl, {

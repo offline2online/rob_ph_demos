@@ -540,12 +540,32 @@ head (`afterRevertDispatches`). A card's test verdict, for the auto-eject
 the card's own commit and the reverts / generated-only commits directly after
 it. A run is stale when a commit at or before it was reverted by a later
 commit, so a ticket is never blamed for an ejected ticket's failure.
-`pickRedCulprit` skips (does not stop at) a card whose every candidate is
-stale (`onlyStaleEvidence`: `revert(S)` on a train B, S, L, M leaves L with
-only runs that held S), so a later ticket N that goes red on its own commit is
-still named. That card's chip borrows the nearest later non-stale run on the
-branch (`borrowableShas`) for display only; a borrowed failure is never
-used to blame the card.
+A card whose every candidate is stale (`onlyStaleEvidence`: `revert(S)` on
+a train B, S, L, M leaves L with only runs that held S) is covered by a later
+card's green run, since that run held it too. A red run above it can't be
+pinned on anyone until it has a verdict of its own (26 Oct 2026: M3Uysw3u was
+sent back for a failure Lk5ojZ0t, two cards below it, had caused, because
+the scan passed over the cards with only stale runs). So `scanRedTrain`
+returns those cards as `unjudged`, and `rejudgeCards` re-tests each one:
+`buildRejudgeCommit` reverts the reverted commits (`rejudgeReverts`, newest
+first, a Markdown-only collision resolved as in a train revert) on top of the
+card's own commit in a throwaway worktree, pushes it to
+`train-rejudge/<sha12>`, and the workflow is dispatched there. The card's
+`trainTestReruns` records `rejudge@<sha12>:<reverted sha7s>=<commit>`, and
+that commit's run is the card's evidence, for the eject and the chip alike;
+the eject note says what it was tested without. A second revert below the
+card needs a new re-test. When the commit can't be built (a code collision,
+or a push GitHub refuses) or the dispatch never produces a run within 20
+minutes, the key reads `=none` and the card is passed over as before, so the
+train never strands. `train-rejudge/*` branches are deleted once their card
+has left the train. A card with no re-test yet borrows the nearest later
+non-stale run on the branch (`borrowableShas`) for its chip only; a borrowed
+failure is never used to blame the card. A card whose run is red, when the
+newest non-stale run further up the train passed, shows that pass and links
+it (`laterPassFor`). This is the chip's side of "fixed further up the train",
+which already kept `pickRedCulprit` from blaming the card. On 26 Oct 2026
+four Retail Media cards read "failed" under a green head, and approving them
+asked for the tests to be acknowledged.
 
 **A failed train test is re-run once (19 Oct 2026).** `trainRunVerdict(run)`
 returns `running`, `passed`, `rerun` (failure / timed_out / startup_failure

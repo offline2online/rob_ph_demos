@@ -2162,7 +2162,14 @@ async function evidenceRunsFor(workflow, card, commits, runsFor, opts = {}) {
   const runsBySha = {};
   for (const c of candidates) if (!c.stale) runsBySha[c.sha] = await runsFor(workflow, c.sha);
   const run_ = cardEvidenceRun(commits, card.deployCommit, runsBySha, { mainMerges });
-  if (run_ || !opts.borrow || !onlyStaleEvidence(commits, card.deployCommit)) return run_ ? [run_] : [];
+  if (run_) return [run_];
+  if (!onlyStaleEvidence(commits, card.deployCommit)) return [];
+  const rejudged = rejudgeShaOf(card, commits);
+  if (rejudged && rejudged !== "none") {
+    const real = newestRealRun(await runsFor(workflow, rejudged));
+    if (real) return [real];
+  }
+  if (!opts.borrow) return [];
   // Display only (the chip): the nearest later run that held this card and no
   // reverted change. Never the culprit's evidence — a failure up there is not
   // this ticket's.
@@ -2171,6 +2178,24 @@ async function evidenceRunsFor(workflow, card, commits, runsFor, opts = {}) {
     if (real) return [real];
   }
   return [];
+}
+
+// Display only (the chip): a card whose own run is red, but whose change the
+// newest run further up the train passed with, shows that pass. It is the
+// same "fixed further up the train" that keeps pickRedCulprit from blaming
+// it. On 26 Oct 2026 four Retail Media cards read "failed" under a green
+// head, for a red run that a later ticket's patch had already fixed.
+// Commits a revert made stale are passed over. Returns the run, or null.
+async function laterPassFor(workflow, card, commits, runsFor) {
+  const list = commits || [];
+  const at = list.findIndex((c) => c && c.sha === card.deployCommit);
+  if (at < 0) return null;
+  for (let i = list.length - 1; i > at; i--) {
+    if (staleAt(list, i)) continue;
+    const real = newestRealRun(await runsFor(workflow, list[i].sha));
+    if (real) return trainRunVerdict(real) === "passed" ? real : null;
+  }
+  return null;
 }
 
 // Once per sweep, just before ejectRedCulprits: keep every train card's
@@ -2194,7 +2219,13 @@ async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha),
       if (rec && (rec.state === "passed" || rec.state === "not-applicable")) continue; // settled
       const files = rec ? null : await filesFor(card.deployCommit);
       const runsByWorkflow = {};
-      for (const t of trainTestWorkflowsFor(card, files)) runsByWorkflow[t.workflow] = commits ? await evidenceRunsFor(t.workflow, card, commits, runsFor, { borrow: true }) : await runsFor(t.workflow, card.deployCommit);
+      for (const t of trainTestWorkflowsFor(card, files)) {
+        runsByWorkflow[t.workflow] = commits ? await evidenceRunsFor(t.workflow, card, commits, runsFor, { borrow: true }) : await runsFor(t.workflow, card.deployCommit);
+        if (commits && ["failed", "rerun"].includes(trainRunVerdict(newestRealRun(runsByWorkflow[t.workflow])))) {
+          const fixed = await laterPassFor(t.workflow, card, commits, runsFor);
+          if (fixed) runsByWorkflow[t.workflow] = [fixed];
+        }
+      }
       const next = nextCardTrainTest(card, runsByWorkflow, Date.now(), files);
       if (next) await patchItem(card.id, { trainTest: next });
       await retestUnrunWorkflows(card, next || rec, gh);
@@ -2395,6 +2426,47 @@ function cardEvidenceRun(commits, cardSha, runsBySha, opts = {}) {
   return null;
 }
 
+// ── A ticket left with no verdict by a revert is tested again on its own ────
+// A card with only stale evidence used to be passed over, and the next red
+// run was pinned on the first card above it that had a fresh run. That run
+// held the passed-over cards too. On 26 Oct 2026 M3Uysw3u was sent back for
+// a failure Lk5ojZ0t had caused, two cards below it: both ran while an
+// ejected ticket was still on the branch. Such a card is now tested again on
+// its own commit with the reverted changes taken out, on a throwaway
+// train-rejudge/<sha> branch, and nobody is blamed until that run has a
+// verdict. The card's trainTestReruns carries
+// `rejudge@<sha12>:<reverted sha7s>=<commit | none>`; "none" means the commit
+// couldn't be built or tested, and the card is passed over as before.
+const rejudgeRef = (sha) => `train-rejudge/${String(sha).slice(0, 12)}`;
+
+// The train commits whose revert left the card with only stale runs, newest
+// first (the order to revert them in). Pure.
+function rejudgeReverts(commits, cardSha) {
+  const list = commits || [];
+  const at = list.findIndex((c) => c && c.sha === cardSha);
+  if (at < 0) return [];
+  const out = [];
+  for (let j = at + 1; j < list.length; j++) {
+    for (const r of revertedShasOf(list[j].message)) {
+      const hit = list.slice(0, at + 1).find((c) => sameSha(c.sha, r));
+      if (hit && !out.includes(hit.sha)) out.push(hit.sha);
+    }
+  }
+  return out.sort((a, b) => list.findIndex((c) => c.sha === b) - list.findIndex((c) => c.sha === a));
+}
+const rejudgeKey = (cardSha, reverts) => `rejudge@${String(cardSha).slice(0, 12)}:${reverts.map((s) => s.slice(0, 7)).join("+")}`;
+
+// The re-test commit recorded for the card's current reverts: its sha,
+// "none", or null when none has been tried yet. Pure.
+function rejudgeShaOf(card, commits) {
+  if (!card || !card.deployCommit) return null;
+  const reverts = rejudgeReverts(commits, card.deployCommit);
+  if (!reverts.length) return null;
+  const prefix = `${rejudgeKey(card.deployCommit, reverts)}=`;
+  const key = ((card && card.trainTestReruns) || []).find((k) => k.startsWith(prefix));
+  return key ? key.slice(prefix.length) : null;
+}
+
 // ── Deploy to Main waits for the train's own tests ─────────────────────────
 // PR #337 (7 Oct 2026): the last ticket landed at 21:44, the train was
 // approved and Deploy to Main clicked while its e2e-quick run was still
@@ -2508,27 +2580,41 @@ function readTrainTestGate(deployBranch) {
 //   cards: the train's cards ({ id, status, deployCommit })
 //   runs:  { [sha]: newest real run on that commit ({ status, conclusion }) }
 //   opts.deployParkedRed: the approved deploy is parked red (see above)
-//   opts.skip: Set of deployCommits whose only runs are stale (onlyStaleEvidence)
+//   opts.skip: Set of deployCommits with no verdict that can't hold the scan
+//              (the workflow doesn't run for them, or no re-test is possible)
+//   opts.unjudged: Set of deployCommits whose only runs are stale and whose
+//              re-test (rejudgeReverts) hasn't reported yet
 // Returns the card to eject, or null (nothing red yet, the culprit is
 // approved and the deploy isn't parked, or the evidence is incomplete — a
-// run still going or missing).
+// run still going or missing, or an unjudged card the red run also held).
 function pickRedCulprit(order, cards, runs, opts = {}) {
+  return scanRedTrain(order, cards, runs, opts).culprit;
+}
+
+// pickRedCulprit's scan, plus `unjudged`: the cards a red run held that have
+// no verdict of their own (nothing passed between them and it). Nobody is
+// blamed until each of those is re-tested. Pure.
+function scanRedTrain(order, cards, runs, opts = {}) {
   const at = new Map((order || []).map((sha, i) => [sha, i]));
   const onTrain = (cards || []).filter((c) => c && at.has(c.deployCommit)).sort((a, b) => at.get(a.deployCommit) - at.get(b.deployCommit));
+  const none = { culprit: null, unjudged: [] };
   let greenBefore = false;
+  let unjudged = [];
   for (const card of onTrain) {
-    if (opts.skip && opts.skip.has(card.deployCommit)) continue; // only stale runs: no verdict, and no reason to stop the scan
+    if (opts.unjudged && opts.unjudged.has(card.deployCommit)) { unjudged.push(card); continue; } // a later green run covers it; a later red one can't be pinned past it
+    if (opts.skip && opts.skip.has(card.deployCommit)) continue; // no verdict, and no reason to stop the scan
     const r = (runs || {})[card.deployCommit];
-    if (!r || String(r.status).toLowerCase() !== "completed") return null;
+    if (!r || String(r.status).toLowerCase() !== "completed") return none;
     const concl = String(r.conclusion).toLowerCase();
-    if (concl === "success") { greenBefore = true; continue; }
-    if (!["failure", "timed_out"].includes(concl)) return null; // cancelled etc.: no verdict on this ticket
+    if (concl === "success") { greenBefore = true; unjudged = []; continue; }
+    if (!["failure", "timed_out"].includes(concl)) return none; // cancelled etc.: no verdict on this ticket
     const later = onTrain.slice(onTrain.indexOf(card) + 1).filter((c) => !(opts.skip && opts.skip.has(c.deployCommit)));
-    if (later.some((c) => { const lr = (runs || {})[c.deployCommit]; return lr && String(lr.status).toLowerCase() === "completed" && String(lr.conclusion).toLowerCase() === "success"; })) return null; // fixed further up the train
-    if (card.status === "ready-for-testing") return card;
-    return opts.deployParkedRed && greenBefore ? card : null;
+    if (later.some((c) => { const lr = (runs || {})[c.deployCommit]; return lr && String(lr.status).toLowerCase() === "completed" && String(lr.conclusion).toLowerCase() === "success"; })) return none; // fixed further up the train
+    if (unjudged.length) return { culprit: null, unjudged };
+    if (card.status === "ready-for-testing") return { culprit: card, unjudged: [] };
+    return { culprit: opts.deployParkedRed && greenBefore ? card : null, unjudged: [] };
   }
-  return null;
+  return none;
 }
 
 // The card whose passing run already proves main green for this workflow on
@@ -2550,7 +2636,7 @@ function provenGreenMain(commits, cards, runs, culprit) {
     if (!c || !culprit || c.id === culprit.id) continue;
     const r = (runs || {})[c.deployCommit];
     if (trainRunVerdict(r) !== "passed") continue;
-    const i = at((r && r.headSha) || c.deployCommit);
+    const i = at(r && r.headSha) >= 0 ? at(r.headSha) : at(c.deployCommit); // a re-test commit is off the train: place it at its card
     if (i < 0 || i >= at(culprit.deployCommit)) continue;
     if (!best || i > best.i) best = { i, card: c, run: r };
   }
@@ -2969,15 +3055,25 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         // A card this workflow never runs for (a docs- or faq-only ticket on
         // a console train) has no run, and pickRedCulprit stops at a card
         // with no run — so every ticket after it went unjudged and a red one
-        // was never sent back. Skipped like a stale one.
-        const skip = new Set(trainCards.filter((c) => onlyStaleEvidence(commits, c.deployCommit)).map((c) => c.deployCommit));
+        // was never sent back. It is skipped. A card whose only runs held a
+        // reverted ticket is re-tested without it (rejudgeCards) and holds
+        // the blame until then; skipped only when no re-test is possible.
+        const skip = new Set();
+        const unjudged = new Set();
         for (const c of trainCards) {
-          if (runs[c.deployCommit] || skip.has(c.deployCommit)) continue;
+          if (runs[c.deployCommit]) continue;
           let files = null;
           try { files = await filesFor(c.deployCommit); } catch { /* unreadable: it keeps holding the scan */ }
-          if (files && files.length && !trainTestsFor(files).some((x) => x.workflow === t.workflow)) skip.add(c.deployCommit);
+          if (files && files.length && !trainTestsFor(files).some((x) => x.workflow === t.workflow)) { skip.add(c.deployCommit); continue; }
+          if (!onlyStaleEvidence(commits, c.deployCommit)) continue;
+          (rejudgeShaOf(c, commits) === "none" ? skip : unjudged).add(c.deployCommit);
         }
-        const culprit = pickRedCulprit(order, trainCards, runs, { deployParkedRed, skip });
+        const scan = scanRedTrain(order, trainCards, runs, { deployParkedRed, skip, unjudged });
+        if (scan.unjudged.length) {
+          await rejudgeCards(branch, t, scan.unjudged, commits, runsFor, gh);
+          continue;
+        }
+        const culprit = scan.culprit;
         if (!culprit) continue;
         const r = runs[culprit.deployCommit];
         const action = culpritAction(r);
@@ -3008,7 +3104,9 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         const wasApproved = culprit.status === "ready-to-publish";
         const project = culprit.projectId === projectId ? trainProject : await getProject(culprit.projectId).catch(() => null);
         const summary = failureSummaryOf(r.id, ghLog);
-        const text = `${t.label} (${t.workflow}) failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} while everything before it on ${branch} passed${
+        const retested = r.headSha && r.headSha === rejudgeShaOf(culprit, commits)
+          ? ` (re-tested without the reverted ${rejudgeReverts(commits, culprit.deployCommit).map((x) => x.slice(0, 7)).join(", ")}, which its earlier runs held)` : "";
+        const text = `${t.label} (${t.workflow}) failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)}${retested} while everything before it on ${branch} passed${
           base.why === "base-green" ? " and main without it passes"
             : base.why === "train-green" ? `, on the same main (${proven.card.id}'s run passed just before it)`
               : base.why === "base-never-ran" ? " (main without it could not be tested)" : ""}: ${r.url || ""}${
@@ -3039,7 +3137,106 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
       console.log(`[train-eject] ${branch}: couldn't check for a red culprit (${scrubSecrets(err.message)})`);
     }
   }
+  pruneRejudgeRefs(cards.filter((c) => c.deployCommit && !c.revertRequested && !ejected.includes(c.id)).map((c) => c.deployCommit), gh);
   return ejected;
+}
+
+// Builds the card's commit with `reverts` taken out, in a throwaway worktree,
+// and pushes it to train-rejudge/<sha>. Returns its sha, or null when a
+// revert conflicts beyond a document list or the push is refused.
+function buildRejudgeCommit(branch, cardSha, reverts) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rejudge-"));
+  let added = false;
+  const who = ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com"];
+  try {
+    run("git", ["fetch", "origin", branch, "--quiet"]);
+    run("git", ["worktree", "add", "--detach", "--quiet", dir, cardSha]);
+    added = true;
+    for (const sha of reverts) {
+      const mainline = parentCount(sha) >= 2 ? ["-m", "1"] : [];
+      try {
+        run("git", [...who, "revert", "--no-edit", ...mainline, sha], { cwd: dir });
+      } catch (err) {
+        const docs = tryAutoResolveRevertConflict(conflictedPaths(dir), sha, dir);
+        if (!docs.resolved) throw err;
+        run("git", [...who, "-c", "core.editor=true", "revert", "--continue"], { cwd: dir });
+      }
+    }
+    const sha = run("git", ["rev-parse", "HEAD"], { cwd: dir });
+    run("git", ["push", "--force", "--quiet", "origin", `${sha}:refs/heads/${rejudgeRef(cardSha)}`]);
+    return sha;
+  } catch (err) {
+    console.log(`[train-rejudge] couldn't build ${cardSha.slice(0, 7)} without ${reverts.map((x) => x.slice(0, 7)).join(", ")} (${scrubSecrets(err.message).split("\n")[0]})`);
+    return null;
+  } finally {
+    if (added) { try { run("git", ["worktree", "remove", "--force", dir]); } catch { /* removed below */ } }
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* temp dir */ }
+  }
+}
+
+// A re-test dispatched this long ago with no run on its commit never started.
+const REJUDGE_START_GRACE_MS = 20 * 60 * 1000;
+
+// Starts `t` on each card's re-test commit, building the commit first when
+// the card has none for its current reverts. Never throws.
+async function rejudgeCards(branch, t, cards, commits, runsFor, gh) {
+  for (const card of cards) {
+    try {
+      const reverts = rejudgeReverts(commits, card.deployCommit);
+      if (!reverts.length) continue;
+      const key = rejudgeKey(card.deployCommit, reverts);
+      let keys = (card.trainTestReruns || []).filter((k) => !k.startsWith(`rejudge@${card.deployCommit.slice(0, 12)}:`) || k.startsWith(`${key}=`));
+      let sha = rejudgeShaOf(card, commits);
+      let note = null;
+      if (!sha) {
+        sha = buildRejudgeCommit(branch, card.deployCommit, reverts) || "none";
+        keys = withKey(keys, `${key}=${sha}`);
+      }
+      if (sha !== "none") {
+        const started = keys.find((k) => k.startsWith(`${t.workflow}@${sha}:rejudge:`));
+        if (!started) {
+          if (dispatchOnSha(t.workflow, sha, gh, rejudgeRef(card.deployCommit))) {
+            keys = withKey(keys, `${t.workflow}@${sha}:rejudge:${Date.now()}`);
+            note = `Every ${t.label} run on this ticket's commit ${card.deployCommit.slice(0, 7)} also held ${reverts.map((x) => x.slice(0, 7)).join(", ")}, since taken off the train, so none of them can judge it. ` +
+              `Testing this ticket again without ${reverts.length > 1 ? "those changes" : "that change"} (${sha.slice(0, 7)}); no ticket is sent back until it reports. Nothing to do.`;
+            console.log(`[train-rejudge] ${branch}: ${card.id} re-tested without ${reverts.map((x) => x.slice(0, 7)).join(", ")} — ${t.workflow} on ${sha.slice(0, 7)}`);
+          } else {
+            sha = "none";
+          }
+        } else if (Date.now() - Number(started.split(":").pop()) > REJUDGE_START_GRACE_MS && !newestRealRun(await runsFor(t.workflow, sha))) {
+          sha = "none"; // dispatched, never ran
+        }
+        if (sha === "none") keys = withKey(keys.filter((k) => !k.startsWith(`${key}=`)), `${key}=none`);
+      }
+      if (sha === "none") {
+        console.log(`[train-rejudge] ${branch}: ${card.id} can't be re-tested without ${reverts.map((x) => x.slice(0, 7)).join(", ")} — judged with the tickets above it`);
+        note = note || `This ticket's ${t.label} runs all held ${reverts.map((x) => x.slice(0, 7)).join(", ")}, since taken off the train, and it couldn't be tested again without ${reverts.length > 1 ? "those changes" : "that change"}. ` +
+          `It is judged together with the tickets above it. Nothing to do.`;
+      }
+      const same = keys.length === (card.trainTestReruns || []).length && keys.every((k, i) => k === card.trainTestReruns[i]);
+      if (same && !note) continue;
+      card.trainTestReruns = keys;
+      const fields = { trainTestReruns: keys };
+      if (note) { fields.notes = await appendNote(card, note); card.notes = fields.notes; fields.updatedAt = new Date().toISOString(); }
+      await patchItem(card.id, fields);
+    } catch (err) {
+      console.log(`[train-rejudge] ${branch}: ${card.id}: ${scrubSecrets(err.message)}`);
+    }
+  }
+}
+
+// Deletes train-rejudge/<sha> branches whose card is no longer on a train.
+function pruneRejudgeRefs(liveShas, gh) {
+  let refs = [];
+  try {
+    refs = JSON.parse(gh(["api", `repos/${REPO}/git/matching-refs/heads/train-rejudge/`, "-q", "[.[].ref]"]) || "[]");
+  } catch { return; }
+  const live = new Set((liveShas || []).map((s) => String(s).slice(0, 12)));
+  for (const ref of refs) {
+    const name = ref.replace(/^refs\/heads\//, "");
+    if (live.has(name.split("/").pop())) continue;
+    try { gh(["api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${name}`]); } catch { /* already gone */ }
+  }
 }
 
 // ── Self-healing Staff Kanban E2E loop (21 Oct 2026, ticket 6CScTuviK0lxznLl5FNk) ──
@@ -4001,8 +4198,8 @@ function discardWorkingTree() {
 }
 
 // The paths `git merge` left with unresolved conflict markers, mid-merge.
-function conflictedPaths() {
-  const out = run("git", ["diff", "--name-only", "--diff-filter=U"]);
+function conflictedPaths(cwd = undefined) {
+  const out = run("git", ["diff", "--name-only", "--diff-filter=U"], cwd ? { cwd } : {});
   return out ? out.split("\n").filter(Boolean) : [];
 }
 
@@ -4531,22 +4728,22 @@ function resolveRevertDocConflict(text, addedLines) {
   }
   return out.join("\n");
 }
-function tryAutoResolveRevertConflict(conflicted, sha) {
+function tryAutoResolveRevertConflict(conflicted, sha, cwd = process.cwd()) {
   if (!conflicted.length || !conflicted.every((p) => /\.md$/i.test(p))) return { resolved: false };
   const resolved = [];
   for (const p of conflicted) {
     let added = [];
     try {
-      added = run("git", ["show", "--format=", sha, "--", p], { maxBuffer: 64 * 1024 * 1024 })
+      added = run("git", ["show", "--format=", sha, "--", p], { maxBuffer: 64 * 1024 * 1024, cwd })
         .split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).map((l) => l.slice(1));
     } catch { return { resolved: false }; }
-    const file = path.join(process.cwd(), p);
+    const file = path.join(cwd, p);
     const text = resolveRevertDocConflict(fs.readFileSync(file, "utf8"), added);
     if (text === null) return { resolved: false };
     fs.writeFileSync(file, text);
     resolved.push(p);
   }
-  run("git", ["add", "--", ...resolved]);
+  run("git", ["add", "--", ...resolved], { cwd });
   return { resolved: true, paths: resolved };
 }
 
@@ -6942,6 +7139,8 @@ module.exports = {
   selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
+  // test/train-rejudge.test.js — a ticket left with no verdict by a revert is re-tested
+  scanRedTrain, rejudgeReverts, rejudgeKey, rejudgeShaOf, rejudgeRef, rejudgeCards, buildRejudgeCommit, pruneRejudgeRefs, evidenceRunsFor, laterPassFor,
   // test/notes-append.test.js — notes are only ever appended, atomically
   notesCommitWrite, appendNote, patchItem,
   // test/train-lock-branch-archive.test.js — the sweep adopts hand-pushed trailer commits
