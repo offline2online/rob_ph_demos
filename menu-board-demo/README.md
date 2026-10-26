@@ -70,7 +70,8 @@ Hub platform" before debugging a screenshot.
 ## Docs
 
 - [`REQUIREMENTS.md`](./REQUIREMENTS.md) — what the prototype does and the
-  price-resolution rules every surface must agree on.
+  price-resolution rules every surface must agree on; §10 holds the
+  discovery requirements for supplier store-level transparency (not built).
 - [`REVIEW-2026-10.md`](./REVIEW-2026-10.md) — the 19 Oct 2026 code
   review: security, pricing correctness, data integrity, design system,
   recommended order of work.

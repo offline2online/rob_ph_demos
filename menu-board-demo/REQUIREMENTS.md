@@ -201,3 +201,82 @@ the recommended fix.
 - Should board URLs carry brand and template ids rather than names/types?
 - Fold `Brands-Suppliers-Assets/` (label templates, discount touchpoints)
   in here, or retire it?
+
+## 10. Supplier store-level transparency (discovery, 26 Oct 2026 — not built)
+
+Ticket `UMSHGbzxg5DCyXiZWBbc`. Nothing here exists in the prototype yet; this
+section is the requirement set for discovery and design. It extends §2's
+product model so the **transaction side** (supplier inventory, orders,
+store sell-through) and the **media side** (campaigns, screens, edge
+computer vision) are joined at product-and-store level, and gives suppliers
+who advertise on the retailer's retail media network a governed, paid view
+of their own SKUs by store.
+
+### 10.1 Store-level trading data per product
+
+- Per product (GS1-identified SKU) and store, the store digital twin holds:
+  live stock, price, sell-through, and supplier order / shipment volumes.
+- Inputs: the transaction / POS API, GS1 product identity, and EDI-style
+  supplier feeds or the supplier's own order management system.
+- Builds on today's `stock/{store}` and `storePricing/{store}` (§2), which
+  hold only in/out of stock, stock level and price overrides.
+
+### 10.2 Stock-aware decisioning
+
+- PH Core suppresses a supplier's campaign for a SKU when shelf stock is
+  below a threshold, and can promote overstock or short-dated lines,
+  adjusting price and creative in real time.
+- Price changes made this way must go through §7's resolution rules and be
+  logged in `priceLog[]` like any other change.
+
+### 10.3 Edge creative performance
+
+- Edge CV (passer-by and visitor engagement by screen and location) is tied
+  to the campaign and SKU, so a supplier sees which creative performs at
+  which store beside the sales uplift.
+- Depends on closed-loop attribution from the Transaction API.
+
+### 10.4 Gated, paid access
+
+- Store-level visibility is available only to a supplier or advertiser with
+  campaigns running through the retail media network.
+- Suggested tiers: **standard** — campaign-period visibility on advertised
+  SKUs; **always-on** — store-level visibility unlocked by an annual
+  commitment; an **entry tier** for smaller suppliers (to be defined).
+
+### 10.5 Governance
+
+- SKU-level permissioning: a supplier sees only its own products, never
+  competitors' or private label. Today's Brands / Suppliers registry
+  (`menuboard/brands`) is the starting point for the supplier-to-SKU link.
+- The retailer controls and meters access (who, which SKUs, which stores,
+  which period) and can audit it.
+- Requires the access model in §8, which does not exist today.
+
+### 10.6 Positioning
+
+- The paid tier must sit clearly above what suppliers already get from
+  supplier portals and EDI: store-level, near real time, tied to media
+  exposure, creative performance and uplift.
+- Frame and name it as **campaign analytics**, not withheld trading data,
+  given grocery-code and competition-regulator scrutiny. Legal review of
+  the framing is a precondition to release.
+
+### 10.7 Dependencies
+
+Transaction API and closed-loop attribution; store digital twin; edge CV;
+Retail Media Insights & Analytics Dashboards (supplier / advertiser views);
+Federated Retail Media (PH-to-PH) for supplier PH instances; §8 access
+controls.
+
+### 10.8 Open questions for discovery
+
+- Which tier boundaries and pricing; what is the entry tier?
+- Data freshness promised per tier (minutes vs. daily)?
+- Which trading measures may be shown without breaching grocery-code or
+  competition rules (e.g. aggregation floors, suppressing small-store
+  counts)?
+- Where does supplier-facing UI live: Insights dashboards, a supplier PH
+  instance via Federated Retail Media, or HQ Admin?
+- Who owns the supplier-to-SKU mapping, and how are shared / multi-supplier
+  SKUs handled?
