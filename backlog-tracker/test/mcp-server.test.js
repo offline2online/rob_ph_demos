@@ -268,7 +268,7 @@ async function rpc(token, method, params, id = 1) {
     // Rob's decision of 20 Oct 2026 (Ysh0yuU9z643E0uisr51): the two earlier
     // pipeline approvals joined the third, each admin-only and each the same
     // action as the board's own button.
-    const CARVE_OUTS = ["approve_deploy_to_main", "send_to_build", "approve_for_deployment"];
+    const CARVE_OUTS = ["approve_deploy_to_main", "send_to_build", "approve_for_deployment", "fail_testing"];
     const writeTools = mcp.__test.TOOLS.filter((t) => t.scope === "board.write");
     for (const name of CARVE_OUTS) {
       const t = writeTools.find((x) => x.name === name);
@@ -1985,7 +1985,7 @@ async function rpc(token, method, params, id = 1) {
   env.store.col("projects").set("voiceproj", { name: "Voice Project", deployBranch: "deploy/voiceproj" });
 
   await test("send_to_build and approve_for_deployment are refused to an editor", async () => {
-    for (const name of ["send_to_build", "approve_for_deployment"]) {
+    for (const name of ["send_to_build", "approve_for_deployment", "fail_testing"]) {
       const res = await rpc(tokens.access_token, "tools/call", { name, arguments: { projectId: "voiceproj", itemIds: ["v1"] } });
       assert.strictEqual(res.body.result.isError, true);
       assert.match(res.body.result.content[0].text, /requires the admin role/);
@@ -2059,6 +2059,34 @@ async function rpc(token, method, params, id = 1) {
     res = await adminCall("approve_for_deployment", { projectId: "voiceproj", itemIds: ["r1"], acknowledgeTests: true });
     assert.strictEqual(res.body.result.isError, undefined);
     assert.strictEqual(env.store.col("backlogItems").get("r1").status, "ready-to-publish");
+  });
+
+  await test("fail_testing sends named tickets back with the reason, queues a rebuild and is audited", async () => {
+    seedItem("f1", { status: "ready-for-testing", deployCommit: "sha-f1" });
+    seedItem("f2", { status: "ready-for-testing", deployCommit: "sha-f2" });
+    const res = await adminCall("fail_testing", { projectId: "voiceproj", itemIds: ["f1"], reason: "Button does nothing", category: "Doesn't work as described" });
+    assert.strictEqual(res.body.result.isError, undefined);
+    const f1 = env.store.col("backlogItems").get("f1");
+    assert.strictEqual(f1.status, "backlog");
+    assert.strictEqual(f1.revertRequested, true);
+    assert.strictEqual(f1.rebuildAfterRevert, true);
+    assert.strictEqual(f1.lastFailureReason.text, "Button does nothing");
+    assert.strictEqual(f1.lastFailureReason.action, "failed-testing");
+    assert.strictEqual(env.store.col("backlogItems").get("f2").status, "ready-for-testing", "unnamed tickets stay put");
+    const row = [...env.store.col("mcpAuditLog").values()].find((r) => r.tool === "fail_testing");
+    assert.ok(row && row.email === TEAMMATE && row.itemIds.join() === "f1");
+  });
+
+  await test("fail_testing refuses tickets not in Ready for Testing, already reverting or foreign, and writes nothing", async () => {
+    seedItem("g1"); // backlog
+    seedItem("g2", { status: "ready-for-testing", deployCommit: "s", revertRequested: true });
+    seedItem("g3", { status: "ready-for-testing", deployCommit: "s3" });
+    for (const [ids, re] of [[["g1"], /not Ready for Testing/], [["g2"], /already marked for revert/], [["ghost"], /not a ticket of this project/], [["g3", "g1"], /Nothing was sent back/], [[], /at least one/]]) {
+      const res = await adminCall("fail_testing", { projectId: "voiceproj", itemIds: ids });
+      assert.strictEqual(res.body.result.isError, true, JSON.stringify(ids));
+      assert.match(res.body.result.content[0].text, re);
+    }
+    assert.strictEqual(env.store.col("backlogItems").get("g3").status, "ready-for-testing");
   });
 
   await test("approve_for_deployment refuses wrong status, revert-marked, no-deploy and foreign tickets, and writes nothing", async () => {
