@@ -530,6 +530,25 @@ describe('Campaign Status stand-in', () => {
     expect(q.get('campaignId')).toBeNull()
   }, slow(45000))
 
+  /* Ticket Hh87Dja2TgYrug606Uq0 (26 Oct 2026): Monthly asks the server for a 12-month roll-up and shows its counts per month. */
+  it('asks for a 12-month monthly roll-up and shows each month\'s booked count', async () => {
+    const start = '2026-10-01T00:00:00.000Z'
+    const rollup = { windows: 30, booked: 7, open: 20, reserved: 0, bookedRevenue: 70, localised: 2, personalised: 1, advertiserIds: ['zinger'], advertiserNames: ['Zinger Direct'], partnerNames: ['Direct'] }
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: '2026-11-01T00:00:00.000Z' }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 7, sellableWindows: 30, bookedRevenue: 70, billedRevenue: 0 },
+      positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'deal', realTime: false, recentPlays: null,
+        windows: [{ start, status: 'booked', booking: null, rollup }] }],
+    }
+    const fetchMock = vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderAt('/booking-schedule')
+    fireEvent.click(await screen.findByText('Monthly', {}, { timeout: 10000 }))
+    expect(await screen.findByText('7 of 30 booked', {}, { timeout: 10000 })).toBeInTheDocument()
+    const url = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/booking-schedule?') && u.includes('view=monthly')).pop() as string
+    const q = new URLSearchParams(url.split('?')[1])
+    expect((Date.parse(q.get('to') as string) - Date.parse(q.get('from') as string)) / 86_400_000).toBeGreaterThan(330)
+  }, slow(45000))
+
   /* The Status column's own funnel is the only status filter (ticket dinPPBl9Rk95UbrXoRbt);
      it stays on until cleared from that funnel. */
   it('filters by status from the Status column funnel, until the filter is cleared', async () => {

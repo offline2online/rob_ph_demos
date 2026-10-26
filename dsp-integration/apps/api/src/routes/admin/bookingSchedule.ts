@@ -42,6 +42,9 @@ export const DEFAULT_RISK_DAYS = 3
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 export interface ScheduleFilter { campaignId?: string; advertiserId?: string; partnerId?: string }
+/* The Monthly view may look a year ahead (ticket Hh87Dja2TgYrug606Uq0, 26 Oct 2026); Daily and Weekly keep the 92-day cap. */
+export const MAX_SCHEDULE_DAYS = 92
+export const MAX_MONTHLY_DAYS = 365
 
 type Booking = NonNullable<BookingSchedule['positions'][number]['windows'][number]['booking']>
 type Layers = Booking['layers']
@@ -95,7 +98,11 @@ export function approvalOf(defaultApproved: boolean, startsInDays: number, local
   return { defaultApproved, defaultRisk: defaultApproved ? 'secured' : startsInDays <= DEFAULT_RISK_DAYS ? 'at_risk' : 'warning', startsInDays, localised, personalised }
 }
 
-export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter = {}): Promise<BookingSchedule> {
+/* `monthly` rolls the grid up on the server: one column per calendar month, and each position's cell carries that month's
+   counts (`rollup`) instead of one cell per window. Built from the live bookings and from window counts worked out once per
+   window length, so a 12-month range costs about what the 92-day one does (ticket Hh87Dja2TgYrug606Uq0). Revenue,
+   % sold and the totals are the same sums as the per-window path, which stays for Daily and Weekly. */
+export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter = {}, monthly = false): Promise<BookingSchedule> {
   const len = await shortestWindowMs(ctx)
   const partners = await ctx.partners.list()
   /* Advertiser names come from the DSPs' seats, keyed by their slug. */
@@ -192,13 +199,43 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
   /* Only advertisers with something booked in this range are worth filtering
      by (Rob, 20 Sep), so the picker is built before any filter is applied. */
   const booked = new Set<string>()
-  for (const p of estate) {
+  if (monthly) for (const r of live.values()) { if (r.advertiserId) booked.add(r.advertiserId) }
+  else for (const p of estate) {
     const own = lenOf.get(p.positionId) as number
     for (const start of new Set(starts.map((s) => windowStartOf(s, own).toISOString()))) {
       const r = live.get(`${p.positionId}|${start}`)
       if (r?.advertiserId) booked.add(r.advertiserId)
     }
   }
+
+  /* Monthly roll-up: the calendar months the columns fall in, and — per window length, once — how many of that length's
+     windows start in each month and how many of those can still be sold. A window is counted in the month of the first
+     column that lands in it, as the per-window path does. */
+  const monthKey = (ms: number) => { const d = new Date(ms); return d.getUTCFullYear() * 12 + d.getUTCMonth() }
+  const monthStarts: number[] = []
+  const monthIndex = new Map<number, number>()
+  if (monthly) for (const c of starts) {
+    const k = monthKey(c.getTime())
+    if (!monthIndex.has(k)) { monthIndex.set(k, monthStarts.length); monthStarts.push(c.getTime()) }
+  }
+  const monthOf = (ms: number) => monthIndex.get(monthKey(Math.max(ms, starts[0].getTime()))) as number
+  const windowCounts = new Map<number, { starts: number[]; total: number[]; sellable: number[] }>()
+  const countsOfLen = (len: number, firstSellable: number) => {
+    let c = windowCounts.get(len)
+    if (!c) {
+      c = { starts: [], total: monthStarts.map(() => 0), sellable: monthStarts.map(() => 0) }
+      for (let t = windowStartOf(starts[0], len).getTime(); t <= starts[starts.length - 1].getTime(); t += len) {
+        const m = monthOf(t)
+        c.starts.push(t)
+        c.total[m]++
+        if (t >= firstSellable) c.sellable[m]++
+      }
+      windowCounts.set(len, c)
+    }
+    return c
+  }
+  const liveByPosition = new Map<string, ReservationRecord[]>()
+  if (monthly) for (const r of live.values()) liveByPosition.set(r.positionId, [...(liveByPosition.get(r.positionId) ?? []), r])
 
   const positions = []
   for (const p of estate) {
@@ -227,6 +264,67 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
        yet is reserved for the deal's advertiser, not available to anyone else (E2E 21 Oct 2026: it read Available). */
     const directFlights = (await Promise.all(assignedOf(p.def).buyersListIds.map(buyersList)))
       .filter((l): l is NonNullable<typeof l> => !!l && l.dealType === 'direct' && l.status === 'shared')
+    if (monthly) {
+      const counts = countsOfLen(len, firstSellable)
+      const sellable = hasDisplays && !realTime
+      const acc = monthStarts.map(() => ({ booked: 0, bookedSellable: 0, bookedRevenue: 0, localised: 0, personalised: 0, advertiserIds: new Set<string>(), advertisers: new Set<string>(), partners: new Set<string>(), taken: new Set<number>() }))
+      for (const x of liveByPosition.get(p.positionId) ?? []) {
+        const r = (!f.campaignId || x.campaignId === f.campaignId) && (!f.partnerId || x.partnerId === f.partnerId) ? x : undefined
+        if (!r) continue
+        const t = Date.parse(r.windowStart)
+        const m = monthOf(t)
+        const a = acc[m]
+        a.taken.add(t)
+        if (sellable && t >= firstSellable) a.bookedSellable++
+        /* With an advertiser filter the others' windows are neither open nor counted: only the advertiser's own are. */
+        if (f.advertiserId && r.advertiserId !== f.advertiserId) continue
+        const bookedRevenue = round2((views / 1000) * (r.clearingCpm as number))
+        const type = (r.pricingType ?? 'default') as BookingSchedule['byPricingType'][number]['pricingType']
+        rev.bookedWindows++
+        rev.bookedRevenue = round2(rev.bookedRevenue + bookedRevenue)
+        rev.billedRevenue = round2(rev.billedRevenue + (billed.get(r.id) ?? 0))
+        const bt = byType.get(type) ?? { pricingType: type, bookedWindows: 0, bookedRevenue: 0 }
+        bt.bookedWindows++
+        bt.bookedRevenue = round2(bt.bookedRevenue + bookedRevenue)
+        byType.set(type, bt)
+        const layers = layersOf(await targetedFor(r.campaignId), r.pricingType)
+        a.booked++
+        a.bookedRevenue = round2(a.bookedRevenue + bookedRevenue)
+        if (layers.localised) a.localised++
+        if (layers.personalised) a.personalised++
+        if (r.advertiserId) { a.advertiserIds.add(r.advertiserId); a.advertisers.add(advertiserName.get(r.advertiserId) || r.advertiserId) }
+        a.partners.add(r.partnerId === DIRECT_PARTNER_ID ? DIRECT_LABEL : partnerName.get(r.partnerId) ?? r.partnerId)
+      }
+      /* Only a window in a live Direct deal's flight that the exchange has not booked yet is reserved. */
+      const reserved = monthStarts.map(() => 0)
+      if (sellable && directFlights.length) {
+        const all = new Set(acc.flatMap((a) => [...a.taken]))
+        for (const t of counts.starts) {
+          if (t >= firstSellable && !all.has(t) && directFlights.some((l) => isActiveAt(l, new Date(t).toISOString()))) reserved[monthOf(t)]++
+        }
+      }
+      const total = monthStarts.map((_, m) => counts.total[m])
+      if (sellable) for (const n of counts.sellable) rev.sellableWindows += n
+      const windows = monthStarts.map((ms, m) => {
+        const a = acc[m]
+        const open = sellable ? Math.max(0, counts.sellable[m] - a.bookedSellable - reserved[m]) : 0
+        return {
+          start: new Date(ms).toISOString(),
+          status: a.booked ? ('booked' as const) : open ? ('available' as const) : reserved[m] ? ('reserved' as const) : ('unavailable' as const),
+          booking: null,
+          rollup: {
+            windows: total[m], booked: a.booked, open, reserved: reserved[m], bookedRevenue: a.bookedRevenue, localised: a.localised, personalised: a.personalised,
+            advertiserIds: [...a.advertiserIds], advertiserNames: [...a.advertisers], partnerNames: [...a.partners],
+          },
+        }
+      })
+      positions.push({
+        positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label, displayCount,
+        zoneName: zonePlaceOf(p.displayType, p.slot)?.zoneName ?? null, zoneSlot: zonePlaceOf(p.displayType, p.slot)?.zoneSlot ?? p.slot,
+        partnerNames: ((await effectivePartnerIds(ctx, p.def, partners, buyersList)) ?? []).map((id) => partnerName.get(id) ?? id), assignment: assignmentOf(p.def), realTime, recentPlays: realTime ? (recentPlays.get(p.positionId) ?? 0) : null, windows,
+      })
+      continue
+    }
     const windows = []
     for (const column of starts) {
 
@@ -296,12 +394,14 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     })
   }
   /* One advertiser selected: only the positions it actually holds (Rob, 20 Sep). */
-  const shown = f.advertiserId ? positions.filter((p) => p.windows.some((w) => w.booking?.advertiserId === f.advertiserId)) : positions
+  const shown = f.advertiserId ? positions.filter((p) => p.windows.some((w) => w.booking?.advertiserId === f.advertiserId || (w as { rollup?: { advertiserIds: string[] } }).rollup?.advertiserIds.includes(f.advertiserId as string))) : positions
   const rows = [...revenue.values()]
   return {
     /* Booked CPM x views is in the exchange's one currency, not the instance's display currency. */
     currency: TRANSACTING_CURRENCY,
-    windows: starts.map((s) => ({ start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() })),
+    windows: monthly
+      ? monthStarts.map((ms, i) => ({ start: new Date(ms).toISOString(), end: new Date(i + 1 < monthStarts.length ? monthStarts[i + 1] : starts[starts.length - 1].getTime() + len).toISOString() }))
+      : starts.map((s) => ({ start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() })),
     positions: shown,
     revenue: rows,
     /* What the filters offer: each DSP and the advertisers it brings (Rob, 20 Sep). */
@@ -324,9 +424,10 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
 }
 
 export const bookingScheduleRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  app.get<{ Querystring: { from?: string; to?: string; campaignId?: string; advertiserId?: string; partnerId?: string } }>('/booking-schedule', async (req) => {
+  app.get<{ Querystring: { from?: string; to?: string; campaignId?: string; advertiserId?: string; partnerId?: string; view?: string } }>('/booking-schedule', async (req) => {
     guards.flagged()
-    const { from, to, campaignId, advertiserId, partnerId } = req.query
+    const { from, to, campaignId, advertiserId, partnerId, view } = req.query
+    const monthly = view === 'monthly'
     let starts: Date[] | null
     /* The columns: the shortest window in the estate (OQ27 — every slot's
        window is its own billing unit), so no slot's window is finer than a
@@ -341,14 +442,14 @@ export const bookingScheduleRoutes = (ctx: Context, guards: Guards): FastifyPlug
     } else {
       const a = Date.parse(`${from}T00:00:00Z`)
       const b = Date.parse(`${to}T00:00:00Z`)
-      starts = from && to && b - a <= 92 * DAY ? windowsBetween(from, to, len) : null
+      starts = from && to && b - a <= (monthly ? MAX_MONTHLY_DAYS : MAX_SCHEDULE_DAYS) * DAY ? windowsBetween(from, to, len) : null
       /* A window that started before `from` but is still running is included. */
       if (starts) {
         const running = windowStartOf(new Date(a), len)
         if (running.getTime() < a) starts = [running, ...starts]
       }
     }
-    if (!starts) throw validationFailed([{ field: 'from', reason: 'from and to are dates (YYYY-MM-DD), from ≤ to, at most 92 days apart.' }])
-    return bookingSchedule(ctx, starts, { campaignId, advertiserId, partnerId })
+    if (!starts) throw validationFailed([{ field: 'from', reason: `from and to are dates (YYYY-MM-DD), from ≤ to, at most ${monthly ? `${MAX_MONTHLY_DAYS} days (12 months)` : `${MAX_SCHEDULE_DAYS} days`} apart.` }])
+    return bookingSchedule(ctx, starts, { campaignId, advertiserId, partnerId }, monthly)
   })
 }

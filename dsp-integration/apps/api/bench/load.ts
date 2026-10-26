@@ -247,6 +247,8 @@ if (ADMIN) {
   const in92 = new Date(Date.parse(w) + 91 * 86_400_000).toISOString().slice(0, 10)
   await drive('GET  /admin/v1/booking-schedule (default)', () => fetch(`${ADMIN_BASE}/booking-schedule`))
   await drive('GET  /admin/v1/booking-schedule (92 d)', () => fetch(`${ADMIN_BASE}/booking-schedule?from=${w}&to=${in92}`))
+  const in365 = new Date(Date.parse(w) + 364 * 86_400_000).toISOString().slice(0, 10)
+  await drive('GET  /admin/v1/booking-schedule (12 mo monthly)', () => fetch(`${ADMIN_BASE}/booking-schedule?from=${w}&to=${in365}&view=monthly`))
   await drive('GET  /admin/v1/available-inventory', () => fetch(`${ADMIN_BASE}/available-inventory`))
   await drive('GET  /admin/v1/advertiser-settings', () => fetch(`${ADMIN_BASE}/advertiser-settings`))
   await drive('GET  /admin/v1/campaigns', () => fetch(`${ADMIN_BASE}/campaigns`))

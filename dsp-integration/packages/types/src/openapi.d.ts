@@ -725,6 +725,12 @@ export interface paths {
          *     display type: booked (CPM × assumed views ÷ 1000) and billed (billing
          *     line items, once the window has played). Test-mode wins are never
          *     counted. Without dates: the current window and the 13 after it.
+         *
+         *     `view=monthly` rolls the grid up on the server (26 Oct 2026): one
+         *     column per calendar month and, on each position, one cell per month
+         *     carrying a `rollup` (booked / open windows, revenue, advertisers)
+         *     instead of one cell per window. It may look up to 365 days ahead;
+         *     without it the range is at most 92 days.
          */
         get: operations["getBookingSchedule"];
         put?: never;
@@ -3379,6 +3385,24 @@ export interface components {
                         /** @description From billing once the window has played; null before. */
                         billedRevenue: number | null;
                     } | null;
+                    /** @description Only with view=monthly, where this cell is a whole calendar month (and `booking` is null). Counts of this position's own windows starting in the month; with an advertiser filter only that advertiser's bookings count as booked. */
+                    rollup?: {
+                        /** @description This position's windows in the month. */
+                        windows: number;
+                        booked: number;
+                        /** @description Windows still available to bid on. */
+                        open: number;
+                        /** @description Windows held by a live Direct deal the exchange has not booked yet. */
+                        reserved: number;
+                        bookedRevenue: number;
+                        /** @description Of the booked windows */
+                        localised: number;
+                        /** @description Of the booked windows */
+                        personalised: number;
+                        advertiserIds: string[];
+                        advertiserNames: string[];
+                        partnerNames: string[];
+                    };
                 }[];
             }[];
             /** @description Per display type with advertiser slots, over the schedule's windows. */
@@ -5109,8 +5133,10 @@ export interface operations {
         parameters: {
             query?: {
                 from?: string;
-                /** @description At most 92 days after from. */
+                /** @description At most 92 days after from; with view=monthly, at most 365. */
                 to?: string;
+                /** @description monthly: one column per calendar month, pre-aggregated. */
+                view?: "monthly";
                 /** @description Only this campaign's bookings; without dates, the range covers all of them. */
                 campaignId?: string;
                 /** @description Only this advertiser's bookings. */
