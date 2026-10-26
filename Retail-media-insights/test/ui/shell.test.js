@@ -44,7 +44,7 @@ test('retailer shell: date range, filters, tabs and the four-tile summary card',
     assert.equal(await text(page, '#f-date'), '12 Sep, 2026→11 Oct, 2026calendar_month');
     assert.equal(await text(page, '#strip .card-title'), 'Retail Media Summary (12 Sep – 11 Oct)');
     assert.deepEqual(await page.$$eval('#strip .tile .lbl', (l) => l.map((x) => x.firstChild.textContent)), ['Earned revenue', 'Estimated revenue', 'Effective CPM', 'Inventory sold']);
-    assert.match(await text(page, '[data-tile="earned"] .sub'), /^via 3 connected DSPs$/);
+    assert.match(await text(page, '[data-tile="earned"] .sub'), /^via 3 connected DSPs \+ direct \(\d+%\)$/);
     assert.match(await text(page, '[data-tile="estimated"] .sub'), /^booked for the next 30 days$/);
     assert.match(await text(page, '[data-tile="cpm"] .val'), /^\$\d+\.\d\d$/);
     assert.equal(await text(page, '[data-tile="cpm"] .sub'), 'per 1,000 assumed views (VAC-d)');

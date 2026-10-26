@@ -75,8 +75,8 @@ for (const width of [1163, 390]) {
       assert.ok(await noHorizontalScroll(page), 'no horizontal scroll');
 
       // earned (summary) = Revenue chart total with every DSP on = Advertisers table total, as displayed
-      for (const name of ['The Trade Desk', 'Amazon DSP']) await page.click(`.rd-chip:has-text("${name}")`);
-      await page.waitForFunction(() => document.querySelectorAll('.rd-chip.on').length === 3);
+      for (const name of ['The Trade Desk', 'Amazon DSP', 'Direct']) await page.click(`.rd-chip:has-text("${name}")`);
+      await page.waitForFunction(() => document.querySelectorAll('.rd-chip.on').length === 4);
       await page.waitForFunction(() => /Total earned/.test((document.querySelector('.rd-total') || {}).textContent || ''));
       const earned = Number(await page.getAttribute('[data-tile="earned"] .val', 'data-value'));
       assert.equal((await page.textContent('[data-tile="earned"] .val')).trim(), asTile(earned), 'tile money format');

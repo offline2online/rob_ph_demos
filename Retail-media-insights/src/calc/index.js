@@ -2,7 +2,7 @@
 // The one shared calculation library: every rule in REQUIREMENTS.md section 3.2.
 // Pure functions, no I/O. Money is USD; percentages are whole numbers.
 
-const { DEAL_TYPES, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, NEVER_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES } = require('../constants');
+const { DEAL_TYPES, SOURCES, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, NEVER_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES } = require('../constants');
 
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
@@ -208,7 +208,7 @@ const orderBy = (list) => (a, b) => {
   return (ia < 0 ? list.length : ia) - (ib < 0 ? list.length : ib) || String(a).localeCompare(String(b));
 };
 const compareDealTypes = orderBy(DEAL_TYPES);
-const compareDsps = orderBy(DSPS);
+const compareDsps = orderBy(SOURCES);
 const compareZones = orderBy(ZONES);
 
 module.exports = {

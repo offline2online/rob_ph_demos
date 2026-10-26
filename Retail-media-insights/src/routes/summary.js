@@ -2,6 +2,7 @@
 const calc = require('../calc');
 const { chartFilter, cents } = require('./params');
 const { addDays } = require('../dealing');
+const { DIRECT } = require('../constants');
 
 // Estimated revenue is Programmatic guaranteed reservations booked ahead: the next 30 days after the last played day.
 const ESTIMATED_DAYS = 30;
@@ -12,7 +13,7 @@ const ESTIMATED_DAYS = 30;
 // cents, as in /revenue, so the two reconcile. Earned revenue follows the date range; estimated revenue is the reservations
 // for the 30 days after the last played day (`estimatedWindow`), whatever the range, under the same store, display type,
 // advertiser and chart filters. `effectiveCpm` is earned revenue / earned views x 1,000 (null with no views); `connectedDsps`
-// counts the DSPs with a connected seat.
+// counts the DSPs with a connected seat; `direct` is the part of earned revenue from direct advertisers.
 //
 // `previous` carries the same four figures for the period before, so the page can show up/down: earned revenue, effective CPM and
 // inventory sold over the equal-length period ending the day before the range starts; estimated revenue is the revenue
@@ -25,9 +26,11 @@ module.exports = {
   handler({ store, filters, params }) {
     const keep = chartFilter(params);
     let earned = 0; let earnedViews = 0;
+    let directEarned = 0; const directAdvertisers = new Set();
     store.scanDelivery(filters, (r) => {
       if (keep && !keep(r)) return;
       earned += r.earned; earnedViews += r.earnedViews;
+      if (r.dsp === DIRECT) { directEarned += r.earned; if (r.earned > 0) directAdvertisers.add(r.advertiserId); }
     });
     const last = store.lastPlayedDay;
     const estimatedWindow = last ? { dateFrom: addDays(last, 1), dateTo: addDays(last, ESTIMATED_DAYS) } : { dateFrom: null, dateTo: null };
@@ -70,6 +73,8 @@ module.exports = {
       estimatedRevenue: cents(estimated),
       estimatedWindow,
       effectiveCpm: earnedViews > 0 ? cents(calc.effectiveCpm(earned, earnedViews)) : null,
+      // The direct advertisers' share of earned revenue (the retailer's own direct sales, no DSP), part of earnedRevenue and not on top of it.
+      direct: { earnedRevenue: cents(directEarned), sharePercent: earned > 0 ? Math.round((directEarned / earned) * 100) : null, advertisers: directAdvertisers.size },
       connectedDsps: ((store.catalog && store.catalog.connectedDsps) || []).length,
       inventorySold: { percent: calc.fillPercent(sold, unsold, offline), slotsSold: sold, slotsAvailable: unsold, slotsOffline: offline },
     };

@@ -65,7 +65,7 @@ test('scheduling hover shows scheduled campaigns for "uses", names only for "non
   const uses = DC.schedulingHover(mat.scheduling[0]);
   assert.deepStrictEqual(uses.names[0], ['Blackmores (DV360)', '3 of 4 campaigns, 5 schedules']);
   const none = DC.schedulingHover(mat.scheduling[1]);
-  assert.deepStrictEqual(names(none), ['Bayer Consumer Health (Amazon DSP)', 'Kenvue (DV360)', 'Perrigo (The Trade Desk)', 'Reckitt (Amazon DSP)', 'Unilever (Amazon DSP)', 'Vitabiotics (The Trade Desk)']);
+  assert.deepStrictEqual(names(none), ['Bayer Consumer Health (Amazon DSP)', 'Kenvue (DV360)', 'Perrigo (Direct)', 'Reckitt (Amazon DSP)', 'Unilever (Amazon DSP)', 'Vitabiotics (The Trade Desk)']);
   assert.ok(none.names.every((r) => r[1] === ''));
   assert.strictEqual(mat.scheduling[0].advertisers + mat.scheduling[1].advertisers, 11);
 });
@@ -117,7 +117,7 @@ test('progress over time: three bands that add to 100 per period, week and month
 test('table filters: level, variable, scheduling combine; Personalised first, then revenue', async () => {
   const mat = await get('/maturity');
   const all = DC.tableRows(mat);
-  assert.deepStrictEqual(all.map((r) => r.label), ['Blackmores (DV360)', 'Haleon (The Trade Desk)', 'Kenvue (DV360)', "L'Oréal Paris (DV360)", 'Procter & Gamble (The Trade Desk)', 'Bayer Consumer Health (Amazon DSP)', 'Vitabiotics (The Trade Desk)', 'Nestlé Health Science (DV360)', 'Reckitt (Amazon DSP)', 'Perrigo (The Trade Desk)', 'Unilever (Amazon DSP)']);
+  assert.deepStrictEqual(all.map((r) => r.label), ['Blackmores (DV360)', 'Haleon (The Trade Desk)', 'Kenvue (DV360)', "L'Oréal Paris (DV360)", 'Procter & Gamble (The Trade Desk)', 'Bayer Consumer Health (Amazon DSP)', 'Vitabiotics (The Trade Desk)', 'Nestlé Health Science (DV360)', 'Reckitt (Amazon DSP)', 'Unilever (Amazon DSP)', 'Perrigo (Direct)']);
   assert.ok((await get('/maturity', { level: 'Personalised' })).table.every((r) => r.level === 'Personalised'));
   assert.ok((await get('/maturity', { variable: 'Fixed Store Segments' })).table.every((r) => r.variables.some((v) => v.label === 'Fixed Store Segments')));
   assert.ok((await get('/maturity', { scheduling: 'none' })).table.every((r) => !r.scheduling.uses));

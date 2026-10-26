@@ -11,7 +11,7 @@
   'use strict';
 
   var LEVELS = ['Default only', 'Localised', 'Personalised'];
-  var DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
+  var DEAL_TYPES = ['Direct advertiser', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
   var TOP_N = 10;
 
   var TIPS = {

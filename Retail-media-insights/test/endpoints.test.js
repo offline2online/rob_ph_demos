@@ -6,7 +6,7 @@ const { buildAggregates } = require('../src/aggregate');
 const { AggregateStore } = require('../src/store');
 const { createServer, BASE } = require('../src/server');
 const { admin, advertiser } = require('./helpers');
-const { DEAL_TYPES, DSPS } = require('../src/constants');
+const { DEAL_TYPES, SOURCES: DSPS } = require('../src/constants');
 
 const { raw, ctx } = generateTestRetailer({ days: 30 });
 const store = new AggregateStore(buildAggregates(raw, ctx));
@@ -52,7 +52,7 @@ test('summary Inventory sold equals Missed revenue fill, and every row reads its
 }));
 
 test('deal type labels use the README casing; the old casing is accepted on input only', () => withServer(async (get) => {
-  assert.equal(DEAL_TYPES[0], 'Programmatic guaranteed');
+  assert.deepEqual(DEAL_TYPES, ['Direct advertiser', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
   const types = (await get(`/deals?${Q}`)).rows.map((r) => r.dealType);
   assert.ok(types.includes('Programmatic guaranteed') && !types.includes('Programmatic Guaranteed'));
   const old = await get(`/deals?${Q}&dealType=Programmatic Guaranteed`);
@@ -72,7 +72,7 @@ test('revenue rows are ordered by period, DSP then deal type', () => withServer(
   }
 }));
 
-test('yield: one row per connected DSP in standard order; CPM reconciles to billing', () => withServer(async (get) => {
+test('yield: one row per connected DSP, then Direct, in standard order; CPM reconciles to billing', () => withServer(async (get) => {
   const y = await get(`/yield?${Q}`);
   assert.deepEqual(y.rows.map((r) => r.dsp), DSPS);
   for (const row of y.rows) {
@@ -91,6 +91,11 @@ test('yield: one row per connected DSP in standard order; CPM reconciles to bill
   const dv = one.rows.find((r) => r.dsp === 'DV360').effectiveCpm;
   assert.ok(dv > 8.2 && dv < 8.8, `blended ${dv}`);
   assert.equal(one.rows.find((r) => r.dsp === 'The Trade Desk').effectiveCpm, null);
+  assert.equal(one.rows.find((r) => r.dsp === 'Direct').effectiveCpm, null);
+  // Direct advertiser deals are the only deals billed under Direct, at their agreed CPM.
+  const direct = (await get(`/yield?${Q}&dealType=Direct advertiser`)).rows;
+  assert.equal(direct.find((r) => r.dsp === 'Direct').effectiveCpm, 6);
+  assert.ok(direct.filter((r) => r.dsp !== 'Direct').every((r) => r.effectiveCpm === null));
 }));
 
 test('yield rejects unknown or multiple deal types', async () => {
@@ -110,4 +115,31 @@ test('summary previous period: equal-length period before the range, same filter
   const r = await get(`/revenue?dateFrom=${s.previous.dateFrom}&dateTo=${s.previous.dateTo}&granularity=day`);
   assert.ok(len >= 1);
   assert.ok(Math.abs(s.previous.earnedRevenue - sum(r.rows, 'earned')) <= 0.01 * Math.max(1, r.rows.length));
+}));
+
+test('direct advertisers: Direct is its own source in Revenue and the summary, part of earned revenue and not on top of it', () => withServer(async (get) => {
+  const rev = (await get(`/revenue?${Q}&granularity=month`)).rows;
+  const direct = rev.filter((r) => r.dsp === 'Direct');
+  assert.ok(direct.length && direct.every((r) => r.dealType === 'Direct advertiser' && r.advertisers === 1), 'only direct deals are billed under Direct');
+  assert.ok(rev.filter((r) => r.dealType === 'Direct advertiser').every((r) => r.dsp === 'Direct'));
+  const only = (await get(`/revenue?${Q}&granularity=month&dsps=Direct`)).rows;
+  assert.deepEqual(only.map((r) => r.dsp), only.map(() => 'Direct'));
+  const byType = (await get(`/revenue?${Q}&granularity=month&dealTypes=Direct advertiser`)).rows;
+  assert.deepEqual(byType, only, 'the Direct source and the Direct advertiser deal type select the same rows');
+  const summary = await get(`/summary?${Q}`);
+  const billed = raw.billing.filter((b) => b.date >= '2026-09-12' && b.date <= '2026-10-11' && b.settled && b.dsp === 'Direct').reduce((n, b) => n + b.revenue, 0);
+  assert.ok(Math.abs(summary.direct.earnedRevenue - billed) < 0.01);
+  assert.equal(summary.direct.advertisers, 1);
+  assert.equal(summary.direct.sharePercent, Math.round((summary.direct.earnedRevenue / summary.earnedRevenue) * 100));
+  assert.ok(summary.direct.earnedRevenue < summary.earnedRevenue);
+  const noDirect = await get(`/summary?${Q}&dsps=DV360,The Trade Desk,Amazon DSP`);
+  assert.deepEqual([noDirect.direct.earnedRevenue, noDirect.direct.sharePercent, noDirect.direct.advertisers], [0, 0, 0]);
+  assert.equal(summary.connectedDsps, 3, 'Direct is not a connected DSP');
+}));
+
+test('direct advertisers: the Advertisers table names Perrigo as Direct, with no seats', () => withServer(async (get) => {
+  const a = (await get(`/advertisers?${Q}`)).all.find((x) => x.name === 'Perrigo');
+  assert.deepEqual([a.dsp, a.direct, a.seatCount], ['Direct', true, 0]);
+  const opts = (await get('/filter-options')).advertisers.find((x) => x.name === 'Perrigo');
+  assert.equal(opts.dsp, 'Direct');
 }));

@@ -69,13 +69,13 @@ test('Yield: defaults to All deal types, coloured eCPM bars highest first, empty
   try {
     const p = panel(page, 'Yield');
     const opts = await p.locator('select option').allTextContents();
-    assert.deepEqual(opts, ['All deal types', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
+    assert.deepEqual(opts, ['All deal types', 'Direct advertiser', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
     assert.equal(await p.locator('select').inputValue(), '');
     const labels = await p.locator('.sc-value').allTextContents();
     assert.ok(labels.length >= 1 && labels.every((l) => /^\$\d+\.\d\d eCPM$/.test(l)), labels.join('|'));
     const cpms = labels.map((l) => parseFloat(l.slice(1)));
     assert.deepEqual(cpms, cpms.slice().sort((a, b) => b - a));
-    const colours = { DV360: 'rgb(235, 104, 52)', 'The Trade Desk': 'rgb(42, 120, 214)', 'Amazon DSP': 'rgb(27, 175, 122)' };
+    const colours = { DV360: 'rgb(235, 104, 52)', 'The Trade Desk': 'rgb(42, 120, 214)', 'Amazon DSP': 'rgb(27, 175, 122)', Direct: 'rgb(107, 63, 160)' };
     for (const row of await p.locator('.sc-row').all()) {
       const name = await row.locator('.sc-label').textContent();
       assert.equal(await row.locator('.sc-bar').evaluate((b) => getComputedStyle(b).backgroundColor), colours[name], name);
