@@ -65,6 +65,10 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
+    # A run takes 1-4 minutes. Without a limit a hung step holds the
+    # concurrency group, and every later run queues behind it, for GitHub's
+    # default of six hours. The script is safe to stop and run again.
+    timeout-minutes: 20
     env:
       # `secrets` can't be read in a step's `if`, so the presence check is
       # evaluated here (job-level env may reference secrets) and the mint
