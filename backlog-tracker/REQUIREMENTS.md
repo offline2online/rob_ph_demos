@@ -2782,7 +2782,7 @@ review" under "Functional requirements — FAQ / Help Center" below for what
 these two collections' write tools do and don't do; skills library:
 `upload_skill`, `update_skill`, `delete_skill`, `report_skill_miss`,
 `mark_skill_reviewed`; your own routine binding: `set_my_routine_binding`;
-release (admin only, deliberate exceptions — see below): `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main`.
+release (admin only, three deliberate exceptions — see below): `send_to_build`, `approve_for_deployment`, `approve_deploy_to_main`.
 A concept has no `list_backlog_items`-shaped tool of its own — it has no
 `backlogItems` until it's promoted to a real project (see "Concept
 Incubator page" above), which is also why there is no `create_concept` or
@@ -2977,12 +2977,7 @@ train and blocked, packaged, already-building or non-Backlog tickets);
 `approve_for_deployment` moves Ready for Testing tickets to Approved for
 Deployment with the approver stamped and `trainLocked` set (refuses tickets
 not in Ready for Testing or marked for revert, and tickets whose train tests
-are not green unless `acknowledgeTests` is true). **`fail_testing`** (25 Oct 2026)
-is the board's Failed testing → send back for named Ready for Testing tickets,
-admin only: status `backlog`, `revertRequested`, `lastFailureReason`, a note
-and `rebuildAfterRevert` (the rebuild queues itself after the revert); it
-refuses any ticket not in Ready for Testing or already reverting, writing
-nothing, and logs the reason to `mcpAuditLog`. These refuse the whole call
+are not green unless `acknowledgeTests` is true). Both refuse the whole call
 on any failing ticket and log to `mcpAuditLog`; no MCP tool moves a card any
 other way. `approve_deploy_to_main`
 (`board.write` **and the `admin` role**, since 27 Sep 2026) fires the exact same trigger the

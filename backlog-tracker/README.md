@@ -1145,7 +1145,7 @@ change to a mirror replaces.
 **No tool merges or moves a card's status by its own route — with three
 deliberate, narrowly-scoped, admin-only exceptions, each the board's own
 button for tickets named by id (20 Oct 2026):** `send_to_build` (Ready for
-Dev) and `fail_testing` (Failed testing: Ready for Testing tickets back to Backlog with a reason, rebuild queued), `approve_for_deployment` (Ready for Testing → Approved for
+Dev) and `approve_for_deployment` (Ready for Testing → Approved for
 Deployment; non-green tests need `acknowledgeTests`), then
 `approve_deploy_to_main` (admin only, since 27 Sep 2026) fires the exact same trigger
 the console's own **Deploy to Main** button writes; it never merges
