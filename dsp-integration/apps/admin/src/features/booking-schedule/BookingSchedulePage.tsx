@@ -79,8 +79,11 @@ interface Ctx { current: { money: (n: number) => string; view: View; advertiserI
 
 const BOOKED = SLOT_OWNERS.advertiser
 const DAY = 86_400_000
-/* The server allows 92 days at a time. */
-const SPAN_DAYS: Record<View, number> = { Daily: 13, Weekly: 83, Monthly: 91 }
+/* The server allows 92 days at a time, and a year on Monthly (ticket Hh87Dja2TgYrug606Uq0): sales teams sell six to twelve months ahead. */
+const SPAN_DAYS: Record<View, number> = { Daily: 13, Weekly: 83, Monthly: 365 }
+const MAX_DAYS: Record<View, number> = { Daily: 92, Weekly: 92, Monthly: 365 }
+/* The filter-row plays totals and the capacity endpoint keep the 92-day cap. */
+const PLAYS_MAX_DAYS = 92
 
 export const BOOKING_SCHEDULE_TIP =
   'Every advertiser-owned slot across its play windows: which are booked (reserved or won, at the CPM they were booked at), which can still be bid on, and which can no longer be sold. Estimated revenue is the booked CPM × the slot’s assumed views. Test-mode wins are not counted.'
@@ -110,6 +113,12 @@ function groupOf(view: View, start: string) {
    screen. The default layer is omitted, same as `GroupedCell` below: it's
    on every booking, so it adds nothing "N of M booked" doesn't already say. */
 function windowSummaryOf(position: Position) {
+  /* Monthly: the server has already counted each month's windows (a rollup cell per month, no per-window cells). */
+  if (position.windows.some((w) => w.rollup)) {
+    const sum = (k: 'booked' | 'windows' | 'localised' | 'personalised') => position.windows.reduce((n, w) => n + (w.rollup?.[k] ?? 0), 0)
+    const upsells = (['localised', 'personalised'] as const).map((k) => ({ k, n: sum(k) })).filter((u) => u.n > 0)
+    return { booked: sum('booked'), total: position.realTime ? sum('booked') : sum('windows'), upsells }
+  }
   const booked = position.windows.filter((w) => w.booking)
   const upsells = (['localised', 'personalised'] as const)
     .map((k) => ({ k, n: booked.filter((w) => w.booking!.layers[k]).length }))
@@ -123,7 +132,17 @@ function windowSummaryOf(position: Position) {
 function PositionCell({ data }: ICellRendererParams<Row>) {
   if (!data) return null
   const { booked, total, upsells } = windowSummaryOf(data.position)
+  const p = data.position
+  /* Hover (ticket ivtzBF4eaaW7BnS0ooI8, 26 Oct 2026): the display details, zone and operating times. */
+  const details: [string, string][] = [
+    ['Display type', p.displayTypeName],
+    ['Zone', p.zoneName ?? '—'],
+    ['Slot', p.zoneName ? `${p.zoneName} / Slot ${p.zoneSlot} · ${p.slotLabel}` : `Slot ${p.slot} · ${p.slotLabel}`],
+    ['Operating times', p.playbackWindow],
+    ['Displays', String(p.displayCount)],
+  ]
   return (
+    <Tip title={<dl className="m-0" aria-label={`${p.displayTypeName} details`}>{details.map(([k, v]) => <div key={k}><dt style={{ display: 'inline', fontWeight: 600 }}>{k}: </dt><dd style={{ display: 'inline', margin: 0 }}>{v}</dd></div>)}</dl>}>
     <div className="min-w-0 py-1.5">
       <div className="truncate">
         {data.position.displayTypeName} <span style={{ color: T.micro }}>({data.position.displayCount})</span>
@@ -144,6 +163,7 @@ function PositionCell({ data }: ICellRendererParams<Row>) {
         ))}
       </div>
     </div>
+    </Tip>
   )
 }
 
@@ -152,6 +172,23 @@ const advertisersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.b
 /* Which DSP(s) actually brought those bookings — not `position.partnerNames`
    (who is merely *eligible* to buy the slot), so the DSP shown always lines
    up with the advertiser next to it (ticket, 21 Sep). */
+/* Per advertiser, every position it is booked on (display type, zone / slot, booked windows)
+   across the whole schedule, for the Advertiser / Deal hover. */
+function dealsByAdvertiser(positions: Position[]) {
+  const out = new Map<string, { dsps: Set<string>; slots: Map<string, { label: string; windows: number }> }>()
+  for (const p of positions) {
+    const label = `${p.displayTypeName} · ${p.zoneName ? `${p.zoneName} / Slot ${p.zoneSlot}` : `Slot ${p.slot}`}`
+    for (const w of p.windows) {
+      if (!w.booking) continue
+      const e = out.get(w.booking.advertiserName) ?? { dsps: new Set<string>(), slots: new Map() }
+      e.dsps.add(w.booking.partnerName)
+      const prev = e.slots.get(p.positionId)
+      e.slots.set(p.positionId, { label, windows: (prev?.windows ?? 0) + 1 })
+      out.set(w.booking.advertiserName, e)
+    }
+  }
+  return out
+}
 const partnersIn = (p: Position) => [...new Set(p.windows.flatMap((w) => (w.booking ? [w.booking.partnerName] : [])))]
 
 /* One layer's pill within a window column — always rendered alongside the
@@ -325,9 +362,9 @@ function BookingTile({ booking, money, slot, dimmed, start }: { booking: Booking
 function DailyCell({ cell, money, slot, advertiserId }: { cell: Cell; money: (n: number) => string; slot?: string; advertiserId?: string }) {
   if (cell.status === 'unavailable') return <span style={{ fontSize: 11, color: T.micro }}>—</span>
   /* Inside a live Direct advertiser deal's flight: held for its advertiser, not on sale to anyone else. */
-  if (cell.status === 'reserved') return <span style={{ fontSize: 11, color: T.muted }}>Reserved · Direct</span>
-  if (!cell.booking) return <span style={{ fontSize: 11, color: T.success }}>Available</span>
-  return <BookingTile booking={cell.booking} money={money} slot={slot} start={cell.start} dimmed={!!advertiserId && cell.booking.advertiserId !== advertiserId} />
+  if (cell.status === 'reserved') return <><span style={{ fontSize: 11, color: T.muted }}>Reserved · Direct</span><ViewsLine views={cell.assumedViews} /></>
+  if (!cell.booking) return <><span style={{ fontSize: 11, color: T.success }}>Available</span><ViewsLine views={cell.assumedViews} /></>
+  return <><BookingTile booking={cell.booking} money={money} slot={slot} start={cell.start} dimmed={!!advertiserId && cell.booking.advertiserId !== advertiserId} /><ViewsLine views={cell.assumedViews} /></>
 }
 
 /* A week or a month: how many windows were booked at all, and — of those —
@@ -336,12 +373,36 @@ function DailyCell({ cell, money, slot, advertiserId }: { cell: Cell; money: (n:
    default layer is omitted here since it is on every booking and so adds
    nothing the "N of M booked" line doesn't already say. */
 function GroupedCell({ cells, money, advertiserId }: { cells: Cell[]; money: (n: number) => string; advertiserId?: string }) {
+  /* Monthly: the server rolled the month up already. */
+  if (cells.length === 1 && cells[0].rollup) {
+    const r = cells[0].rollup
+    const tip = r.booked ? `${r.advertisers.join(', ')} · ${money(r.bookedRevenue)}` : 'Nothing booked in this period.'
+    const upsells = (['localised', 'personalised'] as const).map((k) => ({ k, n: r[k] })).filter((u) => u.n > 0)
+    return (
+      <Tip title={tip}>
+        <div className="flex w-full min-w-0 flex-col gap-0.5">
+          <span className="truncate" style={{ fontSize: 11, fontWeight: r.booked ? 500 : 400, color: r.booked ? BOOKED.colour : T.muted }}>
+            {r.booked ? `${r.booked} of ${r.windows} booked` : `${r.open} open`}
+          </span>
+          {upsells.map(({ k, n }) => (
+            <div key={k} className="flex items-center gap-1">
+              <LayerTag layerKey={k} />
+              <span style={{ fontSize: 10, color: T.micro }}>{n} of {r.booked}</span>
+            </div>
+          ))}
+          <ViewsLine views={cells[0].assumedViews} />
+        </div>
+      </Tip>
+    )
+  }
   /* Filtered to one advertiser: only its own windows count (the others are greyed out on the daily view only). */
   const booked = cells.filter((c) => c.booking && (!advertiserId || c.booking.advertiserId === advertiserId))
   const sellable = cells.filter((c) => c.status === 'available').length
   const names = [...new Set(booked.map((c) => c.booking!.advertiserName))]
   const revenue = booked.reduce((n, c) => n + c.booking!.bookedRevenue, 0)
   const tip = booked.length ? `${names.join(', ')} · ${money(revenue)}` : 'Nothing booked in this period.'
+  /* The sum of the days it covers (an unavailable day has none). */
+  const views = cells.some((c) => c.assumedViews != null) ? cells.reduce((n, c) => n + (c.assumedViews ?? 0), 0) : null
   const upsells = (['localised', 'personalised'] as const).map((k) => ({ k, n: booked.filter((c) => c.booking!.layers[k]).length })).filter((u) => u.n > 0)
   return (
     <Tip title={tip}>
@@ -355,6 +416,7 @@ function GroupedCell({ cells, money, advertiserId }: { cells: Cell[]; money: (n:
             <span style={{ fontSize: 10, color: T.micro }}>{n} of {booked.length}</span>
           </div>
         ))}
+        <ViewsLine views={views} />
       </div>
     </Tip>
   )
@@ -363,7 +425,7 @@ function GroupedCell({ cells, money, advertiserId }: { cells: Cell[]; money: (n:
 function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ctx>) {
   if (!value?.cells.length) return null
   /* Real-time inventory is sold per impression: no booked / available grid. */
-  if (data?.position.realTime && !value.cells.some((c) => c.booking)) return <span style={{ fontSize: 11, color: T.micro }}>—</span>
+  if (data?.position.realTime && !value.cells.some((c) => c.booking || c.rollup?.booked)) return <span style={{ fontSize: 11, color: T.micro }}>—</span>
   const { money, view, advertiserId } = context.current
   return (
     <div className="flex w-full min-w-0 flex-col justify-center gap-0.5 py-1">
@@ -374,6 +436,9 @@ function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ct
   )
 }
 
+const ViewsCell = ({ value, data }: ICellRendererParams<RevenueRow, number>) => (
+  <span style={{ fontWeight: data?.total ? 600 : 400 }}>{plays(value ?? 0)}</span>
+)
 const NumberCell = ({ value, data, context, colDef }: ICellRendererParams<RevenueRow, number, Ctx>) => (
   <span style={{ fontWeight: data?.total ? 600 : 400 }}>{colDef?.field === 'bookedWindows' ? value : context.current.money(value ?? 0)}</span>
 )
@@ -388,6 +453,24 @@ const PercentSoldCell = ({ data }: ICellRendererParams<RevenueRow>) => {
   return <span style={{ fontWeight: data.total ? 600 : 400 }}>{pct}%</span>
 }
 
+/* Available (ticket Ltlu40NbXod3d8NwFF6Z): the sellable windows still unbooked and what they are worth at the display type's floor CPM.
+   A snapshot from before this column has no figures, which reads as a dash. */
+const AvailableCell = ({ data, context }: ICellRendererParams<RevenueRow, number, Ctx>) => {
+  if (!data || data.availableWindows == null) return <span style={{ color: T.muted }}>—</span>
+  return <span style={{ fontWeight: data.total ? 600 : 400 }}>{data.availableWindows.toLocaleString('en-GB')} <span style={{ color: T.muted, fontWeight: 400 }}>·</span> {context.current.money(data.availableValue ?? 0)}</span>
+}
+
+/* Expected fill (ticket bhiyhqKpLPBDlySEfGNB): the share of the last week's
+   real-time opportunities that were filled, for the display types whose
+   positions are sold per impression and so have no % sold. Indicative, never
+   "sold"; a dash when there is no history. A snapshot from before this column
+   has no counts, which reads as a dash too. */
+const ExpectedFillCell = ({ data }: ICellRendererParams<RevenueRow>) => {
+  if (!data?.realtimeOpportunities) return <span style={{ color: T.muted }}>—</span>
+  const pct = Math.round(((data.realtimeFilled ?? 0) / data.realtimeOpportunities) * 100)
+  return <span style={{ fontWeight: data.total ? 600 : 400 }}>{pct}% <span style={{ color: T.muted, fontWeight: 400 }}>expected</span></span>
+}
+
 /* Plays per day (decision Rob 9 Oct 2026): the day is how a retailer reads a
    booking, but the window is what clears, so each figure is the plays of every
    window in the stores' trading hours rolled up to the day. Pre-booked deals
@@ -396,6 +479,9 @@ const PercentSoldCell = ({ data }: ICellRendererParams<RevenueRow>) => {
    on screens, so they are never added to each other or to the estate figure. */
 const PLAYS_TIP = 'Plays per day = the plays of every billing-unit window running in the stores’ trading hours that day (not a flat 24h ÷ billing unit). Pre-booked = plays committed by deals, netted off firmly. Available to bid = the rest, indicative: the auction decides. Segment cuts overlap on screens, so they do not add up to the total.'
 const plays = (n: number) => n.toLocaleString('en-GB')
+/* Assumed views (VAC-d) under a cell (ticket eNlz3fJab4Ehqg9hbf4C, 26 Oct 2026): the day's figure from the hour-of-week profiles. */
+const ViewsLine = ({ views }: { views: number | null | undefined }) => views == null ? null : <span style={{ fontSize: 10.5, color: T.micro }}>{plays(views)} assumed views</span>
+const VIEWS_TIP = 'Assumed views = VAC-d, the audience the displays are expected to deliver. A day is the sum of its 24 hours, from each display’s hour-of-week profile where it has one, else its display type’s default VAC-d. Sales teams quote forward bookings on this figure.'
 
 function PlaysPerDay({ data }: { data: BookingCapacity }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
@@ -474,7 +560,8 @@ export function BookingSchedulePage() {
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null)
   const from = (range?.[0] ?? dayjs()).format('YYYY-MM-DD')
   const to = (range?.[1] ?? dayjs().add(SPAN_DAYS[view], 'day')).format('YYYY-MM-DD')
-  const q = `?from=${from}&to=${to}${advertiserId ? `&advertiserId=${encodeURIComponent(advertiserId)}` : ''}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`
+  const days = dayjs(to).diff(dayjs(from), 'day')
+  const q = `?from=${from}&to=${to}${view === 'Monthly' ? '&view=monthly' : ''}${advertiserId ? `&advertiserId=${encodeURIComponent(advertiserId)}` : ''}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`
   const schedule = useQuery({ queryKey: ['booking-schedule', q], queryFn: () => api<Schedule>('GET', `/admin/v1/booking-schedule${q}`) })
   const data = schedule.data
   /* Plays per day reads the first fortnight of the range: a column per day. */
@@ -484,9 +571,9 @@ export function BookingSchedulePage() {
      Plays per day table, summed over the positions on screen and rolled up to the
      day, week or month of the view. Asked for the whole range, not the table's
      first fortnight. */
-  const totalsQ = useQuery({ queryKey: ['booking-capacity', from, to, partnerId ?? ''], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${to}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`) })
+  const totalsQ = useQuery({ enabled: days <= PLAYS_MAX_DAYS, queryKey: ['booking-capacity', from, to, partnerId ?? ''], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${to}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`) })
   const playTotals = useMemo(() => {
-    if (!totalsQ.data || !Array.isArray(totalsQ.data.positions)) return []
+    if (days > PLAYS_MAX_DAYS || !totalsQ.data || !Array.isArray(totalsQ.data.positions)) return []
     /* Estate capacity: the endpoint applies the DSP filter; the advertiser filter does not apply. */
     const out = new Map<string, { key: string; label: string; total: number; available: number; first: string }>()
     for (const p of totalsQ.data.positions) {
@@ -500,7 +587,7 @@ export function BookingSchedulePage() {
       }
     }
     return [...out.values()].sort((a, b) => a.first.localeCompare(b.first))
-  }, [totalsQ.data, view])
+  }, [totalsQ.data, view, days])
   /* Every amount here is a booked CPM x assumed views, and the exchange books in
      USD whatever the instance reports in (spec section 4: one instance, one
      currency, no conversion), so never format with company.currency or a
@@ -537,6 +624,7 @@ export function BookingSchedulePage() {
     return [...new Map([...chosen.flatMap((d) => d.advertisers), ...direct].map((a) => [a.advertiserId, a.name] as const)).entries()]
       .map(([value, label]) => ({ value, label }))
   }, [dsps, partnerId, data?.directAdvertisers])
+  const deals = useMemo(() => dealsByAdvertiser(data?.positions ?? []), [data])
   const columns = useMemo<ColDef<Row>[]>(() => [
     /* Advertiser / DSP, then Position. Filtered like every other table:
        a funnel in the filter row. The server applies these, so they
@@ -545,17 +633,29 @@ export function BookingSchedulePage() {
       /* One column for both (ticket hhdGMEST6sCwXC4Cw5yR, 25 Oct 2026): the advertiser
          when the row has one — hover for the DSP(s) that brought it — otherwise the
          DSP(s) the slot is assigned to. The funnel offers DSPs and advertisers together. */
-      headerName: 'Advertiser / DSP', width: 200, minWidth: 160, pinned: 'left', cellStyle: { color: T.muted },
+      headerName: 'Advertiser / Deal', width: 200, minWidth: 160, pinned: 'left', cellStyle: { color: T.muted },
       valueGetter: (p) => {
         if (!p.data) return ''
         const advertisers = advertisersIn(p.data.position)
         return advertisers.length ? advertisers.join(', ') : p.data.position.partnerNames.join(', ') || '—'
       },
       cellRenderer: (p: { data?: Row; value?: string }) => {
-        const dsps = p.data && advertisersIn(p.data.position).length ? partnersIn(p.data.position).join(', ') : ''
-        return dsps ? <Tip title={`DSP: ${dsps}`}><span>{p.value}</span></Tip> : <span>{p.value}</span>
+        const names = p.data ? advertisersIn(p.data.position) : []
+        if (!names.length) return <span>{p.value}</span>
+        return (
+          <Tip title={<div aria-label="Deal details">{names.map((n) => {
+            const d = deals.get(n)
+            return (
+              <div key={n} style={{ marginBottom: 4 }}>
+                <div style={{ fontWeight: 600 }}>{n}</div>
+                <div>DSP: {d ? [...d.dsps].join(', ') : '—'}</div>
+                {d && [...d.slots.values()].map((sl) => <div key={sl.label}>{sl.label} · {sl.windows} window{sl.windows === 1 ? '' : 's'}</div>)}
+              </div>
+            )
+          })}</div>}><span>{p.value}</span></Tip>
+        )
       },
-      ...externalSetColumn<Row>('Advertiser / DSP', [...new Set([...dsps.map((d) => d.name), ...advertiserOptions.map((a) => a.label)])],
+      ...externalSetColumn<Row>('Advertiser / Deal', [...new Set([...dsps.map((d) => d.name), ...advertiserOptions.map((a) => a.label)])],
         advertiserOptions.find((a) => a.value === advertiserId)?.label ?? dsps.find((d) => d.partnerId === partnerId)?.name,
         (name) => {
           const dsp = dsps.find((d) => d.name === name)
@@ -599,7 +699,7 @@ export function BookingSchedulePage() {
         ) : null
       },
     })),
-  ], [groups, view, dsps, advertiserOptions, partnerId, advertiserId, playTotals])
+  ], [groups, view, dsps, advertiserOptions, partnerId, advertiserId, playTotals, deals])
   /* The header's own "N play windows" line gets the same booked/available
      read every row already carries (ticket "Also for the play windows …
      anytime you use the word Windows please show a representation of how
@@ -625,10 +725,24 @@ export function BookingSchedulePage() {
     { headerName: 'Display type', field: 'displayTypeName', width: 260, cellStyle: (p) => (p.data?.total ? { fontWeight: 600 } : null) },
     { headerName: 'Booked windows', field: 'bookedWindows', width: 150, cellRenderer: NumberCell },
     {
+      headerName: 'Available (at floor CPM)', field: 'availableWindows', width: 190, cellRenderer: AvailableCell,
+      headerTooltip: 'Sellable windows still unbooked in the period, and their value at the display type’s floor CPM: floor CPM × their assumed views ÷ 1000. Booked + available = the sellable windows behind % sold (a window held for a Direct deal is neither). It is the unsold market, so it does not change with the advertiser / DSP filter.',
+    },
+    {
       /* Ticket "% of slots sold", 22 Sep — booked ÷ sellable windows for
          this display type, over the period shown. */
       headerName: '% sold', field: 'sellableWindows', width: 110, cellRenderer: PercentSoldCell,
     },
+    {
+      /* Ticket bhiyhqKpLPBDlySEfGNB — real-time inventory, from the last 7 days' fill. */
+      headerName: 'Expected fill (real-time)', field: 'realtimeOpportunities', width: 190, cellRenderer: ExpectedFillCell,
+    },
+    {
+      /* Assumed views (VAC-d) over the period shown (ticket eNlz3fJab4Ehqg9hbf4C, 26 Oct 2026): booked + available = total. */
+      headerName: 'Total assumed views', field: 'totalViews', width: 150, cellRenderer: ViewsCell, headerTooltip: VIEWS_TIP,
+    },
+    { headerName: 'Booked assumed views', field: 'bookedViews', width: 150, cellRenderer: ViewsCell, headerTooltip: VIEWS_TIP },
+    { headerName: 'Available assumed views', field: 'availableViews', width: 150, cellRenderer: ViewsCell, headerTooltip: VIEWS_TIP },
     {
       /* Renamed from "Booked revenue" (ticket, 22 Sep) — "estimated" is more
          honest about what this is before a window has actually played:
@@ -648,7 +762,7 @@ export function BookingSchedulePage() {
           <h2 className="m-0" style={{ fontSize: 16, fontWeight: 600 }}><WithTip tip={BOOKING_SCHEDULE_TIP}>Booking schedule</WithTip></h2>
           <div className="mt-1" style={{ fontSize: 12, color: T.muted }}>
             {data && windowsSummary
-              ? `${data.windows.length} play windows${windowsSummary.total
+              ? `${view === 'Monthly' ? windowsSummary.total : data.windows.length} play windows${windowsSummary.total
                 ? ` · ${windowsSummary.booked} of ${windowsSummary.total} booked (${windowsSummary.localised} localised, ${windowsSummary.personalised} personalised)`
                 : ''}`
               : 'Loading…'}
@@ -659,7 +773,9 @@ export function BookingSchedulePage() {
             so it fixes the dates rather than showing a range it doesn't have. */}
         <Tip title={isSnapshotDemo() ? 'Fixed in the hosted demo: its data is a snapshot. Run the POC locally to pick a range.' : ''}>
           <DatePicker.RangePicker aria-label="Dates" value={[dayjs(from), dayjs(to)]} allowClear={false} disabled={isSnapshotDemo()}
-            onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
+            onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)}
+            /* Once a start is picked, no end beyond the view's longest range (92 days; a year on Monthly). */
+            disabledDate={(d, info) => info.from ? Math.abs(d.diff(info.from, 'day')) > MAX_DAYS[view] : false} />
         </Tip>
       </div>
 
@@ -700,7 +816,7 @@ export function BookingSchedulePage() {
               above, so it sits directly under the schedule and names the period it
               covers; Plays per day does not follow the view, so it goes last
               (ticket LFloWVCY1ii2ikrjOx8M, 24 Oct 2026). */}
-          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip><span style={{ fontWeight: 400, color: T.muted }}> · {view}: {dayjs(from).format('D MMM YYYY')} – {dayjs(to).format('D MMM YYYY')}</span></SectionLabel>
+          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash there. Expected fill (real-time) = the share of the last 7 days’ impression opportunities on real-time (open / whitelist-only) positions that were filled: indicative, from recent history, never sold; it is the same in every view and, with an advertiser or DSP picked, counts only that buyer’s fills. Total, Booked and Available assumed views are the audience (VAC-d) of those windows over the period, from each display’s hour-of-week profile where it has one, else its type’s default; booked + available = total, and windows held for a Direct deal count as booked. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip><span style={{ fontWeight: 400, color: T.muted }}> · {view}: {dayjs(from).format('D MMM YYYY')} – {dayjs(to).format('D MMM YYYY')}</span></SectionLabel>
           <Grid<RevenueRow>
             label="Booking revenue"
             rows={data.revenue}

@@ -52,6 +52,8 @@ export interface ImpressionRepo {
   forPosition(positionId: string): Awaitable<ImpressionRecord[]>
   /* Live (non-test) plays proved since `since`, per position, in one grouped query. */
   playedCountsSince(since: string): Awaitable<Map<string, number>>
+  /* Live (non-test) real-time opportunities and fills since `since`, per position, in one grouped query (ticket bhiyhqKpLPBDlySEfGNB): the history an expected fill is read from. `filled` counts impressions that were filled (played or not); `filledFor` only those that match `who`. */
+  fillCountsSince(since: string, who?: { advertiserId?: string; partnerId?: string; campaignId?: string }): Awaitable<Map<string, { opportunities: number; filled: number; filledFor: number }>>
   /* After the post-play review of an at-bid creative: the campaign it resolved to, its hash and what happened. */
   recordReview(id: string, r: { campaignId: string | null; contentHash: string | null; note: string }): Awaitable<void>
 }
@@ -76,6 +78,14 @@ export function sqliteImpressionRepo(db: Db): ImpressionRepo {
     playedCountsSince: (since) => new Map(
       (prepared(db, "SELECT position_id, COUNT(*) AS n FROM realtime_impressions WHERE status = 'played' AND test_mode = 0 AND played_at >= ? GROUP BY position_id").all(since) as unknown as { position_id: string; n: number }[])
         .map((r) => [r.position_id, r.n] as const)),
+    fillCountsSince: (since, who = {}) => {
+      const match = [who.advertiserId ? 'advertiser_id = ?' : '', who.partnerId ? 'partner_id = ?' : '', who.campaignId ? 'campaign_id = ?' : ''].filter(Boolean)
+      const args = [who.advertiserId, who.partnerId, who.campaignId].filter((x): x is string => !!x)
+      const rows = prepared(db, `SELECT position_id, COUNT(*) AS n, SUM(CASE WHEN status != 'no_fill' THEN 1 ELSE 0 END) AS filled,
+          SUM(CASE WHEN status != 'no_fill'${match.map((m) => ` AND ${m}`).join('')} THEN 1 ELSE 0 END) AS filled_for
+        FROM realtime_impressions WHERE test_mode = 0 AND requested_at >= ? GROUP BY position_id`).all(...args, since) as unknown as { position_id: string; n: number; filled: number; filled_for: number }[]
+      return new Map(rows.map((r) => [r.position_id, { opportunities: r.n, filled: r.filled, filledFor: r.filled_for }] as const))
+    },
     forPosition: (positionId) => (prepared(db, 'SELECT * FROM realtime_impressions WHERE position_id = ? ORDER BY requested_at').all(positionId) as unknown as Row[]).map(toRecord),
   }
 }

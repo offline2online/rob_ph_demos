@@ -1018,6 +1018,15 @@ paths:
       security: [{adminSession: []}]
       parameters:
         - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from; 365 with view=monthly.'}
+        - name: view
+          in: query
+          schema: {type: string, enum: [daily, weekly, monthly]}
+          description: |
+            `monthly` rolls the grid up on the server: `windows` are the calendar months of the range (the first starts at `from`) and each position has one
+            window per month carrying a `rollup` (booked windows of the month, open, reserved, localised / personalised counts, the advertisers and the
+            estimated revenue) instead of one window per column. Revenue, % sold and the totals are the same as the per-window figures. Lifts the range cap
+            from 92 to 365 days. Daily and Weekly are the per-window grid, 92 days at most.
         - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from.'}
         - {name: campaignId, in: query, schema: {type: string}, description: 'Only this campaign''s bookings; without dates, the range covers all of them.'}
         - {name: advertiserId, in: query, schema: {type: string}, description: Only this advertiser's bookings.}
@@ -3957,7 +3966,7 @@ components:
           type: array
           items:
             type: object
-            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, zoneName, zoneSlot, partnerNames, assignment, realTime, recentPlays, displayCount, windows]
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, zoneName, zoneSlot, partnerNames, assignment, realTime, recentPlays, displayCount, playbackWindow, windows]
             properties:
               positionId: {type: string}
               displayTypeId: {type: string}
@@ -3987,14 +3996,37 @@ components:
                   prototype has no narrower per-slot store scope for an
                   advertiser position, so it is also what "the slot's store
                   scope" resolves to here.
+              playbackWindow:
+                type: string
+                description: The display type's playback window as its Operating hours read - `24 hours`, `Store hours` or `HH:MM–HH:MM`. Shown in the Position hover.
               windows:
                 type: array
                 description: One per schedule window, in the same order.
                 items:
                   type: object
-                  required: [start, status, booking]
+                  required: [start, status, booking, assumedViews]
                   properties:
                     start: {type: string, format: date-time}
+                    assumedViews:
+                      type: [integer, 'null']
+                      description: |
+                        Assumed views (VAC-d) over this column's span (the schedule's shortest window, a day by default) for a booked, available or
+                        reserved cell; null when unavailable. The sum of the display type's displays' hour-of-week VAC-d profiles
+                        (displays.vacd_profile) over the span, else its default VAC-d spread flat; a slot with its own audience score stays flat.
+                        A Weekly or Monthly cell is the sum of its days.
+                    rollup:
+                      type: object
+                      description: Only with view=monthly, where each window is a calendar month. Counts are of the position's own play windows starting in the month; with an advertiser filter only its bookings count.
+                      required: [windows, booked, open, reserved, localised, personalised, advertisers, bookedRevenue]
+                      properties:
+                        windows: {type: integer, minimum: 0, description: The position's play windows starting in the month, whatever their status.}
+                        booked: {type: integer, minimum: 0}
+                        open: {type: integer, minimum: 0, description: Available windows (not booked, not held for a Direct deal).}
+                        reserved: {type: integer, minimum: 0, description: Windows held for a live Direct deal and not booked yet.}
+                        localised: {type: integer, minimum: 0, description: Booked windows whose campaign carries a localised (or interactive) layer.}
+                        personalised: {type: integer, minimum: 0, description: Booked windows whose campaign carries a personalised layer.}
+                        advertisers: {type: array, items: {type: string}, description: Names of the advertisers booked in the month.}
+                        bookedRevenue: {type: number, description: Estimated revenue of the month's bookings (booked CPM × assumed views ÷ 1000).}
                     status: {type: string, enum: [booked, available, reserved, unavailable], description: '`reserved`: not booked yet, but inside the flight of a live Direct advertiser deal on this position, so no one else can buy it; the exchange books it for the deal''s advertiser (22 Oct 2026).'}
                     booking:
                       type: [object, 'null']
@@ -4106,19 +4138,45 @@ components:
         totals: {$ref: '#/components/schemas/BookingRevenueTotals'}
     BookingRevenueTotals:
       type: object
-      required: [bookedWindows, sellableWindows, bookedRevenue, billedRevenue]
+      required: [bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled, totalViews, bookedViews, availableViews, availableWindows, availableValue]
       properties:
         bookedWindows: {type: integer}
+        totalViews: {type: integer, description: Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available.}
+        bookedViews: {type: integer, description: Assumed views of the booked cells, windows held for a Direct advertiser deal included (a reserved cell counts as booked unless an advertiser filter is picked, which counts only that advertiser's).}
+        availableViews: {type: integer, description: Assumed views of the cells still available to book.}
+        availableWindows: {type: integer, description: Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter, like sellableWindows.}
+        availableValue: {type: number, description: Value of the available cells at each position's floor CPM x assumed views / 1000, in the exchange currency.}
         sellableWindows: {type: integer, description: Sum of every display type's sellableWindows — see BookingRevenue.}
+        realtimeOpportunities: {type: integer, description: Sum of every display type's realtimeOpportunities — see BookingRevenue.}
+        realtimeFilled: {type: integer, description: Sum of every display type's realtimeFilled — see BookingRevenue.}
         bookedRevenue: {type: number}
         billedRevenue: {type: number}
     BookingRevenue:
       type: object
-      required: [displayTypeId, displayTypeName, bookedWindows, sellableWindows, bookedRevenue, billedRevenue]
+      required: [displayTypeId, displayTypeName, bookedWindows, sellableWindows, bookedRevenue, billedRevenue, realtimeOpportunities, realtimeFilled, totalViews, bookedViews, availableViews, availableWindows, availableValue]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
         bookedWindows: {type: integer}
+        totalViews: {type: integer, description: Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available.}
+        bookedViews: {type: integer, description: Assumed views of the booked cells, windows held for a Direct advertiser deal included (a reserved cell counts as booked unless an advertiser filter is picked, which counts only that advertiser's).}
+        availableViews: {type: integer, description: Assumed views of the cells still available to book.}
+        availableWindows: {type: integer, description: Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter, like sellableWindows.}
+        availableValue: {type: number, description: Value of the available cells at each position's floor CPM x assumed views / 1000, in the exchange currency.}
+        realtimeOpportunities:
+          type: integer
+          description: |
+            Live (non-test) impression opportunities on this display type's
+            real-time (open / whitelist-only) positions in the last 7 days
+            (ticket bhiyhqKpLPBDlySEfGNB). With realtimeFilled it gives the
+            expected fill — an indicative figure from recent history, never
+            "sold". It is the same in every view; 0 means no history, so no
+            percentage is meaningful.
+        realtimeFilled:
+          type: integer
+          description: |
+            How many of realtimeOpportunities were filled. With an
+            advertiser, DSP or campaign filter, only that buyer's fills.
         sellableWindows:
           type: integer
           description: |

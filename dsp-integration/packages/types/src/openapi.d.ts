@@ -3196,7 +3196,10 @@ export interface components {
             displayCount: number;
             /** @description Hours per day the display type's displays are open for plays (its operating hours setting). 24 for 24 hours; the custom range's length for Custom; for Store hours, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
             openHoursPerDay: number;
-            /** @description The display type's operating hours setting, the basis of the open hours plays are counted over. Read-only. */
+            /**
+             * @description The display type's operating hours setting, the basis of the open hours plays are counted over. Read-only.
+             * @enum {string}
+             */
             operatingMode: "24h" | "store" | "custom";
             /** @description The actual times for operatingMode as HH:MM–HH:MM (UTC), comma-separated when stores' trading hours differ. 00:00–24:00 for 24 hours. Read-only. */
             operatingTimes: string;
@@ -3281,10 +3284,37 @@ export interface components {
                  *     scope" resolves to here.
                  */
                 displayCount: number;
+                /** @description The display type's playback window as its Operating hours read - `24 hours`, `Store hours` or `HH:MM–HH:MM`. Shown in the Position hover. */
+                playbackWindow: string;
                 /** @description One per schedule window, in the same order. */
                 windows: {
                     /** Format: date-time */
                     start: string;
+                    /**
+                     * @description Assumed views (VAC-d) over this column's span (the schedule's shortest window, a day by default) for a booked, available or
+                     *     reserved cell; null when unavailable. The sum of the display type's displays' hour-of-week VAC-d profiles
+                     *     (displays.vacd_profile) over the span, else its default VAC-d spread flat; a slot with its own audience score stays flat.
+                     *     A Weekly or Monthly cell is the sum of its days.
+                     */
+                    assumedViews: number | null;
+                    /** @description Only with view=monthly, where each window is a calendar month. Counts are of the position's own play windows starting in the month; with an advertiser filter only its bookings count. */
+                    rollup?: {
+                        /** @description The position's play windows starting in the month */
+                        windows: number;
+                        booked: number;
+                        /** @description Available windows (not booked */
+                        open: number;
+                        /** @description Windows held for a live Direct deal and not booked yet. */
+                        reserved: number;
+                        /** @description Booked windows whose campaign carries a localised (or interactive) layer. */
+                        localised: number;
+                        /** @description Booked windows whose campaign carries a personalised layer. */
+                        personalised: number;
+                        /** @description Names of the advertisers booked in the month. */
+                        advertisers: string[];
+                        /** @description Estimated revenue of the month's bookings (booked CPM × assumed views ÷ 1000). */
+                        bookedRevenue: number;
+                    };
                     /**
                      * @description `reserved`: not booked yet, but inside the flight of a live Direct advertiser deal on this position, so no one else can buy it; the exchange books it for the deal's advertiser (22 Oct 2026).
                      * @enum {string}
@@ -3397,8 +3427,22 @@ export interface components {
         };
         BookingRevenueTotals: {
             bookedWindows: number;
+            /** @description Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available. */
+            totalViews: number;
+            /** @description Assumed views of the booked cells */
+            bookedViews: number;
+            /** @description Assumed views of the cells still available to book. */
+            availableViews: number;
+            /** @description Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter */
+            availableWindows: number;
+            /** @description Value of the available cells at each position's floor CPM x assumed views / 1000 */
+            availableValue: number;
             /** @description Sum of every display type's sellableWindows — see BookingRevenue. */
             sellableWindows: number;
+            /** @description Sum of every display type's realtimeOpportunities — see BookingRevenue. */
+            realtimeOpportunities: number;
+            /** @description Sum of every display type's realtimeFilled — see BookingRevenue. */
+            realtimeFilled: number;
             bookedRevenue: number;
             billedRevenue: number;
         };
@@ -3406,6 +3450,30 @@ export interface components {
             displayTypeId: string;
             displayTypeName: string;
             bookedWindows: number;
+            /** @description Assumed views (VAC-d) of every booked and available cell in the period. Booked plus available. */
+            totalViews: number;
+            /** @description Assumed views of the booked cells */
+            bookedViews: number;
+            /** @description Assumed views of the cells still available to book. */
+            availableViews: number;
+            /** @description Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter */
+            availableWindows: number;
+            /** @description Value of the available cells at each position's floor CPM x assumed views / 1000 */
+            availableValue: number;
+            /**
+             * @description Live (non-test) impression opportunities on this display type's
+             *     real-time (open / whitelist-only) positions in the last 7 days
+             *     (ticket bhiyhqKpLPBDlySEfGNB). With realtimeFilled it gives the
+             *     expected fill — an indicative figure from recent history, never
+             *     "sold". It is the same in every view; 0 means no history, so no
+             *     percentage is meaningful.
+             */
+            realtimeOpportunities: number;
+            /**
+             * @description How many of realtimeOpportunities were filled. With an
+             *     advertiser, DSP or campaign filter, only that buyer's fills.
+             */
+            realtimeFilled: number;
             /**
              * @description Windows this display type could have sold in the period shown —
              *     booked or still available, excluding unavailable (no displays,
@@ -5090,6 +5158,13 @@ export interface operations {
                 from?: string;
                 /** @description At most 92 days after from. */
                 to?: string;
+                /**
+                 * @description `monthly` rolls the grid up on the server: `windows` are the calendar months of the range (the first starts at `from`) and each position has one
+                 *     window per month carrying a `rollup` (booked windows of the month, open, reserved, localised / personalised counts, the advertisers and the
+                 *     estimated revenue) instead of one window per column. Revenue, % sold and the totals are the same as the per-window figures. Lifts the range cap
+                 *     from 92 to 365 days. Daily and Weekly are the per-window grid, 92 days at most.
+                 */
+                view?: "daily" | "weekly" | "monthly";
                 /** @description Only this campaign's bookings; without dates, the range covers all of them. */
                 campaignId?: string;
                 /** @description Only this advertiser's bookings. */

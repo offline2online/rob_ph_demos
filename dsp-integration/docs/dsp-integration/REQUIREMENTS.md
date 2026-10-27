@@ -18,7 +18,9 @@ record.
 - **22 Oct 2026** — **No buyer of any kind is named on a slot; slots are sold only through deals** (Rob; ticket QdMaGvVhMZgcdcmIAalT, extending mpbRDjAPS4uIagi2IVsz and z7kRMUflMRwkyBdEWxbn). Assigned to no longer offers an **Advertisers** group: neither a direct advertiser nor a DSP's advertiser (Nestlé via Google DSP) can be picked. `PUT /admin/v1/available-inventory` refuses any name in `assignedTo.advertisers` with 400, pointing to deals (a name a sold slot already holds is tolerated on resave until its lock releases). **DSPs (open auction), Deals and buyers lists, Whitelist only and the Global deal stay**: they sell to anyone eligible, not to a named buyer. Migration 0086 clears every named advertiser; the demo seed sells Landscape slot 4 to Nestlé through a Programmatic guaranteed deal. This supersedes the "DSP named advertisers are unchanged" sentence under migration 0082 below.
 - **22 Oct 2026** — **A deal's touch points, and the Red Bull end-to-end flow** (Rob; ticket dmcbOIDGV3FnBQ66KYIb). A deal's touch points are those of the display types of the slots it is assigned to; `GET /admin/v1/advertisers/{id}/deals` returns them as `touchPoints` and a campaign whose brief names another is refused 400. Visitor segments for a play are a stated interface (`shared/interface-contract.md` row 6). The whole flow is E2E-TEST-SPEC.md Run 12 and AWS-DEMO-TEST-FLOW.md section G.
 - **22 Oct 2026** — **Direct advertisers reach a slot only through a Direct advertiser deal** (Rob; tickets krIPF8rPnMwVOmynHNRh, knqu0B2PGTF9PG1EUWYD, mpbRDjAPS4uIagi2IVsz, OMwDvy3OUmY9raBtTf7v, EipHu2GUdlbZMpPGCTjF, z7kRMUflMRwkyBdEWxbn and H8YNT4aXwSqD6gffTkAz, the 7-ticket series). A deal has an internal PH deal ID, flight dates and a price. Three earlier statements are **superseded**: (1) a direct advertiser named in a slot's **Assigned to** (refused since 21 Oct; migration 0082 clears existing ones); (2) "no deal ID for a direct advertiser" (it now carries its own PH deal ID on its campaigns); (3) "no billing through the platform" (the revenue is **recorded and reported** like DSP revenue, but never invoiced, because a direct advertiser is billed outside PH). Spec: "Direct advertisers" under Advertisers, "Billing", and the deal-type entries under Programmatic guaranteed. Walkthrough: AWS-DEMO-TEST-FLOW.md section F; tests: E2E-TEST-SPEC.md Run 10 X and `apps/api/test/e2e/run10-direct-deals.test.ts`.
+- **26 Oct 2026** — **The Booking schedule's first column is "Advertiser / Deal", with fuller hovers** (Rob; ticket ivtzBF4eaaW7BnS0ooI8). The column shows the advertiser name(s) as before; hovering lists each advertiser with its DSP(s) and every slot it is booked on across the schedule (display type, zone / slot, number of booked windows). Hovering a Position cell shows the display type, Zone, slot, Operating times (`24 hours`, `Store hours` or `HH:MM–HH:MM`, from the new `playbackWindow` on each booking-schedule position) and the display count. The funnel is unchanged.
 - **25 Oct 2026** — **The Booking schedule has one "Advertiser / DSP" column instead of separate Advertiser and DSP columns** (Rob; ticket hhdGMEST6sCwXC4Cw5yR). A row with a booked advertiser shows the advertiser name(s); hovering shows the DSP(s) that brought them (Direct deals read "Direct"). A row with no booked advertiser shows the DSP(s) the slot is assigned to (or a dash). The column's funnel lists DSPs and advertisers together and picks one at a time.
+- **26 Oct 2026** — **Booking schedule: Monthly view up to 12 months** (ticket Hh87Dja2TgYrug606Uq0). Retail media is sold six to twelve months ahead, so Monthly allows a range of up to 365 days (Daily and Weekly keep the 92-day cap) and defaults to 12 months from today. `GET /admin/v1/booking-schedule?view=monthly` rolls the grid up on the server: `windows` are the calendar months (the first starts at `from`) and each position carries one window per month with a `rollup` (the position's play windows starting in the month, booked / open / reserved counts, localised and personalised counts, the advertisers and the estimated revenue), built from the live bookings and each window length, with no per-window cells. Booking revenue (booked windows, % sold, available, assumed views, estimated revenue) and the totals equal the per-window path (tested). A cell reads "N of M booked" or "N open"; hover names the advertisers and revenue. The date picker disallows an end more than 365 days (92 on Daily and Weekly) after the start, and the filter-row plays totals, which read the 92-day capacity endpoint, are not shown beyond 92 days. Tests: `apps/api/test/booking-schedule.test.ts` → "view=monthly"; `apps/admin/test/dsp-integration.test.tsx` → "booking schedule filter-row totals".
 - **25 Oct 2026** — **The Booking schedule's filter row shows total plays against plays available to bid** (Rob; ticket UpXXSjStQvktD3rqWNOM). One figure per day, week (Monday start) or month of the view, shown in the filter row directly under that column's header (not as cards above the table; ticket 1wGUyfLo0XWIufLXc8gq, 26 Oct 2026), summing the Plays per day figures (`totalPlays`, `availableToBid`) over the positions the **DSP** filter leaves on screen: the capacity endpoint takes `partnerId` and keeps only the positions that DSP is assigned to (a position open to all DSPs counts for each). It reads the capacity endpoint for the whole date range, not only the table's first fortnight. An advertiser filter does not change it: plays are estate capacity, not a booking. Month chips run in date order (ticket 7eg5M9Z6AT2wA6iKrXrs, 26 Oct 2026). Tests: `apps/admin/test/dsp-integration.test.tsx` → "booking schedule filter-row totals"; `apps/api/test/daily-capacity.test.ts`.
 - **23 Oct 2026** — **Filtering the Booking schedule to one advertiser highlights it and greys out the rest** (Rob; ticket zebMTdEEJFkVG5AVGiET). The other advertisers' tiles stay on the grid with their names (e.g. "Red Bull (Direct)"), greyed; no tile reads a bare "Reserved · Direct". Only the filtered advertiser counts in the totals, Booking revenue and the weekly / monthly "N of M booked".
 - **22 Oct 2026** — **A finalised Direct advertiser deal reads as booked on every window of its flight** (Rob; ticket TWJmiwQpPu9Y4tAUjncC). The exchange writes a deal's booking one window ahead, but the Booking schedule no longer shows the later windows as a bare "Reserved · Direct": each is the advertiser's booking (named, with Default / Localised / Personalised layers, approval state, the deal's CPM) and counts in Booking revenue, % sold, revenue by pricing type and Plays per day as pre-booked. Derived at read time (`plannedDirectBookings`, `exchange/directDeal.ts`); a window the exchange has booked shows that row instead. Nothing is stored.
@@ -1458,7 +1460,7 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
   column; its search box matches either the advertiser or the campaign name
   and its funnel picks an advertiser), Touch
   points, Display types, Creative ID, Deal ID, Playback Strategy,
-  Received, Activation, Last used. Every row has
+  Activation, Received, Last used. Every row has
   **exactly one** box. Each advertiser is a group row whose single box ticks
   every campaign beneath it (partial when only some are ticked); a campaign
   row's box ticks that campaign. Filtering is **in the columns** — status is
@@ -4638,7 +4640,18 @@ playback analytics.**
   after hours is a lower share, and an external screen's share
   (`EXTERNAL_QUIET_SHARE`) is street/mall traffic, never zero. A slot with its
   own `audience_vacd` score stays flat. Still to build: an admin editor for the
-  profile and daily VAC-d on the Booking schedule.
+  profile.
+- **Assumed views on the Booking schedule** (ticket eNlz3fJab4Ehqg9hbf4C,
+  26 Oct 2026; `routes/admin/bookingSchedule.ts`): each booked, available or
+  reserved cell carries `assumedViews`, its column's (a day's) VAC-d from the
+  hour-of-week profiles, else the display type's default; an unavailable cell
+  has none. The Daily view shows "N assumed views" under the cell; a Weekly or
+  Monthly cell is the sum of its days. The Booking revenue table (and its
+  total) gains **Total, Booked and Available assumed views** over the period
+  shown, booked + available = total; windows held for a Direct deal count as
+  booked (with an advertiser filter only that advertiser's bookings do). The
+  ⓘ on Booking revenue and the headers explain assumed views = VAC-d. Estimated
+  revenue is unchanged (booked CPM × the slot's flat window figure).
 - **Play-window booked/available summary, wherever the page counts
   "windows"** (ticket "anytime you use the word Windows please show a
   representation of how many are booked versus … localised … personalised
@@ -4662,6 +4675,27 @@ playback analytics.**
   positions are sold per impression and never pre-booked, so they are left
   out of the sellable count; % sold reads over deal and reserved positions
   only, and a display type whose positions are all real-time shows a dash.
+  **Expected fill (real-time) (26 Oct 2026, ticket
+  bhiyhqKpLPBDlySEfGNB):** a fifth column beside % sold gives the display
+  types whose positions are sold per impression a figure of their own: the
+  share of the last 7 days' live (non-test) impression opportunities on
+  their real-time positions that were filled (`realtimeFilled` ÷
+  `realtimeOpportunities` on each revenue row and in the totals). It is
+  labelled "expected" (indicative, from recent history), never "sold", is
+  the same in Daily, Weekly and Monthly, and shows a dash when there is no
+  history. % sold itself is unchanged. With an advertiser, DSP or campaign
+  filter picked, only that buyer's fills count over the same opportunities.
+  **Available (at floor CPM) (26 Oct 2026, ticket
+  Ltlu40NbXod3d8NwFF6Z):** a column after Booked windows shows, per display
+  type and in the Total row, "<windows> · <value>": the sellable windows
+  nobody has booked yet (`availableWindows`) and their value at the floor
+  CPM (`availableValue` = each position's floor CPM × the assumed views
+  (VAC-d) of its unbooked columns ÷ 1,000, in the exchange currency), so a
+  retailer's sales team can see what is left to sell in dollars for forward
+  periods. Booked + available = the sellable windows behind % sold; a window
+  held for a Direct deal is neither. It works in Daily, Weekly and Monthly
+  and, like sellable capacity, ignores the advertiser / DSP filter (it is the
+  unsold market, not one buyer's share). Real-time positions have none.
   Estimated revenue is likewise booked-ahead only; real-time revenue is
   realised per play and is not forecast here. "Booked revenue" is renamed **Estimated revenue** — more
   honest about what it is before a window has actually played: booked CPM ×

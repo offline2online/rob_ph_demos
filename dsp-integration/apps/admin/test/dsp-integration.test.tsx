@@ -394,9 +394,9 @@ describe('Campaign Status stand-in', () => {
     expect(within(grid).getByLabelText('Deal ID search')).toBeInTheDocument()
     /* Pinned left: the selection box, Status and Advertiser; one row is one campaign
        (ticket IDGsyELBJsjlAYjizSqT), grouped by advertiser. Order per ticket
-       dinPPBl9Rk95UbrXoRbt: Activation sits left of Last used, Received left of Activation. */
+       HDh2GwTa7m8jaqidBvBY: Activation sits right of Playback Strategy, Received right of Activation, Last used last. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      '', 'Status', 'Advertiser / Campaign name', 'Touch point(s)', 'Display type(s)', 'Creative ID', 'Deal ID', 'Playback Strategy', 'Received', 'Activation', 'Last used', '',
+      '', 'Status', 'Advertiser / Campaign name', 'Touch point(s)', 'Display type(s)', 'Creative ID', 'Deal ID', 'Playback Strategy', 'Activation', 'Received', 'Last used', '',
     ])
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* The touch points it runs on, and its Playback Strategy pill (the localised layer; hover lists its rules). */
@@ -446,6 +446,44 @@ describe('Campaign Status stand-in', () => {
     expect(router.state.location.search).toBe('?tab=campaign-status')
   })
 
+  /* Ticket bhiyhqKpLPBDlySEfGNB: the Booking revenue table shows an expected fill for real-time inventory, labelled expected, while % sold stays a dash. */
+  it('shows an expected fill beside % sold in the Booking revenue table', async () => {
+    const start = new Date().toISOString()
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], dsps: [], directAdvertisers: [], byPricingType: [], positions: [],
+      revenue: [{ displayTypeId: 'portrait', displayTypeName: 'Portrait', bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 8, realtimeFilled: 6 }],
+      totals: { bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 8, realtimeFilled: 6 },
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule })))
+    renderAt('/booking-schedule')
+    expect(await screen.findByText('Expected fill (real-time)', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect((await screen.findAllByText('75%', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('expected').length).toBeGreaterThan(0)
+  }, slow(45000))
+
+  /* Ticket eNlz3fJab4Ehqg9hbf4C: assumed views (VAC-d) under each cell and per display type in the Booking revenue table. */
+  it('shows assumed views under a cell and total, booked and available assumed views per display type', async () => {
+    const start = new Date().toISOString()
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], dsps: [], directAdvertisers: [], byPricingType: [],
+      revenue: [{ displayTypeId: 'portrait', displayTypeName: 'Portrait', bookedWindows: 0, sellableWindows: 1, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 12345, bookedViews: 5000, availableViews: 7345, availableWindows: 3, availableValue: 456.5 }],
+      totals: { bookedWindows: 0, sellableWindows: 1, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0, totalViews: 12345, bookedViews: 5000, availableViews: 7345, availableWindows: 3, availableValue: 456.5 },
+      positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'deal', realTime: false, recentPlays: null,
+        windows: [{ start, status: 'available', booking: null, assumedViews: 4321 }] }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule })))
+    renderAt('/booking-schedule')
+    expect(await screen.findByText('4,321 assumed views', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.getByText('Total assumed views')).toBeInTheDocument()
+    expect(screen.getByText('Booked assumed views')).toBeInTheDocument()
+    expect(screen.getByText('Available assumed views')).toBeInTheDocument()
+    expect(screen.getByText('Available (at floor CPM)')).toBeInTheDocument()
+    expect((await screen.findAllByText(/456\.50/)).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('12,345')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('5,000').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('7,345').length).toBeGreaterThan(0)
+  }, slow(45000))
+
   /* Ticket ByeH6mIkaRqOJjnHu31z: a Booking Schedule tile opens its campaign in Campaign Approval. */
   it('opens a booking tile\'s campaign in Campaign Approval, even one the list normally hides', async () => {
     const start = new Date().toISOString()
@@ -455,7 +493,7 @@ describe('Campaign Status stand-in', () => {
       approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
     })
     const schedule = {
-      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0 },
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
       positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
         windows: [{ start, status: 'booked', booking: tile('c_zinger', 'Zinger Direct') }] }],
     }
@@ -468,6 +506,31 @@ describe('Campaign Status stand-in', () => {
     await waitFor(() => expect(within(screen.getByLabelText('Campaign Status')).getByText('Zinger Box — hero')).toBeInTheDocument(), { timeout: 10000 })
   }, slow(45000))
 
+  /* 26 Oct 2026 (ivtzBF4eaaW7BnS0ooI8): the first pinned column reads Advertiser / Deal; hovering the advertiser lists its DSP and slots,
+     hovering the position shows zone and operating times. */
+  it('names the first column Advertiser / Deal and hovers deal and position details', async () => {
+    const start = new Date().toISOString()
+    const booking = {
+      reservationId: 'r_h', campaignId: 'c_h', advertiserId: 'a', partnerId: 'direct', pricingType: 'default', type: 'reserve', advertiserName: 'Hover Brand', partnerName: 'Direct', cpm: 5, assumedViews: 1000, bookedRevenue: 5, billedRevenue: null,
+      layers: { default: true, localised: false, personalised: false }, personalisedTriggers: null,
+      approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
+    }
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
+      positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, playbackWindow: 'Store hours', zoneName: 'Zone A', zoneSlot: 1, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
+        windows: [{ start, status: 'booked', booking }] }],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/booking-schedule': schedule })))
+    renderAt('/booking-schedule')
+    expect(await screen.findByText('Advertiser / Deal', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.queryByText('Advertiser / DSP')).not.toBeInTheDocument()
+    fireEvent.mouseEnter((await screen.findAllByText('Hover Brand'))[0])
+    expect(await screen.findByText(/DSP: Direct/, {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.getByText(/Portrait · Zone A \/ Slot 1 · 1 window/)).toBeInTheDocument()
+    fireEvent.mouseEnter(screen.getAllByText('Portrait', { selector: '.truncate' })[0])
+    expect(await screen.findByText('Store hours', {}, { timeout: 5000 })).toBeInTheDocument()
+  }, slow(45000))
+
   /* 23 Oct 2026: a Direct deal window whose advertiser has no campaign that fits the slot is red with no campaign behind it,
      and did nothing when clicked. It opens Campaign Approval on the advertiser, which says why nothing plays there. */
   it('opens Campaign Approval on the advertiser from a tile with no campaign, and says it has none', async () => {
@@ -478,7 +541,7 @@ describe('Campaign Status stand-in', () => {
       approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
     }
     const schedule = {
-      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0 },
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
       positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
         windows: [{ start, status: 'booked', booking }] }],
     }
@@ -502,7 +565,7 @@ describe('Campaign Status stand-in', () => {
       approval: { defaultApproved: false, defaultRisk: 'at_risk', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
     }
     const schedule = {
-      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0 },
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 1, sellableWindows: 1, bookedRevenue: 5, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
       positions: [{ positionId: 'p1', displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null,
         windows: [{ start, status: 'booked', booking }] }],
     }
@@ -1932,7 +1995,7 @@ describe('booking schedule filter-row totals', () => {
   const position = (positionId: string) => ({ positionId, displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 0, slotLabel: 'Slot 1', displayCount: 1, zoneName: null, zoneSlot: 0, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null, windows: [] })
   const schedule = (dates: string[], ids = ['p1', 'p2']) => ({
     currency: 'AUD', windows: dates.map((d) => ({ start: `${d}T00:00:00.000Z`, end: `${d}T23:59:59.000Z` })), revenue: [], dsps: [{ partnerId: 'p_google', name: 'Google DSP', advertisers: [] }], directAdvertisers: [], byPricingType: [],
-    totals: { bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 },
+    totals: { bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
     positions: ids.map((id) => ({ ...position(id), windows: dates.map((d) => ({ start: `${d}T00:00:00.000Z`, status: 'available', booking: null })) })),
   })
   /* Each handler sees the query string, which fakeFetch drops. */
@@ -1969,13 +2032,29 @@ describe('booking schedule filter-row totals', () => {
     expect(calls.filter((u) => u.includes('/capacity')).every((u) => !u.includes('advertiserId'))).toBe(true)
   }, slow(45000))
 
-  it('runs the monthly chips October to January', async () => {
-    const dates = ['2026-10-27', '2026-11-03', '2026-12-01', '2027-01-05']
-    stub(schedule(dates), () => ({ days: dates, positions: [{ ...position('p1'), days: dates.map((d) => day(d, 10, 5)) }] }))
+  it('reads the Monthly roll-up cells as N of M booked, with the layer counts', async () => {
+    const months = ['2026-10-27', '2026-11-01']
+    const sched = schedule(months, ['p1'])
+    const rollup = (booked: number) => ({ windows: 4, booked, open: 4 - booked, reserved: 0, localised: booked, personalised: 0, advertisers: booked ? ['Swisse'] : [], bookedRevenue: booked * 10 })
+    sched.positions[0].windows = months.map((d, i) => ({ start: `${d}T00:00:00.000Z`, status: i ? 'available' : 'booked', booking: null, assumedViews: 100, rollup: rollup(i ? 0 : 3) })) as never
+    stub(sched, () => ({ days: [], positions: [] }))
     renderAt('/booking-schedule')
     fireEvent.click(await screen.findByText('Monthly', {}, { timeout: 10000 }))
-    await chip(/Plays and plays available to bid, October 2026/)
-    const labels = screen.getAllByLabelText(/Plays and plays available to bid, /).map((e) => e.getAttribute('aria-label')?.replace('Plays and plays available to bid, ', ''))
-    expect(labels).toEqual(['October 2026', 'November 2026', 'December 2026', 'January 2027'])
+    expect(await screen.findByText('3 of 4 booked', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.getByText('4 open')).toBeInTheDocument()
+  }, slow(45000))
+
+  /* Ticket Hh87Dja2TgYrug606Uq0: Monthly defaults to a 12-month range, the server rolls it up (view=monthly), and the plays totals (capped at 92 days) are skipped. */
+  it('asks for the 12-month Monthly roll-up and shows no plays chips beyond the 92-day cap', async () => {
+    const dates = ['2026-10-27', '2026-11-03', '2026-12-01', '2027-01-05']
+    const calls = stub(schedule(dates), () => ({ days: dates, positions: [{ ...position('p1'), days: dates.map((d) => day(d, 10, 5)) }] }))
+    renderAt('/booking-schedule')
+    fireEvent.click(await screen.findByText('Monthly', {}, { timeout: 10000 }))
+    await waitFor(() => expect(calls.some((u) => u.includes('/booking-schedule?') && u.includes('view=monthly'))).toBe(true), { timeout: 10000 })
+    const monthly = new URL(calls.filter((u) => u.includes('view=monthly')).pop() as string, 'http://x')
+    expect((Date.parse(monthly.searchParams.get('to') as string) - Date.parse(monthly.searchParams.get('from') as string)) / 86_400_000).toBe(365)
+    expect(screen.queryAllByLabelText(/Plays and plays available to bid, /)).toHaveLength(0)
+    const capacityDays = calls.filter((u) => u.includes('/capacity')).map((u) => { const q = new URL(u, 'http://x').searchParams; return (Date.parse(q.get('to') as string) - Date.parse(q.get('from') as string)) / 86_400_000 })
+    expect(Math.max(...capacityDays)).toBeLessThanOrEqual(92)
   }, slow(45000))
 })
