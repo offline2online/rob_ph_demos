@@ -1688,11 +1688,54 @@ describe('Advertisers / Inventory', () => {
     expect(within(tip).getByTestId('details-slot-bl_2-1')).toHaveTextContent('plays n/a')
     fireEvent.mouseOver(within(archive).getByTestId('archived-slots-bl_2'))
     expect(await screen.findByTestId('slots-row-bl_2-0-0')).toHaveTextContent('Hero (slot 1) · 10 (20 total) plays per window')
-    expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(8)
+    expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(9)
     /* One page header, with the back link beside it and the explanation in its tooltip. */
     expect(screen.getAllByText('Archived deals')).toHaveLength(1)
     expect(screen.getByRole('link', { name: /Advertisers \/ Inventory/ })).toHaveAttribute('href', '/advertisers')
     expect(screen.queryByText(/Deals are archived, never deleted/)).toBeNull()
+  }, slow(45000))
+
+  /* Ticket q2t6YgDdW9XCsbORxCq2: Cancel (flight not started) and End (live) sit in the row actions, each with a required reason. */
+  it('offers Cancel on a deal that has not started and End on a live one, each needing a reason', async () => {
+    const base = { invitedBuyers: [], invitedCategories: [], targeting: [], dealType: 'guaranteed', description: '', status: 'shared', termTotal: 10000, activeTo: '2999-12-31T00:00:00.000Z' }
+    const future = { ...base, id: 'bl_f', dealId: 'PH-FUTURE0001', name: 'Future deal', activeFrom: '2998-01-01T00:00:00.000Z' }
+    const live = { ...base, id: 'bl_l', dealId: 'PH-LIVE000002', name: 'Running deal', activeFrom: '2020-01-01T00:00:00.000Z' }
+    const early = { ...base, id: 'bl_e', dealId: 'PH-EARLY00001', name: 'Early deal', activeFrom: '2020-01-01T00:00:00.000Z', endKind: 'ended_early', endReason: 'Pulled', originalActiveTo: '2999-12-31T00:00:00.000Z', deliveredValue: 1234 }
+    const posted: { url: string; body: Record<string, unknown> }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST' && /\/(cancel|end)$/.test(url)) {
+        posted.push({ url, body: JSON.parse(String(init.body)) })
+        return new Response(JSON.stringify(future), { status: 200 })
+      }
+      return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [future, live, early] } })(url)
+    }))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    expect(await within(table).findByLabelText('Cancel deal Future deal')).toBeInTheDocument()
+    expect(within(table).queryByLabelText('End deal Future deal')).toBeNull()
+    expect(within(table).getByLabelText('End deal Running deal')).toBeInTheDocument()
+    expect(within(table).queryByLabelText('Cancel deal Running deal')).toBeNull()
+    expect(within(table).queryByLabelText('End deal Early deal')).toBeNull()
+    expect(within(table).getByTestId('ended-early-bl_e')).toHaveTextContent('Ended early')
+    fireEvent.mouseOver(within(table).getByTestId('details-summary-bl_e'))
+    expect(await screen.findByTestId('ended-values-bl_e')).toHaveTextContent('Original total: USD 10,000 for the term')
+    expect(screen.getByTestId('ended-values-bl_e')).toHaveTextContent('Delivered to date: USD 1,234')
+    fireEvent.click(within(table).getByLabelText('End deal Running deal'))
+    const end = await screen.findByRole('dialog')
+    const confirmEnd = within(end).getByRole('button', { name: 'End deal' })
+    expect(confirmEnd).toBeDisabled()
+    fireEvent.change(within(end).getByLabelText('Reason'), { target: { value: 'Campaign pulled' } })
+    await waitFor(() => expect(confirmEnd).toBeEnabled())
+    fireEvent.click(confirmEnd)
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].url).toBe('/api/admin/v1/buyers-lists/bl_l/end')
+    expect(posted[0].body).toMatchObject({ reason: 'Campaign pulled', endAt: expect.stringMatching(/^\d{4}-/) })
+    fireEvent.click(within(table).getByLabelText('Cancel deal Future deal'))
+    const cancel = await screen.findByRole('dialog')
+    fireEvent.change(within(cancel).getByLabelText('Reason'), { target: { value: 'Buyer withdrew' } })
+    fireEvent.click(within(cancel).getByRole('button', { name: 'Cancel deal' }))
+    await waitFor(() => expect(posted).toHaveLength(2))
+    expect(posted[1]).toEqual({ url: '/api/admin/v1/buyers-lists/bl_f/cancel', body: { reason: 'Buyer withdrew' } })
   }, slow(45000))
 
   /* Ticket Zxw7VRUSytMAovkbDFKt: with the dealTargeting flag off (the default) a deal's tooltip shows no targeting. */

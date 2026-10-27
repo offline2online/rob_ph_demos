@@ -11,7 +11,7 @@ import { type Db, fromJson, prepared, toJson, tx, type Awaitable } from '../db/d
 
 interface Row {
   id: string; deal_id: string; name: string; description: string; deal_type: 'private_auction' | 'preferred' | 'guaranteed'; invited_buyers: string; invited_categories: string; targeting: string; active_from: string | null; active_to: string | null
-  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; term_total: number | null; below_floor_override: number; below_floor_override_by: string | null; below_floor_override_at: string | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null; direct: number; archived_at: string | null; archived_by: string | null; archived_slots: string | null; time_zone_mode: 'platform' | 'store'
+  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; term_total: number | null; below_floor_override: number; below_floor_override_by: string | null; below_floor_override_at: string | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null; direct: number; archived_at: string | null; archived_by: string | null; archived_slots: string | null; end_kind: 'cancelled' | 'ended_early' | null; end_reason: string | null; end_requested_at: string | null; original_active_to: string | null; ended_by: string | null; time_zone_mode: 'platform' | 'store'
 }
 interface AcceptanceRow { partner_id: string; seat_id: string; accepted_version: number; accepted_at: string }
 interface VersionRow { version: number; at: string; by_name: string; changes: string; requires_reacceptance: number }
@@ -39,6 +39,8 @@ export interface BuyersListRepo {
   archive(id: string, by: string, at?: string, slots?: BuyersList['assignedSlots']): Awaitable<BuyersList | null>
   /* Permanently removes a deal that was never shared (a draft): the row, its per-DSP deal IDs, term versions and acceptances. The route has already refused a shared or archived deal. False if the list doesn't exist. */
   delete(id: string): Awaitable<boolean>
+  /* Cancel (flight not started) or End (live) a shared deal, with the person's reason. An early end moves activeTo to `endAt` (keeping the old end as originalActiveTo) and records the change as a term version that asks no buyer to accept again; a cancel only records. Neither archives or releases slots: the caller does, in the same transaction. Null if the list doesn't exist. */
+  terminate(id: string, t: { kind: 'cancelled' | 'ended_early'; reason: string; by: string; at: string; endAt?: string }): Awaitable<BuyersList | null>
   /* Shares a draft deal with its invited buyers: stamps shared_at. From here its term changes ask buyers to re-accept. Idempotent (a shared deal keeps its first shared_at). Null if the list doesn't exist. */
   share(id: string): Awaitable<BuyersList | null>
   /* Records that a named invited buyer accepted the deal's current terms. Null if the list doesn't exist; the route has already checked the seat is invited. */
@@ -91,6 +93,7 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     /* A Direct advertiser deal has no buyer acceptance (Finalise makes it live), so it reports none rather than a pending one. */
     termVersion: r.term_version, buyerAcceptance: r.direct ? [] : acceptanceOf(r),
     status: r.archived_at ? 'archived' : r.shared_at ? 'shared' : 'draft', sharedAt: r.shared_at, archivedAt: r.archived_at, archivedBy: r.archived_by, assignedSlots: fromJson(r.archived_slots, []),
+    endKind: r.end_kind ?? null, endReason: r.end_reason ?? null, endRequestedAt: r.end_requested_at ?? null, originalActiveTo: r.original_active_to ?? null, endedBy: r.ended_by ?? null,
     createdAt: r.created_at, updatedAt: r.updated_at,
   })
   const row = (id: string) => prepared(db, 'SELECT * FROM buyers_lists WHERE id = ?').get(id) as Row | undefined
@@ -185,6 +188,22 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
         prepared(db, 'UPDATE buyers_lists SET archived_at = ?, archived_by = ?, archived_slots = ?, updated_at = ? WHERE id = ?').run(now, by, toJson(slots ?? []), now, id)
       }
       return toRecord(row(id) as Row)
+    },
+    terminate(id, t) {
+      const r = row(id)
+      if (!r) return null
+      return tx(db, () => {
+        if (t.kind === 'cancelled') {
+          prepared(db, 'UPDATE buyers_lists SET end_kind = ?, end_reason = ?, end_requested_at = ?, ended_by = ?, updated_at = ? WHERE id = ?').run('cancelled', t.reason, t.at, t.by, t.at, id)
+        } else {
+          const was = toRecord(r)
+          const changes = termChanges(was, { ...was, activeTo: t.endAt as string })
+          const version = r.term_version + (changes.length ? 1 : 0)
+          prepared(db, 'UPDATE buyers_lists SET end_kind = ?, end_reason = ?, end_requested_at = ?, original_active_to = ?, ended_by = ?, active_to = ?, term_version = ?, updated_at = ? WHERE id = ?').run('ended_early', t.reason, t.at, r.active_to, t.by, t.endAt as string, version, t.at, id)
+          if (changes.length) prepared(db, 'INSERT INTO buyers_list_term_versions (list_id, version, at, by_name, changes, requires_reacceptance) VALUES (?, ?, ?, ?, ?, 0)').run(id, version, t.at, t.by, toJson(changes) ?? '[]')
+        }
+        return toRecord(row(id) as Row)
+      })
     },
     delete(id) {
       if (!row(id)) return false

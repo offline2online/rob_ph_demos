@@ -1501,6 +1501,48 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/HasDependents'}
 
+  /admin/v1/buyers-lists/{buyersListId}/cancel:
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: cancelBuyersList
+      summary: Cancel a finalised deal whose flight has not started
+      description: |
+        Ticket q2t6YgDdW9XCsbORxCq2. Releases the deal from every slot and archives it at once with `endKind` `cancelled` and the required `reason`. The deal ID, terms, history and the slots it held stay on the archived deal. 409 for a draft (delete it), an archived deal, or a deal whose flight has started (end it instead). Admin only. Recorded in the SSP change history. The invited buyers see the deal leave `GET /v1/deals`.
+      security: [{adminSession: [admin]}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [reason], properties: {reason: {type: string, minLength: 1, maxLength: 1000, description: Why the deal is cancelled. Stored on the deal and shown in Archived Deals.}}}}}
+      responses:
+        '200':
+          description: The cancelled, archived deal
+          content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/v1/buyers-lists/{buyersListId}/end:
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: endBuyersList
+      summary: End a live deal early, now or at a future date
+      description: |
+        Ticket q2t6YgDdW9XCsbORxCq2. Sets the deal's `activeTo` to `endAt` (now or later), keeping the old end as `originalActiveTo` (null for an open-ended Direct deal), and records `endKind` `ended_early` with the required `reason`. The deal keeps running until `endAt`; campaigns using its deal ID stop delivering then, revenue to that moment stays reported and nothing after it. After `endAt` it releases its slots and archives itself like any ended deal. There is no notice period: a future `endAt` covers contractual notice. A total-priced deal keeps its `termTotal` and reports `deliveredValue`; billing adjustments happen outside the platform. 409 for a draft, an archived or already-ended deal, or a deal whose flight has not started (cancel it instead); 400 when `endAt` is in the past or not before the current end. Admin only.
+      security: [{adminSession: [admin]}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [reason, endAt], properties: {reason: {type: string, minLength: 1, maxLength: 1000}, endAt: {type: string, format: date-time}}}}}
+      responses:
+        '200':
+          description: The deal with its new end
+          content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
   /admin/v1/advertisers:
     get:
       tags: [Admin — Advertisers]
@@ -3523,6 +3565,12 @@ components:
         sharedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the deal was shared; null while it is a draft. Lists that pre-date drafts are shared as of when they were created.}
         archivedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the deal was archived; null while it is live.}
         archivedBy: {type: [string, 'null'], readOnly: true, description: 'Who archived it: the person''s name, or `system` when its flight ended and its last window was billed.'}
+        endKind: {type: [string, 'null'], enum: [cancelled, ended_early, null], readOnly: true, description: 'How the deal was terminated by a person: `cancelled` (before its flight started; archived at once) or `ended_early` (live; `activeTo` is the new end). Null otherwise. Absent from a demo snapshot taken before 27 Oct 2026.'}
+        endReason: {type: [string, 'null'], readOnly: true, description: The required reason given for a cancel or early end.}
+        endRequestedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the cancel or end was requested.}
+        originalActiveTo: {type: [string, 'null'], format: date-time, readOnly: true, description: 'The flight end before an early end; null for an open-ended deal.'}
+        endedBy: {type: [string, 'null'], readOnly: true, description: The person who cancelled or ended the deal.}
+        deliveredValue: {type: number, readOnly: true, description: 'Early-ended deals only: the value billed over the flight up to its new end (USD), shown beside the original `termTotal`.'}
         assignedSlots:
           type: array
           readOnly: true

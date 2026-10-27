@@ -1049,6 +1049,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/buyers-lists/{buyersListId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a finalised deal whose flight has not started
+         * @description Ticket q2t6YgDdW9XCsbORxCq2. Releases the deal from every slot and archives it at once with `endKind` `cancelled` and the required `reason`. The deal ID, terms, history and the slots it held stay on the archived deal. 409 for a draft (delete it), an archived deal, or a deal whose flight has started (end it instead). Admin only. Recorded in the SSP change history. The invited buyers see the deal leave `GET /v1/deals`.
+         */
+        post: operations["cancelBuyersList"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/buyers-lists/{buyersListId}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End a live deal early, now or at a future date
+         * @description Ticket q2t6YgDdW9XCsbORxCq2. Sets the deal's `activeTo` to `endAt` (now or later), keeping the old end as `originalActiveTo` (null for an open-ended Direct deal), and records `endKind` `ended_early` with the required `reason`. The deal keeps running until `endAt`; campaigns using its deal ID stop delivering then, revenue to that moment stays reported and nothing after it. After `endAt` it releases its slots and archives itself like any ended deal. There is no notice period: a future `endAt` covers contractual notice. A total-priced deal keeps its `termTotal` and reports `deliveredValue`; billing adjustments happen outside the platform. 409 for a draft, an archived or already-ended deal, or a deal whose flight has not started (cancel it instead); 400 when `endAt` is in the past or not before the current end. Admin only.
+         */
+        post: operations["endBuyersList"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/advertisers": {
         parameters: {
             query?: never;
@@ -2828,6 +2868,27 @@ export interface components {
             readonly archivedAt: string | null;
             /** @description Who archived it: the person's name, or `system` when its flight ended and its last window was billed. */
             readonly archivedBy: string | null;
+            /**
+             * @description How the deal was terminated by a person: `cancelled` (before its flight started; archived at once) or `ended_early` (live; `activeTo` is the new end). Null otherwise. Absent from a demo snapshot taken before 27 Oct 2026.
+             * @enum {string|null}
+             */
+            readonly endKind?: "cancelled" | "ended_early" | null;
+            /** @description The required reason given for a cancel or early end. */
+            readonly endReason?: string | null;
+            /**
+             * Format: date-time
+             * @description When the cancel or end was requested.
+             */
+            readonly endRequestedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description The flight end before an early end; null for an open-ended deal.
+             */
+            readonly originalActiveTo?: string | null;
+            /** @description The person who cancelled or ended the deal. */
+            readonly endedBy?: string | null;
+            /** @description Early-ended deals only: the value billed over the flight up to its new end (USD), shown beside the original `termTotal`. */
+            readonly deliveredValue?: number;
             /** @description Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry. On an archived deal it is the slots the deal held when it was archived (they are released then), kept for good; a deal archived before this was recorded has none. */
             readonly assignedSlots: {
                 /** @description displayTypeId.sN */
@@ -5920,6 +5981,73 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["HasDependents"];
+        };
+    };
+    cancelBuyersList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Why the deal is cancelled. Stored on the deal and shown in Archived Deals. */
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The cancelled, archived deal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    endBuyersList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                    /** Format: date-time */
+                    endAt: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The deal with its new end */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listAdvertisers: {

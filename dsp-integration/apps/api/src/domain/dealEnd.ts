@@ -2,7 +2,7 @@
    and whose last window has played and been billed releases itself from every slot and is then archived, by
    'system'. Decided on booking and billing state only: a won or reserved window inside the flight that is not
    billed yet (still to play, or played and awaiting the Billing job) keeps the deal assigned until it is. Run on
-   the scheduler tick after Billing. A deal with no end date never ends. */
+   the scheduler tick after Billing. A deal with no end date never ends, until someone ends it (End deal, ticket q2t6YgDdW9XCsbORxCq2: its end date is set and the deal comes through here like any other). */
 import { assignedOf, type BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { tx } from '../db/db'
@@ -22,7 +22,19 @@ const without = <S extends { buyersListIds?: string[]; openAuction?: boolean }>(
   return { ...s, buyersListIds: ids, buyersListId: ids[0] ?? null, listMode: ids.length ? 'deal' : 'rtb', openAuction: ids.length ? s.openAuction : false }
 }
 
-export const flightHasEnded = (l: Pick<BuyersList, 'activeTo'>, now: number) => !!l.activeTo && Date.parse(l.activeTo) < now
+export const flightHasEnded = (l: Pick<BuyersList, 'activeTo'>, now: number) => !!l.activeTo && Date.parse(l.activeTo) <= now
+
+/* Releases the deal from every slot it holds and archives it, keeping the slots it held on the archived deal. The caller owns the transaction. */
+export async function releaseAndArchive(ctx: Context, listId: string, by: string, at: string): Promise<BuyersList | null> {
+  /* Read before the slots are released: the archived deal keeps them. */
+  const held = (await assignedSlotsByList(ctx)).get(listId) ?? []
+  for (const dt of await ctx.displayTypes.list()) {
+    const slots = dt.phExtensions?.slots
+    if (!slots?.some((s) => assignedOf(s).buyersListIds.includes(listId))) continue
+    await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: slots.map((s) => (assignedOf(s).buyersListIds.includes(listId) ? without(s, listId) : s)) })
+  }
+  return ctx.buyersLists.archive(listId, by, at, held)
+}
 
 /* Archives every ended, fully billed deal. Returns the names archived. */
 export async function archiveEndedDeals(ctx: Context): Promise<string[]> {
@@ -38,14 +50,7 @@ export async function archiveEndedDeals(ctx: Context): Promise<string[]> {
       const from = l.activeFrom ? Date.parse(l.activeFrom) : -Infinity
       const to = Date.parse(l.activeTo as string)
       if (unbilled.some((r) => positions.has(r.positionId) && Date.parse(r.windowStart) >= from && Date.parse(r.windowStart) <= to)) continue
-      /* Read before the slots are released: the archived deal keeps them. */
-      const held = (await assignedSlotsByList(ctx)).get(l.id) ?? []
-      for (const dt of await ctx.displayTypes.list()) {
-        const slots = dt.phExtensions?.slots
-        if (!slots?.some((s) => assignedOf(s).buyersListIds.includes(l.id))) continue
-        await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: slots.map((s) => (assignedOf(s).buyersListIds.includes(l.id) ? without(s, l.id) : s)) })
-      }
-      await ctx.buyersLists.archive(l.id, SYSTEM_ACTOR.name, ctx.clock().toISOString(), held)
+      await releaseAndArchive(ctx, l.id, SYSTEM_ACTOR.name, ctx.clock().toISOString())
       done.push(l.name)
     }
   })

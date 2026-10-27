@@ -360,6 +360,26 @@ the same dialog for both.
   or live deal has no Delete, and the API refuses it (`409 conflict`); a draft
   still assigned to a slot is refused with `409 has_dependents`. The SSP change
   history records it as a deleted deal.
+- **Cancel deal and End deal** (Advertisers / Inventory row actions, admin only; ticket
+  q2t6YgDdW9XCsbORxCq2, 27 Oct 2026). Today a draft can be deleted and a deal archived; these
+  terminate a shared deal properly. Both ask for a **required reason** (free text, kept on the deal
+  as `endReason` and shown in the **Reason** column of Archived deals) and open a confirmation dialog
+  with a Keep deal button. **Cancel** (`POST /admin/v1/buyers-lists/{id}/cancel`) is offered only on
+  a finalised deal whose flight has not started: it releases the slots and archives the deal at once
+  as **Cancelled** (`endKind: cancelled`). **End** (`POST .../end`) is offered only on a live deal
+  (started, not already ended early, flight not over): the user picks **now** or a future date and
+  time (the deal's time zone is shown as for flight dates), `activeTo` becomes that moment (an
+  open-ended Direct deal gets its end date, a fixed-end deal is shortened; the old end is kept as
+  `originalActiveTo`) and the deal shows **Ended early** until then. It keeps running to that moment,
+  campaigns using its deal ID stop delivering then, revenue up to it stays reported and nothing after
+  it; it then releases its slots and archives itself as any ended deal does (`endKind: ended_early`).
+  A deal priced as a total keeps its original `termTotal` and reports `deliveredValue` (billed value
+  up to the new end); both show in the Details hover. There is no notice period in the platform: a
+  future end date covers contractual notice, and billing adjustments happen outside it. The
+  advertiser or buyer is told by the deal changing in `GET /v1/deals` (new end date; gone once
+  archived); the POC has no outbound e-mail or webhook. Migration `0089` adds `end_kind`, `end_reason`,
+  `end_requested_at`, `original_active_to`, `ended_by` to `buyers_lists`. Tests:
+  `apps/api/test/deal-end.test.ts`, and the "Cancel on a deal that has not started" admin test.
 - **Shared deals are archived, never deleted** (Advertisers / Inventory; ticket
   bCcJ2e00CRLxtd98Utlr, 22 Oct 2026). The row's action is **Archive** and uses
   the same confirmation dialog. A deal assigned to one or more slots can't be

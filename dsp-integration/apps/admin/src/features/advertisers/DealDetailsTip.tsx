@@ -42,6 +42,12 @@ export function DealDetailsTip({ data, slots, seatName, showFlight = true, pacin
       <div style={{ fontWeight: 500 }}>{typeLabel}</div>
       {sub('Rate', `${rate ?? 'Per play'}${rateType ? ` ${rateType}` : ''}${src && !perTerm && !data.lockedWin ? ` (${src})` : ''}`)}
       {showFlight && sub('Flight', flight)}
+      {data.endKind === 'ended_early' && <>
+        {sub('Ended early', `ends ${flightMoment(data.activeTo)} (was ${data.originalActiveTo ? flightMoment(data.originalActiveTo) : 'open-ended'})`)}
+        {data.endReason && sub('Reason', data.endReason)}
+        {perTerm && data.termTotal != null && <div data-testid={`ended-values-${data.id}`}>{sub('Original total', termTotalText(data.termTotal) ?? '')}{data.deliveredValue != null && sub('Delivered to date', valueText({ min: data.deliveredValue, max: data.deliveredValue, from: false }) ?? '')}</div>}
+      </>}
+      {data.endKind === 'cancelled' && <>{sub('Cancelled', flightMoment(data.endRequestedAt ?? null) ?? '')}{data.endReason && sub('Reason', data.endReason)}</>}
       {sub('Period', days == null ? (data.activeFrom || data.activeTo ? 'Open flight' : 'Always active') : `${num(days)} day${days === 1 ? '' : 's'}`)}
       {data.dealType === 'direct' && <>
         {sub('Advertiser', data.invitedBuyers.length ? seatName(data.invitedBuyers[0].partnerId, data.invitedBuyers[0].seatId) : 'None yet')}
