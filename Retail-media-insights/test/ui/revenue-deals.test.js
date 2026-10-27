@@ -54,6 +54,8 @@ for (const width of [1163, 390]) {
       const est = await page.$eval('.rd-seg-est', (e) => { const s = getComputedStyle(e); return [s.backgroundColor, s.borderTopColor]; });
       assert.deepEqual(est, ['rgb(238, 244, 250)', 'rgb(122, 167, 214)']);
 
+      // Direct advertiser is its own source (the Direct chip), so it is not offered in the revenue chart's Deal type dropdown.
+      assert.deepEqual(await page.$$eval('.rd-controls .rd-ctl option', (o) => o.map((x) => x.textContent)), ['All deal types', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
       await page.click('.rd-chip:has-text("The Trade Desk")');
       await page.click('.rd-chip:has-text("Amazon DSP")');
       await page.waitForFunction(() => document.querySelectorAll('.rd-legend-item').length === 14);
@@ -87,14 +89,15 @@ for (const width of [1163, 390]) {
       assert.equal(await page.getAttribute('.rd-table thead th[aria-sort="descending"] .rd-sort', 'aria-label'), 'Sort by Revenue, currently highest first');
       const idx = (name) => { const i = rows.findIndex((r) => r[0] === name); assert.ok(i >= 0, `deal ${name} listed`); return i; };
       const pg = rows[idx('Immune — winter launch')];
-      const pd = rows[idx('Dispensary first look')];
+      const pd = rows[idx('Dispensary screens')];
       const pa = rows[idx('Beauty endcaps')];
       assert.match(pg[3], /^\d+ advertisers?$/);
       assert.match(pg[4], /^\d+%$/);
       assert.match(pg[5], /^\d+% of guaranteed$/);
       assert.equal(pd[5], '', 'pacing only on Programmatic guaranteed');
       assert.match(pg[7], /fixed$/);
-      assert.match(pa[7], /floor$/);
+      assert.match(pa[7], /fixed$/, 'a direct deal bills its agreed CPM');
+      assert.equal(pa[3], '2 advertisers');
       assert.match(pg[2], /^2 slots$/);
       const bar = await page.$eval('.rd-fill-bar', (e) => { const r = e.getBoundingClientRect(); return [e.offsetWidth, r.height, getComputedStyle(e).backgroundColor]; });
       assert.equal(bar[0], width === 390 ? 56 : 90);
@@ -103,12 +106,14 @@ for (const width of [1163, 390]) {
 
       const adv = (await page.$$('.rd-table tbody tr'))[idx('Beauty endcaps')];
       await (await adv.$('td:nth-child(4) .rd-hov')).hover();
-      assert.match(await page.textContent('.rd-tip'), /Kenvue \(DV360\)/);
+      assert.match(await page.textContent('.rd-tip'), /Procter & Gamble \(Direct\)/);
       await (await (await page.$$('.rd-table tbody tr'))[idx('Immune — winter launch')].$('td:nth-child(3) .rd-hov')).hover();
       assert.match(await page.textContent('.rd-tip'), /Window Portrait \(Portrait screen in the store window at the entrance\)/);
       assert.match(await page.textContent('.rd-tip'), /slot 1 of \d+\)/);
-      await page.hover('.rd-name');
+      await (await (await page.$$('.rd-table tbody tr'))[idx('Immune — winter launch')].$('.rd-name')).hover();
       assert.match(await page.textContent('.rd-tip'), /Deal IDs.*PH-/);
+      await (await (await page.$$('.rd-table tbody tr'))[idx('Beauty endcaps')].$('.rd-name')).hover();
+      assert.ok(!/Deal IDs/.test(await page.textContent('.rd-tip')), 'a direct deal has no deal ID');
       assert.ok(await noHScroll(page), 'no horizontal scroll');
       assert.deepEqual(problems, []);
     } finally { await context.close(); }

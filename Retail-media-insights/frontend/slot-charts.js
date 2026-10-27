@@ -552,7 +552,7 @@
         ]);
         var row = h('div', { class: 'sc-row sc-row-missed' + (isTotal ? ' sc-total' : ''), role: 'listitem', 'data-fill': String(r.fillPercent) }, [
           nameLabel(name, displaysOf(r), dt),
-          h('div', { class: 'sc-track' }, [track]),
+          hoverable(h('div', { class: 'sc-track' }, [track]), function () { return missedHover(r, dt, filters, isTotal); }),
           hoverable(h('div', { class: 'sc-value' }, [
             h('strong', { text: pct(r.fillPercent) }), ' filled · ',
             h('span', { class: 'sc-m-unsold', text: fmtMoney(p.unsold) }), ' + ',

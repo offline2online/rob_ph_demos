@@ -34,7 +34,7 @@ const rawRequest = (port, text) => new Promise((resolve) => {
 });
 const statusOf = (reply) => Number((/^HTTP\/1\.1 (\d{3})/.exec(reply) || [])[1]);
 const mcp = (port, body, headers = {}) => fetch(`http://127.0.0.1:${port}${MCP_PATH}`, {
-  method: 'POST', headers: { authorization: `Bearer ${tok('adv-unilever')}`, 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body),
+  method: 'POST', headers: { authorization: `Bearer ${tok('adv-procter-gamble')}`, 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body),
 });
 
 // ---- 1. malformed request targets never crash the process
@@ -240,7 +240,8 @@ test('7: PG pacing skips flights that ended before dateFrom or start after dateT
   st.catalog = JSON.parse(JSON.stringify(st.catalog));
   const d1 = st.catalog.deals.d1;
   d1.flight = { start: '2026-08-01', end: '2026-08-31' }; // ended long before the range
-  st.catalog.deals.d2.flight = { start: '2026-08-01', end: '2026-08-31' }; // so has the other Programmatic guaranteed deal
+  st.catalog.deals.d2.flight = { start: '2026-08-01', end: '2026-08-31' }; // so have the other Programmatic guaranteed deals
+  st.catalog.deals.d4.flight = { start: '2026-08-01', end: '2026-08-31' };
   const scans = [];
   const orig = st.scanDelivery.bind(st);
   st.scanDelivery = (f, fn) => { scans.push({ ...f }); return orig(f, fn); };

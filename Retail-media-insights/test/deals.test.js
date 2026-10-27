@@ -18,13 +18,14 @@ async function get(path, opts = {}) {
     return { status: res.status, body: await res.json() };
   } finally { server.close(); }
 }
-const pg = async (q) => (await get(`/deals?${q}`)).body.rows.find((r) => r.dealType === 'Programmatic guaranteed');
+const pg = async (q) => (await get(`/deals?${q}`)).body.rows.find((r) => r.name === 'Immune — winter launch');
 
 test('deals: one row per named deal in standard order, Open auction excluded; the direct deal leads', async () => {
   const { status, body } = await get('/deals');
   assert.equal(status, 200);
-  assert.deepEqual(body.rows.map((r) => r.dealType), ['Direct advertiser', 'Programmatic guaranteed', 'Programmatic guaranteed', 'Preferred deal', 'Preferred deal', 'Private auction', 'Private auction', 'Private auction', 'Private auction', 'Private auction']);
-  const d = body.rows[1];
+  assert.deepEqual(body.rows.map((r) => r.dealType), ['Direct advertiser', 'Direct advertiser', 'Direct advertiser', 'Direct advertiser', 'Direct advertiser', 'Direct advertiser', 'Direct advertiser', 'Programmatic guaranteed', 'Programmatic guaranteed', 'Programmatic guaranteed']);
+  assert.equal(body.rows.filter((r) => r.dealType === 'Direct advertiser').length, 7, '7 of the 10 named deals are sold direct');
+  const d = body.rows.find((r) => r.name === 'Immune — winter launch');
   assert.ok(d.name && d.description && d.revenue > 0);
   assert.deepEqual(d.dealIds, [{ dsp: 'DV360', dspLabel: 'Google DSP (DV360)', dealId: ctx.dealCatalog.d1.dealIds.DV360 }]);
   assert.ok(d.dealIds.every((x) => /^PH-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$/.test(x.dealId)));
@@ -50,12 +51,14 @@ test('deals: PG pacing before, during and after the flight', async () => {
   assert.ok(others.every((r) => r.pacing === null));
 });
 
-test('deals: dealType filter, 400 on unknown, CPM floor for Private auction', async () => {
-  const { body } = await get('/deals?dealType=Preferred deal');
-  assert.deepEqual(body.rows.map((r) => r.dealType), ['Preferred deal', 'Preferred deal']);
+test('deals: dealType filter, 400 on unknown; the launch deal types are all fixed price', async () => {
+  const { body } = await get('/deals?dealType=Programmatic guaranteed');
+  assert.deepEqual(body.rows.map((r) => r.dealType), ['Programmatic guaranteed', 'Programmatic guaranteed', 'Programmatic guaranteed']);
   assert.equal(body.rows[0].cpm.kind, 'fixed');
+  assert.equal((await get('/deals?dealType=Direct advertiser')).body.rows.length, 7);
   assert.equal((await get('/deals?dealType=Nope')).status, 400);
-  assert.equal((await get('/deals?dealType=Private auction')).body.rows[0].cpm.kind, 'floor');
+  assert.equal((await get('/deals?dealType=Private auction')).body.rows.length, 0, 'the example retailer sells no private auctions at launch');
+  assert.ok((await get('/deals')).body.rows.every((r) => r.cpm.kind === 'fixed'));
 });
 
 test('advertisers: shares add to 100, revenue equals billing, top 10 and all', async () => {
@@ -67,8 +70,8 @@ test('advertisers: shares add to 100, revenue equals billing, top 10 and all', a
   const billed = raw.billing.filter((b) => b.date >= '2026-09-12' && b.settled).reduce((a, b) => a + b.revenue, 0); // Revenue is earned (settled) revenue
   assert.ok(Math.abs(body.all.reduce((a, r) => a + r.revenue, 0) - billed) < 0.01 * body.all.length);
   const a = body.all.find((r) => r.advertiserId === 'adv-haleon');
-  assert.deepEqual(a.dealsOn.map((d) => d.dealType), ['Programmatic guaranteed', 'Private auction', 'Private auction', 'Private auction']);
-  assert.ok(a.slotsCovered === 8 && a.slotsWonPercent > 0 && a.effectiveCpm > 0 && a.dsp);
+  assert.deepEqual(a.dealsOn.map((d) => d.dealType), ['Programmatic guaranteed']);
+  assert.ok(a.slotsCovered === 1 && a.slotsWonPercent > 0 && a.effectiveCpm > 0 && a.dsp);
   assert.equal(body.slotsWon.complete, true);
 });
 
@@ -77,13 +80,13 @@ test('advertisers: slotsWon incomplete beyond 90 days of retention', async () =>
 });
 
 test('advertiser login sees only its own deals, buyer, DSP deal ID and row', async () => {
-  const opts = { authenticate: advertiser('adv-unilever'), routes: optIn('deals', 'advertisers') };
+  const opts = { authenticate: advertiser('adv-reckitt'), routes: optIn('deals', 'advertisers') };
   const deals = (await get('/deals', opts)).body.rows;
-  assert.deepEqual(deals.map((r) => r.dealType), ['Private auction']);
-  assert.deepEqual(deals[0].advertisers.map((a) => a.advertiserId), ['adv-unilever']);
+  assert.deepEqual(deals.map((r) => r.dealType), ['Programmatic guaranteed']);
+  assert.deepEqual(deals[0].advertisers.map((a) => a.advertiserId), ['adv-reckitt']);
   assert.deepEqual(deals[0].dealIds.map((x) => x.dsp), ['Amazon DSP']);
   const adv = (await get('/advertisers', opts)).body;
-  assert.deepEqual(adv.all.map((r) => r.advertiserId), ['adv-unilever']);
+  assert.deepEqual(adv.all.map((r) => r.advertiserId), ['adv-reckitt']);
   assert.equal(adv.all[0].share, 100);
   assert.ok(!JSON.stringify(adv).includes('Haleon'));
 });
@@ -91,13 +94,13 @@ test('advertiser login sees only its own deals, buyer, DSP deal ID and row', asy
 test('deals: the ten named deals — fill, pacing, CPM, buyers and deal IDs follow the example retailer', async () => {
   const { body } = await get('/deals?dateFrom=2026-09-12&dateTo=2026-10-11');
   const by = Object.fromEntries(body.rows.map((r) => [r.name, r]));
-  const fills = ['Immune — winter launch', 'Sensodyne always-on', 'Revitalift first look', 'Dispensary first look', 'Health & wellness windows', 'Dispensary screens', 'Beauty endcaps', 'Queue screens', 'Store-wide wellness', 'Perrigo — pharmacy takeover'].map((n) => by[n].fill.percent);
+  const fills = ['Immune — winter launch', 'Sensodyne always-on', 'Revitalift takeover', 'Dispensary guaranteed', 'Health & wellness windows', 'Dispensary screens', 'Beauty endcaps', 'Queue screens', 'Store-wide wellness', 'Perrigo — pharmacy takeover'].map((n) => by[n].fill.percent);
   [95, 95, 72, 55, 92, 84, 52, 90, 56, 56].forEach((want, i) => assert.ok(Math.abs(fills[i] - want) <= 2, `fill ${i + 1}: ${fills[i]} vs ${want}`));
-  assert.ok(Math.abs(by['Immune — winter launch'].pacing.percent - 93) <= 1 && Math.abs(by['Sensodyne always-on'].pacing.percent - 101) <= 1);
+  assert.ok(Math.abs(by['Immune — winter launch'].pacing.percent - 93) <= 1 && Math.abs(by['Sensodyne always-on'].pacing.percent - 101) <= 1 && Math.abs(by['Dispensary guaranteed'].pacing.percent - 97) <= 1);
   assert.deepEqual([by['Immune — winter launch'].pacing.flightStart, by['Immune — winter launch'].pacing.flightEnd], ['2026-09-15', '2026-11-15']);
   assert.deepEqual([by['Sensodyne always-on'].pacing.flightStart, by['Sensodyne always-on'].pacing.flightEnd], ['2026-08-01', '2026-12-31']);
-  assert.deepEqual([by['Immune — winter launch'].cpm, by['Health & wellness windows'].cpm, by['Queue screens'].cpm], [{ value: 9.5, kind: 'fixed' }, { value: 7.5, kind: 'floor' }, { value: 5.5, kind: 'floor' }]);
-  assert.equal(by['Health & wellness windows'].advertisers.length, 5);
+  assert.deepEqual([by['Immune — winter launch'].cpm, by['Health & wellness windows'].cpm, by['Queue screens'].cpm], [{ value: 9.5, kind: 'fixed' }, { value: 7.5, kind: 'fixed' }, { value: 5.5, kind: 'fixed' }]);
+  assert.equal(by['Health & wellness windows'].advertisers.length, 3);
   assert.equal(by['Beauty endcaps'].advertisers.length, 2);
   assert.equal(by['Immune — winter launch'].description, 'Guaranteed Window Portrait plays for the Blackmores Immune winter launch, 15 Sep – 15 Nov.');
   // One deal ID per DSP with an invited buyer, PH- plus 10 characters.
@@ -115,7 +118,7 @@ test('deals: the ten named deals — fill, pacing, CPM, buyers and deal IDs foll
 
 test('advertisers: eleven example advertisers, each with the DSP it buys through', async () => {
   const { body } = await get('/advertisers?dateFrom=2026-09-12&dateTo=2026-10-11');
-  assert.deepEqual(body.all.map((a) => [a.name, a.dsp]).sort(), [['Bayer Consumer Health', 'Amazon DSP'], ['Blackmores', 'DV360'], ['Haleon', 'The Trade Desk'], ['Kenvue', 'DV360'], ["L'Oréal Paris", 'DV360'], ['Nestlé Health Science', 'DV360'], ['Perrigo', 'Direct'], ['Procter & Gamble', 'The Trade Desk'], ['Reckitt', 'Amazon DSP'], ['Unilever', 'Amazon DSP'], ['Vitabiotics', 'The Trade Desk']]);
+  assert.deepEqual(body.all.map((a) => [a.name, a.dsp]).sort(), [['Bayer Consumer Health', 'Amazon DSP'], ['Blackmores', 'DV360'], ['Haleon', 'The Trade Desk'], ['Kenvue', 'DV360'], ["L'Oréal Paris", 'Direct'], ['Nestlé Health Science', 'Direct'], ['Perrigo', 'Direct'], ['Procter & Gamble', 'Direct'], ['Reckitt', 'Amazon DSP'], ['Unilever', 'Amazon DSP'], ['Vitabiotics', 'Direct']]);
   assert.ok(!body.all.some((a) => ['Acme', 'Nova'].includes(a.name)));
-  assert.equal(body.all[0].name, 'Blackmores', 'the biggest revenue weight leads');
+  assert.ok(body.all.filter((a) => a.direct).length === 5 && body.all.every((a) => a.direct === (a.dsp === 'Direct')), 'five direct advertisers, no seats');
 });

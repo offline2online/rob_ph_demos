@@ -101,44 +101,48 @@ test('delivery: day-on-day change, including the day before the range', async ()
 });
 
 test('delivery: the Deal filter narrows the lines and the blocks; an unknown or foreign deal is 400', async () => {
-  const all = (await as('adv-unilever', `/delivery?${Q}`)).body;
-  const one = (await as('adv-unilever', `/delivery?${Q}&dealId=d8`)).body;
+  const all = (await as('adv-procter-gamble', `/delivery?${Q}`)).body;
+  const one = (await as('adv-procter-gamble', `/delivery?${Q}&dealId=d8`)).body;
   assert.ok(one.totals.playsWon > 0 && one.totals.playsWon < all.totals.playsWon);
-  assert.equal(one.totals.playsWon, sum(billing('adv-unilever').filter((r) => r.dealId === 'd8').map((r) => r.slots)));
+  assert.equal(one.totals.playsWon, sum(billing('adv-procter-gamble').filter((r) => r.dealId === 'd8').map((r) => r.slots)));
   assert.ok(one.days.every((d) => d.deals.length === 1 && d.deals[0].dealId === 'd8'));
   assert.deepEqual(one.pacing, []);
   const open = (await as('adv-unilever', `/delivery?${Q}&dealId=open-auction`)).body;
   assert.ok(open.days.every((d) => d.deals.length === 1 && d.deals[0].dealType === 'Open auction'));
   assert.equal((await as('adv-unilever', `/delivery?${Q}&dealId=nope`)).status, 400);
-  // Unilever buys only d8 (Queue screens) and has delivery only in the open auction here, so another buyer's deal is unknown to it.
+  // Unilever is on no named deal and has delivery only in the open auction here, so another buyer's deal is unknown to it.
   const st = fixture([{ adv: 'adv-unilever', cpm: 20 }]);
   assert.equal((await as('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d1', st)).status, 400);
-  assert.equal((await as('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d8', st)).status, 200);
+  assert.equal((await as('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d8', st)).status, 400);
+  const direct = fixture([{ adv: 'adv-procter-gamble', cpm: 20 }]);
+  assert.equal((await as('adv-procter-gamble', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d1', direct)).status, 400);
+  assert.equal((await as('adv-procter-gamble', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d8', direct)).status, 200);
 });
 
-test('delivery: auction blocks show plays won of all plays, share, own CPM and the floor; fixed-price deals have no auction', async () => {
+test('delivery: auction blocks show plays won of all plays, share, own CPM and the floor; fixed-price and direct deals have no auction', async () => {
   const { body } = await as('adv-unilever', `/delivery?${Q}`);
   for (const d of body.days) for (const b of d.deals) {
-    if (b.dealType === 'Private auction' || b.dealType === 'Open auction') {
-      if (!('allPlays' in b)) { assert.ok(!('sharePercent' in b), 'share needs allPlays'); } else assert.ok(b.playsWon <= b.allPlays, b.dealId);
-      if (b.allPlays > 0) assert.equal(b.sharePercent, calc.wholePercent(b.playsWon, b.allPlays));
-      assert.equal('yourCpm' in b, b.playsWon > 0);
-      assert.ok(b.floorCpm.min <= b.floorCpm.max);
-    } else {
-      assert.equal(b.otherBuyers, 'None');
-      assert.ok(!('allPlays' in b) && !('winningCpm' in b));
-    }
+    assert.equal(b.dealType, 'Open auction', 'Unilever buys only through the open auction');
+    if (!('allPlays' in b)) { assert.ok(!('sharePercent' in b), 'share needs allPlays'); } else assert.ok(b.playsWon <= b.allPlays, b.dealId);
+    if (b.allPlays > 0) assert.equal(b.sharePercent, calc.wholePercent(b.playsWon, b.allPlays));
+    assert.equal('yourCpm' in b, b.playsWon > 0);
+    assert.ok(b.floorCpm.min <= b.floorCpm.max);
   }
-  const pd = body.days[0].deals.find((b) => b.dealType === 'Private auction');
-  assert.deepEqual(pd.floorCpm, { min: 5.5, max: 5.5 });
   const oa = body.days[0].deals.find((b) => b.dealType === 'Open auction');
   assert.deepEqual(oa.floorCpm, { min: 5.5, max: 7.5 }, 'range of the floors of the display types its campaigns run on');
+  // A direct advertiser's deals are fixed price: the agreed CPM, no other buyers, no auction figures, and no open auction block.
+  const direct = (await as('adv-procter-gamble', `/delivery?${Q}`)).body;
+  for (const d of direct.days) for (const b of d.deals) {
+    assert.equal(b.dealType, 'Direct advertiser');
+    assert.equal(b.otherBuyers, 'None');
+    assert.ok(b.fixedCpm > 0 && !('allPlays' in b) && !('winningCpm' in b) && !('floorCpm' in b));
+  }
 });
 
 test('delivery: open auction in the test data never clears below its floor; a source that does is passed through unchanged', async () => {
   const { body } = await as('adv-blackmores', `/delivery?${Q}`);
   let seen = 0;
-  for (const d of body.days) for (const b of d.deals.filter((x) => x.dealType === 'Open auction' || x.dealType === 'Private auction')) {
+  for (const d of body.days) for (const b of d.deals.filter((x) => x.dealType === 'Open auction')) {
     if (b.yourCpm != null) { seen += 1; assert.ok(b.yourCpm >= b.floorCpm.min, `${d.date} ${b.dealId}`); }
     if (b.winningCpm) assert.ok(b.winningCpm.p25 >= b.floorCpm.min && b.winningCpm.median >= b.winningCpm.p25 && b.winningCpm.p75 >= b.winningCpm.median);
   }
@@ -194,7 +198,7 @@ test('delivery: PG pacing is the advertiser\'s own guarantee against its own del
   const narrowed = (await as('adv-blackmores', `/delivery?${Q}&storeIds=store-1&displayTypeIds=window`)).body.pacing[0];
   assert.deepEqual(narrowed.series, p.series, 'pacing ignores the store and display type filters');
   assert.ok(p.series.every((s, i) => i === 0 || (s.delivered >= p.series[i - 1].delivered && s.guaranteed > p.series[i - 1].guaranteed)));
-  assert.deepEqual((await as('adv-unilever', `/delivery?${Q}&dealId=d8`)).body.pacing, [], 'no pacing for other deal types');
+  assert.deepEqual((await as('adv-procter-gamble', `/delivery?${Q}&dealId=d8`)).body.pacing, [], 'no pacing for other deal types');
 });
 
 test('deals-by-display-type: groups in shopper-journey order, rows reconcile to billing, shares add up', async () => {
@@ -202,6 +206,7 @@ test('deals-by-display-type: groups in shopper-journey order, rows reconcile to 
     const { body } = await as(me, `/deals-by-display-type?${Q}`);
     const rows = billing(me).filter((r) => r.dealType !== 'Open auction');
     assert.ok(body.groups.length > 0, me);
+    if (!rows.length) continue; // an open-auction-only advertiser has no deal rows: the open auction is kept out of the totals
     assert.equal(body.totals.playsWon, sum(rows.map((r) => r.slots)));
     assert.ok(Math.abs(body.totals.spend - sum(rows.map((r) => r.revenue))) < 0.01 * body.groups.reduce((n, g) => n + g.deals.length, 0));
     assert.equal(body.totals.spend, cents(sum(body.groups.map((g) => g.spend))));

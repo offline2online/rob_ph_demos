@@ -307,7 +307,7 @@
         seg.appendChild(b);
       });
       revType.textContent = '';
-      revType.appendChild(typeSelect('All deal types', DEAL_TYPES, sel.dealType, function (v) { sel.dealType = v; loadRevenue(); }));
+      revType.appendChild(typeSelect('All deal types', DSP_DEAL_TYPES, sel.dealType, function (v) { sel.dealType = v; loadRevenue(); }));
     }
     function drawLegend() {
       legend.textContent = '';

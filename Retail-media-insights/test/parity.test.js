@@ -49,17 +49,21 @@ test('history: 120 played days from 14 Jun to 11 Oct 2026, every one earned', ()
   assert.ok(raw.billing.filter((b) => !b.reservation).every((b) => b.settled), 'no unsettled played day');
 });
 
-test('deals: PG deals have flights and buffers; the rest are fixed or floor priced; one deal ID per DSP with an invited buyer', () => {
+test('deals: PG deals have flights and buffers; the rest are fixed price (no floors: no private auctions at launch); one deal ID per DSP with an invited buyer', () => {
   const d = ctx.dealCatalog;
   assert.deepEqual([d.d1.flight, d.d1.buffer], [{ start: '2026-09-15', end: '2026-11-15' }, 0.1]);
   assert.deepEqual([d.d2.flight, d.d2.buffer], [{ start: '2026-08-01', end: '2026-12-31' }, 0.1]);
   assert.deepEqual(['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9', 'd11'].map((id) => d[id].cpm), [9.5, 8, 8.8, 8.2, 7.5, 7, 6, 5.5, 6.5, 6]);
-  for (const id of ['d5', 'd6', 'd7', 'd8', 'd9']) assert.equal(d[id].floorCpm, d[id].cpm);
+  assert.deepEqual([d.d4.flight, d.d4.buffer], [{ start: '2026-09-01', end: '2026-12-15' }, 0.1]);
+  assert.deepEqual(Object.values(d).map((x) => x.dealType).filter((t, i, a) => a.indexOf(t) === i).sort(), ['Direct advertiser', 'Open auction', 'Programmatic guaranteed'], 'the launch deal types');
+  const named = Object.values(d).filter((x) => x.dealType !== 'Open auction');
+  assert.deepEqual([named.length, named.filter((x) => x.dealType === 'Direct advertiser').length], [10, 7], '7 of the 10 named deals are direct');
+  assert.ok(Object.values(d).every((x) => x.floorCpm === undefined));
   assert.deepEqual(d.d6.slots.map((s) => `${s.displayTypeId}${s.position}`), ['dispensary2', 'dispensary3', 'dispensary4']);
   assert.deepEqual(d.d9.slots.map((s) => `${s.displayTypeId}${s.position}`), ['endcap5']);
   assert.deepEqual(d.d11.slots.map((s) => `${s.displayTypeId}${s.position}`), ['dispensary5']);
   assert.deepEqual(d.d11.dealIds, {}, 'a direct advertiser deal has no DSP and so no deal ID');
-  assert.equal(d.d4.description, 'First look for Kenvue on Dispensary Screen slots at a fixed CPM.');
+  assert.equal(d.d4.description, 'Guaranteed Dispensary Screen plays for Reckitt beside the pharmacy counter.');
   for (const deal of Object.values(d).filter((x) => x.dealType !== 'Open auction')) {
     assert.deepEqual(Object.keys(deal.dealIds).sort(), [...new Set(deal.buyers.map((b) => b.dsp))].filter((x) => x !== 'Direct').sort(), deal.name);
     for (const id of Object.values(deal.dealIds)) assert.match(id, /^PH-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$/);
@@ -90,7 +94,8 @@ test('estimated revenue is the PG reservations booked ahead: 30 days after the l
   const filtered = (await get(`/summary?${Q}&storeIds=store-1&displayTypeIds=window`)).body;
   assert.equal(filtered.estimatedRevenue, inWindow('2026-10-12', '2026-11-10', (b) => b.storeId === 'store-1' && b.displayTypeId === 'window'));
   assert.equal((await get(`/summary?${Q}&advertiserIds=adv-haleon`)).body.estimatedRevenue, inWindow('2026-10-12', '2026-11-10', (b) => b.advertiserId === 'adv-haleon'));
-  assert.equal((await get(`/summary?${Q}&dsps=Amazon DSP`)).body.estimatedRevenue, 0, 'no PG deal is bought through Amazon DSP');
+  assert.equal((await get(`/summary?${Q}&dsps=Amazon DSP`)).body.estimatedRevenue, inWindow('2026-10-12', '2026-11-10', (b) => b.dsp === 'Amazon DSP'), 'Dispensary guaranteed is bought through Amazon DSP');
+  assert.equal((await get(`/summary?${Q}&dsps=Direct`)).body.estimatedRevenue, 0, 'a direct deal books nothing ahead');
   assert.equal((await get(`/summary?${Q}&dealTypes=Open auction`)).body.estimatedRevenue, 0);
   // Reservations add no inventory or slot records, and no earned revenue.
   const s = (await get(`/summary?dateFrom=2026-10-12&dateTo=2026-11-10`)).body;
@@ -148,16 +153,18 @@ test('/my-summary: spend and plays won equal Delivery\'s totals; dealsOn counts 
     }
   }
   const dealsOn = async (id, range = Q) => (await get(`/my-summary?${range}`, advertiser(id))).body.dealsOn;
-  assert.equal(await dealsOn('adv-blackmores'), 3);
-  assert.equal(await dealsOn('adv-haleon'), 4);
-  assert.equal(await dealsOn('adv-perrigo'), 1, 'Perrigo is direct: its one direct deal');
-  assert.equal(await dealsOn('adv-blackmores', 'dateFrom=2026-06-14&dateTo=2026-09-01'), 2, 'Immune — winter launch has not started');
-  assert.equal(await dealsOn('adv-blackmores', 'dateFrom=2026-11-20&dateTo=2026-11-30'), 2, 'Immune — winter launch has ended');
+  assert.equal(await dealsOn('adv-blackmores'), 1);
+  assert.equal(await dealsOn('adv-haleon'), 1);
+  assert.equal(await dealsOn('adv-perrigo'), 4, 'Perrigo is direct: its four direct deals');
+  assert.equal(await dealsOn('adv-procter-gamble'), 2, 'a direct advertiser counts its direct deals');
+  assert.equal(await dealsOn('adv-unilever'), 0, 'Unilever buys only through the open auction');
+  assert.equal(await dealsOn('adv-blackmores', 'dateFrom=2026-06-14&dateTo=2026-09-01'), 0, 'Immune — winter launch has not started');
+  assert.equal(await dealsOn('adv-blackmores', 'dateFrom=2026-11-20&dateTo=2026-11-30'), 0, 'Immune — winter launch has ended');
   // Pinned server-side: another advertiser's id is ignored; a retailer must name exactly one advertiser.
   const spoof = await get(`/my-summary?${Q}&advertiserIds=adv-haleon`, advertiser('adv-blackmores'));
   assert.deepEqual(spoof.body, (await get(`/my-summary?${Q}`, advertiser('adv-blackmores'))).body);
   assert.equal((await get(`/my-summary?${Q}`)).status, 400);
-  assert.equal((await get(`/my-summary?${Q}&advertiserIds=adv-haleon`)).body.dealsOn, 4);
+  assert.equal((await get(`/my-summary?${Q}&advertiserIds=adv-haleon`)).body.dealsOn, 1);
 });
 
 test('/maturity overTime ignores the date range (first campaign to last played day); the ladder and table follow it', async () => {
