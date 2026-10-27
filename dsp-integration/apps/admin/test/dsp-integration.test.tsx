@@ -396,7 +396,7 @@ describe('Campaign Status stand-in', () => {
        (ticket IDGsyELBJsjlAYjizSqT), grouped by advertiser. Order per ticket
        HDh2GwTa7m8jaqidBvBY: Activation sits right of Playback Strategy, Received right of Activation, Last used last. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      '', 'Status', 'Advertiser / Campaign name', 'Touch point(s)', 'Display type(s)', 'Creative ID', 'Deal ID', 'Playback Strategy', 'Activation', 'Received', 'Last used', '',
+      '', 'Status', 'Advertiser / Campaign name', 'Touch point(s)', 'Display type(s)', 'Creative ID', 'Deal ID', 'Playback Strategy', 'Activation', 'Flight start', 'Received', 'Last used', '',
     ])
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* The touch points it runs on, and its Playback Strategy pill (the localised layer; hover lists its rules). */
@@ -426,6 +426,29 @@ describe('Campaign Status stand-in', () => {
     expect(document.body.textContent).toContain('Logo is blurry')
     expect(document.body.textContent).toContain('hq@retailer.test')
   })
+
+  /* Ticket XE6l6fyqZvpLhgIQpb7P: Flight start column, and the deal section in the campaign name hover. */
+  it('shows the flight start and a deal section in the campaign name hover, only for a campaign linked to a deal', async () => {
+    const dealt = { ...campaign, dealId: 'PH-DEAL1' }
+    const list = { id: 'bl_1', dealId: 'PH-DEAL1', name: 'Swisse always-on', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: '2026-11-03T09:00:00.000Z', activeTo: '2026-12-01T00:00:00.000Z', dealType: 'guaranteed', termTotal: 12500, effectiveCommittedPlays: { min: null, max: null, source: 'none' } }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/campaigns': { items: [dealt, hq] }, '/api/admin/v1/buyers-lists': { items: [list] } })))
+    renderAt('/booking-schedule?tab=campaign-status')
+    const grid = await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })
+    await new Promise((r) => setTimeout(r, 300))
+    fireEvent.mouseEnter(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 }))
+    const tip = await screen.findByTestId('deal-tip-c1', {}, { timeout: 10000 })
+    for (const t of ['Swisse always-on', 'PH-DEAL1', 'Programmatic guaranteed', '3 Nov 2026 09:00', '1 Dec 2026 00:00', 'USD 12,500']) expect(tip.textContent).toContain(t)
+    expect(tip.textContent).not.toMatch(/pacing/i)
+  }, slow(45000))
+  it('has no deal section when the campaign is not linked to a deal', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
+    renderAt('/booking-schedule?tab=campaign-status')
+    const grid = await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })
+    await new Promise((r) => setTimeout(r, 300))
+    fireEvent.mouseEnter(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 }))
+    await screen.findByText('Touch points:', {}, { timeout: 10000 })
+    expect(screen.queryByTestId('deal-tip-c1')).not.toBeInTheDocument()
+  }, slow(45000))
 
   /* Ticket BGxKMB89DIOgWuwgfrej: the two tabs are back (removed 13 Oct 2026 by BG4LKXiqTMYNm8jRNFDk). */
   it('has Booking schedule and Campaign Approval tabs, Booking schedule first', async () => {
@@ -504,6 +527,57 @@ describe('Campaign Status stand-in', () => {
     expect(router.state.location.search).toBe('?tab=campaign-status&campaignId=c_zinger')
     /* The HQ campaign is hidden from the list as a rule; the one the tile opened is shown. */
     await waitFor(() => expect(within(screen.getByLabelText('Campaign Status')).getByText('Zinger Box — hero')).toBeInTheDocument(), { timeout: 10000 })
+  }, slow(45000))
+
+  /* Ticket CXmiVdLcDzkcojpSnJic (27 Oct 2026): a booking's hover carries its deal - the flight on top, then the Details hover of Deals and buyers
+     lists, and delivery pacing for a Programmatic guaranteed deal. A booking under no deal keeps the earlier hover. */
+  it('shows the deal on a booking tile\'s hover: flight, the Details block and, for a guaranteed deal, delivery pacing', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const row = { ...inv.items[0], displayTypeId: 'portrait', displayTypeName: 'Portrait', displayCount: 12, slotCount: 3, displayTypeBillingUnitHours: 24, billingUnitHoursOverride: null, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, openHoursPerDay: 24 }
+    const start = new Date(Date.now() + 2 * 86_400_000).toISOString()
+    const iso = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 16) + ':00Z'
+    const flight = { activeFrom: iso(-5), activeTo: iso(5), timeZoneMode: 'platform', description: '', invitedCategories: [], targeting: [], deals: [] }
+    const lists = [
+      { ...flight, id: 'bl_pg', dealId: 'PH-PG1', name: 'Nestlé PG', dealType: 'guaranteed', status: 'shared', invitedBuyers: [], termTotal: 500, committedPlays: 1000, deliveredPlays: 100, assignedSlots: [{ positionId: 'portrait.s1' }] },
+      { ...flight, id: 'bl_d', dealId: 'PH-DIRECT0001', name: 'Direct deal', dealType: 'direct', status: 'shared', invitedBuyers: [{ partnerId: 'direct', seatId: 'adv_x' }], effectiveRateCpm: { min: 4, max: 4, source: 'buyer' }, assignedSlots: [{ positionId: 'portrait.s2' }] },
+    ]
+    const tile = (campaignId: string, advertiserId: string, advertiserName: string, partnerId: string) => ({
+      reservationId: `r_${campaignId}`, campaignId, advertiserId, partnerId, pricingType: 'default', type: 'reserve', advertiserName, partnerName: 'P', cpm: 5, assumedViews: 1000, bookedRevenue: 5, billedRevenue: null,
+      layers: { default: true, localised: false, personalised: false }, personalisedTriggers: null,
+      approval: { defaultApproved: true, defaultRisk: 'secured', startsInDays: 1, localised: { approved: 0, submitted: 0 }, personalised: { approved: 0, submitted: 0 } },
+    })
+    const position = (n: number, b: ReturnType<typeof tile>) => ({ positionId: `portrait.s${n}`, displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: n, slotLabel: `Slot ${n}`, displayCount: 1, zoneName: null, zoneSlot: n, partnerNames: [], assignment: 'open', realTime: false, recentPlays: null, windows: [{ start, status: 'booked', booking: b }] })
+    const schedule = {
+      currency: 'AUD', windows: [{ start, end: start }], revenue: [], dsps: [], directAdvertisers: [], byPricingType: [], totals: { bookedWindows: 3, sellableWindows: 3, bookedRevenue: 15, billedRevenue: 0, realtimeOpportunities: 0, realtimeFilled: 0 },
+      positions: [position(1, tile('c_pg', 'nestle', 'Nestle Pacing', 'dv360')), position(2, tile('c_d', 'adv_x', 'Direct Brand', 'direct')), position(3, tile('c_bid', 'bidder', 'Bid Brand', 'dv360'))],
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...routes, ...ADVERTISER_PAGE, '/api/admin/v1/booking-schedule': schedule, '/api/admin/v1/buyers-lists': { items: lists },
+      '/api/admin/v1/campaigns': { items: [{ campaignId: 'c_pg', dealId: 'PH-PG1' }] },
+      '/api/admin/v1/available-inventory': { ...inv, items: [1, 2, 3].map((slot) => ({ ...row, slot, zoneSlot: slot })) },
+    })))
+    renderAt('/booking-schedule')
+    /* A guaranteed deal, found by the campaign's deal ID: 11 days at 1,920 plays x 12 displays, and 100 of 1,000 committed plays delivered at the flight's half way. */
+    fireEvent.mouseOver(await screen.findByRole('link', { name: 'Show Nestle Pacing in Campaign Approval' }, { timeout: 10000 }))
+    const pg = await screen.findByTestId('details-tip-bl_pg')
+    expect(screen.getByText('Flight')).toBeInTheDocument()
+    expect(screen.getByText(/→.*\(Platform time zone\)/)).toBeInTheDocument()
+    expect(pg).toHaveTextContent('Programmatic guaranteed')
+    expect(pg).toHaveTextContent('Deal total: 253,440 plays · USD 500')
+    expect(pg).not.toHaveTextContent('Deal ID')
+    expect(within(pg).getByTestId('pacing-bl_pg')).toHaveTextContent('Delivered: 100 of 1,000 committed plays')
+    expect(within(pg).getByTestId('pacing-bl_pg')).toHaveTextContent('20% of the plays due by now')
+    expect(within(pg).getByTestId('pacing-bl_pg')).toHaveTextContent('Behind')
+    /* A Direct advertiser deal: found by its advertiser and slot; the Deal ID row, no pacing. */
+    fireEvent.mouseOver(screen.getByRole('link', { name: 'Show Direct Brand in Campaign Approval' }))
+    const direct = await screen.findByTestId('details-tip-bl_d')
+    expect(direct).toHaveTextContent('Deal ID: PH-DIRECT0001')
+    expect(direct).toHaveTextContent('253,440 plays · USD 1,014')
+    expect(screen.queryByTestId('pacing-bl_d')).toBeNull()
+    /* No deal: the earlier hover. */
+    fireEvent.mouseOver(screen.getByRole('link', { name: 'Show Bid Brand in Campaign Approval' }))
+    await waitFor(() => expect(screen.getAllByText('Booking value').length).toBeGreaterThan(0))
+    expect(screen.queryByTestId('details-tip-bl_none')).toBeNull()
   }, slow(45000))
 
   /* 26 Oct 2026 (ivtzBF4eaaW7BnS0ooI8): the first pinned column reads Advertiser / Deal; hovering the advertiser lists its DSP and slots,

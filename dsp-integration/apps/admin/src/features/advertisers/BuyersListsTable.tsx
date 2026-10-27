@@ -4,7 +4,7 @@
    table (Rob, 23 Sep). */
 import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { DIRECT_PARTNER_ID, isGuaranteedLike, OPERATOR_LABELS, TARGETING_VARIABLES, storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
+import { DIRECT_PARTNER_ID, OPERATOR_LABELS, TARGETING_VARIABLES, storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -22,12 +22,11 @@ import { ARCHIVED_DEALS_PATH } from './archivedPath'
 import { BuyersListModal } from './BuyersListModal'
 import { DealSheetModal } from './DealSheetModal'
 import { groupSlotsByDisplayType } from './slotLine'
-import { buyerStatusOf, flightDays, flightMoment, slotPlaysOver, termTotalText, rateTypeOf, rateValue, sourceLabel, valueOf, valueText, zoneLabelOf } from './effectiveTerm'
+import { buyerStatusOf, flightMoment, zoneLabelOf } from './effectiveTerm'
+import { DEAL_TYPE_LABELS, DealDetailsTip, TIP_MUTED, dealFigures, num, type DealSlot } from './DealDetailsTip'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
-type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; orientation?: 'landscape' | 'portrait' | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }
-/* Secondary text inside a Tip (dark background). */
-const TIP_MUTED = 'rgba(255,255,255,0.65)'
+type SlotInfo = DealSlot
 export type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onArchive: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
 export type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
@@ -138,58 +137,16 @@ export const TermCell = ({ data }: P) => {
   if (!from && !to) return <span style={{ color: T.muted }}>Always active</span>
   return <span style={{ fontSize: 12.5 }}>{from ?? 'No start date'} → {to ?? 'No end date'}<div style={{ fontSize: 11.5, color: T.muted }}>{zoneLabelOf(data.timeZoneMode)}</div></span>
 }
-/* Details (ticket nfDLP1CZiPjGfN8FG764): the rate, the deal type and a one-line summary in the cell; the hover is a compact,
-   programmatic read of the deal over its whole flight. It does not repeat the Slots hover (per-window slot copy): per slot it
-   gives only the total plays and total value, then the deal's total. The rate the deal locked in, once it has one; until then the
-   rate it inherits platform -> DSP -> this list, so the cell is never blank. */
-const MAX_TIP_SLOTS = 5
-const num = (n: number) => n.toLocaleString('en-US')
+/* Details (ticket nfDLP1CZiPjGfN8FG764): the rate, the deal type and a one-line summary in the cell; the hover (DealDetailsTip, shared with
+   the Booking schedule tile) is a compact, programmatic read of the deal over its whole flight. */
 export const DetailsCell = ({ data, context }: P) => {
   if (!data) return null
-  const perTerm = isGuaranteedLike(data.dealType) && data.termTotal != null
-  const rate = data.lockedWin ? `Locked: ${data.lockedWin.cpm} CPM` : perTerm ? termTotalText(data.termTotal) : rateValue(data.effectiveRateCpm)
-  const rateType = data.lockedWin ? '' : rateTypeOf(data.dealType, data.termTotal)
-  const typeLabel = DEAL_TYPE_LABELS[data.dealType] ?? 'Private auction'
-  const src = sourceLabel(data.effectiveRateCpm?.source ?? 'none')
   const slots = context.current.slots.get(data.id) ?? []
-  const days = flightDays(data.activeFrom, data.activeTo)
-  const plays = slots.map((s) => slotPlaysOver(s, days))
-  const counted = plays.filter((n): n is number => n !== null)
-  const totalPlays = counted.reduce((a, n) => a + n, 0)
-  const complete = slots.length > 0 && counted.length === slots.length
-  const total = complete ? valueText(valueOf(data, totalPlays, totalPlays)) : null
-  const flight = data.activeFrom || data.activeTo ? `${flightMoment(data.activeFrom) ?? 'No start date'} → ${flightMoment(data.activeTo) ?? 'No end date'} (${zoneLabelOf(data.timeZoneMode)})` : 'Always active'
+  const { rate, rateType, typeLabel, days, totalPlays, complete, total } = dealFigures(data, slots)
   /* The cell's one-line summary: slots, plays and value over the flight, or why there is no total yet. */
   const summary = !slots.length ? 'Not assigned to a slot' : days == null ? 'Open flight: no total' : !complete ? `${slots.length} slot${slots.length === 1 ? '' : 's'}` : [`${slots.length} slot${slots.length === 1 ? '' : 's'}`, `${num(totalPlays)} plays`, total].filter(Boolean).join(' · ')
-  /* The hover sits on the tooltip's dark background, where T.muted (black at 45%) is invisible (E2E 22 Oct 2026): secondary text is white at 65% there. */
-  const sub = (l: string, v: string) => <div><span style={{ color: TIP_MUTED }}>{l}: </span>{v}</div>
-  const tip = (
-    <div data-testid={`details-tip-${data.id}`}>
-      <div style={{ fontWeight: 500 }}>{typeLabel}</div>
-      {sub('Rate', `${rate ?? 'Per play'}${rateType ? ` ${rateType}` : ''}${src && !perTerm && !data.lockedWin ? ` (${src})` : ''}`)}
-      {sub('Flight', flight)}
-      {sub('Period', days == null ? (data.activeFrom || data.activeTo ? 'Open flight' : 'Always active') : `${num(days)} day${days === 1 ? '' : 's'}`)}
-      {data.dealType === 'direct' && <>
-        {sub('Advertiser', data.invitedBuyers.length ? context.current.seatName(data.invitedBuyers[0].partnerId, data.invitedBuyers[0].seatId) : 'None yet')}
-        {sub('Deal ID', data.dealId)}
-      </>}
-      <div style={{ marginTop: 6, fontWeight: 500 }}>Over the whole flight</div>
-      {!slots.length ? <div>No assigned slots.</div>
-        : days == null ? <div>Set a start and an end date to total the plays and value.</div>
-        : <>
-          {slots.slice(0, MAX_TIP_SLOTS).map((s, i) => {
-            const p = plays[i]
-            const v = p === null || !complete ? null : valueText(valueOf(data, p, totalPlays))
-            return <div key={i} data-testid={`details-slot-${data.id}-${i}`}>{s.displayType} · slot {s.slot}: {p === null ? 'plays n/a' : `${num(p)} plays`}{v ? ` · ${v}` : ''}</div>
-          })}
-          {slots.length > MAX_TIP_SLOTS && <div style={{ color: TIP_MUTED }}>+ {slots.length - MAX_TIP_SLOTS} more slot{slots.length - MAX_TIP_SLOTS === 1 ? '' : 's'}</div>}
-          <div style={{ marginTop: 4, fontWeight: 500 }} data-testid={`details-total-${data.id}`}>Deal total: {complete ? `${num(totalPlays)} plays${total ? ` · ${total}` : ''}` : 'not available for every slot'}</div>
-          {!perTerm && !data.lockedWin && <div style={{ color: TIP_MUTED }}>Value = plays ÷ 1,000 × CPM.</div>}
-        </>}
-    </div>
-  )
   return (
-    <Tip title={tip} styles={{ root: { maxWidth: 'min(320px, calc(100vw - 32px))' } }}>
+    <Tip title={<DealDetailsTip data={data} slots={slots} seatName={context.current.seatName} />} styles={{ root: { maxWidth: 'min(320px, calc(100vw - 32px))' } }}>
       <div className="min-w-0">
         <div className="truncate"><span style={{ fontSize: 12.5 }}>{rate ?? 'Per play'}</span> {rateType && <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateType}</span>}{data.belowFloorOverride && <span data-testid={`below-floor-${data.id}`} style={{ fontSize: 11.5, color: T.error }}> · Below floor (override)</span>}</div>
         <div className="truncate" style={{ fontSize: 11.5, color: T.muted }} data-testid={`details-summary-${data.id}`}>{typeLabel} · {summary}</div>
@@ -205,7 +162,7 @@ export const DealIdCell = ({ data, context }: P) => {
   if (!live.length) return cell
   return <Tip title={<div>{live.map((d) => <div key={d.dealId}>{context.current.dspName(d.partnerId)}: <span style={{ fontFamily: 'monospace' }}>{d.dealId}</span></div>)}</div>}>{cell}</Tip>
 }
-export const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed', direct: 'Direct advertiser' } as const
+export { DEAL_TYPE_LABELS }
 const ActionsCell = ({ data, context }: P) =>
   data ? (
     <span className="inline-flex gap-1">
