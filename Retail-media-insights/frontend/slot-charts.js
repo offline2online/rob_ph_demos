@@ -1,4 +1,4 @@
-// Slot value, Slot allocation, Missed revenue & fill and Yield — the four
+// Slot value, Slot allocation and Missed revenue & fill — the three
 // display-type charts of the Retail Media Performance tab. A content-frame
 // module (no header, sidebar or position:fixed): the tab shell calls
 //   var charts = SlotCharts.mount(el, { fetchJson: function (endpoint, params) { return Promise } });
@@ -35,8 +35,7 @@
     hourly: 'Fill = advertiser slots sold ÷ all advertiser slots in the hour, across all deal types (booking schedule and unsold real-time slot records). ' +
       'Effective CPM = revenue ÷ (assumed views (VAC-d) ÷ 1,000). Only hours inside each display type’s operating hours are inventory and shown: outside screens and windows run 24 hours, in-store screens follow store opening hours. ' +
       'Until the hourly impression multiplier ships, assumed views per hour = the day’s assumed views spread by each hour’s share of the day’s slots played, and revenue is spread the same way. ' +
-      'The number in brackets is connected displays (PH Core).',
-    yield: 'Effective CPM for each connected DSP and for Direct (the retailer\u2019s direct advertisers, billed through PH with no DSP): cleared revenue per 1,000 assumed views (VAC-d), from billing line items and reservations. ' + VAC_TEXT
+      'The number in brackets is connected displays (PH Core).'
   };
   // Column definitions for the Slot allocation table (an ⓘ beside each heading).
   var COLUMN_TIPS = {
@@ -263,40 +262,13 @@
     return withHours(valuesOnly(dt ? dt.name : row.name, [{ rows: rows, note: note }]), dt);
   }
 
-  // Only DSPs with delivery, highest effective CPM first (ties keep the DSP order).
-  function yieldRows(rows) {
-    return dspOrder(rows.filter(function (r) { return r.effectiveCpm !== null && r.effectiveCpm !== undefined; }))
-      .map(function (r, i) { return { r: r, i: i }; })
-      .sort(function (a, b) { return b.r.effectiveCpm - a.r.effectiveCpm || a.i - b.i; }).map(function (x) { return x.r; });
-  }
-
-  // Share of the revenue cleared in scope (every DSP and Direct on this deal type), whole percent.
-  function yieldRevenueShare(row, allRows) {
-    var total = (allRows || []).reduce(function (t, r) { return t + (has(r.earnedRevenue) ? r.earnedRevenue : 0); }, 0);
-    if (!(total > 0) || !has(row.earnedRevenue)) return null;
-    return pct(100 * row.earnedRevenue / total);
-  }
-
-  function yieldHover(row, dealType, meta, allRows) {
-    if (row.effectiveCpm === null || row.effectiveCpm === undefined) {
-      return { title: row.dsp, desc: null, sections: [{ rows: [['Deal type', dealType], ['Effective CPM', 'No delivery']], note: 'No settled billing for this DSP and deal type in the selected period.' }] };
-    }
-    var rows = [['Deal type', dealType], ['Effective CPM', fmtMoney(row.effectiveCpm, 2)]];
-    if (has(row.earnedRevenue) && has(row.assumedViews)) {
-      rows.push(['Earned', fmtMoney(row.earnedRevenue, 2) + ' on ' + fmtCompact(row.assumedViews) + ' assumed views' + (dateRange(meta) ? ', ' + dateRange(meta) : '')]);
-    }
-    var share = yieldRevenueShare(row, allRows);
-    if (share) rows.push(['Share of total revenue', share + (dealType !== ALL_DEAL_TYPES ? ' of ' + dealType + ' revenue' : '')]);
-    return { title: row.dsp, desc: null, sections: [{ rows: rows }] };
-  }
-
   var pure = {
     ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
     fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct, orientationText: orientationText,
-    journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, yieldRows: yieldRows, yieldRevenueShare: yieldRevenueShare, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
+    journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
     DSP_COLOURS: DSP_COLOURS, ALL_DEAL_TYPES: ALL_DEAL_TYPES, typesById: typesById, missedParts: missedParts,
     displayTypeCard: displayTypeCard, hoursText: hoursText, slotValueHover: slotValueHover, allocationHover: allocationHover,
-    missedHover: missedHover, yieldHover: yieldHover,
+    missedHover: missedHover,
     hourlyHover: hourlyHover, hourlyShade: hourlyShade, hourlyCellText: hourlyCellText, hourlyMax: hourlyMax, hourRange: hourRange
   };
 
@@ -306,7 +278,7 @@
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
     var state = { mode: 'cpm', dealType: '', hourly: 'fill' };
-    var gen = { all: 0, yield: 0 };
+    var gen = { all: 0 };
     var cache = { types: null, typeMap: {} };
     var alive = true;
 
@@ -412,12 +384,9 @@
     var pSA = panel('Slot allocation', TIPS.slotAllocation, null, null);
     var pMR = panel('Missed revenue & fill', TIPS.missed, null, h('div', { class: 'sc-legend' }, [legendItem('sc-primary', 'Filled'), legendItem('sc-unsold', 'Unsold slots (at floor CPM)'), legendItem('sc-down', 'Display downtime')]));
 
-    var sel = h('select', { class: 'sc-select', 'aria-label': 'Deal type' });
-    [ALL_DEAL_TYPES].concat(DEAL_TYPES).forEach(function (d) { sel.appendChild(h('option', { value: d === ALL_DEAL_TYPES ? '' : d, text: d })); });
-    sel.addEventListener('change', function () { state.dealType = sel.value; loadYield(); });
-    var pY = panel('Yield', TIPS.yield, h('label', { class: 'sc-field' }, [h('span', { text: 'Deal type' }), sel]), null);
+    pMR.el.classList.add('sc-wide'); // takes the full row
 
-    // Fill and effective CPM by hour: full width under Missed revenue & fill and Yield.
+    // Fill and effective CPM by hour: full width under Missed revenue & fill.
     var hSegBtns = {};
     var hSeg = h('div', { class: 'sc-seg', role: 'radiogroup', 'aria-label': 'Hourly metric' });
     [['fill', 'Fill'], ['cpm', 'Effective CPM']].forEach(function (o) {
@@ -434,7 +403,7 @@
     var pH = panel('Fill and effective CPM by hour', TIPS.hourly, hSeg, null);
     pH.el.classList.add('sc-wide');
 
-    container.appendChild(h('div', { class: 'sc-grid' }, [pSV.el, pSA.el, pMR.el, pY.el, pH.el]));
+    container.appendChild(h('div', { class: 'sc-grid' }, [pSV.el, pSA.el, pMR.el, pH.el]));
     container.appendChild(tip);
 
     function setState(p, kind, retry) {
@@ -545,29 +514,6 @@
       pMR.body.innerHTML = ''; pMR.body.setAttribute('aria-busy', 'false'); pMR.body.appendChild(list);
     }
 
-    // ----- yield -----
-    function drawYield(d) {
-      var rows = yieldRows(d.rows);
-      pY.body.innerHTML = ''; pY.body.setAttribute('aria-busy', 'false');
-      if (!rows.length) {
-        pY.body.appendChild(h('div', { class: 'sc-state' }, [icon('bar_chart_off'), h('div', { text: 'Nothing cleared on this deal type in scope.' })]));
-        return;
-      }
-      var max = Math.max.apply(null, rows.map(function (r) { return r.effectiveCpm; })) * 1.08 || 1;
-      var list = h('div', { class: 'sc-rows', role: 'list' });
-      rows.forEach(function (r) {
-        var bar = h('div', { class: 'sc-bar sc-primary', style: 'width:' + (100 * r.effectiveCpm / max).toFixed(2) + '%' + (DSP_COLOURS[r.dsp] ? ';background:' + DSP_COLOURS[r.dsp] : '') });
-        var row = h('div', { class: 'sc-row', role: 'listitem' }, [
-          h('div', { class: 'sc-label', text: r.dsp }),
-          h('div', { class: 'sc-track' }, [h('div', { class: 'sc-track-in' }, [bar])]),
-          h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(r.effectiveCpm) }), ' eCPM'])
-        ]);
-        hoverable(row, function () { return yieldHover(r, d.dealType || ALL_DEAL_TYPES, filters, d.rows); });
-        list.appendChild(row);
-      });
-      pY.body.appendChild(list);
-    }
-
     // ----- fill and effective CPM by hour -----
     var hData = null;
     function drawHourly(d) {
@@ -598,15 +544,6 @@
     }
 
     // ----- loading -----
-    function loadYield() {
-      var g = ++gen.yield;
-      setState(pY, 'loading');
-      fetchJson('yield', state.dealType ? Object.assign({}, filters, { dealType: state.dealType }) : filters).then(function (d) {
-        if (!alive || g !== gen.yield) return;
-        if (!d || !d.rows) return setState(pY, 'empty');
-        drawYield(d);
-      }, function () { if (alive && g === gen.yield) setState(pY, 'error', loadYield); });
-    }
     function loadAll() {
       var g = ++gen.all;
       [pSV, pSA, pMR, pH].forEach(function (p) { setState(p, 'loading'); });
@@ -630,7 +567,6 @@
       run(pSA, 'slot-allocation', drawAllocation);
       run(pMR, 'missed-revenue', drawMissed, null, svP);
       run(pH, 'hourly', drawHourly, function (d) { hData = d; });
-      loadYield();
     }
 
     syncSeg(); syncHSeg();

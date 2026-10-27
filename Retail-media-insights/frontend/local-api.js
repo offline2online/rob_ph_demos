@@ -2646,7 +2646,7 @@ module.exports = {
 const { DEAL_TYPES, SOURCES, normaliseDealType } = require('../constants');
 const { FilterError } = require('../filters');
 
-// Chart-level filters shared by summary, revenue and yield. Accepts `dsps=a,b`, `dsps=a&dsps=b` and `dsps[]=a`.
+// Chart-level filters shared by summary and revenue. Accepts `dsps=a,b`, `dsps=a&dsps=b` and `dsps[]=a`.
 function listParam(params, key) {
   const out = [];
   for (const raw of [...params.getAll(key), ...params.getAll(`${key}[]`)]) for (const p of raw.split(',')) if (p.trim()) out.push(p.trim());
@@ -2937,39 +2937,6 @@ module.exports = {
     };
   },
 };
-  },
-  "src/routes/yield.js": function (module, exports, require) {
-const calc = require('../calc');
-const { FilterError } = require('../filters');
-const { listParam, cents, DSPS } = require('./params');
-const { DEAL_TYPES, normaliseDealType } = require('../constants');
-
-// Effective CPM per connected DSP: earned revenue / (assumed views / 1000), from settled billing
-// only, so it reconciles to what advertisers were charged. Optional single `dealType` filter.
-// Every connected DSP is returned, in the standard order, with a null CPM when it has no delivery.
-module.exports = {
-  path: '/yield',
-  handler({ store, filters, params }) {
-    const types = listParam(params, 'dealType');
-    if (types && types.size > 1) throw new FilterError('dealType takes a single deal type');
-    const dealType = types ? normaliseDealType([...types][0]) : null;
-    if (dealType && !DEAL_TYPES.includes(dealType)) throw new FilterError(`dealType must be one of ${DEAL_TYPES.join(', ')}`);
-    const byDsp = new Map(DSPS.map((d) => [d, { dsp: d, earned: 0, views: 0 }]));
-    store.scanDelivery(filters, (r) => {
-      if (dealType && r.dealType !== dealType) return;
-      let b = byDsp.get(r.dsp);
-      if (!b) { b = { dsp: r.dsp, earned: 0, views: 0 }; byDsp.set(r.dsp, b); }
-      b.earned += r.earned; b.views += r.earnedViews;
-    });
-    const rows = [...byDsp.values()].sort((a, b) => calc.compareDsps(a.dsp, b.dsp)).map((b) => ({
-      dsp: b.dsp,
-      effectiveCpm: b.views > 0 ? cents(calc.effectiveCpm(b.earned, b.views)) : null,
-      earnedRevenue: cents(b.earned),
-      assumedViews: b.views,
-    }));
-    return { dealType, rows };
-  },
-};
   }
   };
   var cache = {};
@@ -2991,7 +2958,7 @@ module.exports = {
     });
     return module.exports;
   }
-  var ROUTE_FILES = ["src/routes/advertisers.js","src/routes/audience.js","src/routes/deals-by-display-type.js","src/routes/deals.js","src/routes/delivery.js","src/routes/display-types.js","src/routes/filter-options.js","src/routes/health.js","src/routes/hourly.js","src/routes/maturity.js","src/routes/missed-revenue.js","src/routes/my-summary.js","src/routes/my-targeting.js","src/routes/revenue.js","src/routes/slot-allocation.js","src/routes/slot-value.js","src/routes/summary.js","src/routes/yield.js"];
+  var ROUTE_FILES = ["src/routes/advertisers.js","src/routes/audience.js","src/routes/deals-by-display-type.js","src/routes/deals.js","src/routes/delivery.js","src/routes/display-types.js","src/routes/filter-options.js","src/routes/health.js","src/routes/hourly.js","src/routes/maturity.js","src/routes/missed-revenue.js","src/routes/my-summary.js","src/routes/my-targeting.js","src/routes/revenue.js","src/routes/slot-allocation.js","src/routes/slot-value.js","src/routes/summary.js"];
   var state = null;
   function init() {
     if (state) return state;

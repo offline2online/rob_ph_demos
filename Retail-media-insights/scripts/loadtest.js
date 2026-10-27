@@ -17,7 +17,7 @@ const { fork } = require('child_process');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 
 const SECRET = 'loadtest-secret-loadtest-secret-loadtest';
-const ENDPOINTS = ['summary', 'revenue', 'deals', 'slot-value', 'slot-allocation', 'missed-revenue', 'yield', 'display-types', 'advertisers', 'maturity', 'filter-options'];
+const ENDPOINTS = ['summary', 'revenue', 'deals', 'slot-value', 'slot-allocation', 'missed-revenue', 'display-types', 'advertisers', 'maturity', 'filter-options'];
 const BROWSER_CONNECTIONS = 6;
 const TARGET_MS = 2000; const HEALTH_MS = 100;
 const BASE = '/insights/v1/retail-media';

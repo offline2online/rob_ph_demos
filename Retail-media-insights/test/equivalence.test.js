@@ -119,7 +119,7 @@ test('the aggregate winning CPM of a busy auction is the same through the rollup
     withCpm += x.body.days.filter((day) => day.deals.some((blk) => blk.winningCpm)).length;
   }
   assert.ok(withCpm > 100, `winning CPMs were exercised (${withCpm} days)`);
-  for (const path of ['summary', 'yield', 'revenue', 'advertisers', 'deals', 'maturity']) {
+  for (const path of ['summary', 'revenue', 'advertisers', 'deals', 'maturity']) {
     const url = `/${path}?dateFrom=${dayFrom(30)}&dateTo=${TODAY}`;
     assert.deepStrictEqual(get(a, principals[0], url), get(b, principals[0], url), url);
   }

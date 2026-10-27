@@ -12,7 +12,7 @@ const { store } = buildBenchStore();
 
 const admin = { principalType: 'admin', principalId: 'retailer', scopes: ['insights:read'] };
 const ENDPOINTS = [
-  ['summary', ''], ['revenue', 'granularity=week'], ['yield', ''], ['deals', ''], ['advertisers', ''], ['display-types', ''],
+  ['summary', ''], ['revenue', 'granularity=week'], ['deals', ''], ['advertisers', ''], ['display-types', ''],
   ['slot-value', ''], ['slot-allocation', ''], ['missed-revenue', ''], ['maturity', ''],
   // Per advertiser (the advertiser view): pinned to one advertiser, as the server does for an advertiser login.
   ['delivery', 'advertiserIds=adv-blackmores'], ['deals-by-display-type', 'advertiserIds=adv-blackmores'],

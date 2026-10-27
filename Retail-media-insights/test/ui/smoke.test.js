@@ -12,7 +12,7 @@ const { launchChromium } = require('./browser');
 const ROOT = path.join(__dirname, '..', '..');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 const HOSTILE = '<img src=x onerror=alert(1)>';
-const SECTIONS = ['Revenue', 'Deals', 'Slot value', 'Slot allocation', 'Missed revenue & fill', 'Yield', 'Fill and effective CPM by hour', 'Demand health', 'Advertisers', 'Targeting & scheduling maturity'];
+const SECTIONS = ['Revenue', 'Deals', 'Slot value', 'Slot allocation', 'Missed revenue & fill', 'Fill and effective CPM by hour', 'Demand health', 'Advertisers', 'Targeting & scheduling maturity'];
 
 let server; let base; let browser;
 test.before(async () => {
@@ -58,7 +58,7 @@ async function settle(page, ctx) {
   await page.waitForSelector('[data-tile="sold"]');
   // Once a slot chart panel has rendered (data, empty or error) a screen reader must not hear "busy" any more.
   await page.waitForFunction(() => [...document.querySelectorAll('.sc-body')].every((b) => b.getAttribute('aria-busy') !== 'true'));
-  assert.deepEqual(await page.$$eval('.sc-body', (b) => b.map((x) => x.getAttribute('aria-busy'))), ['false', 'false', 'false', 'false', 'false'], `${ctx}: slot chart panels aria-busy`);
+  assert.deepEqual(await page.$$eval('.sc-body', (b) => b.map((x) => x.getAttribute('aria-busy'))), ['false', 'false', 'false', 'false'], `${ctx}: slot chart panels aria-busy`);
   assert.deepEqual(await page.evaluate(() => window.__csp || []), [], `${ctx}: CSP violations`);
 }
 

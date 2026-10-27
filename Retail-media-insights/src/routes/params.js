@@ -2,7 +2,7 @@
 const { DEAL_TYPES, SOURCES, normaliseDealType } = require('../constants');
 const { FilterError } = require('../filters');
 
-// Chart-level filters shared by summary, revenue and yield. Accepts `dsps=a,b`, `dsps=a&dsps=b` and `dsps[]=a`.
+// Chart-level filters shared by summary and revenue. Accepts `dsps=a,b`, `dsps=a&dsps=b` and `dsps[]=a`.
 function listParam(params, key) {
   const out = [];
   for (const raw of [...params.getAll(key), ...params.getAll(`${key}[]`)]) for (const p of raw.split(',')) if (p.trim()) out.push(p.trim());

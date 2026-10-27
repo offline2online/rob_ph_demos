@@ -30,8 +30,6 @@ const DATASETS = [
     rows: (r) => [flat(r)] },
   { name: 'revenue', route: 'revenue', grain: 'period x DSP x deal type', description: 'Earned and estimated revenue; granularity day, week or month.',
     rows: rowsOf('rows') },
-  { name: 'yield', route: 'yield', grain: 'DSP', description: 'Effective CPM, earned revenue and assumed views (VAC-d) per DSP.',
-    rows: rowsOf('rows') },
   { name: 'display-types', route: 'display-types', grain: 'display type', description: 'Display type facts and VAC-d averages.',
     rows: rowsOf('rows') },
   { name: 'slot-value', route: 'slot-value', grain: 'display type', description: 'Floor and effective CPM, revenue per available slot and totals.',

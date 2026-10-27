@@ -1,5 +1,5 @@
 'use strict';
-// Browser checks for the slot charts (npm run test:ui): Missed revenue & fill, Yield, Slot allocation hovers, Slot value
+// Browser checks for the slot charts (npm run test:ui): Missed revenue & fill, Slot allocation hovers, Slot value
 // legend and labels, and the 390px layout. Chromium comes from PLAYWRIGHT_BROWSERS_PATH; Google Fonts are stubbed.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -81,32 +81,6 @@ test('Missed revenue & fill: hovering the bar shows the same hover as its number
   } finally { await context.close(); }
 });
 
-test('Yield: defaults to All deal types, coloured eCPM bars highest first, empty state when nothing cleared', async () => {
-  const { page, context } = await open(1163);
-  try {
-    const p = panel(page, 'Yield');
-    const opts = await p.locator('select option').allTextContents();
-    assert.deepEqual(opts, ['All deal types', 'Direct advertiser', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
-    assert.equal(await p.locator('select').inputValue(), '');
-    const labels = await p.locator('.sc-value').allTextContents();
-    assert.ok(labels.length >= 1 && labels.every((l) => /^\$\d+\.\d\d eCPM$/.test(l)), labels.join('|'));
-    const cpms = labels.map((l) => parseFloat(l.slice(1)));
-    assert.deepEqual(cpms, cpms.slice().sort((a, b) => b - a));
-    const colours = { DV360: 'rgb(235, 104, 52)', 'The Trade Desk': 'rgb(42, 120, 214)', 'Amazon DSP': 'rgb(27, 175, 122)', Direct: 'rgb(107, 63, 160)' };
-    for (const row of await p.locator('.sc-row').all()) {
-      const name = await row.locator('.sc-label').textContent();
-      assert.equal(await row.locator('.sc-bar').evaluate((b) => getComputedStyle(b).backgroundColor), colours[name], name);
-    }
-    for (const type of ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']) {
-      await p.locator('select').selectOption({ label: type });
-      await page.waitForFunction(() => document.querySelector('.sc-panel[aria-label="Yield"] .sc-body').getAttribute('aria-busy') === 'false');
-      const names = await p.locator('.sc-label').allTextContents();
-      assert.ok(!(await p.textContent('.sc-body')).includes('No delivery'));
-      if (!names.length) assert.equal(await p.locator('.sc-state').textContent(), 'bar_chart_offNothing cleared on this deal type in scope.');
-    }
-  } finally { await context.close(); }
-});
-
 test('Slot allocation hover headings, four columns and no sold bar; Slot value legend and labels', async () => {
   const { page, context } = await open(1163);
   try {
@@ -147,13 +121,13 @@ test('at 390px there is no sideways scroll and the missed-revenue label sits abo
   } finally { await context.close(); }
 });
 
-test('Fill and effective CPM by hour: under Yield, full width, toggle, operating hours, hover facts', async () => {
+test('Fill and effective CPM by hour: under Missed revenue & fill, full width, toggle, operating hours, hover facts', async () => {
   const { page, context } = await open(1163);
   try {
     const p = panel(page, 'Fill and effective CPM by hour');
     assert.equal(await p.locator('h2').textContent(), 'Fill and effective CPM by hour');
-    const [y, h] = await Promise.all([panel(page, 'Yield').boundingBox(), p.boundingBox()]);
-    assert.ok(h.y >= y.y + y.height - 1, 'directly under Yield');
+    const [y, h] = await Promise.all([panel(page, 'Missed revenue & fill').boundingBox(), p.boundingBox()]);
+    assert.ok(h.y >= y.y + y.height - 1, 'directly under Missed revenue & fill');
     const grid = await page.locator('.sc-grid').boundingBox();
     assert.ok(h.width > grid.width * 0.95, 'full width');
     assert.equal(await p.locator('.sc-seg-btn.on').textContent(), 'Fill');

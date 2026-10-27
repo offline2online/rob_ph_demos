@@ -1,6 +1,6 @@
 'use strict';
 // Audit (27 Oct 2026): every calculation that reads billing or inventory counts the direct advertisers. Slot value, Missed revenue
-// & fill, Slot allocation, Inventory sold, Yield and Revenue must all agree with the raw billing, whatever the source of a line.
+// & fill, Slot allocation, Inventory sold and Revenue must all agree with the raw billing, whatever the source of a line.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { generateTestRetailer } = require('../src/testdata');
@@ -64,17 +64,11 @@ test('Inventory sold, Missed revenue & fill and Slot allocation count the slots 
   assert.equal(missed.total.totalMissed, missed.total.unsoldValueAtFloor + missed.total.downtimeLostRevenue);
 });
 
-test('Yield, Revenue and Summary: Direct is its own source and every source adds to earned revenue', () => {
+test('Revenue and Summary: Direct is its own source and every source adds to earned revenue', () => {
   const summary = run('summary');
-  const yld = run('yield');
-  assert.deepEqual(yld.rows.map((r) => r.dsp), ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct']);
-  const d = yld.rows.find((r) => r.dsp === 'Direct');
-  assert.ok(Math.abs(d.earnedRevenue - sum(direct.map((b) => b.revenue))) < 0.01);
-  assert.equal(d.assumedViews, sum(direct.map((b) => b.views)));
-  assert.ok(Math.abs(sum(yld.rows.map((r) => r.earnedRevenue)) - summary.earnedRevenue) < 0.04);
-  assert.ok(Math.abs(sum(run('revenue', `${RANGE}&granularity=month`).rows.map((r) => r.earned)) - summary.earnedRevenue) < 0.04);
+  const rev = run('revenue', `${RANGE}&granularity=month`).rows;
+  const bySource = (dsp) => sum(rev.filter((r) => r.dsp === dsp).map((r) => r.earned));
+  assert.ok(Math.abs(bySource('Direct') - sum(direct.map((b) => b.revenue))) < 0.04);
+  assert.ok(Math.abs(sum(rev.map((r) => r.earned)) - summary.earnedRevenue) < 0.04);
   assert.equal(summary.direct.advertisers, 5);
-  // Effective CPM is revenue over views across every source, so it sits between the lowest and highest source CPM.
-  const cpms = yld.rows.map((r) => r.effectiveCpm).filter((c) => c != null);
-  assert.ok(summary.effectiveCpm >= Math.min(...cpms) && summary.effectiveCpm <= Math.max(...cpms));
 });

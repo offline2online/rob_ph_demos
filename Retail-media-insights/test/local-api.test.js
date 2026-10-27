@@ -24,7 +24,7 @@ test('the bundle needs no http, fs, crypto or token code', () => {
 
 const SAMPLE = [
   '/filter-options', '/display-types', '/summary', '/revenue?granularity=week', '/revenue?dsps[]=DV360&dsps[]=Amazon%20DSP&dealTypes[]=Preferred%20deal',
-  '/deals', '/deals?dealType=Programmatic%20guaranteed&storeIds[]=store-2', '/slot-value', '/slot-allocation', '/missed-revenue', '/yield?dealType=Private%20auction',
+  '/deals', '/deals?dealType=Programmatic%20guaranteed&storeIds[]=store-2', '/slot-value', '/slot-allocation', '/missed-revenue',
   '/advertisers', '/maturity', '/maturity?level=Personalised&scheduling=uses', '/delivery', '/deals-by-display-type', '/audience', '/my-targeting',
   '/summary?displayTypeIds[]=queue&storeIds[]=store-1&dateFrom=2026-10-01&dateTo=2026-10-07', '/health', '/summary?dateFrom=nope', '/missed-revenue?displayTypeIds=queue',
 ].map((p) => (p.includes('dateFrom') || p === '/health' ? p : p + (p.includes('?') ? '&' : '?') + 'dateFrom=2026-09-12&dateTo=2026-10-11'));

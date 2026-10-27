@@ -22,7 +22,6 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 5. `slot-allocation` — per display type: slots per loop, advertiser / own-content counts and average durations, loop length, advertiser slots sold % (still in the response for reconciliation with Missed revenue & fill; not shown as a column).
 6. `missed-revenue` — per display type + all-types total: connected displays, floor CPM (or range), fill, unsold slots and value at floor, downtime lost revenue and slots offline, total missed.
 6a. `hourly` — (endpoint 10a in the ticket) per display type: connected displays and, for each hour inside operating hours, fill, sold / unsold / offline slots, revenue, assumed views and effective CPM. Retailer only (403 for an advertiser). `viewsBasis` names the interim spreading rule.
-7. `yield` — effective CPM per source (each connected DSP, then `Direct`); param `dealType`.
 8. `advertisers` — revenue, share, deals on, slots covered, slots won %, effective CPM, DSP, and demand by DSP seat: `seatCount` / `direct` and a `seats[]` sub-list per advertiser (seat, DSP, synced, revenue, share of the advertiser's spend, plays, deals, effective CPM, first/last win, advertisers the seat bought for). Seats add up to the advertiser's row (data only: the Advertisers table is advertiser level and does not show seats or agencies, 26 Oct 2026); a seat dropped from a DSP re-sync keeps its history (`synced: false`); retailer only, never in an advertiser login's response.
 9. `maturity` — ladder counts + advertiser lists, scheduling counts + lists, share by level over time, variables-in-use ranking, advertiser targeting & scheduling table.
 10. `display-types` — hover card data shared by every chart.
@@ -53,7 +52,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 - Respect the 90-day settled-bid retention (see open question on Slots won).
 
 ## 4. Front-end requirements
-- Tab, breadcrumb, page order and layout exactly as the README (Revenue full width; Deals under it; Slot value · Slot allocation; Missed revenue & fill · Yield; Advertisers; Targeting & scheduling maturity).
+- Tab, breadcrumb, page order and layout exactly as the README (Revenue full width; Deals under it; Slot value · Slot allocation; Missed revenue & fill; Advertisers; Targeting & scheduling maturity).
 - Filters stay pending until **Apply**; **Cancel** reverts; **Reset Filters** only once a filter differs from default; no CTA otherwise. Advertiser filter is a locked chip for advertiser logins.
 - Display-type charts are horizontal rows in shopper-journey order, with connected-display counts in brackets where specified.
 - Every README hover implemented as facts only (no advice, no warning chips); long hovers float above the page and stay on-screen on mobile. Missing fields are omitted, never "not set".
@@ -66,10 +65,10 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 | Needed | Used for |
 |---|---|
 | Deals & buyers lists: name, description, deal type, per-DSP deal IDs (PH- format), flight dates, guaranteed volume, buffer, buyers and each buyer's DSP seat | Deals table and hovers, Advertisers table, advertiser view, "Name (DSP)" everywhere |
-| Four industry-standard deal types, incl. the ticket aligning Private auction and Preferred deal, plus the Direct advertiser deal type and direct advertisers' billing lines (no DSP, no seat, no deal ID) | Revenue, Yield, Deals, Demand health, Summary |
+| Four industry-standard deal types, incl. the ticket aligning Private auction and Preferred deal, plus the Direct advertiser deal type and direct advertisers' billing lines (no DSP, no seat, no deal ID) | Revenue, Deals, Demand health, Summary |
 | Available Inventory slot assignments (display type, playlist, zone, position, plays per window) | Slots column and hovers, Slots covered, advertiser display type filter |
 | Winning seat (partnerId + seatId from the bid response) on every billing line item, synced seat names (`partners.seats`) and the advertiser ↔ seat mapping (`advertiser_seats`). **Not confirmed persisted on billing line items in DSP Integration today: confirm, else file it on DSP Integration** | Demand by DSP seat (Advertisers table sub-rows) |
-| Billing line items and reservations (cleared / fixed CPM, plays, VAC-d, DSP seat, deal, display type) | Revenue, Yield, effective CPM, Delivery, winning CPM aggregates |
+| Billing line items and reservations (cleared / fixed CPM, plays, VAC-d, DSP seat, deal, display type) | Revenue, effective CPM, Delivery, winning CPM aggregates |
 | **Unsold real-time slot records** | Inventory sold, Fill, Missed revenue, Slot allocation (API only) |
 | Display type definitions: Touch Point, canvas size (px), creative formats, IAB store zone, floor CPM, operating hours (24-hour rule) | Display type hover, floor markers, missed revenue valuation, inventory |
 | VAC-d / MOVE scoring inputs and realised assumed views | All CPMs, assumed views, pacing |
@@ -91,7 +90,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 
 ## 7. Delivery order
 1. Back-end foundations: aggregation tables, calculation library, filters, isolation.
-2. Retailer view: summary, Revenue, Deals, Slot value, Slot allocation, Missed revenue, Yield, Advertisers, Maturity.
+2. Retailer view: summary, Revenue, Deals, Slot value, Slot allocation, Missed revenue, Advertisers, Maturity.
 3. Advertiser view — gated on DSP Integration auth seams.
 4. QuickSight datasets and MCP tools over the same API.
 
@@ -100,7 +99,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 - An advertiser login cannot retrieve any other advertiser's data or downtime via UI or API (pen-tested).
 - All README "never show" rules pass a UI review checklist.
 
-- Launch sample data (27 Oct 2026): the example retailer sells only Programmatic guaranteed, Direct advertiser and the Open auction, with 7 of its 10 named deals direct. A direct advertiser takes part in no auction, so its Delivery and Your deals by display type show no Open auction. Every calculation (Slot value, Missed revenue & fill, Slot allocation, Inventory sold, Yield, Revenue) includes direct revenue and plays once (`test/direct-audit.test.js`).
+- Launch sample data (27 Oct 2026): the example retailer sells only Programmatic guaranteed, Direct advertiser and the Open auction, with 7 of its 10 named deals direct. A direct advertiser takes part in no auction, so its Delivery and Your deals by display type show no Open auction. Every calculation (Slot value, Missed revenue & fill, Slot allocation, Inventory sold, Revenue) includes direct revenue and plays once (`test/direct-audit.test.js`).
 
 ## 9. Open questions carried into the project
 README open questions 1–6, plus: does the analytics service read DSP Integration's data store directly or via its API?
