@@ -45,22 +45,26 @@ test('week and month regroup, and the x-axis thins to what fits', async () => {
 });
 
 test('deal type filter narrows revenue', async () => {
-  const rows = (await get('/revenue', { dealTypes: ['Private auction'] })).rows;
-  assert.ok(rows.length && rows.every((r) => r.dealType === 'Private auction'));
+  const rows = (await get('/revenue', { dealTypes: ['Direct advertiser'] })).rows;
+  assert.ok(rows.length && rows.every((r) => r.dealType === 'Direct advertiser' && r.dsp === 'Direct'));
 });
 
 test('deal name hover: description and per-DSP deal IDs from {dsp, dspLabel, dealId}', async () => {
-  const deal = (await get('/deals')).rows.find((d) => d.dealIds.length === 2);
+  const deal = (await get('/deals')).rows.find((d) => d.dealIds.length === 1);
   const t = RD.nameTooltip(deal);
   assert.deepStrictEqual(t.rows.map((r) => r[0]), [deal.description, 'Deal IDs'].concat(deal.dealIds.map((d) => d.dspLabel)));
   assert.match(t.rows[2][0], /^(Google DSP \(DV360\)|The Trade Desk|Amazon Ads DSP)$/);
   assert.match(t.rows[2][1], /^PH-[A-Z0-9]{10}$/);
   assert.strictEqual(t.rows[2][2], 'rd-tip-mono');
+  // A direct deal has no DSP and so no deal ID: the hover is its description alone.
+  const direct = (await get('/deals')).rows.find((d) => d.dealType === 'Direct advertiser');
+  assert.deepStrictEqual(direct.dealIds, []);
+  assert.ok(!RD.nameTooltip(direct).rows.some((r) => r[0] === 'Deal IDs'));
 });
 
 test('slots label and Assigned slots hover', async () => {
   const rows = (await get('/deals')).rows;
-  const pg = rows.find((d) => d.dealType === 'Programmatic guaranteed');
+  const pg = rows.find((d) => d.name === 'Immune — winter launch');
   assert.strictEqual(RD.slotsLabel(pg), '2 slots');
   assert.strictEqual(RD.slotsLabel({ slots: [] }), 'Not assigned');
   const t = RD.slotsTooltip(pg);
@@ -73,11 +77,11 @@ test('slots label and Assigned slots hover', async () => {
 });
 
 test('advertisers hover lists "Name (DSP)"', async () => {
-  const deal = (await get('/deals')).rows.find((d) => d.dealType === 'Private auction');
+  const deal = (await get('/deals')).rows.find((d) => d.name === 'Beauty endcaps');
   assert.strictEqual(RD.advertisersTooltip(deal).title, deal.name);
   assert.strictEqual(RD.advertisersLabel(deal), '2 advertisers');
   assert.strictEqual(RD.advertisersLabel({ advertisers: [1] }), '1 advertiser');
-  assert.deepStrictEqual(RD.advertisersTooltip(deal).rows.map((r) => r[0]), ['Kenvue (DV360)', "L'Oréal Paris (DV360)"]);
+  assert.deepStrictEqual(RD.advertisersTooltip(deal).rows.map((r) => r[0]), ["L'Oréal Paris (Direct)", 'Procter & Gamble (Direct)']);
 });
 
 test('pacing hover: in flight', async () => {
@@ -92,7 +96,8 @@ test('pacing hover: in flight', async () => {
 
 test('CPM hover names floor vs fixed', async () => {
   const rows = (await get('/deals')).rows;
-  assert.strictEqual(RD.cpmTooltip(rows.find((d) => d.dealType === 'Private auction').cpm).rows[0][0], 'Floor CPM');
+  assert.strictEqual(RD.cpmTooltip({ value: 7.5, kind: 'floor' }).rows[0][0], 'Floor CPM', 'the formatter still names a floor');
+  assert.strictEqual(RD.cpmTooltip(rows.find((d) => d.dealType === 'Direct advertiser').cpm).rows[0][0], 'Fixed CPM');
   assert.strictEqual(RD.cpmTooltip(rows.find((d) => d.dealType === 'Programmatic guaranteed').cpm).rows[0][0], 'Fixed CPM');
 });
 

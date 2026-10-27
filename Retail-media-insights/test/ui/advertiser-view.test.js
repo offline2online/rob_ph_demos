@@ -109,7 +109,7 @@ test('delivery: deal select, orange Spend, day hover, pacing view', async () => 
   const { page, context, problems } = await open(1163);
   try {
     const options = await page.$$eval('select[aria-label="Deal"] option', (o) => o.map((x) => x.textContent));
-    assert.deepEqual(options, ['All deals', 'Open auction', 'Immune — winter launch (Programmatic guaranteed)', 'Health & wellness windows (Private auction)', 'Dispensary screens (Private auction)']);
+    assert.deepEqual(options, ['All deals', 'Open auction', 'Immune — winter launch (Programmatic guaranteed)']);
     assert.equal(await page.$$eval('.av-svg path[stroke="#eb6834"]', (p) => p.length), 1);
     assert.equal(await page.$eval('.av-tile:nth-child(2)', (e) => getComputedStyle(e.querySelector('.av-tile-bar')).backgroundColor), 'rgb(235, 104, 52)');
     const day = await tipText(page, '.av-hit', 10);

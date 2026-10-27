@@ -201,25 +201,36 @@ test('deals: the display type filter applies to every part of a row, and a deal 
 });
 
 test('advertisers: Slots covered counts only covered slots on the filtered types; Slots won only own wins on those deals', () => {
-  const full = run('advertisers').all.find((a) => a.advertiserId === 'adv-blackmores');
-  const window = run('advertisers', 'displayTypeIds=window').all.find((a) => a.advertiserId === 'adv-blackmores');
-  assert.equal(full.slotsCovered, 8); // Window 1-5 (Immune, Health & wellness windows) and Dispensary 2-4 (Dispensary screens)
-  assert.equal(window.slotsCovered, 5);
+  const covered = (id, q = '') => run('advertisers', q).all.find((a) => a.advertiserId === id);
+  const full = covered('adv-perrigo');
+  const window = covered('adv-perrigo', 'displayTypeIds=window');
+  assert.equal(full.slotsCovered, 8); // Window 3-5 (Health & wellness windows), Dispensary 2-5 (Dispensary screens, Perrigo — pharmacy takeover), Queue 2 (Queue screens)
+  assert.equal(window.slotsCovered, 3);
   assert.deepEqual(window.dealsOn.map((d) => d.id), full.dealsOn.map((d) => d.id));
-  // Blackmores also buys the open auction on every type; none of that may count as a win on its deal positions.
+  // Reckitt buys its guaranteed Dispensary slot and the open auction on other types; none of that may count as a win on its deal positions.
+  const reckitt = covered('adv-reckitt');
   let ownDealWins = 0; let allWins = 0;
   store.scanDelivery(parseFilters(new URLSearchParams(''), { today: TODAY }), (r) => {
-    if (r.advertiserId !== 'adv-blackmores') return;
+    if (r.advertiserId !== 'adv-reckitt') return;
     allWins += r.slots;
     if (r.dealType !== 'Open auction') ownDealWins += r.slots;
   });
-  assert.equal(full.slotsWonCount, ownDealWins);
+  assert.equal(reckitt.slotsWonCount, ownDealWins);
   assert.ok(allWins > ownDealWins);
+  // A direct advertiser never bids in the open auction, so every one of its plays is on its own deals.
+  let perrigoWins = 0; let perrigoDealWins = 0;
+  store.scanDelivery(parseFilters(new URLSearchParams(''), { today: TODAY }), (r) => {
+    if (r.advertiserId !== 'adv-perrigo') return;
+    perrigoWins += r.slots;
+    if (r.dealType !== 'Open auction') perrigoDealWins += r.slots;
+  });
+  assert.equal(perrigoWins, perrigoDealWins);
+  assert.equal(full.slotsWonCount, perrigoDealWins);
 });
 
 test('deals: Advertisers on deal are ordered by DSP, then name', () => {
-  const priv = run('deals', 'dealType=Private auction').rows.find((r) => r.name === 'Dispensary screens');
-  assert.deepEqual(priv.advertisers.map((a) => [a.dsp, a.name]), [['DV360', 'Blackmores'], ['The Trade Desk', 'Haleon'], ['Amazon DSP', 'Bayer Consumer Health'], ['Amazon DSP', 'Reckitt']]);
+  const deal = run('deals', 'dealType=Direct advertiser').rows.find((r) => r.name === 'Health & wellness windows');
+  assert.deepEqual(deal.advertisers.map((a) => [a.dsp, a.name]), [['Direct', 'Nestlé Health Science'], ['Direct', 'Perrigo'], ['Direct', 'Vitabiotics']]);
 });
 
 test('Revenue is earned and to the cent in the maturity table', () => {
