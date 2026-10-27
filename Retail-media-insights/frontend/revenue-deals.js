@@ -31,7 +31,7 @@
     revenue: 'Earned revenue from billing line items, stacked by source and deal type. Each connected DSP has four shades: darkest = programmatic guaranteed, then preferred deal, private auction, and lightest = open auction. ' +
       'Direct (purple) = direct advertisers the retailer sells to straight through PH, with no DSP; it has the one deal type, Direct advertiser. ' +
       'Estimated = reservations booked ahead that have not played yet, mainly programmatic guaranteed.',
-    deals: 'One row per deal. Hover a deal name for its description and its deal ID on each DSP (as on Deals & buyers lists). ' +
+    deals: 'One row per deal. Hover a deal name for its description, deal type, rate, flight, deal ID on each DSP, and total plays and value per slot across the term (the Details hover on DSP Integration’s Deals & buyers lists). ' +
       'Slots = the slots the deal is assigned to (Available Inventory’s Assigned to column); hover for each slot’s display type, playlist, IAB zone, position and plays per window. ' +
       'Hover an advertiser count to see who is on the deal. Fill = slots sold ÷ all slots on the deal inside operating hours (unsold slot records). ' +
       'Pacing (programmatic guaranteed only) = assumed views (VAC-d) delivered ÷ guaranteed to date. Guaranteed volume = forecast × (1 − buffer). Hover the bar for the numbers. ' +
@@ -130,11 +130,36 @@
 
   // ---------- Deals model ----------
   function slotsLabel(deal) { return deal.slots && deal.slots.length ? plural(deal.slots.length, 'slot') : 'Not assigned'; }
+  // The deal name hover reuses DSP Integration's Details hover (Deals & buyers lists): the deal type, rate, flight and period, then
+  // total plays and value per slot across the term and the deal total. The deal description and per-DSP deal IDs stay.
+  var MAX_TIP_SLOTS = 5;
+  function termMoney(n, from) { return (from ? 'from ' : '') + 'USD ' + fmtInt(n); }
   function nameTooltip(deal) {
     var rows = [];
     if (deal.description) rows.push([deal.description, '']);
+    var c = deal.cpm;
+    var floor = c && c.kind === 'floor';
+    rows.push(['Deal type', typeName(deal.dealType)]);
+    rows.push(['Rate', c && c.value != null ? fmtMoney(c.value, 2) + ' CPM ' + (floor ? 'floor' : 'fixed') : 'Per play']);
+    var term = deal.term;
+    rows.push(['Flight', term ? fmtDay(term.start) + ' → ' + fmtDay(term.end) : 'Always active']);
+    rows.push(['Period', term ? plural(term.days, 'day') : 'Always active']);
     if ((deal.dealIds || []).length) rows.push(['Deal IDs', '', 'rd-tip-h']);
     (deal.dealIds || []).forEach(function (d) { rows.push([d.dspLabel || d.dsp, d.dealId, 'rd-tip-mono']); });
+    rows.push(['Over the whole flight', '', 'rd-tip-h']);
+    var slots = deal.slots || [];
+    if (!slots.length) rows.push(['No assigned slots.', '']);
+    else if (!term) rows.push(['Set a start and an end date to total the plays and value.', '']);
+    else {
+      slots.slice(0, MAX_TIP_SLOTS).forEach(function (s) {
+        var plays = s.termPlays == null ? 'plays n/a' : fmtInt(s.termPlays) + ' plays';
+        rows.push([s.displayType + ' · slot ' + s.advertiserSlot, plays + (s.termValue != null ? ' · ' + termMoney(s.termValue, floor) : '')]);
+      });
+      if (slots.length > MAX_TIP_SLOTS) rows.push(['+ ' + plural(slots.length - MAX_TIP_SLOTS, 'more slot'), '']);
+      var t = term.total;
+      rows.push(['Deal total', t ? fmtInt(t.plays) + ' plays' + (t.value != null ? ' · ' + termMoney(t.value, floor) : '') : 'not available for every slot', 'rd-tip-h']);
+      if (c && c.value != null) rows.push(['Value = plays ÷ 1,000 × CPM.', '']);
+    }
     return { title: deal.name, rows: rows };
   }
   // loopSizes: optional { displayTypeId: slots per loop } from slot-allocation, for "slot 1 of 12".

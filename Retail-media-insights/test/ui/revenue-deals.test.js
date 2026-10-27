@@ -112,6 +112,7 @@ for (const width of [1163, 390]) {
       assert.match(await page.textContent('.rd-tip'), /slot 1 of \d+\)/);
       await (await (await page.$$('.rd-table tbody tr'))[idx('Immune — winter launch')].$('.rd-name')).hover();
       assert.match(await page.textContent('.rd-tip'), /Deal IDs.*PH-/);
+      assert.match(await page.textContent('.rd-tip'), /Programmatic guaranteed.*Rate.*CPM fixed.*Flight.*Period.*Over the whole flight.*plays · USD.*Deal total[\d,]+ plays · USD/);
       await (await (await page.$$('.rd-table tbody tr'))[idx('Beauty endcaps')].$('.rd-name')).hover();
       assert.ok(!/Deal IDs/.test(await page.textContent('.rd-tip')), 'a direct deal has no deal ID');
       assert.ok(await noHScroll(page), 'no horizontal scroll');

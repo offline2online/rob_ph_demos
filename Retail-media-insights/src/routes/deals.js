@@ -4,12 +4,27 @@ const { FilterError } = require('../filters');
 const { DEAL_TYPES, normaliseDealType } = require('../constants');
 const { listParam } = require('./params');
 const { loopOf } = require('../display-types');
-const { dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, cents } = require('../dealing');
+const { dayDiff, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, cents } = require('../dealing');
 
 // One row per named deal (Open auction is not a deal). An advertiser login sees only the deals it is
 // invited to, with only its own buyer and the deal ID for its own DSP. The display type page filter applies to
 // every part of a row (slots list, Slots, Fill), and a deal with no slot on the filtered types drops out.
 // Revenue is earned revenue. Pacing is deal-wide: the store and display type filters do not change it.
+// Plays a slot gives over a deal's term (as DSP Integration's Details hover totals them): plays per window x connected displays
+// x hours a day it runs x days in the term. A display counts in every store the page filter allows; null when no display is connected.
+const termDays = (flight) => (flight ? dayDiff(flight.start, flight.end) + 1 : null);
+function termPlaysOf(store, filters, slot, days) {
+  if (days == null || slot.playsPerWindow == null) return null;
+  const type = (store.catalog.displayTypes || {})[slot.displayTypeId];
+  const stores = filters.storeIds ? new Set(filters.storeIds) : null;
+  let hours = 0; let any = false;
+  for (const d of store.catalog.displays || []) {
+    if (d.displayTypeId !== slot.displayTypeId || (stores && !stores.has(d.storeId))) continue;
+    const w = calc.operatingWindow(type || {}, (store.catalog.stores || {})[d.storeId]);
+    hours += w.close - w.open; any = true;
+  }
+  return any ? Math.round(slot.playsPerWindow * hours * days) : null;
+}
 const loopSlotCountOf = (slots) => { const l = loopOf(slots); return l ? l.slotsPerLoop : null; };
 
 module.exports = {
@@ -35,6 +50,8 @@ module.exports = {
       const assigned = (deal.slots || []).filter((s) => !wantedTypes || wantedTypes.has(s.displayTypeId));
       if (wantedTypes && !assigned.length) continue;
       included.push(deal);
+      const days = termDays(deal.flight);
+      const rate = deal.dealType === 'Private auction' ? deal.floorCpm : deal.cpm;
       const slots = assigned.map((s) => ({
         displayTypeId: s.displayTypeId, displayType: (types2[s.displayTypeId] || {}).name || s.displayTypeId,
         playlist: s.playlist, zone: s.zone, playlistZone: `${s.playlist} · ${s.zone}`,
@@ -42,7 +59,15 @@ module.exports = {
         iabZone: (types2[s.displayTypeId] || {}).zone || null,
         advertiserSlot: s.position, loopSlot: s.loopSlot, loopSlotCount: loopSlotCountOf((types2[s.displayTypeId] || {}).slots), label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`,
         playsPerWindow: s.playsPerWindow,
+        termPlays: termPlaysOf(store, filters, s, days),
       }));
+      for (const s of slots) s.termValue = s.termPlays == null || rate == null ? null : cents(s.termPlays / 1000 * rate);
+      const counted = slots.filter((s) => s.termPlays != null);
+      const term = days == null ? null : {
+        start: deal.flight.start, end: deal.flight.end, days,
+        // The deal total only when every slot can be totalled and a rate prices it.
+        total: slots.length && counted.length === slots.length ? { plays: counted.reduce((n, s) => n + s.termPlays, 0), value: rate == null ? null : cents(counted.reduce((n, s) => n + s.termPlays, 0) / 1000 * rate) } : null,
+      };
       // Fill: slots won on the deal / slot opportunities inside operating hours (sold + unsold + offline records).
       let opportunity = 0; const seen = new Set();
       for (const s of assigned) { if (!seen.has(slotKey(s))) { seen.add(slotKey(s)); opportunity += opp.perPosition(s.displayTypeId); } }
@@ -53,7 +78,7 @@ module.exports = {
         ? { value: deal.floorCpm, kind: 'floor' }
         : { value: deal.cpm, kind: 'fixed' };
       rows.push({
-        id: deal.id, name: deal.name, description: deal.description, dealType: deal.dealType, dealIds, slots,
+        id: deal.id, name: deal.name, description: deal.description, dealType: deal.dealType, dealIds, slots, term,
         advertisers: buyers.map((b) => ({ advertiserId: b.advertiserId, name: (advertisers[b.advertiserId] || {}).name || b.advertiserId, dsp: b.dsp }))
           .sort((x, y) => calc.compareDsps(x.dsp, y.dsp) || x.name.localeCompare(y.name)),
         fill: { percent: opportunity > 0 ? calc.wholePercent(won, opportunity) : null, slotsWon: won, slotsAvailable: Math.round(opportunity) },

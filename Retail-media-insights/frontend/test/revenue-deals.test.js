@@ -52,14 +52,38 @@ test('deal type filter narrows revenue', async () => {
 test('deal name hover: description and per-DSP deal IDs from {dsp, dspLabel, dealId}', async () => {
   const deal = (await get('/deals')).rows.find((d) => d.dealIds.length === 1);
   const t = RD.nameTooltip(deal);
-  assert.deepStrictEqual(t.rows.map((r) => r[0]), [deal.description, 'Deal IDs'].concat(deal.dealIds.map((d) => d.dspLabel)));
-  assert.match(t.rows[2][0], /^(Google DSP \(DV360\)|The Trade Desk|Amazon Ads DSP)$/);
-  assert.match(t.rows[2][1], /^PH-[A-Z0-9]{10}$/);
-  assert.strictEqual(t.rows[2][2], 'rd-tip-mono');
+  const at = t.rows.findIndex((r) => r[0] === 'Deal IDs');
+  assert.strictEqual(t.rows[0][0], deal.description);
+  assert.ok(at > 0 && t.rows[at + 1][0] === deal.dealIds[0].dspLabel);
+  assert.match(t.rows[at + 1][0], /^(Google DSP \(DV360\)|The Trade Desk|Amazon Ads DSP)$/);
+  assert.match(t.rows[at + 1][1], /^PH-[A-Z0-9]{10}$/);
+  assert.strictEqual(t.rows[at + 1][2], 'rd-tip-mono');
   // A direct deal has no DSP and so no deal ID: the hover is its description alone.
   const direct = (await get('/deals')).rows.find((d) => d.dealType === 'Direct advertiser');
   assert.deepStrictEqual(direct.dealIds, []);
   assert.ok(!RD.nameTooltip(direct).rows.some((r) => r[0] === 'Deal IDs'));
+});
+
+test('deal name hover reuses the DSP Details format: type, rate, flight, plays and value per slot, deal total', async () => {
+  const rows = (await get('/deals')).rows;
+  const pg = rows.find((d) => d.name === 'Immune — winter launch');
+  assert.ok(pg.term && pg.term.days > 0 && pg.term.total && pg.term.total.plays > 0);
+  const t = RD.nameTooltip(pg);
+  const get1 = (k) => t.rows.find((r) => r[0] === k);
+  assert.strictEqual(get1('Deal type')[1], 'Programmatic guaranteed');
+  assert.match(get1('Rate')[1], /^\$9\.50 CPM fixed$/);
+  assert.match(get1('Flight')[1], /→/);
+  assert.strictEqual(get1('Period')[1], pg.term.days + ' days');
+  const slotRows = t.rows.filter((r) => / · slot \d+$/.test(r[0]));
+  assert.strictEqual(slotRows.length, pg.slots.length);
+  assert.match(slotRows[0][1], /^[\d,]+ plays · USD [\d,]+$/);
+  assert.match(get1('Deal total')[1], /^[\d,]+ plays · USD [\d,]+$/);
+  assert.strictEqual(get1('Deal total')[1].split(' ')[0], pg.term.total.plays.toLocaleString('en-US'));
+  // A deal with no flight has nothing to total.
+  const open = rows.find((d) => !d.term && d.slots.length);
+  const o = RD.nameTooltip(open);
+  assert.strictEqual(o.rows.find((r) => r[0] === 'Flight')[1], 'Always active');
+  assert.ok(o.rows.some((r) => /Set a start and an end date/.test(r[0])));
 });
 
 test('slots label and Assigned slots hover', async () => {
