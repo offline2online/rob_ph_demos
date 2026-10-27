@@ -176,30 +176,17 @@ test('targeting table: sorts by Revenue by default and every column sorts both w
   assert.deepStrictEqual(names, names.slice().sort((a, b) => a.localeCompare(b)));
 });
 
-test('iROAS: one decimal, em dash when nothing was measured, sorts with blanks last, hover shows the division', async () => {
+test('Advertisers table has no iROAS column (Sales uplift is future work)', async () => {
   const adv = await get('/advertisers');
-  const rows = DC.advertiserRows(adv, true);
-  for (const r of rows) assert.strictEqual(r.iroas, r.src.iroas.value === null ? '\u2014' : r.src.iroas.value.toFixed(1));
-  const none = rows.find((r) => r.src.iroas.value === null);
-  assert.ok(none, 'one advertiser has no POS data');
-  assert.strictEqual(none.src.iroas.measuredCampaigns, 0);
-  assert.strictEqual(DC.iroasHover(none.src).text, DC.TIPS.iroasEmpty);
-  const col = DC.ADV_COLS.find((c) => c.key === 'iroas');
-  assert.strictEqual(DC.ADV_COLS[DC.ADV_COLS.findIndex((c) => c.key === 'effectiveCpm') + 1], col, 'after Effective CPM');
-  const sorted = DC.sortAdvertiserRows(rows, 'iroas', 'desc');
-  const vals = sorted.map((r) => r.src.iroas.value);
-  assert.deepStrictEqual(vals.filter((v) => v !== null), vals.filter((v) => v !== null).slice().sort((a, b) => b - a));
-  assert.strictEqual(vals[vals.length - 1], null);
-  const withValue = rows.find((r) => r.src.iroas.value !== null).src;
-  const m = DC.iroasHover(withValue);
-  const m0 = withValue.iroas;
-  assert.strictEqual(m.sections[0].rows[0][1], DC.fmtMoney(m0.incrementalSales) + ' \u00f7 ' + DC.fmtMoney(m0.measuredSpend) + ' = ' + m0.value.toFixed(1));
-  assert.match(m.sections[0].rows[3][1], /^\d+ of \d+ campaigns measured$/);
+  assert.ok(!DC.ADV_COLS.some((c) => c.key === 'iroas'));
+  assert.strictEqual(DC.ADV_COLS[DC.ADV_COLS.length - 1].key, 'effectiveCpm');
+  for (const r of adv.all) assert.ok(!('iroas' in r));
+  assert.ok(!('posData' in adv));
 });
 
 test('advertiser rows: no Seats column and no per-seat sub-rows (agencies are not supported, advertiser level only)', () => {
   const rows = DC.advertiserRows({ top: [
-    { advertiserId: 'a', name: 'A', dsp: 'DV360', revenue: 100, share: 100, seatCount: 2, direct: false, dealsOn: [], iroas: {},
+    { advertiserId: 'a', name: 'A', dsp: 'DV360', revenue: 100, share: 100, seatCount: 2, direct: false, dealsOn: [],
       seats: [{ seatId: 's1', name: 'GroupM AU', dsp: 'The Trade Desk', synced: true, revenue: 100, share: 100 }] }
   ] }, false);
   assert.equal(rows[0].seats, undefined);

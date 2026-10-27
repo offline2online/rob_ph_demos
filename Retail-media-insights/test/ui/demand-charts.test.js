@@ -52,7 +52,7 @@ test('Demand health: section header, names only, "n deals" hover, Show all N adv
     await head.locator('.dc-info').hover();
     assert.match(await page.textContent('.dc-tip'), /^Which advertisers are on which deals/);
 
-    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM', 'iROAS']);
+    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM']);
     const names = await texts(page, '.dc-adv tbody th');
     assert.equal(names.length, 10);
     assert.ok(names.every((n) => !/\(/.test(n)), `no DSP in the cell: ${names}`);
@@ -81,7 +81,7 @@ test('Advertisers table is advertiser level: no Seats column, no chevron, no sub
     assert.equal(await page.locator('.dc-adv .dc-expand').count(), 0);
     assert.equal(await page.locator('.dc-adv tbody tr.dc-seat').count(), 0);
     assert.equal(await page.locator('.dc-adv tbody tr').count(), 11);
-    assert.equal(await page.locator('.dc-adv tbody tr').first().locator('td').count(), 7);
+    assert.equal(await page.locator('.dc-adv tbody tr').first().locator('td').count(), 6);
     assert.deepEqual(problems, []);
   } finally { await context.close(); }
 });
