@@ -98,10 +98,7 @@ export const BuyersCell = ({ data, context }: P) => {
   return tip ? <Tip title={tip}>{cell}</Tip> : cell
 }
 /* The slots the deal is assigned to (Available Inventory's Assigned to column); hover lists each with its details. */
-const SlotsCell = ({ data, context }: P) => {
-  if (!data) return null
-  const rows = context.current.slots.get(data.id) ?? []
-  if (!rows.length) return <span style={{ color: T.muted }}>Not assigned</span>
+export const slotsTipOf = (dealId: string, rows: SlotInfo[]) => {
   /* Slots of the same display type sit together under one heading, in slot order (ticket IGHoIBf6onQxp0UMVrVk). */
   const groups = groupSlotsByDisplayType(rows)
   const tip = (
@@ -110,12 +107,12 @@ const SlotsCell = ({ data, context }: P) => {
       {groups.map((g, gi) => {
         const r = g.rows[0]
         return (
-          <div key={gi} data-testid={`slots-group-${data.id}-${gi}`} style={{ marginTop: 4 }}>
+          <div key={gi} data-testid={`slots-group-${dealId}-${gi}`} style={{ marginTop: 4 }}>
             <div style={{ fontWeight: 500 }}>{r.displayType}{r.orientation && !r.displayType.toLowerCase().includes(r.orientation) ? ` ${r.orientation === 'portrait' ? 'Portrait' : 'Landscape'}` : ''}{r.displayCount != null ? ` (${num(r.displayCount)} display${r.displayCount === 1 ? '' : 's'})` : ''}{r.description ? ` (${r.description})` : ''}</div>
             {/* The IAB store zone set on the display type (ticket yZ8BvwUQV4Yc7a0IVwak, 15 Oct 2026). */}
             <div>IAB zone: {storeZoneLabel(r.storeZone) ?? 'Not defined'}</div>
             {g.rows.map((x, i) => (
-              <div key={i} data-testid={`slots-row-${data.id}-${gi}-${i}`} style={{ marginTop: 2 }}>
+              <div key={i} data-testid={`slots-row-${dealId}-${gi}-${i}`} style={{ marginTop: 2 }}>
                 <div>{x.position} (slot {x.slot}){x.playsPerWindow != null ? ` · ${num(x.playsPerWindow)}${x.displayCount != null ? ` (${num(x.playsPerWindow * x.displayCount)} total)` : ''} plays per window` : ''}</div>
                 <div style={{ color: TIP_MUTED }}>{x.playlist || 'No playlist'}{x.zoneName ? ` · ${x.zoneName}` : ''}</div>
               </div>
@@ -125,7 +122,13 @@ const SlotsCell = ({ data, context }: P) => {
       })}
     </div>
   )
-  return <Tip title={tip}><span style={{ fontSize: 12.5 }}>{rows.length} slot{rows.length === 1 ? '' : 's'}</span></Tip>
+  return tip
+}
+const SlotsCell = ({ data, context }: P) => {
+  if (!data) return null
+  const rows = context.current.slots.get(data.id) ?? []
+  if (!rows.length) return <span style={{ color: T.muted }}>Not assigned</span>
+  return <Tip title={slotsTipOf(data.id, rows)}><span style={{ fontSize: 12.5 }}>{rows.length} slot{rows.length === 1 ? '' : 's'}</span></Tip>
 }
 /* The flight dates (spec "Private auctions: two-period model", 23 Sep
    2026) — the span this deal is awarded for; was "Active window" before

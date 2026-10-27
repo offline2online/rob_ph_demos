@@ -200,6 +200,19 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       return c ? statusOf(c) : 'draft'
     },
 
+    /* The approval status of every campaign, in one pass: a host list that only needs the word per campaign (Advertisers,
+       the booking schedule) used to build a whole CampaignRef — assets, names, targeting summary — for each one. */
+    async statuses(): Promise<Map<string, ApprovalStatus>> {
+      const out = new Map<string, ApprovalStatus>()
+      const versions = o.campaigns.assetVersions ? await o.campaigns.assetVersions() : null
+      if (versions) {
+        for (const [id, version] of versions) out.set(id, (await store.get(id, version))?.status ?? 'draft')
+      } else {
+        for (const c of await o.campaigns.listCampaigns()) out.set(c.campaignId, await statusOf(c))
+      }
+      return out
+    },
+
     async view(id: string) {
       return toView(await campaign(id), true)
     },

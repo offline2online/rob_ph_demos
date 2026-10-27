@@ -15,19 +15,29 @@ import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { searchColumn, setColumn, showingCount } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
-import { BuyersCell, DEAL_TYPE_LABELS, DealIdCell, DetailsCell, TermCell, useDealNames, type Ctx, type P } from './BuyersListsTable'
+import { BuyersCell, DEAL_TYPE_LABELS, DealIdCell, DetailsCell, TermCell, slotsTipOf, useDealNames, type Ctx, type P } from './BuyersListsTable'
+import type { DealSlot } from './DealDetailsTip'
+import { Tip } from '../../shared/Tip'
 import { flightMoment, rateValue, termTotalText } from './effectiveTerm'
 import { slotLine } from './slotLine'
 
 /* Same "22 Oct 2026 14:05" form as the flight dates, not the browser's locale (E2E 22 Oct 2026: it read 10/22/2026, 2:19:36 AM). */
 const fmtDate = (v: string | null) => flightMoment(v) ?? ''
 const ArchivedNameCell = ({ data }: P) => (data ? <div className="min-w-0"><div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div><div style={{ fontSize: 11.5, color: T.muted }}>Archived · read only</div></div> : null)
+/* The deal's slots as the Slots and Details hovers read them, from the snapshot kept when it was archived (ticket TeKdyE4cSeb9EQ9LIJeX):
+   the same shape the live table builds from Available Inventory, so both hovers read the same on a live and an archived deal. A deal
+   archived before the figures were kept has no play counts; the hovers say "plays n/a" rather than guess. */
+const archivedSlotsOf = (l?: BuyersList): DealSlot[] => (l?.assignedSlots ?? []).map((s) => ({
+  displayType: s.displayTypeName, description: s.description, storeZone: s.storeZone ?? null, orientation: s.orientation ?? null, zoneName: s.zoneName,
+  playlist: s.playlistName === '—' ? '' : s.playlistName ?? '', position: s.position ?? s.label.split(' — ').slice(1).join(' — ') ?? '', slot: s.zoneSlot,
+  playsPerWindow: s.playsPerWindow ?? null, displayCount: s.displayCount ?? null, windowHours: s.windowHours ?? 24,
+}))
 const slotLines = (l?: BuyersList) => (l?.assignedSlots ?? []).map((s) => slotLine(s))
 /* One slot per line, none dropped: a person needs to see exactly which slots the deal was in. */
 const ArchivedSlotsCell = ({ data }: P) => {
   const lines = slotLines(data)
-  return lines.length
-    ? <ul className="m-0 list-none py-1 pl-0" style={{ fontSize: 12.5, lineHeight: '18px' }} data-testid={`archived-slots-${data?.id}`}>{lines.map((t, i) => <li key={i}>{t}</li>)}</ul>
+  return lines.length && data
+    ? <Tip title={slotsTipOf(data.id, archivedSlotsOf(data))}><ul className="m-0 list-none py-1 pl-0" style={{ fontSize: 12.5, lineHeight: '18px' }} data-testid={`archived-slots-${data?.id}`}>{lines.map((t, i) => <li key={i}>{t}</li>)}</ul></Tip>
     : <span style={{ fontSize: 12.5, color: T.muted }}>No slots recorded</span>
 }
 const ArchivedAtCell = ({ data }: P) => (data?.archivedAt ? <span style={{ fontSize: 12.5 }}>{fmtDate(data.archivedAt)}</span> : null)
@@ -51,7 +61,7 @@ export function ArchivedDealsPage() {
     { headerName: 'Archived by', width: 140, minWidth: 120, cellRenderer: ArchivedByCell, valueGetter: (p) => p.data?.archivedBy ?? '', ...setColumn<BuyersList>('Archived by', () => rows.map((l) => l.archivedBy ?? '')) },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [rows])
-  const context: Ctx['current'] = { canEdit: false, showTargeting: false, bufferPct, capacity: new Map(), slots: new Map(), dspName, seatName, onEdit: () => {}, onShare: () => {}, onArchive: () => {}, onDelete: () => {} }
+  const context: Ctx['current'] = { canEdit: false, showTargeting: false, bufferPct, capacity: new Map(), slots: new Map(rows.map((l) => [l.id, archivedSlotsOf(l)])), dspName, seatName, onEdit: () => {}, onShare: () => {}, onArchive: () => {}, onDelete: () => {} }
   return (
     <div>
       {q.isError ? <div style={{ fontSize: 12.5, color: T.error }}>Archived deals could not be loaded.</div>

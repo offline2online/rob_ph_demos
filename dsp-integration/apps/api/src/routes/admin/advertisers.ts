@@ -15,10 +15,11 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   const company = await ctx.company.get()
   /* Each advertiser's campaigns by approval status (Rob, 20 Sep). */
   const byAdvertiser = new Map<string, Advertiser['campaigns']>()
+  const statuses = await ctx.approvals.statuses()
   for (const c of await ctx.campaigns.listCampaigns()) {
     if (c.source === 'hq' || !c.advertiserId) continue
     const counts = byAdvertiser.get(c.advertiserId) ?? { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 }
-    counts[await ctx.approvals.statusOf(c.campaignId)]++
+    counts[statuses.get(c.campaignId) ?? 'draft']++
     byAdvertiser.set(c.advertiserId, counts)
   }
   /* Live bookings from the current window on: an advertiser with none has
@@ -47,7 +48,8 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
     bookings.set(r.advertiserId, (bookings.get(r.advertiserId) ?? 0) + 1)
   }
   const byId = new Map<string, { name: string; via: string[] }>()
-  for (const p of await ctx.partners.list()) {
+  const partnerList = await ctx.partners.list()
+  for (const p of partnerList) {
     for (const s of p.seats) {
       const id = advertiserSlug(s.name)
       const a = byId.get(id) ?? { name: s.name, via: [] }
@@ -66,7 +68,7 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   /* Mapped DSP seats (ticket T0gLfo2zDrRXPVGcvEoL), checked against what each DSP has synced now. */
   const mapped = await ctx.company.advertiserSeats()
   const audiences = await ctx.company.advertiserAudiences()
-  const partners = new Map((await ctx.partners.list()).map((p) => [p.id, p]))
+  const partners = new Map(partnerList.map((p) => [p.id, p]))
   const out: Advertiser[] = []
   for (const [advertiserId, a] of [...byId.entries()].sort((x, y) => x[1].name.localeCompare(y[1].name))) {
     const s = await ctx.company.advertiserSetting(advertiserId)

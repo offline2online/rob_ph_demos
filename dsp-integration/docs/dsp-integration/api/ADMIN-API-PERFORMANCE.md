@@ -128,3 +128,25 @@ position re-read the partner list and each of its buyers lists. The schedule
 now passes both (`effectivePartnerIds` takes an optional list reader).
 Shape T on the same machine: default 525 → 378 ms p50, 92 days
 1,429 → 1,039 ms.
+
+## 27 Oct 2026 — shape C bench breaches: approval statuses read in bulk (ticket 0DYF4K3DO6tTvV0Tde9w)
+
+The gate flagged shape C's booking schedule (default and 92 days) and Advertisers
+at 02aafa21. Causes, all repeated work per position or per campaign:
+
+- **Advertisers and the schedule's approval counters** asked
+  `approvals.statusOf` for each campaign, and that built a whole `CampaignRef`
+  (assets, names looked up through the partner list, targeting summary) just to
+  read one word. `approvals.statuses()` now answers every campaign in one pass
+  from `CampaignSource.assetVersions()` (one grouped query; optional on the
+  seam, falling back to listing). Advertisers also read the partner list once,
+  not twice.
+- **The schedule's Available figure** read each position's buyers list again
+  through `baseFloorFor`; it now takes the request's per-list reader. A display
+  type's display count is read once per type, a slot's audience once, and
+  each type's views per column come from its one memoised row instead of an
+  await per cell.
+
+Shape C on the same machine, p50: default 489 → 307 ms, 92 days
+1,305 → 1,004 ms, Advertisers 255 → 62 ms. `npm run bench -- --assert --shapes=C`
+passes.

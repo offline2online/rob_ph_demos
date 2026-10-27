@@ -130,11 +130,13 @@ export async function checkVersionCount(ctx: Context, p: PositionRef, campaignId
 export interface FloorScope { partner?: Pick<PartnerRecord, 'bidder'> | null; position?: PositionRef | null; buyersListId?: string | null }
 
 /* The base floor for a scope: the most specific floor set (buyers list, else
-   DSP, else platform), never below the platform floor or the slot's own floor. */
-export async function baseFloorFor(ctx: Context, scope: FloorScope = {}): Promise<number> {
+   DSP, else platform), never below the platform floor or the slot's own floor.
+   `readList` lets a caller that prices many positions in one request read each
+   buyers list once (the booking schedule). */
+export async function baseFloorFor(ctx: Context, scope: FloorScope = {}, readList: (id: string) => ReturnType<Context['buyersLists']['get']> = (id) => ctx.buyersLists.get(id)): Promise<number> {
   const company = await ctx.company.get()
   const listId = scope.buyersListId ?? (scope.position && assignmentOf(scope.position.def) === 'deal' ? assignedOf(scope.position.def).buyersListId : undefined)
-  const list = listId ? await ctx.buyersLists.get(listId) : null
+  const list = listId ? await readList(listId) : null
   return resolveBaseFloor(company.floorCpm, scope.partner?.bidder.floorCpm, list?.floorCpm, scope.position ? displayTypeFloorCpmOf(scope.position.displayType) : null, scope.position ? slotFloorCpmOf(scope.position.def) : null, list?.belowFloorOverride === true)
 }
 

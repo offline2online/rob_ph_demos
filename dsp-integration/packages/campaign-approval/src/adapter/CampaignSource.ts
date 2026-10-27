@@ -41,6 +41,9 @@ export interface CampaignSource {
   getCampaign(id: string): CampaignRef | null | Promise<CampaignRef | null>
   listCampaigns(filter?: CampaignFilter): CampaignRef[] | Promise<CampaignRef[]>
   setActivation(id: string, enabled: boolean): CampaignRef | null | Promise<CampaignRef | null>
+  /* Every campaign's current assetVersion in one read, for a host screen that only needs approval statuses and
+     would otherwise build a whole CampaignRef per campaign. Optional: without it the module lists the campaigns. */
+  assetVersions?(): Map<string, string> | Promise<Map<string, string>>
   /* Called with a campaign id whenever it changes; returns an unsubscribe. */
   onCampaignChanged(listener: (id: string) => void): () => void
   /* Q38 (Rob, 29 Sep 2026): throw away every asset change made after

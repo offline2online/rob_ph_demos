@@ -24,7 +24,7 @@ import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { audienceOf } from '../../domain/displayTypes'
-import { allPositions, assignmentOf, assumedViewsPerWindow, effectivePartnerIds, isRealtime, nextWindow, shortestWindowMs, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
+import { allPositions, assignmentOf, assumedViewsFor, effectivePartnerIds, isRealtime, nextWindow, shortestWindowMs, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
 import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN, type ReservationRecord } from '../../repos/ReservationRepo'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
@@ -147,12 +147,11 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     campaignsOn.set(k, (campaignsOn.get(k) ?? new Set()).add(r.campaignId))
   }
   /* Approval is per campaign: its status and its type (localised / personalised) are read once each per request. */
-  const approvedMemo = new Map<string, Promise<boolean>>()
-  const isApproved = (campaignId: string) => {
-    if (!campaignId) return Promise.resolve(false)
-    let a = approvedMemo.get(campaignId)
-    if (!a) approvedMemo.set(campaignId, (a = Promise.resolve(ctx.approvals.statusOf(campaignId)).then((s) => s === 'approved')))
-    return a
+  let statuses: ReturnType<typeof ctx.approvals.statuses> | undefined
+  const isApproved = async (campaignId: string) => {
+    if (!campaignId) return false
+    statuses ??= ctx.approvals.statuses()
+    return (await statuses).get(campaignId) === 'approved'
   }
   /* The counters are the same for every tile of one position and advertiser, so they are worked out once per request. */
   const typeMemo = new Map<string, Promise<string | null | undefined>>()
@@ -262,10 +261,16 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
   }
 
   const positions = []
+  /* A display type's display count is the same for each of its positions: read once per type. */
+  const displayCountMemo = new Map<string, number>()
   for (const p of estate) {
-    const displayCount = (await ctx.displays.summaryByDisplayType(p.displayType.id)).displays
+    let displayCountOfType = displayCountMemo.get(p.displayType.id)
+    if (displayCountOfType === undefined) displayCountMemo.set(p.displayType.id, (displayCountOfType = (await ctx.displays.summaryByDisplayType(p.displayType.id)).displays))
+    const displayCount = displayCountOfType
     const hasDisplays = displayCount > 0
-    const views = await assumedViewsPerWindow(ctx, p)
+    /* The slot's own score is read once: both its figure for this position's window and its flat figure below come from it. */
+    const ownFlat = (await Promise.resolve(audienceOf(ctx.audience, p.displayType, p.slot))).assumedViewsPerWindow
+    const views = assumedViewsFor(ownFlat, p)
     /* Columns are the finest grid (the shortest window in the estate);
        this position's own window is its billing unit long (OQ27), so a
        column shows the window of its own that the column falls in — a
@@ -289,14 +294,16 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     const directFlights = (await Promise.all(assignedOf(p.def).buyersListIds.map(buyersList)))
       .filter((l): l is NonNullable<typeof l> => !!l && l.dealType === 'direct' && l.status === 'shared')
     /* A slot scored on its own (audience_vacd) differs from its type's display-derived flat figure and stays flat. */
-    const ownFlat = (await Promise.resolve(audienceOf(ctx.audience, p.displayType, p.slot))).assumedViewsPerWindow
     const ownScored = ownFlat !== (await flatDerived(p))
-    const viewsOf = async (column: Date) => ownScored ? Math.round(ownFlat * (columnMs / HOUR / PLATFORM_DEFAULT_BILLING_UNIT_HOURS)) : derivedViews(p, column)
+    /* One row of views per display type (read once), then a plain lookup per cell: an await per cell was most of the 92-day cost. */
+    const flatColumnViews = Math.round(ownFlat * (columnMs / HOUR / PLATFORM_DEFAULT_BILLING_UNIT_HOURS))
+    const derivedRowOf = monthly || ownScored ? null : await derivedRow(p)
     /* Available (ticket Ltlu40NbXod3d8NwFF6Z): what is left to sell, at this position's floor CPM (the base floor it clears at, in the
        exchange currency) x the assumed views of each unbooked column / 1000. */
-    const floor = await baseFloorFor(ctx, { position: p })
+    const floor = await baseFloorFor(ctx, { position: p }, buyersList)
     const windows: BookingSchedule['positions'][number]['windows'] = []
-    for (const column of monthly ? [] : starts) {
+    for (let ci = 0; ci < (monthly ? 0 : starts.length); ci++) {
+      const column = starts[ci]
 
       const start = windowStartOf(column, len)
       const first = !counted.has(start.getTime())
@@ -317,7 +324,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       /* With an advertiser filter the other advertisers' tiles stay on the grid, named, so the page can grey them out
          (ticket zebMTdEEJFkVG5AVGiET); they are left out of every total below, which read the filtered advertiser only. */
       const inFilter = !f.advertiserId || r?.advertiserId === f.advertiserId
-      const columnViews = hasDisplays || r ? await viewsOf(column) : 0
+      const columnViews = hasDisplays || r ? (derivedRowOf ? derivedRowOf[ci] : flatColumnViews) : 0
       if (r) {
         if (inFilter) { rev.bookedViews += columnViews; rev.totalViews += columnViews }
         const bookedRevenue = round2((views / 1000) * (r.clearingCpm as number))

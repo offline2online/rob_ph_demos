@@ -3539,6 +3539,12 @@ components:
               zoneSlot: {type: integer, description: 'The slot''s 1-based number within its zone (the same as `slot` on a single-zone display type): what Available Inventory shows as Slot.'}
               description: {type: [string, 'null'], description: The display type's description.}
               storeZone: {type: [string, 'null'], enum: [exterior, entrance, checkout, aisles, other, null], description: The IAB / IAB Europe store zone set on the display type; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.}
+              position: {type: string, description: 'The slot''s name (its label) on the display type. What the Slots hover shows beside "(slot N)". Kept on an archived deal; absent from a deal archived before 27 Oct 2026.'}
+              playlistName: {type: string, description: The playlist the slot plays; the em dash when none. Kept on an archived deal; absent from a deal archived before 27 Oct 2026.}
+              orientation: {type: string, enum: [landscape, portrait], description: The display type's orientation. Kept on an archived deal; absent from a deal archived before 27 Oct 2026.}
+              displayCount: {type: integer, description: 'Displays on the display type when the figures were taken. Kept on an archived deal; absent from a deal archived before 27 Oct 2026.'}
+              playsPerWindow: {type: integer, description: 'Plays per display per window when the figures were taken (the figure behind the Details hover''s plays and value). Kept on an archived deal; absent from a deal archived before 27 Oct 2026.'}
+              windowHours: {type: integer, description: 'The slot''s play window (billing unit) in hours when the figures were taken. Kept on an archived deal; absent from a deal archived before 27 Oct 2026.'}
         termVersion:
           type: integer
           readOnly: true

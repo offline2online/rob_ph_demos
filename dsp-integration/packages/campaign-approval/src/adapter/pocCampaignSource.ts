@@ -76,6 +76,11 @@ export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSourc
         return out
       })
     },
+    assetVersions() {
+      /* The same figure toRef reports: the highest version of the campaign's undiscarded assets, v0 with none. */
+      return andThen(db.prepare('SELECT c.id AS id, COALESCE(MAX(a.version), 0) AS version FROM campaigns c LEFT JOIN campaign_assets a ON a.campaign_id = c.id AND a.discarded_at IS NULL GROUP BY c.id').all(), (rs) =>
+        new Map((rs as unknown as { id: string; version: number }[]).map((r) => [r.id, `v${r.version}`] as const)))
+    },
     setActivation(id, enabled) {
       return andThen(db.prepare('UPDATE campaigns SET activation_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id), () => {
         listeners.forEach((l) => l(id))

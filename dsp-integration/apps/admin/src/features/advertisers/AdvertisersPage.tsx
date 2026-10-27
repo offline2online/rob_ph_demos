@@ -1182,7 +1182,12 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         </div>
       ) : (
         <>
-          <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(invShown ?? invRows.length, invRows.length, `position${invRows.length === 1 ? '' : 's'}/slot${invRows.length === 1 ? '' : 's'}`)}</div>
+          {/* View booking schedule sits top right of the table, as View campaign approvals does on Advertisers, and opens
+              the schedule in a new tab (ticket VnF4Dd7ISHccn1z03nW6). Shown to read-only users too: it only reads. */}
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div style={{ fontSize: 13 }}>{showingCount(invShown ?? invRows.length, invRows.length, `position${invRows.length === 1 ? '' : 's'}/slot${invRows.length === 1 ? '' : 's'}`)}</div>
+            <Button onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>View booking schedule</Button>
+          </div>
           <Grid<AvailableInventoryRow>
             label="Available Inventory"
             rows={invRows}

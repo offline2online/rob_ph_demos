@@ -381,8 +381,15 @@ the same dialog for both.
   keeps them: `buyers_lists.archived_slots` (migration `0088`, ticket
   VHuSQiHQoGCPPvreusgK, 27 Oct 2026) holds the deal's `assignedSlots` as they
   stood, and the Slots column lists every one, one per line. A deal archived
-  before then shows "No slots recorded". Archiving is recorded
-  in the SSP change history (§3a).
+  before then shows "No slots recorded". Each kept slot also carries what the
+  hovers read (ticket TeKdyE4cSeb9EQ9LIJeX, 27 Oct 2026): the slot's name
+  (`position`), `playlistName`, `orientation`, `displayCount`, `playsPerWindow`
+  and `windowHours`, taken when the deal was archived. On the archive the
+  **Details** hover therefore totals the plays and value over the flight, and
+  hovering **Slots** gives the same Assigned slots hover as the Deals and buyers
+  lists, so the two tables match; a slot archived before these were kept shows
+  "plays n/a" and no playlist. Archiving is recorded in the SSP change history
+  (§3a).
 - **Automatic end of flight.** Once a shared deal's flight dates have ended and
   its last window inside the flight has played and been billed, the deal
   releases itself from every slot (unassigns) and is then archived, archived
