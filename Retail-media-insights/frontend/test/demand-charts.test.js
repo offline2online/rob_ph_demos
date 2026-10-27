@@ -49,24 +49,10 @@ test('slots won hover notes the retention only when the range is longer', async 
   assert.match(DC.slotsWonHover(a, { complete: false, retentionDays: 90 }).sections[0].note, /90 days/);
 });
 
-test('maturity ladder: three levels, counts match lists, every hover name carries the DSP', async () => {
+test('maturity ladder data: three levels, counts match lists', async () => {
   const mat = await get('/maturity');
   assert.deepStrictEqual(mat.ladder.map((l) => l.level), DC.LEVELS);
   mat.ladder.forEach((l) => assert.strictEqual(l.advertisers, l.list.length));
-  const m = DC.ladderHover(mat.ladder[2]);
-  assert.match(m.title, /^Personalised · 5 advertisers$/);
-  assert.deepStrictEqual(names(m), ['Blackmores (DV360)', 'Haleon (The Trade Desk)', 'Kenvue (DV360)', "L'Oréal Paris (Direct)", 'Procter & Gamble (Direct)']);
-  assert.strictEqual(m.names[0][1], 'Aggregate, Computer Vision');
-  assert.ok(DC.ladderHover(mat.ladder[1]).names.every((r) => r[1] === ''), 'only Personalised shows a personalisation type');
-});
-
-test('scheduling hover shows scheduled campaigns for "uses", names only for "none"', async () => {
-  const mat = await get('/maturity');
-  const uses = DC.schedulingHover(mat.scheduling[0]);
-  assert.deepStrictEqual(uses.names[0], ['Blackmores (DV360)', '3 of 4 campaigns, 5 schedules']);
-  const none = DC.schedulingHover(mat.scheduling[1]);
-  assert.deepStrictEqual(names(none), ['Bayer Consumer Health (Amazon DSP)', 'Kenvue (DV360)', 'Perrigo (Direct)', 'Reckitt (Amazon DSP)', 'Unilever (Amazon DSP)', 'Vitabiotics (Direct)']);
-  assert.ok(none.names.every((r) => r[1] === ''));
   assert.strictEqual(mat.scheduling[0].advertisers + mat.scheduling[1].advertisers, 11);
 });
 

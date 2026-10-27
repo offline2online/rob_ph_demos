@@ -21,9 +21,7 @@
       'Better targeting and scheduling mean better campaigns, more spend and more inventory sold.',
     advertisers: 'Top 10 by revenue. Deals on = deals the advertiser is on (buyers lists), any deal type; hover to list them. Slots covered = slots across those deals. ' +
       'Slots won = share of covered slot opportunities the advertiser won. Effective CPM is per 1,000 assumed views (VAC-d). ' +
-      'Maturity level and Scheduling show how the advertiser uses targeting and scheduling; use the filters, or click a bar in the charts below, to narrow the table.',
-    ladder: 'Advertisers at each level. An advertiser’s level is the highest level used by any of its campaigns in the date range. Hover a bar to see every advertiser at that level; click it to filter the Advertisers table.',
-    scheduling: 'Advertisers whose campaigns in the date range use scheduling (dayparting or schedules from the Scheduling tab) compared with those that do not. Hover a bar to see who; click it to filter the table.',
+      'Maturity level and Scheduling show how the advertiser uses targeting and scheduling; use the filters, or click a bar in Variables in use below, to narrow the table.',
     progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
     variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertisers table. ' +
       'Daypart is not a targeting variable: it is a campaign scheduling feature, shown in Scheduling.',
@@ -162,20 +160,6 @@
     return { title: advName(r.src) + ': scheduled campaigns', names: names.map(function (n) { return [n, '']; }) };
   }
 
-  function ladderHover(entry) {
-    var rows = (entry.list || []).map(function (a) {
-      return [advName(a), a.personalisationTypes && a.personalisationTypes.length ? a.personalisationTypes.join(', ') : ''];
-    });
-    return { title: entry.level + ' · ' + plural(entry.advertisers, 'advertiser'), names: rows };
-  }
-  function schedulingHover(entry) {
-    var rows = (entry.list || []).map(function (a) {
-      var detail = entry.key === 'uses' && has(a.campaigns)
-        ? a.scheduledCampaigns + ' of ' + plural(a.campaigns, 'campaign') + ', ' + plural(a.schedules || 0, 'schedule') : '';
-      return [advName(a), detail];
-    });
-    return { title: entry.label + ' · ' + plural(entry.advertisers, 'advertiser'), names: rows };
-  }
   function variableHover(entry) {
     return {
       title: entry.variable + ' · ' + plural(entry.advertisers, 'advertiser'),
@@ -232,8 +216,7 @@
 
   var pure = {
     LEVELS: LEVELS, TOP_N: TOP_N, TIPS: TIPS, advName: advName, isDaypart: isDaypart, targetingVars: targetingVars,
-    advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
-    schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
+    advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
     activeFilters: activeFilters, matchesFilters: matchesFilters, levelCellHover: levelCellHover, schedulingCellHover: schedulingCellHover, ADV_COLS: ADV_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
@@ -380,8 +363,6 @@
     var showBtn = h('button', { type: 'button', class: 'dc-btn dc-link', text: 'Show all', hidden: '' });
     showBtn.addEventListener('click', function () { state.showAll = !state.showAll; if (advData) drawAdvertisers(); });
 
-    var pLad = panel('Maturity ladder', TIPS.ladder, null);
-    var pSch = panel('Scheduling', TIPS.scheduling, null);
     var pPro = panel('Progress over time', TIPS.progress, granSeg, 'dc-wide');
     var pVar = panel('Variables in use', TIPS.variables, kindSeg, 'dc-wide');
 
@@ -397,7 +378,7 @@
     }
     var fLevel = select('Maturity level', 'level', function () { return [['', 'All levels']].concat(LEVELS.map(function (l) { return [l, l]; })); });
     var fVar = select('Variable', 'variable', function () { return [['', 'All variables']].concat(knownVars.map(function (v) { return [v, v]; })); });
-    var fSch = select('Scheduling', 'scheduling', function () { return [['', 'All scheduling'], ['uses', 'Uses scheduling'], ['none', 'No scheduling']]; });
+    var fSch = select('Scheduling', 'scheduling', function () { return [['', 'All scheduling'], ['uses', 'Uses scheduling'], ['none', 'Not used']]; });
     var clearChip = h('button', { type: 'button', class: 'dc-chip dc-clear', hidden: '' }, [h('span', { text: 'Clear filter' }), icon('close')]);
     clearChip.addEventListener('click', function () { state.table = { level: '', variable: '', scheduling: '' }; refilter(); });
     var tableControls = h('div', { class: 'dc-filters' }, [clearChip, fLevel.el, fVar.el, fSch.el]);
@@ -405,7 +386,6 @@
 
     container.appendChild(section('Demand health', 'handshake', TIPS.demand, [pAdv.el]));
     container.appendChild(section('Targeting & scheduling maturity', 'stairs', TIPS.maturity, [
-      h('div', { class: 'dc-grid' }, [pLad.el, pSch.el]),
       pVar.el,
       pPro.el
     ]));
@@ -472,7 +452,7 @@
       pAdv.body.appendChild(showBtn);
     }
 
-    // ----- Maturity: horizontal count bars (ladder, scheduling, variables) -----
+    // ----- Maturity: horizontal count bars (variables in use) -----
     function selected(kind, key) { return state.table[kind] === key; }
     function barRows(p, entries, spec) {
       var max = Math.max.apply(null, entries.map(function (e) { return e.advertisers; }).concat([1]));
@@ -499,20 +479,6 @@
     }
     var LEVEL_CLS = { 'Default only': 'dc-l0', Localised: 'dc-l1', Personalised: 'dc-l2' };
 
-    function drawLadder(d) {
-      // Personalised on top, Default only at the bottom (the ladder reads upwards).
-      var entries = (d.ladder || []).slice().sort(function (a, b) { return LEVELS.indexOf(b.level) - LEVELS.indexOf(a.level); });
-      barRows(pLad, entries, {
-        filter: 'level', key: function (e) { return e.level; }, cls: function (e) { return LEVEL_CLS[e.level]; },
-        label: function (e) { return e.level; }, value: function (e) { return plural(e.advertisers, 'advertiser'); }, hover: ladderHover
-      });
-    }
-    function drawScheduling(d) {
-      barRows(pSch, d.scheduling || [], {
-        filter: 'scheduling', key: function (e) { return e.key; }, cls: function (e) { return e.key === 'uses' ? 'dc-l1' : 'dc-l0'; },
-        label: function (e) { return e.label; }, value: function (e) { return plural(e.advertisers, 'advertiser'); }, hover: schedulingHover
-      });
-    }
     function drawVariables(d) {
       var bars = variableBars(d);
       if (!bars.length) return emptyState(pVar, 'filter_alt_off', 'No advertiser uses these variables in range.');
@@ -592,27 +558,27 @@
     function refilter() {
       hideTip();
       syncTableFilters();
-      if (matData && (matData.ladder || []).length) { drawLadder(matData); drawScheduling(matData); drawVariables(matData); }
+      if (matData && (matData.ladder || []).length) drawVariables(matData);
       if (advData) drawAdvertisers();
     }
     function drawMaturity() {
       var d = matData;
       if (!d || !(d.ladder || []).length) {
-        [pLad, pSch, pPro, pVar].forEach(function (p) { setState(p, 'empty'); });
+        [pPro, pVar].forEach(function (p) { setState(p, 'empty'); });
         if (advData) drawAdvertisers();
         return;
       }
       knownVars = variableOptions({ variablesInUse: d.variablesInUse, table: d.table }, state.table.variable)
         .concat(knownVars).filter(function (v, i, a) { return a.indexOf(v) === i; }).sort();
       syncTableFilters();
-      drawLadder(d); drawScheduling(d); drawProgress(d); drawVariables(d);
+      drawProgress(d); drawVariables(d);
       if (advData) drawAdvertisers();
     }
     // full=true on first load and page-filter changes (skeletons); false when only a chart control or table filter moved.
     function loadMaturity(full) {
       var g = ++gen.mat;
       hideTip();
-      if (full || !matData) [pLad, pSch, pPro, pVar].forEach(function (p) { setState(p, 'loading'); });
+      if (full || !matData) [pPro, pVar].forEach(function (p) { setState(p, 'loading'); });
       fetchJson('maturity', matParams()).then(function (d) {
         if (!alive || g !== gen.mat) return;
         matData = d; drawMaturity();
@@ -620,7 +586,7 @@
         if (!alive || g !== gen.mat) return;
         matData = null;
         if (advData) drawAdvertisers();
-        [pLad, pSch, pPro, pVar].forEach(function (p) { setState(p, 'error', function () { loadMaturity(true); }); });
+        [pPro, pVar].forEach(function (p) { setState(p, 'error', function () { loadMaturity(true); }); });
       });
     }
     function loadAdvertisers() {

@@ -86,24 +86,16 @@ test('Advertisers table is advertiser level: no Seats column, no chevron, no sub
   } finally { await context.close(); }
 });
 
-test('Maturity: order, ladder, Variables in use, table cells, Progress over time last', async () => {
+test('Maturity: order, filters, Variables in use, table cells, Progress over time last', async () => {
   const { page, context, problems } = await open(1163);
   try {
     assert.equal(await page.locator('.dc-sechead:has(h2:text-is("Targeting & scheduling maturity")) .dc-sec-icon').textContent(), 'stairs');
     assert.deepEqual(await texts(page, '.dc-panel h3'),
-      ['Advertisers', 'Maturity ladder', 'Scheduling', 'Variables in use', 'Progress over time']);
+      ['Advertisers', 'Variables in use', 'Progress over time']);
     const box = (t) => page.locator(`.dc-panel:has(h3:text-is("${t}"))`).boundingBox();
-    const [lad, sch, vars, pro] = await Promise.all(['Maturity ladder', 'Scheduling', 'Variables in use', 'Progress over time'].map(box));
-    assert.ok(Math.abs(lad.y - sch.y) < 2 && sch.x > lad.x, 'ladder and scheduling side by side');
+    const [vars, pro] = await Promise.all(['Variables in use', 'Progress over time'].map(box));
     for (const b of [vars, pro]) assert.ok(b.width > 1000, `full width: ${b.width}`);
-
-    const ladder = page.locator('.dc-panel:has(h3:text-is("Maturity ladder"))');
-    assert.deepEqual(await texts(page, '.dc-panel:has(h3:text-is("Maturity ladder")) .dc-label'), ['Personalised', 'Localised', 'Default only']);
-    assert.deepEqual(await ladder.locator('.dc-bar').evaluateAll((b) => b.map((x) => getComputedStyle(x).backgroundColor)),
-      ['rgb(23, 74, 140)', 'rgb(106, 167, 224)', 'rgb(217, 217, 217)']);
-    assert.match(await ladder.locator('.dc-value').first().innerHTML(), /^<b>5<\/b> advertisers$/);
-    await ladder.locator('.dc-row').first().hover();
-    assert.ok((await page.textContent('.dc-tip')).includes('Blackmores (DV360) · '));
+    assert.equal(await page.locator('.dc-panel:has(h3:text-is("Maturity ladder")), .dc-panel:has(h3:text-is("Scheduling"))').count(), 0, 'the ladder and scheduling charts are gone');
 
     const seg = page.locator('.dc-panel:has(h3:text-is("Variables in use")) .dc-seg-btn');
     assert.deepEqual(await seg.allTextContents(), ['Localised', 'Personalised']);
@@ -115,7 +107,7 @@ test('Maturity: order, ladder, Variables in use, table cells, Progress over time
     const filters = page.locator('.dc-panel:has(h3:text-is("Advertisers")) .dc-select');
     assert.deepEqual(await filters.evaluateAll((s) => s.map((x) => x.getAttribute('aria-label'))), ['Maturity level', 'Variable', 'Scheduling']);
     assert.deepEqual(await filters.first().locator('option').allTextContents(), ['All levels', 'Default only', 'Localised', 'Personalised']);
-    assert.equal(await filters.last().locator('option').first().textContent(), 'All scheduling');
+    assert.deepEqual(await filters.last().locator('option').allTextContents(), ['All scheduling', 'Uses scheduling', 'Not used']);
     assert.equal(await page.locator('h3:text-is("Advertiser targeting & scheduling")').count(), 0, 'the separate table is gone');
     assert.equal(await page.locator('.dc-mat').count(), 0);
     const sched = await texts(page, '.dc-adv tbody td:nth-child(9)');
@@ -133,8 +125,8 @@ test('Maturity: order, ladder, Variables in use, table cells, Progress over time
     assert.match(await page.textContent('.dc-filters > :first-child'), /^Clear filter/);
     await page.click('.dc-clear');
     await page.waitForFunction(() => document.querySelectorAll('.dc-adv tbody tr').length === 10);
-    // a chart click filters the same table
-    await page.locator('.dc-panel:has(h3:text-is("Scheduling")) .dc-row').first().click();
+    // the Scheduling filter narrows the table to advertisers that use it
+    await page.selectOption('.dc-select[aria-label="Scheduling"]', 'uses');
     await page.waitForFunction(() => document.querySelectorAll('.dc-adv tbody tr').length > 0 && ![...document.querySelectorAll('.dc-adv tbody td:nth-child(9)')].some((x) => x.textContent === 'Not used'));
     await page.click('.dc-clear');
     // revenue appears once on the page
