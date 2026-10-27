@@ -64,6 +64,23 @@ test('Missed revenue & fill: title, legend, stacked bars, label, order, total ro
   } finally { await context.close(); }
 });
 
+test('Missed revenue & fill: hovering the bar shows the same hover as its numbers; the name keeps the display type card', async () => {
+  const { page, context } = await open(1163);
+  try {
+    const row = panel(page, 'Missed revenue & fill').locator('.sc-row').first();
+    const tip = page.locator('.sc-tip:not([hidden])');
+    await row.locator('.sc-value').hover();
+    const fromNumbers = await tip.textContent();
+    assert.match(fromNumbers, /Total missed revenue/);
+    await page.mouse.move(0, 0);
+    await row.locator('.sc-track').hover();
+    assert.equal(await tip.textContent(), fromNumbers, 'bar hover matches the numbers hover');
+    await page.mouse.move(0, 0);
+    await row.locator('.sc-label').hover();
+    assert.doesNotMatch(await tip.textContent(), /Total missed revenue/, 'the name still shows the display type card');
+  } finally { await context.close(); }
+});
+
 test('Yield: defaults to All deal types, coloured eCPM bars highest first, empty state when nothing cleared', async () => {
   const { page, context } = await open(1163);
   try {
