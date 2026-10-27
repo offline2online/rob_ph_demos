@@ -6,9 +6,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, Input, InputNumber, Modal, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
-import { cpmKindHint, cpmSummary, flightDays, flightMoment, slotPlaysOver, sourceLabel } from './effectiveTerm'
+import { cpmKindHint, cpmSummary, flightDays, flightMoment, slotImpressionsOver, slotPlaysOver, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams, IFloatingFilterParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, advertiserSlug, DIRECT_PARTNER_ID, type Partner, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
+import { valueOfImpressions, INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, advertiserSlug, DIRECT_PARTNER_ID, type Partner, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
 import { forwardRef, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -164,10 +164,10 @@ type InvCtx = { current: {
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
 /* Pricing guidance for one deal (Rob, 27 Oct 2026): filtering Assigned to by a single deal totals, over the deal's flight, the plays and the
-   minimum value (floor CPM x plays / 1,000) of every slot assigned to it, so its price can be set afterwards. A total is null when the
+   minimum value (floor CPM x impressions / 1,000, impressions = plays x VAC-d) of every slot assigned to it, so its price can be set afterwards. A total is null when the
    flight has no dates, or a slot's plays can't be counted. */
-type DealFocusSlot = { label: string; floor: number; plays: number | null; min: number | null }
-type DealFocus = { deal: BuyersList; days: number | null; slots: DealFocusSlot[]; totalPlays: number | null; totalMin: number | null }
+type DealFocusSlot = { label: string; floor: number; plays: number | null; impressions: number | null; min: number | null }
+type DealFocus = { deal: BuyersList; days: number | null; slots: DealFocusSlot[]; totalPlays: number | null; totalImpressions: number | null; totalMin: number | null }
 const usd = (n: number) => `${TRANSACTING_CURRENCY} ${Math.round(n).toLocaleString('en-US')}`
 const flightRangeOf = (d: BuyersList) => (d.activeFrom || d.activeTo ? `${flightMoment(d.activeFrom) ?? 'No start date'} → ${flightMoment(d.activeTo) ?? 'No end date'}` : 'Always active')
 const DEAL_TIP_MUTED = 'rgba(255,255,255,0.65)'
@@ -190,9 +190,9 @@ function DealFloorFilter() {
   const tip = (
     <div data-testid="deal-floor-tip">
       <div style={{ fontWeight: 500 }}>Minimum value for this deal</div>
-      <div>The minimum for {f.deal.name} over its flight dates ({flightRangeOf(f.deal)}), across the {f.slots.length} selected slot{f.slots.length === 1 ? '' : 's'}. Each slot: floor CPM × plays over the flight ÷ 1,000.</div>
+      <div>The minimum for {f.deal.name} over its flight dates ({flightRangeOf(f.deal)}), across the {f.slots.length} selected slot{f.slots.length === 1 ? '' : 's'}. Each slot: floor CPM × impressions over the flight ÷ 1,000 (impressions = plays × VAC-d).</div>
       {f.days == null ? <div style={{ color: DEAL_TIP_MUTED }}>Set the deal's start and end dates to total it.</div>
-        : f.slots.map((s, i) => <div key={i}>{s.label}: {s.min == null ? 'n/a' : usd(s.min)}<span style={{ color: DEAL_TIP_MUTED }}> ({s.floor} CPM)</span></div>)}
+        : f.slots.map((s, i) => <div key={i}>{s.label}: {s.min == null ? 'n/a' : usd(s.min)}<span style={{ color: DEAL_TIP_MUTED }}> ({s.impressions == null ? 'n/a' : `${s.impressions.toLocaleString('en-US')} impressions`} × {s.floor} CPM)</span></div>)}
     </div>
   )
   return <Tip title={tip}><span data-testid="deal-floor-total" style={{ fontSize: 12.5, fontWeight: 600 }}>{f.totalMin == null ? '–' : usd(f.totalMin)}</span></Tip>
@@ -1167,11 +1167,12 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     const days = flightDays(focusDeal.activeFrom, focusDeal.activeTo)
     const slots = invRows.filter((r) => tiersOf(edited(invContext, r).assignedTo).includes(focusDeal.id)).map((r): DealFocusSlot => {
       const floor = effectiveFloorCpm(invContext, r)
-      const plays = slotPlaysOver({ playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r) }, days)
-      return { label: `${r.displayTypeName} · slot ${r.zoneSlot}`, floor, plays, min: plays == null ? null : (plays / 1000) * floor }
+      const detail = { playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r), vacdPerPlay: r.vacdPerPlay ?? null }
+      const plays = slotPlaysOver(detail, days), impressions = slotImpressionsOver(detail, days)
+      return { label: `${r.displayTypeName} · slot ${r.zoneSlot}`, floor, plays, impressions, min: impressions == null ? null : valueOfImpressions(impressions, floor) }
     })
-    const complete = days != null && slots.length > 0 && slots.every((s) => s.plays != null)
-    invContext.dealFocus = { deal: focusDeal, days, slots, totalPlays: complete ? slots.reduce((n, s) => n + (s.plays ?? 0), 0) : null, totalMin: complete ? slots.reduce((n, s) => n + (s.min ?? 0), 0) : null }
+    const complete = days != null && slots.length > 0 && slots.every((s) => s.plays != null && s.impressions != null)
+    invContext.dealFocus = { deal: focusDeal, days, slots, totalPlays: complete ? slots.reduce((n, s) => n + (s.plays ?? 0), 0) : null, totalImpressions: complete ? slots.reduce((n, s) => n + (s.impressions ?? 0), 0) : null, totalMin: complete ? slots.reduce((n, s) => n + (s.min ?? 0), 0) : null }
   }
   /* Combined plays per window per buyers list (8 Oct 2026): the fleet total (plays per display x displays registered in PH Core)
      of every position the list is assigned to, summed - the ceiling for a guaranteed deal's committed volume. Read from the
@@ -1179,10 +1180,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
   const countedTypes = new Map<string, Set<string>>()
   /* The slots each list is assigned to, for the Slots column's hover on the Deals and buyers lists table. */
-  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; orientation: 'landscape' | 'portrait' | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }[]>()
+  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; orientation: 'landscape' | 'portrait' | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number; vacdPerPlay: number | null }[]>()
   for (const r of invRows) {
     for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
-      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, orientation: r.displayTypeOrientation ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r) }])
+      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, orientation: r.displayTypeOrientation ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r), vacdPerPlay: r.vacdPerPlay ?? null }])
     }
     if (typeof r.displayCount !== 'number') continue
     const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount

@@ -9,7 +9,7 @@ import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { resolveBaseFloor } from '../../domain/pricing'
 import { billingChangeApplied, changePending, globalDealSuppressedBy, nextWindowFor, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
-import { playsPerWindowOpenOf } from '../../domain/plays'
+import { playsPerWindowOpenOf, vacdPerPlayFor } from '../../domain/plays'
 import { openHoursPerDayOf, operatingHoursExt, positionHourGroups } from '../../domain/operatingGate'
 import { assignedToSlot, rotationSizeOf, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
@@ -187,6 +187,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           operatingMode: operating.mode,
           operatingTimes,
           playsPerWindow: playsPerWindowOpenOf(billingUnitHoursOf(t, s) * 3_600_000, maxPlayLengthSecOf(t, s, company.maxPlayLengthSec), slotCount, openHoursPerDay),
+          vacdPerPlay: vacdPerPlayFor(audience.assumedViewsPerWindow, billingUnitHoursOf(t, s), playsPerWindowOpenOf(billingUnitHoursOf(t, s) * 3_600_000, maxPlayLengthSecOf(t, s, company.maxPlayLengthSec), slotCount, openHoursPerDay) * displayCount),
         })
       }
     }

@@ -132,7 +132,8 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
   const { inventoryScope, estimatedVolume } = await scopeAndVolumeOf(ctx, list, positions)
   const targeting = targetingOf(list)
   const committedPlays = isGuaranteedLike(list.dealType) ? list.committedPlays ?? null : null
-  const guaranteedImps = committedPlays != null && estimatedVolume.assumedViewsPerPlay != null ? Math.round(committedPlays * estimatedVolume.assumedViewsPerPlay) : null
+  /* Guaranteed IMPRESSIONS (28 Oct 2026) are the deal's own stored figure, built per display and open hour from VAC-d: not committed plays x an average. */
+  const guaranteedImps = isGuaranteedLike(list.dealType) ? list.committedImpressions ?? null : null
   const orderStatus = list.status !== 'shared' ? 'DRAFT' : entries.length && entries.every((e) => e.inventorySource.buyerStatus === 'ACTIVE') ? 'ACCEPTED' : 'PENDING_ACCEPTANCE'
   return {
     buyersListId: list.id,

@@ -33,7 +33,7 @@ const ArchivedNameCell = ({ data }: P) => (data ? <div className="min-w-0"><div 
 const archivedSlotsOf = (l?: BuyersList): DealSlot[] => (l?.assignedSlots ?? []).map((s) => ({
   displayType: s.displayTypeName, description: s.description, storeZone: s.storeZone ?? null, orientation: s.orientation ?? null, zoneName: s.zoneName,
   playlist: s.playlistName === '—' ? '' : s.playlistName ?? '', position: s.position ?? s.label.split(' — ').slice(1).join(' — ') ?? '', slot: s.zoneSlot,
-  playsPerWindow: s.playsPerWindow ?? null, displayCount: s.displayCount ?? null, windowHours: s.windowHours ?? 24,
+  playsPerWindow: s.playsPerWindow ?? null, displayCount: s.displayCount ?? null, windowHours: s.windowHours ?? 24, vacdPerPlay: s.vacdPerPlay ?? null,
 }))
 const slotLines = (l?: BuyersList) => (l?.assignedSlots ?? []).map((s) => slotLine(s))
 /* One slot per line, none dropped: a person needs to see exactly which slots the deal was in. */

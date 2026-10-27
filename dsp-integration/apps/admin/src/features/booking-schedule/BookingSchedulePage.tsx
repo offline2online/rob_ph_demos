@@ -313,13 +313,13 @@ function TileCard({ booking, money, start, slot, onViewAll, dealInfo }: { bookin
     }
   }
   rows.push(['Booking value', money(booking.bookedRevenue)])
-  /* Delivery pacing closes the card for a Programmatic guaranteed deal: plays delivered against plays committed. */
+  /* Delivery pacing closes the card for a Programmatic guaranteed deal: impressions delivered against impressions committed (28 Oct 2026). */
   const pacing = dealInfo ? pacingOf(dealInfo.deal, dealInfo.now) : null
   const pacingBlock: ReactNode = pacing && (
     <div data-testid={`pacing-${dealInfo!.deal.id}`} style={{ marginTop: 6 }}>
       <div style={{ fontWeight: 500 }}>Delivery pacing</div>
-      <div>Delivered: {num(pacing.delivered)} of {num(pacing.committed)} committed plays</div>
-      {pacing.pct != null && <div><span style={{ color: TIP_MUTED }}>Pacing: </span>{pacing.pct}% of the plays due by now</div>}
+      <div>Delivered: {num(pacing.delivered)} of {num(pacing.committed)} committed impressions</div>
+      {pacing.pct != null && <div><span style={{ color: TIP_MUTED }}>Pacing: </span>{pacing.pct}% of the impressions due by now</div>}
       <div><span style={{ color: TIP_MUTED }}>Status: </span>{PACING_LABEL[pacing.status]}</div>
     </div>
   )

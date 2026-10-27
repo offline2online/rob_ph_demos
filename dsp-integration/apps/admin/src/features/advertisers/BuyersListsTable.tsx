@@ -147,9 +147,9 @@ export const TermCell = ({ data }: P) => {
 export const DetailsCell = ({ data, context }: P) => {
   if (!data) return null
   const slots = context.current.slots.get(data.id) ?? []
-  const { rate, rateType, typeLabel, days, totalPlays, complete, total } = dealFigures(data, slots)
+  const { rate, rateType, typeLabel, days, totalPlays, totalImpressions, complete, total } = dealFigures(data, slots)
   /* The cell's one-line summary: slots, plays and value over the flight, or why there is no total yet. */
-  const summary = !slots.length ? 'Not assigned to a slot' : days == null ? 'Open flight: no total' : !complete ? `${slots.length} slot${slots.length === 1 ? '' : 's'}` : [`${slots.length} slot${slots.length === 1 ? '' : 's'}`, `${num(totalPlays)} plays`, total].filter(Boolean).join(' · ')
+  const summary = !slots.length ? 'Not assigned to a slot' : days == null ? 'Open flight: no total' : !complete ? `${slots.length} slot${slots.length === 1 ? '' : 's'}` : [`${slots.length} slot${slots.length === 1 ? '' : 's'}`, `${num(totalPlays)} plays`, `${num(totalImpressions)} impressions`, total].filter(Boolean).join(' · ')
   return (
     <Tip title={<DealDetailsTip data={data} slots={slots} seatName={context.current.seatName} />} styles={{ root: { maxWidth: 'min(320px, calc(100vw - 32px))' } }}>
       <div className="min-w-0">

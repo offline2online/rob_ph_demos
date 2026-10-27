@@ -30,6 +30,7 @@ import { tx } from '../db/db'
 import type { LineItem } from './index'
 import type { ReceivedPlay } from '../platform/PlaybackSource'
 import type { LatePlay } from '../repos/LateLedgerRepo'
+import { valueOfImpressions } from '@ph-dsp/types'
 
 const BATCH = 2_000
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6
@@ -40,7 +41,7 @@ export function valueLatePlay(item: LineItem, play: { durationSec: number }, lat
   const headroom = Math.max(0, item.expectedSec - item.playedSec - lateSecSoFar)
   const sec = Math.min(play.durationSec, headroom)
   const lostViews = item.expectedSec > 0 ? (item.assumedViews * sec) / item.expectedSec : 0
-  return { lostViews: round6(lostViews), lostAmount: round6((lostViews / 1000) * item.cpm) }
+  return { lostViews: round6(lostViews), lostAmount: round6(valueOfImpressions(lostViews, item.cpm)) }
 }
 
 /* Records every play received since the last scan, up to now, that arrived

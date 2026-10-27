@@ -2687,7 +2687,7 @@ export interface components {
                 bufferPct: number | null;
                 assumedViewsPerPlay: number | null;
             };
-            /** @description Programmatic guaranteed only - committed plays x assumed views per play. Committed plays stay the stored figure. */
+            /** @description Programmatic guaranteed only - the committed IMPRESSIONS (28 Oct 2026), built bottom-up per display and open hour from VAC-d, less the buffer; the same figure as BuyersList.committedImpressions. Committed plays stay beside it as the delivery plan. */
             guaranteedImpressions: number | null;
             /** @description A short plain-language description to paste into a DSP's description field. */
             description: string;
@@ -2924,6 +2924,8 @@ export interface components {
                 playsPerWindow?: number;
                 /** @description The slot's play window (billing unit) in hours when the figures were taken. Kept on an archived deal; absent from a deal archived before 27 Oct 2026. */
                 windowHours?: number;
+                /** @description VAC-d per play: the impressions one play of this slot delivers, its window's assumed views (VAC-d) divided by its plays across the display type's displays (28 Oct 2026). The multiplier behind the Details hover's impressions and value: value = plays x vacdPerPlay / 1,000 x CPM. Null when the slot has no audience score. Kept on an archived deal; absent from a deal archived before 28 Oct 2026. */
+                vacdPerPlay?: number | null;
             }[];
             /** @description The version of the deal's mutable terms (rate/floor, committed plays, delivery term, auction window, invited buyers and categories). Starts at 1 and goes up by one on every saved change to those terms; the deal ID and deal type never change. The history is `GET .../term-versions`. */
             readonly termVersion: number;
@@ -3000,6 +3002,29 @@ export interface components {
              *     dates change, and is never typed in.
              */
             committedPlays: number | null;
+            /**
+             * @description Programmatic guaranteed and Direct advertiser deals only
+             *     (28 Oct 2026): the IMPRESSIONS this deal commits to, which is
+             *     what Programmatic guaranteed sells (not plays). Built bottom-up
+             *     from the assigned slots: for each display, each window inside
+             *     operating hours over the delivery term, plays x that display's
+             *     VAC-d (hour-of-week profile, else the display's override, else the
+             *     display type's default), summed across displays, less the
+             *     guarantee buffer (default 10%). Stored with committedPlays and
+             *     recomputed whenever a slot, the term or the buffer changes. The
+             *     deal's value is committedImpressions / 1,000 x its fixed CPM.
+             *     Null for any other deal type, with no slot, or with an open term.
+             */
+            readonly committedImpressions?: number | null;
+            /**
+             * @description Read only (28 Oct 2026). The impressions billed so far at every
+             *     position this deal is attached to, in play windows that start
+             *     inside the delivery term: the sum of the billing line items'
+             *     realised VAC-d, the same figure billing charges on. Pacing is this
+             *     against committedImpressions. Plays (deliveredPlays) stay beside it
+             *     as the delivery plan.
+             */
+            readonly deliveredImpressions?: number;
             /**
              * @description Read only. Plays billed so far at every position this deal is
              *     attached to, in play windows that start inside the delivery term
@@ -3281,6 +3306,8 @@ export interface components {
             operatingTimes: string;
             /** @description Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change. */
             playsPerWindow: number;
+            /** @description Derived, read-only (28 Oct 2026). VAC-d per play: this slot's window assumed views (VAC-d, from each display's hour-of-week profile, else its override, else the display type's default) divided by its plays across the display type's displays. The impressions-per-play multiplier of the one pricing formula: value = plays x vacdPerPlay / 1,000 x CPM. Null when the slot has no audience score or no plays. Absent from a demo snapshot taken before 28 Oct 2026. */
+            vacdPerPlay?: number | null;
         };
         BookingCapacity: {
             days: string[];

@@ -70,7 +70,7 @@ const withDelivery = async (ctx: Context, l: BuyersList, slots?: Map<string, Ass
   const effectiveCommittedPlays = { min: committed, max: committed, source: committed == null ? ('none' as const) : ('buyer' as const) }
   const effectiveRateCpm = effectiveTerm({ platform: company.floorCpm, dsp: invited.map((b) => b?.floorCpm), buyer: l.floorCpm }, (n) => (l.belowFloorOverride && typeof l.floorCpm === 'number' ? n : Math.max(company.floorCpm, n)))
   const equivalentCpm = isGuaranteedLike(l.dealType) && l.termTotal != null ? equivalentCpmRange(equivalentCpmOf(l.termTotal, await termSlotsOf(ctx, l.id), termDaysOf(l.activeFrom, l.activeTo))) : null
-  return { ...l, effectiveCommittedPlays, effectiveRateCpm, equivalentCpm, deliveredPlays: await deliveredOf(ctx, l), deliveredValue: await deliveredValueOf(ctx, l), assignedSlots: l.status === 'archived' ? l.assignedSlots : (slots ?? (await assignedSlotsByList(ctx))).get(l.id) ?? [] }
+  return { ...l, effectiveCommittedPlays, effectiveRateCpm, equivalentCpm, deliveredPlays: await deliveredOf(ctx, l), deliveredImpressions: await deliveredImpressionsOf(ctx, l), deliveredValue: await deliveredValueOf(ctx, l), assignedSlots: l.status === 'archived' ? l.assignedSlots : (slots ?? (await assignedSlotsByList(ctx))).get(l.id) ?? [] }
 }
 /* Billed value over an early-ended deal's flight, for the Details hover beside its original total. Positions come from the slots it holds, or kept when it was archived. */
 const deliveredValueOf = async (ctx: Context, l: BuyersList): Promise<number | undefined> => {
@@ -78,6 +78,9 @@ const deliveredValueOf = async (ctx: Context, l: BuyersList): Promise<number | u
   const positions = l.status === 'archived' ? l.assignedSlots.map((s) => s.positionId) : await positionsOfDeal(ctx, l.id)
   return Math.round((await ctx.billing.amountAt(positions, l.activeFrom, l.activeTo)) * 100) / 100
 }
+/* Impressions billed over the flight (28 Oct 2026): the billing line items' realised VAC-d, what a guaranteed deal's pacing runs on. */
+const deliveredImpressionsOf = async (ctx: Context, l: BuyersList): Promise<number> =>
+  l.committedImpressions == null ? 0 : await ctx.billing.viewsAt(await positionsOfDeal(ctx, l.id), l.activeFrom, l.activeTo)
 const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
   l.committedPlays == null ? 0 : await ctx.billing.playsAt(await positionsOfDeal(ctx, l.id), l.activeFrom, l.activeTo)
 

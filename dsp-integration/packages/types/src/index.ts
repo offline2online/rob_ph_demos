@@ -81,3 +81,4 @@ export type Role = Session['role']
 export * from './catalog'
 export * from './iabTaxonomy'
 export * from './analyticsEvent'
+export * from './pricing'

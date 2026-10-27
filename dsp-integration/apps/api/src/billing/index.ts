@@ -55,6 +55,7 @@ import type { PlayTotals } from '../platform/PlaybackSource'
 import { assumedViewsPerWindow, findPosition, shortestWindowMs, windowMsAt, windowMsFor, type PositionRef } from '../domain/positions'
 import type { ReservationRecord } from '../repos/ReservationRepo'
 import { rotationSizeOf } from '../domain/slots'
+import { valueOfImpressions } from '@ph-dsp/types'
 
 export interface LineItem {
   id: string
@@ -129,7 +130,7 @@ export async function computeLineItem(ctx: Context, r: ReservationRecord, p: Pos
   return {
     id: `bl_${randomUUID().slice(0, 12)}`, reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, seatId: r.seatId ?? null, campaignId: r.campaignId as string,
     positionId: r.positionId, windowStart: r.windowStart, windowEnd: new Date(end).toISOString(), plays: played.plays, playedSec: played.playedSec, expectedSec,
-    assumedViews, realisedViews, cpm, currency: r.currency, amount: round2((realisedViews / 1000) * cpm),
+    assumedViews, realisedViews, cpm, currency: r.currency, amount: round2(valueOfImpressions(realisedViews, cpm)),
     playsByVersion: played.byVersion ?? [],
   }
 }

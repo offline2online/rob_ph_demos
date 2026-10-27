@@ -430,6 +430,13 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         </div>
       </div>
       )}
+      {/* What a Programmatic guaranteed deal actually commits (28 Oct 2026): impressions, plays x VAC-d per display and open hour, less the buffer. */}
+      {guaranteed && editing && editing.committedImpressions != null && (slots.length > 0) && (
+      <div className="mb-3.5" data-testid="committed-impressions">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListCommittedImpressions"><WithTip tip="What Programmatic guaranteed commits: impressions, not plays. Built from the slots assigned to this deal: for each display and each window inside operating hours over the delivery term, its plays × that display's VAC-d (hour-of-week profile, else the display's override, else the display type's default), summed across displays, less the guarantee buffer. The deal's value is these impressions ÷ 1,000 × its CPM; pacing is delivered against committed impressions. The plays above are the delivery plan.">Committed impressions</WithTip></label>
+        <Input id="buyersListCommittedImpressions" aria-label="Committed impressions" readOnly value={editing.committedImpressions.toLocaleString()} />
+      </div>
+      )}
       {editing?.lockedWin && (
         <div style={{ fontSize: 12.5, color: T.muted }}>Rate locked at {editing.lockedWin.cpm} CPM on {new Date(editing.lockedWin.lockedAt).toLocaleString()}, before private auctions stopped locking a rate: every play for the rest of the flight books at that rate.</div>
       )}

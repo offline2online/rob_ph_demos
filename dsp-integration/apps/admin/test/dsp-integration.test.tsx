@@ -533,12 +533,12 @@ describe('Campaign Status stand-in', () => {
      lists, and delivery pacing for a Programmatic guaranteed deal. A booking under no deal keeps the earlier hover. */
   it('shows the deal on a booking tile\'s hover: flight, the Details block and, for a guaranteed deal, delivery pacing', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
-    const row = { ...inv.items[0], displayTypeId: 'portrait', displayTypeName: 'Portrait', displayCount: 12, slotCount: 3, displayTypeBillingUnitHours: 24, billingUnitHoursOverride: null, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, openHoursPerDay: 24 }
+    const row = { ...inv.items[0], displayTypeId: 'portrait', displayTypeName: 'Portrait', displayCount: 12, slotCount: 3, displayTypeBillingUnitHours: 24, billingUnitHoursOverride: null, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, openHoursPerDay: 24, vacdPerPlay: 2 }
     const start = new Date(Date.now() + 2 * 86_400_000).toISOString()
     const iso = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 16) + ':00Z'
     const flight = { activeFrom: iso(-5), activeTo: iso(5), timeZoneMode: 'platform', description: '', invitedCategories: [], targeting: [], deals: [] }
     const lists = [
-      { ...flight, id: 'bl_pg', dealId: 'PH-PG1', name: 'Nestlé PG', dealType: 'guaranteed', status: 'shared', invitedBuyers: [], termTotal: 500, committedPlays: 1000, deliveredPlays: 100, assignedSlots: [{ positionId: 'portrait.s1' }] },
+      { ...flight, id: 'bl_pg', dealId: 'PH-PG1', name: 'Nestlé PG', dealType: 'guaranteed', status: 'shared', invitedBuyers: [], termTotal: 500, committedPlays: 1000, deliveredPlays: 100, committedImpressions: 1000, deliveredImpressions: 100, assignedSlots: [{ positionId: 'portrait.s1' }] },
       { ...flight, id: 'bl_d', dealId: 'PH-DIRECT0001', name: 'Direct deal', dealType: 'direct', status: 'shared', invitedBuyers: [{ partnerId: 'direct', seatId: 'adv_x' }], effectiveRateCpm: { min: 4, max: 4, source: 'buyer' }, assignedSlots: [{ positionId: 'portrait.s2' }] },
     ]
     const tile = (campaignId: string, advertiserId: string, advertiserName: string, partnerId: string) => ({
@@ -557,22 +557,22 @@ describe('Campaign Status stand-in', () => {
       '/api/admin/v1/available-inventory': { ...inv, items: [1, 2, 3].map((slot) => ({ ...row, slot, zoneSlot: slot })) },
     })))
     renderAt('/booking-schedule')
-    /* A guaranteed deal, found by the campaign's deal ID: 11 days at 1,920 plays x 12 displays, and 100 of 1,000 committed plays delivered at the flight's half way. */
+    /* A guaranteed deal, found by the campaign's deal ID: 11 days at 1,920 plays x 12 displays, and 100 of 1,000 committed impressions delivered at the flight's half way (28 Oct 2026: VAC-d 2 per play, so 506,880 impressions). */
     fireEvent.mouseOver(await screen.findByRole('link', { name: 'Show Nestle Pacing in Campaign Approval' }, { timeout: 10000 }))
     const pg = await screen.findByTestId('details-tip-bl_pg')
     expect(screen.getByText('Flight')).toBeInTheDocument()
     expect(screen.getByText(/→.*\(Platform time zone\)/)).toBeInTheDocument()
     expect(pg).toHaveTextContent('Programmatic guaranteed')
-    expect(pg).toHaveTextContent('Deal total: 253,440 plays · USD 500')
+    expect(pg).toHaveTextContent('Deal total: 253,440 plays · 506,880 impressions · USD 500')
     expect(pg).not.toHaveTextContent('Deal ID')
-    expect(within(pg).getByTestId('pacing-bl_pg')).toHaveTextContent('Delivered: 100 of 1,000 committed plays')
-    expect(within(pg).getByTestId('pacing-bl_pg')).toHaveTextContent('20% of the plays due by now')
+    expect(within(pg).getByTestId('pacing-bl_pg')).toHaveTextContent('Delivered: 100 of 1,000 committed impressions')
+    expect(within(pg).getByTestId('pacing-bl_pg')).toHaveTextContent('20% of the impressions due by now')
     expect(within(pg).getByTestId('pacing-bl_pg')).toHaveTextContent('Behind')
     /* A Direct advertiser deal: found by its advertiser and slot; the Deal ID row, no pacing. */
     fireEvent.mouseOver(screen.getByRole('link', { name: 'Show Direct Brand in Campaign Approval' }))
     const direct = await screen.findByTestId('details-tip-bl_d')
     expect(direct).toHaveTextContent('Deal ID: PH-DIRECT0001')
-    expect(direct).toHaveTextContent('253,440 plays · USD 1,014')
+    expect(direct).toHaveTextContent('253,440 plays · 506,880 impressions · USD 2,028')
     expect(screen.queryByTestId('pacing-bl_d')).toBeNull()
     /* No deal: the earlier hover. */
     fireEvent.mouseOver(screen.getByRole('link', { name: 'Show Bid Brand in Campaign Approval' }))
@@ -1097,10 +1097,10 @@ describe('Advertisers / Inventory', () => {
     const deal = { id: 'bl_g', name: 'Gatorade takeover', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: '2026-11-01T00:00:00.000Z', activeTo: '2026-11-07T23:59:59.999Z', dealType: 'direct' }
     const other = { ...deal, id: 'bl_o', name: 'Other deal' }
     const assigned = (ids: string[]) => ({ partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: ids[0] ?? null, buyersListIds: ids, openAuction: false })
-    const base = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }
+    const base = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15, vacdPerPlay: 2 }
     const items = [
       { ...base, assignedTo: assigned(['bl_g']) },
-      { ...base, displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 1, zoneSlot: 1, displayCount: 1, floorCpmOverride: 50, assignedTo: assigned(['bl_g', 'bl_o']) },
+      { ...base, displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 1, zoneSlot: 1, displayCount: 1, floorCpmOverride: 50, vacdPerPlay: 4, assignedTo: assigned(['bl_g', 'bl_o']) },
     ]
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [deal, other] }, '/api/admin/v1/available-inventory': { ...inv, items } })))
     renderAt('/advertisers')
@@ -1110,13 +1110,13 @@ describe('Advertisers / Inventory', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Buyers list: Gatorade takeover' }))
     /* 1,920 plays per window per display x 12 displays x 7 days = 161,280, and 13,440 on the one-display slot. */
     expect(await within(inventory).findByTestId('deal-plays-total', {}, { timeout: 10000 })).toHaveTextContent('174,720')
-    /* 161.28 x 100 + 13.44 x 50 = 16,800. */
-    expect(within(inventory).getByTestId('deal-floor-total')).toHaveTextContent('USD 16,800')
+    /* VAC-d 2 and 4 per play: 322.56k impressions x 100 + 53.76k x 50 = 34,944. */
+    expect(within(inventory).getByTestId('deal-floor-total')).toHaveTextContent('USD 34,944')
     expect(within(inventory).getByTestId('deal-flight')).toHaveTextContent('(7 days)')
     fireEvent.mouseOver(within(inventory).getByTestId('deal-floor-total'))
     const tip = await screen.findByTestId('deal-floor-tip')
-    expect(tip).toHaveTextContent('Menu Board — Long Format · slot 2: USD 16,128')
-    expect(tip).toHaveTextContent('Portrait · slot 1: USD 672')
+    expect(tip).toHaveTextContent('Menu Board — Long Format · slot 2: USD 32,256')
+    expect(tip).toHaveTextContent('Portrait · slot 1: USD 2,688')
     fireEvent.mouseOver(within(inventory).getByTestId('deal-plays-total'))
     expect(await screen.findByTestId('deal-plays-tip')).toHaveTextContent('Portrait · slot 1: 13,440 plays')
     /* Two deals ticked: the figures go away. */
@@ -1226,7 +1226,7 @@ describe('Advertisers / Inventory', () => {
   /* Ticket nfDLP1CZiPjGfN8FG764 (22 Oct 2026): the Details hover totals each slot's plays and value over the whole flight, with the deal total, and carries no per-window slot copy. */
   it('shows each slot’s total plays and value over the flight, and the deal total, on the Details hover', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
-    const row = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }
+    const row = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15, vacdPerPlay: 2 }
     const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_1', buyersListIds: ['bl_1'] }
     const base = { description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: '2026-11-01T00:00:00Z', activeTo: '2026-11-10T00:00:00Z' }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
@@ -1240,22 +1240,22 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const table = await screen.findByLabelText('Deals and buyers lists')
     /* 1,920 plays per window per display x 12 displays x 1 window a day x 10 days. */
-    expect(await within(table).findByTestId('details-summary-bl_1')).toHaveTextContent('Programmatic guaranteed · 1 slot · 230,400 plays · USD 500')
+    expect(await within(table).findByTestId('details-summary-bl_1')).toHaveTextContent('Programmatic guaranteed · 1 slot · 230,400 plays · 460,800 impressions · USD 500')
     expect(within(table).getByTestId('rate-type-bl_1')).toHaveTextContent('Fixed per term')
     fireEvent.mouseOver(within(table).getByTestId('details-summary-bl_1'))
     const tip = await screen.findByTestId('details-tip-bl_1')
-    expect(within(tip).getByTestId('details-slot-bl_1-0')).toHaveTextContent('230,400 plays · USD 500')
-    expect(within(tip).getByTestId('details-total-bl_1')).toHaveTextContent('Deal total: 230,400 plays · USD 500')
+    expect(within(tip).getByTestId('details-slot-bl_1-0')).toHaveTextContent('230,400 plays · 460,800 impressions · USD 500')
+    expect(within(tip).getByTestId('details-total-bl_1')).toHaveTextContent('Deal total: 230,400 plays · 460,800 impressions · USD 500')
     expect(tip).toHaveTextContent('USD 500 for the term')
     /* The flight's length sits in its own Period line (22 Oct 2026). */
     expect(tip).toHaveTextContent('Period: 10 days')
     expect(tip).not.toHaveTextContent(/per window|IAB zone|buffer/)
-    /* A Direct advertiser deal gets the same cell, with the advertiser and the internal deal ID. 19,200 plays x 4 CPM / 1000. */
+    /* A Direct advertiser deal gets the same cell, with the advertiser and the internal deal ID. 19,200 plays x VAC-d 2 = 38,400 impressions x 4 CPM / 1000. */
     fireEvent.mouseOver(within(table).getByTestId('details-summary-bl_2'))
     const direct = await screen.findByTestId('details-tip-bl_2')
     expect(direct).toHaveTextContent('Advertiser: adv_x')
     expect(direct).toHaveTextContent('Deal ID: PH-DIRECT0001')
-    expect(within(direct).getByTestId('details-total-bl_2')).toHaveTextContent('Deal total: 19,200 plays · USD 77')
+    expect(within(direct).getByTestId('details-total-bl_2')).toHaveTextContent('Deal total: 19,200 plays · 38,400 impressions · USD 154')
   }, slow(30000))
 
   /* Ticket 5CCgGEYSkVoDTH9yNSYu (10 Oct 2026): the deal ID is minted by the platform, shown read-only, and never part of the save payload. */

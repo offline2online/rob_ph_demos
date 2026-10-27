@@ -11,7 +11,7 @@ import { type Db, fromJson, prepared, toJson, tx, type Awaitable } from '../db/d
 
 interface Row {
   id: string; deal_id: string; name: string; description: string; deal_type: 'private_auction' | 'preferred' | 'guaranteed'; invited_buyers: string; invited_categories: string; targeting: string; active_from: string | null; active_to: string | null
-  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; term_total: number | null; below_floor_override: number; below_floor_override_by: string | null; below_floor_override_at: string | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null; direct: number; archived_at: string | null; archived_by: string | null; archived_slots: string | null; end_kind: 'cancelled' | 'ended_early' | null; end_reason: string | null; end_requested_at: string | null; original_active_to: string | null; ended_by: string | null; time_zone_mode: 'platform' | 'store'
+  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; committed_impressions: number | null; floor_cpm: number | null; term_total: number | null; below_floor_override: number; below_floor_override_by: string | null; below_floor_override_at: string | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null; direct: number; archived_at: string | null; archived_by: string | null; archived_slots: string | null; end_kind: 'cancelled' | 'ended_early' | null; end_reason: string | null; end_requested_at: string | null; original_active_to: string | null; ended_by: string | null; time_zone_mode: 'platform' | 'store'
 }
 interface AcceptanceRow { partner_id: string; seat_id: string; accepted_version: number; accepted_at: string }
 interface VersionRow { version: number; at: string; by_name: string; changes: string; requires_reacceptance: number }
@@ -32,7 +32,7 @@ export interface BuyersListRepo {
   insert(l: { by?: string; id: string; dealId?: string; name: string; description: string; dealType?: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories?: string[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; timeZoneMode?: TimeZoneMode; auctionCloses: string | null; committedPlays?: number | null; floorCpm?: number | null; termTotal?: number | null; belowFloorOverride?: boolean; /* false: saved as a draft, shared with no DSP yet. Omitted: shared, as every list was before drafts existed. */ shared?: boolean }): Awaitable<BuyersList>
   update(id: string, patch: { by?: string; name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories?: string[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; /* Omitted keeps the stored mode. */ timeZoneMode?: TimeZoneMode; auctionCloses: string | null; committedPlays?: number | null; floorCpm?: number | null; termTotal?: number | null; belowFloorOverride?: boolean }): Awaitable<BuyersList | null>
   /* Stores the committed plays derived from the deal's assigned slots, term and guarantee buffer (never typed in). On a shared deal a changed figure versions the terms and asks accepted buyers to accept again; a draft has been sent to no one, so nothing is versioned. Null if the list doesn't exist. */
-  setCommittedPlays(id: string, committedPlays: number | null, by?: string): Awaitable<BuyersList | null>
+  setCommittedPlays(id: string, committedPlays: number | null, by?: string, committedImpressions?: number | null): Awaitable<BuyersList | null>
   /* Deals are never deleted. Archiving keeps the row, its deal IDs, terms and history; `by` is the person's name, or 'system' at the end of flight. Idempotent (an archived deal keeps its first archive). Null if the list doesn't exist. */
   /* `slots`: the slots the deal held, kept on the archived deal for good (they are released as it is archived). */
   /* `at`: when it was archived; the scheduler passes its own clock so a test clock is honoured. Default now. */
@@ -86,7 +86,7 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
   const toRecord = (r: Row): BuyersList => ({
     id: r.id, dealId: r.deal_id, deals: dealsOf(r.id, r.deal_id), name: r.name, description: r.description, dealType: r.direct ? 'direct' : r.deal_type, invitedBuyers: fromJson(r.invited_buyers, []), invitedCategories: fromJson(r.invited_categories, []), targeting: fromJson(r.targeting, []),
     activeFrom: r.active_from, activeTo: r.active_to, timeZoneMode: r.time_zone_mode ?? 'platform', auctionCloses: r.auction_closes, lockedWin: fromJson(r.locked_win, null),
-    committedPlays: r.committed_plays, floorCpm: r.floor_cpm, termTotal: r.term_total, belowFloorOverride: r.below_floor_override === 1, belowFloorOverrideBy: r.below_floor_override_by, belowFloorOverrideAt: r.below_floor_override_at, equivalentCpm: null, deliveredPlays: 0,
+    committedPlays: r.committed_plays, committedImpressions: r.committed_impressions ?? null, floorCpm: r.floor_cpm, termTotal: r.term_total, belowFloorOverride: r.below_floor_override === 1, belowFloorOverrideBy: r.below_floor_override_by, belowFloorOverrideAt: r.below_floor_override_at, equivalentCpm: null, deliveredPlays: 0,
     /* Resolved against the platform and DSP levels by the admin route (withDelivery); the row alone can't know them. */
     effectiveCommittedPlays: { min: r.committed_plays, max: r.committed_plays, source: r.committed_plays == null ? 'none' : 'buyer' },
     effectiveRateCpm: { min: r.floor_cpm, max: r.floor_cpm, source: r.floor_cpm == null ? 'none' : 'buyer' },
@@ -134,17 +134,21 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
         return toRecord(row(id) as Row)
       })
     },
-    setCommittedPlays(id, committedPlays, by) {
+    setCommittedPlays(id, committedPlays, by, committedImpressions = null) {
       const before = row(id)
       if (!before) return null
-      if ((before.committed_plays ?? null) === committedPlays) return toRecord(before)
+      /* Impressions are what a guaranteed deal commits (28 Oct 2026); the term version still turns on plays, which move with them. A change in impressions alone (a VAC-d profile moved) is stored without asking buyers to accept again. */
+      if ((before.committed_plays ?? null) === committedPlays) {
+        if ((before.committed_impressions ?? null) !== committedImpressions) prepared(db, 'UPDATE buyers_lists SET committed_impressions = ? WHERE id = ?').run(committedImpressions, id)
+        return toRecord(row(id) as Row)
+      }
       const now = new Date().toISOString()
       return tx(db, () => {
         const was = toRecord(before)
         const changes = !before.shared_at ? [] : termChanges(was, { ...was, committedPlays })
         const version = before.term_version + (changes.length ? 1 : 0)
         const reaccept = needsReacceptance(changes) ? version : before.reaccept_version
-        prepared(db, 'UPDATE buyers_lists SET committed_plays = ?, term_version = ?, reaccept_version = ?, updated_at = ? WHERE id = ?').run(committedPlays, version, reaccept, now, id)
+        prepared(db, 'UPDATE buyers_lists SET committed_plays = ?, committed_impressions = ?, term_version = ?, reaccept_version = ?, updated_at = ? WHERE id = ?').run(committedPlays, committedImpressions, version, reaccept, now, id)
         if (changes.length) prepared(db, 'INSERT INTO buyers_list_term_versions (list_id, version, at, by_name, changes, requires_reacceptance) VALUES (?, ?, ?, ?, ?, ?)').run(id, version, now, by ?? 'system', toJson(changes) ?? '[]', needsReacceptance(changes) ? 1 : 0)
         return toRecord(row(id) as Row)
       })

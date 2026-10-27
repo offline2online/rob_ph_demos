@@ -12,6 +12,7 @@
    its loop from a fixed slot length in loop policy. It is never the loop
    length (which moves with the rotation) and never an advertiser's creative
    length (which differs by campaign): neither feeds this count. */
+import { PLATFORM_DEFAULT_BILLING_UNIT_HOURS, vacdPerPlayOf } from '@ph-dsp/types'
 
 /* Plays-per-window derivation (ticket "Derive plays per window from slot
    length x slots / billing unit", 8 Oct 2026). Three retailer-controlled
@@ -55,3 +56,7 @@ export const windowMsForPlays = (plays: number, maxPlayLengthSec: number, slots:
 
 /* Plays across the whole estate the position runs on: per display x displays. */
 export const totalPlaysOf = (playsPerDisplay: number, displays: number): number => playsPerDisplay * Math.max(0, displays)
+
+/* VAC-d per play of a slot (28 Oct 2026): its window's assumed views over the plays it gets in that window across the displays. The audience source scores a slot per platform-default window, so the scored figure is scaled to the slot's own window first (as positions.ts assumedViewsFor does). Null with no plays or no score. */
+export const vacdPerPlayFor = (scoredPerPlatformWindow: number, windowHours: number, playsAcrossDisplays: number): number | null =>
+  vacdPerPlayOf((scoredPerPlatformWindow * windowHours) / PLATFORM_DEFAULT_BILLING_UNIT_HOURS, playsAcrossDisplays)

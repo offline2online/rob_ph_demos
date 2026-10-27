@@ -23,6 +23,8 @@ export interface BillingRepo {
   /* Plays billed at these positions in windows that start inside [from, to]
      (null = no bound): the volume a deal has delivered over its term. */
   playsAt(positionIds: string[], from: string | null, to: string | null): Awaitable<number>
+  /* Impressions billed (the line items' realised VAC-d) in the same windows: what a Programmatic guaranteed deal has delivered against its committed impressions. */
+  viewsAt(positionIds: string[], from: string | null, to: string | null): Awaitable<number>
   /* The billed amount (in the transacting currency) in the same windows: what a deal has delivered in value. */
   amountAt(positionIds: string[], from: string | null, to: string | null): Awaitable<number>
 }
@@ -72,6 +74,16 @@ export function sqliteBillingRepo(db: Db): BillingRepo {
       for (let i = 0; i < positionIds.length; i += CHUNK) {
         const chunk = positionIds.slice(i, i + CHUNK)
         const r = prepared(db, `SELECT COALESCE(SUM(plays), 0) AS n FROM billing_line_items WHERE position_id IN (${chunk.map(() => '?').join(', ')}) AND (? IS NULL OR window_start >= ?) AND (? IS NULL OR window_start <= ?)`)
+          .get(...chunk, from, from, to, to) as { n: number }
+        total += r.n
+      }
+      return total
+    },
+    viewsAt(positionIds, from, to) {
+      let total = 0
+      for (let i = 0; i < positionIds.length; i += CHUNK) {
+        const chunk = positionIds.slice(i, i + CHUNK)
+        const r = prepared(db, `SELECT COALESCE(SUM(realised_views), 0) AS n FROM billing_line_items WHERE position_id IN (${chunk.map(() => '?').join(', ')}) AND (? IS NULL OR window_start >= ?) AND (? IS NULL OR window_start <= ?)`)
           .get(...chunk, from, from, to, to) as { n: number }
         total += r.n
       }

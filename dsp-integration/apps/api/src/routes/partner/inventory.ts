@@ -13,6 +13,7 @@ import { baseFloorFor } from '../../exchange/enforcement'
 import { andThen } from '../../db/db'
 import { type Rules, throwIfRejected, validateRules } from '../../domain/targetingValidation'
 import { notFound, validationFailed } from '../../http/errors'
+import { valueOfImpressions } from '@ph-dsp/types'
 
 const STATUSES: WindowStatus[] = ['available', 'reserved', 'sold', 'unavailable']
 const dateOf = (d: Date) => d.toISOString().slice(0, 10)
@@ -178,6 +179,6 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     const assumedViews = Math.round(views)
     const company = await ctx.company.get()
     const cpm = effectiveFloorCpm(company, await baseFloorFor(ctx, { partner: req.partner }))
-    return { assumedViews, currency: TRANSACTING_CURRENCY, estimatedCost: Math.round((assumedViews / 1000) * cpm * 100) / 100 }
+    return { assumedViews, currency: TRANSACTING_CURRENCY, estimatedCost: Math.round(valueOfImpressions(assumedViews, cpm) * 100) / 100 }
   })
 }
