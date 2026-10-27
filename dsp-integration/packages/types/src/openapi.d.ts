@@ -2828,7 +2828,7 @@ export interface components {
             readonly archivedAt: string | null;
             /** @description Who archived it: the person's name, or `system` when its flight ended and its last window was billed. */
             readonly archivedBy: string | null;
-            /** @description Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry. */
+            /** @description Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry. On an archived deal it is the slots the deal held when it was archived (they are released then), kept for good; a deal archived before this was recorded has none. */
             readonly assignedSlots: {
                 /** @description displayTypeId.sN */
                 positionId: string;

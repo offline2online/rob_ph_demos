@@ -6,6 +6,7 @@
 import { assignedOf, type BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { tx } from '../db/db'
+import { assignedSlotsByList } from './assignedSlots'
 import { positionIdOf } from './positions'
 import { diffSnapshots, takeSnapshot } from './sspAudit'
 import type { AuditActor } from '../repos/SspAuditRepo'
@@ -37,12 +38,14 @@ export async function archiveEndedDeals(ctx: Context): Promise<string[]> {
       const from = l.activeFrom ? Date.parse(l.activeFrom) : -Infinity
       const to = Date.parse(l.activeTo as string)
       if (unbilled.some((r) => positions.has(r.positionId) && Date.parse(r.windowStart) >= from && Date.parse(r.windowStart) <= to)) continue
+      /* Read before the slots are released: the archived deal keeps them. */
+      const held = (await assignedSlotsByList(ctx)).get(l.id) ?? []
       for (const dt of await ctx.displayTypes.list()) {
         const slots = dt.phExtensions?.slots
         if (!slots?.some((s) => assignedOf(s).buyersListIds.includes(l.id))) continue
         await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: slots.map((s) => (assignedOf(s).buyersListIds.includes(l.id) ? without(s, l.id) : s)) })
       }
-      await ctx.buyersLists.archive(l.id, SYSTEM_ACTOR.name, ctx.clock().toISOString())
+      await ctx.buyersLists.archive(l.id, SYSTEM_ACTOR.name, ctx.clock().toISOString(), held)
       done.push(l.name)
     }
   })

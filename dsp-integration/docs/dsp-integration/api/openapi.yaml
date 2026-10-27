@@ -3526,7 +3526,7 @@ components:
         assignedSlots:
           type: array
           readOnly: true
-          description: Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry.
+          description: Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry. On an archived deal it is the slots the deal held when it was archived (they are released then), kept for good; a deal archived before this was recorded has none.
           items:
             type: object
             required: [positionId, label, displayTypeName, slot, zoneName, zoneSlot, description]

@@ -375,7 +375,12 @@ the same dialog for both.
   Inventory; ticket cy45L5xGDqKwzt4diBBa, 22 Oct 2026) holding a historic
   table (AG Grid, a filter under every column heading and a "Showing X of N"
   count) of all archived deals: deal, deal type, buyers, rate / total,
-  flight dates, deal ID, archived date and archived by. Archiving is recorded
+  flight dates, the slots the deal was assigned to, deal ID, archived date and
+  archived by. The slots are released as the deal is archived, so the archive
+  keeps them: `buyers_lists.archived_slots` (migration `0088`, ticket
+  VHuSQiHQoGCPPvreusgK, 27 Oct 2026) holds the deal's `assignedSlots` as they
+  stood, and the Slots column lists every one, one per line. A deal archived
+  before then shows "No slots recorded". Archiving is recorded
   in the SSP change history (§3a).
 - **Automatic end of flight.** Once a shared deal's flight dates have ended and
   its last window inside the flight has played and been billed, the deal
@@ -3463,6 +3468,10 @@ written or add any other reporting on it. As the exchange, disputes resolve agai
 > the admin's explicit override; surfaced as `belowFloorOverride`, `belowFloorOverrideBy`, `belowFloorOverrideAt` on
 > the deal (see the guaranteed-deal pricing rules above).
 
+> **`buyers_lists` archived slots (migration 0088, 27 Oct 2026):** `archived_slots` (JSON text, null until archived)
+> holds the deal's `assignedSlots` as they stood when it was archived, because the slots are released then. Surfaced
+> as `assignedSlots` on an archived deal.
+
 The display type, playlist and campaign records are the platform's
 **existing** records, with this project's additions kept in clearly separated
 fields. The canonical definition is `app/src/model/schema.js` and
@@ -4687,7 +4696,7 @@ playback analytics.**
   filter picked, only that buyer's fills count over the same opportunities.
   **Available (at floor CPM) (26 Oct 2026, ticket
   Ltlu40NbXod3d8NwFF6Z):** a column after Booked windows shows, per display
-  type and in the Total row, "<windows> (<value>)" (the value in brackets, matching the column header): the sellable windows
+  type and in the Total row, "<windows> · <value>": the sellable windows
   nobody has booked yet (`availableWindows`) and their value at the floor
   CPM (`availableValue` = each position's floor CPM × the assumed views
   (VAC-d) of its unbooked columns ÷ 1,000, in the exchange currency), so a

@@ -478,7 +478,7 @@ describe('Campaign Status stand-in', () => {
     expect(screen.getByText('Booked assumed views')).toBeInTheDocument()
     expect(screen.getByText('Available assumed views')).toBeInTheDocument()
     expect(screen.getByText('Available (at floor CPM)')).toBeInTheDocument()
-    expect((await screen.findAllByText(/\(.*456\.50\)/)).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(/456\.50/)).length).toBeGreaterThan(0)
     expect((await screen.findAllByText('12,345')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('5,000').length).toBeGreaterThan(0)
     expect(screen.getAllByText('7,345').length).toBeGreaterThan(0)
@@ -1538,7 +1538,7 @@ describe('Advertisers / Inventory', () => {
   it('archives a deal from its row and lists archived deals under View Archived Deals', async () => {
     const base = { invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', description: '', status: 'draft' }
     const live = { ...base, status: 'shared', id: 'bl_1', dealId: 'PH-LIVE000001', name: 'Live deal' }
-    const old = { ...base, id: 'bl_2', dealId: 'PH-OLD0000001', name: 'Ended deal', status: 'archived', archivedAt: '2026-10-01T00:00:00.000Z', archivedBy: 'system' }
+    const old = { ...base, id: 'bl_2', dealId: 'PH-OLD0000001', name: 'Ended deal', status: 'archived', archivedAt: '2026-10-01T00:00:00.000Z', archivedBy: 'system', assignedSlots: [{ positionId: 'portrait.s1', label: 'Portrait — Hero', displayTypeName: 'Portrait', slot: 1, zoneName: null, zoneSlot: 1, description: 'Entrance', storeZone: null }, { positionId: 'portrait.s2', label: 'Portrait — slot 2', displayTypeName: 'Portrait', slot: 2, zoneName: null, zoneSlot: 2, description: null, storeZone: null }] }
     const calls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST' && url.endsWith('/archive')) {
@@ -1562,7 +1562,10 @@ describe('Advertisers / Inventory', () => {
     expect(await within(archive).findByText('Ended deal')).toBeInTheDocument()
     expect(within(archive).getByText('PH-OLD0000001')).toBeInTheDocument()
     expect(within(archive).getByText('system')).toBeInTheDocument()
-    expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(7)
+    /* The slots the deal held when it was archived, one per line (ticket VHuSQiHQoGCPPvreusgK). */
+    expect(within(archive).getByText('Portrait (Entrance), slot 1')).toBeInTheDocument()
+    expect(within(archive).getByText('Portrait, slot 2')).toBeInTheDocument()
+    expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(8)
     /* One page header, with the back link beside it and the explanation in its tooltip. */
     expect(screen.getAllByText('Archived deals')).toHaveLength(1)
     expect(screen.getByRole('link', { name: /Advertisers \/ Inventory/ })).toHaveAttribute('href', '/advertisers')

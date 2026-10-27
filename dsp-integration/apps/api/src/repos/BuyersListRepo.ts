@@ -11,7 +11,7 @@ import { type Db, fromJson, prepared, toJson, tx, type Awaitable } from '../db/d
 
 interface Row {
   id: string; deal_id: string; name: string; description: string; deal_type: 'private_auction' | 'preferred' | 'guaranteed'; invited_buyers: string; invited_categories: string; targeting: string; active_from: string | null; active_to: string | null
-  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; term_total: number | null; below_floor_override: number; below_floor_override_by: string | null; below_floor_override_at: string | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null; direct: number; archived_at: string | null; archived_by: string | null; time_zone_mode: 'platform' | 'store'
+  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; term_total: number | null; below_floor_override: number; below_floor_override_by: string | null; below_floor_override_at: string | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null; direct: number; archived_at: string | null; archived_by: string | null; archived_slots: string | null; time_zone_mode: 'platform' | 'store'
 }
 interface AcceptanceRow { partner_id: string; seat_id: string; accepted_version: number; accepted_at: string }
 interface VersionRow { version: number; at: string; by_name: string; changes: string; requires_reacceptance: number }
@@ -34,8 +34,9 @@ export interface BuyersListRepo {
   /* Stores the committed plays derived from the deal's assigned slots, term and guarantee buffer (never typed in). On a shared deal a changed figure versions the terms and asks accepted buyers to accept again; a draft has been sent to no one, so nothing is versioned. Null if the list doesn't exist. */
   setCommittedPlays(id: string, committedPlays: number | null, by?: string): Awaitable<BuyersList | null>
   /* Deals are never deleted. Archiving keeps the row, its deal IDs, terms and history; `by` is the person's name, or 'system' at the end of flight. Idempotent (an archived deal keeps its first archive). Null if the list doesn't exist. */
+  /* `slots`: the slots the deal held, kept on the archived deal for good (they are released as it is archived). */
   /* `at`: when it was archived; the scheduler passes its own clock so a test clock is honoured. Default now. */
-  archive(id: string, by: string, at?: string): Awaitable<BuyersList | null>
+  archive(id: string, by: string, at?: string, slots?: BuyersList['assignedSlots']): Awaitable<BuyersList | null>
   /* Permanently removes a deal that was never shared (a draft): the row, its per-DSP deal IDs, term versions and acceptances. The route has already refused a shared or archived deal. False if the list doesn't exist. */
   delete(id: string): Awaitable<boolean>
   /* Shares a draft deal with its invited buyers: stamps shared_at. From here its term changes ask buyers to re-accept. Idempotent (a shared deal keeps its first shared_at). Null if the list doesn't exist. */
@@ -89,7 +90,7 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     effectiveRateCpm: { min: r.floor_cpm, max: r.floor_cpm, source: r.floor_cpm == null ? 'none' : 'buyer' },
     /* A Direct advertiser deal has no buyer acceptance (Finalise makes it live), so it reports none rather than a pending one. */
     termVersion: r.term_version, buyerAcceptance: r.direct ? [] : acceptanceOf(r),
-    status: r.archived_at ? 'archived' : r.shared_at ? 'shared' : 'draft', sharedAt: r.shared_at, archivedAt: r.archived_at, archivedBy: r.archived_by, assignedSlots: [],
+    status: r.archived_at ? 'archived' : r.shared_at ? 'shared' : 'draft', sharedAt: r.shared_at, archivedAt: r.archived_at, archivedBy: r.archived_by, assignedSlots: fromJson(r.archived_slots, []),
     createdAt: r.created_at, updatedAt: r.updated_at,
   })
   const row = (id: string) => prepared(db, 'SELECT * FROM buyers_lists WHERE id = ?').get(id) as Row | undefined
@@ -176,12 +177,12 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
       prepared(db, 'INSERT INTO buyers_list_deals (deal_id, list_id, partner_id, created_at) VALUES (?, ?, ?, ?)').run(id, listId, partnerId, new Date().toISOString())
       return id
     },
-    archive(id, by, at) {
+    archive(id, by, at, slots) {
       const r = row(id)
       if (!r) return null
       if (!r.archived_at) {
         const now = at ?? new Date().toISOString()
-        prepared(db, 'UPDATE buyers_lists SET archived_at = ?, archived_by = ?, updated_at = ? WHERE id = ?').run(now, by, now, id)
+        prepared(db, 'UPDATE buyers_lists SET archived_at = ?, archived_by = ?, archived_slots = ?, updated_at = ? WHERE id = ?').run(now, by, toJson(slots ?? []), now, id)
       }
       return toRecord(row(id) as Row)
     },
