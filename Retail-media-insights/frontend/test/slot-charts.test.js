@@ -32,7 +32,7 @@ test('display type card shows the description, operating hours and labelled aver
   assert.strictEqual(SC.orientationText('45°'), 'Not set');
 });
 
-test('slot value: the hover shows the back end’s link, CPM × average views ÷ 1,000 × sold share', async () => {
+test('slot value: the hover shows effective CPM, floor CPM and revenue per available slot, with no Fill or formula', async () => {
   const data = await get('/slot-value');
   data.rows.forEach((r) => {
     const link = r.effectiveCpm * r.averageAssumedViewsPerSlotPerDay / 1000 * r.advertiserSlotsSoldShare;
@@ -44,12 +44,9 @@ test('slot value: the hover shows the back end’s link, CPM × average views ÷
   assert.strictEqual(val(m, 'Effective CPM'), `$${w.effectiveCpm.toFixed(2)} (total $${w.totals.earnedRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })} earned on ${SC.fmtCompact(w.totals.assumedViews)} assumed views, 12 Sep – 11 Oct)`);
   assert.strictEqual(val(m, 'Floor CPM'), '$7.50');
   assert.match(val(m, 'Revenue per available slot'), /^\$\d+\.\d\d \(total \$\d+ per day across 80 advertiser slots on 10 displays\)$/);
-  const line = /^\$(\d+\.\d\d) CPM × ([\d,.]+) average assumed views ÷ 1,000 × (\d+)% of advertiser slot capacity earned \(settled billing\) = \$(\d+\.\d\d)$/.exec(val(m, 'How it adds up'));
-  assert.ok(line, val(m, 'How it adds up'));
-  // The line adds up as displayed: the result is computed from the displayed factors.
-  assert.strictEqual(line[4], (+line[1] * +line[2].replace(/,/g, '') / 1000 * (+line[3] / 100)).toFixed(2));
-  assert.match(val(m, 'Fill'), /^\d+% of advertiser slot capacity earned/);
-  assert.match(text(m), /Revenue per available slot = effective CPM × average assumed views per slot per day ÷ 1,000 × fill/);
+  // Fill is shown elsewhere on the page, so the hover carries neither a Fill row, the adding-up line nor the formula note.
+  assert.strictEqual(m.sections[0].rows.some((r) => r[0] === 'Fill' || r[0] === 'How it adds up'), false);
+  assert.doesNotMatch(text(m), /× fill|÷ 1,000/);
 });
 
 test('CPM labels are always to the cent', () => {

@@ -142,7 +142,6 @@ Purpose: show the **value of each screen along the shopper journey**, and help t
   - **Effective CPM** with the **network total in brackets** — total earned revenue and total assumed views across all the type's connected displays for the date range, e.g. "$9.01 (total $7,321 earned on 812.6k assumed views, 12 Sep – 11 Oct)".
   - **Floor CPM**.
   - **Revenue per available slot** with the **network total in brackets** — revenue per available slot × advertiser slots × connected displays, e.g. "$3.05 (total $244 per day across 80 advertiser slots on 10 displays)".
-  - **Fill** %, and the formula: revenue per available slot = effective CPM × **average** assumed views per slot per day ÷ 1,000 × fill.
 - Title ⓘ tooltip carries the VAC-d explanation and worked example from "Assumed views and VAC-d" (averages), and says the number in brackets is the display type's connected displays across the selected stores (PH Core).
 - Future (not shown yet): an **own-content value** bar beside it.
 

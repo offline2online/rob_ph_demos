@@ -158,18 +158,7 @@
     var rows = [['Effective CPM', fmtMoney(row.effectiveCpm, 2) + ' (total ' + fmtMoney(t.earnedRevenue, 2) + ' earned on ' + fmtCompact(t.assumedViews) + ' assumed views' + (range ? ', ' + range : '') + ')']];
     if (has(row.floorCpm)) rows.push(['Floor CPM', fmtMoney(row.floorCpm, 2)]);
     rows.push(['Revenue per available slot', fmtMoney(row.perSlotPerDay, 2) + ' (total ' + fmtMoney(t.perDay, 0) + ' per day across ' + plural(t.advertiserSlots, 'advertiser slot') + ' on ' + plural(displaysOf(row), 'display') + ')']);
-    if (has(row.averageAssumedViewsPerSlotPerDay) && has(row.advertiserSlotsSoldShare)) {
-      // The share is the settled (earned) VAC-d over the range as a share of slot capacity, not the Slot allocation "sold" figure
-      // (booked-ahead days are not settled), so it is labelled as what it is. Whole-number percentage, and the result is
-      // computed from the displayed factors so the line adds up as shown.
-      var cpm = Math.round(row.effectiveCpm * 100) / 100;
-      var views = Math.round(row.averageAssumedViewsPerSlotPerDay * 100) / 100;
-      var share = Math.round(row.advertiserSlotsSoldShare * 100);
-      rows.push(['How it adds up', fmtMoney(cpm, 2) + ' CPM × ' + fmtNum(views) + ' average assumed views ÷ 1,000 × ' +
-        share + '% of advertiser slot capacity earned (settled billing) = ' + fmtMoney(cpm * views / 1000 * share / 100, 2)]);
-    }
-    if (has(row.advertiserSlotsSoldShare)) rows.push(['Fill', Math.round(row.advertiserSlotsSoldShare * 100) + '% of advertiser slot capacity earned (settled billing)']);
-    var sec = { rows: rows, note: 'Revenue per available slot = effective CPM × average assumed views per slot per day ÷ 1,000 × fill.' };
+    var sec = { rows: rows };
     return withHours(valuesOnly(row.name, [sec]), row);
   }
 
