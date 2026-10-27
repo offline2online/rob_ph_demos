@@ -21,6 +21,7 @@ import { T } from '../../theme/phTheme'
 import { ARCHIVED_DEALS_PATH } from './archivedPath'
 import { BuyersListModal } from './BuyersListModal'
 import { DealSheetModal } from './DealSheetModal'
+import { groupSlotsByDisplayType } from './slotLine'
 import { buyerStatusOf, flightDays, flightMoment, slotPlaysOver, termTotalText, rateTypeOf, rateValue, sourceLabel, valueOf, valueText, zoneLabelOf } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
@@ -102,18 +103,27 @@ const SlotsCell = ({ data, context }: P) => {
   if (!data) return null
   const rows = context.current.slots.get(data.id) ?? []
   if (!rows.length) return <span style={{ color: T.muted }}>Not assigned</span>
+  /* Slots of the same display type sit together under one heading, in slot order (ticket IGHoIBf6onQxp0UMVrVk). */
+  const groups = groupSlotsByDisplayType(rows)
   const tip = (
     <div>
       <div style={{ fontWeight: 500 }}>Assigned slots</div>
-      {rows.map((r, i) => (
-        <div key={i} style={{ marginTop: 4 }}>
-          <div style={{ fontWeight: 500 }}>{r.displayType}{r.orientation && !r.displayType.toLowerCase().includes(r.orientation) ? ` ${r.orientation === 'portrait' ? 'Portrait' : 'Landscape'}` : ''}{r.displayCount != null ? ` (${num(r.displayCount)} display${r.displayCount === 1 ? '' : 's'})` : ''}{r.description ? ` (${r.description})` : ''}</div>
-          <div>{r.playlist || 'No playlist'}{r.zoneName ? ` · ${r.zoneName}` : ''}</div>
-          {/* The IAB store zone set on the display type (ticket yZ8BvwUQV4Yc7a0IVwak, 15 Oct 2026). */}
-          <div>IAB zone: {storeZoneLabel(r.storeZone) ?? 'Not defined'}</div>
-          <div>{r.position} (slot {r.slot}){r.playsPerWindow != null ? ` · ${num(r.playsPerWindow)}${r.displayCount != null ? ` (${num(r.playsPerWindow * r.displayCount)} total)` : ''} plays per window` : ''}</div>
-        </div>
-      ))}
+      {groups.map((g, gi) => {
+        const r = g.rows[0]
+        return (
+          <div key={gi} data-testid={`slots-group-${data.id}-${gi}`} style={{ marginTop: 4 }}>
+            <div style={{ fontWeight: 500 }}>{r.displayType}{r.orientation && !r.displayType.toLowerCase().includes(r.orientation) ? ` ${r.orientation === 'portrait' ? 'Portrait' : 'Landscape'}` : ''}{r.displayCount != null ? ` (${num(r.displayCount)} display${r.displayCount === 1 ? '' : 's'})` : ''}{r.description ? ` (${r.description})` : ''}</div>
+            {/* The IAB store zone set on the display type (ticket yZ8BvwUQV4Yc7a0IVwak, 15 Oct 2026). */}
+            <div>IAB zone: {storeZoneLabel(r.storeZone) ?? 'Not defined'}</div>
+            {g.rows.map((x, i) => (
+              <div key={i} data-testid={`slots-row-${data.id}-${gi}-${i}`} style={{ marginTop: 2 }}>
+                <div>{x.position} (slot {x.slot}){x.playsPerWindow != null ? ` · ${num(x.playsPerWindow)}${x.displayCount != null ? ` (${num(x.playsPerWindow * x.displayCount)} total)` : ''} plays per window` : ''}</div>
+                <div style={{ color: TIP_MUTED }}>{x.playlist || 'No playlist'}{x.zoneName ? ` · ${x.zoneName}` : ''}</div>
+              </div>
+            ))}
+          </div>
+        )
+      })}
     </div>
   )
   return <Tip title={tip}><span style={{ fontSize: 12.5 }}>{rows.length} slot{rows.length === 1 ? '' : 's'}</span></Tip>

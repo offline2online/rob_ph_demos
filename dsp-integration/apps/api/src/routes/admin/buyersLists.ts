@@ -19,7 +19,7 @@ import { dealSheetCsv, dealSheetOf } from '../../domain/dealSheet'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { effectiveTerm } from '../../domain/pricing'
 import { positionIdOf } from '../../domain/positions'
-import { slotDetailOf, type SlotDetail } from '../../domain/displayTypes'
+import { assignedSlotsByList, type AssignedSlot } from '../../domain/assignedSlots'
 import { dealAudienceErrors } from '../../domain/audiences'
 import { belowFloorReasons, equivalentCpmOf, equivalentCpmRange, termDaysOf, termSlotsOf } from '../../domain/termPrice'
 import { derivedCommittedPlays } from '../../domain/committedPlays'
@@ -40,19 +40,6 @@ const dependentSlots = async (ctx: Context, buyersListId: string) =>
   (await ctx.displayTypes.list()).flatMap((t) =>
     (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListIds.includes(buyersListId) ? [`${t.name} — ${s.label || `slot ${i + 1}`}`] : [])),
   )
-
-type AssignedSlot = SlotDetail & { positionId: string; label: string; displayTypeName: string }
-
-/* Every slot assigned to each list, saved assignments only: what Finalise confirms and what a deal needs at least one of before it can be shared. */
-const assignedSlotsByList = async (ctx: Context) => {
-  const out = new Map<string, AssignedSlot[]>()
-  for (const t of await ctx.displayTypes.list()) {
-    ;(t.phExtensions?.slots ?? []).forEach((s, i) => {
-      for (const id of new Set(assignedOf(s).buyersListIds)) out.set(id, [...(out.get(id) ?? []), { positionId: positionIdOf(t.id, i + 1), label: `${t.name} — ${s.label || `slot ${i + 1}`}`, displayTypeName: t.name, ...slotDetailOf(t, i + 1) }])
-    })
-  }
-  return out
-}
 
 /* The positions a deal is attached to: every slot assigned to it, as `displayTypeId.sN`. */
 const positionsOfDeal = async (ctx: Context, buyersListId: string) =>
@@ -82,7 +69,7 @@ const withDelivery = async (ctx: Context, l: BuyersList, slots?: Map<string, Ass
   const effectiveCommittedPlays = { min: committed, max: committed, source: committed == null ? ('none' as const) : ('buyer' as const) }
   const effectiveRateCpm = effectiveTerm({ platform: company.floorCpm, dsp: invited.map((b) => b?.floorCpm), buyer: l.floorCpm }, (n) => (l.belowFloorOverride && typeof l.floorCpm === 'number' ? n : Math.max(company.floorCpm, n)))
   const equivalentCpm = isGuaranteedLike(l.dealType) && l.termTotal != null ? equivalentCpmRange(equivalentCpmOf(l.termTotal, await termSlotsOf(ctx, l.id), termDaysOf(l.activeFrom, l.activeTo))) : null
-  return { ...l, effectiveCommittedPlays, effectiveRateCpm, equivalentCpm, deliveredPlays: await deliveredOf(ctx, l), assignedSlots: (slots ?? (await assignedSlotsByList(ctx))).get(l.id) ?? [] }
+  return { ...l, effectiveCommittedPlays, effectiveRateCpm, equivalentCpm, deliveredPlays: await deliveredOf(ctx, l), assignedSlots: l.status === 'archived' ? l.assignedSlots : (slots ?? (await assignedSlotsByList(ctx))).get(l.id) ?? [] }
 }
 const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
   l.committedPlays == null ? 0 : await ctx.billing.playsAt(await positionsOfDeal(ctx, l.id), l.activeFrom, l.activeTo)

@@ -375,7 +375,12 @@ the same dialog for both.
   Inventory; ticket cy45L5xGDqKwzt4diBBa, 22 Oct 2026) holding a historic
   table (AG Grid, a filter under every column heading and a "Showing X of N"
   count) of all archived deals: deal, deal type, buyers, rate / total,
-  flight dates, deal ID, archived date and archived by. Archiving is recorded
+  flight dates, the slots the deal was assigned to, deal ID, archived date and
+  archived by. The slots are released as the deal is archived, so the archive
+  keeps them: `buyers_lists.archived_slots` (migration `0088`, ticket
+  VHuSQiHQoGCPPvreusgK, 27 Oct 2026) holds the deal's `assignedSlots` as they
+  stood, and the Slots column lists every one, one per line. A deal archived
+  before then shows "No slots recorded". Archiving is recorded
   in the SSP change history (§3a).
 - **Automatic end of flight.** Once a shared deal's flight dates have ended and
   its last window inside the flight has played and been billed, the deal
@@ -2272,7 +2277,8 @@ It carries:
   over the flight). Its hover is a compact programmatic read that fits on
   screen at 390 px and up: deal type, rate, flight dates and times, then per
   slot the **total plays and total value over the whole flight** (not per
-  window; the Slots hover keeps the per-window slot copy), then the deal
+  window; the Slots hover keeps the per-window slot copy, and lists slots of
+  the same display type together under one heading, in slot order), then the deal
   total. Plays are the measure (signage): a slot's plays = plays per window
   per display x displays x windows a day x calendar days in the flight; value
   = plays / 1,000 x the CPM, or the term total split by each slot's share of
@@ -3462,6 +3468,10 @@ written or add any other reporting on it. As the exchange, disputes resolve agai
 > `below_floor_override_by` and `below_floor_override_at` record that a deal was saved below the platform floor with
 > the admin's explicit override; surfaced as `belowFloorOverride`, `belowFloorOverrideBy`, `belowFloorOverrideAt` on
 > the deal (see the guaranteed-deal pricing rules above).
+
+> **`buyers_lists` archived slots (migration 0088, 27 Oct 2026):** `archived_slots` (JSON text, null until archived)
+> holds the deal's `assignedSlots` as they stood when it was archived, because the slots are released then. Surfaced
+> as `assignedSlots` on an archived deal.
 
 The display type, playlist and campaign records are the platform's
 **existing** records, with this project's additions kept in clearly separated

@@ -2,7 +2,9 @@
    archive first (ticket cy45L5xGDqKwzt4diBBa; it was a dialog under Advertisers
    / Inventory). Deals are archived, never deleted, so each keeps its deal ID,
    terms and history; the page is read only. Every column has a filter (a search
-   box, or a set for Archived by) so a deal from the past is quick to find. */
+   box, or a set for Archived by) so a deal from the past is quick to find. The Slots column lists the slots the deal was
+   assigned to when it was archived (they are released as it is archived, so the API keeps them on the deal; ticket
+   VHuSQiHQoGCPPvreusgK). */
 import type { ColDef } from 'ag-grid-community'
 import type { BuyersList } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
@@ -15,10 +17,19 @@ import { searchColumn, setColumn, showingCount } from '../../shared/TableFilters
 import { T } from '../../theme/phTheme'
 import { BuyersCell, DEAL_TYPE_LABELS, DealIdCell, DetailsCell, TermCell, useDealNames, type Ctx, type P } from './BuyersListsTable'
 import { flightMoment, rateValue, termTotalText } from './effectiveTerm'
+import { slotLine } from './slotLine'
 
 /* Same "22 Oct 2026 14:05" form as the flight dates, not the browser's locale (E2E 22 Oct 2026: it read 10/22/2026, 2:19:36 AM). */
 const fmtDate = (v: string | null) => flightMoment(v) ?? ''
 const ArchivedNameCell = ({ data }: P) => (data ? <div className="min-w-0"><div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div><div style={{ fontSize: 11.5, color: T.muted }}>Archived · read only</div></div> : null)
+const slotLines = (l?: BuyersList) => (l?.assignedSlots ?? []).map((s) => slotLine(s))
+/* One slot per line, none dropped: a person needs to see exactly which slots the deal was in. */
+const ArchivedSlotsCell = ({ data }: P) => {
+  const lines = slotLines(data)
+  return lines.length
+    ? <ul className="m-0 list-none py-1 pl-0" style={{ fontSize: 12.5, lineHeight: '18px' }} data-testid={`archived-slots-${data?.id}`}>{lines.map((t, i) => <li key={i}>{t}</li>)}</ul>
+    : <span style={{ fontSize: 12.5, color: T.muted }}>No slots recorded</span>
+}
 const ArchivedAtCell = ({ data }: P) => (data?.archivedAt ? <span style={{ fontSize: 12.5 }}>{fmtDate(data.archivedAt)}</span> : null)
 const ArchivedByCell = ({ data }: P) => (data?.archivedBy ? <span style={{ fontSize: 12.5 }}>{data.archivedBy}</span> : null)
 
@@ -34,6 +45,7 @@ export function ArchivedDealsPage() {
     { headerName: 'Buyer(s)', width: 180, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => [...(p.data?.invitedBuyers ?? []).map((b) => p.context.current.seatName(b.partnerId, b.seatId)), ...(p.data?.invitedCategories ?? [])].join(', '), ...searchColumn<BuyersList>('Buyer(s)') },
     { headerName: 'Details', width: 280, minWidth: 220, cellRenderer: DetailsCell, valueGetter: (p) => `${typeText(p.data)} ${p.data?.termTotal != null ? termTotalText(p.data.termTotal) : rateValue(p.data?.effectiveRateCpm) ?? ''}`, ...searchColumn<BuyersList>('Details') },
     { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${fmtDate(p.data?.activeFrom ?? null)} ${fmtDate(p.data?.activeTo ?? null)}`, ...searchColumn<BuyersList>('Flight dates') },
+    { headerName: 'Slots', width: 300, minWidth: 220, autoHeight: true, cellRenderer: ArchivedSlotsCell, valueGetter: (p) => slotLines(p.data).join(', '), ...searchColumn<BuyersList>('Slots') },
     { headerName: 'Deal ID', width: 160, minWidth: 140, cellRenderer: DealIdCell, valueGetter: (p) => p.data?.dealId ?? '', ...searchColumn<BuyersList>('Deal ID') },
     { headerName: 'Archived', width: 180, minWidth: 160, cellRenderer: ArchivedAtCell, valueGetter: (p) => fmtDate(p.data?.archivedAt ?? null), ...searchColumn<BuyersList>('Archived') },
     { headerName: 'Archived by', width: 140, minWidth: 120, cellRenderer: ArchivedByCell, valueGetter: (p) => p.data?.archivedBy ?? '', ...setColumn<BuyersList>('Archived by', () => rows.map((l) => l.archivedBy ?? '')) },
