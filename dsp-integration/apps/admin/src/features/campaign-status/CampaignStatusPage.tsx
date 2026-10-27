@@ -33,7 +33,7 @@
    selection box, Status, Advertiser / Campaign name (one locked column,
    ticket QstRAlo3YCi7erFD0maN — the DSP shows on hovering the advertiser), Touch points, Display
    types, Creative ID, Deal ID, the two variable columns, Activation,
-   Received, Last used. Each advertiser is a group row whose ONE box ticks
+   Flight start, Received, Last used. Each advertiser is a group row whose ONE box ticks
    every campaign beneath it; each campaign row has its own one box. There is
    no status selector or "select all" above the table — status is filtered
    in its column — and the actions at the top right follow the status of the
@@ -42,8 +42,11 @@
    row (nothing, since no action is valid across both).
 
    Triage order (Rob, 8 Oct 2026): Received replaces Schedule and Last used
-   closes the row. Rows open Awaiting approval first, oldest Received at the
-   top, then decided rows by Last used, most recent first (triage.ts).
+   closes the row. Rows open Awaiting approval first, then decided rows;
+   within each the soonest Flight start first (ticket XE6l6fyqZvpLhgIQpb7P,
+   27 Oct 2026), then oldest Received / most recent Last used (triage.ts).
+   A campaign carries no flight of its own, so Flight start is its deal's
+   start, else the start of its next booked window.
    Last used is PH Core's playback data (Campaign.lastPlayedAt).
 
    The Status filter lives in the URL (`status`), like the Advertiser filter. */
@@ -53,7 +56,7 @@ import { Tip } from '../../shared/Tip'
 import { PlaybackStrategyPills, type PlaybackStrategyRules } from '../../shared/PlaybackStrategyPills'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalStatusBadge, RejectionCodeSelect, STATUS_LABELS, isRejectionCode, rejectionLabel, type Approval, type ApprovalStatus, type RejectionCode } from '@ph-dsp/campaign-approval/ui'
-import type { Campaign } from '@ph-dsp/types'
+import type { BuyersList, Campaign } from '@ph-dsp/types'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
@@ -62,6 +65,8 @@ import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { pageSetColumn, searchColumn, searchFunnelColumn, setColumn } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
+import { DEAL_TYPE_LABELS } from '../advertisers/BuyersListsTable'
+import { dealTotalValueText, flightMoment } from '../advertisers/effectiveTerm'
 import { CAMPAIGN_STATUS_PATH, useCampaignActions } from './useCampaigns'
 import { byAdvertiserDeal, elapsedSince, triageOrder } from './triage'
 
@@ -87,6 +92,8 @@ interface Ctx {
   assignOneToExisting: (c: Campaign, a: Approval) => void
   /* A creative ID needs an advertiser, and another of its campaigns to share an existing one with. */
   hasSibling: (c: Campaign) => boolean
+  /* The deal a campaign is linked to (Deals and buyers lists), for the flight start and the name hover's deal section. */
+  dealOf: (c: Campaign) => BuyersList | undefined
   now: number
 }
 /* An advertiser's group row sits above its campaigns; its one box ticks them all.
@@ -178,8 +185,22 @@ const CampaignNameCell = ({ data, context }: Pick<P, 'data' | 'context'>) => {
     ['Touch points', touchPointsOf(data).join(', ') || '—'], ['Pricing', pricingLabel(data)],
     ['Localised variables', data.localisedVariables.join(', ') || '—'], ['Personalised variables', data.personalisedVariables.join(', ') || '—'],
   ]
+  /* Only a campaign linked to a deal has this section. Not the Deals list's per-slot breakdown, and no pacing (nothing has delivered yet). */
+  const deal = context.current.dealOf(data)
+  const total = deal ? dealTotalValueText(deal) : null
+  const dealLines: [string, string][] = deal ? [
+    ['Deal', deal.name], ['Deal ID', data.dealId ?? deal.dealId], ['Deal type', DEAL_TYPE_LABELS[deal.dealType] ?? deal.dealType],
+    ['Flight', deal.activeFrom || deal.activeTo ? `${flightMoment(deal.activeFrom) ?? 'No start date'} → ${flightMoment(deal.activeTo) ?? 'No end date'}` : 'Always active'],
+    ['Total value', total ?? 'Not available yet'],
+  ] : []
   return (
-    <Tip title={<div>{lines.map(([k, v]) => <div key={k}><b>{k}:</b> {v}</div>)}</div>}>
+    <Tip title={<div>
+      {lines.map(([k, v]) => <div key={k}><b>{k}:</b> {v}</div>)}
+      {deal && <div data-testid={`deal-tip-${data.campaignId}`} style={{ marginTop: 6 }}>
+        <div style={{ fontWeight: 500 }}>Deal</div>
+        {dealLines.map(([k, v]) => <div key={k}><b>{k === 'Deal' ? 'Name' : k}:</b> {v}</div>)}
+      </div>}
+    </div>}>
       <Button type="link" className="h-auto px-0 py-0" style={{ color: T.text, maxWidth: '100%' }} onClick={() => context.current.open(data.campaignId)}>
         <span className="block truncate">{data.name}</span>
       </Button>
@@ -220,6 +241,13 @@ const strategiesOf = (c: Campaign) => {
   return [r.localised?.length && 'LOCALISED', r.personalised?.length && 'PERSONALISED', r.scheduled?.length && 'SCHEDULED'].filter(Boolean).join(', ')
 }
 const PlaybackStrategyCell = ({ data }: P) => (data && !data.group ? <PlaybackStrategyPills rules={strategyRules(data)} /> : null)
+/* The flight start that drives approval urgency: the linked deal's start, else the next booked window's (a campaign has no flight of its own). */
+const flightStartOf = (c: Campaign, deal: BuyersList | undefined): string | null => deal?.activeFrom ?? c.schedule.nextWindowStart ?? null
+const FlightStartCell = ({ data, context }: P) => {
+  if (!data || data.group) return null
+  const iso = flightStartOf(data, context.current.dealOf(data))
+  return iso ? <span className="block truncate">{flightMoment(iso)}</span> : <span style={{ color: T.micro }}>—</span>
+}
 /* When the creative's approval request was received, with the time since in
    brackets — a snapshot taken when the page loaded, never ticking (Rob, 8 Oct
    2026). Only while the row is Awaiting approval: once decided there is no
@@ -309,6 +337,16 @@ export function CampaignStatusPage() {
   const reasonFilter = isRejectionCode(reasonParam) ? reasonParam : null
   const campaigns = useQuery(Q.campaigns)
   const displayTypes = useQuery(Q.displayTypes)
+  /* Same query (and cache entry) as Deals and buyers lists. */
+  const buyersLists = useQuery({ queryKey: ['buyers-lists'], queryFn: () => api<{ items: BuyersList[] }>('GET', '/admin/v1/buyers-lists'), retry: false })
+  const dealOf = useMemo(() => {
+    const byId = new Map<string, BuyersList>()
+    for (const l of buyersLists.data?.items ?? []) {
+      byId.set(l.dealId, l)
+      for (const d of l.deals ?? []) if (!byId.has(d.dealId)) byId.set(d.dealId, l)
+    }
+    return (c: Campaign) => (c.dealId ? byId.get(c.dealId) : undefined)
+  }, [buyersLists.data])
   const displayTypeNames = useMemo(() => new Map((displayTypes.data ?? []).map((d) => [d.id, d.name] as const)), [displayTypes.data])
   /* Only what came in through a DSP or the Partner API. */
   const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq' || c.campaignId === campaignFilter), [campaigns.data, campaignFilter])
@@ -326,7 +364,7 @@ export function CampaignStatusPage() {
     if (reasonFilter && !(a?.status === 'rejected' && (a.reasonCode ?? 'other') === reasonFilter)) return false
     const s = a?.status
     return !statusFilter.length || (!!s && (statusFilter as string[]).includes(s))
-  }), approvals)), [all, advertiserId, statusFilter, approvals, campaignFilter, reasonFilter])
+  }), approvals, (c) => flightStartOf(c, dealOf(c)))), [all, advertiserId, statusFilter, approvals, campaignFilter, reasonFilter, dealOf])
   /* A group row above each advertiser's campaigns. Its filterable values are its campaigns' joined, so a column filter keeps it while any campaign beneath still matches. */
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = []
@@ -435,7 +473,7 @@ export function CampaignStatusPage() {
   }, [picking, deal, originals.size, choice, creativeIds.data])
 
   const ctx: Ctx = {
-    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, revert, activate, selected, toggle, toggleGroup, groupIds, displayTypeNames, hasSibling,
+    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, revert, activate, selected, toggle, toggleGroup, groupIds, displayTypeNames, dealOf, hasSibling,
     approveOne: (a) => void approveAssign([a]).then((ok) => ok && toggle(a.campaignId, false)),
     approveOneIntoExisting: (c, a) => { only(c); openPicker([a]) },
     rejectOne: (c) => { only(c); setReason(''); setReasonCode(undefined); setRejecting(true) },
@@ -507,12 +545,16 @@ export function CampaignStatusPage() {
     { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
     /* Received replaces Schedule (Rob, 8 Oct 2026): the forward schedule is no longer relevant on the real-time path. */
     {
+      headerName: 'Flight start', width: 170, minWidth: 140, cellRenderer: FlightStartCell,
+      valueGetter: (p) => (p.data && !p.data.group ? flightStartOf(p.data, dealOf(p.data)) ?? '' : ''),
+    },
+    {
       headerName: 'Received', width: 190, minWidth: 160, cellRenderer: ReceivedCell,
       valueGetter: (p) => (p.data && !p.data.group && approvals[p.data.campaignId]?.status === 'awaiting_approval' ? approvals[p.data.campaignId]?.submittedAt ?? '' : ''),
     },
     { headerName: 'Last used', width: 150, minWidth: 130, cellRenderer: LastUsedCell, valueGetter: (p) => p.data?.lastPlayedAt ?? '' },
     { headerName: '', width: 56, suppressSizeToFit: true, pinned: 'right', cellRenderer: RowMenu },
-  ], [approvals, all, advertiserOptions, advertiserId, statusOptions, statusFilter, displayTypeNames])
+  ], [approvals, all, advertiserOptions, advertiserId, statusOptions, statusFilter, displayTypeNames, dealOf])
 
   const toActivate = selectedRows.filter((c) => !c.activation.enabled).length
   const toDeactivate = selectedRows.length - toActivate

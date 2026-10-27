@@ -4,16 +4,19 @@
 import type { Approval } from '@ph-dsp/campaign-approval/ui'
 import type { Campaign } from '@ph-dsp/types'
 
-/* Awaiting-approval rows first, longest-waiting at the very top (oldest
-   Received first); then the decided rows (Approved / Rejected), most
-   recently used first, never-used last. Ties fall back to the name so the
-   order is stable. */
-export function triageOrder(rows: Campaign[], approvals: Record<string, Approval | undefined>): Campaign[] {
+/* Awaiting-approval rows first, then the decided rows (Approved / Rejected).
+   Within each, the soonest flight start comes first (it is what drives
+   approval urgency; no flight start last). Ties fall back to the old order:
+   oldest Received first when awaiting, most recently used first (never-used
+   last) when decided, then the name so the order is stable. */
+export function triageOrder(rows: Campaign[], approvals: Record<string, Approval | undefined>, flightStart: (c: Campaign) => string | null = () => null): Campaign[] {
   const awaiting = (c: Campaign) => approvals[c.campaignId]?.status === 'awaiting_approval'
   const at = (iso: string | null | undefined, missing: number) => (iso ? Date.parse(iso) : missing)
   return [...rows].sort((a, b) => {
     const aw = awaiting(a), bw = awaiting(b)
     if (aw !== bw) return aw ? -1 : 1
+    const f = at(flightStart(a), Infinity) - at(flightStart(b), Infinity)
+    if (f) return Number.isNaN(f) ? 0 : f
     if (aw) {
       const d = at(approvals[a.campaignId]?.submittedAt, Infinity) - at(approvals[b.campaignId]?.submittedAt, Infinity)
       if (d) return Number.isNaN(d) ? 0 : d

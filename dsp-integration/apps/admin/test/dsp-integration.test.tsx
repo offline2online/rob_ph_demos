@@ -396,7 +396,7 @@ describe('Campaign Status stand-in', () => {
        (ticket IDGsyELBJsjlAYjizSqT), grouped by advertiser. Order per ticket
        HDh2GwTa7m8jaqidBvBY: Activation sits right of Playback Strategy, Received right of Activation, Last used last. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      '', 'Status', 'Advertiser / Campaign name', 'Touch point(s)', 'Display type(s)', 'Creative ID', 'Deal ID', 'Playback Strategy', 'Activation', 'Received', 'Last used', '',
+      '', 'Status', 'Advertiser / Campaign name', 'Touch point(s)', 'Display type(s)', 'Creative ID', 'Deal ID', 'Playback Strategy', 'Activation', 'Flight start', 'Received', 'Last used', '',
     ])
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* The touch points it runs on, and its Playback Strategy pill (the localised layer; hover lists its rules). */
@@ -426,6 +426,29 @@ describe('Campaign Status stand-in', () => {
     expect(document.body.textContent).toContain('Logo is blurry')
     expect(document.body.textContent).toContain('hq@retailer.test')
   })
+
+  /* Ticket XE6l6fyqZvpLhgIQpb7P: Flight start column, and the deal section in the campaign name hover. */
+  it('shows the flight start and a deal section in the campaign name hover, only for a campaign linked to a deal', async () => {
+    const dealt = { ...campaign, dealId: 'PH-DEAL1' }
+    const list = { id: 'bl_1', dealId: 'PH-DEAL1', name: 'Swisse always-on', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: '2026-11-03T09:00:00.000Z', activeTo: '2026-12-01T00:00:00.000Z', dealType: 'guaranteed', termTotal: 12500, effectiveCommittedPlays: { min: null, max: null, source: 'none' } }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/campaigns': { items: [dealt, hq] }, '/api/admin/v1/buyers-lists': { items: [list] } })))
+    renderAt('/booking-schedule?tab=campaign-status')
+    const grid = await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })
+    await new Promise((r) => setTimeout(r, 300))
+    fireEvent.mouseEnter(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 }))
+    const tip = await screen.findByTestId('deal-tip-c1', {}, { timeout: 10000 })
+    for (const t of ['Swisse always-on', 'PH-DEAL1', 'Programmatic guaranteed', '3 Nov 2026 09:00', '1 Dec 2026 00:00', 'USD 12,500']) expect(tip.textContent).toContain(t)
+    expect(tip.textContent).not.toMatch(/pacing/i)
+  }, slow(45000))
+  it('has no deal section when the campaign is not linked to a deal', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
+    renderAt('/booking-schedule?tab=campaign-status')
+    const grid = await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })
+    await new Promise((r) => setTimeout(r, 300))
+    fireEvent.mouseEnter(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 }))
+    await screen.findByText('Touch points:', {}, { timeout: 10000 })
+    expect(screen.queryByTestId('deal-tip-c1')).not.toBeInTheDocument()
+  }, slow(45000))
 
   /* Ticket BGxKMB89DIOgWuwgfrej: the two tabs are back (removed 13 Oct 2026 by BG4LKXiqTMYNm8jRNFDk). */
   it('has Booking schedule and Campaign Approval tabs, Booking schedule first', async () => {

@@ -1465,7 +1465,17 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
   column; its search box matches either the advertiser or the campaign name
   and its funnel picks an advertiser), Touch
   points, Display types, Creative ID, Deal ID, Playback Strategy,
-  Activation, Received, Last used. Every row has
+  Activation, Flight start, Received, Last used. **Flight start** (ticket
+  XE6l6fyqZvpLhgIQpb7P, 27 Oct 2026) is the start of the campaign's deal
+  (a campaign carries no flight of its own), else the start of its next
+  booked window; it drives approval urgency, so inside each advertiser /
+  deal group the rows open soonest Flight start first (Awaiting approval
+  before decided, no flight start last, then oldest Received / most recent
+  Last used). Hovering the campaign name also shows, for a campaign linked
+  to a deal only, a **Deal** section: deal name, deal ID, deal type, flight
+  start and end, and the deal's total value (a term total, else committed
+  plays at the deal's rate). It does not repeat the Deals and buyers lists
+  per-slot breakdown and carries no pacing. Every row has
   **exactly one** box. Each advertiser is a group row whose single box ticks
   every campaign beneath it (partial when only some are ticked); a campaign
   row's box ticks that campaign. Filtering is **in the columns** — status is

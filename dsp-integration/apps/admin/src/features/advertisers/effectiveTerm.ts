@@ -92,3 +92,13 @@ export const valueText = (v: DealValue | null) => {
   const f = (n: number) => Math.round(n).toLocaleString('en-US')
   return `${v.from ? 'from ' : ''}USD ${Math.round(v.min) === Math.round(v.max) ? f(v.min) : `${f(v.min)}–${f(v.max)}`}`
 }
+
+/* The deal's total value for a campaign's hover (Campaign Approval): a term total as set, otherwise the committed plays priced at the deal's
+   rate (a range when either varies). Null when the deal has no committed volume or rate yet - the hover then says so. */
+export const dealTotalValueText = (l: ValueList & Pick<BuyersList, 'effectiveCommittedPlays'>): string | null => {
+  if (isGuaranteedLike(l.dealType) && l.termTotal != null) return valueText(valueOf(l, 1, 1))
+  const p = l.effectiveCommittedPlays
+  if (!p || p.min === null || p.max === null) return null
+  const lo = valueOf(l, p.min, p.min), hi = valueOf(l, p.max, p.max)
+  return lo && hi ? valueText({ min: lo.min, max: hi.max, from: lo.from }) : null
+}
