@@ -2277,7 +2277,8 @@ It carries:
   over the flight). Its hover is a compact programmatic read that fits on
   screen at 390 px and up: deal type, rate, flight dates and times, then per
   slot the **total plays and total value over the whole flight** (not per
-  window; the Slots hover keeps the per-window slot copy), then the deal
+  window; the Slots hover keeps the per-window slot copy, and lists slots of
+  the same display type together under one heading, in slot order), then the deal
   total. Plays are the measure (signage): a slot's plays = plays per window
   per display x displays x windows a day x calendar days in the flight; value
   = plays / 1,000 x the CPM, or the term total split by each slot's share of

@@ -30,3 +30,17 @@ export const slotColumnText = (r: PlaceLike): string => {
   const name = slotName(r)
   return name ? `${slot} (${name})` : slot
 }
+
+/* The deal's Slots hover: slots of the same display type together, in zone then slot order (ticket IGHoIBf6onQxp0UMVrVk).
+   Groups keep the order their display type first appears in. */
+export interface GroupableSlot { displayType: string; description: string | null; orientation?: 'landscape' | 'portrait' | null; zoneName: string | null; slot: number }
+export const groupSlotsByDisplayType = <T extends GroupableSlot>(rows: T[]): { rows: T[] }[] => {
+  const groups = new Map<string, T[]>()
+  for (const r of rows) {
+    const key = JSON.stringify([r.displayType, r.description ?? null, r.orientation ?? null])
+    groups.set(key, [...(groups.get(key) ?? []), r])
+  }
+  return [...groups.values()].map((g) => ({
+    rows: [...g].sort((a, b) => (a.zoneName ?? '').localeCompare(b.zoneName ?? '', undefined, { numeric: true }) || a.slot - b.slot),
+  }))
+}
