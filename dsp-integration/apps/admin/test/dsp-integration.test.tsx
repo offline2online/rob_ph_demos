@@ -478,7 +478,7 @@ describe('Campaign Status stand-in', () => {
     expect(screen.getByText('Booked assumed views')).toBeInTheDocument()
     expect(screen.getByText('Available assumed views')).toBeInTheDocument()
     expect(screen.getByText('Available (at floor CPM)')).toBeInTheDocument()
-    expect((await screen.findAllByText(/456\.50/)).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(/\(.*456\.50\)/)).length).toBeGreaterThan(0)
     expect((await screen.findAllByText('12,345')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('5,000').length).toBeGreaterThan(0)
     expect(screen.getAllByText('7,345').length).toBeGreaterThan(0)

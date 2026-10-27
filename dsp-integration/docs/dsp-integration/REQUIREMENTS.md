@@ -4687,7 +4687,7 @@ playback analytics.**
   filter picked, only that buyer's fills count over the same opportunities.
   **Available (at floor CPM) (26 Oct 2026, ticket
   Ltlu40NbXod3d8NwFF6Z):** a column after Booked windows shows, per display
-  type and in the Total row, "<windows> · <value>": the sellable windows
+  type and in the Total row, "<windows> (<value>)" (the value in brackets, matching the column header): the sellable windows
   nobody has booked yet (`availableWindows`) and their value at the floor
   CPM (`availableValue` = each position's floor CPM × the assumed views
   (VAC-d) of its unbooked columns ÷ 1,000, in the exchange currency), so a

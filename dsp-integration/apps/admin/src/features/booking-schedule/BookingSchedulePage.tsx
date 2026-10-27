@@ -457,7 +457,7 @@ const PercentSoldCell = ({ data }: ICellRendererParams<RevenueRow>) => {
    A snapshot from before this column has no figures, which reads as a dash. */
 const AvailableCell = ({ data, context }: ICellRendererParams<RevenueRow, number, Ctx>) => {
   if (!data || data.availableWindows == null) return <span style={{ color: T.muted }}>—</span>
-  return <span style={{ fontWeight: data.total ? 600 : 400 }}>{data.availableWindows.toLocaleString('en-GB')} <span style={{ color: T.muted, fontWeight: 400 }}>·</span> {context.current.money(data.availableValue ?? 0)}</span>
+  return <span style={{ fontWeight: data.total ? 600 : 400 }}>{data.availableWindows.toLocaleString('en-GB')} <span style={{ color: T.muted, fontWeight: 400 }}>({context.current.money(data.availableValue ?? 0)})</span></span>
 }
 
 /* Expected fill (ticket bhiyhqKpLPBDlySEfGNB): the share of the last week's
