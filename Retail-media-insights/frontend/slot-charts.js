@@ -31,11 +31,7 @@
     missed: 'Fill = advertiser slots sold ÷ all advertiser slots, across all deal types (booking schedule and unsold real-time slot records). ' +
       'Only slots inside each display’s operating hours count (outside screens run 24 hours; in-store screens follow store opening hours); slots outside them play house content. ' +
       'Amber = unsold slots valued at floor CPM × their assumed views ÷ 1,000 (a minimum estimate). ' +
-      'Red = revenue lost while displays were offline. The number in brackets is connected displays (PH Core). ' + VAC_TEXT,
-    hourly: 'Fill = advertiser slots sold ÷ all advertiser slots in the hour, across all deal types (booking schedule and unsold real-time slot records). ' +
-      'Effective CPM = revenue ÷ (assumed views (VAC-d) ÷ 1,000). Only hours inside each display type’s operating hours are inventory and shown: outside screens and windows run 24 hours, in-store screens follow store opening hours. ' +
-      'Until the hourly impression multiplier ships, assumed views per hour = the day’s assumed views spread by each hour’s share of the day’s slots played, and revenue is spread the same way. ' +
-      'The number in brackets is connected displays (PH Core).'
+      'Red = revenue lost while displays were offline. The number in brackets is connected displays (PH Core). ' + VAC_TEXT
   };
   // Column definitions for the Slot allocation table (an ⓘ beside each heading).
   var COLUMN_TIPS = {
@@ -227,49 +223,13 @@
     return withHours(valuesOnly(dt.name, [sec]), dt);
   }
 
-  function hourLabel(h) { return (h < 10 ? '0' : '') + h + ':00'; }
-  function hourRange(h) { return hourLabel(h) + '–' + hourLabel((h + 1) % 24); }
-
-  // Cell shade: the primary colour at an opacity of the cell's value against the largest value in the grid.
-  function hourlyShade(value, max) {
-    if (!has(value) || !(max > 0)) return { bg: 'transparent', dark: false };
-    var a = Math.max(0.08, Math.min(1, value / max));
-    return { bg: 'rgba(22,155,194,' + a.toFixed(2) + ')', dark: a > 0.55 };
-  }
-  function hourlyCellText(cell, mode) {
-    if (mode === 'fill') return pct(cell.fillPercent);
-    return has(cell.effectiveCpm) ? fmtMoney(cell.effectiveCpm, 2) : '–';
-  }
-  function hourlyMax(rows, mode) {
-    var max = 0;
-    rows.forEach(function (r) { r.hours.forEach(function (c) { var v = mode === 'fill' ? c.fillPercent : c.effectiveCpm; if (has(v) && v > max) max = v; }); });
-    return max;
-  }
-
-  // row is a /hourly row, cell one of its hours; dt is the display type's card. Facts only.
-  function hourlyHover(row, cell, dt, meta) {
-    var range = dateRange(meta);
-    var cd = row.connectedDisplays || {};
-    var rows = [
-      ['Hour', hourRange(cell.hour)],
-      ['Fill', pct(cell.fillPercent) + ' (total ' + fmtInt(cell.slotsSold) + ' of ' + fmtInt(cell.slotsTotal) + ' advertiser slots sold; ' + fmtInt(cell.slotsUnsold) + ' unsold, ' + fmtInt(cell.slotsOffline) + ' offline)'],
-      ['Effective CPM', has(cell.effectiveCpm)
-        ? fmtMoney(cell.effectiveCpm, 2) + ' (total revenue ' + fmtMoney(cell.revenue, 2) + ' over ' + fmtInt(cell.views) + ' assumed views)'
-        : 'No delivery']
-    ];
-    var note = 'Totals across all ' + fmtInt(cd.displays) + ' connected ' + (dt ? dt.name + ' ' : '') + 'displays' +
-      (has(cd.stores) ? ' in ' + plural(cd.stores, 'store') : '') + (range ? ', ' + range : '') + '.';
-    return withHours(valuesOnly(dt ? dt.name : row.name, [{ rows: rows, note: note }]), dt);
-  }
-
   var pure = {
     ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
     fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct, orientationText: orientationText,
     journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
     DSP_COLOURS: DSP_COLOURS, ALL_DEAL_TYPES: ALL_DEAL_TYPES, typesById: typesById, missedParts: missedParts,
     displayTypeCard: displayTypeCard, hoursText: hoursText, slotValueHover: slotValueHover, allocationHover: allocationHover,
-    missedHover: missedHover,
-    hourlyHover: hourlyHover, hourlyShade: hourlyShade, hourlyCellText: hourlyCellText, hourlyMax: hourlyMax, hourRange: hourRange
+    missedHover: missedHover
   };
 
   // ---------- DOM ----------
@@ -277,7 +237,7 @@
     if (typeof document === 'undefined') throw new Error('SlotCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { mode: 'cpm', dealType: '', hourly: 'fill' };
+    var state = { mode: 'cpm', dealType: '' };
     var gen = { all: 0 };
     var cache = { types: null, typeMap: {} };
     var alive = true;
@@ -386,24 +346,7 @@
 
     pMR.el.classList.add('sc-wide'); // takes the full row
 
-    // Fill and effective CPM by hour: full width under Missed revenue & fill.
-    var hSegBtns = {};
-    var hSeg = h('div', { class: 'sc-seg', role: 'radiogroup', 'aria-label': 'Hourly metric' });
-    [['fill', 'Fill'], ['cpm', 'Effective CPM']].forEach(function (o) {
-      var b = h('button', { type: 'button', class: 'sc-seg-btn', role: 'radio', 'data-mode': o[0], text: o[1] });
-      b.addEventListener('click', function () { state.hourly = o[0]; syncHSeg(); if (hData) drawHourly(hData); });
-      hSegBtns[o[0]] = b; hSeg.appendChild(b);
-    });
-    function syncHSeg() {
-      Object.keys(hSegBtns).forEach(function (k) {
-        hSegBtns[k].setAttribute('aria-checked', String(state.hourly === k));
-        hSegBtns[k].classList.toggle('on', state.hourly === k);
-      });
-    }
-    var pH = panel('Fill and effective CPM by hour', TIPS.hourly, hSeg, null);
-    pH.el.classList.add('sc-wide');
-
-    container.appendChild(h('div', { class: 'sc-grid' }, [pSV.el, pSA.el, pMR.el, pH.el]));
+    container.appendChild(h('div', { class: 'sc-grid' }, [pSV.el, pSA.el, pMR.el]));
     container.appendChild(tip);
 
     function setState(p, kind, retry) {
@@ -514,40 +457,11 @@
       pMR.body.innerHTML = ''; pMR.body.setAttribute('aria-busy', 'false'); pMR.body.appendChild(list);
     }
 
-    // ----- fill and effective CPM by hour -----
-    var hData = null;
-    function drawHourly(d) {
-      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.id]; });
-      var max = hourlyMax(rows, state.hourly);
-      var grid = h('div', { class: 'sc-heat', role: 'table', 'aria-label': 'Fill and effective CPM by hour' });
-      var head = h('div', { class: 'sc-heat-row', role: 'row' }, [h('div', { class: 'sc-heat-label', role: 'columnheader', text: 'Display type' })]);
-      for (var hr = 0; hr < 24; hr++) head.appendChild(h('div', { class: 'sc-heat-hour', role: 'columnheader', text: (hr < 10 ? '0' : '') + hr }));
-      grid.appendChild(head);
-      rows.forEach(function (r) {
-        var dt = cache.typeMap[r.id];
-        var byHour = {};
-        r.hours.forEach(function (c) { byHour[c.hour] = c; });
-        var line = h('div', { class: 'sc-heat-row', role: 'row' }, [nameLabel(r.name, displaysOf(r), dt, { class: 'sc-heat-label', role: 'rowheader' })]);
-        for (var i = 0; i < 24; i++) {
-          var c = byHour[i];
-          if (!c) { line.appendChild(h('div', { class: 'sc-heat-cell sc-heat-none', role: 'cell', 'aria-label': r.name + ' ' + hourRange(i) + ': not inventory' })); continue; }
-          var v = state.hourly === 'fill' ? c.fillPercent : c.effectiveCpm;
-          var shade = hourlyShade(v, max);
-          var cell = h('div', { class: 'sc-heat-cell' + (shade.dark ? ' sc-heat-dark' : ''), role: 'cell', style: 'background:' + shade.bg, 'data-hour': String(i), 'data-value': hourlyCellText(c, state.hourly), text: hourlyCellText(c, state.hourly) });
-          (function (cc) { hoverable(cell, function () { return hourlyHover(r, cc, dt, filters); }); })(c);
-          line.appendChild(cell);
-        }
-        grid.appendChild(line);
-      });
-      pH.body.innerHTML = ''; pH.body.setAttribute('aria-busy', 'false');
-      pH.body.appendChild(h('div', { class: 'sc-heat-scroll' }, [grid]));
-    }
-
     // ----- loading -----
     function loadAll() {
       var g = ++gen.all;
-      [pSV, pSA, pMR, pH].forEach(function (p) { setState(p, 'loading'); });
-      svData = null; saData = null; mrData = null; hData = null;
+      [pSV, pSA, pMR].forEach(function (p) { setState(p, 'loading'); });
+      svData = null; saData = null; mrData = null;
       var current = function () { return alive && g === gen.all; };
       var typesP = fetchJson('display-types', filters).then(function (t) {
         cache.types = t; cache.typeMap = typesById(t); return t;
@@ -566,10 +480,9 @@
       run(pSV, 'slot-value', function () { drawSlotValue(); if (saData) drawAllocation(saData); }, function (d) { svData = d; });
       run(pSA, 'slot-allocation', drawAllocation);
       run(pMR, 'missed-revenue', drawMissed, null, svP);
-      run(pH, 'hourly', drawHourly, function (d) { hData = d; });
     }
 
-    syncSeg(); syncHSeg();
+    syncSeg();
     loadAll();
     return {
       setFilters: function (f) { filters = f || {}; hideTip(); loadAll(); },

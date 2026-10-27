@@ -108,3 +108,9 @@ test('hoursMode labels 24 hours, custom hours and store opening hours without na
   assert.strictEqual(calc.hoursMode({ is24Hour: false }), 'Store opening hours');
   assert.deepStrictEqual(calc.operatingWindow({ is24Hour: false, customHours: { open: 8, close: 20 } }, { open: 9, close: 17 }), { open: 8, close: 20 });
 });
+
+test('roundToTotal: rounded parts add to the rounded sum', () => {
+  const parts = calc.roundToTotal([1.004, 1.004, 1.004], 2);
+  assert.equal(Math.round(parts.reduce((a, b) => a + b, 0) * 100), 301);
+  assert.deepEqual(calc.roundToTotal([0.4, 0.4, 0.4], 0), [1, 0, 0]);
+});

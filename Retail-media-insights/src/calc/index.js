@@ -184,7 +184,7 @@ function roundParts(parts) {
 
 /**
  * Round each value to `decimals` places so the rounded values add to the rounded sum (largest remainder).
- * Used where parts are shown beside a total that is a figure of its own (hourly revenue against the Revenue chart).
+ * Used where parts are shown beside a total that is a figure of its own (parts shown against a chart total).
  */
 function roundToTotal(values, decimals = 0) {
   const scale = 10 ** decimals;

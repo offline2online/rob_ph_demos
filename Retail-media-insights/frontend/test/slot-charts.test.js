@@ -158,8 +158,7 @@ test('every display type hover carries the operating hours', async () => {
   const sv = (await get('/slot-value')).rows.find((r) => r.id === 'window');
   const sa = (await get('/slot-allocation')).rows.find((r) => r.id === 'window');
   const mr = (await get('/missed-revenue')).rows.find((r) => r.id === 'window');
-  const hr = (await get('/hourly')).rows.find((r) => r.id === 'window');
-  for (const m of [SC.slotValueHover(sv, RANGE), SC.allocationHover(sa, 'loop', w), SC.missedHover(mr, w, RANGE, false), SC.hourlyHover(hr, hr.hours[9], w, RANGE)]) {
+  for (const m of [SC.slotValueHover(sv, RANGE), SC.allocationHover(sa, 'loop', w), SC.missedHover(mr, w, RANGE, false)]) {
     assert.strictEqual(val(m, 'Operating hours'), '24 hours', m.title);
   }
   assert.strictEqual(SC.hoursText('Custom hours'), 'Custom hours');
@@ -190,21 +189,6 @@ test('slot value sorts by the selected metric and slot allocation follows it', a
     const types = await typesP;
     assert.deepStrictEqual(SC.followOrder(sa.slice().reverse(), order, (r) => types[r.id]).map((r) => r.id), order.map((r) => r.id).filter((id) => sa.some((a) => a.id === id)));
   }
-});
-
-test('hourly: cell text, shading and hover facts', async () => {
-  const body = await get('/hourly');
-  const row = body.rows.find((r) => r.name === 'Window Portrait');
-  assert.equal(row.hours.length, 24);
-  const cell = row.hours[9];
-  assert.match(SC.hourlyCellText(cell, 'fill'), /^\d+%$/);
-  assert.equal(SC.hourlyCellText({ fillPercent: 50, effectiveCpm: null }, 'cpm'), '–');
-  assert.equal(SC.hourlyShade(null, 10).bg, 'transparent');
-  assert.equal(SC.hourlyMax(body.rows, 'fill') >= cell.fillPercent, true);
-  const m = SC.hourlyHover(row, cell, (await typesP)[row.id], RANGE);
-  assert.equal(val(m, 'Hour'), '09:00–10:00');
-  assert.match(val(m, 'Fill'), /advertiser slots sold; .* unsold, .* offline\)$/);
-  assert.match(text(m), /Totals across all/);
 });
 
 test('value hovers carry the figures only; the description and averages sit on the display type name', async () => {

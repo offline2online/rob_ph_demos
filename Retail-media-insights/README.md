@@ -183,14 +183,6 @@ Purpose: show the **value of each screen along the shopper journey**, and help t
 - No chart filter; page filters only.
 - Data: booking schedule, display operating hours (per display type: 24 hours or store opening hours), unsold real-time slot records, floor CPM and VAC-d per display type, **connected displays per display type and store (PH Core)**, lost-revenue report (GET /admin/v1/reports/lost-revenue).
 
-### 5a. Fill and effective CPM by hour — heatmap (full width, directly under Missed revenue & fill; retailer view only)
-- **One heatmap:** display types as rows (name only, connected displays in brackets, shopper-journey order), hours 00–23 across. Only hours inside a display type's operating hours are inventory and have a cell (Exterior and window screens show 24 hours; in-store types show store opening hours); other hours are blank. **No opening times are shown anywhere.**
-- **Metric toggle:** **Fill** (default, whole-number %) / **Effective CPM** (USD per 1,000 assumed views, VAC-d; "–" where an hour has no delivery). Page filters apply; no chart-level filter.
-- **Hover:** the display type card plus Hour, Fill (total sold of all advertiser slots in the hour, unsold, offline), Effective CPM (total revenue and total assumed views) and "Totals across all N connected … displays in S stores, <dates>." Facts only, no warning chips or advice.
-- **Fill** = sold ÷ (sold + unsold + offline), the Inventory sold rule, so an hour's parts add to its total and a display type's hours add to its Missed revenue & fill row. **Effective CPM** = revenue ÷ (VAC-d ÷ 1,000).
-- **Interim spread:** billing has no play timestamp yet, so each day's earned revenue and assumed views are spread over its hours by the share of that day's sold slots in the hour (`viewsBasis: share-of-slots-sold`); stated in the ⓘ. The hourly impression multiplier (DSP Integration, future) replaces it. Hourly revenue adds to the Revenue chart's earned total.
-- Endpoint `/hourly` (retailer only; 403 for an advertiser login; the chart is not mounted in the advertiser view).
-
 ### 6. Demand health — advertisers
 Purpose: which advertisers are on which deals and over which slots. (The Deals table that used to sit in this section is now section 2, directly under Revenue.) No suggested additions in this release. **No warning chips or amber rows.**
 
@@ -285,9 +277,7 @@ Purpose: dial in on the advertiser's own deals — an overview of **every displa
 - **Variable requests** — advertisers request new targeting variables they believe drive their sales (name, type, driver, reason); retailer reviews a requested-variables queue (requested by, number of requests, data available, status New → Under review → Approved → Added / Declined); added variables become Shared Targeting Variables. Not in this release; likely belongs with the DSP Integration project.
 - **Advertiser efficiency vs category average** — the advertiser's effective CPM next to the anonymised average for their category (Seat.category). Returns once enough advertisers per category (at least 3 others) are on the platform for the average to be meaningful and anonymous.
 - **IAB classification of displays / stores** — e.g. "Retail › Health & beauty store" in the display type hover, once it is captured on the display type or store.
-- **Assumed views by hour of week** — once the hourly impression multiplier ships in DSP Integration.
 - **Own-content value** — compare promoting the retailer's own product vs selling the slot. Needs closed-loop sales attribution.
-- ~~**Empty slots by time of day**~~ — promoted to chart 5a, Fill and effective CPM by hour (retailer view).
 - **Revenue vs target** — no revenue target is stored; needs a new setting.
 - **Win rate, losing bids and bids below floor** — the advertiser's own losing bid prices, the number of auctions they bid in and lost, and bids rejected below floor. Rejected and losing bids aren't stored and settled bids are deleted after 90 days, so the Delivery hover shows plays won vs all plays and winning CPMs (from billing) instead.
 - **Outcomes (sales lift vs control stores, ROAS, new vs repeat buyers)** — depends on closed-loop attribution (DSP project open question 55, deferred).

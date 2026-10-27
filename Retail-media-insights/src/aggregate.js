@@ -2,7 +2,6 @@
 // Daily pre-aggregates built from raw billing line items and unsold-slot records.
 //   delivery:  date x displayType x store x deal x DSP x advertiser
 //   inventory: date x displayType x store   (slot records carry no advertiser)
-//   hourlyInventory: date x displayType x store x hour, only hours inside operating hours (the hourly chart's cells)
 
 const calc = require('./calc');
 
@@ -60,20 +59,6 @@ function buildAggregates(raw, ctx) {
     if (kind === 'offline') row.lostRevenue += r.lostRevenue || 0;
     if (kind === 'unsold') row.unsoldViews += r.count * (r.views || 0);
   }
-  // The same slot records per hour. Hours outside a display type's operating hours are not inventory, so they are left out.
-  const hourly = new Map();
-  for (const r of raw.slotRecords) {
-    const window = calc.operatingWindow(ctx.displayTypes[r.displayTypeId] || {}, ctx.stores[r.storeId]);
-    const kind = calc.classifySlot(r, window);
-    if (kind === 'outsideHours') continue;
-    const key = [r.date, r.displayTypeId, r.storeId, r.hour].join('|');
-    let row = hourly.get(key);
-    if (!row) {
-      row = { date: r.date, displayTypeId: r.displayTypeId, storeId: r.storeId, hour: r.hour, sold: 0, unsold: 0, offline: 0 };
-      hourly.set(key, row);
-    }
-    row[kind] += r.count;
-  }
   const campaigns = (raw.campaigns || []).map((c) => ({
     id: c.id,
     name: c.name || null,
@@ -93,7 +78,7 @@ function buildAggregates(raw, ctx) {
     targetedVersions: c.targetedVersions || 0,
   }));
   return {
-    delivery: [...delivery.values()], inventory: [...inventory.values()], hourlyInventory: [...hourly.values()], campaigns, advertisers: ctx.advertisers || {},
+    delivery: [...delivery.values()], inventory: [...inventory.values()], campaigns, advertisers: ctx.advertisers || {},
     catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, seats: ctx.seats || {}, advertiserSeats: ctx.advertiserSeats || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
       controlStores: ctx.controlStores || { name: 'Control stores', storeIds: [] }, transactionApi: Boolean(ctx.transactionApi) },
   };

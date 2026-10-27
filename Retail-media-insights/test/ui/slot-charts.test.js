@@ -33,7 +33,6 @@ async function open(width) {
   await page.goto(base + '/index.html');
   await page.waitForSelector('.sc-row[data-fill]');
   await page.waitForSelector('.sc-table');
-  await page.waitForSelector('.sc-heat-cell[data-hour]');
   await page.waitForFunction(() => [...document.querySelectorAll('.sc-body')].every((b) => b.getAttribute('aria-busy') === 'false'));
   return { page, context };
 }
@@ -121,27 +120,11 @@ test('at 390px there is no sideways scroll and the missed-revenue label sits abo
   } finally { await context.close(); }
 });
 
-test('Fill and effective CPM by hour: under Missed revenue & fill, full width, toggle, operating hours, hover facts', async () => {
+test('Fill and effective CPM by hour is gone; Missed revenue & fill is the last slot chart', async () => {
   const { page, context } = await open(1163);
   try {
-    const p = panel(page, 'Fill and effective CPM by hour');
-    assert.equal(await p.locator('h2').textContent(), 'Fill and effective CPM by hour');
-    const [y, h] = await Promise.all([panel(page, 'Missed revenue & fill').boundingBox(), p.boundingBox()]);
-    assert.ok(h.y >= y.y + y.height - 1, 'directly under Missed revenue & fill');
-    const grid = await page.locator('.sc-grid').boundingBox();
-    assert.ok(h.width > grid.width * 0.95, 'full width');
-    assert.equal(await p.locator('.sc-seg-btn.on').textContent(), 'Fill');
-    const rowOf = (name) => p.locator('.sc-heat-row', { has: page.locator(`.sc-heat-label:has-text("${name}")`) });
-    assert.match(await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').first().textContent(), /^\d+%$/);
-    assert.equal(await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').count(), 24);
-    const queue = await rowOf('Queue Screen').locator('.sc-heat-cell[data-hour]').count();
-    assert.ok(queue > 0 && queue < 24);
-    await p.locator('.sc-seg-btn[data-mode="cpm"]').click();
-    assert.match(await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').first().textContent(), /^\$\d+\.\d\d$|^–$/);
-    await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').nth(10).hover();
-    const tip = await page.locator('.sc-tip').textContent();
-    assert.match(tip, /Hour/); assert.match(tip, /advertiser slots sold/); assert.match(tip, /assumed views/); assert.match(tip, /Totals across all/);
-    await p.locator('.sc-seg-btn[data-mode="fill"]').click();
-    assert.match(await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').first().textContent(), /^\d+%$/);
+    assert.equal(await panel(page, 'Fill and effective CPM by hour').count(), 0);
+    assert.equal(await page.locator('.sc-heat, .sc-heat-cell').count(), 0);
+    for (const t of ['Slot value', 'Slot allocation', 'Missed revenue & fill']) assert.equal(await panel(page, t).count(), 1, t);
   } finally { await context.close(); }
 });

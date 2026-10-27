@@ -252,7 +252,7 @@ function roundParts(parts) {
 
 /**
  * Round each value to `decimals` places so the rounded values add to the rounded sum (largest remainder).
- * Used where parts are shown beside a total that is a figure of its own (hourly revenue against the Revenue chart).
+ * Used where parts are shown beside a total that is a figure of its own (parts shown against a chart total).
  */
 function roundToTotal(values, decimals = 0) {
   const scale = 10 ** decimals;
@@ -689,20 +689,18 @@ function buildCells(rows, nDeals, out = [], index = new Map()) {
 }
 
 class AggregateStore {
-  constructor({ delivery, inventory, hourlyInventory = [], campaigns = [], advertisers = {}, catalog = { displayTypes: {}, displays: [] } }, { indexed = true } = {}) {
+  constructor({ delivery, inventory, campaigns = [], advertisers = {}, catalog = { displayTypes: {}, displays: [] } }, { indexed = true } = {}) {
     this.catalog = catalog;
     this.campaigns = campaigns;
     this.advertisers = advertisers;
     this.indexed = indexed;
     this.delivery = [...delivery].sort(byDate);
     this.inventory = [...inventory].sort(byDate);
-    this.hourlyInventory = [...hourlyInventory].sort(byDate);
 
     const deals = dictionary(); const types = dictionary(); const advs = dictionary(); const seats = dictionary();
-    stampDays(this.delivery); stampDays(this.inventory); stampDays(this.hourlyInventory);
+    stampDays(this.delivery); stampDays(this.inventory);
     for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); r.seatIx = seats.code(r.seatId || null); }
     for (const r of this.inventory) r.typeIx = types.code(r.displayTypeId);
-    for (const r of this.hourlyInventory) r.typeIx = types.code(r.displayTypeId);
     // The first and last played day: days with inventory or earned delivery. Reservations (estimated rows booked ahead) are not played days.
     let first = null; let last = null;
     const played = (date) => { if (first === null || date < first) first = date; if (last === null || date > last) last = date; };
@@ -724,10 +722,6 @@ class AggregateStore {
       this.inventoryRollup = rollup(this.inventory, (r) => r.typeIx,
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0 }),
         INVENTORY_MEASURES);
-      this.hourlyRollup = rollup(this.hourlyInventory, (r) => r.typeIx * 24 + r.hour,
-        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, hour: r.hour, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0 }),
-        ['sold', 'unsold', 'offline']);
-      this.hourlyByStore = partition(this.hourlyInventory, 'storeId');
       this.deliveryCells = buildCells(this.deliveryRollup, deals.ids.length);
       this.deliveryByStore = partition(this.delivery, 'storeId');
       this.inventoryByStore = partition(this.inventory, 'storeId');
@@ -823,9 +817,6 @@ class AggregateStore {
     }
   }
 
-  /** Slot records per date x display type x hour (x store when filtered), inside operating hours only. Ignores the advertiser filter. */
-  scanHourlyInventory(filters, fn) { this.#scan(this.hourlyInventory, this.hourlyRollup, this.hourlyByStore, filters, fn, false); }
-
   /** Unsold inventory ignores the advertiser filter: slot records belong to no advertiser (README open question 1 default). */
   scanInventory(filters, fn) { this.#scan(this.inventory, this.inventoryRollup, this.inventoryByStore, filters, fn, false); }
 }
@@ -836,7 +827,6 @@ module.exports = { AggregateStore };
 // Daily pre-aggregates built from raw billing line items and unsold-slot records.
 //   delivery:  date x displayType x store x deal x DSP x advertiser
 //   inventory: date x displayType x store   (slot records carry no advertiser)
-//   hourlyInventory: date x displayType x store x hour, only hours inside operating hours (the hourly chart's cells)
 
 const calc = require('./calc');
 
@@ -894,20 +884,6 @@ function buildAggregates(raw, ctx) {
     if (kind === 'offline') row.lostRevenue += r.lostRevenue || 0;
     if (kind === 'unsold') row.unsoldViews += r.count * (r.views || 0);
   }
-  // The same slot records per hour. Hours outside a display type's operating hours are not inventory, so they are left out.
-  const hourly = new Map();
-  for (const r of raw.slotRecords) {
-    const window = calc.operatingWindow(ctx.displayTypes[r.displayTypeId] || {}, ctx.stores[r.storeId]);
-    const kind = calc.classifySlot(r, window);
-    if (kind === 'outsideHours') continue;
-    const key = [r.date, r.displayTypeId, r.storeId, r.hour].join('|');
-    let row = hourly.get(key);
-    if (!row) {
-      row = { date: r.date, displayTypeId: r.displayTypeId, storeId: r.storeId, hour: r.hour, sold: 0, unsold: 0, offline: 0 };
-      hourly.set(key, row);
-    }
-    row[kind] += r.count;
-  }
   const campaigns = (raw.campaigns || []).map((c) => ({
     id: c.id,
     name: c.name || null,
@@ -927,7 +903,7 @@ function buildAggregates(raw, ctx) {
     targetedVersions: c.targetedVersions || 0,
   }));
   return {
-    delivery: [...delivery.values()], inventory: [...inventory.values()], hourlyInventory: [...hourly.values()], campaigns, advertisers: ctx.advertisers || {},
+    delivery: [...delivery.values()], inventory: [...inventory.values()], campaigns, advertisers: ctx.advertisers || {},
     catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, seats: ctx.seats || {}, advertiserSeats: ctx.advertiserSeats || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
       controlStores: ctx.controlStores || { name: 'Control stores', storeIds: [] }, transactionApi: Boolean(ctx.transactionApi) },
   };
@@ -2286,82 +2262,6 @@ module.exports = {
 // The only unauthenticated route.
 module.exports = { path: '/health', public: true, handler: () => ({ status: 'ok' }) };
   },
-  "src/routes/hourly.js": function (module, exports, require) {
-const calc = require('../calc');
-const { ForbiddenError } = require('../filters');
-const { displayTypeFacts } = require('../display-types');
-
-const HOURS = 24;
-
-// Fill and effective CPM by hour of day, per display type. Retailer view only. Only hours inside a display type's
-// operating hours are inventory, so only those hours have a cell (the API never says when a store opens).
-// Billing line items carry no play timestamp yet, so each day's earned revenue and assumed views are spread over its
-// hours by the share of that day's sold slots played in the hour (`viewsBasis`); the hourly impression multiplier
-// (DSP Integration) replaces this. Fill is the Missed revenue & fill rule: sold / (sold + unsold + offline).
-module.exports = {
-  path: '/hourly',
-  handler({ store, filters, principal }) {
-    if (principal.principalType === 'advertiser') throw new ForbiddenError('hourly fill is a retailer view'); // also denied by default in the server
-    const facts = displayTypeFacts(store, filters);
-    const slots = new Map(); // type -> hour -> {sold, unsold, offline}
-    const days = new Map(); // `${date}|${type}` -> { sold[24], total[24] }
-    store.scanHourlyInventory(filters, (r) => {
-      let hours = slots.get(r.displayTypeId);
-      if (!hours) { hours = Array.from({ length: HOURS }, () => ({ sold: 0, unsold: 0, offline: 0 })); slots.set(r.displayTypeId, hours); }
-      const c = hours[r.hour];
-      c.sold += r.sold; c.unsold += r.unsold; c.offline += r.offline;
-      const key = `${r.date}|${r.displayTypeId}`;
-      let d = days.get(key);
-      if (!d) { d = { sold: new Float64Array(HOURS), total: new Float64Array(HOURS) }; days.set(key, d); }
-      d.sold[r.hour] += r.sold; d.total[r.hour] += r.sold + r.unsold + r.offline;
-    });
-    // Earned revenue and views per day x display type, for the advertiser filter too (slot records belong to no advertiser).
-    const earned = new Map();
-    store.scanDelivery(filters, (r) => {
-      if (r.earned <= 0 && r.earnedViews <= 0) return;
-      const key = `${r.date}|${r.displayTypeId}`;
-      const e = earned.get(key) || { revenue: 0, views: 0 };
-      e.revenue += r.earned; e.views += r.earnedViews;
-      earned.set(key, e);
-    });
-    const spread = new Map(); // type -> { revenue[24], views[24] }
-    for (const [key, e] of earned) {
-      const d = days.get(key);
-      if (!d) continue;
-      const typeId = key.slice(key.indexOf('|') + 1);
-      let weights = d.sold; let sum = weights.reduce((a, b) => a + b, 0);
-      if (!(sum > 0)) { weights = d.total; sum = weights.reduce((a, b) => a + b, 0); }
-      if (!(sum > 0)) continue;
-      let acc = spread.get(typeId);
-      if (!acc) { acc = { revenue: new Float64Array(HOURS), views: new Float64Array(HOURS) }; spread.set(typeId, acc); }
-      for (let h = 0; h < HOURS; h += 1) { acc.revenue[h] += (e.revenue * weights[h]) / sum; acc.views[h] += (e.views * weights[h]) / sum; }
-    }
-    const rows = facts.map((t) => {
-      const hours = slots.get(t.id);
-      const acc = spread.get(t.id);
-      const live = []; // hours with inventory
-      for (let h = 0; h < HOURS; h += 1) if (hours && hours[h].sold + hours[h].unsold + hours[h].offline > 0) live.push(h);
-      // Parts add to the day-level totals: revenue to the cent, views to the whole number.
-      const revenue = acc ? calc.roundToTotal(live.map((h) => acc.revenue[h]), 2) : live.map(() => 0);
-      const views = acc ? calc.roundToTotal(live.map((h) => acc.views[h]), 0) : live.map(() => 0);
-      return {
-        id: t.id, name: t.def.name,
-        connectedDisplays: { displays: t.displays.length, stores: t.storeCount },
-        hours: live.map((h, i) => {
-          const c = hours[h];
-          return {
-            hour: h, fillPercent: calc.fillPercent(c.sold, c.unsold, c.offline),
-            slotsSold: c.sold, slotsUnsold: c.unsold, slotsOffline: c.offline, slotsTotal: c.sold + c.unsold + c.offline,
-            revenue: revenue[i], views: views[i],
-            effectiveCpm: views[i] > 0 ? Math.round(calc.effectiveCpm(revenue[i], views[i]) * 100) / 100 : null,
-          };
-        }),
-      };
-    });
-    return { viewsBasis: 'share-of-slots-sold', rows };
-  },
-};
-  },
   "src/routes/maturity.js": function (module, exports, require) {
 const calc = require('../calc');
 const { FilterError } = require('../filters');
@@ -2958,7 +2858,7 @@ module.exports = {
     });
     return module.exports;
   }
-  var ROUTE_FILES = ["src/routes/advertisers.js","src/routes/audience.js","src/routes/deals-by-display-type.js","src/routes/deals.js","src/routes/delivery.js","src/routes/display-types.js","src/routes/filter-options.js","src/routes/health.js","src/routes/hourly.js","src/routes/maturity.js","src/routes/missed-revenue.js","src/routes/my-summary.js","src/routes/my-targeting.js","src/routes/revenue.js","src/routes/slot-allocation.js","src/routes/slot-value.js","src/routes/summary.js"];
+  var ROUTE_FILES = ["src/routes/advertisers.js","src/routes/audience.js","src/routes/deals-by-display-type.js","src/routes/deals.js","src/routes/delivery.js","src/routes/display-types.js","src/routes/filter-options.js","src/routes/health.js","src/routes/maturity.js","src/routes/missed-revenue.js","src/routes/my-summary.js","src/routes/my-targeting.js","src/routes/revenue.js","src/routes/slot-allocation.js","src/routes/slot-value.js","src/routes/summary.js"];
   var state = null;
   function init() {
     if (state) return state;
