@@ -102,3 +102,27 @@ export const dealTotalValueText = (l: ValueList & Pick<BuyersList, 'effectiveCom
   const lo = valueOf(l, p.min, p.min), hi = valueOf(l, p.max, p.max)
   return lo && hi ? valueText({ min: lo.min, max: hi.max, from: lo.from }) : null
 }
+
+/* Delivery pacing for a Programmatic guaranteed deal (Booking schedule hover, ticket CXmiVdLcDzkcojpSnJic, 27 Oct 2026). Plays are the
+   measure (signage bills on plays, not impressions). Delivered = plays billed so far; due = the committed plays x the share of the flight
+   elapsed; pacing = delivered / due. Within 5% of due is on pace. Null when the deal commits nothing or has an open flight (nothing to pace
+   against); "not started" before the flight begins. Flight moments are compared as saved (no zone conversion), so the share is approximate
+   to within the zone offset. */
+export const PACING_TOLERANCE = 0.05
+export type Pacing = { delivered: number; committed: number; status: 'not started' | 'on pace' | 'behind' | 'ahead'; pct: number | null }
+export const pacingOf = (l: Pick<BuyersList, 'dealType' | 'committedPlays' | 'deliveredPlays' | 'activeFrom' | 'activeTo'>, now: number): Pacing | null => {
+  if (l.dealType !== 'guaranteed' || l.committedPlays == null || !(l.committedPlays > 0)) return null
+  const delivered = l.deliveredPlays ?? 0
+  const base = { delivered, committed: l.committedPlays }
+  if (!l.activeFrom || !l.activeTo) return null
+  const start = Date.parse(l.activeFrom), end = Date.parse(l.activeTo)
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return null
+  if (now < start) return { ...base, status: 'not started', pct: null }
+  const due = l.committedPlays * Math.min(1, (now - start) / (end - start))
+  const ratio = delivered / due
+  return { ...base, status: Math.abs(ratio - 1) <= PACING_TOLERANCE ? 'on pace' : ratio < 1 ? 'behind' : 'ahead', pct: Math.round(ratio * 100) }
+}
+
+/* A flight as the Booking schedule hover reads it: start → end with times and the time zone. */
+export const flightText = (l: Pick<BuyersList, 'activeFrom' | 'activeTo' | 'timeZoneMode'>): string =>
+  l.activeFrom || l.activeTo ? `${flightMoment(l.activeFrom) ?? 'No start date'} → ${flightMoment(l.activeTo) ?? 'No end date'} (${zoneLabelOf(l.timeZoneMode)})` : 'Always active'
