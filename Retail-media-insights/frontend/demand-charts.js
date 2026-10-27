@@ -1,5 +1,5 @@
-// Demand health (Advertisers table) and Targeting & scheduling maturity — the two
-// advertiser sections of the Retail Media Performance tab. A content-frame module
+// Demand health (Advertisers table, with each advertiser's Maturity level and Scheduling) and the Targeting & scheduling
+// maturity charts — the two advertiser sections of the Retail Media Performance tab. A content-frame module
 // (no header, sidebar or position:fixed): the tab shell calls
 //   var demand = DemandCharts.mount(el, { fetchJson: function (endpoint, params) { return Promise } });
 //   demand.setFilters({ dateFrom, dateTo, storeIds, displayTypeIds, advertiserIds });
@@ -20,19 +20,13 @@
     maturity: 'How advertisers use targeting and scheduling on your displays, and exactly who sits where, so you can coach them from Default only to Localised to Personalised, and to schedule their campaigns. ' +
       'Better targeting and scheduling mean better campaigns, more spend and more inventory sold.',
     advertisers: 'Top 10 by revenue. Deals on = deals the advertiser is on (buyers lists), any deal type; hover to list them. Slots covered = slots across those deals. ' +
-      'Slots won = share of covered slot opportunities the advertiser won. Effective CPM is per 1,000 assumed views (VAC-d).',
-    iroas: 'Incremental return on ad spend. For each advertiser, the extra sales of their campaigns\u2019 products in stores where the campaigns played, compared with your Control stores segment, divided by what they spent on those campaigns. 2.5 means every $1 of spend drove $2.50 of extra sales. ' +
-      'Only campaigns that excluded the Control stores segment are measured; others are left out of both sales and spend. Products come from the SKU or product name on each campaign, via campaign playback analytics. ' +
-      'Sales come from your POS through the Personalisation Hub Transaction API, which needs a custom POS integration. Same calculation as the Sales uplift chart.',
-    iroasNoPos: ' No POS data received for this period.',
-    iroasEmpty: 'No campaigns measured in this period \u2014 needs the Control stores exclusion on a campaign and a POS integration into the Personalisation Hub Transaction API.',
-    ladder: 'Advertisers at each level. An advertiser’s level is the highest level used by any of its campaigns in the date range. Hover a bar to see every advertiser at that level; click it to filter the Advertiser targeting & scheduling table.',
-    scheduling: 'Advertisers whose campaigns in the date range use scheduling (dayparting or schedules from the Scheduling tab) compared with those that do not. Hover a bar to see who; click it to filter the table.',
+      'Slots won = share of covered slot opportunities the advertiser won. Effective CPM is per 1,000 assumed views (VAC-d). ' +
+      'Maturity level and Scheduling show how the advertiser uses targeting and scheduling; use the filters, or click a bar in Variables in use below, to narrow the table.',
     progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
-    variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertiser targeting & scheduling table. ' +
+    variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertisers table. ' +
       'Daypart is not a targeting variable: it is a campaign scheduling feature, shown in Scheduling.',
-    table: 'Who is most sophisticated: sorted by Revenue, highest first; click any heading to sort by it. Scheduling = campaigns using dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. ' +
-      'Targeted versions = targeted versions submitted in the date range, beyond the default.'
+    level: 'The highest level used by any of the advertiser’s campaigns in the date range: Default only, Localised or Personalised. Hover to see the Shared Targeting Variables its campaigns use.',
+    sched: 'Whether the advertiser’s campaigns use dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. Hover to see the scheduled campaigns.'
   };
 
   // ---------- formatting ----------
@@ -84,10 +78,17 @@
   // Sum of the back end's rounded revenue figures, in whole cents, so the total never drifts from the rows above it.
   function revenueTotal(rows) { return rows.reduce(function (n, a) { return n + Math.round(a.revenue * 100); }, 0) / 100; }
 
-  function advertiserRows(data, showAll) {
-    var rows = (showAll ? data.all : data.top) || [];
-    return rows.map(function (a) {
+  // mat = the /maturity table rows (tableRows) to join by advertiser; f = the Maturity level / Variable / Scheduling filters.
+  // A filter looks across every advertiser, then the top 10 by revenue of those that match are shown unless showAll.
+  function advertiserRows(data, showAll, mat, f) {
+    var filtered = activeFilters(f || {});
+    var idx = {};
+    (mat || []).forEach(function (r) { idx[r.advertiserId] = r; });
+    var rows = ((showAll || filtered ? data.all : data.top) || []).map(function (a) {
+      var m = idx[a.advertiserId] || null;
       return {
+        mat: m, level: m ? m.level : null,
+        scheduled: m ? m.scheduledCampaigns : 0,
         advertiserId: a.advertiserId, name: a.name, dsp: a.dsp, label: a.name,
         revenue: fmtMoney(a.revenue),
         share: pct(a.share),
@@ -96,10 +97,18 @@
         slotsCovered: has(a.slotsCovered) ? fmtInt(a.slotsCovered) : '–',
         slotsWon: has(a.slotsWonPercent) ? pct(a.slotsWonPercent) : '–',
         effectiveCpm: has(a.effectiveCpm) ? fmtMoney(a.effectiveCpm, 2) : '–',
-        iroas: a.iroas && has(a.iroas.value) ? a.iroas.value.toFixed(1) : '\u2014',
         src: a
       };
     });
+    if (filtered) rows = rows.filter(function (r) { return matchesFilters(r.mat, f); });
+    return showAll ? rows : rows.slice(0, TOP_N);
+  }
+  function matchesFilters(m, f) {
+    if (!m) return false;
+    if (f.level && m.level !== f.level) return false;
+    if (f.variable && m.variableLabels.indexOf(f.variable) < 0) return false;
+    if (f.scheduling && (f.scheduling === 'uses') !== (m.scheduledCampaigns > 0)) return false;
+    return true;
   }
 
   // Advertisers table columns: header text, the raw value each sorts by, and the direction a first click uses.
@@ -111,7 +120,8 @@
     { key: 'slotsCovered', label: 'Slots covered', first: 'desc', value: function (r) { return r.src.slotsCovered; } },
     { key: 'slotsWon', label: 'Slots won', first: 'desc', value: function (r) { return r.src.slotsWonPercent; } },
     { key: 'effectiveCpm', label: 'Effective CPM', first: 'desc', value: function (r) { return r.src.effectiveCpm; } },
-    { key: 'iroas', label: 'iROAS', first: 'desc', info: 'iroas', value: function (r) { return r.src.iroas ? r.src.iroas.value : null; } }
+    { key: 'level', label: 'Maturity level', first: 'desc', info: 'level', value: function (r) { return r.level ? LEVELS.indexOf(r.level) : null; } },
+    { key: 'scheduling', label: 'Scheduling', first: 'desc', info: 'sched', value: function (r) { return r.mat ? r.scheduled : null; } }
   ];
   // Rows ordered by one column ('asc' = A–Z / lowest first); no key keeps the back end's order. Blank values always sit last.
   function sortAdvertiserRows(rows, key, dir, cols) {
@@ -131,22 +141,6 @@
     var deals = (a.dealsOn || []).slice().sort(function (x, y) { return dealRank(x.dealType) - dealRank(y.dealType) || x.name.localeCompare(y.name); });
     return { title: advName(a) + ': deals on', sections: [{ rows: deals.map(function (d) { return [d.name, d.dealType]; }) }] };
   }
-  // Hover on an iROAS cell: the division, how many campaigns were measured and why the rest were not.
-  function iroasHover(a) {
-    var m = a.iroas || {};
-    if (!has(m.value)) return { text: TIPS.iroasEmpty };
-    var rows = [
-      ['iROAS', fmtMoney(m.incrementalSales) + ' \u00f7 ' + fmtMoney(m.measuredSpend) + ' = ' + m.value.toFixed(1)],
-      ['Incremental sales', fmtMoney(m.incrementalSales)], ['Spend (measured campaigns)', fmtMoney(m.measuredSpend)],
-      ['Campaigns measured', m.measuredCampaigns + ' of ' + m.totalCampaigns + ' campaigns measured'],
-      ['Campaign stores', fmtInt(m.campaignStores)], ['Control stores', fmtInt(m.controlStores)]
-    ];
-    if (m.dateFrom) rows.push(['Date range covered', m.dateFrom + ' to ' + m.dateTo]);
-    var sections = [{ rows: rows }];
-    var left = (m.notMeasured || []).concat(m.flagged || []).map(function (c) { return [c.product, c.reason]; });
-    if (left.length) sections.push({ rows: left, note: 'Not measured, or matched on product name.' });
-    return { title: advName(a) + ': iROAS', sections: sections };
-  }
   function slotsWonHover(a, slotsWon) {
     var rows = [['Slots covered', has(a.slotsCovered) ? fmtInt(a.slotsCovered) : '–'], ['Slots won', has(a.slotsWonPercent) ? pct(a.slotsWonPercent) : '–']];
     var note = slotsWon && slotsWon.complete === false
@@ -154,20 +148,18 @@
     return { title: advName(a) + ': slots won', sections: [{ rows: rows, note: note }] };
   }
 
-  function ladderHover(entry) {
-    var rows = (entry.list || []).map(function (a) {
-      return [advName(a), a.personalisationTypes && a.personalisationTypes.length ? a.personalisationTypes.join(', ') : ''];
-    });
-    return { title: entry.level + ' · ' + plural(entry.advertisers, 'advertiser'), names: rows };
+  // Hover on a Maturity level cell: the Shared Targeting Variables the advertiser's campaigns use, or None.
+  function levelCellHover(r) {
+    var m = r.mat;
+    return { title: advName(r.src) + ': ' + (m ? m.level : 'Maturity level'), sections: [{ rows: [['Variables used', m && m.chips.length ? m.chips.map(function (c) { return c.text; }).join(', ') : 'None']] }] };
   }
-  function schedulingHover(entry) {
-    var rows = (entry.list || []).map(function (a) {
-      var detail = entry.key === 'uses' && has(a.campaigns)
-        ? a.scheduledCampaigns + ' of ' + plural(a.campaigns, 'campaign') + ', ' + plural(a.schedules || 0, 'schedule') : '';
-      return [advName(a), detail];
-    });
-    return { title: entry.label + ' · ' + plural(entry.advertisers, 'advertiser'), names: rows };
+  // Hover on a Scheduling cell: the campaigns that use dayparting or schedules.
+  function schedulingCellHover(r) {
+    var m = r.mat, names = m ? m.scheduledNames : [];
+    if (!names.length) return { title: advName(r.src) + ': scheduling', text: 'No campaigns use scheduling in this date range.' };
+    return { title: advName(r.src) + ': scheduled campaigns', names: names.map(function (n) { return [n, '']; }) };
   }
+
   function variableHover(entry) {
     return {
       title: entry.variable + ' · ' + plural(entry.advertisers, 'advertiser'),
@@ -191,15 +183,6 @@
     return v.label;
   }
   var NOT_USED = 'Not used';
-  // Targeting & scheduling table columns, sorted the same way as the Advertisers table.
-  var MAT_COLS = [
-    { key: 'name', label: 'Advertiser', first: 'asc', value: function (r) { return r.name; } },
-    { key: 'level', label: 'Maturity level', first: 'desc', value: function (r) { return LEVELS.indexOf(r.level); } },
-    { key: 'variables', label: 'Variables used', first: 'desc', value: function (r) { return r.chips.length; } },
-    { key: 'scheduling', label: 'Scheduling', first: 'desc', value: function (r) { return r.scheduledCampaigns; } },
-    { key: 'versions', label: 'Targeted versions', first: 'desc', value: function (r) { return r.versionsRaw; } },
-    { key: 'revenue', label: 'Revenue', first: 'desc', value: function (r) { return r.revenueRaw; } }
-  ];
   function schedulingText(s) {
     if (!s || !s.uses) return NOT_USED;
     return 'Dayparted · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign');
@@ -211,6 +194,8 @@
         chips: targetingVars(r.variables).map(function (v) { return { text: chipText(v), kind: v.kind }; }),
         scheduling: schedulingText(r.scheduling), versions: has(r.targetedVersions) ? fmtInt(r.targetedVersions) : '–',
         scheduledCampaigns: r.scheduling && r.scheduling.uses ? r.scheduling.scheduledCampaigns : 0,
+        scheduledNames: r.scheduling && r.scheduling.uses ? (r.scheduling.campaignNames || []).slice() : [],
+        variableLabels: targetingVars(r.variables).map(function (v) { return v.label; }),
         versionsRaw: has(r.targetedVersions) ? r.targetedVersions : null, revenueRaw: r.revenue || 0,
         revenue: fmtMoney(r.revenue || 0)
       };
@@ -231,10 +216,9 @@
 
   var pure = {
     LEVELS: LEVELS, TOP_N: TOP_N, TIPS: TIPS, advName: advName, isDaypart: isDaypart, targetingVars: targetingVars,
-    advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, iroasHover: iroasHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
-    schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
+    advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
-    activeFilters: activeFilters, ADV_COLS: ADV_COLS, MAT_COLS: MAT_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
+    activeFilters: activeFilters, matchesFilters: matchesFilters, levelCellHover: levelCellHover, schedulingCellHover: schedulingCellHover, ADV_COLS: ADV_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
 
   // ---------- DOM ----------
@@ -242,7 +226,7 @@
     if (typeof document === 'undefined') throw new Error('DemandCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { showAll: false, advSort: { key: '', dir: 'desc' }, matSort: { key: 'revenue', dir: 'desc' }, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
+    var state = { showAll: false, advSort: { key: '', dir: 'desc' }, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
     var gen = { adv: 0, mat: 0 };
     var advData = null, matData = null, knownVars = [], resizeTimer = null;
     var alive = true;
@@ -379,16 +363,13 @@
     var showBtn = h('button', { type: 'button', class: 'dc-btn dc-link', text: 'Show all', hidden: '' });
     showBtn.addEventListener('click', function () { state.showAll = !state.showAll; if (advData) drawAdvertisers(); });
 
-    var pAdv = panel('Advertisers', TIPS.advertisers, null);
-    var pLad = panel('Maturity ladder', TIPS.ladder, null);
-    var pSch = panel('Scheduling', TIPS.scheduling, null);
     var pPro = panel('Progress over time', TIPS.progress, granSeg, 'dc-wide');
     var pVar = panel('Variables in use', TIPS.variables, kindSeg, 'dc-wide');
 
     // table panel with its own filters
     function select(label, key, getOptions) {
       var sel = h('select', { class: 'dc-select', 'aria-label': label });
-      sel.addEventListener('change', function () { state.table[key] = sel.value; loadMaturity(false); });
+      sel.addEventListener('change', function () { state.table[key] = sel.value; refilter(); });
       return { sel: sel, fill: function () {
         sel.innerHTML = '';
         getOptions().forEach(function (o) { sel.appendChild(h('option', { value: o[0], text: o[1] })); });
@@ -397,17 +378,15 @@
     }
     var fLevel = select('Maturity level', 'level', function () { return [['', 'All levels']].concat(LEVELS.map(function (l) { return [l, l]; })); });
     var fVar = select('Variable', 'variable', function () { return [['', 'All variables']].concat(knownVars.map(function (v) { return [v, v]; })); });
-    var fSch = select('Scheduling', 'scheduling', function () { return [['', 'All scheduling'], ['uses', 'Uses scheduling'], ['none', 'No scheduling']]; });
+    var fSch = select('Scheduling', 'scheduling', function () { return [['', 'All scheduling'], ['uses', 'Uses scheduling'], ['none', 'Not used']]; });
     var clearChip = h('button', { type: 'button', class: 'dc-chip dc-clear', hidden: '' }, [h('span', { text: 'Clear filter' }), icon('close')]);
-    clearChip.addEventListener('click', function () { state.table = { level: '', variable: '', scheduling: '' }; loadMaturity(false); });
+    clearChip.addEventListener('click', function () { state.table = { level: '', variable: '', scheduling: '' }; refilter(); });
     var tableControls = h('div', { class: 'dc-filters' }, [clearChip, fLevel.el, fVar.el, fSch.el]);
-    var pTab = panel('Advertiser targeting & scheduling', TIPS.table, tableControls, 'dc-wide');
+    var pAdv = panel('Advertisers', TIPS.advertisers, tableControls, 'dc-wide');
 
     container.appendChild(section('Demand health', 'handshake', TIPS.demand, [pAdv.el]));
     container.appendChild(section('Targeting & scheduling maturity', 'stairs', TIPS.maturity, [
-      h('div', { class: 'dc-grid' }, [pLad.el, pSch.el]),
       pVar.el,
-      pTab.el,
       pPro.el
     ]));
     container.appendChild(tip);
@@ -420,13 +399,13 @@
       return h('tr', { class: 'dc-total', 'data-total': String(total) }, [
         h('th', { scope: 'row', class: 'dc-name', text: partial ? 'Total (top ' + TOP_N + ')' : 'Total' }),
         h('td', { class: 'dc-num', text: fmtMoney(total) }),
-        h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td'), h('td')
+        h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td'), h('td'), h('td')
       ]);
     }
     function drawAdvertisers() {
       var d = advData;
-      var rows = sortAdvertiserRows(advertiserRows(d, state.showAll), state.advSort.key, state.advSort.dir);
-      var more = (d.all || []).length > TOP_N;
+      var rows = sortAdvertiserRows(advertiserRows(d, state.showAll, matRows(), state.table), state.advSort.key, state.advSort.dir);
+      var more = (d.all || []).length > TOP_N && !activeFilters(state.table);
       showBtn.hidden = !more;
       showBtn.textContent = state.showAll ? 'Show top ' + TOP_N : 'Show all ' + fmtInt((d.all || []).length) + ' advertisers';
       showBtn.setAttribute('aria-pressed', String(state.showAll));
@@ -435,13 +414,16 @@
         var btn = h('button', { type: 'button', class: 'dc-sort' + (on ? ' on' : ''), title: 'Sort by ' + c.label }, [
           h('span', { text: c.label }), icon(on ? (dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more')
         ]);
-        var tipEl = c.info ? info(TIPS[c.info] + (c.info === 'iroas' && d.posData === false ? TIPS.iroasNoPos : '')) : null;
+        var tipEl = c.info ? info(TIPS[c.info]) : null;
         btn.addEventListener('click', function () {
           state.advSort = on ? { key: c.key, dir: dir === 'asc' ? 'desc' : 'asc' } : { key: c.key, dir: c.first };
           drawAdvertisers();
         });
         return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, tipEl ? [btn, tipEl] : [btn]);
       }
+      pAdv.body.removeAttribute('aria-busy');
+      pAdv.body.innerHTML = '';
+      if (!rows.length) return emptyState(pAdv, 'table_rows', 'No advertisers match this filter.');
       var table = h('table', { class: 'dc-table dc-adv' }, [
         h('thead', {}, [h('tr', {}, ADV_COLS.map(sortHead))]),
         h('tbody', {}, rows.map(function (r) {
@@ -450,23 +432,27 @@
           if (r.dealsOn) { dealsTd.classList.add('dc-dotted'); hoverable(dealsTd, function () { return dealsOnHover(a); }); }
           var wonTd = h('td', { class: 'dc-num', text: r.slotsWon });
           if (d.slotsWon && d.slotsWon.complete === false) hoverable(wonTd, function () { return slotsWonHover(a, d.slotsWon); });
-          var iroasTd = h('td', { class: 'dc-num dc-dotted', text: r.iroas });
-          hoverable(iroasTd, function () { return iroasHover(a); });
+          var levelTd = h('td', {}), schedTd = h('td', {});
+          if (!r.mat) { levelTd.appendChild(h('span', { class: 'dc-none', text: '–' })); schedTd.appendChild(h('span', { class: 'dc-none', text: '–' })); }
+          else {
+            levelTd.appendChild(hoverable(h('span', { class: 'dc-chip dc-level dc-dotted' }, [h('i', { class: 'dc-swatch ' + LEVEL_CLS[r.level] }), r.level]), function () { return levelCellHover(r); }));
+            schedTd.appendChild(r.mat.scheduling === NOT_USED
+              ? hoverable(h('span', { class: 'dc-none', text: NOT_USED }), function () { return schedulingCellHover(r); })
+              : hoverable(h('span', { class: 'dc-chip dc-sched dc-dotted', text: r.mat.scheduling }), function () { return schedulingCellHover(r); }));
+          }
           return h('tr', { 'data-advertiser': r.advertiserId }, [
             h('th', { scope: 'row', class: 'dc-name', text: r.label }),
             h('td', { class: 'dc-num', text: r.revenue }), h('td', { class: 'dc-num', text: r.share }),
-            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm }), iroasTd
+            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm }), levelTd, schedTd
           ]);
         })),
         h('tfoot', {}, [totalRow(d, rows)])
       ]);
-      pAdv.body.removeAttribute('aria-busy');
-      pAdv.body.innerHTML = '';
       pAdv.body.appendChild(h('div', { class: 'dc-scroll' }, [table]));
       pAdv.body.appendChild(showBtn);
     }
 
-    // ----- Maturity: horizontal count bars (ladder, scheduling, variables) -----
+    // ----- Maturity: horizontal count bars (variables in use) -----
     function selected(kind, key) { return state.table[kind] === key; }
     function barRows(p, entries, spec) {
       var max = Math.max.apply(null, entries.map(function (e) { return e.advertisers; }).concat([1]));
@@ -485,7 +471,7 @@
         row.setAttribute('role', 'button');
         hoverable(row, function () { return spec.hover(e); }, function () {
           state.table[spec.filter] = on ? '' : key;
-          loadMaturity(false);
+          refilter();
         });
         wrap.appendChild(row);
       });
@@ -493,20 +479,6 @@
     }
     var LEVEL_CLS = { 'Default only': 'dc-l0', Localised: 'dc-l1', Personalised: 'dc-l2' };
 
-    function drawLadder(d) {
-      // Personalised on top, Default only at the bottom (the ladder reads upwards).
-      var entries = (d.ladder || []).slice().sort(function (a, b) { return LEVELS.indexOf(b.level) - LEVELS.indexOf(a.level); });
-      barRows(pLad, entries, {
-        filter: 'level', key: function (e) { return e.level; }, cls: function (e) { return LEVEL_CLS[e.level]; },
-        label: function (e) { return e.level; }, value: function (e) { return plural(e.advertisers, 'advertiser'); }, hover: ladderHover
-      });
-    }
-    function drawScheduling(d) {
-      barRows(pSch, d.scheduling || [], {
-        filter: 'scheduling', key: function (e) { return e.key; }, cls: function (e) { return e.key === 'uses' ? 'dc-l1' : 'dc-l0'; },
-        label: function (e) { return e.label; }, value: function (e) { return plural(e.advertisers, 'advertiser'); }, hover: schedulingHover
-      });
-    }
     function drawVariables(d) {
       var bars = variableBars(d);
       if (!bars.length) return emptyState(pVar, 'filter_alt_off', 'No advertiser uses these variables in range.');
@@ -569,78 +541,52 @@
       pPro.body.appendChild(h('div', { class: 'dc-chart' }, [svg, hits]));
     }
 
-    // ----- Advertiser targeting & scheduling table -----
-    function drawTable(d) {
-      var rows = sortAdvertiserRows(tableRows(d), state.matSort.key, state.matSort.dir, MAT_COLS);
-      pTab.body.removeAttribute('aria-busy');
-      pTab.body.innerHTML = '';
-      if (!rows.length) {
-        return emptyState(pTab, 'table_rows', activeFilters(state.table) ? 'No advertisers match this filter.' : 'No data for the selected filters');
-      }
-      function sortHead(c) {
-        var on = state.matSort.key === c.key, dir = state.matSort.dir;
-        var btn = h('button', { type: 'button', class: 'dc-sort' + (on ? ' on' : ''), title: 'Sort by ' + c.label }, [
-          h('span', { text: c.label }), icon(on ? (dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more')
-        ]);
-        var tipEl = c.info ? info(TIPS[c.info] + (d.posData === false ? TIPS.iroasNoPos : '')) : null;
-        btn.addEventListener('click', function () {
-          state.matSort = on ? { key: c.key, dir: dir === 'asc' ? 'desc' : 'asc' } : { key: c.key, dir: c.first };
-          drawTable(d);
-        });
-        return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, tipEl ? [btn, tipEl] : [btn]);
-      }
-      var table = h('table', { class: 'dc-table dc-mat' }, [
-        h('thead', {}, [h('tr', {}, MAT_COLS.map(sortHead))]),
-        h('tbody', {}, rows.map(function (r) {
-          return h('tr', {}, [
-            h('th', { scope: 'row', class: 'dc-name', text: r.name }),
-            h('td', {}, [h('span', { class: 'dc-chip dc-level' }, [h('i', { class: 'dc-swatch ' + LEVEL_CLS[r.level] }), r.level])]),
-            h('td', {}, [r.chips.length
-              ? h('div', { class: 'dc-chips' }, r.chips.map(function (c) { return h('span', { class: 'dc-chip ' + (c.kind === 'Personalised' ? 'dc-p' : 'dc-loc'), text: c.text }); }))
-              : h('span', { class: 'dc-none', text: 'None' })]),
-            h('td', {}, [r.scheduling === NOT_USED ? h('span', { class: 'dc-none', text: NOT_USED }) : h('span', { class: 'dc-chip dc-sched', text: r.scheduling })]),
-            h('td', { class: 'dc-num', text: r.versions }),
-            h('td', { class: 'dc-num', text: r.revenue })
-          ]);
-        }))
-      ]);
-      pTab.body.appendChild(h('div', { class: 'dc-scroll' }, [table]));
-    }
     function syncTableFilters() {
       fLevel.fill(); fVar.fill(); fSch.fill();
       clearChip.hidden = !activeFilters(state.table);
     }
 
     // ----- loading -----
+    // The Maturity level / Variable / Scheduling filters narrow the Advertisers table in the page, so /maturity is always asked for every advertiser.
     function matParams() {
       var p = Object.assign({}, filters, { granularity: state.granularity });
       p.kind = state.kind;
-      ['level', 'variable', 'scheduling'].forEach(function (k) { if (state.table[k]) p[k] = state.table[k]; });
       return p;
+    }
+    function matRows() { return matData ? tableRows(matData) : null; }
+    // A filter or chart click: redraw the bars (selected state), the filter controls and the Advertisers table.
+    function refilter() {
+      hideTip();
+      syncTableFilters();
+      if (matData && (matData.ladder || []).length) drawVariables(matData);
+      if (advData) drawAdvertisers();
     }
     function drawMaturity() {
       var d = matData;
       if (!d || !(d.ladder || []).length) {
-        [pLad, pSch, pPro, pVar, pTab].forEach(function (p) { setState(p, 'empty'); });
+        [pPro, pVar].forEach(function (p) { setState(p, 'empty'); });
+        if (advData) drawAdvertisers();
         return;
       }
       knownVars = variableOptions({ variablesInUse: d.variablesInUse, table: d.table }, state.table.variable)
         .concat(knownVars).filter(function (v, i, a) { return a.indexOf(v) === i; }).sort();
       syncTableFilters();
-      drawLadder(d); drawScheduling(d); drawProgress(d); drawVariables(d); drawTable(d);
+      drawProgress(d); drawVariables(d);
+      if (advData) drawAdvertisers();
     }
     // full=true on first load and page-filter changes (skeletons); false when only a chart control or table filter moved.
     function loadMaturity(full) {
       var g = ++gen.mat;
       hideTip();
-      if (full || !matData) [pLad, pSch, pPro, pVar, pTab].forEach(function (p) { setState(p, 'loading'); });
+      if (full || !matData) [pPro, pVar].forEach(function (p) { setState(p, 'loading'); });
       fetchJson('maturity', matParams()).then(function (d) {
         if (!alive || g !== gen.mat) return;
         matData = d; drawMaturity();
       }, function () {
         if (!alive || g !== gen.mat) return;
         matData = null;
-        [pLad, pSch, pPro, pVar, pTab].forEach(function (p) { setState(p, 'error', function () { loadMaturity(true); }); });
+        if (advData) drawAdvertisers();
+        [pPro, pVar].forEach(function (p) { setState(p, 'error', function () { loadMaturity(true); }); });
       });
     }
     function loadAdvertisers() {

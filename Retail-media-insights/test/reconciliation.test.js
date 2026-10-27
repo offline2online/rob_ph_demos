@@ -34,7 +34,6 @@ for (const [label, q] of SCENARIOS) {
   test(`reconciles under ${label}: earned revenue everywhere, shares, fill, caps`, () => {
     const summary = run('summary', q);
     const revenue = run('revenue', q);
-    const yld = run('yield', q);
     const advertisers = run('advertisers', q);
     const deals = run('deals', q);
     let openEarned = 0;
@@ -42,7 +41,6 @@ for (const [label, q] of SCENARIOS) {
 
     assert.ok(summary.earnedRevenue > 0, 'there is revenue to reconcile');
     near(sum(revenue.rows.map((r) => r.earned)), summary.earnedRevenue, 0.01 * revenue.rows.length, 'revenue chart earned');
-    near(sum(yld.rows.map((r) => r.earnedRevenue)), summary.earnedRevenue, 0.01 * yld.rows.length, 'yield earned');
     near(sum(advertisers.all.map((a) => a.revenue)), summary.earnedRevenue, 0.01 * advertisers.all.length, 'advertisers revenue');
     near(sum(deals.rows.map((d) => d.revenue)) + openEarned, summary.earnedRevenue, 0.01 * (deals.rows.length + 1), 'deals revenue + open auction');
     assert.equal(sum(advertisers.all.map((a) => a.share)), 100);
@@ -88,8 +86,6 @@ test('no clearing price is below its floor (every billing row)', () => {
     auctions += 1;
   }
   assert.ok(auctions > 100);
-  const open = run('yield', 'dealType=Open auction&displayTypeIds=window');
-  for (const r of open.rows) if (r.effectiveCpm !== null) assert.ok(r.effectiveCpm >= ctx.displayTypes.window.floorCpm, r.dsp);
 });
 
 test('slot value: per slot per day = effective CPM x average views per slot per day / 1,000 x sold share, on every display type', () => {

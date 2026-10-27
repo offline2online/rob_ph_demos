@@ -419,14 +419,12 @@
       loadMySummary(f);
       modules.av = AdvertiserView.mount($('av'), { fetchJson: fetchJson });
       modules.av.setFilters(f);
-      modules.up = UpliftChart.mount($('up'), { fetchJson: fetchJson, filters: f });
     } else {
       loadSummary(f);
       modules.rd = RevenueDeals.mount($('rd'), { fetchJson: fetchJson });
       modules.rd.setFilters(f);
       modules.sc = SlotCharts.mount($('sc'), { fetchJson: fetchJson, filters: f });
       modules.dc = DemandCharts.mount($('dc'), { fetchJson: fetchJson, filters: f });
-      modules.up = UpliftChart.mount($('up'), { fetchJson: fetchJson, filters: f });
     }
   }, function () { fail('We couldn’t load the page filters. Try again shortly.'); });
 })();

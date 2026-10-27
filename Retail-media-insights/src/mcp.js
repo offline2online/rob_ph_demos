@@ -28,12 +28,10 @@ const CHART = { dsps: strs('Limit the money figures to these DSPs.'), dealTypes:
 const TOOLS = {
   summary: ['retail_media_summary', 'Earned revenue, estimated revenue and Inventory sold for the filters.', CHART],
   revenue: ['retail_media_revenue', 'Revenue per period x DSP x deal type, earned and estimated.', { granularity: GRANULARITY, aheadDays: str('Booked-ahead days after the last played day to add, a whole number from 0 to 120. Default 0.'), ...CHART }],
-  yield: ['retail_media_yield', 'Effective CPM, earned revenue and assumed views (VAC-d) per DSP.', { dealType: str('One deal type.') }],
   'display-types': ['retail_media_display_types', 'Display types with their facts and VAC-d averages.', {}],
   'slot-value': ['retail_media_slot_value', 'Floor and effective CPM and revenue per available slot, by display type.', {}],
   'slot-allocation': ['retail_media_slot_allocation', 'Advertiser and own-content slots per loop, by display type.', {}],
   'missed-revenue': ['retail_media_missed_revenue', 'Fill, unsold value at floor and downtime lost revenue, by display type.', {}],
-  hourly: ['retail_media_hourly', 'Fill and effective CPM by hour of day, per display type (inside operating hours only).', {}],
   deals: ['retail_media_deals', 'Named deals with fill, pacing (Programmatic guaranteed), revenue, CPM and advertisers.', { dealType: str('One deal type.') }],
   advertisers: ['retail_media_advertisers', 'Advertisers by revenue, share, deals and effective CPM.', {}],
   maturity: ['retail_media_maturity', 'Targeting and scheduling maturity: ladder, scheduling, variables in use and the advertiser table.',

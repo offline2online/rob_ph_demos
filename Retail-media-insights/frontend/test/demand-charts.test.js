@@ -49,24 +49,10 @@ test('slots won hover notes the retention only when the range is longer', async 
   assert.match(DC.slotsWonHover(a, { complete: false, retentionDays: 90 }).sections[0].note, /90 days/);
 });
 
-test('maturity ladder: three levels, counts match lists, every hover name carries the DSP', async () => {
+test('maturity ladder data: three levels, counts match lists', async () => {
   const mat = await get('/maturity');
   assert.deepStrictEqual(mat.ladder.map((l) => l.level), DC.LEVELS);
   mat.ladder.forEach((l) => assert.strictEqual(l.advertisers, l.list.length));
-  const m = DC.ladderHover(mat.ladder[2]);
-  assert.match(m.title, /^Personalised · 5 advertisers$/);
-  assert.deepStrictEqual(names(m), ['Blackmores (DV360)', 'Haleon (The Trade Desk)', 'Kenvue (DV360)', "L'Oréal Paris (Direct)", 'Procter & Gamble (Direct)']);
-  assert.strictEqual(m.names[0][1], 'Aggregate, Computer Vision');
-  assert.ok(DC.ladderHover(mat.ladder[1]).names.every((r) => r[1] === ''), 'only Personalised shows a personalisation type');
-});
-
-test('scheduling hover shows scheduled campaigns for "uses", names only for "none"', async () => {
-  const mat = await get('/maturity');
-  const uses = DC.schedulingHover(mat.scheduling[0]);
-  assert.deepStrictEqual(uses.names[0], ['Blackmores (DV360)', '3 of 4 campaigns, 5 schedules']);
-  const none = DC.schedulingHover(mat.scheduling[1]);
-  assert.deepStrictEqual(names(none), ['Bayer Consumer Health (Amazon DSP)', 'Kenvue (DV360)', 'Perrigo (Direct)', 'Reckitt (Amazon DSP)', 'Unilever (Amazon DSP)', 'Vitabiotics (Direct)']);
-  assert.ok(none.names.every((r) => r[1] === ''));
   assert.strictEqual(mat.scheduling[0].advertisers + mat.scheduling[1].advertisers, 11);
 });
 
@@ -163,43 +149,43 @@ test('advertiser table: every column sorts both ways, blanks last, no key keeps 
   }
 });
 
-test('targeting table: sorts by Revenue by default and every column sorts both ways', async () => {
-  const rows = DC.tableRows(await get('/maturity'));
-  const rev = (key, dir) => DC.sortAdvertiserRows(rows, key, dir, DC.MAT_COLS).map((r) => r.revenueRaw);
-  const desc = rev('revenue', 'desc');
-  assert.deepStrictEqual(desc, desc.slice().sort((a, b) => b - a));
-  assert.deepStrictEqual(rev('revenue', 'asc'), desc.slice().reverse());
-  DC.MAT_COLS.forEach((c) => {
-    ['asc', 'desc'].forEach((dir) => assert.strictEqual(DC.sortAdvertiserRows(rows, c.key, dir, DC.MAT_COLS).length, rows.length));
+test('Advertisers table: Maturity level and Scheduling join by advertiser, filter across all advertisers, sort with blanks last, hover lists variables and scheduled campaigns', async () => {
+  const adv = await get('/advertisers');
+  const mat = DC.tableRows(await get('/maturity'));
+  const rows = DC.advertiserRows(adv, true, mat);
+  assert.ok(rows.every((r) => r.mat && r.level), 'every advertiser has a maturity record');
+  const blackmores = rows.find((r) => r.name === 'Blackmores');
+  assert.strictEqual(blackmores.mat.scheduling, 'Dayparted · 3 of 4 campaigns');
+  assert.strictEqual(DC.schedulingCellHover(blackmores).names.length, 3, 'one name per scheduled campaign');
+  assert.ok(DC.levelCellHover(blackmores).sections[0].rows[0][1].includes('Gender (Computer Vision)'));
+  const unscheduled = rows.find((r) => r.mat.scheduling === 'Not used');
+  assert.match(DC.schedulingCellHover(unscheduled).text, /No campaigns use scheduling/);
+  assert.strictEqual(DC.advertiserRows(adv, false, mat).length, adv.top.length, 'no filter: the top 10');
+  const none = { level: '', variable: '', scheduling: '' };
+  assert.strictEqual(DC.advertiserRows(adv, true, mat, none).length, rows.length);
+  const loc = DC.advertiserRows(adv, true, mat, { ...none, level: 'Localised' });
+  assert.ok(loc.length && loc.every((r) => r.level === 'Localised'));
+  assert.ok(DC.advertiserRows(adv, true, mat, { ...none, scheduling: 'none' }).every((r) => r.scheduled === 0));
+  assert.deepStrictEqual(DC.advertiserRows(adv, true, mat, { level: 'Localised', variable: '', scheduling: 'uses' }).map((r) => r.name), ['Nestlé Health Science']);
+  assert.strictEqual(DC.advertiserRows(adv, true, null, { ...none, level: 'Localised' }).length, 0, 'no maturity data matches no filter');
+  ['level', 'scheduling'].forEach((key) => {
+    ['asc', 'desc'].forEach((dir) => assert.strictEqual(DC.sortAdvertiserRows(rows, key, dir).length, rows.length));
   });
-  const names = DC.sortAdvertiserRows(rows, 'name', 'asc', DC.MAT_COLS).map((r) => r.name);
-  assert.deepStrictEqual(names, names.slice().sort((a, b) => a.localeCompare(b)));
+  const byLevel = DC.sortAdvertiserRows(rows, 'level', 'desc').map((r) => DC.LEVELS.indexOf(r.level));
+  assert.deepStrictEqual(byLevel, byLevel.slice().sort((a, b) => b - a));
 });
 
-test('iROAS: one decimal, em dash when nothing was measured, sorts with blanks last, hover shows the division', async () => {
+test('Advertisers table has no iROAS column (Sales uplift is future work)', async () => {
   const adv = await get('/advertisers');
-  const rows = DC.advertiserRows(adv, true);
-  for (const r of rows) assert.strictEqual(r.iroas, r.src.iroas.value === null ? '\u2014' : r.src.iroas.value.toFixed(1));
-  const none = rows.find((r) => r.src.iroas.value === null);
-  assert.ok(none, 'one advertiser has no POS data');
-  assert.strictEqual(none.src.iroas.measuredCampaigns, 0);
-  assert.strictEqual(DC.iroasHover(none.src).text, DC.TIPS.iroasEmpty);
-  const col = DC.ADV_COLS.find((c) => c.key === 'iroas');
-  assert.strictEqual(DC.ADV_COLS[DC.ADV_COLS.findIndex((c) => c.key === 'effectiveCpm') + 1], col, 'after Effective CPM');
-  const sorted = DC.sortAdvertiserRows(rows, 'iroas', 'desc');
-  const vals = sorted.map((r) => r.src.iroas.value);
-  assert.deepStrictEqual(vals.filter((v) => v !== null), vals.filter((v) => v !== null).slice().sort((a, b) => b - a));
-  assert.strictEqual(vals[vals.length - 1], null);
-  const withValue = rows.find((r) => r.src.iroas.value !== null).src;
-  const m = DC.iroasHover(withValue);
-  const m0 = withValue.iroas;
-  assert.strictEqual(m.sections[0].rows[0][1], DC.fmtMoney(m0.incrementalSales) + ' \u00f7 ' + DC.fmtMoney(m0.measuredSpend) + ' = ' + m0.value.toFixed(1));
-  assert.match(m.sections[0].rows[3][1], /^\d+ of \d+ campaigns measured$/);
+  assert.ok(!DC.ADV_COLS.some((c) => c.key === 'iroas'));
+  assert.deepStrictEqual(DC.ADV_COLS.slice(-3).map((c) => c.key), ['effectiveCpm', 'level', 'scheduling']);
+  for (const r of adv.all) assert.ok(!('iroas' in r));
+  assert.ok(!('posData' in adv));
 });
 
 test('advertiser rows: no Seats column and no per-seat sub-rows (agencies are not supported, advertiser level only)', () => {
   const rows = DC.advertiserRows({ top: [
-    { advertiserId: 'a', name: 'A', dsp: 'DV360', revenue: 100, share: 100, seatCount: 2, direct: false, dealsOn: [], iroas: {},
+    { advertiserId: 'a', name: 'A', dsp: 'DV360', revenue: 100, share: 100, seatCount: 2, direct: false, dealsOn: [],
       seats: [{ seatId: 's1', name: 'GroupM AU', dsp: 'The Trade Desk', synced: true, revenue: 100, share: 100 }] }
   ] }, false);
   assert.equal(rows[0].seats, undefined);

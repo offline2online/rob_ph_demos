@@ -72,40 +72,11 @@ test('revenue rows are ordered by period, DSP then deal type', () => withServer(
   }
 }));
 
-test('yield: one row per connected DSP, then Direct, in standard order; CPM reconciles to billing', () => withServer(async (get) => {
-  const y = await get(`/yield?${Q}`);
-  assert.deepEqual(y.rows.map((r) => r.dsp), DSPS);
-  for (const row of y.rows) {
-    let rev = 0; let views = 0;
-    for (const b of raw.billing) {
-      if (b.date < '2026-09-12' || b.date > '2026-10-11' || b.dsp !== row.dsp || !b.settled) continue;
-      rev += b.revenue; views += b.views;
-    }
-    assert.equal(row.assumedViews, views);
-    assert.ok(Math.abs(row.earnedRevenue - rev) < 0.01);
-    assert.ok(Math.abs(row.effectiveCpm - rev / (views / 1000)) < 0.01);
-  }
-  const one = await get(`/yield?${Q}&dealType=Programmatic guaranteed`);
-  assert.equal(one.dealType, 'Programmatic guaranteed');
-  // The three Programmatic guaranteed deals are each bought through their own DSP, at their fixed CPMs (d1 $9.50, d2 $8.00, d4 $8.20).
-  const cpmOf = (dsp) => one.rows.find((r) => r.dsp === dsp).effectiveCpm;
-  assert.deepEqual(['DV360', 'The Trade Desk', 'Amazon DSP'].map((d) => Math.round(cpmOf(d) * 10) / 10), [9.5, 8, 8.2]);
-  assert.equal(one.rows.find((r) => r.dsp === 'Direct').effectiveCpm, null);
-  // Direct advertiser deals are the only deals billed under Direct, at their agreed CPMs ($5.50 to $8.80).
-  const direct = (await get(`/yield?${Q}&dealType=Direct advertiser`)).rows;
-  const blended = direct.find((r) => r.dsp === 'Direct').effectiveCpm;
-  assert.ok(blended > 5.5 && blended < 8.8, `blended ${blended}`);
-  assert.ok(direct.filter((r) => r.dsp !== 'Direct').every((r) => r.effectiveCpm === null));
-  assert.equal((await get(`/yield?${Q}&dealType=Open auction`)).rows.find((r) => r.dsp === 'Direct').effectiveCpm, null, 'a direct advertiser never buys in the open auction');
-}));
-
-test('yield rejects unknown or multiple deal types', async () => {
+test('revenue rejects unknown deal types', async () => {
   const server = createServer({ store, today: '2026-10-11', authenticate: admin });
   await new Promise((r) => server.listen(0, r));
   try {
     const base = `http://127.0.0.1:${server.address().port}${BASE}`;
-    assert.equal((await fetch(`${base}/yield?dealType=Nope`)).status, 400);
-    assert.equal((await fetch(`${base}/yield?dealType=Open auction,Private auction`)).status, 400);
     assert.equal((await fetch(`${base}/revenue?dealTypes=Nope`)).status, 400);
   } finally { server.close(); }
 });

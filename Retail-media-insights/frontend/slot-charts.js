@@ -1,4 +1,4 @@
-// Slot value, Slot allocation, Missed revenue & fill and Yield — the four
+// Slot value, Slot allocation and Missed revenue & fill — the three
 // display-type charts of the Retail Media Performance tab. A content-frame
 // module (no header, sidebar or position:fixed): the tab shell calls
 //   var charts = SlotCharts.mount(el, { fetchJson: function (endpoint, params) { return Promise } });
@@ -18,7 +18,6 @@
   // Each DSP's Preferred shade, the same families as the Revenue chart.
   var DSP_COLOURS = { 'DV360': '#eb6834', 'The Trade Desk': '#2a78d6', 'Amazon DSP': '#1baf7a', 'Direct': '#6b3fa0' };
   var ALL_DEAL_TYPES = 'All deal types';
-  var AMBER_AT = 85;
   var ORIENTATIONS = ['Not set', '90°', '180°', '270°'];
 
   var VAC_TEXT = 'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE standard; CPM is cost per thousand assumed views. ' +
@@ -28,25 +27,18 @@
 
   var TIPS = {
     slotValue: VAC_TEXT + ' The number in brackets is the display type’s connected displays across the selected stores (PH Core).',
-    slotAllocation: 'Slots per loop: total slots in the display type’s loop. Advertiser slots + Own-content slots = Slots per loop. ' +
-      'Advertiser slots sold: share of advertiser slot capacity inside operating hours sold over the date range; rows at ' + AMBER_AT + '% or more are highlighted amber.',
+    slotAllocation: 'Slots per loop: total slots in the display type’s loop. Advertiser slots + Own-content slots = Slots per loop. Fill per display type is in Missed revenue & fill.',
     missed: 'Fill = advertiser slots sold ÷ all advertiser slots, across all deal types (booking schedule and unsold real-time slot records). ' +
       'Only slots inside each display’s operating hours count (outside screens run 24 hours; in-store screens follow store opening hours); slots outside them play house content. ' +
       'Amber = unsold slots valued at floor CPM × their assumed views ÷ 1,000 (a minimum estimate). ' +
-      'Red = revenue lost while displays were offline. The number in brackets is connected displays (PH Core). ' + VAC_TEXT,
-    hourly: 'Fill = advertiser slots sold ÷ all advertiser slots in the hour, across all deal types (booking schedule and unsold real-time slot records). ' +
-      'Effective CPM = revenue ÷ (assumed views (VAC-d) ÷ 1,000). Only hours inside each display type’s operating hours are inventory and shown: outside screens and windows run 24 hours, in-store screens follow store opening hours. ' +
-      'Until the hourly impression multiplier ships, assumed views per hour = the day’s assumed views spread by each hour’s share of the day’s slots played, and revenue is spread the same way. ' +
-      'The number in brackets is connected displays (PH Core).',
-    yield: 'Effective CPM for each connected DSP and for Direct (the retailer\u2019s direct advertisers, billed through PH with no DSP): cleared revenue per 1,000 assumed views (VAC-d), from billing line items and reservations. ' + VAC_TEXT
+      'Red = revenue lost while displays were offline. The number in brackets is connected displays (PH Core). ' + VAC_TEXT
   };
   // Column definitions for the Slot allocation table (an ⓘ beside each heading).
   var COLUMN_TIPS = {
     'Display type': 'The kind of screen, in shopper-journey order. Hover the name for its facts.',
     'Slots per loop': 'All slots in one pass of the display type’s playlist loop: advertiser slots plus own-content slots.',
     'Advertiser slots': 'Slots in the loop that advertisers can buy. Hover for their duration and share of the loop.',
-    'Own-content slots': 'Slots in the loop the retailer keeps for its own content. They are never sold to advertisers.',
-    'Advertiser slots sold': 'Share of advertiser slots, inside operating hours, that were sold in the selected period. ' + AMBER_AT + '% or more is highlighted amber.'
+    'Own-content slots': 'Slots in the loop the retailer keeps for its own content. They are never sold to advertisers.'
   };
 
   // ---------- formatting ----------
@@ -140,7 +132,7 @@
     if (has(a.averageFootfallPerDay)) vac.push(['Average footfall past a display per day', fmtInt(a.averageFootfallPerDay)]);
     if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', Number(a.averageVisibility).toFixed(2)]);
     var s = a.shareOfLoopTime;
-    if (s && has(s.advertiserSlotSeconds) && has(s.loopSeconds) && has(s.percent)) {
+    if (!opts.omitShareOfLoop && s && has(s.advertiserSlotSeconds) && has(s.loopSeconds) && has(s.percent)) {
       vac.push(['Share of loop time', s.advertiserSlotSeconds + 's advertiser slot ÷ ' + s.loopSeconds + 's loop = ' + pct(s.percent)]);
     }
     var sections = [];
@@ -161,18 +153,7 @@
     var rows = [['Effective CPM', fmtMoney(row.effectiveCpm, 2) + ' (total ' + fmtMoney(t.earnedRevenue, 2) + ' earned on ' + fmtCompact(t.assumedViews) + ' assumed views' + (range ? ', ' + range : '') + ')']];
     if (has(row.floorCpm)) rows.push(['Floor CPM', fmtMoney(row.floorCpm, 2)]);
     rows.push(['Revenue per available slot', fmtMoney(row.perSlotPerDay, 2) + ' (total ' + fmtMoney(t.perDay, 0) + ' per day across ' + plural(t.advertiserSlots, 'advertiser slot') + ' on ' + plural(displaysOf(row), 'display') + ')']);
-    if (has(row.averageAssumedViewsPerSlotPerDay) && has(row.advertiserSlotsSoldShare)) {
-      // The share is the settled (earned) VAC-d over the range as a share of slot capacity, not the Slot allocation "sold" figure
-      // (booked-ahead days are not settled), so it is labelled as what it is. Whole-number percentage, and the result is
-      // computed from the displayed factors so the line adds up as shown.
-      var cpm = Math.round(row.effectiveCpm * 100) / 100;
-      var views = Math.round(row.averageAssumedViewsPerSlotPerDay * 100) / 100;
-      var share = Math.round(row.advertiserSlotsSoldShare * 100);
-      rows.push(['How it adds up', fmtMoney(cpm, 2) + ' CPM × ' + fmtNum(views) + ' average assumed views ÷ 1,000 × ' +
-        share + '% of advertiser slot capacity earned (settled billing) = ' + fmtMoney(cpm * views / 1000 * share / 100, 2)]);
-    }
-    if (has(row.advertiserSlotsSoldShare)) rows.push(['Fill', Math.round(row.advertiserSlotsSoldShare * 100) + '% of advertiser slot capacity earned (settled billing)']);
-    var sec = { rows: rows, note: 'Revenue per available slot = effective CPM × average assumed views per slot per day ÷ 1,000 × fill.' };
+    var sec = { rows: rows };
     return withHours(valuesOnly(row.name, [sec]), row);
   }
 
@@ -242,76 +223,13 @@
     return withHours(valuesOnly(dt.name, [sec]), dt);
   }
 
-  function hourLabel(h) { return (h < 10 ? '0' : '') + h + ':00'; }
-  function hourRange(h) { return hourLabel(h) + '–' + hourLabel((h + 1) % 24); }
-
-  // Cell shade: the primary colour at an opacity of the cell's value against the largest value in the grid.
-  function hourlyShade(value, max) {
-    if (!has(value) || !(max > 0)) return { bg: 'transparent', dark: false };
-    var a = Math.max(0.08, Math.min(1, value / max));
-    return { bg: 'rgba(22,155,194,' + a.toFixed(2) + ')', dark: a > 0.55 };
-  }
-  function hourlyCellText(cell, mode) {
-    if (mode === 'fill') return pct(cell.fillPercent);
-    return has(cell.effectiveCpm) ? fmtMoney(cell.effectiveCpm, 2) : '–';
-  }
-  function hourlyMax(rows, mode) {
-    var max = 0;
-    rows.forEach(function (r) { r.hours.forEach(function (c) { var v = mode === 'fill' ? c.fillPercent : c.effectiveCpm; if (has(v) && v > max) max = v; }); });
-    return max;
-  }
-
-  // row is a /hourly row, cell one of its hours; dt is the display type's card. Facts only.
-  function hourlyHover(row, cell, dt, meta) {
-    var range = dateRange(meta);
-    var cd = row.connectedDisplays || {};
-    var rows = [
-      ['Hour', hourRange(cell.hour)],
-      ['Fill', pct(cell.fillPercent) + ' (total ' + fmtInt(cell.slotsSold) + ' of ' + fmtInt(cell.slotsTotal) + ' advertiser slots sold; ' + fmtInt(cell.slotsUnsold) + ' unsold, ' + fmtInt(cell.slotsOffline) + ' offline)'],
-      ['Effective CPM', has(cell.effectiveCpm)
-        ? fmtMoney(cell.effectiveCpm, 2) + ' (total revenue ' + fmtMoney(cell.revenue, 2) + ' over ' + fmtInt(cell.views) + ' assumed views)'
-        : 'No delivery']
-    ];
-    var note = 'Totals across all ' + fmtInt(cd.displays) + ' connected ' + (dt ? dt.name + ' ' : '') + 'displays' +
-      (has(cd.stores) ? ' in ' + plural(cd.stores, 'store') : '') + (range ? ', ' + range : '') + '.';
-    return withHours(valuesOnly(dt ? dt.name : row.name, [{ rows: rows, note: note }]), dt);
-  }
-
-  // Only DSPs with delivery, highest effective CPM first (ties keep the DSP order).
-  function yieldRows(rows) {
-    return dspOrder(rows.filter(function (r) { return r.effectiveCpm !== null && r.effectiveCpm !== undefined; }))
-      .map(function (r, i) { return { r: r, i: i }; })
-      .sort(function (a, b) { return b.r.effectiveCpm - a.r.effectiveCpm || a.i - b.i; }).map(function (x) { return x.r; });
-  }
-
-  // Share of the revenue cleared in scope (every DSP and Direct on this deal type), whole percent.
-  function yieldRevenueShare(row, allRows) {
-    var total = (allRows || []).reduce(function (t, r) { return t + (has(r.earnedRevenue) ? r.earnedRevenue : 0); }, 0);
-    if (!(total > 0) || !has(row.earnedRevenue)) return null;
-    return pct(100 * row.earnedRevenue / total);
-  }
-
-  function yieldHover(row, dealType, meta, allRows) {
-    if (row.effectiveCpm === null || row.effectiveCpm === undefined) {
-      return { title: row.dsp, desc: null, sections: [{ rows: [['Deal type', dealType], ['Effective CPM', 'No delivery']], note: 'No settled billing for this DSP and deal type in the selected period.' }] };
-    }
-    var rows = [['Deal type', dealType], ['Effective CPM', fmtMoney(row.effectiveCpm, 2)]];
-    if (has(row.earnedRevenue) && has(row.assumedViews)) {
-      rows.push(['Earned', fmtMoney(row.earnedRevenue, 2) + ' on ' + fmtCompact(row.assumedViews) + ' assumed views' + (dateRange(meta) ? ', ' + dateRange(meta) : '')]);
-    }
-    var share = yieldRevenueShare(row, allRows);
-    if (share) rows.push(['Share of total revenue', share + (dealType !== ALL_DEAL_TYPES ? ' of ' + dealType + ' revenue' : '')]);
-    return { title: row.dsp, desc: null, sections: [{ rows: rows }] };
-  }
-
   var pure = {
-    ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, AMBER_AT: AMBER_AT, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
+    ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
     fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct, orientationText: orientationText,
-    journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, yieldRows: yieldRows, yieldRevenueShare: yieldRevenueShare, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
+    journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
     DSP_COLOURS: DSP_COLOURS, ALL_DEAL_TYPES: ALL_DEAL_TYPES, typesById: typesById, missedParts: missedParts,
     displayTypeCard: displayTypeCard, hoursText: hoursText, slotValueHover: slotValueHover, allocationHover: allocationHover,
-    missedHover: missedHover, yieldHover: yieldHover,
-    hourlyHover: hourlyHover, hourlyShade: hourlyShade, hourlyCellText: hourlyCellText, hourlyMax: hourlyMax, hourRange: hourRange
+    missedHover: missedHover
   };
 
   // ---------- DOM ----------
@@ -319,8 +237,8 @@
     if (typeof document === 'undefined') throw new Error('SlotCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { mode: 'cpm', dealType: '', hourly: 'fill' };
-    var gen = { all: 0, yield: 0 };
+    var state = { mode: 'cpm', dealType: '' };
+    var gen = { all: 0 };
     var cache = { types: null, typeMap: {} };
     var alive = true;
 
@@ -426,29 +344,9 @@
     var pSA = panel('Slot allocation', TIPS.slotAllocation, null, null);
     var pMR = panel('Missed revenue & fill', TIPS.missed, null, h('div', { class: 'sc-legend' }, [legendItem('sc-primary', 'Filled'), legendItem('sc-unsold', 'Unsold slots (at floor CPM)'), legendItem('sc-down', 'Display downtime')]));
 
-    var sel = h('select', { class: 'sc-select', 'aria-label': 'Deal type' });
-    [ALL_DEAL_TYPES].concat(DEAL_TYPES).forEach(function (d) { sel.appendChild(h('option', { value: d === ALL_DEAL_TYPES ? '' : d, text: d })); });
-    sel.addEventListener('change', function () { state.dealType = sel.value; loadYield(); });
-    var pY = panel('Yield', TIPS.yield, h('label', { class: 'sc-field' }, [h('span', { text: 'Deal type' }), sel]), null);
+    pMR.el.classList.add('sc-wide'); // takes the full row
 
-    // Fill and effective CPM by hour: full width under Missed revenue & fill and Yield.
-    var hSegBtns = {};
-    var hSeg = h('div', { class: 'sc-seg', role: 'radiogroup', 'aria-label': 'Hourly metric' });
-    [['fill', 'Fill'], ['cpm', 'Effective CPM']].forEach(function (o) {
-      var b = h('button', { type: 'button', class: 'sc-seg-btn', role: 'radio', 'data-mode': o[0], text: o[1] });
-      b.addEventListener('click', function () { state.hourly = o[0]; syncHSeg(); if (hData) drawHourly(hData); });
-      hSegBtns[o[0]] = b; hSeg.appendChild(b);
-    });
-    function syncHSeg() {
-      Object.keys(hSegBtns).forEach(function (k) {
-        hSegBtns[k].setAttribute('aria-checked', String(state.hourly === k));
-        hSegBtns[k].classList.toggle('on', state.hourly === k);
-      });
-    }
-    var pH = panel('Fill and effective CPM by hour', TIPS.hourly, hSeg, null);
-    pH.el.classList.add('sc-wide');
-
-    container.appendChild(h('div', { class: 'sc-grid' }, [pSV.el, pSA.el, pMR.el, pY.el, pH.el]));
+    container.appendChild(h('div', { class: 'sc-grid' }, [pSV.el, pSA.el, pMR.el]));
     container.appendChild(tip);
 
     function setState(p, kind, retry) {
@@ -471,9 +369,9 @@
     }
 
     // The display type's name, hoverable for its description and averages when it has a card.
-    function nameLabel(name, displays, dt, attrs) {
+    function nameLabel(name, displays, dt, attrs, cardOpts) {
       var el = h('div', Object.assign({ class: 'sc-label', text: bracketed(name, displays) }, attrs || {}));
-      return dt ? hoverable(el, function () { return displayTypeCard(dt, filters); }) : el;
+      return dt ? hoverable(el, function () { return displayTypeCard(dt, filters, cardOpts); }) : el;
     }
 
     // ----- slot value -----
@@ -490,7 +388,8 @@
         var track = h('div', { class: 'sc-track-in' }, [bar]);
         if (cpm && has(r.floorCpm)) track.appendChild(h('i', { class: 'sc-floor-mark', style: 'left:' + (100 * r.floorCpm / max).toFixed(2) + '%' }));
         var row = h('div', { class: 'sc-row', role: 'listitem' }, [
-          nameLabel(r.name, displaysOf(r), cache.typeMap[r.id]),
+          // Share of loop time is Slot allocation's (supply); Slot value (price) doesn't repeat it.
+          nameLabel(r.name, displaysOf(r), cache.typeMap[r.id], null, { omitShareOfLoop: true }),
           hoverable(h('div', { class: 'sc-track' }, [track]), function () { return slotValueHover(r, filters); }),
           hoverable(h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(vals[i]) }), cpm ? ' CPM' : ' per available slot per day']), function () { return slotValueHover(r, filters); })
         ]);
@@ -504,13 +403,11 @@
     function drawAllocation(d) {
       saData = d;
       var rows = followOrder(d.rows, svData && metricOrder(svData.rows, state.mode), function (r) { return cache.typeMap[r.id]; });
-      var heads = ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots', 'Advertiser slots sold'];
+      var heads = ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots'];
       var thead = h('thead', {}, [h('tr', {}, heads.map(function (t) { return h('th', { scope: 'col' }, [h('span', { text: t }), info(COLUMN_TIPS[t])]); }))]);
       var tbody = h('tbody');
       rows.forEach(function (r) {
         var dt = cache.typeMap[r.id];
-        var sold = r.advertiserSlotsSoldPercent;
-        var amber = sold >= AMBER_AT;
         var nameTd = h('td', { class: 'sc-name', text: r.name });
         if (dt) hoverable(nameTd, function () { return displayTypeCard(dt, filters); });
         // The count, with the time it covers in brackets: the whole loop for slots per loop, the slots' total duration otherwise.
@@ -519,11 +416,7 @@
           var td = h('td', { class: 'sc-num', text: String(v) + ' (' + secs + 's)' });
           return hoverable(td, function () { return allocationHover(r, kind, dt); });
         }
-        var soldTd = h('td', { class: 'sc-sold' }, [
-          h('span', { class: 'sc-sold-n', text: pct(sold) }),
-          h('span', { class: 'sc-mini' }, [h('i', { class: 'sc-mini-fill ' + (amber ? 'sc-amber' : 'sc-primary'), style: 'width:' + Math.min(100, sold) + '%' })])
-        ]);
-        tbody.appendChild(h('tr', { class: amber ? 'sc-hot' : '', 'data-amber': amber ? 'true' : 'false' }, [nameTd, numTd(r.slotsPerLoop, 'loop'), numTd(r.advertiserSlots.count, 'advertiser'), numTd(r.ownContentSlots.count, 'own'), soldTd]));
+        tbody.appendChild(h('tr', {}, [nameTd, numTd(r.slotsPerLoop, 'loop'), numTd(r.advertiserSlots.count, 'advertiser'), numTd(r.ownContentSlots.count, 'own')]));
       });
       pSA.body.innerHTML = ''; pSA.body.setAttribute('aria-busy', 'false');
       pSA.body.appendChild(h('div', { class: 'sc-scroll' }, [h('table', { class: 'sc-table' }, [thead, tbody])]));
@@ -564,72 +457,11 @@
       pMR.body.innerHTML = ''; pMR.body.setAttribute('aria-busy', 'false'); pMR.body.appendChild(list);
     }
 
-    // ----- yield -----
-    function drawYield(d) {
-      var rows = yieldRows(d.rows);
-      pY.body.innerHTML = ''; pY.body.setAttribute('aria-busy', 'false');
-      if (!rows.length) {
-        pY.body.appendChild(h('div', { class: 'sc-state' }, [icon('bar_chart_off'), h('div', { text: 'Nothing cleared on this deal type in scope.' })]));
-        return;
-      }
-      var max = Math.max.apply(null, rows.map(function (r) { return r.effectiveCpm; })) * 1.08 || 1;
-      var list = h('div', { class: 'sc-rows', role: 'list' });
-      rows.forEach(function (r) {
-        var bar = h('div', { class: 'sc-bar sc-primary', style: 'width:' + (100 * r.effectiveCpm / max).toFixed(2) + '%' + (DSP_COLOURS[r.dsp] ? ';background:' + DSP_COLOURS[r.dsp] : '') });
-        var row = h('div', { class: 'sc-row', role: 'listitem' }, [
-          h('div', { class: 'sc-label', text: r.dsp }),
-          h('div', { class: 'sc-track' }, [h('div', { class: 'sc-track-in' }, [bar])]),
-          h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(r.effectiveCpm) }), ' eCPM'])
-        ]);
-        hoverable(row, function () { return yieldHover(r, d.dealType || ALL_DEAL_TYPES, filters, d.rows); });
-        list.appendChild(row);
-      });
-      pY.body.appendChild(list);
-    }
-
-    // ----- fill and effective CPM by hour -----
-    var hData = null;
-    function drawHourly(d) {
-      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.id]; });
-      var max = hourlyMax(rows, state.hourly);
-      var grid = h('div', { class: 'sc-heat', role: 'table', 'aria-label': 'Fill and effective CPM by hour' });
-      var head = h('div', { class: 'sc-heat-row', role: 'row' }, [h('div', { class: 'sc-heat-label', role: 'columnheader', text: 'Display type' })]);
-      for (var hr = 0; hr < 24; hr++) head.appendChild(h('div', { class: 'sc-heat-hour', role: 'columnheader', text: (hr < 10 ? '0' : '') + hr }));
-      grid.appendChild(head);
-      rows.forEach(function (r) {
-        var dt = cache.typeMap[r.id];
-        var byHour = {};
-        r.hours.forEach(function (c) { byHour[c.hour] = c; });
-        var line = h('div', { class: 'sc-heat-row', role: 'row' }, [nameLabel(r.name, displaysOf(r), dt, { class: 'sc-heat-label', role: 'rowheader' })]);
-        for (var i = 0; i < 24; i++) {
-          var c = byHour[i];
-          if (!c) { line.appendChild(h('div', { class: 'sc-heat-cell sc-heat-none', role: 'cell', 'aria-label': r.name + ' ' + hourRange(i) + ': not inventory' })); continue; }
-          var v = state.hourly === 'fill' ? c.fillPercent : c.effectiveCpm;
-          var shade = hourlyShade(v, max);
-          var cell = h('div', { class: 'sc-heat-cell' + (shade.dark ? ' sc-heat-dark' : ''), role: 'cell', style: 'background:' + shade.bg, 'data-hour': String(i), 'data-value': hourlyCellText(c, state.hourly), text: hourlyCellText(c, state.hourly) });
-          (function (cc) { hoverable(cell, function () { return hourlyHover(r, cc, dt, filters); }); })(c);
-          line.appendChild(cell);
-        }
-        grid.appendChild(line);
-      });
-      pH.body.innerHTML = ''; pH.body.setAttribute('aria-busy', 'false');
-      pH.body.appendChild(h('div', { class: 'sc-heat-scroll' }, [grid]));
-    }
-
     // ----- loading -----
-    function loadYield() {
-      var g = ++gen.yield;
-      setState(pY, 'loading');
-      fetchJson('yield', state.dealType ? Object.assign({}, filters, { dealType: state.dealType }) : filters).then(function (d) {
-        if (!alive || g !== gen.yield) return;
-        if (!d || !d.rows) return setState(pY, 'empty');
-        drawYield(d);
-      }, function () { if (alive && g === gen.yield) setState(pY, 'error', loadYield); });
-    }
     function loadAll() {
       var g = ++gen.all;
-      [pSV, pSA, pMR, pH].forEach(function (p) { setState(p, 'loading'); });
-      svData = null; saData = null; mrData = null; hData = null;
+      [pSV, pSA, pMR].forEach(function (p) { setState(p, 'loading'); });
+      svData = null; saData = null; mrData = null;
       var current = function () { return alive && g === gen.all; };
       var typesP = fetchJson('display-types', filters).then(function (t) {
         cache.types = t; cache.typeMap = typesById(t); return t;
@@ -648,11 +480,9 @@
       run(pSV, 'slot-value', function () { drawSlotValue(); if (saData) drawAllocation(saData); }, function (d) { svData = d; });
       run(pSA, 'slot-allocation', drawAllocation);
       run(pMR, 'missed-revenue', drawMissed, null, svP);
-      run(pH, 'hourly', drawHourly, function (d) { hData = d; });
-      loadYield();
     }
 
-    syncSeg(); syncHSeg();
+    syncSeg();
     loadAll();
     return {
       setFilters: function (f) { filters = f || {}; hideTip(); loadAll(); },

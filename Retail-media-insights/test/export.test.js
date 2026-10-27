@@ -71,7 +71,7 @@ test('dataset csv has a header row, escapes cells and neutralises formulas', () 
 test('an advertiser reads only its own advertiser datasets, scoped to itself', () => withServer(advertiser(ME), async ({ api, json }) => {
   const { datasets } = await json('/datasets');
   assert.deepEqual(datasets.map((d) => d.name).sort(), ['audience', 'deals-by-display-type', 'delivery', 'delivery-deals', 'display-types', 'my-summary', 'my-targeting']);
-  for (const retailerOnly of ['summary', 'revenue', 'yield', 'deals', 'advertisers', 'missed-revenue', 'slot-value', 'maturity-ladder']) {
+  for (const retailerOnly of ['summary', 'revenue', 'deals', 'advertisers', 'missed-revenue', 'slot-value', 'maturity-ladder']) {
     assert.equal((await api(`/dataset?name=${retailerOnly}&${Q}`)).status, 403, retailerOnly);
   }
   // asking for someone else's data does not widen the scope
@@ -122,8 +122,8 @@ test('MCP tool results equal the tab endpoint for the same filters', () => withS
   assert.deepEqual(JSON.parse(res.result.content[0].text), res.result.structuredContent);
   const sm = await call(api, 'retail_media_summary', { dateFrom: '2026-10-05', dateTo: '2026-10-11', dsps: ['DV360'] });
   assert.deepEqual(sm.result.structuredContent, await json(`/summary?${Q}&dsps[]=DV360`));
-  const ds = await call(api, 'retail_media_dataset', { name: 'yield', dateFrom: '2026-10-05', dateTo: '2026-10-11' });
-  assert.deepEqual(ds.result.structuredContent, await json(`/dataset?name=yield&${Q}`));
+  const ds = await call(api, 'retail_media_dataset', { name: 'slot-value', dateFrom: '2026-10-05', dateTo: '2026-10-11' });
+  assert.deepEqual(ds.result.structuredContent, await json(`/dataset?name=slot-value&${Q}`));
   const list = await call(api, 'retail_media_dataset', {});
   assert.equal(list.result.structuredContent.datasets.length, DATASETS.length);
 }));

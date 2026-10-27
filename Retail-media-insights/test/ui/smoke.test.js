@@ -12,7 +12,7 @@ const { launchChromium } = require('./browser');
 const ROOT = path.join(__dirname, '..', '..');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 const HOSTILE = '<img src=x onerror=alert(1)>';
-const SECTIONS = ['Revenue', 'Deals', 'Slot value', 'Slot allocation', 'Missed revenue & fill', 'Yield', 'Fill and effective CPM by hour', 'Demand health', 'Advertisers', 'Targeting & scheduling maturity'];
+const SECTIONS = ['Revenue', 'Deals', 'Slot value', 'Slot allocation', 'Missed revenue & fill', 'Demand health', 'Advertisers', 'Targeting & scheduling maturity'];
 
 let server; let base; let browser;
 test.before(async () => {
@@ -54,16 +54,16 @@ async function settle(page, ctx) {
   await page.waitForSelector('.sc-table');
   await page.waitForSelector('.sc-row[data-fill]');
   await page.waitForSelector('.dc-adv');
-  await page.waitForSelector('.dc-mat');
+  await page.waitForSelector('.dc-adv .dc-level');
   await page.waitForSelector('[data-tile="sold"]');
   // Once a slot chart panel has rendered (data, empty or error) a screen reader must not hear "busy" any more.
   await page.waitForFunction(() => [...document.querySelectorAll('.sc-body')].every((b) => b.getAttribute('aria-busy') !== 'true'));
-  assert.deepEqual(await page.$$eval('.sc-body', (b) => b.map((x) => x.getAttribute('aria-busy'))), ['false', 'false', 'false', 'false', 'false'], `${ctx}: slot chart panels aria-busy`);
+  assert.deepEqual(await page.$$eval('.sc-body', (b) => b.map((x) => x.getAttribute('aria-busy'))), ['false', 'false', 'false'], `${ctx}: slot chart panels aria-busy`);
   assert.deepEqual(await page.evaluate(() => window.__csp || []), [], `${ctx}: CSP violations`);
 }
 
 for (const width of [1163, 390]) {
-  test(`retailer page at ${width}px: order, reconciliation, amber, no scroll`, async () => {
+  test(`retailer page at ${width}px: order, reconciliation, no scroll`, async () => {
     const { page, context, problems } = await open('/index.html', width);
     try {
       await settle(page, 'retailer');
@@ -95,12 +95,8 @@ for (const width of [1163, 390]) {
       assert.match(await page.textContent('[data-tile="sold"] .val'), /^\d+%$/);
       assert.match(await page.textContent('[data-tile="sold"] .sub'), /^[\d,]+ sold · [\d,]+ available$/);
 
-      // at least one amber Slot allocation row, and it is Queue Screen
-      const amber = await page.$$eval('.sc-table tr[data-amber="true"] .sc-name', (r) => r.map((x) => x.textContent));
-      assert.deepEqual(amber.slice().sort(), ['Queue Screen', 'Window Portrait'], `amber rows: ${amber}`);
-
       // hovers stay on screen
-      for (const sel of ['.sc-row[data-fill]:not(.sc-total) .sc-label', '.sc-row[data-fill] .sc-value', '.sc-heat-label[role=rowheader]', '.sc-heat-cell[data-hour]', '.sc-info', '.dc-adv td[tabindex]', '.pg-info']) {
+      for (const sel of ['.sc-row[data-fill]:not(.sc-total) .sc-label', '.sc-row[data-fill] .sc-value', '.sc-info', '.dc-adv td[tabindex]', '.pg-info']) {
         const el = (await page.$$(sel))[0];
         if (!el) continue;
         await el.scrollIntoViewIfNeeded();

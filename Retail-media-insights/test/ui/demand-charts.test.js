@@ -34,7 +34,7 @@ async function open(width) {
   await page.route('https://fonts.gstatic.com/**', (r) => r.fulfill({ status: 200, body: '' }));
   await page.goto(base + '/index.html');
   await page.waitForSelector('.dc-adv');
-  await page.waitForSelector('.dc-mat');
+  await page.waitForSelector('.dc-adv .dc-level');
   await page.waitForSelector('.dc-panel:has(h3:text-is("Progress over time")) .dc-svg');
   return { page, context, problems };
 }
@@ -52,7 +52,7 @@ test('Demand health: section header, names only, "n deals" hover, Show all N adv
     await head.locator('.dc-info').hover();
     assert.match(await page.textContent('.dc-tip'), /^Which advertisers are on which deals/);
 
-    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM', 'iROAS']);
+    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM', 'Maturity level', 'Scheduling']);
     const names = await texts(page, '.dc-adv tbody th');
     assert.equal(names.length, 10);
     assert.ok(names.every((n) => !/\(/.test(n)), `no DSP in the cell: ${names}`);
@@ -81,29 +81,21 @@ test('Advertisers table is advertiser level: no Seats column, no chevron, no sub
     assert.equal(await page.locator('.dc-adv .dc-expand').count(), 0);
     assert.equal(await page.locator('.dc-adv tbody tr.dc-seat').count(), 0);
     assert.equal(await page.locator('.dc-adv tbody tr').count(), 11);
-    assert.equal(await page.locator('.dc-adv tbody tr').first().locator('td').count(), 7);
+    assert.equal(await page.locator('.dc-adv tbody tr').first().locator('td').count(), 8);
     assert.deepEqual(problems, []);
   } finally { await context.close(); }
 });
 
-test('Maturity: order, ladder, Variables in use, table cells, Progress over time last', async () => {
+test('Maturity: order, filters, Variables in use, table cells, Progress over time last', async () => {
   const { page, context, problems } = await open(1163);
   try {
     assert.equal(await page.locator('.dc-sechead:has(h2:text-is("Targeting & scheduling maturity")) .dc-sec-icon').textContent(), 'stairs');
     assert.deepEqual(await texts(page, '.dc-panel h3'),
-      ['Advertisers', 'Maturity ladder', 'Scheduling', 'Variables in use', 'Advertiser targeting & scheduling', 'Progress over time']);
+      ['Advertisers', 'Variables in use', 'Progress over time']);
     const box = (t) => page.locator(`.dc-panel:has(h3:text-is("${t}"))`).boundingBox();
-    const [lad, sch, vars, tab, pro] = await Promise.all(['Maturity ladder', 'Scheduling', 'Variables in use', 'Advertiser targeting & scheduling', 'Progress over time'].map(box));
-    assert.ok(Math.abs(lad.y - sch.y) < 2 && sch.x > lad.x, 'ladder and scheduling side by side');
-    for (const b of [vars, tab, pro]) assert.ok(b.width > 1000, `full width: ${b.width}`);
-
-    const ladder = page.locator('.dc-panel:has(h3:text-is("Maturity ladder"))');
-    assert.deepEqual(await texts(page, '.dc-panel:has(h3:text-is("Maturity ladder")) .dc-label'), ['Personalised', 'Localised', 'Default only']);
-    assert.deepEqual(await ladder.locator('.dc-bar').evaluateAll((b) => b.map((x) => getComputedStyle(x).backgroundColor)),
-      ['rgb(23, 74, 140)', 'rgb(106, 167, 224)', 'rgb(217, 217, 217)']);
-    assert.match(await ladder.locator('.dc-value').first().innerHTML(), /^<b>5<\/b> advertisers$/);
-    await ladder.locator('.dc-row').first().hover();
-    assert.ok((await page.textContent('.dc-tip')).includes('Blackmores (DV360) · '));
+    const [vars, pro] = await Promise.all(['Variables in use', 'Progress over time'].map(box));
+    for (const b of [vars, pro]) assert.ok(b.width > 1000, `full width: ${b.width}`);
+    assert.equal(await page.locator('.dc-panel:has(h3:text-is("Maturity ladder")), .dc-panel:has(h3:text-is("Scheduling"))').count(), 0, 'the ladder and scheduling charts are gone');
 
     const seg = page.locator('.dc-panel:has(h3:text-is("Variables in use")) .dc-seg-btn');
     assert.deepEqual(await seg.allTextContents(), ['Localised', 'Personalised']);
@@ -112,19 +104,33 @@ test('Maturity: order, ladder, Variables in use, table cells, Progress over time
     await page.waitForFunction(() => document.querySelector('.dc-panel:has(h3) .dc-seg-btn.on') && [...document.querySelectorAll('.dc-panel')].find((p) => p.querySelector('h3').textContent === 'Variables in use').querySelector('.dc-seg-btn.on').textContent === 'Personalised');
     await page.waitForFunction(() => [...document.querySelectorAll('.dc-panel')].find((p) => p.querySelector('h3').textContent === 'Variables in use').querySelector('.dc-bar.dc-l2'));
 
-    const filters = page.locator('.dc-panel:has(h3:text-is("Advertiser targeting & scheduling")) .dc-select');
+    const filters = page.locator('.dc-panel:has(h3:text-is("Advertisers")) .dc-select');
     assert.deepEqual(await filters.evaluateAll((s) => s.map((x) => x.getAttribute('aria-label'))), ['Maturity level', 'Variable', 'Scheduling']);
     assert.deepEqual(await filters.first().locator('option').allTextContents(), ['All levels', 'Default only', 'Localised', 'Personalised']);
-    assert.equal(await filters.last().locator('option').first().textContent(), 'All scheduling');
-    const rows = await texts(page, '.dc-mat tbody th');
-    assert.ok(rows.every((n) => !/\(/.test(n)), 'name only');
-    const sched = await texts(page, '.dc-mat tbody td:nth-child(4)');
+    assert.deepEqual(await filters.last().locator('option').allTextContents(), ['All scheduling', 'Uses scheduling', 'Not used']);
+    assert.equal(await page.locator('h3:text-is("Advertiser targeting & scheduling")').count(), 0, 'the separate table is gone');
+    assert.equal(await page.locator('.dc-mat').count(), 0);
+    const sched = await texts(page, '.dc-adv tbody td:nth-child(9)');
     assert.ok(sched.includes('Dayparted · 3 of 4 campaigns') && sched.includes('Not used'), sched.join());
-    assert.ok((await texts(page, '.dc-mat .dc-none')).includes('Not used'));
+    assert.ok((await texts(page, '.dc-adv .dc-none')).includes('Not used'));
+    const levels = await texts(page, '.dc-adv tbody td:nth-child(8)');
+    assert.ok(levels.every((l) => ['Default only', 'Localised', 'Personalised'].includes(l)), levels.join());
+    await page.locator('.dc-adv tbody td:nth-child(8) .dc-level').first().hover();
+    assert.match(await page.textContent('.dc-tip'), /Variables used/);
+    await page.locator('.dc-adv tbody td:nth-child(9) .dc-sched').first().hover();
+    assert.match(await page.textContent('.dc-tip'), /scheduled campaigns/);
     await page.selectOption('.dc-select[aria-label="Maturity level"]', 'Localised');
     await page.waitForSelector('.dc-clear');
-    await page.waitForFunction(() => document.querySelectorAll('.dc-mat tbody tr').length === 4);
+    await page.waitForFunction(() => document.querySelectorAll('.dc-adv tbody tr').length === 4);
     assert.match(await page.textContent('.dc-filters > :first-child'), /^Clear filter/);
+    await page.click('.dc-clear');
+    await page.waitForFunction(() => document.querySelectorAll('.dc-adv tbody tr').length === 10);
+    // the Scheduling filter narrows the table to advertisers that use it
+    await page.selectOption('.dc-select[aria-label="Scheduling"]', 'uses');
+    await page.waitForFunction(() => document.querySelectorAll('.dc-adv tbody tr').length > 0 && ![...document.querySelectorAll('.dc-adv tbody td:nth-child(9)')].some((x) => x.textContent === 'Not used'));
+    await page.click('.dc-clear');
+    // revenue appears once on the page
+    assert.equal(await page.locator('th:text-is("Revenue"), .dc-sort > span:text-is("Revenue")').count(), 1);
 
     const prog = page.locator('.dc-panel:has(h3:text-is("Progress over time"))');
     assert.deepEqual(await prog.locator('.dc-seg-btn.on').allTextContents(), ['Month']);
@@ -137,12 +143,12 @@ test('Progress over time ignores the date range; the advertiser table follows it
   const { page, context } = await open(1163);
   try {
     const prog = () => page.locator('.dc-panel:has(h3:text-is("Progress over time")) .dc-svg').innerHTML();
-    const revenue = () => page.locator('.dc-mat tbody td:last-child').allTextContents();
+    const revenue = () => page.locator('.dc-adv tbody td:nth-child(2)').allTextContents();
     const [p0, r0] = [await prog(), await revenue()];
     await page.click('#f-date');
     await page.click('.dr-preset[data-days="7"]');
     await page.click('#apply');
-    await page.waitForFunction((b) => [...document.querySelectorAll('.dc-mat tbody td:last-child')].map((x) => x.textContent).join() !== b, r0.join());
+    await page.waitForFunction((b) => [...document.querySelectorAll('.dc-adv tbody td:nth-child(2)')].map((x) => x.textContent).join() !== b, r0.join());
     assert.notDeepEqual(await revenue(), r0);
     assert.equal(await prog(), p0);
   } finally { await context.close(); }

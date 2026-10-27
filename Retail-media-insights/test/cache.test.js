@@ -84,7 +84,7 @@ test('keyFor: admins share one key space, advertisers each have their own, and t
 });
 
 test('a cached response is byte for byte the response the handler gives, for every route', () => withServer(async (get, server) => {
-  const urls = ['/summary', '/revenue?granularity=week', '/yield', '/deals', '/advertisers', '/display-types', '/slot-value', '/slot-allocation', '/missed-revenue', '/maturity', '/filter-options', '/datasets']
+  const urls = ['/summary', '/revenue?granularity=week', '/deals', '/advertisers', '/display-types', '/slot-value', '/slot-allocation', '/missed-revenue', '/maturity', '/filter-options', '/datasets']
     .map((p) => `${p}${p.includes('?') ? '&' : '?'}${Q}`);
   await withServer(async (plain) => {
     for (const url of urls) {
@@ -159,7 +159,7 @@ test('health is never cached and the CSV datasets are served as before', () => w
 }));
 
 test('the key sorts filter lists because every route answers the same for any order of them', () => withServer(async (get) => {
-  const routes = ['summary', 'revenue', 'deals', 'advertisers', 'display-types', 'slot-value', 'slot-allocation', 'missed-revenue', 'maturity', 'yield'];
+  const routes = ['summary', 'revenue', 'deals', 'advertisers', 'display-types', 'slot-value', 'slot-allocation', 'missed-revenue', 'maturity'];
   await withServer(async (plain) => {
     for (const r of routes) {
       const a = await plain(`/${r}?${Q}&storeIds=store-1,store-3,store-2&displayTypeIds=queue,window,endcap&advertiserIds=${ADVERTISERS.join(',')}`, 'admin');
