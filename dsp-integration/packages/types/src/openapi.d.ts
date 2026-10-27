@@ -3297,6 +3297,24 @@ export interface components {
                      *     A Weekly or Monthly cell is the sum of its days.
                      */
                     assumedViews: number | null;
+                    /** @description Only with view=monthly, where each window is a calendar month. Counts are of the position's own play windows starting in the month; with an advertiser filter only its bookings count. */
+                    rollup?: {
+                        /** @description The position's play windows starting in the month */
+                        windows: number;
+                        booked: number;
+                        /** @description Available windows (not booked */
+                        open: number;
+                        /** @description Windows held for a live Direct deal and not booked yet. */
+                        reserved: number;
+                        /** @description Booked windows whose campaign carries a localised (or interactive) layer. */
+                        localised: number;
+                        /** @description Booked windows whose campaign carries a personalised layer. */
+                        personalised: number;
+                        /** @description Names of the advertisers booked in the month. */
+                        advertisers: string[];
+                        /** @description Estimated revenue of the month's bookings (booked CPM × assumed views ÷ 1000). */
+                        bookedRevenue: number;
+                    };
                     /**
                      * @description `reserved`: not booked yet, but inside the flight of a live Direct advertiser deal on this position, so no one else can buy it; the exchange books it for the deal's advertiser (22 Oct 2026).
                      * @enum {string}
@@ -3415,9 +3433,9 @@ export interface components {
             bookedViews: number;
             /** @description Assumed views of the cells still available to book. */
             availableViews: number;
-            /** @description Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter, like sellableWindows. */
+            /** @description Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter */
             availableWindows: number;
-            /** @description Value of the available cells at each position's floor CPM x assumed views / 1000, in the exchange currency. */
+            /** @description Value of the available cells at each position's floor CPM x assumed views / 1000 */
             availableValue: number;
             /** @description Sum of every display type's sellableWindows — see BookingRevenue. */
             sellableWindows: number;
@@ -3438,9 +3456,9 @@ export interface components {
             bookedViews: number;
             /** @description Assumed views of the cells still available to book. */
             availableViews: number;
-            /** @description Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter, like sellableWindows. */
+            /** @description Sellable windows nobody has booked and no Direct deal holds (booked + available + held = sellable). Ignores the advertiser / DSP filter */
             availableWindows: number;
-            /** @description Value of the available cells at each position's floor CPM x assumed views / 1000, in the exchange currency. */
+            /** @description Value of the available cells at each position's floor CPM x assumed views / 1000 */
             availableValue: number;
             /**
              * @description Live (non-test) impression opportunities on this display type's
@@ -5140,6 +5158,13 @@ export interface operations {
                 from?: string;
                 /** @description At most 92 days after from. */
                 to?: string;
+                /**
+                 * @description `monthly` rolls the grid up on the server: `windows` are the calendar months of the range (the first starts at `from`) and each position has one
+                 *     window per month carrying a `rollup` (booked windows of the month, open, reserved, localised / personalised counts, the advertisers and the
+                 *     estimated revenue) instead of one window per column. Revenue, % sold and the totals are the same as the per-window figures. Lifts the range cap
+                 *     from 92 to 365 days. Daily and Weekly are the per-window grid, 92 days at most.
+                 */
+                view?: "daily" | "weekly" | "monthly";
                 /** @description Only this campaign's bookings; without dates, the range covers all of them. */
                 campaignId?: string;
                 /** @description Only this advertiser's bookings. */

@@ -2032,13 +2032,29 @@ describe('booking schedule filter-row totals', () => {
     expect(calls.filter((u) => u.includes('/capacity')).every((u) => !u.includes('advertiserId'))).toBe(true)
   }, slow(45000))
 
-  it('runs the monthly chips October to January', async () => {
-    const dates = ['2026-10-27', '2026-11-03', '2026-12-01', '2027-01-05']
-    stub(schedule(dates), () => ({ days: dates, positions: [{ ...position('p1'), days: dates.map((d) => day(d, 10, 5)) }] }))
+  it('reads the Monthly roll-up cells as N of M booked, with the layer counts', async () => {
+    const months = ['2026-10-27', '2026-11-01']
+    const sched = schedule(months, ['p1'])
+    const rollup = (booked: number) => ({ windows: 4, booked, open: 4 - booked, reserved: 0, localised: booked, personalised: 0, advertisers: booked ? ['Swisse'] : [], bookedRevenue: booked * 10 })
+    sched.positions[0].windows = months.map((d, i) => ({ start: `${d}T00:00:00.000Z`, status: i ? 'available' : 'booked', booking: null, assumedViews: 100, rollup: rollup(i ? 0 : 3) })) as never
+    stub(sched, () => ({ days: [], positions: [] }))
     renderAt('/booking-schedule')
     fireEvent.click(await screen.findByText('Monthly', {}, { timeout: 10000 }))
-    await chip(/Plays and plays available to bid, October 2026/)
-    const labels = screen.getAllByLabelText(/Plays and plays available to bid, /).map((e) => e.getAttribute('aria-label')?.replace('Plays and plays available to bid, ', ''))
-    expect(labels).toEqual(['October 2026', 'November 2026', 'December 2026', 'January 2027'])
+    expect(await screen.findByText('3 of 4 booked', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.getByText('4 open')).toBeInTheDocument()
+  }, slow(45000))
+
+  /* Ticket Hh87Dja2TgYrug606Uq0: Monthly defaults to a 12-month range, the server rolls it up (view=monthly), and the plays totals (capped at 92 days) are skipped. */
+  it('asks for the 12-month Monthly roll-up and shows no plays chips beyond the 92-day cap', async () => {
+    const dates = ['2026-10-27', '2026-11-03', '2026-12-01', '2027-01-05']
+    const calls = stub(schedule(dates), () => ({ days: dates, positions: [{ ...position('p1'), days: dates.map((d) => day(d, 10, 5)) }] }))
+    renderAt('/booking-schedule')
+    fireEvent.click(await screen.findByText('Monthly', {}, { timeout: 10000 }))
+    await waitFor(() => expect(calls.some((u) => u.includes('/booking-schedule?') && u.includes('view=monthly'))).toBe(true), { timeout: 10000 })
+    const monthly = new URL(calls.filter((u) => u.includes('view=monthly')).pop() as string, 'http://x')
+    expect((Date.parse(monthly.searchParams.get('to') as string) - Date.parse(monthly.searchParams.get('from') as string)) / 86_400_000).toBe(365)
+    expect(screen.queryAllByLabelText(/Plays and plays available to bid, /)).toHaveLength(0)
+    const capacityDays = calls.filter((u) => u.includes('/capacity')).map((u) => { const q = new URL(u, 'http://x').searchParams; return (Date.parse(q.get('to') as string) - Date.parse(q.get('from') as string)) / 86_400_000 })
+    expect(Math.max(...capacityDays)).toBeLessThanOrEqual(92)
   }, slow(45000))
 })

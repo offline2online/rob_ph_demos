@@ -297,6 +297,60 @@ describe('GET /admin/v1/booking-schedule', () => {
     }
   })
 
+  /* Ticket Hh87Dja2TgYrug606Uq0 (26 Oct 2026): view=monthly rolls the grid up per calendar month on the server. */
+  describe('view=monthly', () => {
+    const seed = async () => {
+      const s = await setup()
+      await sellByWindow(s.ctx, 'menu_board', 2)
+      await s.ctx.reservations.insert(booking({}))
+      await s.ctx.reservations.insert(booking({ id: 'r_oct', windowStart: '2026-10-05T00:00:00.000Z', advertiserId: 'nestle', clearingCpm: 90 }))
+      await s.ctx.reservations.insert(booking({ id: 'r_dec', windowStart: '2026-12-02T00:00:00.000Z', clearingCpm: 60 }))
+      return s
+    }
+
+    it('gives one column per calendar month and one rollup cell per position and month, with the same revenue, % sold and views as the per-window path', async () => {
+      const { get } = await seed()
+      const per = (await get('?from=2026-09-20&to=2026-12-18')).json()
+      const res = await get('?from=2026-09-20&to=2026-12-18&view=monthly')
+      expect(res.statusCode).toBe(200)
+      expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
+      const body = res.json()
+      expect(body.windows.map((w: { start: string }) => w.start)).toEqual(['2026-09-20T00:00:00.000Z', '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', '2026-12-01T00:00:00.000Z'])
+      expect(body.windows[3].end).toBe('2027-01-01T00:00:00.000Z')
+      expect(body.positions[0].windows).toHaveLength(4)
+      expect(body.positions[0].windows.every((w: { booking: unknown; rollup: unknown }) => w.booking === null && w.rollup)).toBe(true)
+      expect(body.revenue).toEqual(per.revenue)
+      expect(body.totals).toEqual(per.totals)
+      expect(body.byPricingType).toEqual(per.byPricingType)
+      expect(body.dsps).toEqual(per.dsps)
+      /* The cells add up to the same booked windows, and a month names who booked and what it earned. */
+      const cells = body.positions[0].windows
+      expect(cells.reduce((n: number, c: { rollup: { booked: number } }) => n + c.rollup.booked, 0)).toBe(per.totals.bookedWindows)
+      expect(cells.find((c: { start: string }) => c.start.startsWith('2026-10')).rollup).toMatchObject({ booked: 1, advertisers: ['Nestlé'] })
+      expect(cells.reduce((n: number, c: { rollup: { bookedRevenue: number } }) => n + c.rollup.bookedRevenue, 0)).toBeCloseTo(per.totals.bookedRevenue, 2)
+      expect(cells[0]).toMatchObject({ status: 'booked' })
+    })
+
+    it('narrows to one advertiser: only its windows count in the cells and the revenue table', async () => {
+      const { get } = await seed()
+      const per = (await get('?from=2026-09-20&to=2026-12-18&advertiserId=nestle')).json()
+      const body = (await get('?from=2026-09-20&to=2026-12-18&view=monthly&advertiserId=nestle')).json()
+      expect(body.totals).toEqual(per.totals)
+      expect(body.totals.bookedWindows).toBe(1)
+      expect(body.positions[0].windows.map((w: { rollup: { booked: number } }) => w.rollup.booked)).toEqual([0, 1, 0, 0])
+    })
+
+    it('allows up to 365 days, where Daily and Weekly stop at 92', async () => {
+      const { get } = await seed()
+      const year = await get('?from=2026-09-20&to=2027-09-20&view=monthly')
+      expect(year.statusCode).toBe(200)
+      expect(year.json().windows).toHaveLength(13)
+      expect((await get('?from=2026-09-20&to=2027-09-21&view=monthly')).statusCode).toBe(400)
+      for (const q of ['&view=daily', '&view=weekly', '']) expect((await get(`?from=2026-09-20&to=2027-09-20${q}`)).statusCode).toBe(400)
+      expect((await get('?from=2026-09-20&to=2026-10-20&view=yearly')).statusCode).toBe(400)
+    })
+  })
+
   it('needs a valid range of at most 92 days, and is behind the flag', async () => {
     const { get } = await setup()
     for (const q of ['?from=2026-09-20', '?from=2026-09-20&to=2026-12-31', '?from=2026-09-22&to=2026-09-21']) {

@@ -102,6 +102,14 @@ shape.
   2,408 positions × 92 columns; most of its 26 s under load is building
   and serialising that. If an estate this wide is real, the screen should
   page by display type (a UI change, not attempted here).
+- **Booking schedule, Monthly (26 Oct 2026).** `view=monthly` serves up to 365 days
+  by rolling up per calendar month on the server: one rollup cell per position and
+  month, built from the live bookings (indexed by position) and each window length,
+  with the display type's assumed views read once per type and column. No
+  per-window cells or objects are built, so the response is positions × months
+  (about 2,408 × 12 on shape A) rather than positions × days. It is not yet in
+  the bench thresholds (needs `--calibrate`); the revenue figures equal the
+  per-window path (`booking-schedule.test.ts`).
 - **Available Inventory on shape A is 1.8 s under load** (about 60 ms a
   request): one playlist read and one audience read per slot, 2,408 slots.
   Paging this screen too would fix it; the per-slot reads are already

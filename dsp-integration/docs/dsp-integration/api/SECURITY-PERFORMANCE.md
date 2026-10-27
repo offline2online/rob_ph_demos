@@ -130,7 +130,7 @@ in `apps/api/test/hardening.test.ts`,
 - **Secrets.** AES-256-GCM with a random IV. Secrets are never returned or
   logged, and the authorization header is redacted from logs.
 - **Existing limits.** Pagination is capped at 200. Date ranges are capped
-  at 366 days (inventory) and 92 days (booking schedule).
+  at 366 days (inventory) and 92 days (booking schedule; 365 for `view=monthly`, which the server rolls up per calendar month instead of building a cell per window, 26 Oct 2026).
 - **Billing is idempotent** per reservation.
 - **The bidder timeout covers the body stream too.** A slow body is
   aborted at 300 ms.
