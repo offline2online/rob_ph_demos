@@ -140,7 +140,7 @@
     if (has(a.averageFootfallPerDay)) vac.push(['Average footfall past a display per day', fmtInt(a.averageFootfallPerDay)]);
     if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', Number(a.averageVisibility).toFixed(2)]);
     var s = a.shareOfLoopTime;
-    if (s && has(s.advertiserSlotSeconds) && has(s.loopSeconds) && has(s.percent)) {
+    if (!opts.omitShareOfLoop && s && has(s.advertiserSlotSeconds) && has(s.loopSeconds) && has(s.percent)) {
       vac.push(['Share of loop time', s.advertiserSlotSeconds + 's advertiser slot ÷ ' + s.loopSeconds + 's loop = ' + pct(s.percent)]);
     }
     var sections = [];
@@ -471,9 +471,9 @@
     }
 
     // The display type's name, hoverable for its description and averages when it has a card.
-    function nameLabel(name, displays, dt, attrs) {
+    function nameLabel(name, displays, dt, attrs, cardOpts) {
       var el = h('div', Object.assign({ class: 'sc-label', text: bracketed(name, displays) }, attrs || {}));
-      return dt ? hoverable(el, function () { return displayTypeCard(dt, filters); }) : el;
+      return dt ? hoverable(el, function () { return displayTypeCard(dt, filters, cardOpts); }) : el;
     }
 
     // ----- slot value -----
@@ -490,7 +490,8 @@
         var track = h('div', { class: 'sc-track-in' }, [bar]);
         if (cpm && has(r.floorCpm)) track.appendChild(h('i', { class: 'sc-floor-mark', style: 'left:' + (100 * r.floorCpm / max).toFixed(2) + '%' }));
         var row = h('div', { class: 'sc-row', role: 'listitem' }, [
-          nameLabel(r.name, displaysOf(r), cache.typeMap[r.id]),
+          // Share of loop time is Slot allocation's (supply); Slot value (price) doesn't repeat it.
+          nameLabel(r.name, displaysOf(r), cache.typeMap[r.id], null, { omitShareOfLoop: true }),
           hoverable(h('div', { class: 'sc-track' }, [track]), function () { return slotValueHover(r, filters); }),
           hoverable(h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(vals[i]) }), cpm ? ' CPM' : ' per available slot per day']), function () { return slotValueHover(r, filters); })
         ]);

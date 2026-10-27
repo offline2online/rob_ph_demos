@@ -21,6 +21,9 @@ test('display type card shows the description, operating hours and labelled aver
   ['Connected displays', 'IAB store zone', 'Touch Point', 'Display canvas size (resolution)', 'Display orientation', 'Creative formats'].forEach((k) => assert.strictEqual(val(full, k), undefined, k));
   assert.strictEqual(val(full, 'Operating hours'), '24 hours');
   assert.strictEqual(val(full, 'Share of loop time'), '6s advertiser slot ÷ 60s loop = 10%');
+  const noLoop = SC.displayTypeCard(types.window, RANGE, { omitShareOfLoop: true }); // Slot value's name hover
+  assert.strictEqual(val(noLoop, 'Share of loop time'), undefined);
+  assert.ok(val(noLoop, 'Average footfall past a display per day') && val(noLoop, 'Average visibility adjustment') && val(noLoop, 'Average assumed views (VAC-d) per slot per day'));
   assert.match(text(full), /Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct\./);
   const sparse = SC.displayTypeCard({ id: 's', name: 'Sparse', iabZone: 'Checkout', operatingHours: '08:00-22:00' }, RANGE);
   assert.deepStrictEqual(sparse.sections, []); // a specific time is never shown
