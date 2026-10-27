@@ -1091,6 +1091,40 @@ describe('Advertisers / Inventory', () => {
     await waitFor(() => expect(within(screen.getByLabelText('Available Inventory')).getAllByLabelText(/slot 2: assigned to/).length).toBeGreaterThan(0), { timeout: 10000 })
   }, slow(45000))
 
+  /* Ticket dbvMKyHYMMk3uGzsDZaj (27 Oct 2026): filtering Assigned to by one deal puts its pricing guidance in the filter row. */
+  it('shows a deal\'s flight, total minimum value and total plays in the filter row when Assigned to is filtered to that one deal', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const deal = { id: 'bl_g', name: 'Gatorade takeover', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: '2026-11-01T00:00:00.000Z', activeTo: '2026-11-07T23:59:59.999Z', dealType: 'direct' }
+    const other = { ...deal, id: 'bl_o', name: 'Other deal' }
+    const assigned = (ids: string[]) => ({ partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: ids[0] ?? null, buyersListIds: ids, openAuction: false })
+    const base = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }
+    const items = [
+      { ...base, assignedTo: assigned(['bl_g']) },
+      { ...base, displayTypeId: 'portrait', displayTypeName: 'Portrait', slot: 1, zoneSlot: 1, displayCount: 1, floorCpmOverride: 50, assignedTo: assigned(['bl_g', 'bl_o']) },
+    ]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [deal, other] }, '/api/admin/v1/available-inventory': { ...inv, items } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    expect(within(inventory).queryByTestId('deal-floor-total')).toBeNull()
+    fireEvent.click(await within(inventory).findByLabelText('Assigned to filter', {}, { timeout: 10000 }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Buyers list: Gatorade takeover' }))
+    /* 1,920 plays per window per display x 12 displays x 7 days = 161,280, and 13,440 on the one-display slot. */
+    expect(await within(inventory).findByTestId('deal-plays-total', {}, { timeout: 10000 })).toHaveTextContent('174,720')
+    /* 161.28 x 100 + 13.44 x 50 = 16,800. */
+    expect(within(inventory).getByTestId('deal-floor-total')).toHaveTextContent('USD 16,800')
+    expect(within(inventory).getByTestId('deal-flight')).toHaveTextContent('(7 days)')
+    fireEvent.mouseOver(within(inventory).getByTestId('deal-floor-total'))
+    const tip = await screen.findByTestId('deal-floor-tip')
+    expect(tip).toHaveTextContent('Menu Board — Long Format · slot 2: USD 16,128')
+    expect(tip).toHaveTextContent('Portrait · slot 1: USD 672')
+    fireEvent.mouseOver(within(inventory).getByTestId('deal-plays-total'))
+    expect(await screen.findByTestId('deal-plays-tip')).toHaveTextContent('Portrait · slot 1: 13,440 plays')
+    /* Two deals ticked: the figures go away. */
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Buyers list: Other deal' }))
+    await waitFor(() => expect(within(screen.getByLabelText('Available Inventory')).queryByTestId('deal-floor-total')).toBeNull(), { timeout: 10000 })
+    expect(within(screen.getByLabelText('Available Inventory')).queryByTestId('deal-flight')).toBeNull()
+  }, slow(60000))
+
   /* "Unassigned": the display type has advertiser slots but no physical
      display is playing them (ticket "Available Inventory: playlist-primary
      table (drop Display type column) with Unassigned indicator", 27 Sep

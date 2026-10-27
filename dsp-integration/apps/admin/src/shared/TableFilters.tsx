@@ -125,7 +125,7 @@ export function Funnel({ label, values, chosen, onChange, single }: {
 }
 
 /* The grid-backed set filter: AG Grid holds the chosen values. */
-const SetFilter = forwardRef<unknown, Params>(function SetFilter(props, ref) {
+export const SetFilter = forwardRef<unknown, Params>(function SetFilter(props, ref) {
   const [chosen, setChosen] = useState<string[]>(() => parse(modelText(props.currentParentModel())))
   useImperativeHandle(ref, () => ({ onParentModelChanged: (model: { filter?: string | null } | null) => setChosen(parse(modelText(model))) }))
   return (
