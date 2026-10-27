@@ -14,6 +14,12 @@ describe('Upcoming Campaign Approval triage order', () => {
     }
     expect(triageOrder(rows, approvals).map((r) => r.campaignId)).toEqual(['wait-old', 'wait-new', 'approved-new', 'approved-mid', 'approved-old', 'rejected-never'])
   })
+  it('orders by soonest flight start inside each status, no flight start last, ties by the old order', () => {
+    const rows = [c('wait-late'), c('wait-soon'), c('wait-none'), c('done-late'), c('done-soon'), c('wait-tie-new'), c('wait-tie-old')]
+    const approvals = Object.fromEntries(rows.map((r) => [r.campaignId, ap(r.campaignId.startsWith('wait') ? 'awaiting_approval' : 'approved', r.campaignId === 'wait-tie-old' ? '2026-10-01T00:00:00Z' : '2026-10-02T00:00:00Z')]))
+    const start: Record<string, string> = { 'wait-late': '2026-12-01T00:00:00Z', 'wait-soon': '2026-11-01T00:00:00Z', 'done-late': '2026-12-05T00:00:00Z', 'done-soon': '2026-11-02T00:00:00Z', 'wait-tie-new': '2026-11-20T00:00:00Z', 'wait-tie-old': '2026-11-20T00:00:00Z' }
+    expect(triageOrder(rows, approvals, (r) => start[r.campaignId] ?? null).map((r) => r.campaignId)).toEqual(['wait-soon', 'wait-tie-old', 'wait-tie-new', 'wait-late', 'wait-none', 'done-soon', 'done-late'])
+  })
   it('formats the elapsed snapshot', () => {
     const now = Date.parse('2026-10-08T12:00:00Z')
     expect(elapsedSince('2026-10-08T11:59:40Z', now)).toBe('<1m')
