@@ -4,10 +4,9 @@ Demand health and Targeting & scheduling maturity of the Retail Media Performanc
 
 | Panel | Layout, top to bottom | Source |
 |---|---|---|
-| Advertisers (top 10, "Show all N advertisers") | Demand health, full width | `advertisers` |
+| Advertisers (top 10, "Show all N advertisers"), with Maturity level and Scheduling columns and filters | Demand health, full width | `advertisers` + `maturity` (`table`, joined by advertiser) |
 | Maturity ladder · Scheduling | side by side, stacking at narrow widths | `maturity` (`ladder`, `scheduling`) |
 | Variables in use | full width | `maturity` (`variablesInUse`) |
-| Advertiser targeting & scheduling table | full width | `maturity` (`table`) |
 | Progress over time | full width, last; whole history | `maturity` (`overTime`) |
 
 Each section opens with an 18px/600 header: teal Material Symbol (`handshake`, `stairs`), title, ⓘ, 1px divider.

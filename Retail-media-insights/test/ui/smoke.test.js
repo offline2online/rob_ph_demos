@@ -54,7 +54,7 @@ async function settle(page, ctx) {
   await page.waitForSelector('.sc-table');
   await page.waitForSelector('.sc-row[data-fill]');
   await page.waitForSelector('.dc-adv');
-  await page.waitForSelector('.dc-mat');
+  await page.waitForSelector('.dc-adv .dc-level');
   await page.waitForSelector('[data-tile="sold"]');
   // Once a slot chart panel has rendered (data, empty or error) a screen reader must not hear "busy" any more.
   await page.waitForFunction(() => [...document.querySelectorAll('.sc-body')].every((b) => b.getAttribute('aria-busy') !== 'true'));

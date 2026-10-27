@@ -2416,14 +2416,14 @@ module.exports = {
         const meta = store.advertisers[c.advertiserId] || {};
         a = {
           advertiserId: c.advertiserId, name: meta.name || c.advertiserId, dsp: meta.dsp || null,
-          levels: [], variables: new Map(), campaigns: 0, scheduledCampaigns: 0, schedules: 0, targetedVersions: 0,
+          levels: [], variables: new Map(), campaigns: 0, scheduledCampaigns: 0, scheduledNames: [], schedules: 0, targetedVersions: 0,
         };
         advs.set(c.advertiserId, a);
       }
       a.levels.push(c.level);
       a.campaigns += 1;
       a.targetedVersions += c.targetedVersions;
-      if (c.scheduled) { a.scheduledCampaigns += 1; a.schedules += c.schedules; }
+      if (c.scheduled) { a.scheduledCampaigns += 1; a.schedules += c.schedules; a.scheduledNames.push(c.name || c.id); }
       for (const v of c.variables) a.variables.set(v.label, v);
     }
     const rows = [...advs.values()].map((a) => {
@@ -2435,7 +2435,7 @@ module.exports = {
         level: calc.maturityLevel(a.levels),
         variables: vars,
         personalisationTypes: [...new Set(vars.map((v) => v.personalisationType).filter(Boolean))].sort(),
-        scheduling: { uses: a.scheduledCampaigns > 0, scheduledCampaigns: a.scheduledCampaigns, campaigns: a.campaigns, schedules: a.schedules },
+        scheduling: { uses: a.scheduledCampaigns > 0, scheduledCampaigns: a.scheduledCampaigns, campaigns: a.campaigns, schedules: a.schedules, campaignNames: a.scheduledNames.sort() },
         targetedVersions: a.targetedVersions,
         revenue: cents(revenue.get(a.advertiserId) || 0), // earned revenue, to the cent
       };

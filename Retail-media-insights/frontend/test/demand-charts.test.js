@@ -163,23 +163,36 @@ test('advertiser table: every column sorts both ways, blanks last, no key keeps 
   }
 });
 
-test('targeting table: sorts by Revenue by default and every column sorts both ways', async () => {
-  const rows = DC.tableRows(await get('/maturity'));
-  const rev = (key, dir) => DC.sortAdvertiserRows(rows, key, dir, DC.MAT_COLS).map((r) => r.revenueRaw);
-  const desc = rev('revenue', 'desc');
-  assert.deepStrictEqual(desc, desc.slice().sort((a, b) => b - a));
-  assert.deepStrictEqual(rev('revenue', 'asc'), desc.slice().reverse());
-  DC.MAT_COLS.forEach((c) => {
-    ['asc', 'desc'].forEach((dir) => assert.strictEqual(DC.sortAdvertiserRows(rows, c.key, dir, DC.MAT_COLS).length, rows.length));
+test('Advertisers table: Maturity level and Scheduling join by advertiser, filter across all advertisers, sort with blanks last, hover lists variables and scheduled campaigns', async () => {
+  const adv = await get('/advertisers');
+  const mat = DC.tableRows(await get('/maturity'));
+  const rows = DC.advertiserRows(adv, true, mat);
+  assert.ok(rows.every((r) => r.mat && r.level), 'every advertiser has a maturity record');
+  const blackmores = rows.find((r) => r.name === 'Blackmores');
+  assert.strictEqual(blackmores.mat.scheduling, 'Dayparted · 3 of 4 campaigns');
+  assert.strictEqual(DC.schedulingCellHover(blackmores).names.length, 3, 'one name per scheduled campaign');
+  assert.ok(DC.levelCellHover(blackmores).sections[0].rows[0][1].includes('Gender (Computer Vision)'));
+  const unscheduled = rows.find((r) => r.mat.scheduling === 'Not used');
+  assert.match(DC.schedulingCellHover(unscheduled).text, /No campaigns use scheduling/);
+  assert.strictEqual(DC.advertiserRows(adv, false, mat).length, adv.top.length, 'no filter: the top 10');
+  const none = { level: '', variable: '', scheduling: '' };
+  assert.strictEqual(DC.advertiserRows(adv, true, mat, none).length, rows.length);
+  const loc = DC.advertiserRows(adv, true, mat, { ...none, level: 'Localised' });
+  assert.ok(loc.length && loc.every((r) => r.level === 'Localised'));
+  assert.ok(DC.advertiserRows(adv, true, mat, { ...none, scheduling: 'none' }).every((r) => r.scheduled === 0));
+  assert.deepStrictEqual(DC.advertiserRows(adv, true, mat, { level: 'Localised', variable: '', scheduling: 'uses' }).map((r) => r.name), ['Nestlé Health Science']);
+  assert.strictEqual(DC.advertiserRows(adv, true, null, { ...none, level: 'Localised' }).length, 0, 'no maturity data matches no filter');
+  ['level', 'scheduling'].forEach((key) => {
+    ['asc', 'desc'].forEach((dir) => assert.strictEqual(DC.sortAdvertiserRows(rows, key, dir).length, rows.length));
   });
-  const names = DC.sortAdvertiserRows(rows, 'name', 'asc', DC.MAT_COLS).map((r) => r.name);
-  assert.deepStrictEqual(names, names.slice().sort((a, b) => a.localeCompare(b)));
+  const byLevel = DC.sortAdvertiserRows(rows, 'level', 'desc').map((r) => DC.LEVELS.indexOf(r.level));
+  assert.deepStrictEqual(byLevel, byLevel.slice().sort((a, b) => b - a));
 });
 
 test('Advertisers table has no iROAS column (Sales uplift is future work)', async () => {
   const adv = await get('/advertisers');
   assert.ok(!DC.ADV_COLS.some((c) => c.key === 'iroas'));
-  assert.strictEqual(DC.ADV_COLS[DC.ADV_COLS.length - 1].key, 'effectiveCpm');
+  assert.deepStrictEqual(DC.ADV_COLS.slice(-3).map((c) => c.key), ['effectiveCpm', 'level', 'scheduling']);
   for (const r of adv.all) assert.ok(!('iroas' in r));
   assert.ok(!('posData' in adv));
 });
