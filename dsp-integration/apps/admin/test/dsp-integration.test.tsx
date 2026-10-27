@@ -943,12 +943,19 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
   }, slow(45000))
 })
 
-describe('Booking schedule (not in the initial release)', () => {
-  it('has no Booking schedule button on Advertisers / Inventory', async () => {
+describe('Booking schedule link on Advertisers / Inventory', () => {
+  it('shows View booking schedule top right of Available Inventory and opens the schedule in a new tab (ticket VnF4Dd7ISHccn1z03nW6)', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
-    expect(await screen.findByLabelText('Available Inventory')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Booking schedule/ })).not.toBeInTheDocument()
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const button = screen.getByRole('button', { name: 'View booking schedule' })
+    /* Above the table, not inside it. */
+    expect(inventory.contains(button)).toBe(false)
+    expect(button.compareDocumentPosition(inventory) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    fireEvent.click(button)
+    expect(open).toHaveBeenCalledWith(expect.stringMatching(/\/booking-schedule$/), '_blank', 'noopener')
+    open.mockRestore()
   })
 })
 
