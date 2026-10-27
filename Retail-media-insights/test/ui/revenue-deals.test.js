@@ -54,6 +54,8 @@ for (const width of [1163, 390]) {
       const est = await page.$eval('.rd-seg-est', (e) => { const s = getComputedStyle(e); return [s.backgroundColor, s.borderTopColor]; });
       assert.deepEqual(est, ['rgb(238, 244, 250)', 'rgb(122, 167, 214)']);
 
+      // Direct advertiser is its own source (the Direct chip), so it is not offered in the revenue chart's Deal type dropdown.
+      assert.deepEqual(await page.$$eval('.rd-controls .rd-ctl option', (o) => o.map((x) => x.textContent)), ['All deal types', 'Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
       await page.click('.rd-chip:has-text("The Trade Desk")');
       await page.click('.rd-chip:has-text("Amazon DSP")');
       await page.waitForFunction(() => document.querySelectorAll('.rd-legend-item').length === 14);
