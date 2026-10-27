@@ -2848,6 +2848,21 @@ export interface components {
                  * @enum {string|null}
                  */
                 storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
+                /** @description The slot's name (its label) on the display type. What the Slots hover shows beside "(slot N)". Kept on an archived deal; absent from a deal archived before 27 Oct 2026. */
+                position?: string;
+                /** @description The playlist the slot plays; the em dash when none. Kept on an archived deal; absent from a deal archived before 27 Oct 2026. */
+                playlistName?: string;
+                /**
+                 * @description The display type's orientation. Kept on an archived deal; absent from a deal archived before 27 Oct 2026.
+                 * @enum {string}
+                 */
+                orientation?: "landscape" | "portrait";
+                /** @description Displays on the display type when the figures were taken. Kept on an archived deal; absent from a deal archived before 27 Oct 2026. */
+                displayCount?: number;
+                /** @description Plays per display per window when the figures were taken (the figure behind the Details hover's plays and value). Kept on an archived deal; absent from a deal archived before 27 Oct 2026. */
+                playsPerWindow?: number;
+                /** @description The slot's play window (billing unit) in hours when the figures were taken. Kept on an archived deal; absent from a deal archived before 27 Oct 2026. */
+                windowHours?: number;
             }[];
             /** @description The version of the deal's mutable terms (rate/floor, committed plays, delivery term, auction window, invited buyers and categories). Starts at 1 and goes up by one on every saved change to those terms; the deal ID and deal type never change. The history is `GET .../term-versions`. */
             readonly termVersion: number;

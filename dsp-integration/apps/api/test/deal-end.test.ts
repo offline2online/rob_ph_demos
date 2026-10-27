@@ -35,6 +35,8 @@ describe('deal end of flight', () => {
     expect(after.archivedAt).toBe(ctx.clock().toISOString())
     /* The slots are released, but the archived deal still says which it was in (ticket VHuSQiHQoGCPPvreusgK). */
     expect(after.assignedSlots).toEqual([expect.objectContaining({ positionId: 'portrait.s1', displayTypeName: expect.any(String) })])
+    /* ...and what the Slots and Details hovers read of each slot, so they stay as full as a live deal's (ticket TeKdyE4cSeb9EQ9LIJeX). */
+    expect(after.assignedSlots[0]).toMatchObject({ position: expect.any(String), playlistName: expect.any(String), orientation: expect.stringMatching(/^(landscape|portrait)$/), displayCount: expect.any(Number), playsPerWindow: expect.any(Number), windowHours: expect.any(Number) })
     expect(assignedOf((await ctx.displayTypes.get('portrait'))!.phExtensions!.slots[0]).buyersListIds).toEqual([])
     const trail = (await ctx.sspAudit.query({ objectType: 'buyers_list', objectId: deal.id })).items
     expect(trail.find((e) => e.field === 'archivedBy')).toMatchObject({ newValue: 'system', actor: { type: 'agent', id: 'system' } })

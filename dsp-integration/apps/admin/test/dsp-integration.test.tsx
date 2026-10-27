@@ -1619,7 +1619,7 @@ describe('Advertisers / Inventory', () => {
   it('archives a deal from its row and lists archived deals under View Archived Deals', async () => {
     const base = { invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', description: '', status: 'draft' }
     const live = { ...base, status: 'shared', id: 'bl_1', dealId: 'PH-LIVE000001', name: 'Live deal' }
-    const old = { ...base, id: 'bl_2', dealId: 'PH-OLD0000001', name: 'Ended deal', status: 'archived', archivedAt: '2026-10-01T00:00:00.000Z', archivedBy: 'system', assignedSlots: [{ positionId: 'portrait.s1', label: 'Portrait — Hero', displayTypeName: 'Portrait', slot: 1, zoneName: null, zoneSlot: 1, description: 'Entrance', storeZone: null }, { positionId: 'portrait.s2', label: 'Portrait — slot 2', displayTypeName: 'Portrait', slot: 2, zoneName: null, zoneSlot: 2, description: null, storeZone: null }] }
+    const old = { ...base, id: 'bl_2', dealId: 'PH-OLD0000001', name: 'Ended deal', status: 'archived', archivedAt: '2026-10-01T00:00:00.000Z', archivedBy: 'system', activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2026-09-10T00:00:00.000Z', assignedSlots: [{ positionId: 'portrait.s1', label: 'Portrait — Hero', displayTypeName: 'Portrait', slot: 1, zoneName: null, zoneSlot: 1, description: 'Entrance', storeZone: null, position: 'Hero', playlistName: 'Portrait Playlist', orientation: 'portrait', displayCount: 2, playsPerWindow: 10, windowHours: 24 }, { positionId: 'portrait.s2', label: 'Portrait — slot 2', displayTypeName: 'Portrait', slot: 2, zoneName: null, zoneSlot: 2, description: null, storeZone: null }] }
     const calls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST' && url.endsWith('/archive')) {
@@ -1646,6 +1646,14 @@ describe('Advertisers / Inventory', () => {
     /* The slots the deal held when it was archived, one per line (ticket VHuSQiHQoGCPPvreusgK). */
     expect(within(archive).getByText('Portrait (Entrance), slot 1')).toBeInTheDocument()
     expect(within(archive).getByText('Portrait, slot 2')).toBeInTheDocument()
+    /* The hovers keep the slots' details once the slots are released (ticket TeKdyE4cSeb9EQ9LIJeX): Details totals the flight over the kept slots, Slots names each one. */
+    fireEvent.mouseOver(within(archive).getByTestId('details-summary-bl_2'))
+    const tip = await screen.findByTestId('details-tip-bl_2')
+    expect(within(tip).queryByText('No assigned slots.')).toBeNull()
+    expect(within(tip).getByTestId('details-slot-bl_2-0')).toHaveTextContent('Portrait · slot 1: 200 plays')
+    expect(within(tip).getByTestId('details-slot-bl_2-1')).toHaveTextContent('plays n/a')
+    fireEvent.mouseOver(within(archive).getByTestId('archived-slots-bl_2'))
+    expect(await screen.findByTestId('slots-row-bl_2-0-0')).toHaveTextContent('Hero (slot 1) · 10 (20 total) plays per window')
     expect(archive.querySelectorAll('.ag-floating-filter').length).toBe(8)
     /* One page header, with the back link beside it and the explanation in its tooltip. */
     expect(screen.getAllByText('Archived deals')).toHaveLength(1)
