@@ -1088,14 +1088,14 @@ const loopsPerHourOf = (type) => Math.round(3600 / loopSecondsOf(type));
 const ADVERTISER_PROFILES = [
   { id: 'adv-blackmores', name: 'Blackmores', dsp: 'DV360', weight: 0.15, open: 0.20 },
   { id: 'adv-haleon', name: 'Haleon', dsp: 'The Trade Desk', weight: 0.14, open: 0.45 },
-  { id: 'adv-loreal-paris', name: "L'Oréal Paris", dsp: 'DV360', weight: 0.12, open: 0.40 },
-  { id: 'adv-vitabiotics', name: 'Vitabiotics', dsp: 'The Trade Desk', weight: 0.10, open: 0.30 },
+  { id: 'adv-loreal-paris', name: "L'Oréal Paris", dsp: 'Direct', weight: 0.12, open: 0.40 },
+  { id: 'adv-vitabiotics', name: 'Vitabiotics', dsp: 'Direct', weight: 0.10, open: 0.30 },
   { id: 'adv-bayer-consumer-health', name: 'Bayer Consumer Health', dsp: 'Amazon DSP', weight: 0.09, open: 0.40 },
   { id: 'adv-reckitt', name: 'Reckitt', dsp: 'Amazon DSP', weight: 0.08, open: 0.70 },
   { id: 'adv-kenvue', name: 'Kenvue', dsp: 'DV360', weight: 0.08, open: 0.50 },
-  { id: 'adv-procter-gamble', name: 'Procter & Gamble', dsp: 'The Trade Desk', weight: 0.07, open: 0.60 },
+  { id: 'adv-procter-gamble', name: 'Procter & Gamble', dsp: 'Direct', weight: 0.07, open: 0.60 },
   { id: 'adv-unilever', name: 'Unilever', dsp: 'Amazon DSP', weight: 0.06, open: 0.80 },
-  { id: 'adv-nestle-health-science', name: 'Nestlé Health Science', dsp: 'DV360', weight: 0.06, open: 0.05 },
+  { id: 'adv-nestle-health-science', name: 'Nestlé Health Science', dsp: 'Direct', weight: 0.06, open: 0.05 },
   { id: 'adv-perrigo', name: 'Perrigo', dsp: 'Direct', weight: 0.05, open: 0.80 },
 ];
 const ADVERTISERS = ADVERTISER_PROFILES.map((a) => a.id);
@@ -1110,7 +1110,6 @@ const OPEN_AUCTION_DEAL = 'd10';
 const SEAT_CATALOG = {
   'ttd-groupm-au': { name: 'GroupM AU', dsp: 'The Trade Desk', synced: true },
   'ttd-haleon-inhouse': { name: 'Haleon In-house', dsp: 'The Trade Desk', synced: true },
-  'ttd-wavemaker-au': { name: 'Wavemaker AU', dsp: 'The Trade Desk', synced: true },
   'dv-omd-au': { name: 'OMD AU', dsp: 'DV360', synced: true },
   'dv-publicis-au': { name: 'Publicis Media AU', dsp: 'DV360', synced: true },
   'dv-mindshare-au': { name: 'Mindshare AU', dsp: 'DV360', synced: false },
@@ -1120,15 +1119,11 @@ const SEAT_CATALOG = {
 const SEAT_PLAN = {
   'adv-blackmores': [{ seatId: 'dv-omd-au', weight: 1 }],
   'adv-haleon': [{ seatId: 'ttd-groupm-au', weight: 0.6 }, { seatId: 'ttd-haleon-inhouse', weight: 0.4 }],
-  'adv-loreal-paris': [{ seatId: 'dv-publicis-au', weight: 0.7 }, { seatId: 'dv-omd-au', weight: 0.3 }],
-  'adv-vitabiotics': [{ seatId: 'ttd-groupm-au', weight: 1 }],
   'adv-bayer-consumer-health': [{ seatId: 'amz-dentsu-au', weight: 1 }],
   'adv-reckitt': [{ seatId: 'amz-dentsu-au', weight: 0.5 }, { seatId: 'amz-reckitt-desk', weight: 0.5 }],
   'adv-kenvue': [{ seatId: 'dv-mindshare-au', weight: 1, minAge: 45 }, { seatId: 'dv-publicis-au', weight: 1, maxAge: 45 }],
-  'adv-procter-gamble': [{ seatId: 'ttd-groupm-au', weight: 0.5 }, { seatId: 'ttd-wavemaker-au', weight: 0.5 }],
   'adv-unilever': [{ seatId: 'amz-dentsu-au', weight: 1 }],
-  'adv-nestle-health-science': [{ seatId: 'dv-omd-au', weight: 1 }],
-  // adv-perrigo buys direct: no seat.
+  // The direct advertisers (adv-perrigo, adv-loreal-paris, adv-vitabiotics, adv-procter-gamble, adv-nestle-health-science) have no seat.
 };
 const ADVERTISER_SEATS = Object.fromEntries(Object.entries(SEAT_PLAN).map(([id, plan]) => [id, [...new Set(plan.map((e) => e.seatId))]]));
 // The seat that won a billing row: a deterministic hash of the row's keys (no random draw, so every other figure is unchanged).
@@ -1154,29 +1149,30 @@ const DEAL_SPECS = [
     'Guaranteed Window Portrait plays for the Blackmores Immune winter launch, 15 Sep – 15 Nov.'],
   ['d2', 'Sensodyne always-on', 'Programmatic guaranteed', 8, ['adv-haleon'], slotsOf('queue', [1]), 0.95,
     'Always-on guaranteed Queue Screen plays for Haleon Sensodyne at the checkout.'],
-  ['d3', 'Revitalift first look', 'Preferred deal', 8.8, ['adv-loreal-paris'], slotsOf('endcap', [1, 2]), 0.72,
-    "First look for L'Oréal Paris on Endcap Shelf-edge slots at a fixed CPM."],
-  ['d4', 'Dispensary first look', 'Preferred deal', 8.2, ['adv-kenvue'], slotsOf('dispensary', [1]), 0.55,
-    'First look for Kenvue on Dispensary Screen slots at a fixed CPM.'],
-  ['d5', 'Health & wellness windows', 'Private auction', 7.5, ['adv-blackmores', 'adv-haleon', 'adv-vitabiotics', 'adv-bayer-consumer-health', 'adv-nestle-health-science'], slotsOf('window', [3, 4, 5]), 0.92,
-    'Health & wellness brands bidding on Window Portrait slots against the deal floor.'],
-  ['d6', 'Dispensary screens', 'Private auction', 7, ['adv-blackmores', 'adv-haleon', 'adv-bayer-consumer-health', 'adv-reckitt'], slotsOf('dispensary', [2, 3, 4]), 0.84,
-    'Health brands bidding on Dispensary Screen slots beside the pharmacy counter.'],
-  ['d7', 'Beauty endcaps', 'Private auction', 6, ['adv-loreal-paris', 'adv-kenvue'], slotsOf('endcap', [3, 4]), 0.52,
-    'Beauty brands bidding on Endcap Shelf-edge slots at the gondola ends.'],
-  ['d8', 'Queue screens', 'Private auction', 5.5, ['adv-haleon', 'adv-procter-gamble', 'adv-unilever'], slotsOf('queue', [2]), 0.9,
-    'Everyday brands bidding on Queue Screen slots at the checkout.'],
-  ['d9', 'Store-wide wellness', 'Private auction', 6.5, ['adv-vitabiotics', 'adv-nestle-health-science'], slotsOf('endcap', [5]), 0.56,
-    'Wellness brands bidding on Endcap Shelf-edge slots across the store.'],
-  // A direct advertiser (README "Direct advertisers"): the retailer sells the slot straight to the brand through PH, so there is no DSP,
-  // no seat and no deal ID. Revenue is billed at the agreed CPM and counted as 'Direct' in every DSP breakdown.
+  // Launch deal types (decided 27 Oct 2026): Programmatic guaranteed, Direct advertiser and the Open auction only, with 7 of the
+  // 10 named deals sold direct. A direct deal has no DSP, no seat and no deal ID: the retailer sells the slot straight to the brand
+  // through PH and bills the agreed CPM, counted as 'Direct' in every DSP breakdown.
+  ['d3', 'Revitalift takeover', 'Direct advertiser', 8.8, ['adv-loreal-paris'], slotsOf('endcap', [1, 2]), 0.72,
+    "Endcap Shelf-edge slots owned by L'Oréal Paris, sold directly by the retailer at an agreed CPM. No DSP or deal ID."],
+  ['d4', 'Dispensary guaranteed', 'Programmatic guaranteed', 8.2, ['adv-reckitt'], slotsOf('dispensary', [1]), 0.55,
+    'Guaranteed Dispensary Screen plays for Reckitt beside the pharmacy counter.'],
+  ['d5', 'Health & wellness windows', 'Direct advertiser', 7.5, ['adv-vitabiotics', 'adv-nestle-health-science', 'adv-perrigo'], slotsOf('window', [3, 4, 5]), 0.92,
+    'Window Portrait slots sold directly by the retailer to health & wellness brands at an agreed CPM. No DSP or deal ID.'],
+  ['d6', 'Dispensary screens', 'Direct advertiser', 7, ['adv-perrigo', 'adv-nestle-health-science', 'adv-vitabiotics'], slotsOf('dispensary', [2, 3, 4]), 0.84,
+    'Dispensary Screen slots beside the pharmacy counter, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
+  ['d7', 'Beauty endcaps', 'Direct advertiser', 6, ['adv-loreal-paris', 'adv-procter-gamble'], slotsOf('endcap', [3, 4]), 0.52,
+    'Endcap Shelf-edge slots at the gondola ends, sold directly by the retailer to beauty brands at an agreed CPM. No DSP or deal ID.'],
+  ['d8', 'Queue screens', 'Direct advertiser', 5.5, ['adv-procter-gamble', 'adv-perrigo'], slotsOf('queue', [2]), 0.9,
+    'Queue Screen slots at the checkout, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
+  ['d9', 'Store-wide wellness', 'Direct advertiser', 6.5, ['adv-vitabiotics', 'adv-nestle-health-science'], slotsOf('endcap', [5]), 0.56,
+    'Endcap Shelf-edge slots across the store, sold directly by the retailer to wellness brands at an agreed CPM. No DSP or deal ID.'],
   ['d11', 'Perrigo — pharmacy takeover', 'Direct advertiser', 6, ['adv-perrigo'], slotsOf('dispensary', [5]), 0.56,
     'Dispensary Screen slot owned by Perrigo, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
 ];
 // Fill of the positions no deal assigns (the open auction), set so each type's overall sell-through lands on its target:
 // Window and Queue about 89% (amber), Dispensary about 61%, Endcap about 56%.
 const OPEN_FILL = { window: 0.82, queue: 0.82, dispensary: 0.05, endcap: 0.32 };
-const FLIGHTS = { d1: { start: '2026-09-15', end: '2026-11-15', pacing: 0.93 }, d2: { start: '2026-08-01', end: '2026-12-31', pacing: 1.01 } };
+const FLIGHTS = { d1: { start: '2026-09-15', end: '2026-11-15', pacing: 0.93 }, d2: { start: '2026-08-01', end: '2026-12-31', pacing: 1.01 }, d4: { start: '2026-09-01', end: '2026-12-15', pacing: 0.97 } };
 const RESERVE_UNTIL = '2026-12-31';
 
 // One deal ID per DSP with an invited buyer: PH- plus 10 characters, minted deterministically from the unambiguous
@@ -2029,7 +2025,7 @@ module.exports = {
 const calc = require('../calc');
 const { displayTypeFacts, hoverCard } = require('../display-types');
 const { dealIdsFor, slotKey, slotsWonComplete, RETENTION_DAYS } = require('../dealing');
-const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
+const { MIN_OTHER_BUYERS_FOR_WINNING_CPM, DIRECT } = require('../constants');
 const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, cents, winningRange } = require('../advertiser-view');
 
 // Advertiser "Your deals by display type": one group per display type the advertiser's deals are on (shopper-journey
@@ -2085,7 +2081,8 @@ module.exports = {
     for (const r of ownRows) typeIds.add(r.displayTypeId);
     // Open auction: the display types the advertiser's campaigns run on (within its scope), plus any it has won open plays on.
     const openTypeIds = new Set();
-    store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypeIds.add(t); });
+    // A direct advertiser buys its slots from the retailer, not through a DSP, so it never takes part in the open auction.
+    if (((store.advertisers || {})[me] || {}).dsp !== DIRECT) store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypeIds.add(t); });
     for (const t of openMine.keys()) openTypeIds.add(store.typeIds[t]);
     for (const t of [...openTypeIds]) if ((inScope && !inScope.has(t)) || !known[t]) openTypeIds.delete(t); else typeIds.add(t);
     for (const t of [...typeIds]) if ((inScope && !inScope.has(t)) || !known[t]) typeIds.delete(t);
@@ -2278,7 +2275,7 @@ module.exports = {
   "src/routes/delivery.js": function (module, exports, require) {
 const calc = require('../calc');
 const { FilterError } = require('../filters');
-const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
+const { MIN_OTHER_BUYERS_FOR_WINNING_CPM, DIRECT } = require('../constants');
 const { addDays, eachDay, dayDiff, dayNumber, dealsOf } = require('../dealing');
 const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsDelivered, cents, winningRange } = require('../advertiser-view');
 
@@ -2342,7 +2339,9 @@ module.exports = {
 
     // Open auction: the display types the advertiser's campaigns run on (within its scope), plus any it has won on.
     const inScope = filters.displayTypeIds ? new Set(filters.displayTypeIds) : null;
-    store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypes.add(t); });
+    // A direct advertiser buys its slots from the retailer, not through a DSP, so it never takes part in the open auction.
+    const direct = ((store.advertisers || {})[me] || {}).dsp === DIRECT;
+    if (!direct) store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypes.add(t); });
     for (const t of [...openTypes]) if ((inScope && !inScope.has(t)) || !store.catalog.displayTypes[t]) openTypes.delete(t);
     const floors = [...openTypes].map((t) => store.catalog.displayTypes[t].floorCpm).filter((v) => v != null);
 

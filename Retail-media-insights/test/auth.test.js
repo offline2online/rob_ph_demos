@@ -122,13 +122,13 @@ test('POST is 405 for an authenticated caller and 401 without a token', async ()
 });
 
 test('an advertiser on an opted-in route gets only its own data, whatever advertiserIds says', async () => {
-  const t = tok('advertiser', 'adv-unilever');
+  const t = tok('advertiser', 'adv-reckitt');
   const routes = optIn('deals', 'advertisers', 'maturity');
-  for (const other of ['', '&advertiserIds=adv-haleon', '&advertiserIds[]=adv-haleon&advertiserIds[]=adv-blackmores', '&advertiserIds=adv-haleon,adv-unilever']) {
+  for (const other of ['', '&advertiserIds=adv-haleon', '&advertiserIds[]=adv-haleon&advertiserIds[]=adv-blackmores', '&advertiserIds=adv-haleon,adv-reckitt']) {
     const adv = (await call(`/advertisers?${Q}${other}`, t, { routes })).body;
-    assert.deepEqual(adv.all.map((a) => a.advertiserId), ['adv-unilever'], other);
+    assert.deepEqual(adv.all.map((a) => a.advertiserId), ['adv-reckitt'], other);
     const deals = (await call(`/deals?${Q}${other}`, t, { routes })).body;
-    assert.ok(deals.rows.length > 0 && deals.rows.every((d) => d.advertisers.every((a) => a.advertiserId === 'adv-unilever')), other);
+    assert.ok(deals.rows.length > 0 && deals.rows.every((d) => d.advertisers.every((a) => a.advertiserId === 'adv-reckitt')), other);
     const text = JSON.stringify([adv, deals, (await call(`/maturity?${Q}${other}`, t, { routes })).body]);
     for (const name of ['Acme', 'Blackmores']) assert.ok(!text.includes(name), `${name} leaked with ${other}`);
   }

@@ -17,7 +17,7 @@ test('both metric tiles start on and the last one on cannot be switched off', ()
 
 test('Deal drop-down: All deals, Open auction, then each deal as name (type)', async () => {
   const o = AV.dealOptions(await mine('/delivery'));
-  assert.deepStrictEqual(o.map((x) => x.label), ['All deals', 'Open auction', 'Immune — winter launch (Programmatic guaranteed)', 'Health & wellness windows (Private auction)', 'Dispensary screens (Private auction)']);
+  assert.deepStrictEqual(o.map((x) => x.label), ['All deals', 'Open auction', 'Immune — winter launch (Programmatic guaranteed)']);
   assert.strictEqual(o[0].value, '');
 });
 
@@ -35,7 +35,7 @@ test('day hover: totals, a block per deal, then change vs previous day', async (
   const keys = t.rows.map((r) => r[0]);
   assert.strictEqual(keys[0], 'Plays won'); assert.strictEqual(keys[1], 'Spend');
   assert.deepStrictEqual(t.rows.filter((r) => r[2] === 'head').map((r) => r[0]),
-    ['Immune — winter launch · Programmatic guaranteed', 'Health & wellness windows · Private auction', 'Dispensary screens · Private auction', 'Open auction · Open auction']);
+    ['Immune — winter launch · Programmatic guaranteed', 'Open auction · Open auction']);
   assert.deepStrictEqual(keys.slice(-2), ['Plays won vs previous day', 'Spend vs previous day']);
   assert.match(t.rows[t.rows.length - 2][1], /^(▲|▼) \d+%$|^0%$/);
   const none = AV.dayTooltip({ date: '2026-09-12', playsWon: 1, spend: 1, deals: [], vsPreviousDay: {} });
@@ -87,7 +87,7 @@ test('deal hover: description and only the advertiser’s own DSP deal ID', asyn
 });
 
 test('share hover: plays won, all plays, advertiser count — never names', async () => {
-  const deal = (await mine('/deals-by-display-type')).groups[0].deals.find((d) => d.dealType === 'Private auction');
+  const deal = (await mine('/deals-by-display-type')).groups[0].deals.find((d) => d.dealType !== 'Open auction');
   const t = AV.shareTooltip({ ...deal, share: { playsWon: 5, allPlays: 20, advertisersOnDeal: 3 } }, 'Window Portrait');
   assert.strictEqual(t.title, `${deal.name} · Window Portrait`);
   assert.deepStrictEqual(t.rows.map((r) => r[0]), ['Plays you won', 'All plays on this deal here', 'Advertisers on the deal']);

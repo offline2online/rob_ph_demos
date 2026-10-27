@@ -106,5 +106,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 - An advertiser login cannot retrieve any other advertiser's data or downtime via UI or API (pen-tested).
 - All README "never show" rules pass a UI review checklist.
 
+- Launch sample data (27 Oct 2026): the example retailer sells only Programmatic guaranteed, Direct advertiser and the Open auction, with 7 of its 10 named deals direct. A direct advertiser takes part in no auction, so its Delivery and Your deals by display type show no Open auction. Every calculation (Slot value, Missed revenue & fill, Slot allocation, Inventory sold, Yield, Revenue) includes direct revenue and plays once (`test/direct-audit.test.js`).
+
 ## 9. Open questions carried into the project
 README open questions 1–6, plus: does the analytics service read DSP Integration's data store directly or via its API?

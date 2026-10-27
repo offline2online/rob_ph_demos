@@ -2,7 +2,7 @@
 const calc = require('../calc');
 const { displayTypeFacts, hoverCard } = require('../display-types');
 const { dealIdsFor, slotKey, slotsWonComplete, RETENTION_DAYS } = require('../dealing');
-const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
+const { MIN_OTHER_BUYERS_FOR_WINNING_CPM, DIRECT } = require('../constants');
 const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, cents, winningRange } = require('../advertiser-view');
 
 // Advertiser "Your deals by display type": one group per display type the advertiser's deals are on (shopper-journey
@@ -58,7 +58,8 @@ module.exports = {
     for (const r of ownRows) typeIds.add(r.displayTypeId);
     // Open auction: the display types the advertiser's campaigns run on (within its scope), plus any it has won open plays on.
     const openTypeIds = new Set();
-    store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypeIds.add(t); });
+    // A direct advertiser buys its slots from the retailer, not through a DSP, so it never takes part in the open auction.
+    if (((store.advertisers || {})[me] || {}).dsp !== DIRECT) store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypeIds.add(t); });
     for (const t of openMine.keys()) openTypeIds.add(store.typeIds[t]);
     for (const t of [...openTypeIds]) if ((inScope && !inScope.has(t)) || !known[t]) openTypeIds.delete(t); else typeIds.add(t);
     for (const t of [...typeIds]) if ((inScope && !inScope.has(t)) || !known[t]) typeIds.delete(t);

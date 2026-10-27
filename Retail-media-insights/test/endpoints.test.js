@@ -85,17 +85,18 @@ test('yield: one row per connected DSP, then Direct, in standard order; CPM reco
     assert.ok(Math.abs(row.earnedRevenue - rev) < 0.01);
     assert.ok(Math.abs(row.effectiveCpm - rev / (views / 1000)) < 0.01);
   }
-  const one = await get(`/yield?${Q}&dealType=Preferred deal`);
-  assert.equal(one.dealType, 'Preferred deal');
-  // The Preferred deals (d3 $8.80, d4 $8.20) are both bought through DV360, at their fixed CPMs.
-  const dv = one.rows.find((r) => r.dsp === 'DV360').effectiveCpm;
-  assert.ok(dv > 8.2 && dv < 8.8, `blended ${dv}`);
-  assert.equal(one.rows.find((r) => r.dsp === 'The Trade Desk').effectiveCpm, null);
+  const one = await get(`/yield?${Q}&dealType=Programmatic guaranteed`);
+  assert.equal(one.dealType, 'Programmatic guaranteed');
+  // The three Programmatic guaranteed deals are each bought through their own DSP, at their fixed CPMs (d1 $9.50, d2 $8.00, d4 $8.20).
+  const cpmOf = (dsp) => one.rows.find((r) => r.dsp === dsp).effectiveCpm;
+  assert.deepEqual(['DV360', 'The Trade Desk', 'Amazon DSP'].map((d) => Math.round(cpmOf(d) * 10) / 10), [9.5, 8, 8.2]);
   assert.equal(one.rows.find((r) => r.dsp === 'Direct').effectiveCpm, null);
-  // Direct advertiser deals are the only deals billed under Direct, at their agreed CPM.
+  // Direct advertiser deals are the only deals billed under Direct, at their agreed CPMs ($5.50 to $8.80).
   const direct = (await get(`/yield?${Q}&dealType=Direct advertiser`)).rows;
-  assert.equal(direct.find((r) => r.dsp === 'Direct').effectiveCpm, 6);
+  const blended = direct.find((r) => r.dsp === 'Direct').effectiveCpm;
+  assert.ok(blended > 5.5 && blended < 8.8, `blended ${blended}`);
   assert.ok(direct.filter((r) => r.dsp !== 'Direct').every((r) => r.effectiveCpm === null));
+  assert.equal((await get(`/yield?${Q}&dealType=Open auction`)).rows.find((r) => r.dsp === 'Direct').effectiveCpm, null, 'a direct advertiser never buys in the open auction');
 }));
 
 test('yield rejects unknown or multiple deal types', async () => {
@@ -120,7 +121,7 @@ test('summary previous period: equal-length period before the range, same filter
 test('direct advertisers: Direct is its own source in Revenue and the summary, part of earned revenue and not on top of it', () => withServer(async (get) => {
   const rev = (await get(`/revenue?${Q}&granularity=month`)).rows;
   const direct = rev.filter((r) => r.dsp === 'Direct');
-  assert.ok(direct.length && direct.every((r) => r.dealType === 'Direct advertiser' && r.advertisers === 1), 'only direct deals are billed under Direct');
+  assert.ok(direct.length && direct.every((r) => r.dealType === 'Direct advertiser'), 'only direct deals are billed under Direct');
   assert.ok(rev.filter((r) => r.dealType === 'Direct advertiser').every((r) => r.dsp === 'Direct'));
   const only = (await get(`/revenue?${Q}&granularity=month&dsps=Direct`)).rows;
   assert.deepEqual(only.map((r) => r.dsp), only.map(() => 'Direct'));
@@ -129,7 +130,7 @@ test('direct advertisers: Direct is its own source in Revenue and the summary, p
   const summary = await get(`/summary?${Q}`);
   const billed = raw.billing.filter((b) => b.date >= '2026-09-12' && b.date <= '2026-10-11' && b.settled && b.dsp === 'Direct').reduce((n, b) => n + b.revenue, 0);
   assert.ok(Math.abs(summary.direct.earnedRevenue - billed) < 0.01);
-  assert.equal(summary.direct.advertisers, 1);
+  assert.equal(summary.direct.advertisers, 5, 'five of the eleven example advertisers buy direct');
   assert.equal(summary.direct.sharePercent, Math.round((summary.direct.earnedRevenue / summary.earnedRevenue) * 100));
   assert.ok(summary.direct.earnedRevenue < summary.earnedRevenue);
   const noDirect = await get(`/summary?${Q}&dsps=DV360,The Trade Desk,Amazon DSP`);

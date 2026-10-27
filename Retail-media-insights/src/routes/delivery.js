@@ -1,7 +1,7 @@
 'use strict';
 const calc = require('../calc');
 const { FilterError } = require('../filters');
-const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
+const { MIN_OTHER_BUYERS_FOR_WINNING_CPM, DIRECT } = require('../constants');
 const { addDays, eachDay, dayDiff, dayNumber, dealsOf } = require('../dealing');
 const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsDelivered, cents, winningRange } = require('../advertiser-view');
 
@@ -65,7 +65,9 @@ module.exports = {
 
     // Open auction: the display types the advertiser's campaigns run on (within its scope), plus any it has won on.
     const inScope = filters.displayTypeIds ? new Set(filters.displayTypeIds) : null;
-    store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypes.add(t); });
+    // A direct advertiser buys its slots from the retailer, not through a DSP, so it never takes part in the open auction.
+    const direct = ((store.advertisers || {})[me] || {}).dsp === DIRECT;
+    if (!direct) store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypes.add(t); });
     for (const t of [...openTypes]) if ((inScope && !inScope.has(t)) || !store.catalog.displayTypes[t]) openTypes.delete(t);
     const floors = [...openTypes].map((t) => store.catalog.displayTypes[t].floorCpm).filter((v) => v != null);
 
