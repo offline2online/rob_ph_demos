@@ -83,12 +83,12 @@ test('slot allocation: advertiser + own = slots per loop; loop shares are the ba
 });
 
 test('column definitions exist for every Slot allocation heading', () => {
-  ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots', 'Advertiser slots sold'].forEach((c) => assert.ok(SC.COLUMN_TIPS[c].length > 20, c));
+  ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots'].forEach((c) => assert.ok(SC.COLUMN_TIPS[c].length > 20, c));
 });
 
-test('amber threshold is 85%: Window Portrait and Queue Screen are amber and the others are not', async () => {
-  const hot = (await get('/slot-allocation')).rows.filter((r) => r.advertiserSlotsSoldPercent >= SC.AMBER_AT).map((r) => r.id);
-  assert.deepStrictEqual(hot.sort(), ['queue', 'window']);
+test('Slot allocation has no sold column: COLUMN_TIPS lists only the four headings and the amber threshold is gone', () => {
+  assert.deepStrictEqual(Object.keys(SC.COLUMN_TIPS), ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots']);
+  assert.strictEqual(SC.AMBER_AT, undefined);
 });
 
 test('missed revenue: sold + unsold + offline = all slots, unsold + downtime = total, rows sum to the total row', async () => {

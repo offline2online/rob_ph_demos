@@ -18,7 +18,6 @@
   // Each DSP's Preferred shade, the same families as the Revenue chart.
   var DSP_COLOURS = { 'DV360': '#eb6834', 'The Trade Desk': '#2a78d6', 'Amazon DSP': '#1baf7a', 'Direct': '#6b3fa0' };
   var ALL_DEAL_TYPES = 'All deal types';
-  var AMBER_AT = 85;
   var ORIENTATIONS = ['Not set', '90°', '180°', '270°'];
 
   var VAC_TEXT = 'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE standard; CPM is cost per thousand assumed views. ' +
@@ -28,8 +27,7 @@
 
   var TIPS = {
     slotValue: VAC_TEXT + ' The number in brackets is the display type’s connected displays across the selected stores (PH Core).',
-    slotAllocation: 'Slots per loop: total slots in the display type’s loop. Advertiser slots + Own-content slots = Slots per loop. ' +
-      'Advertiser slots sold: share of advertiser slot capacity inside operating hours sold over the date range; rows at ' + AMBER_AT + '% or more are highlighted amber.',
+    slotAllocation: 'Slots per loop: total slots in the display type’s loop. Advertiser slots + Own-content slots = Slots per loop. Fill per display type is in Missed revenue & fill.',
     missed: 'Fill = advertiser slots sold ÷ all advertiser slots, across all deal types (booking schedule and unsold real-time slot records). ' +
       'Only slots inside each display’s operating hours count (outside screens run 24 hours; in-store screens follow store opening hours); slots outside them play house content. ' +
       'Amber = unsold slots valued at floor CPM × their assumed views ÷ 1,000 (a minimum estimate). ' +
@@ -45,8 +43,7 @@
     'Display type': 'The kind of screen, in shopper-journey order. Hover the name for its facts.',
     'Slots per loop': 'All slots in one pass of the display type’s playlist loop: advertiser slots plus own-content slots.',
     'Advertiser slots': 'Slots in the loop that advertisers can buy. Hover for their duration and share of the loop.',
-    'Own-content slots': 'Slots in the loop the retailer keeps for its own content. They are never sold to advertisers.',
-    'Advertiser slots sold': 'Share of advertiser slots, inside operating hours, that were sold in the selected period. ' + AMBER_AT + '% or more is highlighted amber.'
+    'Own-content slots': 'Slots in the loop the retailer keeps for its own content. They are never sold to advertisers.'
   };
 
   // ---------- formatting ----------
@@ -305,7 +302,7 @@
   }
 
   var pure = {
-    ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, AMBER_AT: AMBER_AT, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
+    ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
     fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct, orientationText: orientationText,
     journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, yieldRows: yieldRows, yieldRevenueShare: yieldRevenueShare, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
     DSP_COLOURS: DSP_COLOURS, ALL_DEAL_TYPES: ALL_DEAL_TYPES, typesById: typesById, missedParts: missedParts,
@@ -505,13 +502,11 @@
     function drawAllocation(d) {
       saData = d;
       var rows = followOrder(d.rows, svData && metricOrder(svData.rows, state.mode), function (r) { return cache.typeMap[r.id]; });
-      var heads = ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots', 'Advertiser slots sold'];
+      var heads = ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots'];
       var thead = h('thead', {}, [h('tr', {}, heads.map(function (t) { return h('th', { scope: 'col' }, [h('span', { text: t }), info(COLUMN_TIPS[t])]); }))]);
       var tbody = h('tbody');
       rows.forEach(function (r) {
         var dt = cache.typeMap[r.id];
-        var sold = r.advertiserSlotsSoldPercent;
-        var amber = sold >= AMBER_AT;
         var nameTd = h('td', { class: 'sc-name', text: r.name });
         if (dt) hoverable(nameTd, function () { return displayTypeCard(dt, filters); });
         // The count, with the time it covers in brackets: the whole loop for slots per loop, the slots' total duration otherwise.
@@ -520,11 +515,7 @@
           var td = h('td', { class: 'sc-num', text: String(v) + ' (' + secs + 's)' });
           return hoverable(td, function () { return allocationHover(r, kind, dt); });
         }
-        var soldTd = h('td', { class: 'sc-sold' }, [
-          h('span', { class: 'sc-sold-n', text: pct(sold) }),
-          h('span', { class: 'sc-mini' }, [h('i', { class: 'sc-mini-fill ' + (amber ? 'sc-amber' : 'sc-primary'), style: 'width:' + Math.min(100, sold) + '%' })])
-        ]);
-        tbody.appendChild(h('tr', { class: amber ? 'sc-hot' : '', 'data-amber': amber ? 'true' : 'false' }, [nameTd, numTd(r.slotsPerLoop, 'loop'), numTd(r.advertiserSlots.count, 'advertiser'), numTd(r.ownContentSlots.count, 'own'), soldTd]));
+        tbody.appendChild(h('tr', {}, [nameTd, numTd(r.slotsPerLoop, 'loop'), numTd(r.advertiserSlots.count, 'advertiser'), numTd(r.ownContentSlots.count, 'own')]));
       });
       pSA.body.innerHTML = ''; pSA.body.setAttribute('aria-busy', 'false');
       pSA.body.appendChild(h('div', { class: 'sc-scroll' }, [h('table', { class: 'sc-table' }, [thead, tbody])]));

@@ -63,7 +63,7 @@ async function settle(page, ctx) {
 }
 
 for (const width of [1163, 390]) {
-  test(`retailer page at ${width}px: order, reconciliation, amber, no scroll`, async () => {
+  test(`retailer page at ${width}px: order, reconciliation, no scroll`, async () => {
     const { page, context, problems } = await open('/index.html', width);
     try {
       await settle(page, 'retailer');
@@ -94,10 +94,6 @@ for (const width of [1163, 390]) {
       assert.equal(sold, fill);
       assert.match(await page.textContent('[data-tile="sold"] .val'), /^\d+%$/);
       assert.match(await page.textContent('[data-tile="sold"] .sub'), /^[\d,]+ sold · [\d,]+ available$/);
-
-      // at least one amber Slot allocation row, and it is Queue Screen
-      const amber = await page.$$eval('.sc-table tr[data-amber="true"] .sc-name', (r) => r.map((x) => x.textContent));
-      assert.deepEqual(amber.slice().sort(), ['Queue Screen', 'Window Portrait'], `amber rows: ${amber}`);
 
       // hovers stay on screen
       for (const sel of ['.sc-row[data-fill]:not(.sc-total) .sc-label', '.sc-row[data-fill] .sc-value', '.sc-heat-label[role=rowheader]', '.sc-heat-cell[data-hour]', '.sc-info', '.dc-adv td[tabindex]', '.pg-info']) {

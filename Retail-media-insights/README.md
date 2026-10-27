@@ -148,9 +148,9 @@ Purpose: show the **value of each screen along the shopper journey**, and help t
 
 **3b. Slot allocation — simple table, one row per display type (right).** Columns:
 
-| Display type | Slots per loop | Advertiser slots | Own-content slots | Advertiser slots sold |
-|---|---|---|---|---|
-| e.g. Checkout screen | 12 | 8 | 4 | 87% (bar) |
+| Display type | Slots per loop | Advertiser slots | Own-content slots |
+|---|---|---|---|
+| e.g. Checkout screen | 12 | 8 | 4 |
 
 - **Display type** shows the name only (no IAB store zone label beneath it); hover for the zone, connected displays and other details.
 - **Slots per loop** = total slots in the display type's loop; Advertiser slots + Own-content slots = Slots per loop (sample data must add up). **Hover shows the loop:** total loop length, average slot duration, and the advertiser and own-content slots each as count × average duration = seconds and % of the loop (e.g. "8 × 6s = 48s (80% of the loop)", "4 × 3s = 12s (20% of the loop)").
@@ -158,7 +158,7 @@ Purpose: show the **value of each screen along the shopper journey**, and help t
 - **Own-content slots** — **hover shows** the same for own-content slots.
 - So a user can quickly see the average slot length per display type and its impact on the total loop length, which feeds the share of loop time in the display type hover.
 - Sample data must add up: advertiser slots × their average duration + own-content slots × theirs = total loop length.
-- **Advertiser slots sold** = % of advertiser slot capacity inside operating hours sold over the date range, whole number with a small inline bar — **no chip, hover or commentary on it**. Rows at 85% or more are highlighted amber (the only signal).
+- **No sold column.** Fill per display type is shown once, in Missed revenue & fill (3c), so Slot allocation carries no Advertiser slots sold column, bar or amber row highlight.
 - Column definitions go in the ⓘ tooltip, not on the page.
 
 - Page filters only.

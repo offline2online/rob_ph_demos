@@ -41,7 +41,6 @@
 .sc-track-in { position: relative; height: 16px; }
 .sc-bar { height: 100%; border-radius: 3px; min-width: 2px; }
 .sc-primary { background: var(--sc-primary); }
-.sc-amber { background: var(--sc-warn); }
 .sc-floor-mark { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 2px dashed var(--sc-floor); }
 .sc-value { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 92px; }
 .sc-sub { display: block; font-size: 12px; color: var(--sc-muted); }
@@ -62,14 +61,8 @@
 .sc-table th:not(:first-child), .sc-table td:not(:first-child) { text-align: right; }
 .sc-table th:first-child { width: 28%; }
 .sc-table td { padding: 10px 6px; border-top: 1px solid var(--sc-border); overflow-wrap: anywhere; }
-.sc-table tr.sc-hot td { background: var(--sc-warn-tint); }
 .sc-table td.sc-name, .sc-table td.sc-num { cursor: default; }
 .sc-table td:hover { background: #e8fdff; }
-.sc-table tr.sc-hot td:hover { background: rgba(250,173,20,0.26); }
-.sc-sold { white-space: nowrap; }
-.sc-sold-n { display: inline-block; min-width: 38px; font-variant-numeric: tabular-nums; }
-.sc-mini { display: inline-block; width: 90px; height: 6px; border-radius: 9999px; background: rgba(0,0,0,0.08); vertical-align: middle; overflow: hidden; margin-left: 6px; }
-.sc-mini-fill { display: block; height: 100%; }
 
 .sc-skel-row { height: 16px; border-radius: 3px; background: linear-gradient(90deg, #f0f0f0, #fafafa, #f0f0f0); background-size: 200% 100%; animation: sc-shim 1.2s linear infinite; margin: 14px 0; }
 .sc-skel-row:nth-child(2) { width: 80%; } .sc-skel-row:nth-child(3) { width: 60%; } .sc-skel-row:nth-child(4) { width: 70%; }
@@ -113,9 +106,6 @@
 @media (max-width: 600px) {
   .sc-panel { padding: 12px; }
   .sc-table th, .sc-table td { padding-left: 3px; padding-right: 3px; font-size: 12px; }
-  .sc-sold { white-space: normal; }
-  .sc-sold-n { display: block; }
-  .sc-mini { display: block; width: 100%; margin: 4px 0 0; }
   .sc-tip-rows { grid-template-columns: minmax(0, 1fr); gap: 0; } .sc-tip-rows dd { margin-bottom: 4px; }
 }
 .sc-scroll { overflow-x: auto; }

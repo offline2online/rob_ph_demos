@@ -19,7 +19,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 2. `revenue` — per day/week/month × source (DSP or `Direct`) × deal type, earned and estimated; params `dsps[]` (a connected DSP or `Direct`), `dealTypes[]`, `granularity`.
 3. `deals` — name, description, type, per-DSP deal IDs, assigned slots (with slot detail), advertisers (with DSP), fill, pacing (PG only: flight, days elapsed/remaining, forecast, buffer), revenue, CPM; param `dealType`.
 4. `slot-value` — per display type: connected displays, effective CPM, floor CPM, revenue per available slot, network totals, VAC-d averages and inputs.
-5. `slot-allocation` — per display type: slots per loop, advertiser / own-content counts and average durations, loop length, advertiser slots sold %.
+5. `slot-allocation` — per display type: slots per loop, advertiser / own-content counts and average durations, loop length, advertiser slots sold % (still in the response for reconciliation with Missed revenue & fill; not shown as a column).
 6. `missed-revenue` — per display type + all-types total: connected displays, floor CPM (or range), fill, unsold slots and value at floor, downtime lost revenue and slots offline, total missed.
 6a. `hourly` — (endpoint 10a in the ticket) per display type: connected displays and, for each hour inside operating hours, fill, sold / unsold / offline slots, revenue, assumed views and effective CPM. Retailer only (403 for an advertiser). `viewsBasis` names the interim spreading rule.
 7. `yield` — effective CPM per source (each connected DSP, then `Direct`); param `dealType`.
@@ -72,7 +72,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 | Available Inventory slot assignments (display type, playlist, zone, position, plays per window) | Slots column and hovers, Slots covered, advertiser display type filter |
 | Winning seat (partnerId + seatId from the bid response) on every billing line item, synced seat names (`partners.seats`) and the advertiser ↔ seat mapping (`advertiser_seats`). **Not confirmed persisted on billing line items in DSP Integration today: confirm, else file it on DSP Integration** | Demand by DSP seat (Advertisers table sub-rows) |
 | Billing line items and reservations (cleared / fixed CPM, plays, VAC-d, DSP seat, deal, display type) | Revenue, Yield, effective CPM, Delivery, winning CPM aggregates |
-| **Unsold real-time slot records** | Inventory sold, Fill, Missed revenue, Slot allocation sold % |
+| **Unsold real-time slot records** | Inventory sold, Fill, Missed revenue, Slot allocation (API only) |
 | Display type definitions: Touch Point, canvas size (px), creative formats, IAB store zone, floor CPM, operating hours (24-hour rule) | Display type hover, floor markers, missed revenue valuation, inventory |
 | VAC-d / MOVE scoring inputs and realised assumed views | All CPMs, assumed views, pacing |
 | Shared Targeting Variables (default set, labels, per-DSP access) | Maturity, Variables in use, advertiser available variables |

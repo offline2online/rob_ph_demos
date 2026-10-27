@@ -107,7 +107,7 @@ test('Yield: defaults to All deal types, coloured eCPM bars highest first, empty
   } finally { await context.close(); }
 });
 
-test('Slot allocation hover headings and the 90px sold bar; Slot value legend and labels', async () => {
+test('Slot allocation hover headings, four columns and no sold bar; Slot value legend and labels', async () => {
   const { page, context } = await open(1163);
   try {
     const n = page.locator('.sc-table td.sc-num').first();
@@ -119,8 +119,8 @@ test('Slot allocation hover headings and the 90px sold bar; Slot value legend an
     assert.match(await tip.locator('.sc-tip-title').textContent(), /^.+: advertiser slots$/);
     await page.locator('.sc-table tr').nth(1).locator('td.sc-num').nth(2).hover();
     assert.match(await tip.locator('.sc-tip-title').textContent(), /^.+: own-content slots$/);
-    const mini = await page.locator('.sc-mini').first().evaluate((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height, getComputedStyle(e).borderRadius]; });
-    assert.deepEqual(mini, [90, 6, '9999px']);
+    assert.deepEqual(await page.locator('.sc-table th > span:first-child').evaluateAll((e) => e.map((x) => x.textContent.trim())), ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots']);
+    assert.equal(await page.locator('.sc-mini').count(), 0);
 
     const sv = panel(page, 'Slot value');
     assert.deepEqual(await sv.locator('.sc-legend-item').allTextContents(), ['Effective CPM', 'Floor CPM']);
