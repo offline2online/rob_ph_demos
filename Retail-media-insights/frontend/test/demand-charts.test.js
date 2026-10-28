@@ -149,7 +149,7 @@ test('advertiser table: every column sorts both ways, blanks last, no key keeps 
   }
 });
 
-test('Advertisers table: Maturity level and Scheduling join by advertiser, filter across all advertisers, sort with blanks last, hover lists variables and scheduled campaigns', async () => {
+test('Advertisers table: Maturity level, scheduling and Pacing join by advertiser, filter across all advertisers, sort with blanks last, hover lists variables and scheduled campaigns', async () => {
   const adv = await get('/advertisers');
   const mat = DC.tableRows(await get('/maturity'));
   const rows = DC.advertiserRows(adv, true, mat);
@@ -168,9 +168,17 @@ test('Advertisers table: Maturity level and Scheduling join by advertiser, filte
   assert.ok(DC.advertiserRows(adv, true, mat, { ...none, scheduling: 'none' }).every((r) => r.scheduled === 0));
   assert.deepStrictEqual(DC.advertiserRows(adv, true, mat, { level: 'Localised', variable: '', scheduling: 'uses' }).map((r) => r.name), ['Nestlé Health Science']);
   assert.strictEqual(DC.advertiserRows(adv, true, null, { ...none, level: 'Localised' }).length, 0, 'no maturity data matches no filter');
-  ['level', 'scheduling'].forEach((key) => {
+  ['level', 'pacing'].forEach((key) => {
     ['asc', 'desc'].forEach((dir) => assert.strictEqual(DC.sortAdvertiserRows(rows, key, dir).length, rows.length));
   });
+  const withPacing = rows.filter((r) => r.pacing && r.pacing.percent != null);
+  assert.ok(withPacing.length, 'some advertisers are on programmatic guaranteed deals');
+  assert.ok(rows.some((r) => !r.pacing), 'others are not');
+  const hv = DC.pacingCellHover(withPacing[0]);
+  assert.strictEqual(hv.sections[0].rows.length, withPacing[0].pacing.deals.length, 'one row per programmatic guaranteed deal');
+  const sortedPacing = DC.sortAdvertiserRows(rows, 'pacing', 'desc').map((r) => (r.pacing ? r.pacing.percent : null));
+  const firstBlank = sortedPacing.findIndex((v) => v == null);
+  assert.ok(firstBlank < 0 || sortedPacing.slice(firstBlank).every((v) => v == null), 'blank pacing sorts last');
   const byLevel = DC.sortAdvertiserRows(rows, 'level', 'desc').map((r) => DC.LEVELS.indexOf(r.level));
   assert.deepStrictEqual(byLevel, byLevel.slice().sort((a, b) => b - a));
 });
@@ -178,7 +186,7 @@ test('Advertisers table: Maturity level and Scheduling join by advertiser, filte
 test('Advertisers table has no iROAS column (Sales uplift is future work)', async () => {
   const adv = await get('/advertisers');
   assert.ok(!DC.ADV_COLS.some((c) => c.key === 'iroas'));
-  assert.deepStrictEqual(DC.ADV_COLS.slice(-3).map((c) => c.key), ['effectiveCpm', 'level', 'scheduling']);
+  assert.deepStrictEqual(DC.ADV_COLS.slice(-3).map((c) => c.key), ['effectiveCpm', 'level', 'pacing']);
   for (const r of adv.all) assert.ok(!('iroas' in r));
   assert.ok(!('posData' in adv));
 });
