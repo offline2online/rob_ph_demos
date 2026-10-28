@@ -1,4 +1,4 @@
-// Demand health (Advertisers table, with each advertiser's Maturity level, scheduling and Pacing) and the Targeting & scheduling
+// Demand health (Advertisers table, with each advertiser's Maturity level and scheduling) and the Targeting & scheduling
 // maturity charts — the two advertiser sections of the Retail Media Performance tab. A content-frame module
 // (no header, sidebar or position:fixed): the tab shell calls
 //   var demand = DemandCharts.mount(el, { fetchJson: function (endpoint, params) { return Promise } });
@@ -15,19 +15,18 @@
   var TOP_N = 10;
 
   var TIPS = {
-    demand: 'Which advertisers are on which deals (Direct advertiser and Programmatic guaranteed at launch) and over which slots, plus pacing for programmatic guaranteed. ' +
+    demand: 'Which advertisers are on which deals (Direct advertiser and Programmatic guaranteed at launch) and over which slots. ' +
       'Data: deals and buyers lists (deal type, guaranteed volume, buffer), billing line items, reservations (won impressions), unsold slot records, display type slot configuration, display operating hours.',
     maturity: 'How advertisers use targeting and scheduling on your displays, and exactly who sits where, so you can coach them from Default only to Localised to Personalised, and to schedule their campaigns. ' +
       'Better targeting and scheduling mean better campaigns, more spend and more inventory sold.',
     advertisers: 'Top 10 by revenue. Deals on = deals the advertiser is on (buyers lists), any deal type; hover to list them. Slots covered = slots across those deals. ' +
-      'Effective CPM is per 1,000 assumed views (VAC-d). Pacing is for programmatic guaranteed deals only: read it with the days elapsed and remaining in the flight. ' +
+      'Effective CPM is the advertiser’s blended rate across all its deals, per 1,000 assumed views (VAC-d); hover it for the rate and revenue on each deal. ' +
       'Maturity level shows how the advertiser uses targeting, with a Scheduled tile beside it when its campaigns are scheduled. Click a bar in Variables in use below to narrow the table.',
     progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
     variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertisers table. ' +
       'Daypart is not a targeting variable: it is a campaign scheduling feature, shown in Scheduling.',
     level: 'The highest level used by any of the advertiser’s campaigns in the date range: Default only, Localised or Personalised. Hover to see the Shared Targeting Variables its campaigns use.',
-    sched: 'Whether the advertiser’s campaigns use dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. Hover to see the scheduled campaigns.',
-    pacing: 'Programmatic guaranteed deals only: assumed views (VAC-d) delivered ÷ guaranteed to date, pooled across the advertiser’s programmatic guaranteed deals. Hover to see each deal.'
+    sched: 'Whether the advertiser’s campaigns use dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. Hover to see the scheduled campaigns.'
   };
 
   // ---------- formatting ----------
@@ -90,7 +89,6 @@
       return {
         mat: m, level: m ? m.level : null,
         scheduled: m ? m.scheduledCampaigns : 0,
-        pacing: a.pacing || null,
         advertiserId: a.advertiserId, name: a.name, dsp: a.dsp, label: a.name,
         revenue: fmtMoney(a.revenue),
         share: pct(a.share),
@@ -120,7 +118,6 @@
     { key: 'dealsOn', label: 'Deals on', first: 'desc', value: function (r) { return r.dealsOn; } },
     { key: 'slotsCovered', label: 'Slots covered', first: 'desc', value: function (r) { return r.src.slotsCovered; } },
     { key: 'effectiveCpm', label: 'Effective CPM', first: 'desc', value: function (r) { return r.src.effectiveCpm; } },
-    { key: 'pacing', label: 'Pacing', first: 'desc', info: 'pacing', value: function (r) { return r.pacing && r.pacing.percent != null ? r.pacing.percent : null; } },
     { key: 'level', label: 'Maturity level', first: 'desc', info: 'level', value: function (r) { return r.level ? LEVELS.indexOf(r.level) : null; } }
   ];
   // Rows ordered by one column ('asc' = A–Z / lowest first); no key keeps the back end's order. Blank values always sit last.
@@ -147,10 +144,9 @@
     var m = r.mat;
     return { title: advName(r.src) + ': ' + (m ? m.level : 'Maturity level'), sections: [{ rows: [['Variables used', m && m.chips.length ? m.chips.map(function (c) { return c.text; }).join(', ') : 'None']] }] };
   }
-  // Hover on a Pacing cell: each programmatic guaranteed deal with its deal-wide pacing.
-  function pacingCellHover(r) {
-    var p = r.pacing;
-    return { title: advName(r.src) + ': programmatic guaranteed pacing', sections: [{ rows: ((p && p.deals) || []).map(function (d) { return [d.name, has(d.percent) ? d.percent + '%' : '–']; }) }] };
+  // Hover on an Effective CPM cell: the advertiser's rate and revenue on each deal it was billed on.
+  function cpmCellHover(r) {
+    return { title: advName(r.src) + ': effective CPM by deal', sections: [{ rows: (r.src.dealRates || []).map(function (d) { return [d.name, (has(d.effectiveCpm) ? fmtMoney(d.effectiveCpm, 2) : '–') + ' · ' + fmtMoney(d.revenue)]; }) }] };
   }
   // Hover on the scheduling tile in a Maturity level cell: the campaigns that use dayparting or schedules.
   function schedulingCellHover(r) {
@@ -217,7 +213,7 @@
     LEVELS: LEVELS, TOP_N: TOP_N, TIPS: TIPS, advName: advName, isDaypart: isDaypart, targetingVars: targetingVars,
     advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
-    activeFilters: activeFilters, matchesFilters: matchesFilters, levelCellHover: levelCellHover, pacingCellHover: pacingCellHover, schedulingCellHover: schedulingCellHover, ADV_COLS: ADV_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
+    activeFilters: activeFilters, matchesFilters: matchesFilters, levelCellHover: levelCellHover, cpmCellHover: cpmCellHover, schedulingCellHover: schedulingCellHover, ADV_COLS: ADV_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
 
   // ---------- DOM ----------
@@ -386,7 +382,7 @@
       return h('tr', { class: 'dc-total', 'data-total': String(total) }, [
         h('th', { scope: 'row', class: 'dc-name', text: partial ? 'Total (top ' + TOP_N + ')' : 'Total' }),
         h('td', { class: 'dc-num', text: fmtMoney(total) }),
-        h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td'), h('td')
+        h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td')
       ]);
     }
     function drawAdvertisers() {
@@ -417,18 +413,17 @@
           var a = r.src;
           var dealsTd = h('td', { class: 'dc-num', text: r.dealsText });
           if (r.dealsOn) { dealsTd.classList.add('dc-dotted'); hoverable(dealsTd, function () { return dealsOnHover(a); }); }
-          var levelTd = h('td', {}), pacingTd = h('td', { class: 'dc-num' });
+          var levelTd = h('td', {}), cpmTd = h('td', { class: 'dc-num', text: r.effectiveCpm });
+          if (a.dealRates && a.dealRates.length && has(a.effectiveCpm)) { cpmTd.classList.add('dc-dotted'); hoverable(cpmTd, function () { return cpmCellHover(r); }); }
           if (!r.mat) levelTd.appendChild(h('span', { class: 'dc-none', text: '–' }));
           else {
             levelTd.appendChild(hoverable(h('span', { class: 'dc-chip dc-level dc-dotted' }, [h('i', { class: 'dc-swatch ' + LEVEL_CLS[r.level] }), r.level]), function () { return levelCellHover(r); }));
             if (r.mat.scheduling !== NOT_USED) levelTd.appendChild(hoverable(h('span', { class: 'dc-chip dc-sched dc-dotted', text: r.mat.scheduling }), function () { return schedulingCellHover(r); }));
           }
-          if (r.pacing && r.pacing.percent != null) { pacingTd.classList.add('dc-dotted'); pacingTd.textContent = r.pacing.percent + '%'; hoverable(pacingTd, function () { return pacingCellHover(r); }); }
-          else pacingTd.textContent = '–';
           return h('tr', { 'data-advertiser': r.advertiserId }, [
             h('th', { scope: 'row', class: 'dc-name', text: r.label }),
             h('td', { class: 'dc-num', text: r.revenue }), h('td', { class: 'dc-num', text: r.share }),
-            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), h('td', { class: 'dc-num', text: r.effectiveCpm }), pacingTd, levelTd
+            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), cpmTd, levelTd
           ]);
         })),
         h('tfoot', {}, [totalRow(d, rows)])

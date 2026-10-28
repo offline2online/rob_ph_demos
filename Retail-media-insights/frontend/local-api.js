@@ -452,6 +452,7 @@ function rollUp(store, filters) {
   const adv = { revenue: new Float64Array(nA), earned: new Float64Array(nA), earnedViews: new Float64Array(nA), views: new Float64Array(nA), slots: new Float64Array(nA) };
   const dealSeen = new Uint8Array(nD); const advSeen = new Uint8Array(nA);
   const dealOrder = []; const advOrder = [];
+  const advDeals = new Map(); // advIx -> Map(dealIx -> {earned, earnedViews}): each advertiser's earnings per deal, for the Advertisers table's eCPM hover
   const dealType = new Float64Array(nD * nT);
   // adv x deal x type is dense up to 4M cells (32 MB); an estate bigger than that falls back to a sparse map on the same numeric key.
   const adSize = nA * nD * nT;
@@ -463,6 +464,9 @@ function rollUp(store, filters) {
     if (!advSeen[a]) { advSeen[a] = 1; advOrder.push(a); }
     deal.revenue[d] += r.revenue; deal.earned[d] += r.earned; deal.earnedViews[d] += r.earnedViews; deal.views[d] += r.views; deal.slots[d] += r.slots;
     adv.revenue[a] += r.revenue; adv.earned[a] += r.earned; adv.earnedViews[a] += r.earnedViews; adv.views[a] += r.views; adv.slots[a] += r.slots;
+    let ad = advDeals.get(a); if (!ad) advDeals.set(a, ad = new Map());
+    let ab = ad.get(d); if (!ab) ad.set(d, ab = { earned: 0, earnedViews: 0 });
+    ab.earned += r.earned; ab.earnedViews += r.earnedViews;
     const dk = d * nT + r.typeIx;
     dealType[dk] += r.slots;
     const ak = a * nD * nT + dk;
@@ -480,7 +484,12 @@ function rollUp(store, filters) {
     const a = store.advCode.get(advId); const d = store.dealCode.get(dealId); const t = store.typeCode.get(typeId);
     return a === undefined || d === undefined || t === undefined ? 0 : (dense ? advDealType[a * nD * nT + d * nT + t] : advDealType.get(a * nD * nT + d * nT + t) || 0);
   };
-  return { byDeal, byAdv, slotsOnDealType, slotsOnAdvDealType };
+  // The advertiser's earned revenue and earned views on each deal it was billed on, by deal id.
+  const earnedByAdvDeal = (advId) => {
+    const a = store.advCode.get(advId); const m = a === undefined ? null : advDeals.get(a);
+    return m ? [...m].map(([d, b]) => ({ dealId: store.dealIds[d], earned: b.earned, earnedViews: b.earnedViews })) : [];
+  };
+  return { byDeal, byAdv, slotsOnDealType, slotsOnAdvDealType, earnedByAdvDeal };
 }
 
 /**
@@ -1636,7 +1645,7 @@ module.exports = { dispatch, normalisePrincipal, BASE };
   },
   "src/routes/advertisers.js": function (module, exports, require) {
 const calc = require('../calc');
-const { dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, slotsWonComplete, RETENTION_DAYS, cents } = require('../dealing');
+const { dealsOf, slotKey, rollUp, opportunities, slotsWonComplete, RETENTION_DAYS, cents } = require('../dealing');
 
 // Demand by DSP seat, one level below advertiser and DSP: the seat that won each play (the buying account inside a DSP, usually held by
 // the advertiser's agency or trading desk), read from the seat on every settled billing row. Spend, plays and CPM are exact; the
@@ -1696,9 +1705,7 @@ module.exports = {
     const retailer = !principal || principal.principalType !== 'advertiser'; // seat data names other advertisers: never in an advertiser's response
     const seatRows = retailer ? seatsOf(store, filters, scope) : new Map();
     const advertiserSeats = (store.catalog && store.catalog.advertiserSeats) || {};
-    const pgDeals = deals.filter((d) => d.dealType === 'Programmatic guaranteed' && d.flight);
-    const delivered = deliveredByDeal(store, filters, pgDeals);
-    const pgPacing = new Map(pgDeals.map((d) => [d.id, pacingOf(d, delivered.get(d.id), filters)]));
+    const dealName = new Map(deals.map((d) => [d.id, d.name]));
     const ids = new Set(roll.byAdv.keys());
     for (const d of deals) for (const b of d.buyers || []) if (!scope || scope.has(b.advertiserId)) ids.add(b.advertiserId);
     const list = [...ids].map((id) => {
@@ -1717,15 +1724,9 @@ module.exports = {
       // The seats add up to the advertiser's row: a rounding cent goes to the largest seat; each seat's share of the advertiser's spend is a whole percent.
       if (seats.length) seats[0].revenue = cents(seats[0].revenue + (cents(a.earned) - seats.reduce((n, x) => n + x.revenue, 0)));
       const seatShares = calc.percentSplit(seats.map((x) => x.revenueRaw));
-      // Pacing: programmatic guaranteed only. Delivered and guaranteed-to-date are pooled across the advertiser's PG deals (each deal-wide, as in the Deals table).
-      const pgRows = mine.filter((d) => pgPacing.has(d.id)).map((d) => ({ id: d.id, name: d.name, p: pgPacing.get(d.id) }));
-      const measured = pgRows.filter((x) => x.p.percent != null);
-      const toDate = measured.reduce((n, x) => n + x.p.guaranteedToDate, 0);
-      const got = measured.reduce((n, x) => n + x.p.delivered, 0);
-      const pacing = pgRows.length ? {
-        percent: toDate > 0 ? Math.round((got / toDate) * 100) : null,
-        deals: pgRows.map((x) => ({ id: x.id, name: x.name, percent: x.p.percent })),
-      } : null;
+      // eCPM by deal (the hover on the blended Effective CPM): every deal the advertiser was billed on, largest revenue first.
+      const dealRates = roll.earnedByAdvDeal(id).map((x) => ({ id: x.dealId, name: dealName.get(x.dealId) || 'Open auction', revenue: cents(x.earned), effectiveCpm: x.earnedViews > 0 ? cents(calc.effectiveCpm(x.earned, x.earnedViews)) : null, raw: x.earned }))
+        .sort((x, y) => y.raw - x.raw || x.name.localeCompare(y.name)).map(({ raw, ...x }) => x);
       return {
         advertiserId: id, name: (meta[id] || {}).name || id, dsp: (meta[id] || {}).dsp || (buyer && buyer.dsp) || null,
         revenue: cents(a.earned), revenueRaw: a.earned,
@@ -1737,7 +1738,7 @@ module.exports = {
         slotsWonPercent: opportunity > 0 ? calc.wholePercent(won, opportunity) : null,
         slotsWonCount: won, slotsOpportunity: Math.round(opportunity),
         effectiveCpm: a.earnedViews > 0 ? cents(calc.effectiveCpm(a.earned, a.earnedViews)) : null,
-        pacing,
+        dealRates,
       };
     }).sort((x, y) => y.revenueRaw - x.revenueRaw || x.name.localeCompare(y.name));
     const shares = calc.percentSplit(list.map((x) => x.revenueRaw));

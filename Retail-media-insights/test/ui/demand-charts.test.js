@@ -52,7 +52,7 @@ test('Demand health: section header, names only, "n deals" hover, Show all N adv
     await head.locator('.dc-info').hover();
     assert.match(await page.textContent('.dc-tip'), /^Which advertisers are on which deals/);
 
-    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Effective CPM', 'Pacing', 'Maturity level']);
+    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Effective CPM', 'Maturity level']);
     const names = await texts(page, '.dc-adv tbody th');
     assert.equal(names.length, 10);
     assert.ok(names.every((n) => !/\(/.test(n)), `no DSP in the cell: ${names}`);
@@ -81,7 +81,7 @@ test('Advertisers table is advertiser level: no Seats column, no chevron, no sub
     assert.equal(await page.locator('.dc-adv .dc-expand').count(), 0);
     assert.equal(await page.locator('.dc-adv tbody tr.dc-seat').count(), 0);
     assert.equal(await page.locator('.dc-adv tbody tr').count(), 11);
-    assert.equal(await page.locator('.dc-adv tbody tr').first().locator('td').count(), 7);
+    assert.equal(await page.locator('.dc-adv tbody tr').first().locator('td').count(), 6);
     assert.deepEqual(problems, []);
   } finally { await context.close(); }
 });
@@ -107,21 +107,18 @@ test('Maturity: order, filters, Variables in use, table cells, Progress over tim
     assert.equal(await page.locator('.dc-panel:has(h3:text-is("Advertisers")) .dc-select').count(), 0, 'no filter dropdowns on the Advertisers table');
     assert.equal(await page.locator('h3:text-is("Advertiser targeting & scheduling")').count(), 0, 'the separate table is gone');
     assert.equal(await page.locator('.dc-mat').count(), 0);
-    const levels = await texts(page, '.dc-adv tbody td:nth-child(8) .dc-level');
+    const levels = await texts(page, '.dc-adv tbody td:nth-child(7) .dc-level');
     assert.ok(levels.length === 10 && levels.every((l) => ['Default only', 'Localised', 'Personalised'].includes(l)), levels.join());
-    const cells = await texts(page, '.dc-adv tbody td:nth-child(8)');
+    const cells = await texts(page, '.dc-adv tbody td:nth-child(7)');
     assert.ok(cells.some((c) => /Scheduled$/.test(c)), 'scheduling tile beside the level chip');
     assert.ok(cells.some((c) => ['Default only', 'Localised', 'Personalised'].includes(c)), 'an advertiser that does not schedule shows only the level chip');
-    assert.equal(await page.locator('.dc-adv tbody td:nth-child(8) .dc-none').filter({ hasText: 'Not used' }).count(), 0);
-    const pacing = await texts(page, '.dc-adv tbody td:nth-child(7)');
-    assert.ok(pacing.every((p) => p === '–' || /^\d+%$/.test(p)), pacing.join());
-    assert.ok(pacing.some((p) => /%$/.test(p)) && pacing.includes('–'), pacing.join());
-    await page.locator('.dc-adv tbody td:nth-child(8) .dc-level').first().hover();
+    assert.equal(await page.locator('.dc-adv tbody td:nth-child(7) .dc-none').filter({ hasText: 'Not used' }).count(), 0);
+    await page.locator('.dc-adv tbody td:nth-child(7) .dc-level').first().hover();
     assert.match(await page.textContent('.dc-tip'), /Variables used/);
-    await page.locator('.dc-adv tbody td:nth-child(8) .dc-sched').first().hover();
+    await page.locator('.dc-adv tbody td:nth-child(7) .dc-sched').first().hover();
     assert.match(await page.textContent('.dc-tip'), /scheduled campaigns/);
-    await page.locator('.dc-adv tbody td:nth-child(7).dc-dotted').first().hover();
-    assert.match(await page.textContent('.dc-tip'), /programmatic guaranteed pacing/);
+    await page.locator('.dc-adv tbody td:nth-child(6).dc-dotted').first().hover();
+    assert.match(await page.textContent('.dc-tip'), /effective CPM by deal/);
     // clicking a Variables in use bar still filters the table; the chip clears it
     await page.locator('.dc-panel:has(h3:text-is("Variables in use")) .dc-bar').first().click();
     await page.waitForSelector('.dc-clear:not([hidden])');

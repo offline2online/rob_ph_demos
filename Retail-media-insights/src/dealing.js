@@ -42,6 +42,7 @@ function rollUp(store, filters) {
   const adv = { revenue: new Float64Array(nA), earned: new Float64Array(nA), earnedViews: new Float64Array(nA), views: new Float64Array(nA), slots: new Float64Array(nA) };
   const dealSeen = new Uint8Array(nD); const advSeen = new Uint8Array(nA);
   const dealOrder = []; const advOrder = [];
+  const advDeals = new Map(); // advIx -> Map(dealIx -> {earned, earnedViews}): each advertiser's earnings per deal, for the Advertisers table's eCPM hover
   const dealType = new Float64Array(nD * nT);
   // adv x deal x type is dense up to 4M cells (32 MB); an estate bigger than that falls back to a sparse map on the same numeric key.
   const adSize = nA * nD * nT;
@@ -53,6 +54,9 @@ function rollUp(store, filters) {
     if (!advSeen[a]) { advSeen[a] = 1; advOrder.push(a); }
     deal.revenue[d] += r.revenue; deal.earned[d] += r.earned; deal.earnedViews[d] += r.earnedViews; deal.views[d] += r.views; deal.slots[d] += r.slots;
     adv.revenue[a] += r.revenue; adv.earned[a] += r.earned; adv.earnedViews[a] += r.earnedViews; adv.views[a] += r.views; adv.slots[a] += r.slots;
+    let ad = advDeals.get(a); if (!ad) advDeals.set(a, ad = new Map());
+    let ab = ad.get(d); if (!ab) ad.set(d, ab = { earned: 0, earnedViews: 0 });
+    ab.earned += r.earned; ab.earnedViews += r.earnedViews;
     const dk = d * nT + r.typeIx;
     dealType[dk] += r.slots;
     const ak = a * nD * nT + dk;
@@ -70,7 +74,12 @@ function rollUp(store, filters) {
     const a = store.advCode.get(advId); const d = store.dealCode.get(dealId); const t = store.typeCode.get(typeId);
     return a === undefined || d === undefined || t === undefined ? 0 : (dense ? advDealType[a * nD * nT + d * nT + t] : advDealType.get(a * nD * nT + d * nT + t) || 0);
   };
-  return { byDeal, byAdv, slotsOnDealType, slotsOnAdvDealType };
+  // The advertiser's earned revenue and earned views on each deal it was billed on, by deal id.
+  const earnedByAdvDeal = (advId) => {
+    const a = store.advCode.get(advId); const m = a === undefined ? null : advDeals.get(a);
+    return m ? [...m].map(([d, b]) => ({ dealId: store.dealIds[d], earned: b.earned, earnedViews: b.earnedViews })) : [];
+  };
+  return { byDeal, byAdv, slotsOnDealType, slotsOnAdvDealType, earnedByAdvDeal };
 }
 
 /**
