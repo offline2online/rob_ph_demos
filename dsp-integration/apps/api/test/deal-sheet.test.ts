@@ -119,7 +119,7 @@ describe('Deal sheet', () => {
       expect(a.estimatedVolume.targetedShare).toBe(1)
     })
 
-    it('Programmatic guaranteed carries guaranteed impressions, derived from the stored committed plays', async () => {
+    it('Programmatic guaranteed carries guaranteed impressions, the stored committed impressions built from VAC-d (28 Oct 2026)', async () => {
       const ctx = await testContext()
       const app = buildApp(ctx)
       const created = (await app.inject({ method: 'POST', url: URL, payload: { ...list, dealType: 'guaranteed', activeFrom: '2026-11-01T00:00:00.000Z', activeTo: '2026-11-30T23:59:59.999Z' } })).json()
@@ -134,7 +134,11 @@ describe('Deal sheet', () => {
       const committed = sheet.committedPlays as number
       const perPlay = sheet.estimatedVolume.assumedViewsPerPlay
       expect(perPlay).toBeGreaterThan(0)
-      expect(sheet.guaranteedImpressions).toBe(Math.round(committed * perPlay))
+      /* Impressions are what is committed: the stored figure, built per slot from VAC-d, not committed plays x an average. */
+      const stored = (await ctx.buyersLists.get(created.id))!.committedImpressions
+      expect(stored).toBeGreaterThan(0)
+      expect(sheet.guaranteedImpressions).toBe(stored)
+      expect(committed).toBeGreaterThan(0)
       expect(sheet.description).toContain(`Guarantees ${sheet.guaranteedImpressions.toLocaleString('en-GB')} impressions`)
       expect(sheet.estimatedVolume.bufferPct).toBe((await ctx.company.get()).guaranteeBufferPct)
       expect(sheet.estimatedVolume.guaranteedImpressionsPerWindow).toBe(Math.max(0, Math.floor(sheet.estimatedVolume.assumedViewsPerWindow * (1 - sheet.estimatedVolume.bufferPct / 100))))

@@ -6,7 +6,7 @@
        termTotal / forecast impressions over the term x 1000, so a DSP can compare it with a CPM deal.
    The forecast is the slot's own: plays from its loop and window over the display type's displays and open hours, impressions
    from its assumed views (VAC-d). Nothing is invented for an unscored slot: it has no impressions forecast and is left out of the CPM. */
-import { assignedOf } from '@ph-dsp/types'
+import { assignedOf, valueOfImpressions } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { floorFor } from '../exchange/enforcement'
 import { allPositions, assumedViewsPerWindow, maxPlayLengthSecFor, windowHoursFor, windowMsFor, type PositionRef } from './positions'
@@ -58,6 +58,14 @@ export const committedPlaysOf = (slots: readonly TermSlot[], days: number | null
   return committed >= 1 ? committed : null
 }
 
+/* floor( forecast impressions of every assigned slot over the whole term x (1 - buffer%) ): what Programmatic guaranteed commits (Rob, 28 Oct 2026). Each slot's impressionsPerDay is its windows' assumed views (VAC-d) summed over the display type's displays, from each display's hour-of-week profile, else its override, else the display type's default, the same source billing realises against; a window outside operating hours has no plays and no views. Null as for the plays. */
+export const committedImpressionsOf = (slots: readonly TermSlot[], days: number | null, bufferPct: number): number | null => {
+  if (!slots.length || !days) return null
+  const total = slots.reduce((n, s) => n + s.impressionsPerDay, 0) * days
+  const committed = Math.floor(total * (1 - bufferPct / 100) + 1e-9)
+  return committed >= 1 ? committed : null
+}
+
 /* The slots that have an impressions forecast; an unscored one is left out rather than priced at nothing. */
 const scored = (slots: readonly TermSlot[]) => slots.filter((s) => s.impressionsPerDay > 0)
 const impressionsOver = (slots: readonly TermSlot[], days: number) => scored(slots).reduce((n, s) => n + s.impressionsPerDay, 0) * days
@@ -75,7 +83,7 @@ export const equivalentCpmRange = (cpm: number | null): { min: number; max: numb
 /* Reasons a total for the term cannot be sold: below what the term's forecast impressions are worth at each slot's own floor. */
 export const belowFloorReasons = (termTotal: number, slots: readonly TermSlot[], days: number | null): string[] => {
   if (!days) return []
-  const need = scored(slots).reduce((n, s) => n + (s.impressionsPerDay * days * s.floorCpm) / 1000, 0)
+  const need = scored(slots).reduce((n, s) => n + valueOfImpressions(s.impressionsPerDay * days, s.floorCpm), 0)
   if (!need || termTotal >= need) return []
   const cpm = equivalentCpmOf(termTotal, slots, days)
   return [`${termTotal} USD for the term is ${cpm} CPM across its assigned slots (${impressionsOver(slots, days).toLocaleString('en-GB')} forecast impressions over ${days} day${days === 1 ? '' : 's'}), below their floors. Raise the total to at least ${Math.ceil(need * 100) / 100} USD.`]

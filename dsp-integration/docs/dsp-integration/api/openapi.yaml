@@ -1501,6 +1501,48 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/HasDependents'}
 
+  /admin/v1/buyers-lists/{buyersListId}/cancel:
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: cancelBuyersList
+      summary: Cancel a finalised deal whose flight has not started
+      description: |
+        Ticket q2t6YgDdW9XCsbORxCq2. Releases the deal from every slot and archives it at once with `endKind` `cancelled` and the required `reason`. The deal ID, terms, history and the slots it held stay on the archived deal. 409 for a draft (delete it), an archived deal, or a deal whose flight has started (end it instead). Admin only. Recorded in the SSP change history. The invited buyers see the deal leave `GET /v1/deals`.
+      security: [{adminSession: [admin]}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [reason], properties: {reason: {type: string, minLength: 1, maxLength: 1000, description: Why the deal is cancelled. Stored on the deal and shown in Archived Deals.}}}}}
+      responses:
+        '200':
+          description: The cancelled, archived deal
+          content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/v1/buyers-lists/{buyersListId}/end:
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: endBuyersList
+      summary: End a live deal early, now or at a future date
+      description: |
+        Ticket q2t6YgDdW9XCsbORxCq2. Sets the deal's `activeTo` to `endAt` (now or later), keeping the old end as `originalActiveTo` (null for an open-ended Direct deal), and records `endKind` `ended_early` with the required `reason`. The deal keeps running until `endAt`; campaigns using its deal ID stop delivering then, revenue to that moment stays reported and nothing after it. After `endAt` it releases its slots and archives itself like any ended deal. There is no notice period: a future `endAt` covers contractual notice. A total-priced deal keeps its `termTotal` and reports `deliveredValue`; billing adjustments happen outside the platform. 409 for a draft, an archived or already-ended deal, or a deal whose flight has not started (cancel it instead); 400 when `endAt` is in the past or not before the current end. Admin only.
+      security: [{adminSession: [admin]}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [reason, endAt], properties: {reason: {type: string, minLength: 1, maxLength: 1000}, endAt: {type: string, format: date-time}}}}}
+      responses:
+        '200':
+          description: The deal with its new end
+          content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
   /admin/v1/advertisers:
     get:
       tags: [Admin — Advertisers]
@@ -3377,7 +3419,7 @@ components:
             guaranteedImpressionsPerWindow: {type: [integer, 'null'], description: Programmatic guaranteed only - forecast x (1 - buffer%).}
             bufferPct: {type: [number, 'null']}
             assumedViewsPerPlay: {type: [number, 'null']}
-        guaranteedImpressions: {type: [integer, 'null'], description: Programmatic guaranteed only - committed plays x assumed views per play. Committed plays stay the stored figure.}
+        guaranteedImpressions: {type: [integer, 'null'], description: 'Programmatic guaranteed only - the committed IMPRESSIONS (28 Oct 2026), built bottom-up per display and open hour from VAC-d, less the buffer; the same figure as BuyersList.committedImpressions. Committed plays stay beside it as the delivery plan.'}
         description: {type: string, description: A short plain-language description to paste into a DSP's description field.}
     DealSheetEntry:
       type: object
@@ -3523,6 +3565,12 @@ components:
         sharedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the deal was shared; null while it is a draft. Lists that pre-date drafts are shared as of when they were created.}
         archivedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the deal was archived; null while it is live.}
         archivedBy: {type: [string, 'null'], readOnly: true, description: 'Who archived it: the person''s name, or `system` when its flight ended and its last window was billed.'}
+        endKind: {type: [string, 'null'], enum: [cancelled, ended_early, null], readOnly: true, description: 'How the deal was terminated by a person: `cancelled` (before its flight started; archived at once) or `ended_early` (live; `activeTo` is the new end). Null otherwise. Absent from a demo snapshot taken before 27 Oct 2026.'}
+        endReason: {type: [string, 'null'], readOnly: true, description: The required reason given for a cancel or early end.}
+        endRequestedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the cancel or end was requested.}
+        originalActiveTo: {type: [string, 'null'], format: date-time, readOnly: true, description: 'The flight end before an early end; null for an open-ended deal.'}
+        endedBy: {type: [string, 'null'], readOnly: true, description: The person who cancelled or ended the deal.}
+        deliveredValue: {type: number, readOnly: true, description: 'Early-ended deals only: the value billed over the flight up to its new end (USD), shown beside the original `termTotal`.'}
         assignedSlots:
           type: array
           readOnly: true
@@ -3545,6 +3593,7 @@ components:
               displayCount: {type: integer, description: 'Displays on the display type when the figures were taken. Kept on an archived deal; absent from a deal archived before 27 Oct 2026.'}
               playsPerWindow: {type: integer, description: 'Plays per display per window when the figures were taken (the figure behind the Details hover''s plays and value). Kept on an archived deal; absent from a deal archived before 27 Oct 2026.'}
               windowHours: {type: integer, description: 'The slot''s play window (billing unit) in hours when the figures were taken. Kept on an archived deal; absent from a deal archived before 27 Oct 2026.'}
+              vacdPerPlay: {type: [number, 'null'], description: 'VAC-d per play: the impressions one play of this slot delivers, its window''s assumed views (VAC-d) divided by its plays across the display type''s displays (28 Oct 2026). The multiplier behind the Details hover''s impressions and value: value = plays x vacdPerPlay / 1,000 x CPM. Null when the slot has no audience score. Kept on an archived deal; absent from a deal archived before 28 Oct 2026.'}
         termVersion:
           type: integer
           readOnly: true
@@ -3627,6 +3676,32 @@ components:
             term x (1 - guarantee buffer %)). It is null until a slot is
             assigned and the term has both dates, recalculates when slots or
             dates change, and is never typed in.
+        committedImpressions:
+          type: [integer, 'null']
+          readOnly: true
+          description: |
+            Programmatic guaranteed and Direct advertiser deals only
+            (28 Oct 2026): the IMPRESSIONS this deal commits to, which is
+            what Programmatic guaranteed sells (not plays). Built bottom-up
+            from the assigned slots: for each display, each window inside
+            operating hours over the delivery term, plays x that display's
+            VAC-d (hour-of-week profile, else the display's override, else the
+            display type's default), summed across displays, less the
+            guarantee buffer (default 10%). Stored with committedPlays and
+            recomputed whenever a slot, the term or the buffer changes. The
+            deal's value is committedImpressions / 1,000 x its fixed CPM.
+            Null for any other deal type, with no slot, or with an open term.
+        deliveredImpressions:
+          type: integer
+          minimum: 0
+          readOnly: true
+          description: |
+            Read only (28 Oct 2026). The impressions billed so far at every
+            position this deal is attached to, in play windows that start
+            inside the delivery term: the sum of the billing line items'
+            realised VAC-d, the same figure billing charges on. Pacing is this
+            against committedImpressions. Plays (deliveredPlays) stay beside it
+            as the delivery plan.
         deliveredPlays:
           type: integer
           minimum: 0
@@ -3908,6 +3983,9 @@ components:
         playsPerWindow:
           type: integer
           description: Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change.
+        vacdPerPlay:
+          type: [number, 'null']
+          description: 'Derived, read-only (28 Oct 2026). VAC-d per play: this slot''s window assumed views (VAC-d, from each display''s hour-of-week profile, else its override, else the display type''s default) divided by its plays across the display type''s displays. The impressions-per-play multiplier of the one pricing formula: value = plays x vacdPerPlay / 1,000 x CPM. Null when the slot has no audience score or no plays. Absent from a demo snapshot taken before 28 Oct 2026.'
 
     BookingCapacity:
       type: object

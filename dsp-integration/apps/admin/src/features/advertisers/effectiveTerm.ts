@@ -2,7 +2,7 @@
    so the table and the modal never show them blank. The API resolves them per list (BuyersList.effective…);
    `resolveTerm` is the same rule for the modal's unsaved draft, whose invited buyers and own values the
    server hasn't seen yet. Rate is the base bid floor in USD CPM; volume is plays. */
-import { isGuaranteedLike, type BuyersList } from '@ph-dsp/types'
+import { impressionsOfPlays, isGuaranteedLike, valueOfImpressions, type BuyersList } from '@ph-dsp/types'
 
 export type Term = BuyersList['effectiveCommittedPlays']
 export type TermSource = Term['source']
@@ -68,9 +68,10 @@ export const zoneLabelOf = (mode: 'platform' | 'store' | undefined) => TIME_ZONE
 
 /* Details column (ticket nfDLP1CZiPjGfN8FG764, 21 Oct 2026): what a deal delivers over its whole flight, for the hover.
    Signage, so plays are the measure: a slot's plays = plays per window per display x displays x windows a day x days in the flight
-   (calendar days, both ends included, as the API counts a term). Value is plays / 1000 x the CPM, or the term total split across
-   the slots by their share of the plays. A floor is the lowest value the deal can settle at, so it is flagged as "from". */
-export type DetailSlot = { playsPerWindow: number | null; displayCount: number | null; windowHours: number }
+   (calendar days, both ends included, as the API counts a term). Value follows the one pricing formula (28 Oct 2026): plays x VAC-d per
+   play = impressions, and impressions / 1,000 x the CPM; or the term total split across the slots by their share of the impressions.
+   A floor is the lowest value the deal can settle at, so it is flagged as "from". */
+export type DetailSlot = { playsPerWindow: number | null; displayCount: number | null; windowHours: number; vacdPerPlay?: number | null }
 export const flightDays = (from: string | null | undefined, to: string | null | undefined): number | null => {
   if (!from || !to) return null
   const a = Date.parse(from.slice(0, 10)), b = Date.parse(to.slice(0, 10))
@@ -78,14 +79,19 @@ export const flightDays = (from: string | null | undefined, to: string | null | 
 }
 export const slotPlaysOver = (s: DetailSlot, days: number | null): number | null =>
   days == null || s.playsPerWindow == null || s.displayCount == null || !(s.windowHours > 0) ? null : Math.round(s.playsPerWindow * s.displayCount * (24 / s.windowHours) * days)
+/* Impressions a slot delivers over the flight: its plays x its VAC-d per play. Null when either is unknown. */
+export const slotImpressionsOver = (s: DetailSlot, days: number | null): number | null => {
+  const plays = slotPlaysOver(s, days)
+  return plays == null || s.vacdPerPlay == null ? null : Math.round(impressionsOfPlays(plays, s.vacdPerPlay))
+}
 export type DealValue = { min: number; max: number; from: boolean }
 type ValueList = Pick<BuyersList, 'dealType' | 'lockedWin' | 'effectiveRateCpm' | 'termTotal'>
-/* The deal's value for `plays` plays (the whole deal's, or one slot's share of a term total); null with no rate to price at. */
-export const valueOf = (l: ValueList, plays: number, totalPlays: number): DealValue | null => {
-  if (l.lockedWin) { const v = (plays / 1000) * l.lockedWin.cpm; return { min: v, max: v, from: false } }
-  if (isGuaranteedLike(l.dealType) && l.termTotal != null) { const v = totalPlays > 0 ? (l.termTotal * plays) / totalPlays : 0; return { min: v, max: v, from: false } }
+/* The deal's value for `impressions` impressions (the whole deal's, or one slot's share of a term total); null with no rate to price at. */
+export const valueOf = (l: ValueList, impressions: number, totalImpressions: number): DealValue | null => {
+  if (l.lockedWin) { const v = valueOfImpressions(impressions, l.lockedWin.cpm); return { min: v, max: v, from: false } }
+  if (isGuaranteedLike(l.dealType) && l.termTotal != null) { const v = totalImpressions > 0 ? (l.termTotal * impressions) / totalImpressions : 0; return { min: v, max: v, from: false } }
   const r = l.effectiveRateCpm
-  return !r || r.min === null || r.max === null ? null : { min: (plays / 1000) * r.min, max: (plays / 1000) * r.max, from: cpmKind(l.dealType) === 'floor' }
+  return !r || r.min === null || r.max === null ? null : { min: valueOfImpressions(impressions, r.min), max: valueOfImpressions(impressions, r.max), from: cpmKind(l.dealType) === 'floor' }
 }
 export const valueText = (v: DealValue | null) => {
   if (!v) return null
@@ -93,32 +99,30 @@ export const valueText = (v: DealValue | null) => {
   return `${v.from ? 'from ' : ''}USD ${Math.round(v.min) === Math.round(v.max) ? f(v.min) : `${f(v.min)}–${f(v.max)}`}`
 }
 
-/* The deal's total value for a campaign's hover (Campaign Approval): a term total as set, otherwise the committed plays priced at the deal's
-   rate (a range when either varies). Null when the deal has no committed volume or rate yet - the hover then says so. */
-export const dealTotalValueText = (l: ValueList & Pick<BuyersList, 'effectiveCommittedPlays'>): string | null => {
+/* The deal's total value for a campaign's hover (Campaign Approval): a term total as set, otherwise the committed IMPRESSIONS priced at the
+   deal's rate: impressions / 1,000 x CPM (a range when the rate varies). Null when the deal has no committed volume or rate yet - the hover then says so. */
+export const dealTotalValueText = (l: ValueList & Pick<BuyersList, 'committedImpressions'>): string | null => {
   if (isGuaranteedLike(l.dealType) && l.termTotal != null) return valueText(valueOf(l, 1, 1))
-  const p = l.effectiveCommittedPlays
-  if (!p || p.min === null || p.max === null) return null
-  const lo = valueOf(l, p.min, p.min), hi = valueOf(l, p.max, p.max)
-  return lo && hi ? valueText({ min: lo.min, max: hi.max, from: lo.from }) : null
+  const imps = l.committedImpressions
+  return imps == null ? null : valueText(valueOf(l, imps, imps))
 }
 
-/* Delivery pacing for a Programmatic guaranteed deal (Booking schedule hover, ticket CXmiVdLcDzkcojpSnJic, 27 Oct 2026). Plays are the
-   measure (signage bills on plays, not impressions). Delivered = plays billed so far; due = the committed plays x the share of the flight
-   elapsed; pacing = delivered / due. Within 5% of due is on pace. Null when the deal commits nothing or has an open flight (nothing to pace
+/* Delivery pacing for a Programmatic guaranteed deal (Booking schedule hover, ticket CXmiVdLcDzkcojpSnJic, 27 Oct 2026). Impressions are the
+   measure since 28 Oct 2026 (Programmatic guaranteed commits impressions, as the industry does; plays are the delivery plan shown beside them).
+   Delivered = impressions billed so far (realised VAC-d); due = the committed impressions x the share of the flight elapsed; pacing = delivered / due. Within 5% of due is on pace. Null when the deal commits nothing or has an open flight (nothing to pace
    against); "not started" before the flight begins. Flight moments are compared as saved (no zone conversion), so the share is approximate
    to within the zone offset. */
 export const PACING_TOLERANCE = 0.05
 export type Pacing = { delivered: number; committed: number; status: 'not started' | 'on pace' | 'behind' | 'ahead'; pct: number | null }
-export const pacingOf = (l: Pick<BuyersList, 'dealType' | 'committedPlays' | 'deliveredPlays' | 'activeFrom' | 'activeTo'>, now: number): Pacing | null => {
-  if (l.dealType !== 'guaranteed' || l.committedPlays == null || !(l.committedPlays > 0)) return null
-  const delivered = l.deliveredPlays ?? 0
-  const base = { delivered, committed: l.committedPlays }
+export const pacingOf = (l: Pick<BuyersList, 'dealType' | 'committedImpressions' | 'deliveredImpressions' | 'activeFrom' | 'activeTo'>, now: number): Pacing | null => {
+  if (l.dealType !== 'guaranteed' || l.committedImpressions == null || !(l.committedImpressions > 0)) return null
+  const delivered = l.deliveredImpressions ?? 0
+  const base = { delivered, committed: l.committedImpressions }
   if (!l.activeFrom || !l.activeTo) return null
   const start = Date.parse(l.activeFrom), end = Date.parse(l.activeTo)
   if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return null
   if (now < start) return { ...base, status: 'not started', pct: null }
-  const due = l.committedPlays * Math.min(1, (now - start) / (end - start))
+  const due = l.committedImpressions * Math.min(1, (now - start) / (end - start))
   const ratio = delivered / due
   return { ...base, status: Math.abs(ratio - 1) <= PACING_TOLERANCE ? 'on pace' : ratio < 1 ? 'behind' : 'ahead', pct: Math.round(ratio * 100) }
 }

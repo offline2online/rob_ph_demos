@@ -21,13 +21,14 @@ import { T } from '../../theme/phTheme'
 import { ARCHIVED_DEALS_PATH } from './archivedPath'
 import { BuyersListModal } from './BuyersListModal'
 import { DealSheetModal } from './DealSheetModal'
+import { canCancel, canEnd, EndDealDialog, type TerminateMode } from './EndDealDialog'
 import { groupSlotsByDisplayType } from './slotLine'
 import { buyerStatusOf, flightMoment, zoneLabelOf } from './effectiveTerm'
 import { DEAL_TYPE_LABELS, DealDetailsTip, TIP_MUTED, dealFigures, num, type DealSlot } from './DealDetailsTip'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type SlotInfo = DealSlot
-export type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onArchive: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
+export type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onArchive: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; onTerminate: (l: BuyersList, mode: TerminateMode) => void; canEdit: boolean; showTargeting: boolean; bufferPct: number } }
 export type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* One line per targeting rule, in the words of the criteria picker: "State: includes selected NSW, VIC". */
@@ -66,6 +67,7 @@ const NameCell = ({ data, context }: P) => {
       {data.status === 'draft' && <div style={{ fontSize: 11.5, color: T.muted }} data-testid={`draft-${data.id}`}>{data.dealType === 'direct' ? 'Draft · not live yet' : 'Draft · not shared with any DSP'}</div>}
       {/* A Direct advertiser deal is never shared with a DSP or accepted by a buyer: Finalise makes it live (E2E 21 Oct 2026, it read "Shared · Pending" for good). */}
       {data.status === 'shared' && data.dealType === 'direct' && <div style={{ fontSize: 11.5, color: T.muted }} data-testid={`status-${data.id}`}>Live · direct, not sent to a DSP</div>}
+      {data.status === 'shared' && data.endKind === 'ended_early' && <div style={{ fontSize: 11.5, color: T.error }} data-testid={`ended-early-${data.id}`}>Ended early · ends {flightMoment(data.activeTo)}</div>}
       {/* A shared deal's status in DV360's words, alongside PH's Shared. */}
       {data.dealType !== 'direct' && (() => {
         const s = buyerStatusOf(data)
@@ -138,16 +140,16 @@ export const TermCell = ({ data }: P) => {
   const from = flightMoment(data.activeFrom)
   const to = flightMoment(data.activeTo)
   if (!from && !to) return <span style={{ color: T.muted }}>Always active</span>
-  return <span style={{ fontSize: 12.5 }}>{from ?? 'No start date'} → {to ?? 'No end date'}<div style={{ fontSize: 11.5, color: T.muted }}>{zoneLabelOf(data.timeZoneMode)}</div></span>
+  return <span style={{ fontSize: 12.5 }}>{from ?? 'No start date'} → {to ?? 'No end date'}<div style={{ fontSize: 11.5, color: T.muted }}>{from && !to ? 'Always active · ' : ''}{zoneLabelOf(data.timeZoneMode)}</div></span>
 }
 /* Details (ticket nfDLP1CZiPjGfN8FG764): the rate, the deal type and a one-line summary in the cell; the hover (DealDetailsTip, shared with
    the Booking schedule tile) is a compact, programmatic read of the deal over its whole flight. */
 export const DetailsCell = ({ data, context }: P) => {
   if (!data) return null
   const slots = context.current.slots.get(data.id) ?? []
-  const { rate, rateType, typeLabel, days, totalPlays, complete, total } = dealFigures(data, slots)
+  const { rate, rateType, typeLabel, days, totalPlays, totalImpressions, complete, total } = dealFigures(data, slots)
   /* The cell's one-line summary: slots, plays and value over the flight, or why there is no total yet. */
-  const summary = !slots.length ? 'Not assigned to a slot' : days == null ? 'Open flight: no total' : !complete ? `${slots.length} slot${slots.length === 1 ? '' : 's'}` : [`${slots.length} slot${slots.length === 1 ? '' : 's'}`, `${num(totalPlays)} plays`, total].filter(Boolean).join(' · ')
+  const summary = !slots.length ? 'Not assigned to a slot' : days == null ? 'Open flight: no total' : !complete ? `${slots.length} slot${slots.length === 1 ? '' : 's'}` : [`${slots.length} slot${slots.length === 1 ? '' : 's'}`, `${num(totalPlays)} plays`, `${num(totalImpressions)} impressions`, total].filter(Boolean).join(' · ')
   return (
     <Tip title={<DealDetailsTip data={data} slots={slots} seatName={context.current.seatName} />} styles={{ root: { maxWidth: 'min(320px, calc(100vw - 32px))' } }}>
       <div className="min-w-0">
@@ -171,6 +173,8 @@ const ActionsCell = ({ data, context }: P) =>
     <span className="inline-flex gap-1">
       {data.status === 'shared' && data.dealType !== 'direct' && <Button type="text" size="small" aria-label={`Deal sheet for ${data.name}`} icon={<Icon name="ios_share" size={15} />} onClick={() => context.current.onShare(data)} />}
       <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
+      {canCancel(data) && <Button type="text" size="small" aria-label={`Cancel deal ${data.name}`} title="Cancel deal (flight not started)" icon={<Icon name="cancel" size={15} />} onClick={() => context.current.onTerminate(data, 'cancel')} />}
+      {canEnd(data) && <Button type="text" size="small" aria-label={`End deal ${data.name}`} title="End deal" icon={<Icon name="event_busy" size={15} />} onClick={() => context.current.onTerminate(data, 'end')} />}
       <Button type="text" size="small" aria-label={`Archive ${data.name}`} icon={<Icon name="archive" size={15} />} onClick={() => context.current.onArchive(data)} />
       {/* Delete (red, always the rightmost icon) is for a deal that was never finalised and shared (a draft, either kind); anything shared can only be archived. */}
       {data.status === 'draft' && <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />}
@@ -212,6 +216,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
   /* Whether the open dialog deletes the draft for good or archives the deal. */
   const [removal, setRemoval] = useState<'archive' | 'delete'>('archive')
   const [sharing, setSharing] = useState<BuyersList | null>(null)
+  const [terminating, setTerminating] = useState<{ deal: BuyersList; mode: TerminateMode } | null>(null)
   const [deleteError, setDeleteError] = useState<ApiRequestError | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
 
@@ -242,7 +247,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
     { headerName: 'Flight dates', width: 300, minWidth: 280, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}`,
       /* Sort by start, then end; ISO text sorts in date order. A missing date (always active, no start) sorts first. */
       sortable: true, comparator: compareFlights, ...searchColumn<BuyersList>('Flight dates'), filterValueGetter: (p) => `${flightMoment(p.data?.activeFrom ?? null) ?? ''} ${flightMoment(p.data?.activeTo ?? null) ?? ''}` },
-    ...(canEdit ? [{ headerName: '', width: 150, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
+    ...(canEdit ? [{ headerName: '', width: 190, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ], [canEdit])
   const context = {
     canEdit, showTargeting, bufferPct, capacity, slots, dspName, seatName,
@@ -251,6 +256,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
       setModalOpen(true)
     },
     onShare: (l: BuyersList) => setSharing(l),
+    onTerminate: (l: BuyersList, mode: TerminateMode) => setTerminating({ deal: l, mode }),
     onArchive: (l: BuyersList) => {
       setRemoval('archive')
       setDeleting(l)
@@ -314,6 +320,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged, s
       )}
       <BuyersListModal showTargeting={showTargeting} open={modalOpen} editing={editing} onClose={() => setModalOpen(false)} onSaved={() => onChanged()} />
       <DealSheetModal list={sharing} onClose={() => setSharing(null)} />
+      <EndDealDialog deal={terminating?.deal ?? null} mode={terminating?.mode ?? 'end'} onClose={() => setTerminating(null)} onDone={onChanged} />
       {deleting && (
         <DeleteDialog
           open={!!deleting} name={deleting.name}

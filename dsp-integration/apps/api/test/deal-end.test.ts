@@ -69,3 +69,52 @@ describe('deal end of flight', () => {
     expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists?archived=true' })).json().items.map((l: { id: string }) => l.id)).toContain(deal.id)
   })
 })
+
+/* Ticket q2t6YgDdW9XCsbORxCq2: Cancel (flight not started) and End (live), each with a required reason. */
+describe('cancel and end a deal', () => {
+  const post = (app: ReturnType<typeof buildApp>, id: string, verb: 'cancel' | 'end', payload: Record<string, unknown>) =>
+    app.inject({ method: 'POST', url: `/api/admin/v1/buyers-lists/${id}/${verb}`, payload })
+  const future = '2026-12-01T00:00:00.000Z'
+
+  it('cancels a shared deal whose flight has not started: archived as cancelled with its reason, slots released', async () => {
+    const { ctx, app, deal } = await setup('2026-12-31T00:00:00.000Z')
+    await ctx.buyersLists.update(deal.id, { name: deal.name, description: '', dealType: 'guaranteed', invitedBuyers: deal.invitedBuyers, activeFrom: future, activeTo: '2026-12-31T00:00:00.000Z', auctionCloses: null, floorCpm: 100 })
+    expect((await post(app, deal.id, 'cancel', { reason: '  ' })).statusCode).toBe(400)
+    const res = await post(app, deal.id, 'cancel', { reason: 'Buyer withdrew' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ status: 'archived', endKind: 'cancelled', endReason: 'Buyer withdrew', assignedSlots: [expect.objectContaining({ positionId: 'portrait.s1' })] })
+    expect(assignedOf((await ctx.displayTypes.get('portrait'))!.phExtensions!.slots[0]).buyersListIds).toEqual([])
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists?archived=true' })).json().items.map((l: { id: string }) => l.id)).toContain(deal.id)
+  })
+
+  it('does not offer Cancel on a live deal, or End on a deal that has not started', async () => {
+    const live = await setup('2026-12-31T00:00:00.000Z')
+    expect((await post(live.app, live.deal.id, 'cancel', { reason: 'x' })).statusCode).toBe(409)
+    await live.ctx.buyersLists.update(live.deal.id, { name: 'n', description: '', dealType: 'guaranteed', invitedBuyers: live.deal.invitedBuyers, activeFrom: future, activeTo: '2026-12-31T00:00:00.000Z', auctionCloses: null, floorCpm: 100 })
+    expect((await post(live.app, live.deal.id, 'end', { reason: 'x', endAt: NOW.toISOString() })).statusCode).toBe(409)
+  })
+
+  it('ends a live deal at a future date: it keeps running, with the old end kept, then archives itself after', async () => {
+    const { ctx, app, deal } = await setup('2026-12-31T00:00:00.000Z')
+    expect((await post(app, deal.id, 'end', { reason: 'x', endAt: '2026-01-01T00:00:00.000Z' })).statusCode).toBe(400)
+    expect((await post(app, deal.id, 'end', { reason: 'x', endAt: '2027-01-01T00:00:00.000Z' })).statusCode).toBe(400)
+    const endAt = new Date(NOW.getTime() + 3600_000).toISOString()
+    const res = await post(app, deal.id, 'end', { reason: 'Campaign pulled', endAt })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ status: 'shared', endKind: 'ended_early', endReason: 'Campaign pulled', activeTo: endAt, originalActiveTo: '2026-12-31T00:00:00.000Z', deliveredValue: 0 })
+    expect(assignedOf((await ctx.displayTypes.get('portrait'))!.phExtensions!.slots[0]).buyersListIds).toEqual([deal.id])
+    expect((await post(app, deal.id, 'end', { reason: 'again', endAt })).statusCode).toBe(409)
+    const later = new Date(NOW.getTime() + 2 * 3600_000)
+    const lateCtx = { ...ctx, clock: () => later }
+    await archiveEndedDeals(lateCtx as typeof ctx)
+    expect(await ctx.buyersLists.get(deal.id)).toMatchObject({ status: 'archived', endKind: 'ended_early', archivedBy: 'system' })
+  })
+
+  it('ends an open-ended deal now: its end date is set and it releases and archives at once', async () => {
+    const { ctx, app, deal } = await setup(null)
+    const res = await post(app, deal.id, 'end', { reason: 'Contract ended', endAt: NOW.toISOString() })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ status: 'archived', endKind: 'ended_early', activeTo: NOW.toISOString(), originalActiveTo: null })
+    expect(assignedOf((await ctx.displayTypes.get('portrait'))!.phExtensions!.slots[0]).buyersListIds).toEqual([])
+  })
+})

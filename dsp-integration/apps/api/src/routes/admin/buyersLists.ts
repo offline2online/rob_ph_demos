@@ -18,6 +18,7 @@ import { dealOf } from '../../domain/dealCreative'
 import { dealSheetCsv, dealSheetOf } from '../../domain/dealSheet'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { effectiveTerm } from '../../domain/pricing'
+import { archiveEndedDeals, releaseAndArchive } from '../../domain/dealEnd'
 import { positionIdOf } from '../../domain/positions'
 import { assignedSlotsByList, type AssignedSlot } from '../../domain/assignedSlots'
 import { dealAudienceErrors } from '../../domain/audiences'
@@ -69,8 +70,17 @@ const withDelivery = async (ctx: Context, l: BuyersList, slots?: Map<string, Ass
   const effectiveCommittedPlays = { min: committed, max: committed, source: committed == null ? ('none' as const) : ('buyer' as const) }
   const effectiveRateCpm = effectiveTerm({ platform: company.floorCpm, dsp: invited.map((b) => b?.floorCpm), buyer: l.floorCpm }, (n) => (l.belowFloorOverride && typeof l.floorCpm === 'number' ? n : Math.max(company.floorCpm, n)))
   const equivalentCpm = isGuaranteedLike(l.dealType) && l.termTotal != null ? equivalentCpmRange(equivalentCpmOf(l.termTotal, await termSlotsOf(ctx, l.id), termDaysOf(l.activeFrom, l.activeTo))) : null
-  return { ...l, effectiveCommittedPlays, effectiveRateCpm, equivalentCpm, deliveredPlays: await deliveredOf(ctx, l), assignedSlots: l.status === 'archived' ? l.assignedSlots : (slots ?? (await assignedSlotsByList(ctx))).get(l.id) ?? [] }
+  return { ...l, effectiveCommittedPlays, effectiveRateCpm, equivalentCpm, deliveredPlays: await deliveredOf(ctx, l), deliveredImpressions: await deliveredImpressionsOf(ctx, l), deliveredValue: await deliveredValueOf(ctx, l), assignedSlots: l.status === 'archived' ? l.assignedSlots : (slots ?? (await assignedSlotsByList(ctx))).get(l.id) ?? [] }
 }
+/* Billed value over an early-ended deal's flight, for the Details hover beside its original total. Positions come from the slots it holds, or kept when it was archived. */
+const deliveredValueOf = async (ctx: Context, l: BuyersList): Promise<number | undefined> => {
+  if (l.endKind !== 'ended_early') return undefined
+  const positions = l.status === 'archived' ? l.assignedSlots.map((s) => s.positionId) : await positionsOfDeal(ctx, l.id)
+  return Math.round((await ctx.billing.amountAt(positions, l.activeFrom, l.activeTo)) * 100) / 100
+}
+/* Impressions billed over the flight (28 Oct 2026): the billing line items' realised VAC-d, what a guaranteed deal's pacing runs on. */
+const deliveredImpressionsOf = async (ctx: Context, l: BuyersList): Promise<number> =>
+  l.committedImpressions == null ? 0 : await ctx.billing.viewsAt(await positionsOfDeal(ctx, l.id), l.activeFrom, l.activeTo)
 const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
   l.committedPlays == null ? 0 : await ctx.billing.playsAt(await positionsOfDeal(ctx, l.id), l.activeFrom, l.activeTo)
 
@@ -162,6 +172,9 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const activeFrom = parseDate(b.activeFrom, 'activeFrom')
     const activeTo = parseDate(b.activeTo, 'activeTo')
     if (activeFrom && activeTo && Date.parse(activeFrom) > Date.parse(activeTo)) errors.push({ field: 'activeTo', reason: 'Must be on or after activeFrom.' })
+    /* Direct advertiser deals may be open-ended (27 Oct 2026): a start date and no end date, running until it is ended or archived, at a fixed CPM. A programmatic guaranteed deal keeps both dates (a draft with neither is still accepted). */
+    if (dealType === 'direct' && !activeFrom) errors.push({ field: 'activeFrom', reason: 'A Direct advertiser deal needs a start date; the end date is optional (no end date means always active from the start).' })
+    if (dealType === 'guaranteed' && !activeFrom !== !activeTo) errors.push({ field: activeFrom ? 'activeTo' : 'activeFrom', reason: 'A programmatic guaranteed deal needs both a start and an end date.' })
     /* The time zone the flight's start and end times are read in (22 Oct 2026): the platform's (the default) or each store's own. Omitted means as it is (the stored mode on an edit, the platform's on a create). */
     if (b.timeZoneMode !== undefined && b.timeZoneMode !== 'platform' && b.timeZoneMode !== 'store') errors.push({ field: 'timeZoneMode', reason: 'platform or store.' })
     const timeZoneMode: TimeZoneMode | undefined = b.timeZoneMode === 'platform' || b.timeZoneMode === 'store' ? b.timeZoneMode : undefined
@@ -197,6 +210,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       if (!guaranteedLike) errors.push({ field: 'termTotal', reason: 'Only a Programmatic guaranteed or Direct advertiser deal is priced as a total for its term; leave it empty for a private auction or preferred deal.' })
       else if (typeof b.termTotal !== 'number' || !Number.isFinite(b.termTotal) || b.termTotal <= 0) errors.push({ field: 'termTotal', reason: 'Total for the term must be greater than 0 USD.' })
       else if (floorCpm != null) errors.push({ field: 'termTotal', reason: 'Price a guaranteed deal as a fixed CPM or a total for the term, not both.' })
+      else if (!activeTo) errors.push({ field: 'termTotal', reason: 'A total for the term needs an end date: an open-ended deal is priced at a fixed CPM. Set an end date, or enter a fixed CPM.' })
       else termTotal = Math.round(b.termTotal * 100) / 100
     }
     const committedPlays: number | null = null
@@ -403,6 +417,58 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       return (await ctx.buyersLists.archive(list.id, auditActorOf(req).actor.name)) as BuyersList
     })
     return withDelivery(ctx, archived)
+  })
+
+  /* Cancel and End (ticket q2t6YgDdW9XCsbORxCq2). Both need the person's reason. Cancel: a shared deal whose flight has not started is archived at once as Cancelled and its slots are released. End: a live deal gets an end date (now or later; an open-ended Direct deal gets one); it runs until then, then releases and archives itself like any ended deal (domain/dealEnd.ts), so delivery and revenue stop at that moment. A past start-of-flight is what separates the two: the other action answers 409. */
+  const reasonOf = (b: { reason?: unknown } | undefined) => {
+    const reason = typeof b?.reason === 'string' ? b.reason.trim() : ''
+    if (!reason || reason.length > 1000) throw validationFailed([{ field: 'reason', reason: 'A reason is required (up to 1000 characters).' }])
+    return reason
+  }
+  const shareable = (list: BuyersList, verb: string) => {
+    notArchived(list)
+    if (list.status !== 'shared') throw conflict(`Only a finalised and shared deal can be ${verb}. Delete a draft instead.`, [{ field: 'status', reason: 'This deal has not been finalised and shared.' }])
+  }
+  app.post<{ Params: { buyersListId: string }; Body: { reason?: unknown } }>('/buyers-lists/:buyersListId/cancel', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'admin')
+    const reason = reasonOf(req.body)
+    const now = ctx.clock().toISOString()
+    const done = await tx(ctx.db, async () => {
+      const list = await ctx.buyersLists.get(req.params.buyersListId)
+      if (!list) throw notFound()
+      shareable(list, 'cancelled')
+      if (!list.activeFrom || Date.parse(list.activeFrom) <= Date.parse(now)) throw conflict('Only a deal whose flight has not started can be cancelled. End a live deal instead.', [{ field: 'activeFrom', reason: 'The flight has started.' }])
+      const by = auditActorOf(req).actor.name
+      await ctx.buyersLists.terminate(list.id, { kind: 'cancelled', reason, by, at: now })
+      return (await releaseAndArchive(ctx, list.id, by, now)) as BuyersList
+    })
+    return withDelivery(ctx, done)
+  })
+  app.post<{ Params: { buyersListId: string }; Body: { reason?: unknown; endAt?: unknown } }>('/buyers-lists/:buyersListId/end', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'admin')
+    const reason = reasonOf(req.body)
+    const nowMs = ctx.clock().getTime()
+    const asked = typeof req.body?.endAt === 'string' ? Date.parse(req.body.endAt) : NaN
+    if (Number.isNaN(asked)) throw validationFailed([{ field: 'endAt', reason: 'An end date and time is required.' }])
+    /* "Now" is what the browser's clock said a moment ago; a few minutes' lag is still now, anything older is the past. */
+    if (asked < nowMs - 5 * 60_000) throw validationFailed([{ field: 'endAt', reason: 'The end date cannot be in the past.' }])
+    const endAt = new Date(Math.max(asked, nowMs)).toISOString()
+    const done = await tx(ctx.db, async () => {
+      const list = await ctx.buyersLists.get(req.params.buyersListId)
+      if (!list) throw notFound()
+      shareable(list, 'ended')
+      if (list.activeFrom && Date.parse(list.activeFrom) > nowMs) throw conflict('Only a live deal can be ended. Cancel a deal whose flight has not started instead.', [{ field: 'activeFrom', reason: 'The flight has not started.' }])
+      if (list.endKind) throw conflict('This deal has already been ended early.', [{ field: 'endKind', reason: 'An early end is already set.' }])
+      if (list.activeTo && Date.parse(list.activeTo) <= nowMs) throw conflict('This deal\'s flight has already ended.', [{ field: 'activeTo', reason: 'The flight is over.' }])
+      if (list.activeTo && Date.parse(endAt) >= Date.parse(list.activeTo)) throw validationFailed([{ field: 'endAt', reason: 'The new end must be before the current end of the flight.' }])
+      if (list.activeFrom && Date.parse(endAt) < Date.parse(list.activeFrom)) throw validationFailed([{ field: 'endAt', reason: 'The end cannot be before the flight starts.' }])
+      return (await ctx.buyersLists.terminate(list.id, { kind: 'ended_early', reason, by: auditActorOf(req).actor.name, at: new Date(nowMs).toISOString(), endAt })) as BuyersList
+    })
+    /* An end at once needs no waiting: if its last window is billed it releases and archives now, otherwise on the scheduler tick that follows billing. */
+    if (Date.parse(endAt) <= nowMs) await archiveEndedDeals(ctx)
+    return withDelivery(ctx, (await ctx.buyersLists.get(done.id)) as BuyersList)
   })
 
   /* A deal that was never finalised and shared can be deleted for good (ticket ROSvBDdeLr3jCHgqRcUR); once shared with a buyer (or live, for a Direct advertiser deal) it can only be archived. Refused while a slot is assigned to it; the checks and the delete are one transaction. The change history records it as a deleted deal. */

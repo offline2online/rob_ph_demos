@@ -2,6 +2,7 @@
    opportunities that found no buyer. Append-only upserts; the retention sweep
    deletes whole old hours. Read by the unsold-slots report. */
 import { type Db, prepared, type Awaitable } from '../db/db'
+import { valueOfImpressions } from '@ph-dsp/types'
 
 export type UnsoldReason = 'no_bids' | 'below_floor' | 'uncached' | 'no_creative' | 'other'
 export const UNSOLD_REASONS: UnsoldReason[] = ['no_bids', 'below_floor', 'uncached', 'no_creative', 'other']
@@ -39,7 +40,7 @@ export function sqliteUnsoldSlotRepo(db: Db): UnsoldSlotRepo {
          VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
          ON CONFLICT (hour, display_id, position_id, reason, currency) DO UPDATE SET impressions = impressions + 1, floor_cpm_sum = floor_cpm_sum + excluded.floor_cpm_sum,
            missed_views = missed_views + excluded.missed_views, missed_amount = missed_amount + excluded.missed_amount`,
-      ).run(o.hour, o.displayId, o.positionId, o.reason, o.currency, o.storeId, o.displayTypeId, o.floorCpm, o.views, (o.views / 1000) * o.floorCpm)
+      ).run(o.hour, o.displayId, o.positionId, o.reason, o.currency, o.storeId, o.displayTypeId, o.floorCpm, o.views, valueOfImpressions(o.views, o.floorCpm))
     },
     report: ({ from, to, by, storeId, displayId, displayTypeId }) => {
       const [key, label, group] = by === 'store'

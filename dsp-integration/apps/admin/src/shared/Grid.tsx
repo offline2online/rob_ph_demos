@@ -16,6 +16,8 @@ import type { ComponentType } from 'react'
    is wrapped to read it, so a cell re-renders (never remounts, so focus and
    an open dropdown survive) whenever the page's context changes. */
 const LiveContext = createContext<unknown>(null)
+/* For a component AG Grid mounts outside the cells (a floating filter) that must follow the page's latest values. */
+export const useLiveContext = () => useContext(LiveContext)
 const liveCache = new WeakMap<object, ComponentType<any>>()
 function live(renderer: unknown): unknown {
   if (typeof renderer !== 'function') return renderer

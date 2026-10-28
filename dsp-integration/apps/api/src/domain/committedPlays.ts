@@ -1,10 +1,10 @@
-/* A programmatic guaranteed deal's committed plays are derived, never typed (Rob, 21 Oct 2026): the forecast plays of every
+/* A programmatic guaranteed deal's committed plays and impressions are derived, never typed (Rob, 21 Oct 2026): the forecast plays of every
    slot assigned to it over its whole delivery term, less the guarantee buffer. Anything that changes the slots, the term or the
    buffer changes the figure, so the routes that make those changes recompute it here and store the result on the deal
    (BuyersListRepo.setCommittedPlays), where the deal sheet, the DSP payload and delivery read it. */
 import { isGuaranteedLike, type BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
-import { committedPlaysOf, termDaysOf, termSlotsOf } from './termPrice'
+import { committedImpressionsOf, committedPlaysOf, termDaysOf, termSlotsOf } from './termPrice'
 
 type TermOf = Pick<BuyersList, 'id' | 'dealType' | 'activeFrom' | 'activeTo'>
 
@@ -14,12 +14,18 @@ export async function derivedCommittedPlays(ctx: Context, list: TermOf): Promise
   return committedPlaysOf(await termSlotsOf(ctx, list.id), termDaysOf(list.activeFrom, list.activeTo), (await ctx.company.get()).guaranteeBufferPct)
 }
 
+/* What a guaranteed deal actually commits (Rob, 28 Oct 2026): IMPRESSIONS, the slots' VAC-d over every open window of the term, less the buffer. Null on the same conditions as the plays. */
+export async function derivedCommittedImpressions(ctx: Context, list: TermOf): Promise<number | null> {
+  if (!isGuaranteedLike(list.dealType)) return null
+  return committedImpressionsOf(await termSlotsOf(ctx, list.id), termDaysOf(list.activeFrom, list.activeTo), (await ctx.company.get()).guaranteeBufferPct)
+}
+
 /* Stores the derived figure on each deal whose slots just changed; a shared deal whose figure moved is versioned and asks its buyers to accept again. */
 export async function refreshCommittedPlays(ctx: Context, listIds: Iterable<string>, by?: string): Promise<void> {
   for (const id of new Set(listIds)) {
     const list = await ctx.buyersLists.get(id)
     if (!list || !isGuaranteedLike(list.dealType)) continue
-    await ctx.buyersLists.setCommittedPlays(id, await derivedCommittedPlays(ctx, list), by)
+    await ctx.buyersLists.setCommittedPlays(id, await derivedCommittedPlays(ctx, list), by, await derivedCommittedImpressions(ctx, list))
   }
 }
 

@@ -16,7 +16,7 @@ const playsPerWindow = (r: AvailableInventoryRow): { plays: number; hours: numbe
 export const dealSlotsByPosition = (rows: AvailableInventoryRow[]): Map<string, DealSlot> =>
   new Map(rows.map((r) => {
     const { plays, hours } = playsPerWindow(r)
-    return [`${r.displayTypeId}.s${r.slot}`, { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, orientation: r.displayTypeOrientation ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: plays, displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: hours }] as const
+    return [`${r.displayTypeId}.s${r.slot}`, { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, orientation: r.displayTypeOrientation ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: plays, displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: hours, vacdPerPlay: r.vacdPerPlay ?? null }] as const
   }))
 
 /* A deal's slots, in the order the API lists them. */

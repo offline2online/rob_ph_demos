@@ -23,14 +23,17 @@ import { slotLine } from './slotLine'
 
 /* Same "22 Oct 2026 14:05" form as the flight dates, not the browser's locale (E2E 22 Oct 2026: it read 10/22/2026, 2:19:36 AM). */
 const fmtDate = (v: string | null) => flightMoment(v) ?? ''
-const ArchivedNameCell = ({ data }: P) => (data ? <div className="min-w-0"><div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div><div style={{ fontSize: 11.5, color: T.muted }}>Archived · read only</div></div> : null)
+/* How the deal left the live table: cancelled before it started, ended early, or simply archived. */
+const outcomeOf = (l: BuyersList) => (l.endKind === 'cancelled' ? 'Cancelled' : l.endKind === 'ended_early' ? 'Ended early' : 'Archived')
+const ReasonCell = ({ data }: P) => (data?.endReason ? <Tip title={data.endReason}><span className="truncate" style={{ fontSize: 12.5 }} data-testid={`end-reason-${data.id}`}>{data.endReason}</span></Tip> : <span style={{ fontSize: 12.5, color: T.muted }}>—</span>)
+const ArchivedNameCell = ({ data }: P) => (data ? <div className="min-w-0"><div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div><div style={{ fontSize: 11.5, color: T.muted }}>{outcomeOf(data)} · read only</div></div> : null)
 /* The deal's slots as the Slots and Details hovers read them, from the snapshot kept when it was archived (ticket TeKdyE4cSeb9EQ9LIJeX):
    the same shape the live table builds from Available Inventory, so both hovers read the same on a live and an archived deal. A deal
    archived before the figures were kept has no play counts; the hovers say "plays n/a" rather than guess. */
 const archivedSlotsOf = (l?: BuyersList): DealSlot[] => (l?.assignedSlots ?? []).map((s) => ({
   displayType: s.displayTypeName, description: s.description, storeZone: s.storeZone ?? null, orientation: s.orientation ?? null, zoneName: s.zoneName,
   playlist: s.playlistName === '—' ? '' : s.playlistName ?? '', position: s.position ?? s.label.split(' — ').slice(1).join(' — ') ?? '', slot: s.zoneSlot,
-  playsPerWindow: s.playsPerWindow ?? null, displayCount: s.displayCount ?? null, windowHours: s.windowHours ?? 24,
+  playsPerWindow: s.playsPerWindow ?? null, displayCount: s.displayCount ?? null, windowHours: s.windowHours ?? 24, vacdPerPlay: s.vacdPerPlay ?? null,
 }))
 const slotLines = (l?: BuyersList) => (l?.assignedSlots ?? []).map((s) => slotLine(s))
 /* One slot per line, none dropped: a person needs to see exactly which slots the deal was in. */
@@ -58,10 +61,11 @@ export function ArchivedDealsPage() {
     { headerName: 'Slots', width: 300, minWidth: 220, autoHeight: true, cellRenderer: ArchivedSlotsCell, valueGetter: (p) => slotLines(p.data).join(', '), ...searchColumn<BuyersList>('Slots') },
     { headerName: 'Deal ID', width: 160, minWidth: 140, cellRenderer: DealIdCell, valueGetter: (p) => p.data?.dealId ?? '', ...searchColumn<BuyersList>('Deal ID') },
     { headerName: 'Archived', width: 180, minWidth: 160, cellRenderer: ArchivedAtCell, valueGetter: (p) => fmtDate(p.data?.archivedAt ?? null), ...searchColumn<BuyersList>('Archived') },
+    { headerName: 'Reason', width: 220, minWidth: 150, cellRenderer: ReasonCell, valueGetter: (p) => (p.data ? `${outcomeOf(p.data)} ${p.data.endReason ?? ''}` : ''), ...searchColumn<BuyersList>('Reason') },
     { headerName: 'Archived by', width: 140, minWidth: 120, cellRenderer: ArchivedByCell, valueGetter: (p) => p.data?.archivedBy ?? '', ...setColumn<BuyersList>('Archived by', () => rows.map((l) => l.archivedBy ?? '')) },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [rows])
-  const context: Ctx['current'] = { canEdit: false, showTargeting: false, bufferPct, capacity: new Map(), slots: new Map(rows.map((l) => [l.id, archivedSlotsOf(l)])), dspName, seatName, onEdit: () => {}, onShare: () => {}, onArchive: () => {}, onDelete: () => {} }
+  const context: Ctx['current'] = { canEdit: false, showTargeting: false, bufferPct, capacity: new Map(), slots: new Map(rows.map((l) => [l.id, archivedSlotsOf(l)])), dspName, seatName, onEdit: () => {}, onShare: () => {}, onTerminate: () => {}, onArchive: () => {}, onDelete: () => {} }
   return (
     <div>
       {q.isError ? <div style={{ fontSize: 12.5, color: T.error }}>Archived deals could not be loaded.</div>

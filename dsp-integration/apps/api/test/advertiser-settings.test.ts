@@ -112,6 +112,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', displayTypeDescription: null, displayTypeStoreZone: null, displayTypeOrientation: 'landscape', zoneName: 'Zone 1', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, inGlobalDeal: true, globalDealSuppressedBy: null, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null, buyersListIds: [], buyersListNames: [], openAuction: false }, qrControl: true, visionAi: true,
+      vacdPerPlay: 0.214583,
       floorCpm: 100, floorCpmOverride: null, platformFloorCpm: 100,
       billingUnitHours: 24, billingUnitHoursOverride: null, billingUnitPending: null, displayTypeBillingUnitHours: null,
       maxCampaigns: 10, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,

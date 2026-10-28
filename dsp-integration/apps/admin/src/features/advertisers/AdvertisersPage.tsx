@@ -6,22 +6,22 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, Input, InputNumber, Modal, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
-import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
-import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, advertiserSlug, DIRECT_PARTNER_ID, type Partner, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { cpmKindHint, cpmSummary, flightDays, flightMoment, slotImpressionsOver, slotPlaysOver, sourceLabel } from './effectiveTerm'
+import type { ColDef, ICellRendererParams, IFloatingFilterParams } from 'ag-grid-community'
+import { valueOfImpressions, INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, advertiserSlug, DIRECT_PARTNER_ID, type Partner, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
+import { forwardRef, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
 import { Q } from '../../api/queries'
 import { Callout } from '../../shared/Callout'
 import { DeleteDialog } from '../../shared/DeleteDialog'
-import { Grid } from '../../shared/Grid'
+import { Grid, useLiveContext } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { InfoTip, WithTip } from '../../shared/InfoTip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { StatusPill } from '../../shared/Pill'
 import { SaveBar } from '../../shared/SaveBar'
-import { searchColumn, setColumn, showingCount } from '../../shared/TableFilters'
+import { SetFilter, searchColumn, setColumn, showingCount } from '../../shared/TableFilters'
 import { useReportDirty } from '../../shared/UnsavedChanges'
 import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
@@ -151,6 +151,8 @@ type InvCtx = { current: {
   /* Each playlist's display types, listed once for the whole response rather than on every row. */
   playlistDisplayTypes: Record<string, PlaylistDisplayType[]>
   buyersLists: BuyersList[]
+  /* The one deal the Assigned to filter is set to, with its pricing guidance; null otherwise. */
+  dealFocus: DealFocus | null
   set: (key: string, patch: Partial<SlotEdit>) => void
   setBillingUnitDefault: (displayTypeId: string, v: number | null) => void
   setMaxCampaignsDefault: (displayTypeId: string, v: number | null) => void
@@ -161,6 +163,58 @@ type InvCtx = { current: {
   copyAssignedToSiblings: (r: AvailableInventoryRow) => void
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
+/* Pricing guidance for one deal (Rob, 27 Oct 2026): filtering Assigned to by a single deal totals, over the deal's flight, the plays and the
+   minimum value (floor CPM x impressions / 1,000, impressions = plays x VAC-d) of every slot assigned to it, so its price can be set afterwards. A total is null when the
+   flight has no dates, or a slot's plays can't be counted. */
+type DealFocusSlot = { label: string; floor: number; plays: number | null; impressions: number | null; min: number | null }
+type DealFocus = { deal: BuyersList; perDay: boolean; days: number | null; slots: DealFocusSlot[]; totalPlays: number | null; totalImpressions: number | null; totalMin: number | null }
+const usd = (n: number) => `${TRANSACTING_CURRENCY} ${Math.round(n).toLocaleString('en-US')}`
+/* An open-ended deal (a start date and no end date; Direct advertiser deals, 27 Oct 2026) has no flight to total over, so its figures are per day. */
+const isOpenEnded = (d: Pick<BuyersList, 'activeFrom' | 'activeTo'>) => !!d.activeFrom && !d.activeTo
+const flightRangeOf = (d: BuyersList) => (isOpenEnded(d) ? `${flightMoment(d.activeFrom)} → No end date (always active)` : d.activeFrom || d.activeTo ? `${flightMoment(d.activeFrom) ?? 'No start date'} → ${flightMoment(d.activeTo) ?? 'No end date'}` : 'Always active')
+const DEAL_TIP_MUTED = 'rgba(255,255,255,0.65)'
+const useDealFocus = () => (useLiveContext() as { dealFocus?: DealFocus | null } | null)?.dealFocus ?? null
+/* Beside the Assigned to funnel: the selected deal's flight and its length. */
+const AssignedToFilter = forwardRef<unknown, IFloatingFilterParams & { label: string; values?: () => string[] }>(function AssignedToFilter(props, ref) {
+  const f = useDealFocus()
+  return (
+    <div className="flex h-full w-full items-center gap-2">
+      <div className="h-full w-8 shrink-0"><SetFilter ref={ref} {...props} /></div>
+      {f && <span data-testid="deal-flight" className="truncate" style={{ fontSize: 12.5 }}>
+        <span style={{ color: T.muted }}>Flight: </span>{flightRangeOf(f.deal)}{f.perDay ? ' (per day)' : f.days != null ? ` (${f.days.toLocaleString('en-US')} day${f.days === 1 ? '' : 's'})` : ''}
+      </span>}
+    </div>
+  )
+})
+function DealFloorFilter() {
+  const f = useDealFocus()
+  if (!f) return null
+  const tip = (
+    <div data-testid="deal-floor-tip">
+      <div style={{ fontWeight: 500 }}>Minimum value for this deal</div>
+      <div>The minimum for {f.deal.name} {f.perDay ? <>per day: it has no end date ({flightRangeOf(f.deal)}), so this is not over a flight</> : <>over its flight dates ({flightRangeOf(f.deal)})</>}, across the {f.slots.length} selected slot{f.slots.length === 1 ? '' : 's'}. Each slot: floor CPM × impressions {f.perDay ? 'per day' : 'over the flight'} ÷ 1,000 (impressions = plays × VAC-d).</div>
+      {f.days == null ? <div style={{ color: DEAL_TIP_MUTED }}>Set the deal's start and end dates to total it.</div>
+        : f.slots.map((s, i) => <div key={i}>{s.label}: {s.min == null ? 'n/a' : usd(s.min)}<span style={{ color: DEAL_TIP_MUTED }}> ({s.impressions == null ? 'n/a' : `${s.impressions.toLocaleString('en-US')} impressions`} × {s.floor} CPM)</span></div>)}
+    </div>
+  )
+  return <Tip title={tip}><span data-testid="deal-floor-total" style={{ fontSize: 12.5, fontWeight: 600 }}>{f.totalMin == null ? '–' : usd(f.totalMin)}</span></Tip>
+}
+function DealPlaysFilter() {
+  const f = useDealFocus()
+  if (!f) return null
+  const tip = (
+    <div data-testid="deal-plays-tip">
+      <div style={{ fontWeight: 500 }}>{f.perDay ? 'Total plays per day' : 'Total plays over the flight'}</div>
+      <div>Across the {f.slots.length} selected slot{f.slots.length === 1 ? '' : 's'}, {f.perDay ? `per day: the deal has no end date (${flightRangeOf(f.deal)})` : `for ${flightRangeOf(f.deal)}`}.</div>
+      {f.days == null ? <div style={{ color: DEAL_TIP_MUTED }}>Set the deal's start and end dates to total it.</div>
+        : f.slots.map((s, i) => <div key={i}>{s.label}: {s.plays == null ? 'n/a' : `${s.plays.toLocaleString('en-US')} plays`}</div>)}
+    </div>
+  )
+  return <Tip title={tip}><span data-testid="deal-plays-total" style={{ fontSize: 12.5, fontWeight: 600 }}>{f.totalPlays == null ? '–' : f.totalPlays.toLocaleString('en-US')}</span></Tip>
+}
+const dealValueColumn = (component: () => ReactNode): Partial<ColDef<AvailableInventoryRow>> => ({
+  filter: 'agTextColumnFilter', suppressHeaderMenuButton: true, suppressHeaderFilterButton: true, floatingFilter: true, suppressFloatingFilterButton: true, floatingFilterComponent: component,
+})
 /* Playlist is the primary column (ticket "Available Inventory:
    playlist-primary table (drop Display type column) with Unassigned
    indicator", 27 Sep 2026 — this replaced a separate Display type column
@@ -351,6 +405,7 @@ const ADD_BUYERS_LIST = '__add_buyers_list__'
 /* Global deal membership as a chip (9 Oct 2026), backed by Slot.inGlobalDeal; on a buyers-list slot it sits in the open tier beneath the numbered lists (12 Oct 2026). */
 const GLOBAL_CHIP = '__global_deal__'
 const GLOBAL_CHIP_LABEL = 'Included in global deals'
+const ASSIGNED_TO_COL = 'assignedTo'
 const WHITELIST_FILTER = 'Whitelist only'
 const BUYERS_LIST_FILTER_PREFIX = 'Buyers list: '
 /* The slot's buyers lists in priority order (7 Oct 2026): the waterfall. */
@@ -729,14 +784,12 @@ function MaxPlayLengthCell({ data, context }: IP) {
   )
 }
 
-/* Assigned to header tooltip (14 Oct 2026): how slots are assigned and how the waterfall reads, with one worked example. */
+/* Assigned to header tooltip (27 Oct 2026): assigning deals to a slot, and how to read a deal's minimum value and total plays. Auctions are left out: the first release sells Programmatic guaranteed and Direct advertiser deals. */
 const ASSIGNED_TO_TIP = (
   <div className="flex flex-col gap-[6px]">
-    <p className="m-0"><strong>Assigning.</strong> Pick DSPs or buyers lists for this slot in the Assigned to cell. An empty cell is valid: the slot is unassigned and does not sell.</p>
-    <p className="m-0"><strong>Waterfall.</strong> The deals and buyers lists you assign form an ordered priority stack, tried highest first. Beneath them sits the Open auction tier: the DSPs (or All DSPs) chosen for the open auction, plus the global deal where included. If no deal wins the window, the slot falls through to the Open auction.</p>
-    <p className="m-0"><strong>Reserving deals.</strong> Programmatic guaranteed and Direct advertiser deals take the whole slot, so they are not ranked: they are listed apart, and only their flight dates must not overlap.</p>
-    <p className="m-0"><strong>Priority.</strong> Drag the rows to reorder, or use the arrows. The position badge shows each rank.</p>
-    <p className="m-0"><strong>Example.</strong> A slot has buyers list 1, buyers list 2, then the Open auction. Each window is offered to buyers list 1 first; if it does not take it, to buyers list 2; and if no deal wins, it clears in the Open auction.</p>
+    <p className="m-0"><strong>Assigning.</strong> Pick the deals for this slot in the Assigned to cell. An empty cell is valid: the slot is unassigned and does not sell.</p>
+    <p className="m-0"><strong>Reserving deals.</strong> Programmatic guaranteed and Direct advertiser deals take the whole slot, so only their flight dates must not overlap.</p>
+    <p className="m-0"><strong>Pricing a deal.</strong> 1. Create the deal with its advertiser, deal type and flight dates. 2. Assign it to slots here. 3. Click the filter icon in this column and tick that one deal. The filter row then shows the deal's flight, the total minimum value of its slots over the flight (under Floor CPM) and the total plays over the flight (under Plays per window). Hover each to see every slot's figure. 4. Set the deal's price afterwards in Deals and buyers lists.</p>
   </div>
 )
 
@@ -784,6 +837,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
      row: on save, the new list is assigned straight to that slot (Rob, 23 Sep). */
   const [addingBuyersListFor, setAddingBuyersListFor] = useState<AvailableInventoryRow | null>(null)
   const [invShown, setInvShown] = useState<number | null>(null)
+  /* What the Assigned to filter is set to, as the filter's own tokens ("Buyers list: <name>"). */
+  const [assignedFilter, setAssignedFilter] = useState<string[]>([])
   const invValues = (of: (r: AvailableInventoryRow) => string[]) => () => invRows.flatMap(of)
   const inventoryColumns = useMemo<ColDef<AvailableInventoryRow>[]>(() => [
     {
@@ -804,7 +859,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     { headerName: 'Slot', width: 140, minWidth: 140, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? slotColumnText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Slot') },
     {
       /* minWidth too: sizeColumnsToFit shrinks every column to its minWidth on a wide table, which left this at 300px and cut off its waterfall note (E2E 22 Oct 2026). */
-      headerName: 'Assigned to', width: 400, minWidth: 400, cellRenderer: AssignedCell, autoHeight: true,
+      headerName: 'Assigned to', colId: ASSIGNED_TO_COL, width: 400, minWidth: 400, cellRenderer: AssignedCell, autoHeight: true,
       headerComponent: header('Assigned to', ASSIGNED_TO_TIP),
       valueGetter: (p) => {
         if (!p.data) return ''
@@ -833,6 +888,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         ...(buyersLists.data?.items ?? []).map((l) => `${BUYERS_LIST_FILTER_PREFIX}${l.name}`),
         WHITELIST_FILTER,
       ]),
+      floatingFilterComponent: AssignedToFilter,
     },
     {
       /* Narrowed to fit the input + reset/override control (ticket, 26 Sep
@@ -841,6 +897,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       headerName: 'Floor CPM', width: 170, minWidth: 150, cellRenderer: FloorCpmCell,
       headerComponent: header('Floor CPM', FLOOR_CPM_TIP),
       valueGetter: (p) => (p.data ? effectiveFloorCpm((p.context as InvCtx).current, p.data) : 0),
+      ...dealValueColumn(DealFloorFilter),
     },
     {
       headerName: MAX_CAMPAIGNS_HEADER, width: 140, minWidth: 125, cellRenderer: MaxCampaignsCell,
@@ -856,6 +913,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       headerName: 'Plays per window', width: 150, minWidth: 135,
       headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit on ONE display: open hours in the billing unit ÷ (max slot length × slots playing). External displays (Exterior, Entrance) count 24 hours; internal displays (In aisles, Checkout, Other & connected store, or no zone) count the average store trading hours of the stores with displays on this display type. The figure in brackets is the fleet total: that per-display figure × the displays registered to this display type in PH Core (the count in brackets after the playlist name). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
       valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
+      ...dealValueColumn(DealPlaysFilter),
       cellRenderer: ({ value, data, context }: ICellRendererParams<AvailableInventoryRow>) => {
         const per = Number(value)
         const fleet = typeof data?.displayCount === 'number' ? per * data.displayCount : null
@@ -1090,6 +1148,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     open: (id: string) => navigate(`/playlists?displayTypeId=${encodeURIComponent(id)}`),
     canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {},
     buyersLists: buyersLists.data?.items ?? [],
+    dealFocus: null as DealFocus | null,
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
     setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     setMaxCampaignsDefault: (displayTypeId: string, v: number | null) => maxCampaignsDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
@@ -1103,16 +1162,31 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       message.success(`Copied to ${targets.length} other slot${targets.length === 1 ? '' : 's'} on ${r.displayTypeName}. Save changes to apply.`)
     },
   }
+  /* The Assigned to filter set to exactly one deal: total its slots' plays and minimum value over its flight. Read from the draft, like the cells. */
+  const focusName = assignedFilter.length === 1 && assignedFilter[0].startsWith(BUYERS_LIST_FILTER_PREFIX) ? assignedFilter[0].slice(BUYERS_LIST_FILTER_PREFIX.length) : null
+  const focusDeal = focusName === null ? undefined : invContext.buyersLists.find((l) => l.name === focusName)
+  if (focusDeal) {
+    const perDay = isOpenEnded(focusDeal)
+    const days = perDay ? 1 : flightDays(focusDeal.activeFrom, focusDeal.activeTo)
+    const slots = invRows.filter((r) => tiersOf(edited(invContext, r).assignedTo).includes(focusDeal.id)).map((r): DealFocusSlot => {
+      const floor = effectiveFloorCpm(invContext, r)
+      const detail = { playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r), vacdPerPlay: r.vacdPerPlay ?? null }
+      const plays = slotPlaysOver(detail, days), impressions = slotImpressionsOver(detail, days)
+      return { label: `${r.displayTypeName} · slot ${r.zoneSlot}`, floor, plays, impressions, min: impressions == null ? null : valueOfImpressions(impressions, floor) }
+    })
+    const complete = days != null && slots.length > 0 && slots.every((s) => s.plays != null && s.impressions != null)
+    invContext.dealFocus = { deal: focusDeal, perDay, days, slots, totalPlays: complete ? slots.reduce((n, s) => n + (s.plays ?? 0), 0) : null, totalImpressions: complete ? slots.reduce((n, s) => n + (s.impressions ?? 0), 0) : null, totalMin: complete ? slots.reduce((n, s) => n + (s.min ?? 0), 0) : null }
+  }
   /* Combined plays per window per buyers list (8 Oct 2026): the fleet total (plays per display x displays registered in PH Core)
      of every position the list is assigned to, summed - the ceiling for a guaranteed deal's committed volume. Read from the
      draft, so assigning or unassigning a list, or changing a billing unit, recalculates before save. */
   const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
   const countedTypes = new Map<string, Set<string>>()
   /* The slots each list is assigned to, for the Slots column's hover on the Deals and buyers lists table. */
-  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; orientation: 'landscape' | 'portrait' | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number }[]>()
+  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; orientation: 'landscape' | 'portrait' | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null; displayCount: number | null; windowHours: number; vacdPerPlay: number | null }[]>()
   for (const r of invRows) {
     for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
-      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, orientation: r.displayTypeOrientation ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r) }])
+      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, orientation: r.displayTypeOrientation ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r), vacdPerPlay: r.vacdPerPlay ?? null }])
     }
     if (typeof r.displayCount !== 'number') continue
     const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount
@@ -1198,7 +1272,12 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
             stickyHeader
             headerHeight={40}
             floatingFiltersHeight={40}
-            onFilterChanged={(e) => setInvShown(e.api.getDisplayedRowCount())}
+            onFilterChanged={(e) => {
+              setInvShown(e.api.getDisplayedRowCount())
+              let chosen: string[] = []
+              try { const v = JSON.parse(e.api.getColumnFilterModel<{ filter?: string }>(ASSIGNED_TO_COL)?.filter || '[]'); if (Array.isArray(v)) chosen = v } catch { /* not a set filter value */ }
+              setAssignedFilter((cur) => (cur.length === chosen.length && cur.every((v, i) => v === chosen[i]) ? cur : chosen))
+            }}
           />
         </>
       )}

@@ -18,7 +18,7 @@
    time — but a breakdown of which trigger mechanism(s) its rules use,
    ticket "Booking schedule: personalised trigger icons"). */
 import type { BookingSchedule } from '@ph-dsp/types'
-import { TARGETING_VARIABLES, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, assignedOf } from '@ph-dsp/types'
+import { TARGETING_VARIABLES, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, assignedOf, valueOfImpressions } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
@@ -327,7 +327,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       const columnViews = hasDisplays || r ? (derivedRowOf ? derivedRowOf[ci] : flatColumnViews) : 0
       if (r) {
         if (inFilter) { rev.bookedViews += columnViews; rev.totalViews += columnViews }
-        const bookedRevenue = round2((views / 1000) * (r.clearingCpm as number))
+        const bookedRevenue = round2(valueOfImpressions(views, r.clearingCpm as number))
         const bill = billed.get(r.id) ?? null
         const type = (r.pricingType ?? 'default') as BookingSchedule['byPricingType'][number]['pricingType']
         if (first && inFilter) {
@@ -367,7 +367,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       if (reserved && !f.advertiserId) { rev.bookedViews += columnViews; rev.totalViews += columnViews }
       else if (open && !reserved) {
         rev.availableViews += columnViews; rev.totalViews += columnViews
-        rev.availableValue = round2(rev.availableValue + (floor / 1000) * columnViews)
+        rev.availableValue = round2(rev.availableValue + valueOfImpressions(columnViews, floor))
         if (sellable) rev.availableWindows++
       }
       windows.push({ start: column.toISOString(), status: reserved ? ('reserved' as const) : open ? ('available' as const) : ('unavailable' as const), assumedViews: open ? columnViews : null, booking: null })
@@ -400,7 +400,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
           cell.views += columnViews
           cell.viewed = true
           if (first && inFilter) {
-            const bookedRevenue = round2((views / 1000) * (r.clearingCpm as number))
+            const bookedRevenue = round2(valueOfImpressions(views, r.clearingCpm as number))
             const type = (r.pricingType ?? 'default') as BookingSchedule['byPricingType'][number]['pricingType']
             rev.bookedWindows++
             rev.bookedRevenue = round2(rev.bookedRevenue + bookedRevenue)
@@ -423,7 +423,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
         if (reserved && !f.advertiserId) { rev.bookedViews += columnViews; rev.totalViews += columnViews }
         else if (open && !reserved) {
           rev.availableViews += columnViews; rev.totalViews += columnViews
-          rev.availableValue = round2(rev.availableValue + (floor / 1000) * columnViews)
+          rev.availableValue = round2(rev.availableValue + valueOfImpressions(columnViews, floor))
           if (sellable) rev.availableWindows++
         }
         if (open) { cell.views += columnViews; cell.viewed = true }
