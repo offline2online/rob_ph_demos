@@ -62,7 +62,7 @@ test('targeting & scheduling: ladder, blocks, Audience full width', async () => 
     assert.deepEqual(labels, ['Variables you use', 'Scheduling', 'Other variables available to use']);
     const target = await page.innerText('.av-target');
     assert.match(target, /Purchase Intent · Identified visitor/);
-    assert.match(target, /Dayparted · 3 of 4 campaigns · 5 schedules/);
+    assert.match(target, /Scheduled/);
     assert.deepEqual(await page.$$eval('.av-lvl', (l) => l.map((x) => x.textContent.trim())), ['Localised', 'Personalised']);
     const cols = await page.$eval('.av-target', (e) => getComputedStyle(e).gridTemplateColumns.split(' ').length);
     assert.equal(cols, 2);

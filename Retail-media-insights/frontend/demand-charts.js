@@ -15,13 +15,13 @@
   var TOP_N = 10;
 
   var TIPS = {
-    demand: 'Which advertisers are on which deals (programmatic guaranteed, preferred, private auction) and over which slots, plus pacing for programmatic guaranteed. ' +
+    demand: 'Which advertisers are on which deals (Direct advertiser and Programmatic guaranteed at launch) and over which slots, plus pacing for programmatic guaranteed. ' +
       'Data: deals and buyers lists (deal type, guaranteed volume, buffer), billing line items, reservations (won impressions), unsold slot records, display type slot configuration, display operating hours.',
     maturity: 'How advertisers use targeting and scheduling on your displays, and exactly who sits where, so you can coach them from Default only to Localised to Personalised, and to schedule their campaigns. ' +
       'Better targeting and scheduling mean better campaigns, more spend and more inventory sold.',
     advertisers: 'Top 10 by revenue. Deals on = deals the advertiser is on (buyers lists), any deal type; hover to list them. Slots covered = slots across those deals. ' +
-      'Slots won = share of covered slot opportunities the advertiser won. Effective CPM is per 1,000 assumed views (VAC-d). ' +
-      'Maturity level shows how the advertiser uses targeting, with a tile beside it when its campaigns are scheduled; Pacing is for programmatic guaranteed deals only. Click a bar in Variables in use below to narrow the table.',
+      'Effective CPM is per 1,000 assumed views (VAC-d). Pacing is for programmatic guaranteed deals only: read it with the days elapsed and remaining in the flight. ' +
+      'Maturity level shows how the advertiser uses targeting, with a Scheduled tile beside it when its campaigns are scheduled. Click a bar in Variables in use below to narrow the table.',
     progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
     variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertisers table. ' +
       'Daypart is not a targeting variable: it is a campaign scheduling feature, shown in Scheduling.',
@@ -97,7 +97,6 @@
         dealsOn: a.dealsOn ? a.dealsOn.length : 0,
         dealsText: plural(a.dealsOn ? a.dealsOn.length : 0, 'deal'),
         slotsCovered: has(a.slotsCovered) ? fmtInt(a.slotsCovered) : '–',
-        slotsWon: has(a.slotsWonPercent) ? pct(a.slotsWonPercent) : '–',
         effectiveCpm: has(a.effectiveCpm) ? fmtMoney(a.effectiveCpm, 2) : '–',
         src: a
       };
@@ -120,10 +119,9 @@
     { key: 'share', label: 'Share of total revenue', first: 'desc', value: function (r) { return r.src.share; } },
     { key: 'dealsOn', label: 'Deals on', first: 'desc', value: function (r) { return r.dealsOn; } },
     { key: 'slotsCovered', label: 'Slots covered', first: 'desc', value: function (r) { return r.src.slotsCovered; } },
-    { key: 'slotsWon', label: 'Slots won', first: 'desc', value: function (r) { return r.src.slotsWonPercent; } },
     { key: 'effectiveCpm', label: 'Effective CPM', first: 'desc', value: function (r) { return r.src.effectiveCpm; } },
-    { key: 'level', label: 'Maturity level', first: 'desc', info: 'level', value: function (r) { return r.level ? LEVELS.indexOf(r.level) : null; } },
-    { key: 'pacing', label: 'Pacing', first: 'desc', info: 'pacing', value: function (r) { return r.pacing && r.pacing.percent != null ? r.pacing.percent : null; } }
+    { key: 'pacing', label: 'Pacing', first: 'desc', info: 'pacing', value: function (r) { return r.pacing && r.pacing.percent != null ? r.pacing.percent : null; } },
+    { key: 'level', label: 'Maturity level', first: 'desc', info: 'level', value: function (r) { return r.level ? LEVELS.indexOf(r.level) : null; } }
   ];
   // Rows ordered by one column ('asc' = A–Z / lowest first); no key keeps the back end's order. Blank values always sit last.
   function sortAdvertiserRows(rows, key, dir, cols) {
@@ -142,12 +140,6 @@
   function dealsOnHover(a) {
     var deals = (a.dealsOn || []).slice().sort(function (x, y) { return dealRank(x.dealType) - dealRank(y.dealType) || x.name.localeCompare(y.name); });
     return { title: advName(a) + ': deals on', sections: [{ rows: deals.map(function (d) { return [d.name, d.dealType]; }) }] };
-  }
-  function slotsWonHover(a, slotsWon) {
-    var rows = [['Slots covered', has(a.slotsCovered) ? fmtInt(a.slotsCovered) : '–'], ['Slots won', has(a.slotsWonPercent) ? pct(a.slotsWonPercent) : '–']];
-    var note = slotsWon && slotsWon.complete === false
-      ? 'Settled bids are kept for ' + slotsWon.retentionDays + ' days; the selected range is longer, so this covers the most recent ' + slotsWon.retentionDays + ' days.' : null;
-    return { title: advName(a) + ': slots won', sections: [{ rows: rows, note: note }] };
   }
 
   // Hover on a Maturity level cell: the Shared Targeting Variables the advertiser's campaigns use, or None.
@@ -192,7 +184,7 @@
   var NOT_USED = 'Not used';
   function schedulingText(s) {
     if (!s || !s.uses) return NOT_USED;
-    return 'Dayparted · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign');
+    return 'Scheduled';
   }
   function tableRows(data) {
     return ((data && data.table) || []).map(function (r) {
@@ -223,7 +215,7 @@
 
   var pure = {
     LEVELS: LEVELS, TOP_N: TOP_N, TIPS: TIPS, advName: advName, isDaypart: isDaypart, targetingVars: targetingVars,
-    advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
+    advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
     activeFilters: activeFilters, matchesFilters: matchesFilters, levelCellHover: levelCellHover, pacingCellHover: pacingCellHover, schedulingCellHover: schedulingCellHover, ADV_COLS: ADV_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
@@ -394,7 +386,7 @@
       return h('tr', { class: 'dc-total', 'data-total': String(total) }, [
         h('th', { scope: 'row', class: 'dc-name', text: partial ? 'Total (top ' + TOP_N + ')' : 'Total' }),
         h('td', { class: 'dc-num', text: fmtMoney(total) }),
-        h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td'), h('td'), h('td')
+        h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td'), h('td')
       ]);
     }
     function drawAdvertisers() {
@@ -425,8 +417,6 @@
           var a = r.src;
           var dealsTd = h('td', { class: 'dc-num', text: r.dealsText });
           if (r.dealsOn) { dealsTd.classList.add('dc-dotted'); hoverable(dealsTd, function () { return dealsOnHover(a); }); }
-          var wonTd = h('td', { class: 'dc-num', text: r.slotsWon });
-          if (d.slotsWon && d.slotsWon.complete === false) hoverable(wonTd, function () { return slotsWonHover(a, d.slotsWon); });
           var levelTd = h('td', {}), pacingTd = h('td', { class: 'dc-num' });
           if (!r.mat) levelTd.appendChild(h('span', { class: 'dc-none', text: '–' }));
           else {
@@ -438,7 +428,7 @@
           return h('tr', { 'data-advertiser': r.advertiserId }, [
             h('th', { scope: 'row', class: 'dc-name', text: r.label }),
             h('td', { class: 'dc-num', text: r.revenue }), h('td', { class: 'dc-num', text: r.share }),
-            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm }), levelTd, pacingTd
+            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), h('td', { class: 'dc-num', text: r.effectiveCpm }), pacingTd, levelTd
           ]);
         })),
         h('tfoot', {}, [totalRow(d, rows)])
