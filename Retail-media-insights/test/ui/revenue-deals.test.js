@@ -84,20 +84,20 @@ for (const width of [1163, 390]) {
       // Rows are sorted by Revenue, highest first, by default; look rows up by deal name so a sort change
       // doesn't silently re-point every assertion at a different deal.
       const money = (s) => Number(s.replace(/[^0-9.]/g, ''));
-      const revenue = rows.map((r) => money(r[6]));
+      const revenue = rows.map((r) => money(r[4]));
       assert.deepEqual(revenue, [...revenue].sort((a, b) => b - a), 'default order is Revenue, highest first');
       assert.equal(await page.getAttribute('.rd-table thead th[aria-sort="descending"] .rd-sort', 'aria-label'), 'Sort by Revenue, currently highest first');
       const idx = (name) => { const i = rows.findIndex((r) => r[0] === name); assert.ok(i >= 0, `deal ${name} listed`); return i; };
       const pg = rows[idx('Immune — winter launch')];
       const pd = rows[idx('Dispensary screens')];
       const pa = rows[idx('Beauty endcaps')];
-      assert.match(pg[3], /^\d+ advertisers?$/);
-      assert.match(pg[4], /^\d+%$/);
-      assert.match(pg[5], /^\d+% of guaranteed$/);
-      assert.equal(pd[5], '', 'pacing only on Programmatic guaranteed');
-      assert.match(pg[7], /fixed$/);
-      assert.match(pa[7], /fixed$/, 'a direct deal bills its agreed CPM');
-      assert.equal(pa[3], '1 advertiser');
+      assert.match(pg[3], /^(\d+ advertisers|[^\d]+)$/, 'a count, or the name when there is one advertiser');
+      assert.match(pg[6], /^\d+%$/);
+      assert.match(pg[7], /^\d+% of guaranteed$/);
+      assert.equal(pd[7], '', 'pacing only on Programmatic guaranteed');
+      assert.match(pg[5], /fixed$/);
+      assert.match(pa[5], /fixed$/, 'a direct deal bills its agreed CPM');
+      assert.equal(pa[3], "L'Oréal Paris", 'one advertiser shows its name');
       assert.match(pg[2], /^2 slots$/);
       const bar = await page.$eval('.rd-fill-bar', (e) => { const r = e.getBoundingClientRect(); return [e.offsetWidth, r.height, getComputedStyle(e).backgroundColor]; });
       assert.equal(bar[0], width === 390 ? 56 : 90);
@@ -106,7 +106,7 @@ for (const width of [1163, 390]) {
 
       const adv = (await page.$$('.rd-table tbody tr'))[idx('Beauty endcaps')];
       await (await adv.$('td:nth-child(4) .rd-hov')).hover();
-      assert.match(await page.textContent('.rd-tip'), /L'Oréal Paris \(Direct\)/);
+      assert.equal(await page.$('.rd-tip:not([hidden])') && await page.textContent('.rd-tip').catch(() => ''), null, 'a single advertiser has no hover');
       await (await (await page.$$('.rd-table tbody tr'))[idx('Immune — winter launch')].$('td:nth-child(3) .rd-hov')).hover();
       assert.match(await page.textContent('.rd-tip'), /Window Portrait \(Portrait screen in the store window at the entrance\)/);
       assert.match(await page.textContent('.rd-tip'), /slot 1 of \d+\)/);
@@ -115,6 +115,31 @@ for (const width of [1163, 390]) {
       assert.match(await page.textContent('.rd-tip'), /Programmatic guaranteed.*Rate.*CPM fixed.*Flight.*Period.*Over the whole flight.*plays · USD.*Deal total[\d,]+ plays · USD/);
       await (await (await page.$$('.rd-table tbody tr'))[idx('Beauty endcaps')].$('.rd-name')).hover();
       assert.match(await page.textContent('.rd-tip'), /Deal IDs.*Direct \(no DSP\).*PH-/, 'a direct deal has an internal PH deal ID');
+      assert.ok(await noHScroll(page), 'no horizontal scroll');
+      assert.deepEqual(problems, []);
+    } finally { await context.close(); }
+  });
+
+  test(`deals table at ${width}px: filter row by deal type and advertiser`, async () => {
+    const { page, context, problems } = await open(width);
+    try {
+      const count = () => page.$$eval('.rd-table tbody tr', (r) => r.length);
+      const all = await count();
+      assert.equal(await page.$$eval('.rd-table thead tr', (r) => r.length), 2, 'label row, then filter row');
+      await page.selectOption('.rd-filter-row select', 'Programmatic guaranteed');
+      const types = await page.$$eval('.rd-table tbody tr td:nth-child(2)', (c) => [...new Set(c.map((x) => x.innerText.trim()))]);
+      assert.deepEqual(types, ['Programmatic guaranteed']);
+      assert.ok(await count() < all, 'deal type narrows the rows');
+      await page.selectOption('.rd-filter-row select', '');
+      assert.equal(await count(), all);
+      await page.fill('.rd-filter-row input', "l'oréal");
+      const names = await page.$$eval('.rd-table tbody tr td:nth-child(1)', (c) => c.map((x) => x.innerText.trim()));
+      assert.ok(names.includes('Beauty endcaps') && names.length < all, 'advertiser text narrows to deals with a matching advertiser');
+      await page.fill('.rd-filter-row input', 'zzz-no-such-advertiser');
+      assert.equal(await page.textContent('.rd-empty-row'), 'No deals match these filters.');
+      assert.equal(await page.$$eval('.rd-filter-row input', (i) => i.length), 1, 'filters stay so they can be cleared');
+      await page.fill('.rd-filter-row input', '');
+      assert.equal(await count(), all);
       assert.ok(await noHScroll(page), 'no horizontal scroll');
       assert.deepEqual(problems, []);
     } finally { await context.close(); }

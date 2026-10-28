@@ -108,7 +108,9 @@ test('advertiser shell: banner, one tab, locked chip and the summary card matchi
     assert.equal(await page.getAttribute('#adv-chip', 'title'), 'Scoped to your advertiser account. You only ever see your own data.');
     assert.equal(await text(page, '#mysum .card-title'), 'Retail Media Summary · Blackmores (12 Sep – 11 Oct)');
     assert.equal(await page.$('#mysum .pg-info'), null, 'no ⓘ on the advertiser card');
-    assert.deepEqual(await page.$$eval('#mysum .tile .lbl', (l) => l.map((x) => x.textContent)), ['Spend', 'Plays won', 'Deals you’re on']);
+    assert.deepEqual(await page.$$eval('#mysum .tile .lbl', (l) => l.map((x) => x.textContent)), ['Spend', 'Plays won', 'Effective CPM', 'Deals you’re on']);
+    assert.match(await text(page, '[data-tile="cpm"] .val'), /^\$\d+\.\d\d$/);
+    assert.equal(await text(page, '[data-tile="cpm"] .sub'), 'per 1,000 assumed views (VAC-d)');
     assert.match(await text(page, '[data-tile="deals"] .val'), /^\d+$/);
     // above Delivery, and equal to its totals
     assert.equal(await page.evaluate(() => document.getElementById('mysum').compareDocumentPosition(document.getElementById('av')) & Node.DOCUMENT_POSITION_FOLLOWING), 4);

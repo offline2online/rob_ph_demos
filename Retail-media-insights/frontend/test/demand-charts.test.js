@@ -141,7 +141,7 @@ test('advertiser table: every column sorts both ways, blanks last, no key keeps 
   }
 });
 
-test('Advertisers table: Maturity level, scheduling and Pacing join by advertiser, filter across all advertisers, sort with blanks last, hover lists variables and scheduled campaigns', async () => {
+test('Advertisers table: Maturity level and scheduling join by advertiser, filter across all advertisers, sort with blanks last, hover lists variables and scheduled campaigns', async () => {
   const adv = await get('/advertisers');
   const mat = DC.tableRows(await get('/maturity'));
   const rows = DC.advertiserRows(adv, true, mat);
@@ -160,17 +160,18 @@ test('Advertisers table: Maturity level, scheduling and Pacing join by advertise
   assert.ok(DC.advertiserRows(adv, true, mat, { ...none, scheduling: 'none' }).every((r) => r.scheduled === 0));
   assert.deepStrictEqual(DC.advertiserRows(adv, true, mat, { level: 'Localised', variable: '', scheduling: 'uses' }).map((r) => r.name), ['Nestlé Health Science']);
   assert.strictEqual(DC.advertiserRows(adv, true, null, { ...none, level: 'Localised' }).length, 0, 'no maturity data matches no filter');
-  ['level', 'pacing'].forEach((key) => {
+  ['level', 'effectiveCpm'].forEach((key) => {
     ['asc', 'desc'].forEach((dir) => assert.strictEqual(DC.sortAdvertiserRows(rows, key, dir).length, rows.length));
   });
-  const withPacing = rows.filter((r) => r.pacing && r.pacing.percent != null);
-  assert.ok(withPacing.length, 'some advertisers are on programmatic guaranteed deals');
-  assert.ok(rows.some((r) => !r.pacing), 'others are not');
-  const hv = DC.pacingCellHover(withPacing[0]);
-  assert.strictEqual(hv.sections[0].rows.length, withPacing[0].pacing.deals.length, 'one row per programmatic guaranteed deal');
-  const sortedPacing = DC.sortAdvertiserRows(rows, 'pacing', 'desc').map((r) => (r.pacing ? r.pacing.percent : null));
-  const firstBlank = sortedPacing.findIndex((v) => v == null);
-  assert.ok(firstBlank < 0 || sortedPacing.slice(firstBlank).every((v) => v == null), 'blank pacing sorts last');
+  assert.ok(!DC.ADV_COLS.some((c) => c.key === 'pacing'), 'pacing lives on the Deals table only');
+  assert.ok(rows.every((r) => !('pacing' in r)));
+  const multi = rows.find((r) => r.src.dealRates.length > 1);
+  assert.ok(multi, 'an advertiser is on more than one deal');
+  const hv = DC.cpmCellHover(multi);
+  assert.strictEqual(hv.sections[0].rows.length, multi.src.dealRates.length, 'one row per deal');
+  assert.match(hv.title, /effective CPM by deal/);
+  const single = rows.find((r) => r.src.dealRates.length === 1);
+  assert.strictEqual(single.src.dealRates[0].effectiveCpm, single.src.effectiveCpm, 'a single-deal advertiser blends to its one deal');
   const byLevel = DC.sortAdvertiserRows(rows, 'level', 'desc').map((r) => DC.LEVELS.indexOf(r.level));
   assert.deepStrictEqual(byLevel, byLevel.slice().sort((a, b) => b - a));
 });
@@ -178,7 +179,7 @@ test('Advertisers table: Maturity level, scheduling and Pacing join by advertise
 test('Advertisers table has no iROAS column (Sales uplift is future work)', async () => {
   const adv = await get('/advertisers');
   assert.ok(!DC.ADV_COLS.some((c) => c.key === 'iroas'));
-  assert.deepStrictEqual(DC.ADV_COLS.slice(-3).map((c) => c.key), ['effectiveCpm', 'pacing', 'level']);
+  assert.deepStrictEqual(DC.ADV_COLS.slice(-2).map((c) => c.key), ['effectiveCpm', 'level']);
   for (const r of adv.all) assert.ok(!('iroas' in r));
   assert.ok(!('posData' in adv));
 });

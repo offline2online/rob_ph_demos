@@ -46,6 +46,10 @@
 .rd-table th { text-align: left; font-weight: 500; padding: 10px 8px; border-bottom: 1px solid #d9d9d9; white-space: nowrap; }
 .rd-table td { padding: 10px 8px; border-bottom: 1px solid var(--rd-border); vertical-align: middle; }
 .rd-table tbody tr:hover { background: #e8fdff; }
+.rd-filter-row th { padding: 6px 8px; font-weight: 400; }
+.rd-filter-row .rd-filter { width: 100%; min-width: 120px; height: 28px; font-size: 13px; }
+.rd-input { font: inherit; font-size: 13px; color: var(--rd-text); border: 1px solid #d9d9d9; border-radius: 6px; padding: 0 8px; background: #fff; }
+.rd-empty-row { text-align: center; color: var(--rd-muted); padding: 24px 8px !important; }
 .rd-sort { font: inherit; font-weight: 500; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
 .rd-sort .rd-icon { font-size: 16px; color: var(--rd-muted); }
 .rd-sort:hover .rd-icon, .rd-sort-on .rd-icon { color: var(--rd-primary); }
@@ -59,8 +63,10 @@
 .rd-sub { font-size: 12px; color: var(--rd-muted); }
 .rd-num .rd-sub { line-height: 1.2; }
 .rd-tip-h { font-weight: 500; margin-top: 4px; }
-.rd-tip-stack { flex-direction: column; gap: 2px; padding: 6px 0; border-top: 1px solid #f0f0f0; }
-.rd-tip-title + .rd-tip-stack { border-top: 0; padding-top: 2px; }
+/* Each assigned slot is one block: its header and details sit together, with a divider and space before the next slot.
+   Doubled class so the later .rd-tip-row rule (gap 16px, padding 1px) cannot override the block spacing. */
+.rd-tip-row.rd-tip-stack { flex-direction: column; justify-content: flex-start; gap: 2px; padding: 8px 0; border-top: 1px solid #e8e8e8; }
+.rd-tip-title + .rd-tip-row.rd-tip-stack { border-top: 0; padding-top: 2px; }
 .rd-tip-stack .rd-tip-k { font-weight: 500; }
 .rd-tip-stack .rd-tip-v { text-align: left; font-weight: 400; color: var(--rd-muted); }
 .rd-tip-mono .rd-tip-v { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }

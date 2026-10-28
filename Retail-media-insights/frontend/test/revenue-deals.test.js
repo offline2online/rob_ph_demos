@@ -105,8 +105,9 @@ test('slots label and Assigned slots hover', async () => {
 test('advertisers hover lists "Name (DSP)"', async () => {
   const deal = (await get('/deals')).rows.find((d) => d.name === 'Beauty endcaps');
   assert.strictEqual(RD.advertisersTooltip(deal).title, deal.name);
-  assert.strictEqual(RD.advertisersLabel(deal), '1 advertiser');
+  assert.strictEqual(RD.advertisersLabel(deal), "L'Oréal Paris", 'a single advertiser shows its name');
   assert.strictEqual(RD.advertisersLabel({ advertisers: [1] }), '1 advertiser');
+  assert.strictEqual(RD.advertisersLabel({ advertisers: [{ name: 'A' }, { name: 'B' }] }), '2 advertisers');
   assert.deepStrictEqual(RD.advertisersTooltip(deal).rows.map((r) => r[0]), ["L'Oréal Paris (Direct)"]);
 });
 
@@ -211,4 +212,13 @@ test('Direct is a source beside the DSPs: one purple shade, one legend entry, fi
   assert.strictEqual(RD.legendEntries(['DV360', 'Direct'], '').length, 5);
   assert.deepStrictEqual(RD.legendEntries(['DV360'], 'Direct advertiser'), [], 'a DSP has no direct deals');
   assert.deepStrictEqual(RD.legendEntries(['The Trade Desk', 'Direct'], 'Direct advertiser').map((e) => e.label), ['Direct · Direct advertiser']);
+});
+
+test('Assigned slots hover: a slot’s header and details stay together, with a divider between slots', () => {
+  const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'revenue-deals.css'), 'utf8');
+  const stack = css.match(/\.rd-tip-row\.rd-tip-stack\s*\{([^}]*)\}/);
+  assert.ok(stack, 'the stack rule must out-rank the generic .rd-tip-row rule that comes after it');
+  assert.match(stack[1], /flex-direction:\s*column/);
+  assert.match(stack[1], /gap:\s*2px/);
+  assert.match(stack[1], /border-top:\s*1px solid/);
 });

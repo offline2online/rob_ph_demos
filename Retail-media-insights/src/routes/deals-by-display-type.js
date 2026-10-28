@@ -1,6 +1,7 @@
 'use strict';
 const calc = require('../calc');
 const { displayTypeFacts, hoverCard } = require('../display-types');
+const { termOf } = require('../deal-terms');
 const { dealIdsFor, slotKey, slotsWonComplete, RETENTION_DAYS } = require('../dealing');
 const { MIN_OTHER_BUYERS_FOR_WINNING_CPM, DIRECT } = require('../constants');
 const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, cents, winningRange } = require('../advertiser-view');
@@ -67,6 +68,21 @@ module.exports = {
     const facts = new Map(displayTypeFacts(store, { ...filters, displayTypeIds: [...typeIds] }).map((t) => [t.id, t]));
     const ordered = [...facts.keys(), ...[...typeIds].filter((t) => !facts.has(t)).sort((a, b) => String(known[a].name).localeCompare(String(known[b].name)))];
 
+    // The deal hover: the deal's rate, flight and, per assigned slot (within the display type filter), plays, VAC-d and value over the
+    // term, then the deal total. The deal's own facts only; no other advertiser appears.
+    const termCache = new Map(); const types2 = known;
+    const termsOf = (deal) => {
+      if (termCache.has(deal.id)) return termCache.get(deal.id);
+      const assigned = (deal.slots || []).filter((s) => !inScope || inScope.has(s.displayTypeId));
+      const t = termOf(store, filters, deal, assigned);
+      const out = {
+        rate: t.rate == null ? null : { value: cents(t.rate), kind: deal.dealType === 'Private auction' ? 'floor' : 'fixed' }, term: t.term,
+        slots: assigned.map((s, i) => ({ displayType: (types2[s.displayTypeId] || {}).name || s.displayTypeId, advertiserSlot: s.position, termPlays: t.per[i].plays, termVacd: t.per[i].vacd, termValue: t.per[i].value })),
+      };
+      termCache.set(deal.id, out);
+      return out;
+    };
+
     const groups = ordered.map((typeId) => {
       const slotsHere = new Set();
       const tf = facts.get(typeId);
@@ -94,6 +110,7 @@ module.exports = {
           },
           playsWon: own.plays, assumedViews: Math.round(own.views), spend: cents(own.rev),
           share: { playsWon: own.plays, advertisersOnDeal },
+          terms: termsOf(deal),
         };
         // One other buyer winning here would make allPlays minus playsWon that buyer's plays: omit allPlays and the percent.
         const winners = k >= 0 ? otherCount[k] : 0;
@@ -118,7 +135,7 @@ module.exports = {
         const hideShare = winners >= 1 && winners < MIN_OTHER_BUYERS_FOR_WINNING_CPM;
         const row = {
           id: OPEN_AUCTION, name: 'Open auction', description: 'Any buyer bids per slot against the display type\u2019s floor.', dealType: 'Open auction',
-          dealIds: [], slots: { count: 0, assigned: [] },
+          dealIds: [], slots: { count: 0, assigned: [] }, terms: null,
           playsWon: m.plays, assumedViews: Math.round(m.views), spend: cents(m.rev),
           share: { playsWon: m.plays },
         };

@@ -11,7 +11,7 @@ const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'frontend', 'local-api.js');
 
 const MODULES = [
-  'src/constants.js', 'src/calc/index.js', 'src/filters.js', 'src/scope.js', 'src/dealing.js', 'src/query.js', 'src/store.js',
+  'src/constants.js', 'src/calc/index.js', 'src/filters.js', 'src/scope.js', 'src/dealing.js', 'src/deal-terms.js', 'src/query.js', 'src/store.js',
   'src/aggregate.js', 'src/variations.js', 'src/testdata.js', 'src/advertiser-view.js', 'src/display-types.js', 'src/auth-types.js', 'src/dispatch.js',
 ];
 const ROUTES = [

@@ -13,6 +13,9 @@
 
   var COLOURS = { plays: '#169bc2', spend: '#eb6834', guaranteed: '#8c8c8c', delivered: '#169bc2' };
   var OPEN_AUCTION = 'open-auction';
+  // Launch deal types (27 Oct 2026): Private auction and Preferred deal are not supported yet, so no block, row or range is shown for them.
+  var LAUNCH_DEAL_TYPES = ['Programmatic guaranteed', 'Direct advertiser', 'Open auction'];
+  function atLaunch(t) { return LAUNCH_DEAL_TYPES.indexOf(typeName(t)) >= 0; }
 
   // The shared VAC-d explanation and worked example, appended to every ⓘ that mentions assumed views.
   var VACD = [
@@ -23,12 +26,11 @@
   var TIPS = {
     delivery: ['Plays you won (left axis) and what you spent (right axis) per day. Click the Plays won or Spend total to turn its line off or on. Hover a day to see, per deal, your plays won, your CPM against the winning CPM range and the floor CPM (never naming other buyers). The winning CPM range is the 25th percentile, the middle (median) and the 75th percentile of the CPMs all winning buyers cleared at that day, shown only when at least 2 other buyers won plays there, and the change on the previous day. For a programmatic guaranteed deal, Pacing shows assumed views (VAC-d) delivered against the guaranteed line over the flight; other deal types have no guaranteed line.'],
     deals: function (range) {
-      return ['Every display type your deals are active on, in shopper-journey order, with each deal’s performance in ' + (range || 'the selected range') + ' (the open auction is listed last under each display type and is not in its totals). Winning CPM range: the 25th percentile to the 75th percentile of the CPMs all winning buyers cleared on auctions there, with the middle (median) in brackets; shown only when at least 2 other buyers won plays, and never for programmatic guaranteed or preferred deals, which have a fixed CPM. Hover a display type for its details, a deal for its description and deal ID, and Slots for its assigned slots. Share: on a display type row, its share of your deal spend; on a deal row, the share of the deal’s plays there that you won.'];
+      return ['Every display type your deals are active on, in shopper-journey order, with each deal’s performance in ' + (range || 'the selected range') + ' (the open auction is listed last under each display type and is not in its totals). Winning CPM range: the 25th percentile to the 75th percentile of the CPMs all winning buyers cleared in the open auction there, with the middle (median) in brackets; shown only on Open auction rows, and only when at least 2 other buyers won plays. Programmatic guaranteed and Direct advertiser deals have a fixed CPM. Hover a display type for its details, a deal for its description and deal ID, and Slots for its assigned slots. Share: on a display type row, its share of your deal spend; on a deal row, the share of the deal’s plays there that you won.'];
     },
     targeting: ['Your highest targeting level across your campaigns in the date range: Default only, Localised or Personalised. Scheduling = campaigns you schedule (dayparting and multiple schedules) from the campaign’s Scheduling tab, separately from targeting. Other variables available to use = the Shared Targeting Variables the retailer has made available to your DSP seat that your campaigns don’t use yet.']
   };
   var LEVELS = [['Personalised', '#174a8c'], ['Localised', '#6aa7e0'], ['Default only', '#d9d9d9']];
-  var ORIENTATIONS = ['Not set', '90°', '180°', '270°'];
 
   // ---------- formatting ----------
   function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
@@ -131,7 +133,7 @@
   // The day hover: the day's totals, one block per deal, then day-on-day change. No downtime, no advice.
   function dayTooltip(day) {
     var rows = [['Plays won', fmtInt(day.playsWon)], ['Spend', fmtMoney(day.spend, 2)]];
-    (day.deals || []).forEach(function (b) { rows = rows.concat(dealBlockRows(b)); });
+    (day.deals || []).filter(function (b) { return atLaunch(b.dealType); }).forEach(function (b) { rows = rows.concat(dealBlockRows(b)); });
     var v = day.vsPreviousDay || {};
     rows.push(['Plays won vs previous day', changeText(v.playsWon) || 'No plays the previous day']);
     rows.push(['Spend vs previous day', changeText(v.spend) || 'No spend the previous day']);
@@ -155,26 +157,10 @@
   // ---------- Your deals by display type model ----------
   // Hover rows are [key, value, kind]: kind 'head' = bold with a rule above, 'para' = a full-width paragraph,
   // 'sect' = a rule above (new section), 'note' = muted small footer, 'line' = a plain full-width line.
-  function hoursText(v) {
-    if (/^\s*24 hours\s*$/i.test(v || '')) return '24 hours';
-    if (/^\s*store opening hours\s*$/i.test(v || '')) return 'Store opening hours';
-    if (/^\s*custom hours\s*$/i.test(v || '')) return 'Custom hours';
-    return null; // anything else could be a specific time, so it is never shown
-  }
-  // The same card as the retailer view's display type hover; facts only, and only fields that are stored.
+  // The same card as the retailer view's display type hover (trimmed 19 Oct 2026): the description and the VAC-d averages only.
   function displayTypeTooltip(t) {
     var rows = [];
     if (has(t.description)) rows.push([t.description, '', 'para']);
-    var cd = t.connectedDisplays;
-    if (cd && has(cd.displays)) rows.push(['Connected displays', fmtInt(cd.displays) + (has(cd.stores) ? ' across ' + plural(cd.stores, 'store') : '')]);
-    if (has(t.iabZone)) rows.push(['IAB store zone', t.iabZone]);
-    var hrs = hoursText(t.operatingHours);
-    if (hrs) rows.push(['Operating hours', hrs]);
-    if (has(t.touchPoint)) rows.push(['Touch Point', t.touchPoint]);
-    if (t.canvas && has(t.canvas.width) && has(t.canvas.height)) rows.push(['Display canvas size (resolution)', t.canvas.width + ' × ' + t.canvas.height + ' px']);
-    if (has(t.displayOrientation)) rows.push(['Display orientation', ORIENTATIONS.indexOf(String(t.displayOrientation)) >= 0 ? String(t.displayOrientation) : 'Not set']);
-    var cf = Array.isArray(t.creativeFormats) ? t.creativeFormats.filter(has).join('; ') : t.creativeFormats;
-    if (has(cf)) rows.push(['Creative formats', cf]);
     var a = t.averages || {}, vac = [];
     if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtInt(a.averageAssumedViewsPerSlotPerDay)]);
     if (has(a.averageFootfallPerDay)) vac.push(['Average footfall past a display per day', fmtInt(a.averageFootfallPerDay)]);
@@ -188,11 +174,42 @@
     }
     return { title: t.name, rows: rows };
   }
-  // Only the advertiser's own DSP deal ID is returned by the API; list it as "Google DSP (DV360): PH-…".
+  // The deal name hover matches the retailer Deals table's for the advertiser's own deal: description, deal type, rate, flight and
+  // period, the deal ID (the advertiser's own DSP only, or "Direct (no DSP)" and the internal PH deal ID), then plays, VAC-d and value per
+  // assigned slot across the term (first 5, then + N more) and the deal total. No other advertiser's name or data.
+  var MAX_TIP_SLOTS = 5;
+  function termMoney(n, from) { return (from ? 'from ' : '') + 'USD ' + fmtInt(n); }
   function dealNameTooltip(deal) {
     var rows = [];
     if (deal.description) rows.push([deal.description, '', 'para']);
-    (deal.dealIds || []).forEach(function (d, i) { rows.push([i ? '' : 'Deal ID', (d.dspLabel || d.dsp) + ': ' + d.dealId, i ? '' : 'sect']); });
+    var ts = deal.terms;
+    if (ts) {
+      var c = ts.rate, floor = c && c.kind === 'floor';
+      rows.push(['Deal type', typeName(deal.dealType)]);
+      rows.push(['Rate', c && c.value != null ? fmtMoney(c.value, 2) + ' CPM ' + (floor ? 'floor' : 'fixed') : 'Per play']);
+      rows.push(['Flight', ts.term ? fmtDay(ts.term.start) + ' → ' + fmtDay(ts.term.end) : 'Always active']);
+      rows.push(['Period', ts.term ? plural(ts.term.days, 'day') : 'Always active']);
+    }
+    var ids = deal.dealIds || [];
+    if (ids.length) rows.push([ids.length > 1 ? 'Deal IDs' : 'Deal ID', '', 'sect']);
+    ids.forEach(function (d) { rows.push([d.dspLabel || d.dsp, d.dealId]); });
+    if (ts) {
+      rows.push(['Over the whole flight', '', 'sect']);
+      var slots = ts.slots || [], floorRate = ts.rate && ts.rate.kind === 'floor';
+      if (!slots.length) rows.push(['No assigned slots.', '', 'line']);
+      else if (!ts.term) rows.push(['Set a start and an end date to total the plays and value.', '', 'line']);
+      else {
+        slots.slice(0, MAX_TIP_SLOTS).forEach(function (s) {
+          var plays = s.termPlays == null ? 'plays n/a' : fmtInt(s.termPlays) + ' plays';
+          var vac = s.termVacd == null ? '' : ' · ' + fmtInt(s.termVacd) + ' VAC-d';
+          rows.push([s.displayType + ' · slot ' + s.advertiserSlot, plays + vac + (s.termValue != null ? ' · ' + termMoney(s.termValue, floorRate) : '')]);
+        });
+        if (slots.length > MAX_TIP_SLOTS) rows.push(['+ ' + plural(slots.length - MAX_TIP_SLOTS, 'more slot'), '', 'line']);
+        var t = ts.term.total;
+        rows.push(['Deal total', t ? fmtInt(t.plays) + ' plays · ' + fmtInt(t.vacd) + ' VAC-d' + (t.value != null ? ' · ' + termMoney(t.value, floorRate) : '') : 'not available for every slot', 'sect']);
+        if (ts.rate && ts.rate.value != null) rows.push(['Value = plays × VAC-d ÷ 1,000 × CPM.', '', 'note']);
+      }
+    }
     return { title: deal.name, rows: rows };
   }
   function slotsLabel(deal) { return deal.slots && deal.slots.count ? plural(deal.slots.count, 'slot') : 'Not assigned'; }
@@ -226,14 +243,17 @@
   function tableRows(data) {
     var out = [];
     ((data && data.groups) || []).forEach(function (g) {
-      out.push({ kind: 'type', name: g.displayType.name, deals: g.dealCount, slots: g.slots, playsWon: g.playsWon, views: g.assumedViews, spend: g.spend, cpm: g.effectiveCpm, range: winningRangeText(g.winningCpm), share: g.sharePercent, tip: displayTypeTooltip(g.displayType) });
+      out.push({ kind: 'type', name: g.displayType.name, deals: g.dealCount, slots: g.slots, playsWon: g.playsWon, views: g.assumedViews, spend: g.spend, cpm: g.effectiveCpm, range: '', share: g.sharePercent, tip: displayTypeTooltip(g.displayType) });
       g.deals.forEach(function (d) {
-        out.push({ kind: 'deal', name: d.name, dealType: typeName(d.dealType), slotsText: d.id === OPEN_AUCTION ? '' : slotsLabel(d), playsWon: d.playsWon, views: d.assumedViews, spend: d.spend, cpm: d.effectiveCpm, range: winningRangeText(d.winningCpm),
+        out.push({ kind: 'deal', name: d.name, dealType: typeName(d.dealType), slotsText: d.id === OPEN_AUCTION ? '' : slotsLabel(d), playsWon: d.playsWon, views: d.assumedViews, spend: d.spend, cpm: d.effectiveCpm, range: d.dealType === 'Open auction' ? winningRangeText(d.winningCpm) : '',
           share: d.share && d.share.percent, nameTip: dealNameTooltip(d), slotsTip: slotsTooltip(d, g.displayType), shareTip: shareTooltip(d, g.displayType.name) });
       });
     });
     return out;
   }
+
+  // The Winning CPM range column shows only when a row has a range to show (Open auction rows); otherwise it is hidden.
+  function showRangeColumn(rows) { return (rows || []).some(function (r) { return !!r.range; }); }
 
   // ---------- Audience and targeting models ----------
   function sparkline(trend, w, h) {
@@ -503,13 +523,14 @@
 
     // ----- Your deals by display type -----
     var dl = panel('Your deals by display type', function () { return TIPS.deals(rangeText(filters.dateFrom, filters.dateTo)); }, null);
-    var COLS = [['Display type / deal', ''], ['Deal type', ''], ['Slots', 'num'], ['Plays won', 'num'], ['Assumed views (VAC-d)', 'num'], ['Spend', 'num'], ['Effective CPM', 'num'], ['Winning CPM range', 'num'], ['Share', 'num']];
+    var COLS = [['Display type / deal', ''], ['Deal type', ''], ['Slots', 'num'], ['Plays won', 'num'], ['Assumed views (VAC-d)', 'num'], ['Spend', 'num'], ['Effective CPM', 'num'], ['Winning CPM range', 'num', 'range'], ['Share', 'num']];
     function td(text, cls) { return h('td', { class: cls || '', text: text == null ? '' : text }); }
     function drawDeals(data) {
       var tbl = h('table', { class: 'av-table' });
-      tbl.appendChild(h('thead', {}, [h('tr', {}, COLS.map(function (c) { return h('th', { class: c[1], scope: 'col', text: c[0] }); }))]));
+      var allRows = tableRows(data), withRange = showRangeColumn(allRows);
+      tbl.appendChild(h('thead', {}, [h('tr', {}, COLS.filter(function (c) { return withRange || c[2] !== 'range'; }).map(function (c) { return h('th', { class: c[1], scope: 'col', text: c[0] }); }))]));
       var tb = h('tbody');
-      tableRows(data).forEach(function (r) {
+      allRows.forEach(function (r) {
         var tr = h('tr', { class: 'av-' + r.kind });
         var name = h('td', { class: 'av-name' }, [h('span', { class: 'av-name-in', text: r.name })]);
         if (r.kind === 'type') {
@@ -523,7 +544,7 @@
         }
         tr.appendChild(td(fmtInt(r.playsWon), 'num')); tr.appendChild(td(fmtInt(r.views), 'num')); tr.appendChild(td(fmtMoney(r.spend, 2), 'num'));
         tr.appendChild(td(r.cpm != null ? fmtMoney(r.cpm, 2) : '', 'num'));
-        tr.appendChild(td(r.range, 'num'));
+        if (withRange) tr.appendChild(td(r.range, 'num'));
         var sh = h('td', { class: 'num' });
         if (r.share != null) {
           sh.appendChild(h('span', { class: 'av-share-bar' }, [h('i', { style: 'width:' + Math.min(100, r.share) + '%' })]));
@@ -604,6 +625,6 @@
     initialMetrics: initialMetrics, toggleMetric: toggleMetric, dealOptions: dealOptions, pacingFor: pacingFor, showPacingSwitch: showPacingSwitch,
     dayTooltip: dayTooltip, dealBlockRows: dealBlockRows, pacingTooltip: pacingTooltip, cpmRange: cpmRange, changeText: changeText,
     displayTypeTooltip: displayTypeTooltip, pacingKpis: pacingKpis, ladderRungs: ladderRungs, audienceModel: audienceModel, sparkArea: sparkArea, fmtCompact: fmtCompact, fmtBig: fmtBig, peakOf: peakOf, NO_SCHEDULING: NO_SCHEDULING, dealNameTooltip: dealNameTooltip, slotsLabel: slotsLabel, winningRangeText: winningRangeText, slotsTooltip: slotsTooltip, shareTooltip: shareTooltip,
-    tableRows: tableRows, sparkline: sparkline, variableLabel: variableLabel, schedulingText: schedulingText, seriesPoints: seriesPoints, fmtMoney: fmtMoney, fmtInt: fmtInt, niceMax: niceMax
+    tableRows: tableRows, showRangeColumn: showRangeColumn, atLaunch: atLaunch, sparkline: sparkline, variableLabel: variableLabel, schedulingText: schedulingText, seriesPoints: seriesPoints, fmtMoney: fmtMoney, fmtInt: fmtInt, niceMax: niceMax
   };
 });
