@@ -147,7 +147,7 @@ test('sparkline covers the trend; scheduling text; variable chips', async () => 
   assert.match(AV.sparkline((await mine('/audience')).trend, 240, 48), /^M0\.0 /);
   assert.strictEqual(AV.sparkline([{ assumedViews: 1 }], 240, 48), '');
   const targeting = await mine('/my-targeting');
-  assert.strictEqual(AV.schedulingText(targeting.scheduling), 'Dayparted · 3 of 4 campaigns · 5 schedules');
+  assert.strictEqual(AV.schedulingText(targeting.scheduling), 'Scheduled');
   assert.strictEqual(AV.schedulingText({ uses: false }), null);
   assert.match(AV.NO_SCHEDULING, /^Not used yet\. Set dayparts and schedules/);
   assert.deepStrictEqual(targeting.variablesUsed.map((v) => AV.variableLabel(v)), ['Display Tag(s)', 'Fixed Store Segments', 'Gender (Computer Vision)', 'Reason for Visit (Aggregate)', 'Store Open / Closed', 'Variable Store Segments']);

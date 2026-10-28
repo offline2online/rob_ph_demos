@@ -248,10 +248,10 @@
     var sub = v.personalisationType && String(v.label).toLowerCase().indexOf(String(v.personalisationType).toLowerCase()) < 0 ? ' · ' + v.personalisationType : '';
     return v.label + sub;
   }
-  // The scheduling chip, e.g. "Dayparted · 3 of 4 campaigns · 5 schedules"; null when scheduling is not used.
+  // The scheduling chip, "Scheduled"; null when scheduling is not used.
   function schedulingText(s) {
     if (!s || !s.uses) return null;
-    return 'Dayparted · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign') + (s.schedules != null ? ' · ' + plural(s.schedules, 'schedule') : '');
+    return 'Scheduled';
   }
   var NO_SCHEDULING = 'Not used yet. Set dayparts and schedules on a campaign’s Scheduling tab.';
   // The three-rung ladder, highest first: the advertiser's rung, the one above it ("Next step") and the muted rungs above.

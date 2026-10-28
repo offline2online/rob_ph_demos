@@ -21,9 +21,8 @@ test('advertiser table: shares are whole numbers adding to 100, the total is the
   assert.strictEqual(Math.round(DC.revenueTotal(adv.all)), Math.round(summary.earnedRevenue));
 });
 
-test('missing slots won and CPM show a dash, never zero', () => {
+test('missing CPM shows a dash, never zero', () => {
   const r = DC.advertiserRows({ all: [{ advertiserId: 'x', name: 'Fess', dsp: 'DV360', revenue: 0, share: 0, dealsOn: [], slotsCovered: 0, slotsWonPercent: null, effectiveCpm: null }] }, true)[0];
-  assert.strictEqual(r.slotsWon, '–');
   assert.strictEqual(r.effectiveCpm, '–');
 });
 
@@ -40,13 +39,6 @@ test('deals on reads "n deal(s)", "0 deals" has no hover model rows', () => {
     { advertiserId: 'b', name: 'B', dsp: 'X', revenue: 1, share: 50, dealsOn: [] }] }, true);
   assert.deepStrictEqual(rows.map((r) => r.dealsText), ['1 deal', '0 deals']);
   assert.deepStrictEqual(rows.map((r) => r.label), ['A', 'B'], 'the cell is the name only; the DSP is in the hover');
-});
-
-test('slots won hover notes the retention only when the range is longer', async () => {
-  const adv = await get('/advertisers');
-  const a = adv.all[0];
-  assert.strictEqual(DC.slotsWonHover(a, adv.slotsWon).sections[0].note, null);
-  assert.match(DC.slotsWonHover(a, { complete: false, retentionDays: 90 }).sections[0].note, /90 days/);
 });
 
 test('maturity ladder data: three levels, counts match lists', async () => {
@@ -112,9 +104,9 @@ test('table filters: level, variable, scheduling combine; Personalised first, th
   assert.strictEqual(DC.activeFilters({ level: '', variable: 'State', scheduling: '' }), true);
 });
 
-test('table cells: scheduling reads "Dayparted · n of m campaigns" or "Not used"; chips carry the sub-type unless the label says it', async () => {
+test('table cells: scheduling reads "Scheduled" or "Not used"; chips carry the sub-type unless the label says it', async () => {
   const rows = DC.tableRows(await get('/maturity'));
-  assert.strictEqual(rows[0].scheduling, 'Dayparted · 3 of 4 campaigns');
+  assert.strictEqual(rows[0].scheduling, 'Scheduled');
   assert.strictEqual(rows[2].scheduling, 'Not used');
   assert.strictEqual(rows[0].name, 'Blackmores', 'the Advertiser cell is the name only');
   assert.ok(rows.find((r) => r.label.startsWith('L')).chips.some((c) => c.text === 'Purchase History · Identified visitor'));
@@ -155,7 +147,7 @@ test('Advertisers table: Maturity level, scheduling and Pacing join by advertise
   const rows = DC.advertiserRows(adv, true, mat);
   assert.ok(rows.every((r) => r.mat && r.level), 'every advertiser has a maturity record');
   const blackmores = rows.find((r) => r.name === 'Blackmores');
-  assert.strictEqual(blackmores.mat.scheduling, 'Dayparted · 3 of 4 campaigns');
+  assert.strictEqual(blackmores.mat.scheduling, 'Scheduled');
   assert.strictEqual(DC.schedulingCellHover(blackmores).names.length, 3, 'one name per scheduled campaign');
   assert.ok(DC.levelCellHover(blackmores).sections[0].rows[0][1].includes('Gender (Computer Vision)'));
   const unscheduled = rows.find((r) => r.mat.scheduling === 'Not used');
@@ -186,7 +178,7 @@ test('Advertisers table: Maturity level, scheduling and Pacing join by advertise
 test('Advertisers table has no iROAS column (Sales uplift is future work)', async () => {
   const adv = await get('/advertisers');
   assert.ok(!DC.ADV_COLS.some((c) => c.key === 'iroas'));
-  assert.deepStrictEqual(DC.ADV_COLS.slice(-3).map((c) => c.key), ['effectiveCpm', 'level', 'pacing']);
+  assert.deepStrictEqual(DC.ADV_COLS.slice(-3).map((c) => c.key), ['effectiveCpm', 'pacing', 'level']);
   for (const r of adv.all) assert.ok(!('iroas' in r));
   assert.ok(!('posData' in adv));
 });
