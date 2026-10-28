@@ -212,3 +212,12 @@ test('Direct is a source beside the DSPs: one purple shade, one legend entry, fi
   assert.deepStrictEqual(RD.legendEntries(['DV360'], 'Direct advertiser'), [], 'a DSP has no direct deals');
   assert.deepStrictEqual(RD.legendEntries(['The Trade Desk', 'Direct'], 'Direct advertiser').map((e) => e.label), ['Direct · Direct advertiser']);
 });
+
+test('Assigned slots hover: a slot’s header and details stay together, with a divider between slots', () => {
+  const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'revenue-deals.css'), 'utf8');
+  const stack = css.match(/\.rd-tip-row\.rd-tip-stack\s*\{([^}]*)\}/);
+  assert.ok(stack, 'the stack rule must out-rank the generic .rd-tip-row rule that comes after it');
+  assert.match(stack[1], /flex-direction:\s*column/);
+  assert.match(stack[1], /gap:\s*2px/);
+  assert.match(stack[1], /border-top:\s*1px solid/);
+});
