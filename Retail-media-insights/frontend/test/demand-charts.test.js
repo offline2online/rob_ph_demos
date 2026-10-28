@@ -103,7 +103,7 @@ test('progress over time: three bands that add to 100 per period, week and month
 test('table filters: level, variable, scheduling combine; Personalised first, then revenue', async () => {
   const mat = await get('/maturity');
   const all = DC.tableRows(mat);
-  assert.deepStrictEqual(all.map((r) => r.label), ['Blackmores (DV360)', 'Haleon (The Trade Desk)', 'Kenvue (DV360)', 'Procter & Gamble (Direct)', "L'Oréal Paris (Direct)", 'Vitabiotics (Direct)', 'Nestlé Health Science (Direct)', 'Bayer Consumer Health (Amazon DSP)', 'Reckitt (Amazon DSP)', 'Perrigo (Direct)', 'Unilever (Amazon DSP)']);
+  assert.deepStrictEqual(all.map((r) => r.label), ['Blackmores (DV360)', 'Haleon (The Trade Desk)', 'Kenvue (DV360)', 'Procter & Gamble (Direct)', "L'Oréal Paris (Direct)", 'Vitabiotics (Direct)', 'Bayer Consumer Health (Amazon DSP)', 'Reckitt (Amazon DSP)', 'Nestlé Health Science (Direct)', 'Perrigo (Direct)', 'Unilever (Amazon DSP)']);
   assert.ok((await get('/maturity', { level: 'Personalised' })).table.every((r) => r.level === 'Personalised'));
   assert.ok((await get('/maturity', { variable: 'Fixed Store Segments' })).table.every((r) => r.variables.some((v) => v.label === 'Fixed Store Segments')));
   assert.ok((await get('/maturity', { scheduling: 'none' })).table.every((r) => !r.scheduling.uses));

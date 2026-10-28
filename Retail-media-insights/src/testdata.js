@@ -137,25 +137,26 @@ const DEAL_SPECS = [
     'Guaranteed Window Portrait plays for the Blackmores Immune winter launch, 15 Sep – 15 Nov.'],
   ['d2', 'Sensodyne always-on', 'Programmatic guaranteed', 8, ['adv-haleon'], slotsOf('queue', [1]), 0.95,
     'Always-on guaranteed Queue Screen plays for Haleon Sensodyne at the checkout.'],
-  // Launch deal types (decided 27 Oct 2026): Programmatic guaranteed, Direct advertiser and the Open auction only, with 7 of the
-  // 10 named deals sold direct. A direct deal has no DSP, no seat and no deal ID: the retailer sells the slot straight to the brand
-  // through PH and bills the agreed CPM, counted as 'Direct' in every DSP breakdown.
+  // Launch deal types (decided 27 Oct 2026): Programmatic guaranteed, Direct advertiser and the Open auction only. A Direct advertiser
+  // deal has exactly one named buyer (decided 28 Oct 2026, as on DSP Integration: {partnerId: 'direct', seatId: advertiserId}), a single
+  // advertiser at an agreed CPM, so each deal names one brand. It has no DSP and no seat but does carry an internal
+  // PH deal ID (PH- plus 10 characters), used for campaign authoring; it is counted as 'Direct' in every DSP breakdown.
   ['d3', 'Revitalift takeover', 'Direct advertiser', 8.8, ['adv-loreal-paris'], slotsOf('endcap', [1, 2]), 0.72,
-    "Endcap Shelf-edge slots owned by L'Oréal Paris, sold directly by the retailer at an agreed CPM. No DSP or deal ID."],
+    "Endcap Shelf-edge slots owned by L'Oréal Paris, sold directly by the retailer at an agreed CPM. No DSP."],
   ['d4', 'Dispensary guaranteed', 'Programmatic guaranteed', 8.2, ['adv-reckitt'], slotsOf('dispensary', [1]), 0.55,
     'Guaranteed Dispensary Screen plays for Reckitt beside the pharmacy counter.'],
-  ['d5', 'Health & wellness windows', 'Direct advertiser', 7.5, ['adv-vitabiotics', 'adv-nestle-health-science', 'adv-perrigo'], slotsOf('window', [3, 4, 5]), 0.92,
-    'Window Portrait slots sold directly by the retailer to health & wellness brands at an agreed CPM. No DSP or deal ID.'],
-  ['d6', 'Dispensary screens', 'Direct advertiser', 7, ['adv-perrigo', 'adv-nestle-health-science', 'adv-vitabiotics'], slotsOf('dispensary', [2, 3, 4]), 0.84,
-    'Dispensary Screen slots beside the pharmacy counter, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
-  ['d7', 'Beauty endcaps', 'Direct advertiser', 6, ['adv-loreal-paris', 'adv-procter-gamble'], slotsOf('endcap', [3, 4]), 0.52,
-    'Endcap Shelf-edge slots at the gondola ends, sold directly by the retailer to beauty brands at an agreed CPM. No DSP or deal ID.'],
-  ['d8', 'Queue screens', 'Direct advertiser', 5.5, ['adv-procter-gamble', 'adv-perrigo'], slotsOf('queue', [2]), 0.9,
-    'Queue Screen slots at the checkout, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
-  ['d9', 'Store-wide wellness', 'Direct advertiser', 6.5, ['adv-vitabiotics', 'adv-nestle-health-science'], slotsOf('endcap', [5]), 0.56,
-    'Endcap Shelf-edge slots across the store, sold directly by the retailer to wellness brands at an agreed CPM. No DSP or deal ID.'],
+  ['d5', 'Health & wellness windows', 'Direct advertiser', 7.5, ['adv-vitabiotics'], slotsOf('window', [3, 4, 5]), 0.92,
+    'Window Portrait slots sold directly by the retailer to Vitabiotics at an agreed CPM. No DSP.'],
+  ['d6', 'Dispensary screens', 'Direct advertiser', 7, ['adv-perrigo'], slotsOf('dispensary', [2, 3, 4]), 0.84,
+    'Dispensary Screen slots beside the pharmacy counter, sold directly by the retailer to Perrigo at an agreed CPM. No DSP.'],
+  ['d7', 'Beauty endcaps', 'Direct advertiser', 6, ['adv-loreal-paris'], slotsOf('endcap', [3, 4]), 0.52,
+    "Endcap Shelf-edge slots at the gondola ends, sold directly by the retailer to L'Oréal Paris at an agreed CPM. No DSP."],
+  ['d8', 'Queue screens', 'Direct advertiser', 5.5, ['adv-procter-gamble'], slotsOf('queue', [2]), 0.9,
+    'Queue Screen slot at the checkout, sold directly by the retailer to Procter & Gamble at an agreed CPM. No DSP.'],
+  ['d9', 'Store-wide wellness', 'Direct advertiser', 6.5, ['adv-nestle-health-science'], slotsOf('endcap', [5]), 0.56,
+    'Endcap Shelf-edge slot across the store, sold directly by the retailer to Nestlé Health Science at an agreed CPM. No DSP.'],
   ['d11', 'Perrigo — pharmacy takeover', 'Direct advertiser', 6, ['adv-perrigo'], slotsOf('dispensary', [5]), 0.56,
-    'Dispensary Screen slot owned by Perrigo, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
+    'Dispensary Screen slot owned by Perrigo, sold directly by the retailer at an agreed CPM. No DSP.'],
 ];
 // Fill of the positions no deal assigns (the open auction), set so each type's overall sell-through lands on its target:
 // Window and Queue about 89% (amber), Dispensary about 61%, Endcap about 56%.
@@ -163,7 +164,7 @@ const OPEN_FILL = { window: 0.82, queue: 0.82, dispensary: 0.05, endcap: 0.32 };
 const FLIGHTS = { d1: { start: '2026-09-15', end: '2026-11-15', pacing: 0.93 }, d2: { start: '2026-08-01', end: '2026-12-31', pacing: 1.01 }, d4: { start: '2026-09-01', end: '2026-12-15', pacing: 0.97 } };
 const RESERVE_UNTIL = '2026-12-31';
 
-// One deal ID per DSP with an invited buyer: PH- plus 10 characters, minted deterministically from the unambiguous
+// One deal ID per DSP with an invited buyer (a Direct advertiser deal has one, under 'Direct'): PH- plus 10 characters, minted deterministically from the unambiguous
 // alphabet DSP Integration uses (DEAL_ID_ALPHABET in BuyersListRepo.ts: never 0, 1, I, L or O) and unique across all deals.
 const DEAL_ID_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const mintedDealIds = new Set();
@@ -179,7 +180,7 @@ function mintDealIds(dsps, rand) {
 const mintRand = rng(2026);
 const DEAL_CATALOG = Object.fromEntries(DEAL_SPECS.map(([id, name, dealType, cpm, buyers, slots, , description], i) => {
   const buyerList = buyers.map((advertiserId) => ({ advertiserId, dsp: PROFILE[advertiserId].dsp }));
-  const dspsInOrder = DSPS_ORDER.filter((d) => buyerList.some((b) => b.dsp === d));
+  const dspsInOrder = [...DSPS_ORDER, 'Direct'].filter((d) => buyerList.some((b) => b.dsp === d));
   const deal = { name, description, dealType, phId: `PH-${id.toUpperCase()}`, cpm, dealIds: mintDealIds(dspsInOrder, mintRand), buyers: buyerList, slots };
   if (dealType === 'Private auction') deal.floorCpm = cpm;
   if (FLIGHTS[id]) { deal.flight = { start: FLIGHTS[id].start, end: FLIGHTS[id].end }; deal.forecast = 100000; deal.buffer = 0.1; }

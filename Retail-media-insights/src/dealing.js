@@ -4,7 +4,7 @@
 // adapter will fill from DSP Integration; today it comes from the test catalog.
 
 const calc = require('./calc');
-const { DSPS, DSP_LABELS } = require('./constants');
+const { DSPS, DIRECT, DSP_LABELS } = require('./constants');
 const { days } = require('./filters');
 
 const RETENTION_DAYS = 90; // settled-bid retention (README open question 3)
@@ -23,9 +23,9 @@ const eachDay = (from, to) => { const out = []; for (let d = from; d <= to; d = 
 
 /**
  * The deal's IDs, one per DSP that has one of the given buyers, in the standard DSP order. Read from the
- * catalog deal's per-DSP map (`deal.dealIds`, PH- plus 10 characters); a DSP with no ID on record is left out.
+ * catalog deal's per-DSP map (`deal.dealIds`, PH- plus 10 characters); a Direct advertiser deal has its internal PH deal ID under `Direct`; a DSP with no ID on record is left out.
  */
-const dealIdsFor = (deal, buyers) => DSPS.filter((d) => buyers.some((b) => b.dsp === d) && (deal.dealIds || {})[d])
+const dealIdsFor = (deal, buyers) => [...DSPS, DIRECT].filter((d) => buyers.some((b) => b.dsp === d) && (deal.dealIds || {})[d])
   .map((d) => ({ dsp: d, dspLabel: DSP_LABELS[d], dealId: deal.dealIds[d] }));
 
 const dealsOf = (store) => Object.entries((store.catalog && store.catalog.deals) || {}).map(([id, d]) => ({ id, ...d }));

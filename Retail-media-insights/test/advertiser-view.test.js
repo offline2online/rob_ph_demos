@@ -79,10 +79,11 @@ test('delivery: plays won and spend reconcile to billing, day by day and in tota
     assert.equal(body.days.length, 7);
     assert.equal(body.totals.playsWon, sum(rows.map((r) => r.slots)));
     assert.ok(Math.abs(body.totals.spend - sum(rows.map((r) => r.revenue))) < 0.005 * 7, me);
-    assert.equal(body.totals.spend, cents(sum(body.days.map((d) => d.spend))));
+    // The total is rounded once, the days one by one, so they can differ by a cent per day.
+    assert.ok(Math.abs(body.totals.spend - sum(body.days.map((d) => d.spend))) < 0.005 * 7 + 1e-9, me);
     for (const d of body.days) {
       assert.equal(d.playsWon, sum(rows.filter((r) => r.date === d.date).map((r) => r.slots)));
-      assert.equal(d.spend, cents(sum(rows.filter((r) => r.date === d.date).map((r) => r.revenue))));
+      assert.ok(Math.abs(d.spend - sum(rows.filter((r) => r.date === d.date).map((r) => r.revenue))) < 0.005 * rows.length + 1e-9, `${me} ${d.date}`); // per-deal amounts are rounded to the cent before adding
     }
     // The per-deal blocks add up to the day's plays (every own row is on a deal or the open auction).
     for (const d of body.days) assert.equal(sum(d.deals.map((b) => b.playsWon)), d.playsWon, `${me} ${d.date}`);
@@ -101,11 +102,11 @@ test('delivery: day-on-day change, including the day before the range', async ()
 });
 
 test('delivery: the Deal filter narrows the lines and the blocks; an unknown or foreign deal is 400', async () => {
-  const all = (await as('adv-procter-gamble', `/delivery?${Q}`)).body;
-  const one = (await as('adv-procter-gamble', `/delivery?${Q}&dealId=d8`)).body;
+  const all = (await as('adv-perrigo', `/delivery?${Q}`)).body;
+  const one = (await as('adv-perrigo', `/delivery?${Q}&dealId=d6`)).body;
   assert.ok(one.totals.playsWon > 0 && one.totals.playsWon < all.totals.playsWon);
-  assert.equal(one.totals.playsWon, sum(billing('adv-procter-gamble').filter((r) => r.dealId === 'd8').map((r) => r.slots)));
-  assert.ok(one.days.every((d) => d.deals.length === 1 && d.deals[0].dealId === 'd8'));
+  assert.equal(one.totals.playsWon, sum(billing('adv-perrigo').filter((r) => r.dealId === 'd6').map((r) => r.slots)));
+  assert.ok(one.days.every((d) => d.deals.length === 1 && d.deals[0].dealId === 'd6'));
   assert.deepEqual(one.pacing, []);
   const open = (await as('adv-unilever', `/delivery?${Q}&dealId=open-auction`)).body;
   assert.ok(open.days.every((d) => d.deals.length === 1 && d.deals[0].dealType === 'Open auction'));
@@ -113,10 +114,10 @@ test('delivery: the Deal filter narrows the lines and the blocks; an unknown or 
   // Unilever is on no named deal and has delivery only in the open auction here, so another buyer's deal is unknown to it.
   const st = fixture([{ adv: 'adv-unilever', cpm: 20 }]);
   assert.equal((await as('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d1', st)).status, 400);
-  assert.equal((await as('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d8', st)).status, 400);
-  const direct = fixture([{ adv: 'adv-procter-gamble', cpm: 20 }]);
-  assert.equal((await as('adv-procter-gamble', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d1', direct)).status, 400);
-  assert.equal((await as('adv-procter-gamble', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d8', direct)).status, 200);
+  assert.equal((await as('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d6', st)).status, 400);
+  const direct = fixture([{ adv: 'adv-perrigo', cpm: 20 }]);
+  assert.equal((await as('adv-perrigo', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d1', direct)).status, 400);
+  assert.equal((await as('adv-perrigo', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d6', direct)).status, 200);
 });
 
 test('delivery: auction blocks show plays won of all plays, share, own CPM and the floor; fixed-price and direct deals have no auction', async () => {

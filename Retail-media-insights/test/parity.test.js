@@ -62,10 +62,11 @@ test('deals: PG deals have flights and buffers; the rest are fixed price (no flo
   assert.deepEqual(d.d6.slots.map((s) => `${s.displayTypeId}${s.position}`), ['dispensary2', 'dispensary3', 'dispensary4']);
   assert.deepEqual(d.d9.slots.map((s) => `${s.displayTypeId}${s.position}`), ['endcap5']);
   assert.deepEqual(d.d11.slots.map((s) => `${s.displayTypeId}${s.position}`), ['dispensary5']);
-  assert.deepEqual(d.d11.dealIds, {}, 'a direct advertiser deal has no DSP and so no deal ID');
+  assert.deepEqual(Object.keys(d.d11.dealIds), ['Direct'], 'a direct advertiser deal has no DSP but has an internal PH deal ID');
+  for (const x of Object.values(d).filter((y) => y.dealType === 'Direct advertiser')) assert.equal(x.buyers.length, 1, `${x.name}: a direct advertiser deal has exactly one advertiser`);
   assert.equal(d.d4.description, 'Guaranteed Dispensary Screen plays for Reckitt beside the pharmacy counter.');
   for (const deal of Object.values(d).filter((x) => x.dealType !== 'Open auction')) {
-    assert.deepEqual(Object.keys(deal.dealIds).sort(), [...new Set(deal.buyers.map((b) => b.dsp))].filter((x) => x !== 'Direct').sort(), deal.name);
+    assert.deepEqual(Object.keys(deal.dealIds).sort(), [...new Set(deal.buyers.map((b) => b.dsp))].sort(), deal.name);
     for (const id of Object.values(deal.dealIds)) assert.match(id, /^PH-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$/);
   }
   const allDealIds = Object.values(d).flatMap((deal) => Object.values(deal.dealIds || {}));
@@ -155,8 +156,8 @@ test('/my-summary: spend and plays won equal Delivery\'s totals; dealsOn counts 
   const dealsOn = async (id, range = Q) => (await get(`/my-summary?${range}`, advertiser(id))).body.dealsOn;
   assert.equal(await dealsOn('adv-blackmores'), 1);
   assert.equal(await dealsOn('adv-haleon'), 1);
-  assert.equal(await dealsOn('adv-perrigo'), 4, 'Perrigo is direct: its four direct deals');
-  assert.equal(await dealsOn('adv-procter-gamble'), 2, 'a direct advertiser counts its direct deals');
+  assert.equal(await dealsOn('adv-perrigo'), 2, 'Perrigo is direct: its two direct deals');
+  assert.equal(await dealsOn('adv-procter-gamble'), 1, 'a direct advertiser counts its direct deals');
   assert.equal(await dealsOn('adv-unilever'), 0, 'Unilever buys only through the open auction');
   assert.equal(await dealsOn('adv-blackmores', 'dateFrom=2026-06-14&dateTo=2026-09-01'), 0, 'Immune — winter launch has not started');
   assert.equal(await dealsOn('adv-blackmores', 'dateFrom=2026-11-20&dateTo=2026-11-30'), 0, 'Immune — winter launch has ended');

@@ -37,7 +37,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 - **Pacing** (PG only) = delivered VAC-d ÷ guaranteed to date; guaranteed = forecast × (1 − buffer).
 - **Maturity level** = highest of Default only / Localised / Personalised across an advertiser's campaigns in range. Daypart is scheduling, never a variable.
 - Parts add to totals as returned (round parts first). Whole-number percentages. All money in USD.
-- **Direct advertisers** (26 Oct 2026): revenue from advertisers sold straight through PH (no DSP, no seat, no deal ID, agreed CPM) is real billing, a source named `Direct` in every DSP breakdown and the fifth deal type `Direct advertiser`. It is part of earned revenue, never extra.
+- **Direct advertisers** (26 Oct 2026): revenue from advertisers sold straight through PH (no DSP, no seat, agreed CPM; an internal PH deal ID for campaign authoring; each Direct advertiser deal has exactly one advertiser) is real billing, a source named `Direct` in every DSP breakdown and the fifth deal type `Direct advertiser`. It is part of earned revenue, never extra.
 - Orderings: deal types Direct advertiser → PG → Preferred deal → Private auction → Open auction; sources DV360, The Trade Desk, Amazon DSP, Direct; display types by IAB zone along the shopper journey.
 
 ### 3.3 Security and isolation
@@ -64,7 +64,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 | Needed | Used for |
 |---|---|
 | Deals & buyers lists: name, description, deal type, per-DSP deal IDs (PH- format), flight dates, guaranteed volume, buffer, buyers and each buyer's DSP seat | Deals table and hovers, Advertisers table, advertiser view, "Name (DSP)" everywhere |
-| Four industry-standard deal types, incl. the ticket aligning Private auction and Preferred deal, plus the Direct advertiser deal type and direct advertisers' billing lines (no DSP, no seat, no deal ID) | Revenue, Deals, Demand health, Summary |
+| Four industry-standard deal types, incl. the ticket aligning Private auction and Preferred deal, plus the Direct advertiser deal type and direct advertisers' billing lines (no DSP, no seat; one advertiser per deal; internal PH deal ID) | Revenue, Deals, Demand health, Summary |
 | Available Inventory slot assignments (display type, playlist, zone, position, plays per window) | Slots column and hovers, Slots covered, advertiser display type filter |
 | Winning seat (partnerId + seatId from the bid response) on every billing line item, synced seat names (`partners.seats`) and the advertiser ↔ seat mapping (`advertiser_seats`). **Not confirmed persisted on billing line items in DSP Integration today: confirm, else file it on DSP Integration** | Demand by DSP seat (Advertisers table sub-rows) |
 | Billing line items and reservations (cleared / fixed CPM, plays, VAC-d, DSP seat, deal, display type) | Revenue, effective CPM, Delivery, winning CPM aggregates |
