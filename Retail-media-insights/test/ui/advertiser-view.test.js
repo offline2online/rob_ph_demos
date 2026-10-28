@@ -69,7 +69,7 @@ test('targeting & scheduling: ladder, blocks, Audience full width', async () => 
     // Audience: full width card, hero number and caption, area under the line.
     const [aw, dw] = await page.evaluate(() => [...document.querySelectorAll('.av-panel')].filter((p) => /Audience|Delivery/.test(p.querySelector('h2').textContent)).map((p) => p.getBoundingClientRect().width));
     assert.ok(Math.abs(aw - dw) < 1, 'Audience is as wide as Delivery');
-    assert.match(await page.innerText('.av-metric-lbl'), /^Assumed views \(VAC-d\) delivered, 12 Sep – 11 Oct$/);
+    assert.match(await page.innerText('.av-metric-lbl'), /^Assumed views delivered, 12 Sep – 11 Oct$/);
     assert.equal(await page.$eval('.av-metric-val', (e) => getComputedStyle(e).fontSize + getComputedStyle(e).fontWeight), '32px700');
     assert.equal(await page.$eval('.av-spark', (e) => e.getBoundingClientRect().height), 56);
     assert.equal(await page.$$eval('.av-spark path', (p) => p.length), 2);
@@ -91,7 +91,7 @@ test('your deals by display type: share, deal, slots and display type hovers', a
     const deal = await tipText(page, '.av-deal .av-name .av-name-in');
     assert.match(deal, /Deal type\s+Programmatic guaranteed\s+Rate\s+\$\d+\.\d\d CPM fixed\s+Flight\s+.+→.+\s+Period\s+\d+ days/);
     assert.match(deal, /Deal ID\s+Google DSP \(DV360\)\s+PH-[A-Z0-9]{10}/);
-    assert.match(deal, /Window Portrait · slot 1\s+[\d,]+ plays · [\d,]+ VAC-d · USD [\d,]+/);
+    assert.match(deal, /Window Portrait · slot 1\s+[\d,]+ plays · [\d,]+ assumed views · USD [\d,]+/);
     assert.match(deal, /Deal total\s+[\d,]+ plays/);
     const slots = await tipText(page, '.av-deal td.hov');
     assert.match(slots, /^Assigned slots/);
@@ -100,7 +100,7 @@ test('your deals by display type: share, deal, slots and display type hovers', a
     assert.match(slots, /IAB zone: Entrance & out of category/);
     assert.match(slots, /Advertiser slot 1 \(slot 1 of/);
     const type = await tipText(page, '.av-type .av-name .av-name-in');
-    for (const k of ['Average assumed views (VAC-d) per slot per day', 'Share of loop time', 'Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct.']) assert.ok(type.includes(k), k);
+    for (const k of ['Average assumed views per slot per day', 'Share of loop time', 'Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct.']) assert.ok(type.includes(k), k);
     assert.ok(!/Description|10 displays in|Connected displays|IAB store zone|Operating hours|Touch Point|canvas size|Display orientation|Creative formats/.test(type));
     const typeRow = await page.innerText('.av-type');
     assert.match(typeRow, /\d+ deals?\s+\d+ slots?/);
@@ -120,7 +120,7 @@ test('delivery: deal select, orange Spend, day hover, pacing view', async () => 
     await page.selectOption('select[aria-label="Deal"]', 'd1');
     await page.click('.av-seg-btn:text("Pacing")');
     assert.deepEqual(await page.$$eval('.av-kpi .av-tile-lbl', (l) => l.map((x) => x.textContent)), ['Delivered', 'Guaranteed to date', 'Guaranteed whole flight', 'Pacing']);
-    assert.match(await page.innerText('.av-legend'), /Delivered assumed views \(VAC-d\)\s+Guaranteed/);
+    assert.match(await page.innerText('.av-legend'), /Delivered assumed views\s+Guaranteed/);
     assert.equal(await page.$$eval('.av-today', (l) => l.length), 1);
     assert.ok(await page.$$eval('.av-svg text', (t) => t.some((x) => x.textContent === 'Today')));
     const info = await tipText(page, '.av-panel:has(h2:text("Delivery")) .av-info');

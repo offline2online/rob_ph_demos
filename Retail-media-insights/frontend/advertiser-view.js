@@ -17,16 +17,16 @@
   var LAUNCH_DEAL_TYPES = ['Programmatic guaranteed', 'Direct advertiser', 'Open auction'];
   function atLaunch(t) { return LAUNCH_DEAL_TYPES.indexOf(typeName(t)) >= 0; }
 
-  // The shared VAC-d explanation and worked example, appended to every ⓘ that mentions assumed views.
+  // The shared assumed views explanation and worked example, appended to every ⓘ that mentions assumed views.
   var VACD = [
-    'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE standard; CPM is cost per thousand assumed views. ' +
+    'Assumed views is the visibility-adjusted audience score from the OMA MOVE standard; CPM is cost per thousand assumed views. ' +
     'Average assumed views per slot per day = footfall past a display × visibility adjustment × the slot’s share of the loop, averaged across connected displays. ' +
     'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day.'
   ];
   var TIPS = {
-    delivery: ['Plays you won (left axis) and what you spent (right axis) per day. Click the Plays won or Spend total to turn its line off or on. Hover a day to see, per deal, your plays won, your CPM against the winning CPM range and the floor CPM (never naming other buyers). The winning CPM range is the 25th percentile, the middle (median) and the 75th percentile of the CPMs all winning buyers cleared at that day, shown only when at least 2 other buyers won plays there, and the change on the previous day. For a programmatic guaranteed deal, Pacing shows assumed views (VAC-d) delivered against the guaranteed line over the flight; other deal types have no guaranteed line.'],
+    delivery: ['Plays you won (left axis) and what you spent (right axis) per day. Click the Plays won or Spend total to turn its line off or on. Hover a day to see, per deal, your plays won, your CPM against the winning CPM range and the floor CPM (never naming other buyers). The winning CPM range is the 25th percentile, the middle (median) and the 75th percentile of the CPMs all winning buyers cleared at that day, shown only when at least 2 other buyers won plays there, and the change on the previous day. For a programmatic guaranteed deal, Pacing shows assumed views delivered against the guaranteed line over the flight; other deal types have no guaranteed line.'],
     deals: function (range) {
-      return ['Every display type your deals are active on, in shopper-journey order, with each deal’s performance in ' + (range || 'the selected range') + ' (the open auction is listed last under each display type and is not in its totals). Winning CPM range: the 25th percentile to the 75th percentile of the CPMs all winning buyers cleared in the open auction there, with the middle (median) in brackets; shown only on Open auction rows, and only when at least 2 other buyers won plays. Programmatic guaranteed and Direct advertiser deals have a fixed CPM. Hover a display type for its details, a deal for its description and deal ID, and Slots for its assigned slots. Share: on a display type row, its share of your deal spend; on a deal row, the share of the deal’s plays there that you won.'];
+      return ['Every display type your deals are active on, in shopper-journey order, with each deal’s performance in ' + (range || 'the selected range') + ' (the open auction is listed last under each display type and is not in its totals). Winning CPM range: the 25th percentile to the 75th percentile of the CPMs all winning buyers cleared in the open auction there, with the middle (median) in brackets; shown only on Open auction rows, and only when at least 2 other buyers won plays. Programmatic guaranteed and Direct advertiser deals have a fixed CPM. Hover a display type for its details, a deal for its description and deal ID, and Slots for the details of each slot it covers. On the Open auction row, Slots counts the advertiser slots no deal is assigned to that you won open auction plays on. Share: on a display type row, its share of your deal spend; on a deal row, the share of the deal’s plays there that you won.'];
     },
     targeting: ['Your highest targeting level across your campaigns in the date range: Default only, Localised or Personalised. Scheduling = campaigns you schedule (dayparting and multiple schedules) from the campaign’s Scheduling tab, separately from targeting. Other variables available to use = the Shared Targeting Variables the retailer has made available to your DSP seat that your campaigns don’t use yet.']
   };
@@ -157,12 +157,12 @@
   // ---------- Your deals by display type model ----------
   // Hover rows are [key, value, kind]: kind 'head' = bold with a rule above, 'para' = a full-width paragraph,
   // 'sect' = a rule above (new section), 'note' = muted small footer, 'line' = a plain full-width line.
-  // The same card as the retailer view's display type hover (trimmed 19 Oct 2026): the description and the VAC-d averages only.
+  // The same card as the retailer view's display type hover (trimmed 19 Oct 2026): the description and the assumed views averages only.
   function displayTypeTooltip(t) {
     var rows = [];
     if (has(t.description)) rows.push([t.description, '', 'para']);
     var a = t.averages || {}, vac = [];
-    if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtInt(a.averageAssumedViewsPerSlotPerDay)]);
+    if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views per slot per day', fmtInt(a.averageAssumedViewsPerSlotPerDay)]);
     if (has(a.averageFootfallPerDay)) vac.push(['Average footfall past a display per day', fmtInt(a.averageFootfallPerDay)]);
     if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', Number(a.averageVisibility).toFixed(2)]);
     var sl = a.shareOfLoopTime;
@@ -175,7 +175,7 @@
     return { title: t.name, rows: rows };
   }
   // The deal name hover matches the retailer Deals table's for the advertiser's own deal: description, deal type, rate, flight and
-  // period, the deal ID (the advertiser's own DSP only, or "Direct (no DSP)" and the internal PH deal ID), then plays, VAC-d and value per
+  // period, the deal ID (the advertiser's own DSP only, or "Direct (no DSP)" and the internal PH deal ID), then plays, assumed views and value per
   // assigned slot across the term (first 5, then + N more) and the deal total. No other advertiser's name or data.
   var MAX_TIP_SLOTS = 5;
   function termMoney(n, from) { return (from ? 'from ' : '') + 'USD ' + fmtInt(n); }
@@ -201,17 +201,19 @@
       else {
         slots.slice(0, MAX_TIP_SLOTS).forEach(function (s) {
           var plays = s.termPlays == null ? 'plays n/a' : fmtInt(s.termPlays) + ' plays';
-          var vac = s.termVacd == null ? '' : ' · ' + fmtInt(s.termVacd) + ' VAC-d';
+          var vac = s.termVacd == null ? '' : ' · ' + fmtInt(s.termVacd) + ' assumed views';
           rows.push([s.displayType + ' · slot ' + s.advertiserSlot, plays + vac + (s.termValue != null ? ' · ' + termMoney(s.termValue, floorRate) : '')]);
         });
         if (slots.length > MAX_TIP_SLOTS) rows.push(['+ ' + plural(slots.length - MAX_TIP_SLOTS, 'more slot'), '', 'line']);
         var t = ts.term.total;
-        rows.push(['Deal total', t ? fmtInt(t.plays) + ' plays · ' + fmtInt(t.vacd) + ' VAC-d' + (t.value != null ? ' · ' + termMoney(t.value, floorRate) : '') : 'not available for every slot', 'sect']);
-        if (ts.rate && ts.rate.value != null) rows.push(['Value = plays × VAC-d ÷ 1,000 × CPM.', '', 'note']);
+        rows.push(['Deal total', t ? fmtInt(t.plays) + ' plays · ' + fmtInt(t.vacd) + ' assumed views' + (t.value != null ? ' · ' + termMoney(t.value, floorRate) : '') : 'not available for every slot', 'sect']);
+        if (ts.rate && ts.rate.value != null) rows.push(['Value = assumed views ÷ 1,000 × CPM.', '', 'note']);
       }
     }
     return { title: deal.name, rows: rows };
   }
+  // The Open auction row's slots are the advertiser slots no deal assigns that the advertiser won plays on; blank when none.
+  function openSlotsLabel(deal) { return deal.slots && deal.slots.count ? plural(deal.slots.count, 'slot') : ''; }
   function slotsLabel(deal) { return deal.slots && deal.slots.count ? plural(deal.slots.count, 'slot') : 'Not assigned'; }
   // One block per assigned slot: display type (description), playlist · zone, IAB zone, then the slot and its plays per window.
   function slotsTooltip(deal, displayType) {
@@ -243,9 +245,9 @@
   function tableRows(data) {
     var out = [];
     ((data && data.groups) || []).forEach(function (g) {
-      out.push({ kind: 'type', name: g.displayType.name, deals: g.dealCount, slots: g.slots, playsWon: g.playsWon, views: g.assumedViews, spend: g.spend, cpm: g.effectiveCpm, range: '', share: g.sharePercent, tip: displayTypeTooltip(g.displayType) });
+      out.push({ kind: 'type', name: g.displayType.name, deals: g.dealCount, slots: g.slots, slotsTip: slotsTooltip({ slots: { assigned: g.slotsAssigned || [] } }, g.displayType), playsWon: g.playsWon, views: g.assumedViews, spend: g.spend, cpm: g.effectiveCpm, range: '', share: g.sharePercent, tip: displayTypeTooltip(g.displayType) });
       g.deals.forEach(function (d) {
-        out.push({ kind: 'deal', name: d.name, dealType: typeName(d.dealType), slotsText: d.id === OPEN_AUCTION ? '' : slotsLabel(d), playsWon: d.playsWon, views: d.assumedViews, spend: d.spend, cpm: d.effectiveCpm, range: d.dealType === 'Open auction' ? winningRangeText(d.winningCpm) : '',
+        out.push({ kind: 'deal', name: d.name, dealType: typeName(d.dealType), slotsText: d.id === OPEN_AUCTION ? openSlotsLabel(d) : slotsLabel(d), playsWon: d.playsWon, views: d.assumedViews, spend: d.spend, cpm: d.effectiveCpm, range: d.dealType === 'Open auction' ? winningRangeText(d.winningCpm) : '',
           share: d.share && d.share.percent, nameTip: dealNameTooltip(d), slotsTip: slotsTooltip(d, g.displayType), shareTip: shareTooltip(d, g.displayType.name) });
       });
     });
@@ -291,8 +293,8 @@
     var tr = (data && data.trend) || [];
     var from = (filters && filters.dateFrom) || (tr[0] && tr[0].date), to = (filters && filters.dateTo) || (tr.length && tr[tr.length - 1].date);
     var peak = peakOf(tr);
-    var tip = ['Assumed views (VAC-d) delivered to you, from PH Core playback analytics. The line is the daily trend' + (peak ? '; the peak was ' + fmtBig(peak.assumedViews) + ' on ' + fmtDay(peak.date) : '') + '.'].concat(VACD);
-    return { hero: fmtBig(data.assumedViews), caption: 'Assumed views (VAC-d) delivered' + (from && to ? ', ' + rangeText(from, to) : ''), tip: tip };
+    var tip = ['Assumed views delivered to you, from PH Core playback analytics. The line is the daily trend' + (peak ? '; the peak was ' + fmtBig(peak.assumedViews) + ' on ' + fmtDay(peak.date) : '') + '.'].concat(VACD);
+    return { hero: fmtBig(data.assumedViews), caption: 'Assumed views delivered' + (from && to ? ', ' + rangeText(from, to) : ''), tip: tip };
   }
   function sparkArea(trend, w, h) {
     var line = sparkline(trend, w, h);
@@ -490,7 +492,7 @@
       }
       plot.appendChild(svg);
       if (sel.view === 'pacing') {
-        plot.appendChild(h('div', { class: 'av-legend' }, [h('span', { class: 'av-key', style: '--av-line:' + COLOURS.delivered, text: 'Delivered assumed views (VAC-d)' }), h('span', { class: 'av-key dashed', style: '--av-line:' + COLOURS.guaranteed, text: 'Guaranteed' })]));
+        plot.appendChild(h('div', { class: 'av-legend' }, [h('span', { class: 'av-key', style: '--av-line:' + COLOURS.delivered, text: 'Delivered assumed views' }), h('span', { class: 'av-key dashed', style: '--av-line:' + COLOURS.guaranteed, text: 'Guaranteed' })]));
       }
       // One transparent column per day carries the hover, so each day is a real focus/touch target.
       var hit = h('div', { class: 'av-hits', style: 'left:' + (PL / W * 100) + '%;right:' + (PR / W * 100) + '%' });
@@ -523,7 +525,7 @@
 
     // ----- Your deals by display type -----
     var dl = panel('Your deals by display type', function () { return TIPS.deals(rangeText(filters.dateFrom, filters.dateTo)); }, null);
-    var COLS = [['Display type / deal', ''], ['Deal type', ''], ['Slots', 'num'], ['Plays won', 'num'], ['Assumed views (VAC-d)', 'num'], ['Spend', 'num'], ['Effective CPM', 'num'], ['Winning CPM range', 'num', 'range'], ['Share', 'num']];
+    var COLS = [['Display type / deal', ''], ['Deal type', ''], ['Slots', 'num'], ['Plays won', 'num'], ['Assumed views', 'num'], ['Spend', 'num'], ['Effective CPM', 'num'], ['Winning CPM range', 'num', 'range'], ['Share', 'num']];
     function td(text, cls) { return h('td', { class: cls || '', text: text == null ? '' : text }); }
     function drawDeals(data) {
       var tbl = h('table', { class: 'av-table' });
@@ -535,7 +537,8 @@
         var name = h('td', { class: 'av-name' }, [h('span', { class: 'av-name-in', text: r.name })]);
         if (r.kind === 'type') {
           hover(name.firstChild, function () { return r.tip; });
-          tr.appendChild(name); tr.appendChild(td(plural(r.deals, 'deal'), 'av-muted')); tr.appendChild(td(plural(r.slots, 'slot'), 'num'));
+          tr.appendChild(name); tr.appendChild(td(plural(r.deals, 'deal'), 'av-muted')); var gs = td(plural(r.slots, 'slot'), 'num'); if (r.slotsTip && r.slotsTip.rows.length) { gs.className = 'num hov'; hover(gs, function () { return r.slotsTip; }); }
+          tr.appendChild(gs);
         } else {
           hover(name.firstChild, function () { return r.nameTip; });
           tr.appendChild(name); tr.appendChild(td(r.dealType));

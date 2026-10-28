@@ -83,8 +83,29 @@ module.exports = {
       return out;
     };
 
+    // The advertiser slot positions of a display type that no deal assigns: the open auction plays on these. Positions only (no deal
+    // or buyer is named); playlist, zone and plays per window are the display type's, read from any slot assigned on it.
+    const catalogDeals = Object.values((store.catalog && store.catalog.deals) || {});
+    const unassignedSlots = (typeId, loopSlotCount) => {
+      const adv = ((known[typeId] || {}).slots || {}).advertiser;
+      const onType = catalogDeals.flatMap((d) => (d.slots || []).filter((s) => s.displayTypeId === typeId));
+      const taken = new Set(onType.map((s) => s.position));
+      const like = onType[0] || {};
+      const out = [];
+      for (let position = 1; adv && position <= adv.count; position += 1) {
+        if (taken.has(position)) continue;
+        out.push(slotDetail({ playlist: like.playlist, zone: like.zone, position, loopSlot: position, playsPerWindow: like.playsPerWindow }, loopSlotCount));
+      }
+      return out;
+    };
+    const slotDetail = (s, loopSlotCount) => ({
+      playlist: s.playlist, zone: s.zone, playlistZone: s.playlist ? `${s.playlist} \u00b7 ${s.zone}` : undefined,
+      advertiserSlot: s.position, loopSlot: s.loopSlot, loopSlotCount, label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`, playsPerWindow: s.playsPerWindow,
+    });
+
     const groups = ordered.map((typeId) => {
       const slotsHere = new Set();
+      const slotsHereList = new Map();
       const tf = facts.get(typeId);
       const loopSlotCount = tf && tf.loop ? tf.loop.slotsPerLoop : null; // a display type fact, safe for an advertiser
       const rows = [];
@@ -93,7 +114,7 @@ module.exports = {
         const k = cell(deal.id, typeId);
         const m = k >= 0 && mineSeen[k] ? { plays: minePlays[k], views: mineViews[k], rev: mineRev[k] } : undefined;
         if (!slots.length && !m) continue;
-        for (const s of slots) slotsHere.add(slotKey(s));
+        for (const s of slots) { slotsHere.add(slotKey(s)); if (!slotsHereList.has(slotKey(s))) slotsHereList.set(slotKey(s), s); }
         const own = m || { plays: 0, views: 0, rev: 0 };
         const allPlays = k >= 0 ? all[k] : 0;
         const buyers = (deal.buyers || []).filter((b) => b.advertiserId === me);
@@ -103,10 +124,7 @@ module.exports = {
           dealIds: dealIdsFor(deal, buyers), // only the advertiser's own DSP
           slots: {
             count: new Set(slots.map(slotKey)).size,
-            assigned: slots.map((s) => ({
-              playlist: s.playlist, zone: s.zone, playlistZone: `${s.playlist} · ${s.zone}`,
-              advertiserSlot: s.position, loopSlot: s.loopSlot, loopSlotCount, label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`, playsPerWindow: s.playsPerWindow,
-            })),
+            assigned: slots.map((s) => slotDetail(s, loopSlotCount)),
           },
           playsWon: own.plays, assumedViews: Math.round(own.views), spend: cents(own.rev),
           share: { playsWon: own.plays, advertisersOnDeal },
@@ -125,7 +143,7 @@ module.exports = {
         }
         rows.push(row);
       }
-      // The open auction on this display type, listed last: no assigned slots, plays won of all open auction plays there. Like
+      // The open auction on this display type, listed last: its slots are the advertiser slots no deal assigns, plays won of all open auction plays there. Like
       // Delivery's open auction block it is kept out of the group's own totals (which stay the deals', so deals + open auction = Delivery).
       let openRow = null;
       const tIx = store.typeCode.get(typeId);
@@ -133,9 +151,11 @@ module.exports = {
         const m = (tIx !== undefined && openMine.get(tIx)) || { plays: 0, views: 0, rev: 0 };
         const winners = tIx !== undefined ? openOthers[tIx].size : 0;
         const hideShare = winners >= 1 && winners < MIN_OTHER_BUYERS_FOR_WINNING_CPM;
+        // Open auction plays run on the advertiser slots no deal assigns: those are the slots shown, once the advertiser has won plays there.
+        const openSlots = m.plays > 0 ? unassignedSlots(typeId, loopSlotCount) : [];
         const row = {
           id: OPEN_AUCTION, name: 'Open auction', description: 'Any buyer bids per slot against the display type\u2019s floor.', dealType: 'Open auction',
-          dealIds: [], slots: { count: 0, assigned: [] }, terms: null,
+          dealIds: [], slots: { count: openSlots.length, assigned: openSlots }, terms: null,
           playsWon: m.plays, assumedViews: Math.round(m.views), spend: cents(m.rev),
           share: { playsWon: m.plays },
         };
@@ -155,6 +175,7 @@ module.exports = {
       const group = {
         displayType: t ? hoverCard(t) : { id: typeId, name: known[typeId].name },
         dealCount: rows.length, slots: slotsHere.size,
+        slotsAssigned: [...slotsHereList.values()].sort((a, b) => a.position - b.position).map((x) => slotDetail(x, loopSlotCount)),
         playsWon: rows.reduce((s, r) => s + r.playsWon, 0), assumedViews: views, spend, deals: openRow ? [...rows, openRow] : rows,
       };
       if (views > 0) group.effectiveCpm = cents(calc.effectiveCpm(spend, views));

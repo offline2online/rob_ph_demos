@@ -322,3 +322,19 @@ test('my-summary carries assumed views and an Effective CPM that reconciles with
   assert.equal(body.effectiveCpm, cents(calc.effectiveCpm(body.spend, views)));
   assert.ok(Math.abs(body.effectiveCpm - body.spend / (views / 1000)) < 0.02);
 });
+
+test('deals-by-display-type: the Open auction row lists the advertiser slots no deal assigns, and group rows list every slot they cover', async () => {
+  const { body } = await as('adv-blackmores', `/deals-by-display-type?${Q}`);
+  const queue = body.groups.find((g) => g.displayType.id === 'queue');
+  const open = queue.deals.find((d) => d.id === 'open-auction');
+  // Queue Screen has 3 advertiser slots; deal d2 and d8 take 1 and 2, so slot 3 is the open auction's.
+  assert.equal(open.slots.count, 1);
+  assert.deepEqual(open.slots.assigned.map((s) => s.advertiserSlot), [3]);
+  assert.ok(open.slots.assigned[0].playlistZone && open.slots.assigned[0].playsPerWindow > 0 && open.slots.assigned[0].loopSlotCount);
+  for (const g of body.groups) assert.equal(g.slotsAssigned.length, g.slots, `${g.displayType.id}: one detail per slot`);
+  const dealSlots = new Set();
+  for (const g of body.groups) for (const d of g.deals) if (d.id !== 'open-auction') for (const s of d.slots.assigned) dealSlots.add(`${g.displayType.id}#${s.advertiserSlot}`);
+  for (const g of body.groups) { const open2 = g.deals.find((d) => d.id === 'open-auction'); for (const s of (open2 ? open2.slots.assigned : [])) assert.ok(!dealSlots.has(`${g.displayType.id}#${s.advertiserSlot}`)); }
+  const direct = (await as('adv-loreal-paris', `/deals-by-display-type?${Q}`)).body;
+  assert.ok(direct.groups.every((g) => !g.deals.some((d) => d.id === 'open-auction')));
+});
