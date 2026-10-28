@@ -21,7 +21,7 @@
       'Better targeting and scheduling mean better campaigns, more spend and more inventory sold.',
     advertisers: 'Top 10 by revenue. Deals on = deals the advertiser is on (buyers lists), any deal type; hover to list them. Slots covered = slots across those deals. ' +
       'Slots won = share of covered slot opportunities the advertiser won. Effective CPM is per 1,000 assumed views (VAC-d). ' +
-      'Maturity level and Scheduling show how the advertiser uses targeting and scheduling; use the filters, or click a bar in Variables in use below, to narrow the table.',
+      'Maturity level and Scheduling show how the advertiser uses targeting and scheduling; click a bar in Variables in use below to narrow the table.',
     progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
     variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertisers table. ' +
       'Daypart is not a targeting variable: it is a campaign scheduling feature, shown in Scheduling.',
@@ -366,22 +366,10 @@
     var pPro = panel('Progress over time', TIPS.progress, granSeg, 'dc-wide');
     var pVar = panel('Variables in use', TIPS.variables, kindSeg, 'dc-wide');
 
-    // table panel with its own filters
-    function select(label, key, getOptions) {
-      var sel = h('select', { class: 'dc-select', 'aria-label': label });
-      sel.addEventListener('change', function () { state.table[key] = sel.value; refilter(); });
-      return { sel: sel, fill: function () {
-        sel.innerHTML = '';
-        getOptions().forEach(function (o) { sel.appendChild(h('option', { value: o[0], text: o[1] })); });
-        sel.value = state.table[key];
-      }, el: h('span', { class: 'dc-selwrap' }, [sel, icon('expand_more')]) };
-    }
-    var fLevel = select('Maturity level', 'level', function () { return [['', 'All levels']].concat(LEVELS.map(function (l) { return [l, l]; })); });
-    var fVar = select('Variable', 'variable', function () { return [['', 'All variables']].concat(knownVars.map(function (v) { return [v, v]; })); });
-    var fSch = select('Scheduling', 'scheduling', function () { return [['', 'All scheduling'], ['uses', 'Uses scheduling'], ['none', 'Not used']]; });
+    // table panel: no filter dropdowns (sort by a heading); a Variables in use bar click still filters, and the chip clears it
     var clearChip = h('button', { type: 'button', class: 'dc-chip dc-clear', hidden: '' }, [h('span', { text: 'Clear filter' }), icon('close')]);
     clearChip.addEventListener('click', function () { state.table = { level: '', variable: '', scheduling: '' }; refilter(); });
-    var tableControls = h('div', { class: 'dc-filters' }, [clearChip, fLevel.el, fVar.el, fSch.el]);
+    var tableControls = h('div', { class: 'dc-filters' }, [clearChip]);
     var pAdv = panel('Advertisers', TIPS.advertisers, tableControls, 'dc-wide');
 
     container.appendChild(section('Demand health', 'handshake', TIPS.demand, [pAdv.el]));
@@ -542,7 +530,6 @@
     }
 
     function syncTableFilters() {
-      fLevel.fill(); fVar.fill(); fSch.fill();
       clearChip.hidden = !activeFilters(state.table);
     }
 

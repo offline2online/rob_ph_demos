@@ -104,10 +104,7 @@ test('Maturity: order, filters, Variables in use, table cells, Progress over tim
     await page.waitForFunction(() => document.querySelector('.dc-panel:has(h3) .dc-seg-btn.on') && [...document.querySelectorAll('.dc-panel')].find((p) => p.querySelector('h3').textContent === 'Variables in use').querySelector('.dc-seg-btn.on').textContent === 'Personalised');
     await page.waitForFunction(() => [...document.querySelectorAll('.dc-panel')].find((p) => p.querySelector('h3').textContent === 'Variables in use').querySelector('.dc-bar.dc-l2'));
 
-    const filters = page.locator('.dc-panel:has(h3:text-is("Advertisers")) .dc-select');
-    assert.deepEqual(await filters.evaluateAll((s) => s.map((x) => x.getAttribute('aria-label'))), ['Maturity level', 'Variable', 'Scheduling']);
-    assert.deepEqual(await filters.first().locator('option').allTextContents(), ['All levels', 'Default only', 'Localised', 'Personalised']);
-    assert.deepEqual(await filters.last().locator('option').allTextContents(), ['All scheduling', 'Uses scheduling', 'Not used']);
+    assert.equal(await page.locator('.dc-panel:has(h3:text-is("Advertisers")) .dc-select').count(), 0, 'no filter dropdowns on the Advertisers table');
     assert.equal(await page.locator('h3:text-is("Advertiser targeting & scheduling")').count(), 0, 'the separate table is gone');
     assert.equal(await page.locator('.dc-mat').count(), 0);
     const sched = await texts(page, '.dc-adv tbody td:nth-child(9)');
@@ -119,16 +116,12 @@ test('Maturity: order, filters, Variables in use, table cells, Progress over tim
     assert.match(await page.textContent('.dc-tip'), /Variables used/);
     await page.locator('.dc-adv tbody td:nth-child(9) .dc-sched').first().hover();
     assert.match(await page.textContent('.dc-tip'), /scheduled campaigns/);
-    await page.selectOption('.dc-select[aria-label="Maturity level"]', 'Localised');
-    await page.waitForSelector('.dc-clear');
-    await page.waitForFunction(() => document.querySelectorAll('.dc-adv tbody tr').length === 4);
+    // clicking a Variables in use bar still filters the table; the chip clears it
+    await page.locator('.dc-panel:has(h3:text-is("Variables in use")) .dc-bar').first().click();
+    await page.waitForSelector('.dc-clear:not([hidden])');
     assert.match(await page.textContent('.dc-filters > :first-child'), /^Clear filter/);
     await page.click('.dc-clear');
     await page.waitForFunction(() => document.querySelectorAll('.dc-adv tbody tr').length === 10);
-    // the Scheduling filter narrows the table to advertisers that use it
-    await page.selectOption('.dc-select[aria-label="Scheduling"]', 'uses');
-    await page.waitForFunction(() => document.querySelectorAll('.dc-adv tbody tr').length > 0 && ![...document.querySelectorAll('.dc-adv tbody td:nth-child(9)')].some((x) => x.textContent === 'Not used'));
-    await page.click('.dc-clear');
     // revenue appears once on the page
     assert.equal(await page.locator('th:text-is("Revenue"), .dc-sort > span:text-is("Revenue")').count(), 1);
 
@@ -154,13 +147,10 @@ test('Progress over time ignores the date range; the advertiser table follows it
   } finally { await context.close(); }
 });
 
-test('empty states and no sideways scroll at 390px', async () => {
+test('no sideways scroll at 390px', async () => {
   const { page, context, problems } = await open(390);
   try {
     assert.ok(await noHorizontalScroll(page), 'no horizontal scroll');
-    await page.selectOption('.dc-select[aria-label="Scheduling"]', 'uses');
-    await page.selectOption('.dc-select[aria-label="Maturity level"]', 'Default only');
-    await page.waitForFunction(() => /No advertisers match this filter\./.test(document.body.innerText));
     assert.ok(await noHorizontalScroll(page));
     assert.deepEqual(problems, []);
   } finally { await context.close(); }
