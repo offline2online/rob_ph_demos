@@ -1,4 +1,4 @@
-// Demand health (Advertisers table, with each advertiser's Maturity level and Scheduling) and the Targeting & scheduling
+// Demand health (Advertisers table, with each advertiser's Maturity level, scheduling and Pacing) and the Targeting & scheduling
 // maturity charts — the two advertiser sections of the Retail Media Performance tab. A content-frame module
 // (no header, sidebar or position:fixed): the tab shell calls
 //   var demand = DemandCharts.mount(el, { fetchJson: function (endpoint, params) { return Promise } });
@@ -21,12 +21,13 @@
       'Better targeting and scheduling mean better campaigns, more spend and more inventory sold.',
     advertisers: 'Top 10 by revenue. Deals on = deals the advertiser is on (buyers lists), any deal type; hover to list them. Slots covered = slots across those deals. ' +
       'Slots won = share of covered slot opportunities the advertiser won. Effective CPM is per 1,000 assumed views (VAC-d). ' +
-      'Maturity level and Scheduling show how the advertiser uses targeting and scheduling; click a bar in Variables in use below to narrow the table.',
+      'Maturity level shows how the advertiser uses targeting, with a tile beside it when its campaigns are scheduled; Pacing is for programmatic guaranteed deals only. Click a bar in Variables in use below to narrow the table.',
     progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
     variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertisers table. ' +
       'Daypart is not a targeting variable: it is a campaign scheduling feature, shown in Scheduling.',
     level: 'The highest level used by any of the advertiser’s campaigns in the date range: Default only, Localised or Personalised. Hover to see the Shared Targeting Variables its campaigns use.',
-    sched: 'Whether the advertiser’s campaigns use dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. Hover to see the scheduled campaigns.'
+    sched: 'Whether the advertiser’s campaigns use dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. Hover to see the scheduled campaigns.',
+    pacing: 'Programmatic guaranteed deals only: assumed views (VAC-d) delivered ÷ guaranteed to date, pooled across the advertiser’s programmatic guaranteed deals. Hover to see each deal.'
   };
 
   // ---------- formatting ----------
@@ -89,6 +90,7 @@
       return {
         mat: m, level: m ? m.level : null,
         scheduled: m ? m.scheduledCampaigns : 0,
+        pacing: a.pacing || null,
         advertiserId: a.advertiserId, name: a.name, dsp: a.dsp, label: a.name,
         revenue: fmtMoney(a.revenue),
         share: pct(a.share),
@@ -121,7 +123,7 @@
     { key: 'slotsWon', label: 'Slots won', first: 'desc', value: function (r) { return r.src.slotsWonPercent; } },
     { key: 'effectiveCpm', label: 'Effective CPM', first: 'desc', value: function (r) { return r.src.effectiveCpm; } },
     { key: 'level', label: 'Maturity level', first: 'desc', info: 'level', value: function (r) { return r.level ? LEVELS.indexOf(r.level) : null; } },
-    { key: 'scheduling', label: 'Scheduling', first: 'desc', info: 'sched', value: function (r) { return r.mat ? r.scheduled : null; } }
+    { key: 'pacing', label: 'Pacing', first: 'desc', info: 'pacing', value: function (r) { return r.pacing && r.pacing.percent != null ? r.pacing.percent : null; } }
   ];
   // Rows ordered by one column ('asc' = A–Z / lowest first); no key keeps the back end's order. Blank values always sit last.
   function sortAdvertiserRows(rows, key, dir, cols) {
@@ -153,7 +155,12 @@
     var m = r.mat;
     return { title: advName(r.src) + ': ' + (m ? m.level : 'Maturity level'), sections: [{ rows: [['Variables used', m && m.chips.length ? m.chips.map(function (c) { return c.text; }).join(', ') : 'None']] }] };
   }
-  // Hover on a Scheduling cell: the campaigns that use dayparting or schedules.
+  // Hover on a Pacing cell: each programmatic guaranteed deal with its deal-wide pacing.
+  function pacingCellHover(r) {
+    var p = r.pacing;
+    return { title: advName(r.src) + ': programmatic guaranteed pacing', sections: [{ rows: ((p && p.deals) || []).map(function (d) { return [d.name, has(d.percent) ? d.percent + '%' : '–']; }) }] };
+  }
+  // Hover on the scheduling tile in a Maturity level cell: the campaigns that use dayparting or schedules.
   function schedulingCellHover(r) {
     var m = r.mat, names = m ? m.scheduledNames : [];
     if (!names.length) return { title: advName(r.src) + ': scheduling', text: 'No campaigns use scheduling in this date range.' };
@@ -218,7 +225,7 @@
     LEVELS: LEVELS, TOP_N: TOP_N, TIPS: TIPS, advName: advName, isDaypart: isDaypart, targetingVars: targetingVars,
     advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
-    activeFilters: activeFilters, matchesFilters: matchesFilters, levelCellHover: levelCellHover, schedulingCellHover: schedulingCellHover, ADV_COLS: ADV_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
+    activeFilters: activeFilters, matchesFilters: matchesFilters, levelCellHover: levelCellHover, pacingCellHover: pacingCellHover, schedulingCellHover: schedulingCellHover, ADV_COLS: ADV_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
 
   // ---------- DOM ----------
@@ -420,18 +427,18 @@
           if (r.dealsOn) { dealsTd.classList.add('dc-dotted'); hoverable(dealsTd, function () { return dealsOnHover(a); }); }
           var wonTd = h('td', { class: 'dc-num', text: r.slotsWon });
           if (d.slotsWon && d.slotsWon.complete === false) hoverable(wonTd, function () { return slotsWonHover(a, d.slotsWon); });
-          var levelTd = h('td', {}), schedTd = h('td', {});
-          if (!r.mat) { levelTd.appendChild(h('span', { class: 'dc-none', text: '–' })); schedTd.appendChild(h('span', { class: 'dc-none', text: '–' })); }
+          var levelTd = h('td', {}), pacingTd = h('td', { class: 'dc-num' });
+          if (!r.mat) levelTd.appendChild(h('span', { class: 'dc-none', text: '–' }));
           else {
             levelTd.appendChild(hoverable(h('span', { class: 'dc-chip dc-level dc-dotted' }, [h('i', { class: 'dc-swatch ' + LEVEL_CLS[r.level] }), r.level]), function () { return levelCellHover(r); }));
-            schedTd.appendChild(r.mat.scheduling === NOT_USED
-              ? hoverable(h('span', { class: 'dc-none', text: NOT_USED }), function () { return schedulingCellHover(r); })
-              : hoverable(h('span', { class: 'dc-chip dc-sched dc-dotted', text: r.mat.scheduling }), function () { return schedulingCellHover(r); }));
+            if (r.mat.scheduling !== NOT_USED) levelTd.appendChild(hoverable(h('span', { class: 'dc-chip dc-sched dc-dotted', text: r.mat.scheduling }), function () { return schedulingCellHover(r); }));
           }
+          if (r.pacing && r.pacing.percent != null) { pacingTd.classList.add('dc-dotted'); pacingTd.textContent = r.pacing.percent + '%'; hoverable(pacingTd, function () { return pacingCellHover(r); }); }
+          else pacingTd.textContent = '–';
           return h('tr', { 'data-advertiser': r.advertiserId }, [
             h('th', { scope: 'row', class: 'dc-name', text: r.label }),
             h('td', { class: 'dc-num', text: r.revenue }), h('td', { class: 'dc-num', text: r.share }),
-            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm }), levelTd, schedTd
+            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm }), levelTd, pacingTd
           ]);
         })),
         h('tfoot', {}, [totalRow(d, rows)])

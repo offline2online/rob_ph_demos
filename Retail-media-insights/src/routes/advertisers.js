@@ -1,6 +1,6 @@
 'use strict';
 const calc = require('../calc');
-const { dealsOf, slotKey, rollUp, opportunities, slotsWonComplete, RETENTION_DAYS, cents } = require('../dealing');
+const { dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, slotsWonComplete, RETENTION_DAYS, cents } = require('../dealing');
 
 // Demand by DSP seat, one level below advertiser and DSP: the seat that won each play (the buying account inside a DSP, usually held by
 // the advertiser's agency or trading desk), read from the seat on every settled billing row. Spend, plays and CPM are exact; the
@@ -60,6 +60,9 @@ module.exports = {
     const retailer = !principal || principal.principalType !== 'advertiser'; // seat data names other advertisers: never in an advertiser's response
     const seatRows = retailer ? seatsOf(store, filters, scope) : new Map();
     const advertiserSeats = (store.catalog && store.catalog.advertiserSeats) || {};
+    const pgDeals = deals.filter((d) => d.dealType === 'Programmatic guaranteed' && d.flight);
+    const delivered = deliveredByDeal(store, filters, pgDeals);
+    const pgPacing = new Map(pgDeals.map((d) => [d.id, pacingOf(d, delivered.get(d.id), filters)]));
     const ids = new Set(roll.byAdv.keys());
     for (const d of deals) for (const b of d.buyers || []) if (!scope || scope.has(b.advertiserId)) ids.add(b.advertiserId);
     const list = [...ids].map((id) => {
@@ -78,6 +81,15 @@ module.exports = {
       // The seats add up to the advertiser's row: a rounding cent goes to the largest seat; each seat's share of the advertiser's spend is a whole percent.
       if (seats.length) seats[0].revenue = cents(seats[0].revenue + (cents(a.earned) - seats.reduce((n, x) => n + x.revenue, 0)));
       const seatShares = calc.percentSplit(seats.map((x) => x.revenueRaw));
+      // Pacing: programmatic guaranteed only. Delivered and guaranteed-to-date are pooled across the advertiser's PG deals (each deal-wide, as in the Deals table).
+      const pgRows = mine.filter((d) => pgPacing.has(d.id)).map((d) => ({ id: d.id, name: d.name, p: pgPacing.get(d.id) }));
+      const measured = pgRows.filter((x) => x.p.percent != null);
+      const toDate = measured.reduce((n, x) => n + x.p.guaranteedToDate, 0);
+      const got = measured.reduce((n, x) => n + x.p.delivered, 0);
+      const pacing = pgRows.length ? {
+        percent: toDate > 0 ? Math.round((got / toDate) * 100) : null,
+        deals: pgRows.map((x) => ({ id: x.id, name: x.name, percent: x.p.percent })),
+      } : null;
       return {
         advertiserId: id, name: (meta[id] || {}).name || id, dsp: (meta[id] || {}).dsp || (buyer && buyer.dsp) || null,
         revenue: cents(a.earned), revenueRaw: a.earned,
@@ -89,6 +101,7 @@ module.exports = {
         slotsWonPercent: opportunity > 0 ? calc.wholePercent(won, opportunity) : null,
         slotsWonCount: won, slotsOpportunity: Math.round(opportunity),
         effectiveCpm: a.earnedViews > 0 ? cents(calc.effectiveCpm(a.earned, a.earnedViews)) : null,
+        pacing,
       };
     }).sort((x, y) => y.revenueRaw - x.revenueRaw || x.name.localeCompare(y.name));
     const shares = calc.percentSplit(list.map((x) => x.revenueRaw));

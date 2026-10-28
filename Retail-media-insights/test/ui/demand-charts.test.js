@@ -52,7 +52,7 @@ test('Demand health: section header, names only, "n deals" hover, Show all N adv
     await head.locator('.dc-info').hover();
     assert.match(await page.textContent('.dc-tip'), /^Which advertisers are on which deals/);
 
-    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM', 'Maturity level', 'Scheduling']);
+    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM', 'Maturity level', 'Pacing']);
     const names = await texts(page, '.dc-adv tbody th');
     assert.equal(names.length, 10);
     assert.ok(names.every((n) => !/\(/.test(n)), `no DSP in the cell: ${names}`);
@@ -107,15 +107,21 @@ test('Maturity: order, filters, Variables in use, table cells, Progress over tim
     assert.equal(await page.locator('.dc-panel:has(h3:text-is("Advertisers")) .dc-select').count(), 0, 'no filter dropdowns on the Advertisers table');
     assert.equal(await page.locator('h3:text-is("Advertiser targeting & scheduling")').count(), 0, 'the separate table is gone');
     assert.equal(await page.locator('.dc-mat').count(), 0);
-    const sched = await texts(page, '.dc-adv tbody td:nth-child(9)');
-    assert.ok(sched.includes('Dayparted · 3 of 4 campaigns') && sched.includes('Not used'), sched.join());
-    assert.ok((await texts(page, '.dc-adv .dc-none')).includes('Not used'));
-    const levels = await texts(page, '.dc-adv tbody td:nth-child(8)');
-    assert.ok(levels.every((l) => ['Default only', 'Localised', 'Personalised'].includes(l)), levels.join());
+    const levels = await texts(page, '.dc-adv tbody td:nth-child(8) .dc-level');
+    assert.ok(levels.length === 10 && levels.every((l) => ['Default only', 'Localised', 'Personalised'].includes(l)), levels.join());
+    const cells = await texts(page, '.dc-adv tbody td:nth-child(8)');
+    assert.ok(cells.some((c) => /Dayparted · 3 of 4 campaigns$/.test(c)), 'scheduling tile beside the level chip');
+    assert.ok(cells.some((c) => ['Default only', 'Localised', 'Personalised'].includes(c)), 'an advertiser that does not schedule shows only the level chip');
+    assert.equal(await page.locator('.dc-adv tbody td:nth-child(8) .dc-none').filter({ hasText: 'Not used' }).count(), 0);
+    const pacing = await texts(page, '.dc-adv tbody td:nth-child(9)');
+    assert.ok(pacing.every((p) => p === '–' || /^\d+%$/.test(p)), pacing.join());
+    assert.ok(pacing.some((p) => /%$/.test(p)) && pacing.includes('–'), pacing.join());
     await page.locator('.dc-adv tbody td:nth-child(8) .dc-level').first().hover();
     assert.match(await page.textContent('.dc-tip'), /Variables used/);
-    await page.locator('.dc-adv tbody td:nth-child(9) .dc-sched').first().hover();
+    await page.locator('.dc-adv tbody td:nth-child(8) .dc-sched').first().hover();
     assert.match(await page.textContent('.dc-tip'), /scheduled campaigns/);
+    await page.locator('.dc-adv tbody td:nth-child(9).dc-dotted').first().hover();
+    assert.match(await page.textContent('.dc-tip'), /programmatic guaranteed pacing/);
     // clicking a Variables in use bar still filters the table; the chip clears it
     await page.locator('.dc-panel:has(h3:text-is("Variables in use")) .dc-bar').first().click();
     await page.waitForSelector('.dc-clear:not([hidden])');
