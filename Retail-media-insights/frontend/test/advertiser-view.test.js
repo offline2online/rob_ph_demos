@@ -76,14 +76,56 @@ test('deals table: display type row, then its deals; Share on each', async () =>
   assert.strictEqual(wellness.share, 100);
 });
 
-test('deal hover: description and only the advertiser’s own DSP deal ID', async () => {
+test('deal hover: description, type, rate, flight, own DSP deal ID, per-slot totals and the deal total', async () => {
   const groups = (await mine('/deals-by-display-type')).groups;
   groups.forEach((g) => g.deals.filter((d) => d.dealType !== 'Open auction').forEach((d) => assert.strictEqual(d.dealIds.length, 1)));
-  const t = AV.dealNameTooltip(groups[0].deals[0]);
-  assert.strictEqual(t.rows.length, 2);
+  const deal = groups[0].deals.find((d) => d.dealType !== 'Open auction');
+  const t = AV.dealNameTooltip(deal);
+  const keys = t.rows.map((r) => r[0]);
   assert.strictEqual(t.rows[0][2], 'para');
-  assert.strictEqual(t.rows[1][0], 'Deal ID');
-  assert.match(t.rows[1][1], /^Google DSP \(DV360\): PH-[A-Z0-9]{10}$/);
+  for (const k of ['Deal type', 'Rate', 'Flight', 'Period', 'Deal ID', 'Over the whole flight', 'Deal total']) assert.ok(keys.includes(k), k);
+  assert.strictEqual(t.rows.find((r) => r[0] === 'Deal type')[1], 'Programmatic guaranteed');
+  assert.match(t.rows.find((r) => r[0] === 'Rate')[1], /^\$\d+\.\d\d CPM fixed$/);
+  assert.match(t.rows.find((r) => r[0] === 'Google DSP (DV360)')[1], /^PH-[A-Z0-9]{10}$/);
+  assert.match(t.rows.find((r) => r[0] === 'Deal total')[1], /plays · .* VAC-d · USD /);
+  const slotRows = t.rows.filter((r) => / · slot \d+$/.test(r[0]));
+  assert.ok(slotRows.length >= 1 && slotRows.length <= 5);
+  slotRows.forEach((r) => assert.match(r[1], /plays · .* VAC-d/));
+  const many = { ...deal, terms: { ...deal.terms, slots: Array.from({ length: 7 }, (_, i) => ({ displayType: 'X', advertiserSlot: i + 1, termPlays: 1, termVacd: 1, termValue: 1 })) } };
+  const m = AV.dealNameTooltip(many);
+  assert.strictEqual(m.rows.filter((r) => / · slot \d+$/.test(r[0])).length, 5);
+  assert.ok(m.rows.some((r) => r[0] === '+ 2 more slots'));
+});
+
+test('a direct advertiser’s deal hover shows the PH deal ID under Direct (no DSP) and the page has no Open auction', async () => {
+  const loreal = { principalType: 'advertiser', principalId: 'adv-loreal-paris', scopes: ['insights:read'] };
+  const data = await get('/deals-by-display-type', {}, loreal);
+  const rows = data.groups.flatMap((g) => g.deals);
+  assert.ok(rows.length > 0 && !rows.some((d) => d.dealType === 'Open auction'));
+  const t = AV.dealNameTooltip(rows[0]);
+  assert.match(t.rows.find((r) => r[0] === 'Direct (no DSP)')[1], /^PH-[A-Z0-9]{10}$/);
+  assert.ok(!t.rows.some((r) => /DV360|Trade Desk|Amazon/.test(r[0])));
+  assert.strictEqual(t.rows.find((r) => r[0] === 'Deal type')[1], 'Direct advertiser');
+  const delivery = await get('/delivery', {}, loreal);
+  assert.ok(!delivery.dealOptions.some((o) => o.dealId === 'open-auction'));
+  assert.ok(!delivery.days.some((day) => day.deals.some((b) => b.dealType === 'Open auction')));
+  assert.strictEqual(AV.showRangeColumn(AV.tableRows(data)), false);
+});
+
+test('Winning CPM range only on Open auction rows; the column hides when no row has one', async () => {
+  const data = await mine('/deals-by-display-type');
+  const rows = AV.tableRows(data);
+  rows.forEach((r) => { if (r.range) assert.strictEqual(r.dealType, 'Open auction'); });
+  rows.filter((r) => r.kind === 'type').forEach((r) => assert.strictEqual(r.range, ''));
+  assert.strictEqual(AV.showRangeColumn(rows), rows.some((r) => r.dealType === 'Open auction' && r.range));
+  assert.strictEqual(AV.showRangeColumn([{ range: '' }]), false);
+  assert.strictEqual(AV.showRangeColumn([{ range: '' }, { range: '$1.00 – $2.00' }]), true);
+});
+
+test('Delivery day hover shows launch deal types only', async () => {
+  const day = (await mine('/delivery')).days[0];
+  const t = AV.dayTooltip({ ...day, deals: day.deals.concat([{ name: 'P', dealType: 'Private auction', playsWon: 1 }, { name: 'F', dealType: 'Preferred deal', playsWon: 1, otherBuyers: 'None' }]) });
+  assert.ok(!t.rows.some((r) => /Private auction|Preferred deal/.test(r[0])));
 });
 
 test('share hover: plays won, all plays, advertiser count — never names', async () => {
@@ -110,13 +152,12 @@ test('slots hover: display type (description), playlist · zone, IAB zone, slot 
   assert.strictEqual(withN.rows[3][0], 'Advertiser slot 3 (slot 3 of 12) · 10 plays per window');
 });
 
-test('display type hover matches the retailer card: paragraph, labelled facts, averages, footer', async () => {
+test('display type hover matches the retailer card: paragraph, VAC-d averages, share of loop time, footer', async () => {
   const t = AV.displayTypeTooltip((await mine('/deals-by-display-type')).groups[0].displayType);
   assert.strictEqual(t.rows[0][2], 'para');
   const rows = Object.fromEntries(t.rows.filter((r) => r[1]).map((r) => [r[0], r[1]]));
-  assert.strictEqual(rows['Connected displays'], '10 across 5 stores');
-  for (const k of ['IAB store zone', 'Operating hours', 'Touch Point', 'Display canvas size (resolution)', 'Display orientation', 'Creative formats', 'Share of loop time']) assert.ok(k in rows, k);
-  assert.ok(!('Description' in rows) && !('Canvas' in rows) && !('Touch point' in rows));
+  for (const k of ['Connected displays', 'IAB store zone', 'Operating hours', 'Touch Point', 'Display canvas size (resolution)', 'Display orientation', 'Creative formats']) assert.ok(!(k in rows), `${k} removed`);
+  for (const k of ['Average assumed views (VAC-d) per slot per day', 'Average footfall past a display per day', 'Average visibility adjustment', 'Share of loop time']) assert.ok(k in rows, k);
   assert.deepStrictEqual(t.rows[t.rows.length - 1].slice(0, 3), ['Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct.', '', 'note']);
 });
 
@@ -136,11 +177,9 @@ test('pacing KPIs, targeting ladder and Audience model', async () => {
 
 test('display type hover is facts only and omits what is not stored', async () => {
   const full = AV.displayTypeTooltip((await mine('/deals-by-display-type')).groups[0].displayType);
-  const keys = full.rows.map((r) => r[0]);
-  assert.ok(keys.includes('IAB store zone') && keys.includes('Average footfall past a display per day'));
-  assert.ok(keys.includes('Display orientation'));
-  const sparse = AV.displayTypeTooltip({ id: 's', name: 'Sparse', iabZone: 'Checkout' });
-  assert.deepStrictEqual(sparse.rows.map((r) => r[0]), ['IAB store zone']);
+  assert.ok(full.rows.map((r) => r[0]).includes('Average footfall past a display per day'));
+  const sparse = AV.displayTypeTooltip({ id: 's', name: 'Sparse', iabZone: 'Checkout', description: 'A screen.' });
+  assert.deepStrictEqual(sparse.rows.map((r) => r[0]), ['A screen.']);
 });
 
 test('sparkline covers the trend; scheduling text; variable chips', async () => {

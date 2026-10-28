@@ -89,7 +89,10 @@ test('your deals by display type: share, deal, slots and display type hovers', a
     assert.match(share, /Plays you won/);
     assert.match(share, /Advertisers on the deal/);
     const deal = await tipText(page, '.av-deal .av-name .av-name-in');
-    assert.match(deal, /Deal ID\s+Google DSP \(DV360\): PH-[A-Z0-9]{10}/);
+    assert.match(deal, /Deal type\s+Programmatic guaranteed\s+Rate\s+\$\d+\.\d\d CPM fixed\s+Flight\s+.+→.+\s+Period\s+\d+ days/);
+    assert.match(deal, /Deal ID\s+Google DSP \(DV360\)\s+PH-[A-Z0-9]{10}/);
+    assert.match(deal, /Window Portrait · slot 1\s+[\d,]+ plays · [\d,]+ VAC-d · USD [\d,]+/);
+    assert.match(deal, /Deal total\s+[\d,]+ plays/);
     const slots = await tipText(page, '.av-deal td.hov');
     assert.match(slots, /^Assigned slots/);
     assert.match(slots, /Window Portrait \(Portrait screen in the store window at the entrance\)/);
@@ -97,8 +100,8 @@ test('your deals by display type: share, deal, slots and display type hovers', a
     assert.match(slots, /IAB zone: Entrance & out of category/);
     assert.match(slots, /Advertiser slot 1 \(slot 1 of/);
     const type = await tipText(page, '.av-type .av-name .av-name-in');
-    for (const k of ['Connected displays', '10 across 5 stores', 'IAB store zone', 'Operating hours', 'Touch Point', 'Display canvas size (resolution)', 'Display orientation', 'Creative formats', 'Share of loop time', 'Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct.']) assert.ok(type.includes(k), k);
-    assert.ok(!/Description|10 displays in/.test(type));
+    for (const k of ['Average assumed views (VAC-d) per slot per day', 'Share of loop time', 'Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct.']) assert.ok(type.includes(k), k);
+    assert.ok(!/Description|10 displays in|Connected displays|IAB store zone|Operating hours|Touch Point|canvas size|Display orientation|Creative formats/.test(type));
     const typeRow = await page.innerText('.av-type');
     assert.match(typeRow, /\d+ deals?\s+\d+ slots?/);
     assert.deepEqual(problems, []);

@@ -323,12 +323,13 @@
   function loadMySummary(f) {
     var host = $('mysum'), my = ++mySeq;
     var grid = card(host, 'Retail Media Summary · ' + options.advertiser.name + ' (' + rangeShort(applied) + ')');
-    skeletons(grid, 3);
+    skeletons(grid, 4);
     api('my-summary', f).then(function (d) {
       if (my !== mySeq) return;
       clear(grid);
       grid.appendChild(tile('spend', 'Spend', { raw: d.spend, text: fmtMoneyK(d.spend) }));
       grid.appendChild(tile('plays', 'Plays won', { raw: d.playsWon, text: fmtInt(d.playsWon) }));
+      grid.appendChild(tile('cpm', 'Effective CPM', { raw: d.effectiveCpm, text: d.effectiveCpm == null ? '–' : '$' + d.effectiveCpm.toFixed(2) }, d.effectiveCpm == null ? 'No delivery' : 'per 1,000 assumed views (VAC-d)'));
       grid.appendChild(tile('deals', 'Deals you’re on', { raw: d.dealsOn, text: fmtInt(d.dealsOn) }));
     }, function () {
       if (my !== mySeq) return;

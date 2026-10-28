@@ -313,3 +313,12 @@ test('deals-by-display-type: the range needs at least MIN_OTHER_BUYERS_FOR_WINNI
   assert.deepEqual(row.winningCpm, { p25: 25, median: 30, p75: 35 });
   assert.ok(!JSON.stringify(row).match(/haleon|blackmores/i));
 });
+
+test('my-summary carries assumed views and an Effective CPM that reconciles with Spend / views x 1,000', async () => {
+  const { body } = await as('adv-blackmores', `/my-summary?${Q}`);
+  const f = scopeFilters({ dateFrom: '2026-10-05', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: ['adv-blackmores'] }, { principalType: 'advertiser', principalId: 'adv-blackmores' }, store);
+  let views = 0; store.scanDelivery(f, (r) => { if (r.earnedSlots > 0 || r.earned > 0) views += r.earnedViews; });
+  assert.equal(body.assumedViews, Math.round(views));
+  assert.equal(body.effectiveCpm, cents(calc.effectiveCpm(body.spend, views)));
+  assert.ok(Math.abs(body.effectiveCpm - body.spend / (views / 1000)) < 0.02);
+});

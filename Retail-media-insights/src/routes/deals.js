@@ -3,52 +3,15 @@ const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { DEAL_TYPES, normaliseDealType } = require('../constants');
 const { listParam } = require('./params');
-const { loopOf } = require('../display-types');
-const { dayDiff, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, cents } = require('../dealing');
+const { termDays, termPlaysOf, termViewsOf, loopSlotCountOf } = require('../deal-terms');
+const { dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, cents } = require('../dealing');
+
+const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
 // One row per named deal (Open auction is not a deal). An advertiser login sees only the deals it is
 // invited to, with only its own buyer and the deal ID for its own DSP. The display type page filter applies to
 // every part of a row (slots list, Slots, Fill), and a deal with no slot on the filtered types drops out.
 // Revenue is earned revenue. Pacing is deal-wide: the store and display type filters do not change it.
-// Plays a slot gives over a deal's term (as DSP Integration's Details hover totals them): plays per window x connected displays
-// x hours a day it runs x days in the term. A display counts in every store the page filter allows; null when no display is connected.
-const sum = (xs) => xs.reduce((a, b) => a + b, 0);
-const termDays = (flight) => (flight ? dayDiff(flight.start, flight.end) + 1 : null);
-function termPlaysOf(store, filters, slot, days) {
-  if (days == null || slot.playsPerWindow == null) return null;
-  const type = (store.catalog.displayTypes || {})[slot.displayTypeId];
-  const stores = filters.storeIds ? new Set(filters.storeIds) : null;
-  let hours = 0; let any = false;
-  for (const d of store.catalog.displays || []) {
-    if (d.displayTypeId !== slot.displayTypeId || (stores && !stores.has(d.storeId))) continue;
-    const w = calc.operatingWindow(type || {}, (store.catalog.stores || {})[d.storeId]);
-    hours += w.close - w.open; any = true;
-  }
-  return any ? Math.round(slot.playsPerWindow * hours * days) : null;
-}
-// VAC-d (assumed views) those plays deliver, display by display: plays x the VAC-d one play delivers there (the display's views per
-// slot per day spread over its plays a day). Value is priced on this, never on plays: plays x VAC-d / 1,000 x CPM, as billing does.
-// Null when a connected display has no footfall or visibility on record, or the type has no loop.
-function termViewsOf(store, filters, slot, days) {
-  if (days == null || slot.playsPerWindow == null) return null;
-  const type = (store.catalog.displayTypes || {})[slot.displayTypeId];
-  const loop = type && loopOf(type.slots);
-  if (!loop) return null;
-  const stores = filters.storeIds ? new Set(filters.storeIds) : null;
-  let views = 0; let any = false;
-  for (const d of store.catalog.displays || []) {
-    if (d.displayTypeId !== slot.displayTypeId || (stores && !stores.has(d.storeId))) continue;
-    if (d.footfall == null || d.visibility == null) return null;
-    const w = calc.operatingWindow(type, (store.catalog.stores || {})[d.storeId]);
-    const plays = slot.playsPerWindow * (w.close - w.open) * days;
-    const daily = calc.assumedViewsPerSlotPerDay(d.footfall, d.visibility, loop.advertiser.avgSeconds, loop.loopSeconds);
-    views += calc.playsVacd(plays, calc.vacdPerPlay(daily, slot.playsPerWindow * (w.close - w.open)));
-    any = true;
-  }
-  return any ? views : null;
-}
-const loopSlotCountOf = (slots) => { const l = loopOf(slots); return l ? l.slotsPerLoop : null; };
-
 module.exports = {
   path: '/deals',
   handler({ store, filters, params }) {

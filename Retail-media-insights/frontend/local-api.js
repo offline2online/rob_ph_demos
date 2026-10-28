@@ -565,6 +565,73 @@ const slotsWonComplete = (filters) => days(filters) <= RETENTION_DAYS;
 
 module.exports = { addDays, eachDay, dayDiff, dayNumber, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, slotsWonComplete, RETENTION_DAYS, cents };
   },
+  "src/deal-terms.js": function (module, exports, require) {
+// A deal's term totals per assigned slot (plays, VAC-d, value), shared by the retailer Deals table and the advertiser's deal hover.
+const calc = require('./calc');
+const { loopOf } = require('./display-types');
+const { dayDiff, cents } = require('./dealing');
+
+const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+// Plays a slot gives over a deal's term (as DSP Integration's Details hover totals them): plays per window x connected displays
+// x hours a day it runs x days in the term. A display counts in every store the page filter allows; null when no display is connected.
+const termDays = (flight) => (flight ? dayDiff(flight.start, flight.end) + 1 : null);
+function termPlaysOf(store, filters, slot, days) {
+  if (days == null || slot.playsPerWindow == null) return null;
+  const type = (store.catalog.displayTypes || {})[slot.displayTypeId];
+  const stores = filters.storeIds ? new Set(filters.storeIds) : null;
+  let hours = 0; let any = false;
+  for (const d of store.catalog.displays || []) {
+    if (d.displayTypeId !== slot.displayTypeId || (stores && !stores.has(d.storeId))) continue;
+    const w = calc.operatingWindow(type || {}, (store.catalog.stores || {})[d.storeId]);
+    hours += w.close - w.open; any = true;
+  }
+  return any ? Math.round(slot.playsPerWindow * hours * days) : null;
+}
+// VAC-d (assumed views) those plays deliver, display by display: plays x the VAC-d one play delivers there (the display's views per
+// slot per day spread over its plays a day). Value is priced on this, never on plays: plays x VAC-d / 1,000 x CPM, as billing does.
+// Null when a connected display has no footfall or visibility on record, or the type has no loop.
+function termViewsOf(store, filters, slot, days) {
+  if (days == null || slot.playsPerWindow == null) return null;
+  const type = (store.catalog.displayTypes || {})[slot.displayTypeId];
+  const loop = type && loopOf(type.slots);
+  if (!loop) return null;
+  const stores = filters.storeIds ? new Set(filters.storeIds) : null;
+  let views = 0; let any = false;
+  for (const d of store.catalog.displays || []) {
+    if (d.displayTypeId !== slot.displayTypeId || (stores && !stores.has(d.storeId))) continue;
+    if (d.footfall == null || d.visibility == null) return null;
+    const w = calc.operatingWindow(type, (store.catalog.stores || {})[d.storeId]);
+    const plays = slot.playsPerWindow * (w.close - w.open) * days;
+    const daily = calc.assumedViewsPerSlotPerDay(d.footfall, d.visibility, loop.advertiser.avgSeconds, loop.loopSeconds);
+    views += calc.playsVacd(plays, calc.vacdPerPlay(daily, slot.playsPerWindow * (w.close - w.open)));
+    any = true;
+  }
+  return any ? views : null;
+}
+const loopSlotCountOf = (slots) => { const l = loopOf(slots); return l ? l.slotsPerLoop : null; };
+
+/**
+ * A deal's rate and term totals for the hover: per assigned slot (display type filter applied by the caller) its term plays, VAC-d and
+ * value, and the deal total when every slot can be totalled. `slots` are catalog slots; `types` the catalog display types.
+ */
+function termOf(store, filters, deal, slots) {
+  const days = termDays(deal.flight);
+  const rate = deal.dealType === 'Private auction' ? deal.floorCpm : deal.cpm;
+  const raw = slots.map((s) => termViewsOf(store, filters, s, days));
+  const per = slots.map((s, i) => {
+    const plays = termPlaysOf(store, filters, s, days);
+    return { plays, vacd: raw[i] == null ? null : Math.round(raw[i]), value: raw[i] == null || rate == null ? null : cents(calc.revenueAtCpm(rate, raw[i])) };
+  });
+  const countedIx = per.map((p, i) => i).filter((i) => per[i].plays != null && raw[i] != null);
+  const term = days == null ? null : {
+    start: deal.flight.start, end: deal.flight.end, days,
+    total: slots.length && countedIx.length === slots.length ? { plays: sum(countedIx.map((i) => per[i].plays)), vacd: Math.round(sum(countedIx.map((i) => raw[i]))), value: rate == null ? null : cents(calc.revenueAtCpm(rate, sum(countedIx.map((i) => raw[i])))) } : null,
+  };
+  return { rate, per, term };
+}
+
+module.exports = { termDays, termPlaysOf, termViewsOf, termOf, loopSlotCountOf };
+  },
   "src/query.js": function (module, exports, require) {
 // The one place a request becomes an answer: HTTP routes, QuickSight datasets and MCP tools all go through
 // runRoute, so they share the same role check, the same server-side advertiser scoping and the same filters.
@@ -1768,6 +1835,7 @@ module.exports = {
   "src/routes/deals-by-display-type.js": function (module, exports, require) {
 const calc = require('../calc');
 const { displayTypeFacts, hoverCard } = require('../display-types');
+const { termOf } = require('../deal-terms');
 const { dealIdsFor, slotKey, slotsWonComplete, RETENTION_DAYS } = require('../dealing');
 const { MIN_OTHER_BUYERS_FOR_WINNING_CPM, DIRECT } = require('../constants');
 const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, cents, winningRange } = require('../advertiser-view');
@@ -1834,6 +1902,21 @@ module.exports = {
     const facts = new Map(displayTypeFacts(store, { ...filters, displayTypeIds: [...typeIds] }).map((t) => [t.id, t]));
     const ordered = [...facts.keys(), ...[...typeIds].filter((t) => !facts.has(t)).sort((a, b) => String(known[a].name).localeCompare(String(known[b].name)))];
 
+    // The deal hover: the deal's rate, flight and, per assigned slot (within the display type filter), plays, VAC-d and value over the
+    // term, then the deal total. The deal's own facts only; no other advertiser appears.
+    const termCache = new Map(); const types2 = known;
+    const termsOf = (deal) => {
+      if (termCache.has(deal.id)) return termCache.get(deal.id);
+      const assigned = (deal.slots || []).filter((s) => !inScope || inScope.has(s.displayTypeId));
+      const t = termOf(store, filters, deal, assigned);
+      const out = {
+        rate: t.rate == null ? null : { value: cents(t.rate), kind: deal.dealType === 'Private auction' ? 'floor' : 'fixed' }, term: t.term,
+        slots: assigned.map((s, i) => ({ displayType: (types2[s.displayTypeId] || {}).name || s.displayTypeId, advertiserSlot: s.position, termPlays: t.per[i].plays, termVacd: t.per[i].vacd, termValue: t.per[i].value })),
+      };
+      termCache.set(deal.id, out);
+      return out;
+    };
+
     const groups = ordered.map((typeId) => {
       const slotsHere = new Set();
       const tf = facts.get(typeId);
@@ -1861,6 +1944,7 @@ module.exports = {
           },
           playsWon: own.plays, assumedViews: Math.round(own.views), spend: cents(own.rev),
           share: { playsWon: own.plays, advertisersOnDeal },
+          terms: termsOf(deal),
         };
         // One other buyer winning here would make allPlays minus playsWon that buyer's plays: omit allPlays and the percent.
         const winners = k >= 0 ? otherCount[k] : 0;
@@ -1885,7 +1969,7 @@ module.exports = {
         const hideShare = winners >= 1 && winners < MIN_OTHER_BUYERS_FOR_WINNING_CPM;
         const row = {
           id: OPEN_AUCTION, name: 'Open auction', description: 'Any buyer bids per slot against the display type\u2019s floor.', dealType: 'Open auction',
-          dealIds: [], slots: { count: 0, assigned: [] },
+          dealIds: [], slots: { count: 0, assigned: [] }, terms: null,
           playsWon: m.plays, assumedViews: Math.round(m.views), spend: cents(m.rev),
           share: { playsWon: m.plays },
         };
@@ -1946,52 +2030,15 @@ const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { DEAL_TYPES, normaliseDealType } = require('../constants');
 const { listParam } = require('./params');
-const { loopOf } = require('../display-types');
-const { dayDiff, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, cents } = require('../dealing');
+const { termDays, termPlaysOf, termViewsOf, loopSlotCountOf } = require('../deal-terms');
+const { dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, cents } = require('../dealing');
+
+const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
 // One row per named deal (Open auction is not a deal). An advertiser login sees only the deals it is
 // invited to, with only its own buyer and the deal ID for its own DSP. The display type page filter applies to
 // every part of a row (slots list, Slots, Fill), and a deal with no slot on the filtered types drops out.
 // Revenue is earned revenue. Pacing is deal-wide: the store and display type filters do not change it.
-// Plays a slot gives over a deal's term (as DSP Integration's Details hover totals them): plays per window x connected displays
-// x hours a day it runs x days in the term. A display counts in every store the page filter allows; null when no display is connected.
-const sum = (xs) => xs.reduce((a, b) => a + b, 0);
-const termDays = (flight) => (flight ? dayDiff(flight.start, flight.end) + 1 : null);
-function termPlaysOf(store, filters, slot, days) {
-  if (days == null || slot.playsPerWindow == null) return null;
-  const type = (store.catalog.displayTypes || {})[slot.displayTypeId];
-  const stores = filters.storeIds ? new Set(filters.storeIds) : null;
-  let hours = 0; let any = false;
-  for (const d of store.catalog.displays || []) {
-    if (d.displayTypeId !== slot.displayTypeId || (stores && !stores.has(d.storeId))) continue;
-    const w = calc.operatingWindow(type || {}, (store.catalog.stores || {})[d.storeId]);
-    hours += w.close - w.open; any = true;
-  }
-  return any ? Math.round(slot.playsPerWindow * hours * days) : null;
-}
-// VAC-d (assumed views) those plays deliver, display by display: plays x the VAC-d one play delivers there (the display's views per
-// slot per day spread over its plays a day). Value is priced on this, never on plays: plays x VAC-d / 1,000 x CPM, as billing does.
-// Null when a connected display has no footfall or visibility on record, or the type has no loop.
-function termViewsOf(store, filters, slot, days) {
-  if (days == null || slot.playsPerWindow == null) return null;
-  const type = (store.catalog.displayTypes || {})[slot.displayTypeId];
-  const loop = type && loopOf(type.slots);
-  if (!loop) return null;
-  const stores = filters.storeIds ? new Set(filters.storeIds) : null;
-  let views = 0; let any = false;
-  for (const d of store.catalog.displays || []) {
-    if (d.displayTypeId !== slot.displayTypeId || (stores && !stores.has(d.storeId))) continue;
-    if (d.footfall == null || d.visibility == null) return null;
-    const w = calc.operatingWindow(type, (store.catalog.stores || {})[d.storeId]);
-    const plays = slot.playsPerWindow * (w.close - w.open) * days;
-    const daily = calc.assumedViewsPerSlotPerDay(d.footfall, d.visibility, loop.advertiser.avgSeconds, loop.loopSeconds);
-    views += calc.playsVacd(plays, calc.vacdPerPlay(daily, slot.playsPerWindow * (w.close - w.open)));
-    any = true;
-  }
-  return any ? views : null;
-}
-const loopSlotCountOf = (slots) => { const l = loopOf(slots); return l ? l.slotsPerLoop : null; };
-
 module.exports = {
   path: '/deals',
   handler({ store, filters, params }) {
@@ -2521,21 +2568,23 @@ module.exports = {
 };
   },
   "src/routes/my-summary.js": function (module, exports, require) {
+const calc = require('../calc');
 const { ownAdvertiser, cents } = require('../advertiser-view');
 const { dealsOf } = require('../dealing');
 
 // Advertiser summary: spend and plays won, which equal Delivery's totals for the same filters, and the number of deals the
 // advertiser is a buyer on that are live in the range (a deal with a flight is live when the flight overlaps the range).
-// Always pinned to one advertiser (an advertiser login by scopeFilters; a retailer names exactly one).
+// Effective CPM is that spend / those assumed views (VAC-d) x 1,000, null with no views. Always pinned to one advertiser (an advertiser login by scopeFilters; a retailer names exactly one).
 module.exports = {
   path: '/my-summary',
   advertiserAccess: true,
   handler({ store, filters }) {
     const me = ownAdvertiser(filters);
     // Delivery's totals are the sum of its per-day figures, each spend rounded to the cent first.
-    const spend = new Map(); const plays = new Map();
+    const spend = new Map(); const plays = new Map(); let views = 0;
     store.scanDelivery({ ...filters, advertiserIds: [me] }, (r) => {
       if (r.earnedSlots <= 0 && r.earned <= 0) return;
+      views += r.earnedViews;
       spend.set(r.date, (spend.get(r.date) || 0) + r.earned);
       plays.set(r.date, (plays.get(r.date) || 0) + r.earnedSlots);
     });
@@ -2544,7 +2593,7 @@ module.exports = {
     const dealsOn = dealsOf(store).filter((d) => d.dealType !== 'Open auction'
       && (d.buyers || []).some((b) => b.advertiserId === me)
       && (!d.flight || (d.flight.start <= filters.dateTo && d.flight.end >= filters.dateFrom))).length;
-    return { dateFrom: filters.dateFrom, dateTo: filters.dateTo, spend: cents(total), playsWon, dealsOn };
+    return { dateFrom: filters.dateFrom, dateTo: filters.dateTo, spend: cents(total), playsWon, dealsOn, assumedViews: Math.round(views), effectiveCpm: views > 0 ? cents(calc.effectiveCpm(total, views)) : null };
   },
 };
   },
