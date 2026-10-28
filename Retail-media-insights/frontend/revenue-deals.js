@@ -158,7 +158,7 @@
       if (slots.length > MAX_TIP_SLOTS) rows.push(['+ ' + plural(slots.length - MAX_TIP_SLOTS, 'more slot'), '']);
       var t = term.total;
       rows.push(['Deal total', t ? fmtInt(t.plays) + ' plays' + (t.value != null ? ' · ' + termMoney(t.value, floor) : '') : 'not available for every slot', 'rd-tip-h']);
-      if (c && c.value != null) rows.push(['Value = plays ÷ 1,000 × CPM.', '']);
+      if (c && c.value != null) rows.push(['Value = plays × VAC-d ÷ 1,000 × CPM.', '']);
     }
     return { title: deal.name, rows: rows };
   }

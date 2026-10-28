@@ -42,6 +42,16 @@ function revenueAtCpm(cpm, views) {
   return (cpm * views) / 1000;
 }
 
+/** VAC-d one play delivers = a slot's assumed views per day / its plays a day. */
+function vacdPerPlay(viewsPerDay, playsPerDay) {
+  return playsPerDay > 0 ? viewsPerDay / playsPerDay : 0;
+}
+
+/** VAC-d delivered by `plays` plays. Every money figure is priced on this, never on plays: plays x VAC-d / 1,000 x CPM. */
+function playsVacd(plays, vacdPerPlayValue) {
+  return plays * vacdPerPlayValue;
+}
+
 /** Effective CPM = revenue / (VAC-d / 1000). */
 function effectiveCpm(revenue, views) {
   return views > 0 ? revenue / (views / 1000) : 0;
@@ -226,7 +236,7 @@ const compareZones = orderBy(ZONES);
 
 module.exports = {
   assumedViewsPerSlotPerDay, averageAssumedViews, shareOfLoop,
-  revenueAtCpm, effectiveCpm, perSlotPerDay, perSlotPerDayPerDisplay,
+  revenueAtCpm, vacdPerPlay, playsVacd, effectiveCpm, perSlotPerDay, perSlotPerDayPerDisplay,
   operatingWindow, runsAllDay, hasCustomHours, hoursMode, insideOperatingHours, classifySlot, fillPercent,
   unsoldValueAtFloor, missedRevenue,
   guaranteedVolume, pgPacing, maturityLevel, sharedVariables, campaignLevel,
