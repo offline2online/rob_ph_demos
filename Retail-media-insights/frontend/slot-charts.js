@@ -28,10 +28,10 @@
   var TIPS = {
     slotValue: VAC_TEXT + ' The number in brackets is the display type’s connected displays across the selected stores (PH Core).',
     slotAllocation: 'Slots per loop: total slots in the display type’s loop. Advertiser slots + Own-content slots = Slots per loop. Fill per display type is in Missed revenue & fill.',
-    missed: 'Fill = advertiser slots sold ÷ all advertiser slots, across all deal types (booking schedule and unsold real-time slot records). ' +
-      'Only slots inside each display’s operating hours count (outside screens run 24 hours; in-store screens follow store opening hours); slots outside them play house content. ' +
+    missed: 'Fill = advertiser slots sold ÷ all advertiser slots, across all deal types. ' +
+      'Only slots inside each display’s operating hours count; slots outside them play house content. ' +
       'Amber = unsold slots valued at floor CPM × their assumed views ÷ 1,000 (a minimum estimate). ' +
-      'Red = revenue lost while displays were offline. The number in brackets is connected displays (PH Core). ' + VAC_TEXT
+      'Red = revenue lost while displays were offline.'
   };
   // Column definitions for the Slot allocation table (an ⓘ beside each heading).
   var COLUMN_TIPS = {

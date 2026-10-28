@@ -144,11 +144,13 @@ test('the Missed revenue & fill ⓘ explains the new bars', () => {
   assert.match(SC.TIPS.missed, /^Fill = advertiser slots sold ÷ all advertiser slots, across all deal types/);
 });
 
-test('the Slot value and Missed revenue ⓘ carry the VAC-d explanation and the worked example', () => {
-  for (const k of ['slotValue', 'missed']) {
-    assert.match(SC.TIPS[k], /VAC-d/);
-    assert.match(SC.TIPS[k], /Example: 4,000 footfall × 0\.5 visibility × 1\/10 of the loop = 200/);
-  }
+test('the Slot value ⓘ carries the VAC-d explanation and the worked example', () => {
+  assert.match(SC.TIPS.slotValue, /VAC-d/);
+  assert.match(SC.TIPS.slotValue, /Example: 4,000 footfall × 0\.5 visibility × 1\/10 of the loop = 200/);
+});
+
+test('the Missed revenue & fill ⓘ stays on the table: no PH Core or OMA references', () => {
+  assert.doesNotMatch(SC.TIPS.missed, /PH Core|OMA|VAC-d|Example:/);
 });
 
 test('every display type hover carries the operating hours', async () => {
