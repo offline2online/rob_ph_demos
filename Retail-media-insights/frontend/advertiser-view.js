@@ -523,7 +523,7 @@
 
     // ----- Your deals by display type -----
     var dl = panel('Your deals by display type', function () { return TIPS.deals(rangeText(filters.dateFrom, filters.dateTo)); }, null);
-    var COLS = [['Display type / deal', ''], ['Deal type', ''], ['Slots', 'num'], ['Plays won', 'num'], ['Assumed views (VAC-d)', 'num'], ['Spend', 'num'], ['Effective CPM', 'num'], ['Winning CPM range', 'num', 'range'], ['Share', 'num']];
+    var COLS = [['Display type / deal', ''], ['Deal type', ''], ['Slots', 'num'], ['Plays won', 'num'], ['Assumed views', 'num'], ['Spend', 'num'], ['Effective CPM', 'num'], ['Winning CPM range', 'num', 'range'], ['Share', 'num']];
     function td(text, cls) { return h('td', { class: cls || '', text: text == null ? '' : text }); }
     function drawDeals(data) {
       var tbl = h('table', { class: 'av-table' });
