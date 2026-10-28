@@ -172,6 +172,9 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const activeFrom = parseDate(b.activeFrom, 'activeFrom')
     const activeTo = parseDate(b.activeTo, 'activeTo')
     if (activeFrom && activeTo && Date.parse(activeFrom) > Date.parse(activeTo)) errors.push({ field: 'activeTo', reason: 'Must be on or after activeFrom.' })
+    /* Direct advertiser deals may be open-ended (27 Oct 2026): a start date and no end date, running until it is ended or archived, at a fixed CPM. A programmatic guaranteed deal keeps both dates (a draft with neither is still accepted). */
+    if (dealType === 'direct' && !activeFrom) errors.push({ field: 'activeFrom', reason: 'A Direct advertiser deal needs a start date; the end date is optional (no end date means always active from the start).' })
+    if (dealType === 'guaranteed' && !activeFrom !== !activeTo) errors.push({ field: activeFrom ? 'activeTo' : 'activeFrom', reason: 'A programmatic guaranteed deal needs both a start and an end date.' })
     /* The time zone the flight's start and end times are read in (22 Oct 2026): the platform's (the default) or each store's own. Omitted means as it is (the stored mode on an edit, the platform's on a create). */
     if (b.timeZoneMode !== undefined && b.timeZoneMode !== 'platform' && b.timeZoneMode !== 'store') errors.push({ field: 'timeZoneMode', reason: 'platform or store.' })
     const timeZoneMode: TimeZoneMode | undefined = b.timeZoneMode === 'platform' || b.timeZoneMode === 'store' ? b.timeZoneMode : undefined
@@ -207,6 +210,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       if (!guaranteedLike) errors.push({ field: 'termTotal', reason: 'Only a Programmatic guaranteed or Direct advertiser deal is priced as a total for its term; leave it empty for a private auction or preferred deal.' })
       else if (typeof b.termTotal !== 'number' || !Number.isFinite(b.termTotal) || b.termTotal <= 0) errors.push({ field: 'termTotal', reason: 'Total for the term must be greater than 0 USD.' })
       else if (floorCpm != null) errors.push({ field: 'termTotal', reason: 'Price a guaranteed deal as a fixed CPM or a total for the term, not both.' })
+      else if (!activeTo) errors.push({ field: 'termTotal', reason: 'A total for the term needs an end date: an open-ended deal is priced at a fixed CPM. Set an end date, or enter a fixed CPM.' })
       else termTotal = Math.round(b.termTotal * 100) / 100
     }
     const committedPlays: number | null = null

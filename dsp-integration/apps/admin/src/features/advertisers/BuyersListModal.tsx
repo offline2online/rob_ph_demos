@@ -88,6 +88,8 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
   /* Reserving deals never overlap on a slot: asked as the dates change, and saving is blocked until they don't. */
   const flightConflicts = useFlightConflicts(editing?.id, draft.dealType, draft.activeFrom, draft.activeTo, open && !!editing && guaranteed && draft.dealType === editing.dealType)
   const blocked = flightConflicts.length > 0
+  /* An open-ended Direct deal (a start date, no end date) is priced at a fixed CPM only: a total needs an end date to be a total for something. */
+  const openEnded = direct && !!draft.activeFrom && !draft.activeTo
   const privateAuction = draft.dealType === 'private_auction'
   /* A programmatic guaranteed deal is one-to-one with its buyer (21 Oct 2026): a list that already has several must be reduced to one before it can be saved as guaranteed. */
   const tooManyForPg = guaranteed && draft.invitedBuyers.length > 1
@@ -173,8 +175,9 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
 
   const save = async (finalise = false, belowFloorOverride = false): Promise<void> => {
     if (tooManyForPg) return void setErrors({ invitedBuyers: 'A programmatic guaranteed deal is with one named buyer; remove the others, or create a separate deal for each advertiser.' })
-    /* A flight needs both ends, each a date and a time: a half-set one is not saved. */
-    if (!draft.activeFrom !== !draft.activeTo) return void setErrors({ activeTo: `Set the flight's ${draft.activeFrom ? 'end' : 'start'} date and time too, or clear both.` })
+    /* A flight needs both ends, each a date and a time: a half-set one is not saved. A Direct advertiser deal may have a start and no end (open-ended), but not an end and no start. */
+    if (direct && !draft.activeFrom) return void setErrors({ activeFrom: 'A Direct advertiser deal needs a start date and time; the end date is optional.' })
+    if (!direct && !draft.activeFrom !== !draft.activeTo) return void setErrors({ activeTo: `Set the flight's ${draft.activeFrom ? 'end' : 'start'} date and time too, or clear both.` })
     setSaving(true)
     setErrors({})
     const payload = { ...(showTargeting ? draft : { ...draft, targeting: [] }), ...(belowFloorOverride ? { belowFloorOverride: true } : {}) }
@@ -374,9 +377,14 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         </div>
         <div className="flex gap-2">
           <DatePicker showTime={{ format: 'HH:mm' }} format="D MMM YYYY HH:mm" allowClear style={{ flex: 1 }} aria-label="Flight start" placeholder="Start date and time" value={momentOf(draft.activeFrom)} onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v ? startIso(v) : null }))} />
-          <DatePicker showTime={{ format: 'HH:mm' }} format="D MMM YYYY HH:mm" allowClear style={{ flex: 1 }} aria-label="Flight end" placeholder="End date and time" value={momentOf(draft.activeTo)} onChange={(v) => setDraft((d) => ({ ...d, activeTo: v ? endIso(v) : null }))} />
+          <DatePicker showTime={{ format: 'HH:mm' }} format="D MMM YYYY HH:mm" allowClear style={{ flex: 1 }} aria-label="Flight end" placeholder="End date and time" value={momentOf(draft.activeTo)} onChange={(v) => {
+            setDraft((d) => ({ ...d, activeTo: v ? endIso(v) : null, ...(!v && direct && d.termTotal != null ? { termTotal: null } : {}) }))
+            if (!v && direct && priceMode === 'total') { setPriceMode('cpm'); message.info('A deal with no end date is priced at a fixed CPM, so the price type was switched from Total for the term. Enter the CPM.') }
+          }} />
         </div>
         <ConflictCallout conflicts={flightConflicts} />
+        {openEnded && <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="open-ended-note">No end date: this deal is always active from its start until it is ended or archived. It is priced at a fixed CPM.</div>}
+        {errors.activeFrom && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeFrom}</div>}
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
       </div>
       {guaranteed && (
@@ -385,7 +393,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved, showTargeting
         <Select
           id="buyersListPriceType" className="w-full" aria-label="Price type" value={priceMode}
           onChange={(m: 'cpm' | 'total') => { setPriceMode(m); setDraft((d) => (m === 'total' ? { ...d, floorCpm: null } : { ...d, termTotal: null })) }}
-          options={[{ value: 'cpm', label: 'Fixed CPM' }, { value: 'total', label: 'Total for the term' }]}
+          options={[{ value: 'cpm', label: 'Fixed CPM' }, { value: 'total', label: <Tip title={openEnded ? 'A total needs an end date. Set an end date to price this deal as a total for the term.' : undefined}><span>Total for the term</span></Tip>, disabled: openEnded }]}
         />
       </div>
       )}

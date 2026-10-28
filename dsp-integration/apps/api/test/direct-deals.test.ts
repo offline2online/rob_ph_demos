@@ -52,6 +52,24 @@ describe('Direct advertiser deals', () => {
     expect((await post({ floorCpm: 150, committedPlays: 100 })).statusCode).toBe(400)
   })
 
+  it('may be open-ended: a start date and no end date, at a fixed CPM only (27 Oct 2026)', async () => {
+    const { app, deal } = await setup()
+    const post = (extra: Record<string, unknown>) => app.inject({ method: 'POST', url: URL, payload: deal(extra) })
+    const open = await post({ activeTo: null, floorCpm: 150 })
+    expect(open.statusCode).toBe(201)
+    expect(open.json().activeTo).toBeNull()
+    /* A total needs an end date, on create and when the end date is removed from a total-priced deal. */
+    expect((await post({ activeTo: null, termTotal: 5000 })).statusCode).toBe(400)
+    const priced = (await post({ termTotal: 5000 })).json()
+    const cleared = await app.inject({ method: 'PUT', url: `${URL}/${priced.id}`, payload: deal({ activeTo: null, termTotal: 5000 }) })
+    expect(cleared.statusCode).toBe(400)
+    expect((await app.inject({ method: 'PUT', url: `${URL}/${priced.id}`, payload: deal({ activeTo: null, termTotal: null, floorCpm: 150 }) })).statusCode).toBe(200)
+    /* The start date is still required; programmatic guaranteed keeps both. */
+    expect((await post({ activeFrom: null, activeTo: null, floorCpm: 150 })).statusCode).toBe(400)
+    const pg = (extra: Record<string, unknown>) => app.inject({ method: 'POST', url: URL, payload: { name: 'PG', dealType: 'guaranteed', invitedBuyers: [{ partnerId: 'google_dv360', seatId: 'nestle' }], floorCpm: 150, activeFrom: '2026-11-01T00:00:00.000Z', activeTo: '2026-12-01T00:00:00.000Z', ...extra } })
+    expect((await pg({ activeTo: null })).statusCode).toBe(400)
+  })
+
   it('finalises (shares) internally once it has a slot, with no DSP entries or acceptance', async () => {
     const { ctx, app, deal } = await setup()
     const created = (await app.inject({ method: 'POST', url: URL, payload: deal({ floorCpm: 150 }) })).json()

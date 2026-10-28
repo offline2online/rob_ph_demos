@@ -167,9 +167,11 @@ type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
    minimum value (floor CPM x impressions / 1,000, impressions = plays x VAC-d) of every slot assigned to it, so its price can be set afterwards. A total is null when the
    flight has no dates, or a slot's plays can't be counted. */
 type DealFocusSlot = { label: string; floor: number; plays: number | null; impressions: number | null; min: number | null }
-type DealFocus = { deal: BuyersList; days: number | null; slots: DealFocusSlot[]; totalPlays: number | null; totalImpressions: number | null; totalMin: number | null }
+type DealFocus = { deal: BuyersList; perDay: boolean; days: number | null; slots: DealFocusSlot[]; totalPlays: number | null; totalImpressions: number | null; totalMin: number | null }
 const usd = (n: number) => `${TRANSACTING_CURRENCY} ${Math.round(n).toLocaleString('en-US')}`
-const flightRangeOf = (d: BuyersList) => (d.activeFrom || d.activeTo ? `${flightMoment(d.activeFrom) ?? 'No start date'} → ${flightMoment(d.activeTo) ?? 'No end date'}` : 'Always active')
+/* An open-ended deal (a start date and no end date; Direct advertiser deals, 27 Oct 2026) has no flight to total over, so its figures are per day. */
+const isOpenEnded = (d: Pick<BuyersList, 'activeFrom' | 'activeTo'>) => !!d.activeFrom && !d.activeTo
+const flightRangeOf = (d: BuyersList) => (isOpenEnded(d) ? `${flightMoment(d.activeFrom)} → No end date (always active)` : d.activeFrom || d.activeTo ? `${flightMoment(d.activeFrom) ?? 'No start date'} → ${flightMoment(d.activeTo) ?? 'No end date'}` : 'Always active')
 const DEAL_TIP_MUTED = 'rgba(255,255,255,0.65)'
 const useDealFocus = () => (useLiveContext() as { dealFocus?: DealFocus | null } | null)?.dealFocus ?? null
 /* Beside the Assigned to funnel: the selected deal's flight and its length. */
@@ -179,7 +181,7 @@ const AssignedToFilter = forwardRef<unknown, IFloatingFilterParams & { label: st
     <div className="flex h-full w-full items-center gap-2">
       <div className="h-full w-8 shrink-0"><SetFilter ref={ref} {...props} /></div>
       {f && <span data-testid="deal-flight" className="truncate" style={{ fontSize: 12.5 }}>
-        <span style={{ color: T.muted }}>Flight: </span>{flightRangeOf(f.deal)}{f.days != null ? ` (${f.days.toLocaleString('en-US')} day${f.days === 1 ? '' : 's'})` : ''}
+        <span style={{ color: T.muted }}>Flight: </span>{flightRangeOf(f.deal)}{f.perDay ? ' (per day)' : f.days != null ? ` (${f.days.toLocaleString('en-US')} day${f.days === 1 ? '' : 's'})` : ''}
       </span>}
     </div>
   )
@@ -190,7 +192,7 @@ function DealFloorFilter() {
   const tip = (
     <div data-testid="deal-floor-tip">
       <div style={{ fontWeight: 500 }}>Minimum value for this deal</div>
-      <div>The minimum for {f.deal.name} over its flight dates ({flightRangeOf(f.deal)}), across the {f.slots.length} selected slot{f.slots.length === 1 ? '' : 's'}. Each slot: floor CPM × impressions over the flight ÷ 1,000 (impressions = plays × VAC-d).</div>
+      <div>The minimum for {f.deal.name} {f.perDay ? <>per day: it has no end date ({flightRangeOf(f.deal)}), so this is not over a flight</> : <>over its flight dates ({flightRangeOf(f.deal)})</>}, across the {f.slots.length} selected slot{f.slots.length === 1 ? '' : 's'}. Each slot: floor CPM × impressions {f.perDay ? 'per day' : 'over the flight'} ÷ 1,000 (impressions = plays × VAC-d).</div>
       {f.days == null ? <div style={{ color: DEAL_TIP_MUTED }}>Set the deal's start and end dates to total it.</div>
         : f.slots.map((s, i) => <div key={i}>{s.label}: {s.min == null ? 'n/a' : usd(s.min)}<span style={{ color: DEAL_TIP_MUTED }}> ({s.impressions == null ? 'n/a' : `${s.impressions.toLocaleString('en-US')} impressions`} × {s.floor} CPM)</span></div>)}
     </div>
@@ -202,8 +204,8 @@ function DealPlaysFilter() {
   if (!f) return null
   const tip = (
     <div data-testid="deal-plays-tip">
-      <div style={{ fontWeight: 500 }}>Total plays over the flight</div>
-      <div>Across the {f.slots.length} selected slot{f.slots.length === 1 ? '' : 's'}, for {flightRangeOf(f.deal)}.</div>
+      <div style={{ fontWeight: 500 }}>{f.perDay ? 'Total plays per day' : 'Total plays over the flight'}</div>
+      <div>Across the {f.slots.length} selected slot{f.slots.length === 1 ? '' : 's'}, {f.perDay ? `per day: the deal has no end date (${flightRangeOf(f.deal)})` : `for ${flightRangeOf(f.deal)}`}.</div>
       {f.days == null ? <div style={{ color: DEAL_TIP_MUTED }}>Set the deal's start and end dates to total it.</div>
         : f.slots.map((s, i) => <div key={i}>{s.label}: {s.plays == null ? 'n/a' : `${s.plays.toLocaleString('en-US')} plays`}</div>)}
     </div>
@@ -1164,7 +1166,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const focusName = assignedFilter.length === 1 && assignedFilter[0].startsWith(BUYERS_LIST_FILTER_PREFIX) ? assignedFilter[0].slice(BUYERS_LIST_FILTER_PREFIX.length) : null
   const focusDeal = focusName === null ? undefined : invContext.buyersLists.find((l) => l.name === focusName)
   if (focusDeal) {
-    const days = flightDays(focusDeal.activeFrom, focusDeal.activeTo)
+    const perDay = isOpenEnded(focusDeal)
+    const days = perDay ? 1 : flightDays(focusDeal.activeFrom, focusDeal.activeTo)
     const slots = invRows.filter((r) => tiersOf(edited(invContext, r).assignedTo).includes(focusDeal.id)).map((r): DealFocusSlot => {
       const floor = effectiveFloorCpm(invContext, r)
       const detail = { playsPerWindow: effectivePlaysPerWindow(invContext, r), displayCount: typeof r.displayCount === 'number' ? r.displayCount : null, windowHours: effectiveBillingUnitHours(invContext, r), vacdPerPlay: r.vacdPerPlay ?? null }
@@ -1172,7 +1175,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       return { label: `${r.displayTypeName} · slot ${r.zoneSlot}`, floor, plays, impressions, min: impressions == null ? null : valueOfImpressions(impressions, floor) }
     })
     const complete = days != null && slots.length > 0 && slots.every((s) => s.plays != null && s.impressions != null)
-    invContext.dealFocus = { deal: focusDeal, days, slots, totalPlays: complete ? slots.reduce((n, s) => n + (s.plays ?? 0), 0) : null, totalImpressions: complete ? slots.reduce((n, s) => n + (s.impressions ?? 0), 0) : null, totalMin: complete ? slots.reduce((n, s) => n + (s.min ?? 0), 0) : null }
+    invContext.dealFocus = { deal: focusDeal, perDay, days, slots, totalPlays: complete ? slots.reduce((n, s) => n + (s.plays ?? 0), 0) : null, totalImpressions: complete ? slots.reduce((n, s) => n + (s.impressions ?? 0), 0) : null, totalMin: complete ? slots.reduce((n, s) => n + (s.min ?? 0), 0) : null }
   }
   /* Combined plays per window per buyers list (8 Oct 2026): the fleet total (plays per display x displays registered in PH Core)
      of every position the list is assigned to, summed - the ceiling for a guaranteed deal's committed volume. Read from the

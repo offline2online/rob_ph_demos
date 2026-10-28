@@ -140,7 +140,7 @@ export const TermCell = ({ data }: P) => {
   const from = flightMoment(data.activeFrom)
   const to = flightMoment(data.activeTo)
   if (!from && !to) return <span style={{ color: T.muted }}>Always active</span>
-  return <span style={{ fontSize: 12.5 }}>{from ?? 'No start date'} → {to ?? 'No end date'}<div style={{ fontSize: 11.5, color: T.muted }}>{zoneLabelOf(data.timeZoneMode)}</div></span>
+  return <span style={{ fontSize: 12.5 }}>{from ?? 'No start date'} → {to ?? 'No end date'}<div style={{ fontSize: 11.5, color: T.muted }}>{from && !to ? 'Always active · ' : ''}{zoneLabelOf(data.timeZoneMode)}</div></span>
 }
 /* Details (ticket nfDLP1CZiPjGfN8FG764): the rate, the deal type and a one-line summary in the cell; the hover (DealDetailsTip, shared with
    the Booking schedule tile) is a compact, programmatic read of the deal over its whole flight. */

@@ -83,7 +83,7 @@ describe('Programmatic guaranteed: committed plays derived from the assigned slo
     const { id } = await create()
     expect((await get(id)).committedPlays).toBeNull()
     await assign({ 2: id })
-    const open = await app.inject({ method: 'PUT', url: `${URL}/${id}`, payload: { ...body, activeTo: null } })
+    const open = await app.inject({ method: 'PUT', url: `${URL}/${id}`, payload: { ...body, activeFrom: null, activeTo: null } })
     expect(open.json().committedPlays).toBeNull()
   })
 

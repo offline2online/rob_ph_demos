@@ -1125,6 +1125,24 @@ describe('Advertisers / Inventory', () => {
     expect(within(screen.getByLabelText('Available Inventory')).queryByTestId('deal-flight')).toBeNull()
   }, slow(60000))
 
+  /* Ticket Ga5CoPtEECgCK7FzFsfO (27 Oct 2026): an open-ended Direct deal (no end date) shows its figures per day. */
+  it('shows per-day minimum value and plays in the filter row for an open-ended deal', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const deal = { id: 'bl_g', name: 'Gatorade always on', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: '2026-11-01T00:00:00.000Z', activeTo: null, dealType: 'direct' }
+    const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_g', buyersListIds: ['bl_g'], openAuction: false }
+    const items = [{ ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15, vacdPerPlay: 2, assignedTo: assigned }]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [deal] }, '/api/admin/v1/available-inventory': { ...inv, items } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    fireEvent.click(await within(inventory).findByLabelText('Assigned to filter', {}, { timeout: 10000 }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Buyers list: Gatorade always on' }))
+    expect(await within(inventory).findByTestId('deal-plays-total', {}, { timeout: 10000 })).toHaveTextContent('23,040')
+    expect(within(inventory).getByTestId('deal-floor-total')).toHaveTextContent('USD 4,608')
+    expect(within(inventory).getByTestId('deal-flight')).toHaveTextContent('No end date (always active) (per day)')
+    fireEvent.mouseOver(within(inventory).getByTestId('deal-floor-total'))
+    expect(await screen.findByTestId('deal-floor-tip')).toHaveTextContent('per day')
+  }, slow(60000))
+
   /* "Unassigned": the display type has advertiser slots but no physical
      display is playing them (ticket "Available Inventory: playlist-primary
      table (drop Display type column) with Unassigned indicator", 27 Sep

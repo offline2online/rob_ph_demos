@@ -37,7 +37,7 @@ export function dealFigures(data: BuyersList, slots: DealSlot[]) {
 export function DealDetailsTip({ data, slots, seatName, showFlight = true, pacing }: { data: BuyersList; slots: DealSlot[]; seatName: (partnerId: string, seatId: string) => string; showFlight?: boolean; pacing?: ReactNode }) {
   const { perTerm, rate, rateType, typeLabel, days, plays, impressions, totalPlays, totalImpressions, complete, total } = dealFigures(data, slots)
   const src = sourceLabel(data.effectiveRateCpm?.source ?? 'none')
-  const flight = data.activeFrom || data.activeTo ? `${flightMoment(data.activeFrom) ?? 'No start date'} → ${flightMoment(data.activeTo) ?? 'No end date'} (${zoneLabelOf(data.timeZoneMode)})` : 'Always active'
+  const flight = data.activeFrom || data.activeTo ? `${flightMoment(data.activeFrom) ?? 'No start date'} → ${flightMoment(data.activeTo) ?? (data.activeFrom ? 'No end date (always active)' : 'No end date')} (${zoneLabelOf(data.timeZoneMode)})` : 'Always active'
   /* The hover sits on the tooltip's dark background, where T.muted (black at 45%) is invisible (E2E 22 Oct 2026): secondary text is white at 65% there. */
   const sub = (l: string, v: string) => <div><span style={{ color: TIP_MUTED }}>{l}: </span>{v}</div>
   return (
@@ -51,7 +51,7 @@ export function DealDetailsTip({ data, slots, seatName, showFlight = true, pacin
         {perTerm && data.termTotal != null && <div data-testid={`ended-values-${data.id}`}>{sub('Original total', termTotalText(data.termTotal) ?? '')}{data.deliveredValue != null && sub('Delivered to date', valueText({ min: data.deliveredValue, max: data.deliveredValue, from: false }) ?? '')}</div>}
       </>}
       {data.endKind === 'cancelled' && <>{sub('Cancelled', flightMoment(data.endRequestedAt ?? null) ?? '')}{data.endReason && sub('Reason', data.endReason)}</>}
-      {sub('Period', days == null ? (data.activeFrom || data.activeTo ? 'Open flight' : 'Always active') : `${num(days)} day${days === 1 ? '' : 's'}`)}
+      {sub('Period', days == null ? (data.activeFrom && !data.activeTo ? 'No end date (always active)' : data.activeFrom || data.activeTo ? 'Open flight' : 'Always active') : `${num(days)} day${days === 1 ? '' : 's'}`)}
       {data.dealType === 'direct' && <>
         {sub('Advertiser', data.invitedBuyers.length ? seatName(data.invitedBuyers[0].partnerId, data.invitedBuyers[0].seatId) : 'None yet')}
         {sub('Deal ID', data.dealId)}
