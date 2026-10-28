@@ -91,13 +91,13 @@ for (const width of [1163, 390]) {
       const pg = rows[idx('Immune — winter launch')];
       const pd = rows[idx('Dispensary screens')];
       const pa = rows[idx('Beauty endcaps')];
-      assert.match(pg[3], /^\d+ advertisers?$/);
+      assert.match(pg[3], /^(\d+ advertisers|[^\d]+)$/, 'a count, or the name when there is one advertiser');
       assert.match(pg[6], /^\d+%$/);
       assert.match(pg[7], /^\d+% of guaranteed$/);
       assert.equal(pd[7], '', 'pacing only on Programmatic guaranteed');
       assert.match(pg[5], /fixed$/);
       assert.match(pa[5], /fixed$/, 'a direct deal bills its agreed CPM');
-      assert.equal(pa[3], '1 advertiser');
+      assert.equal(pa[3], "L'Oréal Paris", 'one advertiser shows its name');
       assert.match(pg[2], /^2 slots$/);
       const bar = await page.$eval('.rd-fill-bar', (e) => { const r = e.getBoundingClientRect(); return [e.offsetWidth, r.height, getComputedStyle(e).backgroundColor]; });
       assert.equal(bar[0], width === 390 ? 56 : 90);
@@ -106,7 +106,7 @@ for (const width of [1163, 390]) {
 
       const adv = (await page.$$('.rd-table tbody tr'))[idx('Beauty endcaps')];
       await (await adv.$('td:nth-child(4) .rd-hov')).hover();
-      assert.match(await page.textContent('.rd-tip'), /L'Oréal Paris \(Direct\)/);
+      assert.equal(await page.$('.rd-tip:not([hidden])') && await page.textContent('.rd-tip').catch(() => ''), null, 'a single advertiser has no hover');
       await (await (await page.$$('.rd-table tbody tr'))[idx('Immune — winter launch')].$('td:nth-child(3) .rd-hov')).hover();
       assert.match(await page.textContent('.rd-tip'), /Window Portrait \(Portrait screen in the store window at the entrance\)/);
       assert.match(await page.textContent('.rd-tip'), /slot 1 of \d+\)/);

@@ -9,7 +9,7 @@ Behaviour: Direct and DV360 are selected by default; chips run Direct, DV360, Th
 
 Booked ahead: `/revenue` is called with `aheadDays` 14 (Day), 42 (Week) or the days to 31 Dec (Month, capped at 120). A dashed "Today" line sits before the first booked-ahead bar; those bars show only the estimated segment (fill #eef4fa, outline #7aa7d6) and their hover reads "Estimated (booked ahead)". Estimated revenue never counts toward the chart total. Week labels read "w/c 14 Sep", Month labels "Sep".
 
-Deals: Fill and Pacing show a 90×6 bar with the whole-number % (Pacing, Programmatic guaranteed only, adds "of guaranteed"); Advertisers on deal reads "5 advertisers"; CPM carries a muted "fixed" or "floor"; the slot hover shows "slot n of N" from `slot-allocation`'s `slotsPerLoop`. Every figure beyond the headline is in a hover or ⓘ tooltip; no warnings or explanatory copy. Before the flight the pacing hover says "Starts in N days".
+Deals: Fill and Pacing show a 90×6 bar with the whole-number % (Pacing, Programmatic guaranteed only, adds "of guaranteed"); Advertisers on deal reads "5 advertisers" (hover for names), or the advertiser's name when there is only one (no hover); CPM carries a muted "fixed" or "floor"; the slot hover shows "slot n of N" from `slot-allocation`'s `slotsPerLoop`. Every figure beyond the headline is in a hover or ⓘ tooltip; no warnings or explanatory copy. Before the flight the pacing hover says "Starts in N days".
 
 The Revenue panel shows `Total earned $x`: the sum of the back end's rounded rows, added in whole cents, so it equals the summary strip's Earned revenue when every DSP chip is on. The x-axis shows as many dates as fit the width (at 390px, about every fifth day).
 

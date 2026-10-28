@@ -105,8 +105,9 @@ test('slots label and Assigned slots hover', async () => {
 test('advertisers hover lists "Name (DSP)"', async () => {
   const deal = (await get('/deals')).rows.find((d) => d.name === 'Beauty endcaps');
   assert.strictEqual(RD.advertisersTooltip(deal).title, deal.name);
-  assert.strictEqual(RD.advertisersLabel(deal), '1 advertiser');
+  assert.strictEqual(RD.advertisersLabel(deal), "L'Oréal Paris", 'a single advertiser shows its name');
   assert.strictEqual(RD.advertisersLabel({ advertisers: [1] }), '1 advertiser');
+  assert.strictEqual(RD.advertisersLabel({ advertisers: [{ name: 'A' }, { name: 'B' }] }), '2 advertisers');
   assert.deepStrictEqual(RD.advertisersTooltip(deal).rows.map((r) => r[0]), ["L'Oréal Paris (Direct)"]);
 });
 

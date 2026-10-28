@@ -33,7 +33,7 @@
       'Estimated = reservations booked ahead that have not played yet, mainly programmatic guaranteed.',
     deals: 'One row per deal. Hover a deal name for its description, deal type, rate, flight, deal ID on each DSP, and total plays and value per slot across the term (the Details hover on DSP Integration’s Deals & buyers lists). ' +
       'Slots = the slots the deal is assigned to (Available Inventory’s Assigned to column); hover for each slot’s display type, playlist, IAB zone, position and plays per window. ' +
-      'Hover an advertiser count to see who is on the deal. Fill = slots sold ÷ all slots on the deal inside operating hours (unsold slot records). ' +
+      'One advertiser shows its name; with more than one, hover the count to see who is on the deal. Fill = slots sold ÷ all slots on the deal inside operating hours (unsold slot records). ' +
       'Pacing (programmatic guaranteed only) = assumed views (VAC-d) delivered ÷ guaranteed to date. Guaranteed volume = forecast × (1 − buffer). Hover the bar for the numbers. ' +
       'CPM = floor CPM for private auctions; fixed CPM for preferred deals and programmatic guaranteed.',
     pacing: 'Pacing = assumed views (VAC-d) delivered ÷ guaranteed to date. Guaranteed volume = forecast × (1 − buffer).'
@@ -197,7 +197,10 @@
     return fmtMoney(c.value, 2);
   }
   function cpmNote(c) { return !c || c.value == null ? '' : c.kind === 'floor' ? 'floor' : 'fixed'; }
-  function advertisersLabel(deal) { return plural((deal.advertisers || []).length, 'advertiser'); }
+  function advertisersLabel(deal) {
+    var list = deal.advertisers || [];
+    return list.length === 1 && list[0] && list[0].name ? list[0].name : plural(list.length, 'advertiser');
+  }
   function cpmTooltip(c) { return c && c.value != null ? { title: 'CPM', rows: [[c.kind === 'floor' ? 'Floor CPM' : 'Fixed CPM', fmtMoney(c.value, 2)]] } : null; }
 
   // ---------- Deals sorting ----------
@@ -463,7 +466,7 @@
         if (d.slots && d.slots.length) hover(slots, function () { return slotsTooltip(d, loopSizes); });
         tr.appendChild(h('td', {}, [slots]));
         var adv = h('span', { class: 'rd-hov', text: advertisersLabel(d) });
-        if ((d.advertisers || []).length) hover(adv, function () { return advertisersTooltip(d); });
+        if ((d.advertisers || []).length > 1) hover(adv, function () { return advertisersTooltip(d); });
         tr.appendChild(h('td', {}, [adv]));
         tr.appendChild(h('td', { class: 'rd-num', text: fmtMoney(d.revenue) }));
         var cpm = h('td', { class: 'rd-num' }); var cm = cpmTooltip(d.cpm);
