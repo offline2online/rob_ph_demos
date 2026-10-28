@@ -231,6 +231,17 @@
     return cur === null ? { key: key, dir: 'desc' } : cur === 'desc' ? { key: key, dir: 'asc' } : null;
   }
 
+  // Column filters for the Deals table (the filter row under the header, as on the platform's grids).
+  // f = { dealType: '' | a deal type, advertiser: free text }. Advertiser matches any advertiser name on the deal, case-insensitively.
+  function filterDeals(rows, f) {
+    var type = (f && f.dealType) || '';
+    var adv = String((f && f.advertiser) || '').trim().toLowerCase();
+    return rows.filter(function (d) {
+      if (type && d.dealType !== type) return false;
+      return !adv || (d.advertisers || []).some(function (a) { return String(a.name || '').toLowerCase().indexOf(adv) >= 0; });
+    });
+  }
+
   // ---------- DOM ----------
   function h(tag, attrs, kids) {
     var el = document.createElement(tag);
@@ -246,7 +257,7 @@
     if (typeof document === 'undefined') throw new Error('RevenueDeals.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = {};
-    var sel = { dsps: ['Direct', 'DV360'], dealType: '', granularity: 'day', dealsType: '', dealsSort: null };
+    var sel = { dsps: ['Direct', 'DV360'], dealType: '', granularity: 'day', dealsType: '', dealsAdv: '', dealsSort: null };
     var lastDeals = null;
     var seq = { revenue: 0, deals: 0 };
 
@@ -396,8 +407,7 @@
     }
 
     // ----- Deals -----
-    var dealsTypeWrap = h('span', { class: 'rd-ctl' });
-    var deals = panel('Deals', TIPS.deals, dealsTypeWrap);
+    var deals = panel('Deals', TIPS.deals, null);
     var loopSizes = null;
     function loadLoopSizes() {
       var p = params({}); delete p.displayTypeIds;
@@ -413,8 +423,7 @@
     function drawDeals(data) {
       deals.body.textContent = '';
       lastDeals = data;
-      var rows = sortDeals((data && data.rows) || [], sel.dealsSort);
-      if (!rows.length) return deals.body.appendChild(stateBox('empty', 'No deals match this filter.'));
+      if (!((data && data.rows) || []).length) return deals.body.appendChild(stateBox('empty', 'No deals match this filter.'));
       var eff = sel.dealsSort || DEFAULT_DEAL_SORT;
       var thead = h('thead', {}, [h('tr', {}, DEAL_COLS.map(function (c) {
         var active = eff.key === c.key;
@@ -427,8 +436,25 @@
         if (c.key === 'pacing') th.appendChild(info(TIPS.pacing));
         return th;
       }))]);
+      var typeFilter = typeSelect('All deal types', DEAL_TYPES.filter(function (t) { return t !== 'Open auction'; }), sel.dealsType, function (v) { sel.dealsType = v; drawRows(); });
+      typeFilter.classList.add('rd-filter');
+      var advFilter = h('input', { type: 'search', class: 'rd-filter rd-input', placeholder: 'Filter advertisers', 'aria-label': 'Filter by advertiser', autocomplete: 'off' });
+      advFilter.value = sel.dealsAdv;
+      advFilter.oninput = function () { sel.dealsAdv = advFilter.value; drawRows(); };
+      thead.appendChild(h('tr', { class: 'rd-filter-row' }, DEAL_COLS.map(function (c) {
+        return h('th', { scope: 'col' }, [c.key === 'dealType' ? typeFilter : c.key === 'advertisers' ? advFilter : null]);
+      })));
       var tbody = h('tbody');
-      rows.forEach(function (d) {
+      function drawRows() {
+        hideTip(); tbody.textContent = '';
+        var shown = sortDeals(filterDeals(data.rows, { dealType: sel.dealsType, advertiser: sel.dealsAdv }), sel.dealsSort);
+        if (!shown.length) {
+          var empty = h('td', { colspan: String(DEAL_COLS.length), class: 'rd-empty-row', text: 'No deals match these filters.' });
+          tbody.appendChild(h('tr', {}, [empty]));
+        }
+        shown.forEach(addRow);
+      }
+      function addRow(d) {
         var tr = h('tr');
         var nameBtn = h('span', { class: 'rd-name', text: d.name }); hover(nameBtn, function () { return nameTooltip(d); });
         tr.appendChild(h('td', {}, [nameBtn]));
@@ -457,24 +483,20 @@
         }
         tr.appendChild(pc);
         tbody.appendChild(tr);
-      });
+      }
+      drawRows();
       deals.body.appendChild(h('div', { class: 'rd-scroll' }, [h('table', { class: 'rd-table' }, [thead, tbody])]));
     }
     function loadDeals() {
       var my = ++seq.deals;
       hideTip();
       deals.body.textContent = ''; deals.body.appendChild(h('div', { class: 'rd-skel' }));
-      var extra = sel.dealsType ? { dealType: sel.dealsType } : {};
-      fetchJson('deals', params(extra)).then(function (d) { if (my === seq.deals) drawDeals(d); })
+      fetchJson('deals', params({})).then(function (d) { if (my === seq.deals) drawDeals(d); })
         .catch(function () { if (my === seq.deals) { deals.body.textContent = ''; deals.body.appendChild(stateBox('error', 'We couldn’t load deals. Try again shortly.', loadDeals)); } });
-    }
-    function drawDealsFilter() {
-      dealsTypeWrap.textContent = '';
-      dealsTypeWrap.appendChild(typeSelect('All deal types', DEAL_TYPES.filter(function (t) { return t !== 'Open auction'; }), sel.dealsType, function (v) { sel.dealsType = v; loadDeals(); }));
     }
 
     root.appendChild(rev.el); root.appendChild(deals.el);
-    drawControls(); drawDealsFilter();
+    drawControls();
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideTip(); });
     var resizeTimer = null, lastWidth = root.clientWidth;
     window.addEventListener('resize', function () {
@@ -492,7 +514,7 @@
     mount: mount, DSP_ORDER: DSP_ORDER, DEAL_TYPES: DEAL_TYPES,
     revenueBars: revenueBars, revenueTotals: revenueTotals, labelStep: labelStep, barTooltip: barTooltip, shadeColour: shadeColour, periodLabel: periodLabel, typeName: typeName, legendEntries: legendEntries, aheadDaysFor: aheadDaysFor, advertisersLabel: advertisersLabel, cpmNote: cpmNote, DSP_SHADES: DSP_SHADES,
     nameTooltip: nameTooltip, slotsTooltip: slotsTooltip, slotsLabel: slotsLabel, advertisersTooltip: advertisersTooltip,
-    sortDeals: sortDeals, nextDealSort: nextDealSort, DEAL_COLS: DEAL_COLS,
+    sortDeals: sortDeals, filterDeals: filterDeals, nextDealSort: nextDealSort, DEAL_COLS: DEAL_COLS,
     pacingTooltip: pacingTooltip, cpmTooltip: cpmTooltip, fmtMoney: fmtMoney
   };
 });

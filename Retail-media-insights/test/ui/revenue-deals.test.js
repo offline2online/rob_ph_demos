@@ -119,4 +119,29 @@ for (const width of [1163, 390]) {
       assert.deepEqual(problems, []);
     } finally { await context.close(); }
   });
+
+  test(`deals table at ${width}px: filter row by deal type and advertiser`, async () => {
+    const { page, context, problems } = await open(width);
+    try {
+      const count = () => page.$$eval('.rd-table tbody tr', (r) => r.length);
+      const all = await count();
+      assert.equal(await page.$$eval('.rd-table thead tr', (r) => r.length), 2, 'label row, then filter row');
+      await page.selectOption('.rd-filter-row select', 'Programmatic guaranteed');
+      const types = await page.$$eval('.rd-table tbody tr td:nth-child(2)', (c) => [...new Set(c.map((x) => x.innerText.trim()))]);
+      assert.deepEqual(types, ['Programmatic guaranteed']);
+      assert.ok(await count() < all, 'deal type narrows the rows');
+      await page.selectOption('.rd-filter-row select', '');
+      assert.equal(await count(), all);
+      await page.fill('.rd-filter-row input', "l'oréal");
+      const names = await page.$$eval('.rd-table tbody tr td:nth-child(1)', (c) => c.map((x) => x.innerText.trim()));
+      assert.ok(names.includes('Beauty endcaps') && names.length < all, 'advertiser text narrows to deals with a matching advertiser');
+      await page.fill('.rd-filter-row input', 'zzz-no-such-advertiser');
+      assert.equal(await page.textContent('.rd-empty-row'), 'No deals match these filters.');
+      assert.equal(await page.$$eval('.rd-filter-row input', (i) => i.length), 1, 'filters stay so they can be cleared');
+      await page.fill('.rd-filter-row input', '');
+      assert.equal(await count(), all);
+      assert.ok(await noHScroll(page), 'no horizontal scroll');
+      assert.deepEqual(problems, []);
+    } finally { await context.close(); }
+  });
 }
