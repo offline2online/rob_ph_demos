@@ -111,3 +111,5 @@ REQUIREMENTS §2 and §7 step 4: the same API, exposed two more ways. **No on-pa
 - **Decision (to confirm):** MCP is a plain JSON-RPC POST endpoint rather than an SDK server, because this service has no dependencies; the "MCP plumbing" owned by PH Core (REQUIREMENTS §6) may front it or replace the transport without changing the tools.
 - Tests: `test/export.test.js` (datasets equal the endpoints, CSV, advertiser isolation and spoofing, MCP protocol, tool results equal the endpoints, bad arguments).
 
+
+- `/deals` slots carry `termPlays`, `termVacd` (plays × the VAC-d one play delivers on each connected display; null when a display has no footfall or visibility) and `termValue` = `termVacd` ÷ 1,000 × CPM (floor for a Private auction); `term.total` carries `plays`, `vacd` and `value` the same way. Value is never plays ÷ 1,000 × CPM.

@@ -97,7 +97,7 @@ for (const width of [1163, 390]) {
       assert.equal(pd[5], '', 'pacing only on Programmatic guaranteed');
       assert.match(pg[7], /fixed$/);
       assert.match(pa[7], /fixed$/, 'a direct deal bills its agreed CPM');
-      assert.equal(pa[3], '2 advertisers');
+      assert.equal(pa[3], '1 advertiser');
       assert.match(pg[2], /^2 slots$/);
       const bar = await page.$eval('.rd-fill-bar', (e) => { const r = e.getBoundingClientRect(); return [e.offsetWidth, r.height, getComputedStyle(e).backgroundColor]; });
       assert.equal(bar[0], width === 390 ? 56 : 90);
@@ -106,7 +106,7 @@ for (const width of [1163, 390]) {
 
       const adv = (await page.$$('.rd-table tbody tr'))[idx('Beauty endcaps')];
       await (await adv.$('td:nth-child(4) .rd-hov')).hover();
-      assert.match(await page.textContent('.rd-tip'), /Procter & Gamble \(Direct\)/);
+      assert.match(await page.textContent('.rd-tip'), /L'Oréal Paris \(Direct\)/);
       await (await (await page.$$('.rd-table tbody tr'))[idx('Immune — winter launch')].$('td:nth-child(3) .rd-hov')).hover();
       assert.match(await page.textContent('.rd-tip'), /Window Portrait \(Portrait screen in the store window at the entrance\)/);
       assert.match(await page.textContent('.rd-tip'), /slot 1 of \d+\)/);
@@ -114,7 +114,7 @@ for (const width of [1163, 390]) {
       assert.match(await page.textContent('.rd-tip'), /Deal IDs.*PH-/);
       assert.match(await page.textContent('.rd-tip'), /Programmatic guaranteed.*Rate.*CPM fixed.*Flight.*Period.*Over the whole flight.*plays · USD.*Deal total[\d,]+ plays · USD/);
       await (await (await page.$$('.rd-table tbody tr'))[idx('Beauty endcaps')].$('.rd-name')).hover();
-      assert.ok(!/Deal IDs/.test(await page.textContent('.rd-tip')), 'a direct deal has no deal ID');
+      assert.match(await page.textContent('.rd-tip'), /Deal IDs.*Direct \(no DSP\).*PH-/, 'a direct deal has an internal PH deal ID');
       assert.ok(await noHScroll(page), 'no horizontal scroll');
       assert.deepEqual(problems, []);
     } finally { await context.close(); }

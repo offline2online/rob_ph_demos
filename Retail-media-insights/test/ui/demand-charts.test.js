@@ -58,7 +58,7 @@ test('Demand health: section header, names only, "n deals" hover, Show all N adv
     assert.ok(names.every((n) => !/\(/.test(n)), `no DSP in the cell: ${names}`);
     const deals = await texts(page, '.dc-adv tbody td:nth-child(4)');
     assert.ok(deals.every((d) => /^\d+ deals?$/.test(d)), deals.join());
-    const i = deals.findIndex((d) => d === '3 deals');
+    const i = deals.findIndex((d) => d === '2 deals');
     assert.ok(i >= 0);
     const cell = page.locator('.dc-adv tbody tr').nth(i).locator('td').nth(2);
     await cell.hover();

@@ -12,6 +12,7 @@ const { dayDiff, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredB
 // Revenue is earned revenue. Pacing is deal-wide: the store and display type filters do not change it.
 // Plays a slot gives over a deal's term (as DSP Integration's Details hover totals them): plays per window x connected displays
 // x hours a day it runs x days in the term. A display counts in every store the page filter allows; null when no display is connected.
+const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 const termDays = (flight) => (flight ? dayDiff(flight.start, flight.end) + 1 : null);
 function termPlaysOf(store, filters, slot, days) {
   if (days == null || slot.playsPerWindow == null) return null;
@@ -24,6 +25,27 @@ function termPlaysOf(store, filters, slot, days) {
     hours += w.close - w.open; any = true;
   }
   return any ? Math.round(slot.playsPerWindow * hours * days) : null;
+}
+// VAC-d (assumed views) those plays deliver, display by display: plays x the VAC-d one play delivers there (the display's views per
+// slot per day spread over its plays a day). Value is priced on this, never on plays: plays x VAC-d / 1,000 x CPM, as billing does.
+// Null when a connected display has no footfall or visibility on record, or the type has no loop.
+function termViewsOf(store, filters, slot, days) {
+  if (days == null || slot.playsPerWindow == null) return null;
+  const type = (store.catalog.displayTypes || {})[slot.displayTypeId];
+  const loop = type && loopOf(type.slots);
+  if (!loop) return null;
+  const stores = filters.storeIds ? new Set(filters.storeIds) : null;
+  let views = 0; let any = false;
+  for (const d of store.catalog.displays || []) {
+    if (d.displayTypeId !== slot.displayTypeId || (stores && !stores.has(d.storeId))) continue;
+    if (d.footfall == null || d.visibility == null) return null;
+    const w = calc.operatingWindow(type, (store.catalog.stores || {})[d.storeId]);
+    const plays = slot.playsPerWindow * (w.close - w.open) * days;
+    const daily = calc.assumedViewsPerSlotPerDay(d.footfall, d.visibility, loop.advertiser.avgSeconds, loop.loopSeconds);
+    views += calc.playsVacd(plays, calc.vacdPerPlay(daily, slot.playsPerWindow * (w.close - w.open)));
+    any = true;
+  }
+  return any ? views : null;
 }
 const loopSlotCountOf = (slots) => { const l = loopOf(slots); return l ? l.slotsPerLoop : null; };
 
@@ -61,12 +83,14 @@ module.exports = {
         playsPerWindow: s.playsPerWindow,
         termPlays: termPlaysOf(store, filters, s, days),
       }));
-      for (const s of slots) s.termValue = s.termPlays == null || rate == null ? null : cents(s.termPlays / 1000 * rate);
-      const counted = slots.filter((s) => s.termPlays != null);
+      const rawVacd = assigned.map((s) => termViewsOf(store, filters, s, days));
+      slots.forEach((s, i) => { s.termVacd = rawVacd[i] == null ? null : Math.round(rawVacd[i]); s.termValue = rawVacd[i] == null || rate == null ? null : cents(calc.revenueAtCpm(rate, rawVacd[i])); });
+      const counted = slots.filter((s, i) => s.termPlays != null && rawVacd[i] != null);
+      const countedVacd = rawVacd.filter((v, i) => slots[i].termPlays != null && v != null);
       const term = days == null ? null : {
         start: deal.flight.start, end: deal.flight.end, days,
         // The deal total only when every slot can be totalled and a rate prices it.
-        total: slots.length && counted.length === slots.length ? { plays: counted.reduce((n, s) => n + s.termPlays, 0), value: rate == null ? null : cents(counted.reduce((n, s) => n + s.termPlays, 0) / 1000 * rate) } : null,
+        total: slots.length && counted.length === slots.length ? { plays: counted.reduce((n, s) => n + s.termPlays, 0), vacd: Math.round(sum(countedVacd)), value: rate == null ? null : cents(calc.revenueAtCpm(rate, sum(countedVacd))) } : null,
       };
       // Fill: slots won on the deal / slot opportunities inside operating hours (sold + unsold + offline records).
       let opportunity = 0; const seen = new Set();

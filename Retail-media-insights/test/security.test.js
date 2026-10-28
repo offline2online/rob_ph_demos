@@ -128,18 +128,6 @@ const path = require('path');
 const ROUTES = fs.readdirSync(path.join(__dirname, '../src/routes')).map((f) => require(`../src/routes/${f}`)).filter((r) => r.path);
 const ask = (me, url, st = store) => dispatch({ store: st, routes: ROUTES, url: `${BASE}${url}`, principal: { principalType: 'advertiser', principalId: me, scopes: ['insights:read'] }, today: '2026-10-11' });
 
-test('3: d7 (Beauty endcaps) with exactly one other buyer: no allPlays and no share, for every day', () => {
-  const out = ask('adv-loreal-paris', `/delivery?${Q}&dealId=d7`);
-  assert.equal(out.status, 200);
-  const others = othersByBlock('adv-loreal-paris');
-  let withOne = 0;
-  for (const d of out.body.days) for (const b of d.deals) {
-    const n = (others.get(`${d.date}#d7`) || new Set()).size;
-    if (n === 1) { withOne += 1; assert.ok(!('allPlays' in b) && !('sharePercent' in b) && !('winningCpm' in b), d.date); }
-  }
-  assert.ok(withOne > 0, 'the sample data has d7 days with one other buyer');
-});
-
 test('3: for every advertiser, no delivery block or deal row lets you subtract out one other buyer', () => {
   for (const me of ADVERTISERS) {
     const others = othersByBlock(me);

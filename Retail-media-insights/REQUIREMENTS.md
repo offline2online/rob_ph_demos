@@ -33,10 +33,11 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 - **Operating hours:** only slots inside each display type's operating hours are inventory (24 hours for Exterior and window screens visible from outside; store opening hours otherwise; a type with its own `customHours` {open, close} is labelled "Custom hours"). Every display type hover shows only that label ("24 hours", "Store opening hours" or "Custom hours"). Never return specific opening times.
 - **Fill / Inventory sold** = sold ÷ (sold + unsold + offline), i.e. all advertiser slots inside operating hours, using unsold real-time slot records.
 - **Missed revenue** = unsold slots × floor CPM × VAC-d ÷ 1,000, plus downtime lost revenue.
+- **One money formula everywhere** (VAC-d audit, 27 Oct 2026; Broadsign model agreed 7 Oct 2026): value = plays × VAC-d per play ÷ 1,000 × CPM, i.e. `revenueAtCpm(cpm, vacd)` on VAC-d, never on plays. Covers earned and estimated revenue, unsold value at floor, downtime lost revenue, revenue per available slot, ad value per slot per day, effective CPM, direct advertiser values and the Deals table name hover (per-slot and deal-total value over the term: the hover totals VAC-d = plays × the VAC-d one play delivers on each connected display). The one place that priced plays ÷ 1,000 × CPM was the Deals hover; fixed. PG pacing and forecast are in VAC-d. Any matched-play figure targeted by Computer Vision would count one unit per match with no VAC-d; none exists in this service today.
 - **Pacing** (PG only) = delivered VAC-d ÷ guaranteed to date; guaranteed = forecast × (1 − buffer).
 - **Maturity level** = highest of Default only / Localised / Personalised across an advertiser's campaigns in range. Daypart is scheduling, never a variable.
 - Parts add to totals as returned (round parts first). Whole-number percentages. All money in USD.
-- **Direct advertisers** (26 Oct 2026): revenue from advertisers sold straight through PH (no DSP, no seat, no deal ID, agreed CPM) is real billing, a source named `Direct` in every DSP breakdown and the fifth deal type `Direct advertiser`. It is part of earned revenue, never extra.
+- **Direct advertisers** (26 Oct 2026): revenue from advertisers sold straight through PH (no DSP, no seat, agreed CPM; an internal PH deal ID for campaign authoring; each Direct advertiser deal has exactly one advertiser) is real billing, a source named `Direct` in every DSP breakdown and the fifth deal type `Direct advertiser`. It is part of earned revenue, never extra.
 - Orderings: deal types Direct advertiser → PG → Preferred deal → Private auction → Open auction; sources DV360, The Trade Desk, Amazon DSP, Direct; display types by IAB zone along the shopper journey.
 
 ### 3.3 Security and isolation
@@ -63,7 +64,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 | Needed | Used for |
 |---|---|
 | Deals & buyers lists: name, description, deal type, per-DSP deal IDs (PH- format), flight dates, guaranteed volume, buffer, buyers and each buyer's DSP seat | Deals table and hovers, Advertisers table, advertiser view, "Name (DSP)" everywhere |
-| Four industry-standard deal types, incl. the ticket aligning Private auction and Preferred deal, plus the Direct advertiser deal type and direct advertisers' billing lines (no DSP, no seat, no deal ID) | Revenue, Deals, Demand health, Summary |
+| Four industry-standard deal types, incl. the ticket aligning Private auction and Preferred deal, plus the Direct advertiser deal type and direct advertisers' billing lines (no DSP, no seat; one advertiser per deal; internal PH deal ID) | Revenue, Deals, Demand health, Summary |
 | Available Inventory slot assignments (display type, playlist, zone, position, plays per window) | Slots column and hovers, Slots covered, advertiser display type filter |
 | Winning seat (partnerId + seatId from the bid response) on every billing line item, synced seat names (`partners.seats`) and the advertiser ↔ seat mapping (`advertiser_seats`). **Not confirmed persisted on billing line items in DSP Integration today: confirm, else file it on DSP Integration** | Demand by DSP seat (Advertisers table sub-rows) |
 | Billing line items and reservations (cleared / fixed CPM, plays, VAC-d, DSP seat, deal, display type) | Revenue, effective CPM, Delivery, winning CPM aggregates |

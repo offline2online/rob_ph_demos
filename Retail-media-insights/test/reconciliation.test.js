@@ -144,10 +144,10 @@ test('billing follows the buyers lists: own DSP seat, own display types, one buy
 });
 
 test('deal IDs: PH- plus 10 upper-case alphanumerics, one per DSP with an invited buyer, from the catalog map', () => {
-  const labels = { DV360: 'Google DSP (DV360)', 'The Trade Desk': 'The Trade Desk', 'Amazon DSP': 'Amazon Ads DSP' };
+  const labels = { DV360: 'Google DSP (DV360)', 'The Trade Desk': 'The Trade Desk', 'Amazon DSP': 'Amazon Ads DSP', Direct: 'Direct (no DSP)' };
   for (const row of run('deals').rows) {
     const deal = ctx.dealCatalog[row.id];
-    assert.deepEqual(row.dealIds.map((x) => x.dsp), [...new Set(deal.buyers.map((b) => b.dsp))].filter((d) => d !== 'Direct').sort(calc.compareDsps));
+    assert.deepEqual(row.dealIds.map((x) => x.dsp), [...new Set(deal.buyers.map((b) => b.dsp))].sort(calc.compareDsps));
     for (const x of row.dealIds) {
       assert.match(x.dealId, /^PH-[A-Z0-9]{10}$/);
       assert.equal(x.dealId, deal.dealIds[x.dsp]);
@@ -200,8 +200,8 @@ test('advertisers: Slots covered counts only covered slots on the filtered types
   const covered = (id, q = '') => run('advertisers', q).all.find((a) => a.advertiserId === id);
   const full = covered('adv-perrigo');
   const window = covered('adv-perrigo', 'displayTypeIds=window');
-  assert.equal(full.slotsCovered, 8); // Window 3-5 (Health & wellness windows), Dispensary 2-5 (Dispensary screens, Perrigo — pharmacy takeover), Queue 2 (Queue screens)
-  assert.equal(window.slotsCovered, 3);
+  assert.equal(full.slotsCovered, 4); // Dispensary 2-4 (Dispensary screens) and 5 (Perrigo — pharmacy takeover)
+  assert.equal(window.slotsCovered, 0);
   assert.deepEqual(window.dealsOn.map((d) => d.id), full.dealsOn.map((d) => d.id));
   // Reckitt buys its guaranteed Dispensary slot and the open auction on other types; none of that may count as a win on its deal positions.
   const reckitt = covered('adv-reckitt');
@@ -224,9 +224,12 @@ test('advertisers: Slots covered counts only covered slots on the filtered types
   assert.equal(full.slotsWonCount, perrigoDealWins);
 });
 
-test('deals: Advertisers on deal are ordered by DSP, then name', () => {
-  const deal = run('deals', 'dealType=Direct advertiser').rows.find((r) => r.name === 'Health & wellness windows');
-  assert.deepEqual(deal.advertisers.map((a) => [a.dsp, a.name]), [['Direct', 'Nestlé Health Science'], ['Direct', 'Perrigo'], ['Direct', 'Vitabiotics']]);
+test('deals: a Direct advertiser deal has exactly one advertiser; Advertisers on deal are ordered by DSP, then name', () => {
+  const rows = run('deals', 'dealType=Direct advertiser').rows;
+  assert.ok(rows.length > 0);
+  for (const r of rows) assert.equal(r.advertisers.length, 1, r.name);
+  const deal = rows.find((r) => r.name === 'Health & wellness windows');
+  assert.deepEqual(deal.advertisers.map((a) => [a.dsp, a.name]), [['Direct', 'Vitabiotics']]);
 });
 
 test('Revenue is earned and to the cent in the maturity table', () => {

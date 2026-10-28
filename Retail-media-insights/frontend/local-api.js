@@ -110,6 +110,16 @@ function revenueAtCpm(cpm, views) {
   return (cpm * views) / 1000;
 }
 
+/** VAC-d one play delivers = a slot's assumed views per day / its plays a day. */
+function vacdPerPlay(viewsPerDay, playsPerDay) {
+  return playsPerDay > 0 ? viewsPerDay / playsPerDay : 0;
+}
+
+/** VAC-d delivered by `plays` plays. Every money figure is priced on this, never on plays: plays x VAC-d / 1,000 x CPM. */
+function playsVacd(plays, vacdPerPlayValue) {
+  return plays * vacdPerPlayValue;
+}
+
 /** Effective CPM = revenue / (VAC-d / 1000). */
 function effectiveCpm(revenue, views) {
   return views > 0 ? revenue / (views / 1000) : 0;
@@ -294,7 +304,7 @@ const compareZones = orderBy(ZONES);
 
 module.exports = {
   assumedViewsPerSlotPerDay, averageAssumedViews, shareOfLoop,
-  revenueAtCpm, effectiveCpm, perSlotPerDay, perSlotPerDayPerDisplay,
+  revenueAtCpm, vacdPerPlay, playsVacd, effectiveCpm, perSlotPerDay, perSlotPerDayPerDisplay,
   operatingWindow, runsAllDay, hasCustomHours, hoursMode, insideOperatingHours, classifySlot, fillPercent,
   unsoldValueAtFloor, missedRevenue,
   guaranteedVolume, pgPacing, maturityLevel, sharedVariables, campaignLevel,
@@ -404,7 +414,7 @@ module.exports = { allowedDisplayTypeIds, scopeFilters };
 // adapter will fill from DSP Integration; today it comes from the test catalog.
 
 const calc = require('./calc');
-const { DSPS, DSP_LABELS } = require('./constants');
+const { DSPS, DIRECT, DSP_LABELS } = require('./constants');
 const { days } = require('./filters');
 
 const RETENTION_DAYS = 90; // settled-bid retention (README open question 3)
@@ -423,9 +433,9 @@ const eachDay = (from, to) => { const out = []; for (let d = from; d <= to; d = 
 
 /**
  * The deal's IDs, one per DSP that has one of the given buyers, in the standard DSP order. Read from the
- * catalog deal's per-DSP map (`deal.dealIds`, PH- plus 10 characters); a DSP with no ID on record is left out.
+ * catalog deal's per-DSP map (`deal.dealIds`, PH- plus 10 characters); a Direct advertiser deal has its internal PH deal ID under `Direct`; a DSP with no ID on record is left out.
  */
-const dealIdsFor = (deal, buyers) => DSPS.filter((d) => buyers.some((b) => b.dsp === d) && (deal.dealIds || {})[d])
+const dealIdsFor = (deal, buyers) => [...DSPS, DIRECT].filter((d) => buyers.some((b) => b.dsp === d) && (deal.dealIds || {})[d])
   .map((d) => ({ dsp: d, dspLabel: DSP_LABELS[d], dealId: deal.dealIds[d] }));
 
 const dealsOf = (store) => Object.entries((store.catalog && store.catalog.deals) || {}).map(([id, d]) => ({ id, ...d }));
@@ -1125,25 +1135,26 @@ const DEAL_SPECS = [
     'Guaranteed Window Portrait plays for the Blackmores Immune winter launch, 15 Sep – 15 Nov.'],
   ['d2', 'Sensodyne always-on', 'Programmatic guaranteed', 8, ['adv-haleon'], slotsOf('queue', [1]), 0.95,
     'Always-on guaranteed Queue Screen plays for Haleon Sensodyne at the checkout.'],
-  // Launch deal types (decided 27 Oct 2026): Programmatic guaranteed, Direct advertiser and the Open auction only, with 7 of the
-  // 10 named deals sold direct. A direct deal has no DSP, no seat and no deal ID: the retailer sells the slot straight to the brand
-  // through PH and bills the agreed CPM, counted as 'Direct' in every DSP breakdown.
+  // Launch deal types (decided 27 Oct 2026): Programmatic guaranteed, Direct advertiser and the Open auction only. A Direct advertiser
+  // deal has exactly one named buyer (decided 28 Oct 2026, as on DSP Integration: {partnerId: 'direct', seatId: advertiserId}), a single
+  // advertiser at an agreed CPM, so each deal names one brand. It has no DSP and no seat but does carry an internal
+  // PH deal ID (PH- plus 10 characters), used for campaign authoring; it is counted as 'Direct' in every DSP breakdown.
   ['d3', 'Revitalift takeover', 'Direct advertiser', 8.8, ['adv-loreal-paris'], slotsOf('endcap', [1, 2]), 0.72,
-    "Endcap Shelf-edge slots owned by L'Oréal Paris, sold directly by the retailer at an agreed CPM. No DSP or deal ID."],
+    "Endcap Shelf-edge slots owned by L'Oréal Paris, sold directly by the retailer at an agreed CPM. No DSP."],
   ['d4', 'Dispensary guaranteed', 'Programmatic guaranteed', 8.2, ['adv-reckitt'], slotsOf('dispensary', [1]), 0.55,
     'Guaranteed Dispensary Screen plays for Reckitt beside the pharmacy counter.'],
-  ['d5', 'Health & wellness windows', 'Direct advertiser', 7.5, ['adv-vitabiotics', 'adv-nestle-health-science', 'adv-perrigo'], slotsOf('window', [3, 4, 5]), 0.92,
-    'Window Portrait slots sold directly by the retailer to health & wellness brands at an agreed CPM. No DSP or deal ID.'],
-  ['d6', 'Dispensary screens', 'Direct advertiser', 7, ['adv-perrigo', 'adv-nestle-health-science', 'adv-vitabiotics'], slotsOf('dispensary', [2, 3, 4]), 0.84,
-    'Dispensary Screen slots beside the pharmacy counter, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
-  ['d7', 'Beauty endcaps', 'Direct advertiser', 6, ['adv-loreal-paris', 'adv-procter-gamble'], slotsOf('endcap', [3, 4]), 0.52,
-    'Endcap Shelf-edge slots at the gondola ends, sold directly by the retailer to beauty brands at an agreed CPM. No DSP or deal ID.'],
-  ['d8', 'Queue screens', 'Direct advertiser', 5.5, ['adv-procter-gamble', 'adv-perrigo'], slotsOf('queue', [2]), 0.9,
-    'Queue Screen slots at the checkout, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
-  ['d9', 'Store-wide wellness', 'Direct advertiser', 6.5, ['adv-vitabiotics', 'adv-nestle-health-science'], slotsOf('endcap', [5]), 0.56,
-    'Endcap Shelf-edge slots across the store, sold directly by the retailer to wellness brands at an agreed CPM. No DSP or deal ID.'],
+  ['d5', 'Health & wellness windows', 'Direct advertiser', 7.5, ['adv-vitabiotics'], slotsOf('window', [3, 4, 5]), 0.92,
+    'Window Portrait slots sold directly by the retailer to Vitabiotics at an agreed CPM. No DSP.'],
+  ['d6', 'Dispensary screens', 'Direct advertiser', 7, ['adv-perrigo'], slotsOf('dispensary', [2, 3, 4]), 0.84,
+    'Dispensary Screen slots beside the pharmacy counter, sold directly by the retailer to Perrigo at an agreed CPM. No DSP.'],
+  ['d7', 'Beauty endcaps', 'Direct advertiser', 6, ['adv-loreal-paris'], slotsOf('endcap', [3, 4]), 0.52,
+    "Endcap Shelf-edge slots at the gondola ends, sold directly by the retailer to L'Oréal Paris at an agreed CPM. No DSP."],
+  ['d8', 'Queue screens', 'Direct advertiser', 5.5, ['adv-procter-gamble'], slotsOf('queue', [2]), 0.9,
+    'Queue Screen slot at the checkout, sold directly by the retailer to Procter & Gamble at an agreed CPM. No DSP.'],
+  ['d9', 'Store-wide wellness', 'Direct advertiser', 6.5, ['adv-nestle-health-science'], slotsOf('endcap', [5]), 0.56,
+    'Endcap Shelf-edge slot across the store, sold directly by the retailer to Nestlé Health Science at an agreed CPM. No DSP.'],
   ['d11', 'Perrigo — pharmacy takeover', 'Direct advertiser', 6, ['adv-perrigo'], slotsOf('dispensary', [5]), 0.56,
-    'Dispensary Screen slot owned by Perrigo, sold directly by the retailer at an agreed CPM. No DSP or deal ID.'],
+    'Dispensary Screen slot owned by Perrigo, sold directly by the retailer at an agreed CPM. No DSP.'],
 ];
 // Fill of the positions no deal assigns (the open auction), set so each type's overall sell-through lands on its target:
 // Window and Queue about 89% (amber), Dispensary about 61%, Endcap about 56%.
@@ -1151,7 +1162,7 @@ const OPEN_FILL = { window: 0.82, queue: 0.82, dispensary: 0.05, endcap: 0.32 };
 const FLIGHTS = { d1: { start: '2026-09-15', end: '2026-11-15', pacing: 0.93 }, d2: { start: '2026-08-01', end: '2026-12-31', pacing: 1.01 }, d4: { start: '2026-09-01', end: '2026-12-15', pacing: 0.97 } };
 const RESERVE_UNTIL = '2026-12-31';
 
-// One deal ID per DSP with an invited buyer: PH- plus 10 characters, minted deterministically from the unambiguous
+// One deal ID per DSP with an invited buyer (a Direct advertiser deal has one, under 'Direct'): PH- plus 10 characters, minted deterministically from the unambiguous
 // alphabet DSP Integration uses (DEAL_ID_ALPHABET in BuyersListRepo.ts: never 0, 1, I, L or O) and unique across all deals.
 const DEAL_ID_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const mintedDealIds = new Set();
@@ -1167,7 +1178,7 @@ function mintDealIds(dsps, rand) {
 const mintRand = rng(2026);
 const DEAL_CATALOG = Object.fromEntries(DEAL_SPECS.map(([id, name, dealType, cpm, buyers, slots, , description], i) => {
   const buyerList = buyers.map((advertiserId) => ({ advertiserId, dsp: PROFILE[advertiserId].dsp }));
-  const dspsInOrder = DSPS_ORDER.filter((d) => buyerList.some((b) => b.dsp === d));
+  const dspsInOrder = [...DSPS_ORDER, 'Direct'].filter((d) => buyerList.some((b) => b.dsp === d));
   const deal = { name, description, dealType, phId: `PH-${id.toUpperCase()}`, cpm, dealIds: mintDealIds(dspsInOrder, mintRand), buyers: buyerList, slots };
   if (dealType === 'Private auction') deal.floorCpm = cpm;
   if (FLIGHTS[id]) { deal.flight = { start: FLIGHTS[id].start, end: FLIGHTS[id].end }; deal.forecast = 100000; deal.buffer = 0.1; }
@@ -1930,6 +1941,7 @@ const { dayDiff, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredB
 // Revenue is earned revenue. Pacing is deal-wide: the store and display type filters do not change it.
 // Plays a slot gives over a deal's term (as DSP Integration's Details hover totals them): plays per window x connected displays
 // x hours a day it runs x days in the term. A display counts in every store the page filter allows; null when no display is connected.
+const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 const termDays = (flight) => (flight ? dayDiff(flight.start, flight.end) + 1 : null);
 function termPlaysOf(store, filters, slot, days) {
   if (days == null || slot.playsPerWindow == null) return null;
@@ -1942,6 +1954,27 @@ function termPlaysOf(store, filters, slot, days) {
     hours += w.close - w.open; any = true;
   }
   return any ? Math.round(slot.playsPerWindow * hours * days) : null;
+}
+// VAC-d (assumed views) those plays deliver, display by display: plays x the VAC-d one play delivers there (the display's views per
+// slot per day spread over its plays a day). Value is priced on this, never on plays: plays x VAC-d / 1,000 x CPM, as billing does.
+// Null when a connected display has no footfall or visibility on record, or the type has no loop.
+function termViewsOf(store, filters, slot, days) {
+  if (days == null || slot.playsPerWindow == null) return null;
+  const type = (store.catalog.displayTypes || {})[slot.displayTypeId];
+  const loop = type && loopOf(type.slots);
+  if (!loop) return null;
+  const stores = filters.storeIds ? new Set(filters.storeIds) : null;
+  let views = 0; let any = false;
+  for (const d of store.catalog.displays || []) {
+    if (d.displayTypeId !== slot.displayTypeId || (stores && !stores.has(d.storeId))) continue;
+    if (d.footfall == null || d.visibility == null) return null;
+    const w = calc.operatingWindow(type, (store.catalog.stores || {})[d.storeId]);
+    const plays = slot.playsPerWindow * (w.close - w.open) * days;
+    const daily = calc.assumedViewsPerSlotPerDay(d.footfall, d.visibility, loop.advertiser.avgSeconds, loop.loopSeconds);
+    views += calc.playsVacd(plays, calc.vacdPerPlay(daily, slot.playsPerWindow * (w.close - w.open)));
+    any = true;
+  }
+  return any ? views : null;
 }
 const loopSlotCountOf = (slots) => { const l = loopOf(slots); return l ? l.slotsPerLoop : null; };
 
@@ -1979,12 +2012,14 @@ module.exports = {
         playsPerWindow: s.playsPerWindow,
         termPlays: termPlaysOf(store, filters, s, days),
       }));
-      for (const s of slots) s.termValue = s.termPlays == null || rate == null ? null : cents(s.termPlays / 1000 * rate);
-      const counted = slots.filter((s) => s.termPlays != null);
+      const rawVacd = assigned.map((s) => termViewsOf(store, filters, s, days));
+      slots.forEach((s, i) => { s.termVacd = rawVacd[i] == null ? null : Math.round(rawVacd[i]); s.termValue = rawVacd[i] == null || rate == null ? null : cents(calc.revenueAtCpm(rate, rawVacd[i])); });
+      const counted = slots.filter((s, i) => s.termPlays != null && rawVacd[i] != null);
+      const countedVacd = rawVacd.filter((v, i) => slots[i].termPlays != null && v != null);
       const term = days == null ? null : {
         start: deal.flight.start, end: deal.flight.end, days,
         // The deal total only when every slot can be totalled and a rate prices it.
-        total: slots.length && counted.length === slots.length ? { plays: counted.reduce((n, s) => n + s.termPlays, 0), value: rate == null ? null : cents(counted.reduce((n, s) => n + s.termPlays, 0) / 1000 * rate) } : null,
+        total: slots.length && counted.length === slots.length ? { plays: counted.reduce((n, s) => n + s.termPlays, 0), vacd: Math.round(sum(countedVacd)), value: rate == null ? null : cents(calc.revenueAtCpm(rate, sum(countedVacd))) } : null,
       };
       // Fill: slots won on the deal / slot opportunities inside operating hours (sold + unsold + offline records).
       let opportunity = 0; const seen = new Set();

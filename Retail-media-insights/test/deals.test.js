@@ -100,18 +100,23 @@ test('deals: the ten named deals — fill, pacing, CPM, buyers and deal IDs foll
   assert.deepEqual([by['Immune — winter launch'].pacing.flightStart, by['Immune — winter launch'].pacing.flightEnd], ['2026-09-15', '2026-11-15']);
   assert.deepEqual([by['Sensodyne always-on'].pacing.flightStart, by['Sensodyne always-on'].pacing.flightEnd], ['2026-08-01', '2026-12-31']);
   assert.deepEqual([by['Immune — winter launch'].cpm, by['Health & wellness windows'].cpm, by['Queue screens'].cpm], [{ value: 9.5, kind: 'fixed' }, { value: 7.5, kind: 'fixed' }, { value: 5.5, kind: 'fixed' }]);
-  assert.equal(by['Health & wellness windows'].advertisers.length, 3);
-  assert.equal(by['Beauty endcaps'].advertisers.length, 2);
+  // A Direct advertiser deal has exactly one named buyer, and an internal PH deal ID under 'Direct'.
+  for (const r of body.rows.filter((x) => x.dealType === 'Direct advertiser')) {
+    assert.equal(r.advertisers.length, 1, `${r.name}: one advertiser`);
+    assert.deepEqual(r.dealIds.map((x) => x.dsp), ['Direct'], r.name);
+  }
+  assert.deepEqual(by['Health & wellness windows'].advertisers.map((a) => a.name), ['Vitabiotics']);
+  assert.deepEqual(by['Beauty endcaps'].advertisers.map((a) => a.name), ["L'Oréal Paris"]);
   assert.equal(by['Immune — winter launch'].description, 'Guaranteed Window Portrait plays for the Blackmores Immune winter launch, 15 Sep – 15 Nov.');
   // One deal ID per DSP with an invited buyer, PH- plus 10 characters.
   for (const r of body.rows) {
-    assert.deepEqual(r.dealIds.map((x) => x.dsp), [...new Set(r.advertisers.map((a) => a.dsp))].filter((d) => d !== 'Direct').sort((x, y) => ['DV360', 'The Trade Desk', 'Amazon DSP'].indexOf(x) - ['DV360', 'The Trade Desk', 'Amazon DSP'].indexOf(y)), r.name);
+    assert.deepEqual(r.dealIds.map((x) => x.dsp), [...new Set(r.advertisers.map((a) => a.dsp))].sort((x, y) => ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct'].indexOf(x) - ['DV360', 'The Trade Desk', 'Amazon DSP', 'Direct'].indexOf(y)), r.name);
     assert.ok(r.dealIds.every((x) => /^PH-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$/.test(x.dealId)));
   }
   assert.deepEqual(by['Store-wide wellness'].slots.map((s) => `${s.displayTypeId}#${s.advertiserSlot}`), ['endcap#5']);
-  // A direct advertiser's deal: owned slot, fixed CPM, no DSP and so no deal ID.
+  // A direct advertiser's deal: owned slot, fixed CPM, no DSP but an internal PH deal ID.
   const direct = by['Perrigo — pharmacy takeover'];
-  assert.deepEqual([direct.dealType, direct.cpm, direct.dealIds], ['Direct advertiser', { value: 6, kind: 'fixed' }, []]);
+  assert.deepEqual([direct.dealType, direct.cpm, direct.dealIds], ['Direct advertiser', { value: 6, kind: 'fixed' }, [{ dsp: 'Direct', dspLabel: 'Direct (no DSP)', dealId: ctx.dealCatalog.d11.dealIds.Direct }]]);
   assert.deepEqual(direct.advertisers.map((a) => [a.name, a.dsp]), [['Perrigo', 'Direct']]);
   assert.deepEqual(direct.slots.map((s) => `${s.displayTypeId}#${s.advertiserSlot}`), ['dispensary#5']);
 });

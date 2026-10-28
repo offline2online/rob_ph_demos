@@ -55,13 +55,15 @@ test('deal name hover: description and per-DSP deal IDs from {dsp, dspLabel, dea
   const at = t.rows.findIndex((r) => r[0] === 'Deal IDs');
   assert.strictEqual(t.rows[0][0], deal.description);
   assert.ok(at > 0 && t.rows[at + 1][0] === deal.dealIds[0].dspLabel);
-  assert.match(t.rows[at + 1][0], /^(Google DSP \(DV360\)|The Trade Desk|Amazon Ads DSP)$/);
+  assert.match(t.rows[at + 1][0], /^(Google DSP \(DV360\)|The Trade Desk|Amazon Ads DSP|Direct \(no DSP\))$/);
   assert.match(t.rows[at + 1][1], /^PH-[A-Z0-9]{10}$/);
   assert.strictEqual(t.rows[at + 1][2], 'rd-tip-mono');
-  // A direct deal has no DSP and so no deal ID: the hover is its description alone.
+  // A direct deal has no DSP but has an internal PH deal ID, listed under Direct.
   const direct = (await get('/deals')).rows.find((d) => d.dealType === 'Direct advertiser');
-  assert.deepStrictEqual(direct.dealIds, []);
-  assert.ok(!RD.nameTooltip(direct).rows.some((r) => r[0] === 'Deal IDs'));
+  assert.deepStrictEqual(direct.dealIds.map((x) => x.dsp), ['Direct']);
+  const dt = RD.nameTooltip(direct);
+  const di = dt.rows.findIndex((r) => r[0] === 'Deal IDs');
+  assert.ok(di > 0 && /^PH-[A-Z0-9]{10}$/.test(dt.rows[di + 1][1]));
 });
 
 test('deal name hover reuses the DSP Details format: type, rate, flight, plays and value per slot, deal total', async () => {
@@ -103,9 +105,9 @@ test('slots label and Assigned slots hover', async () => {
 test('advertisers hover lists "Name (DSP)"', async () => {
   const deal = (await get('/deals')).rows.find((d) => d.name === 'Beauty endcaps');
   assert.strictEqual(RD.advertisersTooltip(deal).title, deal.name);
-  assert.strictEqual(RD.advertisersLabel(deal), '2 advertisers');
+  assert.strictEqual(RD.advertisersLabel(deal), '1 advertiser');
   assert.strictEqual(RD.advertisersLabel({ advertisers: [1] }), '1 advertiser');
-  assert.deepStrictEqual(RD.advertisersTooltip(deal).rows.map((r) => r[0]), ["L'Oréal Paris (Direct)", 'Procter & Gamble (Direct)']);
+  assert.deepStrictEqual(RD.advertisersTooltip(deal).rows.map((r) => r[0]), ["L'Oréal Paris (Direct)"]);
 });
 
 test('pacing hover: in flight', async () => {
