@@ -87,10 +87,10 @@ test('deal hover: description, type, rate, flight, own DSP deal ID, per-slot tot
   assert.strictEqual(t.rows.find((r) => r[0] === 'Deal type')[1], 'Programmatic guaranteed');
   assert.match(t.rows.find((r) => r[0] === 'Rate')[1], /^\$\d+\.\d\d CPM fixed$/);
   assert.match(t.rows.find((r) => r[0] === 'Google DSP (DV360)')[1], /^PH-[A-Z0-9]{10}$/);
-  assert.match(t.rows.find((r) => r[0] === 'Deal total')[1], /plays · .* VAC-d · USD /);
+  assert.match(t.rows.find((r) => r[0] === 'Deal total')[1], /plays · .* assumed views · USD /);
   const slotRows = t.rows.filter((r) => / · slot \d+$/.test(r[0]));
   assert.ok(slotRows.length >= 1 && slotRows.length <= 5);
-  slotRows.forEach((r) => assert.match(r[1], /plays · .* VAC-d/));
+  slotRows.forEach((r) => assert.match(r[1], /plays · .* assumed views/));
   const many = { ...deal, terms: { ...deal.terms, slots: Array.from({ length: 7 }, (_, i) => ({ displayType: 'X', advertiserSlot: i + 1, termPlays: 1, termVacd: 1, termValue: 1 })) } };
   const m = AV.dealNameTooltip(many);
   assert.strictEqual(m.rows.filter((r) => / · slot \d+$/.test(r[0])).length, 5);
@@ -152,12 +152,12 @@ test('slots hover: display type (description), playlist · zone, IAB zone, slot 
   assert.strictEqual(withN.rows[3][0], 'Advertiser slot 3 (slot 3 of 12) · 10 plays per window');
 });
 
-test('display type hover matches the retailer card: paragraph, VAC-d averages, share of loop time, footer', async () => {
+test('display type hover matches the retailer card: paragraph, assumed views averages, share of loop time, footer', async () => {
   const t = AV.displayTypeTooltip((await mine('/deals-by-display-type')).groups[0].displayType);
   assert.strictEqual(t.rows[0][2], 'para');
   const rows = Object.fromEntries(t.rows.filter((r) => r[1]).map((r) => [r[0], r[1]]));
   for (const k of ['Connected displays', 'IAB store zone', 'Operating hours', 'Touch Point', 'Display canvas size (resolution)', 'Display orientation', 'Creative formats']) assert.ok(!(k in rows), `${k} removed`);
-  for (const k of ['Average assumed views (VAC-d) per slot per day', 'Average footfall past a display per day', 'Average visibility adjustment', 'Share of loop time']) assert.ok(k in rows, k);
+  for (const k of ['Average assumed views per slot per day', 'Average footfall past a display per day', 'Average visibility adjustment', 'Share of loop time']) assert.ok(k in rows, k);
   assert.deepStrictEqual(t.rows[t.rows.length - 1].slice(0, 3), ['Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct.', '', 'note']);
 });
 
@@ -168,7 +168,7 @@ test('pacing KPIs, targeting ladder and Audience model', async () => {
   assert.ok(!AV.ladderRungs('Personalised').some((r) => r.next));
   const a = await mine('/audience');
   const m = AV.audienceModel(a, { dateFrom: '2026-09-12', dateTo: '2026-10-11' });
-  assert.strictEqual(m.caption, 'Assumed views (VAC-d) delivered, 12 Sep – 11 Oct');
+  assert.strictEqual(m.caption, 'Assumed views delivered, 12 Sep – 11 Oct');
   assert.strictEqual(m.hero, AV.fmtBig(a.assumedViews));
   const peak = AV.peakOf(a.trend);
   assert.ok(m.tip[0].includes(`the peak was ${AV.fmtBig(peak.assumedViews)} on `));
@@ -200,4 +200,18 @@ test('the advertiser’s responses never carry another advertiser, downtime or a
 
 test('nice axis maxima', () => {
   assert.strictEqual(AV.niceMax(0), 1); assert.strictEqual(AV.niceMax(6780), 10000); assert.strictEqual(AV.niceMax(3751), 5000); assert.strictEqual(AV.niceMax(1500), 2000);
+});
+
+test('table rows: the Open auction row shows its slot count and every slots hover lists each slot; type rows carry a slots hover', () => {
+  const slot = (n) => ({ playlistZone: 'Checkout loop · Tills', advertiserSlot: n, loopSlot: n, loopSlotCount: 6, playsPerWindow: 10 });
+  const dt = { id: 'queue', name: 'Queue Screen', description: 'In-queue screen.' };
+  const data = { groups: [{ displayType: dt, dealCount: 1, slots: 3, slotsAssigned: [slot(1), slot(2), slot(3)], playsWon: 1, assumedViews: 1, spend: 1, sharePercent: 100, deals: [
+    { id: 'open-auction', name: 'Open auction', dealType: 'Open auction', slots: { count: 2, assigned: [slot(4), slot(5)] }, playsWon: 1, assumedViews: 1, spend: 1 },
+  ] }] };
+  const rows = AV.tableRows(data);
+  assert.strictEqual(rows[1].slotsText, '2 slots');
+  assert.strictEqual(rows[1].slotsTip.rows.filter((r) => /^Advertiser slot/.test(r[0])).length, 2);
+  assert.match(rows[1].slotsTip.rows.find((r) => /^Advertiser slot 4/.test(r[0]))[0], /^Advertiser slot 4 \(slot 4 of 6\) · 10 plays per window$/);
+  assert.strictEqual(rows[0].slotsTip.rows.filter((r) => /^Advertiser slot/.test(r[0])).length, 3);
+  assert.ok(!JSON.stringify(rows).includes('VAC-d'));
 });
