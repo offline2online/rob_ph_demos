@@ -207,16 +207,16 @@
     { key: 'dealType', label: 'Deal type', value: function (d) { return typeRank(d.dealType); } },
     { key: 'slots', label: 'Slots', value: function (d) { return (d.slots || []).length; } },
     { key: 'advertisers', label: 'Advertisers on deal', value: function (d) { return (d.advertisers || []).length; } },
-    { key: 'fill', label: 'Fill', value: function (d) { return d.fill && d.fill.percent != null ? d.fill.percent : null; } },
-    { key: 'pacing', label: 'Pacing', value: function (d) { return isPg(d.dealType) && d.pacing && d.pacing.percent != null ? d.pacing.percent : null; } },
     { key: 'revenue', label: 'Revenue', num: true, value: function (d) { return d.revenue == null ? null : d.revenue; } },
-    { key: 'cpm', label: 'CPM', num: true, value: function (d) { return d.cpm && d.cpm.value != null ? d.cpm.value : null; } }
+    { key: 'cpm', label: 'CPM', num: true, value: function (d) { return d.cpm && d.cpm.value != null ? d.cpm.value : null; } },
+    { key: 'fill', label: 'Fill', value: function (d) { return d.fill && d.fill.percent != null ? d.fill.percent : null; } },
+    { key: 'pacing', label: 'Pacing', value: function (d) { return isPg(d.dealType) && d.pacing && d.pacing.percent != null ? d.pacing.percent : null; } }
   ];
   var DEFAULT_DEAL_SORT = { key: 'revenue', dir: 'desc' };
   // sort: null = default, else { key, dir: 'asc' | 'desc' }. Rows with no value in that column always sit last.
   function sortDeals(rows, sort) {
     var s = sort || DEFAULT_DEAL_SORT;
-    var col = DEAL_COLS.filter(function (c) { return c.key === s.key; })[0] || DEAL_COLS[6];
+    var col = DEAL_COLS.filter(function (c) { return c.key === s.key; })[0] || DEAL_COLS[4];
     var sign = s.dir === 'asc' ? 1 : -1;
     return rows.map(function (r, i) { return { r: r, i: i, v: col.value(r) }; }).sort(function (a, b) {
       if (a.v == null || b.v == null) return a.v == null && b.v == null ? a.i - b.i : a.v == null ? 1 : -1;
@@ -439,6 +439,12 @@
         var adv = h('span', { class: 'rd-hov', text: advertisersLabel(d) });
         if ((d.advertisers || []).length) hover(adv, function () { return advertisersTooltip(d); });
         tr.appendChild(h('td', {}, [adv]));
+        tr.appendChild(h('td', { class: 'rd-num', text: fmtMoney(d.revenue) }));
+        var cpm = h('td', { class: 'rd-num' }); var cm = cpmTooltip(d.cpm);
+        var cs = h('span', { class: 'rd-hov', text: cpmText(d.cpm) }); if (cm) hover(cs, function () { return cm; });
+        cpm.appendChild(cs);
+        if (cpmNote(d.cpm)) cpm.appendChild(h('div', { class: 'rd-sub', text: cpmNote(d.cpm) }));
+        tr.appendChild(cpm);
         var fillTd = h('td');
         if (d.fill && d.fill.percent != null) fillTd.appendChild(h('span', { class: 'rd-barcell' }, barWithPercent(d.fill.percent, 'rd-fill-bar')));
         tr.appendChild(fillTd);
@@ -450,12 +456,6 @@
           pc.appendChild(cell);
         }
         tr.appendChild(pc);
-        tr.appendChild(h('td', { class: 'rd-num', text: fmtMoney(d.revenue) }));
-        var cpm = h('td', { class: 'rd-num' }); var cm = cpmTooltip(d.cpm);
-        var cs = h('span', { class: 'rd-hov', text: cpmText(d.cpm) }); if (cm) hover(cs, function () { return cm; });
-        cpm.appendChild(cs);
-        if (cpmNote(d.cpm)) cpm.appendChild(h('div', { class: 'rd-sub', text: cpmNote(d.cpm) }));
-        tr.appendChild(cpm);
         tbody.appendChild(tr);
       });
       deals.body.appendChild(h('div', { class: 'rd-scroll' }, [h('table', { class: 'rd-table' }, [thead, tbody])]));

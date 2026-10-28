@@ -84,7 +84,7 @@ for (const width of [1163, 390]) {
       // Rows are sorted by Revenue, highest first, by default; look rows up by deal name so a sort change
       // doesn't silently re-point every assertion at a different deal.
       const money = (s) => Number(s.replace(/[^0-9.]/g, ''));
-      const revenue = rows.map((r) => money(r[6]));
+      const revenue = rows.map((r) => money(r[4]));
       assert.deepEqual(revenue, [...revenue].sort((a, b) => b - a), 'default order is Revenue, highest first');
       assert.equal(await page.getAttribute('.rd-table thead th[aria-sort="descending"] .rd-sort', 'aria-label'), 'Sort by Revenue, currently highest first');
       const idx = (name) => { const i = rows.findIndex((r) => r[0] === name); assert.ok(i >= 0, `deal ${name} listed`); return i; };
@@ -92,11 +92,11 @@ for (const width of [1163, 390]) {
       const pd = rows[idx('Dispensary screens')];
       const pa = rows[idx('Beauty endcaps')];
       assert.match(pg[3], /^\d+ advertisers?$/);
-      assert.match(pg[4], /^\d+%$/);
-      assert.match(pg[5], /^\d+% of guaranteed$/);
-      assert.equal(pd[5], '', 'pacing only on Programmatic guaranteed');
-      assert.match(pg[7], /fixed$/);
-      assert.match(pa[7], /fixed$/, 'a direct deal bills its agreed CPM');
+      assert.match(pg[6], /^\d+%$/);
+      assert.match(pg[7], /^\d+% of guaranteed$/);
+      assert.equal(pd[7], '', 'pacing only on Programmatic guaranteed');
+      assert.match(pg[5], /fixed$/);
+      assert.match(pa[5], /fixed$/, 'a direct deal bills its agreed CPM');
       assert.equal(pa[3], '1 advertiser');
       assert.match(pg[2], /^2 slots$/);
       const bar = await page.$eval('.rd-fill-bar', (e) => { const r = e.getBoundingClientRect(); return [e.offsetWidth, r.height, getComputedStyle(e).backgroundColor]; });
