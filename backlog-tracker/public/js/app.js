@@ -9592,6 +9592,25 @@ document.getElementById("team-sort")?.addEventListener("change", (e) => {
   renderTeamList();
 });
 
+// The notification bell (KB-NAV-2): in the topbar on every page. The module
+// loads when someone signs in; a ticket opened from it goes to the Staff Kanban.
+let notificationBell = null;
+onAuthStateChanged(auth, (user) => {
+  if (notificationBell) { notificationBell.destroy(); notificationBell = null; }
+  if (!user || !user.email) return;
+  import("./kanban/kanban-bell.js").then(({ mountNotificationBell }) => {
+    if (!auth.currentUser || auth.currentUser.email !== user.email) return;
+    notificationBell = mountNotificationBell({
+      db, me: normEmail(user.email), host: document.getElementById("notification-bell"),
+      openTicket: (key) => {
+        openStaffKanbanPage("", new URLSearchParams());
+        loadStaffKanban().then((k) => k.openTask(key)).catch((err) => console.warn("backlog-tracker: couldn't open", key, err));
+      },
+      onError: (err) => console.warn("backlog-tracker: notifications", err),
+    });
+  }).catch((err) => console.warn("backlog-tracker: notification bell didn't load", err));
+});
+
 // Stamp the signed-in member's own row once per browser session so Admin >
 // Users can show their last console login. Failure (no row, offline) is fine.
 onAuthStateChanged(auth, (user) => {

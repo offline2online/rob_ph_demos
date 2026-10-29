@@ -866,6 +866,7 @@ service cloud.firestore {
         && d.links is list && d.links.size() <= 50
         && d.attachments is list && d.attachments.size() <= 50
         && d.get("project", "") is string && d.get("project", "").size() <= 100
+        && (!("watchers" in d) || (d.watchers is list && d.watchers.size() <= 100))
         && isKanbanCriteria(d.get("acceptanceCriteria", []))
         && d.searchTokens is list && d.searchTokens.size() <= 600
         && d.updatedBy == callerEmail();
@@ -945,14 +946,12 @@ service cloud.firestore {
       allow create, update: if isAdmin() && isNonEmptyBoundedString(incoming().name, 80);
       allow delete: if isAdmin();
     }
-    // @mentions (KB-MOD-3): a member notifies someone else; only the person
-    // notified reads theirs, marks it read or clears it.
+    // Notifications (KB-NAV-2, KB-MOD-3): written only by the Kanban fan-out
+    // trigger (functions/kanban-notify.js, the admin SDK), never by a client.
+    // Only the person notified reads theirs, marks it read or clears it.
     match /kanbanNotifications/{noteId} {
       allow read: if signedIn() && resource.data.to == callerEmail();
-      allow create: if isEditor() && incoming().from == callerEmail()
-        && incoming().to is string && incoming().to != callerEmail()
-        && incoming().keys().hasOnly(["to", "from", "taskKey", "taskTitle", "kind", "read", "at"])
-        && incoming().read == false && incoming().at == request.time;
+      allow create: if false;
       allow update: if signedIn() && resource.data.to == callerEmail()
         && incoming().diff(resource.data).affectedKeys().hasOnly(["read"]);
       allow delete: if signedIn() && resource.data.to == callerEmail();

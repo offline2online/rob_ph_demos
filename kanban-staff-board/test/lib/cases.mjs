@@ -1069,10 +1069,27 @@ export function defineNewCases(E) {
     assert.match(await toastText(p), /Linh notified/);
     assert.doesNotMatch(await toastText(p), /Rob notified/);
     if (C) {
+      // The page writes no notification itself: the server's fan-out trigger does (functions/kanban-notify.js).
       const notes = (await E.writes(p, /^kanbanNotifications\//)).slice(writesBefore);
-      const to = notes.map((w) => w.data.to);
-      assert.ok(to.includes(E.pid("huy")) && to.includes(E.pid("linh")), `recipients ${to}`);
-      assert.ok(!to.includes(E.pid("rob")), "nothing written for the author");
+      assert.equal(notes.length, 0, "no client-side notification writes");
+      // The bell (topbar, every page): what the trigger wrote for this person, newest 30, grouped by ticket, with an unread count.
+      const me = E.pid("rob"), huy = E.pid("huy");
+      await closeTask(p);
+      await p.evaluate(({ me, huy }) => {
+        const b = globalThis.__fbStub, c = b.col("kanbanNotifications");
+        for (let i = 0; i < 150; i++) c.set(`seed${i}`, { to: me, from: huy, taskKey: i < 3 ? "PH-21" : "PH-22", taskTitle: i < 3 ? "Menu board" : "Other", kind: i === 149 ? "assigned" : "commented", read: false, at: new globalThis.__fbStubTimestamp(Date.UTC(2026, 9, 29, 0, 0, i)) });
+        b.notify();
+      }, { me, huy });
+      await sleep(300);
+      assert.match(await p.textContent("#kb-bell"), /150/, "the badge counts every unread note, not the 30 shown");
+      await press(p, "#kb-bell");
+      assert.equal(await p.$$eval(".kb-bell-item", (e) => e.length), 30, "the newest 30 show");
+      const panelText = await p.textContent(".kb-bell-panel");
+      assert.match(panelText, /assigned this to you/, `newest first: the assignment (${panelText.slice(0, 200)})`);
+      assert.ok((await p.$$eval(".kb-bell-ticket", (e) => e.length)) >= 1, "grouped by ticket");
+      await press(p, "#kb-bell-read"); await sleep(400);
+      assert.equal(await p.$eval("#kb-bell", (e) => e.textContent.replace(/\D/g, "")), "", "Mark all read clears the badge");
+      assert.equal(await p.evaluate(() => [...globalThis.__fbStub.col("kanbanNotifications").values()].filter((n) => !n.read).length), 0, "…every note, not only the visible 30");
     }
     await p.done();
   });

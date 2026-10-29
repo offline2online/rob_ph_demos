@@ -112,7 +112,7 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   release, sprint and labels already filled in, and the epic reopens when the child is created
   or cancelled. The × on a child row removes it from the epic. Epics are left out of the release report's effort figures.
 - **Rich descriptions and comments**. The description uses the same editor as Help Centre articles. The
-  comment box uses a compact version. Type `@` to mention someone, and they're notified when you save or comment. Paste,
+  comment box uses a compact version. Type `@` to mention someone, and they get a notification when you save or comment (the bell in the console topbar; Watch a ticket to follow its comments). Paste,
   drop or upload screenshots; they're downscaled and stored with the ticket. The record button captures your screen as a
   playable video (prototype only: a recording lasts for the browser session, and the real console would upload it to Storage).
 - **Task modal layout**. The panel button in the window header (or the "Details" tab) folds the details column away to

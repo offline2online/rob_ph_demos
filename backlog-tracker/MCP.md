@@ -157,8 +157,9 @@ server instructions. `test/kanban-mcp.test.js` checks both.
 | `kanban_get_task` (everything, with comments, activity, `descriptionHtml`, links in both directions and an epic's children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off) |
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
 | `kanban_release_report` (outstanding, remaining effort, per-person capacity) | `kanban_comment` (`mention` notifies people on the board's bell) |
-| | `kanban_check_criteria` (tick or untick acceptance criteria by id; see below) |
+| `kanban_list_notifications` (your notifications, unread first; only the unread ones, `limit`: "what's new for me on the board?") | `kanban_check_criteria` (tick or untick acceptance criteria by id; see below) |
 | | `kanban_attach_file` (a screenshot, image or pdf as base64; see below) |
+| | `kanban_mark_notifications_read` (`ids` or `all: true`; the open bell updates without a reload) |
 
 **Acceptance criteria — `acceptanceCriteria` and `kanban_check_criteria`.** A ticket has a checklist of up to 50 items of at most 500 characters. `kanban_create_task` and `kanban_update_task` take `acceptanceCriteria` as an array of strings or `{text, done}` (an update replaces the list, and an item whose text is unchanged keeps its id and its tick unless you give `done`; `[]` clears it). `kanban_get_task` returns `acceptanceCriteria: [{id, text, done}]` and the list and get results carry `criteriaTotal` / `criteriaDone`. `kanban_check_criteria` (`key`, `ids`, `done`) ticks or unticks items by id without resending the list, in one transaction, and returns the new counts; an unknown id is refused and nothing is written. Each add, edit, removal, tick and untick writes an activity line. More than 50 items, an empty item or one over 500 characters is refused. The board shows the checklist in the ticket's modal and "AC n/m" on the card; the card (`kanbanCards`) carries the counts only. Storage detail: the checklist is saved as strings `<id>\t<0|1>\t<text>` so `firestore.rules` can check it whole (KB-TASK-12).
 

@@ -2571,17 +2571,19 @@ the board); the code is here:
 | File | What it does |
 |---|---|
 | `public/js/kanban/kanban-page.js` | The page: board, filters, swimlanes, drag and drop, task modal, voice capture, release report, settings. Loaded by `app.js` (`loadStaffKanban`) the first time the page opens, so the Agent Board's load is unchanged |
-| `public/js/kanban/kanban-store.js` | Firestore and Storage: listeners on `kanbanCards` (open, the 300 most recently closed, the picked release; `kanbanTasks` until the cards are backfilled), the full ticket read when a modal opens, writes (each also writes the card in the same batch), the PH-n counter transaction, comments, activity, mentions, uploads, inline screenshots moved to Storage on save |
+| `public/js/kanban/kanban-store.js` | Firestore and Storage: listeners on `kanbanCards` (open, the 300 most recently closed, the picked release; `kanbanTasks` until the cards are backfilled), the full ticket read when a modal opens, writes (each also writes the card in the same batch), the PH-n counter transaction, comments, activity, the Watch toggle, uploads, inline screenshots moved to Storage on save |
+| `public/js/kanban/kanban-bell.js` | The Notifications bell in the console topbar on every page: one `limit(30)` listener ordered by `at` plus a `count()` of unread, grouped by ticket, Mark all read, click to open the ticket (loaded by `app.js` at sign-in) |
 | `public/js/kanban/kanban-core.js` | The rules shared by the page, the MCP tools and the tests: statuses, the testing hand-off, durations, search tokens and ranking, the release report, the local agent fill, and `PERSON_ALIASES` (a second sign-in address that is the same person: `rob@personalisationhub.com` → `rob@offline2online.com`) |
 | `public/js/kanban/kanban-editor.js` | The rich-text editor (the FAQ editor's toolbar, plus @mentions, screenshots, screen recording) |
 | `public/css/kanban.css` | Its styles; anything that would reach the rest of the console is scoped to `html[data-page="staff-kanban"]` |
-| `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, `/mcp/kanban/backfill` (fills `kanbanCards` from `kanbanTasks`, moves inline screenshots to Storage; idempotent, called by the board when the cards are behind), and the eleven `kanban_*` MCP tools |
+| `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, `/mcp/kanban/backfill` (fills `kanbanCards` from `kanbanTasks`, moves inline screenshots to Storage; idempotent, called by the board when the cards are behind), and the thirteen `kanban_*` MCP tools (including `kanban_list_notifications` and `kanban_mark_notifications_read`) |
+| `functions/kanban-notify.js` | The notification fan-out: triggers on `kanbanTasks` and its comments write one `kanbanNotifications` doc per recipient (assigned, testing, returned, commented, mention, closed; never to the actor), and a daily job deletes ones read more than 30 days ago |
 | `scripts/apply-person-aliases.js` | Run on every deploy: removes an alias's `consoleUsers` / `memberDirectory` rows and moves tickets, comments, mentions and Kanban settings that name it onto its owner (idempotent; `--dry` reports only) |
 | `functions/kanban-core.js` | Generated CommonJS copy of `kanban-core.js`: `node test/kanban-core-copy.mjs --write` after changing the source (`kanban-mcp.test.js` fails until you do) |
 
 Rules: `firestore.rules` → "Staff Kanban" (members write, viewers read, admins
 alone change settings and sprints, keys never reused, activity append-only,
-mentions private to their recipient) and `storage.rules` → `kanban/`.
+notifications written only by the server and private to their recipient) and `storage.rules` → `kanban/`.
 
 The voice fill uses Claude once the **`ANTHROPIC_API_KEY`** repo secret is set
 (the deploy workflow syncs it into Secret Manager, as "unset" until then). Until

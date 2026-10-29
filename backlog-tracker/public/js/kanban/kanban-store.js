@@ -11,7 +11,7 @@
 //   kanbanCounters/main                nextNumber, taken in a transaction
 //   kanbanSettings/main                field settings, tester, current release
 //   kanbanSprints/{id}                 name, start, end
-//   kanbanNotifications/{id}           @mentions, one per recipient
+//   kanbanNotifications/{id}           written by the fan-out trigger (functions/kanban-notify.js); read by kanban-bell.js
 //   memberDirectory/{email}            names and photos of every member,
 //                                      kept by functions/index.js (the full
 //                                      consoleUsers list is admin-only)
@@ -24,7 +24,7 @@
 // kanbanCards is behind kanbanTasks (before the server's backfill has run) the
 // board reads kanbanTasks, so no ticket ever disappears.
 import {
-  collection, doc, getDoc, getDocs, onSnapshot, query, where, orderBy, limit,
+  collection, doc, getDoc, getDocs, updateDoc, onSnapshot, query, where, orderBy, limit,
   serverTimestamp, writeBatch, runTransaction, increment, deleteField, getCountFromServer,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
@@ -73,6 +73,7 @@ export function taskFromDoc(id, d) {
     epic: d.epic || "",
     links: Array.isArray(d.links) ? d.links : [],
     flagged: !!d.flagged,
+    watchers: Array.isArray(d.watchers) ? d.watchers : [],
     attachments: Array.isArray(d.attachments) ? d.attachments : [],
     acceptanceCriteria: decodeCriteria(d.acceptanceCriteria),
     acTotal: Array.isArray(d.acceptanceCriteria) ? acCounts(d.acceptanceCriteria).total : Number.isInteger(d.acTotal) ? d.acTotal : 0,
@@ -97,7 +98,7 @@ export function derivedFields(t) {
 const DERIVED_FROM = ["title", "description", "labels"];
 
 // The fields of a task that are stored as they are.
-export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments", "acceptanceCriteria"];
+export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments", "acceptanceCriteria", "watchers"];
 
 // backfill: asks the server to fill kanbanCards from kanbanTasks (idempotent).
 export function createStore({ db, storage, me, backfill = null, onChange = () => {}, onError = () => {} }) {
@@ -109,7 +110,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   let boardColl = "kanbanCards"; // "kanbanTasks" while the cards are behind
   const state = {
     tasks, extra, texts, settings: normaliseSettings(null), settingsLoaded: false, sprints: [], members: [], membersLoaded: false,
-    notifications: [], ready: { open: false, closed: false }, rev: 0, doneTotal: null,
+    ready: { open: false, closed: false }, rev: 0, doneTotal: null,
   };
   const unsubs = [];
   let releaseUnsub = null, releaseWatched = "";
@@ -219,10 +220,6 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
       state.members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).filter((m) => !m.disabled);
       state.membersLoaded = true;
       changed("members");
-    }, onError));
-    unsubs.push(onSnapshot(query(collection(db, "kanbanNotifications"), where("to", "==", me), limit(100)), (snap) => {
-      state.notifications = snap.docs.map((d) => ({ id: d.id, ...d.data(), at: isoOf(d.data({ serverTimestamps: "estimate" }).at) })).sort((a, b) => b.at.localeCompare(a.at));
-      changed("notifications");
     }, onError));
   }
   function stop() { unsubs.splice(0).forEach((u) => u()); if (releaseUnsub) releaseUnsub(); releaseUnsub = null; releaseWatched = ""; }
@@ -417,7 +414,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     changed("tasks");
   }
 
-  async function addComment(key, { html, text }, notifyTo = [], title = "") {
+  async function addComment(key, { html, text }) {
     const b = writeBatch(db);
     b.set(doc(collection(db, "kanbanTasks", key, "comments")), { author: me, html, text: String(text || "").slice(0, 20000), mentions: mentionsIn(html), at: serverTimestamp() });
     b.update(doc(db, "kanbanTasks", key), { commentCount: increment(1), ...stamp() });
@@ -426,26 +423,16 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     b.set(cardDoc(key), boardColl === "kanbanCards" && tasks.has(key)
       ? { commentCount: increment(1), ...stamp() }
       : { ...cardOf({ ...cur, key }), commentCount: (cur.commentCount || 0) + 1, ...stamp() }, { merge: true });
-    notifyOps(b, notifyTo, key, title, "comment");
     await b.commit();
   }
 
-  // @mention notifications (KB-MOD-3): one doc per recipient.
-  function notifyOps(b, to, key, title, kind) {
-    for (const email of [...new Set(to)].filter((e) => e && e !== me)) {
-      b.set(doc(collection(db, "kanbanNotifications")), { to: email, from: me, taskKey: key, taskTitle: String(title || "").slice(0, 200), kind, read: false, at: serverTimestamp() });
-    }
-  }
-  async function notify(to, key, title, kind = "description") {
-    if (!to.length) return;
-    const b = writeBatch(db);
-    notifyOps(b, to, key, title, kind);
-    await b.commit();
-  }
-  async function markRead(ids) {
-    const b = writeBatch(db);
-    for (const id of ids) b.update(doc(db, "kanbanNotifications", id), { read: true });
-    await b.commit();
+  // Watch / stop watching a ticket (KB-NAV-2); the fan-out trigger reads watchers[].
+  async function setWatching(key, on) {
+    const cur = (await fetchTask(key)) || (await ensure(key));
+    const list = (cur.watchers || []).filter((x) => x !== me);
+    if (on) list.push(me);
+    await updateDoc(doc(db, "kanbanTasks", key), { watchers: list, ...stamp() });
+    if (full.has(key)) full.set(key, { ...full.get(key), watchers: list });
   }
 
   async function upload(key, blob, name) {
@@ -483,6 +470,6 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
 
   return {
     state, get, getFull, start, stop, watchRelease, fetchTask, fetchChildren, searchServer, watchComments, watchActivity,
-    createTask, updateTask, changeCriteria, deleteTask, addComment, notify, markRead, upload, externaliseImages, saveSettings, addSprint, backfill: () => (backfill ? backfill() : Promise.resolve()),
+    createTask, updateTask, changeCriteria, deleteTask, addComment, setWatching, upload, externaliseImages, saveSettings, addSprint, backfill: () => (backfill ? backfill() : Promise.resolve()),
   };
 }

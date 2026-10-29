@@ -423,7 +423,7 @@ T("TC-13", "rich description: link, @mention, screenshot, table and callout are 
   const up = await p.evaluate(() => Object.keys(globalThis.__fbStub.uploads || {}));
   assert.ok(up.some((k) => /^kanban\/PH-20\/\d+-shot\.(jpg|png)$/.test(k)), `uploaded under the ticket: ${up}`);
   const notes = await writes(p, /^kanbanNotifications\//);
-  assert.equal(notes.length, 1); assert.equal(notes[0].data.to, MINH); assert.equal(notes[0].data.from, ROB);
+  assert.equal(notes.length, 0, "the page writes no notification: the server's fan-out trigger does");
   // Re-opened, the editor shows what was saved.
   await press(p, '.kb-card[data-key="PH-20"]');
   assert.match(await p.$eval(ed, (e) => e.innerHTML), /callout-warning/);
@@ -669,11 +669,11 @@ T("KB-C1", "a viewer sees the board and changes nothing", async (prof) => {
 });
 
 const bellSeed = () => kanbanSeed({ extra: { kanbanNotifications: { n1: { to: ROB, from: HUY, taskKey: "PH-20", taskTitle: "Menu board preview shows RRP", kind: "comment", read: false, at: { $ts: Date.parse("2026-10-21T08:00:00Z") } } } } });
-T("KB-C2", "mentions bell: unread count, opening one marks it read and opens the ticket", async (prof) => {
+T("KB-C2", "notifications bell: unread count, opening one marks it read and opens the ticket", async (prof) => {
   const p = await open(prof, "#staff-kanban", { seed: bellSeed() });
   await until(async () => (await p.textContent("#kb-bell")).includes("1"), "the unread count");
   await press(p, "#kb-bell");
-  assert.match(await p.textContent("#kb-bell-panel"), /Huy mentioned you in a comment on PH-20/);
+  assert.match(await p.textContent("#kb-bell-panel"), /PH-20[\s\S]*Huy mentioned you in a comment/);
   await press(p, ".kb-bell-item");
   await p.waitForSelector("#task-backdrop:not([hidden])");
   assert.equal(await p.textContent("#task-title-h"), "PH-20");
@@ -681,7 +681,39 @@ T("KB-C2", "mentions bell: unread count, opening one marks it read and opens the
   await p.done();
 });
 
-T("KB-C2b", "the mentions bell panel stays inside the window", { on: on.phone }, async (prof) => {
+T("KB-C2c", "notifications bell: the newest 30 of 150, the badge counts them all, Mark all read clears them, and it is in the topbar of every page", async (prof) => {
+  const seed = kanbanSeed({ extra: { kanbanNotifications: Object.fromEntries(Array.from({ length: 150 }, (_, i) => [`n${i}`, { to: ROB, from: HUY, taskKey: i % 2 ? "PH-20" : "PH-21", taskTitle: i % 2 ? "Menu board preview shows RRP" : "Other", kind: i === 149 ? "assigned" : "commented", read: false, at: { $ts: Date.UTC(2026, 9, 29, 0, 0, i) } }])) } });
+  const p = await open(prof, "#staff-kanban", { seed });
+  await goAgentBoard(p);
+  assert.equal(await p.isVisible("#kb-view .kb-card"), false, "on the Agent Board, not the Kanban");
+  await until(async () => (await p.textContent("#kb-bell")).includes("150"), "the unread count, on the Agent Board");
+  await press(p, "#kb-bell");
+  assert.equal((await p.$$(".kb-bell-item")).length, 30, "the newest 30");
+  assert.match(await p.textContent(".kb-bell-item"), /Huy assigned this to you/, "newest first");
+  assert.equal((await p.$$(".kb-bell-ticket")).length, 2, "grouped by ticket");
+  await press(p, "#kb-bell-read");
+  await until(async () => !/\d/.test(await p.textContent("#kb-bell")), "Mark all read");
+  assert.equal(await p.evaluate(() => [...globalThis.__fbStub.col("kanbanNotifications").values()].filter((n) => !n.read).length), 0, "every note, not only the 30 shown");
+  await p.done();
+});
+
+T("KB-C2d", "the Watch toggle: saved at once, and implicit for the assignee", async (prof) => {
+  const p = await open(prof, "#staff-kanban");
+  await press(p, '.kb-card[data-key="PH-23"]');
+  const w = "#task-watch";
+  const implicit = await p.$eval(w, (e) => e.disabled);
+  if (!implicit) {
+    assert.equal(await p.textContent("#task-watch-label"), "Watch");
+    await press(p, w);
+    await until(async () => (await stored(p, "PH-23")).watchers?.includes(ROB), "the watcher is saved");
+    assert.equal(await p.textContent("#task-watch-label"), "Watching");
+    await press(p, w);
+    await until(async () => !(await stored(p, "PH-23")).watchers?.includes(ROB), "…and removed");
+  } else assert.equal(await p.textContent("#task-watch-label"), "Watching");
+  await p.done();
+});
+
+T("KB-C2b", "the notifications bell panel stays inside the window", { on: on.phone }, async (prof) => {
   const p = await open(prof, "#staff-kanban", { seed: bellSeed() });
   await until(async () => (await p.textContent("#kb-bell")).includes("1"), "the unread count");
   await press(p, "#kb-bell");

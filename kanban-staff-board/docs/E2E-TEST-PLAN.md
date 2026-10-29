@@ -155,7 +155,7 @@ TC-26 onwards:
 - **TC-41**: the console's Label filter lists the labels in use; the prototype's is a fixed list.
 - **TC-45d, TC-44 (server half)**: `kanban-mcp.test.js`, against the real MCP server with stubbed SDKs.
 - **TC-48**: the second session is a second page in the same browser (prototype); in the console the stored `rank` order is checked.
-- **TC-63**: the bell is console only (KB-C2, KB-C2b); the prototype shows toasts.
+- **TC-63**: the bell is console only (KB-C2, KB-C2b, KB-C2c, KB-C2d); the prototype shows toasts. Fan-out and MCP are in `backlog-tracker/test/kanban-mcp.test.js`.
 
 ### Console-only cases
 

@@ -245,7 +245,6 @@ export function mountStaffKanban(ctx) {
       for (const m of store.state.members) if (m.email !== me || !getAvatarMember(m.email)) setAvatarMember(m.email, m);
       syncDirectoryIfBehind();
     }
-    if (what === "notifications") { drawBell(); return; }
     if (pageEl.hidden) return;
     // Coalesce bursts (the first load delivers six listeners at once) into one
     // render per animation frame. A hidden tab doesn't run frames: a timer covers it.
@@ -289,41 +288,6 @@ export function mountStaffKanban(ctx) {
     if (!user) return;
     user.getIdToken().then((t) => fetch("/mcp/kanban/directory-sync", { method: "POST", headers: { "X-Firebase-ID-Token": t } })).catch(() => {});
   }
-
-  // ── Mentions bell ───────────────────────────────────────────────────────
-  // KB-MOD-3: a mention notifies the person; the bell beside + New task
-  // lists theirs, newest first, and opening one marks it read.
-  let bellOpen = false;
-  function drawBell() {
-    const btn = $("#kb-bell"), panel = $("#kb-bell-panel");
-    if (!btn) return;
-    const list = store.state.notifications;
-    const unread = list.filter((n) => !n.read).length;
-    btn.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">notifications</span>${unread ? `<span class="kb-bell-count">${unread}</span>` : ""}`;
-    btn.setAttribute("aria-label", unread ? `${unread} unread mention${unread === 1 ? "" : "s"}` : "Mentions");
-    panel.hidden = !bellOpen;
-    if (!bellOpen) return;
-    panel.style.transform = "";
-    panel.innerHTML = `<div class="kb-bell-head"><b>Mentions</b>${unread ? '<button type="button" class="link-btn" id="kb-bell-read">Mark all read</button>' : ""}</div>` + (list.slice(0, 30).map((n) => `<button type="button" class="kb-bell-item${n.read ? "" : " unread"}" data-note="${esc(n.id)}" data-key="${esc(n.taskKey)}">${avatar(n.from)}<span><b>${esc(firstName(n.from))}</b> mentioned you ${n.kind === "comment" ? "in a comment on" : "on"} <b>${esc(n.taskKey)}</b> ${esc(n.taskTitle || "")}<span class="kb-none">${esc(fmtDate(n.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</span></span></button>`).join("") || '<p class="kb-none kb-bell-empty">No mentions yet</p>');
-    // Keep the panel inside the window (on a phone the bell sits near the right edge, so its right-aligned panel ran off the left).
-    const pr = panel.getBoundingClientRect(), pad = 8;
-    const shift = pr.left < pad ? pad - pr.left : pr.right > innerWidth - pad ? innerWidth - pad - pr.right : 0;
-    if (shift) panel.style.transform = `translateX(${Math.round(shift)}px)`;
-  }
-  document.addEventListener("click", (e) => {
-    if (pageEl.hidden) return;
-    const b = e.target.closest("#kb-bell");
-    if (b) { bellOpen = !bellOpen; drawBell(); return; }
-    const item = e.target.closest(".kb-bell-item");
-    if (item) {
-      bellOpen = false; drawBell();
-      store.markRead([item.dataset.note]).catch(() => {});
-      openTaskByKey(item.dataset.key);
-      return;
-    }
-    if (e.target.closest("#kb-bell-read")) { store.markRead(store.state.notifications.filter((n) => !n.read).map((n) => n.id)).catch(() => {}); return; }
-    if (bellOpen && !e.target.closest("#kb-bell-panel")) { bellOpen = false; drawBell(); }
-  });
 
   // ── Kanban page ─────────────────────────────────────────────────────────
   function boardTasks() {
@@ -371,7 +335,6 @@ export function mountStaffKanban(ctx) {
         <div class="kb-header-actions">
           <button type="button" class="btn-ghost kb-icon-label" id="kb-report-btn"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span>Release report</button>
           ${canWrite() ? '<button type="button" class="btn-primary" id="kb-new-btn">+ New task</button>' : ""}
-          <span class="kb-bell-wrap"><button type="button" class="btn-ghost kb-settings-btn kb-bell" id="kb-bell" aria-haspopup="true" aria-label="Mentions"></button><div class="kb-bell-panel" id="kb-bell-panel" hidden></div></span>
           <button type="button" class="btn-ghost kb-settings-btn" data-route="settings" title="Kanban settings" aria-label="Kanban settings"><span class="material-symbols-outlined" aria-hidden="true">settings</span></button>
         </div>
       </div>
@@ -428,7 +391,6 @@ export function mountStaffKanban(ctx) {
 
     const nb = $("#kb-new-btn");
     if (nb) nb.addEventListener("click", () => openTask(null));
-    drawBell();
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
     let qTimer = 0;
     $("#kb-q").addEventListener("input", (e) => {
@@ -1002,6 +964,7 @@ export function mountStaffKanban(ctx) {
     } else unwatchThread();
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
     syncModalFlag();
+    syncModalWatch();
     renderForm();
     setSideCollapsed(sideCollapsed);
     syncCreateCta();
@@ -1041,6 +1004,20 @@ export function mountStaffKanban(ctx) {
     b.setAttribute("aria-pressed", String(!!draft.flagged));
     $("#task-flag-label").textContent = draft.flagged ? "Flagged" : "Flag";
     $(".kb-task-panel").classList.toggle("kb-panel-flagged", !!draft.flagged);
+  }
+  // Watch (KB-NAV-2): follow a ticket's comments and changes. Its assignee and
+  // reporter follow it already. Saved at once, not with the form.
+  function syncModalWatch() {
+    const b = $("#task-watch");
+    if (!b) return;
+    const implicit = !!draft && !draftIsNew && [draft.assignee, draft.reporter].some((x) => x && canonicalEmail(x) === canonicalEmail(me));
+    const on = implicit || (!!draft && (draft.watchers || []).includes(me));
+    b.hidden = !draft || draftIsNew;
+    b.disabled = implicit;
+    b.title = implicit ? "You're the assignee or reporter, so you follow this ticket" : on ? "Stop watching" : "Get notified about comments and changes";
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", String(on));
+    $("#task-watch-label").textContent = on ? "Watching" : "Watch";
   }
   function closeTask() {
     stopRecorder(true); unwatchThread(); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
@@ -1550,7 +1527,7 @@ export function mountStaffKanban(ctx) {
     draft.comments = [...(draft.comments || []), pending];
     const el = $("#f-comments"); if (el) el.innerHTML = commentsHTML();
     commentQ.setContents([]);
-    store.addComment(draft.key, { html, text: pending.text }, mentioned, draft.title).catch(fail);
+    store.addComment(draft.key, { html, text: pending.text }).catch(fail);
     toast(who.length ? `Comment added · ${esc(who.join(", "))} notified` : "Comment added");
     return true;
   }
@@ -1893,10 +1870,7 @@ export function mountStaffKanban(ctx) {
         await store.fetchTask(key).catch(() => {});
         toast(`<b>${esc(key)}</b> created in Backlog`);
       }
-      if (notify.length) {
-        store.notify(notify, next.key, next.title, "description").catch(() => {});
-        setTimeout(() => toast(`${esc(notify.map(firstName).join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
-      }
+      if (notify.length) setTimeout(() => toast(`${esc(notify.map(firstName).join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
     } catch (e) {
       saving = false;
       if (saveBtn) saveBtn.disabled = false;
@@ -1914,6 +1888,14 @@ export function mountStaffKanban(ctx) {
     $("#task-side-toggle").addEventListener("click", () => setSideCollapsed(!sideCollapsed));
     $("#task-form").addEventListener("click", (e) => { if (e.target.closest("#kb-side-tab")) setSideCollapsed(false); });
     $("#task-flag").addEventListener("click", () => { if (draft && canWrite()) { draft.flagged = !draft.flagged; syncModalFlag(); } });
+    $("#task-watch").addEventListener("click", () => {
+      if (!draft || draftIsNew || !canWrite()) return;
+      const on = !(draft.watchers || []).includes(me);
+      draft.watchers = on ? [...(draft.watchers || []), me] : (draft.watchers || []).filter((x) => x !== me);
+      syncModalWatch();
+      store.setWatching(draft.key, on).catch(fail);
+      toast(on ? `Watching <b>${esc(draft.key)}</b>` : `Stopped watching <b>${esc(draft.key)}</b>`);
+    });
     $("#task-close").addEventListener("click", closeTask);
     $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#task-backdrop").hidden) closeTask(); });

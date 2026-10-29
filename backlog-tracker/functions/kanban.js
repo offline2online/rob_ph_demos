@@ -522,6 +522,20 @@ function kanbanTools(h) {
     }
     return own;
   }
+  // One line per notification, the way the bell words it.
+  const describe = (n, first) => {
+    const who = first(n.from), what = `${n.taskKey}${n.taskTitle ? " " + n.taskTitle : ""}`;
+    switch (n.kind) {
+      case "assigned": return `${who} assigned ${what} to you`;
+      case "testing": return `${who} handed ${what} to you for testing`;
+      case "returned": return `${who} returned ${what} to you from testing`;
+      case "commented": return `${who} commented on ${what}`;
+      case "closed": return `${who} closed ${what}`;
+      case "mention": return `${who} mentioned you ${n.via === "comment" ? "in a comment on" : "on"} ${what}`;
+      case "comment": return `${who} mentioned you in a comment on ${what}`;
+      default: return `${who} mentioned you on ${what}`;
+    }
+  };
 
   const tools = [
     {
@@ -901,7 +915,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_comment",
-      description: "Staff Kanban: comment on a ticket, labelled with your email. Mention people by email in `mention` to notify them.",
+      description: "Staff Kanban: comment on a ticket, labelled with your email. Mention people by email in `mention` to notify them; the assignee, reporter and watchers are notified too (the board's notification trigger does it).",
       scope: "board.write",
       inputSchema: {
         type: "object",
@@ -921,10 +935,54 @@ function kanbanTools(h) {
         b.set(tasks().doc(key).collection("comments").doc(), { author: session.email, html: asHtml(text), text, mentions: mention, at: FieldValue.serverTimestamp() });
         b.update(tasks().doc(key), Object.assign({ commentCount: FieldValue.increment(1) }, stamp(session.email)));
         putCard(b, key, Object.assign({}, cur, { commentCount: (cur.commentCount || 0) + 1 }), session.email);
-        for (const to of mention) b.set(db().collection("kanbanNotifications").doc(), { to, from: session.email, taskKey: key, taskTitle: String(cur.title || "").slice(0, 200), kind: "comment", read: false, at: FieldValue.serverTimestamp() });
         await b.commit();
         await audit(session, "kanban_comment", { key, chars: text.length, mentions: mention.length });
         return textResult({ added: true, key, author: session.email, notified: mention });
+      },
+    },
+    {
+      name: "kanban_list_notifications",
+      description: "Staff Kanban: your notifications — assigned to you, handed to you for testing, comments on tickets you own or watch, @mentions, your tickets closed — unread first, newest first. Answers \"what's new for me on the board?\".",
+      scope: "board.read",
+      inputSchema: {
+        type: "object",
+        properties: { unread_only: { type: "boolean", description: "Only the unread ones." }, limit: { type: "integer", minimum: 1, maximum: 100, description: "Of your newest notifications (default 30)." } },
+        additionalProperties: false,
+      },
+      async run(args, session) {
+        const n = Math.min(args.limit || 30, 100);
+        const mine = db().collection("kanbanNotifications").where("to", "==", session.email);
+        const [snap, unread, first] = await Promise.all([mine.orderBy("at", "desc").limit(n).get(), mine.where("read", "==", false).count().get(), firstNamer()]);
+        const at = (d) => { const t = d.at; return t && t.toDate ? t.toDate().toISOString() : t || null; };
+        let list = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+        if (args.unread_only) list = list.filter((x) => !x.read);
+        list.sort((a, b) => (a.read === b.read ? 0 : a.read ? 1 : -1));
+        return textResult({
+          unreadCount: unread.data().count, returned: list.length,
+          notifications: list.map((x) => ({ id: x.id, read: !!x.read, kind: x.kind, via: x.via || null, key: x.taskKey, title: x.taskTitle || "", from: x.from || null, fromName: first(x.from), at: at(x), message: describe(x, first) })),
+        });
+      },
+    },
+    {
+      name: "kanban_mark_notifications_read",
+      description: "Staff Kanban: mark your notifications read — pass `ids` (from kanban_list_notifications) or `all: true`. The bell on the open board updates without a reload.",
+      scope: "board.write",
+      inputSchema: { type: "object", properties: { ids: { type: "array", items: { type: "string" }, maxItems: 100 }, all: { type: "boolean" } }, additionalProperties: false },
+      async run(args, session) {
+        if (!args.all && !(args.ids && args.ids.length)) return toolError("Pass ids, or all: true.");
+        const col = db().collection("kanbanNotifications");
+        let refs;
+        if (args.all) refs = (await col.where("to", "==", session.email).where("read", "==", false).limit(450).get()).docs.map((d) => d.ref);
+        else {
+          const snaps = await Promise.all([...new Set(args.ids.map(String))].map((id) => col.doc(id).get()));
+          refs = snaps.filter((x) => x.exists && x.data().to === session.email && !x.data().read).map((x) => x.ref);
+        }
+        const b = db().batch();
+        refs.forEach((r) => b.update(r, { read: true }));
+        if (refs.length) await b.commit();
+        await audit(session, "kanban_mark_notifications_read", { count: refs.length, all: !!args.all });
+        const unread = await col.where("to", "==", session.email).where("read", "==", false).count().get();
+        return textResult({ marked: refs.length, unreadCount: unread.data().count });
       },
     },
   ];

@@ -97,9 +97,9 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     execFileSync(process.execPath, [path.join(__dirname, "kanban-core-copy.mjs")], { stdio: "pipe" });
   });
 
-  await test("the thirteen kanban_* tools are registered, reads as board.read", async () => {
+  await test("the fifteen kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_flag_task", "kanban_get_task", "kanban_list_people", "kanban_list_tasks", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list|get|search|release)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
@@ -283,8 +283,8 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const r = await tool(sam, "kanban_comment", { key: "PH-1", text: "Fix in review.", mention: [HUY, "nobody@example.com", SAM] });
     assert.deepStrictEqual(r.json.notified, [HUY]);
     assert.strictEqual(task("PH-1").commentCount, 1);
-    const notes = [...env.store.col("kanbanNotifications").values()];
-    assert.strictEqual(notes.length, 1); assert.strictEqual(notes[0].to, HUY); assert.strictEqual(notes[0].from, SAM); assert.strictEqual(notes[0].read, false);
+    // The tool no longer writes notifications: the Firestore trigger (kanban-notify.js) does, for every path.
+    assert.strictEqual(env.store.col("kanbanNotifications").size, 0);
     const got = await tool(sam, "kanban_get_task", { key: "PH-1" });
     assert.strictEqual(got.json.comments[0].text, "Fix in review.");
     assert.strictEqual(got.json.assigneeName, "Huy");
@@ -764,6 +764,93 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     lim.set(SAM, { windowStart: Date.now() - 3700000, count: 60 });
     const again = await attach(sam, { name: "again.png", data: pngBytes(5).toString("base64") });
     assert.ok(!again.isError, "a new hour starts a new allowance: " + again.text);
+  });
+
+
+  // ── Notifications (KB-NAV-2): the fan-out, and the two MCP tools ──────────
+  const notify = require("../functions/kanban-notify");
+  const snap = (d) => ({ exists: d != null, data: () => d });
+  const ev = (id, key, before, after) => ({ id, params: { key }, data: { before: snap(before), after: snap(after) } });
+  const notesFor = (to) => [...env.store.col("kanbanNotifications").values()].filter((n) => n.to === to);
+  const base = { title: "Sweep is broken", status: "in-progress", assignee: HUY, reporter: ROB, updatedBy: ROB, mentions: [], watchers: [] };
+
+  await test("fan-out: assigned goes to the assignee, never to the person who acted", async () => {
+    env.store.col("kanbanNotifications").clear();
+    await notify.taskWritten(ev("e1", "PH-50", null, { ...base, createdBy: ROB }));
+    assert.strictEqual(notesFor(HUY).length, 1); assert.strictEqual(notesFor(HUY)[0].kind, "assigned"); assert.strictEqual(notesFor(HUY)[0].from, ROB);
+    assert.strictEqual(notesFor(ROB).length, 0, "Rob acted, so he is told nothing");
+    await notify.taskWritten(ev("e2", "PH-50", { ...base }, { ...base, assignee: SAM }));
+    assert.strictEqual(notesFor(SAM)[0].kind, "assigned");
+  });
+
+  await test("fan-out: a retried delivery writes nothing twice", async () => {
+    env.store.col("kanbanNotifications").clear();
+    const e = ev("e3", "PH-50", { ...base }, { ...base, assignee: SAM });
+    await notify.taskWritten(e); await notify.taskWritten(e);
+    assert.strictEqual(notesFor(SAM).length, 1);
+  });
+
+  await test("fan-out: Ready for Testing hands it to the tester, and sending it back returns it", async () => {
+    env.store.col("kanbanNotifications").clear();
+    await notify.taskWritten(ev("e4", "PH-50", { ...base, assignee: HUY }, { ...base, assignee: ROB, previousAssignee: HUY, status: "ready-for-testing", updatedBy: HUY }));
+    assert.strictEqual(notesFor(ROB)[0].kind, "testing");
+    await notify.taskWritten(ev("e5", "PH-50", { ...base, assignee: ROB, previousAssignee: HUY, status: "ready-for-testing" }, { ...base, assignee: HUY, previousAssignee: HUY, status: "in-progress", updatedBy: ROB }));
+    assert.strictEqual(notesFor(HUY)[0].kind, "returned");
+  });
+
+  await test("fan-out: a description @mention notifies once, and wins over assigned", async () => {
+    env.store.col("kanbanNotifications").clear();
+    await notify.taskWritten(ev("e6", "PH-50", { ...base, assignee: "" }, { ...base, assignee: HUY, mentions: [HUY, SAM] }));
+    assert.deepStrictEqual(notesFor(HUY).map((n) => [n.kind, n.via]), [["mention", "description"]]);
+    assert.deepStrictEqual(notesFor(SAM).map((n) => [n.kind, n.via]), [["mention", "description"]]);
+    await notify.taskWritten(ev("e7", "PH-50", { ...base, mentions: [HUY] }, { ...base, mentions: [HUY], title: "Renamed" }));
+    assert.strictEqual(notesFor(HUY).length, 1, "an old mention is not repeated by an unrelated edit");
+  });
+
+  await test("fan-out: closing someone else's ticket tells its assignee and reporter, not the closer", async () => {
+    env.store.col("kanbanNotifications").clear();
+    await notify.taskWritten(ev("e8", "PH-50", { ...base }, { ...base, status: "done", updatedBy: SAM }));
+    assert.deepStrictEqual([HUY, ROB].map((e) => notesFor(e).map((n) => n.kind)), [["closed"], ["closed"]]);
+    assert.strictEqual(notesFor(SAM).length, 0);
+  });
+
+  await test("fan-out: a comment tells the assignee, reporter and watchers, not its author", async () => {
+    env.store.col("kanbanNotifications").clear();
+    env.store.col("kanbanTasks").set("PH-51", { ...base, watchers: [KIT] });
+    const c = { author: HUY, mentions: [SAM] };
+    await notify.commentCreated({ id: "c1", params: { key: "PH-51" }, data: { data: () => c } });
+    assert.deepStrictEqual(notesFor(ROB).map((n) => n.kind), ["commented"], "the reporter");
+    assert.deepStrictEqual(notesFor(KIT).map((n) => n.kind), ["commented"], "a watcher");
+    assert.deepStrictEqual(notesFor(SAM).map((n) => [n.kind, n.via]), [["mention", "comment"]]);
+    assert.strictEqual(notesFor(HUY).length, 0, "the commenter is told nothing");
+  });
+
+  await test("kanban_list_notifications / kanban_mark_notifications_read: unread first, only your own, count follows", async () => {
+    env.store.col("kanbanNotifications").clear();
+    const col = env.store.col("kanbanNotifications");
+    for (let i = 0; i < 150; i++) col.set(`n${i}`, { to: SAM, from: HUY, taskKey: "PH-1", taskTitle: "Sweep", kind: "commented", read: i === 149, at: new Date(Date.UTC(2026, 9, 29, 0, 0, i)) });
+    col.set("other", { to: ROB, from: HUY, taskKey: "PH-1", taskTitle: "Sweep", kind: "assigned", read: false, at: new Date() });
+    const l = await tool1(sam, "kanban_list_notifications", {});
+    assert.strictEqual(l.json.unreadCount, 149); assert.strictEqual(l.json.returned, 30);
+    assert.ok(l.json.notifications.every((n) => n.id !== "other"));
+    assert.strictEqual(l.json.notifications[0].read, false, "unread first");
+    assert.match(l.json.notifications[0].message, /Huy commented on PH-1 Sweep/);
+    const u = await tool1(sam, "kanban_list_notifications", { unread_only: true, limit: 5 });
+    assert.ok(u.json.notifications.length <= 5 && u.json.notifications.every((n) => !n.read));
+    const some = await tool1(sam, "kanban_mark_notifications_read", { ids: ["n0", "other"] });
+    assert.strictEqual(some.json.marked, 1, "someone else's is left alone"); assert.strictEqual(col.get("other").read, false);
+    const all = await tool1(sam, "kanban_mark_notifications_read", { all: true });
+    assert.strictEqual(all.json.unreadCount, 0);
+    assert.ok((await tool1(sam, "kanban_mark_notifications_read", {})).isError);
+    assert.ok((await tool1(kit, "kanban_mark_notifications_read", { all: true })).isError, "a viewer cannot write");
+  });
+
+  await test("pruneReadNotifications: read ones older than 30 days go, unread ones stay", async () => {
+    const col = env.store.col("kanbanNotifications"); col.clear();
+    const old = new Date(Date.now() - 40 * 86400000), recent = new Date(Date.now() - 5 * 86400000);
+    col.set("a", { to: SAM, read: true, at: old }); col.set("b", { to: SAM, read: false, at: old }); col.set("c", { to: SAM, read: true, at: recent });
+    assert.strictEqual(await notify.pruneReadNotifications(), 1);
+    assert.deepStrictEqual([...col.keys()].sort(), ["b", "c"]);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

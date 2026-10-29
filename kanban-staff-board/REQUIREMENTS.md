@@ -55,9 +55,11 @@ Build, Publish, Search, Profile). Route `#staff-kanban`, with
 `#staff-kanban/report?…` and `#staff-kanban/settings`.
 
 **KB-NAV-2** The Staff Kanban page header holds the title, task count, search
-box, **Release report**, **+ New task**, the mentions bell and a settings cog (no ⋮ menu). AC: the
+box, **Release report**, **+ New task**, and a settings cog (no ⋮ menu). AC: the
 cog opens Kanban settings; Release report opens the report for the board's
 selected release.
+
+**Notifications (bell).** The console topbar carries a **Notifications** bell on every page, not only the Kanban. One notification per recipient, never to the person who acted, for: assigned to you (create, edit, drag, `kanban_assign_task`, MCP create); handed to you for testing, and returned to you from testing; a comment on a ticket you are assignee or reporter of, or watching; an @mention in a description or comment (wins over the other reason); your ticket closed (Completed or Withdrawn) by someone else. The ticket modal has a **Watch** toggle (`watchers[]`); the assignee and reporter watch automatically. The bell groups by ticket, shows an unread count and **Mark all read**, and a click opens the ticket. Cost per member is flat: one `limit(30)` listener ordered by `at` descending plus a `count()` of unread. The notifications are written by a Firestore trigger on `kanbanTasks` and its comments (`functions/kanban-notify.js`), so the board, MCP and voice paths notify the same way and no client writes one; a daily job deletes read notifications older than 30 days.
 
 ## 4. Board
 
@@ -223,7 +225,7 @@ prototype does.
 toolbar (Quill 1.3.7): headings H1–H4, bold/italic/underline/strike,
 alignment, lists, quote, inline code, code block, Note/Important/Warning
 callouts, link, image (with alt text), video, tables with row/column controls,
-clear formatting. Plus: **@mentions** of staff (notified on save), **URLs that
+clear formatting. Plus: **@mentions** of staff (notified when the ticket or comment is saved, by the notification trigger), **URLs that
 link themselves**, **screenshots** (upload, paste or drop; downscaled to ≤1400 px and held in
 Storage, the description carrying their download URL — never a `data:` URI, so
 a ticket doesn't fill its size limit and no listener downloads a picture), and
@@ -320,6 +322,7 @@ server, attributed to the calling member: `kanban_list_tasks` (filters as on
 the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,
 `kanban_move_task` (status + resolution; applies the testing hand-off),
 `kanban_assign_task`, `kanban_comment`, `kanban_flag_task`,
+`kanban_list_notifications` (unread first; `unread_only`, `limit`), `kanban_mark_notifications_read` (`ids` or `all`),
 `kanban_search_tickets`, `kanban_release_report`, `kanban_check_criteria` (tick or
 untick acceptance criteria by id, KB-TASK-12), `kanban_attach_file` (a
 screenshot, image or pdf as base64, at most 5 MB decoded, stored under
@@ -346,13 +349,13 @@ stored by lowercased email; release ids are the console's `releases` ids.
 | Collection | Shape |
 |---|---|
 | `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
-| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
+| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
 | `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at` |
 | `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, reassignments, flags); append-only |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |
 | `kanbanSettings/main` | `fields {key: {show, required}}`, `tester`, `currentRelease`, `releaseDates {releaseId: date}`, `labels[]`, `firstNames {email: name}`, `updatedAt/By` |
 | `kanbanSprints/{id}` | `name`, `start`, `end` |
-| `kanbanNotifications/{id}` | `to`, `from`, `taskKey`, `taskTitle`, `kind` (description/comment), `read`, `at` |
+| `kanbanNotifications/{id}` | `to`, `from`, `taskKey`, `taskTitle`, `kind` (assigned/testing/returned/commented/mention/closed), `via` (description/comment, for a mention), `read`, `at`; written only by the trigger, named from the event id so a retry writes nothing twice; the person notified may mark read or delete theirs. Indexes: `to`+`at` desc, `read`+`at` |
 | `memberDirectory/{email}` | `email`, `displayName`, `photoUrl`, `photoUpdatedAt`, `disabled` (server-written) |
 | Storage `kanban/{PH-n or new}/…` | screenshots, recordings, attachments |
 

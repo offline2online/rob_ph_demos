@@ -74,6 +74,11 @@ function docRef(store, collection, id) {
       store.col(collection).set(id, applyWrite(store.col(collection).get(id), data, true));
     },
     async delete() { store.col(collection).delete(id); },
+    // create() refuses a document that exists, as Firestore's does (code 6, ALREADY_EXISTS).
+    async create(data) {
+      if (store.col(collection).has(id)) throw Object.assign(new Error(`6 ALREADY_EXISTS: ${collection}/${id}`), { code: 6 });
+      store.col(collection).set(id, applyWrite(undefined, data, false));
+    },
     // A subcollection is just another stub collection under a path-shaped name.
     collection: (sub) => collectionRef(store, `${collection}/${id}/${sub}`),
   };
@@ -95,6 +100,7 @@ function query(store, collection, filters = [], limit = null, order = null) {
         rows = rows.filter(([, d]) => {
           const v = d[f.field];
           if (f.op === "==") return v === f.value;
+          if (f.op === "<") return v != null && v < f.value;
           if (f.op === "array-contains") return Array.isArray(v) && v.includes(f.value);
           throw new Error(`stub: unsupported operator ${f.op}`);
         });
