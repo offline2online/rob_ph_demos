@@ -297,6 +297,45 @@ function kanbanTools(h) {
     return null;
   }
 
+  // Everything a write names that must exist, checked together so an agent
+  // sees every problem at once: people are console members, a release is an
+  // id, name or version of a real one (v.release is rewritten to its id),
+  // the epic is an epic. Returns the messages.
+  async function checkRefs(v, selfKey, session) {
+    const errs = [];
+    const named = ["assignee", "reporter"].filter((k) => v[k]);
+    if (named.length) {
+      const members = new Set((await people(session)).map((p) => p.email));
+      for (const k of named) if (!members.has(v[k])) errs.push(`${k} ${v[k]} isn't a member of the console; kanban_list_people lists who's who`);
+    }
+    if (v.release) {
+      const rel = (await db().collection("releases").get()).docs;
+      const want = String(v.release).trim().toLowerCase();
+      const hit = rel.find((d) => d.id === v.release) || rel.find((d) => [d.data().name, d.data().version].some((x) => x != null && String(x).trim().toLowerCase() === want));
+      if (hit) v.release = hit.id; else errs.push(`release ${v.release} isn't a release (an id, name or version; kanban_list_people lists them)`);
+    }
+    const e = await checkEpic(v.epic, selfKey);
+    if (e) errs.push(e);
+    return errs;
+  }
+  // The other end of each typed link, as the board reads it (KB-TASK-5):
+  // links are stored on the ticket they were added to, and shown on both.
+  const INVERSE_LINK = { blocks: "is blocked by", "is blocked by": "blocks", "relates to": "relates to", duplicates: "is duplicated by", "is duplicated by": "duplicates" };
+  async function linksFor(t) {
+    const own = (t.links || []).map((l) => ({ type: l.type, key: l.key }));
+    const seen = new Set(own.map((l) => `${l.type}|${l.key}`));
+    const all = await tasks().get();
+    for (const d of all.docs) {
+      if (d.id === t.key) continue;
+      for (const l of (d.data().links || [])) {
+        if (l.key !== t.key || !INVERSE_LINK[l.type]) continue;
+        const inv = { type: INVERSE_LINK[l.type], key: d.id };
+        if (!seen.has(`${inv.type}|${inv.key}`)) { seen.add(`${inv.type}|${inv.key}`); own.push(Object.assign(inv, { from: "inverse" })); }
+      }
+    }
+    return own;
+  }
+
   const tools = [
     {
       name: "kanban_list_people",
@@ -316,7 +355,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_list_tasks",
-      description: "Staff Kanban: tickets matching the board's filters (summaries; kanban_get_task for one in full). Without a release it covers every open ticket and the 300 most recently closed.",
+      description: "Staff Kanban: tickets matching the board's filters (summaries; kanban_get_task for one in full). Without a release or status it covers every open ticket; a release adds its closed ones, and status done / done:completed / done:withdrawn adds the 300 most recently closed.",
       scope: "board.read",
       inputSchema: {
         type: "object",
@@ -341,7 +380,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_get_task",
-      description: "Staff Kanban: one ticket in full — description, every field, links, attachments, comments and the activity log.",
+      description: "Staff Kanban: one ticket in full — description (plain text and descriptionHtml), every field, links (both directions: blocks / is blocked by, relates to, duplicates / is duplicated by), attachments, comments and the activity log.",
       scope: "board.read",
       inputSchema: { type: "object", properties: { key: KEY }, required: ["key"], additionalProperties: false },
       async run(args) {
@@ -352,8 +391,8 @@ function kanbanTools(h) {
         const iso = (v) => (v && v.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : v || null);
         const kids = t.type === "epic" ? (await tasks().where("epic", "==", key).get()).docs.map((d) => ({ key: d.id, title: d.data().title, status: core.statusLabel(d.data().status, d.data().resolution) })) : undefined;
         return textResult(Object.assign(summary(t, first), {
-          description: t.descriptionText || core.htmlToText(t.description || ""), reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
-          links: t.links || [], attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null })),
+          description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
+          links: await linksFor(t), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null })),
           children: kids, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
           comments: cs.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((c) => ({ author: c.author, at: iso(c.at), text: c.text })),
           activity: act.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((a) => ({ who: a.who, at: iso(a.at), text: a.text })),
@@ -405,10 +444,9 @@ function kanbanTools(h) {
       async run(args, session) {
         args = resolveMe(args, session);
         const { value: v, errors } = core.cleanTaskFields(args);
-        if (errors.length) return toolError(errors.join("; "));
         if (v.type === "epic") v.epic = "";
-        const epicErr = await checkEpic(v.epic, null);
-        if (epicErr) return toolError(epicErr);
+        errors.push(...await checkRefs(v, null, session));
+        if (errors.length) return toolError(errors.join("; "));
         const s = await settings();
         const counterRef = db().collection("kanbanCounters").doc("main");
         const backlog = await tasks().where("status", "==", "backlog").get();
@@ -450,14 +488,14 @@ function kanbanTools(h) {
         const input = resolveMe(args, session); delete input.key;
         if (!Object.keys(input).length) return toolError("Nothing to change.");
         const { value: v, errors } = core.cleanTaskFields(input, { partial: true });
-        if (errors.length) return toolError(errors.join("; "));
         if ("description" in v) v.description = asHtml(v.description);
         const type = v.type || cur.type;
         if (type === "epic") v.epic = "";
-        if (v.epic) { const e = await checkEpic(v.epic, key); if (e) return toolError(e); }
+        errors.push(...await checkRefs(v, key, session));
+        if (errors.length) return toolError(errors.join("; "));
         const first = await firstNamer();
         const lines = [];
-        if ("assignee" in v && v.assignee !== (cur.assignee || "")) lines.push(`reassigned ${first(cur.assignee)} → ${first(v.assignee)}`);
+        if ("assignee" in v && v.assignee !== core.canonicalEmail(cur.assignee || "")) lines.push(`reassigned ${first(cur.assignee)} → ${first(v.assignee)}`);
         if ("flagged" in v && v.flagged !== !!cur.flagged) lines.push(v.flagged ? "flagged this ticket" : "removed the flag");
         if (!lines.length) lines.push(`updated ${Object.keys(v).join(", ")} over MCP`);
         const next = Object.assign({}, cur, v);
@@ -514,11 +552,13 @@ function kanbanTools(h) {
         if (!cur) return toolError(`No ticket ${args.key}.`);
         const { value: v, errors } = core.cleanTaskFields({ assignee: meOr(args.assignee, session) }, { partial: true });
         if (errors.length) return toolError(errors.join("; "));
-        if (v.assignee && !(await people(session)).some((p) => p.email === v.assignee)) return toolError(`${v.assignee} isn't a member of the console.`);
+        const refErrs = await checkRefs(v, null, session);
+        if (refErrs.length) return toolError(refErrs.join("; "));
         const first = await firstNamer();
+        const same = first(cur.assignee) === first(v.assignee) && core.canonicalEmail(cur.assignee) === v.assignee;
         const b = db().batch();
         b.update(tasks().doc(key), Object.assign({ assignee: v.assignee, previousAssignee: "" }, stamp(session.email)));
-        activity(b, key, session.email, [`reassigned ${first(cur.assignee)} → ${first(v.assignee)}`]);
+        if (!same) activity(b, key, session.email, [`reassigned ${first(cur.assignee)} → ${first(v.assignee)}`]);
         await b.commit();
         await audit(session, "kanban_assign_task", { key, assignee: v.assignee });
         return textResult({ assigned: true, key, assignee: v.assignee || null });

@@ -269,6 +269,17 @@ the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,
 `kanban_assign_task`, `kanban_comment`, `kanban_flag_task`,
 `kanban_search_tickets`, `kanban_release_report`. Viewers get read tools only.
 Staff can add and move tasks verbally through their agent.
+Writes (`kanban_create_task`, `kanban_update_task`, `kanban_assign_task`)
+refuse what the board can't show and report every problem in one error: an
+assignee or reporter who isn't a console member (an alias folds to its owner,
+KB-PPL-3), a release that isn't one (an id, name or version is accepted and
+saved as the id), an epic that isn't an epic, a bad due date or estimate.
+`kanban_list_tasks` with no release or status covers open tickets; a release
+adds its closed ones, and status `done` the 300 most recently closed.
+`kanban_get_task` returns the description as text and as `descriptionHtml`, and
+links in both directions (blocks / is blocked by, relates to, duplicates / is
+duplicated by; KB-TASK-5, TC-39). A reassignment that leaves the same person
+is not logged.
 
 ## 12. Data model (production)
 

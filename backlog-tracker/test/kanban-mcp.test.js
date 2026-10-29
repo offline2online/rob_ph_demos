@@ -383,6 +383,72 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.match(sent.system, /speaker/);
   });
 
+  // ── references, links and descriptions an agent relies on ─────────────
+  await test("a non-member assignee or reporter is refused; an alias folds to its owner", async () => {
+    const bad = await tool(sam, "kanban_create_task", { title: "Nobody", assignee: "nobody@example.com" });
+    assert.ok(bad.isError); assert.match(bad.text, /nobody@example\.com isn't a member.*kanban_list_people/);
+    const rep = await tool(sam, "kanban_update_task", { key: "PH-1", reporter: "nobody@example.com" });
+    assert.ok(rep.isError); assert.match(rep.text, /reporter nobody@example\.com isn't a member/);
+    const as = await tool(sam, "kanban_assign_task", { key: "PH-1", assignee: "nobody@example.com" });
+    assert.ok(as.isError); assert.match(as.text, /isn't a member.*kanban_list_people/);
+    const ok = await tool(sam, "kanban_create_task", { title: "Alias owner", assignee: "rob@personalisationhub.com" });
+    assert.ok(!ok.isError, ok.text); assert.strictEqual(task(ok.json.key).assignee, ROB);
+  });
+  await test("a release must exist; an id, name or version all find it", async () => {
+    env.store.col("releases").set("rDSP", { name: "DSP Integration", version: "5.0", status: "draft", order: 2 });
+    const bad = await tool(sam, "kanban_create_task", { title: "No such release", release: "not-a-release" });
+    assert.ok(bad.isError); assert.match(bad.text, /release not-a-release isn't a release/);
+    const upd = await tool(sam, "kanban_update_task", { key: "PH-1", release: "not-a-release" });
+    assert.ok(upd.isError);
+    for (const r of ["rDSP", "DSP Integration", "dsp integration", "5.0"]) {
+      const ok = await tool(sam, "kanban_create_task", { title: `Release ${r}`, release: r });
+      assert.ok(!ok.isError, ok.text); assert.strictEqual(task(ok.json.key).release, "rDSP", r);
+    }
+    const up = await tool(sam, "kanban_update_task", { key: "PH-1", release: "PH 4.12" });
+    assert.ok(!up.isError, up.text); assert.strictEqual(task("PH-1").release, "r412");
+  });
+  await test("every problem in one error: bad due, bad estimate, unknown epic, non-member, unknown release", async () => {
+    const r = await tool(sam, "kanban_create_task", { title: "All wrong", due: "tomorrow", estimate: "lots", epic: "PH-999999", assignee: "nobody@example.com", release: "nope" });
+    assert.ok(r.isError);
+    for (const re of [/due must be YYYY-MM-DD/, /estimate must be/, /PH-999999 is not an epic/, /isn't a member/, /isn't a release/]) assert.match(r.text, re);
+  });
+  await test("kanban_list_tasks: no status covers open tickets only, as its description says", async () => {
+    const desc = mcp.__test.TOOLS.find((x) => x.name === "kanban_list_tasks").description;
+    assert.match(desc, /every open ticket/); assert.doesNotMatch(desc, /Without a release it covers every open ticket and the 300/);
+    const made = await tool(sam, "kanban_create_task", { title: "Closed for list" });
+    await tool(sam, "kanban_move_task", { key: made.json.key, status: "done", resolution: "completed" });
+    const open = await tool(sam, "kanban_list_tasks", {});
+    assert.ok(!open.json.tasks.some((t) => t.key === made.json.key));
+    const done = await tool(sam, "kanban_list_tasks", { status: "done" });
+    assert.ok(done.json.tasks.some((t) => t.key === made.json.key));
+  });
+  await test("TC-39 links show on both tickets with the reverse type", async () => {
+    const a = (await tool(sam, "kanban_create_task", { title: "Link A" })).json.key;
+    const b = (await tool(sam, "kanban_create_task", { title: "Link B" })).json.key;
+    const c = (await tool(sam, "kanban_create_task", { title: "Link C", links: [{ type: "duplicates", key: a }, { type: "relates to", key: b }] })).json.key;
+    await tool(sam, "kanban_update_task", { key: a, links: [{ type: "blocks", key: b }] });
+    const gb = await tool(sam, "kanban_get_task", { key: b });
+    assert.ok(gb.json.links.some((l) => l.type === "is blocked by" && l.key === a), JSON.stringify(gb.json.links));
+    assert.ok(gb.json.links.some((l) => l.type === "relates to" && l.key === c));
+    const ga = await tool(sam, "kanban_get_task", { key: a });
+    assert.ok(ga.json.links.some((l) => l.type === "blocks" && l.key === b));
+    assert.ok(ga.json.links.some((l) => l.type === "is duplicated by" && l.key === c));
+    assert.strictEqual(task(b).links === undefined || task(b).links.length === 0, true, "stored on one ticket only");
+  });
+  await test("kanban_get_task returns descriptionHtml beside the text", async () => {
+    const k = (await tool(sam, "kanban_create_task", { title: "Rich", description: '<h2>Heading</h2><p>See <a href="https://example.com/x">the page</a></p>' })).json.key;
+    const g = await tool(sam, "kanban_get_task", { key: k });
+    assert.match(g.json.descriptionHtml, /<h2>Heading<\/h2>.*href="https:\/\/example\.com\/x"/);
+    assert.match(g.json.description, /Heading/); assert.doesNotMatch(g.json.description, /<h2>/);
+  });
+  await test("assigning to the same person, or an alias of them, logs no reassignment", async () => {
+    const k = (await tool(sam, "kanban_create_task", { title: "Same owner", assignee: ROB })).json.key;
+    await tool(sam, "kanban_assign_task", { key: k, assignee: "rob@personalisationhub.com" });
+    await tool(sam, "kanban_update_task", { key: k, assignee: "rob@personalisationhub.com" });
+    assert.ok(!activity(k).some((t) => /reassigned/.test(t)), activity(k).join(" | "));
+    assert.strictEqual(task(k).assignee, ROB);
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   if (failures.length) { for (const [n, e] of failures) console.log(`\n--- ${n}\n${e && e.stack}`); process.exit(1); }
 })().catch((e) => { console.error(e); process.exit(1); });
