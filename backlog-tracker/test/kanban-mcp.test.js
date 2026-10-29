@@ -101,10 +101,10 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     execFileSync(process.execPath, [path.join(__dirname, "kanban-core-copy.mjs")], { stdio: "pipe" });
   });
 
-  await test("the fifteen kanban_* tools are registered, reads as board.read", async () => {
+  await test("the nineteen kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
-    for (const x of t) assert.strictEqual(x.scope, /^kanban_(list|get|search|release)/.test(x.name) ? "board.read" : "board.write", x.name);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_create_tasks", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
+    for (const x of t) assert.strictEqual(x.scope, /^kanban_(list_(?!notif)|list_notifications|get|search|release|my_work)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
   await test("every kanban_* tool description carries KANBAN_SCOPE, and the backlog side says its half", async () => {
@@ -1069,6 +1069,156 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
       assert.ok(p.json.people.some((x) => x.email === "late@personalisationhub.com"));
       env.store.col("memberDirectory").delete("late@personalisationhub.com");
     } finally { keepCaches = false; kanban.clearCaches(); }
+  });
+
+  // ── kanban_create_tasks / kanban_my_work ────────────────────────────────
+  const counter = () => env.store.col("kanbanCounters").get("main").nextNumber;
+  const rowsOf = (n, extra = {}) => Array.from({ length: n }, (_, i) => Object.assign({ title: `Bulk ${i + 1}` }, extra));
+  await test("kanban_create_tasks: 50 tickets with an epic and 10 children by ref → sequential keys, children under the epic, one counter write", async () => {
+    const before = counter();
+    const rows = [{ ref: "e1", type: "epic", title: "Bulk epic" }];
+    for (let i = 0; i < 10; i++) rows.push({ title: `Child ${i + 1}`, epic: "e1", assignee: HUY, acceptanceCriteria: ["Works", { text: "Tested", done: true }], project: "staff kanban", labels: ["Bulk"] });
+    rows.push(...rowsOf(39));
+    const t0 = Date.now();
+    const r = await tool(sam, "kanban_create_tasks", { tasks: rows });
+    assert.ok(!r.isError, r.text);
+    assert.ok(Date.now() - t0 < 5000);
+    assert.strictEqual(r.json.written, 50);
+    r.json.tickets.forEach((t, n) => { assert.strictEqual(t.key, `PH-${before + n}`); assert.strictEqual(t.row, n + 1); });
+    assert.strictEqual(counter(), before + 50);
+    const epicKey = r.json.tickets[0].key;
+    assert.strictEqual(r.json.tickets[0].ref, "e1");
+    for (let i = 1; i <= 10; i++) { const t = task(r.json.tickets[i].key); assert.strictEqual(t.epic, epicKey); assert.strictEqual(t.assignee, HUY); assert.strictEqual(t.status, "backlog"); assert.strictEqual(t.acceptanceCriteria.length, 2); }
+    assert.strictEqual(task(r.json.tickets[11].key).epic, "");
+    const ranks = r.json.tickets.map((t) => task(t.key).rank);
+    ranks.forEach((x, n) => n && assert.strictEqual(x, ranks[n - 1] + 10));
+    assert.deepStrictEqual(activity(r.json.tickets[3].key), ["created this ticket over MCP (bulk upload, row 4 of 50)"]);
+    assert.ok(r.json.board.includes("staff-kanban"));
+    const row = [...env.store.col("mcpAuditLog").values()].filter((a) => a.tool === "kanban_create_tasks").pop();
+    assert.strictEqual(row.detail ? row.detail.written : row.written, 50);
+    // the notification fan-out belongs to the server trigger: the tool writes none
+    assert.strictEqual([...env.store.col("kanbanNotifications").values()].filter((n) => n.taskKey === r.json.tickets[1].key).length, 0);
+  });
+  // 100 tickets that each link to two existing ones: 7 writes each, 700 in all.
+  const linked = async () => {
+    const x = (await tool(sam, "kanban_create_task", { title: "Link target X" })).json.key, y = (await tool(sam, "kanban_create_task", { title: "Link target Y" })).json.key;
+    return rowsOf(100, { links: [{ type: "relates to", key: x }, { type: "relates to", key: y }] });
+  };
+  await test("kanban_create_tasks: a batch over 450 writes goes in several commits, none over 500", async () => {
+    const rows = await linked();
+    const sizes = []; env.store.onBatch = (n) => sizes.push(n);
+    try {
+      const r = await tool(sam, "kanban_create_tasks", { tasks: rows });
+      assert.ok(!r.isError, r.text);
+      assert.strictEqual(r.json.written, 100);
+      assert.ok(sizes.length >= 2 && sizes.every((n) => n <= 450), JSON.stringify(sizes));
+      assert.strictEqual(sizes.reduce((a, b) => a + b, 0), 700);
+      assert.strictEqual(task(rows[0].links[0].key).links.length, 100, "the other side of every link");
+    } finally { env.store.onBatch = null; }
+  });
+  await test("kanban_create_tasks: 3 bad rows → one error listing rows and fields, nothing written, counter unchanged", async () => {
+    const before = counter(), tasksBefore = env.store.col("kanbanTasks").size;
+    const rows = rowsOf(50);
+    rows[4] = { title: "Bad due", due: "tomorrow" }; rows[19] = { title: "Bad who", assignee: "nobody@example.com", estimate: "lots" }; rows[33] = { title: "Bad epic", epic: "missing-ref" };
+    const r = await tool(sam, "kanban_create_tasks", { tasks: rows });
+    assert.ok(r.isError); assert.strictEqual(r.json.created, false); assert.strictEqual(r.json.written, 0);
+    const by = (row) => r.json.problems.filter((p) => p.row === row);
+    assert.strictEqual(by(5)[0].field, "due"); assert.strictEqual(by(20).length, 2); assert.deepStrictEqual(by(20).map((p) => p.field).sort(), ["assignee", "estimate"]); assert.strictEqual(by(34)[0].field, "epic");
+    assert.deepStrictEqual([...new Set(r.json.problems.map((p) => p.row))], [5, 20, 34]);
+    assert.strictEqual(counter(), before); assert.strictEqual(env.store.col("kanbanTasks").size, tasksBefore);
+    // partial: the 47 good rows are written, the 3 reported
+    const p = await tool(sam, "kanban_create_tasks", { tasks: rows, partial: true });
+    assert.ok(!p.isError, p.text); assert.strictEqual(p.json.written, 47); assert.deepStrictEqual([...new Set(p.json.skipped.map((x) => x.row))], [5, 20, 34]);
+    assert.strictEqual(counter(), before + 47); assert.ok(!p.json.tickets.some((t) => [5, 20, 34].includes(t.row)));
+  });
+  await test("kanban_create_tasks: dryRun validates only; the counter and the allowance don't move", async () => {
+    const before = counter(), lim = JSON.stringify(env.store.col("kanbanBulkLimits").get(SAM));
+    const ok = await tool(sam, "kanban_create_tasks", { tasks: [{ ref: "a", type: "epic", title: "A" }, { title: "B", epic: "a" }], dryRun: true });
+    assert.ok(!ok.isError, ok.text); assert.strictEqual(ok.json.dryRun, true); assert.strictEqual(ok.json.valid, 2); assert.strictEqual(ok.json.written, 0);
+    assert.deepStrictEqual(ok.json.wouldUseKeys, [`PH-${before}`, `PH-${before + 1}`]);
+    const bad = await tool(sam, "kanban_create_tasks", { tasks: [{ title: "x", due: "soon" }], dryRun: true });
+    assert.ok(!bad.isError); assert.strictEqual(bad.json.problems[0].field, "due"); assert.strictEqual(bad.json.valid, 0);
+    assert.strictEqual(counter(), before); assert.strictEqual(JSON.stringify(env.store.col("kanbanBulkLimits").get(SAM)), lim);
+  });
+  await test("kanban_create_tasks: refs and epics are checked (not an epic, own epic, duplicate ref, key-shaped ref, existing epic), a failed epic row takes its children with it, over 100 refused", async () => {
+    const epic = (await tool(sam, "kanban_create_task", { title: "Existing epic", type: "epic" })).json.key;
+    const task1 = (await tool(sam, "kanban_create_task", { title: "Existing task" })).json.key;
+    const r = await tool(sam, "kanban_create_tasks", { tasks: [
+      { ref: "t", title: "Plain" }, { title: "Under plain", epic: "t" }, { ref: "self", type: "epic", title: "Self", epic: "self" },
+      { ref: "t", title: "Dup" }, { ref: "PH-9", title: "Keyish" }, { title: "Under existing", epic: epic }, { title: "Under a task", epic: task1 },
+      { ref: "bad", type: "epic", title: "Bad epic", due: "x" }, { title: "Orphan", epic: "bad" } ], partial: true });
+    assert.ok(!r.isError, r.text);
+    const rowsBad = [...new Set(r.json.skipped.map((p) => p.row))];
+    assert.deepStrictEqual(rowsBad, [2, 3, 4, 5, 7, 8, 9]);
+    assert.deepStrictEqual(r.json.tickets.map((t) => t.row), [1, 6]);
+    assert.strictEqual(task(r.json.tickets[1].key).epic, epic);
+    const many = await tool(sam, "kanban_create_tasks", { tasks: rowsOf(101) });
+    assert.ok(many.isError); assert.match(many.text, /At most 100/);
+    const none = await tool(sam, "kanban_create_tasks", { tasks: [] });
+    assert.ok(none.isError);
+    const unknown = await tool(sam, "kanban_create_tasks", { tasks: [{ title: "x", colour: "red" }], dryRun: true });
+    assert.strictEqual(unknown.json.problems[0].field, "colour");
+  });
+  await test("kanban_create_tasks: a viewer can't write; 500 tickets an hour per member, refused whole when over", async () => {
+    const v = await tool(kit, "kanban_create_tasks", { tasks: [{ title: "x" }] });
+    assert.ok(v.isError);
+    const lim = env.store.col("kanbanBulkLimits");
+    lim.set(SAM, { windowStart: Date.now() - 60000, count: 498 });
+    const before = counter();
+    const over = await tool(sam, "kanban_create_tasks", { tasks: rowsOf(3) });
+    assert.ok(over.isError); assert.match(over.text, /500 tickets an hour/); assert.match(over.text, /2 left/);
+    assert.strictEqual(counter(), before);
+    const ok = await tool(sam, "kanban_create_tasks", { tasks: rowsOf(2) });
+    assert.ok(!ok.isError, ok.text); assert.strictEqual(lim.get(SAM).count, 500);
+    lim.set(SAM, { windowStart: Date.now() - 3700000, count: 500 });
+    const again = await tool(sam, "kanban_create_tasks", { tasks: rowsOf(1) });
+    assert.ok(!again.isError, again.text);
+  });
+  await test("kanban_create_tasks: a write that fails part-way says exactly which keys were written", async () => {
+    const rows = await linked();
+    const orig = env.store.onBatch; let n = 0;
+    env.store.onBatch = () => { if (++n === 2) throw new Error("UNAVAILABLE: boom"); };
+    try {
+      const before = counter();
+      const r = await tool1(sam, "kanban_create_tasks", { tasks: rows });
+      assert.ok(r.isError); assert.strictEqual(r.json.created, false);
+      assert.ok(r.json.writtenKeys.length > 0 && r.json.writtenKeys.length < 100);
+      assert.strictEqual(r.json.writtenKeys.length + r.json.notWritten.length, 100);
+      for (const k of r.json.writtenKeys) assert.ok(task(k), k);
+      for (const x of r.json.notWritten) assert.ok(!task(x.key), x.key);
+      assert.strictEqual(r.json.writtenKeys[0], `PH-${before}`);
+    } finally { env.store.onBatch = orig; }
+  });
+  await test("kanban_my_work: only the caller's open tickets, grouped by column, overdue / due this week / flagged, unread count", async () => {
+    const huy = await connect(HUY);
+    const day = (d) => { const x = new Date(Date.now() + d * 86400000); return x.toISOString().slice(0, 10); };
+    const a = (await tool(sam, "kanban_create_task", { title: "Huy overdue", assignee: HUY, due: day(-3), flagged: true })).json.key;
+    const b = (await tool(sam, "kanban_create_task", { title: "Huy today", assignee: HUY, due: day(0) })).json.key;
+    const c = (await tool(sam, "kanban_create_task", { title: "Huy far", assignee: HUY, due: day(30) })).json.key;
+    const d = (await tool(sam, "kanban_create_task", { title: "Sam's own", assignee: "me", due: day(-1) })).json.key;
+    await tool(sam, "kanban_move_task", { key: b, status: "in-progress" });
+    const done = (await tool(sam, "kanban_create_task", { title: "Huy finished", assignee: HUY })).json.key;
+    await tool(sam, "kanban_move_task", { key: done, status: "done", resolution: "completed" });
+    env.store.col("kanbanNotifications").set("n-huy-1", { to: HUY, read: false, kind: "assigned", taskKey: a, at: new Date() });
+    env.store.col("kanbanNotifications").set("n-huy-2", { to: HUY, read: true, kind: "assigned", taskKey: b, at: new Date() });
+    env.store.col("kanbanNotifications").set("n-sam-1", { to: SAM, read: false, kind: "assigned", taskKey: d, at: new Date() });
+    const r = await tool(huy, "kanban_my_work", {});
+    assert.ok(!r.isError, r.text);
+    const keys = r.json.columns.flatMap((x) => x.tasks.map((t) => t.key));
+    assert.ok(keys.includes(a) && keys.includes(b) && keys.includes(c));
+    assert.ok(!keys.includes(d) && !keys.includes(done), "nobody else's, nothing closed");
+    for (const col of r.json.columns) for (const t of col.tasks) assert.strictEqual(t.assignee, HUY);
+    assert.deepStrictEqual(r.json.columns.map((x) => x.status), ["backlog", "in-progress"]);
+    assert.strictEqual(r.json.open, keys.length);
+    assert.deepStrictEqual(r.json.overdue.map((t) => t.key), [a]);
+    assert.ok(r.json.dueThisWeek.some((t) => t.key === b) && !r.json.dueThisWeek.some((t) => t.key === c));
+    assert.deepStrictEqual(r.json.flagged.map((t) => t.key), [a]);
+    assert.strictEqual(r.json.unreadNotifications, 1);
+    const s = await tool(sam, "kanban_my_work", {});
+    assert.ok(s.json.columns.every((x) => x.tasks.every((t) => t.assignee === SAM)));
+    assert.strictEqual(s.json.unreadNotifications, 1);
+    const v = await tool(kit, "kanban_my_work", {});
+    assert.ok(!v.isError); assert.strictEqual(v.json.open, 0);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

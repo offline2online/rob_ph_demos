@@ -153,7 +153,12 @@ function makeDb(store) {
         set: (ref, data, opts) => ops.push(() => ref.set(data, opts)),
         update: (ref, data) => ops.push(() => ref.update(data)),
         delete: (ref) => ops.push(() => ref.delete()),
-        commit: async () => { for (const op of ops) await op(); },
+        commit: async () => {
+          // A real batch holds at most 500 writes; a test may also fail one (store.onBatch).
+          if (ops.length > 500) throw new Error(`3 INVALID_ARGUMENT: maximum 500 writes allowed per request (${ops.length})`);
+          if (store.onBatch) store.onBatch(ops.length);
+          for (const op of ops) await op();
+        },
       };
     },
     async runTransaction(fn) {

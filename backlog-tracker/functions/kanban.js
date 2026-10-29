@@ -392,6 +392,10 @@ async function handleBackfillLinks(req, res, h) {
 const ATTACH_MAX_BYTES = 5 * 1024 * 1024;
 const ATTACH_MAX_PER_TICKET = 50;
 const ATTACH_PER_HOUR = 60;
+const BULK_MAX_ROWS = 100;        // kanban_create_tasks: tickets in one call
+const BULK_PER_HOUR = 500;        // ...and per member per hour
+const BATCH_OPS = 450;            // a Firestore batch holds 500 writes; stay under
+const BOARD_URL = "https://backlog-tracker-e4ed2.web.app/#staff-kanban";
 const ATTACH_MAX_SIDE = 1400; // the page shrinks a pasted screenshot to this too
 const ATTACH_TYPES = {
   "image/png": { ext: "png", magic: (b) => b.length > 8 && b.readUInt32BE(0) === 0x89504e47 && b.readUInt32BE(4) === 0x0d0a1a0a },
@@ -584,19 +588,22 @@ function kanbanTools(h) {
   // Writes a ticket's card with the ticket (same batch or transaction).
   const putCard = (w, key, t, email, closedAt) => w.set(db().collection(CARDS).doc(key), cardData(Object.assign({}, t, { key }), email, closedAt));
   // Per-member hourly allowance, kept in Firestore so every instance shares it.
-  async function takeAttachSlot(email) {
-    const ref = db().collection("kanbanAttachLimits").doc(String(email).toLowerCase());
+  // Takes n at once; nothing is taken when the window would go over max.
+  // Answers { ok, left } (left: what the window still allows).
+  async function takeSlots(collection, email, n, max) {
+    const ref = db().collection(collection).doc(String(email).toLowerCase());
     return db().runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const d = snap.exists ? snap.data() : {};
       const now = Date.now();
       const fresh = typeof d.windowStart === "number" && now - d.windowStart < 3600000;
       const count = fresh ? d.count || 0 : 0;
-      if (count >= ATTACH_PER_HOUR) return false;
-      tx.set(ref, { windowStart: fresh ? d.windowStart : now, count: count + 1 });
-      return true;
+      if (count + n > max) return { ok: false, left: Math.max(0, max - count) };
+      tx.set(ref, { windowStart: fresh ? d.windowStart : now, count: count + n });
+      return { ok: true, left: max - count - n };
     });
   }
+  const takeAttachSlot = async (email) => (await takeSlots("kanbanAttachLimits", email, 1, ATTACH_PER_HOUR)).ok;
   const stamp = (email) => ({ updatedAt: FieldValue.serverTimestamp(), updatedBy: email });
   const activity = (batch, key, email, texts) => {
     for (const text of texts) if (text) batch.set(tasks().doc(key).collection("activity").doc(), { who: email, text: String(text).slice(0, 500), at: FieldValue.serverTimestamp() });
@@ -872,6 +879,158 @@ function kanbanTools(h) {
         await b.commit();
         await audit(session, "kanban_create_task", { key });
         return textResult({ created: true, key, status: "backlog" });
+      },
+    },
+    {
+      name: "kanban_create_tasks",
+      description: `Staff Kanban: create up to ${BULK_MAX_ROWS} tickets in one call (a list, spreadsheet or meeting notes), all into Backlog with consecutive PH-n keys in row order. Each row takes the fields of kanban_create_task plus ref, a temporary name other rows can use as their epic, so an epic and its stories upload together (give the epic row a ref and type "epic", then epic: "<ref>" on each child; an existing ticket's key works as epic too). The whole batch is checked first and every problem is reported by row and field; nothing is written if any row fails, unless partial is true (then the good rows are written and the bad ones reported). dryRun: true validates only and writes nothing. Limit ${BULK_PER_HOUR} tickets an hour per member. Assignment notifications are sent by the board itself.`,
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: {
+          tasks: { type: "array", minItems: 1, maxItems: BULK_MAX_ROWS, items: { type: "object", properties: Object.assign({ ref: { type: "string", description: "A temporary name for this row (not a PH-n key), for other rows' epic." } }, WRITABLE), required: ["title"], additionalProperties: false } },
+          dryRun: { type: "boolean", description: "Validate only: write nothing, take nothing from the hourly allowance." },
+          partial: { type: "boolean", description: "Write the rows that pass and report the ones that don't, instead of writing nothing when any row fails." },
+        },
+        required: ["tasks"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const rows = args.tasks;
+        if (!Array.isArray(rows) || !rows.length) return toolError("Give at least one ticket in tasks.");
+        if (rows.length > BULK_MAX_ROWS) return toolError(`At most ${BULK_MAX_ROWS} tickets per call; this has ${rows.length}. Send them in several calls.`);
+        const dryRun = !!args.dryRun, partial = !!args.partial;
+        const problems = [];
+        const bad = new Set();
+        const fail = (i, field, message) => { bad.add(i); problems.push({ row: i + 1, ref: (rows[i] && rows[i].ref) || undefined, title: rows[i] && typeof rows[i].title === "string" ? rows[i].title.slice(0, 80) : undefined, field: field || undefined, message }); };
+        const fieldOf = (msg) => { const m = /^(\w+)/.exec(msg); return m && Object.prototype.hasOwnProperty.call(WRITABLE, m[1]) ? m[1] : undefined; };
+        const known = new Set(["ref", ...Object.keys(WRITABLE)]);
+        // Temporary refs: unique, and not shaped like a ticket key.
+        const refRow = new Map();
+        rows.forEach((r, i) => {
+          if (!r || typeof r !== "object" || Array.isArray(r)) return fail(i, undefined, "a ticket must be an object with at least a title");
+          if (r.ref == null || r.ref === "") return;
+          const ref = String(r.ref).trim();
+          if (core.keyNumber(ref) != null || /^\d+$/.test(ref)) fail(i, "ref", `ref ${ref} looks like a ticket key; use a temporary name`);
+          else if (refRow.has(ref.toLowerCase())) fail(i, "ref", `ref ${ref} is used by row ${refRow.get(ref.toLowerCase()) + 1} too`);
+          else refRow.set(ref.toLowerCase(), i);
+        });
+        // Each row on its own: fields, people, release, project. Memoised lookups keep it to one read per distinct value.
+        const clean = new Array(rows.length);
+        const epicMemo = new Map();
+        const linkMemo = new Map();
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || typeof r !== "object" || Array.isArray(r)) continue;
+          for (const k of Object.keys(r)) if (!known.has(k)) fail(i, k, `${k} isn't a field of a ticket`);
+          const input = resolveMe(r, session);
+          for (const k of ["assignee", "reporter"]) if (k in input) input[k] = asPerson(input[k]);
+          delete input.ref;
+          const epicIn = typeof input.epic === "string" ? input.epic.trim() : "";
+          const viaRef = epicIn && core.keyNumber(epicIn) == null && !/^\d+$/.test(epicIn) ? epicIn.toLowerCase() : null;
+          if (viaRef !== null) delete input.epic;
+          const { value: v, errors } = core.cleanTaskFields(input);
+          if (v.type === "epic") { v.epic = ""; } 
+          const epicKey = viaRef === null && v.type !== "epic" && "epic" in v ? normKey(v.epic) : null;
+          if (viaRef === null && v.type !== "epic" && v.epic && !epicKey) errors.push(`epic ${v.epic} isn't a ticket key or a ref in this batch`);
+          const epicExisting = epicKey;
+          delete v.epic;
+          errors.push(...await checkRefs(v, null, session));
+          if (epicExisting) {
+            if (!epicMemo.has(epicExisting)) epicMemo.set(epicExisting, await checkEpic(epicExisting, null));
+            if (epicMemo.get(epicExisting)) errors.push(epicMemo.get(epicExisting)); else v.epic = epicExisting;
+          }
+          for (const l of v.links || []) {
+            if (!linkMemo.has(l.key)) linkMemo.set(l.key, (await tasks().doc(l.key).get()).exists);
+            if (!linkMemo.get(l.key)) errors.push(`link ${l.type} ${l.key}: no such ticket`);
+          }
+          if (viaRef !== null) {
+            const at = refRow.get(viaRef);
+            if (at === undefined) errors.push(`epic ${epicIn} isn't a ref in this batch or a ticket key`);
+            else if (at === i) errors.push("A ticket can't be its own epic.");
+            else if (rows[at] && rows[at].type !== "epic") errors.push(`epic ${epicIn} (row ${at + 1}) isn't of type epic`);
+          }
+          errors.forEach((m) => fail(i, fieldOf(m) || (/^link /.test(m) ? "links" : /epic/i.test(m) ? "epic" : undefined), m));
+          clean[i] = { v, epicRef: viaRef };
+        }
+        // A child whose epic row failed can't be created either (partial mode): repeat until nothing more falls.
+        for (let again = true; again;) {
+          again = false;
+          for (let i = 0; i < rows.length; i++) {
+            if (bad.has(i) || !clean[i] || clean[i].epicRef === null) continue;
+            const at = refRow.get(clean[i].epicRef);
+            if (at !== undefined && bad.has(at)) { fail(i, "epic", `epic ${rows[i].epic} (row ${at + 1}) has a problem, so this ticket can't go under it`); again = true; }
+          }
+        }
+        const good = rows.map((_, i) => i).filter((i) => !bad.has(i));
+        problems.sort((a, b) => a.row - b.row);
+        const counterRef = db().collection("kanbanCounters").doc("main");
+        if (dryRun) {
+          const c = await counterRef.get();
+          const next = c.exists && typeof c.data().nextNumber === "number" ? c.data().nextNumber : 1;
+          await audit(session, "kanban_create_tasks", { dryRun: true, rows: rows.length, valid: good.length, problems: problems.length });
+          return textResult({ dryRun: true, wouldCreate: partial || !problems.length ? good.length : 0, valid: good.length, rows: rows.length, problems, wouldUseKeys: !problems.length || partial ? good.map((_, n) => core.keyOf(next + n)) : [], written: 0 });
+        }
+        if (problems.length && (!partial || !good.length)) {
+          await audit(session, "kanban_create_tasks", { rows: rows.length, written: 0, problems: problems.length });
+          return toolError(JSON.stringify({ created: false, written: 0, rows: rows.length, message: `${problems.length} problem${problems.length === 1 ? "" : "s"} in ${new Set(problems.map((p) => p.row)).size} of ${rows.length} rows; nothing was written. Fix them, or pass partial: true to write the rows that pass.`, problems }, null, 2));
+        }
+        const slots = await takeSlots("kanbanBulkLimits", session.email, good.length, BULK_PER_HOUR);
+        if (!slots.ok) return toolError(`Limit reached: ${BULK_PER_HOUR} tickets an hour per member; ${slots.left} left in this hour, and this call has ${good.length}. Nothing was written.`);
+        // Keys: one counter transaction for the whole batch. Ranks: the top of Backlog once, then consecutive.
+        const rank0 = await nextRank("backlog");
+        const first = await db().runTransaction(async (tx) => {
+          const c = await tx.get(counterRef);
+          const n = c.exists && typeof c.data().nextNumber === "number" ? c.data().nextNumber : 1;
+          tx.set(counterRef, { nextNumber: n + good.length, updatedAt: FieldValue.serverTimestamp() });
+          return n;
+        });
+        const keyOfRow = new Map(good.map((i, n) => [i, core.keyOf(first + n)]));
+        // Each ticket is a group of writes kept together; groups fill batches of at most BATCH_OPS writes.
+        const groups = good.map((i, n) => {
+          const key = keyOfRow.get(i), { v, epicRef } = clean[i];
+          const epic = epicRef !== null ? keyOfRow.get(refRow.get(epicRef)) : v.epic || "";
+          const t = {
+            key, number: first + n, type: v.type || "task", title: v.title, description: asHtml(v.description || ""),
+            status: "backlog", resolution: null, open: true, rank: rank0 + n * 10,
+            assignee: v.assignee || "", previousAssignee: "", reporter: v.reporter || session.email,
+            release: v.release || "", sprint: v.sprint || "", project: v.project || "",
+            estimate: v.estimate == null ? null : v.estimate, logged: v.logged || 0, priority: v.priority || "medium",
+            due: v.due || "", labels: v.labels || [], epic, links: v.links || [], flagged: !!v.flagged,
+            attachments: [], commentCount: 0, acceptanceCriteria: core.encodeCriteria(v.acceptanceCriteria || []),
+          };
+          Object.assign(t, derived(t), { createdAt: FieldValue.serverTimestamp(), createdBy: session.email }, stamp(session.email));
+          const ops = [
+            (b) => b.set(tasks().doc(key), t),
+            (b) => putCard(b, key, t, session.email),
+            (b) => activity(b, key, session.email, [`created this ticket over MCP (bulk upload, row ${i + 1} of ${rows.length})`]),
+          ];
+          for (const l of t.links) {
+            ops.push((b) => b.update(tasks().doc(l.key), Object.assign({ links: FieldValue.arrayUnion(core.inverseOf(key, l)) }, stamp(session.email))));
+            ops.push((b) => activity(b, l.key, session.email, [`linked: ${core.inverseOf(key, l).type} ${key}`]));
+          }
+          return { i, key, ops };
+        });
+        const chunks = [];
+        for (const g of groups) {
+          let cur = chunks[chunks.length - 1];
+          if (!cur || cur.n + g.ops.length > BATCH_OPS) chunks.push(cur = { n: 0, groups: [] });
+          cur.groups.push(g); cur.n += g.ops.length;
+        }
+        const written = [];
+        const row = (g) => ({ row: g.i + 1, ref: rows[g.i].ref || undefined, key: g.key, title: clean[g.i].v.title });
+        for (const ch of chunks) {
+          const b = db().batch();
+          ch.groups.forEach((g) => g.ops.forEach((op) => op(b)));
+          try { await b.commit(); } catch (err) {
+            logger.error("kanban_create_tasks: a batch failed", err);
+            await audit(session, "kanban_create_tasks", { rows: rows.length, written: written.length, failedAt: ch.groups[0].key });
+            const left = groups.filter((g) => !written.some((w) => w.key === g.key));
+            return toolError(JSON.stringify({ created: false, written: written.length, message: `A write failed part-way (${String((err && err.message) || err).slice(0, 200)}). ${written.length ? `PH keys written: ${written.map((w) => w.key).join(", ")}. ` : "Nothing was written. "}Not written: ${left.map((g) => g.key).join(", ")} (their numbers are skipped); send those rows again.`, writtenKeys: written.map((w) => w.key), notWritten: left.map((g) => ({ row: g.i + 1, key: g.key })) }, null, 2));
+          }
+          ch.groups.forEach((g) => written.push(row(g)));
+        }
+        await audit(session, "kanban_create_tasks", { rows: rows.length, written: written.length, first: written[0] && written[0].key, last: written[written.length - 1].key, partial, skipped: problems.length ? [...new Set(problems.map((p) => p.row))].length : 0, batches: chunks.length });
+        return textResult({ created: true, written: written.length, status: "backlog", tickets: written, skipped: partial && problems.length ? problems : undefined, board: BOARD_URL, hourlyAllowanceLeft: slots.left });
       },
     },
     {
@@ -1201,6 +1360,37 @@ function kanbanTools(h) {
         return textResult({
           unreadCount: unread.data().count, returned: list.length,
           notifications: list.map((x) => ({ id: x.id, read: !!x.read, kind: x.kind, via: x.via || null, key: x.taskKey, title: x.taskTitle || "", from: x.from || null, fromName: first(x.from), at: at(x), message: describe(x, first) })),
+        });
+      },
+    },
+    {
+      name: "kanban_my_work",
+      description: "Staff Kanban: your own work in one call — your open tickets grouped by column, the overdue ones, those due this week (today to Sunday), your flagged ones and how many notifications are unread. The board's \"My tasks\".",
+      scope: "board.read",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      async run(args, session) {
+        const [loaded, first, unread] = await Promise.all([
+          loadTasks({ assignee: session.email }),
+          firstNamer(),
+          db().collection("kanbanNotifications").where("to", "==", session.email).where("read", "==", false).count().get(),
+        ]);
+        const mine = loaded.list.filter((t) => t.open !== false && core.canonicalEmail(t.assignee || "") === session.email);
+        mine.sort((a, b) => (a.rank || 0) - (b.rank || 0));
+        const today = new Date().toISOString().slice(0, 10);
+        const sunday = new Date(today + "T12:00:00Z"); sunday.setUTCDate(sunday.getUTCDate() + ((7 - sunday.getUTCDay()) % 7));
+        const weekEnd = sunday.toISOString().slice(0, 10);
+        const slim = (t) => ({ key: t.key, title: t.title, status: core.statusLabel(t.status, t.resolution), due: t.due || null, priority: t.priority || null });
+        return textResult({
+          member: session.email, today, weekEnd, open: mine.length, truncated: loaded.truncated,
+          columns: core.STATUSES.filter((s) => s.key !== "done").map((s) => {
+            const list = mine.filter((t) => t.status === s.key);
+            return { status: s.key, label: s.label, count: list.length, tasks: list.map((t) => summary(t, first)) };
+          }).filter((c) => c.count),
+          overdue: mine.filter((t) => t.due && t.due < today).sort((a, b) => a.due.localeCompare(b.due)).map(slim),
+          dueThisWeek: mine.filter((t) => t.due && t.due >= today && t.due <= weekEnd).sort((a, b) => a.due.localeCompare(b.due)).map(slim),
+          flagged: mine.filter((t) => t.flagged).map(slim),
+          unreadNotifications: unread.data().count,
+          board: BOARD_URL,
         });
       },
     },
