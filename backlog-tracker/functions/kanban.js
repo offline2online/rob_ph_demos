@@ -398,6 +398,7 @@ function kanbanTools(h) {
       epic: t.epic || null, estimate: typeof t.estimate === "number" ? core.fmtH(t.estimate) : null,
       logged: t.logged ? core.fmtH(t.logged) : null, remaining: typeof t.estimate === "number" ? core.fmtH(core.remaining(t)) : null,
       due: t.due || null, labels: t.labels || [],
+      criteriaTotal: core.cardOf(t).acTotal, criteriaDone: core.cardOf(t).acDone,
     };
   }
   const board = async () => db().collection(await boardCollection());
@@ -456,6 +457,11 @@ function kanbanTools(h) {
     labels: { type: "array", items: { type: "string" } }, epic: { type: "string", description: "Parent epic key, or empty." },
     links: { type: "array", items: { type: "object", properties: { type: { type: "string", enum: core.LINK_TYPES }, key: { type: "string" } }, required: ["type", "key"] } },
     flagged: { type: "boolean" },
+    acceptanceCriteria: {
+      type: "array", maxItems: core.AC_MAX_ITEMS,
+      description: `The ticket's acceptance-criteria checklist (up to ${core.AC_MAX_ITEMS} items of at most ${core.AC_MAX_TEXT} characters): strings, or {text, done}. On an update it replaces the whole list (an item with unchanged text keeps its id and state unless you give done); to tick items without resending the list use kanban_check_criteria. An empty list clears it.`,
+      items: { anyOf: [{ type: "string", maxLength: core.AC_MAX_TEXT }, { type: "object", properties: { text: { type: "string", maxLength: core.AC_MAX_TEXT }, done: { type: "boolean" } }, required: ["text"] }] },
+    },
   };
   async function checkEpic(epicKey, selfKey) {
     if (!epicKey) return null;
@@ -582,6 +588,7 @@ function kanbanTools(h) {
         return textResult(Object.assign(summary(t, first), {
           projectName: project ? project.name : null,
           description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
+          acceptanceCriteria: core.decodeCriteria(t.acceptanceCriteria),
           links: await linksFor(t), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
           children: kids, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
           comments: cs.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((c) => ({ author: c.author, at: iso(c.at), text: c.text })),
@@ -652,7 +659,7 @@ function kanbanTools(h) {
             release: v.release || "", sprint: v.sprint || "", project: v.project || "",
             estimate: v.estimate == null ? null : v.estimate, logged: v.logged || 0, priority: v.priority || "medium",
             due: v.due || "", labels: v.labels || [], epic: v.epic || "", links: v.links || [], flagged: !!v.flagged,
-            attachments: [], commentCount: 0,
+            attachments: [], commentCount: 0, acceptanceCriteria: core.encodeCriteria(v.acceptanceCriteria || []),
           };
           Object.assign(t, derived(t), { createdAt: FieldValue.serverTimestamp(), createdBy: session.email }, stamp(session.email));
           tx.set(counterRef, { nextNumber: n + 1, updatedAt: FieldValue.serverTimestamp() });
@@ -678,7 +685,7 @@ function kanbanTools(h) {
         if (!cur) return toolError(`No ticket ${args.key}.`);
         const input = resolveMe(args, session); delete input.key;
         if (!Object.keys(input).length) return toolError("Nothing to change.");
-        const { value: v, errors } = core.cleanTaskFields(input, { partial: true });
+        const { value: v, errors } = core.cleanTaskFields(input, { partial: true, existingCriteria: cur.acceptanceCriteria });
         if ("description" in v) v.description = asHtml(v.description);
         const type = v.type || cur.type;
         if (type === "epic") v.epic = "";
@@ -688,6 +695,10 @@ function kanbanTools(h) {
         const lines = [];
         if ("assignee" in v && v.assignee !== core.canonicalEmail(cur.assignee || "")) lines.push(`reassigned ${first(cur.assignee)} → ${first(v.assignee)}`);
         if ("flagged" in v && v.flagged !== !!cur.flagged) lines.push(v.flagged ? "flagged this ticket" : "removed the flag");
+        if ("acceptanceCriteria" in v) {
+          lines.push(...core.diffCriteria(cur.acceptanceCriteria, v.acceptanceCriteria));
+          v.acceptanceCriteria = core.encodeCriteria(v.acceptanceCriteria);
+        }
         if (!lines.length) lines.push(`updated ${Object.keys(v).join(", ")} over MCP`);
         const next = Object.assign({}, cur, v);
         const patch = Object.assign({}, v, stamp(session.email));
@@ -704,6 +715,43 @@ function kanbanTools(h) {
         await b.commit();
         await audit(session, "kanban_update_task", { key, fields: Object.keys(v) });
         return textResult({ updated: true, key, changed: Object.keys(v) });
+      },
+    },
+    {
+      name: "kanban_check_criteria",
+      description: "Staff Kanban: tick or untick acceptance criteria on a ticket by id (kanban_get_task returns each item's id) without resending the list. Each change writes an activity line.",
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: { key: KEY, ids: { type: "array", items: { type: "string" }, minItems: 1, maxItems: core.AC_MAX_ITEMS, description: "Criterion ids." }, done: { type: "boolean", description: "true to tick, false to untick." } },
+        required: ["key", "ids", "done"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const key = normKey(args.key);
+        const ids = [...new Set((args.ids || []).map((x) => String(x).trim()))];
+        if (!key) return toolError(`No ticket ${args.key}.`);
+        if (!ids.length) return toolError("Give at least one criterion id.");
+        const done = !!args.done;
+        const out = await db().runTransaction(async (tx) => {
+          const snap = await tx.get(tasks().doc(key));
+          if (!snap.exists) return { error: `No ticket ${args.key}.` };
+          const list = core.decodeCriteria(snap.data().acceptanceCriteria);
+          const missing = ids.filter((id) => !list.some((c) => c.id === id));
+          if (missing.length) return { error: `${key} has no criterion ${missing.join(", ")}; kanban_get_task lists the ids.` };
+          const before = list.map((c) => Object.assign({}, c));
+          for (const c of list) if (ids.includes(c.id)) c.done = done;
+          const lines = core.diffCriteria(before, list);
+          if (!lines.length) return { unchanged: true, list };
+          const t = Object.assign({ key }, snap.data(), { acceptanceCriteria: core.encodeCriteria(list) });
+          tx.update(tasks().doc(key), Object.assign({ acceptanceCriteria: t.acceptanceCriteria }, stamp(session.email)));
+          putCard(tx, key, t, session.email);
+          for (const text of lines) tx.set(tasks().doc(key).collection("activity").doc(), { who: session.email, text: String(text).slice(0, 500), at: FieldValue.serverTimestamp() });
+          return { list, changed: lines.length };
+        });
+        if (out.error) return toolError(out.error);
+        const n = core.acCounts(out.list);
+        if (!out.unchanged) await audit(session, "kanban_check_criteria", { key, ids, done });
+        return textResult({ key, done, changed: out.changed || 0, acDone: n.done, acTotal: n.total, acceptanceCriteria: out.list });
       },
     },
     {

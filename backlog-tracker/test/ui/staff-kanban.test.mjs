@@ -740,6 +740,60 @@ T("KB-C13", "project: set in the modal, named on the card, filtered from Filters
   await p.done();
 });
 
+T("TC-68", "acceptance criteria: shown, ticked and edited in the modal with an activity line each, counted on the card, updated live, and saved with a new ticket (PH-22)", async (prof) => {
+  const line = (i, done, text) => `crit000${i}\t${done}\t${text}`;
+  const texts = ["Field A is required", "Saves on Enter", "Shows an error on 500", "Clears on cancel", "Keyboard reachable"];
+  const seed = kanbanSeed();
+  seed.docs.kanbanTasks["PH-20"].acceptanceCriteria = texts.map((t, i) => line(i, 0, t));
+  seed.docs.kanbanCards["PH-20"].acTotal = 5; seed.docs.kanbanCards["PH-20"].acDone = 0;
+  const p = await open(prof, "#staff-kanban", { seed });
+  const chip = () => p.textContent('.kb-card[data-key="PH-20"] .kb-ac-chip');
+  const activityOf = async () => (await writes(p, /kanbanTasks\/PH-20\/activity\//)).map((w) => w.data.text);
+  assert.match(await chip(), /AC 0\/5/, "the card shows AC 0/5");
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await until(() => p.$("#f-ac .kb-ac-item"), "the criteria in the modal");
+  assert.deepEqual(await p.$$eval("#f-ac [data-ac-text]", (e) => e.map((x) => x.value)), texts, "the modal shows the 5");
+  assert.match(await p.textContent("#f-ac-count"), /0 of 5 done/);
+  // Tick two: each is saved at once, with its own activity line.
+  await p.check('#f-ac [data-ac="crit0000"] [data-ac-tick]'); await p.waitForTimeout(150);
+  await p.check('#f-ac [data-ac="crit0002"] [data-ac-tick]'); await p.waitForTimeout(150);
+  assert.deepEqual((await stored(p, "PH-20")).acceptanceCriteria.map((l) => l.split("\t")[1]), ["1", "0", "1", "0", "0"]);
+  assert.match(await chip(), /AC 2\/5/, "the card follows");
+  assert.match(await p.textContent("#f-ac-count"), /2 of 5 done/);
+  assert.deepEqual((await activityOf()).sort(), ['ticked criterion "Field A is required"', 'ticked criterion "Shows an error on 500"']);
+  // Edit one, add one, move one, remove one.
+  await p.fill('#f-ac [data-ac="crit0001"] [data-ac-text]', "Saves on Enter or Save"); await p.press('#f-ac [data-ac="crit0001"] [data-ac-text]', "Tab"); await p.waitForTimeout(150);
+  assert.ok((await activityOf()).includes('edited criterion "Saves on Enter" → "Saves on Enter or Save"'));
+  await p.fill("#f-ac-input", "Works on a phone"); await p.press("#f-ac-input", "Enter"); await p.waitForTimeout(150);
+  assert.equal((await stored(p, "PH-20")).acceptanceCriteria.length, 6); assert.match(await chip(), /AC 2\/6/);
+  await press(p, '#f-ac [data-ac="crit0004"] [data-ac-up]'); await p.waitForTimeout(150);
+  assert.equal((await stored(p, "PH-20")).acceptanceCriteria[3].split("\t")[2], "Keyboard reachable");
+  await press(p, '#f-ac [data-ac="crit0003"] [data-ac-rm]'); await p.waitForTimeout(150);
+  assert.equal((await stored(p, "PH-20")).acceptanceCriteria.length, 5); assert.match(await chip(), /AC 2\/5/);
+  // Someone else (over MCP) unticks one: the open modal and the card follow without a reload.
+  await p.evaluate(() => {
+    const b = globalThis.__fbStub, t = b.col("kanbanTasks").get("PH-20");
+    const list = t.acceptanceCriteria.map((l) => (l.startsWith("crit0000") ? l.replace("\t1\t", "\t0\t") : l));
+    b.col("kanbanTasks").set("PH-20", { ...t, acceptanceCriteria: list });
+    const c = b.col("kanbanCards").get("PH-20");
+    b.col("kanbanCards").set("PH-20", { ...c, acDone: 1, updatedAt: new globalThis.__fbStubTimestamp(Date.now() + 5000), updatedBy: "other@personalisationhub.com" });
+    b.notify();
+  });
+  await until(async () => !(await p.isChecked('#f-ac [data-ac="crit0000"] [data-ac-tick]')), "the open modal to show the untick");
+  assert.match(await chip(), /AC 1\/5/);
+  await press(p, "#f-cancel");
+  // A new ticket saves with criteria; 51 can't be added.
+  await press(p, "#kb-new-btn");
+  await p.fill("#f-title", "Ticket with criteria");
+  for (const t of ["One", "Two", "Three"]) { await p.fill("#f-ac-input", t); await p.press("#f-ac-input", "Enter"); }
+  assert.equal((await p.$$("#f-ac .kb-ac-item")).length, 3);
+  await press(p, "#f-save"); await p.waitForTimeout(250);
+  const made = (await p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks")].filter(([, t]) => t.title === "Ticket with criteria"))) [0];
+  assert.deepEqual(made[1].acceptanceCriteria.map((l) => l.split("\t")[2]), ["One", "Two", "Three"]);
+  assert.match(await p.textContent(`.kb-card[data-key="${made[0]}"] .kb-ac-chip`), /AC 0\/3/);
+  await p.done();
+});
+
 // ── Cards (kanbanCards): the board reads only what a card shows ─────────────
 const readBytes = (p, path) => p.evaluate((x) => (globalThis.__fbStub.readBytes || {})[x] || 0, path);
 const watching = (p, path) => p.evaluate((x) => (globalThis.__fbStub.watching || {})[x] || 0, path);

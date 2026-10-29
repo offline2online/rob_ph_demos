@@ -161,6 +161,30 @@ flagged cards are amber with a filled flag.
 **KB-TASK-5 Linked tickets.** Typed links (blocks, is blocked by, relates to,
 duplicates) to any other ticket.
 
+**KB-TASK-12 Acceptance criteria.** A ticket has a checklist of up to 50
+acceptance criteria, each `{id, text, done}` with the text 1 to 500 characters,
+so a generated page epic can list the fields, states, validation rules and API
+calls its artifact shows. The task modal has an **Acceptance criteria** section
+under the description (on new and existing tickets) where a member adds, edits,
+removes, reorders (up / down) and ticks items; on an existing ticket each change
+is saved at once, in a transaction against the latest copy (two people ticking
+different items never overwrite each other), and writes its own activity line
+(added / edited / removed / ticked / unticked / moved); on a new ticket the list
+is saved with Create. The card shows **AC n/m** when there are any. Over MCP
+`kanban_create_task` and `kanban_update_task` take `acceptanceCriteria` as an
+array of strings or `{text, done}` (an update replaces the list; an item whose
+text is unchanged keeps its id and state), `kanban_get_task` returns the items
+with their ids, and `kanban_check_criteria` (`key`, `ids`, `done`) ticks or
+unticks items without resending the list. 51 items or a 501-character item are
+refused over MCP and by `firestore.rules` for a direct write. An open modal
+follows a change made elsewhere without a reload. *Storage:* the rules cannot
+loop and cap an operation at 1000 expressions, and a list of 50 maps checked
+item by item exceeded that, so the checklist is stored as a list of strings
+`<8-char id>\t<0|1>\t<text>` that the rules check whole (count, the shape of
+every line, the 500-character limit); the page, MCP and tests see
+`{id, text, done}` through `decodeCriteria`, and a direct write of objects is
+refused. The card carries the counts only (`acTotal`, `acDone`), never the text.
+
 **KB-TASK-6 Ticket search picker.** Wherever a ticket is chosen (linked
 tickets, adding an existing ticket to an epic) the user types a number (`36`,
 `PH-36`) or words from the title or description; results rank exact key, key
@@ -296,7 +320,8 @@ server, attributed to the calling member: `kanban_list_tasks` (filters as on
 the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,
 `kanban_move_task` (status + resolution; applies the testing hand-off),
 `kanban_assign_task`, `kanban_comment`, `kanban_flag_task`,
-`kanban_search_tickets`, `kanban_release_report`, `kanban_attach_file` (a
+`kanban_search_tickets`, `kanban_release_report`, `kanban_check_criteria` (tick or
+untick acceptance criteria by id, KB-TASK-12), `kanban_attach_file` (a
 screenshot, image or pdf as base64, at most 5 MB decoded, stored under
 `kanban/{PH-n}/`, images over 1400 px shrunk, optionally inline in the
 description; 60 files an hour per member). Viewers get read tools only.
@@ -320,8 +345,8 @@ stored by lowercased email; release ids are the console's `releases` ids.
 
 | Collection | Shape |
 |---|---|
-| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
-| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
+| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
+| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
 | `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at` |
 | `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, reassignments, flags); append-only |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |

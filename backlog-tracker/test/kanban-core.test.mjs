@@ -114,4 +114,40 @@ t("field validation names what's wrong", () => {
   const { errors, value } = k.cleanTaskFields({ title: "x", estimate: "1d", assignee: "Huy", labels: ["Menu Boards", "menu-boards"] });
   assert.deepEqual(errors, ["assignee must be an email"]); assert.equal(value.estimate, 8); assert.deepEqual(value.labels, ["menu-boards"]);
 });
+t("acceptance criteria: cleaned, stored as id/done/text lines, counted, diffed and carried on the card", () => {
+  const { value, errors } = k.cleanCriteria(["  First\n item ", { text: "Second", done: true }]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(value.map((c) => [c.text, c.done]), [["First item", false], ["Second", true]]);
+  assert.ok(value.every((c) => /^[a-z0-9]{8}$/.test(c.id)) && value[0].id !== value[1].id);
+  const stored = k.encodeCriteria(value);
+  assert.ok(stored.every((l) => /^[a-z0-9]{8}\t[01]\t[^\t\n]+$/.test(l)));
+  assert.deepEqual(k.decodeCriteria(stored), value);
+  assert.deepEqual(k.acCounts(stored), { total: 2, done: 1 });
+  assert.deepEqual(k.acCounts(value), { total: 2, done: 1 });
+  // unchanged text keeps its id (and a list sent again is the same list)
+  const again = k.cleanCriteria(["Second", "Brand new"], stored).value;
+  assert.equal(again[0].id, value[1].id); assert.notEqual(again[1].id, value[0].id);
+  // limits
+  assert.match(k.cleanCriteria(Array.from({ length: 51 }, (_, i) => "c" + i)).errors.join(), /limited to 50 items/);
+  assert.deepEqual(k.cleanCriteria(Array.from({ length: 50 }, (_, i) => "c" + i)).errors, []);
+  assert.match(k.cleanCriteria(["x".repeat(501)]).errors.join(), /limited to 500 characters/);
+  assert.deepEqual(k.cleanCriteria(["x".repeat(500)]).errors, []);
+  assert.match(k.cleanCriteria(["ok", "   "]).errors.join(), /item 2 is empty/);
+  assert.match(k.cleanCriteria("nope").errors.join(), /must be a list/);
+  assert.deepEqual(k.cleanTaskFields({ title: "x", acceptanceCriteria: ["a"] }).value.acceptanceCriteria.map((c) => c.text), ["a"]);
+  assert.match(k.cleanTaskFields({ title: "x", acceptanceCriteria: ["x".repeat(501)] }).errors.join(), /500 characters/);
+  // the card carries the counts, never the text
+  const card = k.cardOf({ key: "PH-1", acceptanceCriteria: stored });
+  assert.equal(card.acTotal, 2); assert.equal(card.acDone, 1); assert.ok(!("acceptanceCriteria" in card));
+  assert.equal(k.cardOf({ key: "PH-1" }).acTotal, 0);
+  assert.equal(k.cardOf({ key: "PH-1", acTotal: 4, acDone: 3 }).acDone, 3, "a card read back keeps its counts");
+  assert.deepEqual([k.cardPatchOf({ acceptanceCriteria: stored }).acTotal, k.cardPatchOf({ acceptanceCriteria: stored }).acDone], [2, 1]);
+  assert.ok(k.CARD_FIELDS.includes("acTotal") && k.CARD_FIELDS.includes("acDone"));
+  // activity lines
+  const after = value.map((c) => ({ ...c })); after[0].done = true; after[1].text = "Second, reworded"; after.push({ id: "zzzzzzzz", text: "Third", done: false });
+  assert.deepEqual(k.diffCriteria(value, after), ['ticked criterion "First item"', 'edited criterion "Second" → "Second, reworded"', 'added criterion "Third"']);
+  assert.ok(k.diffCriteria(value, after).includes('ticked criterion "First item"'));
+  assert.deepEqual(k.diffCriteria(value, [value[1], value[0]]), ["reordered the acceptance criteria"]);
+  assert.deepEqual(k.diffCriteria(value, value), []);
+});
 console.log(`\n${n} passed`);

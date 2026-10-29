@@ -462,9 +462,95 @@ function mentionsIn(html) {
   return [...out];
 }
 
+// ── Acceptance criteria (KB-TASK-12) ─────────────────────────────────────────
+// A checklist of up to 50 items, each { id, text (1-500 characters), done }.
+// It is STORED as a list of strings "<8-char id>\t<0|1>\t<text>": firestore.rules
+// cannot loop and caps an operation at 1000 expressions, so a list of maps
+// can't be checked item by item at 50 items, but a list of strings can be
+// checked whole (count, shape of every line, text length) with two patterns
+// over the joined list. The page, MCP and tests see { id, text, done } through
+// decodeCriteria; text never holds a tab or a line break (cleanCriteria folds them).
+const AC_MAX_ITEMS = 50;
+const AC_MAX_TEXT = 500;
+const AC_ID = /^[a-z0-9]{8}$/;
+function newCriterionId(taken = new Set()) {
+  for (;;) {
+    let id = "";
+    for (let i = 0; i < 8; i++) id += "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 36)];
+    if (!taken.has(id)) return id;
+  }
+}
+function encodeCriteria(list) {
+  return (Array.isArray(list) ? list : []).map((c) => `${c.id}\t${c.done ? 1 : 0}\t${c.text}`);
+}
+function decodeCriteria(stored) {
+  const out = [];
+  for (const line of Array.isArray(stored) ? stored : []) {
+    if (line && typeof line === "object" && typeof line.text === "string") { out.push({ id: String(line.id || ""), text: line.text, done: !!line.done }); continue; }
+    const m = /^([a-z0-9]{8})\t([01])\t([\s\S]*)$/.exec(String(line));
+    if (m) out.push({ id: m[1], text: m[3], done: m[2] === "1" });
+  }
+  return out;
+}
+// Counts from a stored or decoded checklist.
+function acCounts(list) {
+  const items = decodeCriteria(list);
+  return { total: items.length, done: items.filter((c) => c.done).length };
+}
+// Strings or { text, done, id } → the checklist, or the problems. An item keeps
+// its id when it names one that is still free, else when `existing` holds an
+// unclaimed item with the same text; else it gets a new id.
+function cleanCriteria(input, existing = []) {
+  const errors = [];
+  if (input == null) return { value: [], errors };
+  if (!Array.isArray(input)) return { value: [], errors: ["acceptanceCriteria must be a list"] };
+  if (input.length > AC_MAX_ITEMS) errors.push(`acceptanceCriteria is limited to ${AC_MAX_ITEMS} items`);
+  const have = decodeCriteria(existing);
+  const claimed = new Set(), taken = new Set();
+  const items = [];
+  input.slice(0, AC_MAX_ITEMS).forEach((raw, i) => {
+    const obj = raw && typeof raw === "object" ? raw : { text: raw };
+    const text = String(obj.text == null ? "" : obj.text).replace(/\s+/g, " ").trim();
+    if (!text) { errors.push(`acceptanceCriteria item ${i + 1} is empty`); return; }
+    if (text.length > AC_MAX_TEXT) { errors.push(`acceptanceCriteria item ${i + 1} is limited to ${AC_MAX_TEXT} characters`); return; }
+    items.push({ text, done: !!obj.done, wanted: typeof obj.id === "string" && AC_ID.test(obj.id) ? obj.id : "" });
+  });
+  for (const it of items) {
+    if (it.wanted && !taken.has(it.wanted)) { taken.add(it.wanted); it.id = it.wanted; claimed.add(it.wanted); }
+  }
+  for (const it of items) {
+    if (it.id) continue;
+    const same = have.find((h) => h.text === it.text && !claimed.has(h.id) && !taken.has(h.id));
+    if (same) { it.id = same.id; claimed.add(same.id); taken.add(same.id); }
+  }
+  for (const it of items) if (!it.id) { it.id = newCriterionId(new Set([...taken, ...have.map((h) => h.id)])); taken.add(it.id); }
+  return { value: items.map((it) => ({ id: it.id, text: it.text, done: it.done })), errors };
+}
+
+// The activity lines for a change of checklist (before and after both decoded).
+function diffCriteria(before, after) {
+  const q = (t) => `"${t.length > 80 ? t.slice(0, 79) + "…" : t}"`;
+  const lines = [];
+  const was = new Map(decodeCriteria(before).map((c) => [c.id, c]));
+  const now = decodeCriteria(after);
+  const keep = new Set(now.map((c) => c.id));
+  for (const c of was.values()) if (!keep.has(c.id)) lines.push(`removed criterion ${q(c.text)}`);
+  for (const c of now) {
+    const o = was.get(c.id);
+    if (!o) lines.push(`added criterion ${q(c.text)}`);
+    else {
+      if (o.text !== c.text) lines.push(`edited criterion ${q(o.text)} → ${q(c.text)}`);
+      if (o.done !== c.done) lines.push(`${c.done ? "ticked" : "unticked"} criterion ${q(c.text)}`);
+    }
+  }
+  const order = (l) => l.filter((c) => was.has(c.id) && keep.has(c.id)).map((c) => c.id).join();
+  if (!lines.length && order([...was.values()]) !== order(now)) lines.push("reordered the acceptance criteria");
+  return lines.slice(0, 20);
+}
+
 // Validates and normalises the writable fields of a task (MCP and page).
 // Returns { value, errors }.
-function cleanTaskFields(input, { partial = false } = {}) {
+function cleanTaskFields(input, { partial = false, existingCriteria = [] } = {}) {
   const v = {}, errors = [];
   const str = (k, max) => {
     if (!(k in input)) return;
@@ -495,6 +581,11 @@ function cleanTaskFields(input, { partial = false } = {}) {
     const l = Array.isArray(input.links) ? input.links : [];
     v.links = l.filter((x) => x && LINK_TYPES.includes(x.type) && keyNumber(x.key) != null).map((x) => ({ type: x.type, key: String(x.key).toUpperCase() })).slice(0, 50);
   }
+  if ("acceptanceCriteria" in input) {
+    const c = cleanCriteria(input.acceptanceCriteria, existingCriteria);
+    errors.push(...c.errors);
+    v.acceptanceCriteria = c.value;
+  }
   if ("flagged" in input) v.flagged = !!input.flagged;
   return { value: v, errors };
 }
@@ -508,7 +599,7 @@ function cleanTaskFields(input, { partial = false } = {}) {
 // tests use the same functions, so a card and its ticket cannot be derived two ways.
 // (one string, not a list of quoted words: a lone quoted word that is also an icon name fails test/icon-font.test.mjs)
 const CARD_FIELDS = ("key type title status resolution open rank assignee previousAssignee release sprint project "
-  + "priority flagged estimate logged due labels epic commentCount attachmentCount").split(" ");
+  + "priority flagged estimate logged due labels epic commentCount attachmentCount acTotal acDone").split(" ");
 const CARD_NORM = {
   key: (v) => String(v || ""),
   type: (v) => v || "task",
@@ -536,7 +627,10 @@ function cardOf(t) {
   for (const k of CARD_FIELDS) {
     if (k === "open") c.open = (t.status || "backlog") !== "done";
     else if (k === "attachmentCount") c.attachmentCount = Array.isArray(t.attachments) ? t.attachments.length : Number.isInteger(t.attachmentCount) && t.attachmentCount > 0 ? t.attachmentCount : 0;
-    else c[k] = CARD_NORM[k](t[k]);
+    else if (k === "acTotal" || k === "acDone") {
+      const n = Array.isArray(t.acceptanceCriteria) ? acCounts(t.acceptanceCriteria)[k === "acTotal" ? "total" : "done"] : t[k];
+      c[k] = Number.isInteger(n) && n > 0 ? n : 0;
+    } else c[k] = CARD_NORM[k](t[k]);
   }
   return c;
 }
@@ -545,6 +639,7 @@ function cardPatchOf(patch) {
   const c = {};
   for (const k of Object.keys(CARD_NORM)) if (k in patch) c[k] = CARD_NORM[k](patch[k]);
   if ("status" in patch) c.open = (patch.status || "backlog") !== "done";
+  if ("acceptanceCriteria" in patch) { const n = acCounts(patch.acceptanceCriteria); c.acTotal = n.total; c.acDone = n.done; }
   if ("attachments" in patch) c.attachmentCount = Array.isArray(patch.attachments) ? patch.attachments.length : 0;
   return c;
 }
@@ -571,4 +666,4 @@ function dataUriParts(uri) {
   return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
 }
 
-module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, DEFAULT_TESTER, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, cleanTaskFields, CARD_FIELDS, cardOf, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };
+module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, DEFAULT_TESTER, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, CARD_FIELDS, cardOf, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };

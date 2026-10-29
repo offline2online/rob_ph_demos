@@ -178,6 +178,34 @@ async function main() {
   await check("A ticket's project must be a string", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: ["x"], updatedBy: SAM }));
   await check("A ticket's project is at most 100 characters", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "p".repeat(101), updatedBy: SAM }));
   await check("A ticket can name a project", "allow", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "New5VKTF2QBqT3T4YEla", updatedBy: SAM }));
+  // ── Acceptance criteria (KB-TASK-12): stored as "<id>\t<0|1>\t<text>" lines ──
+  const line = (i, done = 0, text = `Criterion ${i}`) => `${String(i).padStart(8, "a")}\t${done}\t${text}`;
+  const crit = (n, done = 0, text) => Array.from({ length: n }, (_, i) => line(i, done, text));
+  const setCrit = (list, over = {}) => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), Object.assign({ acceptanceCriteria: list, updatedBy: SAM }, over));
+  await check("A ticket can carry 5 criteria", "allow", () => setCrit(crit(5)));
+  await check("A ticket can carry 50 criteria", "allow", () => setCrit(crit(50)));
+  await check("A ticket can't carry 51 criteria", "deny", () => setCrit(crit(51)));
+  await check("A ticket can clear its criteria", "allow", () => setCrit([]));
+  await check("A criterion of 500 characters is accepted", "allow", () => setCrit([line(1, 0, "x".repeat(500))]));
+  await check("A criterion of 501 characters is refused", "deny", () => setCrit([line(1, 0, "x".repeat(501))]));
+  await check("A 501-character criterion is refused in the last of 50 slots", "deny", () => setCrit([...crit(49), line(49, 0, "x".repeat(501))]));
+  await check("A 501-character criterion is refused in the first slot", "deny", () => setCrit([line(0, 0, "x".repeat(501)), ...crit(5).slice(1)]));
+  await check("An empty criterion is refused", "deny", () => setCrit([line(1, 0, "")]));
+  await check("A criterion without an id is refused", "deny", () => setCrit(["\t0\ttext"]));
+  await check("A criterion with a bad done flag is refused", "deny", () => setCrit([line(1, 2)]));
+  await check("A criterion holding a line break is refused", "deny", () => setCrit(["abcdefgh\t0\tone\ntwo"]));
+  await check("Criteria stored as objects are refused", "deny", () => setCrit([{ id: "abcdefgh", text: "x", done: false }]));
+  await check("Criteria that aren't a list are refused", "deny", () => setCrit("abcdefgh\t0\tx"));
+  await check("Ticking one of 50 criteria is accepted", "allow", async () => {
+    await env.withSecurityRulesDisabled((ctx) => updateDoc(doc(ctx.firestore(), "kanbanTasks/PH-7"), { acceptanceCriteria: crit(50) }));
+    return setCrit([line(0, 1), ...crit(50).slice(1)]);
+  });
+  await check("A ticket is created with criteria", "allow", () => create(MEMBER, 8, { acceptanceCriteria: crit(5) }));
+  await check("A ticket is not created with 51 criteria", "deny", () => create(MEMBER, 8, { acceptanceCriteria: crit(51) }));
+  await check("A card carries the criteria counts", "allow", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { acTotal: 5, acDone: 2 })));
+  await check("A card's done count can't exceed its total", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { acTotal: 2, acDone: 3 })));
+  await check("A card's total is at most 50", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { acTotal: 51, acDone: 0 })));
+  await check("A card can't carry the criteria text", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { acceptanceCriteria: crit(2) })));
   await check("A card with a description can't be written", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { description: "<p>big</p>" })));
   await check("A card can't carry search tokens", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { searchTokens: ["a"] })));
   await check("A card's key must be its id", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(9)));

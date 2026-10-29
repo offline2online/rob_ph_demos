@@ -30,7 +30,7 @@ import {
 import { ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
 import {
   searchTokens, htmlToText, mentionsIn, keyOf, keyNumber, normaliseSettings, queryToken,
-  cardOf, cardPatchOf, externaliseInlineImages, dataUriParts,
+  cardOf, cardPatchOf, externaliseInlineImages, dataUriParts, decodeCriteria, encodeCriteria, acCounts,
 } from "./kanban-core.js";
 
 export const CLOSED_LIMIT = 300;
@@ -74,6 +74,9 @@ export function taskFromDoc(id, d) {
     links: Array.isArray(d.links) ? d.links : [],
     flagged: !!d.flagged,
     attachments: Array.isArray(d.attachments) ? d.attachments : [],
+    acceptanceCriteria: decodeCriteria(d.acceptanceCriteria),
+    acTotal: Array.isArray(d.acceptanceCriteria) ? acCounts(d.acceptanceCriteria).total : Number.isInteger(d.acTotal) ? d.acTotal : 0,
+    acDone: Array.isArray(d.acceptanceCriteria) ? acCounts(d.acceptanceCriteria).done : Number.isInteger(d.acDone) ? d.acDone : 0,
     attachmentCount: Array.isArray(d.attachments) ? d.attachments.length : typeof d.attachmentCount === "number" ? d.attachmentCount : 0,
     commentCount: typeof d.commentCount === "number" ? d.commentCount : 0,
     created: isoOf(d.createdAt),
@@ -94,7 +97,7 @@ export function derivedFields(t) {
 const DERIVED_FROM = ["title", "description", "labels"];
 
 // The fields of a task that are stored as they are.
-export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments"];
+export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments", "acceptanceCriteria"];
 
 // backfill: asks the server to fill kanbanCards from kanbanTasks (idempotent).
 export function createStore({ db, storage, me, backfill = null, onChange = () => {}, onError = () => {} }) {
@@ -286,6 +289,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   function storedPatch(patch) {
     const out = {};
     for (const k of STORED_FIELDS) if (k in patch) out[k] = patch[k] === undefined ? null : patch[k];
+    if ("acceptanceCriteria" in out) out.acceptanceCriteria = encodeCriteria(out.acceptanceCriteria);
     if ("estimate" in out && (out.estimate === "" || out.estimate == null)) out.estimate = null;
     if ("resolution" in out && !out.resolution) out.resolution = null;
     return out;
@@ -354,13 +358,47 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     // write puts the old values back.
     const before = [[key, get(key)], ...others.map((o) => [o.key, get(o.key)])];
     const put = (k, v) => { if (!v) return; (tasks.has(k) ? tasks : extra).set(k, v); bump(); };
-    const withCount = (t, p) => ({ ...t, ...p, ...("attachments" in p ? { attachmentCount: (p.attachments || []).length } : {}) });
+    const withCount = (t, p) => ({
+      ...t, ...p,
+      ...("attachments" in p ? { attachmentCount: (p.attachments || []).length } : {}),
+      ...("acceptanceCriteria" in p ? { acTotal: acCounts(p.acceptanceCriteria).total, acDone: acCounts(p.acceptanceCriteria).done } : {}),
+    });
     put(key, cur.key ? withCount(cur, patch) : null);
     for (const o of others) { const t = get(o.key); put(o.key, t ? withCount(t, o.patch) : null); }
     const fullBefore = full.get(key);
     if (fullBefore) full.set(key, { ...withCount(fullBefore, patch), ...(derive ? { descriptionText: data.descriptionText } : {}) });
     try { await b.commit(); }
     catch (err) { for (const [k, v] of before) put(k, v); if (fullBefore) full.set(key, fullBefore); changed("tasks"); throw err; }
+  }
+
+  // A change to a ticket's acceptance criteria (KB-TASK-12), made against the
+  // latest copy in a transaction so two people ticking different items never
+  // overwrite each other. `change(list)` gets the current decoded list and
+  // returns { list, activity: [lines] } (or null for no change).
+  async function changeCriteria(key, change) {
+    const ref = doc(db, "kanbanTasks", key);
+    const res = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error(`${key} no longer exists`);
+      const cur = decodeCriteria(snap.data().acceptanceCriteria);
+      const out = change(cur);
+      if (!out) return null;
+      const n = acCounts(out.list);
+      tx.update(ref, { acceptanceCriteria: encodeCriteria(out.list), ...stamp() });
+      // (while the cards are behind, a card is written whole so it is never a fragment)
+      const counts = boardColl === "kanbanCards" ? { acTotal: n.total, acDone: n.done } : cardOf({ ...snap.data(), key, acceptanceCriteria: encodeCriteria(out.list) });
+      tx.set(cardDoc(key), { ...counts, ...stamp() }, { merge: true });
+      for (const text of out.activity || []) if (text) tx.set(doc(collection(db, "kanbanTasks", key, "activity")), { who: me, text: String(text).slice(0, 500), at: serverTimestamp() });
+      return out.list;
+    });
+    if (res) {
+      const n = acCounts(res), fresh = (t) => (t ? { ...t, acceptanceCriteria: res, acTotal: n.total, acDone: n.done } : t);
+      const held = get(key);
+      if (held) { (tasks.has(key) ? tasks : extra).set(key, fresh(held)); bump(); }
+      if (full.has(key)) full.set(key, fresh(full.get(key)));
+      changed("tasks");
+    }
+    return res;
   }
 
   // Deleting an epic unlinks its children (KB-TASK-7).
@@ -445,6 +483,6 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
 
   return {
     state, get, getFull, start, stop, watchRelease, fetchTask, fetchChildren, searchServer, watchComments, watchActivity,
-    createTask, updateTask, deleteTask, addComment, notify, markRead, upload, externaliseImages, saveSettings, addSprint, backfill: () => (backfill ? backfill() : Promise.resolve()),
+    createTask, updateTask, changeCriteria, deleteTask, addComment, notify, markRead, upload, externaliseImages, saveSettings, addSprint, backfill: () => (backfill ? backfill() : Promise.resolve()),
   };
 }

@@ -97,9 +97,9 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     execFileSync(process.execPath, [path.join(__dirname, "kanban-core-copy.mjs")], { stdio: "pipe" });
   });
 
-  await test("the twelve kanban_* tools are registered, reads as board.read", async () => {
+  await test("the thirteen kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_comment", "kanban_create_task", "kanban_flag_task", "kanban_get_task", "kanban_list_people", "kanban_list_tasks", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_flag_task", "kanban_get_task", "kanban_list_people", "kanban_list_tasks", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list|get|search|release)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
@@ -197,6 +197,66 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(n.isError); assert.match(n.text, /isn't a member/);
     await tool(sam, "kanban_flag_task", { key: "PH-3", flagged: true });
     assert.strictEqual(task("PH-3").flagged, true);
+  });
+
+  await test("acceptance criteria: 5 on create, returned by kanban_get_task, counted in the list and on the card", async () => {
+    const r = await tool(sam, "kanban_create_task", { title: "Criteria ticket", acceptanceCriteria: ["Field A is required", { text: "Saves on Enter", done: true }, "Shows an error on 500", "Clears on cancel", "Keyboard reachable"] });
+    assert.ok(!r.isError, r.text);
+    const key = r.json.key;
+    const stored = task(key).acceptanceCriteria;
+    assert.strictEqual(stored.length, 5); assert.ok(stored.every((l) => /^[a-z0-9]{8}\t[01]\t.+/.test(l)), "stored as id/done/text lines");
+    const g = await tool(sam, "kanban_get_task", { key });
+    assert.strictEqual(g.json.acceptanceCriteria.length, 5);
+    assert.deepStrictEqual(g.json.acceptanceCriteria.map((c) => [c.text, c.done]), [["Field A is required", false], ["Saves on Enter", true], ["Shows an error on 500", false], ["Clears on cancel", false], ["Keyboard reachable", false]]);
+    assert.strictEqual(g.json.criteriaTotal, 5); assert.strictEqual(g.json.criteriaDone, 1);
+    const card = env.store.col("kanbanCards").get(key);
+    assert.strictEqual(card.acTotal, 5); assert.strictEqual(card.acDone, 1);
+    assert.ok(!("acceptanceCriteria" in card), "the card carries the counts only");
+    const l = await tool(sam, "kanban_list_tasks", { search: "Criteria ticket" });
+    assert.strictEqual(l.json.tasks[0].criteriaTotal, 5);
+  });
+
+  await test("kanban_check_criteria ticks and unticks by id without resending the list, one activity line each", async () => {
+    const key = [...env.store.col("kanbanTasks").keys()].find((k) => task(k).title === "Criteria ticket");
+    const ids = (await tool(sam, "kanban_get_task", { key })).json.acceptanceCriteria.map((c) => c.id);
+    const t = await tool(sam, "kanban_check_criteria", { key, ids: [ids[0], ids[2]], done: true });
+    assert.ok(!t.isError, t.text);
+    assert.strictEqual(t.json.acDone, 3); assert.strictEqual(t.json.acTotal, 5); assert.strictEqual(t.json.changed, 2);
+    assert.strictEqual(env.store.col("kanbanCards").get(key).acDone, 3);
+    assert.deepStrictEqual(activity(key).filter((a) => /^ticked/.test(a)).sort(), ['ticked criterion "Field A is required"', 'ticked criterion "Shows an error on 500"']);
+    const u = await tool(sam, "kanban_check_criteria", { key, ids: [ids[1]], done: false });
+    assert.strictEqual(u.json.acDone, 2);
+    assert.ok(activity(key).includes('unticked criterion "Saves on Enter"'));
+    const same = await tool(sam, "kanban_check_criteria", { key, ids: [ids[1]], done: false });
+    assert.strictEqual(same.json.changed, 0);
+    const bad = await tool(sam, "kanban_check_criteria", { key, ids: ["nosuchid"], done: true });
+    assert.ok(bad.isError); assert.match(bad.text, /no criterion nosuchid/);
+    assert.ok((await tool1(kit, "kanban_check_criteria", { key, ids: [ids[0]], done: false })).isError, "a viewer can't tick");
+  });
+
+  await test("kanban_update_task replaces the list, keeping ids and state of unchanged text, and logs what changed", async () => {
+    const key = [...env.store.col("kanbanTasks").keys()].find((k) => task(k).title === "Criteria ticket");
+    const before = (await tool(sam, "kanban_get_task", { key })).json.acceptanceCriteria;
+    const u = await tool(sam, "kanban_update_task", { key, acceptanceCriteria: ["Keyboard reachable", "Field A is required", "A brand new one"] });
+    assert.ok(!u.isError, u.text);
+    const after = (await tool(sam, "kanban_get_task", { key })).json.acceptanceCriteria;
+    assert.strictEqual(after.length, 3);
+    assert.strictEqual(after[1].id, before[0].id); assert.strictEqual(after[0].id, before[4].id);
+    assert.ok(activity(key).includes('added criterion "A brand new one"'));
+    assert.ok(activity(key).some((a) => /^removed criterion/.test(a)));
+    const cleared = await tool(sam, "kanban_update_task", { key, acceptanceCriteria: [] });
+    assert.ok(!cleared.isError); assert.strictEqual(env.store.col("kanbanCards").get(key).acTotal, 0);
+  });
+
+  await test("51 criteria, or a 501-character one, are refused over MCP", async () => {
+    const many = await tool(sam, "kanban_create_task", { title: "Too many", acceptanceCriteria: Array.from({ length: 51 }, (_, i) => `Criterion ${i}`) });
+    assert.ok(many.isError); assert.match(many.text, /limited to 50 items/);
+    const long = await tool(sam, "kanban_create_task", { title: "Too long", acceptanceCriteria: ["x".repeat(501)] });
+    assert.ok(long.isError); assert.match(long.text, /limited to 500 characters/);
+    const ok = await tool(sam, "kanban_create_task", { title: "Edge", acceptanceCriteria: ["x".repeat(500), ...Array.from({ length: 49 }, (_, i) => `c${i}`)] });
+    assert.ok(!ok.isError, ok.text);
+    const empty = await tool(sam, "kanban_update_task", { key: ok.json.key, acceptanceCriteria: ["fine", "  "] });
+    assert.ok(empty.isError); assert.match(empty.text, /is empty/);
   });
 
   await test("an admin with no console row is a member: listed, assignable by email and as \"me\"", async () => {

@@ -13,7 +13,7 @@ import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
   statusChange, currentReleaseId, DEFAULT_TESTER, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
-  canonicalEmail, isAliasEmail,
+  canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -772,6 +772,7 @@ export function mountStaffKanban(ctx) {
           ${t.project && projectName(t.project) ? `<span class="card-cat kb-project-chip" title="Project: ${esc(projectName(t.project))}"><span class="material-symbols-outlined" aria-hidden="true">folder</span>${esc(projectName(t.project))}</span>` : ""}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
           ${(t.comments || []).length ? `<span class="kb-meta-ic" title="${t.comments.length} comment${t.comments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.comments.length}</span>` : ""}
+          ${t.acTotal ? `<span class="kb-meta-ic kb-ac-chip${t.acDone === t.acTotal ? " done" : ""}" title="${t.acDone} of ${t.acTotal} acceptance criteria done"><span class="material-symbols-outlined" aria-hidden="true">checklist</span>AC ${t.acDone}/${t.acTotal}</span>` : ""}
           ${t.attachmentCount ? `<span class="kb-meta-ic" title="${t.attachmentCount} attachment${t.attachmentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachmentCount}</span>` : ""}
         </div>
         ${avatar(t.assignee)}
@@ -987,11 +988,11 @@ export function mountStaffKanban(ctx) {
     if (!t && !canWrite()) return;
     draftIsNew = !t;
     returnTo = preset && preset.returnTo ? preset.returnTo : null;
-    draft = t ? { ...clone(t), comments: [], activity: [] } : Object.assign({
+    draft = t ? { ...clone(t), comments: [], activity: [], _acSeen: t.updated } : Object.assign({
       key: "", type: "task", title: "", description: "", status: "backlog",
       assignee: board.mine ? state.me : "", reporter: state.me, release: state.settings.currentRelease,
       estimate: "", logged: 0, priority: "medium", sprint: "", project: "", due: "", labels: [], epic: "",
-      comments: [], attachments: [], links: [], previousAssignee: "", activity: [], flagged: false,
+      comments: [], attachments: [], links: [], previousAssignee: "", activity: [], flagged: false, acceptanceCriteria: [],
     }, preset ? preset.fields : {});
     if (t) {
       watchThread(t.key);
@@ -1059,6 +1060,7 @@ export function mountStaffKanban(ctx) {
     refreshChildren();
     const el = $("#f-links");
     if (el) el.innerHTML = linksHTML();
+    syncCriteriaFromBoard();
   }
 
   const micBtn = (id, aria) => `<button type="button" class="mic-btn kb-mic" id="${id}" title="Dictate" aria-label="${aria}" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">mic</span></button>`;
@@ -1116,6 +1118,10 @@ export function mountStaffKanban(ctx) {
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
         <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${LINK_TYPES.map((x) => opt(x, x, "relates to")).join("")}</select>
           ${pickerHTML("f-link-key", "Search tickets by number, title or description")}</div></div>`;
+      case "criteria": return `<div class="kb-field" data-field="criteria"><label class="field-label" for="f-ac-input">Acceptance criteria <span class="kb-none" id="f-ac-count">${criteriaCountText()}</span></label>
+        <ul class="kb-sublist kb-ac" id="f-ac">${criteriaHTML()}</ul>
+        ${canWrite() ? `<div class="kb-add-row kb-ac-add"><input type="text" id="f-ac-input" class="kb-input" maxlength="${AC_MAX_TEXT}" placeholder="Add a criterion and press Enter" autocomplete="off"><button type="button" class="btn-ghost" id="f-ac-add">Add</button></div>` : ""}
+        <p class="kb-inline-note" id="f-ac-note" hidden></p></div>`;
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
       case "comments": return `<div class="kb-field" data-field="comments">${label("comments", "f-comment")}<ul class="kb-comments" id="f-comments">${commentsHTML()}</ul>
@@ -1124,6 +1130,123 @@ export function mountStaffKanban(ctx) {
         <div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" id="f-comment-add">Add comment</button></div></div>`;
     }
     return "";
+  }
+  // ── Acceptance criteria (KB-TASK-12) ────────────────────────────────────
+  // On an existing ticket each add, edit, tick, move and removal is saved at
+  // once against the latest copy (store.changeCriteria) with its own activity
+  // line; on a new ticket they ride in the Create.
+  const acList = () => draft.acceptanceCriteria || (draft.acceptanceCriteria = []);
+  const criteriaCountText = () => { const l = acList(); return l.length ? `${l.filter((c) => c.done).length} of ${l.length} done` : "None yet"; };
+  const criteriaHTML = () => {
+    const l = acList(), w = canWrite();
+    return l.map((c, i) => `<li class="kb-ac-item${c.done ? " done" : ""}" data-ac="${esc(c.id)}"><input type="checkbox" data-ac-tick ${c.done ? "checked" : ""} ${w ? "" : "disabled"} aria-label="Done: ${esc(c.text)}"><input type="text" class="kb-input kb-ac-text" data-ac-text value="${esc(c.text)}" maxlength="${AC_MAX_TEXT}" ${w ? "" : "disabled"} aria-label="Criterion ${i + 1}">${w ? `<button type="button" class="icon-btn" data-ac-up ${i ? "" : "disabled"} aria-label="Move criterion ${i + 1} up"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button><button type="button" class="icon-btn" data-ac-down ${i < l.length - 1 ? "" : "disabled"} aria-label="Move criterion ${i + 1} down"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button><button type="button" class="icon-btn" data-ac-rm aria-label="Remove criterion ${i + 1}">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No acceptance criteria</li>';
+  };
+  function redrawCriteria() {
+    const el = $("#f-ac");
+    if (el) el.innerHTML = criteriaHTML();
+    const c = $("#f-ac-count");
+    if (c) c.textContent = criteriaCountText();
+  }
+  const acQuote = (t) => `"${t.length > 80 ? t.slice(0, 79) + "…" : t}"`;
+  // change(list) edits a copy of the latest list and returns the activity lines.
+  async function editCriteria(change) {
+    const d = draft;
+    if (!d || !canWrite()) return;
+    const note = $("#f-ac-note");
+    if (note) note.hidden = true;
+    if (draftIsNew) {
+      const list = clone(acList());
+      change(list);
+      d.acceptanceCriteria = list;
+      redrawCriteria();
+      return;
+    }
+    try {
+      const res2 = await store.changeCriteria(d.key, (cur) => {
+        const list = clone(cur);
+        const lines = change(list);
+        return lines && lines.length ? { list, activity: lines } : null;
+      });
+      if (draft === d && res2) d.acceptanceCriteria = res2.map((c) => ({ ...c }));
+    } catch (e) {
+      if (note) { note.hidden = false; note.textContent = e && e.code === "permission-denied" ? "You don't have permission to change this ticket." : "The criteria weren't saved. Check your connection and try again."; }
+      console.warn("staff kanban: criteria save failed", e);
+      if (draft === d) { const t = await store.fetchTask(d.key).catch(() => null); if (t && draft === d) d.acceptanceCriteria = t.acceptanceCriteria.map((c) => ({ ...c })); }
+    }
+    if (draft === d) redrawCriteria();
+  }
+  // The open ticket changed elsewhere (the board's cards carry the counts and
+  // the time of the last write): read its criteria again unless one is being typed.
+  function syncCriteriaFromBoard() {
+    const held = taskByKey(draft.key);
+    if (!held || held.updated === draft._acSeen) return;
+    const d = draft;
+    d._acSeen = held.updated;
+    const mine = acList();
+    if (held.acTotal === mine.length && held.acDone === mine.filter((c) => c.done).length) return;
+    const el = $("#f-ac");
+    if (el && el.contains(document.activeElement) && document.activeElement.matches("[data-ac-text]")) return;
+    store.fetchTask(d.key).then((t) => { if (t && draft === d) { d.acceptanceCriteria = t.acceptanceCriteria.map((c) => ({ ...c })); redrawCriteria(); } }).catch(() => {});
+  }
+  function bindCriteria(form) {
+    const add = () => {
+      const input = $("#f-ac-input");
+      const text = input.value.replace(/\s+/g, " ").trim();
+      if (!text) return;
+      const note = $("#f-ac-note");
+      if (acList().length >= AC_MAX_ITEMS) { note.hidden = false; note.textContent = `A ticket can have at most ${AC_MAX_ITEMS} criteria.`; return; }
+      input.value = "";
+      editCriteria((list) => {
+        if (list.length >= AC_MAX_ITEMS) return null;
+        list.push({ id: newCriterionId(new Set(list.map((c) => c.id))), text, done: false });
+        return [`added criterion ${acQuote(text)}`];
+      });
+    };
+    const addBtn = $("#f-ac-add"), input = $("#f-ac-input");
+    if (addBtn) addBtn.addEventListener("click", add);
+    if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+    const ul = $("#f-ac");
+    if (!ul) return;
+    const idOf = (el) => el.closest("[data-ac]").dataset.ac;
+    ul.addEventListener("change", (e) => {
+      const id = idOf(e.target);
+      if (e.target.matches("[data-ac-tick]")) {
+        const done = e.target.checked;
+        editCriteria((list) => {
+          const c = list.find((x) => x.id === id);
+          if (!c || c.done === done) return null;
+          c.done = done;
+          return [`${done ? "ticked" : "unticked"} criterion ${acQuote(c.text)}`];
+        });
+      } else if (e.target.matches("[data-ac-text]")) {
+        const text = e.target.value.replace(/\s+/g, " ").trim();
+        editCriteria((list) => {
+          const c = list.find((x) => x.id === id);
+          if (!c || !text || c.text === text) return null;
+          const old = c.text;
+          c.text = text;
+          return [`edited criterion ${acQuote(old)} → ${acQuote(text)}`];
+        });
+      }
+    });
+    ul.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-ac-up], [data-ac-down], [data-ac-rm]");
+      if (!b || b.disabled) return;
+      const id = idOf(b);
+      if (b.matches("[data-ac-rm]")) {
+        editCriteria((list) => { const i = list.findIndex((x) => x.id === id); if (i < 0) return null; const [c] = list.splice(i, 1); return [`removed criterion ${acQuote(c.text)}`]; });
+      } else {
+        const by = b.matches("[data-ac-up]") ? -1 : 1;
+        editCriteria((list) => {
+          const i = list.findIndex((x) => x.id === id), j = i + by;
+          if (i < 0 || j < 0 || j >= list.length) return null;
+          [list[i], list[j]] = [list[j], list[i]];
+          return [`moved criterion ${acQuote(list[j].text)} ${by < 0 ? "up" : "down"}`];
+        });
+      }
+    });
+    // A blank edit puts the old text back.
+    ul.addEventListener("focusout", (e) => { if (e.target.matches("[data-ac-text]") && !e.target.value.trim()) redrawCriteria(); });
   }
   const labelsHTML = () => (draft.labels || []).map((l) => `<span class="kb-label-chip">${esc(l)}<button type="button" data-rm-label="${esc(l)}" aria-label="Remove ${esc(l)}">&times;</button></span>`).join("") || '<span class="kb-none">No labels</span>';
   const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
@@ -1139,9 +1262,9 @@ export function mountStaffKanban(ctx) {
   function renderForm() {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
-    const main = draftIsNew ? ["voice", "title", "description", "children", "attachments", "links"] : ["title", "description", "children", "links", "attachments", "comments"];
+    const main = draftIsNew ? ["voice", "title", "description", "criteria", "children", "attachments", "links"] : ["title", "description", "criteria", "children", "links", "attachments", "comments"];
     const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "project", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
-    const visible = (k) => k === "voice" || k === "children" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
+    const visible = (k) => k === "voice" || k === "children" || k === "criteria" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
     form.innerHTML = `
@@ -1237,6 +1360,7 @@ export function mountStaffKanban(ctx) {
     bindEditors();
     bindVoice();
     bindChildren(form);
+    bindCriteria(form);
     $("#f-cancel").addEventListener("click", closeTask);
     const del = $("#f-delete");
     if (del) del.addEventListener("click", async () => {

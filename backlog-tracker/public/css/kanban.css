@@ -270,6 +270,16 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 .kb-add-row .kb-input:first-child { flex: 0 0 140px; }
 .kb-add-row .btn-ghost { flex: none; min-height: 40px; padding: 0 14px; font-weight: 600; }
 .kb-add-row-end { justify-content: flex-end; }
+/* Acceptance criteria: a tick, an editable line and move / remove buttons per item */
+.kb-ac li.kb-ac-item { padding-right: 4px; }
+.kb-ac-item input[type="checkbox"] { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--primary, #0b57d0); }
+.kb-ac-item .kb-ac-text { flex: 1 1 auto; min-width: 0; min-height: 32px; border-color: transparent; background: transparent; padding: 2px 6px; }
+.kb-ac-item .kb-ac-text:hover, .kb-ac-item .kb-ac-text:focus { border-color: var(--border); background: var(--bg, #fff); }
+.kb-ac-item.done .kb-ac-text { color: var(--text-muted); text-decoration: line-through; }
+.kb-ac-item .icon-btn { margin-left: 0; flex: none; }
+.kb-ac-item .icon-btn:disabled { opacity: .35; }
+.kb-ac-add .kb-input:first-child { flex: 1 1 auto; }
+.kb-ac-chip.done { color: var(--success, #1a7f37); font-weight: 600; }
 .kb-attach-btn { cursor: pointer; min-height: 40px; padding: 0 14px; margin-top: 2px; }
 .kb-comments { list-style: none; margin: 6px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .kb-comment { display: flex; gap: 10px; align-items: flex-start; }
