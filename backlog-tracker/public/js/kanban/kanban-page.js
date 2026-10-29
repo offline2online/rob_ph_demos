@@ -12,7 +12,7 @@ import { createResultReader, useContinuousMode, isAndroidDevice } from "../dicta
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
-  statusChange, rankBetween, fold, searchTickets, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
+  statusChange, currentReleaseId, DEFAULT_TESTER, rankBetween, fold, searchTickets, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
   canonicalEmail, isAliasEmail,
 } from "./kanban-core.js";
 
@@ -40,16 +40,7 @@ export function mountStaffKanban(ctx) {
   };
   function effectiveSettings() {
     const s = store.state.settings;
-    return { ...s, tester: s.tester || defaultTester(), currentRelease: s.currentRelease || defaultRelease() };
-  }
-  // Until an admin picks one: the console owner tests, and the first release not yet live is current.
-  function defaultTester() {
-    const rob = people().find((u) => /^rob@/.test(u.id));
-    return rob ? rob.id : "";
-  }
-  function defaultRelease() {
-    const r = releases().find((x) => !x.released);
-    return r ? r.id : "";
+    return { ...s, currentRelease: currentReleaseId(s, releases()) };
   }
 
   const board = { q: "", mine: false, flagged: false, assignees: new Set(), type: "", priority: "", sprint: "", release: "", label: "" };
@@ -1792,6 +1783,7 @@ export function mountStaffKanban(ctx) {
   // kanbanSettings / kanbanSprints).
   function renderSettings(view) {
     const S = state.settings;
+    const stored = store.state.settings; // what the server has, not the fallback it uses
     const admin = isAdmin();
     const dis = admin ? "" : " disabled";
     const row = (f, core) => {
@@ -1821,9 +1813,9 @@ export function mountStaffKanban(ctx) {
         <section class="docs-block">
           <div class="docs-block-header"><h3>Workflow${tip("Moving a task into Ready for Testing reassigns it to this person. Moving it back to In Progress or Ready for Dev returns it to the developer.")}</h3></div>
           <label class="field-label" for="st-tester">Ready for Testing reassigns to</label>
-          <select id="st-tester" class="kb-input"${dis}>${peopleWith(S.tester).map((u) => opt(u.id, u.first, S.tester)).join("")}</select>
+          <select id="st-tester" class="kb-input"${dis}>${opt("", `Not set (${firstName(S.tester)} is used)`, stored.testerIsDefault ? "" : "-")}${peopleWith(stored.testerIsDefault ? "" : stored.tester).map((u) => opt(u.id, u.first, stored.testerIsDefault ? "" : stored.tester)).join("")}</select>
           <label class="field-label" for="st-release">Current release</label>
-          <select id="st-release" class="kb-input"${dis}>${opt("", rels.length ? "Choose a release" : "No releases yet (add one on the Releases page)", S.currentRelease)}${rels.filter((r) => !r.released || r.id === S.currentRelease).map((r) => opt(r.id, r.date ? `${r.name} · ${fmtDate(r.date, { day: "numeric", month: "short", year: "numeric" })}` : r.name, S.currentRelease)).join("")}</select>
+          <select id="st-release" class="kb-input"${dis}>${opt("", S.currentRelease ? `Not set (${releaseName(S.currentRelease)} is used)` : rels.length ? "Not set" : "No releases yet (add one on the Releases page)", stored.currentRelease)}${rels.filter((r) => !r.released || r.id === stored.currentRelease).map((r) => opt(r.id, r.date ? `${r.name} · ${fmtDate(r.date, { day: "numeric", month: "short", year: "numeric" })}` : r.name, stored.currentRelease)).join("")}</select>
         </section>
         <section class="docs-block">
           <div class="docs-block-header"><h3>Release dates${tip("The release report counts working days to these dates and sizes each person's capacity from them. Releases themselves are managed on the console's Releases page.")}</h3></div>
@@ -1851,8 +1843,8 @@ export function mountStaffKanban(ctx) {
       fields[c.dataset.req].required = c.checked;
       saveS({ fields }, `${esc(FIELD_LABEL[c.dataset.req])} ${c.checked ? "required" : "optional"}`);
     }));
-    $("#st-tester").addEventListener("change", (e) => saveS({ tester: e.target.value }, `Ready for Testing now reassigns to <b>${esc(firstName(e.target.value))}</b>`));
-    $("#st-release").addEventListener("change", (e) => saveS({ currentRelease: e.target.value }, `Current release is <b>${esc(releaseName(e.target.value))}</b>`));
+    $("#st-tester").addEventListener("change", (e) => saveS({ tester: e.target.value }, `Ready for Testing now reassigns to <b>${esc(firstName(e.target.value || DEFAULT_TESTER))}</b>`));
+    $("#st-release").addEventListener("change", (e) => saveS({ currentRelease: e.target.value }, `Current release is <b>${esc(releaseName(e.target.value || currentReleaseId({}, releases())))}</b>`));
     $$("[data-rel-date]", view).forEach((inp) => inp.addEventListener("change", () => {
       saveS({ releaseDates: { ...(store.state.settings.releaseDates || {}), [inp.dataset.relDate]: inp.value } }, `${esc(releaseName(inp.dataset.relDate))} date saved`);
     }));

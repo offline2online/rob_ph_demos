@@ -77,6 +77,29 @@ export function defaultFields() {
   };
 }
 
+// Until an admin picks one, Ready for Testing hands tickets to the console owner (REQUIREMENTS §2).
+export const DEFAULT_TESTER = "rob@offline2online.com";
+
+// Compare dotted versions numerically ("4.9" before "4.12"); unversioned last.
+function cmpVersion(a, b) {
+  const pa = String(a || "").match(/\d+/g), pb = String(b || "").match(/\d+/g);
+  if (!pa || !pb) return pa ? -1 : pb ? 1 : 0;
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (+pa[i] || 0) - (+pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+// The current release: the one an admin chose, else the earliest release not
+// yet live by version. releases: [{id, version, released, order?}].
+export function currentReleaseId(settings, releases = []) {
+  const chosen = settings && settings.currentRelease;
+  if (chosen) return chosen;
+  const open = releases.filter((r) => !r.released);
+  open.sort((a, b) => cmpVersion(a.version, b.version) || (Number(a.order) || 0) - (Number(b.order) || 0));
+  return open.length ? open[0].id : "";
+}
+
 // kanbanSettings/main as stored, filled out with defaults. Core fields are
 // always shown, and title / status always required, whatever was saved.
 export function normaliseSettings(raw) {
@@ -93,7 +116,8 @@ export function normaliseSettings(raw) {
   for (const k of FIELD_KEYS) if (!fields[k].show) fields[k].required = false;
   return {
     fields,
-    tester: typeof s.tester === "string" ? s.tester : "",
+    tester: typeof s.tester === "string" && s.tester ? s.tester : DEFAULT_TESTER,
+    testerIsDefault: !(typeof s.tester === "string" && s.tester),
     currentRelease: typeof s.currentRelease === "string" ? s.currentRelease : "",
     releaseDates: s.releaseDates && typeof s.releaseDates === "object" ? { ...s.releaseDates } : {},
     labels: Array.isArray(s.labels) ? s.labels.filter((l) => typeof l === "string") : [],

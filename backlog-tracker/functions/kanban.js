@@ -215,6 +215,8 @@ function kanbanTools(h) {
     const s = await db().collection("kanbanSettings").doc("main").get();
     return core.normaliseSettings(s.exists ? s.data() : null);
   }
+  // The chosen current release, else the earliest one not yet live.
+  const currentRelease = (s, relDocs) => core.currentReleaseId(s, relDocs.map((d) => ({ id: d.id, version: d.data().version, released: d.data().status === "live", order: d.data().order })));
   // The directory, plus the bootstrap admins and the caller when they have no
   // consoleUsers row (so no directory entry yet).
   async function people(session) {
@@ -348,7 +350,7 @@ function kanbanTools(h) {
           people: ppl.map((p) => ({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null })),
           releases: rel.docs.map((d) => ({ id: d.id, name: d.data().name, version: d.data().version || null, live: d.data().status === "live", date: s.releaseDates[d.id] || null })),
           sprints: spr.docs.map((d) => ({ id: d.id, name: d.data().name, start: d.data().start || null, end: d.data().end || null })),
-          currentRelease: s.currentRelease || null, tester: s.tester || null,
+          currentRelease: currentRelease(s, rel.docs) || null, tester: s.tester,
           statuses: core.STATUSES.map((x) => x.key), resolutions: core.RESOLUTIONS.map((x) => x.key),
         });
       },
@@ -420,7 +422,7 @@ function kanbanTools(h) {
       inputSchema: { type: "object", properties: { release: { type: "string", description: "A release id, or \"all\"." }, assignee: { type: "string" }, status: { type: "string" } }, additionalProperties: false },
       async run(args, session) {
         const s = await settings();
-        const release = args.release || s.currentRelease;
+        const release = args.release || currentRelease(s, (await db().collection("releases").get()).docs);
         if (!release) return toolError("No current release is set. Give a release id (kanban_list_people lists them).");
         const relDoc = release === "all" ? null : await db().collection("releases").doc(release).get();
         const all = await loadTasks({ release: release === "all" ? "" : release });

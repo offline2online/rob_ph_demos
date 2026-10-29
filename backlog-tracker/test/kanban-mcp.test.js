@@ -120,6 +120,28 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(activity("PH-1").includes("In Progress → Ready for Testing · reassigned to Rob for testing"));
   });
 
+  await test("TC-47: with no tester or current release stored, the defaults apply", async () => {
+    const saved = env.store.col("kanbanSettings").get("main");
+    const savedRel = env.store.col("releases").get("r412");
+    env.store.col("kanbanSettings").set("main", { releaseDates: {}, firstNames: { [HUY]: "Huy" } });
+    env.store.col("releases").set("r409", { name: "PH 4.9", version: "4.9", status: "draft", order: 5 });
+    env.store.col("releases").set("r412", { name: "PH 4.12", version: "4.12", status: "draft", order: 1 });
+    try {
+      const people = await tool(kit, "kanban_list_people", {});
+      assert.strictEqual(people.json.tester, ROB); assert.strictEqual(people.json.currentRelease, "r409");
+      assert.strictEqual((await tool(kit, "kanban_release_report", {})).json.release, "r409");
+      await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
+      const r = await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-testing" });
+      assert.strictEqual(r.json.assignee, ROB); assert.match(r.json.note, /reassigned to Rob for testing/);
+      assert.strictEqual(task("PH-1").previousAssignee, HUY);
+      assert.match((await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" })).json.note, /returned to Huy/);
+    } finally {
+      env.store.col("kanbanSettings").set("main", saved);
+      env.store.col("releases").delete("r409");
+      env.store.col("releases").set("r412", savedRel);
+    }
+  });
+
   await test("closing: completed or withdrawn, with open and closedAt kept in step", async () => {
     const r = await tool(sam, "kanban_move_task", { key: "PH-3", status: "done", resolution: "withdrawn" });
     assert.strictEqual(r.json.resolution, "withdrawn");

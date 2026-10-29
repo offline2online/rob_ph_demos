@@ -52,6 +52,21 @@ t("settings: release is never required, even if saved so", () => {
   assert.equal(k.normaliseSettings({ fields: { release: { show: true, required: true } } }).fields.release.required, false);
   assert.equal(k.defaultFields().release.required, false);
 });
+t("settings: an unset tester defaults to Rob; a stored one wins (TC-47)", () => {
+  const d = k.normaliseSettings(null);
+  assert.equal(d.tester, "rob@offline2online.com"); assert.equal(d.testerIsDefault, true);
+  assert.equal(k.normaliseSettings({ tester: "" }).tester, k.DEFAULT_TESTER);
+  const s = k.normaliseSettings({ tester: "huy@x" });
+  assert.equal(s.tester, "huy@x"); assert.equal(s.testerIsDefault, false);
+  const ch = k.statusChange({ status: "in-progress", assignee: "duong@x" }, "ready-for-testing", { tester: d.tester });
+  assert.equal(ch.patch.assignee, "rob@offline2online.com"); assert.match(ch.note, /reassigned to .* for testing/);
+});
+t("settings: an unset current release is the earliest unreleased by version (TC-47)", () => {
+  const rels = [{ id: "a", version: "4.12", released: false, order: 1 }, { id: "b", version: "4.9", released: false, order: 2 }, { id: "c", version: "4.1", released: true, order: 3 }];
+  assert.equal(k.currentReleaseId({ currentRelease: "" }, rels), "b");
+  assert.equal(k.currentReleaseId({ currentRelease: "a" }, rels), "a");
+  assert.equal(k.currentReleaseId({}, []), "");
+});
 t("settings: core fields always shown, title and status always required", () => {
   const s = k.normaliseSettings({ fields: { title: { show: false, required: false }, sprint: { show: false, required: true } }, firstNames: { "h@x": "Huy" } });
   assert.deepEqual(s.fields.title, { show: true, required: true });

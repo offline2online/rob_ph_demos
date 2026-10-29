@@ -247,7 +247,10 @@ grouped by person. Epics are excluded from effort figures. Explanations live in
 Core fields always shown (title and status always required). Hidden fields
 stay editable on an existing ticket under "N more fields" and over MCP.
 
-**KB-SET-2** Ready for Testing reassignment target; current release; each
+**KB-SET-2** Ready for Testing reassignment target; current release (when none is
+stored the tester is Rob and the current release is the earliest unreleased one
+by version, on the board, the report and `kanban_release_report`; the page shows
+an unset field as "Not set (X is used)", never a value the server lacks); each
 release's date (releases themselves are the console's Releases page); sprints
 (name, start, end); the team list with photos and "Shown as" names. Members
 read settings; only admins change them.
