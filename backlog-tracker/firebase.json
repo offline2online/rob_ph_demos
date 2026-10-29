@@ -15,7 +15,10 @@
   ],
   "hosting": [
     {
-      "public": "public",
+      "public": "console-dist",
+      "predeploy": [
+        "node scripts/build-console.js --out console-dist"
+      ],
       "ignore": [
         "firebase.json",
         "**/.*",

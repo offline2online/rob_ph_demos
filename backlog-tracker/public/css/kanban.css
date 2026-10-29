@@ -89,6 +89,10 @@
 .kb-board:not(.kb-board-lanes) .kb-list { flex: 1; }
 @media (min-width: 641px) { .kb-board:not(.kb-board-lanes) .kb-col > .kb-col-head { display: none; } }
 .kb-empty { padding: 18px 6px; font-size: 13px; }
+.kb-more-row:empty { display: none; }
+.kb-more-row { padding: 0 8px 8px; }
+.kb-more { width: 100%; justify-content: center; gap: 6px; }
+.kb-more-left { color: var(--text-secondary, #6b7280); font-size: 12px; font-weight: 400; }
 .kb-drop-target .kb-empty { display: none; }
 
 /* Swimlanes (two or more staff selected): one header row of columns, then a
@@ -157,6 +161,8 @@ html[data-page="staff-kanban"] .topbar { position: relative; }
 .kb-card-chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
 .kb-est { font-weight: 600; white-space: nowrap; }
 .kb-est-none { font-weight: 400; font-style: italic; }
+.kb-project-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 140px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.kb-project-chip .material-symbols-outlined { font-size: 13px; flex: none; }
 .kb-due { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
 .kb-due .material-symbols-outlined { font-size: 13px; }
 .kb-due.soon { color: var(--warning); background: rgba(201, 138, 10, .12); }
@@ -264,12 +270,32 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 .kb-add-row .kb-input:first-child { flex: 0 0 140px; }
 .kb-add-row .btn-ghost { flex: none; min-height: 40px; padding: 0 14px; font-weight: 600; }
 .kb-add-row-end { justify-content: flex-end; }
+/* Acceptance criteria: a tick, an editable line and move / remove buttons per item */
+.kb-ac li.kb-ac-item { padding-right: 4px; }
+.kb-ac-item input[type="checkbox"] { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--primary, #0b57d0); }
+.kb-ac-item .kb-ac-text { flex: 1 1 auto; min-width: 0; min-height: 32px; border-color: transparent; background: transparent; padding: 2px 6px; }
+.kb-ac-item .kb-ac-text:hover, .kb-ac-item .kb-ac-text:focus { border-color: var(--border); background: var(--bg, #fff); }
+.kb-ac-item.done .kb-ac-text { color: var(--text-muted); text-decoration: line-through; }
+.kb-ac-item .icon-btn { margin-left: 0; flex: none; }
+.kb-ac-item .icon-btn:disabled { opacity: .35; }
+.kb-ac-add .kb-input:first-child { flex: 1 1 auto; }
+.kb-ac-chip.done { color: var(--success, #1a7f37); font-weight: 600; }
 .kb-attach-btn { cursor: pointer; min-height: 40px; padding: 0 14px; margin-top: 2px; }
 .kb-comments { list-style: none; margin: 6px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .kb-comment { display: flex; gap: 10px; align-items: flex-start; }
 .kb-comment-meta { font-size: 12px; color: var(--text-muted); }
 .kb-comment-meta b { color: var(--text); }
 .kb-comment-text { font-size: 13.5px; white-space: pre-wrap; }
+.kb-comment-body { flex: 1; min-width: 0; }
+.kb-comment-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.kb-comment-edited { font-style: italic; }
+.kb-comment-menu-wrap { position: relative; margin-left: auto; }
+.kb-comment-menu-btn { width: 28px; height: 28px; padding: 0; }
+.kb-comment-menu-btn .material-symbols-outlined { font-size: 18px; }
+.kb-comment-menu { position: absolute; right: 0; top: 100%; z-index: 5; display: flex; flex-direction: column; min-width: 120px; padding: 4px 0; background: var(--surface, #fff); border-radius: var(--ap-radius-sm); box-shadow: 0 0 0 .5px var(--ap-divider), 0 4px 12px rgba(0, 0, 0, .12); }
+.kb-comment-menu[hidden] { display: none; }
+.kb-comment-menu button { text-align: left; padding: 8px 14px; font: inherit; font-size: 13.5px; color: var(--text); background: none; border: 0; cursor: pointer; }
+.kb-comment-menu button:hover, .kb-comment-menu button:focus-visible { background: var(--ap-hover, rgba(0, 0, 0, .06)); }
 .kb-activity { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--text-muted); padding-left: 2px; }
 .kb-activity .material-symbols-outlined { font-size: 17px; width: 24px; text-align: center; }
 .kb-activity b { color: var(--text); font-weight: 600; }
@@ -479,9 +505,26 @@ body.kb-drag-active .kb-col[data-status="done"] .kb-res-split { visibility: hidd
 .kb-close-zone.on { border-style: solid; transform: scale(1.02); }
 .kb-close-completed.on { background: #d4f0c4; }
 .kb-close-withdrawn.on { background: #dfe1e3; }
+/* Tablet: while the Completed column is scrolled out of view the targets are a slim strip at the right edge. */
+.kb-close-zones.kb-close-strip .kb-close-label, .kb-close-zones.kb-close-strip .kb-close-count { display: none; }
 @media (max-width: 640px) {
+  /* Phone: a slim bar above the tab bar; it grows to the tall targets only when the card nears it. */
   .kb-close-zones { left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom, 0px)); height: 38vh; }
-  .kb-close-withdrawn .material-symbols-outlined { font-size: 24px; }
+  .kb-close-zones.kb-close-slim { flex-direction: row; height: 52px; gap: 8px; }
+  .kb-close-slim .kb-close-zone { flex-direction: row; gap: 6px; min-width: 0; padding: 0 8px; overflow: hidden; white-space: nowrap; }
+  .kb-close-slim .kb-close-completed { flex: 3; }
+  .kb-close-slim .kb-close-withdrawn { flex: 2; }
+  .kb-close-slim .kb-close-zone .material-symbols-outlined { font-size: 22px; }
+  .kb-close-slim .kb-close-label { font-size: 13px; }
+  .kb-close-zones.kb-close-slim.kb-close-grown { flex-direction: column; height: 38vh; gap: 10px; }
+  .kb-close-slim.kb-close-grown .kb-close-zone { flex-direction: column; gap: 6px; }
+  .kb-close-slim.kb-close-grown .kb-close-completed { flex: 3; }
+  .kb-close-slim.kb-close-grown .kb-close-withdrawn { flex: 1; }
+  .kb-close-slim.kb-close-grown .kb-close-zone .material-symbols-outlined { font-size: 36px; }
+  .kb-close-slim.kb-close-grown .kb-close-withdrawn .material-symbols-outlined { font-size: 24px; }
+  .kb-close-slim.kb-close-grown .kb-close-label { font-size: 15px; }
+  /* The bar's own height stays clear of the last card while a card is carried. */
+  body.kb-drag-active .kb-board-wrap { padding-bottom: 96px !important; }
 }
 
 /* Rich-text description and comments (js/editor.js). Callout, table and code

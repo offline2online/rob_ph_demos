@@ -22,10 +22,10 @@ export function defineNewCases(E) {
   E.confirm = confirm;
 
   // ── helpers ──────────────────────────────────────────────────────────────
-  // A drag the layout makes impossible for this input (the closing targets cover the destination) is a finding, not a failure.
+  // The console must be able to make every drag; the prototype, which keeps the old layout, records a drag its layout makes impossible as a finding.
   const tryDrag = async (p, id, what, key, target, o) => {
     try { await dragCard(p, key, target, o); return true; }
-    catch (e) { if (!e.unreachable) throw e; confirm(id, `${what} cannot be reached by dragging on this screen`, String(e.message).split("\n")[0]); return false; }
+    catch (e) { if (!e.unreachable || C) throw e; confirm(id, `${what} cannot be reached by dragging on this screen`, String(e.message).split("\n")[0]); return false; }
   };
   const card = (key) => `.kb-card[data-key="${key}"]`;
   const modalOpen = (p) => p.$eval("#task-backdrop", (e) => !e.hidden);
@@ -279,7 +279,7 @@ export function defineNewCases(E) {
     await p.done();
   });
 
-  T("TC-38b", "removing an attachment from a ticket that was opened before removes exactly one", { known: "the Remove handler is added to the form on every open, so the Nth open removes N" }, async (prof) => {
+  T("TC-38b", "removing an attachment from a ticket that was opened before removes exactly one", async (prof) => {
     const p = await open(prof, E.hash("kanban"));
     await openTask(p, "PH-20"); await moreFields(p);
     await p.setInputFiles("#f-file", [{ name: "a.txt", mimeType: "text/plain", buffer: Buffer.from("a") }, { name: "b.txt", mimeType: "text/plain", buffer: Buffer.from("b") }]);
@@ -307,11 +307,22 @@ export function defineNewCases(E) {
     if (offered.includes("PH-20")) { await p.keyboard.press("Enter"); await sleep(150); }
     assert.ok(!/relates to\s*PH-20/.test(await p.textContent("#f-links")), "a ticket cannot be linked to itself");
     await saveTask(p);
-    // shown on the other ticket too
+    // shown on the other tickets too, with the reverse type (KB-TASK-5)
+    for (const [other, shown] of [["PH-21", "is blocked by"], ["PH-22", "blocks"], ["PH-23", "relates to"], ["PH-24", "is duplicated by"]]) {
+      await openTask(p, other); await moreFields(p);
+      assert.match(await p.textContent("#f-links"), new RegExp(`${shown}\\s*PH-20`), `${other} shows the link from PH-20`);
+      await closeTask(p);
+    }
+    // removing it from the other side removes it from both
     await openTask(p, "PH-21"); await moreFields(p);
-    const onOther = await p.textContent("#f-links");
-    if (/PH-20/.test(onOther)) assert.match(onOther, /is blocked by\s*PH-20/);
-    else confirm("TC-39", "is a link shown on BOTH tickets (the reverse type on the other side)?", `PH-21's links read: ${onOther.trim()}`);
+    const at = await p.$$eval("#f-links li", (e) => e.findIndex((x) => /PH-20/.test(x.textContent)));
+    assert.ok(at >= 0, "PH-21 lists PH-20");
+    await press(p, `[data-rm-link="${at}"]`); await sleep(100);
+    await saveTask(p);
+    await openTask(p, "PH-20"); await moreFields(p);
+    const left = await p.textContent("#f-links");
+    assert.ok(!/blocks\s*PH-21/.test(left), `PH-20 no longer blocks PH-21: ${left.trim()}`);
+    assert.match(left, /is blocked by\s*PH-22/);
     await closeTask(p);
     // remove (within one open of the ticket)
     await p.reload(); await p.waitForSelector(".kb-card");
@@ -322,7 +333,7 @@ export function defineNewCases(E) {
     await p.done();
   });
 
-  T("TC-39b", "removing a link from a ticket that was opened before removes exactly one", { known: "the Remove handler is added to the form on every open, so the Nth open removes N" }, async (prof) => {
+  T("TC-39b", "removing a link from a ticket that was opened before removes exactly one", async (prof) => {
     const p = await open(prof, E.hash("kanban"));
     await openTask(p, "PH-33"); await moreFields(p); await closeTask(p);
     await openTask(p, "PH-30"); await moreFields(p);
@@ -441,8 +452,13 @@ export function defineNewCases(E) {
     assert.ok(log.length >= 1, "the activity log has an entry");
     const status = log.find((l) => /→/.test(l));
     assert.ok(status, `a status line: ${log.join(" | ")}`);
-    const fieldLines = log.filter((l) => !/→/.test(l));
-    if (!fieldLines.length) confirm("TC-43", "should the activity log also record non-status edits (assignee, priority, estimate…)?", `only: ${log.join(" | ")}`);
+    const text = log.join(" | ");
+    assert.match(text, /changed Priority from \w+ to Lowest/, text);
+    assert.match(text, /assigned to Th\S+/, text);
+    assert.match(text, /changed Estimate from .+ to 2d/, text);
+    assert.match(text, /changed Time logged from .+ to 4h/, text);
+    assert.match(text, /changed Due date from .+ to 2026-12-01/, text);
+    assert.match(text, /changed Title from .+ to Edited title/, text);
     await p.done();
   });
 
@@ -503,7 +519,8 @@ export function defineNewCases(E) {
       assert.match(toast, to === "completed" ? /completed/ : to === "withdrawn" ? /withdrawn/ : new RegExp(`moved to ${TITLE[to]}`), `move ${n}: toast`);
     }
     assert.equal(n, 42);
-    if (limits.length) confirm("TC-45", `${label}: moves that cannot be made by drag because the Completed/Withdrawn targets cover the destination column (made by the Status menu instead)`, `${limits.length} of 42: ${limits.join(", ")}`);
+    if (C) assert.deepEqual(limits, [], `${label}: every move that is offered by drag can be made by drag`);
+    else if (limits.length) confirm("TC-45", `${label}: moves that cannot be made by drag because the Completed/Withdrawn targets cover the destination column (made by the Status menu instead)`, `${limits.length} of 42: ${limits.join(", ")}`);
     await p.done();
   }
   E.remainingOf = 5; // PH-28: estimate 5h, nothing logged
@@ -602,7 +619,8 @@ export function defineNewCases(E) {
       // On a phone the page is still settling under the held finger when it lets go, so the slot can be one off: check the card moved down into the list and nobody else changed order.
       assert.ok(now.indexOf(last) > 0 && now.indexOf(last) < now.length - 1, `top → middle (${now.join(",")})`);
       assert.deepEqual(now.filter((k) => k !== last), before.filter((k) => k !== last), "the others kept their order");
-      if (JSON.stringify(now) !== JSON.stringify(expect)) confirm("TC-48", "on a phone a card dropped on the upper half of a card lands one slot lower than expected", `got ${now.join(",")}, wanted ${expect.join(",")}`);
+      if (C) assert.deepEqual(now, expect, "top → middle");
+      else if (JSON.stringify(now) !== JSON.stringify(expect)) confirm("TC-48", "on a phone a card dropped on the upper half of a card lands one slot lower than expected", `got ${now.join(",")}, wanted ${expect.join(",")}`);
     } else assert.deepEqual(now, expect, "top → middle");
     // a middle card to the bottom: drop in the empty space under the last card
     if (!(await tryDrag(p, "TC-48", "the bottom of the column", mid, { status: col }, { input, at: "bottom" }))) { await p.done(); return; }
@@ -678,7 +696,12 @@ export function defineNewCases(E) {
     const afterEsc = await dragGone(p);
     await P.up(); await sleep(250);
     const w = await where(p, key);
-    confirm("TC-50", "should Esc cancel a drag in progress?", `after Esc the drag ${afterEsc.ghost ? "was still active" : "ended"}; releasing then ${w.status !== "backlog" ? "moved the card to " + w.status : "left it where it was"}`);
+    if (C) {
+      assert.equal(afterEsc.ghost, false, "Esc ends the drag");
+      assert.deepEqual(afterEsc, { ghost: false, zones: false, active: false, marker: false, dragging: false }, "Esc leaves nothing of the drag behind");
+      assert.equal(w.status, "backlog", "letting go after Esc leaves the card where it was");
+      assert.equal((await E.snapshot(p, key)).activity.length, act0, "Esc: nothing logged");
+    } else confirm("TC-50", "should Esc cancel a drag in progress?", `after Esc the drag ${afterEsc.ghost ? "was still active" : "ended"}; releasing then ${w.status !== "backlog" ? "moved the card to " + w.status : "left it where it was"}`);
     if (w.status !== "backlog") await statusMove(p, key, "backlog");
     await p.done();
   });
@@ -692,9 +715,11 @@ export function defineNewCases(E) {
     const wiggle = async (x, y, n = 14) => { for (let i = 0; i < n; i++) { await P.move(x + (i % 2 ? 3 : 0), y, 1); await sleep(25); } };
     // bottom edge scrolls down
     const y0 = await p.evaluate(() => scrollY);
-    await wiggle(c.x + 44, H - 24);
+    // (on a phone the slim closing bar sits over the bottom edge: the page scrolls in the strip just above it)
+    const edgeY = C && prof.kind === "phone" ? Math.round(await p.$eval(".kb-close-zones", (e) => e.getBoundingClientRect().top)) - 60 : H - 24;
+    await wiggle(c.x + 44, edgeY);
     let y1 = await p.evaluate(() => scrollY);
-    if (prof.kind === "phone" && y1 <= y0) {
+    if (prof.kind === "phone" && y1 <= y0 && !C) {
       // the full-width closing targets sit over the bottom edge, and the board does not scroll while the pointer is over them
       confirm("TC-51", "should dragging at the bottom of a phone screen scroll the page, given the Completed/Withdrawn targets sit there?", `no: scrollY stayed ${y1}`);
       await P.move(c.x + 44, 200, 3); await p.evaluate(() => scrollTo(0, 300)); y1 = await p.evaluate(() => scrollY);
@@ -709,7 +734,8 @@ export function defineNewCases(E) {
       const r0 = await p.evaluate(() => document.querySelector("#kb-board-wrap").scrollLeft);
       await wiggle(over.right - 14, Math.max(140, y2 + 200));
       const r1 = await p.evaluate(() => document.querySelector("#kb-board-wrap").scrollLeft);
-      if (r1 <= r0) confirm("TC-51", "should dragging at the right edge scroll the board sideways when the Completed/Withdrawn targets are pinned over that edge?", `no: scrollLeft stayed ${r0} (the targets cover the edge)`);
+      if (C) assert.ok(r1 > r0, `scrolled right near the right edge, over the closing targets (${r0} → ${r1})`);
+      else if (r1 <= r0) confirm("TC-51", "should dragging at the right edge scroll the board sideways when the Completed/Withdrawn targets are pinned over that edge?", `no: scrollLeft stayed ${r0} (the targets cover the edge)`);
       await p.evaluate(() => { document.querySelector("#kb-board-wrap").scrollLeft = 9999; });
       const l0 = await p.evaluate(() => document.querySelector("#kb-board-wrap").scrollLeft);
       await wiggle(over.left + 14, Math.max(140, y2 + 200));
@@ -755,7 +781,12 @@ export function defineNewCases(E) {
     const z = await p.$$eval(".kb-close-zone", (e) => e.map((x) => { const r = x.getBoundingClientRect(); return { r: x.dataset.resolution, left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }));
     const tab = await p.$eval("#tabbar, .tabbar, nav.tabbar", (e) => e.getBoundingClientRect().top).catch(() => null);
     assert.equal(z.length, 2);
-    for (const x of z) { assert.ok(x.left >= 0 && x.right <= prof.width && x.right - x.left >= prof.width - 40, `full width (${x.left}–${x.right} of ${prof.width})`); if (tab != null) assert.ok(x.bottom <= tab + 1, `above the tab bar (${x.bottom} vs ${tab})`); }
+    if (C) {
+      // a slim bar across the screen above the tab bar, both targets side by side; it grows only when the card nears it
+      const lo = Math.min(...z.map((x) => x.left)), hi = Math.max(...z.map((x) => x.right));
+      assert.ok(lo >= 0 && hi <= prof.width && hi - lo >= prof.width - 40, `the bar spans the width (${lo}–${hi} of ${prof.width})`);
+      for (const x of z) { assert.ok(x.bottom - x.top <= 64, `slim while the card is far from it (${x.bottom - x.top}px)`); if (tab != null) assert.ok(x.bottom <= tab + 1, `above the tab bar (${x.bottom} vs ${tab})`); }
+    } else for (const x of z) { assert.ok(x.left >= 0 && x.right <= prof.width && x.right - x.left >= prof.width - 40, `full width (${x.left}–${x.right} of ${prof.width})`); if (tab != null) assert.ok(x.bottom <= tab + 1, `above the tab bar (${x.bottom} vs ${tab})`); }
     await P.up(); await sleep(150);
     // onto Completed, then Withdrawn, by touch
     await dragCard(p, "PH-34", { zone: "completed" }, { input: "touch" });
@@ -783,7 +814,16 @@ export function defineNewCases(E) {
     const zoneTop = await p.$eval(".kb-close-zone", (e) => Math.round(e.getBoundingClientRect().top)).catch(() => null);
     await Q.up(); await sleep(300);
     const lw = await where(p, lowKey);
-    confirm("TC-53", "on a phone, should a card picked up low on the screen (under the Completed target) be completed by letting go without moving?", `${lowKey} was at y=${lowY}, the Completed target starts at y=${zoneTop}; after letting go it is ${lw.status === "done" ? "Completed" : "still in " + lw.status}`);
+    if (C) assert.equal(lw.status, "backlog", `${lowKey} (y=${lowY}, bar from y=${zoneTop}) is not closed by letting go without moving`);
+    else confirm("TC-53", "on a phone, should a card picked up low on the screen (under the Completed target) be completed by letting go without moving?", `${lowKey} was at y=${lowY}, the Completed target starts at y=${zoneTop}; after letting go it is ${lw.status === "done" ? "Completed" : "still in " + lw.status}`);
+    if (C) {
+      // ...nor by sliding along the bar without ever leaving it: only entering a target counts
+      const R = await makePointer(p, "touch");
+      await R.down(lb.x + 30, lb.y + 20); await sleep(420); await R.move(lb.x + 34, lb.y + 24, 2); await sleep(60);
+      await R.move(lb.x + 120, lb.y + 24, 4); await sleep(80);
+      await R.up(); await sleep(300);
+      assert.equal((await where(p, lowKey)).status, "backlog", "sliding along the bar from where the card was picked up closes nothing");
+    }
     confirm("TC-53", "after a Status-menu move on a phone, should the carousel stay on the column the person was in, or follow the card?", `it ${colAfter === colBefore ? "stayed on" : "moved to"} ${colAfter} (was ${colBefore}); the card is in In Progress`);
     await p.done();
   });
@@ -886,7 +926,8 @@ export function defineNewCases(E) {
   T("TC-60", "search by key, title words, description words and label; no-results state; clear", async (prof) => {
     const p = await open(prof, E.hash("kanban"));
     const all = await E.tasks(p);
-    const search = async (q) => { await p.fill("#kb-q", q); await sleep(220); return visibleKeys(p); };
+    // (the console matches description words through the server, so a hit lands a moment after the keystroke)
+    const search = async (q) => { await p.fill("#kb-q", q); await sleep(700); return visibleKeys(p); };
     for (const q of ["PH-33", "expiry sweep", "daylight", "DST", "security", "hq-admin", "ph-3"]) {
       const want = sortedKeys(all.filter((t) => hasText(t, q)).map((t) => t.key));
       const got = await search(q);
@@ -1044,10 +1085,27 @@ export function defineNewCases(E) {
     assert.match(await toastText(p), /Linh notified/);
     assert.doesNotMatch(await toastText(p), /Rob notified/);
     if (C) {
+      // The page writes no notification itself: the server's fan-out trigger does (functions/kanban-notify.js).
       const notes = (await E.writes(p, /^kanbanNotifications\//)).slice(writesBefore);
-      const to = notes.map((w) => w.data.to);
-      assert.ok(to.includes(E.pid("huy")) && to.includes(E.pid("linh")), `recipients ${to}`);
-      assert.ok(!to.includes(E.pid("rob")), "nothing written for the author");
+      assert.equal(notes.length, 0, "no client-side notification writes");
+      // The bell (topbar, every page): what the trigger wrote for this person, newest 30, grouped by ticket, with an unread count.
+      const me = E.pid("rob"), huy = E.pid("huy");
+      await closeTask(p);
+      await p.evaluate(({ me, huy }) => {
+        const b = globalThis.__fbStub, c = b.col("kanbanNotifications");
+        for (let i = 0; i < 150; i++) c.set(`seed${i}`, { to: me, from: huy, taskKey: i < 3 ? "PH-21" : "PH-22", taskTitle: i < 3 ? "Menu board" : "Other", kind: i === 149 ? "assigned" : "commented", read: false, at: new globalThis.__fbStubTimestamp(Date.UTC(2026, 9, 29, 0, 0, i)) });
+        b.notify();
+      }, { me, huy });
+      await sleep(300);
+      assert.match(await p.textContent("#kb-bell"), /150/, "the badge counts every unread note, not the 30 shown");
+      await press(p, "#kb-bell");
+      assert.equal(await p.$$eval(".kb-bell-item", (e) => e.length), 30, "the newest 30 show");
+      const panelText = await p.textContent(".kb-bell-panel");
+      assert.match(panelText, /assigned this to you/, `newest first: the assignment (${panelText.slice(0, 200)})`);
+      assert.ok((await p.$$eval(".kb-bell-ticket", (e) => e.length)) >= 1, "grouped by ticket");
+      await press(p, "#kb-bell-read"); await sleep(400);
+      assert.equal(await p.$eval("#kb-bell", (e) => e.textContent.replace(/\D/g, "")), "", "Mark all read clears the badge");
+      assert.equal(await p.evaluate(() => [...globalThis.__fbStub.col("kanbanNotifications").values()].filter((n) => !n.read).length), 0, "…every note, not only the visible 30");
     }
     await p.done();
   });
@@ -1111,6 +1169,53 @@ export function defineNewCases(E) {
     const w = await where(p, "PH-34");
     confirm("TC-65", "what should rotating the device mid-drag do (cancel the drag, or carry on)?", `the drag ${live.ghost ? "carried on" : "was cancelled"}; on release the card ${w.status === "backlog" ? "stayed in Backlog" : "went to " + w.status + (w.resolution ? "/" + w.resolution : "")}`);
     await p.done();
+  });
+
+  T("TC-67", "comments: the author edits and deletes their own (⋮ menu, console confirm, \"edited\", count follows); an admin deletes anyone's; no one edits another's", (C ? {} : { skip: "Console only: the prototype's comments are a local list with no ids or author rules" }), async (prof) => {
+    const menus = (q) => q.$$eval("#f-comments .kb-comment", (li) => li.map((x) => ({ who: x.querySelector(".kb-comment-meta b").textContent, menu: !!x.querySelector("[data-comment-menu]") })));
+    const commentWrites = (q, re) => E.writes(q, re);
+    // As Linh (an editor): Rob's and Huy's comments on PH-20 have no controls.
+    const q = await open(prof, E.hash("kanban"), { seed: E.roleSeed("editor") });
+    await openTask(q, "PH-20");
+    assert.deepEqual((await menus(q)).filter((m) => m.menu), [], "no ⋮ on someone else's comment");
+    await q.click('[data-field="comments"] .ql-editor'); await q.keyboard.type("First draft");
+    await press(q, "#f-comment-add");
+    await q.waitForSelector("#f-comments [data-comment-menu]", { timeout: 8000 });
+    assert.equal((await stored(q, "PH-20")).commentCount, 3, "posting counts");
+    // Edit: the same compact editor inline.
+    await press(q, "#f-comments [data-comment-menu]");
+    assert.equal(await q.$$eval("#f-comments .kb-comment-menu:not([hidden]) button", (b) => b.map((x) => x.textContent.trim()).join()), "Edit,Delete");
+    await press(q, "#f-comments [data-comment-edit]");
+    await q.waitForSelector("#f-comment-edit .ql-editor");
+    await q.click("#f-comment-edit .ql-editor"); await q.keyboard.press("Control+A"); await q.keyboard.type("Second draft");
+    await press(q, "[data-comment-save]"); await sleep(400);
+    const txt = () => q.$$eval("#f-comments .kb-comment", (li) => li.map((x) => x.textContent));
+    assert.ok((await txt()).some((t) => t.includes("Second draft") && t.includes("edited")), "the edited text and its \"edited\" label");
+    assert.ok((await commentWrites(q, /^kanbanTasks\/PH-20\/activity\//)).some((w) => w.data && w.data.text === "edited a comment"), "the activity log says so");
+    // Delete: asks in the console's own modal; Cancel keeps it, Delete removes it and the count follows.
+    await press(q, "#f-comments [data-comment-menu]"); await press(q, "#f-comments [data-comment-delete]");
+    await q.waitForSelector("#dialog-backdrop:not([hidden])");
+    await press(q, "#dialog-cancel"); await sleep(250);
+    assert.ok((await txt()).some((t) => t.includes("Second draft")), "Cancel keeps the comment");
+    await press(q, "#f-comments [data-comment-menu]"); await press(q, "#f-comments [data-comment-delete]");
+    await q.waitForSelector("#dialog-backdrop:not([hidden])");
+    await press(q, "#dialog-ok"); await sleep(400);
+    assert.ok(!(await txt()).some((t) => t.includes("Second draft")), "deleted");
+    assert.equal((await stored(q, "PH-20")).commentCount, 2, "the count follows");
+    assert.ok((await commentWrites(q, /^kanbanTasks\/PH-20\/activity\//)).some((w) => w.data && w.data.text === "deleted a comment"), "the activity log says so");
+    await q.done();
+    // As Rob (admin): Delete on anyone's, Edit only on his own.
+    const a = await open(prof, E.hash("kanban"));
+    await openTask(a, "PH-20");
+    assert.equal((await menus(a)).filter((m) => m.menu).length, 2, "an admin sees ⋮ on every comment");
+    const huyMenu = '#f-comments .kb-comment:has(b:text-is("Huy")) ';
+    await press(a, huyMenu + "[data-comment-menu]");
+    assert.equal(await a.$$eval(huyMenu + ".kb-comment-menu button", (b) => b.map((x) => x.textContent.trim()).join()), "Delete", "no Edit on someone else's");
+    await press(a, huyMenu + "[data-comment-delete]");
+    await a.waitForSelector("#dialog-backdrop:not([hidden])"); await press(a, "#dialog-ok"); await sleep(400);
+    assert.equal((await menus(a)).some((m) => m.who === "Huy"), false, "Huy's comment is gone");
+    assert.equal((await stored(a, "PH-20")).commentCount, 1);
+    await a.done();
   });
 
   T("TC-66", "browser Back and Forward and deep links for board, report and settings", async (prof) => {
@@ -1306,7 +1411,8 @@ export function defineNewCases(E) {
       // session B takes PH-40 while A's form is open
       await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title");
       await p.fill("#f-title", "Session A's ticket");
-      await p.evaluate(() => { const b = globalThis.__fbStub; b.col("kanbanCounters").set("main", { nextNumber: 41 }); b.col("kanbanTasks").set("PH-40", { key: "PH-40", number: 40, type: "task", title: "Session B's ticket", status: "backlog", open: true, rank: 9999, assignee: "", labels: [], searchTokens: ["ph-40"], createdBy: "other@personalisationhub.com" }); b.notify(); });
+      // (another session writes the ticket and its board card together, as the page does)
+      await p.evaluate(async () => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const t = { key: "PH-40", number: 40, type: "task", title: "Session B's ticket", status: "backlog", open: true, rank: 9999, assignee: "", labels: [], searchTokens: ["ph-40"], createdBy: "other@personalisationhub.com" }; b.col("kanbanCounters").set("main", { nextNumber: 41 }); b.col("kanbanTasks").set("PH-40", t); b.col("kanbanCards").set("PH-40", { ...core.cardOf(t), updatedBy: t.createdBy }); b.notify(); });
       await sleep(300);
       await saveTask(p);
       assert.equal(await toastKey(p), "PH-41", "A's ticket skips the key B took");
@@ -1326,14 +1432,17 @@ export function defineNewCases(E) {
     const p = await open(prof, E.hash("kanban"));
     const n0 = await countText(p);
     // kanban_create_task (server side) writes this document; the board's listener should show it
-    await p.evaluate(() => { const b = globalThis.__fbStub; b.col("kanbanCounters").set("main", { nextNumber: 41 }); b.col("kanbanTasks").set("PH-40", { key: "PH-40", number: 40, type: "bug", title: "Raised by an agent", status: "backlog", open: true, rank: 9999, assignee: "", reporter: "rob@offline2online.com", release: "4-12", estimate: 3, logged: 0, priority: "high", labels: ["api"], searchTokens: ["ph-40", "raised", "agent"], createdBy: "agent" }); b.notify(); });
+    // The server's tools write the ticket and its board card together.
+    const putTicket = (t) => p.evaluate(async (t) => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; b.col("kanbanTasks").set(t.key, t); b.col("kanbanCards").set(t.key, { ...core.cardOf(t), ...(t.closedAt ? { closedAt: t.closedAt } : {}), updatedBy: "agent" }); b.notify(); }, t);
+    await p.evaluate(() => { globalThis.__fbStub.col("kanbanCounters").set("main", { nextNumber: 41 }); });
+    await putTicket({ key: "PH-40", number: 40, type: "bug", title: "Raised by an agent", status: "backlog", open: true, rank: 9999, assignee: "", reporter: "rob@offline2online.com", release: "4-12", estimate: 3, logged: 0, priority: "high", labels: ["api"], searchTokens: ["ph-40", "raised", "agent"], createdBy: "agent" });
     await until(() => p.$(card("PH-40")), "the new card", 5000);
     assert.equal(await countText(p), n0 + 1);
     assert.equal((await where(p, "PH-40")).status, "backlog");
     // kanban_move_task
-    await p.evaluate(() => { const b = globalThis.__fbStub; const c = b.col("kanbanTasks"); c.set("PH-40", { ...c.get("PH-40"), status: "in-progress", open: true }); b.notify(); });
+    await putTicket(await p.evaluate(() => ({ ...globalThis.__fbStub.col("kanbanTasks").get("PH-40"), status: "in-progress", open: true })));
     await until(async () => (await where(p, "PH-40")).status === "in-progress", "the card to move", 5000);
-    await p.evaluate(() => { const b = globalThis.__fbStub; const c = b.col("kanbanTasks"); c.set("PH-40", { ...c.get("PH-40"), status: "done", resolution: "completed", open: false, closedAt: { $ts: Date.now() } }); b.notify(); });
+    await putTicket(await p.evaluate(() => ({ ...globalThis.__fbStub.col("kanbanTasks").get("PH-40"), status: "done", resolution: "completed", open: false, closedAt: { $ts: Date.now() } })));
     await until(async () => { const w = await where(p, "PH-40"); return w && w.status === "done" && w.resolution === "completed"; }, "the card to close", 5000);
     assert.equal((await headers(p)).find((h) => h.title === "Completed / Withdrawn").completed, 7);
     await p.done();
@@ -1342,7 +1451,7 @@ export function defineNewCases(E) {
   T("TC-56", "two sessions move the same card at once: both boards end on the same state, with no duplicate card", { ...consoleOnly("Console only: the prototype keeps its state in one browser"), timeout: 200000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"), TALL);
     const input = prof.touch ? "touch" : "mouse";
-    const remote = (status) => p.evaluate((s) => { const b = globalThis.__fbStub; const c = b.col("kanbanTasks"); const t = c.get("PH-34"); c.set("PH-34", { ...t, status: s, open: true }); b.notify(); }, status);
+    const remote = (status) => p.evaluate(async (s) => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const c = b.col("kanbanTasks"); const t = { ...c.get("PH-34"), status: s, open: true }; c.set("PH-34", t); b.col("kanbanCards").set("PH-34", { ...core.cardOf(t), updatedBy: "other@personalisationhub.com" }); b.notify(); }, status);
     if (prof.kind === "phone") { await statusMove(p, "PH-34", "in-progress"); await remote("approved"); await sleep(500); }
     else {
       // A picks the card up; B moves it; A drops it in In Progress

@@ -18,7 +18,9 @@ import { fileURLToPath } from "node:url";
 import { chromium, firefox, webkit } from "playwright-core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const publicDir = path.join(here, "..", "..", "public");
+// HARNESS_PUBLIC_DIR points the run at the minified Hosting build instead
+// (ui/minified.test.mjs), so a minifier fault can't reach production unseen.
+export const publicDir = process.env.HARNESS_PUBLIC_DIR ? path.resolve(process.env.HARNESS_PUBLIC_DIR) : path.join(here, "..", "..", "public");
 export const outDir = path.join(here, "out");
 export const stubPath = path.join(here, "firebase-stub.mjs");
 
@@ -81,6 +83,9 @@ export async function startHarness() {
         // unconfigured by default, as in production without a key, so the page
         // falls back to its local fill; seed.agentDraft stands in for Claude.
         if (url.pathname === "/mcp/kanban/directory-sync") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ members: 0 }) });
+        // The cards are seeded in step with the tickets; a case that seeds them behind answers { done: true } here after the page's own fill.
+        if (url.pathname === "/mcp/kanban/backfill-links") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ done: true, after: "", tickets: 0, links: 0 }) });
+        if (url.pathname === "/mcp/kanban/backfill") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ done: true, after: "", tickets: 0 }) });
         if (url.pathname === "/mcp/kanban/agent-fill") {
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.agentDraft ? { draft: seed.agentDraft, source: "claude" } : { draft: null, reason: "not-configured" }) });
         }

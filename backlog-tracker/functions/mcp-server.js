@@ -267,6 +267,18 @@ function atLeast(role, needed) {
 // makes the common rules path cheap: a claim check costs no document read.
 // Staff Kanban: every member's name and photo for the board (functions/kanban.js).
 exports.syncMemberDirectory = onDocumentWritten("consoleUsers/{userEmail}", (event) => kanban.syncMemberDirectoryWrite(event));
+// Staff Kanban notifications (functions/kanban-notify.js): one fan-out for the
+// board, MCP and voice paths. Read ones are pruned when their owner marks
+// notifications read (kanban-notify.js pruneReadFor): no scheduled function.
+const kanbanNotify = require("./kanban-notify");
+exports.kanbanNotifyTask = onDocumentWritten("kanbanTasks/{key}", (event) => kanbanNotify.taskWritten(event));
+// A comment's creation notifies as ever; an edit notifies only the people it newly @mentions.
+exports.kanbanNotifyComment = onDocumentWritten("kanbanTasks/{key}/comments/{commentId}", (event) => {
+  const before = event.data && event.data.before && event.data.before.exists;
+  const after = event.data && event.data.after && event.data.after.exists;
+  if (!before && after) return kanbanNotify.commentCreated({ id: event.id, params: event.params, data: event.data.after });
+  return before && after ? kanbanNotify.commentEdited({ id: event.id, params: event.params, data: event.data }) : null;
+});
 // The helpers Staff Kanban's browser endpoints share with the rest of this file.
 const kanbanHelpers = {
   requireConsoleUser: (req, minRole) => requireConsoleUser(req, minRole),
@@ -1261,6 +1273,32 @@ async function resolveEndpoints(args) {
   return { endpoints: eps };
 }
 
+// create_interface's rules, shared with kanban_create_contract_ticket:
+// every problem with {name, contentMd, endpoints|projectIds} together, and
+// the checked value ({name, md, endpoints}) when there are none.
+async function checkInterface(args) {
+  const problems = [];
+  const name = String(args.name || "").trim();
+  const md = String(args.contentMd == null ? "" : args.contentMd);
+  if (!name) problems.push("name is required.");
+  else if (name.length > DOC_NAME_MAX) problems.push(`name is limited to ${DOC_NAME_MAX} characters.`);
+  if (md.length > DOC_MD_MAX) problems.push(`An interface document is limited to ${DOC_MD_MAX} characters; that was ${md.length}.`);
+  const r = await resolveEndpoints(args);
+  if (r.error) problems.push(r.error);
+  return { problems, name, md, endpoints: r.endpoints || [] };
+}
+// The interfaces/{id} document create_interface writes.
+function interfaceDoc(c, session) {
+  return {
+    name: c.name, endpoints: c.endpoints, projectIds: c.endpoints.map((e) => e.id), contentMd: c.md, history: [],
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    createdByEmail: session.email,
+    updatedByEmail: session.email,
+    createdVia: "mcp",
+  };
+}
+
 function describeInterface(id, i) {
   const v = i || {};
   return { id, name: v.name || "", endpoints: endpointsOf(v), projectIds: v.projectIds || [], contentMd: v.contentMd || "", history: (Array.isArray(v.history) ? v.history : []).map((h) => ({ at: tsToISO(h.at), reason: h.reason || "", from: h.from || null, to: h.to || null })), updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null, mirror: interfaceMirror(v) };
@@ -1299,6 +1337,53 @@ async function repointInterfaces(from, to, reason, session) {
     moved.push(d.id);
   }
   return moved;
+}
+
+// ── Artifact snapshots: projects/{id}/artifactVersions/{n} (PH-20) ───────
+// Append-only, frozen copies of a project's artifact at sign-off. Written
+// here with the admin SDK and nowhere else (firestore.rules lets members read
+// and nobody write from a browser), so snapshots deliberately add NOTHING to
+// PROJECT_WRITABLE_FIELDS: the project doc is not touched at all.
+const PAGES_HOST = "offline2online.github.io";
+const PAGES_REPO_PREFIX = "/rob_ph_demos/";
+const ARTIFACT_NOTE_MAX = 500;
+
+// A GitHub Pages URL of this repo → the repo path it serves, else null.
+function pagesRepoPath(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch { return null; }
+  if (u.protocol !== "https:" || u.hostname !== PAGES_HOST || !u.pathname.startsWith(PAGES_REPO_PREFIX)) return null;
+  let path = decodeURIComponent(u.pathname.slice(PAGES_REPO_PREFIX.length));
+  if (!path || path.endsWith("/")) path += "index.html";
+  if (path.split("/").some((seg) => seg === ".." || seg === "." || seg === "")) return null;
+  return path;
+}
+
+async function defaultMainSha() {
+  const resp = await fetch("https://api.github.com/repos/offline2online/rob_ph_demos/commits/main", {
+    headers: { Accept: "application/vnd.github.sha", "User-Agent": "ph-agent-console" },
+  });
+  if (!resp.ok) throw new Error(`GitHub answered ${resp.status}`);
+  const sha = (await resp.text()).trim();
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("GitHub did not return a commit sha");
+  return sha;
+}
+let mainShaFetcher = defaultMainSha;
+
+function versionOut(id, d) {
+  const at = d.signedOffAt;
+  return {
+    version: d.version, sourceUrl: d.sourceUrl, pinnedUrl: d.pinnedUrl, commitSha: d.commitSha || null,
+    frozen: d.frozen === true, signedOffBy: d.signedOffBy || null,
+    signedOffAt: at && typeof at.toDate === "function" ? at.toDate().toISOString() : (at || null),
+    note: d.note || null,
+  };
+}
+
+async function latestArtifactVersionDoc(projectId) {
+  const snap = await db().collection("projects").doc(String(projectId)).collection("artifactVersions")
+    .orderBy("version", "desc").limit(1).get();
+  return snap.empty ? null : snap.docs[0].data();
 }
 
 async function updateProjectFields(projectId, fields) {
@@ -1924,6 +2009,10 @@ async function mirrorManifestFor(projectIds) {
 const mirrorDeleteRefusal = (name, sourcePath, manifestPath) =>
   `"${name}" mirrors ${sourcePath}; it is written by the docs sync from ${manifestPath || "the project's board-docs.json"}. Remove its entry there (and the file, if it is going) and the next sync marks it superseded. It can't be deleted over MCP.`;
 
+// Which board is for what; create_backlog_item's description and the server
+// instructions say it in these words (functions/kanban.js has KANBAN_SCOPE).
+const BACKLOG_SCOPE = "The backlog is for agent work: agent-built product, docs, prototype and tooling changes. A task a human staff member does belongs on the Staff Kanban (kanban_create_task, which can assign it).";
+
 const TOOLS = [
   {
     name: "whoami",
@@ -2058,6 +2147,12 @@ const TOOLS = [
         byStatus[d.status || "backlog"] = (byStatus[d.status || "backlog"] || 0) + 1;
         counts.set(d.projectId, byStatus);
       });
+      const latestVersions = new Map();
+      for (const p of projects.values()) {
+        if (!p.artifactUrl || (p.archived === true && !(args && args.includeArchived))) continue;
+        const v = await latestArtifactVersionDoc(p.id);
+        if (v) latestVersions.set(p.id, v.version);
+      }
       const out = [];
       projects.forEach((p) => {
         if (p.archived === true && !(args && args.includeArchived)) return;
@@ -2078,6 +2173,7 @@ const TOOLS = [
           e2eStatus: e2eStatusOut(p.e2eStatus),
           handOff: handOffOut(p),
           artifactUrl: p.artifactUrl || null,
+          latestArtifactVersion: p.artifactUrl ? (latestVersions.get(p.id) || null) : null,
           // The document to read first: "readme", "requirements" or a projectDocs id. Declared in the repo's board-docs.json and written by the post-merge sync, never over MCP.
           startHereDocId: p.startHereDocId || null,
           counts: counts.get(p.id) || {},
@@ -2194,7 +2290,7 @@ const TOOLS = [
   },
   {
     name: "create_backlog_item",
-    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment.",
+    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment. " + BACKLOG_SCOPE,
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -3146,6 +3242,97 @@ const TOOLS = [
     },
   },
   {
+    name: "snapshot_project_artifact",
+    description: "Sign off a project's artifact: capture the next frozen, numbered version of it (version 1, 2, …) so tickets, epics and screenshots can cite a version that cannot drift. A GitHub Pages artifact of this repo (offline2online.github.io/rob_ph_demos/…) is pinned to the commit main is on right now, via an immutable rawcdn.githack.com link. Any other URL cannot be frozen: pinnedUrl is then the same link and the reply says it may change. Append-only; changes no project field.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "From list_projects. The project must have an artifact link (set_project_artifact)." },
+        note: { type: "string", description: `Optional sign-off note (up to ${ARTIFACT_NOTE_MAX} characters).` },
+      },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const sourceUrl = String((snap.data() || {}).artifactUrl || "").trim();
+      if (!sourceUrl) return toolError("This project has no artifact link to sign off. Set one with set_project_artifact first.");
+      const note = args.note == null ? null : String(args.note).trim();
+      if (note && note.length > ARTIFACT_NOTE_MAX) return toolError(`note is too long (max ${ARTIFACT_NOTE_MAX} characters).`);
+
+      let commitSha = null;
+      let pinnedUrl = sourceUrl;
+      let frozen = false;
+      const repoPath = pagesRepoPath(sourceUrl);
+      if (repoPath) {
+        try { commitSha = await mainShaFetcher(); } catch (err) {
+          return toolError(`Could not read the commit main is on, so the artifact was not signed off: ${err.message}. Try again shortly.`);
+        }
+        pinnedUrl = `https://rawcdn.githack.com/offline2online/rob_ph_demos/${commitSha}/${repoPath.split("/").map(encodeURIComponent).join("/")}`;
+        frozen = true;
+      }
+
+      const versions = db().collection("projects").doc(projectId).collection("artifactVersions");
+      let record;
+      await db().runTransaction(async (tx) => {
+        const latest = await tx.get(versions.orderBy("version", "desc").limit(1));
+        const n = (latest.empty ? 0 : latest.docs[0].data().version) + 1;
+        record = {
+          version: n, projectId, sourceUrl, pinnedUrl, commitSha, frozen,
+          signedOffBy: session.email, signedOffAt: FieldValue.serverTimestamp(), note: note || null,
+        };
+        tx.set(versions.doc(String(n)), record);
+      });
+      await audit(session, "snapshot_project_artifact", { projectId, version: record.version, frozen });
+      return textResult({
+        signedOff: true, projectId, version: record.version, sourceUrl, pinnedUrl, commitSha, frozen,
+        signedOffBy: session.email, note: record.note,
+        ...(frozen ? {} : { warning: "This artifact is not on this repo's GitHub Pages, so it cannot be frozen: pinnedUrl is the live link and may change after this sign-off." }),
+      });
+    },
+  },
+  {
+    name: "list_artifact_versions",
+    description: "Every signed-off snapshot of a project's artifact, newest first (version, pinnedUrl, commitSha, frozen, signedOffBy, signedOffAt, note). Cite a version number in epics and tickets rather than the live artifact link.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "From list_projects." } },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args) {
+      const projectId = String(args.projectId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const res = await db().collection("projects").doc(projectId).collection("artifactVersions").orderBy("version", "desc").get();
+      const versions = res.docs.map((d) => versionOut(d.id, d.data() || {})).sort((a, b) => b.version - a.version);
+      return textResult({ projectId, count: versions.length, versions });
+    },
+  },
+  {
+    name: "get_artifact_version",
+    description: "One signed-off snapshot of a project's artifact by version number.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "From list_projects." },
+        version: { type: "integer", minimum: 1, description: "From list_artifact_versions." },
+      },
+      required: ["projectId", "version"], additionalProperties: false,
+    },
+    async run(args) {
+      const projectId = String(args.projectId);
+      const n = Number(args.version);
+      if (!Number.isInteger(n) || n < 1) return toolError("version must be a whole number from 1.");
+      const snap = await db().collection("projects").doc(projectId).collection("artifactVersions").doc(String(n)).get();
+      if (!snap.exists) return toolError(`Project ${projectId} has no artifact version ${n}. Call list_artifact_versions.`);
+      return textResult(Object.assign({ projectId }, versionOut(snap.id, snap.data() || {})));
+    },
+  },
+  {
     name: "set_project_description",
     description: `Set (or clear) a project's short description — one or two sentences on what the project covers, shown in list_projects. Pass description: null to remove it. Up to ${PROJECT_DESCRIPTION_MAX} characters.`,
     scope: "board.write",
@@ -3282,24 +3469,12 @@ const TOOLS = [
       required: ["name", "contentMd"], additionalProperties: false,
     },
     async run(args, session) {
-      const name = String(args.name || "").trim();
-      const md = String(args.contentMd == null ? "" : args.contentMd);
-      if (!name) return toolError("name is required.");
-      if (name.length > DOC_NAME_MAX) return toolError(`name is limited to ${DOC_NAME_MAX} characters.`);
-      if (md.length > DOC_MD_MAX) return toolError(`An interface document is limited to ${DOC_MD_MAX} characters; that was ${md.length}.`);
-      const r = await resolveEndpoints(args);
-      if (r.error) return toolError(r.error);
-      const ids = r.endpoints.map((e) => e.id);
-      const ref = await db().collection("interfaces").add({
-        name, endpoints: r.endpoints, projectIds: ids, contentMd: md, history: [],
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-        createdByEmail: session.email,
-        updatedByEmail: session.email,
-        createdVia: "mcp",
-      });
-      await audit(session, "create_interface", { interfaceId: ref.id, projectIds: ids, name, chars: md.length });
-      return textResult({ created: true, interfaceId: ref.id, endpoints: r.endpoints, projectIds: ids, name, chars: md.length });
+      const c = await checkInterface(args);
+      if (c.problems.length) return toolError(c.problems[0]);
+      const ids = c.endpoints.map((e) => e.id);
+      const ref = await db().collection("interfaces").add(interfaceDoc(c, session));
+      await audit(session, "create_interface", { interfaceId: ref.id, projectIds: ids, name: c.name, chars: c.md.length });
+      return textResult({ created: true, interfaceId: ref.id, endpoints: c.endpoints, projectIds: ids, name: c.name, chars: c.md.length });
     },
   },
   {
@@ -4620,7 +4795,7 @@ const TOOLS = [
 ];
 
 // Staff Kanban's tools (KB-MCP-1), defined beside the rest of its server code.
-TOOLS.push(...kanban.kanbanTools({ textResult, toolError, audit }));
+TOOLS.push(...kanban.kanbanTools({ textResult, toolError, audit, checkInterface, interfaceDoc }));
 const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -4726,15 +4901,15 @@ const PROMPTS = [
 ];
 
 const SERVER_INSTRUCTIONS = [
-  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has the release tools below.",
-  "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
-  "To take over or catch up on a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in its order. A person can start the same plan with the project_handover prompt.",
-  "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full (it can be huge), so set include to the one block you need.",
-  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document, so read it first and send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
+  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor also writes, an admin also has the release tools below.",
+  "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: inline cards).",
+  "To take over a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in order. The project_handover prompt starts the same plan.",
+  "Reading docs: list_project_documents and get_project_document read one document or section at a time; get_project_docs returns every document in full, so set include.",
+  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first, send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
   REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
   "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
-  "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment).",
+  "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Skills (all projects): list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
   "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
 ].join(" ");
@@ -5087,6 +5262,8 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512Mi
       // Staff Kanban's browser endpoints (functions/kanban.js).
       case "/kanban/agent-fill": return await kanban.handleAgentFill(req, res, kanbanHelpers);
       case "/kanban/directory-sync": return await kanban.handleDirectorySync(req, res, kanbanHelpers);
+      case "/kanban/backfill": return await kanban.handleBackfill(req, res, kanbanHelpers);
+      case "/kanban/backfill-links": return await kanban.handleBackfillLinks(req, res, kanbanHelpers);
       default:
         res.status(404).json({ error: "not_found", error_description: `no endpoint at ${path}` });
     }
@@ -5103,6 +5280,6 @@ exports.__test = {
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
   TOOLS, PROMPTS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
   MCP_APP_MIME, UI_META, BOARD_VIEWS, safeHref,
-  PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
+  PROJECT_WRITABLE_FIELDS, pagesRepoPath, setMainShaFetcher: (f) => { mainShaFetcher = f || defaultMainSha; }, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,
 };

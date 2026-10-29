@@ -45,6 +45,7 @@ const describe = (v) => {
     if (v.$sentinel === "serverTimestamp") return "$serverTimestamp";
     if (v.$sentinel === "deleteField") return "$deleteField";
     if (v.$sentinel === "arrayUnion") return { $arrayUnion: v.values.map(describe) };
+    if (v.$sentinel === "arrayRemove") return { $arrayRemove: v.values.map(describe) };
     if (v.$sentinel === "increment") return { $increment: v.n };
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, describe(x)]));
   }
@@ -76,6 +77,7 @@ class Backend {
       for (const el of value.values) if (!cur.some((c) => same(c, el))) cur.push(clone(el));
       return cur;
     }
+    if (isObj(value) && value.$sentinel === "arrayRemove") return (Array.isArray(existing) ? existing : []).filter((c) => !value.values.some((el) => same(c, el)));
     if (isObj(value) && value.$sentinel === "deleteField") return undefined;
     if (isObj(value) && value.$sentinel === "increment") return (typeof existing === "number" ? existing : 0) + value.n;
     if (isObj(value)) return this.resolveMap(value, isObj(existing) ? existing : {});
@@ -140,6 +142,8 @@ export function doc(base, ...rest) {
 export function where(field, op, value) { return { kind: "where", field, op, value }; }
 export function orderBy(field, dir = "asc") { return { kind: "orderBy", field, dir }; }
 export function limit(n) { return { kind: "limit", n }; }
+// Seeded as a plain collection named after the group; the page only queries one group.
+export function collectionGroup(_db, id) { return { type: "collection", path: id, parentPath: id }; }
 export function query(col, ...constraints) { return { type: "query", path: col.path, constraints }; }
 
 const val = (v) => (v instanceof Timestamp ? v.ms : v);
@@ -179,6 +183,8 @@ function querySnap(target, prev) {
     if (!before.has(d.id)) changes.push({ type: "added", doc: d });
     else if (before.get(d.id) !== JSON.stringify(describe(d.data()))) changes.push({ type: "modified", doc: d });
   }
+  const now = new Set(docs.map((d) => d.id));
+  for (const d of prev || []) if (!now.has(d.id)) changes.push({ type: "removed", doc: d });
   return { docs, empty: docs.length === 0, size: docs.length, metadata, forEach: (fn) => docs.forEach(fn), docChanges: () => changes };
 }
 
@@ -193,18 +199,27 @@ export function onSnapshot(target, onNext, onError) {
       } else {
         const snap = querySnap(target, last && last.docs);
         last = snap;
+        // What the listener downloads: each added or changed document.
+        const rb = (b.readBytes ||= {});
+        for (const ch of snap.docChanges()) rb[target.path] = (rb[target.path] || 0) + JSON.stringify(describe(ch.doc.data())).length;
         onNext(snap);
       }
     } catch (err) { if (onError) onError(err); else throw err; }
   };
   const l = { run: emit };
   b.listeners.add(l);
+  const watch = (b.watching ||= {});
+  watch[target.path] = (watch[target.path] || 0) + 1;
   // Firestore delivers the first snapshot asynchronously.
   Promise.resolve().then(() => { if (b.listeners.has(l)) emit(); });
-  return () => b.listeners.delete(l);
+  return () => { if (b.listeners.delete(l)) watch[target.path] -= 1; };
 }
 export async function getDoc(ref) { return docSnap(ref.parentPath, ref.id, backend().col(ref.parentPath).get(ref.id)); }
 export async function getDocs(target) { return querySnap(target); }
+export async function getCountFromServer(target) {
+  const rows = run(target.type === "collection" ? { path: target.path, constraints: [] } : target);
+  return { data: () => ({ count: rows.length }) };
+}
 
 export async function addDoc(colRef, data) {
   const ref = doc(colRef);
@@ -239,6 +254,7 @@ export async function runTransaction(_db, fn) {
 export const increment = (n) => ({ $sentinel: "increment", n });
 export const serverTimestamp = () => SERVER_TS;
 export const arrayUnion = (...values) => ({ $sentinel: "arrayUnion", values });
+export const arrayRemove = (...values) => ({ $sentinel: "arrayRemove", values });
 export const deleteField = () => DELETE;
 export const initializeFirestore = () => ({ type: "firestore" });
 export const persistentLocalCache = () => ({});

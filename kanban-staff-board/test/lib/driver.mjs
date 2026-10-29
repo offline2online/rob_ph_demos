@@ -73,6 +73,17 @@ export async function makePointer(p, input) {
   };
 }
 
+// The phone's carousel scrolls smoothly: wait until the card has stopped moving before aiming at it.
+async function settled(p, sel) {
+  let prev = null;
+  for (let i = 0; i < 60; i++) {
+    const b = await (await p.$(sel)).boundingBox();
+    const k = b && `${Math.round(b.x)},${Math.round(b.y)}`;
+    if (k === prev) return;
+    prev = k; await sleep(50);
+  }
+}
+
 // The point in `sel`'s box to aim at, and whether it can be reached now.
 async function aim(p, sel, at, dropY) {
   return p.evaluate(([s, where_, yOverride]) => {
@@ -88,7 +99,10 @@ async function aim(p, sel, at, dropY) {
     const big = r.height > 400;
     const y = Math.round(yOverride != null ? yOverride : where_ === "top" ? (big ? Math.max(r.top + 14, top + 12) : r.top + Math.max(3, Math.min(10, r.height * 0.15))) : where_ === "bottom" ? r.bottom - 14 : big ? (Math.max(r.top, top) + Math.min(r.bottom, innerHeight)) / 2 : r.top + r.height / 2);
     const hit = document.elementFromPoint(Math.min(Math.max(x, 0), innerWidth - 1), Math.min(Math.max(y, 0), innerHeight - 1));
-    const delta = y < top + 4 ? y - top - 4 : y > innerHeight - 4 ? y - innerHeight + 4 : 0;
+    // (the console's phone has a slim closing bar over the bottom edge, and it grows when a card comes within ~36px of it)
+    const slimEl = document.querySelector(".kb-close-slim");
+    const floor = slimEl && !s.includes("kb-close-zone") ? slimEl.getBoundingClientRect().bottom - 52 - 44 : innerHeight - 4;
+    const delta = y < top + 4 ? y - top - 4 : y > floor ? y - floor : 0;
     const ok = x > wr.left && x < wr.right && delta === 0 && !!hit && (hit === el || el.contains(hit) || (hit.closest && hit.closest(s) === el));
     const zone = hit && hit.closest ? hit.closest(".kb-close-zone") : null;
     return { hit: hit && (hit.className || hit.tagName), zone: !!zone && !s.includes("kb-close-zone"), ok, x, y, dx: r.right < wr.left + 8 || r.left < wr.left - 4 ? -1 : r.left > wr.right - 8 ? 1 : zone ? 1 : 0, dy: delta < 0 ? -1 : delta > 0 ? 1 : 0, delta, wl: wr.left, wr: wr.right, top };
@@ -152,6 +166,7 @@ export async function dragCard(p, key, target, o = {}) {
   if (!target.zone && p.profile && p.profile.kind === "phone") await preScrollV(p, card, target);
   await p.$eval(card, (e) => { const r = e.getBoundingClientRect(); const s = document.querySelector("#kb-sticky"); const top = s && !s.hidden ? s.getBoundingClientRect().bottom : 0; if (r.top < top + 4 || r.bottom > innerHeight - 4 || r.left < Math.max(0, (document.querySelector("#kb-board-wrap") || { getBoundingClientRect: () => ({ left: 0 }) }).getBoundingClientRect().left) || r.right > Math.min(innerWidth, (document.querySelector("#kb-board-wrap") || { getBoundingClientRect: () => ({ right: innerWidth }) }).getBoundingClientRect().right)) e.scrollIntoView({ block: "center", inline: innerWidth <= 640 ? "center" : "nearest" }); }).catch(() => {});
   await sleep(120);
+  await settled(p, card);
   // On a phone the carousel scrolls sideways: bring the card's column to the middle.
   let b = await (await p.$(card)).boundingBox();
   await P.down(b.x + Math.min(30, b.width / 2), b.y + Math.min(20, b.height / 2));
@@ -187,7 +202,9 @@ export async function dragCard(p, key, target, o = {}) {
     }
     // Not reachable: park the pointer near the edge it must scroll and keep it moving there.
     const ex = a.dx > 0 ? a.wr - 24 : a.dx < 0 ? a.wl + 24 : pos.x;
-    const ey = a.dy > 0 ? (p.viewportSize().height - 24) : a.dy < 0 ? 90 : pos.y;
+    // (the console's phone has a slim closing bar over the bottom edge: the page scrolls in the strip just above it)
+    const slimTop = a.dy > 0 ? await p.evaluate(() => { const z = document.querySelector(".kb-close-slim"); return z ? Math.round(z.getBoundingClientRect().top) : null; }) : null;
+    const ey = a.dy > 0 ? (slimTop != null ? slimTop - 60 : p.viewportSize().height - 24) : a.dy < 0 ? 90 : pos.y;
     await P.move(ex, ey, 2); await P.move(ex + 3, ey + 2, 1); await P.move(ex, ey, 1);
     pos = { x: ex, y: ey };
     await sleep(20);
@@ -263,6 +280,7 @@ export async function pickUp(p, key, input, o = {}) {
   await showCard(p, key);
   await p.$eval(sel, (e) => { const r = e.getBoundingClientRect(); const s = document.querySelector("#kb-sticky"); const top = s && !s.hidden ? s.getBoundingClientRect().bottom : 0; if (r.top < top + 4 || r.bottom > innerHeight - 4 || r.left < Math.max(0, (document.querySelector("#kb-board-wrap") || { getBoundingClientRect: () => ({ left: 0 }) }).getBoundingClientRect().left) || r.right > Math.min(innerWidth, (document.querySelector("#kb-board-wrap") || { getBoundingClientRect: () => ({ right: innerWidth }) }).getBoundingClientRect().right)) e.scrollIntoView({ block: "center", inline: innerWidth <= 640 ? "center" : "nearest" }); });
   await sleep(120);
+  await settled(p, sel);
   const b = await (await p.$(sel)).boundingBox();
   const x = b.x + Math.min(30, b.width / 2), y = b.y + Math.min(20, b.height / 2);
   await P.down(x, y);

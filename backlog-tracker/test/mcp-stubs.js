@@ -14,6 +14,7 @@ function nowTs() {
 const SERVER_TIMESTAMP = { __sentinel: "serverTimestamp" };
 const DELETE_FIELD = { __sentinel: "delete" };
 function arrayUnion(...items) { return { __sentinel: "arrayUnion", items }; }
+function arrayRemove(...items) { return { __sentinel: "arrayRemove", items }; }
 function increment(n) { return { __sentinel: "increment", n }; }
 
 function resolve(value) {
@@ -36,7 +37,12 @@ function applyWrite(existing, data, merge) {
       base[k] = (typeof base[k] === "number" ? base[k] : 0) + v.n;
     } else if (v && v.__sentinel === "arrayUnion") {
       const cur = Array.isArray(base[k]) ? base[k].slice() : [];
-      base[k] = cur.concat(v.items.map(resolve));
+      // Firestore adds only the elements the array doesn't already hold.
+      for (const it of v.items.map(resolve)) if (!cur.some((c) => JSON.stringify(c) === JSON.stringify(it))) cur.push(it);
+      base[k] = cur;
+    } else if (v && v.__sentinel === "arrayRemove") {
+      const gone = v.items.map((i) => JSON.stringify(resolve(i)));
+      base[k] = (Array.isArray(base[k]) ? base[k] : []).filter((c) => !gone.includes(JSON.stringify(c)));
     } else if (merge && v && typeof v === "object" && !Array.isArray(v) && !v._ts && !(v instanceof Date) && !v.__sentinel
       && base[k] && typeof base[k] === "object" && !Array.isArray(base[k]) && !base[k]._ts) {
       // Firestore's set(..., {merge: true}) merges nested maps field by field.
@@ -49,12 +55,15 @@ function applyWrite(existing, data, merge) {
 }
 
 class Store {
-  constructor() { this.data = new Map(); this.seq = 0; }
+  constructor() { this.data = new Map(); this.seq = 0; this.reads = new Map(); }
+  // Documents read per collection (a get on a doc or a query), so a test can assert a tool reads only what it needs.
+  countRead(collection, n = 1) { this.reads.set(collection, (this.reads.get(collection) || 0) + n); }
   col(name) { if (!this.data.has(name)) this.data.set(name, new Map()); return this.data.get(name); }
   nextId() { return `id${++this.seq}`; }
 }
 
-function snapshotFor(store, collection, id) {
+function snapshotFor(store, collection, id, counted = true) {
+  if (counted) store.countRead(collection);
   const raw = store.col(collection).get(id);
   return {
     id, exists: raw !== undefined,
@@ -74,31 +83,53 @@ function docRef(store, collection, id) {
       store.col(collection).set(id, applyWrite(store.col(collection).get(id), data, true));
     },
     async delete() { store.col(collection).delete(id); },
+    // create() refuses a document that exists, as Firestore's does (code 6, ALREADY_EXISTS).
+    async create(data) {
+      if (store.col(collection).has(id)) throw Object.assign(new Error(`6 ALREADY_EXISTS: ${collection}/${id}`), { code: 6 });
+      store.col(collection).set(id, applyWrite(undefined, data, false));
+    },
     // A subcollection is just another stub collection under a path-shaped name.
     collection: (sub) => collectionRef(store, `${collection}/${id}/${sub}`),
   };
 }
 
-function query(store, collection, filters = [], limit = null) {
+const NAME = "__name__"; // FieldPath.documentId()
+function query(store, collection, filters = [], limit = null, order = null, cursor = null) {
+  // The rows a query matches, without counting reads: a get counts the documents it returns, an aggregate count() none.
+  const matching = () => {
+    let rows = [...store.col(collection).entries()];
+    for (const f of filters) {
+      rows = rows.filter(([, d]) => {
+        const v = d[f.field];
+        if (f.op === "==") return v === f.value;
+        if (f.op === "<") return v != null && v < f.value;
+        if (f.op === "array-contains") return Array.isArray(v) && v.includes(f.value);
+        throw new Error(`stub: unsupported operator ${f.op}`);
+      });
+    }
+    const val = (id, d) => (order.field === NAME ? id : d[order.field]);
+    if (order) {
+      rows.sort(([ia, a], [ib, b]) => (val(ia, a) > val(ib, b) ? 1 : val(ia, a) < val(ib, b) ? -1 : 0) * order.dir);
+      if (cursor != null) rows = rows.filter(([id, d]) => (order.dir > 0 ? val(id, d) > cursor : val(id, d) < cursor));
+    }
+    return rows;
+  };
+  const isName = (field) => field && typeof field === "object" && field.__docId;
   return {
-    where(field, op, value) { return query(store, collection, filters.concat([{ field, op, value }]), limit); },
-    limit(n) { return query(store, collection, filters, n); },
-    // Projections/ordering are accepted and ignored: the stub hands back
+    where(field, op, value) { return query(store, collection, filters.concat([{ field, op, value }]), limit, order, cursor); },
+    limit(n) { return query(store, collection, filters, n, order, cursor); },
+    // Projections are accepted and ignored: the stub hands back
     // whole documents, which is a superset of what the real call returns.
-    select() { return query(store, collection, filters, limit); },
-    orderBy() { return query(store, collection, filters, limit); },
+    select() { return query(store, collection, filters, limit, order, cursor); },
+    orderBy(field, dir) { return query(store, collection, filters, limit, field ? { field: isName(field) ? NAME : field, dir: dir === "desc" ? -1 : 1 } : order, cursor); },
+    startAfter(v) { return query(store, collection, filters, limit, order, v); },
+    // The aggregate count the server uses to compare two collections.
+    count() { return { async get() { return { data: () => ({ count: query(store, collection, filters, limit, order, cursor).__rows().length }) }; } }; },
+    __rows() { let rows = matching(); if (limit != null) rows = rows.slice(0, limit); return rows; },
     async get() {
-      let rows = [...store.col(collection).entries()];
-      for (const f of filters) {
-        rows = rows.filter(([, d]) => {
-          const v = d[f.field];
-          if (f.op === "==") return v === f.value;
-          if (f.op === "array-contains") return Array.isArray(v) && v.includes(f.value);
-          throw new Error(`stub: unsupported operator ${f.op}`);
-        });
-      }
-      if (limit != null) rows = rows.slice(0, limit);
-      const docs = rows.map(([id]) => snapshotFor(store, collection, id));
+      // A test sets store.failOrder to the fields whose ordered queries answer as an index still building.
+      if (store.failOrder && order && store.failOrder.has(order.field)) throw Object.assign(new Error("9 FAILED_PRECONDITION: The query requires an index."), { code: 9 });
+      const docs = this.__rows().map(([id]) => snapshotFor(store, collection, id));
       return { docs, empty: docs.length === 0, size: docs.length, forEach: (fn) => docs.forEach(fn) };
     },
   };
@@ -122,7 +153,12 @@ function makeDb(store) {
         set: (ref, data, opts) => ops.push(() => ref.set(data, opts)),
         update: (ref, data) => ops.push(() => ref.update(data)),
         delete: (ref) => ops.push(() => ref.delete()),
-        commit: async () => { for (const op of ops) await op(); },
+        commit: async () => {
+          // A real batch holds at most 500 writes; a test may also fail one (store.onBatch).
+          if (ops.length > 500) throw new Error(`3 INVALID_ARGUMENT: maximum 500 writes allowed per request (${ops.length})`);
+          if (store.onBatch) store.onBatch(ops.length);
+          for (const op of ops) await op();
+        },
       };
     },
     async runTransaction(fn) {
@@ -162,7 +198,17 @@ function install() {
     },
     "firebase-admin/firestore": {
       getFirestore: () => db,
-      FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion, increment, delete: () => DELETE_FIELD },
+      FieldPath: { documentId: () => ({ __docId: true }) },
+      FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion, arrayRemove, increment, delete: () => DELETE_FIELD },
+    },
+    // Storage: an upload is kept in authState.uploads (path -> { size, contentType, token }).
+    "firebase-admin/storage": {
+      getStorage: () => ({
+        bucket: (name) => ({
+          name: name || "test-bucket",
+          file: (path) => ({ save: async (buf, opts) => { (authState.uploads ||= {})[path] = { size: buf.length, contentType: opts && opts.contentType, token: opts && opts.metadata && opts.metadata.metadata && opts.metadata.metadata.firebaseStorageDownloadTokens }; } }),
+        }),
+      }),
     },
     "firebase-admin/auth": {
       getAuth: () => ({

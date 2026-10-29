@@ -93,6 +93,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   releaseId?: string | null,      // see "releases/{releaseId}" below
   artifactUrl?: string,           // published Artifact link for this project — ⋮ → "View Artifact". Written directly (not via patchFiles/patchReady) by the Notify Claude Routine — see ROUTINE_INSTRUCTIONS.md → "Project Artifact"
   artifactUpdatedAt?: timestamp,  // set alongside artifactUrl, shown as "updated <date>" under the menu link
+  // artifactVersions: subcollection projects/{id}/artifactVersions/{n} — append-only sign-off snapshots {version, projectId, sourceUrl, pinnedUrl, commitSha, frozen, signedOffBy, signedOffAt, note}; written only by the MCP server (snapshot_project_artifact), members read, no browser write (firestore.rules). The ⋮ menu's View Artifact row shows the latest as "v<n>, signed off <date>". See MCP.md → "Artifact snapshots on sign-off".
   notifyRoutine?: {                // set by notifyOnProjectReadyForReview on each fire
     status: "in-progress" | "done" | "error" | "stalled", // "stalled" is transient: the sweep notes the cards, then writes "done" (closedAt, stalledItemIds)
     firedAt: timestamp,

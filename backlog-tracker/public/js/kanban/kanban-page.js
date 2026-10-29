@@ -12,13 +12,13 @@ import { createResultReader, useContinuousMode, isAndroidDevice } from "../dicta
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
-  statusChange, rankBetween, fold, searchTickets, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
-  canonicalEmail, isAliasEmail,
+  statusChange, currentReleaseId, DEFAULT_TESTER, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
+  canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
   "use strict";
-  // ctx: { root, db, storage, auth, me, role(), releases(), confirm(message, opts), go(sub, params) }
+  // ctx: { root, db, storage, auth, me, role(), releases(), projects(), interfaces(), confirm(message, opts), go(sub, params) }
   const me = ctx.me;
   const root = document.documentElement;
   const pageEl = ctx.root;
@@ -27,32 +27,72 @@ export function mountStaffKanban(ctx) {
   const mqPhone = matchMedia("(max-width: 640px)");
   const store = createStore({
     db: ctx.db, storage: ctx.storage, me,
+    backfill: backfillCards,
     onChange: (what) => onData(what),
     onError: (err) => { console.warn("staff kanban:", err); if (err && err.code === "permission-denied") toast("You don't have access to that. An admin can change your role in Settings → Team & agent access."); },
   });
 
+  // The board reads kanbanCards, which a Cloud Function-side endpoint fills
+  // from kanbanTasks (and moves inline screenshots to Storage) when it finds
+  // them behind. Idempotent, and nobody has to run it (functions/kanban.js).
+  // Asked once per session: a card that stays missing would otherwise make every open run it again.
+  // (sessionStorage keeps it to once per browser session per member across reloads.)
+  let cardsBackfillAsked = false;
+  async function backfillCards() {
+    const user = ctx.auth.currentUser;
+    if (!user || cardsBackfillAsked) return;
+    cardsBackfillAsked = true;
+    const flag = `kb-cards-backfill:${user.uid || user.email || ""}`;
+    try { if (sessionStorage.getItem(flag)) return; sessionStorage.setItem(flag, "1"); } catch (e) { /* storage blocked: once per page load */ }
+    // A long run answers { done: false } after a slice of the tickets: ask again.
+    let after = "";
+    for (let i = 0; i < 400; i++) {
+      const r = await fetch("/mcp/kanban/backfill", { method: "POST", headers: { "X-Firebase-ID-Token": await user.getIdToken(), "Content-Type": "application/json" }, body: JSON.stringify({ after }) });
+      if (!r.ok) throw new Error(`card backfill answered ${r.status}`);
+      const out = await r.json().catch(() => ({}));
+      if (out.done !== false) return;
+      after = out.after || "";
+    }
+  }
+
+  // Links stored before they were written on both tickets are one-sided. The
+  // server makes them two-sided (idempotent) and stamps kanbanSettings/main;
+  // the board asks once per session, and only while the stamp is missing.
+  let linksBackfillAsked = false;
+  async function backfillLinks() {
+    const user = ctx.auth.currentUser;
+    if (!user || linksBackfillAsked || !store.state.settingsLoaded || store.state.settings.linksTwoSidedAt) return;
+    linksBackfillAsked = true;
+    let after = "";
+    try {
+      for (let i = 0; i < 60; i++) {
+        const r = await fetch("/mcp/kanban/backfill-links", { method: "POST", headers: { "X-Firebase-ID-Token": await user.getIdToken(), "Content-Type": "application/json" }, body: JSON.stringify({ after }) });
+        if (!r.ok) throw new Error(`links backfill answered ${r.status}`);
+        const out = await r.json().catch(() => ({}));
+        if (out.done !== false) return;
+        after = out.after || "";
+      }
+    } catch (e) { console.warn("staff kanban: links backfill:", e); }
+  }
+
   // ── State ───────────────────────────────────────────────────────────────
   const clone = (o) => JSON.parse(JSON.stringify(o));
+  // The board's tickets as an array, rebuilt only when the store has changed.
+  let taskList = [], taskListRev = -1;
   const state = {
-    get tasks() { return [...store.state.tasks.values()]; },
+    get tasks() {
+      if (taskListRev !== store.state.rev) { taskList = [...store.state.tasks.values()]; taskListRev = store.state.rev; }
+      return taskList;
+    },
     get settings() { return effectiveSettings(); },
     me,
   };
   function effectiveSettings() {
     const s = store.state.settings;
-    return { ...s, tester: s.tester || defaultTester(), currentRelease: s.currentRelease || defaultRelease() };
-  }
-  // Until an admin picks one: the console owner tests, and the first release not yet live is current.
-  function defaultTester() {
-    const rob = people().find((u) => /^rob@/.test(u.id));
-    return rob ? rob.id : "";
-  }
-  function defaultRelease() {
-    const r = releases().find((x) => !x.released);
-    return r ? r.id : "";
+    return { ...s, currentRelease: currentReleaseId(s, releases()) };
   }
 
-  const board = { q: "", mine: false, flagged: false, assignees: new Set(), type: "", priority: "", sprint: "", release: "", label: "" };
+  const board = { q: "", mine: false, flagged: false, assignees: new Set(), type: "", priority: "", sprint: "", project: "", release: "", label: "" };
   const collapsedCols = new Set();
   let filtersOpen = false;
   const collapsedLanes = new Set();
@@ -87,6 +127,12 @@ export function mountStaffKanban(ctx) {
       id: r.id, name: r.name || r.version || r.id, version: r.version || "", released: r.status === "live", date: dates[r.id] || "",
     }));
   }
+  // Console projects (not archived, unless a ticket still names one), by name.
+  function projects(keep) {
+    return (ctx.projects() || []).filter((p) => !p.archived || p.id === keep).map((p) => ({ id: p.id, name: p.name || p.id }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+  const projectName = (id) => (id ? ((ctx.projects() || []).find((p) => p.id === id) || {}).name || "" : "");
   const release = (id) => releases().find((r) => r.id === id);
   const releaseName = (id) => (release(id) || {}).name || "No release";
   function sprints() {
@@ -101,11 +147,17 @@ export function mountStaffKanban(ctx) {
   // Epics are ordinary tickets of type "epic"; any task or bug can name one as its parent.
   const byKey = (a, b) => (keyNumber(a.key) || 0) - (keyNumber(b.key) || 0);
   const epics = () => state.tasks.filter((t) => t.type === "epic").sort(byKey);
-  const epic = (key) => (key ? state.tasks.find((t) => t.key === key && t.type === "epic") : null);
+  const epic = (key) => { const t = key ? store.state.tasks.get(key) : null; return t && t.type === "epic" ? t : null; };
   const childrenOf = (key) => knownTasks().filter((t) => t.epic === key && t.type !== "epic");
   const taskByKey = (k) => store.get(k);
   // Every ticket the page knows of, the board's and those fetched on demand.
-  const knownTasks = () => [...store.state.tasks.values(), ...store.state.extra.values()];
+  // A board card has no description text; a search hit brings it, so the picker can match and quote it.
+  const knownTasks = () => {
+    const out = new Map();
+    for (const t of store.state.extra.values()) out.set(t.key, t);
+    for (const t of store.state.tasks.values()) { const x = store.state.texts.get(t.key); out.set(t.key, x && !t.descriptionText ? { ...t, descriptionText: x } : t); }
+    return [...out.values()];
+  };
   const tip = (text, cls = "") => `<button type="button" class="info-tip ${cls}" data-tip="${esc(text)}" aria-label="More information">i</button>`;
   const statusPill = (t) => `<span class="kb-status-pill kb-sp-${t.status}${res(t) === "withdrawn" ? " kb-sp-withdrawn" : ""}">${esc(statusShort(t))}</span>`;
   const today = () => new Date();
@@ -185,6 +237,8 @@ export function mountStaffKanban(ctx) {
   function go(route, params) { ctx.go(route === "kanban" ? "" : route, params || null); }
   function show(sub, params) {
     current = { route: sub || "kanban", params: params || new URLSearchParams() };
+    // The board's project filter lives in the address (#staff-kanban?project=<id>).
+    if (current.route === "kanban" && current.params.has("project")) board.project = current.params.get("project") || "";
     root.dataset.page = "staff-kanban";
     render();
   }
@@ -206,7 +260,7 @@ export function mountStaffKanban(ctx) {
     if (current.route === "kanban" && $("#kb-board")) { renderKanbanBoard(); refreshFilterCounts(); return; }
     keepPosition(() => render());
   }
-  let dataTimer = 0;
+  let dataTimer = 0, dataFrame = 0;
   const pendingData = new Set();
   function onData(what) {
     // Members the console hasn't loaded yet join its avatar cache, so photos
@@ -217,28 +271,33 @@ export function mountStaffKanban(ctx) {
       for (const m of store.state.members) if (m.email !== me || !getAvatarMember(m.email)) setAvatarMember(m.email, m);
       syncDirectoryIfBehind();
     }
-    if (what === "notifications") { drawBell(); return; }
+    if (what === "settings") backfillLinks();
     if (pageEl.hidden) return;
-    // Coalesce bursts (the first load delivers several listeners at once).
+    // Coalesce bursts (the first load delivers six listeners at once) into one
+    // render per animation frame. A hidden tab doesn't run frames: a timer covers it.
     pendingData.add(what);
-    clearTimeout(dataTimer);
-    dataTimer = setTimeout(() => {
-      const onlyTasks = [...pendingData].every((w) => w === "tasks");
-      const hadTasks = pendingData.has("tasks");
-      pendingData.clear();
-      if (current.route === "kanban") {
-        const b = $("#kb-board");
-        // People and settings change the filter bar itself; tickets only the columns.
-        if (b && onlyTasks) { renderKanbanBoard(); refreshFilterCounts(); }
-        else if (b) {
-          const typing = document.activeElement && document.activeElement.id === "kb-q";
-          keepPosition(() => renderKanban($("#kb-view")));
-          if (typing) { const q = $("#kb-q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
-        } else render();
-      }
-      else if (current.route === "report" || (current.route === "settings" && !pageEl.contains(document.activeElement))) keepPosition(() => render());
-      if (draft && !draftIsNew && hadTasks) refreshOpenTask();
-    }, 30);
+    if (dataFrame) return;
+    const run = () => { cancelAnimationFrame(dataFrame); clearTimeout(dataTimer); dataFrame = 0; flushData(); };
+    dataFrame = requestAnimationFrame(run);
+    dataTimer = setTimeout(run, 100);
+  }
+  function flushData() {
+    if (pageEl.hidden) { pendingData.clear(); return; }
+    const onlyTasks = [...pendingData].every((w) => w === "tasks");
+    const hadTasks = pendingData.has("tasks");
+    pendingData.clear();
+    if (current.route === "kanban") {
+      const b = $("#kb-board");
+      // People and settings change the filter bar itself; tickets only the columns.
+      if (b && onlyTasks) { renderKanbanBoard(); refreshFilterCounts(); }
+      else if (b) {
+        const typing = document.activeElement && document.activeElement.id === "kb-q";
+        keepPosition(() => renderKanban($("#kb-view")));
+        if (typing) { const q = $("#kb-q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+      } else render();
+    }
+    else if (current.route === "report" || (current.route === "settings" && !pageEl.contains(document.activeElement))) keepPosition(() => render());
+    if (draft && !draftIsNew && hadTasks) refreshOpenTask();
   }
   pageEl.addEventListener("click", (e) => {
     const r = e.target.closest("button[data-route], a[data-route]");
@@ -257,39 +316,21 @@ export function mountStaffKanban(ctx) {
     user.getIdToken().then((t) => fetch("/mcp/kanban/directory-sync", { method: "POST", headers: { "X-Firebase-ID-Token": t } })).catch(() => {});
   }
 
-  // ── Mentions bell ───────────────────────────────────────────────────────
-  // KB-MOD-3: a mention notifies the person; the bell beside + New task
-  // lists theirs, newest first, and opening one marks it read.
-  let bellOpen = false;
-  function drawBell() {
-    const btn = $("#kb-bell"), panel = $("#kb-bell-panel");
-    if (!btn) return;
-    const list = store.state.notifications;
-    const unread = list.filter((n) => !n.read).length;
-    btn.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">notifications</span>${unread ? `<span class="kb-bell-count">${unread}</span>` : ""}`;
-    btn.setAttribute("aria-label", unread ? `${unread} unread mention${unread === 1 ? "" : "s"}` : "Mentions");
-    panel.hidden = !bellOpen;
-    if (!bellOpen) return;
-    panel.innerHTML = `<div class="kb-bell-head"><b>Mentions</b>${unread ? '<button type="button" class="link-btn" id="kb-bell-read">Mark all read</button>' : ""}</div>` + (list.slice(0, 30).map((n) => `<button type="button" class="kb-bell-item${n.read ? "" : " unread"}" data-note="${esc(n.id)}" data-key="${esc(n.taskKey)}">${avatar(n.from)}<span><b>${esc(firstName(n.from))}</b> mentioned you ${n.kind === "comment" ? "in a comment on" : "on"} <b>${esc(n.taskKey)}</b> ${esc(n.taskTitle || "")}<span class="kb-none">${esc(fmtDate(n.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</span></span></button>`).join("") || '<p class="kb-none kb-bell-empty">No mentions yet</p>');
-  }
-  document.addEventListener("click", (e) => {
-    if (pageEl.hidden) return;
-    const b = e.target.closest("#kb-bell");
-    if (b) { bellOpen = !bellOpen; drawBell(); return; }
-    const item = e.target.closest(".kb-bell-item");
-    if (item) {
-      bellOpen = false; drawBell();
-      store.markRead([item.dataset.note]).catch(() => {});
-      openTaskByKey(item.dataset.key);
-      return;
-    }
-    if (e.target.closest("#kb-bell-read")) { store.markRead(store.state.notifications.filter((n) => !n.read).map((n) => n.id)).catch(() => {}); return; }
-    if (bellOpen && !e.target.closest("#kb-bell-panel")) { bellOpen = false; drawBell(); }
-  });
-
   // ── Kanban page ─────────────────────────────────────────────────────────
   function boardTasks() {
-    return filterTasks(state.tasks, { ...board, me });
+    // A card has no description text: words in descriptions match through the
+    // server's search hits (asked for as the box is typed in).
+    const texts = store.state.texts;
+    const list = board.q && texts.size ? state.tasks.map((t) => (!t.descriptionText && texts.has(t.key) ? { ...t, descriptionText: texts.get(t.key) } : t)) : state.tasks;
+    return filterTasks(list, { ...board, me });
+  }
+  let boardSearchTimer = 0;
+  function searchDescriptions(q) {
+    clearTimeout(boardSearchTimer);
+    if (!q.trim()) return;
+    boardSearchTimer = setTimeout(() => {
+      store.searchServer(q.trim()).then(() => { if (board.q === q) renderKanbanBoard(); }).catch(() => {});
+    }, 150);
   }
   // Counts in the pinned bar that change with the data, without redrawing it.
   function refreshFilterCounts() {
@@ -298,21 +339,29 @@ export function mountStaffKanban(ctx) {
   }
   const opt = (v, label, sel) => `<option value="${esc(v)}"${v === sel ? " selected" : ""}>${esc(label)}</option>`;
 
+  function syncBoardUrl() {
+    const h = "#staff-kanban" + (board.project ? "?project=" + encodeURIComponent(board.project) : "");
+    if (window.location.hash !== h) { try { history.replaceState(null, "", h); } catch (e) { /* the filter just isn't kept in the address */ } }
+  }
   function renderKanban(view) {
+    // A project that no longer exists would filter the board to nothing.
+    if (board.project && (ctx.projects() || []).length && !projectName(board.project)) board.project = "";
+    if (!pageEl.hidden) syncBoardUrl();
     const relOpts = opt("", "All releases", board.release) + releases().map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), board.release)).join("");
     store.watchRelease(board.release);
+    headSig = ""; // (the view is drawn afresh below)
     // Primary filters: staff, My tasks, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
-    const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.label].filter(Boolean).length;
+    const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.project, board.label].filter(Boolean).length;
     const filtersActive = moreCount || board.mine || board.assignees.size || board.release || board.q;
     view.innerHTML = `
       <div class="page-header">
         <h2>Staff Kanban</h2>
+        ${tip("Staff Kanban is for staff tasks only: work a human staff member does. Work for agents (product, docs, prototype and tooling changes, including for this project) goes in the project backlog on the Agent Board. Agents can still create and assign tasks for staff here.")}
         <span class="page-header-count" id="kb-count"></span>
         <label class="kb-search kb-header-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
         <div class="kb-header-actions">
           <button type="button" class="btn-ghost kb-icon-label" id="kb-report-btn"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span>Release report</button>
           ${canWrite() ? '<button type="button" class="btn-primary" id="kb-new-btn">+ New task</button>' : ""}
-          <span class="kb-bell-wrap"><button type="button" class="btn-ghost kb-settings-btn kb-bell" id="kb-bell" aria-haspopup="true" aria-label="Mentions"></button><div class="kb-bell-panel" id="kb-bell-panel" hidden></div></span>
           <button type="button" class="btn-ghost kb-settings-btn" data-route="settings" title="Kanban settings" aria-label="Kanban settings"><span class="material-symbols-outlined" aria-hidden="true">settings</span></button>
         </div>
       </div>
@@ -333,6 +382,7 @@ export function mountStaffKanban(ctx) {
             <label class="kb-rfilter"><span>Type</span><select id="kb-type">${opt("", "All types", board.type)}${TYPES.map((t) => opt(t.key, t.label, board.type)).join("")}</select></label>
             <label class="kb-rfilter"><span>Priority</span><select id="kb-priority">${opt("", "All priorities", board.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, board.priority)).join("")}</select></label>
             <label class="kb-rfilter"><span>Sprint</span><select id="kb-sprint">${opt("", "All sprints", board.sprint)}${sprints().map((s) => opt(s.id, s.name, board.sprint)).join("")}</select></label>
+            <label class="kb-rfilter"><span>Project</span><select id="kb-project">${opt("", "All projects", board.project)}${projects(board.project).map((p) => opt(p.id, p.name, board.project)).join("")}</select></label>
             <label class="kb-rfilter"><span>Label</span><select id="kb-label">${opt("", "All labels", board.label)}${allLabels().map((l) => opt(l, l, board.label)).join("")}</select></label>
             <div class="kb-filter-panel-foot">${moreCount ? '<button type="button" class="link-btn" id="kb-clear-more">Clear these</button>' : "<span></span>"}<button type="button" class="btn-primary" id="kb-filter-done">Done</button></div>
           </div>
@@ -368,9 +418,13 @@ export function mountStaffKanban(ctx) {
 
     const nb = $("#kb-new-btn");
     if (nb) nb.addEventListener("click", () => openTask(null));
-    drawBell();
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
-    $("#kb-q").addEventListener("input", (e) => { board.q = e.target.value; renderKanbanBoard(); });
+    let qTimer = 0;
+    $("#kb-q").addEventListener("input", (e) => {
+      board.q = e.target.value;
+      clearTimeout(qTimer);
+      qTimer = setTimeout(() => { renderKanbanBoard(); searchDescriptions(board.q); }, 150);
+    });
     // A filter change redraws the board in place: the page keeps its scroll
     // position (and, on a phone, the column you were on).
     const redraw = () => keepPosition(() => renderKanban(view));
@@ -388,12 +442,12 @@ export function mountStaffKanban(ctx) {
     $("#kb-filter-done").addEventListener("click", () => { filtersOpen = false; $("#kb-filter-panel").hidden = true; $("#kb-filter-toggle").setAttribute("aria-expanded", "false"); });
     $("#kb-mine").addEventListener("click", () => { board.mine = !board.mine; redraw(); });
     $("#kb-flagged").addEventListener("click", () => { board.flagged = !board.flagged; redraw(); });
-    [["kb-release", "release"], ["kb-type", "type"], ["kb-priority", "priority"], ["kb-sprint", "sprint"], ["kb-label", "label"]].forEach(([id, k]) =>
+    [["kb-release", "release"], ["kb-type", "type"], ["kb-priority", "priority"], ["kb-sprint", "sprint"], ["kb-project", "project"], ["kb-label", "label"]].forEach(([id, k]) =>
       $("#" + id).addEventListener("change", (e) => { board[k] = e.target.value; redraw(); }));
     const clearMore = $("#kb-clear-more");
-    if (clearMore) clearMore.addEventListener("click", () => { Object.assign(board, { flagged: false, type: "", priority: "", sprint: "", label: "" }); redraw(); });
+    if (clearMore) clearMore.addEventListener("click", () => { Object.assign(board, { flagged: false, type: "", priority: "", sprint: "", project: "", label: "" }); redraw(); });
     const clear = $("#kb-clear");
-    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, release: "", type: "", priority: "", sprint: "", label: "" }); board.assignees.clear(); redraw(); });
+    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, release: "", type: "", priority: "", sprint: "", project: "", label: "" }); board.assignees.clear(); redraw(); });
     // Phone: swipe the board left / right between columns.
     wrap.addEventListener("scroll", () => { if (mqPhone.matches && !$("#kb-board").classList.contains("kb-board-lanes")) syncPagerFromScroll(); }, { passive: true });
     let sw = null;
@@ -466,35 +520,131 @@ export function mountStaffKanban(ctx) {
     if (!board.assignees.size) return null;
     return [...people().map((u) => u.id), "none"].filter((id) => board.assignees.has(id));
   }
+  const boardIsFiltered = () => !!(board.q || board.mine || board.flagged || board.assignees.size || board.release || board.type || board.priority || board.sprint || board.label);
   const colMeta = (list, s) => {
     if (s.key === "done") {
-      return `<span class="kb-col-meta">${RESOLUTIONS.map((r) => `<span class="col-count kb-res-count kb-res-count-${r.key}" title="${r.label}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${list.filter((t) => res(t) === r.key).length}</span>`).join("")}</span>`;
+      const total = store.state.doneTotal;
+      const all = !boardIsFiltered() && total != null && total > list.length ? `<span class="col-count kb-done-total" title="All completed and withdrawn tickets, including those not loaded">${total} in all</span>` : "";
+      return `<span class="kb-col-meta">${RESOLUTIONS.map((r) => `<span class="col-count kb-res-count kb-res-count-${r.key}" title="${r.label}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${list.filter((t) => res(t) === r.key).length}</span>`).join("")}${all}</span>`;
     }
     const rem = list.reduce((n, t) => n + remaining(t), 0);
     return `<span class="kb-col-meta">${s.key !== "done" && rem ? `<span class="kb-col-effort" title="Remaining effort">${fmtH(rem)}</span>` : ""}<span class="col-count">${list.length}</span></span>`;
   };
+  // Paging (KB §13): each column draws its first cards and a "Show more" row
+  // for the rest. The counts in the headers are of the whole filtered list.
+  const PAGE_STEP = 50, FIRST_PAGE = { backlog: 25 };
+  const pageExtra = new Map();     // paging key -> cards revealed beyond the first page
+  const pageSize = (status, key) => (FIRST_PAGE[status] || PAGE_STEP) + (pageExtra.get(key) || 0);
+  const moreHTML = (key, shown, total) => (total > shown
+    ? `<button type="button" class="btn-ghost kb-more" data-more="${esc(key)}">Show ${Math.min(PAGE_STEP, total - shown)} more<span class="kb-more-left">${total - shown} not shown</span></button>` : "");
+  const emptyOf = (s, r) => (r ? `<p class="empty-hint kb-empty">Drop here to ${r.key === "completed" ? "complete" : "withdraw"}</p>` : '<p class="empty-hint kb-empty">No tasks</p>');
   // The cards of one column (or swimlane cell). The last column has two drop
   // zones, Completed and Withdrawn, each with its own count.
-  function listsHTML(list, s, emptyHint) {
-    if (s.key !== "done") return `<div class="col-list kb-list">${list.map(cardHTML).join("") || emptyHint}</div>`;
+  function listsHTML(list, s, emptyHint, pageKey) {
+    if (s.key !== "done") {
+      const n = pageSize(s.key, `${pageKey}:${s.key}`);
+      return `<div class="col-list kb-list">${list.slice(0, n).map(cardHTML).join("") || emptyHint}</div>${moreHTML(`${pageKey}:${s.key}`, n, list.length)}`;
+    }
     return `<div class="kb-res-split">${RESOLUTIONS.map((r) => {
-      const items = list.filter((t) => res(t) === r.key);
+      const items = list.filter((t) => res(t) === r.key), k = `${pageKey}:done:${r.key}`, n = pageSize("done", k);
       return `<div class="kb-res-group kb-res-${r.key}"><div class="kb-res-head"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${r.label}<span class="col-count">${items.length}</span></div>
-        <div class="col-list kb-list" data-resolution="${r.key}">${items.map(cardHTML).join("") || `<p class="empty-hint kb-empty">Drop here to ${r.key === "completed" ? "complete" : "withdraw"}</p>`}</div></div>`;
+        <div class="col-list kb-list" data-resolution="${r.key}">${items.slice(0, n).map(cardHTML).join("") || emptyOf(s, r)}</div>${moreHTML(k, n, items.length)}</div>`;
     }).join("")}</div>`;
   }
+  // The plain board is drawn once as columns; after that only what changed in a
+  // column is touched: a card whose markup is the same stays the same node.
+  const cardSig = new WeakMap();
+  function setMeta(head, html) {
+    if (head.dataset.metaSig === html) return;
+    head.dataset.metaSig = html;
+    const old = head.querySelector(".kb-col-meta");
+    if (old) old.outerHTML = html; else head.insertAdjacentHTML("beforeend", html);
+  }
+  function reconcileList(listEl, items, hint) {
+    const have = new Map();
+    for (const c of [...listEl.children]) {
+      if (c.dataset.key && !have.has(c.dataset.key)) have.set(c.dataset.key, c);
+      else if (items.length || !c.classList.contains("kb-empty")) c.remove();
+    }
+    const want = new Set(items.map((t) => t.key));
+    for (const [k, c] of have) if (!want.has(k)) { c.remove(); have.delete(k); }
+    const tpl = document.createElement("template");
+    let prev = null;
+    for (const t of items) {
+      const html = cardHTML(t);
+      let node = have.get(t.key);
+      if (node && cardSig.get(node) !== html) {
+        tpl.innerHTML = html;
+        const fresh = tpl.content.firstElementChild;
+        cardSig.set(fresh, html);
+        node.replaceWith(fresh);
+        node = fresh;
+      } else if (!node) {
+        tpl.innerHTML = html;
+        node = tpl.content.firstElementChild;
+        cardSig.set(node, html);
+      }
+      const at = prev ? prev.nextSibling : listEl.firstChild;
+      if (node !== at) listEl.insertBefore(node, at);
+      prev = node;
+    }
+    if (!items.length && !listEl.querySelector(".kb-empty")) listEl.insertAdjacentHTML("beforeend", hint);
+  }
+  function setMore(host, key, shown, total) {
+    let row = host.nextElementSibling;
+    if (!row || !row.classList.contains("kb-more-row")) { row = document.createElement("div"); row.className = "kb-more-row"; host.after(row); }
+    const html = moreHTML(key, shown, total);
+    if (row.dataset.sig !== html) { row.dataset.sig = html; row.innerHTML = html; }
+  }
+  function renderPlainBoard(el, tasks) {
+    if (el.dataset.mode !== "plain") {
+      el.dataset.mode = "plain";
+      el.innerHTML = STATUSES.map((s) => `<section class="column kb-col" data-status="${s.key}" aria-label="${esc(s.label)}">
+        <div class="col-head kb-col-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span></div>
+        ${s.key === "done"
+    ? `<div class="kb-res-split">${RESOLUTIONS.map((r) => `<div class="kb-res-group kb-res-${r.key}"><div class="kb-res-head"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${r.label}<span class="col-count"></span></div><div class="col-list kb-list" data-resolution="${r.key}"></div></div>`).join("")}</div>`
+    : '<div class="col-list kb-list"></div>'}
+      </section>`).join("");
+    }
+    const byStatus = new Map(STATUSES.map((s) => [s.key, []]));
+    for (const t of tasks) { const l = byStatus.get(t.status); if (l) l.push(t); }
+    for (const s of STATUSES) {
+      const list = byStatus.get(s.key).sort((a, b) => a.rank - b.rank);
+      const col = $(`.kb-col[data-status="${s.key}"]`, el);
+      col.classList.toggle("column-collapsed", collapsedCols.has(s.key));
+      setMeta($(".kb-col-head", col), colMeta(list, s));
+      if (s.key !== "done") {
+        const n = pageSize(s.key, `plain:${s.key}`), host = $(".kb-list", col);
+        reconcileList(host, list.slice(0, n), emptyOf(s));
+        setMore(host, `plain:${s.key}`, n, list.length);
+      } else {
+        for (const r of RESOLUTIONS) {
+          const items = list.filter((t) => res(t) === r.key), k = `plain:done:${r.key}`, n = pageSize("done", k);
+          const host = $(`.kb-list[data-resolution="${r.key}"]`, col);
+          const count = $(".kb-res-head .col-count", host.parentElement);
+          if (count.textContent !== String(items.length)) count.textContent = items.length;
+          reconcileList(host, items.slice(0, n), emptyOf(s, r));
+          setMore(host, k, n, items.length);
+        }
+      }
+    }
+  }
+  let headSig = "";
   function renderKanbanBoard() {
     const el = $("#kb-board");
     if (!el) return;
     const tasks = boardTasks();
-    $("#kb-count").textContent = `${tasks.length} task${tasks.length === 1 ? "" : "s"}`;
+    const countText = `${tasks.length} task${tasks.length === 1 ? "" : "s"}`;
+    if ($("#kb-count").textContent !== countText) $("#kb-count").textContent = countText;
     const lanes = laneIds();
     el.classList.toggle("kb-board-lanes", !!lanes);
     el.dataset.col = STATUSES[phoneCol].key;
     drawPager(tasks);
     const sorted = (list, k) => list.filter((t) => t.status === k).sort((a, b) => a.rank - b.rank);
     if (lanes) {
+      el.dataset.mode = "lanes";
       $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
+      headSig = "";
       $("#kb-lanes-sticky").hidden = false;
       $("#kb-lanes-bar").hidden = false;
       $("#kb-lanes-head-scroll").scrollLeft = $("#kb-board-wrap").scrollLeft;
@@ -513,7 +663,7 @@ export function mountStaffKanban(ctx) {
             const list = sorted(mine, s.key);
             return `<section class="column kb-col kb-lane-cell${list.length ? "" : " kb-cell-empty"}${collapsed ? " kb-cell-hidden" : ""}" data-status="${s.key}" data-lane="${id}" aria-label="${esc((id === "none" ? "Unassigned" : firstName(id)) + " · " + s.label)}">
               <div class="kb-cell-head kb-col-${s.key}"><span>${esc(s.label)}</span><span class="col-count">${list.length}</span></div>
-              ${listsHTML(list, s, "")}
+              ${listsHTML(list, s, "", `lane:${id}`)}
             </section>`;
           }).join("");
         }).join("");
@@ -527,27 +677,28 @@ export function mountStaffKanban(ctx) {
     }
     // Plain board: the page scrolls as a whole and the same pinned header
     // row as the swimlanes stays at the top (each column's own head is for phones).
-    $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
+    if (el.dataset.mode === "lanes") { el.innerHTML = ""; headSig = ""; }
+    const headHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
+    if (headHTML !== headSig) { headSig = headHTML; $("#kb-lanes-head").innerHTML = headHTML; }
     $("#kb-lanes-sticky").hidden = false;
     $("#kb-lanes-head-scroll").scrollLeft = $("#kb-board-wrap").scrollLeft;
     $("#kb-lanes-bar").hidden = true;
     updateLanePin();
-    el.innerHTML = STATUSES.map((s) => {
-      const list = sorted(tasks, s.key);
-      return `<section class="column kb-col${collapsedCols.has(s.key) ? " column-collapsed" : ""}" data-status="${s.key}" aria-label="${esc(s.label)}">
-        <div class="col-head kb-col-head kb-col-${s.key}">
-          <span class="kb-col-title">${esc(s.label)}</span>
-          ${colMeta(list, s)}
-        </div>
-        ${listsHTML(list, s, '<p class="empty-hint kb-empty">No tasks</p>')}
-      </section>`;
-    }).join("");
+    const fresh = el.dataset.mode !== "plain";
+    renderPlainBoard(el, tasks);
     // Phone: open on the column the pager says you're on.
-    if (mqPhone.matches) requestAnimationFrame(() => {
+    if (fresh && mqPhone.matches) requestAnimationFrame(() => {
       const col = $(`.kb-col[data-status="${STATUSES[phoneCol].key}"]`, el), wrap = $("#kb-board-wrap");
       if (col && wrap) { wrap.style.scrollBehavior = "auto"; wrap.scrollLeft = col.offsetLeft - parseFloat(getComputedStyle(wrap).paddingLeft); wrap.style.scrollBehavior = ""; }
     });
   }
+  // "Show 50 more" at the foot of a column.
+  pageEl.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-more]");
+    if (!b) return;
+    pageExtra.set(b.dataset.more, (pageExtra.get(b.dataset.more) || 0) + PAGE_STEP);
+    renderKanbanBoard();
+  });
 
   // Desktop: the board scrolls sideways in its own box, so a lane header can't
   // CSS-stick to the page. Instead the pin under the column headers shows the
@@ -607,9 +758,11 @@ export function mountStaffKanban(ctx) {
       <div class="kb-card-footer">
         <div class="kb-card-chips">
           ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kidsLive.length} done</span>` : res(t) === "withdrawn" ? '<span class="card-cat kb-est kb-withdrawn-chip">Withdrawn</span>' : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
+          ${t.project && projectName(t.project) ? `<span class="card-cat kb-project-chip" title="Project: ${esc(projectName(t.project))}"><span class="material-symbols-outlined" aria-hidden="true">folder</span>${esc(projectName(t.project))}</span>` : ""}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
           ${(t.comments || []).length ? `<span class="kb-meta-ic" title="${t.comments.length} comment${t.comments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.comments.length}</span>` : ""}
-          ${(t.attachments || []).length ? `<span class="kb-meta-ic" title="${t.attachments.length} attachment${t.attachments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachments.length}</span>` : ""}
+          ${t.acTotal ? `<span class="kb-meta-ic kb-ac-chip${t.acDone === t.acTotal ? " done" : ""}" title="${t.acDone} of ${t.acTotal} acceptance criteria done"><span class="material-symbols-outlined" aria-hidden="true">checklist</span>AC ${t.acDone}/${t.acTotal}</span>` : ""}
+          ${t.attachmentCount ? `<span class="kb-meta-ic" title="${t.attachmentCount} attachment${t.attachmentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachmentCount}</span>` : ""}
         </div>
         ${avatar(t.assignee)}
       </div>
@@ -638,6 +791,8 @@ export function mountStaffKanban(ctx) {
       }
       moveDrag(e.clientX, e.clientY);
     });
+    // The layout moves under a held finger (the page or the board scrolls): work out the drop place again.
+    document.addEventListener("scroll", () => { if (drag && drag.active) moveDrag(drag.lastX, drag.lastY, true); }, { capture: true, passive: true });
     document.addEventListener("touchmove", (e) => { if (drag && drag.active) e.preventDefault(); }, { passive: false });
     document.addEventListener("pointerup", (e) => { if (drag && e.pointerId === drag.id) endDrag(true); });
     document.addEventListener("pointercancel", () => { if (drag) endDrag(false); });
@@ -651,6 +806,7 @@ export function mountStaffKanban(ctx) {
       openTask(card.dataset.key);
     });
     document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && drag && drag.active) { e.preventDefault(); endDrag(false); return; }
       const card = e.target.closest && e.target.closest(".kb-card");
       if (card && pageEl.contains(card) && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openTask(card.dataset.key); }
     });
@@ -658,6 +814,7 @@ export function mountStaffKanban(ctx) {
   function startDrag(x, y) {
     const r = drag.card.getBoundingClientRect();
     drag.active = true;
+    drag.sx = x; drag.sy = y; drag.lastX = x; drag.lastY = y; drag.moved = false;
     drag.dx = x - r.left; drag.dy = y - r.top;
     const ghost = drag.card.cloneNode(true);
     ghost.classList.add("kb-ghost");
@@ -673,10 +830,13 @@ export function mountStaffKanban(ctx) {
     moveDrag(x, y);
   }
   // While a card is being dragged, the Completed / Withdrawn column's cards
-  // are hidden and two big drop targets take its place: Completed (3/4 of the
-  // screen height) and Withdrawn (1/4). They are pinned over that column, so
-  // they are in view wherever the board is scrolled. On a phone they sit at
-  // the bottom of the screen, full width.
+  // are hidden and two drop targets take its place. On a tablet or desktop
+  // they sit over that column and nowhere else (Completed three quarters,
+  // Withdrawn one quarter, clipped to what is on screen; while the column is
+  // scrolled out of view they are a slim strip at the right edge, and the
+  // board scrolls sideways under a finger held there). On a phone they are a
+  // slim bar above the tab bar that grows only when the card nears it, so the
+  // board stays reachable.
   function showCloseZones() {
     if (!$("#kb-board")) return;
     const ov = document.createElement("div");
@@ -685,31 +845,66 @@ export function mountStaffKanban(ctx) {
       const n = state.tasks.filter((t) => res(t) === r.key).length;
       return `<div class="kb-close-zone kb-close-${r.key}" data-resolution="${r.key}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span><span class="kb-close-label">${r.label}</span><span class="kb-close-count">${n}</span></div>`;
     }).join("");
-    if (!mqPhone.matches) {
-      const ref = $("#kb-lanes-head .kb-col-done") || $('.kb-col[data-status="done"]');
-      const head = $("#kb-sticky");
-      const r = ref.getBoundingClientRect();
-      const top = Math.max(head && !head.hidden ? head.getBoundingClientRect().bottom : 0, 0) + 8;
-      const left = Math.min(Math.max(r.left, 0), innerWidth - r.width - 8);
-      Object.assign(ov.style, { left: left + "px", width: r.width + "px", top: top + "px", bottom: "16px" });
-    }
+    if (mqPhone.matches) ov.classList.add("kb-close-slim");
     document.body.appendChild(ov);
     drag.zones = ov;
+    drag.zoneStart = zoneAt(drag.sx, drag.sy);
+    layoutCloseZones();
+    if (mqPhone.matches) drag.barTop = ov.getBoundingClientRect().top;
   }
-  function moveDrag(x, y) {
+  function layoutCloseZones() {
+    const ov = drag && drag.zones;
+    if (!ov || mqPhone.matches) return;
+    const ref = $("#kb-lanes-head .kb-col-done") || $('.kb-col[data-status="done"]');
+    if (!ref) return;
+    const head = $("#kb-sticky"), wrap = $("#kb-board-wrap");
+    const r = ref.getBoundingClientRect();
+    const wr = wrap ? wrap.getBoundingClientRect() : { left: 0, right: innerWidth };
+    const top = Math.max(head && !head.hidden ? head.getBoundingClientRect().bottom : 0, 0) + 8;
+    const strip = 56;
+    let left = Math.max(r.left, wr.left, 0), right = Math.min(r.right, wr.right, innerWidth);
+    ov.classList.toggle("kb-close-strip", right - left < strip);
+    if (right - left < strip) { right = Math.min(wr.right, innerWidth); left = right - strip; }
+    Object.assign(ov.style, { left: left + "px", width: right - left + "px", top: top + "px", bottom: "16px" });
+  }
+  const zoneAt = (x, y) => { const el = document.elementFromPoint(x, y); const z = el && el.closest(".kb-close-zone"); return z ? z.dataset.resolution : null; };
+  function moveDrag(x, y, noScroll) {
+    drag.lastX = x; drag.lastY = y;
     drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) rotate(2deg)`;
+    // Letting go without moving drops nothing: a finger held on a card low on the screen must not close it
+    // because a target has appeared under it.
+    if (!drag.moved) {
+      if (Math.hypot(x - drag.sx, y - drag.sy) <= 6) { drag.target = null; return; }
+      drag.moved = true;
+    }
+    if (drag.zones) {
+      layoutCloseZones();
+      if (mqPhone.matches) {
+        // The bar grows when the card nears it and stays grown while the finger is on it.
+        const grown = drag.zones.classList.contains("kb-close-grown");
+        if (!drag.barTop) drag.barTop = drag.zones.getBoundingClientRect().top;
+        const near = y >= (grown ? drag.zones.getBoundingClientRect().top - 8 : drag.barTop - 36);
+        drag.zones.classList.toggle("kb-close-grown", near);
+      }
+    }
     const under = document.elementFromPoint(x, y);
-    const zone = under && under.closest(".kb-close-zone");
+    const zoneEl = under && under.closest(".kb-close-zone");
+    const zoneKey = zoneEl ? zoneEl.dataset.resolution : null;
+    // A drop on a target counts only once the finger has been somewhere else since the drag began.
+    // (On a phone the bar changes shape under the finger, so there it means having been off the bar altogether.)
+    if (!zoneEl || (!mqPhone.matches && zoneKey !== drag.zoneStart)) drag.armed = true;
+    const zone = zoneEl && drag.armed ? zoneEl : null;
     if (drag.zones) $$(".kb-close-zone", drag.zones).forEach((z) => z.classList.toggle("on", z === zone));
     if (zone) {
       $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));
       drag.marker.remove();
       drag.target = { status: "done", resolution: zone.dataset.resolution, before: null };
+      if (!noScroll) autoScroll(x, y, true);
       return;
     }
-    const col = under && under.closest(".kb-col");
+    const col = !zoneEl && under && under.closest(".kb-col");
     $$(".kb-col.kb-drop-target").forEach((c) => c !== col && c.classList.remove("kb-drop-target"));
-    if (!col) { drag.marker.remove(); drag.target = null; autoScroll(x, y); return; }
+    if (!col) { drag.marker.remove(); drag.target = null; if (!noScroll) autoScroll(x, y, !!zoneEl); return; }
     col.classList.add("kb-drop-target");
     const lists = $$(".kb-list", col);
     // In the split last column, pick the zone under the pointer (or the nearest one).
@@ -721,11 +916,19 @@ export function mountStaffKanban(ctx) {
     const before = cards.find((c) => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
     if (before) list.insertBefore(drag.marker, before); else list.appendChild(drag.marker);
     drag.target = { status: col.dataset.status, lane: col.dataset.lane, resolution: list.dataset.resolution, before: before ? before.dataset.key : null };
-    autoScroll(x, y);
+    if (!noScroll) autoScroll(x, y, false);
   }
-  function autoScroll(x, y) {
-    const edge = 60, wrap = $(".kb-board-wrap");
-    if (y < edge + 60) window.scrollBy(0, -14); else if (y > innerHeight - edge) window.scrollBy(0, 14);
+  // Near the top or bottom edge the page scrolls, near the left or right edge of the board the board does
+  // (also over a closing target: the board is what brings the Completed column into view). The page does
+  // not scroll while the finger is on a target. On a phone the bottom edge is the top of the slim bar's
+  // reach, so the bar and the scrolling never compete for the same strip of screen.
+  function autoScroll(x, y, overZone) {
+    const edge = 60, wrap = $(".kb-board-wrap"), phone = mqPhone.matches;
+    if (!overZone) {
+      const bottom = phone && drag.barTop ? drag.barTop - 36 : innerHeight - edge;
+      if (y < edge + 60) window.scrollBy(0, -14);
+      else if (y > bottom - (phone ? 50 : 0) && y <= bottom + (phone ? 0 : edge)) window.scrollBy(0, 14);
+    }
     if (wrap) { const r = wrap.getBoundingClientRect(); if (x < r.left + edge) wrap.scrollLeft -= 16; else if (x > r.right - edge) wrap.scrollLeft += 16; }
   }
   function endDrag(commit) {
@@ -739,7 +942,7 @@ export function mountStaffKanban(ctx) {
     document.body.classList.remove("kb-drag-active");
     $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));
     $$(".kb-res-group.kb-res-target").forEach((g) => g.classList.remove("kb-res-target"));
-    if (commit && d.target) moveTask(d.key, d.target.status, d.target.before, d.target.lane, d.target.resolution);
+    if (commit && d.moved && d.target) moveTask(d.key, d.target.status, d.target.before, d.target.lane, d.target.resolution);
   }
 
   // ── Task create / edit modal ────────────────────────────────────────────
@@ -751,33 +954,34 @@ export function mountStaffKanban(ctx) {
   let returnTo = null;
   // The open ticket's comments and activity arrive from their own listeners.
   let threadUnsubs = [];
-  function unwatchThread() { threadUnsubs.splice(0).forEach((u) => u()); }
+  function unwatchThread() { threadUnsubs.splice(0).forEach((u) => u()); editingComment = ""; editQ = null; }
   function watchThread(key) {
     unwatchThread();
-    const redraw = () => { const el = $("#f-comments"); if (el) el.innerHTML = commentsHTML(); };
+    const redraw = () => redrawComments();
     threadUnsubs.push(store.watchComments(key, (list) => { if (draft && draft.key === key) { draft.comments = list; redraw(); } }));
     threadUnsubs.push(store.watchActivity(key, (list) => { if (draft && draft.key === key) { draft.activity = list; redraw(); } }));
   }
   // Opening a ticket the board isn't holding (a mention, a link, a child in
   // another release) fetches it first.
+  // The board holds cards, so a ticket's modal reads the full ticket first.
   async function openTaskByKey(key, preset) {
-    if (!taskByKey(key)) {
-      try { if (!(await store.fetchTask(key))) { toast(`<b>${esc(key)}</b> no longer exists`); return; } }
-      catch (e) { fail(e); return; }
-    }
-    openTask(key, preset);
+    try { if (!(await store.fetchTask(key))) { toast(`<b>${esc(key)}</b> no longer exists`); return; } }
+    catch (e) { fail(e); return; }
+    openTask(key, { ...preset, loaded: true });
   }
   function openTask(key, preset) {
-    const t = key ? taskByKey(key) : null;
+    // Always read the ticket fresh: what the board holds is the card.
+    if (key && !(preset && preset.loaded)) { openTaskByKey(key, preset); return; }
+    const t = key ? store.getFull(key) : null;
     if (key && !t) { openTaskByKey(key, preset); return; }
     if (!t && !canWrite()) return;
     draftIsNew = !t;
     returnTo = preset && preset.returnTo ? preset.returnTo : null;
-    draft = t ? { ...clone(t), comments: [], activity: [] } : Object.assign({
+    draft = t ? { ...clone(t), comments: [], activity: [], _acSeen: t.updated } : Object.assign({
       key: "", type: "task", title: "", description: "", status: "backlog",
       assignee: board.mine ? state.me : "", reporter: state.me, release: state.settings.currentRelease,
-      estimate: "", logged: 0, priority: "medium", sprint: "", due: "", labels: [], epic: "",
-      comments: [], attachments: [], links: [], previousAssignee: "", activity: [], flagged: false,
+      estimate: "", logged: 0, priority: "medium", sprint: "", project: "", due: "", labels: [], epic: "",
+      comments: [], attachments: [], links: [], previousAssignee: "", activity: [], flagged: false, acceptanceCriteria: [],
     }, preset ? preset.fields : {});
     if (t) {
       watchThread(t.key);
@@ -787,6 +991,7 @@ export function mountStaffKanban(ctx) {
     } else unwatchThread();
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
     syncModalFlag();
+    syncModalWatch();
     renderForm();
     setSideCollapsed(sideCollapsed);
     syncCreateCta();
@@ -827,6 +1032,20 @@ export function mountStaffKanban(ctx) {
     $("#task-flag-label").textContent = draft.flagged ? "Flagged" : "Flag";
     $(".kb-task-panel").classList.toggle("kb-panel-flagged", !!draft.flagged);
   }
+  // Watch (KB-NAV-2): follow a ticket's comments and changes. Its assignee and
+  // reporter follow it already. Saved at once, not with the form.
+  function syncModalWatch() {
+    const b = $("#task-watch");
+    if (!b) return;
+    const implicit = !!draft && !draftIsNew && [draft.assignee, draft.reporter].some((x) => x && canonicalEmail(x) === canonicalEmail(me));
+    const on = implicit || (!!draft && (draft.watchers || []).includes(me));
+    b.hidden = !draft || draftIsNew;
+    b.disabled = implicit;
+    b.title = implicit ? "You're the assignee or reporter, so you follow this ticket" : on ? "Stop watching" : "Get notified about comments and changes";
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", String(on));
+    $("#task-watch-label").textContent = on ? "Watching" : "Watch";
+  }
   function closeTask() {
     stopRecorder(true); unwatchThread(); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
     const back = returnTo; returnTo = null;
@@ -845,6 +1064,7 @@ export function mountStaffKanban(ctx) {
     refreshChildren();
     const el = $("#f-links");
     if (el) el.innerHTML = linksHTML();
+    syncCriteriaFromBoard();
   }
 
   const micBtn = (id, aria) => `<button type="button" class="mic-btn kb-mic" id="${id}" title="Dictate" aria-label="${aria}" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">mic</span></button>`;
@@ -871,6 +1091,7 @@ export function mountStaffKanban(ctx) {
       case "type": return `<div class="kb-field" data-field="type">${label("type", "f-type-task")}<div class="type-toggle kb-type-toggle" role="radiogroup">${TYPES.map((t) => `<button type="button" class="type-opt${d.type === t.key ? " active" : ""}" id="f-type-${t.key}" data-type="${t.key}" role="radio" aria-checked="${d.type === t.key}"><span class="material-symbols-outlined kb-type-${t.key}" aria-hidden="true">${t.icon}</span>${t.label}</button>`).join("")}</div></div>`;
       case "priority": return `<div class="kb-field" data-field="priority">${label("priority")}<select id="f-priority" class="kb-input">${opt("", "—", d.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, d.priority)).join("")}</select></div>`;
       case "sprint": return `<div class="kb-field" data-field="sprint">${label("sprint")}<select id="f-sprint" class="kb-input">${opt("", "No sprint", d.sprint)}${sprints().map((s) => opt(s.id, s.range ? `${s.name} · ${s.range}` : s.name, d.sprint)).join("")}</select></div>`;
+      case "project": return `<div class="kb-field" data-field="project">${label("project")}<select id="f-project" class="kb-input">${opt("", "No project", d.project)}${projects(d.project).map((p) => opt(p.id, p.name, d.project)).join("")}</select></div>`;
       case "due": return `<div class="kb-field" data-field="due">${label("due")}<input type="date" id="f-due" class="kb-input" value="${esc(d.due)}"></div>`;
       case "logged": {
         const est = +d.estimate || 0, log = +d.logged || 0;
@@ -897,10 +1118,15 @@ export function mountStaffKanban(ctx) {
             <span class="kb-child-link">${pickerHTML("f-child-link", "Add an existing ticket: search by number, title or description")}</span>
           </div></div>`;
       }
+      case "interface": return interfaceHTML();
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
         <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${LINK_TYPES.map((x) => opt(x, x, "relates to")).join("")}</select>
           ${pickerHTML("f-link-key", "Search tickets by number, title or description")}</div></div>`;
+      case "criteria": return `<div class="kb-field" data-field="criteria"><label class="field-label" for="f-ac-input">Acceptance criteria <span class="kb-none" id="f-ac-count">${criteriaCountText()}</span></label>
+        <ul class="kb-sublist kb-ac" id="f-ac">${criteriaHTML()}</ul>
+        ${canWrite() ? `<div class="kb-add-row kb-ac-add"><input type="text" id="f-ac-input" class="kb-input" maxlength="${AC_MAX_TEXT}" placeholder="Add a criterion and press Enter" autocomplete="off"><button type="button" class="btn-ghost" id="f-ac-add">Add</button></div>` : ""}
+        <p class="kb-inline-note" id="f-ac-note" hidden></p></div>`;
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
       case "comments": return `<div class="kb-field" data-field="comments">${label("comments", "f-comment")}<ul class="kb-comments" id="f-comments">${commentsHTML()}</ul>
@@ -910,23 +1136,196 @@ export function mountStaffKanban(ctx) {
     }
     return "";
   }
+  // ── Acceptance criteria (KB-TASK-12) ────────────────────────────────────
+  // On an existing ticket each add, edit, tick, move and removal is saved at
+  // once against the latest copy (store.changeCriteria) with its own activity
+  // line; on a new ticket they ride in the Create.
+  const acList = () => draft.acceptanceCriteria || (draft.acceptanceCriteria = []);
+  const criteriaCountText = () => { const l = acList(); return l.length ? `${l.filter((c) => c.done).length} of ${l.length} done` : "None yet"; };
+  const criteriaHTML = () => {
+    const l = acList(), w = canWrite();
+    return l.map((c, i) => `<li class="kb-ac-item${c.done ? " done" : ""}" data-ac="${esc(c.id)}"><input type="checkbox" data-ac-tick ${c.done ? "checked" : ""} ${w ? "" : "disabled"} aria-label="Done: ${esc(c.text)}"><input type="text" class="kb-input kb-ac-text" data-ac-text value="${esc(c.text)}" maxlength="${AC_MAX_TEXT}" ${w ? "" : "disabled"} aria-label="Criterion ${i + 1}">${w ? `<button type="button" class="icon-btn" data-ac-up ${i ? "" : "disabled"} aria-label="Move criterion ${i + 1} up"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button><button type="button" class="icon-btn" data-ac-down ${i < l.length - 1 ? "" : "disabled"} aria-label="Move criterion ${i + 1} down"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button><button type="button" class="icon-btn" data-ac-rm aria-label="Remove criterion ${i + 1}">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No acceptance criteria</li>';
+  };
+  function redrawCriteria() {
+    const el = $("#f-ac");
+    if (el) el.innerHTML = criteriaHTML();
+    const c = $("#f-ac-count");
+    if (c) c.textContent = criteriaCountText();
+  }
+  const acQuote = (t) => `"${t.length > 80 ? t.slice(0, 79) + "…" : t}"`;
+  // change(list) edits a copy of the latest list and returns the activity lines.
+  async function editCriteria(change) {
+    const d = draft;
+    if (!d || !canWrite()) return;
+    const note = $("#f-ac-note");
+    if (note) note.hidden = true;
+    if (draftIsNew) {
+      const list = clone(acList());
+      change(list);
+      d.acceptanceCriteria = list;
+      redrawCriteria();
+      return;
+    }
+    try {
+      const res2 = await store.changeCriteria(d.key, (cur) => {
+        const list = clone(cur);
+        const lines = change(list);
+        return lines && lines.length ? { list, activity: lines } : null;
+      });
+      if (draft === d && res2) d.acceptanceCriteria = res2.map((c) => ({ ...c }));
+    } catch (e) {
+      if (note) { note.hidden = false; note.textContent = e && e.code === "permission-denied" ? "You don't have permission to change this ticket." : "The criteria weren't saved. Check your connection and try again."; }
+      console.warn("staff kanban: criteria save failed", e);
+      if (draft === d) { const t = await store.fetchTask(d.key).catch(() => null); if (t && draft === d) d.acceptanceCriteria = t.acceptanceCriteria.map((c) => ({ ...c })); }
+    }
+    if (draft === d) redrawCriteria();
+  }
+  // The open ticket changed elsewhere (the board's cards carry the counts and
+  // the time of the last write): read its criteria again unless one is being typed.
+  function syncCriteriaFromBoard() {
+    const held = taskByKey(draft.key);
+    if (!held || held.updated === draft._acSeen) return;
+    const d = draft;
+    d._acSeen = held.updated;
+    const mine = acList();
+    if (held.acTotal === mine.length && held.acDone === mine.filter((c) => c.done).length) return;
+    const el = $("#f-ac");
+    if (el && el.contains(document.activeElement) && document.activeElement.matches("[data-ac-text]")) return;
+    store.fetchTask(d.key).then((t) => { if (t && draft === d) { d.acceptanceCriteria = t.acceptanceCriteria.map((c) => ({ ...c })); redrawCriteria(); } }).catch(() => {});
+  }
+  function bindCriteria(form) {
+    const add = () => {
+      const input = $("#f-ac-input");
+      const text = input.value.replace(/\s+/g, " ").trim();
+      if (!text) return;
+      const note = $("#f-ac-note");
+      if (acList().length >= AC_MAX_ITEMS) { note.hidden = false; note.textContent = `A ticket can have at most ${AC_MAX_ITEMS} criteria.`; return; }
+      input.value = "";
+      editCriteria((list) => {
+        if (list.length >= AC_MAX_ITEMS) return null;
+        list.push({ id: newCriterionId(new Set(list.map((c) => c.id))), text, done: false });
+        return [`added criterion ${acQuote(text)}`];
+      });
+    };
+    const addBtn = $("#f-ac-add"), input = $("#f-ac-input");
+    if (addBtn) addBtn.addEventListener("click", add);
+    if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+    const ul = $("#f-ac");
+    if (!ul) return;
+    const idOf = (el) => el.closest("[data-ac]").dataset.ac;
+    ul.addEventListener("change", (e) => {
+      const id = idOf(e.target);
+      if (e.target.matches("[data-ac-tick]")) {
+        const done = e.target.checked;
+        editCriteria((list) => {
+          const c = list.find((x) => x.id === id);
+          if (!c || c.done === done) return null;
+          c.done = done;
+          return [`${done ? "ticked" : "unticked"} criterion ${acQuote(c.text)}`];
+        });
+      } else if (e.target.matches("[data-ac-text]")) {
+        const text = e.target.value.replace(/\s+/g, " ").trim();
+        editCriteria((list) => {
+          const c = list.find((x) => x.id === id);
+          if (!c || !text || c.text === text) return null;
+          const old = c.text;
+          c.text = text;
+          return [`edited criterion ${acQuote(old)} → ${acQuote(text)}`];
+        });
+      }
+    });
+    ul.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-ac-up], [data-ac-down], [data-ac-rm]");
+      if (!b || b.disabled) return;
+      const id = idOf(b);
+      if (b.matches("[data-ac-rm]")) {
+        editCriteria((list) => { const i = list.findIndex((x) => x.id === id); if (i < 0) return null; const [c] = list.splice(i, 1); return [`removed criterion ${acQuote(c.text)}`]; });
+      } else {
+        const by = b.matches("[data-ac-up]") ? -1 : 1;
+        editCriteria((list) => {
+          const i = list.findIndex((x) => x.id === id), j = i + by;
+          if (i < 0 || j < 0 || j >= list.length) return null;
+          [list[i], list[j]] = [list[j], list[i]];
+          return [`moved criterion ${acQuote(list[j].text)} ${by < 0 ? "up" : "down"}`];
+        });
+      }
+    });
+    // A blank edit puts the old text back.
+    ul.addEventListener("focusout", (e) => { if (e.target.matches("[data-ac-text]") && !e.target.value.trim()) redrawCriteria(); });
+  }
   const labelsHTML = () => (draft.labels || []).map((l) => `<span class="kb-label-chip">${esc(l)}<button type="button" data-rm-label="${esc(l)}" aria-label="Remove ${esc(l)}">&times;</button></span>`).join("") || '<span class="kb-none">No labels</span>';
+  // The API contract a contract ticket carries: opens that project's Docs page at it.
+  const interfaceHTML = () => {
+    const id = draft.interfaceId;
+    if (!id) return "";
+    const f = (ctx.interfaces ? ctx.interfaces() || [] : []).find((x) => x.id === id);
+    const pid = draft.project || ((f && f.projectIds) || [])[0] || "";
+    const name = f ? f.name : "";
+    return `<div class="kb-field" data-field="interface"><p class="kb-interface" id="f-interface">Interface: ${pid && name ? `<a href="#docs/${encodeURIComponent(pid)}?interface=${encodeURIComponent(id)}" data-interface-link>${esc(name)}</a>` : esc(name || id)}</p></div>`;
+  };
   const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const fmtSize = (n) => (typeof n === "number" ? (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB") : String(n || ""));
   const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4|webm)$/i.test(a.name) ? "movie" : "description"}</span>${a.url ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
+  // Edit and Delete in a ⋮ menu: the author edits and deletes their own; an admin deletes anyone's (KB-MOD-3).
+  let editingComment = "", editQ = null;
+  const commentMenuHTML = (c) => {
+    if (!c.id || !canWrite() || c.id === editingComment) return "";
+    const own = c.author === state.me;
+    if (!own && !isAdmin()) return "";
+    return `<span class="kb-comment-menu-wrap"><button type="button" class="icon-btn kb-comment-menu-btn" data-comment-menu="${esc(c.id)}" aria-haspopup="menu" aria-expanded="false" aria-label="Comment actions"><span class="material-symbols-outlined" aria-hidden="true">more_vert</span></button>
+      <span class="kb-comment-menu" role="menu" hidden>${own ? `<button type="button" role="menuitem" data-comment-edit="${esc(c.id)}">Edit</button>` : ""}<button type="button" role="menuitem" data-comment-delete="${esc(c.id)}">Delete</button></span></span>`;
+  };
+  function redrawComments() {
+    const el = $("#f-comments"); if (!el) return;
+    const keep = editQ && editingComment ? KBEditor.getHtml(editQ) : null;
+    editQ = null;
+    el.innerHTML = commentsHTML();
+    if (editingComment) mountCommentEditor(keep);
+  }
+  async function mountCommentEditor(html) {
+    const host = $("#f-comment-edit");
+    if (!host) { editingComment = ""; return; }
+    const id = editingComment;
+    try { await KBEditor.ready(); } catch (e) { toast("The editor couldn't load. Check your connection and try again."); editingComment = ""; redrawComments(); return; }
+    if (!host.isConnected || editingComment !== id) return;
+    editQ = KBEditor.create(host, { compact: true, users: staff(), upload: uploadFor(), placeholder: "Edit your comment", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you save`) });
+    const c = (draft.comments || []).find((x) => x.id === id);
+    KBEditor.setHtml(editQ, html != null ? html : (c && (c.html || esc(c.text))) || "");
+  }
+  async function saveCommentEdit() {
+    if (!editQ || !draft || !editingComment) return;
+    const html = KBEditor.getHtml(editQ);
+    if (!html) { toast("A comment can't be empty. Delete it instead."); return; }
+    const id = editingComment, text = KBEditor.toText(html);
+    editingComment = ""; editQ = null;
+    const c = (draft.comments || []).find((x) => x.id === id);
+    if (c) Object.assign(c, { html, text, edited: true });
+    redrawComments();
+    store.editComment(draft.key, id, { html, text }).then(() => toast("Comment updated")).catch(fail);
+  }
+  async function deleteCommentFlow(id) {
+    if (!draft || !id) return;
+    if (!(await ctx.confirm("Delete this comment? This can't be undone.", { title: "Delete comment", okLabel: "Delete" }))) return;
+    draft.comments = (draft.comments || []).filter((x) => x.id !== id);
+    if (editingComment === id) { editingComment = ""; editQ = null; }
+    redrawComments();
+    store.deleteComment(draft.key, id).then(() => toast("Comment deleted")).catch(fail);
+  }
   const commentsHTML = () => {
     const items = [...(draft.comments || []).map((c) => ({ ...c, kind: "c" })), ...(draft.activity || []).map((a) => ({ ...a, kind: "a" }))].sort((a, b) => String(a.at || "9").localeCompare(String(b.at || "9")));
     return items.map((c) => c.kind === "c"
-      ? `<li class="kb-comment">${avatar(c.author)}<div><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div><div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div></div></li>`
+      ? `<li class="kb-comment" data-comment="${esc(c.id || "")}">${avatar(c.author)}<div class="kb-comment-body"><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${c.edited ? ' · <span class="kb-comment-edited">edited</span>' : ""}${commentMenuHTML(c)}</div>${c.id && c.id === editingComment
+        ? `<div class="kb-editor kb-editor-compact" id="f-comment-edit"></div><div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" data-comment-cancel>Cancel</button><button type="button" class="btn-ghost" data-comment-save>Save</button></div>`
+        : `<div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div>`}</div></li>`
       : `<li class="kb-activity"><span class="material-symbols-outlined" aria-hidden="true">history</span><span><b>${esc(firstName(c.who))}</b> ${esc(c.text)}</span></li>`).join("") || '<li class="kb-none">No comments yet</li>';
   };
 
   function renderForm() {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
-    const main = draftIsNew ? ["voice", "title", "description", "children", "attachments", "links"] : ["title", "description", "children", "links", "attachments", "comments"];
-    const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
-    const visible = (k) => k === "voice" || k === "children" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
+    const main = draftIsNew ? ["voice", "title", "description", "criteria", "children", "attachments", "links"] : ["title", "description", "interface", "criteria", "children", "links", "attachments", "comments"];
+    const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "project", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
+    const visible = (k) => k === "voice" || k === "children" || k === "criteria" || k === "interface" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
     form.innerHTML = `
@@ -982,14 +1381,32 @@ export function mountStaffKanban(ctx) {
       if (v && !draft.labels.includes(v)) draft.labels.push(v);
       li.value = ""; $("#f-labels").innerHTML = labelsHTML();
     });
-    form.addEventListener("click", (e) => {
+    // The form element outlives every open, so bind this delegated handler once: a handler per open ran N times on the Nth open.
+    if (!form._rmBound) form.addEventListener("click", (e) => {
       const rl = e.target.closest("[data-rm-label]");
       if (rl) { draft.labels = draft.labels.filter((x) => x !== rl.dataset.rmLabel); $("#f-labels").innerHTML = labelsHTML(); }
       const rk = e.target.closest("[data-rm-link]");
       if (rk) { draft.links.splice(+rk.dataset.rmLink, 1); $("#f-links").innerHTML = linksHTML(); }
+      const cm = e.target.closest("[data-comment-menu]");
+      if (cm) {
+        const menu = cm.nextElementSibling, open = menu.hidden;
+        $$(".kb-comment-menu", form).forEach((m) => { m.hidden = true; });
+        $$("[data-comment-menu]", form).forEach((b) => b.setAttribute("aria-expanded", "false"));
+        menu.hidden = !open; cm.setAttribute("aria-expanded", String(open));
+        return;
+      }
+      if (e.target.closest("[data-comment-edit], [data-comment-delete]")) $$(".kb-comment-menu", form).forEach((m) => { m.hidden = true; });
+      const ce = e.target.closest("[data-comment-edit]");
+      if (ce) { editingComment = ce.dataset.commentEdit; redrawComments(); return; }
+      const cd = e.target.closest("[data-comment-delete]");
+      if (cd) { deleteCommentFlow(cd.dataset.commentDelete); return; }
+      if (e.target.closest("[data-comment-cancel]")) { editingComment = ""; redrawComments(); return; }
+      if (e.target.closest("[data-comment-save]")) { saveCommentEdit(); return; }
+      $$(".kb-comment-menu", form).forEach((m) => { m.hidden = true; });
       const ra = e.target.closest("[data-rm-att]");
       if (ra) { draft.attachments.splice(+ra.dataset.rmAtt, 1); $("#f-attachments").innerHTML = attachmentsHTML(); }
     });
+    form._rmBound = true;
     bindPicker("f-link-key", {
       candidates: () => knownTasks().filter((t) => t.key !== draft.key && !draft.links.some((l) => l.key === t.key)),
       onPick: (t) => {
@@ -1020,6 +1437,7 @@ export function mountStaffKanban(ctx) {
     bindEditors();
     bindVoice();
     bindChildren(form);
+    bindCriteria(form);
     $("#f-cancel").addEventListener("click", closeTask);
     const del = $("#f-delete");
     if (del) del.addEventListener("click", async () => {
@@ -1032,7 +1450,6 @@ export function mountStaffKanban(ctx) {
     // Viewers see everything and change nothing.
     if (!canWrite()) {
       $$("input, select, textarea, .type-opt, .kb-mic, .kb-record-btn, .kb-agent-link, #f-comment-add, .kb-child-actions, .kb-attach-btn, [data-rm-label], [data-rm-link], [data-unlink-child]", form).forEach((el) => { el.disabled = true; if (el.matches(".kb-child-actions, .kb-attach-btn, .kb-mic, .kb-record-btn, .kb-agent-link, #f-comment-add, [data-rm-label], [data-rm-link], [data-unlink-child]")) el.hidden = true; });
-      [descQ, commentQ].forEach((q) => { if (q) q.enable(false); });
       const cw = $('[data-field="comments"] .kb-ed-wrap', form); if (cw) cw.hidden = true;
     }
     form.onsubmit = (e) => { e.preventDefault(); if (canWrite()) submitTask(); };
@@ -1181,9 +1598,13 @@ export function mountStaffKanban(ctx) {
   const staff = () => people().map((u) => ({ id: u.id, first: u.first, full: u.full, color: u.color, photo: photoOf(u.id) }));
   // Screenshots and recordings go to Storage under the ticket's key.
   const uploadFor = () => { const d = draft; return (blob, name) => store.upload(d && d.key ? d.key : "new", blob, name).then((r) => r.url); };
-  function bindEditors() {
+  async function bindEditors() {
     descQ = commentQ = null;
     const d = $("#f-description"), c = $("#f-comment");
+    // Quill downloads the first time a modal opens (js/quill-loader.js).
+    try { await KBEditor.ready(); } catch (e) { toast("The editor couldn't load. Check your connection and reopen the ticket."); return; }
+    // The modal may have been closed or re-rendered while Quill loaded.
+    if ((d && !d.isConnected) || (c && !c.isConnected)) return;
     if (d) {
       descQ = KBEditor.create(d, { users: staff(), upload: uploadFor(), placeholder: "Context, steps to reproduce, acceptance criteria. Type @ to mention someone; paste a screenshot straight in.", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you save`) });
       KBEditor.setHtml(descQ, draft.description || "");
@@ -1192,6 +1613,8 @@ export function mountStaffKanban(ctx) {
     if (c) {
       commentQ = KBEditor.create(c, { compact: true, users: staff(), upload: uploadFor(), placeholder: "Add a comment, @mention someone, or tap the mic and talk", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you add the comment`) });
     }
+    // Viewers see everything and change nothing.
+    if (!canWrite()) [descQ, commentQ].forEach((q) => { if (q) q.enable(false); });
   }
   // A comment is saved as soon as it's added (it doesn't wait for Save).
   function addCommentFromEditor() {
@@ -1202,9 +1625,9 @@ export function mountStaffKanban(ctx) {
     const who = mentioned.map(firstName);
     const pending = { author: state.me, at: new Date().toISOString(), html, text: KBEditor.toText(html) };
     draft.comments = [...(draft.comments || []), pending];
-    const el = $("#f-comments"); if (el) el.innerHTML = commentsHTML();
+    redrawComments();
     commentQ.setContents([]);
-    store.addComment(draft.key, { html, text: pending.text }, mentioned, draft.title).catch(fail);
+    store.addComment(draft.key, { html, text: pending.text }).catch(fail);
     toast(who.length ? `Comment added · ${esc(who.join(", "))} notified` : "Comment added");
     return true;
   }
@@ -1446,7 +1869,7 @@ export function mountStaffKanban(ctx) {
   function withEpicSaved(then) {
     const key = draft.key;
     if (!draftIsNew && !formDirty()) { then(key); return; }
-    submitTask({ then: (savedKey) => { openTask(savedKey); then(savedKey); } });
+    submitTask({ then: (savedKey) => { openTask(savedKey, { loaded: true }); then(savedKey); } });
   }
   function formDirty() {
     const t = taskByKey(draft.key);
@@ -1466,7 +1889,11 @@ export function mountStaffKanban(ctx) {
     let notify = [];
     if (descQ) {
       next.description = KBEditor.getHtml(descQ);
-      const before = KBEditor.mentionsIn(draftIsNew ? "" : (taskByKey(next.key) || {}).description);
+      if (hasInlineImages(next.description)) {
+        try { next.description = await store.externaliseImages(next.key || "new", next.description); }
+        catch (e) { toast("A screenshot couldn't be uploaded, so the ticket wasn't saved. Try again."); return; }
+      }
+      const before = KBEditor.mentionsIn(draftIsNew ? "" : (store.getFull(next.key) || {}).description);
       notify = KBEditor.mentionsIn(next.description).filter((id) => id !== state.me && !before.includes(id));
     }
     set("assignee", val("f-assignee"));
@@ -1474,6 +1901,7 @@ export function mountStaffKanban(ctx) {
     set("release", val("f-release"));
     set("priority", val("f-priority"));
     set("sprint", val("f-sprint"));
+    set("project", val("f-project"));
     set("due", val("f-due"));
     set("epic", val("f-epic"));
     const errors = [];
@@ -1506,19 +1934,19 @@ export function mountStaffKanban(ctx) {
     }
     if (next.type === "epic") next.epic = "";
     const [newStatus, newRes] = (val("f-status") || draft.status).split(":");
-    const existing = draftIsNew ? null : taskByKey(next.key);
+    const existing = draftIsNew ? null : store.getFull(next.key);
     const endOf = (status) => { const inCol = state.tasks.filter((t) => t.status === status); return inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10; };
     saving = true;
     const saveBtn = $("#f-save"); if (saveBtn) saveBtn.disabled = true;
     try {
       if (existing) {
         const patch = {}, activity = [];
-        for (const k of ["type", "title", "description", "assignee", "reporter", "release", "sprint", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments"]) {
+        for (const k of ["type", "title", "description", "assignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments"]) {
           const a = existing[k], b = next[k];
           if (JSON.stringify(a == null ? "" : a) !== JSON.stringify(b == null ? "" : b)) patch[k] = b;
         }
-        if ("flagged" in patch) activity.push(patch.flagged ? "flagged this ticket" : "removed the flag");
-        if ("assignee" in patch && !(newStatus !== existing.status)) activity.push(`reassigned ${firstName(existing.assignee)} → ${firstName(patch.assignee)}`);
+        // One line per changed field, with the old and new value (KB-BOARD-5).
+        activity.push(...editActivity(existing, { ...existing, ...patch }, { person: firstName, release: (id) => (release(id) || {}).name || id, project: (id) => projectName(id) || id }));
         let ch = null;
         if (newStatus !== existing.status || (newStatus === "done" && newRes !== res(existing))) {
           ch = setStatus({ ...existing, ...patch }, newStatus, { resolution: newRes });
@@ -1539,13 +1967,10 @@ export function mountStaffKanban(ctx) {
         delete fields.key; delete fields.comments; delete fields.activity;
         const key = await store.createTask(fields);
         next.key = key;
-        if (!taskByKey(key)) await store.fetchTask(key).catch(() => {});
+        await store.fetchTask(key).catch(() => {});
         toast(`<b>${esc(key)}</b> created in Backlog`);
       }
-      if (notify.length) {
-        store.notify(notify, next.key, next.title, "description").catch(() => {});
-        setTimeout(() => toast(`${esc(notify.map(firstName).join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
-      }
+      if (notify.length) setTimeout(() => toast(`${esc(notify.map(firstName).join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
     } catch (e) {
       saving = false;
       if (saveBtn) saveBtn.disabled = false;
@@ -1563,6 +1988,14 @@ export function mountStaffKanban(ctx) {
     $("#task-side-toggle").addEventListener("click", () => setSideCollapsed(!sideCollapsed));
     $("#task-form").addEventListener("click", (e) => { if (e.target.closest("#kb-side-tab")) setSideCollapsed(false); });
     $("#task-flag").addEventListener("click", () => { if (draft && canWrite()) { draft.flagged = !draft.flagged; syncModalFlag(); } });
+    $("#task-watch").addEventListener("click", () => {
+      if (!draft || draftIsNew || !canWrite()) return;
+      const on = !(draft.watchers || []).includes(me);
+      draft.watchers = on ? [...(draft.watchers || []), me] : (draft.watchers || []).filter((x) => x !== me);
+      syncModalWatch();
+      store.setWatching(draft.key, on).catch(fail);
+      toast(on ? `Watching <b>${esc(draft.key)}</b>` : `Stopped watching <b>${esc(draft.key)}</b>`);
+    });
     $("#task-close").addEventListener("click", closeTask);
     $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#task-backdrop").hidden) closeTask(); });
@@ -1730,6 +2163,7 @@ export function mountStaffKanban(ctx) {
   // kanbanSettings / kanbanSprints).
   function renderSettings(view) {
     const S = state.settings;
+    const stored = store.state.settings; // what the server has, not the fallback it uses
     const admin = isAdmin();
     const dis = admin ? "" : " disabled";
     const row = (f, core) => {
@@ -1759,9 +2193,9 @@ export function mountStaffKanban(ctx) {
         <section class="docs-block">
           <div class="docs-block-header"><h3>Workflow${tip("Moving a task into Ready for Testing reassigns it to this person. Moving it back to In Progress or Ready for Dev returns it to the developer.")}</h3></div>
           <label class="field-label" for="st-tester">Ready for Testing reassigns to</label>
-          <select id="st-tester" class="kb-input"${dis}>${peopleWith(S.tester).map((u) => opt(u.id, u.first, S.tester)).join("")}</select>
+          <select id="st-tester" class="kb-input"${dis}>${opt("", `Not set (${firstName(S.tester)} is used)`, stored.testerIsDefault ? "" : "-")}${peopleWith(stored.testerIsDefault ? "" : stored.tester).map((u) => opt(u.id, u.first, stored.testerIsDefault ? "" : stored.tester)).join("")}</select>
           <label class="field-label" for="st-release">Current release</label>
-          <select id="st-release" class="kb-input"${dis}>${opt("", rels.length ? "Choose a release" : "No releases yet (add one on the Releases page)", S.currentRelease)}${rels.filter((r) => !r.released || r.id === S.currentRelease).map((r) => opt(r.id, r.date ? `${r.name} · ${fmtDate(r.date, { day: "numeric", month: "short", year: "numeric" })}` : r.name, S.currentRelease)).join("")}</select>
+          <select id="st-release" class="kb-input"${dis}>${opt("", S.currentRelease ? `Not set (${releaseName(S.currentRelease)} is used)` : rels.length ? "Not set" : "No releases yet (add one on the Releases page)", stored.currentRelease)}${rels.filter((r) => !r.released || r.id === stored.currentRelease).map((r) => opt(r.id, r.date ? `${r.name} · ${fmtDate(r.date, { day: "numeric", month: "short", year: "numeric" })}` : r.name, stored.currentRelease)).join("")}</select>
         </section>
         <section class="docs-block">
           <div class="docs-block-header"><h3>Release dates${tip("The release report counts working days to these dates and sizes each person's capacity from them. Releases themselves are managed on the console's Releases page.")}</h3></div>
@@ -1789,8 +2223,8 @@ export function mountStaffKanban(ctx) {
       fields[c.dataset.req].required = c.checked;
       saveS({ fields }, `${esc(FIELD_LABEL[c.dataset.req])} ${c.checked ? "required" : "optional"}`);
     }));
-    $("#st-tester").addEventListener("change", (e) => saveS({ tester: e.target.value }, `Ready for Testing now reassigns to <b>${esc(firstName(e.target.value))}</b>`));
-    $("#st-release").addEventListener("change", (e) => saveS({ currentRelease: e.target.value }, `Current release is <b>${esc(releaseName(e.target.value))}</b>`));
+    $("#st-tester").addEventListener("change", (e) => saveS({ tester: e.target.value }, `Ready for Testing now reassigns to <b>${esc(firstName(e.target.value || DEFAULT_TESTER))}</b>`));
+    $("#st-release").addEventListener("change", (e) => saveS({ currentRelease: e.target.value }, `Current release is <b>${esc(releaseName(e.target.value || currentReleaseId({}, releases())))}</b>`));
     $$("[data-rel-date]", view).forEach((inp) => inp.addEventListener("change", () => {
       saveS({ releaseDates: { ...(store.state.settings.releaseDates || {}), [inp.dataset.relDate]: inp.value } }, `${esc(releaseName(inp.dataset.relDate))} date saved`);
     }));

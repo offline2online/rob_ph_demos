@@ -231,6 +231,13 @@ service cloud.firestore {
       // write does not re-send it to every open tab. Same gates as the
       // project doc: any editor (and the automation user) writes, any member
       // reads. The project doc keeps only a pointer (`docs`).
+      // Signed-off artifact snapshots (PH-20): append-only versions written
+      // only by the MCP server's admin SDK. Members read; no browser writes.
+      match /artifactVersions/{version} {
+        allow read: if isBoardReader();
+        allow write: if false;
+      }
+
       match /docs/{docName} {
         allow read: if isBoardReader();
         allow create, update: if isEditor()
@@ -245,6 +252,12 @@ service cloud.firestore {
           && (!("sha256" in incoming()) || incoming().sha256 == null || (incoming().sha256 is string && incoming().sha256.size() <= 64));
         allow delete: if isAdmin();
       }
+    }
+
+    // The board reads every project's latest snapshot with one collection-group
+    // listener (public/js/app.js). Read-only, like the nested rule above.
+    match /{path=**}/artifactVersions/{version} {
+      allow read: if isBoardReader();
     }
 
     // Programs/Products — a purely organizational grouping above Projects
@@ -681,6 +694,8 @@ service cloud.firestore {
     // browser, every signed-in person and the boardApi proxy alike is "no".
     // Even hashed, this is the credential store standing behind every team
     // member's agent, and nothing in the UI has any reason to read it.
+    // kanban_attach_file's per-member hourly allowance (functions/kanban.js); server only.
+    match /kanbanAttachLimits/{email} { allow read, write: if false; }
     match /mcpClients/{clientId} { allow read, write: if false; }
     match /mcpAuthCodes/{codeHash} { allow read, write: if false; }
     match /mcpTokens/{tokenHash} { allow read, write: if false; }
@@ -829,6 +844,16 @@ service cloud.firestore {
     function kanbanCounterPath() {
       return /databases/$(database)/documents/kanbanCounters/main;
     }
+    // Acceptance criteria (KB-TASK-12): at most 50 lines "<8-char id>\t<0|1>\t<text>",
+    // each text 1-500 characters with no tab or line break. A list of maps would
+    // need a check per item and exceed the 1000-expression budget at 50, so the
+    // list is stored as strings and checked whole: the count, then two patterns
+    // over the joined list (every line well formed; no text longer than 500).
+    function isKanbanCriteria(l) {
+      return l is list && l.size() <= 50
+        && (l.size() == 0 || (l.join("\n").matches("[a-z0-9]{8}\t[01]\t[^\t\n]+(\n[a-z0-9]{8}\t[01]\t[^\t\n]+)*")
+          && !l.join("\n").matches("(?s).*\t[^\t\n]{501}.*")));
+    }
     function isKanbanTask(d) {
       return d.key is string && isNonEmptyBoundedString(d.title, 200)
         && d.type in ["task", "bug", "epic"]
@@ -840,6 +865,9 @@ service cloud.firestore {
         && d.labels is list && d.labels.size() <= 30
         && d.links is list && d.links.size() <= 50
         && d.attachments is list && d.attachments.size() <= 50
+        && d.get("project", "") is string && d.get("project", "").size() <= 100
+        && (!("watchers" in d) || (d.watchers is list && d.watchers.size() <= 100))
+        && isKanbanCriteria(d.get("acceptanceCriteria", []))
         && d.searchTokens is list && d.searchTokens.size() <= 600
         && d.updatedBy == callerEmail();
     }
@@ -864,7 +892,13 @@ service cloud.firestore {
           && incoming().html is string && incoming().html.size() <= 200000
           && incoming().text is string && incoming().text.size() <= 20000
           && incoming().at == request.time;
-        allow update, delete: if isEditor() && resource.data.author == callerEmail();
+        // Edit your own (and only its text, mentions and edited-at); delete your own, or anyone's as an admin (KB-MOD-3).
+        allow update: if isEditor() && resource.data.author == callerEmail()
+          && incoming().diff(resource.data).affectedKeys().hasOnly(["html", "text", "mentions", "editedAt"])
+          && incoming().html is string && incoming().html.size() <= 200000
+          && incoming().text is string && incoming().text.size() <= 20000
+          && incoming().editedAt == request.time;
+        allow delete: if isEditor() && (resource.data.author == callerEmail() || isAdmin());
       }
       // Append-only: who moved, reassigned or flagged what, and when.
       match /activity/{entryId} {
@@ -873,6 +907,32 @@ service cloud.firestore {
           && isNonEmptyBoundedString(incoming().text, 500)
           && incoming().at == request.time;
       }
+    }
+    // The board's light copy of a ticket (public/js/kanban/kanban-core.js
+    // cardOf): only what a card shows, so the board's listeners download no
+    // descriptions, links or search tokens. Written in the same batch as its
+    // ticket by the page (kanban-store.js) and the MCP tools; no other key is
+    // accepted, so a description can't ride along.
+    function isKanbanCard(d) {
+      return d.keys().hasOnly(["key", "type", "title", "status", "resolution", "open", "closedAt", "rank", "assignee", "previousAssignee",
+          "release", "sprint", "project", "priority", "flagged", "estimate", "logged", "due", "labels", "epic", "commentCount", "attachmentCount", "acTotal", "acDone",
+          "updatedAt", "updatedBy"])
+        && d.key is string && isNonEmptyBoundedString(d.title, 200)
+        && d.type in ["task", "bug", "epic"]
+        && d.status in ["backlog", "ready-for-dev", "in-progress", "ready-for-testing", "approved", "done"]
+        && (d.status == "done" ? d.resolution in ["completed", "withdrawn"] : d.resolution == null)
+        && d.open == (d.status != "done")
+        && d.rank is number
+        && d.labels is list && d.labels.size() <= 30
+        && d.commentCount is int && d.attachmentCount is int
+        && d.get("acTotal", 0) is int && d.get("acDone", 0) is int && d.get("acDone", 0) <= d.get("acTotal", 0) && d.get("acTotal", 0) <= 50
+        && d.get("project", "") is string && d.get("project", "").size() <= 100
+        && d.updatedBy == callerEmail();
+    }
+    match /kanbanCards/{key} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor() && isKanbanCard(incoming()) && incoming().key == key;
+      allow delete: if isEditor();
     }
     match /kanbanCounters/{counterId} {
       allow read: if isBoardReader();
@@ -892,17 +952,16 @@ service cloud.firestore {
       allow create, update: if isAdmin() && isNonEmptyBoundedString(incoming().name, 80);
       allow delete: if isAdmin();
     }
-    // @mentions (KB-MOD-3): a member notifies someone else; only the person
-    // notified reads theirs, marks it read or clears it.
+    // Notifications (KB-NAV-2, KB-MOD-3): written only by the Kanban fan-out
+    // trigger (functions/kanban-notify.js, the admin SDK), never by a client.
+    // Only the person notified reads theirs, marks it read or clears it.
     match /kanbanNotifications/{noteId} {
       allow read: if signedIn() && resource.data.to == callerEmail();
-      allow create: if isEditor() && incoming().from == callerEmail()
-        && incoming().to is string && incoming().to != callerEmail()
-        && incoming().keys().hasOnly(["to", "from", "taskKey", "taskTitle", "kind", "read", "at"])
-        && incoming().read == false && incoming().at == request.time;
+      allow create: if false;
       allow update: if signedIn() && resource.data.to == callerEmail()
         && incoming().diff(resource.data).affectedKeys().hasOnly(["read"]);
-      allow delete: if signedIn() && resource.data.to == callerEmail();
+      // Only a read one: the bell prunes the person's own read notifications older than 30 days.
+      allow delete: if signedIn() && resource.data.to == callerEmail() && resource.data.read == true;
     }
     // Names and photos of every member, for assignee lists and avatars.
     // consoleUsers itself is admin-only to list; functions/index.js keeps

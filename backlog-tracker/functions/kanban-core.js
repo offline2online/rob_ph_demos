@@ -37,7 +37,18 @@ const PRIORITIES = [
   { key: "low", label: "Low", icon: "keyboard_arrow_down" },
   { key: "lowest", label: "Lowest", icon: "keyboard_double_arrow_down" },
 ];
-const LINK_TYPES = ["blocks", "is blocked by", "relates to", "duplicates"];
+const LINK_TYPES = ["blocks", "is blocked by", "relates to", "duplicates", "is duplicated by"];
+// A link is stored on both tickets (KB-TASK-5): "A blocks B" is {blocks, B} on
+// A and {is blocked by, A} on B, written in one batch.
+const INVERSE_LINK = { blocks: "is blocked by", "is blocked by": "blocks", "relates to": "relates to", duplicates: "is duplicated by", "is duplicated by": "duplicates" };
+const linkId = (l) => `${l.type}|${l.key}`;
+// What changed between two link lists: { added, removed } (each { type, key }).
+function linkChanges(before, after) {
+  const was = new Map((before || []).map((l) => [linkId(l), l])), now = new Map((after || []).map((l) => [linkId(l), l]));
+  return { added: [...now].filter(([k]) => !was.has(k)).map(([, l]) => l), removed: [...was].filter(([k]) => !now.has(k)).map(([, l]) => l) };
+}
+// The entry the other ticket of a link carries.
+const inverseOf = (selfKey, l) => ({ type: INVERSE_LINK[l.type], key: selfKey });
 
 // Core fields are always on the form; optional ones follow Kanban settings.
 const CORE_FIELDS = [
@@ -53,6 +64,7 @@ const OPTIONAL_FIELDS = [
   { key: "type", label: "Type" },
   { key: "priority", label: "Priority" },
   { key: "sprint", label: "Sprint" },
+  { key: "project", label: "Project" },
   { key: "due", label: "Due date" },
   { key: "logged", label: "Time logged" },
   { key: "labels", label: "Labels" },
@@ -72,12 +84,35 @@ function defaultFields() {
     status: { show: true, required: true }, release: { show: true, required: false },
     estimate: { show: true, required: false },
     type: { show: true, required: true }, priority: { show: true, required: false },
-    sprint: { show: false, required: false }, due: { show: false, required: false },
+    sprint: { show: false, required: false }, project: { show: true, required: false }, due: { show: false, required: false },
     logged: { show: true, required: false }, labels: { show: false, required: false },
     comments: { show: true, required: false }, attachments: { show: false, required: false },
     links: { show: false, required: false },
     epic: { show: true, required: false }, flag: { show: true, required: false },
   };
+}
+
+// Until an admin picks one, Ready for Testing hands tickets to the console owner (REQUIREMENTS §2).
+const DEFAULT_TESTER = "rob@offline2online.com";
+
+// Compare dotted versions numerically ("4.9" before "4.12"); unversioned last.
+function cmpVersion(a, b) {
+  const pa = String(a || "").match(/\d+/g), pb = String(b || "").match(/\d+/g);
+  if (!pa || !pb) return pa ? -1 : pb ? 1 : 0;
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (+pa[i] || 0) - (+pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+// The current release: the one an admin chose, else the earliest release not
+// yet live by version. releases: [{id, version, released, order?}].
+function currentReleaseId(settings, releases = []) {
+  const chosen = settings && settings.currentRelease;
+  if (chosen) return chosen;
+  const open = releases.filter((r) => !r.released);
+  open.sort((a, b) => cmpVersion(a.version, b.version) || (Number(a.order) || 0) - (Number(b.order) || 0));
+  return open.length ? open[0].id : "";
 }
 
 // kanbanSettings/main as stored, filled out with defaults. Core fields are
@@ -96,13 +131,16 @@ function normaliseSettings(raw) {
   for (const k of FIELD_KEYS) if (!fields[k].show) fields[k].required = false;
   return {
     fields,
-    tester: typeof s.tester === "string" ? s.tester : "",
+    tester: typeof s.tester === "string" && s.tester ? s.tester : DEFAULT_TESTER,
+    testerIsDefault: !(typeof s.tester === "string" && s.tester),
     currentRelease: typeof s.currentRelease === "string" ? s.currentRelease : "",
     releaseDates: s.releaseDates && typeof s.releaseDates === "object" ? { ...s.releaseDates } : {},
     labels: Array.isArray(s.labels) ? s.labels.filter((l) => typeof l === "string") : [],
     // How each person is named on the board (KB-PPL-1), when the first word
     // of their console name isn't it ("Lê Quang Huy" → "Huy").
     firstNames: s.firstNames && typeof s.firstNames === "object" ? { ...s.firstNames } : {},
+    // Stamped by the server's links backfill once every stored link has its other side.
+    linksTwoSidedAt: s.linksTwoSidedAt ? s.linksTwoSidedAt : null,
   };
 }
 
@@ -256,14 +294,19 @@ function searchTickets(list, query, descText = (t) => fold(t.descriptionText || 
 const PICK_LIMIT = 50;
 
 // The board's text search: key, title, description text and labels.
+// The folded text of a ticket is kept per ticket object (the store replaces the
+// object when its document changes), so a keystroke scans prepared strings.
+const haystacks = new WeakMap();
 function matchesQuery(t, q) {
   const s = fold(q).trim();
   if (!s) return true;
-  return fold(`${t.key} ${t.title} ${t.descriptionText || ""} ${(t.labels || []).join(" ")}`).includes(s);
+  let h = haystacks.get(t);
+  if (h === undefined) { h = fold(`${t.key} ${t.title} ${t.descriptionText || ""} ${(t.labels || []).join(" ")}`); haystacks.set(t, h); }
+  return h.includes(s);
 }
 
 // Board / MCP filters (KB-FLT-1). f: { q, mine, me, flagged, assignees (Set
-// or array of emails, "none" = unassigned), release, type, priority, sprint, label }.
+// or array of emails, "none" = unassigned), release, type, priority, sprint, project, label }.
 function filterTasks(tasks, f) {
   const who = f.assignees instanceof Set ? f.assignees : new Set(f.assignees || []);
   return tasks.filter((t) => {
@@ -274,6 +317,7 @@ function filterTasks(tasks, f) {
     if (f.type && t.type !== f.type) return false;
     if (f.priority && t.priority !== f.priority) return false;
     if (f.sprint && t.sprint !== f.sprint) return false;
+    if (f.project && t.project !== f.project) return false;
     if (f.label && !(t.labels || []).includes(f.label)) return false;
     if (f.status && (f.status.startsWith("done:") ? "done:" + res(t) !== f.status : t.status !== f.status)) return false;
     if (f.q && !matchesQuery(t, f.q)) return false;
@@ -431,9 +475,95 @@ function mentionsIn(html) {
   return [...out];
 }
 
+// ── Acceptance criteria (KB-TASK-12) ─────────────────────────────────────────
+// A checklist of up to 50 items, each { id, text (1-500 characters), done }.
+// It is STORED as a list of strings "<8-char id>\t<0|1>\t<text>": firestore.rules
+// cannot loop and caps an operation at 1000 expressions, so a list of maps
+// can't be checked item by item at 50 items, but a list of strings can be
+// checked whole (count, shape of every line, text length) with two patterns
+// over the joined list. The page, MCP and tests see { id, text, done } through
+// decodeCriteria; text never holds a tab or a line break (cleanCriteria folds them).
+const AC_MAX_ITEMS = 50;
+const AC_MAX_TEXT = 500;
+const AC_ID = /^[a-z0-9]{8}$/;
+function newCriterionId(taken = new Set()) {
+  for (;;) {
+    let id = "";
+    for (let i = 0; i < 8; i++) id += "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 36)];
+    if (!taken.has(id)) return id;
+  }
+}
+function encodeCriteria(list) {
+  return (Array.isArray(list) ? list : []).map((c) => `${c.id}\t${c.done ? 1 : 0}\t${c.text}`);
+}
+function decodeCriteria(stored) {
+  const out = [];
+  for (const line of Array.isArray(stored) ? stored : []) {
+    if (line && typeof line === "object" && typeof line.text === "string") { out.push({ id: String(line.id || ""), text: line.text, done: !!line.done }); continue; }
+    const m = /^([a-z0-9]{8})\t([01])\t([\s\S]*)$/.exec(String(line));
+    if (m) out.push({ id: m[1], text: m[3], done: m[2] === "1" });
+  }
+  return out;
+}
+// Counts from a stored or decoded checklist.
+function acCounts(list) {
+  const items = decodeCriteria(list);
+  return { total: items.length, done: items.filter((c) => c.done).length };
+}
+// Strings or { text, done, id } → the checklist, or the problems. An item keeps
+// its id when it names one that is still free, else when `existing` holds an
+// unclaimed item with the same text; else it gets a new id.
+function cleanCriteria(input, existing = []) {
+  const errors = [];
+  if (input == null) return { value: [], errors };
+  if (!Array.isArray(input)) return { value: [], errors: ["acceptanceCriteria must be a list"] };
+  if (input.length > AC_MAX_ITEMS) errors.push(`acceptanceCriteria is limited to ${AC_MAX_ITEMS} items`);
+  const have = decodeCriteria(existing);
+  const claimed = new Set(), taken = new Set();
+  const items = [];
+  input.slice(0, AC_MAX_ITEMS).forEach((raw, i) => {
+    const obj = raw && typeof raw === "object" ? raw : { text: raw };
+    const text = String(obj.text == null ? "" : obj.text).replace(/\s+/g, " ").trim();
+    if (!text) { errors.push(`acceptanceCriteria item ${i + 1} is empty`); return; }
+    if (text.length > AC_MAX_TEXT) { errors.push(`acceptanceCriteria item ${i + 1} is limited to ${AC_MAX_TEXT} characters`); return; }
+    items.push({ text, done: !!obj.done, wanted: typeof obj.id === "string" && AC_ID.test(obj.id) ? obj.id : "" });
+  });
+  for (const it of items) {
+    if (it.wanted && !taken.has(it.wanted)) { taken.add(it.wanted); it.id = it.wanted; claimed.add(it.wanted); }
+  }
+  for (const it of items) {
+    if (it.id) continue;
+    const same = have.find((h) => h.text === it.text && !claimed.has(h.id) && !taken.has(h.id));
+    if (same) { it.id = same.id; claimed.add(same.id); taken.add(same.id); }
+  }
+  for (const it of items) if (!it.id) { it.id = newCriterionId(new Set([...taken, ...have.map((h) => h.id)])); taken.add(it.id); }
+  return { value: items.map((it) => ({ id: it.id, text: it.text, done: it.done })), errors };
+}
+
+// The activity lines for a change of checklist (before and after both decoded).
+function diffCriteria(before, after) {
+  const q = (t) => `"${t.length > 80 ? t.slice(0, 79) + "…" : t}"`;
+  const lines = [];
+  const was = new Map(decodeCriteria(before).map((c) => [c.id, c]));
+  const now = decodeCriteria(after);
+  const keep = new Set(now.map((c) => c.id));
+  for (const c of was.values()) if (!keep.has(c.id)) lines.push(`removed criterion ${q(c.text)}`);
+  for (const c of now) {
+    const o = was.get(c.id);
+    if (!o) lines.push(`added criterion ${q(c.text)}`);
+    else {
+      if (o.text !== c.text) lines.push(`edited criterion ${q(o.text)} → ${q(c.text)}`);
+      if (o.done !== c.done) lines.push(`${c.done ? "ticked" : "unticked"} criterion ${q(c.text)}`);
+    }
+  }
+  const order = (l) => l.filter((c) => was.has(c.id) && keep.has(c.id)).map((c) => c.id).join();
+  if (!lines.length && order([...was.values()]) !== order(now)) lines.push("reordered the acceptance criteria");
+  return lines.slice(0, 20);
+}
+
 // Validates and normalises the writable fields of a task (MCP and page).
 // Returns { value, errors }.
-function cleanTaskFields(input, { partial = false } = {}) {
+function cleanTaskFields(input, { partial = false, existingCriteria = [] } = {}) {
   const v = {}, errors = [];
   const str = (k, max) => {
     if (!(k in input)) return;
@@ -448,7 +578,7 @@ function cleanTaskFields(input, { partial = false } = {}) {
   if ("type" in input) { if (!TYPES.some((t) => t.key === input.type)) errors.push("type must be task, bug or epic"); else v.type = input.type; }
   if ("priority" in input) { if (input.priority && !PRIORITIES.some((p) => p.key === input.priority)) errors.push("priority must be highest, high, medium, low or lowest"); else v.priority = input.priority || ""; }
   for (const k of ["assignee", "reporter", "previousAssignee"]) if (k in input) { const s = String(input[k] || "").trim().toLowerCase(); if (s && !/^[^@\s]+@[^@\s]+$/.test(s)) errors.push(`${k} must be an email`); else v[k] = s; }
-  str("release", 100); str("sprint", 100); str("epic", 20);
+  str("release", 100); str("sprint", 100); str("project", 100); str("epic", 20);
   if ("due" in input) { const s = String(input.due || ""); if (s && !/^\d{4}-\d{2}-\d{2}$/.test(s)) errors.push("due must be YYYY-MM-DD"); else v.due = s; }
   for (const k of ["estimate", "logged"]) if (k in input) {
     const raw = input[k];
@@ -462,10 +592,132 @@ function cleanTaskFields(input, { partial = false } = {}) {
   }
   if ("links" in input) {
     const l = Array.isArray(input.links) ? input.links : [];
-    v.links = l.filter((x) => x && LINK_TYPES.includes(x.type) && keyNumber(x.key) != null).map((x) => ({ type: x.type, key: String(x.key).toUpperCase() })).slice(0, 50);
+    v.links = l.filter((x) => x && LINK_TYPES.includes(x.type) && keyNumber(x.key) != null).map((x) => ({ type: x.type, key: String(x.key).toUpperCase() }))
+      .filter((x, i, all) => all.findIndex((y) => linkId(y) === linkId(x)) === i).slice(0, 50);
+  }
+  if ("acceptanceCriteria" in input) {
+    const c = cleanCriteria(input.acceptanceCriteria, existingCriteria);
+    errors.push(...c.errors);
+    v.acceptanceCriteria = c.value;
   }
   if ("flagged" in input) v.flagged = !!input.flagged;
   return { value: v, errors };
 }
 
-module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, cleanTaskFields };
+// The activity lines for an edit of a ticket's fields: one per field, with the
+// old and new value ("changed Priority from Medium to High", "assigned to
+// Duong", KB-BOARD-5). names: { person(email), release(id), project(id) } turn
+// stored values into what the board shows. Status moves are written by
+// statusChange, not here. Shared by the page, the prototype and the tests.
+function editActivity(before, after, names = {}) {
+  const person = names.person || ((e) => e || "Unassigned"), release = names.release || ((x) => x), project = names.project || ((x) => x);
+  const none = (v) => (v === "" || v == null ? "none" : v);
+  const out = [];
+  const change = (label, a, b) => out.push(`changed ${label} from ${none(a)} to ${none(b)}`);
+  const differs = (k) => JSON.stringify(before[k] == null ? "" : before[k]) !== JSON.stringify(after[k] == null ? "" : after[k]);
+  const prio = (v) => (PRIORITIES.find((p) => p.key === v) || {}).label || v;
+  const hours = (v) => (v === "" || v == null ? "" : fmtH(v));
+  if (differs("title")) change("Title", before.title, after.title);
+  if (differs("type")) change("Type", (TYPES.find((t) => t.key === before.type) || {}).label || before.type, (TYPES.find((t) => t.key === after.type) || {}).label || after.type);
+  if (differs("description")) out.push("edited the description");
+  if (differs("assignee")) out.push(after.assignee ? `assigned to ${person(after.assignee)}` : `unassigned (was ${person(before.assignee)})`);
+  if (differs("reporter")) change("Reporter", before.reporter ? person(before.reporter) : "", after.reporter ? person(after.reporter) : "");
+  if (differs("priority")) change("Priority", prio(before.priority), prio(after.priority));
+  if (differs("estimate")) change("Estimate", hours(before.estimate), hours(after.estimate));
+  if (differs("logged")) change("Time logged", hours(before.logged || ""), hours(after.logged || ""));
+  if (differs("release")) change("Release", before.release ? release(before.release) : "", after.release ? release(after.release) : "");
+  if (differs("sprint")) change("Sprint", before.sprint, after.sprint);
+  if (differs("project")) change("Project", before.project ? project(before.project) : "", after.project ? project(after.project) : "");
+  if (differs("due")) change("Due date", before.due, after.due);
+  if (differs("epic")) change("Epic", before.epic, after.epic);
+  if (differs("labels")) {
+    const a = new Set(before.labels || []), b = new Set(after.labels || []);
+    for (const l of b) if (!a.has(l)) out.push(`added label ${l}`);
+    for (const l of a) if (!b.has(l)) out.push(`removed label ${l}`);
+  }
+  if (differs("links")) {
+    const { added, removed } = linkChanges(before.links, after.links);
+    for (const l of added) out.push(`linked: ${l.type} ${l.key}`);
+    for (const l of removed) out.push(`unlinked: ${l.type} ${l.key}`);
+  }
+  if (!!before.flagged !== !!after.flagged) out.push(after.flagged ? "flagged this ticket" : "removed the flag");
+  return out;
+}
+
+// ── The board card (kanbanCards/{PH-n}) ─────────────────────────────────────
+// The board's listeners read this light copy of a ticket: only what a card
+// shows, so opening the board downloads no descriptions, screenshots, links or
+// search tokens (REQUIREMENTS.md §12–13). Every writer of a ticket writes its
+// card in the same batch or transaction; closedAt (a timestamp) and
+// updatedAt/updatedBy ride beside these fields. The server's backfill and the
+// tests use the same functions, so a card and its ticket cannot be derived two ways.
+// (one string, not a list of quoted words: a lone quoted word that is also an icon name fails test/icon-font.test.mjs)
+const CARD_FIELDS = ("key type title status resolution open rank assignee previousAssignee release sprint project "
+  + "priority flagged estimate logged due labels epic commentCount attachmentCount acTotal acDone").split(" ");
+const CARD_NORM = {
+  key: (v) => String(v || ""),
+  type: (v) => v || "task",
+  title: (v) => String(v || ""),
+  status: (v) => v || "backlog",
+  resolution: (v) => v || null,
+  rank: (v) => (typeof v === "number" ? v : 0),
+  assignee: (v) => v || "",
+  previousAssignee: (v) => v || "",
+  release: (v) => v || "",
+  sprint: (v) => v || "",
+  project: (v) => v || "",
+  priority: (v) => v || "",
+  flagged: (v) => !!v,
+  estimate: (v) => (typeof v === "number" ? v : null),
+  logged: (v) => (typeof v === "number" ? v : 0),
+  due: (v) => v || "",
+  labels: (v) => (Array.isArray(v) ? v.slice(0, 30) : []),
+  epic: (v) => v || "",
+  commentCount: (v) => (Number.isInteger(v) && v > 0 ? v : 0),
+};
+// A ticket (or a card) → the fields of its card.
+function cardOf(t) {
+  const c = {};
+  for (const k of CARD_FIELDS) {
+    if (k === "open") c.open = (t.status || "backlog") !== "done";
+    else if (k === "attachmentCount") c.attachmentCount = Array.isArray(t.attachments) ? t.attachments.length : Number.isInteger(t.attachmentCount) && t.attachmentCount > 0 ? t.attachmentCount : 0;
+    else if (k === "acTotal" || k === "acDone") {
+      const n = Array.isArray(t.acceptanceCriteria) ? acCounts(t.acceptanceCriteria)[k === "acTotal" ? "total" : "done"] : t[k];
+      c[k] = Number.isInteger(n) && n > 0 ? n : 0;
+    } else c[k] = CARD_NORM[k](t[k]);
+  }
+  return c;
+}
+// A patch to a ticket → the patch to its card (only what it changes).
+function cardPatchOf(patch) {
+  const c = {};
+  for (const k of Object.keys(CARD_NORM)) if (k in patch) c[k] = CARD_NORM[k](patch[k]);
+  if ("status" in patch) c.open = (patch.status || "backlog") !== "done";
+  if ("acceptanceCriteria" in patch) { const n = acCounts(patch.acceptanceCriteria); c.acTotal = n.total; c.acDone = n.done; }
+  if ("attachments" in patch) c.attachmentCount = Array.isArray(patch.attachments) ? patch.attachments.length : 0;
+  return c;
+}
+
+// ── Screenshots in a description ────────────────────────────────────────────
+// Pasted and dropped screenshots are stored in Storage and the description
+// holds their download URL; a data: URI inline would be downloaded by every
+// listener and fills the description's size limit in two or three pictures.
+const INLINE_IMG = /(<img\b[^>]*?\bsrc\s*=\s*)(["'])(data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+)\2/gi;
+function hasInlineImages(html) { return /<img\b[^>]*\bsrc\s*=\s*["']data:image\//i.test(String(html || "")); }
+// Replaces each distinct inline image with `await upload(dataUri)` (a URL).
+async function externaliseInlineImages(html, upload) {
+  const src = String(html || "");
+  const found = new Set();
+  src.replace(INLINE_IMG, (m, a, q, uri) => { found.add(uri); return m; });
+  if (!found.size) return src;
+  const urls = new Map();
+  for (const uri of found) urls.set(uri, await upload(uri));
+  return src.replace(INLINE_IMG, (m, a, q, uri) => `${a}${q}${String(urls.get(uri)).replace(/&(?!amp;)/g, "&amp;")}${q}`);
+}
+// "data:image/jpeg;base64,…" → { contentType, base64 }, or null.
+function dataUriParts(uri) {
+  const m = /^data:([^;,]+);base64,([\s\S]*)$/.exec(String(uri || ""));
+  return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
+}
+
+module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, DEFAULT_TESTER, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };

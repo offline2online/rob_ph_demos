@@ -12,7 +12,7 @@
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc, getDocs,
+  getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, collectionGroup, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc, getDocs,
   onSnapshot, query, orderBy, where, serverTimestamp, writeBatch, arrayUnion, deleteField,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
@@ -38,6 +38,7 @@ import { pickRepoFolder, planPromotionTickets } from "./promote-plan.js";
 import { packageBacklog, groomButtonVisible, DEFAULT_GROOM_THRESHOLD, DEFAULT_PACKAGE_BUDGET } from "./groom-packages.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 import { createResultReader, useContinuousMode } from "./dictation-results.js";
+import { loadQuill } from "./quill-loader.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -319,6 +320,7 @@ function rebuildAllItems() {
 let items = [];
 let projects = [];
 let projectsLoaded = false;
+let latestArtifactVersions = new Map(); // projectId -> newest artifactVersions doc
 let interfaces = [];
 let programs = [];
 let releases = [];
@@ -1371,6 +1373,7 @@ function optionsMenuHTML(project) {
   const hasReq = projectHasDoc(project, "requirements");
   const ifaces = interfacesForProject(pid);
   const artifactUrl = project.artifactUrl && project.artifactUrl.trim();
+  const artifactVersion = latestArtifactVersions.get(pid);
 
   let html = `
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
@@ -1392,6 +1395,7 @@ function optionsMenuHTML(project) {
     ? `<a class="options-menu-item" href="${escapeHTML(safeHttpUrl(artifactUrl))}" target="_blank" rel="noopener">
         View Artifact &#8599;
         ${project.artifactUpdatedAt ? `<span class="options-menu-sub">updated ${escapeHTML(formatNoteAt(project.artifactUpdatedAt))}</span>` : ""}
+        ${artifactVersion ? `<span class="options-menu-sub artifact-version-line">v${escapeHTML(String(artifactVersion.version))}, signed off ${escapeHTML(artifactVersion.signedOffAt && artifactVersion.signedOffAt.toDate ? artifactVersion.signedOffAt.toDate().toLocaleDateString() : "")}</span>` : ""}
       </a>`
     : `<div class="options-menu-item options-menu-item-empty options-menu-item-static">No artifact yet</div>`;
 
@@ -3001,7 +3005,12 @@ function ensureArchivedItems() {
   if (archivedLoaded) return Promise.resolve();
   return archivedLoading || loadArchivedItems();
 }
-refreshArchivedStats();
+// The archived-ticket stats feed only the Agent Board's health strip and project
+// headers. On a cold open of the Staff Kanban this runQuery (about a second on a
+// phone) would compete with the Kanban's own first listeners, so it waits until
+// the Kanban has had time to paint; every other route runs it at once.
+if (/^#staff-kanban(\/|\?|$)/.test(location.hash)) setTimeout(refreshArchivedStats, 6000);
+else refreshArchivedStats();
 
 const byMillis = (field, dir) => (a, b) => {
   const av = a[field] && a[field].toMillis ? a[field].toMillis() : 0;
@@ -3015,7 +3024,7 @@ const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || "")
 // to connect — so the board has something on screen within a second or two
 // even when the realtime channel is slow to deliver. Each is a no-op if its
 // listener gets there first.
-primeFromRest("projects", (rows) => { projects = rows; render(); }, byMillis("createdAt", "asc"));
+primeFromRest("projects", (rows) => { projects = rows; render(); if (staffKanban && !staffKanbanPage.hidden) staffKanban.refresh(); }, byMillis("createdAt", "asc"));
 primeItemsFromRest();
 primeFromRest("programs", (rows) => { programs = rows; render(); });
 primeFromRest("releases", (rows) => { releases = rows; onReleasesChanged(); }, byNumber("order"));
@@ -3091,6 +3100,7 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   projects = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   projectsLoaded = true;
   render();
+  if (staffKanban && !staffKanbanPage.hidden) staffKanban.refresh(); // names on cards, the Project filter
   if (archiveProjectId) renderArchivePage();
   if (docsProjectId) renderDocsPage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
@@ -3098,6 +3108,20 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
   renderSystemMap();
 }, onListenerError("projects"));
+
+// Latest signed-off artifact snapshot per project (written by the MCP server,
+// read-only here). One collection-group listener; a failure only hides the
+// "v<n>" line, so it never goes through onListenerError's sign-in reload.
+onSnapshot(collectionGroup(db, "artifactVersions"), (snap) => {
+  const next = new Map();
+  snap.docs.forEach((d) => {
+    const v = d.data({ serverTimestamps: "estimate" });
+    const cur = next.get(v.projectId);
+    if (v.projectId && (!cur || v.version > cur.version)) next.set(v.projectId, v);
+  });
+  latestArtifactVersions = next;
+  if (projectsLoaded) render();
+}, (err) => console.warn("backlog-tracker: artifactVersions listener error", err));
 
 onSnapshot(interfacesRef, (snap) => {
   markLive("interfaces", snap);
@@ -6010,7 +6034,11 @@ function openDocsPage(pid) {
   loadProjectDocs(pid);
 }
 
+let docsFocusInterface = "";
+let docsOpenedByRoute = false;
 function closeDocsPage() {
+  docsOpenedByRoute = false;
+  docsFocusInterface = "";
   docsProjectId = null;
   docsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
@@ -6043,6 +6071,11 @@ let docsSupersededOpen = false;
 
 function renderDocsPage() {
   if (!docsProjectId) return;
+  if (docsFocusInterface && interfaces.some((i) => i.id === docsFocusInterface)) {
+    const focus = docsFocusInterface;
+    docsFocusInterface = "";
+    queueMicrotask(() => openInterfaceModal(focus, docsProjectId));
+  }
   const project = projects.find((p) => p.id === docsProjectId);
   document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
   const originBlock = document.getElementById("docs-origin-concept");
@@ -7658,6 +7691,8 @@ function loadStaffKanban() {
         me: normEmail(auth.currentUser && auth.currentUser.email),
         role: currentConsoleRole,
         releases: () => releases,
+        projects: () => projects,
+        interfaces: () => interfaces,
         confirm: (message, opts) => showConfirmDialog(message, opts),
         go: (sub, params) => {
           const qs = params ? new URLSearchParams(params).toString() : "";
@@ -9567,6 +9602,25 @@ document.getElementById("team-sort")?.addEventListener("change", (e) => {
   renderTeamList();
 });
 
+// The notification bell (KB-NAV-2): in the topbar on every page. The module
+// loads when someone signs in; a ticket opened from it goes to the Staff Kanban.
+let notificationBell = null;
+onAuthStateChanged(auth, (user) => {
+  if (notificationBell) { notificationBell.destroy(); notificationBell = null; }
+  if (!user || !user.email) return;
+  import("./kanban/kanban-bell.js").then(({ mountNotificationBell }) => {
+    if (!auth.currentUser || auth.currentUser.email !== user.email) return;
+    notificationBell = mountNotificationBell({
+      db, me: normEmail(user.email), host: document.getElementById("notification-bell"),
+      openTicket: (key) => {
+        openStaffKanbanPage("", new URLSearchParams());
+        loadStaffKanban().then((k) => k.openTask(key)).catch((err) => console.warn("backlog-tracker: couldn't open", key, err));
+      },
+      onError: (err) => console.warn("backlog-tracker: notifications", err),
+    });
+  }).catch((err) => console.warn("backlog-tracker: notification bell didn't load", err));
+});
+
 // Stamp the signed-in member's own row once per browser session so Admin >
 // Users can show their last console login. Failure (no row, offline) is fine.
 onAuthStateChanged(auth, (user) => {
@@ -10569,6 +10623,20 @@ function faqFilterFromHash(hash) {
   const value = new URLSearchParams(hash.slice(qIndex + 1)).get("filter");
   return FAQ_STATUS_FILTERS.includes(value) ? value : "all";
 }
+// "#docs/<projectId>?interface=<id>": a project's Docs page with that
+// interface contract open (the link on a Staff Kanban contract ticket).
+function openDocsRouteFromHash(hash) {
+  const [path, query] = hash.slice("#docs/".length).split("?");
+  const pid = decodeURIComponent(path || "");
+  if (!pid) return;
+  // openDocsPage closes every sub-page first, which resets the focus and
+  // clears the hash; set both again once it has run.
+  if (docsProjectId !== pid || docsPage.hidden) openDocsPage(pid);
+  docsFocusInterface = (new URLSearchParams(query || "")).get("interface") || "";
+  docsOpenedByRoute = true;
+  setRouteHash(hash, { replace: true });
+  renderDocsPage();
+}
 function applyRouteFromHash() {
   const hash = window.location.hash;
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
@@ -10578,8 +10646,10 @@ function applyRouteFromHash() {
   else if (hash === "#concept-incubator") openConceptIncubatorPage();
   else if (hash.startsWith("#concept-")) openConceptRouteFromHash(hash);
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
+  else if (hash.startsWith("#docs/")) openDocsRouteFromHash(hash);
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
+  else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
   else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
@@ -10955,9 +11025,8 @@ function faqTableRemoveColumn(table) {
   [...table.rows].forEach((row) => { if (row.cells.length) row.deleteCell(row.cells.length - 1); });
 }
 
-registerFaqEditorFormats();
-
-// Rich-text body editor (Quill, loaded via CDN — see index.html <head>).
+// Rich-text body editor (Quill, loaded from the CDN the first time the editor opens
+// — js/quill-loader.js, ensureFaQuill() below).
 // One instance bound to #fa-body-editor for the life of the page, same as
 // every other modal's inputs; openFaqArticleEditorPage() below resets its
 // content on each open rather than recreating it. Toolbar covers headings
@@ -10967,7 +11036,10 @@ registerFaqEditorFormats();
 // prompt rather than letting Quill embed a base64 data URI, to stay well
 // under Firestore's 1MiB document limit), video, tables, and a "clear
 // formatting" button.
-const faQuill = new Quill("#fa-body-editor", {
+let faQuill = null;
+function createFaQuill() {
+registerFaqEditorFormats();
+faQuill = new Quill("#fa-body-editor", {
   theme: "snow",
   modules: {
     toolbar: {
@@ -11057,6 +11129,22 @@ faQuill.root.addEventListener("click", (event) => {
   else if (action === "remove-col") faqTableRemoveColumn(table);
   updateFaDirtyState();
 });
+}
+
+// The editor is created the first time an article opens, after Quill has loaded.
+let faQuillReady = null;
+function ensureFaQuill() {
+  if (faQuill) return Promise.resolve(faQuill);
+  if (!faQuillReady) {
+    faQuillReady = loadQuill().then(() => {
+      createFaQuill();
+      faQuill.on("text-change", updateFaDirtyState);
+      faQuill.root.addEventListener("input", updateFaDirtyState);
+      return faQuill;
+    }).catch((err) => { faQuillReady = null; throw err; });
+  }
+  return faQuillReady;
+}
 
 // Strips the two purely-editing affordances a table blot's DOM carries —
 // its add/remove row/column toolbar, and contenteditable="true" on every
@@ -11066,6 +11154,7 @@ faQuill.root.addEventListener("click", (event) => {
 // Reads off a clone so the live editor's own DOM (and whatever's selected
 // inside it) is never touched.
 function faqBodySourceForSave() {
+  if (!faQuill) return "";
   const clone = faQuill.root.cloneNode(true);
   clone.querySelectorAll(".faq-table-toolbar").forEach((el) => el.remove());
   clone.querySelectorAll("[contenteditable]").forEach((el) => el.removeAttribute("contenteditable"));
@@ -11177,7 +11266,15 @@ function updateFaDirtyState() {
 // proposal is approved and its tickets merge. faEditingPendingRevision is
 // the flag submitFaqArticleFromEditor keys off.
 let faEditingPendingRevision = false;
-function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
+function openFaqArticleEditorPage(articleId, opts = {}) {
+  if (faQuill) { openFaqArticleEditorPageNow(articleId, opts); return; }
+  // First open: the page shows at once, the editor follows when Quill has loaded.
+  ensureFaQuill().then(() => openFaqArticleEditorPageNow(articleId, opts)).catch((err) => {
+    console.error("backlog-tracker: the FAQ editor didn't load", err);
+    showNiToast("The article editor couldn't load. Check your connection and try again.");
+  });
+}
+function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}) {
   closeAllSubPages();
   ensureLazy("faqCategories", "faqArticles");
   editingFaqArticleId = articleId || null;
@@ -11290,8 +11387,7 @@ faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 // goes through Quill's text APIs at all.
 [faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput, faSectionPickerLabelInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
 [faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect, faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
-faQuill.on("text-change", updateFaDirtyState);
-faQuill.root.addEventListener("input", updateFaDirtyState);
+// (faQuill's own listeners are attached in ensureFaQuill.)
 
 // Save draft and Publish share the same field-gathering logic, differing
 // only in what status (and whether publishedAt) gets written — see the

@@ -1506,6 +1506,13 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 #auth-gate-retry, #auth-gate-verify { margin-top: 12px; }
 #auth-gate-redirect { display: block; margin: 10px auto 0; }
 
+/* Set by the inline script in index.html's <head> before first paint when this
+   browser remembers a signed-in session: keep the sign-in card (and its logo)
+   off screen while auth-gate.js loads; it removes the flag once it knows
+   whether to show the shell or the card. */
+html[data-restoring] .auth-gate { display: none; }
+html[data-restoring] .app[hidden] { display: block !important; }
+
 /* Session restore (auth-gate.js): the shell is on screen while Firebase
    confirms the session; this single line under the topbar is all that says
    so. A thin sweep in the primary colour rather than a spinner or a
