@@ -164,6 +164,19 @@ rename it. Keep that case when adding rules.
   front of the admin reviewing it. Now vendored at `public/js/vendor/
   purify.min.js` (3.4.15, the same build the public site ships).
 
+- **First-open weight (29 Oct 2026).** Measured on the live console: a 3.9 MB
+  Material Symbols font, a 612 KB unminified `app.js` and a second module round
+  trip for the Staff Kanban. The font is now an `icon_names` subset (about 33 KB,
+  guarded by `test/icon-font.test.mjs`), scripts are minified in the Hosting copy
+  (`scripts/build-console.js` via `firebase.json` predeploy, tested by
+  `test/ui/minified.test.mjs`), the Kanban modules are preloaded on its route,
+  Quill loads when an editor opens, the archived-stats `runQuery` waits behind the
+  Kanban's own listeners, and a remembered session paints the shell, not the
+  sign-in card (`html[data-restoring]`). The membership check itself was never
+  ahead of the board: a cached token claim resolves it locally and the REST row
+  read and `/mcp/claims/sync` only run when there is no claim, the latter behind
+  the board. Details in `README.md` → "Load performance".
+
 ---
 
 ## 3. Reviewed and deliberately not changed here

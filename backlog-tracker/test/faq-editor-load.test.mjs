@@ -42,7 +42,7 @@ function slice(from, to) {
 const editorCode = [
   slice("function escapeHTML(s) {", "\n}\n") + "\n}\n",
   slice("const FAQ_CALLOUT_LEVELS =", "// Insert a brand-new table at the cursor"),
-  slice("registerFaqEditorFormats();", "// Table cell TEXT needs no handler"),
+  slice("let faQuill = null;", "// The editor is created the first time an article opens"),
   slice("function faqBodySourceForSave() {", "\n}\n") + "\n}\n",
 ].join("\n");
 for (const fn of ["faqHtmlForQuill", "faqSetEditorHtml", "matchers.filter", "faqBodySourceForSave"]) {
@@ -63,6 +63,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8">
 <script src="/quill.min.js"></script><script src="/purify.min.js"></script></head>
 <body><p id="fa-load-notice" hidden></p><div id="fa-body-editor"></div>
 <script>${editorCode}
+createFaQuill();
 function renderFaqBodyMd(c){const t=(c||"").trim();return t.startsWith("<")?DOMPurify.sanitize(t,{ADD_TAGS:["iframe"],ADD_ATTR:["allowfullscreen","frameborder"]}):t;}
 window.loadArticle=(html)=>{faqSetEditorHtml(renderFaqBodyMd(html));return faqBodySourceForSave();};
 </script></body></html>`;

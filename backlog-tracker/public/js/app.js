@@ -38,6 +38,7 @@ import { pickRepoFolder, planPromotionTickets } from "./promote-plan.js";
 import { packageBacklog, groomButtonVisible, DEFAULT_GROOM_THRESHOLD, DEFAULT_PACKAGE_BUDGET } from "./groom-packages.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 import { createResultReader, useContinuousMode } from "./dictation-results.js";
+import { loadQuill } from "./quill-loader.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -3001,7 +3002,12 @@ function ensureArchivedItems() {
   if (archivedLoaded) return Promise.resolve();
   return archivedLoading || loadArchivedItems();
 }
-refreshArchivedStats();
+// The archived-ticket stats feed only the Agent Board's health strip and project
+// headers. On a cold open of the Staff Kanban this runQuery (about a second on a
+// phone) would compete with the Kanban's own first listeners, so it waits until
+// the Kanban has had time to paint; every other route runs it at once.
+if (/^#staff-kanban(\/|\?|$)/.test(location.hash)) setTimeout(refreshArchivedStats, 6000);
+else refreshArchivedStats();
 
 const byMillis = (field, dir) => (a, b) => {
   const av = a[field] && a[field].toMillis ? a[field].toMillis() : 0;
@@ -10955,9 +10961,8 @@ function faqTableRemoveColumn(table) {
   [...table.rows].forEach((row) => { if (row.cells.length) row.deleteCell(row.cells.length - 1); });
 }
 
-registerFaqEditorFormats();
-
-// Rich-text body editor (Quill, loaded via CDN — see index.html <head>).
+// Rich-text body editor (Quill, loaded from the CDN the first time the editor opens
+// — js/quill-loader.js, ensureFaQuill() below).
 // One instance bound to #fa-body-editor for the life of the page, same as
 // every other modal's inputs; openFaqArticleEditorPage() below resets its
 // content on each open rather than recreating it. Toolbar covers headings
@@ -10967,7 +10972,10 @@ registerFaqEditorFormats();
 // prompt rather than letting Quill embed a base64 data URI, to stay well
 // under Firestore's 1MiB document limit), video, tables, and a "clear
 // formatting" button.
-const faQuill = new Quill("#fa-body-editor", {
+let faQuill = null;
+function createFaQuill() {
+registerFaqEditorFormats();
+faQuill = new Quill("#fa-body-editor", {
   theme: "snow",
   modules: {
     toolbar: {
@@ -11057,6 +11065,22 @@ faQuill.root.addEventListener("click", (event) => {
   else if (action === "remove-col") faqTableRemoveColumn(table);
   updateFaDirtyState();
 });
+}
+
+// The editor is created the first time an article opens, after Quill has loaded.
+let faQuillReady = null;
+function ensureFaQuill() {
+  if (faQuill) return Promise.resolve(faQuill);
+  if (!faQuillReady) {
+    faQuillReady = loadQuill().then(() => {
+      createFaQuill();
+      faQuill.on("text-change", updateFaDirtyState);
+      faQuill.root.addEventListener("input", updateFaDirtyState);
+      return faQuill;
+    }).catch((err) => { faQuillReady = null; throw err; });
+  }
+  return faQuillReady;
+}
 
 // Strips the two purely-editing affordances a table blot's DOM carries —
 // its add/remove row/column toolbar, and contenteditable="true" on every
@@ -11066,6 +11090,7 @@ faQuill.root.addEventListener("click", (event) => {
 // Reads off a clone so the live editor's own DOM (and whatever's selected
 // inside it) is never touched.
 function faqBodySourceForSave() {
+  if (!faQuill) return "";
   const clone = faQuill.root.cloneNode(true);
   clone.querySelectorAll(".faq-table-toolbar").forEach((el) => el.remove());
   clone.querySelectorAll("[contenteditable]").forEach((el) => el.removeAttribute("contenteditable"));
@@ -11177,7 +11202,15 @@ function updateFaDirtyState() {
 // proposal is approved and its tickets merge. faEditingPendingRevision is
 // the flag submitFaqArticleFromEditor keys off.
 let faEditingPendingRevision = false;
-function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
+function openFaqArticleEditorPage(articleId, opts = {}) {
+  if (faQuill) { openFaqArticleEditorPageNow(articleId, opts); return; }
+  // First open: the page shows at once, the editor follows when Quill has loaded.
+  ensureFaQuill().then(() => openFaqArticleEditorPageNow(articleId, opts)).catch((err) => {
+    console.error("backlog-tracker: the FAQ editor didn't load", err);
+    showNiToast("The article editor couldn't load. Check your connection and try again.");
+  });
+}
+function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}) {
   closeAllSubPages();
   ensureLazy("faqCategories", "faqArticles");
   editingFaqArticleId = articleId || null;
@@ -11290,8 +11323,7 @@ faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 // goes through Quill's text APIs at all.
 [faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput, faSectionPickerLabelInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
 [faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect, faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
-faQuill.on("text-change", updateFaDirtyState);
-faQuill.root.addEventListener("input", updateFaDirtyState);
+// (faQuill's own listeners are attached in ensureFaQuill.)
 
 // Save draft and Publish share the same field-gathering logic, differing
 // only in what status (and whether publishedAt) gets written — see the

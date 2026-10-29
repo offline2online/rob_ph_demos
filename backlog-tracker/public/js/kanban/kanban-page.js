@@ -1034,7 +1034,6 @@ export function mountStaffKanban(ctx) {
     // Viewers see everything and change nothing.
     if (!canWrite()) {
       $$("input, select, textarea, .type-opt, .kb-mic, .kb-record-btn, .kb-agent-link, #f-comment-add, .kb-child-actions, .kb-attach-btn, [data-rm-label], [data-rm-link], [data-unlink-child]", form).forEach((el) => { el.disabled = true; if (el.matches(".kb-child-actions, .kb-attach-btn, .kb-mic, .kb-record-btn, .kb-agent-link, #f-comment-add, [data-rm-label], [data-rm-link], [data-unlink-child]")) el.hidden = true; });
-      [descQ, commentQ].forEach((q) => { if (q) q.enable(false); });
       const cw = $('[data-field="comments"] .kb-ed-wrap', form); if (cw) cw.hidden = true;
     }
     form.onsubmit = (e) => { e.preventDefault(); if (canWrite()) submitTask(); };
@@ -1183,9 +1182,13 @@ export function mountStaffKanban(ctx) {
   const staff = () => people().map((u) => ({ id: u.id, first: u.first, full: u.full, color: u.color, photo: photoOf(u.id) }));
   // Screenshots and recordings go to Storage under the ticket's key.
   const uploadFor = () => { const d = draft; return (blob, name) => store.upload(d && d.key ? d.key : "new", blob, name).then((r) => r.url); };
-  function bindEditors() {
+  async function bindEditors() {
     descQ = commentQ = null;
     const d = $("#f-description"), c = $("#f-comment");
+    // Quill downloads the first time a modal opens (js/quill-loader.js).
+    try { await KBEditor.ready(); } catch (e) { toast("The editor couldn't load. Check your connection and reopen the ticket."); return; }
+    // The modal may have been closed or re-rendered while Quill loaded.
+    if ((d && !d.isConnected) || (c && !c.isConnected)) return;
     if (d) {
       descQ = KBEditor.create(d, { users: staff(), upload: uploadFor(), placeholder: "Context, steps to reproduce, acceptance criteria. Type @ to mention someone; paste a screenshot straight in.", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you save`) });
       KBEditor.setHtml(descQ, draft.description || "");
@@ -1194,6 +1197,8 @@ export function mountStaffKanban(ctx) {
     if (c) {
       commentQ = KBEditor.create(c, { compact: true, users: staff(), upload: uploadFor(), placeholder: "Add a comment, @mention someone, or tap the mic and talk", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you add the comment`) });
     }
+    // Viewers see everything and change nothing.
+    if (!canWrite()) [descQ, commentQ].forEach((q) => { if (q) q.enable(false); });
   }
   // A comment is saved as soon as it's added (it doesn't wait for Save).
   function addCommentFromEditor() {

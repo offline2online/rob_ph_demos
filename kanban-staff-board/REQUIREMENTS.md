@@ -309,6 +309,11 @@ composite index is needed.
   sanitise all stored HTML on render.
 - **Performance:** board loads one release's tasks by default; search is
   server-side and capped at 50 results; screenshots downscaled to ≤1400 px.
+  First open (29 Oct 2026): the icon font is a subset (about 33 KB, not 3.9 MB),
+  the console's scripts are served minified, the four Kanban modules are
+  preloaded in parallel with `app.js` on `#staff-kanban`, and the rich-text
+  editor (Quill) downloads when a ticket first opens, not at page start. See
+  `backlog-tracker/README.md` → "Load performance".
 - **Accessibility:** keyboard-operable picker, menus and modal; ARIA on tabs,
   toggles and dialogs; tooltips reachable by focus and tap.
 - **Responsive:** desktop ≥1024 px with sidebar; tablet (iPad portrait and

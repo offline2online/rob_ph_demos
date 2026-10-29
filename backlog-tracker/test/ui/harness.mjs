@@ -18,7 +18,9 @@ import { fileURLToPath } from "node:url";
 import { chromium, firefox, webkit } from "playwright-core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const publicDir = path.join(here, "..", "..", "public");
+// HARNESS_PUBLIC_DIR points the run at the minified Hosting build instead
+// (ui/minified.test.mjs), so a minifier fault can't reach production unseen.
+export const publicDir = process.env.HARNESS_PUBLIC_DIR ? path.resolve(process.env.HARNESS_PUBLIC_DIR) : path.join(here, "..", "..", "public");
 export const outDir = path.join(here, "out");
 export const stubPath = path.join(here, "firebase-stub.mjs");
 
