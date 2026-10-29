@@ -982,7 +982,8 @@ export function mountStaffKanban(ctx) {
       if (v && !draft.labels.includes(v)) draft.labels.push(v);
       li.value = ""; $("#f-labels").innerHTML = labelsHTML();
     });
-    form.addEventListener("click", (e) => {
+    // The form element outlives every open, so bind this delegated handler once: a handler per open ran N times on the Nth open.
+    if (!form._rmBound) form.addEventListener("click", (e) => {
       const rl = e.target.closest("[data-rm-label]");
       if (rl) { draft.labels = draft.labels.filter((x) => x !== rl.dataset.rmLabel); $("#f-labels").innerHTML = labelsHTML(); }
       const rk = e.target.closest("[data-rm-link]");
@@ -990,6 +991,7 @@ export function mountStaffKanban(ctx) {
       const ra = e.target.closest("[data-rm-att]");
       if (ra) { draft.attachments.splice(+ra.dataset.rmAtt, 1); $("#f-attachments").innerHTML = attachmentsHTML(); }
     });
+    form._rmBound = true;
     bindPicker("f-link-key", {
       candidates: () => knownTasks().filter((t) => t.key !== draft.key && !draft.links.some((l) => l.key === t.key)),
       onPick: (t) => {

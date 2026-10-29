@@ -279,7 +279,7 @@ export function defineNewCases(E) {
     await p.done();
   });
 
-  T("TC-38b", "removing an attachment from a ticket that was opened before removes exactly one", { known: "the Remove handler is added to the form on every open, so the Nth open removes N" }, async (prof) => {
+  T("TC-38b", "removing an attachment from a ticket that was opened before removes exactly one", async (prof) => {
     const p = await open(prof, E.hash("kanban"));
     await openTask(p, "PH-20"); await moreFields(p);
     await p.setInputFiles("#f-file", [{ name: "a.txt", mimeType: "text/plain", buffer: Buffer.from("a") }, { name: "b.txt", mimeType: "text/plain", buffer: Buffer.from("b") }]);
@@ -322,7 +322,7 @@ export function defineNewCases(E) {
     await p.done();
   });
 
-  T("TC-39b", "removing a link from a ticket that was opened before removes exactly one", { known: "the Remove handler is added to the form on every open, so the Nth open removes N" }, async (prof) => {
+  T("TC-39b", "removing a link from a ticket that was opened before removes exactly one", async (prof) => {
     const p = await open(prof, E.hash("kanban"));
     await openTask(p, "PH-33"); await moreFields(p); await closeTask(p);
     await openTask(p, "PH-30"); await moreFields(p);
