@@ -35,12 +35,18 @@ export function mountStaffKanban(ctx) {
   // The board reads kanbanCards, which a Cloud Function-side endpoint fills
   // from kanbanTasks (and moves inline screenshots to Storage) when it finds
   // them behind. Idempotent, and nobody has to run it (functions/kanban.js).
+  // Asked once per session: a card that stays missing would otherwise make every open run it again.
+  // (sessionStorage keeps it to once per browser session per member across reloads.)
+  let cardsBackfillAsked = false;
   async function backfillCards() {
     const user = ctx.auth.currentUser;
-    if (!user) return;
+    if (!user || cardsBackfillAsked) return;
+    cardsBackfillAsked = true;
+    const flag = `kb-cards-backfill:${user.uid || user.email || ""}`;
+    try { if (sessionStorage.getItem(flag)) return; sessionStorage.setItem(flag, "1"); } catch (e) { /* storage blocked: once per page load */ }
     // A long run answers { done: false } after a slice of the tickets: ask again.
     let after = "";
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 400; i++) {
       const r = await fetch("/mcp/kanban/backfill", { method: "POST", headers: { "X-Firebase-ID-Token": await user.getIdToken(), "Content-Type": "application/json" }, body: JSON.stringify({ after }) });
       if (!r.ok) throw new Error(`card backfill answered ${r.status}`);
       const out = await r.json().catch(() => ({}));

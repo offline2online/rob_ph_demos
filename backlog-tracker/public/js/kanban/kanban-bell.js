@@ -11,6 +11,9 @@ import {
 import { avatarHTML, memberLabel, normEmail } from "../avatar.js";
 
 export const BELL_LIMIT = 30;
+// Read notifications older than this go when their owner marks all read (no scheduled job).
+export const PRUNE_AFTER_DAYS = 30;
+export const PRUNE_BATCH = 200;
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const isoOf = (v) => (v && v.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : typeof v === "string" ? v : "");
 
@@ -94,6 +97,16 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
       snap.docs.slice(i, i + 450).forEach((d) => b.update(d.ref, { read: true }));
       await b.commit();
     }
+    pruneRead().catch((e) => console.warn("staff kanban: notifications not pruned:", e));
+  }
+  // The member's own read notifications older than 30 days: one query, 200 at most.
+  async function pruneRead() {
+    const cutoff = new Date(Date.now() - PRUNE_AFTER_DAYS * 86400000);
+    const snap = await getDocs(query(collection(db, "kanbanNotifications"), where("to", "==", mine), where("read", "==", true), where("at", "<", cutoff), limit(PRUNE_BATCH)));
+    if (snap.empty) return;
+    const b = writeBatch(db);
+    snap.docs.forEach((d) => b.delete(d.ref));
+    await b.commit();
   }
 
   const onClick = (e) => {

@@ -23,15 +23,35 @@
 // release report) come from kanban-core.js, a generated CommonJS copy of
 // public/js/kanban/kanban-core.js, so the page and the tools agree.
 "use strict";
-const { FieldValue } = require("firebase-admin/firestore");
+const { FieldValue, FieldPath } = require("firebase-admin/firestore");
 const crypto = require("crypto");
 const logger = require("firebase-functions/logger");
 const core = require("./kanban-core");
+const notify = require("./kanban-notify");
 
 const db = () => require("firebase-admin/firestore").getFirestore();
 const TASKS = "kanbanTasks";
 const CARDS = "kanbanCards";
 const BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
+
+// ── Per-instance cache ─────────────────────────────────────────────────────
+// The member directory, settings, releases, sprints, projects and the
+// cards-or-tickets check change rarely and every tool wants them, so each is
+// read at most once a minute per function instance. This instance's own
+// writes to the directory drop its copy at once (syncMemberDirectoryWrite).
+const CACHE_MS = 60000;
+const cache = new Map();
+async function cached(name, load) {
+  const hit = cache.get(name);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+  const value = await load();
+  cache.set(name, { at: Date.now(), value });
+  return value;
+}
+const clearCaches = (name) => { if (name) cache.delete(name); else cache.clear(); };
+// An index still building answers FAILED_PRECONDITION (gRPC 9): the caller
+// falls back to the read it made before the index existed, never an error.
+const indexMissing = (err) => !!err && (err.code === 9 || /FAILED_PRECONDITION|requires an index/i.test(String(err.message || err)));
 
 // ── Cards ─────────────────────────────────────────────────────────────────
 // kanbanCards/{PH-n} is what the board reads (core.cardOf + closedAt and who
@@ -45,10 +65,12 @@ function cardData(t, email, closedAt) {
 // Which collection a read of "the board" uses: the cards, once they have
 // caught up with the tickets, else the tickets (no ticket ever disappears).
 async function boardCollection() {
-  try {
-    const [c, t] = await Promise.all([db().collection(CARDS).count().get(), db().collection(TASKS).count().get()]);
-    return c.data().count >= t.data().count ? CARDS : TASKS;
-  } catch (err) { return TASKS; }
+  return cached("board", async () => {
+    try {
+      const [c, t] = await Promise.all([db().collection(CARDS).count().get(), db().collection(TASKS).count().get()]);
+      return c.data().count >= t.data().count ? CARDS : TASKS;
+    } catch (err) { return TASKS; }
+  });
 }
 
 // ── Member directory ──────────────────────────────────────────────────────
@@ -70,6 +92,7 @@ function directoryEntry(email, row) {
 async function syncMemberDirectoryWrite(event) {
   const email = String(event.params.userEmail || "").toLowerCase();
   if (!email) return;
+  clearCaches("directory");
   const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
   const ref = db().collection("memberDirectory").doc(email);
   if (core.isAliasEmail(email)) { await ref.delete(); return; }
@@ -108,6 +131,7 @@ async function syncWholeDirectory() {
   }
   for (const id of have) if (!want.has(id)) { b.delete(db().collection("memberDirectory").doc(id)); writes++; }
   if (writes) await b.commit();
+  clearCaches("directory");
   return { members: want.size };
 }
 
@@ -232,9 +256,11 @@ async function handleDirectorySync(req, res, h) {
 // ── Backfill: kanbanCards from kanbanTasks, screenshots to Storage ─────────
 // Idempotent and sliced, so the board can call it whenever it finds the cards
 // behind and nobody needs a terminal: each call handles BACKFILL_SLICE tickets
-// after `after`, writing a card where it is missing or differs and moving
-// inline (data:) screenshots in a description to Storage. The last slice also
-// removes cards whose ticket is gone. Answers { done, after, ... }.
+// after `after` (document-id order, a page at a time, never the whole
+// collection), writing a card where it is missing or differs and moving inline
+// (data:) screenshots in a description to Storage. Once the tickets are done it
+// pages the cards the same way (after: "orphans:<id>") and removes those whose
+// ticket is gone. Answers { done, after, ... }.
 const BACKFILL_SLICE = 100;
 const sameCard = (card, want, closedAt) => {
   if (!card) return false;
@@ -253,42 +279,57 @@ async function uploadInlineImage(h, key, uri) {
   await bucket.file(path).save(Buffer.from(parts.base64, "base64"), { contentType: parts.contentType, metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
   return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
 }
+// A page of ids in document-id order after `after` (the server's own order, so
+// the cursor needs no sorting of the whole collection).
+const idPage = (coll, after, size) => {
+  let q = db().collection(coll).orderBy(FieldPath.documentId());
+  if (after) q = q.startAfter(after);
+  return q.limit(size);
+};
+const ORPHANS = "orphans:";
 async function backfillSlice({ after = "", size = BACKFILL_SLICE, h } = {}) {
-  const ids = (await db().collection(TASKS).select().get()).docs.map((d) => d.id).sort((a, b) => (core.keyNumber(a) || 0) - (core.keyNumber(b) || 0) || (a < b ? -1 : 1));
-  const from = after ? ids.findIndex((id) => (core.keyNumber(id) || 0) > (core.keyNumber(after) || 0)) : 0;
-  const slice = from < 0 ? [] : ids.slice(from, from + size);
   const out = { cards: 0, images: 0, failed: 0, orphans: 0 };
   const b = db().batch();
-  for (const key of slice) {
-    const ref = db().collection(TASKS).doc(key);
-    const snap = await ref.get();
-    if (!snap.exists) continue;
-    const t = Object.assign({ key }, snap.data());
-    if (core.hasInlineImages(t.description)) {
-      try {
-        const html = await core.externaliseInlineImages(t.description, (uri) => uploadInlineImage(h, key, uri));
-        b.update(ref, { description: html });
-        out.images += 1;
-        t.description = html;
-      } catch (err) {
-        out.failed += 1;
-        logger.warn("kanban backfill: screenshots not moved", { key, error: String(err && err.message ? err.message : err) });
+  let writes = 0;
+  // Second pass: cards whose ticket is gone, a page of cards at a time.
+  const orphanPass = async (from) => {
+    const page = (await idPage(CARDS, from, size).select().get()).docs;
+    for (const d of page) {
+      if (!(await db().collection(TASKS).doc(d.id).get()).exists) { b.delete(d.ref); out.orphans += 1; writes++; }
+    }
+    const done = page.length < size;
+    return { done, after: done ? ORPHANS : ORPHANS + page[page.length - 1].id, scanned: page.length };
+  };
+  let res;
+  if (after.startsWith(ORPHANS)) res = await orphanPass(after.slice(ORPHANS.length));
+  else {
+    const page = (await idPage(TASKS, after, size).get()).docs;
+    for (const snap of page) {
+      const key = snap.id;
+      const ref = snap.ref;
+      const t = Object.assign({ key }, snap.data());
+      if (core.hasInlineImages(t.description)) {
+        try {
+          const html = await core.externaliseInlineImages(t.description, (uri) => uploadInlineImage(h, key, uri));
+          b.update(ref, { description: html });
+          out.images += 1; writes++;
+          t.description = html;
+        } catch (err) {
+          out.failed += 1;
+          logger.warn("kanban backfill: screenshots not moved", { key, error: String(err && err.message ? err.message : err) });
+        }
+      }
+      const have = (await db().collection(CARDS).doc(key).get()).data();
+      if (!sameCard(have, core.cardOf(t), t.closedAt)) {
+        b.set(db().collection(CARDS).doc(key), cardData(t, t.updatedBy || "backfill", t.closedAt));
+        out.cards += 1; writes++;
       }
     }
-    const have = (await db().collection(CARDS).doc(key).get()).data();
-    if (!sameCard(have, core.cardOf(t), t.closedAt)) {
-      b.set(db().collection(CARDS).doc(key), cardData(t, t.updatedBy || "backfill", t.closedAt));
-      out.cards += 1;
-    }
+    // The last page of tickets carries on into the orphan pass in the same call.
+    res = page.length < size ? await orphanPass("") : { done: false, after: page[page.length - 1].id, scanned: page.length };
   }
-  const last = slice.length ? slice[slice.length - 1] : after;
-  const done = !slice.length || ids.indexOf(last) >= ids.length - 1;
-  if (done) {
-    const have = new Set(ids);
-    for (const d of (await db().collection(CARDS).select().get()).docs) if (!have.has(d.id)) { b.delete(d.ref); out.orphans += 1; }
-  }
-  await b.commit();
-  return Object.assign({ done, after: last, tickets: ids.length }, out);
+  if (writes) await b.commit();
+  return Object.assign(res, out);
 }
 async function handleBackfill(req, res, h) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
@@ -310,28 +351,25 @@ async function handleBackfill(req, res, h) {
 // on the last slice, stamps kanbanSettings/main.linksTwoSidedAt, which is how
 // the board knows to stop asking.
 async function backfillLinksSlice({ after = "", size = BACKFILL_SLICE } = {}) {
-  const ids = (await db().collection(TASKS).select().get()).docs.map((d) => d.id).sort((a, b) => (core.keyNumber(a) || 0) - (core.keyNumber(b) || 0) || (a < b ? -1 : 1));
-  const from = after ? ids.findIndex((id) => (core.keyNumber(id) || 0) > (core.keyNumber(after) || 0)) : 0;
-  const slice = from < 0 ? [] : ids.slice(from, from + size);
-  const known = new Set(ids);
+  const page = (await idPage(TASKS, after, size).get()).docs;
   const out = { links: 0 };
   const b = db().batch();
-  for (const key of slice) {
-    const own = (await db().collection(TASKS).doc(key).get()).data() || {};
-    for (const l of own.links || []) {
-      if (!core.INVERSE_LINK[l.type] || l.key === key || !known.has(l.key)) continue;
+  for (const snap of page) {
+    const key = snap.id;
+    for (const l of (snap.data() || {}).links || []) {
+      if (!core.INVERSE_LINK[l.type] || l.key === key) continue;
       const inv = core.inverseOf(key, l);
-      const other = (await db().collection(TASKS).doc(l.key).get()).data() || {};
-      if ((other.links || []).some((x) => x.type === inv.type && x.key === inv.key)) continue;
+      const other = await db().collection(TASKS).doc(l.key).get();
+      if (!other.exists || ((other.data() || {}).links || []).some((x) => x.type === inv.type && x.key === inv.key)) continue;
       b.update(db().collection(TASKS).doc(l.key), { links: FieldValue.arrayUnion(inv) });
       out.links += 1;
     }
   }
-  const last = slice.length ? slice[slice.length - 1] : after;
-  const done = !slice.length || ids.indexOf(last) >= ids.length - 1;
+  const done = page.length < size;
+  const last = page.length ? page[page.length - 1].id : after;
   if (done) b.set(db().collection("kanbanSettings").doc("main"), { linksTwoSidedAt: FieldValue.serverTimestamp() }, { merge: true });
   await b.commit();
-  return Object.assign({ done, after: last, tickets: ids.length }, out);
+  return Object.assign({ done, after: last, scanned: page.length }, out);
 }
 async function handleBackfillLinks(req, res, h) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
@@ -391,23 +429,36 @@ const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const KANBAN_SCOPE = "Staff Kanban is for staff tasks only: work a human staff member does. Agent work (product, docs, prototype and tooling changes, including for the Staff Kanban project itself) goes in the agent backlog with create_backlog_item. You can still create and assign staff tasks here.";
 // h: { textResult, toolError, audit }
 function kanbanTools(h) {
-  const { textResult, toolError, audit } = h;
+  const { textResult, toolError } = h;
+  // Every call writes one mcpAuditLog row with the milliseconds it took, so a
+  // slow tool shows up. A write tool's own audit detail rides on that row
+  // (the wrapper at the end); called outside a wrapped run it writes its own.
+  const timings = new WeakMap();
+  const audit = (session, tool, detail) => {
+    const t = timings.get(session);
+    if (t) { Object.assign(t.detail, detail || {}); return Promise.resolve(); }
+    return h.audit(session, tool, detail);
+  };
   const tasks = () => db().collection(TASKS);
   const PERSON = { type: "string", description: "A member's email address, or \"me\" for yourself; kanban_list_people says who's who." };
   const KEY = { type: "string", description: "Ticket key, e.g. PH-36." };
   const normKey = (k) => { const n = core.keyNumber(String(k || "").trim().replace(/^ph\s*-?\s*/i, "PH-").replace(/^(\d+)$/, "PH-$1")); return n == null ? null : core.keyOf(n); };
 
-  async function settings() {
+  const settings = () => cached("settings", async () => {
     const s = await db().collection("kanbanSettings").doc("main").get();
     return core.normaliseSettings(s.exists ? s.data() : null);
-  }
+  });
+  // Releases, sprints and console projects (document snapshots), read once a minute.
+  const releases = () => cached("releases", async () => (await db().collection("releases").get()).docs);
+  const sprints = () => cached("sprints", async () => (await db().collection("kanbanSprints").get()).docs);
+  const projects = () => cached("projects", async () => (await db().collection("projects").get()).docs);
   // The chosen current release, else the earliest one not yet live.
   const currentRelease = (s, relDocs) => core.currentReleaseId(s, relDocs.map((d) => ({ id: d.id, version: d.data().version, released: d.data().status === "live", order: d.data().order })));
   // The directory, plus the bootstrap admins and the caller when they have no
   // consoleUsers row (so no directory entry yet).
   async function people(session) {
-    const snap = await db().collection("memberDirectory").get();
-    const list = snap.docs.map((d) => d.data() || {}).filter((m) => !m.disabled && !core.isAliasEmail(m.email));
+    const docs = await cached("directory", async () => (await db().collection("memberDirectory").get()).docs.map((d) => d.data() || {}));
+    const list = docs.filter((m) => !m.disabled && !core.isAliasEmail(m.email));
     const have = new Set(list.map((m) => String(m.email || "").toLowerCase()));
     for (const email of [...BOOTSTRAP_ADMINS, session && session.email]) {
       const e = String(email || "").toLowerCase();
@@ -445,18 +496,88 @@ function kanbanTools(h) {
     };
   }
   const board = async () => db().collection(await boardCollection());
-  // Loads what a filter needs: open tickets, plus a release's closed ones. It
-  // reads the board's cards; a text search needs the descriptions, so it reads
-  // the tickets.
-  async function loadTasks(f) {
+  const SUB_LIMIT = 100; // comments and activity lines kanban_get_task returns (the newest)
+  const EPIC_CHILDREN = 500;
+  // The next rank in a column is the highest there plus 10: one query on the
+  // column's status+rank index, never a read of the column. An index still building falls back to the
+  // column read.
+  async function nextRank(status) {
+    let top = 0;
+    try {
+      const snap = await tasks().where("status", "==", status).orderBy("rank", "desc").limit(1).get();
+      top = snap.docs.length ? snap.docs[0].data().rank || 0 : 0;
+    } catch (err) {
+      if (!indexMissing(err)) throw err;
+      const col = await tasks().where("status", "==", status).get();
+      top = col.docs.reduce((m, d) => Math.max(m, d.data().rank || 0), 0);
+    }
+    return top + 10;
+  }
+  // What a list may read in one call, by document id; the answer carries a cursor for the rest.
+  const LIST_PAGE = 500;
+  const DONE_RECENT = 300;
+  // Loads what a filter needs, pushing the filters into the query (equality and
+  // array-contains merge single-field indexes, so none needs a composite index):
+  // a release's tickets, else the closed ones for a done status, else the open
+  // ones. It reads the board's cards; a text search reads the tickets (the
+  // search tokens, then the description in memory). Answers
+  // { list, truncated, nextCursor }. An index still building falls back to
+  // the read made before filters were pushed down.
+  async function loadTasks(f, { cursor = "", pages = 1 } = {}) {
+    try {
+      return await loadPushed(f, cursor, pages);
+    } catch (err) {
+      if (!indexMissing(err)) throw err;
+      return { list: await loadAllOpen(f), truncated: false, nextCursor: null };
+    }
+  }
+  const isDone = (st) => st === "done" || (st || "").startsWith("done:");
+  async function loadPushed(f, cursor, pages) {
+    const useTasks = !!f.search;
+    const src = useTasks ? tasks() : await board();
+    let q = src;
+    const eq = (field, v) => { q = q.where(field, "==", v); };
+    if (f.release) eq("release", f.release);
+    else if (isDone(f.status)) eq("open", false);
+    else eq("open", true);
+    if (f.project) eq("project", f.project);
+    if (f.assignee && f.assignee !== "none") eq("assignee", f.assignee);
+    if (f.type) eq("type", f.type);
+    if (f.priority) eq("priority", f.priority);
+    if (f.sprint) eq("sprint", f.sprint);
+    if (f.flagged) eq("flagged", true);
+    if (f.status && !isDone(f.status)) eq("status", f.status);
+    // One array-contains per query: the search token, else the label.
+    const token = f.search ? core.queryToken(f.search) : "";
+    if (token) q = q.where("searchTokens", "array-contains", token);
+    else if (f.label) q = q.where("labels", "array-contains", f.label);
+    // The most recent closed tickets, newest first, when no release names them.
+    if (isDone(f.status) && !f.release && !f.search) {
+      const snap = await q.orderBy("closedAt", "desc").limit(DONE_RECENT).get();
+      return { list: snap.docs.map((d) => Object.assign({ key: d.id }, d.data())), truncated: false, nextCursor: null };
+    }
+    const list = [];
+    let after = cursor || "";
+    for (let i = 0; i < pages; i++) {
+      let page = q.orderBy(FieldPath.documentId());
+      if (after) page = page.startAfter(after);
+      const snap = await page.limit(LIST_PAGE + 1).get();
+      const docs = snap.docs.slice(0, LIST_PAGE);
+      docs.forEach((d) => list.push(Object.assign({ key: d.id }, d.data())));
+      if (snap.docs.length <= LIST_PAGE) return { list, truncated: false, nextCursor: null };
+      after = docs[docs.length - 1].id;
+    }
+    return { list, truncated: true, nextCursor: after };
+  }
+  // The read made before filters were pushed down: every open ticket, plus a release's.
+  async function loadAllOpen(f) {
     const src = f.search ? tasks() : await board();
-    // A project filter narrows every read to that project's tickets.
     const scoped = (q) => (f.project ? q.where("project", "==", f.project) : q);
     const open = await scoped(src.where("open", "==", true)).get();
     const map = new Map(open.docs.map((d) => [d.id, Object.assign({ key: d.id }, d.data())]));
     if (f.release) (await scoped(src.where("release", "==", f.release)).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
-    if (f.status === "done" || (f.status || "").startsWith("done:")) {
-      (await scoped(src).orderBy("closedAt", "desc").limit(300).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
+    if (isDone(f.status)) {
+      (await scoped(src).orderBy("closedAt", "desc").limit(DONE_RECENT).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
     }
     return [...map.values()];
   }
@@ -526,7 +647,7 @@ function kanbanTools(h) {
       for (const k of named) if (!members.has(v[k])) errs.push(`${k} ${v[k]} isn't a member of the console; kanban_list_people lists who's who`);
     }
     if (v.release) {
-      const rel = (await db().collection("releases").get()).docs;
+      const rel = await releases();
       const want = String(v.release).trim().toLowerCase();
       const hit = rel.find((d) => d.id === v.release) || rel.find((d) => [d.data().name, d.data().version].some((x) => x != null && String(x).trim().toLowerCase() === want));
       if (hit) v.release = hit.id; else errs.push(`release ${v.release} isn't a release (an id, name or version; kanban_list_people lists them)`);
@@ -542,9 +663,9 @@ function kanbanTools(h) {
   // A console project by id or (case-insensitively) name: { id, name }, else null.
   async function findProject(ref) {
     const want = String(ref).trim().toLowerCase();
-    const byId = await db().collection("projects").doc(String(ref).trim()).get().catch(() => null);
-    if (byId && byId.exists) return { id: byId.id, name: byId.data().name || byId.id };
-    const all = (await db().collection("projects").get()).docs;
+    const all = await projects();
+    const byId = all.find((d) => d.id === String(ref).trim());
+    if (byId) return { id: byId.id, name: byId.data().name || byId.id };
     const hit = all.find((d) => d.data().name != null && String(d.data().name).trim().toLowerCase() === want);
     return hit ? { id: hit.id, name: hit.data().name } : null;
   }
@@ -594,7 +715,8 @@ function kanbanTools(h) {
       scope: "board.read",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       async run(args, session) {
-        const [ppl, s, rel, spr, prj] = await Promise.all([people(session), settings(), db().collection("releases").get(), db().collection("kanbanSprints").get(), db().collection("projects").get()]);
+        const [ppl, s, relDocs, sprDocs, prjDocs] = await Promise.all([people(session), settings(), releases(), sprints(), projects()]);
+        const rel = { docs: relDocs }, spr = { docs: sprDocs }, prj = { docs: prjDocs };
         return textResult({
           people: ppl.map((p) => ({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null })),
           releases: rel.docs.map((d) => ({ id: d.id, name: d.data().name, version: d.data().version || null, live: d.data().status === "live", date: s.releaseDates[d.id] || null })),
@@ -607,7 +729,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_list_tasks",
-      description: "Staff Kanban: tickets matching the board's filters (summaries; kanban_get_task for one in full). Without a release or status it covers every open ticket; a release adds its closed ones, and status done / done:completed / done:withdrawn adds the 300 most recently closed.",
+      description: "Staff Kanban: tickets matching the board's filters (summaries; kanban_get_task for one in full). Without a release or status it covers every open ticket; a release adds its closed ones, and status done / done:completed / done:withdrawn covers the 300 most recently closed. Filters are applied in the query; at most 500 tickets are read per call, and when there are more the answer says truncated and gives nextCursor to pass as cursor.",
       scope: "board.read",
       inputSchema: {
         type: "object",
@@ -618,6 +740,7 @@ function kanbanTools(h) {
           type: { type: "string", enum: ["task", "bug", "epic"] }, priority: { type: "string" }, sprint: { type: "string" }, label: { type: "string" },
           flagged: { type: "boolean" }, search: { type: "string", description: "Words in the key, title, description or labels." },
           limit: { type: "integer", minimum: 1, maximum: 200 },
+          cursor: { type: "string", description: "nextCursor from the previous answer, to read the next 500 tickets." },
         },
         additionalProperties: false,
       },
@@ -629,11 +752,12 @@ function kanbanTools(h) {
           f.project = hit.id;
         }
         const who = f.assignee === "me" ? session.email : f.assignee;
-        const list = core.filterTasks(await loadTasks(Object.assign({}, f)), { assignees: who ? [who] : [], release: f.release || "", type: f.type || "", priority: f.priority || "", sprint: f.sprint || "", project: f.project || "", label: f.label || "", flagged: !!f.flagged, status: f.status || "", q: f.search || "" });
+        const loaded = await loadTasks(Object.assign({}, f, { assignee: who }), { cursor: typeof args.cursor === "string" ? args.cursor : "" });
+        const list = core.filterTasks(loaded.list, { assignees: who ? [who] : [], release: f.release || "", type: f.type || "", priority: f.priority || "", sprint: f.sprint || "", project: f.project || "", label: f.label || "", flagged: !!f.flagged, status: f.status || "", q: f.search || "" });
         list.sort((a, b) => core.STATUS_KEYS.indexOf(a.status) - core.STATUS_KEYS.indexOf(b.status) || (a.rank || 0) - (b.rank || 0));
         const first = await firstNamer();
         const n = Math.min(args.limit || 100, 200);
-        return textResult({ matched: list.length, returned: Math.min(n, list.length), tasks: list.slice(0, n).map((t) => summary(t, first)) });
+        return textResult({ matched: list.length, returned: Math.min(n, list.length), truncated: loaded.truncated, nextCursor: loaded.nextCursor, tasks: list.slice(0, n).map((t) => summary(t, first)) });
       },
     },
     {
@@ -645,16 +769,21 @@ function kanbanTools(h) {
         const key = normKey(args.key);
         const t = key && await getTask(key);
         if (!t) return toolError(`No ticket ${args.key}.`);
-        const [cs, act, first] = await Promise.all([tasks().doc(key).collection("comments").get(), tasks().doc(key).collection("activity").get(), firstNamer()]);
+        // The newest 100 of each, and how many were left out.
+        const newest = (sub) => tasks().doc(key).collection(sub).orderBy("at", "desc").limit(SUB_LIMIT).get();
+        const total = async (sub) => (await tasks().doc(key).collection(sub).count().get()).data().count;
+        const [cs, act, nCs, nAct, first] = await Promise.all([newest("comments"), newest("activity"), total("comments"), total("activity"), firstNamer()]);
         const iso = (v) => (v && v.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : v || null);
-        const kids = t.type === "epic" ? (await (await board()).where("epic", "==", key).get()).docs.map((d) => ({ key: d.id, title: d.data().title, status: core.statusLabel(d.data().status, d.data().resolution) })) : undefined;
+        const kidDocs = t.type === "epic" ? (await (await board()).where("epic", "==", key).limit(EPIC_CHILDREN + 1).get()).docs : null;
+        const kids = kidDocs ? kidDocs.slice(0, EPIC_CHILDREN).map((d) => ({ key: d.id, title: d.data().title, status: core.statusLabel(d.data().status, d.data().resolution) })) : undefined;
         const project = t.project ? await findProject(t.project) : null;
         return textResult(Object.assign(summary(t, first), {
           projectName: project ? project.name : null,
           description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
           acceptanceCriteria: core.decodeCriteria(t.acceptanceCriteria),
           links: (t.links || []).map((l) => ({ type: l.type, key: l.key })), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
-          children: kids, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
+          children: kids, childrenOmitted: kidDocs && kidDocs.length > EPIC_CHILDREN ? "more than " + EPIC_CHILDREN : undefined, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
+          commentsOmitted: Math.max(0, nCs - cs.docs.length), activityOmitted: Math.max(0, nAct - act.docs.length),
           comments: cs.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((c) => ({ author: c.author, at: iso(c.at), text: c.text })),
           activity: act.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((a) => ({ who: a.who, at: iso(a.at), text: a.text })),
         }));
@@ -681,13 +810,18 @@ function kanbanTools(h) {
       inputSchema: { type: "object", properties: { release: { type: "string", description: "A release id, or \"all\"." }, assignee: { type: "string" }, status: { type: "string" } }, additionalProperties: false },
       async run(args, session) {
         const s = await settings();
-        const release = args.release || currentRelease(s, (await db().collection("releases").get()).docs);
+        const relDocs = await releases();
+        const release = args.release || currentRelease(s, relDocs);
         if (!release) return toolError("No current release is set. Give a release id (kanban_list_people lists them).");
-        const relDoc = release === "all" ? null : await db().collection("releases").doc(release).get();
-        const all = await loadTasks({ release: release === "all" ? "" : release });
+        const hit = release === "all" ? null : relDocs.find((d) => d.id === release);
+        const relDoc = hit ? { exists: true, data: () => hit.data() } : { exists: false };
+        // A release's tickets, a page of 500 at a time (cards are light); more than 5,000 are cut off and said so.
+        const loaded = await loadTasks({ release: release === "all" ? "" : release }, { pages: 10 });
+        const all = loaded.list;
         const first = await firstNamer();
         const r = core.releaseReport(all, { release, assignee: args.assignee || "", status: args.status || "" }, { people: (await people(session)).map((p) => p.email), releaseDate: s.releaseDates[release] || "", released: !!(relDoc && relDoc.exists && relDoc.data().status === "live") });
         return textResult({
+          truncated: loaded.truncated,
           release, releaseName: relDoc && relDoc.exists ? relDoc.data().name : release === "all" ? "All releases" : release,
           releaseDate: s.releaseDates[release] || null, workingDaysLeft: r.workingDays,
           outstanding: r.outstanding.length, completed: r.totals.completed, withdrawn: r.totals.withdrawn, flagged: r.totals.flagged,
@@ -711,8 +845,7 @@ function kanbanTools(h) {
         if (errors.length) return toolError(errors.join("; "));
         const s = await settings();
         const counterRef = db().collection("kanbanCounters").doc("main");
-        const backlog = await (await board()).where("status", "==", "backlog").get();
-        const rank = backlog.docs.reduce((m, d) => Math.max(m, d.data().rank || 0), 0) + 10;
+        const rank = await nextRank("backlog");
         const key = await db().runTransaction(async (tx) => {
           const c = await tx.get(counterRef);
           const n = c.exists && typeof c.data().nextNumber === "number" ? c.data().nextNumber : 1;
@@ -839,8 +972,7 @@ function kanbanTools(h) {
         const [s, first] = await Promise.all([settings(), firstNamer()]);
         const ch = core.statusChange(cur, args.status, { resolution: args.resolution, tester: s.tester, firstName: first });
         if (!ch) return textResult({ moved: false, key, status: cur.status, note: "Already there." });
-        const col = await (await board()).where("status", "==", args.status).get();
-        const rank = col.docs.reduce((m, d) => Math.max(m, d.data().rank || 0), 0) + 10;
+        const rank = await nextRank(args.status);
         const patch = Object.assign({}, ch.patch, { rank }, stamp(session.email), args.status === "done" ? { closedAt: FieldValue.serverTimestamp() } : { closedAt: FieldValue.delete() });
         const b = db().batch();
         b.update(tasks().doc(key), patch);
@@ -1035,7 +1167,9 @@ function kanbanTools(h) {
         const b = db().batch();
         refs.forEach((r) => b.update(r, { read: true }));
         if (refs.length) await b.commit();
-        await audit(session, "kanban_mark_notifications_read", { count: refs.length, all: !!args.all });
+        // Their read notifications older than 30 days go with it.
+        const pruned = await notify.pruneReadFor(session.email);
+        await audit(session, "kanban_mark_notifications_read", { count: refs.length, all: !!args.all, pruned });
         const unread = await col.where("to", "==", session.email).where("read", "==", false).count().get();
         return textResult({ marked: refs.length, unreadCount: unread.data().count });
       },
@@ -1047,13 +1181,21 @@ function kanbanTools(h) {
   const asPerson = (v) => (typeof v === "string" && v.includes("@") ? core.canonicalEmail(v) : v);
   return tools.map((t) => Object.assign({}, t, {
     description: `${t.description} ${KANBAN_SCOPE}`,
-    run(args, session) {
+    async run(args, session) {
       const a = Object.assign({}, args);
       for (const k of ["assignee", "reporter"]) if (k in a) a[k] = asPerson(a[k]);
       if (Array.isArray(a.mention)) a.mention = a.mention.map(asPerson);
-      return t.run(a, session && Object.assign({}, session, { email: core.canonicalEmail(session.email) }));
+      const as = session && Object.assign({}, session, { email: core.canonicalEmail(session.email) });
+      const timing = { detail: {} };
+      if (as) timings.set(as, timing);
+      const t0 = Date.now();
+      try {
+        return await t.run(a, as);
+      } finally {
+        if (as) await h.audit(as, t.name, Object.assign({}, timing.detail, { ms: Date.now() - t0 }));
+      }
     },
   }));
 }
 
-module.exports = { imageResizer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, handleBackfillLinks, backfillLinksSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };
+module.exports = { clearCaches, imageResizer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, handleBackfillLinks, backfillLinksSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };

@@ -46,6 +46,7 @@ async function reset() {
     await setDoc(doc(db, "kanbanTasks/PH-7/comments/c1"), { author: SAM, html: "<p>x</p>", text: "x", at: new Date(0) });
     await setDoc(doc(db, "kanbanTasks/PH-7/activity/a1"), { who: SAM, text: "Backlog → In Progress", at: new Date(0) });
     await setDoc(doc(db, "kanbanNotifications/n1"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: false, at: new Date(0) });
+    await setDoc(doc(db, "kanbanNotifications/n3"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: true, at: new Date(0) });
     await setDoc(doc(db, "memberDirectory/sam@personalisationhub.com"), { email: SAM, displayName: "Sam Sample" });
     await setDoc(doc(db, "kanbanSettings/main"), { tester: "rob@offline2online.com" });
   });
@@ -260,6 +261,11 @@ async function main() {
     getDocs(query(collection(as(ADMIN), "kanbanNotifications"), where("to", "==", SAM), limit(100))));
   await check("The person notified marks one read", "allow", () => updateDoc(doc(as(MEMBER), "kanbanNotifications/n1"), { read: true }));
   await check("…and can't rewrite it", "deny", () => updateDoc(doc(as(MEMBER), "kanbanNotifications/n1"), { taskTitle: "edited" }));
+  await check("The person notified deletes one that is already read (the 30-day prune)", "allow", () => deleteDoc(doc(as(MEMBER), "kanbanNotifications/n3")));
+  await check("…but not an unread one", "deny", () => deleteDoc(doc(as(MEMBER), "kanbanNotifications/n1")));
+  await check("Nobody deletes someone else's read notification", "deny", () => deleteDoc(doc(as(ADMIN), "kanbanNotifications/n3")));
+  await check("The prune query (own, read, older than 30 days) is allowed", "allow", () =>
+    getDocs(query(collection(as(MEMBER), "kanbanNotifications"), where("to", "==", SAM), where("read", "==", true), where("at", "<", new Date(Date.now() - 30 * 86400000)), limit(200))));
 
   // ── Member directory (written by functions only) ────────────────────────
   await check("A member reads the member directory", "allow", () => getDocs(collection(as(MEMBER), "memberDirectory")));

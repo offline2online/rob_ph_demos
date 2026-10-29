@@ -93,30 +93,43 @@ function docRef(store, collection, id) {
   };
 }
 
-function query(store, collection, filters = [], limit = null, order = null) {
+const NAME = "__name__"; // FieldPath.documentId()
+function query(store, collection, filters = [], limit = null, order = null, cursor = null) {
+  // The rows a query matches, without counting reads: a get counts the documents it returns, an aggregate count() none.
+  const matching = () => {
+    let rows = [...store.col(collection).entries()];
+    for (const f of filters) {
+      rows = rows.filter(([, d]) => {
+        const v = d[f.field];
+        if (f.op === "==") return v === f.value;
+        if (f.op === "<") return v != null && v < f.value;
+        if (f.op === "array-contains") return Array.isArray(v) && v.includes(f.value);
+        throw new Error(`stub: unsupported operator ${f.op}`);
+      });
+    }
+    const val = (id, d) => (order.field === NAME ? id : d[order.field]);
+    if (order) {
+      rows.sort(([ia, a], [ib, b]) => (val(ia, a) > val(ib, b) ? 1 : val(ia, a) < val(ib, b) ? -1 : 0) * order.dir);
+      if (cursor != null) rows = rows.filter(([id, d]) => (order.dir > 0 ? val(id, d) > cursor : val(id, d) < cursor));
+    }
+    return rows;
+  };
+  const isName = (field) => field && typeof field === "object" && field.__docId;
   return {
-    where(field, op, value) { return query(store, collection, filters.concat([{ field, op, value }]), limit, order); },
-    limit(n) { return query(store, collection, filters, n, order); },
-    // Projections/ordering are accepted and ignored: the stub hands back
+    where(field, op, value) { return query(store, collection, filters.concat([{ field, op, value }]), limit, order, cursor); },
+    limit(n) { return query(store, collection, filters, n, order, cursor); },
+    // Projections are accepted and ignored: the stub hands back
     // whole documents, which is a superset of what the real call returns.
-    select() { return query(store, collection, filters, limit, order); },
-    orderBy(field, dir) { return query(store, collection, filters, limit, field ? { field, dir: dir === "desc" ? -1 : 1 } : order); },
+    select() { return query(store, collection, filters, limit, order, cursor); },
+    orderBy(field, dir) { return query(store, collection, filters, limit, field ? { field: isName(field) ? NAME : field, dir: dir === "desc" ? -1 : 1 } : order, cursor); },
+    startAfter(v) { return query(store, collection, filters, limit, order, v); },
     // The aggregate count the server uses to compare two collections.
-    count() { return { async get() { const r = await query(store, collection, filters, limit, order).get(); return { data: () => ({ count: r.size }) }; } }; },
+    count() { return { async get() { return { data: () => ({ count: query(store, collection, filters, limit, order, cursor).__rows().length }) }; } }; },
+    __rows() { let rows = matching(); if (limit != null) rows = rows.slice(0, limit); return rows; },
     async get() {
-      let rows = [...store.col(collection).entries()];
-      for (const f of filters) {
-        rows = rows.filter(([, d]) => {
-          const v = d[f.field];
-          if (f.op === "==") return v === f.value;
-          if (f.op === "<") return v != null && v < f.value;
-          if (f.op === "array-contains") return Array.isArray(v) && v.includes(f.value);
-          throw new Error(`stub: unsupported operator ${f.op}`);
-        });
-      }
-      if (order) rows.sort(([, a], [, b]) => (a[order.field] > b[order.field] ? 1 : a[order.field] < b[order.field] ? -1 : 0) * order.dir);
-      if (limit != null) rows = rows.slice(0, limit);
-      const docs = rows.map(([id]) => snapshotFor(store, collection, id));
+      // A test sets store.failOrder to the fields whose ordered queries answer as an index still building.
+      if (store.failOrder && order && store.failOrder.has(order.field)) throw Object.assign(new Error("9 FAILED_PRECONDITION: The query requires an index."), { code: 9 });
+      const docs = this.__rows().map(([id]) => snapshotFor(store, collection, id));
       return { docs, empty: docs.length === 0, size: docs.length, forEach: (fn) => docs.forEach(fn) };
     },
   };
@@ -180,6 +193,7 @@ function install() {
     },
     "firebase-admin/firestore": {
       getFirestore: () => db,
+      FieldPath: { documentId: () => ({ __docId: true }) },
       FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion, arrayRemove, increment, delete: () => DELETE_FIELD },
     },
     // Storage: an upload is kept in authState.uploads (path -> { size, contentType, token }).

@@ -954,7 +954,8 @@ service cloud.firestore {
       allow create: if false;
       allow update: if signedIn() && resource.data.to == callerEmail()
         && incoming().diff(resource.data).affectedKeys().hasOnly(["read"]);
-      allow delete: if signedIn() && resource.data.to == callerEmail();
+      // Only a read one: the bell prunes the person's own read notifications older than 30 days.
+      allow delete: if signedIn() && resource.data.to == callerEmail() && resource.data.read == true;
     }
     // Names and photos of every member, for assignee lists and avatars.
     // consoleUsers itself is admin-only to list; functions/index.js keeps

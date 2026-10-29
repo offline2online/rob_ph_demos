@@ -268,7 +268,8 @@ function atLeast(role, needed) {
 // Staff Kanban: every member's name and photo for the board (functions/kanban.js).
 exports.syncMemberDirectory = onDocumentWritten("consoleUsers/{userEmail}", (event) => kanban.syncMemberDirectoryWrite(event));
 // Staff Kanban notifications (functions/kanban-notify.js): one fan-out for the
-// board, MCP and voice paths, and a nightly clean-up of read ones.
+// board, MCP and voice paths. Read ones are pruned when their owner marks
+// notifications read (kanban-notify.js pruneReadFor): no scheduled function.
 const kanbanNotify = require("./kanban-notify");
 exports.kanbanNotifyTask = onDocumentWritten("kanbanTasks/{key}", (event) => kanbanNotify.taskWritten(event));
 // A comment is written once and never edited into a new notification: only its creation counts.
@@ -277,10 +278,6 @@ exports.kanbanNotifyComment = onDocumentWritten("kanbanTasks/{key}/comments/{com
   const after = event.data && event.data.after && event.data.after.exists;
   return !before && after ? kanbanNotify.commentCreated({ id: event.id, params: event.params, data: event.data.after }) : null;
 });
-// Scheduled functions need the SDK's scheduler module; tests that stub the SDK don't carry it.
-let onSchedule = null;
-try { ({ onSchedule } = require("firebase-functions/v2/scheduler")); } catch { /* stubbed SDK */ }
-exports.kanbanPruneNotifications = onSchedule ? onSchedule("every day 03:30", () => kanbanNotify.pruneReadNotifications()) : undefined;
 // The helpers Staff Kanban's browser endpoints share with the rest of this file.
 const kanbanHelpers = {
   requireConsoleUser: (req, minRole) => requireConsoleUser(req, minRole),

@@ -2316,7 +2316,6 @@ exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 exports.syncMemberDirectory = mcp.syncMemberDirectory;
 exports.kanbanNotifyTask = mcp.kanbanNotifyTask;
 exports.kanbanNotifyComment = mcp.kanbanNotifyComment;
-exports.kanbanPruneNotifications = mcp.kanbanPruneNotifications;
 
 // Test-only hook, same pattern as mcp-server.js's own `mcp.__test` — lets
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials

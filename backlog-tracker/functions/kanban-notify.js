@@ -13,7 +13,8 @@
 //   mention    @mentioned in a description or comment (wins over the above)
 //   closed     your ticket (assignee/reporter) closed by someone else
 //
-// pruneReadNotifications() deletes read notifications older than 30 days.
+// pruneReadFor() deletes one member's read notifications older than 30 days;
+// it runs when that member marks notifications read (no scheduled job).
 "use strict";
 const { FieldValue } = require("firebase-admin/firestore");
 const logger = require("firebase-functions/logger");
@@ -101,21 +102,24 @@ async function commentCreated(event) {
   return write(event.id, event.params.key, task, comment.author, recipients);
 }
 
-// Read notifications older than 30 days go; unread ones stay until read.
-async function pruneReadNotifications(now = Date.now()) {
-  const cutoff = new Date(now - PRUNE_AFTER_DAYS * 86400000);
-  let deleted = 0;
-  for (;;) {
-    const snap = await db().collection(COL).where("read", "==", true).where("at", "<", cutoff).limit(400).get();
-    if (snap.empty) break;
+// A member's read notifications older than 30 days go; unread ones stay until
+// read. One query (to, read, at), at most 200 a time, run on the member's own
+// "mark read" so no scheduled job is needed. Best effort: an index still
+// building, or any other failure, never fails the mark-read.
+const PRUNE_BATCH = 200;
+async function pruneReadFor(email, now = Date.now()) {
+  try {
+    const cutoff = new Date(now - PRUNE_AFTER_DAYS * 86400000);
+    const snap = await db().collection(COL).where("to", "==", email).where("read", "==", true).where("at", "<", cutoff).limit(PRUNE_BATCH).get();
+    if (snap.empty) return 0;
     const b = db().batch();
     snap.docs.forEach((d) => b.delete(d.ref));
     await b.commit();
-    deleted += snap.size;
-    if (snap.size < 400) break;
+    return snap.size;
+  } catch (err) {
+    logger.warn("kanban notifications not pruned", { email, error: String(err && err.message ? err.message : err) });
+    return 0;
   }
-  logger.info("kanban notifications pruned", { deleted });
-  return deleted;
 }
 
-module.exports = { taskWritten, commentCreated, pruneReadNotifications, recipientsForTask, recipientsForComment, PRUNE_AFTER_DAYS };
+module.exports = { taskWritten, commentCreated, pruneReadFor, recipientsForTask, recipientsForComment, PRUNE_AFTER_DAYS, PRUNE_BATCH };

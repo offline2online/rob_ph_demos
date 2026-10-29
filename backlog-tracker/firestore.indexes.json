@@ -44,6 +44,7 @@
       "collectionGroup": "kanbanNotifications",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "to", "order": "ASCENDING" },
         { "fieldPath": "read", "order": "ASCENDING" },
         { "fieldPath": "at", "order": "ASCENDING" }
       ]

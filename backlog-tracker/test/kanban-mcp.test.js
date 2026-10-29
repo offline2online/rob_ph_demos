@@ -72,7 +72,11 @@ async function tool(token, name, args) {
   if (drift.length) throw new Error(`${name} left a card out of step: ${drift.join("; ")}`);
   return r0;
 }
+// The tools cache the directory, settings and releases for a minute; these tests change them
+// directly in the store, so each call starts with the caches empty (the cache has its own test).
+let keepCaches = false;
 async function tool1(token, name, args) {
+  if (!keepCaches) kanban.clearCaches();
   const res = await call({ method: "POST", path: "/mcp", body: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args || {} } }, headers: { Authorization: `Bearer ${token}` } });
   const r = res.body.result;
   const text = r && r.content && r.content[0] && r.content[0].text;
@@ -319,7 +323,23 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   await test("every write is in the audit log as the caller", async () => {
     const tools = [...env.store.col("mcpAuditLog").values()].filter((a) => String(a.tool).startsWith("kanban_"));
     assert.ok(tools.length >= 8);
-    assert.ok(tools.every((a) => a.email === SAM));
+    const writes = tools.filter((a) => /^kanban_(create|move|update|assign|flag|comment)/.test(a.tool));
+    assert.ok(writes.length >= 8 && writes.every((a) => a.email === SAM));
+    assert.ok(tools.every((a) => [SAM, KIT].includes(a.email)));
+  });
+  await test("every kanban_* call is in the audit log with the milliseconds it took", async () => {
+    const rows = [...env.store.col("mcpAuditLog").values()].filter((a) => String(a.tool).startsWith("kanban_"));
+    assert.ok(rows.length >= 8);
+    for (const a of rows) assert.ok(typeof a.ms === "number" && a.ms >= 0, `${a.tool} has no ms`);
+    const before = env.store.col("mcpAuditLog").size;
+    await tool1(kit, "kanban_list_tasks", {});
+    assert.strictEqual(env.store.col("mcpAuditLog").size, before + 1, "a read writes one row");
+    const created = await tool1(sam, "kanban_create_task", { title: "Audit row" });
+    assert.strictEqual(env.store.col("mcpAuditLog").size, before + 2, "a write writes one row, not two");
+    const row = [...env.store.col("mcpAuditLog").values()].filter((a) => a.tool === "kanban_create_task").pop();
+    assert.strictEqual(row.key, created.json.key); assert.ok(typeof row.ms === "number");
+    await tool1(sam, "kanban_move_task", { key: created.json.key, status: "done", resolution: "withdrawn" });
+    env.store.col("kanbanTasks").delete(created.json.key); env.store.col("kanbanCards").delete(created.json.key);
   });
 
   // ── member directory ──────────────────────────────────────────────────
@@ -873,12 +893,142 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok((await tool1(kit, "kanban_mark_notifications_read", { all: true })).isError, "a viewer cannot write");
   });
 
-  await test("pruneReadNotifications: read ones older than 30 days go, unread ones stay", async () => {
+  await test("marking read prunes the caller's own read notifications older than 30 days, 200 at a time, and no one else's", async () => {
     const col = env.store.col("kanbanNotifications"); col.clear();
     const old = new Date(Date.now() - 40 * 86400000), recent = new Date(Date.now() - 5 * 86400000);
     col.set("a", { to: SAM, read: true, at: old }); col.set("b", { to: SAM, read: false, at: old }); col.set("c", { to: SAM, read: true, at: recent });
-    assert.strictEqual(await notify.pruneReadNotifications(), 1);
-    assert.deepStrictEqual([...col.keys()].sort(), ["b", "c"]);
+    col.set("k", { to: KIT, read: true, at: old });
+    const r = await tool1(sam, "kanban_mark_notifications_read", { ids: ["b"] });
+    assert.strictEqual(r.json.marked, 1);
+    assert.deepStrictEqual([...col.keys()].sort(), ["a", "b", "c", "k"].filter((k) => k !== "a" && k !== "b"), "the old read ones of Sam go, including the one just marked (it is old)");
+    col.clear();
+    for (let i = 0; i < 250; i++) col.set(`o${i}`, { to: SAM, read: true, at: old });
+    col.set("u", { to: SAM, read: false, at: recent });
+    await tool1(sam, "kanban_mark_notifications_read", { all: true });
+    assert.strictEqual([...col.keys()].filter((k) => k.startsWith("o")).length, 50, "one query of 200 a time");
+    assert.ok(col.has("u") === false || col.get("u").read === true);
+    col.clear();
+  });
+  await test("no scheduled function: nothing exports onSchedule, and the prune query has its index", async () => {
+    const fs = require("fs");
+    for (const f of ["../functions/index.js", "../functions/mcp-server.js", "../functions/kanban.js", "../functions/kanban-notify.js"]) {
+      const src = fs.readFileSync(path.join(__dirname, f), "utf8");
+      assert.ok(!/onSchedule|firebase-functions\/v2\/scheduler|kanbanPruneNotifications/.test(src), `${f} must not define or export a scheduled function`);
+    }
+    const idx = JSON.parse(fs.readFileSync(path.join(__dirname, "../firestore.indexes.json"), "utf8")).indexes;
+    const has = (coll, fields) => idx.some((x) => x.collectionGroup === coll && JSON.stringify(x.fields.map((f) => [f.fieldPath, f.order])) === JSON.stringify(fields));
+    assert.ok(has("kanbanNotifications", [["to", "ASCENDING"], ["read", "ASCENDING"], ["at", "ASCENDING"]]), "(to, read, at)");
+    assert.ok(has("kanbanTasks", [["status", "ASCENDING"], ["rank", "DESCENDING"]]), "kanbanTasks status+rank desc");
+  });
+
+  // ── Bounded reads (10,000 closed + 2,000 open tickets) ──────────────────
+  await test("bounded reads: a big board", async () => {
+    const tasks = env.store.col("kanbanTasks"), cards = env.store.col("kanbanCards");
+    for (const k of [...tasks.keys()]) { tasks.delete(k); cards.delete(k); }
+    const OTHER = "ada@personalisationhub.com";
+    const seed = (n, over) => {
+      const key = core.keyOf(n);
+      const t = Object.assign({ key, number: n, type: "task", title: `Seed ${n}`, description: "", status: "backlog", resolution: null, open: true, rank: n * 10, assignee: OTHER, previousAssignee: "", reporter: OTHER, release: "", sprint: "", project: "", estimate: null, logged: 0, priority: "medium", due: "", labels: [], epic: "", links: [], flagged: false, attachments: [], commentCount: 0, searchTokens: [`ph-${n}`] }, over);
+      tasks.set(key, t);
+      cards.set(key, Object.assign(core.cardOf(t), t.open ? {} : { closedAt: t.closedAt }));
+    };
+    for (let i = 1; i <= 10000; i++) seed(i, { status: "done", resolution: "completed", open: false, closedAt: new Date(1700000000000 + i * 1000), release: i % 50 === 0 ? "r412" : "", assignee: i % 7 === 0 ? SAM : OTHER });
+    for (let i = 10001; i <= 12000; i++) seed(i, { status: i % 2 ? "backlog" : "in-progress", assignee: i % 100 === 0 ? SAM : OTHER, labels: i % 500 === 0 ? ["rare"] : [] });
+    env.store.col("kanbanCounters").set("main", { nextNumber: 12001 });
+    kanban.clearCaches();
+    const totalReads = () => (env.store.reads.get("kanbanTasks") || 0) + (env.store.reads.get("kanbanCards") || 0);
+    const measure = async (fn) => { env.store.reads.clear(); const t0 = Date.now(); const out = await fn(); return { out, reads: totalReads(), ms: Date.now() - t0 }; };
+
+    // 1. move to done
+    let m = await measure(() => tool1(sam, "kanban_move_task", { key: "PH-10001", status: "done", resolution: "completed" }));
+    assert.ok(!m.out.isError, m.out.text);
+    assert.ok(m.reads <= 5, `move to done read ${m.reads} documents`); assert.ok(m.ms < 500, `${m.ms} ms`);
+    const top = Math.max(...[...tasks.entries()].filter(([k, t]) => t.status === "done" && k !== "PH-10001").map(([, t]) => t.rank));
+    assert.strictEqual(task("PH-10001").rank, top + 10, "ranked after the top of the column");
+    // 2. create
+    m = await measure(() => tool1(sam, "kanban_create_task", { title: "Fresh ticket" }));
+    assert.ok(!m.out.isError, m.out.text); assert.ok(m.reads <= 5, `create read ${m.reads} documents`); assert.ok(m.ms < 500, `${m.ms} ms`);
+    const topBacklog = Math.max(...[...tasks.entries()].filter(([k, t]) => t.status === "backlog" && k !== m.out.json.key).map(([, t]) => t.rank));
+    assert.strictEqual(task(m.out.json.key).rank, topBacklog + 10);
+    // 3. list: me reads only Sam's open tickets
+    const samOpen = [...tasks.values()].filter((t) => t.open && t.assignee === SAM).length;
+    m = await measure(() => tool1(sam, "kanban_list_tasks", { assignee: "me" }));
+    assert.strictEqual(m.reads, samOpen, "only that person's tickets are read"); assert.strictEqual(m.out.json.matched, samOpen);
+    assert.strictEqual(m.out.json.truncated, false);
+    m = await measure(() => tool1(sam, "kanban_list_tasks", { label: "rare" }));
+    assert.strictEqual(m.reads, m.out.json.matched, "a label is a query, not a filter over every open ticket"); assert.strictEqual(m.out.json.matched, 4);
+    m = await measure(() => tool1(sam, "kanban_list_tasks", { status: "in-progress", type: "task", priority: "medium", flagged: false }));
+    assert.ok(m.reads <= 501 && m.out.json.matched === 500 && m.out.json.truncated, `${m.reads} reads for ${m.out.json.matched}: 1,000 in progress, one page of 500`);
+    // a page is 500 tickets; the cursor carries on
+    m = await measure(() => tool1(sam, "kanban_list_tasks", { limit: 5 }));
+    assert.strictEqual(m.reads, 501, "one page of 500, plus one document to know there is more"); assert.strictEqual(m.out.json.truncated, true); assert.ok(m.out.json.nextCursor);
+    const next = await tool1(sam, "kanban_list_tasks", { cursor: m.out.json.nextCursor });
+    assert.ok(next.json.matched >= 1 && next.json.matched <= 500);
+    assert.ok(next.json.tasks.every((t) => t.key > m.out.json.nextCursor), "the cursor is exclusive");
+    // done: the 300 most recent, not all 10,000
+    m = await measure(() => tool1(sam, "kanban_list_tasks", { status: "done", limit: 200 }));
+    assert.strictEqual(m.reads, 300);
+    // release report reads that release's cards only
+    m = await measure(() => tool1(sam, "kanban_release_report", { release: "r412" }));
+    assert.strictEqual(m.reads, 200, "10,000 / 50 closed tickets in r412, nothing else");
+
+    // 4. get_task: the ticket, newest 100 comments and activity lines, an epic's children
+    tasks.set("PH-11999", Object.assign({}, task("PH-11999"), { type: "epic" })); cards.set("PH-11999", core.cardOf(Object.assign({ key: "PH-11999" }, task("PH-11999"))));
+    for (let i = 1; i <= 30; i++) { tasks.set(core.keyOf(11000 + i), Object.assign({}, task(core.keyOf(11000 + i)), { epic: "PH-11999" })); cards.set(core.keyOf(11000 + i), core.cardOf(Object.assign({ key: core.keyOf(11000 + i) }, task(core.keyOf(11000 + i))))); }
+    for (let i = 0; i < 150; i++) env.store.col("kanbanTasks/PH-11999/comments").set(`c${i}`, { author: SAM, text: `comment ${i}`, at: new Date(1700000000000 + i * 1000) });
+    for (let i = 0; i < 120; i++) env.store.col("kanbanTasks/PH-11999/activity").set(`a${i}`, { who: SAM, text: `line ${i}`, at: new Date(1700000000000 + i * 1000) });
+    m = await measure(() => tool1(sam, "kanban_get_task", { key: "PH-11999" }));
+    assert.ok(!m.out.isError, m.out.text);
+    const g = m.out.json;
+    assert.strictEqual(g.comments.length, 100); assert.strictEqual(g.commentsOmitted, 50); assert.strictEqual(g.activity.length, 100); assert.strictEqual(g.activityOmitted, 20);
+    assert.strictEqual(g.comments[0].text, "comment 50"); assert.strictEqual(g.comments[99].text, "comment 149");
+    assert.strictEqual(g.activity[99].text, "line 119", "oldest first, newest 100 kept");
+    assert.strictEqual(g.children.length, 30);
+    assert.strictEqual(env.store.reads.get("kanbanTasks"), 1, "the ticket"); assert.strictEqual(env.store.reads.get("kanbanCards"), 30, "its children");
+    assert.strictEqual(env.store.reads.get("kanbanTasks/PH-11999/comments"), 100); assert.strictEqual(env.store.reads.get("kanbanTasks/PH-11999/activity"), 100);
+
+    // An index still building: today's read, never an error.
+    env.store.failOrder = new Set(["rank"]);
+    try {
+      const c = await tool1(sam, "kanban_create_task", { title: "While the index builds" });
+      assert.ok(!c.isError, c.text);
+      assert.strictEqual(task(c.json.key).rank, Math.max(...[...tasks.entries()].filter(([k, t]) => t.status === "backlog" && k !== c.json.key).map(([, t]) => t.rank)) + 10);
+      const mv = await tool1(sam, "kanban_move_task", { key: c.json.key, status: "in-progress" });
+      assert.ok(!mv.isError, mv.text);
+    } finally { env.store.failOrder = null; }
+    env.store.failOrder = new Set(["__name__"]);
+    try {
+      const l = await tool1(sam, "kanban_list_tasks", { assignee: "me" });
+      assert.ok(!l.isError, l.text); assert.strictEqual(l.json.matched, [...tasks.values()].filter((t) => t.open && t.assignee === SAM).length);
+    } finally { env.store.failOrder = null; }
+
+    // backfill pages by document id: the tickets are read about once each, not once a slice
+    cards.set("PH-ORPHAN2", { key: "PH-ORPHAN2" });
+    env.store.reads.clear();
+    let after = "", calls = 0, last;
+    do { last = await kanban.backfillSlice({ after, size: 100 }); after = last.after; calls++; assert.ok(calls < 400); } while (!last.done);
+    assert.ok((env.store.reads.get("kanbanTasks") || 0) < 30000, `backfill read ${env.store.reads.get("kanbanTasks")} ticket documents`);
+    assert.ok(!cards.has("PH-ORPHAN2"), "the orphan card is removed");
+    assert.ok(cards.has("PH-1") && cards.size === tasks.size);
+  });
+
+  await test("the directory, settings and releases are cached for 60 s per instance; this instance's directory writes drop the copy", async () => {
+    keepCaches = true; kanban.clearCaches();
+    try {
+      env.store.reads.clear();
+      await tool1(sam, "kanban_list_people", {});
+      const first = ["memberDirectory", "kanbanSettings", "releases", "kanbanSprints", "projects"].map((c) => env.store.reads.get(c) || 0);
+      assert.ok(first[0] >= 1 && first[1] >= 1 && first[2] >= 1, `first read ${first}`);
+      env.store.reads.clear();
+      await tool1(sam, "kanban_list_people", {});
+      await tool1(sam, "kanban_comment", { key: "PH-1", text: "no mention", mention: [] }).catch(() => null);
+      for (const c of ["memberDirectory", "kanbanSettings", "releases", "kanbanSprints", "projects"]) assert.ok(!env.store.reads.get(c), `${c} was read again within the minute`);
+      // a directory write on this instance drops the copy
+      await kanban.syncMemberDirectoryWrite({ params: { userEmail: "late@personalisationhub.com" }, data: { before: { exists: false }, after: { exists: true, data: () => ({ email: "late@personalisationhub.com", displayName: "Late" }) } } });
+      const p = await tool1(sam, "kanban_list_people", {});
+      assert.ok(p.json.people.some((x) => x.email === "late@personalisationhub.com"));
+      env.store.col("memberDirectory").delete("late@personalisationhub.com");
+    } finally { keepCaches = false; kanban.clearCaches(); }
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

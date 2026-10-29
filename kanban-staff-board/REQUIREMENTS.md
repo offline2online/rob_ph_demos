@@ -59,7 +59,7 @@ box, **Release report**, **+ New task**, and a settings cog (no ⋮ menu). AC: t
 cog opens Kanban settings; Release report opens the report for the board's
 selected release.
 
-**Notifications (bell).** The console topbar carries a **Notifications** bell on every page, not only the Kanban. One notification per recipient, never to the person who acted, for: assigned to you (create, edit, drag, `kanban_assign_task`, MCP create); handed to you for testing, and returned to you from testing; a comment on a ticket you are assignee or reporter of, or watching; an @mention in a description or comment (wins over the other reason); your ticket closed (Completed or Withdrawn) by someone else. The ticket modal has a **Watch** toggle (`watchers[]`); the assignee and reporter watch automatically. The bell groups by ticket, shows an unread count and **Mark all read**, and a click opens the ticket. Cost per member is flat: one `limit(30)` listener ordered by `at` descending plus a `count()` of unread. The notifications are written by a Firestore trigger on `kanbanTasks` and its comments (`functions/kanban-notify.js`), so the board, MCP and voice paths notify the same way and no client writes one; a daily job deletes read notifications older than 30 days.
+**Notifications (bell).** The console topbar carries a **Notifications** bell on every page, not only the Kanban. One notification per recipient, never to the person who acted, for: assigned to you (create, edit, drag, `kanban_assign_task`, MCP create); handed to you for testing, and returned to you from testing; a comment on a ticket you are assignee or reporter of, or watching; an @mention in a description or comment (wins over the other reason); your ticket closed (Completed or Withdrawn) by someone else. The ticket modal has a **Watch** toggle (`watchers[]`); the assignee and reporter watch automatically. The bell groups by ticket, shows an unread count and **Mark all read**, and a click opens the ticket. Cost per member is flat: one `limit(30)` listener ordered by `at` descending plus a `count()` of unread. The notifications are written by a Firestore trigger on `kanbanTasks` and its comments (`functions/kanban-notify.js`), so the board, MCP and voice paths notify the same way and no client writes one; there is no scheduled job: when a member marks notifications read (**Mark all read** on the bell, `kanban_mark_notifications_read`) their own read notifications older than 30 days are deleted, one query (`to`, `read`, `at`) of at most 200.
 
 ## 4. Board
 
@@ -350,6 +350,24 @@ the ticket's stored links (both directions are stored, so it reads one ticket
 and no other for them; KB-TASK-5, TC-39). A link to a ticket that doesn't exist,
 or to the ticket itself, is refused. A reassignment that leaves the same person
 is not logged.
+Reads stay bounded as the board grows (every tool answers in well under a
+second whatever its size). The next rank in a column is one query
+(`status` == column, `rank` desc, `limit 1`; no counter document, which would
+take about one write a second); if its index is still building the tool reads
+the column as before. `kanban_list_tasks` and `kanban_release_report` push the
+filters into the query (assignee, status, release, project, type, priority,
+sprint, flagged, label; equality and `array-contains` merge single-field
+indexes), read at most 500 tickets per call by document id, and answer
+`truncated` and `nextCursor` (pass it as `cursor`) when there are more;
+`assignee: me` reads only that person's tickets. `kanban_get_task` reads the
+ticket, its newest 100 comments and newest 100 activity lines (it says how many
+it left out: `commentsOmitted`, `activityOmitted`), an epic's children (500 at
+most) and nothing else. The member directory, settings, releases, sprints,
+projects and the cards-or-tickets check are cached for 60 s in each function
+instance (this instance's directory writes drop its copy). Every `kanban_*`
+call writes one `mcpAuditLog` row with `ms`, so a slow tool shows up. The
+backfill pages tickets, then cards, by document id, and the board asks for it
+at most once per session per member.
 
 ## 12. Data model (production)
 
@@ -365,14 +383,17 @@ stored by lowercased email; release ids are the console's `releases` ids.
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |
 | `kanbanSettings/main` | `fields {key: {show, required}}`, `tester`, `currentRelease`, `releaseDates {releaseId: date}`, `labels[]`, `firstNames {email: name}`, `linksTwoSidedAt` (server-stamped), `updatedAt/By` |
 | `kanbanSprints/{id}` | `name`, `start`, `end` |
-| `kanbanNotifications/{id}` | `to`, `from`, `taskKey`, `taskTitle`, `kind` (assigned/testing/returned/commented/mention/closed), `via` (description/comment, for a mention), `read`, `at`; written only by the trigger, named from the event id so a retry writes nothing twice; the person notified may mark read or delete theirs. Indexes: `to`+`at` desc, `read`+`at` |
+| `kanbanNotifications/{id}` | `to`, `from`, `taskKey`, `taskTitle`, `kind` (assigned/testing/returned/commented/mention/closed), `via` (description/comment, for a mention), `read`, `at`; written only by the trigger, named from the event id so a retry writes nothing twice; the person notified may mark read, and delete theirs once read (rules). Indexes: `to`+`at` desc, `to`+`read`+`at` |
 | `memberDirectory/{email}` | `email`, `displayName`, `photoUrl`, `photoUpdatedAt`, `disabled` (server-written) |
 | Storage `kanban/{PH-n or new}/…` | screenshots, recordings, attachments |
 
 Loading: the **cards** of every open ticket, of the 300 most recently closed,
 and of every ticket in the release picked in the Release filter; an epic's
-children come from cards too. All queries are single-field, so no composite
-index is needed. The modal always reads the full ticket fresh (a save can't
+children come from cards too. The board's own queries are single-field. The server's
+are equality and `array-contains` filters (merged from single-field indexes) plus
+`orderBy(rank desc).limit(1)` per column (composite `status`+`rank`, declared in
+`backlog-tracker/firestore.indexes.json` with the notification prune's `to`+`read`+`at`);
+a query whose index is still building falls back to the earlier read, never an error. The modal always reads the full ticket fresh (a save can't
 overwrite what the board doesn't hold; a title or label edit re-derives
 `searchTokens` from the stored description). Board text search finds
 description words through the server's `searchTokens` query on `kanbanTasks`.
@@ -418,6 +439,11 @@ the same comparison on the server.
   to (they are light); only drawing is paged. The Done column's total is a
   `count()` query, asked again when a ticket enters or leaves Done, not on every
   snapshot (no aggregate document: one document takes about one write a second).
+  MCP (29 Oct 2026): with 10,000 closed and 2,000 open tickets, `kanban_move_task`
+  and `kanban_create_task` read at most 5 documents, `kanban_list_tasks
+  assignee: me` reads only that person's, and `kanban_get_task` reads the ticket,
+  its newest 100 comments and 100 activity lines and an epic's children (see
+  KB-MCP-1). `backlog-tracker/test/kanban-mcp.test.js` seeds that board.
   A listener's later snapshots carry only the changed cards (`docChanges()`),
   listener callbacks are coalesced into one render per animation frame, and a
   redraw keeps every card whose markup is unchanged, so a colleague's move
