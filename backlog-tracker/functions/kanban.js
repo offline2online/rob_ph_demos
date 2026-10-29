@@ -343,6 +343,9 @@ const safeFileName = (name, ext) => {
 const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // ── MCP tools (KB-MCP-1) ──────────────────────────────────────────────────
+// One sentence, appended to every kanban_* tool description (so tools added
+// later carry it too), saying which board is for what.
+const KANBAN_SCOPE = "Staff Kanban is for staff tasks only: work a human staff member does. Agent work (product, docs, prototype and tooling changes, including for the Staff Kanban project itself) goes in the agent backlog with create_backlog_item. You can still create and assign staff tasks here.";
 // h: { textResult, toolError, audit }
 function kanbanTools(h) {
   const { textResult, toolError, audit } = h;
@@ -857,6 +860,7 @@ function kanbanTools(h) {
   // a tool runs, so the alias is never assigned, notified or credited.
   const asPerson = (v) => (typeof v === "string" && v.includes("@") ? core.canonicalEmail(v) : v);
   return tools.map((t) => Object.assign({}, t, {
+    description: `${t.description} ${KANBAN_SCOPE}`,
     run(args, session) {
       const a = Object.assign({}, args);
       for (const k of ["assignee", "reporter"]) if (k in a) a[k] = asPerson(a[k]);
@@ -866,4 +870,4 @@ function kanbanTools(h) {
   }));
 }
 
-module.exports = { imageResizer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, boardCollection, kanbanTools, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };
+module.exports = { imageResizer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };

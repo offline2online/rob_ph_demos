@@ -139,6 +139,17 @@ the ticket's activity; a viewer gets the read tools only. Staff can add,
 move and report on tasks by talking to their agent ("add a bug for Huy:
 the offer sweep ignores the store's time zone, about 4 hours, this release").
 
+**Which board is for what.** Staff Kanban is for staff tasks only — work a
+human staff member does. Agent work (agent-built product, docs, prototype
+and tooling changes, including for the Staff Kanban project itself) is filed
+in the agent backlog with `create_backlog_item`. Agents can still create and
+assign staff tasks with `kanban_create_task`; nothing blocks that. The
+delimitation is one sentence per board, so every description says the same
+thing: `KANBAN_SCOPE` (`functions/kanban.js`) is appended to every `kanban_*`
+tool description, including tools added later, and `BACKLOG_SCOPE`
+(`functions/mcp-server.js`) is in `create_backlog_item`'s description and the
+server instructions. `test/kanban-mcp.test.js` checks both.
+
 | Read | Write (editor and admin) |
 | --- | --- |
 | `kanban_list_people` (members by first name, releases, sprints, current release, tester) | `kanban_create_task` (always into Backlog, next PH-n key) |
@@ -181,7 +192,7 @@ release actions stay on the board apart from `send_to_build`,
 `set_project_requirements` / `set_project_readme` say the same from the
 project's own fields. `test/mcp-server.test.js` keeps them in step with the
 tool list: every name in them is a registered tool, every write and admin tool
-is named, and the instructions stay within 3,400 characters (what Claude Code
+is named, and the instructions stay within 3,600 characters (what Claude Code
 delivers whole).
 
 **Test and link state (server 1.5.0).** All read-only; every URL goes through

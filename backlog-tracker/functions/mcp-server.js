@@ -1971,6 +1971,10 @@ async function mirrorManifestFor(projectIds) {
 const mirrorDeleteRefusal = (name, sourcePath, manifestPath) =>
   `"${name}" mirrors ${sourcePath}; it is written by the docs sync from ${manifestPath || "the project's board-docs.json"}. Remove its entry there (and the file, if it is going) and the next sync marks it superseded. It can't be deleted over MCP.`;
 
+// Which board is for what; create_backlog_item's description and the server
+// instructions say it in these words (functions/kanban.js has KANBAN_SCOPE).
+const BACKLOG_SCOPE = "The backlog is for agent work: agent-built product, docs, prototype and tooling changes. A task a human staff member does belongs on the Staff Kanban (kanban_create_task, which can assign it).";
+
 const TOOLS = [
   {
     name: "whoami",
@@ -2248,7 +2252,7 @@ const TOOLS = [
   },
   {
     name: "create_backlog_item",
-    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment.",
+    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment. " + BACKLOG_SCOPE,
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -4879,7 +4883,7 @@ const SERVER_INSTRUCTIONS = [
   REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
   "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
-  "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_attach_file).",
+  "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_attach_file). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Skills (all projects): list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
   "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
 ].join(" ");

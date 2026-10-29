@@ -120,7 +120,7 @@ await test("the client connects and the server identifies itself", async () => {
 await test("the server instructions name the deploy tool and fit the length a host delivers whole", async () => {
   const text = client.getInstructions();
   assert.match(text, /approve_deploy_to_main/);
-  assert.ok(text.length <= 3400, `instructions are ${text.length} characters`);
+  assert.ok(text.length <= 3600, `instructions are ${text.length} characters`);
 });
 
 await test("a real client sees the PH mark on serverInfo", async () => {

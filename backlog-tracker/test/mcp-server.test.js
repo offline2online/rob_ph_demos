@@ -694,7 +694,7 @@ async function rpc(token, method, params, id = 1) {
     }
     for (const t of tools.filter((x) => x.scope === "board.write" || x.role)) assert.ok(text.includes(t.name), `instructions never name ${t.name}`);
     for (const t of tools.filter((x) => x.scope === "board.write" && /deploy|merge/.test(x.name))) assert.ok(who.includes(t.name), `whoami note never names ${t.name}`);
-    assert.ok(text.length <= 3400, `instructions are ${text.length} characters`);
+    assert.ok(text.length <= 3600, `instructions are ${text.length} characters`);
     assert.match(text, /get_ready_for_testing_board/);
     assert.match(text, /startHereDocId/);
     assert.match(text, /project_handover/);

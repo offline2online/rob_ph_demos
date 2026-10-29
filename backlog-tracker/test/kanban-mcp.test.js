@@ -103,6 +103,18 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list|get|search|release)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
+  await test("every kanban_* tool description carries KANBAN_SCOPE, and the backlog side says its half", async () => {
+    const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
+    assert.ok(t.length >= 11);
+    for (const x of t) assert.ok(x.description.includes(kanban.KANBAN_SCOPE), `${x.name} lacks the scope sentence`);
+    assert.match(kanban.KANBAN_SCOPE, /^Staff Kanban is for staff tasks only: /);
+    const b = mcp.__test.TOOLS.find((x) => x.name === "create_backlog_item");
+    assert.match(b.description, /agent work/); assert.match(b.description, /kanban_create_task/);
+    const init = await call({ method: "POST", path: "/mcp", body: { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } } }, headers: { Authorization: `Bearer ${sam}` } });
+    const ins = init.body.result.instructions;
+    assert.match(ins, /Staff Kanban is for staff tasks only/); assert.match(ins, /create_backlog_item/); assert.match(ins, /still create and assign staff tasks/);
+  });
+
   await test("kanban_create_task: PH-1 in Backlog, no release unless given, attributed, logged", async () => {
     const r = await tool(sam, "kanban_create_task", { title: "Offer expiry sweep ignores the store's time zone", description: "Stores outside London expire an hour early.\n\nAround DST.", type: "bug", assignee: HUY, estimate: "1d 4h", priority: "high", labels: ["Menu Boards"] });
     assert.ok(!r.isError, r.text);

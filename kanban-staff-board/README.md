@@ -43,6 +43,16 @@ When you change any prototype CSS or JS file, bump the `?v=` on its link in
 minutes. The prototype keeps changes in the viewer's own `localStorage`;
 **Kanban settings (cog) → Reset demo data** puts the mock data back.
 
+## Which board is for what
+
+Staff Kanban is for staff tasks only: work a human staff member does. Work for
+agents (product, docs, prototype and tooling changes, including for the Staff
+Kanban project itself) goes in the project backlog on the Agent Board, or from
+an agent with `create_backlog_item`. Agents can still create and assign tasks
+for staff here (`kanban_create_task`). Every `kanban_*` MCP tool description
+says so, and the console shows it in the info tip beside the Staff Kanban
+heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
+
 ## What's in `prototype/`
 
 | File | What it does |

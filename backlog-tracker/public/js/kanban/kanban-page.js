@@ -339,6 +339,7 @@ export function mountStaffKanban(ctx) {
     view.innerHTML = `
       <div class="page-header">
         <h2>Staff Kanban</h2>
+        ${tip("Staff Kanban is for staff tasks only: work a human staff member does. Work for agents (product, docs, prototype and tooling changes, including for this project) goes in the project backlog on the Agent Board. Agents can still create and assign tasks for staff here.")}
         <span class="page-header-count" id="kb-count"></span>
         <label class="kb-search kb-header-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
         <div class="kb-header-actions">
