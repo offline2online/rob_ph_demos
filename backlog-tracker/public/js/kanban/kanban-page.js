@@ -270,7 +270,12 @@ export function mountStaffKanban(ctx) {
     btn.setAttribute("aria-label", unread ? `${unread} unread mention${unread === 1 ? "" : "s"}` : "Mentions");
     panel.hidden = !bellOpen;
     if (!bellOpen) return;
+    panel.style.transform = "";
     panel.innerHTML = `<div class="kb-bell-head"><b>Mentions</b>${unread ? '<button type="button" class="link-btn" id="kb-bell-read">Mark all read</button>' : ""}</div>` + (list.slice(0, 30).map((n) => `<button type="button" class="kb-bell-item${n.read ? "" : " unread"}" data-note="${esc(n.id)}" data-key="${esc(n.taskKey)}">${avatar(n.from)}<span><b>${esc(firstName(n.from))}</b> mentioned you ${n.kind === "comment" ? "in a comment on" : "on"} <b>${esc(n.taskKey)}</b> ${esc(n.taskTitle || "")}<span class="kb-none">${esc(fmtDate(n.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</span></span></button>`).join("") || '<p class="kb-none kb-bell-empty">No mentions yet</p>');
+    // Keep the panel inside the window (on a phone the bell sits near the right edge, so its right-aligned panel ran off the left).
+    const pr = panel.getBoundingClientRect(), pad = 8;
+    const shift = pr.left < pad ? pad - pr.left : pr.right > innerWidth - pad ? innerWidth - pad - pr.right : 0;
+    if (shift) panel.style.transform = `translateX(${Math.round(shift)}px)`;
   }
   document.addEventListener("click", (e) => {
     if (pageEl.hidden) return;
@@ -638,6 +643,8 @@ export function mountStaffKanban(ctx) {
       }
       moveDrag(e.clientX, e.clientY);
     });
+    // The layout moves under a held finger (the page or the board scrolls): work out the drop place again.
+    document.addEventListener("scroll", () => { if (drag && drag.active) moveDrag(drag.lastX, drag.lastY, true); }, { capture: true, passive: true });
     document.addEventListener("touchmove", (e) => { if (drag && drag.active) e.preventDefault(); }, { passive: false });
     document.addEventListener("pointerup", (e) => { if (drag && e.pointerId === drag.id) endDrag(true); });
     document.addEventListener("pointercancel", () => { if (drag) endDrag(false); });
@@ -651,6 +658,7 @@ export function mountStaffKanban(ctx) {
       openTask(card.dataset.key);
     });
     document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && drag && drag.active) { e.preventDefault(); endDrag(false); return; }
       const card = e.target.closest && e.target.closest(".kb-card");
       if (card && pageEl.contains(card) && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openTask(card.dataset.key); }
     });
@@ -658,6 +666,7 @@ export function mountStaffKanban(ctx) {
   function startDrag(x, y) {
     const r = drag.card.getBoundingClientRect();
     drag.active = true;
+    drag.sx = x; drag.sy = y; drag.lastX = x; drag.lastY = y; drag.moved = false;
     drag.dx = x - r.left; drag.dy = y - r.top;
     const ghost = drag.card.cloneNode(true);
     ghost.classList.add("kb-ghost");
@@ -673,10 +682,13 @@ export function mountStaffKanban(ctx) {
     moveDrag(x, y);
   }
   // While a card is being dragged, the Completed / Withdrawn column's cards
-  // are hidden and two big drop targets take its place: Completed (3/4 of the
-  // screen height) and Withdrawn (1/4). They are pinned over that column, so
-  // they are in view wherever the board is scrolled. On a phone they sit at
-  // the bottom of the screen, full width.
+  // are hidden and two drop targets take its place. On a tablet or desktop
+  // they sit over that column and nowhere else (Completed three quarters,
+  // Withdrawn one quarter, clipped to what is on screen; while the column is
+  // scrolled out of view they are a slim strip at the right edge, and the
+  // board scrolls sideways under a finger held there). On a phone they are a
+  // slim bar above the tab bar that grows only when the card nears it, so the
+  // board stays reachable.
   function showCloseZones() {
     if (!$("#kb-board")) return;
     const ov = document.createElement("div");
@@ -685,31 +697,66 @@ export function mountStaffKanban(ctx) {
       const n = state.tasks.filter((t) => res(t) === r.key).length;
       return `<div class="kb-close-zone kb-close-${r.key}" data-resolution="${r.key}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span><span class="kb-close-label">${r.label}</span><span class="kb-close-count">${n}</span></div>`;
     }).join("");
-    if (!mqPhone.matches) {
-      const ref = $("#kb-lanes-head .kb-col-done") || $('.kb-col[data-status="done"]');
-      const head = $("#kb-sticky");
-      const r = ref.getBoundingClientRect();
-      const top = Math.max(head && !head.hidden ? head.getBoundingClientRect().bottom : 0, 0) + 8;
-      const left = Math.min(Math.max(r.left, 0), innerWidth - r.width - 8);
-      Object.assign(ov.style, { left: left + "px", width: r.width + "px", top: top + "px", bottom: "16px" });
-    }
+    if (mqPhone.matches) ov.classList.add("kb-close-slim");
     document.body.appendChild(ov);
     drag.zones = ov;
+    drag.zoneStart = zoneAt(drag.sx, drag.sy);
+    layoutCloseZones();
+    if (mqPhone.matches) drag.barTop = ov.getBoundingClientRect().top;
   }
-  function moveDrag(x, y) {
+  function layoutCloseZones() {
+    const ov = drag && drag.zones;
+    if (!ov || mqPhone.matches) return;
+    const ref = $("#kb-lanes-head .kb-col-done") || $('.kb-col[data-status="done"]');
+    if (!ref) return;
+    const head = $("#kb-sticky"), wrap = $("#kb-board-wrap");
+    const r = ref.getBoundingClientRect();
+    const wr = wrap ? wrap.getBoundingClientRect() : { left: 0, right: innerWidth };
+    const top = Math.max(head && !head.hidden ? head.getBoundingClientRect().bottom : 0, 0) + 8;
+    const strip = 56;
+    let left = Math.max(r.left, wr.left, 0), right = Math.min(r.right, wr.right, innerWidth);
+    ov.classList.toggle("kb-close-strip", right - left < strip);
+    if (right - left < strip) { right = Math.min(wr.right, innerWidth); left = right - strip; }
+    Object.assign(ov.style, { left: left + "px", width: right - left + "px", top: top + "px", bottom: "16px" });
+  }
+  const zoneAt = (x, y) => { const el = document.elementFromPoint(x, y); const z = el && el.closest(".kb-close-zone"); return z ? z.dataset.resolution : null; };
+  function moveDrag(x, y, noScroll) {
+    drag.lastX = x; drag.lastY = y;
     drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) rotate(2deg)`;
+    // Letting go without moving drops nothing: a finger held on a card low on the screen must not close it
+    // because a target has appeared under it.
+    if (!drag.moved) {
+      if (Math.hypot(x - drag.sx, y - drag.sy) <= 6) { drag.target = null; return; }
+      drag.moved = true;
+    }
+    if (drag.zones) {
+      layoutCloseZones();
+      if (mqPhone.matches) {
+        // The bar grows when the card nears it and stays grown while the finger is on it.
+        const grown = drag.zones.classList.contains("kb-close-grown");
+        if (!drag.barTop) drag.barTop = drag.zones.getBoundingClientRect().top;
+        const near = y >= (grown ? drag.zones.getBoundingClientRect().top - 8 : drag.barTop - 36);
+        drag.zones.classList.toggle("kb-close-grown", near);
+      }
+    }
     const under = document.elementFromPoint(x, y);
-    const zone = under && under.closest(".kb-close-zone");
+    const zoneEl = under && under.closest(".kb-close-zone");
+    const zoneKey = zoneEl ? zoneEl.dataset.resolution : null;
+    // A drop on a target counts only once the finger has been somewhere else since the drag began.
+    // (On a phone the bar changes shape under the finger, so there it means having been off the bar altogether.)
+    if (!zoneEl || (!mqPhone.matches && zoneKey !== drag.zoneStart)) drag.armed = true;
+    const zone = zoneEl && drag.armed ? zoneEl : null;
     if (drag.zones) $$(".kb-close-zone", drag.zones).forEach((z) => z.classList.toggle("on", z === zone));
     if (zone) {
       $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));
       drag.marker.remove();
       drag.target = { status: "done", resolution: zone.dataset.resolution, before: null };
+      if (!noScroll) autoScroll(x, y, true);
       return;
     }
-    const col = under && under.closest(".kb-col");
+    const col = !zoneEl && under && under.closest(".kb-col");
     $$(".kb-col.kb-drop-target").forEach((c) => c !== col && c.classList.remove("kb-drop-target"));
-    if (!col) { drag.marker.remove(); drag.target = null; autoScroll(x, y); return; }
+    if (!col) { drag.marker.remove(); drag.target = null; if (!noScroll) autoScroll(x, y, !!zoneEl); return; }
     col.classList.add("kb-drop-target");
     const lists = $$(".kb-list", col);
     // In the split last column, pick the zone under the pointer (or the nearest one).
@@ -721,11 +768,19 @@ export function mountStaffKanban(ctx) {
     const before = cards.find((c) => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
     if (before) list.insertBefore(drag.marker, before); else list.appendChild(drag.marker);
     drag.target = { status: col.dataset.status, lane: col.dataset.lane, resolution: list.dataset.resolution, before: before ? before.dataset.key : null };
-    autoScroll(x, y);
+    if (!noScroll) autoScroll(x, y, false);
   }
-  function autoScroll(x, y) {
-    const edge = 60, wrap = $(".kb-board-wrap");
-    if (y < edge + 60) window.scrollBy(0, -14); else if (y > innerHeight - edge) window.scrollBy(0, 14);
+  // Near the top or bottom edge the page scrolls, near the left or right edge of the board the board does
+  // (also over a closing target: the board is what brings the Completed column into view). The page does
+  // not scroll while the finger is on a target. On a phone the bottom edge is the top of the slim bar's
+  // reach, so the bar and the scrolling never compete for the same strip of screen.
+  function autoScroll(x, y, overZone) {
+    const edge = 60, wrap = $(".kb-board-wrap"), phone = mqPhone.matches;
+    if (!overZone) {
+      const bottom = phone && drag.barTop ? drag.barTop - 36 : innerHeight - edge;
+      if (y < edge + 60) window.scrollBy(0, -14);
+      else if (y > bottom - (phone ? 50 : 0) && y <= bottom + (phone ? 0 : edge)) window.scrollBy(0, 14);
+    }
     if (wrap) { const r = wrap.getBoundingClientRect(); if (x < r.left + edge) wrap.scrollLeft -= 16; else if (x > r.right - edge) wrap.scrollLeft += 16; }
   }
   function endDrag(commit) {
@@ -739,7 +794,7 @@ export function mountStaffKanban(ctx) {
     document.body.classList.remove("kb-drag-active");
     $$(".kb-col.kb-drop-target").forEach((c) => c.classList.remove("kb-drop-target"));
     $$(".kb-res-group.kb-res-target").forEach((g) => g.classList.remove("kb-res-target"));
-    if (commit && d.target) moveTask(d.key, d.target.status, d.target.before, d.target.lane, d.target.resolution);
+    if (commit && d.moved && d.target) moveTask(d.key, d.target.status, d.target.before, d.target.lane, d.target.resolution);
   }
 
   // ── Task create / edit modal ────────────────────────────────────────────

@@ -479,9 +479,26 @@ body.kb-drag-active .kb-col[data-status="done"] .kb-res-split { visibility: hidd
 .kb-close-zone.on { border-style: solid; transform: scale(1.02); }
 .kb-close-completed.on { background: #d4f0c4; }
 .kb-close-withdrawn.on { background: #dfe1e3; }
+/* Tablet: while the Completed column is scrolled out of view the targets are a slim strip at the right edge. */
+.kb-close-zones.kb-close-strip .kb-close-label, .kb-close-zones.kb-close-strip .kb-close-count { display: none; }
 @media (max-width: 640px) {
+  /* Phone: a slim bar above the tab bar; it grows to the tall targets only when the card nears it. */
   .kb-close-zones { left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom, 0px)); height: 38vh; }
-  .kb-close-withdrawn .material-symbols-outlined { font-size: 24px; }
+  .kb-close-zones.kb-close-slim { flex-direction: row; height: 52px; gap: 8px; }
+  .kb-close-slim .kb-close-zone { flex-direction: row; gap: 6px; min-width: 0; padding: 0 8px; overflow: hidden; white-space: nowrap; }
+  .kb-close-slim .kb-close-completed { flex: 3; }
+  .kb-close-slim .kb-close-withdrawn { flex: 2; }
+  .kb-close-slim .kb-close-zone .material-symbols-outlined { font-size: 22px; }
+  .kb-close-slim .kb-close-label { font-size: 13px; }
+  .kb-close-zones.kb-close-slim.kb-close-grown { flex-direction: column; height: 38vh; gap: 10px; }
+  .kb-close-slim.kb-close-grown .kb-close-zone { flex-direction: column; gap: 6px; }
+  .kb-close-slim.kb-close-grown .kb-close-completed { flex: 3; }
+  .kb-close-slim.kb-close-grown .kb-close-withdrawn { flex: 1; }
+  .kb-close-slim.kb-close-grown .kb-close-zone .material-symbols-outlined { font-size: 36px; }
+  .kb-close-slim.kb-close-grown .kb-close-withdrawn .material-symbols-outlined { font-size: 24px; }
+  .kb-close-slim.kb-close-grown .kb-close-label { font-size: 15px; }
+  /* The bar's own height stays clear of the last card while a card is carried. */
+  body.kb-drag-active .kb-board-wrap { padding-bottom: 96px !important; }
 }
 
 /* Rich-text description and comments (js/editor.js). Callout, table and code

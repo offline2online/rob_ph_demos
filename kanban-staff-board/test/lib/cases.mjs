@@ -22,10 +22,10 @@ export function defineNewCases(E) {
   E.confirm = confirm;
 
   // ── helpers ──────────────────────────────────────────────────────────────
-  // A drag the layout makes impossible for this input (the closing targets cover the destination) is a finding, not a failure.
+  // The console must be able to make every drag; the prototype, which keeps the old layout, records a drag its layout makes impossible as a finding.
   const tryDrag = async (p, id, what, key, target, o) => {
     try { await dragCard(p, key, target, o); return true; }
-    catch (e) { if (!e.unreachable) throw e; confirm(id, `${what} cannot be reached by dragging on this screen`, String(e.message).split("\n")[0]); return false; }
+    catch (e) { if (!e.unreachable || C) throw e; confirm(id, `${what} cannot be reached by dragging on this screen`, String(e.message).split("\n")[0]); return false; }
   };
   const card = (key) => `.kb-card[data-key="${key}"]`;
   const modalOpen = (p) => p.$eval("#task-backdrop", (e) => !e.hidden);
@@ -503,7 +503,8 @@ export function defineNewCases(E) {
       assert.match(toast, to === "completed" ? /completed/ : to === "withdrawn" ? /withdrawn/ : new RegExp(`moved to ${TITLE[to]}`), `move ${n}: toast`);
     }
     assert.equal(n, 42);
-    if (limits.length) confirm("TC-45", `${label}: moves that cannot be made by drag because the Completed/Withdrawn targets cover the destination column (made by the Status menu instead)`, `${limits.length} of 42: ${limits.join(", ")}`);
+    if (C) assert.deepEqual(limits, [], `${label}: every move that is offered by drag can be made by drag`);
+    else if (limits.length) confirm("TC-45", `${label}: moves that cannot be made by drag because the Completed/Withdrawn targets cover the destination column (made by the Status menu instead)`, `${limits.length} of 42: ${limits.join(", ")}`);
     await p.done();
   }
   E.remainingOf = 5; // PH-28: estimate 5h, nothing logged
@@ -602,7 +603,8 @@ export function defineNewCases(E) {
       // On a phone the page is still settling under the held finger when it lets go, so the slot can be one off: check the card moved down into the list and nobody else changed order.
       assert.ok(now.indexOf(last) > 0 && now.indexOf(last) < now.length - 1, `top → middle (${now.join(",")})`);
       assert.deepEqual(now.filter((k) => k !== last), before.filter((k) => k !== last), "the others kept their order");
-      if (JSON.stringify(now) !== JSON.stringify(expect)) confirm("TC-48", "on a phone a card dropped on the upper half of a card lands one slot lower than expected", `got ${now.join(",")}, wanted ${expect.join(",")}`);
+      if (C) assert.deepEqual(now, expect, "top → middle");
+      else if (JSON.stringify(now) !== JSON.stringify(expect)) confirm("TC-48", "on a phone a card dropped on the upper half of a card lands one slot lower than expected", `got ${now.join(",")}, wanted ${expect.join(",")}`);
     } else assert.deepEqual(now, expect, "top → middle");
     // a middle card to the bottom: drop in the empty space under the last card
     if (!(await tryDrag(p, "TC-48", "the bottom of the column", mid, { status: col }, { input, at: "bottom" }))) { await p.done(); return; }
@@ -678,7 +680,12 @@ export function defineNewCases(E) {
     const afterEsc = await dragGone(p);
     await P.up(); await sleep(250);
     const w = await where(p, key);
-    confirm("TC-50", "should Esc cancel a drag in progress?", `after Esc the drag ${afterEsc.ghost ? "was still active" : "ended"}; releasing then ${w.status !== "backlog" ? "moved the card to " + w.status : "left it where it was"}`);
+    if (C) {
+      assert.equal(afterEsc.ghost, false, "Esc ends the drag");
+      assert.deepEqual(afterEsc, { ghost: false, zones: false, active: false, marker: false, dragging: false }, "Esc leaves nothing of the drag behind");
+      assert.equal(w.status, "backlog", "letting go after Esc leaves the card where it was");
+      assert.equal((await E.snapshot(p, key)).activity.length, act0, "Esc: nothing logged");
+    } else confirm("TC-50", "should Esc cancel a drag in progress?", `after Esc the drag ${afterEsc.ghost ? "was still active" : "ended"}; releasing then ${w.status !== "backlog" ? "moved the card to " + w.status : "left it where it was"}`);
     if (w.status !== "backlog") await statusMove(p, key, "backlog");
     await p.done();
   });
@@ -692,9 +699,11 @@ export function defineNewCases(E) {
     const wiggle = async (x, y, n = 14) => { for (let i = 0; i < n; i++) { await P.move(x + (i % 2 ? 3 : 0), y, 1); await sleep(25); } };
     // bottom edge scrolls down
     const y0 = await p.evaluate(() => scrollY);
-    await wiggle(c.x + 44, H - 24);
+    // (on a phone the slim closing bar sits over the bottom edge: the page scrolls in the strip just above it)
+    const edgeY = C && prof.kind === "phone" ? Math.round(await p.$eval(".kb-close-zones", (e) => e.getBoundingClientRect().top)) - 60 : H - 24;
+    await wiggle(c.x + 44, edgeY);
     let y1 = await p.evaluate(() => scrollY);
-    if (prof.kind === "phone" && y1 <= y0) {
+    if (prof.kind === "phone" && y1 <= y0 && !C) {
       // the full-width closing targets sit over the bottom edge, and the board does not scroll while the pointer is over them
       confirm("TC-51", "should dragging at the bottom of a phone screen scroll the page, given the Completed/Withdrawn targets sit there?", `no: scrollY stayed ${y1}`);
       await P.move(c.x + 44, 200, 3); await p.evaluate(() => scrollTo(0, 300)); y1 = await p.evaluate(() => scrollY);
@@ -709,7 +718,8 @@ export function defineNewCases(E) {
       const r0 = await p.evaluate(() => document.querySelector("#kb-board-wrap").scrollLeft);
       await wiggle(over.right - 14, Math.max(140, y2 + 200));
       const r1 = await p.evaluate(() => document.querySelector("#kb-board-wrap").scrollLeft);
-      if (r1 <= r0) confirm("TC-51", "should dragging at the right edge scroll the board sideways when the Completed/Withdrawn targets are pinned over that edge?", `no: scrollLeft stayed ${r0} (the targets cover the edge)`);
+      if (C) assert.ok(r1 > r0, `scrolled right near the right edge, over the closing targets (${r0} → ${r1})`);
+      else if (r1 <= r0) confirm("TC-51", "should dragging at the right edge scroll the board sideways when the Completed/Withdrawn targets are pinned over that edge?", `no: scrollLeft stayed ${r0} (the targets cover the edge)`);
       await p.evaluate(() => { document.querySelector("#kb-board-wrap").scrollLeft = 9999; });
       const l0 = await p.evaluate(() => document.querySelector("#kb-board-wrap").scrollLeft);
       await wiggle(over.left + 14, Math.max(140, y2 + 200));
@@ -755,7 +765,12 @@ export function defineNewCases(E) {
     const z = await p.$$eval(".kb-close-zone", (e) => e.map((x) => { const r = x.getBoundingClientRect(); return { r: x.dataset.resolution, left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }));
     const tab = await p.$eval("#tabbar, .tabbar, nav.tabbar", (e) => e.getBoundingClientRect().top).catch(() => null);
     assert.equal(z.length, 2);
-    for (const x of z) { assert.ok(x.left >= 0 && x.right <= prof.width && x.right - x.left >= prof.width - 40, `full width (${x.left}–${x.right} of ${prof.width})`); if (tab != null) assert.ok(x.bottom <= tab + 1, `above the tab bar (${x.bottom} vs ${tab})`); }
+    if (C) {
+      // a slim bar across the screen above the tab bar, both targets side by side; it grows only when the card nears it
+      const lo = Math.min(...z.map((x) => x.left)), hi = Math.max(...z.map((x) => x.right));
+      assert.ok(lo >= 0 && hi <= prof.width && hi - lo >= prof.width - 40, `the bar spans the width (${lo}–${hi} of ${prof.width})`);
+      for (const x of z) { assert.ok(x.bottom - x.top <= 64, `slim while the card is far from it (${x.bottom - x.top}px)`); if (tab != null) assert.ok(x.bottom <= tab + 1, `above the tab bar (${x.bottom} vs ${tab})`); }
+    } else for (const x of z) { assert.ok(x.left >= 0 && x.right <= prof.width && x.right - x.left >= prof.width - 40, `full width (${x.left}–${x.right} of ${prof.width})`); if (tab != null) assert.ok(x.bottom <= tab + 1, `above the tab bar (${x.bottom} vs ${tab})`); }
     await P.up(); await sleep(150);
     // onto Completed, then Withdrawn, by touch
     await dragCard(p, "PH-34", { zone: "completed" }, { input: "touch" });
@@ -783,7 +798,16 @@ export function defineNewCases(E) {
     const zoneTop = await p.$eval(".kb-close-zone", (e) => Math.round(e.getBoundingClientRect().top)).catch(() => null);
     await Q.up(); await sleep(300);
     const lw = await where(p, lowKey);
-    confirm("TC-53", "on a phone, should a card picked up low on the screen (under the Completed target) be completed by letting go without moving?", `${lowKey} was at y=${lowY}, the Completed target starts at y=${zoneTop}; after letting go it is ${lw.status === "done" ? "Completed" : "still in " + lw.status}`);
+    if (C) assert.equal(lw.status, "backlog", `${lowKey} (y=${lowY}, bar from y=${zoneTop}) is not closed by letting go without moving`);
+    else confirm("TC-53", "on a phone, should a card picked up low on the screen (under the Completed target) be completed by letting go without moving?", `${lowKey} was at y=${lowY}, the Completed target starts at y=${zoneTop}; after letting go it is ${lw.status === "done" ? "Completed" : "still in " + lw.status}`);
+    if (C) {
+      // ...nor by sliding along the bar without ever leaving it: only entering a target counts
+      const R = await makePointer(p, "touch");
+      await R.down(lb.x + 30, lb.y + 20); await sleep(420); await R.move(lb.x + 34, lb.y + 24, 2); await sleep(60);
+      await R.move(lb.x + 120, lb.y + 24, 4); await sleep(80);
+      await R.up(); await sleep(300);
+      assert.equal((await where(p, lowKey)).status, "backlog", "sliding along the bar from where the card was picked up closes nothing");
+    }
     confirm("TC-53", "after a Status-menu move on a phone, should the carousel stay on the column the person was in, or follow the card?", `it ${colAfter === colBefore ? "stayed on" : "moved to"} ${colAfter} (was ${colBefore}); the card is in In Progress`);
     await p.done();
   });

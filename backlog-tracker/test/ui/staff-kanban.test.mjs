@@ -659,7 +659,7 @@ T("KB-C2", "mentions bell: unread count, opening one marks it read and opens the
   await p.done();
 });
 
-T("KB-C2b", "the mentions bell panel stays inside the window", { known: "on a phone the panel opens 32 px off the left edge (390 px: -32 to 326)", on: on.phone }, async (prof) => {
+T("KB-C2b", "the mentions bell panel stays inside the window", { on: on.phone }, async (prof) => {
   const p = await open(prof, "#staff-kanban", { seed: bellSeed() });
   await until(async () => (await p.textContent("#kb-bell")).includes("1"), "the unread count");
   await press(p, "#kb-bell");

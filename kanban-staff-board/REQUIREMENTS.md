@@ -75,14 +75,26 @@ lists Completed and Withdrawn separately.
 **KB-BOARD-3 Drag and drop.** Cards move by drag and drop with a mouse, and by
 press-and-hold (about 250 ms) then drag on touch. AC: a drop marker shows the
 insertion point; order within a column is kept (rank); a plain tap opens the
-task; the page scrolls when dragging near an edge.
+task; the page scrolls when dragging near an edge. A drag drops nothing until
+the finger has moved: pressing and holding a card and letting go in place
+leaves it where it was. Esc cancels a drag in progress and the card returns
+(as in Jira and Trello). The drop place is worked out again whenever the page
+or the board scrolls under a held finger, so a card lands where it was last
+shown.
 
 **KB-BOARD-4 Closing targets.** While any card is dragged, the Completed /
 Withdrawn column's cards hide and two large drop targets fill the visible
 height over that column: Completed (three quarters) and Withdrawn (one
-quarter), each with icon, label and count. On a phone they sit full width
-above the tab bar. AC: targets appear only while dragging; dropping sets
-status `done` with the matching resolution.
+quarter), each with icon, label and count. On a tablet they cover that
+column only, clipped to what is on screen; while it is scrolled out of view
+they are a slim strip at the right edge and the board scrolls sideways under
+a finger held at the edge. On a phone they are a slim bar across the screen
+above the tab bar that grows to the tall targets only when the card nears
+it, so every other part of the board stays reachable. AC: targets appear
+only while dragging; dropping sets status `done` with the matching
+resolution; a drop on a target counts only if the finger entered it after
+the drag began (letting go where the target appeared under the finger does
+not close the card).
 
 **KB-BOARD-5 Testing hand-off.** Moving a task into Ready for Testing
 reassigns it to the tester and remembers the developer; moving it back to In
@@ -101,7 +113,8 @@ tallest so a card can be dropped anywhere down a column.
 
 **KB-BOARD-8 Phone.** One column per screen as a sideways carousel (swipe,
 snap); a pinned strip of column tabs shows and changes the current column.
-AC: no horizontal page overflow at 390 px; swipe and tab both change column.
+AC: no horizontal page overflow at 390 px; swipe and tab both change column;
+the mentions bell panel opens inside the window (KB-NAV-2).
 
 ## 5. Filters and swimlanes
 
