@@ -21,7 +21,6 @@ const SOURCE: Record<TermSource, string> = { buyer: 'set on this list', dsp: 'fr
 export const sourceLabel = (s: TermSource) => SOURCE[s]
 
 const range = (t: MaybeTerm, f: (n: number) => string) => (!t || t.min === null || t.max === null ? null : t.min === t.max ? f(t.min) : `${f(t.min)}–${f(t.max)}`)
-export const playsText = (t: MaybeTerm) => { const r = range(t, (n) => n.toLocaleString()); return r === null ? null : `${r} plays` }
 export const rateText = (t: MaybeTerm) => { const r = range(t, (n) => String(n)); return r === null ? null : `USD ${r} CPM` }
 /* The Rate column's number on its own; the Rate type (DV360's wording) sits beside it. */
 export const rateValue = (t: MaybeTerm) => { const r = range(t, (n) => String(n)); return r === null ? null : `USD ${r}` }
@@ -56,8 +55,6 @@ export const buyerStatusOf = (l: Pick<BuyersList, 'status' | 'termVersion' | 'bu
   const active = acc.length > 0 && acc.every((a) => a.state === 'accepted' && a.acceptedVersion === l.termVersion)
   return { label: active ? 'Active' : 'Pending', reacceptance: acc.some((a) => a.state === 'reacceptance_required') }
 }
-/* Guaranteed impressions are derived: committed plays x assumed views per play (stored: plays only). */
-export const impressionsOf = (plays: number | null | undefined, viewsPerPlay: number | null | undefined) => (plays != null && viewsPerPlay ? Math.round(plays * viewsPerPlay) : null)
 
 /* A flight moment as saved (22 Oct 2026): the stored date and time, never converted to the browser's zone, e.g. "1 Nov 2026 09:00". */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

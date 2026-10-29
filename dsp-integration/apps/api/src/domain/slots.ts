@@ -25,7 +25,6 @@ export const expectedZoneIds = (dt: DisplayType): (string | null)[] => {
   const zones = zonesOf(dt)
   return zones.length ? zones.flatMap((z) => Array<string | null>(zoneSlotCountOf(z)).fill(z.id)) : Array<string | null>(slotCountOf(dt)).fill(null)
 }
-export const expectedSlotCountOf = (dt: DisplayType) => expectedZoneIds(dt).length
 /* The size of the rotation a slot (1-based) plays in: its zone's, or the
    whole screen's — what its share of voice is a share of. */
 export const rotationSizeOf = (dt: DisplayType, slot: number) => {
