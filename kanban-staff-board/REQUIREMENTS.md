@@ -285,7 +285,10 @@ server, attributed to the calling member: `kanban_list_tasks` (filters as on
 the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,
 `kanban_move_task` (status + resolution; applies the testing hand-off),
 `kanban_assign_task`, `kanban_comment`, `kanban_flag_task`,
-`kanban_search_tickets`, `kanban_release_report`. Viewers get read tools only.
+`kanban_search_tickets`, `kanban_release_report`, `kanban_attach_file` (a
+screenshot, image or pdf as base64, at most 5 MB decoded, stored under
+`kanban/{PH-n}/`, images over 1400 px shrunk, optionally inline in the
+description; 60 files an hour per member). Viewers get read tools only.
 Staff can add and move tasks verbally through their agent.
 Writes (`kanban_create_task`, `kanban_update_task`, `kanban_assign_task`)
 refuse what the board can't show and report every problem in one error: an

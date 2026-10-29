@@ -97,9 +97,9 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     execFileSync(process.execPath, [path.join(__dirname, "kanban-core-copy.mjs")], { stdio: "pipe" });
   });
 
-  await test("the eleven kanban_* tools are registered, reads as board.read", async () => {
+  await test("the twelve kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_comment", "kanban_create_task", "kanban_flag_task", "kanban_get_task", "kanban_list_people", "kanban_list_tasks", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_comment", "kanban_create_task", "kanban_flag_task", "kanban_get_task", "kanban_list_people", "kanban_list_tasks", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list|get|search|release)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
@@ -578,6 +578,97 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     await kanban.backfillSlice({ size: 1000 });
     assert.strictEqual(await kanban.boardCollection(), "kanbanCards");
     assert.deepStrictEqual(cardDrift(), []);
+  });
+
+  // ── kanban_attach_file (PH-19) ────────────────────────────────────────
+  const pngBytes = (n) => Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.alloc(n, 7)]);
+  const attach = (token, args) => tool(token, "kanban_attach_file", Object.assign({ key: "PH-1", name: "home page.png", contentType: "image/png" }, args));
+  await test("kanban_attach_file: stored under kanban/PH-n/, listed with a URL, counted on the card, logged and audited", async () => {
+    env.authState.uploads = {};
+    const before = (task("PH-1").attachments || []).length;
+    const r = await attach(sam, { data: pngBytes(200 * 1024).toString("base64") });
+    assert.ok(!r.isError, r.text);
+    assert.strictEqual(r.json.attached, true);
+    assert.match(r.json.path, /^kanban\/PH-1\/\d+-home-page\.png$/);
+    assert.match(r.json.url, /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/kanban%2FPH-1%2F\d+-home-page\.png\?alt=media&token=/);
+    assert.strictEqual(env.authState.uploads[r.json.path].contentType, "image/png");
+    assert.strictEqual(env.authState.uploads[r.json.path].size, 200 * 1024 + 8);
+    const t = task("PH-1");
+    assert.strictEqual(t.attachments.length, before + 1);
+    assert.deepStrictEqual(Object.keys(t.attachments[before]).sort(), ["contentType", "name", "path", "size", "url"]);
+    assert.strictEqual(env.store.col("kanbanCards").get("PH-1").attachmentCount, before + 1);
+    const g = await tool1(sam, "kanban_get_task", { key: "PH-1" });
+    assert.ok(g.json.attachments.some((a) => a.name === "home page.png" && a.url === r.json.url));
+    assert.ok(g.json.activity.some((a) => a.who === SAM && a.text === "attached home page.png over MCP"));
+    const log = [...env.store.col("mcpAuditLog").values()].filter((a) => a.tool === "kanban_attach_file");
+    assert.strictEqual(log.length, 1); assert.strictEqual(log[0].email, SAM);
+  });
+  await test("kanban_attach_file: inline puts the Storage URL in the description, never a data: URI", async () => {
+    const r = await attach(sam, { name: "shot.png", data: pngBytes(50).toString("base64"), inline: true, caption: "Home <page>" });
+    assert.ok(!r.isError, r.text);
+    const d = task("PH-1").description;
+    assert.ok(!/data:image/.test(d));
+    assert.ok(d.includes(`src="${r.json.url.replace(/&/g, "&amp;")}"`), d);
+    assert.ok(d.includes("<em>Home &lt;page&gt;</em>"));
+    assert.ok(task("PH-1").descriptionText !== undefined);
+    assert.strictEqual(task("PH-1").attachments.length, env.store.col("kanbanCards").get("PH-1").attachmentCount);
+  });
+  await test("kanban_attach_file: a pdf is a plain attachment, and cannot be inline", async () => {
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\n").toString("base64");
+    const r = await attach(sam, { name: "spec.pdf", contentType: "application/pdf", data: pdf });
+    assert.ok(!r.isError, r.text);
+    const bad = await attach(sam, { name: "spec.pdf", contentType: "application/pdf", data: pdf, inline: true });
+    assert.ok(bad.isError); assert.match(bad.text, /image/);
+  });
+  await test("kanban_attach_file: refuses 6 MB, other types, wrong bytes, bad base64 and unknown tickets, writing nothing", async () => {
+    const snapshot = () => JSON.stringify([Object.keys(env.authState.uploads), task("PH-1").attachments.length, env.store.col("kanbanTasks").get("PH-1").description]);
+    const was = snapshot();
+    const big = await attach(sam, { data: pngBytes(6 * 1024 * 1024).toString("base64") });
+    assert.ok(big.isError); assert.match(big.text, /5 MB/);
+    const html = await attach(sam, { name: "x.html", contentType: "text/html", data: Buffer.from("<script>1</script>").toString("base64") });
+    assert.ok(html.isError); assert.match(html.text, /png, jpeg, webp or gif/);
+    const svg = await attach(sam, { name: "x.svg", contentType: "image/svg+xml", data: Buffer.from("<svg/>").toString("base64") });
+    assert.ok(svg.isError);
+    const lie = await attach(sam, { data: Buffer.from("<html>not a png</html>").toString("base64") });
+    assert.ok(lie.isError); assert.match(lie.text, /aren't a image\/png/);
+    const junk = await attach(sam, { data: "not base64!!" });
+    assert.ok(junk.isError);
+    const none = await attach(sam, { key: "PH-9999", data: pngBytes(10).toString("base64") });
+    assert.ok(none.isError);
+    assert.strictEqual(snapshot(), was);
+  });
+  await test("kanban_attach_file: a viewer is refused (board.write)", async () => {
+    const was = Object.keys(env.authState.uploads).length;
+    const r = await attach(kit, { data: pngBytes(10).toString("base64") });
+    assert.ok(r.isError);
+    assert.strictEqual(Object.keys(env.authState.uploads).length, was);
+  });
+  await test("kanban_attach_file: images over 1400 px are downscaled before they are stored", async () => {
+    const orig = kanban.imageResizer.resize;
+    kanban.imageResizer.resize = async (buf) => ({ buf: Buffer.concat([buf.subarray(0, 8), Buffer.alloc(100)]), resized: true });
+    try {
+      const r = await attach(sam, { name: "wide.png", data: pngBytes(4000).toString("base64") });
+      assert.ok(!r.isError, r.text);
+      assert.strictEqual(r.json.downscaled, true);
+      assert.strictEqual(r.json.size, 108);
+      assert.strictEqual(env.authState.uploads[r.json.path].size, 108);
+    } finally { kanban.imageResizer.resize = orig; }
+  });
+  await test("kanban_attach_file: 60 files an hour per member, then refused; the window is per member", async () => {
+    const lim = env.store.col("kanbanAttachLimits");
+    member("lena@personalisationhub.com", "editor", "Lena Editor");
+    const kitEditor = await connect("lena@personalisationhub.com");
+    lim.set(SAM, { windowStart: Date.now() - 60000, count: 59 });
+    const last = await attach(sam, { name: "last.png", data: pngBytes(5).toString("base64") });
+    assert.ok(!last.isError, last.text);
+    const over = await attach(sam, { data: pngBytes(5).toString("base64") });
+    assert.ok(over.isError); assert.match(over.text, /60 files an hour/);
+    assert.strictEqual(lim.get(SAM).count, 60);
+    const other = await attach(kitEditor, { data: pngBytes(5).toString("base64") });
+    assert.ok(!other.isError, "another member has their own allowance");
+    lim.set(SAM, { windowStart: Date.now() - 3700000, count: 60 });
+    const again = await attach(sam, { name: "again.png", data: pngBytes(5).toString("base64") });
+    assert.ok(!again.isError, "a new hour starts a new allowance: " + again.text);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

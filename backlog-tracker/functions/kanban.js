@@ -304,6 +304,44 @@ async function handleBackfill(req, res, h) {
   }
 }
 
+// ── Attachments over MCP (kanban_attach_file) ──────────────────────────────
+// The bytes arrive base64 in the call; nothing is ever fetched from a URL.
+// Only types whose first bytes can be checked are accepted, so a file can't
+// claim to be a picture and be something else.
+const ATTACH_MAX_BYTES = 5 * 1024 * 1024;
+const ATTACH_MAX_PER_TICKET = 50;
+const ATTACH_PER_HOUR = 60;
+const ATTACH_MAX_SIDE = 1400; // the page shrinks a pasted screenshot to this too
+const ATTACH_TYPES = {
+  "image/png": { ext: "png", magic: (b) => b.length > 8 && b.readUInt32BE(0) === 0x89504e47 && b.readUInt32BE(4) === 0x0d0a1a0a },
+  "image/jpeg": { ext: "jpg", magic: (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  "image/gif": { ext: "gif", magic: (b) => b.length > 6 && /^GIF8[79]a$/.test(b.toString("latin1", 0, 6)) },
+  "image/webp": { ext: "webp", magic: (b) => b.length > 12 && b.toString("latin1", 0, 4) === "RIFF" && b.toString("latin1", 8, 12) === "WEBP" },
+  "application/pdf": { ext: "pdf", magic: (b) => b.length > 5 && b.toString("latin1", 0, 5) === "%PDF-" },
+};
+const ATTACH_LIMIT_TEXT = "png, jpeg, webp or gif images, or a pdf, at most 5 MB once decoded";
+const imageResizer = {
+  // Shrinks png / jpeg / webp whose longest side is over ATTACH_MAX_SIDE. A gif
+  // is kept as it is (resizing would drop its animation). Without the sharp
+  // module the original is stored, which is still within the size limit.
+  async resize(buf, contentType) {
+    if (contentType === "image/gif") return { buf, resized: false };
+    let sharp;
+    try { sharp = require("sharp"); } catch (err) { return { buf, resized: false }; }
+    const meta = await sharp(buf).metadata();
+    if (!meta.width || !meta.height || Math.max(meta.width, meta.height) <= ATTACH_MAX_SIDE) return { buf, resized: false };
+    const out = await sharp(buf).rotate().resize({ width: ATTACH_MAX_SIDE, height: ATTACH_MAX_SIDE, fit: "inside", withoutEnlargement: true }).toBuffer();
+    return { buf: out, resized: true };
+  },
+};
+const safeFileName = (name, ext) => {
+  let n = String(name || "").split(/[\\/]/).pop().normalize("NFKD").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+|-+$/g, "").replace(/-{2,}/g, "-").slice(0, 80);
+  if (!n) n = "file";
+  if (!new RegExp(`\\.${ext}$`, "i").test(n) && !(ext === "jpg" && /\.jpeg$/i.test(n))) n += "." + ext;
+  return n;
+};
+const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
 // ── MCP tools (KB-MCP-1) ──────────────────────────────────────────────────
 // h: { textResult, toolError, audit }
 function kanbanTools(h) {
@@ -375,6 +413,20 @@ function kanbanTools(h) {
   }
   // Writes a ticket's card with the ticket (same batch or transaction).
   const putCard = (w, key, t, email, closedAt) => w.set(db().collection(CARDS).doc(key), cardData(Object.assign({}, t, { key }), email, closedAt));
+  // Per-member hourly allowance, kept in Firestore so every instance shares it.
+  async function takeAttachSlot(email) {
+    const ref = db().collection("kanbanAttachLimits").doc(String(email).toLowerCase());
+    return db().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const d = snap.exists ? snap.data() : {};
+      const now = Date.now();
+      const fresh = typeof d.windowStart === "number" && now - d.windowStart < 3600000;
+      const count = fresh ? d.count || 0 : 0;
+      if (count >= ATTACH_PER_HOUR) return false;
+      tx.set(ref, { windowStart: fresh ? d.windowStart : now, count: count + 1 });
+      return true;
+    });
+  }
   const stamp = (email) => ({ updatedAt: FieldValue.serverTimestamp(), updatedBy: email });
   const activity = (batch, key, email, texts) => {
     for (const text of texts) if (text) batch.set(tasks().doc(key).collection("activity").doc(), { who: email, text: String(text).slice(0, 500), at: FieldValue.serverTimestamp() });
@@ -502,7 +554,7 @@ function kanbanTools(h) {
         const kids = t.type === "epic" ? (await (await board()).where("epic", "==", key).get()).docs.map((d) => ({ key: d.id, title: d.data().title, status: core.statusLabel(d.data().status, d.data().resolution) })) : undefined;
         return textResult(Object.assign(summary(t, first), {
           description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
-          links: await linksFor(t), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null })),
+          links: await linksFor(t), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
           children: kids, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
           comments: cs.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((c) => ({ author: c.author, at: iso(c.at), text: c.text })),
           activity: act.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((a) => ({ who: a.who, at: iso(a.at), text: a.text })),
@@ -699,6 +751,79 @@ function kanbanTools(h) {
       },
     },
     {
+      name: "kanban_attach_file",
+      description: "Staff Kanban: attach a screenshot, image or PDF to a ticket in one call, sent as base64 `data` (png, jpeg, webp or gif images, or a pdf, at most 5 MB decoded; nothing is fetched from a URL). Images over 1400 px are shrunk, as on the board. It shows under the ticket's Attachments; `inline: true` also puts an image in the description. Limited to 60 files an hour per member.",
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: {
+          key: KEY,
+          name: { type: "string", description: "File name, e.g. home-page.png." },
+          contentType: { type: "string", enum: Object.keys(ATTACH_TYPES) },
+          data: { type: "string", description: "The file's bytes, base64 encoded." },
+          inline: { type: "boolean", description: "Also place the image in the description (images only)." },
+          caption: { type: "string", description: "Optional caption, shown under an inline image. Up to 300 characters." },
+        },
+        required: ["key", "name", "contentType", "data"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const key = normKey(args.key);
+        const cur = key && await getTask(key);
+        if (!cur) return toolError(`No ticket ${args.key}.`);
+        const contentType = String(args.contentType || "").trim().toLowerCase();
+        const kind = ATTACH_TYPES[contentType];
+        if (!kind) return toolError(`${args.contentType || "That type"} can't be attached. Allowed: ${ATTACH_LIMIT_TEXT}.`);
+        const name = String(args.name || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 200);
+        if (!name) return toolError("name is required.");
+        const caption = String(args.caption || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+        if (caption.length > 300) return toolError("A caption is limited to 300 characters.");
+        if (args.inline && !contentType.startsWith("image/")) return toolError("Only an image can go inline in the description; a pdf is attached.");
+        let b64 = String(args.data || "");
+        const uri = core.dataUriParts(b64);
+        if (uri) { if (uri.contentType.toLowerCase() !== contentType) return toolError("The data: prefix names a different type from contentType."); b64 = uri.base64; }
+        b64 = b64.replace(/\s+/g, "");
+        if (!b64) return toolError("data is required (the file, base64 encoded).");
+        if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64) || b64.length % 4 === 1) return toolError("data isn't valid base64.");
+        const approx = Math.floor(b64.length * 3 / 4) - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
+        if (approx > ATTACH_MAX_BYTES) return toolError(`That file is ${(approx / 1048576).toFixed(1)} MB; the limit is 5 MB decoded (${ATTACH_LIMIT_TEXT}). Nothing was attached.`);
+        let bytes = Buffer.from(b64, "base64");
+        if (!kind.magic(bytes)) return toolError(`The bytes aren't a ${contentType} file. Nothing was attached.`);
+        if ((cur.attachments || []).length >= ATTACH_MAX_PER_TICKET) return toolError(`${key} already has ${ATTACH_MAX_PER_TICKET} attachments, the most a ticket holds.`);
+        if (!(await takeAttachSlot(session.email))) return toolError(`Limit reached: ${ATTACH_PER_HOUR} files an hour per member. Try again later.`);
+        let resized = false;
+        if (contentType.startsWith("image/")) {
+          try { const r = await imageResizer.resize(bytes, contentType); bytes = r.buf; resized = r.resized; }
+          catch (err) { return toolError("That image couldn't be read. Nothing was attached."); }
+        }
+        const path = `kanban/${key}/${Date.now()}-${safeFileName(name, kind.ext)}`;
+        const token = crypto.randomUUID();
+        const bucket = h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET);
+        await bucket.file(path).save(bytes, { contentType, metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
+        const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+        const entry = { name, url, path, contentType, size: bytes.length };
+        if (caption) entry.caption = caption;
+        const ref = tasks().doc(key);
+        const result = await db().runTransaction(async (tx) => {
+          const snap = await tx.get(ref);
+          if (!snap.exists) return null;
+          const t = Object.assign({ key }, snap.data());
+          const attachments = (t.attachments || []).concat([entry]);
+          const patch = Object.assign({ attachments }, stamp(session.email));
+          if (args.inline) {
+            patch.description = (t.description || "") + `<p><img src="${esc(url)}" alt="${esc(caption || name)}">${caption ? `<br><em>${esc(caption)}</em>` : ""}</p>`;
+            Object.assign(patch, derived(Object.assign({}, t, { description: patch.description })));
+          }
+          tx.update(ref, patch);
+          putCard(tx, key, Object.assign({}, t, patch), session.email);
+          activity(tx, key, session.email, [`attached ${name} over MCP`]);
+          return attachments.length;
+        });
+        if (result == null) return toolError(`No ticket ${args.key}.`);
+        await audit(session, "kanban_attach_file", { key, name, contentType, size: bytes.length, inline: !!args.inline });
+        return textResult({ attached: true, key, name, url, path, contentType, size: bytes.length, downscaled: resized, inline: !!args.inline, attachments: result });
+      },
+    },
+    {
       name: "kanban_comment",
       description: "Staff Kanban: comment on a ticket, labelled with your email. Mention people by email in `mention` to notify them.",
       scope: "board.write",
@@ -741,4 +866,4 @@ function kanbanTools(h) {
   }));
 }
 
-module.exports = { syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, boardCollection, kanbanTools, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };
+module.exports = { imageResizer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, boardCollection, kanbanTools, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };

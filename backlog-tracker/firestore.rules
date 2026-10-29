@@ -694,6 +694,8 @@ service cloud.firestore {
     // browser, every signed-in person and the boardApi proxy alike is "no".
     // Even hashed, this is the credential store standing behind every team
     // member's agent, and nothing in the UI has any reason to read it.
+    // kanban_attach_file's per-member hourly allowance (functions/kanban.js); server only.
+    match /kanbanAttachLimits/{email} { allow read, write: if false; }
     match /mcpClients/{clientId} { allow read, write: if false; }
     match /mcpAuthCodes/{codeHash} { allow read, write: if false; }
     match /mcpTokens/{tokenHash} { allow read, write: if false; }
