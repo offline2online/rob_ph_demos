@@ -1,0 +1,53 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "kanbanTasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "rank", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "kanbanTasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "rank", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "kanbanCards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "rank", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "kanbanCards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "rank", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "kanbanNotifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "to", "order": "ASCENDING" },
+        { "fieldPath": "at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "kanbanNotifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "read", "order": "ASCENDING" },
+        { "fieldPath": "at", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

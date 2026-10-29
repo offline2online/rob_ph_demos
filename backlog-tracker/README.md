@@ -22,7 +22,14 @@ There is exactly **one** thing that makes a code change live: a push to
 `main` that touches anything under `backlog-tracker/` triggers
 `.github/workflows/deploy-backlog-tracker.yml`, which runs
 `firebase deploy --only hosting,functions,firestore:rules` for you. There
-is no separate manual deploy step in the normal flow. **If a change hasn't
+is no separate manual deploy step in the normal flow. Composite indexes
+go in [`firestore.indexes.json`](./firestore.indexes.json), which the same
+workflow deploys first, in its own step, with `--only firestore:indexes`
+and **without** `--force` (29 Oct 2026): it creates the indexes the file
+lists and never deletes one it doesn't, so an index made by hand from a
+console link survives. Before that, nothing deployed indexes, so a query
+needing one would have failed in production. Add the index a new query
+needs to that file in the same change. **If a change hasn't
 reached `main` through one of the two paths below, it is not live — a
 card's status column is never proof, a green run in the Actions tab is.**
 

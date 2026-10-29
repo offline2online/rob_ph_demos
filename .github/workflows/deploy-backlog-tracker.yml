@@ -230,6 +230,27 @@ jobs:
         if: steps.dedupe.outputs.skip != 'true'
         run: rsync -a --delete --exclude README.md ../faq/ help-site/
 
+      # Composite indexes (firestore.indexes.json). Until 29 Oct 2026 the
+      # deploy below shipped firestore:rules only and firebase.json named no
+      # indexes file, so a query needing a composite index (a column's top
+      # rank, notifications newest first) would have reached production with
+      # no index and failed with FAILED_PRECONDITION; the stubbed test suites
+      # can't see that. This runs first so the indexes are already building
+      # while functions deploy. Deliberately WITHOUT --force: with --force the
+      # CLI deletes every index in the project that the file doesn't list
+      # (firebase-tools lib/firestore/api.js), including any made by hand
+      # from a console link. Without it, non-interactive, it only creates.
+      - name: Deploy Firestore indexes (create only, never delete)
+        if: steps.dedupe.outputs.skip != 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: |
+          if ! npx firebase-tools@13 deploy --only firestore:indexes --project backlog-tracker-e4ed2 --non-interactive; then
+            echo "::error title=Firestore indexes not deployed::firebase deploy --only firestore:indexes failed, so queries that need a composite index in backlog-tracker/firestore.indexes.json will fail in production until it succeeds. The deploy service account needs the Cloud Datastore Index Admin role."
+            exit 1
+          fi
+
       - name: Deploy to Firebase (hosting, functions, firestore rules)
         if: steps.dedupe.outputs.skip != 'true'
         id: deploy
