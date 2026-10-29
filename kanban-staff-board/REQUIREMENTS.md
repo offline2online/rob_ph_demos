@@ -199,7 +199,9 @@ toolbar (Quill 1.3.7): headings H1–H4, bold/italic/underline/strike,
 alignment, lists, quote, inline code, code block, Note/Important/Warning
 callouts, link, image (with alt text), video, tables with row/column controls,
 clear formatting. Plus: **@mentions** of staff (notified on save), **URLs that
-link themselves**, **screenshots** (upload, paste or drop; downscaled), and
+link themselves**, **screenshots** (upload, paste or drop; downscaled to ≤1400 px and held in
+Storage, the description carrying their download URL — never a `data:` URI, so
+a ticket doesn't fill its size limit and no listener downloads a picture), and
 **screen recording** (record button → playable video). Comments use a compact
 version of the same editor. Stored HTML is sanitised (DOMPurify) when shown.
 
@@ -304,7 +306,8 @@ stored by lowercased email; release ids are the console's `releases` ids.
 
 | Collection | Shape |
 |---|---|
-| `kanbanTasks/{PH-n}` | `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
+| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
+| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
 | `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at` |
 | `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, reassignments, flags); append-only |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |
@@ -314,17 +317,34 @@ stored by lowercased email; release ids are the console's `releases` ids.
 | `memberDirectory/{email}` | `email`, `displayName`, `photoUrl`, `photoUpdatedAt`, `disabled` (server-written) |
 | Storage `kanban/{PH-n or new}/…` | screenshots, recordings, attachments |
 
-Loading: every open ticket, the 300 most recently closed, and every ticket of
-the release picked in the Release filter. All queries are single-field, so no
-composite index is needed.
+Loading: the **cards** of every open ticket, of the 300 most recently closed,
+and of every ticket in the release picked in the Release filter; an epic's
+children come from cards too. All queries are single-field, so no composite
+index is needed. The modal always reads the full ticket fresh (a save can't
+overwrite what the board doesn't hold; a title or label edit re-derives
+`searchTokens` from the stored description). Board text search finds
+description words through the server's `searchTokens` query on `kanbanTasks`.
+
+**Backfill, with nobody at a terminal:** `POST /mcp/kanban/backfill` (any
+member, rate-limited, idempotent, sliced with `{done, after}`) writes a card for
+every ticket that lacks one or differs, removes cards whose ticket is gone, and
+moves inline `data:` screenshots in descriptions to Storage
+(`kanban/{PH-n}/…`). The board counts cards against tickets when it opens; while
+the cards are behind it reads `kanbanTasks`, so no ticket ever disappears, calls
+the endpoint, and moves to the cards when they have caught up. The MCP tools do
+the same comparison on the server.
 
 ## 13. Non-functional
 
 - **Security:** members write, viewers read (firestore.rules / storage.rules,
   same `consoleUsers` resolution as the board); only admins write settings;
   sanitise all stored HTML on render.
-- **Performance:** board loads one release's tasks by default; search is
-  server-side and capped at 50 results; screenshots downscaled to ≤1400 px.
+- **Performance:** the board downloads cards, not tickets: its payload scales
+  with what a card shows (about 0.4 KB a ticket), not with descriptions, so 1,000
+  open tickets of 150 KB each cost the board under 1 MB instead of ~150 MB, and
+  editing a description sends the board one small card update. Search is
+  server-side and capped at 50 results; screenshots are downscaled to ≤1400 px
+  and held in Storage.
   First open (29 Oct 2026): the icon font is a subset (about 33 KB, not 3.9 MB),
   the console's scripts are served minified, the four Kanban modules are
   preloaded in parallel with `app.js` on `#staff-kanban`, and the rich-text

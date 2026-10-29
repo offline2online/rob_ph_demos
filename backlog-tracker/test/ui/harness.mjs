@@ -83,6 +83,8 @@ export async function startHarness() {
         // unconfigured by default, as in production without a key, so the page
         // falls back to its local fill; seed.agentDraft stands in for Claude.
         if (url.pathname === "/mcp/kanban/directory-sync") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ members: 0 }) });
+        // The cards are seeded in step with the tickets; a case that seeds them behind answers { done: true } here after the page's own fill.
+        if (url.pathname === "/mcp/kanban/backfill") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ done: true, after: "", tickets: 0 }) });
         if (url.pathname === "/mcp/kanban/agent-fill") {
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.agentDraft ? { draft: seed.agentDraft, source: "claude" } : { draft: null, reason: "not-configured" }) });
         }

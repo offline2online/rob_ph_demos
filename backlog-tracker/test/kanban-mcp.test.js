@@ -11,6 +11,7 @@ const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 const path = require("path");
 const { install, makeReq, makeRes } = require("./mcp-stubs");
+const core = require("../functions/kanban-core");
 
 const env = install();
 const mcp = require("../functions/mcp-server.js");
@@ -49,7 +50,29 @@ async function connect(email) {
   const tok = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "authorization_code", code, code_verifier: verifier, client_id: clientId, redirect_uri: REDIRECT } });
   return tok.body.access_token;
 }
+// Every ticket against its board card (kanbanCards): what the board reads must be what the ticket says.
+function cardDrift() {
+  const tasks = env.store.col("kanbanTasks"), cards = env.store.col("kanbanCards");
+  const out = [];
+  for (const [k, t] of tasks) {
+    const c = cards.get(k);
+    if (!c) { out.push(`${k}: no card`); continue; }
+    const want = core.cardOf(Object.assign({ key: k }, t));
+    for (const f of core.CARD_FIELDS) if (JSON.stringify(c[f]) !== JSON.stringify(want[f])) out.push(`${k}.${f}: card ${JSON.stringify(c[f])}, ticket ${JSON.stringify(want[f])}`);
+    if ((c.closedAt != null) !== (t.closedAt != null)) out.push(`${k}.closedAt: card ${c.closedAt ? "has" : "lacks"} it, ticket ${t.closedAt ? "has" : "lacks"} it`);
+    for (const f of Object.keys(c)) if (!core.CARD_FIELDS.includes(f) && !["closedAt", "updatedAt", "updatedBy"].includes(f)) out.push(`${k}.${f}: not a card field`);
+  }
+  for (const k of cards.keys()) if (!tasks.has(k)) out.push(`${k}: card without a ticket`);
+  return out;
+}
 async function tool(token, name, args) {
+  const r0 = await tool1(token, name, args);
+  // A tool that changes a ticket must change its card with it.
+  const drift = cardDrift();
+  if (drift.length) throw new Error(`${name} left a card out of step: ${drift.join("; ")}`);
+  return r0;
+}
+async function tool1(token, name, args) {
   const res = await call({ method: "POST", path: "/mcp", body: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args || {} } }, headers: { Authorization: `Bearer ${token}` } });
   const r = res.body.result;
   const text = r && r.content && r.content[0] && r.content[0].text;
@@ -97,7 +120,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   await test("keys come from the counter and are never reused", async () => {
     const r = await tool(sam, "kanban_create_task", { title: "Second", release: "r412" });
     assert.strictEqual(r.json.key, "PH-2");
-    env.store.col("kanbanTasks").delete("PH-2");
+    env.store.col("kanbanTasks").delete("PH-2"); env.store.col("kanbanCards").delete("PH-2");
     const r3 = await tool(sam, "kanban_create_task", { title: "Third", release: "r412" });
     assert.strictEqual(r3.json.key, "PH-3");
   });
@@ -326,7 +349,9 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const made = await tool(sam, "kanban_create_task", { title: "Moved by hand on the board", assignee: HUY, estimate: "2h" });
     const key = made.json.key;
     // the page's updateTask: one batch with the ticket's fields and an activity line
-    env.store.col("kanbanTasks").set(key, { ...task(key), status: "in-progress", resolution: null, open: true, priority: "highest", labels: ["from-the-board"], updatedBy: HUY });
+    const edited = { ...task(key), status: "in-progress", resolution: null, open: true, priority: "highest", labels: ["from-the-board"], updatedBy: HUY };
+    env.store.col("kanbanTasks").set(key, edited);
+    env.store.col("kanbanCards").set(key, { ...core.cardOf(edited), updatedBy: HUY }); // (the page writes both in one batch)
     env.store.col(`kanbanTasks/${key}/activity`).set("a-board", { who: HUY, text: "Backlog → In Progress", at: new Date() });
     env.store.col(`kanbanTasks/${key}/comments`).set("c-board", { author: HUY, text: "Started on this", html: "<p>Started on this</p>", at: new Date() });
     const got = await tool(sam, "kanban_get_task", { key });
@@ -469,6 +494,90 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     await tool(sam, "kanban_update_task", { key: k, assignee: "rob@personalisationhub.com" });
     assert.ok(!activity(k).some((t) => /reassigned/.test(t)), activity(k).join(" | "));
     assert.strictEqual(task(k).assignee, ROB);
+  });
+
+  // ── board cards (kanbanCards) and the backfill ───────────────────────────
+  await test("the card check can fail: a ticket changed without its card, a card without a ticket", async () => {
+    assert.deepStrictEqual(cardDrift(), []);
+    const t = task("PH-1");
+    env.store.col("kanbanTasks").set("PH-1", { ...t, title: "Changed behind the card's back" });
+    assert.match(cardDrift().join(";"), /PH-1\.title/);
+    env.store.col("kanbanTasks").set("PH-1", t);
+    env.store.col("kanbanCards").set("PH-99", { ...env.store.col("kanbanCards").get("PH-1"), key: "PH-99" });
+    assert.match(cardDrift().join(";"), /PH-99: card without a ticket/);
+    env.store.col("kanbanCards").delete("PH-99");
+    env.store.col("kanbanCards").delete("PH-1");
+    assert.match(cardDrift().join(";"), /PH-1: no card/);
+    env.store.col("kanbanCards").set("PH-1", { ...core.cardOf(t), updatedAt: new Date(), updatedBy: SAM });
+    assert.deepStrictEqual(cardDrift(), []);
+  });
+  await test("a card holds the 20 board fields and nothing of the description, and equals the ticket's", async () => {
+    const c = env.store.col("kanbanCards").get("PH-1"), t = task("PH-1");
+    assert.deepStrictEqual(Object.keys(c).sort(), [...core.CARD_FIELDS, "updatedAt", "updatedBy"].sort());
+    for (const f of ["description", "descriptionText", "searchTokens", "links", "attachments", "mentions"]) assert.ok(!(f in c), f);
+    assert.strictEqual(c.attachmentCount, (t.attachments || []).length);
+    assert.strictEqual(c.commentCount, t.commentCount);
+  });
+  await test("a comment and a flag are on the card as well as on the ticket", async () => {
+    const before = env.store.col("kanbanCards").get("PH-1").commentCount;
+    await tool(sam, "kanban_comment", { key: "PH-1", text: "Counted on the card too." });
+    assert.strictEqual(env.store.col("kanbanCards").get("PH-1").commentCount, before + 1);
+    await tool(sam, "kanban_flag_task", { key: "PH-1", flagged: true });
+    assert.strictEqual(env.store.col("kanbanCards").get("PH-1").flagged, true);
+  });
+  await test("list and release report read the cards; a text search reads the tickets", async () => {
+    env.store.col("kanbanCards").set("PH-1", { ...env.store.col("kanbanCards").get("PH-1"), title: "ONLY ON THE CARD" });
+    const l = await tool1(sam, "kanban_list_tasks", { assignee: HUY });
+    assert.ok(l.json.tasks.some((x) => x.title === "ONLY ON THE CARD"), "the list reads cards");
+    const q = await tool1(sam, "kanban_list_tasks", { search: "sweep" });
+    assert.ok(q.json.tasks.some((x) => x.key === "PH-1" && x.title !== "ONLY ON THE CARD"), "a search reads tickets");
+    const g = await tool1(sam, "kanban_get_task", { key: "PH-1" });
+    assert.notStrictEqual(g.json.title, "ONLY ON THE CARD", "kanban_get_task reads the ticket");
+    env.store.col("kanbanCards").set("PH-1", { ...core.cardOf(task("PH-1")), updatedAt: new Date(), updatedBy: SAM });
+  });
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  await test("/mcp/kanban/backfill: cards from tickets, inline screenshots to Storage, idempotent, sliced", async () => {
+    // Tickets the way they were before cards: no card, a description holding two pictures (one repeated).
+    const old = { ...task("PH-1"), key: "PH-1", description: `<p>See</p><p><img src="${PNG}"></p><p><img src="${PNG}"><img src="data:image/jpeg;base64,/9j/4AAQSkZJRg=="></p>` };
+    env.store.col("kanbanTasks").set("PH-1", old);
+    env.store.col("kanbanCards").delete("PH-1");
+    env.store.col("kanbanCards").set("PH-ORPHAN", { key: "PH-ORPHAN" });
+    env.store.col("kanbanTasks").set("PH-200", { ...task("PH-1"), description: "<p>No pictures</p>", key: "PH-200", number: 200, title: "Closed long ago", status: "done", resolution: "completed", open: false, closedAt: { toMillis: () => 5, _ts: true } });
+    env.store.col("kanbanCards").delete("PH-200");
+    assert.ok(cardDrift().length >= 2);
+    assert.strictEqual((await call({ method: "POST", path: "/mcp/kanban/backfill", headers: { "X-Firebase-ID-Token": signIn("nobody@example.com") } })).statusCode, 403);
+    const r = await call({ method: "POST", path: "/mcp/kanban/backfill", headers: { "X-Firebase-ID-Token": signIn(KIT) }, body: {} });
+    assert.strictEqual(r.statusCode, 200);
+    assert.strictEqual(r.body.done, true); assert.ok(r.body.cards >= 2); assert.strictEqual(r.body.images, 1); assert.strictEqual(r.body.orphans, 1);
+    assert.deepStrictEqual(cardDrift(), []);
+    const html = task("PH-1").description;
+    assert.ok(!/data:image/.test(html), "no inline picture is left");
+    const urls = [...html.matchAll(/src="([^"]+)"/g)].map((m) => m[1]);
+    assert.strictEqual(urls.length, 3);
+    assert.strictEqual(urls[0], urls[1], "the same picture is stored once");
+    assert.match(urls[0], /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/kanban%2FPH-1%2F.*-screenshot\.png\?alt=media&amp;token=/);
+    assert.strictEqual(Object.keys(env.authState.uploads).length, 2);
+    assert.ok(Object.keys(env.authState.uploads).every((p) => p.startsWith("kanban/PH-1/")));
+    // again: nothing to do
+    const again = await call({ method: "POST", path: "/mcp/kanban/backfill", headers: { "X-Firebase-ID-Token": signIn(KIT) }, body: {} });
+    assert.deepStrictEqual([again.body.cards, again.body.images, again.body.orphans], [0, 0, 0]);
+    assert.strictEqual(Object.keys(env.authState.uploads).length, 2);
+    // sliced: a small slice says it isn't done and where to carry on
+    const first = await kanban.backfillSlice({ size: 2 });
+    assert.strictEqual(first.done, false); assert.ok(first.after);
+    const rest = await kanban.backfillSlice({ after: first.after, size: 1000 });
+    assert.strictEqual(rest.done, true);
+  });
+  await test("while the cards are behind the tickets, tools read the tickets (none disappears) and the write fills its card", async () => {
+    env.store.col("kanbanCards").clear();
+    assert.strictEqual(await kanban.boardCollection(), "kanbanTasks");
+    const l = await tool1(sam, "kanban_list_tasks", {});
+    assert.ok(l.json.tasks.length > 3, "every open ticket is listed");
+    await tool1(sam, "kanban_flag_task", { key: "PH-3", flagged: false });
+    assert.ok(env.store.col("kanbanCards").has("PH-3"));
+    await kanban.backfillSlice({ size: 1000 });
+    assert.strictEqual(await kanban.boardCollection(), "kanbanCards");
+    assert.deepStrictEqual(cardDrift(), []);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

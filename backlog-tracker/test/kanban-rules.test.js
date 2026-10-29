@@ -42,6 +42,7 @@ async function reset() {
     await setDoc(doc(db, "consoleUsers/ada@personalisationhub.com"), { email: "ada@personalisationhub.com", role: "admin" });
     await setDoc(doc(db, "kanbanCounters/main"), { nextNumber: 8 });
     await setDoc(doc(db, "kanbanTasks/PH-7"), task(7, { createdAt: new Date(0), updatedAt: new Date(0) }));
+    await setDoc(doc(db, "kanbanCards/PH-7"), { key: "PH-7", type: "task", title: "A task", status: "backlog", resolution: null, open: true, rank: 10, assignee: "", previousAssignee: "", release: "", sprint: "", priority: "medium", flagged: false, estimate: null, logged: 0, due: "", labels: [], epic: "", commentCount: 0, attachmentCount: 0, updatedAt: new Date(0), updatedBy: SAM });
     await setDoc(doc(db, "kanbanTasks/PH-7/comments/c1"), { author: SAM, html: "<p>x</p>", text: "x", at: new Date(0) });
     await setDoc(doc(db, "kanbanTasks/PH-7/activity/a1"), { who: SAM, text: "Backlog → In Progress", at: new Date(0) });
     await setDoc(doc(db, "kanbanNotifications/n1"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: false, at: new Date(0) });
@@ -150,6 +151,45 @@ async function main() {
   await check("A member deletes a ticket", "allow", () => deleteDoc(doc(as(MEMBER), "kanbanTasks/PH-7")));
   await check("Server search: array-contains on searchTokens is readable", "allow", () =>
     getDocs(query(collection(as(MEMBER), "kanbanTasks"), where("searchTokens", "array-contains", "task"), limit(200))));
+
+  // ── The board's cards (kanbanCards): the light copy of a ticket ──────────
+  const card = (n, over = {}) => Object.assign({
+    key: `PH-${n}`, type: "task", title: "A task", status: "backlog", resolution: null, open: true, rank: 10, assignee: "", previousAssignee: "",
+    release: "", sprint: "", priority: "medium", flagged: false, estimate: null, logged: 0, due: "", labels: [], epic: "", commentCount: 0, attachmentCount: 0,
+    updatedAt: serverTimestamp(), updatedBy: SAM,
+  }, over);
+  await check("A member reads a card, and so does a viewer", "allow", async () => {
+    await assertSucceeds(getDoc(doc(as(VIEWER), "kanbanCards/PH-7")));
+    return getDocs(query(collection(as(MEMBER), "kanbanCards"), where("open", "==", true)));
+  });
+  await check("Someone who isn't a member can't read a card", "deny", () => getDoc(doc(as(STRANGER), "kanbanCards/PH-7")));
+  await check("A ticket and its card are created together", "allow", () => {
+    const db = as(MEMBER);
+    return runTransaction(db, async (tx) => {
+      await tx.get(doc(db, "kanbanCounters/main"));
+      tx.set(doc(db, "kanbanCounters/main"), { nextNumber: 9, updatedAt: serverTimestamp() });
+      tx.set(doc(db, "kanbanTasks/PH-8"), asUser(MEMBER, task(8)));
+      tx.set(doc(db, "kanbanCards/PH-8"), card(8));
+    });
+  });
+  await check("A card with a description can't be written", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { description: "<p>big</p>" })));
+  await check("A card can't carry search tokens", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { searchTokens: ["a"] })));
+  await check("A card's key must be its id", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(9)));
+  await check("A card in Done needs a resolution", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { status: "done", open: false })));
+  await check("A card's open flag follows its status", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { status: "done", resolution: "completed", open: true })));
+  await check("A card can't be written in someone else's name", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { updatedBy: "ada@personalisationhub.com" })));
+  await check("A move writes the ticket, its card and the activity line together", "allow", () => {
+    const db = as(MEMBER), b = writeBatch(db);
+    b.update(doc(db, "kanbanTasks/PH-7"), { status: "in-progress", resolution: null, open: true, rank: 5, updatedAt: serverTimestamp(), updatedBy: SAM });
+    b.set(doc(db, "kanbanCards/PH-7"), { status: "in-progress", open: true, rank: 5, updatedAt: serverTimestamp(), updatedBy: SAM }, { merge: true });
+    return b.commit();
+  });
+  await check("A viewer can't write a card", "deny", () => setDoc(doc(as(VIEWER), "kanbanCards/PH-8"), card(8, { updatedBy: VIEWER.claims.email })));
+  await check("A member deletes a card with its ticket", "allow", () => {
+    const db = as(MEMBER), b = writeBatch(db);
+    b.delete(doc(db, "kanbanTasks/PH-7")); b.delete(doc(db, "kanbanCards/PH-7"));
+    return b.commit();
+  });
 
   // ── Comments and activity ───────────────────────────────────────────────
   await check("A member comments, bumping the count", "allow", () => {

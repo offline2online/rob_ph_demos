@@ -87,6 +87,8 @@ function query(store, collection, filters = [], limit = null, order = null) {
     // whole documents, which is a superset of what the real call returns.
     select() { return query(store, collection, filters, limit, order); },
     orderBy(field, dir) { return query(store, collection, filters, limit, field ? { field, dir: dir === "desc" ? -1 : 1 } : order); },
+    // The aggregate count the server uses to compare two collections.
+    count() { return { async get() { const r = await query(store, collection, filters, limit, order).get(); return { data: () => ({ count: r.size }) }; } }; },
     async get() {
       let rows = [...store.col(collection).entries()];
       for (const f of filters) {
@@ -164,6 +166,15 @@ function install() {
     "firebase-admin/firestore": {
       getFirestore: () => db,
       FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion, increment, delete: () => DELETE_FIELD },
+    },
+    // Storage: an upload is kept in authState.uploads (path -> { size, contentType, token }).
+    "firebase-admin/storage": {
+      getStorage: () => ({
+        bucket: (name) => ({
+          name: name || "test-bucket",
+          file: (path) => ({ save: async (buf, opts) => { (authState.uploads ||= {})[path] = { size: buf.length, contentType: opts && opts.contentType, token: opts && opts.metadata && opts.metadata.metadata && opts.metadata.metadata.firebaseStorageDownloadTokens }; } }),
+        }),
+      }),
     },
     "firebase-admin/auth": {
       getAuth: () => ({

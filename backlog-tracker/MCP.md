@@ -147,6 +147,8 @@ the offer sweep ignores the store's time zone, about 4 hours, this release").
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
 | `kanban_release_report` (outstanding, remaining effort, per-person capacity) | `kanban_comment` (`mention` notifies people on the board's bell) |
 
+The board reads a light card per ticket (`kanbanCards/{PH-n}`, the fields a card shows); every write above puts the ticket and its card in the same batch or transaction. `kanban_list_tasks` and `kanban_release_report` read cards (a `search` reads tickets, since cards hold no description), `kanban_get_task` and `kanban_search_tickets` read the full ticket. While the cards are behind the tickets (before `POST /mcp/kanban/backfill` has run) the tools read the tickets.
+
 Every member is on the board, including the bootstrap admins, who have no `consoleUsers` row. Anywhere a person is named (`assignee`, `reporter`) `me` means the authenticated member. An alias address (`PERSON_ALIASES` in `public/js/kanban/kanban-core.js`: `rob@personalisationhub.com` is Rob, `rob@offline2online.com`) is never listed as a person: naming it, mentioning it, or connecting an agent signed in as it all resolve to its owner.
 
 **Reading ticket history.** `list_backlog_items` pages: it returns at most

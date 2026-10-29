@@ -488,3 +488,74 @@ export function cleanTaskFields(input, { partial = false } = {}) {
   if ("flagged" in input) v.flagged = !!input.flagged;
   return { value: v, errors };
 }
+
+// ── The board card (kanbanCards/{PH-n}) ─────────────────────────────────────
+// The board's listeners read this light copy of a ticket: only what a card
+// shows, so opening the board downloads no descriptions, screenshots, links or
+// search tokens (REQUIREMENTS.md §12–13). Every writer of a ticket writes its
+// card in the same batch or transaction; closedAt (a timestamp) and
+// updatedAt/updatedBy ride beside these fields. The server's backfill and the
+// tests use the same functions, so a card and its ticket cannot be derived two ways.
+// (one string, not a list of quoted words: a lone quoted word that is also an icon name fails test/icon-font.test.mjs)
+export const CARD_FIELDS = ("key type title status resolution open rank assignee previousAssignee release sprint "
+  + "priority flagged estimate logged due labels epic commentCount attachmentCount").split(" ");
+const CARD_NORM = {
+  key: (v) => String(v || ""),
+  type: (v) => v || "task",
+  title: (v) => String(v || ""),
+  status: (v) => v || "backlog",
+  resolution: (v) => v || null,
+  rank: (v) => (typeof v === "number" ? v : 0),
+  assignee: (v) => v || "",
+  previousAssignee: (v) => v || "",
+  release: (v) => v || "",
+  sprint: (v) => v || "",
+  priority: (v) => v || "",
+  flagged: (v) => !!v,
+  estimate: (v) => (typeof v === "number" ? v : null),
+  logged: (v) => (typeof v === "number" ? v : 0),
+  due: (v) => v || "",
+  labels: (v) => (Array.isArray(v) ? v.slice(0, 30) : []),
+  epic: (v) => v || "",
+  commentCount: (v) => (Number.isInteger(v) && v > 0 ? v : 0),
+};
+// A ticket (or a card) → the fields of its card.
+export function cardOf(t) {
+  const c = {};
+  for (const k of CARD_FIELDS) {
+    if (k === "open") c.open = (t.status || "backlog") !== "done";
+    else if (k === "attachmentCount") c.attachmentCount = Array.isArray(t.attachments) ? t.attachments.length : Number.isInteger(t.attachmentCount) && t.attachmentCount > 0 ? t.attachmentCount : 0;
+    else c[k] = CARD_NORM[k](t[k]);
+  }
+  return c;
+}
+// A patch to a ticket → the patch to its card (only what it changes).
+export function cardPatchOf(patch) {
+  const c = {};
+  for (const k of Object.keys(CARD_NORM)) if (k in patch) c[k] = CARD_NORM[k](patch[k]);
+  if ("status" in patch) c.open = (patch.status || "backlog") !== "done";
+  if ("attachments" in patch) c.attachmentCount = Array.isArray(patch.attachments) ? patch.attachments.length : 0;
+  return c;
+}
+
+// ── Screenshots in a description ────────────────────────────────────────────
+// Pasted and dropped screenshots are stored in Storage and the description
+// holds their download URL; a data: URI inline would be downloaded by every
+// listener and fills the description's size limit in two or three pictures.
+const INLINE_IMG = /(<img\b[^>]*?\bsrc\s*=\s*)(["'])(data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+)\2/gi;
+export function hasInlineImages(html) { return /<img\b[^>]*\bsrc\s*=\s*["']data:image\//i.test(String(html || "")); }
+// Replaces each distinct inline image with `await upload(dataUri)` (a URL).
+export async function externaliseInlineImages(html, upload) {
+  const src = String(html || "");
+  const found = new Set();
+  src.replace(INLINE_IMG, (m, a, q, uri) => { found.add(uri); return m; });
+  if (!found.size) return src;
+  const urls = new Map();
+  for (const uri of found) urls.set(uri, await upload(uri));
+  return src.replace(INLINE_IMG, (m, a, q, uri) => `${a}${q}${String(urls.get(uri)).replace(/&(?!amp;)/g, "&amp;")}${q}`);
+}
+// "data:image/jpeg;base64,…" → { contentType, base64 }, or null.
+export function dataUriParts(uri) {
+  const m = /^data:([^;,]+);base64,([\s\S]*)$/.exec(String(uri || ""));
+  return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
+}

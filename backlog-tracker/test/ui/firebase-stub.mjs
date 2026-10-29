@@ -195,18 +195,27 @@ export function onSnapshot(target, onNext, onError) {
       } else {
         const snap = querySnap(target, last && last.docs);
         last = snap;
+        // What the listener downloads: each added or changed document.
+        const rb = (b.readBytes ||= {});
+        for (const ch of snap.docChanges()) rb[target.path] = (rb[target.path] || 0) + JSON.stringify(describe(ch.doc.data())).length;
         onNext(snap);
       }
     } catch (err) { if (onError) onError(err); else throw err; }
   };
   const l = { run: emit };
   b.listeners.add(l);
+  const watch = (b.watching ||= {});
+  watch[target.path] = (watch[target.path] || 0) + 1;
   // Firestore delivers the first snapshot asynchronously.
   Promise.resolve().then(() => { if (b.listeners.has(l)) emit(); });
-  return () => b.listeners.delete(l);
+  return () => { if (b.listeners.delete(l)) watch[target.path] -= 1; };
 }
 export async function getDoc(ref) { return docSnap(ref.parentPath, ref.id, backend().col(ref.parentPath).get(ref.id)); }
 export async function getDocs(target) { return querySnap(target); }
+export async function getCountFromServer(target) {
+  const rows = run(target.type === "collection" ? { path: target.path, constraints: [] } : target);
+  return { data: () => ({ count: rows.length }) };
+}
 
 export async function addDoc(colRef, data) {
   const ref = doc(colRef);

@@ -12,7 +12,7 @@ import { createResultReader, useContinuousMode, isAndroidDevice } from "../dicta
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
-  statusChange, currentReleaseId, DEFAULT_TESTER, rankBetween, fold, searchTickets, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
+  statusChange, currentReleaseId, DEFAULT_TESTER, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
   canonicalEmail, isAliasEmail,
 } from "./kanban-core.js";
 
@@ -27,9 +27,27 @@ export function mountStaffKanban(ctx) {
   const mqPhone = matchMedia("(max-width: 640px)");
   const store = createStore({
     db: ctx.db, storage: ctx.storage, me,
+    backfill: backfillCards,
     onChange: (what) => onData(what),
     onError: (err) => { console.warn("staff kanban:", err); if (err && err.code === "permission-denied") toast("You don't have access to that. An admin can change your role in Settings → Team & agent access."); },
   });
+
+  // The board reads kanbanCards, which a Cloud Function-side endpoint fills
+  // from kanbanTasks (and moves inline screenshots to Storage) when it finds
+  // them behind. Idempotent, and nobody has to run it (functions/kanban.js).
+  async function backfillCards() {
+    const user = ctx.auth.currentUser;
+    if (!user) return;
+    // A long run answers { done: false } after a slice of the tickets: ask again.
+    let after = "";
+    for (let i = 0; i < 60; i++) {
+      const r = await fetch("/mcp/kanban/backfill", { method: "POST", headers: { "X-Firebase-ID-Token": await user.getIdToken(), "Content-Type": "application/json" }, body: JSON.stringify({ after }) });
+      if (!r.ok) throw new Error(`card backfill answered ${r.status}`);
+      const out = await r.json().catch(() => ({}));
+      if (out.done !== false) return;
+      after = out.after || "";
+    }
+  }
 
   // ── State ───────────────────────────────────────────────────────────────
   const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -96,7 +114,13 @@ export function mountStaffKanban(ctx) {
   const childrenOf = (key) => knownTasks().filter((t) => t.epic === key && t.type !== "epic");
   const taskByKey = (k) => store.get(k);
   // Every ticket the page knows of, the board's and those fetched on demand.
-  const knownTasks = () => [...store.state.tasks.values(), ...store.state.extra.values()];
+  // A board card has no description text; a search hit brings it, so the picker can match and quote it.
+  const knownTasks = () => {
+    const out = new Map();
+    for (const t of store.state.extra.values()) out.set(t.key, t);
+    for (const t of store.state.tasks.values()) { const x = store.state.texts.get(t.key); out.set(t.key, x && !t.descriptionText ? { ...t, descriptionText: x } : t); }
+    return [...out.values()];
+  };
   const tip = (text, cls = "") => `<button type="button" class="info-tip ${cls}" data-tip="${esc(text)}" aria-label="More information">i</button>`;
   const statusPill = (t) => `<span class="kb-status-pill kb-sp-${t.status}${res(t) === "withdrawn" ? " kb-sp-withdrawn" : ""}">${esc(statusShort(t))}</span>`;
   const today = () => new Date();
@@ -285,7 +309,19 @@ export function mountStaffKanban(ctx) {
 
   // ── Kanban page ─────────────────────────────────────────────────────────
   function boardTasks() {
-    return filterTasks(state.tasks, { ...board, me });
+    // A card has no description text: words in descriptions match through the
+    // server's search hits (asked for as the box is typed in).
+    const texts = store.state.texts;
+    const list = board.q && texts.size ? state.tasks.map((t) => (!t.descriptionText && texts.has(t.key) ? { ...t, descriptionText: texts.get(t.key) } : t)) : state.tasks;
+    return filterTasks(list, { ...board, me });
+  }
+  let boardSearchTimer = 0;
+  function searchDescriptions(q) {
+    clearTimeout(boardSearchTimer);
+    if (!q.trim()) return;
+    boardSearchTimer = setTimeout(() => {
+      store.searchServer(q.trim()).then(() => { if (board.q === q) renderKanbanBoard(); }).catch(() => {});
+    }, 150);
   }
   // Counts in the pinned bar that change with the data, without redrawing it.
   function refreshFilterCounts() {
@@ -366,7 +402,7 @@ export function mountStaffKanban(ctx) {
     if (nb) nb.addEventListener("click", () => openTask(null));
     drawBell();
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
-    $("#kb-q").addEventListener("input", (e) => { board.q = e.target.value; renderKanbanBoard(); });
+    $("#kb-q").addEventListener("input", (e) => { board.q = e.target.value; renderKanbanBoard(); searchDescriptions(board.q); });
     // A filter change redraws the board in place: the page keeps its scroll
     // position (and, on a phone, the column you were on).
     const redraw = () => keepPosition(() => renderKanban(view));
@@ -605,7 +641,7 @@ export function mountStaffKanban(ctx) {
           ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kidsLive.length} done</span>` : res(t) === "withdrawn" ? '<span class="card-cat kb-est kb-withdrawn-chip">Withdrawn</span>' : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
           ${(t.comments || []).length ? `<span class="kb-meta-ic" title="${t.comments.length} comment${t.comments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.comments.length}</span>` : ""}
-          ${(t.attachments || []).length ? `<span class="kb-meta-ic" title="${t.attachments.length} attachment${t.attachments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachments.length}</span>` : ""}
+          ${t.attachmentCount ? `<span class="kb-meta-ic" title="${t.attachmentCount} attachment${t.attachmentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachmentCount}</span>` : ""}
         </div>
         ${avatar(t.assignee)}
       </div>
@@ -806,15 +842,16 @@ export function mountStaffKanban(ctx) {
   }
   // Opening a ticket the board isn't holding (a mention, a link, a child in
   // another release) fetches it first.
+  // The board holds cards, so a ticket's modal reads the full ticket first.
   async function openTaskByKey(key, preset) {
-    if (!taskByKey(key)) {
-      try { if (!(await store.fetchTask(key))) { toast(`<b>${esc(key)}</b> no longer exists`); return; } }
-      catch (e) { fail(e); return; }
-    }
-    openTask(key, preset);
+    try { if (!(await store.fetchTask(key))) { toast(`<b>${esc(key)}</b> no longer exists`); return; } }
+    catch (e) { fail(e); return; }
+    openTask(key, { ...preset, loaded: true });
   }
   function openTask(key, preset) {
-    const t = key ? taskByKey(key) : null;
+    // Always read the ticket fresh: what the board holds is the card.
+    if (key && !(preset && preset.loaded)) { openTaskByKey(key, preset); return; }
+    const t = key ? store.getFull(key) : null;
     if (key && !t) { openTaskByKey(key, preset); return; }
     if (!t && !canWrite()) return;
     draftIsNew = !t;
@@ -1499,7 +1536,7 @@ export function mountStaffKanban(ctx) {
   function withEpicSaved(then) {
     const key = draft.key;
     if (!draftIsNew && !formDirty()) { then(key); return; }
-    submitTask({ then: (savedKey) => { openTask(savedKey); then(savedKey); } });
+    submitTask({ then: (savedKey) => { openTask(savedKey, { loaded: true }); then(savedKey); } });
   }
   function formDirty() {
     const t = taskByKey(draft.key);
@@ -1519,7 +1556,11 @@ export function mountStaffKanban(ctx) {
     let notify = [];
     if (descQ) {
       next.description = KBEditor.getHtml(descQ);
-      const before = KBEditor.mentionsIn(draftIsNew ? "" : (taskByKey(next.key) || {}).description);
+      if (hasInlineImages(next.description)) {
+        try { next.description = await store.externaliseImages(next.key || "new", next.description); }
+        catch (e) { toast("A screenshot couldn't be uploaded, so the ticket wasn't saved. Try again."); return; }
+      }
+      const before = KBEditor.mentionsIn(draftIsNew ? "" : (store.getFull(next.key) || {}).description);
       notify = KBEditor.mentionsIn(next.description).filter((id) => id !== state.me && !before.includes(id));
     }
     set("assignee", val("f-assignee"));
@@ -1559,7 +1600,7 @@ export function mountStaffKanban(ctx) {
     }
     if (next.type === "epic") next.epic = "";
     const [newStatus, newRes] = (val("f-status") || draft.status).split(":");
-    const existing = draftIsNew ? null : taskByKey(next.key);
+    const existing = draftIsNew ? null : store.getFull(next.key);
     const endOf = (status) => { const inCol = state.tasks.filter((t) => t.status === status); return inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10; };
     saving = true;
     const saveBtn = $("#f-save"); if (saveBtn) saveBtn.disabled = true;
@@ -1592,7 +1633,7 @@ export function mountStaffKanban(ctx) {
         delete fields.key; delete fields.comments; delete fields.activity;
         const key = await store.createTask(fields);
         next.key = key;
-        if (!taskByKey(key)) await store.fetchTask(key).catch(() => {});
+        await store.fetchTask(key).catch(() => {});
         toast(`<b>${esc(key)}</b> created in Backlog`);
       }
       if (notify.length) {

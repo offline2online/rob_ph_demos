@@ -5232,6 +5232,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512Mi
       // Staff Kanban's browser endpoints (functions/kanban.js).
       case "/kanban/agent-fill": return await kanban.handleAgentFill(req, res, kanbanHelpers);
       case "/kanban/directory-sync": return await kanban.handleDirectorySync(req, res, kanbanHelpers);
+      case "/kanban/backfill": return await kanban.handleBackfill(req, res, kanbanHelpers);
       default:
         res.status(404).json({ error: "not_found", error_description: `no endpoint at ${path}` });
     }

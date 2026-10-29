@@ -17,7 +17,7 @@
 // An engine that isn't installed is listed under "NOT RUN" at the end, never counted as a pass.
 import assert from "node:assert/strict";
 import { startHarness, until } from "./harness.mjs";
-import { kanbanSeed, emailOf, ROB } from "./kanban-seed.mjs";
+import { kanbanSeed, cardOfTask, emailOf, ROB } from "./kanban-seed.mjs";
 import { wantedProfiles, contextOptions } from "../../../kanban-staff-board/test/lib/profiles.mjs";
 import { where, press, sleep, moveBy, dragCard, toastText } from "../../../kanban-staff-board/test/lib/driver.mjs";
 import { defineNewCases } from "../../../kanban-staff-board/test/lib/cases.mjs";
@@ -100,10 +100,29 @@ async function open(prof, hash = "#staff-kanban", o = {}) {
   await until(() => p.locator(hash.includes("report") || hash.includes("settings") ? "#kb-view .page-header" : ".kb-card").count(), "the Staff Kanban page", 20000);
   await p.waitForTimeout(150);
   p.profile = prof; p.engine = prof.engine; p.ctx = op.context;
-  p.done = async (o = {}) => { const bad = o.allow ? op.problems.filter((x) => !o.allow.test(x)) : op.problems; assert.deepEqual(bad, [], "no page errors, console errors or stray requests"); await op.close(); };
+  // Every case also ends comparing each ticket with its board card: a write path that changes a ticket without its card fails here.
+  p.done = async (o = {}) => { const bad = o.allow ? op.problems.filter((x) => !o.allow.test(x)) : op.problems; assert.deepEqual(bad, [], "no page errors, console errors or stray requests"); assert.deepEqual(await cardDrift(p), [], "every ticket's card matches the ticket"); await op.close(); };
   return p;
 }
 const TALL = { height: 1600 };
+// Tickets whose card (kanbanCards) differs from the ticket, or is missing; cards without a ticket.
+const cardDrift = (page) => page.evaluate(async () => {
+  const core = await import("/js/kanban/kanban-core.js");
+  const b = globalThis.__fbStub, tasks = b.col("kanbanTasks"), cards = b.col("kanbanCards");
+  const out = [];
+  const ms = (v) => (v && v.ms !== undefined ? v.ms : v == null ? null : v);
+  for (const [k, t] of tasks) {
+    const c = cards.get(k);
+    if (!c) { out.push(`${k}: no card`); continue; }
+    const want = core.cardOf(t);
+    for (const f of core.CARD_FIELDS) if (JSON.stringify(c[f]) !== JSON.stringify(want[f])) out.push(`${k}.${f}: card ${JSON.stringify(c[f])}, ticket ${JSON.stringify(want[f])}`);
+    // (each server timestamp resolves separately in the stub, so only presence is compared)
+    if ((c.closedAt != null) !== (t.closedAt != null)) out.push(`${k}.closedAt: card ${ms(c.closedAt)}, ticket ${ms(t.closedAt)}`);
+    for (const f of Object.keys(c)) if (!core.CARD_FIELDS.includes(f) && !["closedAt", "updatedAt", "updatedBy"].includes(f)) out.push(`${k}.${f}: not a card field`);
+  }
+  for (const k of cards.keys()) if (!tasks.has(k)) out.push(`${k}: card without a ticket`);
+  return out;
+});
 const stored = (page, key) => page.evaluate((k) => globalThis.__fbStub.col("kanbanTasks").get(k), key);
 const writes = (page, re) => page.evaluate((src) => globalThis.__fbStub.writes.filter((w) => new RegExp(src).test(w.path)), re.source);
 // The phone has no sidebar: Build and the tab sheet, or the hamburger on a narrow tablet.
@@ -465,10 +484,12 @@ T("TC-16", "ticket search picker: number, title words, description words with sn
   assert.match(await p.textContent("#f-child-link .kb-pick-foot"), /\d+ match/);
   await p.fill(inp, "36"); await p.waitForTimeout(80);
   assert.equal(await p.$eval("#f-child-link .kb-pick .kb-link-key", (e) => e.textContent), "PH-36");
-  await p.fill(inp, "archived articles"); await p.waitForTimeout(80);
-  assert.deepEqual(await p.$$eval("#f-child-link .kb-pick .kb-link-key", (e) => e.map((x) => x.textContent)), ["PH-36"]);
-  await p.fill(inp, "SQLite"); await p.waitForTimeout(80);
-  assert.equal(await p.$eval("#f-child-link .kb-pick .kb-link-key", (e) => e.textContent), "PH-24");
+  // (the board holds cards, which carry no description: words in descriptions arrive with the server's hits, a moment after the keystroke)
+  const keys = () => p.$$eval("#f-child-link .kb-pick .kb-link-key", (e) => e.map((x) => x.textContent));
+  await p.fill(inp, "archived articles");
+  await until(async () => (await keys()).join() === "PH-36", "the description hit PH-36", 5000);
+  await p.fill(inp, "SQLite");
+  await until(async () => (await keys())[0] === "PH-24", "the description hit PH-24", 5000);
   assert.match(await p.$eval("#f-child-link .kb-pick-snip", (e) => e.innerHTML), /<mark>SQLite<\/mark>/);
   await p.done();
 });
@@ -478,6 +499,7 @@ T("TC-16b", "server search finds a ticket the board isn't holding", async (prof)
   // An old closed ticket outside the 300 most recent: only searchTokens finds it.
   seed.docs.kanbanTasks["PH-7"] = { ...seed.docs.kanbanTasks["PH-7"], open: false, status: "done", resolution: "completed", descriptionText: "Retired with the zebracorn migration.", searchTokens: ["7", "ph-7", "seed", "retired", "zebracorn", "migration"] };
   delete seed.docs.kanbanTasks["PH-7"].closedAt;
+  seed.docs.kanbanCards["PH-7"] = cardOfTask(seed.docs.kanbanTasks["PH-7"]);
   const p = await open(prof, "#staff-kanban", { seed });
   assert.equal(await p.$('.kb-card[data-key="PH-7"]'), null, "not on the board");
   await press(p, '.kb-card[data-key="PH-1"]');
@@ -688,6 +710,91 @@ T("KB-C4", "deep links: a report URL opens the report, and the hash follows the 
   assert.match(await p.title(), /Release report/);
   await press(p, '#kb-view [data-route="kanban"]'); await p.waitForSelector(".kb-card");
   assert.equal(await p.evaluate(() => location.hash), "#staff-kanban");
+  await p.done();
+});
+
+// ── Cards (kanbanCards): the board reads only what a card shows ─────────────
+const readBytes = (p, path) => p.evaluate((x) => (globalThis.__fbStub.readBytes || {})[x] || 0, path);
+const watching = (p, path) => p.evaluate((x) => (globalThis.__fbStub.watching || {})[x] || 0, path);
+
+T("KB-C9", "screenshots in a description are held in Storage, never inline, however they got there", async (prof) => {
+  const p = await open(prof);
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await until(() => p.$('[data-field="description"] .ql-editor'), "the editor (it loads when a ticket first opens)");
+  // Three pictures arrive as data: URIs (a paste the editor kept inline, a drop, an older ticket's content).
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  const JPG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
+  const GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  await p.evaluate(([a, b, c]) => {
+    const q = document.querySelector('[data-field="description"] .ql-editor');
+    q.innerHTML += `<p>One</p><p><img src="${a}"></p><p>Two</p><p><img src="${b}"></p><p>Three</p><p><img src="${c}"></p>`;
+  }, [PNG, JPG, GIF]);
+  await p.waitForTimeout(150);
+  await press(p, "#f-save");
+  await until(async () => /PH-20/.test(await p.textContent("#kb-toast")), "saved");
+  const html = (await stored(p, "PH-20")).description;
+  assert.doesNotMatch(html, /data:image/, "no inline picture is stored");
+  assert.equal((html.match(/<img src="https:\/\/firebasestorage\.googleapis\.com\//g) || []).length, 3, "three Storage URLs");
+  const up = await p.evaluate(() => Object.keys(globalThis.__fbStub.uploads || {}));
+  assert.equal(up.filter((k) => /^kanban\/PH-20\/\d+-screenshot\.(png|jpeg|gif)$/.test(k)).length, 3, `three uploads under the ticket: ${up}`);
+  await p.done();
+});
+
+T("KB-C10", "the board downloads cards: 60 tickets of 150 KB each cost it a few KB, and no ticket is listened to", async (prof) => {
+  const seed = kanbanSeed();
+  const big = "<p>" + "Lorem ipsum dolor sit amet. ".repeat(5400) + "</p>";
+  for (const [i, k] of Object.keys(seed.docs.kanbanTasks).slice(0, 60).entries()) seed.docs.kanbanTasks[k] = { ...seed.docs.kanbanTasks[k], description: big, descriptionText: "Lorem ipsum" + i };
+  const p = await open(prof, "#staff-kanban", { seed });
+  const tasksTotal = Object.keys(seed.docs.kanbanTasks).length;
+  assert.ok(tasksTotal >= 39);
+  const cards = await readBytes(p, "kanbanCards");
+  assert.ok(cards > 0 && cards < 60 * 1024, `the board's payload is ${cards} bytes of cards`);
+  assert.equal(await readBytes(p, "kanbanTasks"), 0, "no ticket was downloaded to draw the board");
+  assert.equal(await watching(p, "kanbanTasks"), 0, "nothing listens to kanbanTasks");
+  assert.ok((await watching(p, "kanbanCards")) >= 2, "the open and closed listeners are on the cards");
+  await p.done();
+});
+
+T("KB-C11", "editing a description sends the board one small card update, not the description", async (prof) => {
+  const seed = kanbanSeed();
+  seed.docs.kanbanTasks["PH-20"] = { ...seed.docs.kanbanTasks["PH-20"], description: "<p>" + "Lorem ipsum dolor sit amet. ".repeat(5400) + "</p>" };
+  const p = await open(prof, "#staff-kanban", { seed });
+  const before = await readBytes(p, "kanbanCards");
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await until(() => p.$('[data-field="description"] .ql-editor'), "the ticket's modal");
+  await p.click('[data-field="description"] .ql-editor'); await p.keyboard.press("Control+Home"); await p.keyboard.type("Edited. "); // (search words come from the first 20,000 characters)
+  await press(p, "#f-save");
+  await until(async () => /PH-20/.test(await p.textContent("#kb-toast")), "saved");
+  const sent = (await readBytes(p, "kanbanCards")) - before;
+  assert.ok(sent < 2048, `the board received ${sent} bytes for a description edit`);
+  assert.equal(await readBytes(p, "kanbanTasks"), 0, "the board's listeners never carried the description");
+  assert.match((await stored(p, "PH-20")).description, /Edited\./);
+  assert.ok((await stored(p, "PH-20")).searchTokens.includes("edited"), "search words follow the description");
+  await p.done();
+});
+
+T("KB-C12", "cards behind the tickets: the board reads the tickets, asks the server to fill the cards, then moves to them", async (prof) => {
+  const seed = kanbanSeed();
+  seed.docs.kanbanCards = {};
+  const fillOnBackfill = { fn: () => {
+    const orig = window.fetch;
+    window.fetch = async (u, o) => {
+      if (!String(u).includes("/mcp/kanban/backfill")) return orig(u, o);
+      const core = await import("/js/kanban/kanban-core.js");
+      const b = globalThis.__fbStub;
+      for (const [k, t] of b.col("kanbanTasks")) b.col("kanbanCards").set(k, { ...core.cardOf(t), ...(t.closedAt ? { closedAt: t.closedAt } : {}), updatedBy: "server" });
+      window.__backfills = (window.__backfills || 0) + 1;
+      return new Response(JSON.stringify({ done: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+  } };
+  const p = await open(prof, "#staff-kanban", { seed, init: fillOnBackfill });
+  // every open ticket is on the board, as before the cards existed
+  const open1 = Object.values(seed.docs.kanbanTasks).filter((t) => t.open).length;
+  await until(async () => (await p.$$eval(".kb-card", (e) => e.length)) >= Math.min(open1, 1), "the board");
+  await until(() => p.evaluate(() => window.__backfills === 1), "the server fill, asked for once", 8000);
+  await until(async () => (await watching(p, "kanbanTasks")) === 0 && (await watching(p, "kanbanCards")) >= 2, "the board on the cards", 8000);
+  const shown = await p.$$eval(".kb-card", (e) => e.map((x) => x.dataset.key));
+  assert.ok(shown.length >= open1, `no ticket disappeared: ${shown.length} of ${open1}`);
   await p.done();
 });
 

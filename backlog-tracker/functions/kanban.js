@@ -11,18 +11,45 @@
 //                         fills the ticket with its local stand-in.
 //   /mcp/kanban/directory-sync   fills memberDirectory from consoleUsers
 //                         when it is behind (the first time the board opens).
-//   kanbanTools()         the KB-MCP-1 tools, attributed to the member.
+//   /mcp/kanban/backfill  fills kanbanCards (the light copy of each ticket the
+//                         board reads) from kanbanTasks, and moves inline
+//                         screenshots in descriptions to Storage. Idempotent;
+//                         the board calls it when it finds the cards behind.
+//   kanbanTools()         the KB-MCP-1 tools, attributed to the member. Every
+//                         write puts a ticket's card in the same batch or
+//                         transaction as the ticket.
 //
 // The board's rules (statuses, the testing hand-off, search tokens, the
 // release report) come from kanban-core.js, a generated CommonJS copy of
 // public/js/kanban/kanban-core.js, so the page and the tools agree.
 "use strict";
 const { FieldValue } = require("firebase-admin/firestore");
+const crypto = require("crypto");
 const logger = require("firebase-functions/logger");
 const core = require("./kanban-core");
 
 const db = () => require("firebase-admin/firestore").getFirestore();
 const TASKS = "kanbanTasks";
+const CARDS = "kanbanCards";
+const BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
+
+// ── Cards ─────────────────────────────────────────────────────────────────
+// kanbanCards/{PH-n} is what the board reads (core.cardOf + closedAt and who
+// last wrote it). A card is built from the whole ticket, so the two cannot
+// be derived apart.
+function cardData(t, email, closedAt) {
+  const c = core.cardOf(t);
+  if (!c.open) c.closedAt = closedAt !== undefined ? closedAt : t.closedAt || FieldValue.serverTimestamp();
+  return Object.assign(c, { updatedAt: FieldValue.serverTimestamp(), updatedBy: email });
+}
+// Which collection a read of "the board" uses: the cards, once they have
+// caught up with the tickets, else the tickets (no ticket ever disappears).
+async function boardCollection() {
+  try {
+    const [c, t] = await Promise.all([db().collection(CARDS).count().get(), db().collection(TASKS).count().get()]);
+    return c.data().count >= t.data().count ? CARDS : TASKS;
+  } catch (err) { return TASKS; }
+}
 
 // ── Member directory ──────────────────────────────────────────────────────
 // The console's bootstrap admins (mcp-server.js STATIC_ADMINS, firestore.rules)
@@ -202,6 +229,81 @@ async function handleDirectorySync(req, res, h) {
   res.status(200).json(out);
 }
 
+// ── Backfill: kanbanCards from kanbanTasks, screenshots to Storage ─────────
+// Idempotent and sliced, so the board can call it whenever it finds the cards
+// behind and nobody needs a terminal: each call handles BACKFILL_SLICE tickets
+// after `after`, writing a card where it is missing or differs and moving
+// inline (data:) screenshots in a description to Storage. The last slice also
+// removes cards whose ticket is gone. Answers { done, after, ... }.
+const BACKFILL_SLICE = 100;
+const sameCard = (card, want, closedAt) => {
+  if (!card) return false;
+  for (const k of core.CARD_FIELDS) if (JSON.stringify(card[k]) !== JSON.stringify(want[k])) return false;
+  const ms = (v) => (v && v.toMillis ? v.toMillis() : v instanceof Date ? v.getTime() : v);
+  if (want.open) return card.closedAt === undefined || card.closedAt === null;
+  return card.closedAt != null && (closedAt == null || ms(card.closedAt) === ms(closedAt));
+};
+async function uploadInlineImage(h, key, uri) {
+  const parts = core.dataUriParts(uri);
+  if (!parts) return uri;
+  const ext = (parts.contentType.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "").slice(0, 5) || "png";
+  const path = `kanban/${key}/${Date.now()}-${crypto.randomBytes(3).toString("hex")}-screenshot.${ext}`;
+  const token = crypto.randomUUID();
+  const bucket = h && h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET);
+  await bucket.file(path).save(Buffer.from(parts.base64, "base64"), { contentType: parts.contentType, metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
+  return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+}
+async function backfillSlice({ after = "", size = BACKFILL_SLICE, h } = {}) {
+  const ids = (await db().collection(TASKS).select().get()).docs.map((d) => d.id).sort((a, b) => (core.keyNumber(a) || 0) - (core.keyNumber(b) || 0) || (a < b ? -1 : 1));
+  const from = after ? ids.findIndex((id) => (core.keyNumber(id) || 0) > (core.keyNumber(after) || 0)) : 0;
+  const slice = from < 0 ? [] : ids.slice(from, from + size);
+  const out = { cards: 0, images: 0, failed: 0, orphans: 0 };
+  const b = db().batch();
+  for (const key of slice) {
+    const ref = db().collection(TASKS).doc(key);
+    const snap = await ref.get();
+    if (!snap.exists) continue;
+    const t = Object.assign({ key }, snap.data());
+    if (core.hasInlineImages(t.description)) {
+      try {
+        const html = await core.externaliseInlineImages(t.description, (uri) => uploadInlineImage(h, key, uri));
+        b.update(ref, { description: html });
+        out.images += 1;
+        t.description = html;
+      } catch (err) {
+        out.failed += 1;
+        logger.warn("kanban backfill: screenshots not moved", { key, error: String(err && err.message ? err.message : err) });
+      }
+    }
+    const have = (await db().collection(CARDS).doc(key).get()).data();
+    if (!sameCard(have, core.cardOf(t), t.closedAt)) {
+      b.set(db().collection(CARDS).doc(key), cardData(t, t.updatedBy || "backfill", t.closedAt));
+      out.cards += 1;
+    }
+  }
+  const last = slice.length ? slice[slice.length - 1] : after;
+  const done = !slice.length || ids.indexOf(last) >= ids.length - 1;
+  if (done) {
+    const have = new Set(ids);
+    for (const d of (await db().collection(CARDS).select().get()).docs) if (!have.has(d.id)) { b.delete(d.ref); out.orphans += 1; }
+  }
+  await b.commit();
+  return Object.assign({ done, after: last, tickets: ids.length }, out);
+}
+async function handleBackfill(req, res, h) {
+  if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
+  if (h.rateLimited(req, "kanban-backfill", 120)) return h.tooMany(res);
+  const who = await h.requireConsoleUser(req);
+  if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
+  const after = req.body && typeof req.body.after === "string" ? req.body.after : "";
+  try {
+    res.status(200).json(await backfillSlice({ after, h }));
+  } catch (err) {
+    logger.error("kanban backfill failed", { error: String(err && err.stack ? err.stack : err) });
+    res.status(500).json({ error: "backfill_failed" });
+  }
+}
+
 // ── MCP tools (KB-MCP-1) ──────────────────────────────────────────────────
 // h: { textResult, toolError, audit }
 function kanbanTools(h) {
@@ -257,16 +359,22 @@ function kanbanTools(h) {
       due: t.due || null, labels: t.labels || [],
     };
   }
-  // Loads what a filter needs: open tickets, plus a release's closed ones.
+  const board = async () => db().collection(await boardCollection());
+  // Loads what a filter needs: open tickets, plus a release's closed ones. It
+  // reads the board's cards; a text search needs the descriptions, so it reads
+  // the tickets.
   async function loadTasks(f) {
-    const open = await tasks().where("open", "==", true).get();
+    const src = f.search ? tasks() : await board();
+    const open = await src.where("open", "==", true).get();
     const map = new Map(open.docs.map((d) => [d.id, Object.assign({ key: d.id }, d.data())]));
-    if (f.release) (await tasks().where("release", "==", f.release).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
+    if (f.release) (await src.where("release", "==", f.release).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
     if (f.status === "done" || (f.status || "").startsWith("done:")) {
-      (await tasks().orderBy("closedAt", "desc").limit(300).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
+      (await src.orderBy("closedAt", "desc").limit(300).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
     }
     return [...map.values()];
   }
+  // Writes a ticket's card with the ticket (same batch or transaction).
+  const putCard = (w, key, t, email, closedAt) => w.set(db().collection(CARDS).doc(key), cardData(Object.assign({}, t, { key }), email, closedAt));
   const stamp = (email) => ({ updatedAt: FieldValue.serverTimestamp(), updatedBy: email });
   const activity = (batch, key, email, texts) => {
     for (const text of texts) if (text) batch.set(tasks().doc(key).collection("activity").doc(), { who: email, text: String(text).slice(0, 500), at: FieldValue.serverTimestamp() });
@@ -373,7 +481,7 @@ function kanbanTools(h) {
       async run(args, session) {
         const f = { ...args };
         const who = f.assignee === "me" ? session.email : f.assignee;
-        const list = core.filterTasks(await loadTasks(f), { assignees: who ? [who] : [], release: f.release || "", type: f.type || "", priority: f.priority || "", sprint: f.sprint || "", label: f.label || "", flagged: !!f.flagged, status: f.status || "", q: f.search || "" });
+        const list = core.filterTasks(await loadTasks(Object.assign({}, f)), { assignees: who ? [who] : [], release: f.release || "", type: f.type || "", priority: f.priority || "", sprint: f.sprint || "", label: f.label || "", flagged: !!f.flagged, status: f.status || "", q: f.search || "" });
         list.sort((a, b) => core.STATUS_KEYS.indexOf(a.status) - core.STATUS_KEYS.indexOf(b.status) || (a.rank || 0) - (b.rank || 0));
         const first = await firstNamer();
         const n = Math.min(args.limit || 100, 200);
@@ -391,7 +499,7 @@ function kanbanTools(h) {
         if (!t) return toolError(`No ticket ${args.key}.`);
         const [cs, act, first] = await Promise.all([tasks().doc(key).collection("comments").get(), tasks().doc(key).collection("activity").get(), firstNamer()]);
         const iso = (v) => (v && v.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : v || null);
-        const kids = t.type === "epic" ? (await tasks().where("epic", "==", key).get()).docs.map((d) => ({ key: d.id, title: d.data().title, status: core.statusLabel(d.data().status, d.data().resolution) })) : undefined;
+        const kids = t.type === "epic" ? (await (await board()).where("epic", "==", key).get()).docs.map((d) => ({ key: d.id, title: d.data().title, status: core.statusLabel(d.data().status, d.data().resolution) })) : undefined;
         return textResult(Object.assign(summary(t, first), {
           description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
           links: await linksFor(t), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null })),
@@ -451,7 +559,7 @@ function kanbanTools(h) {
         if (errors.length) return toolError(errors.join("; "));
         const s = await settings();
         const counterRef = db().collection("kanbanCounters").doc("main");
-        const backlog = await tasks().where("status", "==", "backlog").get();
+        const backlog = await (await board()).where("status", "==", "backlog").get();
         const rank = backlog.docs.reduce((m, d) => Math.max(m, d.data().rank || 0), 0) + 10;
         const key = await db().runTransaction(async (tx) => {
           const c = await tx.get(counterRef);
@@ -469,6 +577,7 @@ function kanbanTools(h) {
           Object.assign(t, derived(t), { createdAt: FieldValue.serverTimestamp(), createdBy: session.email }, stamp(session.email));
           tx.set(counterRef, { nextNumber: n + 1, updatedAt: FieldValue.serverTimestamp() });
           tx.set(tasks().doc(key), t);
+          putCard(tx, key, t, session.email);
           return key;
         });
         const b = db().batch();
@@ -505,11 +614,12 @@ function kanbanTools(h) {
         if (["title", "description", "labels"].some((k) => k in v)) Object.assign(patch, derived(next));
         const b = db().batch();
         b.update(tasks().doc(key), patch);
+        putCard(b, key, Object.assign({}, next, patch), session.email);
         activity(b, key, session.email, lines);
         // An epic that stops being one lets go of its children (KB-TASK-7).
         if (cur.type === "epic" && type !== "epic") {
           const kids = await tasks().where("epic", "==", key).get();
-          kids.docs.forEach((d) => { b.update(d.ref, Object.assign({ epic: "" }, stamp(session.email))); activity(b, d.id, session.email, [`removed from epic ${key} (no longer an epic)`]); });
+          kids.docs.forEach((d) => { b.update(d.ref, Object.assign({ epic: "" }, stamp(session.email))); putCard(b, d.id, Object.assign({}, d.data(), { epic: "" }), session.email); activity(b, d.id, session.email, [`removed from epic ${key} (no longer an epic)`]); });
         }
         await b.commit();
         await audit(session, "kanban_update_task", { key, fields: Object.keys(v) });
@@ -532,11 +642,14 @@ function kanbanTools(h) {
         const [s, first] = await Promise.all([settings(), firstNamer()]);
         const ch = core.statusChange(cur, args.status, { resolution: args.resolution, tester: s.tester, firstName: first });
         if (!ch) return textResult({ moved: false, key, status: cur.status, note: "Already there." });
-        const col = await tasks().where("status", "==", args.status).get();
+        const col = await (await board()).where("status", "==", args.status).get();
         const rank = col.docs.reduce((m, d) => Math.max(m, d.data().rank || 0), 0) + 10;
         const patch = Object.assign({}, ch.patch, { rank }, stamp(session.email), args.status === "done" ? { closedAt: FieldValue.serverTimestamp() } : { closedAt: FieldValue.delete() });
         const b = db().batch();
         b.update(tasks().doc(key), patch);
+        const moved = Object.assign({}, cur, patch);
+        if (args.status !== "done") delete moved.closedAt;
+        putCard(b, key, moved, session.email, args.status === "done" ? patch.closedAt : undefined);
         activity(b, key, session.email, [ch.activity]);
         await b.commit();
         await audit(session, "kanban_move_task", { key, status: args.status, resolution: ch.resolution });
@@ -560,6 +673,7 @@ function kanbanTools(h) {
         const same = first(cur.assignee) === first(v.assignee) && core.canonicalEmail(cur.assignee) === v.assignee;
         const b = db().batch();
         b.update(tasks().doc(key), Object.assign({ assignee: v.assignee, previousAssignee: "" }, stamp(session.email)));
+        putCard(b, key, Object.assign({}, cur, { assignee: v.assignee, previousAssignee: "" }), session.email);
         if (!same) activity(b, key, session.email, [`reassigned ${first(cur.assignee)} → ${first(v.assignee)}`]);
         await b.commit();
         await audit(session, "kanban_assign_task", { key, assignee: v.assignee });
@@ -577,6 +691,7 @@ function kanbanTools(h) {
         if (!cur) return toolError(`No ticket ${args.key}.`);
         const b = db().batch();
         b.update(tasks().doc(key), Object.assign({ flagged: !!args.flagged }, stamp(session.email)));
+        putCard(b, key, Object.assign({}, cur, { flagged: !!args.flagged }), session.email);
         activity(b, key, session.email, [args.flagged ? "flagged this ticket" : "removed the flag"]);
         await b.commit();
         await audit(session, "kanban_flag_task", { key, flagged: !!args.flagged });
@@ -604,6 +719,7 @@ function kanbanTools(h) {
         const b = db().batch();
         b.set(tasks().doc(key).collection("comments").doc(), { author: session.email, html: asHtml(text), text, mentions: mention, at: FieldValue.serverTimestamp() });
         b.update(tasks().doc(key), Object.assign({ commentCount: FieldValue.increment(1) }, stamp(session.email)));
+        putCard(b, key, Object.assign({}, cur, { commentCount: (cur.commentCount || 0) + 1 }), session.email);
         for (const to of mention) b.set(db().collection("kanbanNotifications").doc(), { to, from: session.email, taskKey: key, taskTitle: String(cur.title || "").slice(0, 200), kind: "comment", read: false, at: FieldValue.serverTimestamp() });
         await b.commit();
         await audit(session, "kanban_comment", { key, chars: text.length, mentions: mention.length });
@@ -625,4 +741,4 @@ function kanbanTools(h) {
   }));
 }
 
-module.exports = { syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, kanbanTools, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };
+module.exports = { syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, boardCollection, kanbanTools, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };
