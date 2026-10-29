@@ -150,4 +150,20 @@ t("acceptance criteria: cleaned, stored as id/done/text lines, counted, diffed a
   assert.deepEqual(k.diffCriteria(value, [value[1], value[0]]), ["reordered the acceptance criteria"]);
   assert.deepEqual(k.diffCriteria(value, value), []);
 });
+t("links: the reverse type for each, and what a save added or removed", () => {
+  assert.deepEqual(Object.fromEntries(k.LINK_TYPES.map((x) => [x, k.INVERSE_LINK[x]])), { blocks: "is blocked by", "is blocked by": "blocks", "relates to": "relates to", duplicates: "is duplicated by", "is duplicated by": "duplicates" });
+  assert.deepEqual(k.inverseOf("PH-1", { type: "blocks", key: "PH-2" }), { type: "is blocked by", key: "PH-1" });
+  const c = k.linkChanges([{ type: "blocks", key: "PH-2" }, { type: "relates to", key: "PH-3" }], [{ type: "relates to", key: "PH-3" }, { type: "duplicates", key: "PH-4" }]);
+  assert.deepEqual(c, { added: [{ type: "duplicates", key: "PH-4" }], removed: [{ type: "blocks", key: "PH-2" }] });
+  assert.equal(k.cleanTaskFields({ links: [{ type: "blocks", key: "ph-2" }, { type: "blocks", key: "PH-2" }] }, { partial: true }).value.links.length, 1);
+});
+t("an edit writes one activity line per changed field, with old and new values", () => {
+  const before = { title: "A", priority: "medium", assignee: "", estimate: 8, labels: ["x"], links: [], flagged: false, release: "r1" };
+  const after = { ...before, priority: "high", assignee: "d@x", estimate: 16, labels: ["y"], links: [{ type: "blocks", key: "PH-2" }], flagged: true, release: "" };
+  const lines = k.editActivity(before, after, { person: (e) => e.split("@")[0].toUpperCase(), release: (id) => `Rel ${id}` });
+  assert.deepEqual(lines, ["assigned to D", "changed Priority from Medium to High", "changed Estimate from 1d to 2d", "changed Release from Rel r1 to none",
+    "added label y", "removed label x", "linked: blocks PH-2", "flagged this ticket"]);
+  assert.deepEqual(k.editActivity(before, { ...before }), []);
+  assert.deepEqual(k.editActivity({ ...before, assignee: "d@x" }, before, { person: () => "Duong" }), ["unassigned (was Duong)"]);
+});
 console.log(`\n${n} passed`);

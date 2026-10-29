@@ -45,6 +45,7 @@ const describe = (v) => {
     if (v.$sentinel === "serverTimestamp") return "$serverTimestamp";
     if (v.$sentinel === "deleteField") return "$deleteField";
     if (v.$sentinel === "arrayUnion") return { $arrayUnion: v.values.map(describe) };
+    if (v.$sentinel === "arrayRemove") return { $arrayRemove: v.values.map(describe) };
     if (v.$sentinel === "increment") return { $increment: v.n };
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, describe(x)]));
   }
@@ -76,6 +77,7 @@ class Backend {
       for (const el of value.values) if (!cur.some((c) => same(c, el))) cur.push(clone(el));
       return cur;
     }
+    if (isObj(value) && value.$sentinel === "arrayRemove") return (Array.isArray(existing) ? existing : []).filter((c) => !value.values.some((el) => same(c, el)));
     if (isObj(value) && value.$sentinel === "deleteField") return undefined;
     if (isObj(value) && value.$sentinel === "increment") return (typeof existing === "number" ? existing : 0) + value.n;
     if (isObj(value)) return this.resolveMap(value, isObj(existing) ? existing : {});
@@ -252,6 +254,7 @@ export async function runTransaction(_db, fn) {
 export const increment = (n) => ({ $sentinel: "increment", n });
 export const serverTimestamp = () => SERVER_TS;
 export const arrayUnion = (...values) => ({ $sentinel: "arrayUnion", values });
+export const arrayRemove = (...values) => ({ $sentinel: "arrayRemove", values });
 export const deleteField = () => DELETE;
 export const initializeFirestore = () => ({ type: "firestore" });
 export const persistentLocalCache = () => ({});

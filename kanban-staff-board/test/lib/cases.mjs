@@ -307,11 +307,22 @@ export function defineNewCases(E) {
     if (offered.includes("PH-20")) { await p.keyboard.press("Enter"); await sleep(150); }
     assert.ok(!/relates to\s*PH-20/.test(await p.textContent("#f-links")), "a ticket cannot be linked to itself");
     await saveTask(p);
-    // shown on the other ticket too
+    // shown on the other tickets too, with the reverse type (KB-TASK-5)
+    for (const [other, shown] of [["PH-21", "is blocked by"], ["PH-22", "blocks"], ["PH-23", "relates to"], ["PH-24", "is duplicated by"]]) {
+      await openTask(p, other); await moreFields(p);
+      assert.match(await p.textContent("#f-links"), new RegExp(`${shown}\\s*PH-20`), `${other} shows the link from PH-20`);
+      await closeTask(p);
+    }
+    // removing it from the other side removes it from both
     await openTask(p, "PH-21"); await moreFields(p);
-    const onOther = await p.textContent("#f-links");
-    if (/PH-20/.test(onOther)) assert.match(onOther, /is blocked by\s*PH-20/);
-    else confirm("TC-39", "is a link shown on BOTH tickets (the reverse type on the other side)?", `PH-21's links read: ${onOther.trim()}`);
+    const at = await p.$$eval("#f-links li", (e) => e.findIndex((x) => /PH-20/.test(x.textContent)));
+    assert.ok(at >= 0, "PH-21 lists PH-20");
+    await press(p, `[data-rm-link="${at}"]`); await sleep(100);
+    await saveTask(p);
+    await openTask(p, "PH-20"); await moreFields(p);
+    const left = await p.textContent("#f-links");
+    assert.ok(!/blocks\s*PH-21/.test(left), `PH-20 no longer blocks PH-21: ${left.trim()}`);
+    assert.match(left, /is blocked by\s*PH-22/);
     await closeTask(p);
     // remove (within one open of the ticket)
     await p.reload(); await p.waitForSelector(".kb-card");
@@ -441,8 +452,13 @@ export function defineNewCases(E) {
     assert.ok(log.length >= 1, "the activity log has an entry");
     const status = log.find((l) => /→/.test(l));
     assert.ok(status, `a status line: ${log.join(" | ")}`);
-    const fieldLines = log.filter((l) => !/→/.test(l));
-    if (!fieldLines.length) confirm("TC-43", "should the activity log also record non-status edits (assignee, priority, estimate…)?", `only: ${log.join(" | ")}`);
+    const text = log.join(" | ");
+    assert.match(text, /changed Priority from \w+ to Lowest/, text);
+    assert.match(text, /assigned to Th\S+/, text);
+    assert.match(text, /changed Estimate from .+ to 2d/, text);
+    assert.match(text, /changed Time logged from .+ to 4h/, text);
+    assert.match(text, /changed Due date from .+ to 2026-12-01/, text);
+    assert.match(text, /changed Title from .+ to Edited title/, text);
     await p.done();
   });
 

@@ -564,18 +564,46 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const done = await tool(sam, "kanban_list_tasks", { status: "done" });
     assert.ok(done.json.tasks.some((t) => t.key === made.json.key));
   });
-  await test("TC-39 links show on both tickets with the reverse type", async () => {
+  await test("TC-39 links are stored on both tickets with the reverse type; removing from either side removes both", async () => {
     const a = (await tool(sam, "kanban_create_task", { title: "Link A" })).json.key;
     const b = (await tool(sam, "kanban_create_task", { title: "Link B" })).json.key;
     const c = (await tool(sam, "kanban_create_task", { title: "Link C", links: [{ type: "duplicates", key: a }, { type: "relates to", key: b }] })).json.key;
-    await tool(sam, "kanban_update_task", { key: a, links: [{ type: "blocks", key: b }] });
+    const has = (k, type, other) => (task(k).links || []).some((l) => l.type === type && l.key === other);
+    assert.ok(has(a, "is duplicated by", c) && has(b, "relates to", c), "created with links: stored on the other tickets too");
+    await tool(sam, "kanban_update_task", { key: a, links: [{ type: "duplicates", key: c }, { type: "blocks", key: b }] });
+    assert.ok(has(b, "is blocked by", a) && has(c, "is duplicated by", a), JSON.stringify([task(b).links, task(c).links]));
+    assert.ok(!has(c, "duplicates", a), "replacing A's links drops the old one from C as well");
+    const reads = () => env.store.reads.get("kanbanTasks") || 0;
+    const before = reads();
     const gb = await tool(sam, "kanban_get_task", { key: b });
+    assert.strictEqual(reads() - before, 1, "kanban_get_task reads one ticket, not the collection");
     assert.ok(gb.json.links.some((l) => l.type === "is blocked by" && l.key === a), JSON.stringify(gb.json.links));
     assert.ok(gb.json.links.some((l) => l.type === "relates to" && l.key === c));
-    const ga = await tool(sam, "kanban_get_task", { key: a });
-    assert.ok(ga.json.links.some((l) => l.type === "blocks" && l.key === b));
-    assert.ok(ga.json.links.some((l) => l.type === "is duplicated by" && l.key === c));
-    assert.strictEqual(task(b).links === undefined || task(b).links.length === 0, true, "stored on one ticket only");
+    // removing from the other side removes both
+    await tool(sam, "kanban_update_task", { key: b, links: [{ type: "relates to", key: c }] });
+    assert.ok(!has(a, "blocks", b) && !has(b, "is blocked by", a));
+    assert.ok(has(a, "duplicates", c) && has(c, "is duplicated by", a), "other links stay");
+    assert.ok(activity(a).includes(`unlinked: blocks ${b}`), activity(a).join(" | "));
+    assert.deepStrictEqual(cardDrift(), []);
+  });
+  await test("links to nowhere or to the ticket itself are refused", async () => {
+    const a = (await tool(sam, "kanban_create_task", { title: "Self link" })).json.key;
+    const self = await tool(sam, "kanban_update_task", { key: a, links: [{ type: "relates to", key: a }] });
+    assert.ok(self.isError && /itself/.test(self.text), self.text);
+    const nowhere = await tool(sam, "kanban_create_task", { title: "Nowhere", links: [{ type: "blocks", key: "PH-99999" }] });
+    assert.ok(nowhere.isError && /no such ticket/.test(nowhere.text), nowhere.text);
+  });
+  await test("the links backfill makes one-sided links two-sided, idempotently, and stamps the settings", async () => {
+    const a = (await tool(sam, "kanban_create_task", { title: "Old A" })).json.key;
+    const b = (await tool(sam, "kanban_create_task", { title: "Old B" })).json.key;
+    env.store.col("kanbanTasks").set(a, { ...task(a), links: [{ type: "blocks", key: b }, { type: "duplicates", key: "PH-99999" }] });
+    const run = () => kanban.backfillLinksSlice({});
+    const first = await run();
+    assert.strictEqual(first.done, true); assert.strictEqual(first.links, 1);
+    assert.deepStrictEqual(task(b).links, [{ type: "is blocked by", key: a }]);
+    const again = await run();
+    assert.strictEqual(again.links, 0); assert.deepStrictEqual(task(b).links, [{ type: "is blocked by", key: a }]);
+    assert.ok(env.store.col("kanbanSettings").get("main").linksTwoSidedAt, "stamped");
   });
   await test("kanban_get_task returns descriptionHtml beside the text", async () => {
     const k = (await tool(sam, "kanban_create_task", { title: "Rich", description: '<h2>Heading</h2><p>See <a href="https://example.com/x">the page</a></p>' })).json.key;

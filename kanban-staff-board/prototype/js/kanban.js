@@ -85,9 +85,23 @@
 
   // ── State ───────────────────────────────────────────────────────────────
   const clone = (o) => JSON.parse(JSON.stringify(o));
+  // A link shows on both tickets (KB-TASK-5): "A blocks B" is {blocks, B} on A
+  // and {is blocked by, A} on B. Removing it from either side removes both.
+  const LINK_TYPES = ["blocks", "is blocked by", "relates to", "duplicates", "is duplicated by"];
+  const INVERSE_LINK = { blocks: "is blocked by", "is blocked by": "blocks", "relates to": "relates to", duplicates: "is duplicated by", "is duplicated by": "duplicates" };
+  const hasLink = (t, type, key) => (t.links || []).some((l) => l.type === type && l.key === key);
+  // Makes every stored link two-sided (the seed and older saved boards hold one side).
+  function twoSided(tasks) {
+    const by = new Map(tasks.map((t) => [t.key, t]));
+    for (const t of tasks) for (const l of t.links || []) {
+      const o = by.get(l.key);
+      if (o && o !== t && INVERSE_LINK[l.type] && !hasLink(o, INVERSE_LINK[l.type], t.key)) (o.links = o.links || []).push({ type: INVERSE_LINK[l.type], key: t.key });
+    }
+    return tasks;
+  }
   let state = load() || fresh();
   function fresh() {
-    return { tasks: clone(SEED.tasks), settings: defaultSettings(), me: "rob", nextKey: SEED.nextKey };
+    return { tasks: twoSided(clone(SEED.tasks)), settings: defaultSettings(), me: "rob", nextKey: SEED.nextKey };
   }
   function load() {
     try {
@@ -97,6 +111,7 @@
       if (!s || !Array.isArray(s.tasks)) return null;
       s.settings = Object.assign(defaultSettings(), s.settings || {});
       s.settings.fields = Object.assign(defaultSettings().fields, s.settings.fields || {});
+      twoSided(s.tasks);
       return s;
     } catch { return null; }
   }
@@ -225,6 +240,50 @@
   }
 
   // ── Status changes (the one place the testing hand-off happens) ─────────
+  // One activity line per changed field, with the old and new value (KB-BOARD-5).
+  // The same lines as the console's editActivity in kanban-core.js.
+  function editActivity(before, after) {
+    const out = [];
+    const none = (v) => (v === "" || v == null ? "none" : v);
+    const change = (label, a, b) => out.push(`changed ${label} from ${none(a)} to ${none(b)}`);
+    const differs = (k) => JSON.stringify(before[k] == null ? "" : before[k]) !== JSON.stringify(after[k] == null ? "" : after[k]);
+    const hours = (v) => (v === "" || v == null ? "" : fmtH(v));
+    if (differs("title")) change("Title", before.title, after.title);
+    if (differs("type")) change("Type", typeOf(before.type).label, typeOf(after.type).label);
+    if (differs("description")) out.push("edited the description");
+    if (differs("assignee")) out.push(after.assignee ? `assigned to ${firstName(after.assignee)}` : `unassigned (was ${firstName(before.assignee)})`);
+    if (differs("reporter")) change("Reporter", before.reporter ? firstName(before.reporter) : "", after.reporter ? firstName(after.reporter) : "");
+    if (differs("priority")) change("Priority", prioOf(before.priority).label, prioOf(after.priority).label);
+    if (differs("estimate")) change("Estimate", hours(before.estimate), hours(after.estimate));
+    if (differs("logged")) change("Time logged", hours(before.logged || ""), hours(after.logged || ""));
+    if (differs("release")) change("Release", before.release ? releaseName(before.release) : "", after.release ? releaseName(after.release) : "");
+    if (differs("sprint")) change("Sprint", before.sprint, after.sprint);
+    if (differs("due")) change("Due date", before.due, after.due);
+    if (differs("epic")) change("Epic", before.epic, after.epic);
+    if (differs("labels")) {
+      const a = new Set(before.labels || []), b = new Set(after.labels || []);
+      for (const l of b) if (!a.has(l)) out.push(`added label ${l}`);
+      for (const l of a) if (!b.has(l)) out.push(`removed label ${l}`);
+    }
+    if (differs("links")) {
+      for (const l of after.links || []) if (!hasLink(before, l.type, l.key)) out.push(`linked: ${l.type} ${l.key}`);
+      for (const l of before.links || []) if (!hasLink(after, l.type, l.key)) out.push(`unlinked: ${l.type} ${l.key}`);
+    }
+    if (!!before.flagged !== !!after.flagged) out.push(after.flagged ? "flagged this ticket" : "removed the flag");
+    return out;
+  }
+  // Writes the other side of the links a save added or removed.
+  function syncLinks(key, before, after) {
+    const log = (o, text) => (o.activity = o.activity || []).push({ at: new Date().toISOString(), who: state.me, text });
+    for (const l of after) if (!hasLink({ links: before }, l.type, l.key)) {
+      const o = taskByKey(l.key), inv = INVERSE_LINK[l.type];
+      if (o && o.key !== key && inv && !hasLink(o, inv, key)) { (o.links = o.links || []).push({ type: inv, key }); log(o, `linked: ${inv} ${key}`); }
+    }
+    for (const l of before) if (!hasLink({ links: after }, l.type, l.key)) {
+      const o = taskByKey(l.key), inv = INVERSE_LINK[l.type];
+      if (o && inv && hasLink(o, inv, key)) { o.links = o.links.filter((x) => !(x.type === inv && x.key === key)); log(o, `unlinked: ${inv} ${key}`); }
+    }
+  }
   function setStatus(task, status, opts = {}) {
     const from = task.status, fromRes = res(task);
     const toRes = status === "done" ? opts.resolution || fromRes || "completed" : null;
@@ -951,7 +1010,7 @@
       }
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
-        <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${["blocks", "is blocked by", "relates to", "duplicates"].map((x) => opt(x, x, "relates to")).join("")}</select>
+        <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${LINK_TYPES.map((x) => opt(x, x, "relates to")).join("")}</select>
           ${pickerHTML("f-link-key", "Search tickets by number, title or description")}</div></div>`;
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
@@ -1066,6 +1125,7 @@
     const del = $("#f-delete");
     if (del) del.addEventListener("click", () => {
       if (!confirm(`Delete ${draft.key}? This can't be undone.`)) return;
+      syncLinks(draft.key, (taskByKey(draft.key) || {}).links || [], []);
       state.tasks = state.tasks.filter((t) => t.key !== draft.key);
       state.tasks.forEach((t) => { if (t.epic === draft.key) t.epic = ""; });
       save(); toast(`<b>${esc(draft.key)}</b> deleted`); closeTask(); render();
@@ -1636,7 +1696,12 @@
     if (existing) {
       const prevStatus = existing.status, prevRes = res(existing);
       next.status = prevStatus;
+      const was = clone(existing);
       Object.assign(existing, next);
+      const lines = editActivity(was, existing);
+      existing.activity = existing.activity || [];
+      lines.forEach((text) => existing.activity.push({ at: new Date().toISOString(), who: state.me, text }));
+      syncLinks(existing.key, was.links || [], existing.links || []);
       if (newStatus !== prevStatus || (newStatus === "done" && newRes !== prevRes)) {
         const inCol = state.tasks.filter((t) => t.status === newStatus);
         existing.rank = inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10;
@@ -1649,6 +1714,7 @@
       const inCol = state.tasks.filter((t) => t.status === newStatus);
       next.rank = inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10;
       state.tasks.push(next);
+      syncLinks(next.key, [], next.links || []);
       state.nextKey++;
       if (newStatus !== "backlog") setStatus(next, newStatus, { silent: true, resolution: newRes });
       next.activity = [];

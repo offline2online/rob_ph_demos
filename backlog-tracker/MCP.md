@@ -154,7 +154,7 @@ server instructions. `test/kanban-mcp.test.js` checks both.
 | --- | --- |
 | `kanban_list_people` (members by first name, releases, sprints, projects, current release, tester) | `kanban_create_task` (always into Backlog, next PH-n key) |
 | `kanban_list_tasks` (the board's filters: assignee or `me`, release, status, type, priority, sprint, project, label, flagged, search) | `kanban_update_task` (any field but the column) |
-| `kanban_get_task` (everything, with comments, activity, `descriptionHtml`, links in both directions and an epic's children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off) |
+| `kanban_get_task` (everything, with comments, activity, `descriptionHtml`, links (stored on both tickets) and an epic's children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off) |
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
 | `kanban_release_report` (outstanding, remaining effort, per-person capacity) | `kanban_comment` (`mention` notifies people on the board's bell) |
 | `kanban_list_notifications` (your notifications, unread first; only the unread ones, `limit`: "what's new for me on the board?") | `kanban_check_criteria` (tick or untick acceptance criteria by id; see below) |

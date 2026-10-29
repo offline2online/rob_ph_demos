@@ -102,6 +102,10 @@ not close the card).
 reassigns it to the tester and remembers the developer; moving it back to In
 Progress or Ready for Dev returns it to that developer. AC: card shows "From
 <developer>"; a toast states the reassignment; the activity log records it.
+Every edit of a ticket's fields on the board also writes one activity line per
+changed field, with the old and new value ("changed Priority from Medium to
+High", "assigned to Duong", "changed Estimate from 1d to 2d", added/removed
+labels, linked/unlinked tickets); status moves keep their own line.
 
 **KB-BOARD-6 Cards.** Show type icon, key (`PH-n`), priority, flag, title,
 parent epic (under the title), time-logged progress, remaining estimate or due
@@ -161,7 +165,12 @@ filters, and appear under "All releases" in the report.
 flagged cards are amber with a filled flag.
 
 **KB-TASK-5 Linked tickets.** Typed links (blocks, is blocked by, relates to,
-duplicates) to any other ticket.
+duplicates, is duplicated by) to any other ticket. A link shows on both
+tickets, with the reverse type (blocks ↔ is blocked by, duplicates ↔ is
+duplicated by, relates to ↔ relates to), and removing it from either ticket
+removes both. AC: linking A "blocks" B makes B read "is blocked by A"; removing
+it from B clears it from A; a ticket can't be linked to itself. Stored on both
+tickets, written in one batch (§12).
 
 **KB-TASK-12 Acceptance criteria.** A ticket has a checklist of up to 50
 acceptance criteria, each `{id, text, done}` with the text 1 to 500 characters,
@@ -337,8 +346,9 @@ saved as the id), an epic that isn't an epic, a bad due date or estimate.
 `kanban_list_tasks` with no release or status covers open tickets; a release
 adds its closed ones, and status `done` the 300 most recently closed.
 `kanban_get_task` returns the description as text and as `descriptionHtml`, and
-links in both directions (blocks / is blocked by, relates to, duplicates / is
-duplicated by; KB-TASK-5, TC-39). A reassignment that leaves the same person
+the ticket's stored links (both directions are stored, so it reads one ticket
+and no other for them; KB-TASK-5, TC-39). A link to a ticket that doesn't exist,
+or to the ticket itself, is refused. A reassignment that leaves the same person
 is not logged.
 
 ## 12. Data model (production)
@@ -349,11 +359,11 @@ stored by lowercased email; release ids are the console's `releases` ids.
 | Collection | Shape |
 |---|---|
 | `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
-| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
+| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}` (on both tickets: "A blocks B" is `{blocks,B}` on A and `{is blocked by,A}` on B, written in one batch by the page and the MCP tools), `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
 | `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at` |
-| `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, reassignments, flags); append-only |
+| `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, field changes with old and new value, links, flags); append-only |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |
-| `kanbanSettings/main` | `fields {key: {show, required}}`, `tester`, `currentRelease`, `releaseDates {releaseId: date}`, `labels[]`, `firstNames {email: name}`, `updatedAt/By` |
+| `kanbanSettings/main` | `fields {key: {show, required}}`, `tester`, `currentRelease`, `releaseDates {releaseId: date}`, `labels[]`, `firstNames {email: name}`, `linksTwoSidedAt` (server-stamped), `updatedAt/By` |
 | `kanbanSprints/{id}` | `name`, `start`, `end` |
 | `kanbanNotifications/{id}` | `to`, `from`, `taskKey`, `taskTitle`, `kind` (assigned/testing/returned/commented/mention/closed), `via` (description/comment, for a mention), `read`, `at`; written only by the trigger, named from the event id so a retry writes nothing twice; the person notified may mark read or delete theirs. Indexes: `to`+`at` desc, `read`+`at` |
 | `memberDirectory/{email}` | `email`, `displayName`, `photoUrl`, `photoUpdatedAt`, `disabled` (server-written) |
@@ -368,6 +378,13 @@ overwrite what the board doesn't hold; a title or label edit re-derives
 description words through the server's `searchTokens` query on `kanbanTasks`.
 The board draws a page of each column (Backlog 25, others 50, "Show 50 more"), so
 the cost of a render follows what is on screen, not how many tickets are open (§13).
+
+**Links backfill, also with nobody at a terminal:** links stored before they were
+written on both tickets are one-sided. `POST /mcp/kanban/backfill-links` (any
+member, rate-limited, sliced with `{done, after}`) adds the missing side with
+`arrayUnion`, so running it twice changes nothing, and on its last slice stamps
+`kanbanSettings/main.linksTwoSidedAt`. The board calls it once per session, only
+while that stamp is missing.
 
 **Backfill, with nobody at a terminal:** `POST /mcp/kanban/backfill` (any
 member, rate-limited, idempotent, sliced with `{done, after}`) writes a card for

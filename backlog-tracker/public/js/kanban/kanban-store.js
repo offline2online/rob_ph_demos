@@ -25,12 +25,12 @@
 // board reads kanbanTasks, so no ticket ever disappears.
 import {
   collection, doc, getDoc, getDocs, updateDoc, onSnapshot, query, where, orderBy, limit,
-  serverTimestamp, writeBatch, runTransaction, increment, deleteField, getCountFromServer,
+  serverTimestamp, writeBatch, runTransaction, increment, deleteField, getCountFromServer, arrayUnion, arrayRemove,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
 import {
   searchTokens, htmlToText, mentionsIn, keyOf, keyNumber, normaliseSettings, queryToken,
-  cardOf, cardPatchOf, externaliseInlineImages, dataUriParts, decodeCriteria, encodeCriteria, acCounts,
+  cardOf, cardPatchOf, externaliseInlineImages, dataUriParts, decodeCriteria, encodeCriteria, acCounts, linkChanges, inverseOf,
 } from "./kanban-core.js";
 
 export const CLOSED_LIMIT = 300;
@@ -302,17 +302,40 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     Object.assign(data, closed || {}, stamp());
     b.set(cardDoc(key), data, { merge: true });
   }
+  // The other side of every link added or removed (KB-TASK-5): the other ticket
+  // carries the reverse type, written in the same batch. A ticket that no longer
+  // exists is left alone. Returns the tickets touched, for the local copies.
+  async function linkOps(b, key, before, after) {
+    const { added, removed } = linkChanges(before, after);
+    const touched = [];
+    for (const [list, add] of [[added, true], [removed, false]]) {
+      for (const l of list) {
+        if (l.key === key) continue;
+        const ref = doc(db, "kanbanTasks", l.key);
+        if (!(await getDoc(ref)).exists()) continue;
+        const inv = inverseOf(key, l);
+        b.update(ref, { links: add ? arrayUnion(inv) : arrayRemove(inv), ...stamp() });
+        activityOps(b, l.key, [`${add ? "linked" : "unlinked"}: ${inv.type} ${key}`]);
+        touched.push({ key: l.key, inv, add });
+      }
+    }
+    return touched;
+  }
   // What a write needs of a ticket that the board may not hold.
   async function ensure(key) { return get(key) || full.get(key) || (await fetchTask(key)) || {}; }
 
   // New ticket: PH-n from the counter, in one transaction (KB-TASK-1).
   async function createTask(fields, activity) {
+    let linkedOnCreate = [];
     const counterRef = doc(db, "kanbanCounters", "main");
     const key = await runTransaction(db, async (tx) => {
       const c = await tx.get(counterRef);
       const n = c.exists() && typeof c.data().nextNumber === "number" ? c.data().nextNumber : 1;
       const key = keyOf(n);
       const t = { ...fields, key };
+      // Reads first: which linked tickets exist (transactions read before they write).
+      const linked = [];
+      for (const l of t.links || []) if (l.key !== key && (await tx.get(doc(db, "kanbanTasks", l.key))).exists()) linked.push(l);
       const data = {
         ...storedPatch(t), ...derivedFields(t),
         key, number: n, status: t.status || "backlog", ...statusExtras(t.status || "backlog"),
@@ -323,9 +346,15 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
       tx.set(counterRef, { nextNumber: n + 1, updatedAt: serverTimestamp() });
       tx.set(doc(db, "kanbanTasks", key), data);
       tx.set(cardDoc(key), { ...cardOf({ ...t, key, ...data }), ...(data.open ? {} : { closedAt: data.closedAt }), ...stamp() });
-      return key;
-    });
-    if (activity && activity.length) { const b = writeBatch(db); activityOps(b, key, activity); await b.commit(); }
+      for (const l of linked) tx.update(doc(db, "kanbanTasks", l.key), { links: arrayUnion(inverseOf(key, l)), ...stamp() });
+      return { key, linked };
+    }).then((r) => { linkedOnCreate = r.linked; return r.key; });
+    if ((activity && activity.length) || linkedOnCreate.length) {
+      const b = writeBatch(db);
+      activityOps(b, key, activity);
+      for (const l of linkedOnCreate) activityOps(b, l.key, [`linked: ${inverseOf(key, l).type} ${key}`]);
+      await b.commit();
+    }
     return key;
   }
 
@@ -338,6 +367,9 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     const derive = DERIVED_FROM.some((k) => k in patch);
     const whole = derive && !("description" in patch) ? (await fetchTask(key)) || cur : cur;
     const data = { ...storedPatch(patch), ...stamp() };
+    // The other side of a changed link rides in the same batch; the ticket's own
+    // links are read in full, as a card holds none.
+    const touchedLinks = "links" in patch ? await linkOps(b, key, ((await fetchTask(key)) || cur).links || [], patch.links || []) : [];
     if (derive) Object.assign(data, derivedFields({ ...whole, ...patch, key }));
     const closed = "status" in patch ? statusExtras(patch.status) : null;
     if (closed) Object.assign(data, closed);
@@ -362,10 +394,15 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     });
     put(key, cur.key ? withCount(cur, patch) : null);
     for (const o of others) { const t = get(o.key); put(o.key, t ? withCount(t, o.patch) : null); }
+    const otherFull = touchedLinks.filter((x) => full.has(x.key)).map((x) => [x.key, full.get(x.key)]);
+    for (const x of touchedLinks) {
+      const f = full.get(x.key);
+      if (f) full.set(x.key, { ...f, links: x.add ? [...(f.links || []).filter((l) => !(l.type === x.inv.type && l.key === x.inv.key)), x.inv] : (f.links || []).filter((l) => !(l.type === x.inv.type && l.key === x.inv.key)) });
+    }
     const fullBefore = full.get(key);
     if (fullBefore) full.set(key, { ...withCount(fullBefore, patch), ...(derive ? { descriptionText: data.descriptionText } : {}) });
     try { await b.commit(); }
-    catch (err) { for (const [k, v] of before) put(k, v); if (fullBefore) full.set(key, fullBefore); changed("tasks"); throw err; }
+    catch (err) { for (const [k, v] of before) put(k, v); for (const [k, v] of otherFull) full.set(k, v); if (fullBefore) full.set(key, fullBefore); changed("tasks"); throw err; }
   }
 
   // A change to a ticket's acceptance criteria (KB-TASK-12), made against the
@@ -402,6 +439,9 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   async function deleteTask(key) {
     const kids = await fetchChildren(key);
     const b = writeBatch(db);
+    // The tickets it was linked to forget it.
+    const own = (await fetchTask(key).catch(() => null)) || full.get(key) || {};
+    await linkOps(b, key, own.links || [], []);
     for (const k of kids) {
       b.update(doc(db, "kanbanTasks", k.key), { epic: "", ...stamp() });
       cardOps(b, k.key, k, { epic: "" });

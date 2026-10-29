@@ -14,6 +14,7 @@ function nowTs() {
 const SERVER_TIMESTAMP = { __sentinel: "serverTimestamp" };
 const DELETE_FIELD = { __sentinel: "delete" };
 function arrayUnion(...items) { return { __sentinel: "arrayUnion", items }; }
+function arrayRemove(...items) { return { __sentinel: "arrayRemove", items }; }
 function increment(n) { return { __sentinel: "increment", n }; }
 
 function resolve(value) {
@@ -36,7 +37,12 @@ function applyWrite(existing, data, merge) {
       base[k] = (typeof base[k] === "number" ? base[k] : 0) + v.n;
     } else if (v && v.__sentinel === "arrayUnion") {
       const cur = Array.isArray(base[k]) ? base[k].slice() : [];
-      base[k] = cur.concat(v.items.map(resolve));
+      // Firestore adds only the elements the array doesn't already hold.
+      for (const it of v.items.map(resolve)) if (!cur.some((c) => JSON.stringify(c) === JSON.stringify(it))) cur.push(it);
+      base[k] = cur;
+    } else if (v && v.__sentinel === "arrayRemove") {
+      const gone = v.items.map((i) => JSON.stringify(resolve(i)));
+      base[k] = (Array.isArray(base[k]) ? base[k] : []).filter((c) => !gone.includes(JSON.stringify(c)));
     } else if (merge && v && typeof v === "object" && !Array.isArray(v) && !v._ts && !(v instanceof Date) && !v.__sentinel
       && base[k] && typeof base[k] === "object" && !Array.isArray(base[k]) && !base[k]._ts) {
       // Firestore's set(..., {merge: true}) merges nested maps field by field.
@@ -49,12 +55,15 @@ function applyWrite(existing, data, merge) {
 }
 
 class Store {
-  constructor() { this.data = new Map(); this.seq = 0; }
+  constructor() { this.data = new Map(); this.seq = 0; this.reads = new Map(); }
+  // Documents read per collection (a get on a doc or a query), so a test can assert a tool reads only what it needs.
+  countRead(collection, n = 1) { this.reads.set(collection, (this.reads.get(collection) || 0) + n); }
   col(name) { if (!this.data.has(name)) this.data.set(name, new Map()); return this.data.get(name); }
   nextId() { return `id${++this.seq}`; }
 }
 
-function snapshotFor(store, collection, id) {
+function snapshotFor(store, collection, id, counted = true) {
+  if (counted) store.countRead(collection);
   const raw = store.col(collection).get(id);
   return {
     id, exists: raw !== undefined,
@@ -171,7 +180,7 @@ function install() {
     },
     "firebase-admin/firestore": {
       getFirestore: () => db,
-      FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion, increment, delete: () => DELETE_FIELD },
+      FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion, arrayRemove, increment, delete: () => DELETE_FIELD },
     },
     // Storage: an upload is kept in authState.uploads (path -> { size, contentType, token }).
     "firebase-admin/storage": {

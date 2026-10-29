@@ -892,7 +892,7 @@ T("KB-C12", "cards behind the tickets: the board reads the tickets, asks the ser
   const fillOnBackfill = { fn: () => {
     const orig = window.fetch;
     window.fetch = async (u, o) => {
-      if (!String(u).includes("/mcp/kanban/backfill")) return orig(u, o);
+      if (!/\/mcp\/kanban\/backfill$/.test(String(u))) return orig(u, o);
       const core = await import("/js/kanban/kanban-core.js");
       const b = globalThis.__fbStub;
       for (const [k, t] of b.col("kanbanTasks")) b.col("kanbanCards").set(k, { ...core.cardOf(t), ...(t.closedAt ? { closedAt: t.closedAt } : {}), updatedBy: "server" });
@@ -909,6 +909,29 @@ T("KB-C12", "cards behind the tickets: the board reads the tickets, asks the ser
   const shown = await p.$$eval(".kb-card", (e) => e.map((x) => x.dataset.key));
   assert.ok(shown.length >= open1, `no ticket disappeared: ${shown.length} of ${open1}`);
   await p.done();
+});
+
+T("KB-LINKS", "one-sided links: the board asks the server to make them two-sided once, and not once the settings are stamped", async (prof) => {
+  const counting = { fn: () => {
+    const orig = window.fetch;
+    window.fetch = async (u, o) => {
+      if (!/\/mcp\/kanban\/backfill-links$/.test(String(u))) return orig(u, o);
+      window.__linkFills = (window.__linkFills || 0) + 1;
+      return new Response(JSON.stringify({ done: true, links: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+  } };
+  const unstamped = kanbanSeed();
+  const p = await open(prof, "#staff-kanban", { seed: unstamped, init: counting });
+  await until(async () => (await p.$$eval(".kb-card", (e) => e.length)) >= 1, "the board");
+  await until(() => p.evaluate(() => window.__linkFills === 1), "the links backfill, asked for once", 8000);
+  await p.done();
+  const stamped = kanbanSeed();
+  stamped.docs.kanbanSettings.main.linksTwoSidedAt = { $ts: Date.now() };
+  const q = await open(prof, "#staff-kanban", { seed: stamped, init: counting });
+  await until(async () => (await q.$$eval(".kb-card", (e) => e.length)) >= 1, "the board");
+  await new Promise((r) => setTimeout(r, 1200));
+  assert.ok(!(await q.evaluate(() => window.__linkFills)), "no ask once the settings carry linksTwoSidedAt");
+  await q.done();
 });
 
 // ── Scale: the board stays fast however many tickets are open (KB §13) ───────

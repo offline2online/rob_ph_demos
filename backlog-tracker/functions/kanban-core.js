@@ -37,7 +37,18 @@ const PRIORITIES = [
   { key: "low", label: "Low", icon: "keyboard_arrow_down" },
   { key: "lowest", label: "Lowest", icon: "keyboard_double_arrow_down" },
 ];
-const LINK_TYPES = ["blocks", "is blocked by", "relates to", "duplicates"];
+const LINK_TYPES = ["blocks", "is blocked by", "relates to", "duplicates", "is duplicated by"];
+// A link is stored on both tickets (KB-TASK-5): "A blocks B" is {blocks, B} on
+// A and {is blocked by, A} on B, written in one batch.
+const INVERSE_LINK = { blocks: "is blocked by", "is blocked by": "blocks", "relates to": "relates to", duplicates: "is duplicated by", "is duplicated by": "duplicates" };
+const linkId = (l) => `${l.type}|${l.key}`;
+// What changed between two link lists: { added, removed } (each { type, key }).
+function linkChanges(before, after) {
+  const was = new Map((before || []).map((l) => [linkId(l), l])), now = new Map((after || []).map((l) => [linkId(l), l]));
+  return { added: [...now].filter(([k]) => !was.has(k)).map(([, l]) => l), removed: [...was].filter(([k]) => !now.has(k)).map(([, l]) => l) };
+}
+// The entry the other ticket of a link carries.
+const inverseOf = (selfKey, l) => ({ type: INVERSE_LINK[l.type], key: selfKey });
 
 // Core fields are always on the form; optional ones follow Kanban settings.
 const CORE_FIELDS = [
@@ -128,6 +139,8 @@ function normaliseSettings(raw) {
     // How each person is named on the board (KB-PPL-1), when the first word
     // of their console name isn't it ("Lê Quang Huy" → "Huy").
     firstNames: s.firstNames && typeof s.firstNames === "object" ? { ...s.firstNames } : {},
+    // Stamped by the server's links backfill once every stored link has its other side.
+    linksTwoSidedAt: s.linksTwoSidedAt ? s.linksTwoSidedAt : null,
   };
 }
 
@@ -579,7 +592,8 @@ function cleanTaskFields(input, { partial = false, existingCriteria = [] } = {})
   }
   if ("links" in input) {
     const l = Array.isArray(input.links) ? input.links : [];
-    v.links = l.filter((x) => x && LINK_TYPES.includes(x.type) && keyNumber(x.key) != null).map((x) => ({ type: x.type, key: String(x.key).toUpperCase() })).slice(0, 50);
+    v.links = l.filter((x) => x && LINK_TYPES.includes(x.type) && keyNumber(x.key) != null).map((x) => ({ type: x.type, key: String(x.key).toUpperCase() }))
+      .filter((x, i, all) => all.findIndex((y) => linkId(y) === linkId(x)) === i).slice(0, 50);
   }
   if ("acceptanceCriteria" in input) {
     const c = cleanCriteria(input.acceptanceCriteria, existingCriteria);
@@ -588,6 +602,46 @@ function cleanTaskFields(input, { partial = false, existingCriteria = [] } = {})
   }
   if ("flagged" in input) v.flagged = !!input.flagged;
   return { value: v, errors };
+}
+
+// The activity lines for an edit of a ticket's fields: one per field, with the
+// old and new value ("changed Priority from Medium to High", "assigned to
+// Duong", KB-BOARD-5). names: { person(email), release(id), project(id) } turn
+// stored values into what the board shows. Status moves are written by
+// statusChange, not here. Shared by the page, the prototype and the tests.
+function editActivity(before, after, names = {}) {
+  const person = names.person || ((e) => e || "Unassigned"), release = names.release || ((x) => x), project = names.project || ((x) => x);
+  const none = (v) => (v === "" || v == null ? "none" : v);
+  const out = [];
+  const change = (label, a, b) => out.push(`changed ${label} from ${none(a)} to ${none(b)}`);
+  const differs = (k) => JSON.stringify(before[k] == null ? "" : before[k]) !== JSON.stringify(after[k] == null ? "" : after[k]);
+  const prio = (v) => (PRIORITIES.find((p) => p.key === v) || {}).label || v;
+  const hours = (v) => (v === "" || v == null ? "" : fmtH(v));
+  if (differs("title")) change("Title", before.title, after.title);
+  if (differs("type")) change("Type", (TYPES.find((t) => t.key === before.type) || {}).label || before.type, (TYPES.find((t) => t.key === after.type) || {}).label || after.type);
+  if (differs("description")) out.push("edited the description");
+  if (differs("assignee")) out.push(after.assignee ? `assigned to ${person(after.assignee)}` : `unassigned (was ${person(before.assignee)})`);
+  if (differs("reporter")) change("Reporter", before.reporter ? person(before.reporter) : "", after.reporter ? person(after.reporter) : "");
+  if (differs("priority")) change("Priority", prio(before.priority), prio(after.priority));
+  if (differs("estimate")) change("Estimate", hours(before.estimate), hours(after.estimate));
+  if (differs("logged")) change("Time logged", hours(before.logged || ""), hours(after.logged || ""));
+  if (differs("release")) change("Release", before.release ? release(before.release) : "", after.release ? release(after.release) : "");
+  if (differs("sprint")) change("Sprint", before.sprint, after.sprint);
+  if (differs("project")) change("Project", before.project ? project(before.project) : "", after.project ? project(after.project) : "");
+  if (differs("due")) change("Due date", before.due, after.due);
+  if (differs("epic")) change("Epic", before.epic, after.epic);
+  if (differs("labels")) {
+    const a = new Set(before.labels || []), b = new Set(after.labels || []);
+    for (const l of b) if (!a.has(l)) out.push(`added label ${l}`);
+    for (const l of a) if (!b.has(l)) out.push(`removed label ${l}`);
+  }
+  if (differs("links")) {
+    const { added, removed } = linkChanges(before.links, after.links);
+    for (const l of added) out.push(`linked: ${l.type} ${l.key}`);
+    for (const l of removed) out.push(`unlinked: ${l.type} ${l.key}`);
+  }
+  if (!!before.flagged !== !!after.flagged) out.push(after.flagged ? "flagged this ticket" : "removed the flag");
+  return out;
 }
 
 // ── The board card (kanbanCards/{PH-n}) ─────────────────────────────────────
@@ -666,4 +720,4 @@ function dataUriParts(uri) {
   return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
 }
 
-module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, DEFAULT_TESTER, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, CARD_FIELDS, cardOf, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };
+module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, DEFAULT_TESTER, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };

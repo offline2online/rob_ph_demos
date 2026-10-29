@@ -304,6 +304,49 @@ async function handleBackfill(req, res, h) {
   }
 }
 
+// ── Links on both tickets: the backfill ─────────────────────────────────────
+// Links stored before they were written on both tickets are one-sided. This
+// adds the missing side (arrayUnion, so running it twice changes nothing) and,
+// on the last slice, stamps kanbanSettings/main.linksTwoSidedAt, which is how
+// the board knows to stop asking.
+async function backfillLinksSlice({ after = "", size = BACKFILL_SLICE } = {}) {
+  const ids = (await db().collection(TASKS).select().get()).docs.map((d) => d.id).sort((a, b) => (core.keyNumber(a) || 0) - (core.keyNumber(b) || 0) || (a < b ? -1 : 1));
+  const from = after ? ids.findIndex((id) => (core.keyNumber(id) || 0) > (core.keyNumber(after) || 0)) : 0;
+  const slice = from < 0 ? [] : ids.slice(from, from + size);
+  const known = new Set(ids);
+  const out = { links: 0 };
+  const b = db().batch();
+  for (const key of slice) {
+    const own = (await db().collection(TASKS).doc(key).get()).data() || {};
+    for (const l of own.links || []) {
+      if (!core.INVERSE_LINK[l.type] || l.key === key || !known.has(l.key)) continue;
+      const inv = core.inverseOf(key, l);
+      const other = (await db().collection(TASKS).doc(l.key).get()).data() || {};
+      if ((other.links || []).some((x) => x.type === inv.type && x.key === inv.key)) continue;
+      b.update(db().collection(TASKS).doc(l.key), { links: FieldValue.arrayUnion(inv) });
+      out.links += 1;
+    }
+  }
+  const last = slice.length ? slice[slice.length - 1] : after;
+  const done = !slice.length || ids.indexOf(last) >= ids.length - 1;
+  if (done) b.set(db().collection("kanbanSettings").doc("main"), { linksTwoSidedAt: FieldValue.serverTimestamp() }, { merge: true });
+  await b.commit();
+  return Object.assign({ done, after: last, tickets: ids.length }, out);
+}
+async function handleBackfillLinks(req, res, h) {
+  if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
+  if (h.rateLimited(req, "kanban-backfill-links", 120)) return h.tooMany(res);
+  const who = await h.requireConsoleUser(req);
+  if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
+  const after = req.body && typeof req.body.after === "string" ? req.body.after : "";
+  try {
+    res.status(200).json(await backfillLinksSlice({ after }));
+  } catch (err) {
+    logger.error("kanban links backfill failed", { error: String(err && err.stack ? err.stack : err) });
+    res.status(500).json({ error: "backfill_failed" });
+  }
+}
+
 // ── Attachments over MCP (kanban_attach_file) ──────────────────────────────
 // The bytes arrive base64 in the call; nothing is ever fetched from a URL.
 // Only types whose first bytes can be checked are accepted, so a file can't
@@ -505,22 +548,29 @@ function kanbanTools(h) {
     const hit = all.find((d) => d.data().name != null && String(d.data().name).trim().toLowerCase() === want);
     return hit ? { id: hit.id, name: hit.data().name } : null;
   }
-  // The other end of each typed link, as the board reads it (KB-TASK-5):
-  // links are stored on the ticket they were added to, and shown on both.
-  const INVERSE_LINK = { blocks: "is blocked by", "is blocked by": "blocks", "relates to": "relates to", duplicates: "is duplicated by", "is duplicated by": "duplicates" };
-  async function linksFor(t) {
-    const own = (t.links || []).map((l) => ({ type: l.type, key: l.key }));
-    const seen = new Set(own.map((l) => `${l.type}|${l.key}`));
-    const all = await tasks().get();
-    for (const d of all.docs) {
-      if (d.id === t.key) continue;
-      for (const l of (d.data().links || [])) {
-        if (l.key !== t.key || !INVERSE_LINK[l.type]) continue;
-        const inv = { type: INVERSE_LINK[l.type], key: d.id };
-        if (!seen.has(`${inv.type}|${inv.key}`)) { seen.add(`${inv.type}|${inv.key}`); own.push(Object.assign(inv, { from: "inverse" })); }
+  // Links are stored on both tickets (KB-TASK-5): "A blocks B" is {blocks, B}
+  // on A and {is blocked by, A} on B, written in one batch, so reading a ticket
+  // never reads another. Links to nowhere, or to the ticket itself, are refused.
+  async function checkLinks(links, selfKey) {
+    const errs = [];
+    for (const l of links || []) {
+      if (l.key === selfKey) errs.push(`${selfKey} can't be linked to itself`);
+      else if (!(await tasks().doc(l.key).get()).exists) errs.push(`link ${l.type} ${l.key}: no such ticket`);
+    }
+    return errs;
+  }
+  // The other side of every link added or removed, in the caller's batch.
+  // Returns the number of other tickets written.
+  function linkOps(b, key, before, after, email) {
+    const { added, removed } = core.linkChanges(before, after);
+    for (const [list, add] of [[added, true], [removed, false]]) {
+      for (const l of list) {
+        if (l.key === key) continue;
+        const inv = core.inverseOf(key, l);
+        b.update(tasks().doc(l.key), Object.assign({ links: add ? FieldValue.arrayUnion(inv) : FieldValue.arrayRemove(inv) }, stamp(email)));
+        activity(b, l.key, email, [`${add ? "linked" : "unlinked"}: ${inv.type} ${key}`]);
       }
     }
-    return own;
   }
   // One line per notification, the way the bell words it.
   const describe = (n, first) => {
@@ -588,7 +638,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_get_task",
-      description: "Staff Kanban: one ticket in full — description (plain text and descriptionHtml), every field, links (both directions: blocks / is blocked by, relates to, duplicates / is duplicated by), attachments, comments and the activity log.",
+      description: "Staff Kanban: one ticket in full — description (plain text and descriptionHtml), every field, links (stored on both tickets: blocks / is blocked by, relates to, duplicates / is duplicated by), attachments, comments and the activity log.",
       scope: "board.read",
       inputSchema: { type: "object", properties: { key: KEY }, required: ["key"], additionalProperties: false },
       async run(args) {
@@ -603,7 +653,7 @@ function kanbanTools(h) {
           projectName: project ? project.name : null,
           description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
           acceptanceCriteria: core.decodeCriteria(t.acceptanceCriteria),
-          links: await linksFor(t), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
+          links: (t.links || []).map((l) => ({ type: l.type, key: l.key })), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
           children: kids, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
           comments: cs.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((c) => ({ author: c.author, at: iso(c.at), text: c.text })),
           activity: act.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((a) => ({ who: a.who, at: iso(a.at), text: a.text })),
@@ -657,6 +707,7 @@ function kanbanTools(h) {
         const { value: v, errors } = core.cleanTaskFields(args);
         if (v.type === "epic") v.epic = "";
         errors.push(...await checkRefs(v, null, session));
+        errors.push(...await checkLinks(v.links, null));
         if (errors.length) return toolError(errors.join("; "));
         const s = await settings();
         const counterRef = db().collection("kanbanCounters").doc("main");
@@ -679,10 +730,12 @@ function kanbanTools(h) {
           tx.set(counterRef, { nextNumber: n + 1, updatedAt: FieldValue.serverTimestamp() });
           tx.set(tasks().doc(key), t);
           putCard(tx, key, t, session.email);
+          for (const l of t.links) tx.update(tasks().doc(l.key), Object.assign({ links: FieldValue.arrayUnion(core.inverseOf(key, l)) }, stamp(session.email)));
           return key;
         });
         const b = db().batch();
         activity(b, key, session.email, ["created this ticket over MCP"]);
+        for (const l of v.links || []) activity(b, l.key, session.email, [`linked: ${core.inverseOf(key, l).type} ${key}`]);
         await b.commit();
         await audit(session, "kanban_create_task", { key });
         return textResult({ created: true, key, status: "backlog" });
@@ -704,6 +757,7 @@ function kanbanTools(h) {
         const type = v.type || cur.type;
         if (type === "epic") v.epic = "";
         errors.push(...await checkRefs(v, key, session));
+        if ("links" in v) errors.push(...await checkLinks(v.links, key));
         if (errors.length) return toolError(errors.join("; "));
         const first = await firstNamer();
         const lines = [];
@@ -721,6 +775,7 @@ function kanbanTools(h) {
         b.update(tasks().doc(key), patch);
         putCard(b, key, Object.assign({}, next, patch), session.email);
         activity(b, key, session.email, lines);
+        if ("links" in v) linkOps(b, key, cur.links || [], v.links, session.email);
         // An epic that stops being one lets go of its children (KB-TASK-7).
         if (cur.type === "epic" && type !== "epic") {
           const kids = await tasks().where("epic", "==", key).get();
@@ -1001,4 +1056,4 @@ function kanbanTools(h) {
   }));
 }
 
-module.exports = { imageResizer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };
+module.exports = { imageResizer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, handleBackfillLinks, backfillLinksSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };

@@ -13,7 +13,7 @@ import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
   statusChange, currentReleaseId, DEFAULT_TESTER, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
-  canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT,
+  canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -47,6 +47,26 @@ export function mountStaffKanban(ctx) {
       if (out.done !== false) return;
       after = out.after || "";
     }
+  }
+
+  // Links stored before they were written on both tickets are one-sided. The
+  // server makes them two-sided (idempotent) and stamps kanbanSettings/main;
+  // the board asks once per session, and only while the stamp is missing.
+  let linksBackfillAsked = false;
+  async function backfillLinks() {
+    const user = ctx.auth.currentUser;
+    if (!user || linksBackfillAsked || !store.state.settingsLoaded || store.state.settings.linksTwoSidedAt) return;
+    linksBackfillAsked = true;
+    let after = "";
+    try {
+      for (let i = 0; i < 60; i++) {
+        const r = await fetch("/mcp/kanban/backfill-links", { method: "POST", headers: { "X-Firebase-ID-Token": await user.getIdToken(), "Content-Type": "application/json" }, body: JSON.stringify({ after }) });
+        if (!r.ok) throw new Error(`links backfill answered ${r.status}`);
+        const out = await r.json().catch(() => ({}));
+        if (out.done !== false) return;
+        after = out.after || "";
+      }
+    } catch (e) { console.warn("staff kanban: links backfill:", e); }
   }
 
   // ── State ───────────────────────────────────────────────────────────────
@@ -245,6 +265,7 @@ export function mountStaffKanban(ctx) {
       for (const m of store.state.members) if (m.email !== me || !getAvatarMember(m.email)) setAvatarMember(m.email, m);
       syncDirectoryIfBehind();
     }
+    if (what === "settings") backfillLinks();
     if (pageEl.hidden) return;
     // Coalesce bursts (the first load delivers six listeners at once) into one
     // render per animation frame. A hidden tab doesn't run frames: a timer covers it.
@@ -1845,8 +1866,8 @@ export function mountStaffKanban(ctx) {
           const a = existing[k], b = next[k];
           if (JSON.stringify(a == null ? "" : a) !== JSON.stringify(b == null ? "" : b)) patch[k] = b;
         }
-        if ("flagged" in patch) activity.push(patch.flagged ? "flagged this ticket" : "removed the flag");
-        if ("assignee" in patch && !(newStatus !== existing.status)) activity.push(`reassigned ${firstName(existing.assignee)} → ${firstName(patch.assignee)}`);
+        // One line per changed field, with the old and new value (KB-BOARD-5).
+        activity.push(...editActivity(existing, { ...existing, ...patch }, { person: firstName, release: (id) => (release(id) || {}).name || id, project: (id) => projectName(id) || id }));
         let ch = null;
         if (newStatus !== existing.status || (newStatus === "done" && newRes !== res(existing))) {
           ch = setStatus({ ...existing, ...patch }, newStatus, { resolution: newRes });
