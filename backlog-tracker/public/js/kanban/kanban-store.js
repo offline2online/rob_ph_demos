@@ -65,6 +65,7 @@ export function taskFromDoc(id, d) {
     release: d.release || "",
     sprint: d.sprint || "",
     project: d.project || "",
+    interfaceId: d.interfaceId || "",
     estimate: typeof d.estimate === "number" ? d.estimate : "",
     logged: typeof d.logged === "number" ? d.logged : 0,
     priority: d.priority || "",

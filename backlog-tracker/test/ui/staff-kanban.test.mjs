@@ -772,6 +772,22 @@ T("KB-C13", "project: set in the modal, named on the card, filtered from Filters
   await p.done();
 });
 
+T("KB-C14", "an API contract ticket shows Interface: <name> in its modal, linking to that project's Docs page at it (PH-23)", async (prof) => {
+  const seed = kanbanSeed();
+  seed.docs.projects = { pA: { name: "Staff Kanban", createdAt: { $ts: Date.parse("2026-10-01T00:00:00Z") } }, pB: { name: "Console API", createdAt: { $ts: Date.parse("2026-10-02T00:00:00Z") } } };
+  seed.docs.interfaces = { ifc1: { name: "Staff Kanban to Console API", projectIds: ["pA", "pB"], endpoints: [{ type: "project", id: "pA" }, { type: "project", id: "pB" }], contentMd: "# Draft", createdAt: { $ts: Date.parse("2026-10-03T00:00:00Z") }, updatedAt: { $ts: Date.parse("2026-10-03T00:00:00Z") } } };
+  seed.docs.kanbanTasks["PH-20"].interfaceId = "ifc1"; seed.docs.kanbanTasks["PH-20"].project = "pA"; seed.docs.kanbanCards["PH-20"].project = "pA";
+  const p = await open(prof, "#staff-kanban", { seed });
+  await press(p, '.kb-card[data-key="PH-21"]');
+  assert.equal(await p.$("#f-interface"), null, "a ticket with no interface shows none");
+  await press(p, "#f-cancel");
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await until(() => p.$("#f-interface a"), "the interface link");
+  assert.match(await p.textContent("#f-interface"), /^Interface: Staff Kanban to Console API$/);
+  assert.equal(await p.getAttribute("#f-interface a", "href"), "#docs/pA?interface=ifc1");
+  await p.done();
+});
+
 T("TC-68", "acceptance criteria: shown, ticked and edited in the modal with an activity line each, counted on the card, updated live, and saved with a new ticket (PH-22)", async (prof) => {
   const line = (i, done, text) => `crit000${i}\t${done}\t${text}`;
   const texts = ["Field A is required", "Saves on Enter", "Shows an error on 500", "Clears on cancel", "Keyboard reachable"];

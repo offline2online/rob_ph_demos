@@ -432,6 +432,11 @@ const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 // later carry it too), saying which board is for what.
 const KANBAN_SCOPE = "Staff Kanban is for staff tasks only: work a human staff member does. Agent work (product, docs, prototype and tooling changes, including for the Staff Kanban project itself) goes in the agent backlog with create_backlog_item. You can still create and assign staff tasks here.";
 // h: { textResult, toolError, audit }
+// The most stories one contract ticket can block, and the route that opens an
+// interface on its project's Docs page.
+const CONTRACT_MAX_BLOCKS = 50;
+const interfaceDocsUrl = (projectId, interfaceId) => `https://backlog-tracker-e4ed2.web.app/#docs/${projectId}?interface=${interfaceId}`;
+
 function kanbanTools(h) {
   const { textResult, toolError } = h;
   // Every call writes one mcpAuditLog row with the milliseconds it took, so a
@@ -784,8 +789,13 @@ function kanbanTools(h) {
         const kidDocs = t.type === "epic" ? (await (await board()).where("epic", "==", key).limit(EPIC_CHILDREN + 1).get()).docs : null;
         const kids = kidDocs ? kidDocs.slice(0, EPIC_CHILDREN).map((d) => ({ key: d.id, title: d.data().title, status: core.statusLabel(d.data().status, d.data().resolution) })) : undefined;
         const project = t.project ? await findProject(t.project) : null;
+        let linked = null;
+        if (t.interfaceId) {
+          const snap = await db().collection("interfaces").doc(String(t.interfaceId)).get();
+          if (snap.exists) linked = { id: snap.id, name: snap.data().name || "", docsUrl: interfaceDocsUrl(t.project || (snap.data().projectIds || [])[0] || "", snap.id) };
+        }
         return textResult(Object.assign(summary(t, first), {
-          projectName: project ? project.name : null,
+          projectName: project ? project.name : null, interface: linked,
           description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
           acceptanceCriteria: core.decodeCriteria(t.acceptanceCriteria),
           links: (t.links || []).map((l) => ({ type: l.type, key: l.key })), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
@@ -879,6 +889,109 @@ function kanbanTools(h) {
         await b.commit();
         await audit(session, "kanban_create_task", { key });
         return textResult({ created: true, key, status: "backlog" });
+      },
+    },
+    {
+      name: "kanban_create_contract_ticket",
+      description: "Staff Kanban: API contract first, in one step. Creates the draft API contract (an interface document between the ticket's project and one other project or concept), a Backlog ticket labelled api-contract with the project set and the interface linked, and a \"blocks\" link from it to each story it blocks (stored on both tickets). Everything is checked first and every problem is returned together; if any fails, nothing is created. Use it when finalising an artifact: write the contract from the artifact's data needs, pass the PH keys of the front-end and back-end stories. Optionally cite an artifact version (list_artifact_versions) the contract was drafted from.",
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: Object.assign({}, WRITABLE, {
+          project: { type: "string", description: "The console project (id or name) the contract belongs to; it is one end of the interface." },
+          interface: {
+            type: "object", additionalProperties: false, required: ["name", "contentMd", "with"],
+            properties: {
+              name: { type: "string", description: 'e.g. "Staff Kanban ↔ Console API".' },
+              contentMd: { type: "string", description: "The draft contract, in Markdown, written from the artifact's data needs. Up to 20,000 characters." },
+              with: { type: "object", additionalProperties: false, required: ["type", "id"], properties: { type: { type: "string", enum: ["project", "concept"] }, id: { type: "string" } }, description: "The other end of the interface: a project or a concept." },
+            },
+          },
+          blocks: { type: "array", minItems: 1, maxItems: CONTRACT_MAX_BLOCKS, items: { type: "string" }, description: "PH keys of the stories this contract blocks (usually the front-end and the back-end story)." },
+          artifactVersion: { type: "integer", minimum: 1, description: "Optional: the project's artifact version (PH-20) the contract was drafted from." },
+        }),
+        required: ["title", "project", "interface", "blocks"], additionalProperties: false,
+      },
+      async run(args, session) {
+        args = resolveMe(args, session);
+        const problems = [];
+        const iface = args.interface && typeof args.interface === "object" ? args.interface : {};
+        const other = iface.with && typeof iface.with === "object" ? iface.with : {};
+        const input = Object.assign({}, args);
+        for (const k of ["interface", "blocks", "artifactVersion"]) delete input[k];
+        input.type = "task";
+        const { value: v, errors } = core.cleanTaskFields(input);
+        problems.push(...errors);
+        if (!v.project) problems.push("project is required: the contract belongs to a console project.");
+        v.labels = ["api-contract", ...(v.labels || []).filter((l) => l !== "api-contract")];
+        const rawProject = v.project;
+        problems.push(...await checkRefs(v, null, session));
+        const projectOk = !!rawProject && !!(await findProject(v.project));
+        // The stories it blocks.
+        const rows = Array.isArray(args.blocks) ? args.blocks : [];
+        const keys = [];
+        if (!rows.length) problems.push("blocks needs at least one story (the PH key of a ticket this contract blocks).");
+        if (rows.length > CONTRACT_MAX_BLOCKS) problems.push(`blocks takes at most ${CONTRACT_MAX_BLOCKS} stories.`);
+        for (const r of rows.slice(0, CONTRACT_MAX_BLOCKS)) {
+          const k = normKey(r);
+          if (!k) problems.push(`blocks: ${r} isn't a ticket key`);
+          else if (!keys.includes(k)) keys.push(k);
+        }
+        const stories = new Map();
+        for (const k of keys) {
+          const t = await getTask(k);
+          if (t) stories.set(k, t); else problems.push(`blocks: no such ticket ${k}`);
+        }
+        // The interface: create_interface's own rules, with the ticket's project as one end.
+        if (!other.type || !other.id) problems.push("interface.with needs {type, id}: the other end of the interface.");
+        const NIL = "\u0000";
+        const c = await h.checkInterface({ name: iface.name, contentMd: iface.contentMd, endpoints: [{ type: "project", id: projectOk ? v.project : NIL }, { type: String(other.type || ""), id: String(other.id || "") }] });
+        problems.push(...c.problems.filter((m) => !m.includes(NIL) && !(m.startsWith("Every endpoint needs an id") && !other.id)));
+        // The artifact version cited, if any.
+        if (args.artifactVersion != null) {
+          const n = Number(args.artifactVersion);
+          if (!Number.isInteger(n) || n < 1) problems.push(`artifactVersion ${args.artifactVersion} isn't a whole number from 1.`);
+          else if (!projectOk) problems.push(`artifactVersion ${n} can't be checked until the project is valid.`);
+          else if (!(await db().collection("projects").doc(v.project).collection("artifactVersions").doc(String(n)).get()).exists) problems.push(`artifactVersion ${n}: the project has no such artifact version (list_artifact_versions lists them).`);
+        }
+        const links = keys.filter((k) => stories.has(k)).map((k) => ({ type: "blocks", key: k }));
+        for (const l of v.links || []) if (!links.some((x) => x.type === l.type && x.key === l.key)) links.push(l);
+        problems.push(...await checkLinks(v.links || [], null));
+        if (problems.length) return toolError(`Nothing was created. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.join("; ")}`);
+
+        const counterRef = db().collection("kanbanCounters").doc("main");
+        const rank = await nextRank("backlog");
+        const ifaceRef = db().collection("interfaces").doc();
+        const key = await db().runTransaction(async (tx) => {
+          const cnt = await tx.get(counterRef);
+          const n = cnt.exists && typeof cnt.data().nextNumber === "number" ? cnt.data().nextNumber : 1;
+          const key = core.keyOf(n);
+          const t = {
+            key, number: n, type: "task", title: v.title, description: asHtml(v.description || ""),
+            status: "backlog", resolution: null, open: true, rank,
+            assignee: v.assignee || "", previousAssignee: "", reporter: v.reporter || session.email,
+            release: v.release || "", sprint: v.sprint || "", project: v.project,
+            estimate: v.estimate == null ? null : v.estimate, logged: v.logged || 0, priority: v.priority || "medium",
+            due: v.due || "", labels: v.labels, epic: "", links, flagged: !!v.flagged,
+            attachments: [], commentCount: 0, acceptanceCriteria: core.encodeCriteria(v.acceptanceCriteria || []),
+            interfaceId: ifaceRef.id,
+          };
+          if (args.artifactVersion != null) t.artifactVersion = Number(args.artifactVersion);
+          Object.assign(t, derived(t), { createdAt: FieldValue.serverTimestamp(), createdBy: session.email }, stamp(session.email));
+          tx.set(counterRef, { nextNumber: n + 1, updatedAt: FieldValue.serverTimestamp() });
+          tx.set(ifaceRef, h.interfaceDoc(c, session));
+          tx.set(tasks().doc(key), t);
+          putCard(tx, key, t, session.email);
+          activity(tx, key, session.email, [`created this API contract ticket over MCP, with its interface ${c.name}${args.artifactVersion != null ? ` (from artifact version ${args.artifactVersion})` : ""}`]);
+          for (const l of links) {
+            tx.update(tasks().doc(l.key), Object.assign({ links: FieldValue.arrayUnion(core.inverseOf(key, l)) }, stamp(session.email)));
+            activity(tx, l.key, session.email, [`linked: ${core.inverseOf(key, l).type} ${key}`]);
+          }
+          return key;
+        });
+        const docsUrl = interfaceDocsUrl(v.project, ifaceRef.id);
+        await audit(session, "kanban_create_contract_ticket", { key, interfaceId: ifaceRef.id, name: c.name, chars: c.md.length, blocks: links.length });
+        return textResult({ created: true, key, status: "backlog", interfaceId: ifaceRef.id, docsUrl, blocks: links.filter((l) => l.type === "blocks").map((l) => l.key) });
       },
     },
     {

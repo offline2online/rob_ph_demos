@@ -6034,7 +6034,11 @@ function openDocsPage(pid) {
   loadProjectDocs(pid);
 }
 
+let docsFocusInterface = "";
+let docsOpenedByRoute = false;
 function closeDocsPage() {
+  docsOpenedByRoute = false;
+  docsFocusInterface = "";
   docsProjectId = null;
   docsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
@@ -6067,6 +6071,11 @@ let docsSupersededOpen = false;
 
 function renderDocsPage() {
   if (!docsProjectId) return;
+  if (docsFocusInterface && interfaces.some((i) => i.id === docsFocusInterface)) {
+    const focus = docsFocusInterface;
+    docsFocusInterface = "";
+    queueMicrotask(() => openInterfaceModal(focus, docsProjectId));
+  }
   const project = projects.find((p) => p.id === docsProjectId);
   document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
   const originBlock = document.getElementById("docs-origin-concept");
@@ -7683,6 +7692,7 @@ function loadStaffKanban() {
         role: currentConsoleRole,
         releases: () => releases,
         projects: () => projects,
+        interfaces: () => interfaces,
         confirm: (message, opts) => showConfirmDialog(message, opts),
         go: (sub, params) => {
           const qs = params ? new URLSearchParams(params).toString() : "";
@@ -10613,6 +10623,20 @@ function faqFilterFromHash(hash) {
   const value = new URLSearchParams(hash.slice(qIndex + 1)).get("filter");
   return FAQ_STATUS_FILTERS.includes(value) ? value : "all";
 }
+// "#docs/<projectId>?interface=<id>": a project's Docs page with that
+// interface contract open (the link on a Staff Kanban contract ticket).
+function openDocsRouteFromHash(hash) {
+  const [path, query] = hash.slice("#docs/".length).split("?");
+  const pid = decodeURIComponent(path || "");
+  if (!pid) return;
+  // openDocsPage closes every sub-page first, which resets the focus and
+  // clears the hash; set both again once it has run.
+  if (docsProjectId !== pid || docsPage.hidden) openDocsPage(pid);
+  docsFocusInterface = (new URLSearchParams(query || "")).get("interface") || "";
+  docsOpenedByRoute = true;
+  setRouteHash(hash, { replace: true });
+  renderDocsPage();
+}
 function applyRouteFromHash() {
   const hash = window.location.hash;
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
@@ -10622,8 +10646,10 @@ function applyRouteFromHash() {
   else if (hash === "#concept-incubator") openConceptIncubatorPage();
   else if (hash.startsWith("#concept-")) openConceptRouteFromHash(hash);
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
+  else if (hash.startsWith("#docs/")) openDocsRouteFromHash(hash);
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
+  else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
   else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both

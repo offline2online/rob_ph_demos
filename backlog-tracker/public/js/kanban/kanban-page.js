@@ -18,7 +18,7 @@ import {
 
 export function mountStaffKanban(ctx) {
   "use strict";
-  // ctx: { root, db, storage, auth, me, role(), releases(), projects(), confirm(message, opts), go(sub, params) }
+  // ctx: { root, db, storage, auth, me, role(), releases(), projects(), interfaces(), confirm(message, opts), go(sub, params) }
   const me = ctx.me;
   const root = document.documentElement;
   const pageEl = ctx.root;
@@ -1118,6 +1118,7 @@ export function mountStaffKanban(ctx) {
             <span class="kb-child-link">${pickerHTML("f-child-link", "Add an existing ticket: search by number, title or description")}</span>
           </div></div>`;
       }
+      case "interface": return interfaceHTML();
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
         <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${LINK_TYPES.map((x) => opt(x, x, "relates to")).join("")}</select>
@@ -1253,6 +1254,15 @@ export function mountStaffKanban(ctx) {
     ul.addEventListener("focusout", (e) => { if (e.target.matches("[data-ac-text]") && !e.target.value.trim()) redrawCriteria(); });
   }
   const labelsHTML = () => (draft.labels || []).map((l) => `<span class="kb-label-chip">${esc(l)}<button type="button" data-rm-label="${esc(l)}" aria-label="Remove ${esc(l)}">&times;</button></span>`).join("") || '<span class="kb-none">No labels</span>';
+  // The API contract a contract ticket carries: opens that project's Docs page at it.
+  const interfaceHTML = () => {
+    const id = draft.interfaceId;
+    if (!id) return "";
+    const f = (ctx.interfaces ? ctx.interfaces() || [] : []).find((x) => x.id === id);
+    const pid = draft.project || ((f && f.projectIds) || [])[0] || "";
+    const name = f ? f.name : "";
+    return `<div class="kb-field" data-field="interface"><p class="kb-interface" id="f-interface">Interface: ${pid && name ? `<a href="#docs/${encodeURIComponent(pid)}?interface=${encodeURIComponent(id)}" data-interface-link>${esc(name)}</a>` : esc(name || id)}</p></div>`;
+  };
   const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const fmtSize = (n) => (typeof n === "number" ? (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB") : String(n || ""));
   const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4|webm)$/i.test(a.name) ? "movie" : "description"}</span>${a.url ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
@@ -1313,9 +1323,9 @@ export function mountStaffKanban(ctx) {
   function renderForm() {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
-    const main = draftIsNew ? ["voice", "title", "description", "criteria", "children", "attachments", "links"] : ["title", "description", "criteria", "children", "links", "attachments", "comments"];
+    const main = draftIsNew ? ["voice", "title", "description", "criteria", "children", "attachments", "links"] : ["title", "description", "interface", "criteria", "children", "links", "attachments", "comments"];
     const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "project", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
-    const visible = (k) => k === "voice" || k === "children" || k === "criteria" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
+    const visible = (k) => k === "voice" || k === "children" || k === "criteria" || k === "interface" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
     form.innerHTML = `

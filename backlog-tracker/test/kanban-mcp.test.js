@@ -101,9 +101,9 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     execFileSync(process.execPath, [path.join(__dirname, "kanban-core-copy.mjs")], { stdio: "pipe" });
   });
 
-  await test("the nineteen kanban_* tools are registered, reads as board.read", async () => {
+  await test("the twenty kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_create_tasks", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list_(?!notif)|list_notifications|get|search|release|my_work)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
@@ -600,6 +600,40 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const g = await tool(sam, "kanban_get_task", { key: byName.json.key });
     assert.strictEqual(g.json.project, "pStaff"); assert.strictEqual(g.json.projectName, "Staff Kanban");
     assert.ok((await tool(sam, "kanban_list_people")).json.projects.some((x) => x.id === "pStaff" && x.name === "Staff Kanban"));
+  });
+  await test("kanban_create_contract_ticket: interface, api-contract ticket and blocks links in one step; refused wholesale on any problem", async () => {
+    env.store.col("projects").set("pBe", { name: "Console API" });
+    const fe = await tool(sam, "kanban_create_task", { title: "Build the front end" });
+    const be = await tool(sam, "kanban_create_task", { title: "Build the back end" });
+    const ifaces = () => env.store.col("interfaces"), nTasks = () => env.store.col("kanbanTasks").size;
+    const base = { title: "API contract: Staff Kanban data", project: "Staff Kanban", interface: { name: "Staff Kanban ↔ Console API", contentMd: "# Draft\nGET /tickets", with: { type: "project", id: "pBe" } }, blocks: [fe.json.key, be.json.key] };
+    // refused: nothing is created
+    const before = { i: ifaces().size, t: nTasks(), counter: JSON.stringify(env.store.col("kanbanCounters").get("main")) };
+    const untouched = () => { assert.strictEqual(ifaces().size, before.i); assert.strictEqual(nTasks(), before.t); assert.strictEqual(JSON.stringify(env.store.col("kanbanCounters").get("main")), before.counter); };
+    const unknown = await tool(sam, "kanban_create_contract_ticket", Object.assign({}, base, { blocks: [fe.json.key, "PH-9999"] }));
+    assert.ok(unknown.isError); assert.match(unknown.text, /no such ticket PH-9999/); untouched();
+    const big = await tool(sam, "kanban_create_contract_ticket", Object.assign({}, base, { interface: Object.assign({}, base.interface, { contentMd: "x".repeat(20001) }), blocks: ["PH-9999"], artifactVersion: 7 }));
+    assert.ok(big.isError); assert.match(big.text, /limited to 20000/); assert.match(big.text, /PH-9999/); assert.match(big.text, /artifactVersion 7/, "every problem comes back together"); untouched();
+    const nobody = await tool(sam, "kanban_create_contract_ticket", Object.assign({}, base, { interface: Object.assign({}, base.interface, { with: { type: "project", id: "nope" } }), blocks: [] }));
+    assert.ok(nobody.isError); assert.match(nobody.text, /No project with id nope/); assert.match(nobody.text, /at least one story/); untouched();
+    // the happy path
+    env.store.col("projects").set("pStaff", { name: "Staff Kanban" });
+    const ok = await tool(sam, "kanban_create_contract_ticket", Object.assign({}, base, { labels: ["draft"] }));
+    assert.ok(!ok.isError, ok.text);
+    const t = env.store.col("kanbanTasks").get(ok.json.key);
+    assert.deepStrictEqual(t.labels, ["api-contract", "draft"]); assert.strictEqual(t.project, "pStaff"); assert.strictEqual(t.status, "backlog");
+    assert.strictEqual(ifaces().size, before.i + 1);
+    const iface = ifaces().get(t.interfaceId);
+    assert.strictEqual(iface.name, "Staff Kanban ↔ Console API"); assert.deepStrictEqual(iface.projectIds, ["pStaff", "pBe"]); assert.strictEqual(iface.createdByEmail, SAM); assert.strictEqual(iface.createdVia, "mcp");
+    assert.deepStrictEqual(t.links, [{ type: "blocks", key: fe.json.key }, { type: "blocks", key: be.json.key }]);
+    for (const k of [fe.json.key, be.json.key]) assert.ok(env.store.col("kanbanTasks").get(k).links.some((l) => l.type === "is blocked by" && l.key === ok.json.key), `${k} is blocked by the contract`);
+    assert.match(ok.json.docsUrl, new RegExp(`#docs/pStaff\\?interface=${t.interfaceId}$`));
+    const g = await tool(sam, "kanban_get_task", { key: ok.json.key });
+    assert.deepStrictEqual(g.json.interface, { id: t.interfaceId, name: "Staff Kanban ↔ Console API", docsUrl: ok.json.docsUrl });
+    assert.strictEqual((await tool(sam, "kanban_get_task", { key: fe.json.key })).json.interface, null);
+    // a viewer may not
+    const viewer = await tool(kit, "kanban_create_contract_ticket", base);
+    assert.ok(viewer.isError);
   });
   await test("kanban_list_tasks: no status covers open tickets only, as its description says", async () => {
     const desc = mcp.__test.TOOLS.find((x) => x.name === "kanban_list_tasks").description;

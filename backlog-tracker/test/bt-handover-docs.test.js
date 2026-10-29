@@ -30,8 +30,8 @@ function test(name, fn) {
 }
 const cut = (e) => mirrorText(read(e.path), mirrorSpec(m, e));
 
-test("the manifest has the 15 mirrors, valid under docs-manifest's own validator", () => {
-  assert.strictEqual(m.mirrors.length, 15);
+test("the manifest has the 16 mirrors, valid under docs-manifest's own validator", () => {
+  assert.strictEqual(m.mirrors.length, 16);
   assert.deepStrictEqual(validateManifest(m, exists), []);
 });
 
