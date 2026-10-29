@@ -10,7 +10,7 @@
 .profile-btn { padding: 0; }
 
 /* Avatars: first-name initial */
-.kb-avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; border-radius: 50%; color: #fff; font-size: 11.5px; font-weight: 700; line-height: 1; }
+.kb-avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; border-radius: 50%; overflow: hidden; color: #fff; font-size: 11.5px; font-weight: 700; line-height: 1; }
 .kb-avatar-lg { width: 32px; height: 32px; font-size: 14px; }
 .kb-avatar-none { background: var(--surface-2); color: var(--text-muted); box-shadow: inset 0 0 0 1px var(--border); }
 .kb-avatar-none .material-symbols-outlined { font-size: 15px; }
@@ -708,3 +708,11 @@ body.kb-drag-active .kb-col[data-status="done"] .kb-res-split { visibility: hidd
   .kb-sticky .kb-filters .kb-release-select { flex: 1 1 0 !important; min-width: 0; max-width: none; }
   .kb-sticky .kb-clear { flex: none; }
 }
+
+/* Icon-font hardening (29 Oct 2026, ticket IEfqzAILDhgB1evne443): same rules as the console's kanban.css.
+   Icons are ligatures, so until (or unless) the font arrives the icon name is plain text and stretches its
+   chip, covering the next one at 1024 px and on tablets. Each glyph is boxed to one em square and clipped,
+   and the Record dot is pinned to a 44px circle. */
+.material-symbols-outlined { display: inline-block; width: 1em; height: 1em; overflow: hidden; white-space: nowrap; flex: none; }
+.kb-record-dot { flex: 0 0 44px; min-width: 44px; min-height: 44px; padding: 0; box-sizing: border-box; aspect-ratio: 1 / 1; overflow: hidden; }
+.kb-record-btn { flex: none; max-width: 100%; box-sizing: border-box; }
