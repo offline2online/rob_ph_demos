@@ -267,7 +267,9 @@ async function main() {
   await check("A member can't add a sprint", "deny", () => setDoc(doc(as(MEMBER), "kanbanSprints/s1"), { name: "Sprint 43" }));
 
   // ── Mentions ────────────────────────────────────────────────────────────
-  await check("A member notifies someone they mentioned", "allow", () =>
+  // Notifications are written by the server's fan-out (functions/kanban-notify.js),
+  // never by a browser, so even a well-formed one is refused.
+  await check("A member can't create a notification (the server writes them)", "deny", () =>
     setDoc(doc(as(MEMBER), "kanbanNotifications/n2"), { to: "ada@personalisationhub.com", from: SAM, taskKey: "PH-7", taskTitle: "A task", kind: "comment", read: false, at: serverTimestamp() }));
   await check("A notification can't claim to be from someone else", "deny", () =>
     setDoc(doc(as(MEMBER), "kanbanNotifications/n2"), { to: "ada@personalisationhub.com", from: "rob@offline2online.com", taskKey: "PH-7", taskTitle: "", kind: "comment", read: false, at: serverTimestamp() }));
