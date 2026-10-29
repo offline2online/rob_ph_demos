@@ -3284,6 +3284,33 @@ Two surfaces sharing this same Firestore project:
   hand on meaningful changes; no build step exists to derive it
   automatically.
 
+## Project freeze ("Finalised")
+
+A permanent freeze on a project, distinct from `trainLocked` (the temporary
+lock while a release closes). Backlog-tracker projects only: the Staff Kanban
+has no finalised state and staff tasks are unaffected.
+
+- **Data:** `projects/{id}.finalised` is `{version, at, byEmail, artifactUrl,
+  artifactUpdatedAt}` while frozen and `null` otherwise. `finalisedLog` is an
+  append-only array of `{action: "finalise"|"unfreeze", version, at, byEmail,
+  via: "board"|"mcp", reason?}`; an unfreeze always carries a `reason`. `version`
+  counts the project's freezes (1, 2, …) and pins the artifact link and update
+  time the project had at that moment. A fuller versioned artifact snapshot
+  (the separate "Versioned artifact snapshot" ticket, not yet on the board)
+  will hang off the same `finalised.version`.
+- **While frozen:** the board hides Ready for Dev and refuses **+ New backlog
+  item** with a message; `create_backlog_item` and `send_to_build` refuse with
+  the same message; `firestore.rules` denies a browser `backlogItems` create
+  for the project; `notifyOnProjectReadyForReview` ignores a build request.
+  The board shows a **Finalised vN** badge and `list_projects` returns
+  `finalised`.
+- **Who:** admin only. The project's ⋮ menu has **Finalise project…** /
+  **Unfreeze project…** (reason required), and MCP has `finalise_project` and
+  `unfreeze_project`; both are logged to `mcpAuditLog` and `finalisedLog`.
+  `firestore.rules` lets only an admin change `finalised` / `finalisedLog`.
+- **First use:** Display Types & DSP Integration and Retail Media Insights &
+  Analytics Dashboards, once their pre-freeze code reviews are complete.
+
 ## Non-goals / explicitly out of scope
 
 - ~~**Authentication/authorization.** Everything here is open by design at

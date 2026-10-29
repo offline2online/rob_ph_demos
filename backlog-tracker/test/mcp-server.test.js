@@ -2031,6 +2031,65 @@ async function rpc(token, method, params, id = 1) {
     env.store.col("projects").set("voiceproj", { name: "Voice Project" });
   });
 
+  // ── Project freeze (Finalised) ────────────────────────────────────────
+  await test("finalise_project / unfreeze_project are admin-only and refused to an editor", async () => {
+    for (const name of ["finalise_project", "unfreeze_project"]) {
+      const t = mcp.__test.TOOLS.find((x) => x.name === name);
+      assert.ok(t && t.role === "admin" && t.scope === "board.write", `${name} must be an admin board.write tool`);
+      const res = await rpc(tokens.access_token, "tools/call", { name, arguments: { projectId: "voiceproj", reason: "x" } });
+      assert.strictEqual(res.body.result.isError, true);
+      assert.match(res.body.result.content[0].text, /requires the admin role/);
+    }
+  });
+
+  await test("a Finalised project records version, who and when, shows in list_projects, and refuses filing and builds", async () => {
+    env.store.col("projects").set("voiceproj", { name: "Voice Project", artifactUrl: "https://claude.ai/artifact/abc" });
+    seedItem("fz1");
+    let res = await adminCall("finalise_project", { projectId: "voiceproj" });
+    assert.strictEqual(res.body.result.isError, undefined, JSON.stringify(res.body));
+    let project = env.store.col("projects").get("voiceproj");
+    assert.strictEqual(project.finalised.version, 1);
+    assert.strictEqual(project.finalised.byEmail, TEAMMATE);
+    assert.strictEqual(project.finalised.artifactUrl, "https://claude.ai/artifact/abc");
+    assert.ok(project.finalised.at, "must record when");
+    assert.ok([...env.store.col("mcpAuditLog").values()].some((r) => r.tool === "finalise_project" && r.projectId === "voiceproj"));
+
+    res = await adminCall("finalise_project", { projectId: "voiceproj" });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /already Finalised/);
+
+    res = await rpc(tokens.access_token, "tools/call", { name: "list_projects", arguments: {} });
+    const listed = JSON.parse(res.body.result.content[0].text).projects.find((p) => p.id === "voiceproj");
+    assert.strictEqual(listed.finalised.version, 1);
+
+    const before = env.store.col("backlogItems").size;
+    res = await rpc(tokens.access_token, "tools/call", { name: "create_backlog_item", arguments: { projectId: "voiceproj", desc: "Outcome: something new and useful for the voice project." } });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /Finalised/);
+    assert.strictEqual(env.store.col("backlogItems").size, before, "a refused filing must write nothing");
+
+    res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["fz1"] });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /Finalised/);
+    assert.ok(!("notifyRequestedAt" in env.store.col("projects").get("voiceproj")));
+  });
+
+  await test("unfreeze_project needs a reason, records it, and lifts the freeze", async () => {
+    let res = await adminCall("unfreeze_project", { projectId: "voiceproj", reason: "  " });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /reason is required/);
+    assert.ok(env.store.col("projects").get("voiceproj").finalised, "still frozen without a reason");
+    res = await adminCall("unfreeze_project", { projectId: "voiceproj", reason: "Review found a defect" });
+    assert.strictEqual(res.body.result.isError, undefined, JSON.stringify(res.body));
+    const project = env.store.col("projects").get("voiceproj");
+    assert.ok(!project.finalised);
+    assert.ok(JSON.stringify(project.finalisedLog || []).includes("Review found a defect"), "reason must be in the log");
+    assert.ok([...env.store.col("mcpAuditLog").values()].some((r) => r.tool === "unfreeze_project" && r.reason === "Review found a defect"));
+    res = await adminCall("unfreeze_project", { projectId: "voiceproj", reason: "again" });
+    assert.match(res.body.result.content[0].text, /not Finalised/);
+    env.store.col("projects").set("voiceproj", { name: "Voice Project" });
+  });
+
   await test("approve_for_deployment makes the Approve click's writes and locks the train", async () => {
     seedItem("a1", { status: "ready-for-testing", deployCommit: "sha-a1", trainTest: { sha: "sha-a1", state: "passed" } });
     seedItem("a2", { status: "ready-for-testing", deployCommit: "sha-a2" });

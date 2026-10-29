@@ -595,6 +595,20 @@ const scenarios = [
       await c.visible(".blocked-answer-btn", "Answer is shown");
     },
   },
+  {
+    name: "Finalised project: badge shows, Ready for Dev is gone, + New backlog item is refused with a message",
+    seed: () => { const s = only("b1"); s.docs.projects[PID].finalised = { version: 1, at: t(T0 + 10), byEmail: "admin@personalisationhub.com", artifactUrl: null, artifactUpdatedAt: null }; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.visible(".project-finalised-badge", "Finalised badge");
+      assert.strictEqual(await c.page.locator(".project-notify-btn").count(), 0, "Ready for Dev is hidden");
+      await c.click(".new-item-btn", "+ New backlog item");
+      await c.visible("#dialog-backdrop", "the refusal dialog opens");
+      await c.waitText("#dialog-message", "is Finalised");
+      await c.click("#dialog-ok", "OK");
+      assert.ok(await c.page.locator("#ni-backdrop").isHidden(), "the New item form stays closed");
+    },
+  },
   // ── Concept Incubator, Releases and the system map (regression guard: the
   // 20 Oct 2026 report that the redesign dropped them) ────────────────────
   {

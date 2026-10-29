@@ -1215,6 +1215,29 @@ const PROJECT_WRITABLE_FIELDS = new Set([
   "description",
 ]);
 
+// ── Project freeze ("Finalised") ─────────────────────────────────────────
+// A permanent freeze, distinct from trainLocked (a release closing). Written
+// by the board's admin-only button and the finalise_project / unfreeze_project
+// tools, never by a train. `finalised` is {version, at, byEmail, artifactUrl,
+// artifactUpdatedAt} while frozen and null otherwise; `finalisedLog` is the
+// append-only record of every freeze and unfreeze (with the reason for the
+// latter). The Staff Kanban has no such state and is unaffected.
+function finalisedOut(p) {
+  const f = p && p.finalised;
+  if (!f || typeof f !== "object") return null;
+  const iso = (v) => (v && typeof v.toDate === "function" ? v.toDate().toISOString() : (v instanceof Date ? v.toISOString() : (typeof v === "string" ? v : null)));
+  return {
+    version: Number(f.version) || 1,
+    at: iso(f.at), byEmail: f.byEmail || null,
+    artifactUrl: f.artifactUrl || null, artifactUpdatedAt: iso(f.artifactUpdatedAt),
+  };
+}
+function finalisedRefusal(project, what) {
+  if (!project || !project.finalised) return null;
+  const f = finalisedOut(project);
+  return `${project.name || "This project"} is Finalised (frozen at version ${f.version}${f.byEmail ? " by " + f.byEmail : ""}), so ${what}. An admin can unfreeze it with a reason (unfreeze_project, or the project's ⋮ menu on the board).`;
+}
+
 // A project's one-or-two-sentence "what this covers" blurb, surfaced in
 // list_projects so an agent can map a loose reference to the right project.
 // Kept in step with the 300-char bound in firestore.rules.
@@ -2070,6 +2093,7 @@ const TOOLS = [
           deployBranch: p.deployBranch || null,
           trainStatus: p.trainStatus || null,
           trainLocked: p.trainLocked === true,
+          finalised: finalisedOut(p),
           // trainTestsRed hides Deploy to Main on the board; trainHold/trainNote say
           // why a deploy is waiting on tests; e2eStatus is the Run E2E chip (no breakdown).
           trainTestsRed: trainTestsRedOut(p.trainTestsRed),
@@ -2213,6 +2237,8 @@ const TOOLS = [
       if (desc.length > DESC_MAX) return toolError(`desc is ${desc.length} characters — the limit is ${DESC_MAX} (the board's own limit). Trim it and resubmit.`);
       const projectSnap = await db().collection("projects").doc(String(args.projectId)).get();
       if (!projectSnap.exists) return toolError(`No project with id ${args.projectId}. Call list_projects first.`);
+      const frozen = finalisedRefusal(projectSnap.data(), "no new backlog items can be filed against it");
+      if (frozen) return toolError(frozen);
       // ph-ticket-intake: structure into the four sections, infer type and
       // area, and hold the ticket BLOCKED (gap named) if it isn't buildable.
       const intake = applyIntake(desc);
@@ -2599,6 +2625,75 @@ const TOOLS = [
       });
     },
   },
+  {
+    name: "finalise_project",
+    role: "admin",
+    description: "ADMIN ONLY. Mark a project Finalised: a permanent freeze, distinct from the temporary train lock. From then on no new backlog items can be filed against it and no builds can be sent (the board and MCP both refuse with a message). The project's current artifact link and update time are captured as a numbered frozen version, and the project records that version, who froze it and when. Logged to mcpAuditLog and the project's finalisedLog. Only backlog-tracker projects — the Staff Kanban has no finalised state. An admin undoes it with unfreeze_project, which needs a reason.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "Which project (from list_projects)." } },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const projectRef = db().collection("projects").doc(projectId);
+      const snap = await projectRef.get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const project = snap.data() || {};
+      if (project.finalised) return toolError(`${project.name || projectId} is already Finalised (version ${finalisedOut(project).version}). Nothing changed.`);
+      const log = Array.isArray(project.finalisedLog) ? project.finalisedLog : [];
+      const version = log.filter((e) => e && e.action === "finalise").length + 1;
+      const email = String(session.email || "").trim().toLowerCase();
+      const now = new Date();
+      const finalised = {
+        version, at: now, byEmail: email,
+        artifactUrl: project.artifactUrl || null, artifactUpdatedAt: project.artifactUpdatedAt || null,
+      };
+      await projectRef.set({
+        finalised,
+        finalisedLog: FieldValue.arrayUnion({ action: "finalise", version, at: now, byEmail: email, via: "mcp", artifactUrl: finalised.artifactUrl }),
+      }, { merge: true });
+      await audit(session, "finalise_project", { projectId, version });
+      return textResult({
+        finalised: true, projectId, version, byEmail: email, at: now.toISOString(),
+        artifactUrl: finalised.artifactUrl,
+        note: finalised.artifactUrl ? "The current artifact link is recorded as this frozen version." : "The project has no artifact yet, so the frozen version records none.",
+      });
+    },
+  },
+  {
+    name: "unfreeze_project",
+    role: "admin",
+    description: "ADMIN ONLY. Undo a project's Finalised freeze. A reason is required and is recorded in the project's finalisedLog and mcpAuditLog. Filing items and sending builds work again straight away.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Which project (from list_projects)." },
+        reason: { type: "string", description: "Why the freeze is being lifted. Required." },
+      },
+      required: ["projectId", "reason"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const reason = String(args.reason || "").trim().slice(0, 1000);
+      if (!reason) return toolError("A reason is required to unfreeze a project.");
+      const projectRef = db().collection("projects").doc(projectId);
+      const snap = await projectRef.get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const project = snap.data() || {};
+      if (!project.finalised) return toolError(`${project.name || projectId} is not Finalised. Nothing changed.`);
+      const version = finalisedOut(project).version;
+      const email = String(session.email || "").trim().toLowerCase();
+      await projectRef.set({
+        finalised: null,
+        finalisedLog: FieldValue.arrayUnion({ action: "unfreeze", version, at: new Date(), byEmail: email, via: "mcp", reason }),
+      }, { merge: true });
+      await audit(session, "unfreeze_project", { projectId, version, reason });
+      return textResult({ finalised: false, projectId, unfrozenVersion: version, reason });
+    },
+  },
   // ── Two more admin-only carve-outs (Rob, 20 Oct 2026, ticket Ysh0yuU9z643E0uisr51) ──
   // So the first two pipeline approvals can be given by voice the way
   // approve_deploy_to_main gives the third. Each makes exactly the writes the
@@ -2629,6 +2724,9 @@ const TOOLS = [
       const projectSnap = await projectRef.get();
       if (!projectSnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
       const project = projectSnap.data() || {};
+
+      const frozen = finalisedRefusal(project, "no builds can be sent");
+      if (frozen) return toolError(frozen);
 
       // The board hides Ready for Dev while the train is closing.
       if (project.trainLocked) {
@@ -4736,7 +4834,7 @@ const SERVER_INSTRUCTIONS = [
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment).",
   "Skills (all projects): list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
-  "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
+  "Release: other card moves, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings sets the skills that build and deploy runs load; finalise_project / unfreeze_project freeze a project.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {

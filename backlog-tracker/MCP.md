@@ -704,3 +704,14 @@ sign-in on `/mcp/authorize`.
 
 - `set_blocked` / `clear_blocked` (editor): flag a Backlog ticket as `needs-decision` or `waiting-on-input` with a one-line note. Blocked tickets are skipped by Notify Claude and the build routine, show a flag on the card, and are counted as "need your decision" in the Backlog column header. The flag clears when it is cleared from the card, or when anyone other than whoever set it comments on the ticket. Pipeline status is never touched.
 - `set_phase_skill_bindings` (admin): add/remove skill slugs bound to the `build` or `deploy` phase in `settings/phaseSkillBindings` (the doc's Firestore rules are admin-only because it feeds the Routine's prompt).
+
+## Project freeze: `finalise_project` and `unfreeze_project`
+
+Both are **admin-only** `board.write` tools, logged to `mcpAuditLog`. `finalise_project`
+(`projectId`) marks a project Finalised, a permanent freeze that is not the train
+lock: afterwards `create_backlog_item` and `send_to_build` refuse with a message,
+`list_projects` returns `finalised: {version, at, byEmail, artifactUrl, ...}`, and the
+board shows a Finalised badge. The project's current artifact link is recorded as the
+frozen version. `unfreeze_project` (`projectId`, `reason`) lifts it; the reason is
+required and kept in the project's `finalisedLog`. The Staff Kanban tools are
+unaffected. See `REQUIREMENTS.md` → "Project freeze".

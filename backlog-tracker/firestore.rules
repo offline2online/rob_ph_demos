@@ -176,6 +176,7 @@ service cloud.firestore {
       return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge"])
         && (!changed.hasAny(["trainLocked"]) || incoming().trainLocked == true)
         && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
+        && (!changed.hasAny(["finalised", "finalisedLog"]) || isAdmin())
         && (!changed.hasAny(["notifyRequestedByEmail"]) || requesterIsCaller(incoming().notifyRequestedByEmail))
         && (!changed.hasAny(["deployNotifyRequestedByEmail"]) || requesterIsCaller(incoming().deployNotifyRequestedByEmail))
         && (!changed.hasAny(["groomRequestedByEmail"]) || requesterIsCaller(incoming().groomRequestedByEmail))
@@ -205,7 +206,8 @@ service cloud.firestore {
           && !("trainReady" in incoming())
           && !("trainStatus" in incoming()) && !("trainPrNumber" in incoming())
           && !("trainNote" in incoming()) && !("needsHumanMerge" in incoming())
-          && !("trainLocked" in incoming())))
+          && !("trainLocked" in incoming())
+          && !("finalised" in incoming()) && !("finalisedLog" in incoming())))
         && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
         && projectDocsBounded()
         && (isBoardAutomation() || (
@@ -342,6 +344,13 @@ service cloud.firestore {
     function approvalFieldsAbsent() {
       return !incoming().keys().hasAny(["approvedByEmail", "approvedAt", "approvedVia"]);
     }
+    function projectNotFinalised(pid) {
+      // The synthesized "General" project has no doc: exists() first.
+      return !exists(/databases/$(database)/documents/projects/$(pid))
+        || !("finalised" in get(/databases/$(database)/documents/projects/$(pid)).data)
+        || get(/databases/$(database)/documents/projects/$(pid)).data.finalised == null;
+    }
+
     function isValidItemCommon() {
       return isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().title, 200) &&
@@ -356,8 +365,11 @@ service cloud.firestore {
     match /backlogItems/{itemId} {
       allow read: if isBoardReader();
 
+      // A Finalised project is frozen: nobody files new tickets against it
+      // from a browser (the board automation is exempt, as everywhere).
       allow create: if isEditor() && isValidItemCommon()
-        && (isBoardAutomation() || (itemPipelineFieldsAbsent() && approvalFieldsAbsent()));
+        && (isBoardAutomation() || (itemPipelineFieldsAbsent() && approvalFieldsAbsent()
+          && projectNotFinalised(incoming().projectId)));
       allow update: if isEditor() && isValidItemCommon()
         && (isBoardAutomation() || (itemPipelineFieldsUnchanged() && approvalFieldsOk()));
 

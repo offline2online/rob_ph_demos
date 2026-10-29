@@ -2051,3 +2051,11 @@ body { overflow-x: clip; }
 .package-running .material-symbols-outlined { color: var(--primary-text); }
 .package-done .material-symbols-outlined { color: var(--success); }
 .package-failed .material-symbols-outlined { color: var(--danger); }
+
+/* Finalised project badge — see finalisedBadgeHTML() in js/app.js. */
+.project-finalised-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px;
+  background: rgba(201, 138, 10, .12); color: var(--warning); border: 1px solid var(--warning);
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+.project-finalised-badge .material-symbols-outlined { font-size: 14px; }

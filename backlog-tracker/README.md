@@ -2620,3 +2620,12 @@ its ticket back. The project header shows **Kanban E2E running / healing n bugs
 Fix tickets are raised on the **train's own project** (the pipeline builds a
 ticket onto its project's train), which is the Staff Kanban project when its
 own train breaks. Tests: `test/kanban-e2e-heal.test.js` (in `test:train-lock`).
+
+## Project freeze ("Finalised")
+
+An admin can freeze a project from its ⋮ menu (**Finalise project…**) or with the
+`finalise_project` MCP tool. A finalised project takes no new backlog items and no
+builds (board and MCP both refuse), shows a Finalised badge, and records the frozen
+version, who and when on `projects/{id}.finalised`. **Unfreeze project…** /
+`unfreeze_project` needs a reason. Not the same as the train lock, and the Staff
+Kanban is unaffected. See `REQUIREMENTS.md` → "Project freeze".

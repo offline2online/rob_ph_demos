@@ -1413,6 +1413,10 @@ function optionsMenuHTML(project) {
       Grooming settings
       <span class="options-menu-sub">Groom Backlog shows above ${groomThresholdOf(project)} tickets · package budget ${groomBudgetOf(project)}</span>
     </button>`;
+  html += `<button type="button" class="options-menu-item project-finalise-btn" data-admin-only data-project-id="${escapeHTML(pid)}">
+      ${isProjectFinalised(project) ? "Unfreeze project…" : "Finalise project…"}
+      <span class="options-menu-sub">${isProjectFinalised(project) ? "Admin only · needs a recorded reason" : "Admin only · permanent freeze"}</span>
+    </button>`;
   html += `<button type="button" class="options-menu-item options-menu-item-danger project-archive-project-btn" data-project-id="${escapeHTML(pid)}">
     Archive project
   </button>`;
@@ -1566,6 +1570,49 @@ setInterval(() => {
 // it sits there. The way out already exists and needs nothing new — Failed
 // testing sends it back and off the branch, unblocking the deploy without
 // unblocking the build.
+// "Finalised": a permanent freeze set by an admin (project options menu or the
+// finalise_project MCP tool), distinct from the temporary train lock. A
+// finalised project accepts no new backlog items and no builds; its Staff
+// Kanban counterpart does not exist. See REQUIREMENTS.md → "Project freeze".
+function isProjectFinalised(project) {
+  return !!(project && project.finalised && typeof project.finalised === "object");
+}
+function finalisedMessage(project) {
+  const f = project && project.finalised;
+  return `${project && project.name ? project.name : "This project"} is Finalised (frozen at version ${(f && f.version) || 1}${f && f.byEmail ? " by " + f.byEmail : ""}). No new backlog items can be filed and no builds can be sent. An admin can unfreeze it from the project's ⋮ menu.`;
+}
+function finalisedBadgeHTML(project) {
+  if (!isProjectFinalised(project)) return "";
+  const f = project.finalised;
+  const when = f.at && f.at.toMillis ? formatNoteAt(f.at) : "";
+  const title = `Finalised v${f.version || 1}${f.byEmail ? " by " + f.byEmail : ""}${when ? " on " + when : ""}`;
+  return `<span class="project-finalised-badge" title="${escapeHTML(title)}"><span class="material-symbols-outlined">lock</span>Finalised v${escapeHTML(String(f.version || 1))}</span>`;
+}
+async function finaliseProject(pid) {
+  const project = projects.find((p) => p.id === pid);
+  if (!project || !isConsoleAdmin()) return;
+  const email = ((auth.currentUser && auth.currentUser.email) || "").toLowerCase();
+  if (isProjectFinalised(project)) {
+    const reason = await showPromptDialog("", "", { title: `Unfreeze ${project.name}?`, label: "Reason for unfreezing (recorded)", okLabel: "Unfreeze", multiline: true, rows: 3 });
+    if (reason == null) return;
+    if (!reason.trim()) { await showAlert("A reason is required to unfreeze a project."); return; }
+    await setDoc(doc(db, "projects", pid), {
+      finalised: null,
+      finalisedLog: arrayUnion({ action: "unfreeze", version: project.finalised.version || 1, at: new Date(), byEmail: email, via: "board", reason: reason.trim().slice(0, 1000) }),
+    }, { merge: true });
+    return;
+  }
+  const ok = await showConfirmDialog(`Finalise ${project.name}? This is a permanent freeze: no new backlog items can be filed and no builds can be sent until an admin unfreezes it. The current artifact link is recorded as the frozen version.`, { title: "Finalise project", okLabel: "Finalise", danger: true });
+  if (!ok) return;
+  const log = Array.isArray(project.finalisedLog) ? project.finalisedLog : [];
+  const version = log.filter((e) => e && e.action === "finalise").length + 1;
+  const now = new Date();
+  await setDoc(doc(db, "projects", pid), {
+    finalised: { version, at: now, byEmail: email, artifactUrl: project.artifactUrl || null, artifactUpdatedAt: project.artifactUpdatedAt || null },
+    finalisedLog: arrayUnion({ action: "finalise", version, at: now, byEmail: email, via: "board", artifactUrl: project.artifactUrl || null }),
+  }, { merge: true });
+}
+
 function isTrainLocked(project) {
   return !!(project && project.trainLocked);
 }
@@ -1680,7 +1727,7 @@ function notifyClaudeButtonCore(project) {
     // A release is closing on this project's integration branch — see
     // isTrainLocked. Same hidden-when-the-action-isn't-valid rule as the
     // empty-Backlog case right below it.
-    if (isTrainLocked(project)) return "";
+    if (isTrainLocked(project) || isProjectFinalised(project)) return "";
     const backlogCount = backlogCountForProject(pid);
     if (!backlogCount) return waitingOnAnswerChipHTML(pid);
     // A non-empty selection (see the Backlog column's own checkboxes)
@@ -2258,6 +2305,7 @@ function projectSectionHTML(project) {
     : `<div class="project-name-row"><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
          <button type="button" class="project-rename-btn" data-project-id="${escapeHTML(project.id)}" title="Rename project">&#9998;</button>
          ${projectReleaseBadgeHTML(project)}
+         ${finalisedBadgeHTML(project)}
          <button type="button" class="project-star-btn${isProjectStarred(project.id) ? " starred" : ""}" data-project-id="${escapeHTML(project.id)}" aria-pressed="${isProjectStarred(project.id)}" title="${isProjectStarred(project.id) ? "Unstar project (unpin from top)" : "Star project (pin to top)"}">${isProjectStarred(project.id) ? "&#9733;" : "&#9734;"}</button>
        </div>`;
 
@@ -3668,6 +3716,8 @@ async function setProjectRepoFolder(id, repoFolderInfo) {
 // once projects/{id}.notifyRoutine reflects the click, which is a better
 // signal than a one-time dismissable dialog ever was.
 async function requestNotify(pid) {
+  const frozenProject = projects.find((p) => p.id === pid);
+  if (isProjectFinalised(frozenProject)) { await showAlert(finalisedMessage(frozenProject), { title: "Project is Finalised" }); return; }
   const count = backlogCountForProject(pid);
   if (count === 0) {
     await showAlert("Nothing in Backlog for this project yet — add an item first.");
@@ -4360,6 +4410,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (starBtn) { toggleProjectStarred(starBtn.dataset.projectId); return; }
   const renameBtn = e.target.closest(".project-rename-btn");
   if (renameBtn) { startEditingProjectName(renameBtn.dataset.projectId); return; }
+  const finaliseBtn = e.target.closest(".project-finalise-btn");
+  if (finaliseBtn) { closeAllOptionMenus(); finaliseProject(finaliseBtn.dataset.projectId); return; }
   const newItemBtn = e.target.closest(".new-item-btn");
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
   const notifyBtn = e.target.closest(".project-notify-btn");
@@ -5402,6 +5454,8 @@ function resetFormFields() {
   renderNiPendingAttachments();
 }
 function openForm(projectId) {
+  const frozenProject = projects.find((p) => p.id === projectId);
+  if (isProjectFinalised(frozenProject)) { showAlert(finalisedMessage(frozenProject), { title: "Project is Finalised" }); return; }
   activeNewItemProjectId = projectId;
   resetFormFields();
   niBackdrop.hidden = false;
