@@ -327,6 +327,8 @@ index is needed. The modal always reads the full ticket fresh (a save can't
 overwrite what the board doesn't hold; a title or label edit re-derives
 `searchTokens` from the stored description). Board text search finds
 description words through the server's `searchTokens` query on `kanbanTasks`.
+The board draws a page of each column (Backlog 25, others 50, "Show 50 more"), so
+the cost of a render follows what is on screen, not how many tickets are open (§13).
 
 **Backfill, with nobody at a terminal:** `POST /mcp/kanban/backfill` (any
 member, rate-limited, idempotent, sliced with `{done, after}`) writes a card for
@@ -353,6 +355,19 @@ the same comparison on the server.
   preloaded in parallel with `app.js` on `#staff-kanban`, and the rich-text
   editor (Quill) downloads when a ticket first opens, not at page start. See
   `backlog-tracker/README.md` → "Load performance".
+  Render cost (29 Oct 2026): the board draws a page of each column, not every
+  ticket: **Backlog its first 25 cards and every other column its first 50**,
+  each with a "Show 50 more" row. Header counts and remaining effort cover every
+  ticket in the filtered list, drawn or not. Every open card is still listened
+  to (they are light); only drawing is paged. The Done column's total is a
+  `count()` query, asked again when a ticket enters or leaves Done, not on every
+  snapshot (no aggregate document: one document takes about one write a second).
+  A listener's later snapshots carry only the changed cards (`docChanges()`),
+  listener callbacks are coalesced into one render per animation frame, and a
+  redraw keeps every card whose markup is unchanged, so a colleague's move
+  patches that one card. Search is debounced 150 ms and matches against
+  per-ticket text prepared once. Measured with the console's UI suite (2,000 and
+  5,000 open tickets): first cards under 1.5 s, My tasks under 150 ms.
 - **Accessibility:** keyboard-operable picker, menus and modal; ARIA on tabs,
   toggles and dialogs; tooltips reachable by focus and tap.
 - **Responsive:** desktop ≥1024 px with sidebar; tablet (iPad portrait and

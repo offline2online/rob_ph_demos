@@ -89,6 +89,10 @@
 .kb-board:not(.kb-board-lanes) .kb-list { flex: 1; }
 @media (min-width: 641px) { .kb-board:not(.kb-board-lanes) .kb-col > .kb-col-head { display: none; } }
 .kb-empty { padding: 18px 6px; font-size: 13px; }
+.kb-more-row:empty { display: none; }
+.kb-more-row { padding: 0 8px 8px; }
+.kb-more { width: 100%; justify-content: center; gap: 6px; }
+.kb-more-left { color: var(--text-secondary, #6b7280); font-size: 12px; font-weight: 400; }
 .kb-drop-target .kb-empty { display: none; }
 
 /* Swimlanes (two or more staff selected): one header row of columns, then a

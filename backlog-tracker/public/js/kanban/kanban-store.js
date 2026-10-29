@@ -105,38 +105,74 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   let boardColl = "kanbanCards"; // "kanbanTasks" while the cards are behind
   const state = {
     tasks, extra, texts, settings: normaliseSettings(null), settingsLoaded: false, sprints: [], members: [], membersLoaded: false,
-    notifications: [], ready: { open: false, closed: false },
+    notifications: [], ready: { open: false, closed: false }, rev: 0, doneTotal: null,
   };
   const unsubs = [];
   let releaseUnsub = null, releaseWatched = "";
   const changed = (what) => { try { onChange(what); } catch (e) { onError(e); } };
 
+  // state.rev counts changes to what the board holds, so the page can keep
+  // derived lists (every ticket as an array) until it moves.
+  const bump = () => { state.rev++; };
+  function hold(name, id, data) {
+    tasks.set(id, taskFromDoc(id, data));
+    if (!sources.has(id)) sources.set(id, new Set());
+    sources.get(id).add(name);
+  }
+  function release(name, id) {
+    const set = sources.get(id);
+    if (!set || !set.has(name)) return;
+    set.delete(name);
+    if (!set.size) { sources.delete(id); tasks.delete(id); }
+  }
+  // A listener's first snapshot is the whole result: whatever it held before
+  // and isn't in it any more goes. After that only the changed documents arrive.
   function absorb(name, snap) {
     const seen = new Set();
-    snap.forEach((d) => {
-      seen.add(d.id);
-      tasks.set(d.id, taskFromDoc(d.id, d.data({ serverTimestamps: "estimate" })));
-      if (!sources.has(d.id)) sources.set(d.id, new Set());
-      sources.get(d.id).add(name);
-    });
-    for (const [key, set] of sources) {
-      if (set.has(name) && !seen.has(key)) {
-        set.delete(name);
-        if (!set.size) { sources.delete(key); tasks.delete(key); }
-      }
+    snap.forEach((d) => { seen.add(d.id); hold(name, d.id, d.data({ serverTimestamps: "estimate" })); });
+    for (const [key, set] of [...sources]) if (set.has(name) && !seen.has(key)) release(name, key);
+    bump();
+  }
+  function absorbChanges(name, snap) {
+    for (const ch of snap.docChanges()) {
+      if (ch.type === "removed") release(name, ch.doc.id);
+      else hold(name, ch.doc.id, ch.doc.data({ serverTimestamps: "estimate" }));
     }
+    bump();
   }
   // Tickets fetched on demand (an epic's children, a linked ticket, a search
   // hit) are kept beside the board's own, so they can be named and opened
   // without appearing in its columns.
-  function pin(list) { for (const t of list) if (!tasks.has(t.key)) extra.set(t.key, t); }
+  function pin(list) { for (const t of list) if (!tasks.has(t.key)) extra.set(t.key, t); bump(); }
   const get = (key) => tasks.get(key) || extra.get(key) || null;
 
   const tasksRef = collection(db, "kanbanTasks");
   const cardsRef = collection(db, "kanbanCards");
   const boardRef = () => collection(db, boardColl);
   const cardDoc = (key) => doc(db, "kanbanCards", key);
-  const listen = (name, q, after) => onSnapshot(q, (snap) => { absorb(name, snap); if (after) after(); changed("tasks"); }, (err) => onError(err));
+  const listen = (name, q, after) => {
+    let first = true;
+    return onSnapshot(q, (snap) => {
+      const moved = !first && (name === "open" || name === "closed") && snap.docChanges().some((c) => c.type !== "modified");
+      if (first) absorb(name, snap); else absorbChanges(name, snap);
+      if ((name === "closed" && first) || moved) refreshDoneTotal();
+      first = false;
+      if (after) after();
+      changed("tasks");
+    }, (err) => onError(err));
+  };
+  // The Done column's total: a count() query, asked again only when a ticket
+  // enters or leaves Done, never on every snapshot.
+  let doneTimer = 0;
+  function refreshDoneTotal() {
+    clearTimeout(doneTimer);
+    doneTimer = setTimeout(async () => {
+      try {
+        const n = await countOf(query(boardRef(), where("open", "==", false)));
+        if (n !== state.doneTotal) { state.doneTotal = n; changed("tasks"); }
+      } catch (e) { /* the loaded cards still count */ }
+    }, 250);
+  }
 
   // The board's two listeners (open tickets, the latest closed), on the cards
   // or, while they are behind, on the tickets.
@@ -316,7 +352,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     // Optimistic: the listener's echo replaces this a moment later; a failed
     // write puts the old values back.
     const before = [[key, get(key)], ...others.map((o) => [o.key, get(o.key)])];
-    const put = (k, v) => { if (!v) return; (tasks.has(k) ? tasks : extra).set(k, v); };
+    const put = (k, v) => { if (!v) return; (tasks.has(k) ? tasks : extra).set(k, v); bump(); };
     const withCount = (t, p) => ({ ...t, ...p, ...("attachments" in p ? { attachmentCount: (p.attachments || []).length } : {}) });
     put(key, cur.key ? withCount(cur, patch) : null);
     for (const o of others) { const t = get(o.key); put(o.key, t ? withCount(t, o.patch) : null); }
@@ -338,7 +374,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     b.delete(doc(db, "kanbanTasks", key));
     b.delete(cardDoc(key));
     await b.commit();
-    tasks.delete(key); extra.delete(key); full.delete(key); sources.delete(key);
+    tasks.delete(key); extra.delete(key); full.delete(key); sources.delete(key); bump();
     changed("tasks");
   }
 

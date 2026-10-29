@@ -51,8 +51,13 @@ export function mountStaffKanban(ctx) {
 
   // ── State ───────────────────────────────────────────────────────────────
   const clone = (o) => JSON.parse(JSON.stringify(o));
+  // The board's tickets as an array, rebuilt only when the store has changed.
+  let taskList = [], taskListRev = -1;
   const state = {
-    get tasks() { return [...store.state.tasks.values()]; },
+    get tasks() {
+      if (taskListRev !== store.state.rev) { taskList = [...store.state.tasks.values()]; taskListRev = store.state.rev; }
+      return taskList;
+    },
     get settings() { return effectiveSettings(); },
     me,
   };
@@ -110,7 +115,7 @@ export function mountStaffKanban(ctx) {
   // Epics are ordinary tickets of type "epic"; any task or bug can name one as its parent.
   const byKey = (a, b) => (keyNumber(a.key) || 0) - (keyNumber(b.key) || 0);
   const epics = () => state.tasks.filter((t) => t.type === "epic").sort(byKey);
-  const epic = (key) => (key ? state.tasks.find((t) => t.key === key && t.type === "epic") : null);
+  const epic = (key) => { const t = key ? store.state.tasks.get(key) : null; return t && t.type === "epic" ? t : null; };
   const childrenOf = (key) => knownTasks().filter((t) => t.epic === key && t.type !== "epic");
   const taskByKey = (k) => store.get(k);
   // Every ticket the page knows of, the board's and those fetched on demand.
@@ -221,7 +226,7 @@ export function mountStaffKanban(ctx) {
     if (current.route === "kanban" && $("#kb-board")) { renderKanbanBoard(); refreshFilterCounts(); return; }
     keepPosition(() => render());
   }
-  let dataTimer = 0;
+  let dataTimer = 0, dataFrame = 0;
   const pendingData = new Set();
   function onData(what) {
     // Members the console hasn't loaded yet join its avatar cache, so photos
@@ -234,26 +239,31 @@ export function mountStaffKanban(ctx) {
     }
     if (what === "notifications") { drawBell(); return; }
     if (pageEl.hidden) return;
-    // Coalesce bursts (the first load delivers several listeners at once).
+    // Coalesce bursts (the first load delivers six listeners at once) into one
+    // render per animation frame. A hidden tab doesn't run frames: a timer covers it.
     pendingData.add(what);
-    clearTimeout(dataTimer);
-    dataTimer = setTimeout(() => {
-      const onlyTasks = [...pendingData].every((w) => w === "tasks");
-      const hadTasks = pendingData.has("tasks");
-      pendingData.clear();
-      if (current.route === "kanban") {
-        const b = $("#kb-board");
-        // People and settings change the filter bar itself; tickets only the columns.
-        if (b && onlyTasks) { renderKanbanBoard(); refreshFilterCounts(); }
-        else if (b) {
-          const typing = document.activeElement && document.activeElement.id === "kb-q";
-          keepPosition(() => renderKanban($("#kb-view")));
-          if (typing) { const q = $("#kb-q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
-        } else render();
-      }
-      else if (current.route === "report" || (current.route === "settings" && !pageEl.contains(document.activeElement))) keepPosition(() => render());
-      if (draft && !draftIsNew && hadTasks) refreshOpenTask();
-    }, 30);
+    if (dataFrame) return;
+    const run = () => { cancelAnimationFrame(dataFrame); clearTimeout(dataTimer); dataFrame = 0; flushData(); };
+    dataFrame = requestAnimationFrame(run);
+    dataTimer = setTimeout(run, 100);
+  }
+  function flushData() {
+    if (pageEl.hidden) { pendingData.clear(); return; }
+    const onlyTasks = [...pendingData].every((w) => w === "tasks");
+    const hadTasks = pendingData.has("tasks");
+    pendingData.clear();
+    if (current.route === "kanban") {
+      const b = $("#kb-board");
+      // People and settings change the filter bar itself; tickets only the columns.
+      if (b && onlyTasks) { renderKanbanBoard(); refreshFilterCounts(); }
+      else if (b) {
+        const typing = document.activeElement && document.activeElement.id === "kb-q";
+        keepPosition(() => renderKanban($("#kb-view")));
+        if (typing) { const q = $("#kb-q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+      } else render();
+    }
+    else if (current.route === "report" || (current.route === "settings" && !pageEl.contains(document.activeElement))) keepPosition(() => render());
+    if (draft && !draftIsNew && hadTasks) refreshOpenTask();
   }
   pageEl.addEventListener("click", (e) => {
     const r = e.target.closest("button[data-route], a[data-route]");
@@ -333,6 +343,7 @@ export function mountStaffKanban(ctx) {
   function renderKanban(view) {
     const relOpts = opt("", "All releases", board.release) + releases().map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), board.release)).join("");
     store.watchRelease(board.release);
+    headSig = ""; // (the view is drawn afresh below)
     // Primary filters: staff, My tasks, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
     const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.label].filter(Boolean).length;
     const filtersActive = moreCount || board.mine || board.assignees.size || board.release || board.q;
@@ -403,7 +414,12 @@ export function mountStaffKanban(ctx) {
     if (nb) nb.addEventListener("click", () => openTask(null));
     drawBell();
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
-    $("#kb-q").addEventListener("input", (e) => { board.q = e.target.value; renderKanbanBoard(); searchDescriptions(board.q); });
+    let qTimer = 0;
+    $("#kb-q").addEventListener("input", (e) => {
+      board.q = e.target.value;
+      clearTimeout(qTimer);
+      qTimer = setTimeout(() => { renderKanbanBoard(); searchDescriptions(board.q); }, 150);
+    });
     // A filter change redraws the board in place: the page keeps its scroll
     // position (and, on a phone, the column you were on).
     const redraw = () => keepPosition(() => renderKanban(view));
@@ -499,35 +515,131 @@ export function mountStaffKanban(ctx) {
     if (!board.assignees.size) return null;
     return [...people().map((u) => u.id), "none"].filter((id) => board.assignees.has(id));
   }
+  const boardIsFiltered = () => !!(board.q || board.mine || board.flagged || board.assignees.size || board.release || board.type || board.priority || board.sprint || board.label);
   const colMeta = (list, s) => {
     if (s.key === "done") {
-      return `<span class="kb-col-meta">${RESOLUTIONS.map((r) => `<span class="col-count kb-res-count kb-res-count-${r.key}" title="${r.label}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${list.filter((t) => res(t) === r.key).length}</span>`).join("")}</span>`;
+      const total = store.state.doneTotal;
+      const all = !boardIsFiltered() && total != null && total > list.length ? `<span class="col-count kb-done-total" title="All completed and withdrawn tickets, including those not loaded">${total} in all</span>` : "";
+      return `<span class="kb-col-meta">${RESOLUTIONS.map((r) => `<span class="col-count kb-res-count kb-res-count-${r.key}" title="${r.label}"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${list.filter((t) => res(t) === r.key).length}</span>`).join("")}${all}</span>`;
     }
     const rem = list.reduce((n, t) => n + remaining(t), 0);
     return `<span class="kb-col-meta">${s.key !== "done" && rem ? `<span class="kb-col-effort" title="Remaining effort">${fmtH(rem)}</span>` : ""}<span class="col-count">${list.length}</span></span>`;
   };
+  // Paging (KB §13): each column draws its first cards and a "Show more" row
+  // for the rest. The counts in the headers are of the whole filtered list.
+  const PAGE_STEP = 50, FIRST_PAGE = { backlog: 25 };
+  const pageExtra = new Map();     // paging key -> cards revealed beyond the first page
+  const pageSize = (status, key) => (FIRST_PAGE[status] || PAGE_STEP) + (pageExtra.get(key) || 0);
+  const moreHTML = (key, shown, total) => (total > shown
+    ? `<button type="button" class="btn-ghost kb-more" data-more="${esc(key)}">Show ${Math.min(PAGE_STEP, total - shown)} more<span class="kb-more-left">${total - shown} not shown</span></button>` : "");
+  const emptyOf = (s, r) => (r ? `<p class="empty-hint kb-empty">Drop here to ${r.key === "completed" ? "complete" : "withdraw"}</p>` : '<p class="empty-hint kb-empty">No tasks</p>');
   // The cards of one column (or swimlane cell). The last column has two drop
   // zones, Completed and Withdrawn, each with its own count.
-  function listsHTML(list, s, emptyHint) {
-    if (s.key !== "done") return `<div class="col-list kb-list">${list.map(cardHTML).join("") || emptyHint}</div>`;
+  function listsHTML(list, s, emptyHint, pageKey) {
+    if (s.key !== "done") {
+      const n = pageSize(s.key, `${pageKey}:${s.key}`);
+      return `<div class="col-list kb-list">${list.slice(0, n).map(cardHTML).join("") || emptyHint}</div>${moreHTML(`${pageKey}:${s.key}`, n, list.length)}`;
+    }
     return `<div class="kb-res-split">${RESOLUTIONS.map((r) => {
-      const items = list.filter((t) => res(t) === r.key);
+      const items = list.filter((t) => res(t) === r.key), k = `${pageKey}:done:${r.key}`, n = pageSize("done", k);
       return `<div class="kb-res-group kb-res-${r.key}"><div class="kb-res-head"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${r.label}<span class="col-count">${items.length}</span></div>
-        <div class="col-list kb-list" data-resolution="${r.key}">${items.map(cardHTML).join("") || `<p class="empty-hint kb-empty">Drop here to ${r.key === "completed" ? "complete" : "withdraw"}</p>`}</div></div>`;
+        <div class="col-list kb-list" data-resolution="${r.key}">${items.slice(0, n).map(cardHTML).join("") || emptyOf(s, r)}</div>${moreHTML(k, n, items.length)}</div>`;
     }).join("")}</div>`;
   }
+  // The plain board is drawn once as columns; after that only what changed in a
+  // column is touched: a card whose markup is the same stays the same node.
+  const cardSig = new WeakMap();
+  function setMeta(head, html) {
+    if (head.dataset.metaSig === html) return;
+    head.dataset.metaSig = html;
+    const old = head.querySelector(".kb-col-meta");
+    if (old) old.outerHTML = html; else head.insertAdjacentHTML("beforeend", html);
+  }
+  function reconcileList(listEl, items, hint) {
+    const have = new Map();
+    for (const c of [...listEl.children]) {
+      if (c.dataset.key && !have.has(c.dataset.key)) have.set(c.dataset.key, c);
+      else if (items.length || !c.classList.contains("kb-empty")) c.remove();
+    }
+    const want = new Set(items.map((t) => t.key));
+    for (const [k, c] of have) if (!want.has(k)) { c.remove(); have.delete(k); }
+    const tpl = document.createElement("template");
+    let prev = null;
+    for (const t of items) {
+      const html = cardHTML(t);
+      let node = have.get(t.key);
+      if (node && cardSig.get(node) !== html) {
+        tpl.innerHTML = html;
+        const fresh = tpl.content.firstElementChild;
+        cardSig.set(fresh, html);
+        node.replaceWith(fresh);
+        node = fresh;
+      } else if (!node) {
+        tpl.innerHTML = html;
+        node = tpl.content.firstElementChild;
+        cardSig.set(node, html);
+      }
+      const at = prev ? prev.nextSibling : listEl.firstChild;
+      if (node !== at) listEl.insertBefore(node, at);
+      prev = node;
+    }
+    if (!items.length && !listEl.querySelector(".kb-empty")) listEl.insertAdjacentHTML("beforeend", hint);
+  }
+  function setMore(host, key, shown, total) {
+    let row = host.nextElementSibling;
+    if (!row || !row.classList.contains("kb-more-row")) { row = document.createElement("div"); row.className = "kb-more-row"; host.after(row); }
+    const html = moreHTML(key, shown, total);
+    if (row.dataset.sig !== html) { row.dataset.sig = html; row.innerHTML = html; }
+  }
+  function renderPlainBoard(el, tasks) {
+    if (el.dataset.mode !== "plain") {
+      el.dataset.mode = "plain";
+      el.innerHTML = STATUSES.map((s) => `<section class="column kb-col" data-status="${s.key}" aria-label="${esc(s.label)}">
+        <div class="col-head kb-col-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span></div>
+        ${s.key === "done"
+    ? `<div class="kb-res-split">${RESOLUTIONS.map((r) => `<div class="kb-res-group kb-res-${r.key}"><div class="kb-res-head"><span class="material-symbols-outlined" aria-hidden="true">${r.icon}</span>${r.label}<span class="col-count"></span></div><div class="col-list kb-list" data-resolution="${r.key}"></div></div>`).join("")}</div>`
+    : '<div class="col-list kb-list"></div>'}
+      </section>`).join("");
+    }
+    const byStatus = new Map(STATUSES.map((s) => [s.key, []]));
+    for (const t of tasks) { const l = byStatus.get(t.status); if (l) l.push(t); }
+    for (const s of STATUSES) {
+      const list = byStatus.get(s.key).sort((a, b) => a.rank - b.rank);
+      const col = $(`.kb-col[data-status="${s.key}"]`, el);
+      col.classList.toggle("column-collapsed", collapsedCols.has(s.key));
+      setMeta($(".kb-col-head", col), colMeta(list, s));
+      if (s.key !== "done") {
+        const n = pageSize(s.key, `plain:${s.key}`), host = $(".kb-list", col);
+        reconcileList(host, list.slice(0, n), emptyOf(s));
+        setMore(host, `plain:${s.key}`, n, list.length);
+      } else {
+        for (const r of RESOLUTIONS) {
+          const items = list.filter((t) => res(t) === r.key), k = `plain:done:${r.key}`, n = pageSize("done", k);
+          const host = $(`.kb-list[data-resolution="${r.key}"]`, col);
+          const count = $(".kb-res-head .col-count", host.parentElement);
+          if (count.textContent !== String(items.length)) count.textContent = items.length;
+          reconcileList(host, items.slice(0, n), emptyOf(s, r));
+          setMore(host, k, n, items.length);
+        }
+      }
+    }
+  }
+  let headSig = "";
   function renderKanbanBoard() {
     const el = $("#kb-board");
     if (!el) return;
     const tasks = boardTasks();
-    $("#kb-count").textContent = `${tasks.length} task${tasks.length === 1 ? "" : "s"}`;
+    const countText = `${tasks.length} task${tasks.length === 1 ? "" : "s"}`;
+    if ($("#kb-count").textContent !== countText) $("#kb-count").textContent = countText;
     const lanes = laneIds();
     el.classList.toggle("kb-board-lanes", !!lanes);
     el.dataset.col = STATUSES[phoneCol].key;
     drawPager(tasks);
     const sorted = (list, k) => list.filter((t) => t.status === k).sort((a, b) => a.rank - b.rank);
     if (lanes) {
+      el.dataset.mode = "lanes";
       $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
+      headSig = "";
       $("#kb-lanes-sticky").hidden = false;
       $("#kb-lanes-bar").hidden = false;
       $("#kb-lanes-head-scroll").scrollLeft = $("#kb-board-wrap").scrollLeft;
@@ -546,7 +658,7 @@ export function mountStaffKanban(ctx) {
             const list = sorted(mine, s.key);
             return `<section class="column kb-col kb-lane-cell${list.length ? "" : " kb-cell-empty"}${collapsed ? " kb-cell-hidden" : ""}" data-status="${s.key}" data-lane="${id}" aria-label="${esc((id === "none" ? "Unassigned" : firstName(id)) + " · " + s.label)}">
               <div class="kb-cell-head kb-col-${s.key}"><span>${esc(s.label)}</span><span class="col-count">${list.length}</span></div>
-              ${listsHTML(list, s, "")}
+              ${listsHTML(list, s, "", `lane:${id}`)}
             </section>`;
           }).join("");
         }).join("");
@@ -560,27 +672,28 @@ export function mountStaffKanban(ctx) {
     }
     // Plain board: the page scrolls as a whole and the same pinned header
     // row as the swimlanes stays at the top (each column's own head is for phones).
-    $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
+    if (el.dataset.mode === "lanes") { el.innerHTML = ""; headSig = ""; }
+    const headHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
+    if (headHTML !== headSig) { headSig = headHTML; $("#kb-lanes-head").innerHTML = headHTML; }
     $("#kb-lanes-sticky").hidden = false;
     $("#kb-lanes-head-scroll").scrollLeft = $("#kb-board-wrap").scrollLeft;
     $("#kb-lanes-bar").hidden = true;
     updateLanePin();
-    el.innerHTML = STATUSES.map((s) => {
-      const list = sorted(tasks, s.key);
-      return `<section class="column kb-col${collapsedCols.has(s.key) ? " column-collapsed" : ""}" data-status="${s.key}" aria-label="${esc(s.label)}">
-        <div class="col-head kb-col-head kb-col-${s.key}">
-          <span class="kb-col-title">${esc(s.label)}</span>
-          ${colMeta(list, s)}
-        </div>
-        ${listsHTML(list, s, '<p class="empty-hint kb-empty">No tasks</p>')}
-      </section>`;
-    }).join("");
+    const fresh = el.dataset.mode !== "plain";
+    renderPlainBoard(el, tasks);
     // Phone: open on the column the pager says you're on.
-    if (mqPhone.matches) requestAnimationFrame(() => {
+    if (fresh && mqPhone.matches) requestAnimationFrame(() => {
       const col = $(`.kb-col[data-status="${STATUSES[phoneCol].key}"]`, el), wrap = $("#kb-board-wrap");
       if (col && wrap) { wrap.style.scrollBehavior = "auto"; wrap.scrollLeft = col.offsetLeft - parseFloat(getComputedStyle(wrap).paddingLeft); wrap.style.scrollBehavior = ""; }
     });
   }
+  // "Show 50 more" at the foot of a column.
+  pageEl.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-more]");
+    if (!b) return;
+    pageExtra.set(b.dataset.more, (pageExtra.get(b.dataset.more) || 0) + PAGE_STEP);
+    renderKanbanBoard();
+  });
 
   // Desktop: the board scrolls sideways in its own box, so a lane header can't
   // CSS-stick to the page. Instead the pin under the column headers shows the

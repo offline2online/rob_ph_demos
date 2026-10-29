@@ -277,10 +277,15 @@ export function searchTickets(list, query, descText = (t) => fold(t.descriptionT
 export const PICK_LIMIT = 50;
 
 // The board's text search: key, title, description text and labels.
+// The folded text of a ticket is kept per ticket object (the store replaces the
+// object when its document changes), so a keystroke scans prepared strings.
+const haystacks = new WeakMap();
 export function matchesQuery(t, q) {
   const s = fold(q).trim();
   if (!s) return true;
-  return fold(`${t.key} ${t.title} ${t.descriptionText || ""} ${(t.labels || []).join(" ")}`).includes(s);
+  let h = haystacks.get(t);
+  if (h === undefined) { h = fold(`${t.key} ${t.title} ${t.descriptionText || ""} ${(t.labels || []).join(" ")}`); haystacks.set(t, h); }
+  return h.includes(s);
 }
 
 // Board / MCP filters (KB-FLT-1). f: { q, mine, me, flagged, assignees (Set

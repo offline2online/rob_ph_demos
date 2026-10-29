@@ -17,9 +17,9 @@
 // An engine that isn't installed is listed under "NOT RUN" at the end, never counted as a pass.
 import assert from "node:assert/strict";
 import { startHarness, until } from "./harness.mjs";
-import { kanbanSeed, cardOfTask, emailOf, ROB } from "./kanban-seed.mjs";
+import { kanbanSeed, cardOfTask, emailOf, ROB, KB } from "./kanban-seed.mjs";
 import { wantedProfiles, contextOptions } from "../../../kanban-staff-board/test/lib/profiles.mjs";
-import { where, press, sleep, moveBy, dragCard, toastText } from "../../../kanban-staff-board/test/lib/driver.mjs";
+import { where, press, sleep, moveBy, dragCard, toastText, headers } from "../../../kanban-staff-board/test/lib/driver.mjs";
 import { defineNewCases } from "../../../kanban-staff-board/test/lib/cases.mjs";
 import { runMatrix } from "../../../kanban-staff-board/test/lib/matrix-run.mjs";
 import { fileURLToPath } from "node:url";
@@ -797,6 +797,80 @@ T("KB-C12", "cards behind the tickets: the board reads the tickets, asks the ser
   assert.ok(shown.length >= open1, `no ticket disappeared: ${shown.length} of ${open1}`);
   await p.done();
 });
+
+// ── Scale: the board stays fast however many tickets are open (KB §13) ───────
+// 2,000 and 5,000 open tickets, spread over the open columns. Backlog draws 25
+// cards and every other column 50, "Show 50 more" reveals the rest, and the
+// headers still count them all. A colleague's move patches one card.
+for (const N of [2000, 5000]) {
+  T(`KB-SCALE-${N}`, `${N} open tickets: first cards fast, a filter is quick, a remote move patches one card, counts stay exact`, { on: on.desktop }, async (prof) => {
+    const seed = kanbanSeed();
+    const base = Object.values(KB.kanbanTasks).find((t) => t.open && t.type === "task");
+    const statuses = ["backlog", "backlog", "backlog", "backlog", "backlog", "ready-for-dev", "in-progress", "in-progress", "ready-for-testing", "approved"];
+    const extraTasks = {}, extraCards = {};
+    const per = Object.fromEntries(statuses.map((st) => [st, 0]));
+    for (let i = 0; i < N; i++) {
+      const key = `PH-${1000 + i}`, status = statuses[i % statuses.length];
+      const t = { ...base, key, number: 1000 + i, title: `Scale ticket ${i}`, status, open: true, rank: i, assignee: i % 10 === 0 ? ROB : emailOf("Linh"), estimate: 2, logged: 0, resolution: null, labels: [], epic: "", links: [], attachments: [], flagged: false };
+      delete t.closedAt;
+      extraTasks[key] = t; extraCards[key] = cardOfTask(t);
+      per[status]++;
+    }
+    seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, ...extraTasks };
+    seed.docs.kanbanCards = { ...seed.docs.kanbanCards, ...extraCards };
+    const timing = { fn: () => {
+      window.__t0 = performance.now();
+      const mo = new MutationObserver(() => { if (document.querySelector(".kb-card")) { window.__firstCard = performance.now() - window.__t0; mo.disconnect(); } });
+      mo.observe(document, { childList: true, subtree: true });
+    } };
+    const p = await open(prof, "#staff-kanban", { seed, init: timing });
+    await p.waitForTimeout(400);
+    const first = await p.evaluate(() => window.__firstCard);
+    assert.ok(first < 1500, `first cards in ${Math.round(first)} ms`);
+    // paged: the columns draw a first page, the headers count everything
+    const drawn = (st) => p.$$eval(`.kb-col[data-status="${st}"] .kb-card`, (e) => e.length);
+    const seedBacklog = Object.values(seed.docs.kanbanTasks).filter((t) => t.open && t.status === "backlog").length;
+    const seedRft = Object.values(seed.docs.kanbanTasks).filter((t) => t.open && t.status === "ready-for-testing").length;
+    assert.equal(await drawn("backlog"), 25, "Backlog draws its first 25");
+    assert.equal(await drawn("ready-for-testing"), 50, "other columns draw 50");
+    const hs = await headers(p);
+    assert.equal(hs[0].count, seedBacklog, "the Backlog header counts every ticket");
+    assert.equal(hs[3].count, seedRft, "the Ready for Testing header counts every ticket");
+    const effort = await p.evaluate(async (st) => { const core = await import("/js/kanban/kanban-core.js"); const ts = [...globalThis.__fbStub.col("kanbanCards").values()].filter((t) => t.status === st && t.open); return core.fmtH(ts.reduce((n, t) => n + core.remaining(t), 0)); }, "backlog");
+    assert.equal(hs[0].effort, effort, "remaining effort covers the tickets not drawn");
+    await press(p, '.kb-col[data-status="backlog"] .kb-more');
+    assert.equal(await drawn("backlog"), 75, "Show 50 more reveals 50");
+    assert.equal((await headers(p))[0].count, seedBacklog, "the count does not change with paging");
+    // My tasks: one click, measured to the next painted frame
+    const ms = await p.evaluate(async () => {
+      const t0 = performance.now();
+      document.querySelector("#kb-mine").click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return performance.now() - t0;
+    });
+    assert.ok(ms < 150, `My tasks took ${Math.round(ms)} ms`);
+    const mine = Object.values(seed.docs.kanbanTasks).filter((t) => t.open && t.assignee === ROB && t.status === "backlog").length;
+    assert.equal((await headers(p))[0].count, mine, "My tasks counts Rob's backlog");
+    await press(p, "#kb-mine");
+    // a colleague moves one ticket: one card is patched, the rest of the board is left alone
+    await p.evaluate(() => {
+      window.__muts = 0;
+      window.__mo = new MutationObserver((list) => { window.__muts += list.length; });
+      window.__mo.observe(document.querySelector("#kb-board"), { childList: true, subtree: true, attributes: true, characterData: true });
+    });
+    await p.evaluate(async () => {
+      const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub;
+      const c = b.col("kanbanTasks"); const key = "PH-1001";
+      const t = { ...c.get(key), status: "in-progress", open: true }; c.set(key, t);
+      b.col("kanbanCards").set(key, { ...core.cardOf(t), updatedBy: "other@personalisationhub.com" }); b.notify();
+    });
+    await p.waitForTimeout(400);
+    const muts = await p.evaluate(() => { window.__mo.disconnect(); return window.__muts; });
+    assert.ok(muts > 0 && muts < 40, `a remote move changed ${muts} nodes`);
+    assert.equal((await headers(p))[0].count, seedBacklog - 1, "the Backlog header follows the move");
+    await p.done();
+  });
+}
 
 T("KB-C7", "Android: Record task listens one utterance per session and writes each phrase once", async (prof) => {
   const p = await open(prof, "#staff-kanban", { init: androidSpeech(["add a new Epic to the board", "Jack Johnson"], { android: true }) });

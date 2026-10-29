@@ -181,6 +181,8 @@ function querySnap(target, prev) {
     if (!before.has(d.id)) changes.push({ type: "added", doc: d });
     else if (before.get(d.id) !== JSON.stringify(describe(d.data()))) changes.push({ type: "modified", doc: d });
   }
+  const now = new Set(docs.map((d) => d.id));
+  for (const d of prev || []) if (!now.has(d.id)) changes.push({ type: "removed", doc: d });
   return { docs, empty: docs.length === 0, size: docs.length, metadata, forEach: (fn) => docs.forEach(fn), docChanges: () => changes };
 }
 
