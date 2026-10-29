@@ -285,7 +285,7 @@ as text until Anthropic switches on its MCP Apps host.
 | --- | --- | --- | --- | --- | --- |
 | `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
 | `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
-| `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
+| `add_item_comment` | `set_project_artifact`, `set_project_description`, `snapshot_project_artifact` (sign-off: the next frozen, numbered artifact version) | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
 | | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | `mark_skill_reviewed` (clears the review nudge and restarts the clock) | | |
@@ -704,3 +704,31 @@ sign-in on `/mcp/authorize`.
 
 - `set_blocked` / `clear_blocked` (editor): flag a Backlog ticket as `needs-decision` or `waiting-on-input` with a one-line note. Blocked tickets are skipped by Notify Claude and the build routine, show a flag on the card, and are counted as "need your decision" in the Backlog column header. The flag clears when it is cleared from the card, or when anyone other than whoever set it comments on the ticket. Pipeline status is never touched.
 - `set_phase_skill_bindings` (admin): add/remove skill slugs bound to the `build` or `deploy` phase in `settings/phaseSkillBindings` (the doc's Firestore rules are admin-only because it feeds the Routine's prompt).
+
+## Artifact snapshots on sign-off (PH-20)
+
+`snapshot_project_artifact` (editor; `projectId`, optional `note`) signs off
+a project's artifact: it captures the next numbered version of the link set
+with `set_project_artifact`. `list_artifact_versions` and
+`get_artifact_version` read them (any member, viewers included), and
+`list_projects` shows `latestArtifactVersion`. Epics, screenshots and
+descriptions should cite the version, so a ticket does not drift when the
+prototype changes later.
+
+- **What is frozen.** A GitHub Pages artifact of this repo
+  (`offline2online.github.io/rob_ph_demos/<path>`) is pinned to the commit
+  `main` is on at sign-off, as
+  `https://rawcdn.githack.com/offline2online/rob_ph_demos/<sha>/<path>` — an
+  immutable, commit-sha link (CLAUDE.md → test links). Any other URL cannot
+  be frozen: `pinnedUrl` is the same link, `frozen` is `false`, and the reply
+  carries a warning saying so.
+- **Where it lives.** Append-only documents at
+  `projects/{id}/artifactVersions/{n}` — `{version, projectId, sourceUrl,
+  pinnedUrl, commitSha, frozen, signedOffBy, signedOffAt, note}`. They are
+  written only by the MCP server's admin SDK: `firestore.rules` lets members
+  read and nobody write from a browser, and the board reads the latest of each
+  project with one collection-group listener for its ⋮ menu's
+  "v<n>, signed off <date>" line.
+- **Project writes.** The tool writes no project field, so
+  `PROJECT_WRITABLE_FIELDS` is unchanged (`docs`, `artifactUrl`,
+  `artifactUpdatedAt`, `description`); `test/mcp-server.test.js` asserts it.

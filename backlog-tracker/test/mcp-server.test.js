@@ -887,6 +887,98 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("projects").get("proj1").artifactUrl, null);
   });
 
+  // ── Artifact snapshots (PH-20) ──────────────────────────────────────────
+  const WRITABLE_BEFORE_SNAPSHOTS = ["docs", "artifactUrl", "artifactUpdatedAt", "description"];
+  await test("snapshot_project_artifact pins a GitHub Pages artifact to main's commit; later calls append", async () => {
+    const SHA1 = "a".repeat(40), SHA2 = "b".repeat(40);
+    const snap = (args) => rpc(tokens.access_token, "tools/call", { name: "snapshot_project_artifact", arguments: Object.assign({ projectId: "proj1" }, args) });
+    const body = (r) => JSON.parse(r.body.result.content[0].text);
+    const none = await snap({});
+    assert.strictEqual(none.body.result.isError, true, "no artifact link, nothing to sign off");
+    env.store.col("projects").get("proj1").artifactUrl = "https://offline2online.github.io/rob_ph_demos/kanban-staff-board/index.html";
+    const projectBefore = JSON.stringify(env.store.col("projects").get("proj1"));
+    mcp.__test.setMainShaFetcher(async () => SHA1);
+    const v1 = body(await snap({ note: "first sign-off" }));
+    assert.strictEqual(v1.version, 1);
+    assert.strictEqual(v1.frozen, true);
+    assert.strictEqual(v1.commitSha, SHA1);
+    assert.strictEqual(v1.pinnedUrl, `https://rawcdn.githack.com/offline2online/rob_ph_demos/${SHA1}/kanban-staff-board/index.html`);
+    assert.match(v1.signedOffBy, /@/, "attributed to the signed-in person");
+    assert.strictEqual(JSON.stringify(env.store.col("projects").get("proj1")), projectBefore, "the project document is not written");
+
+    mcp.__test.setMainShaFetcher(async () => SHA2); // main moved on
+    const v2 = body(await snap({}));
+    assert.strictEqual(v2.version, 2);
+    assert.strictEqual(v2.commitSha, SHA2);
+    const stored = env.store.col("projects/proj1/artifactVersions");
+    assert.strictEqual(stored.get("1").pinnedUrl, v1.pinnedUrl, "version 1 is unchanged");
+    assert.strictEqual(stored.get("1").note, "first sign-off");
+
+    const list = body(await rpc(tokens.access_token, "tools/call", { name: "list_artifact_versions", arguments: { projectId: "proj1" } }));
+    assert.deepStrictEqual(list.versions.map((v) => v.version), [2, 1]);
+    const got = body(await rpc(tokens.access_token, "tools/call", { name: "get_artifact_version", arguments: { projectId: "proj1", version: 1 } }));
+    assert.strictEqual(got.pinnedUrl, v1.pinnedUrl);
+    const missing = await rpc(tokens.access_token, "tools/call", { name: "get_artifact_version", arguments: { projectId: "proj1", version: 9 } });
+    assert.strictEqual(missing.body.result.isError, true);
+
+    const listed = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_projects", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(listed.projects.find((p) => p.id === "proj1").latestArtifactVersion, 2);
+    assert.strictEqual(listed.projects.find((p) => p.id === "proj2").latestArtifactVersion, null);
+
+    delete env.store.col("projects").get("proj1").artifactUrl;
+    mcp.__test.setMainShaFetcher(null);
+  });
+
+  await test("snapshot_project_artifact cannot freeze a non-Pages URL and says so", async () => {
+    env.store.col("projects").get("proj1").artifactUrl = "https://claude.ai/public/artifacts/abc";
+    const res = await rpc(tokens.access_token, "tools/call", { name: "snapshot_project_artifact", arguments: { projectId: "proj1" } });
+    const out = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(out.pinnedUrl, out.sourceUrl);
+    assert.strictEqual(out.frozen, false);
+    assert.strictEqual(out.commitSha, null);
+    assert.match(out.warning, /cannot be frozen/);
+    assert.strictEqual(out.version, 3, "numbering continues");
+    delete env.store.col("projects").get("proj1").artifactUrl;
+  });
+
+  await test("pagesRepoPath maps only this repo's Pages URLs", async () => {
+    const f = mcp.__test.pagesRepoPath;
+    assert.strictEqual(f("https://offline2online.github.io/rob_ph_demos/a/b.html?x=1#y"), "a/b.html");
+    assert.strictEqual(f("https://offline2online.github.io/rob_ph_demos/a/"), "a/index.html");
+    assert.strictEqual(f("https://offline2online.github.io/other/a.html"), null);
+    assert.strictEqual(f("https://evil.example/rob_ph_demos/a.html"), null);
+    assert.strictEqual(f("https://offline2online.github.io/rob_ph_demos/a/%2e%2e/b"), "b", "the URL parser resolves dot segments, so a path can never leave the repo");
+  });
+
+  await test("a viewer can read artifact versions but cannot snapshot", async () => {
+    const VIEWER3 = "artifactviewer@personalisationhub.com";
+    const idToken = signIn(VIEWER3);
+    addConsoleUser(VIEWER3, { role: "viewer" });
+    const v = b64url(crypto.randomBytes(32));
+    const ch = b64url(crypto.createHash("sha256").update(v).digest());
+    const auth = await call({
+      method: "POST", path: "/mcp/authorize/complete",
+      body: { idToken, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256", scope: "board.read board.write" },
+    });
+    const tok = await call({
+      method: "POST", path: "/mcp/token",
+      body: { grant_type: "authorization_code", code: new URL(auth.body.redirect).searchParams.get("code"), code_verifier: v, client_id: clientId, redirect_uri: REDIRECT },
+    });
+    const viewerToken = tok.body.access_token;
+    const read = await rpc(viewerToken, "tools/call", { name: "list_artifact_versions", arguments: { projectId: "proj1" } });
+    assert.strictEqual(JSON.parse(read.body.result.content[0].text).count, 3);
+    const before = env.store.col("projects/proj1/artifactVersions").size;
+    const write = await rpc(viewerToken, "tools/call", { name: "snapshot_project_artifact", arguments: { projectId: "proj1" } });
+    assert.ok(write.body.error || write.body.result.isError, "refused");
+    assert.strictEqual(env.store.col("projects/proj1/artifactVersions").size, before, "nothing written");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "snapshot_project_artifact").scope, "board.write");
+    for (const n of ["list_artifact_versions", "get_artifact_version"]) assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === n).scope, "board.read");
+  });
+
+  await test("snapshots add no writable project field", async () => {
+    assert.deepStrictEqual([...mcp.__test.PROJECT_WRITABLE_FIELDS].sort(), WRITABLE_BEFORE_SNAPSHOTS.slice().sort());
+  });
+
   await test("sets a project's description and list_projects surfaces it", async () => {
     const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_project_description", arguments: Object.assign({ projectId: "proj1" }, args) });
     await call({ description: "  Visitor attributes and their sources.  " });

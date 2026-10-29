@@ -79,14 +79,14 @@ function docRef(store, collection, id) {
   };
 }
 
-function query(store, collection, filters = [], limit = null) {
+function query(store, collection, filters = [], limit = null, order = null) {
   return {
-    where(field, op, value) { return query(store, collection, filters.concat([{ field, op, value }]), limit); },
-    limit(n) { return query(store, collection, filters, n); },
+    where(field, op, value) { return query(store, collection, filters.concat([{ field, op, value }]), limit, order); },
+    limit(n) { return query(store, collection, filters, n, order); },
     // Projections/ordering are accepted and ignored: the stub hands back
     // whole documents, which is a superset of what the real call returns.
-    select() { return query(store, collection, filters, limit); },
-    orderBy() { return query(store, collection, filters, limit); },
+    select() { return query(store, collection, filters, limit, order); },
+    orderBy(field, dir) { return query(store, collection, filters, limit, field ? { field, dir: dir === "desc" ? -1 : 1 } : order); },
     async get() {
       let rows = [...store.col(collection).entries()];
       for (const f of filters) {
@@ -97,6 +97,7 @@ function query(store, collection, filters = [], limit = null) {
           throw new Error(`stub: unsupported operator ${f.op}`);
         });
       }
+      if (order) rows.sort(([, a], [, b]) => (a[order.field] > b[order.field] ? 1 : a[order.field] < b[order.field] ? -1 : 0) * order.dir);
       if (limit != null) rows = rows.slice(0, limit);
       const docs = rows.map(([id]) => snapshotFor(store, collection, id));
       return { docs, empty: docs.length === 0, size: docs.length, forEach: (fn) => docs.forEach(fn) };

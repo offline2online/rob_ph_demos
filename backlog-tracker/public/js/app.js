@@ -12,7 +12,7 @@
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc, getDocs,
+  getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, collectionGroup, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc, getDocs,
   onSnapshot, query, orderBy, where, serverTimestamp, writeBatch, arrayUnion, deleteField,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
@@ -320,6 +320,7 @@ function rebuildAllItems() {
 let items = [];
 let projects = [];
 let projectsLoaded = false;
+let latestArtifactVersions = new Map(); // projectId -> newest artifactVersions doc
 let interfaces = [];
 let programs = [];
 let releases = [];
@@ -1372,6 +1373,7 @@ function optionsMenuHTML(project) {
   const hasReq = projectHasDoc(project, "requirements");
   const ifaces = interfacesForProject(pid);
   const artifactUrl = project.artifactUrl && project.artifactUrl.trim();
+  const artifactVersion = latestArtifactVersions.get(pid);
 
   let html = `
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
@@ -1393,6 +1395,7 @@ function optionsMenuHTML(project) {
     ? `<a class="options-menu-item" href="${escapeHTML(safeHttpUrl(artifactUrl))}" target="_blank" rel="noopener">
         View Artifact &#8599;
         ${project.artifactUpdatedAt ? `<span class="options-menu-sub">updated ${escapeHTML(formatNoteAt(project.artifactUpdatedAt))}</span>` : ""}
+        ${artifactVersion ? `<span class="options-menu-sub artifact-version-line">v${escapeHTML(String(artifactVersion.version))}, signed off ${escapeHTML(artifactVersion.signedOffAt && artifactVersion.signedOffAt.toDate ? artifactVersion.signedOffAt.toDate().toLocaleDateString() : "")}</span>` : ""}
       </a>`
     : `<div class="options-menu-item options-menu-item-empty options-menu-item-static">No artifact yet</div>`;
 
@@ -3104,6 +3107,20 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
   renderSystemMap();
 }, onListenerError("projects"));
+
+// Latest signed-off artifact snapshot per project (written by the MCP server,
+// read-only here). One collection-group listener; a failure only hides the
+// "v<n>" line, so it never goes through onListenerError's sign-in reload.
+onSnapshot(collectionGroup(db, "artifactVersions"), (snap) => {
+  const next = new Map();
+  snap.docs.forEach((d) => {
+    const v = d.data({ serverTimestamps: "estimate" });
+    const cur = next.get(v.projectId);
+    if (v.projectId && (!cur || v.version > cur.version)) next.set(v.projectId, v);
+  });
+  latestArtifactVersions = next;
+  if (projectsLoaded) render();
+}, (err) => console.warn("backlog-tracker: artifactVersions listener error", err));
 
 onSnapshot(interfacesRef, (snap) => {
   markLive("interfaces", snap);

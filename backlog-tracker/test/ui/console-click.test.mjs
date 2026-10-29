@@ -96,6 +96,25 @@ function makeCtx(o, width) {
 // ── Scenarios ──────────────────────────────────────────────────────────────
 const scenarios = [
   {
+    name: "⋮ menu: View Artifact shows the latest signed-off version",
+    seed: () => {
+      const s = seed();
+      s.docs.projects[PID].artifactUrl = "https://offline2online.github.io/rob_ph_demos/demo/index.html";
+      s.docs.artifactVersions = {
+        v1: { projectId: PID, version: 1, signedOffAt: t(T0 + 10), pinnedUrl: "https://rawcdn.githack.com/x/y/z/demo/index.html" },
+        v2: { projectId: PID, version: 2, signedOffAt: t(T0 + 20), pinnedUrl: "https://rawcdn.githack.com/x/y/w/demo/index.html" },
+      };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.openMenu();
+      await c.waitText(".artifact-version-line", "v2, signed off", "the newest version is shown");
+      const line = await c.text(".artifact-version-line");
+      assert.ok(!line.includes("v1,"), `only the latest version is shown, got "${line}"`);
+    },
+  },
+  {
     name: "board: four columns in order, stacked top to bottom below 640 px",
     seed: () => seed(),
     async run(c) {

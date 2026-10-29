@@ -1301,6 +1301,53 @@ async function repointInterfaces(from, to, reason, session) {
   return moved;
 }
 
+// ── Artifact snapshots: projects/{id}/artifactVersions/{n} (PH-20) ───────
+// Append-only, frozen copies of a project's artifact at sign-off. Written
+// here with the admin SDK and nowhere else (firestore.rules lets members read
+// and nobody write from a browser), so snapshots deliberately add NOTHING to
+// PROJECT_WRITABLE_FIELDS: the project doc is not touched at all.
+const PAGES_HOST = "offline2online.github.io";
+const PAGES_REPO_PREFIX = "/rob_ph_demos/";
+const ARTIFACT_NOTE_MAX = 500;
+
+// A GitHub Pages URL of this repo → the repo path it serves, else null.
+function pagesRepoPath(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch { return null; }
+  if (u.protocol !== "https:" || u.hostname !== PAGES_HOST || !u.pathname.startsWith(PAGES_REPO_PREFIX)) return null;
+  let path = decodeURIComponent(u.pathname.slice(PAGES_REPO_PREFIX.length));
+  if (!path || path.endsWith("/")) path += "index.html";
+  if (path.split("/").some((seg) => seg === ".." || seg === "." || seg === "")) return null;
+  return path;
+}
+
+async function defaultMainSha() {
+  const resp = await fetch("https://api.github.com/repos/offline2online/rob_ph_demos/commits/main", {
+    headers: { Accept: "application/vnd.github.sha", "User-Agent": "ph-agent-console" },
+  });
+  if (!resp.ok) throw new Error(`GitHub answered ${resp.status}`);
+  const sha = (await resp.text()).trim();
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("GitHub did not return a commit sha");
+  return sha;
+}
+let mainShaFetcher = defaultMainSha;
+
+function versionOut(id, d) {
+  const at = d.signedOffAt;
+  return {
+    version: d.version, sourceUrl: d.sourceUrl, pinnedUrl: d.pinnedUrl, commitSha: d.commitSha || null,
+    frozen: d.frozen === true, signedOffBy: d.signedOffBy || null,
+    signedOffAt: at && typeof at.toDate === "function" ? at.toDate().toISOString() : (at || null),
+    note: d.note || null,
+  };
+}
+
+async function latestArtifactVersionDoc(projectId) {
+  const snap = await db().collection("projects").doc(String(projectId)).collection("artifactVersions")
+    .orderBy("version", "desc").limit(1).get();
+  return snap.empty ? null : snap.docs[0].data();
+}
+
 async function updateProjectFields(projectId, fields) {
   for (const key of Object.keys(fields)) {
     if (!PROJECT_WRITABLE_FIELDS.has(key)) {
@@ -2058,6 +2105,12 @@ const TOOLS = [
         byStatus[d.status || "backlog"] = (byStatus[d.status || "backlog"] || 0) + 1;
         counts.set(d.projectId, byStatus);
       });
+      const latestVersions = new Map();
+      for (const p of projects.values()) {
+        if (!p.artifactUrl || (p.archived === true && !(args && args.includeArchived))) continue;
+        const v = await latestArtifactVersionDoc(p.id);
+        if (v) latestVersions.set(p.id, v.version);
+      }
       const out = [];
       projects.forEach((p) => {
         if (p.archived === true && !(args && args.includeArchived)) return;
@@ -2078,6 +2131,7 @@ const TOOLS = [
           e2eStatus: e2eStatusOut(p.e2eStatus),
           handOff: handOffOut(p),
           artifactUrl: p.artifactUrl || null,
+          latestArtifactVersion: p.artifactUrl ? (latestVersions.get(p.id) || null) : null,
           // The document to read first: "readme", "requirements" or a projectDocs id. Declared in the repo's board-docs.json and written by the post-merge sync, never over MCP.
           startHereDocId: p.startHereDocId || null,
           counts: counts.get(p.id) || {},
@@ -3143,6 +3197,97 @@ const TOOLS = [
       await updateProjectFields(projectId, { artifactUrl: raw, artifactUpdatedAt: raw ? FieldValue.serverTimestamp() : null });
       await audit(session, "set_project_artifact", { projectId, artifactUrl: raw });
       return textResult({ updated: true, projectId, artifactUrl: raw });
+    },
+  },
+  {
+    name: "snapshot_project_artifact",
+    description: "Sign off a project's artifact: capture the next frozen, numbered version of it (version 1, 2, …) so tickets, epics and screenshots can cite a version that cannot drift. A GitHub Pages artifact of this repo (offline2online.github.io/rob_ph_demos/…) is pinned to the commit main is on right now, via an immutable rawcdn.githack.com link. Any other URL cannot be frozen: pinnedUrl is then the same link and the reply says it may change. Append-only; changes no project field.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "From list_projects. The project must have an artifact link (set_project_artifact)." },
+        note: { type: "string", description: `Optional sign-off note (up to ${ARTIFACT_NOTE_MAX} characters).` },
+      },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const sourceUrl = String((snap.data() || {}).artifactUrl || "").trim();
+      if (!sourceUrl) return toolError("This project has no artifact link to sign off. Set one with set_project_artifact first.");
+      const note = args.note == null ? null : String(args.note).trim();
+      if (note && note.length > ARTIFACT_NOTE_MAX) return toolError(`note is too long (max ${ARTIFACT_NOTE_MAX} characters).`);
+
+      let commitSha = null;
+      let pinnedUrl = sourceUrl;
+      let frozen = false;
+      const repoPath = pagesRepoPath(sourceUrl);
+      if (repoPath) {
+        try { commitSha = await mainShaFetcher(); } catch (err) {
+          return toolError(`Could not read the commit main is on, so the artifact was not signed off: ${err.message}. Try again shortly.`);
+        }
+        pinnedUrl = `https://rawcdn.githack.com/offline2online/rob_ph_demos/${commitSha}/${repoPath.split("/").map(encodeURIComponent).join("/")}`;
+        frozen = true;
+      }
+
+      const versions = db().collection("projects").doc(projectId).collection("artifactVersions");
+      let record;
+      await db().runTransaction(async (tx) => {
+        const latest = await tx.get(versions.orderBy("version", "desc").limit(1));
+        const n = (latest.empty ? 0 : latest.docs[0].data().version) + 1;
+        record = {
+          version: n, projectId, sourceUrl, pinnedUrl, commitSha, frozen,
+          signedOffBy: session.email, signedOffAt: FieldValue.serverTimestamp(), note: note || null,
+        };
+        tx.set(versions.doc(String(n)), record);
+      });
+      await audit(session, "snapshot_project_artifact", { projectId, version: record.version, frozen });
+      return textResult({
+        signedOff: true, projectId, version: record.version, sourceUrl, pinnedUrl, commitSha, frozen,
+        signedOffBy: session.email, note: record.note,
+        ...(frozen ? {} : { warning: "This artifact is not on this repo's GitHub Pages, so it cannot be frozen: pinnedUrl is the live link and may change after this sign-off." }),
+      });
+    },
+  },
+  {
+    name: "list_artifact_versions",
+    description: "Every signed-off snapshot of a project's artifact, newest first (version, pinnedUrl, commitSha, frozen, signedOffBy, signedOffAt, note). Cite a version number in epics and tickets rather than the live artifact link.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "From list_projects." } },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args) {
+      const projectId = String(args.projectId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const res = await db().collection("projects").doc(projectId).collection("artifactVersions").orderBy("version", "desc").get();
+      const versions = res.docs.map((d) => versionOut(d.id, d.data() || {})).sort((a, b) => b.version - a.version);
+      return textResult({ projectId, count: versions.length, versions });
+    },
+  },
+  {
+    name: "get_artifact_version",
+    description: "One signed-off snapshot of a project's artifact by version number.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "From list_projects." },
+        version: { type: "integer", minimum: 1, description: "From list_artifact_versions." },
+      },
+      required: ["projectId", "version"], additionalProperties: false,
+    },
+    async run(args) {
+      const projectId = String(args.projectId);
+      const n = Number(args.version);
+      if (!Number.isInteger(n) || n < 1) return toolError("version must be a whole number from 1.");
+      const snap = await db().collection("projects").doc(projectId).collection("artifactVersions").doc(String(n)).get();
+      if (!snap.exists) return toolError(`Project ${projectId} has no artifact version ${n}. Call list_artifact_versions.`);
+      return textResult(Object.assign({ projectId }, versionOut(snap.id, snap.data() || {})));
     },
   },
   {
@@ -4730,7 +4875,7 @@ const SERVER_INSTRUCTIONS = [
   "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
   "To take over or catch up on a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in its order. A person can start the same plan with the project_handover prompt.",
   "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full (it can be huge), so set include to the one block you need.",
-  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document, so read it first and send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
+  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first, send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
   REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
   "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
@@ -5103,6 +5248,6 @@ exports.__test = {
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
   TOOLS, PROMPTS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
   MCP_APP_MIME, UI_META, BOARD_VIEWS, safeHref,
-  PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
+  PROJECT_WRITABLE_FIELDS, pagesRepoPath, setMainShaFetcher: (f) => { mainShaFetcher = f || defaultMainSha; }, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,
 };

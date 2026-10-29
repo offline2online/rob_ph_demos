@@ -140,6 +140,8 @@ export function doc(base, ...rest) {
 export function where(field, op, value) { return { kind: "where", field, op, value }; }
 export function orderBy(field, dir = "asc") { return { kind: "orderBy", field, dir }; }
 export function limit(n) { return { kind: "limit", n }; }
+// Seeded as a plain collection named after the group; the page only queries one group.
+export function collectionGroup(_db, id) { return { type: "collection", path: id, parentPath: id }; }
 export function query(col, ...constraints) { return { type: "query", path: col.path, constraints }; }
 
 const val = (v) => (v instanceof Timestamp ? v.ms : v);

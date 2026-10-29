@@ -231,6 +231,13 @@ service cloud.firestore {
       // write does not re-send it to every open tab. Same gates as the
       // project doc: any editor (and the automation user) writes, any member
       // reads. The project doc keeps only a pointer (`docs`).
+      // Signed-off artifact snapshots (PH-20): append-only versions written
+      // only by the MCP server's admin SDK. Members read; no browser writes.
+      match /artifactVersions/{version} {
+        allow read: if isBoardReader();
+        allow write: if false;
+      }
+
       match /docs/{docName} {
         allow read: if isBoardReader();
         allow create, update: if isEditor()
@@ -245,6 +252,12 @@ service cloud.firestore {
           && (!("sha256" in incoming()) || incoming().sha256 == null || (incoming().sha256 is string && incoming().sha256.size() <= 64));
         allow delete: if isAdmin();
       }
+    }
+
+    // The board reads every project's latest snapshot with one collection-group
+    // listener (public/js/app.js). Read-only, like the nested rule above.
+    match /{path=**}/artifactVersions/{version} {
+      allow read: if isBoardReader();
     }
 
     // Programs/Products — a purely organizational grouping above Projects
