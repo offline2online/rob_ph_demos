@@ -47,8 +47,6 @@ export async function audienceRefusal(ctx: Pick<Context, 'company'>, advertiserI
   return null
 }
 
-export const audienceError = (reason: string) => new HttpError(422, 'targeting_not_supported', reason)
-
 /* PUT /admin/v1/advertisers/{id}/audiences: a list of values, each in the Visitor Segments vocabulary (or already private to another advertiser).
    Free text on the variable lets the retailer type a value the vocabulary does not list yet. */
 export async function validateAudiences(ctx: Pick<Context, 'company'>, raw: unknown): Promise<string[]> {
