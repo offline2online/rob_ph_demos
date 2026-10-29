@@ -19,7 +19,10 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { syncTrainWithMain, rebasePatchFilesOnto, mergeCommandChains } = require("../scripts/run-backlog-automation.js");
+const {
+  syncTrainWithMain, rebasePatchFilesOnto, mergeCommandChains,
+  unionMergeConflicts, unionInsertedLines, unionInsertedListNames, unionMergeNote, UNION_MARKER_SIZE,
+} = require("../scripts/run-backlog-automation.js");
 
 let passed = 0;
 const failures = [];
@@ -298,6 +301,237 @@ test("a new file, a file the sync did not change, and a file identical to the br
     assert.strictEqual(out.files[1].content, "same but edited\n");
     assert.strictEqual(out.files[2].content, "intro\n\nsection A (PR #271)\n\nsection B\n");
   } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// ── Append-only conflicts: keep both additions (29 Oct 2026) ────────────
+// Staff Kanban sent 8 tickets at once; each appended a case to the end of
+// test/kanban-mcp.test.js, a name to mcp-client.test.mjs's pinned tool list
+// and a row to the MCP.md tool table. git merge-file calls two insertions at
+// the same point a conflict, so one ticket landed per round and the rest
+// were rebuilt. On allowlisted paths a hunk both sides only added to now
+// keeps both additions, the branch's first.
+
+const REAL = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+const KANBAN_TEST = "backlog-tracker/test/kanban-mcp.test.js";
+const CLIENT_TEST = "backlog-tracker/test/mcp-client.test.mjs";
+// A case added the way a build adds one: before the summary at the end.
+function withCaseAppended(text, name) {
+  const at = text.lastIndexOf("\n  console.log(`\\n${passed} passed");
+  assert.ok(at > 0, "kanban-mcp.test.js still ends with its summary line");
+  const block = `  await test("${name}", async () => {\n    const r = await tool(sam, "kanban_my_work", {});\n    assert.ok(!r.isError, r.text);\n  });\n`;
+  return `${text.slice(0, at + 1)}\n${block}${text.slice(at + 1)}`;
+}
+// A repo whose base commit holds `files`; returns its sha (every ticket's patchBaseSha).
+function makeTicketRepo(files) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "train-union-test-"));
+  const work = path.join(root, "work");
+  fs.mkdirSync(work);
+  sh(work, "git", ["init", "--quiet", "-b", "main"]);
+  sh(work, "git", ["config", "user.name", "test"]);
+  sh(work, "git", ["config", "user.email", "test@example.com"]);
+  for (const [p, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(work, p)), { recursive: true });
+    fs.writeFileSync(path.join(work, p), content);
+  }
+  sh(work, "git", ["add", "-A"]);
+  sh(work, "git", ["commit", "-m", "base", "--quiet"]);
+  return { root, work, base: sh(work, "git", ["rev-parse", "HEAD"]) };
+}
+// What processApplyPatch does once rebasePatchFilesOnto has answered: write
+// the files and commit them onto the train.
+function land(work, files, message) {
+  for (const f of files) fs.writeFileSync(path.join(work, f.path), f.content);
+  sh(work, "git", ["add", "-A"]);
+  sh(work, "git", ["commit", "-m", message, "--quiet"]);
+}
+const parses = (file, text) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "train-union-parse-"));
+  try {
+    fs.writeFileSync(path.join(dir, path.basename(file)), text);
+    execFileSync(process.execPath, ["--check", path.join(dir, path.basename(file))], { stdio: "pipe" });
+    return true;
+  } catch { return false; } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+};
+
+test("THE 29 OCT INCIDENT: two tickets built in parallel each add a case at the end of kanban-mcp.test.js — both land, no conflict", () => {
+  const original = REAL("test/kanban-mcp.test.js");
+  const { root, work, base } = makeTicketRepo({ [KANBAN_TEST]: original });
+  try {
+    process.chdir(work);
+    // Both sessions read `base`. A lands first, exactly as written.
+    land(work, [{ path: KANBAN_TEST, content: withCaseAppended(original, "ticket A's case") }], "ticket A\n\nBacklog item: A");
+    const out = rebasePatchFilesOnto([{ path: KANBAN_TEST, content: withCaseAppended(original, "ticket B's case") }], base);
+    assert.deepStrictEqual(out.conflicts, [], "not a conflict, so no rebuild");
+    assert.deepStrictEqual(out.rebased, [KANBAN_TEST]);
+    assert.deepStrictEqual(out.unioned, [{ path: KANBAN_TEST, hunks: 1 }], "the card is told which file was union-merged");
+    const merged = out.files[0].content;
+    const a = merged.indexOf(`await test("ticket A's case"`), b = merged.indexOf(`await test("ticket B's case"`);
+    assert.ok(a > 0 && b > a, "both cases kept, the branch's (A) first, then this patch's (B)");
+    assert.ok(merged.startsWith(original.slice(0, original.lastIndexOf("\n  console.log("))), "nothing above the additions changed");
+    assert.ok(merged.endsWith(original.slice(original.lastIndexOf("\n  console.log(") + 1)), "the summary lines still close the file");
+    assert.ok(parses(KANBAN_TEST, merged), "the merged file parses");
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("eight tickets from one base, each appending a case, all land in turn without a conflict", () => {
+  const original = REAL("test/kanban-mcp.test.js");
+  const { root, work, base } = makeTicketRepo({ [KANBAN_TEST]: original });
+  try {
+    process.chdir(work);
+    for (let n = 1; n <= 8; n++) {
+      const patch = [{ path: KANBAN_TEST, content: withCaseAppended(original, `ticket ${n}`) }];
+      const out = n === 1 ? { files: patch, conflicts: [] } : rebasePatchFilesOnto(patch, base);
+      assert.deepStrictEqual(out.conflicts, [], `ticket ${n}`);
+      land(work, out.files, `ticket ${n}`);
+    }
+    const final = fs.readFileSync(path.join(work, KANBAN_TEST), "utf8");
+    const at = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => final.indexOf(`await test("ticket ${n}"`));
+    assert.ok(at.every((x, i) => x > 0 && (i === 0 || x > at[i - 1])), "every case kept, in landing order");
+    assert.ok(parses(KANBAN_TEST, final));
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("the same line modified on both sides is still a conflict, and the patch is left as given", () => {
+  const original = REAL("test/kanban-mcp.test.js");
+  // Both tickets add a tool, so both re-count the tools in this test's title.
+  const line = original.match(/await test\("the [\w-]+ kanban_\* tools are registered/)[0];
+  const { root, work, base } = makeTicketRepo({ [KANBAN_TEST]: original });
+  try {
+    process.chdir(work);
+    land(work, [{ path: KANBAN_TEST, content: withCaseAppended(original.replace(line, line.replace(/the [\w-]+ /, "the A-count ")), "A") }], "A");
+    const theirs = withCaseAppended(original.replace(line, line.replace(/the [\w-]+ /, "the B-count ")), "B");
+    const out = rebasePatchFilesOnto([{ path: KANBAN_TEST, content: theirs }], base);
+    assert.deepStrictEqual(out.conflicts, [KANBAN_TEST], "one changed line makes the whole file a conflict, even with an append beside it");
+    assert.deepStrictEqual(out.unioned, []);
+    assert.strictEqual(out.files[0].content, theirs);
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a union that breaks JS syntax is still a conflict (each side adds the same top-level const)", () => {
+  const file = "backlog-tracker/test/helpers.test.js";
+  const baseText = '"use strict";\nconst assert = require("assert");\n\nassert.ok(true);\n';
+  const add = (v) => baseText.replace("\nassert.ok(true);", `const helper = ${v};\n\nassert.ok(true);`);
+  assert.ok(parses(file, add(1)) && parses(file, add(2)), "each side parses on its own");
+  const { root, work, base } = makeTicketRepo({ [file]: baseText });
+  try {
+    process.chdir(work);
+    land(work, [{ path: file, content: add(1) }], "A");
+    const out = rebasePatchFilesOnto([{ path: file, content: add(2) }], base);
+    assert.deepStrictEqual(out.conflicts, [file]);
+    assert.deepStrictEqual(out.unioned, []);
+    assert.strictEqual(out.files[0].content, add(2));
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a path off the allowlist (functions/kanban.js) is still a conflict however append-only it is", () => {
+  const file = "backlog-tracker/functions/kanban.js";
+  const baseText = "const TOOLS = [];\nTOOLS.push(1);\n";
+  const { root, work, base } = makeTicketRepo({ [file]: baseText });
+  try {
+    process.chdir(work);
+    land(work, [{ path: file, content: `${baseText}TOOLS.push(2);\n` }], "A");
+    const out = rebasePatchFilesOnto([{ path: file, content: `${baseText}TOOLS.push(3);\n` }], base);
+    assert.deepStrictEqual(out.conflicts, [file]);
+    assert.deepStrictEqual(out.unioned, []);
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("Markdown: two rows added to the end of the same tool table are both kept", () => {
+  const file = "backlog-tracker/MCP.md";
+  const table = "| Read | Write |\n|---|---|\n| `kanban_get_task` | `kanban_comment` |\n";
+  const baseText = `# MCP\n\n${table}\nMore text.\n`;
+  const row = (r) => baseText.replace(table, `${table}| | ${r} |\n`);
+  const { root, work, base } = makeTicketRepo({ [file]: baseText });
+  try {
+    process.chdir(work);
+    land(work, [{ path: file, content: row("`kanban_a`") }], "A");
+    const out = rebasePatchFilesOnto([{ path: file, content: row("`kanban_b`") }], base);
+    assert.deepStrictEqual(out.conflicts, []);
+    assert.deepStrictEqual(out.unioned, [{ path: file, hunks: 1 }]);
+    assert.strictEqual(out.files[0].content, baseText.replace(table, `${table}| | \`kanban_a\` |\n| | \`kanban_b\` |\n`));
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("the pinned tool list in mcp-client.test.mjs: two tickets each adding a name to the same line keep both names, sorted", () => {
+  const original = REAL("test/mcp-client.test.mjs");
+  const { root, work, base } = makeTicketRepo({ [CLIENT_TEST]: original });
+  try {
+    process.chdir(work);
+    land(work, [{ path: CLIENT_TEST, content: original.replace('"kanban_list_people",\n', '"kanban_list_people", "kanban_list_releases",\n') }], "A");
+    const theirs = original.replace('"kanban_assign_task", "kanban_attach_file"', '"kanban_archive_task", "kanban_assign_task", "kanban_attach_file"')
+      .replace('"kanban_my_work", ', '"kanban_my_work", "kanban_notify_people", ');
+    const out = rebasePatchFilesOnto([{ path: CLIENT_TEST, content: theirs }], base);
+    assert.deepStrictEqual(out.conflicts, []);
+    assert.strictEqual(out.unioned.length, 1);
+    const merged = out.files[0].content;
+    const list = merged.slice(merged.indexOf("assert.deepStrictEqual(names, ["), merged.indexOf("]);", merged.indexOf("assert.deepStrictEqual(names, [")));
+    const names = list.match(/"[a-z_]+"/g).map((n) => JSON.parse(n));
+    for (const n of ["kanban_archive_task", "kanban_list_releases", "kanban_notify_people"]) assert.ok(names.includes(n), n);
+    assert.deepStrictEqual(names, names.slice().sort(), "still sorted, as the test compares it with a sorted list");
+    assert.strictEqual(new Set(names).size, names.length, "no name twice");
+    assert.ok(parses(CLIENT_TEST, merged));
+    // Only the lines that gained a name changed.
+    const changed = merged.split("\n").filter((l, i) => l !== original.split("\n")[i]);
+    assert.strictEqual(changed.length, 2, changed.join("\n"));
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("the pinned tool list: a name one side removed is still a conflict", () => {
+  const original = REAL("test/mcp-client.test.mjs");
+  const { root, work, base } = makeTicketRepo({ [CLIENT_TEST]: original });
+  try {
+    process.chdir(work);
+    land(work, [{ path: CLIENT_TEST, content: original.replace('"kanban_list_people",\n', '"kanban_list_people", "kanban_list_releases",\n') }], "A");
+    const out = rebasePatchFilesOnto([{ path: CLIENT_TEST, content: original.replace('"kanban_flag_task", ', "") }], base);
+    assert.deepStrictEqual(out.conflicts, [CLIENT_TEST]);
+  } finally { process.chdir(root); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("unionInsertedLines: insertions around kept base lines; identical additions once; a changed line refuses", () => {
+  assert.deepStrictEqual(unionInsertedLines(["a"], [], ["b"]), ["a", "b"], "same point: ours, then theirs");
+  assert.deepStrictEqual(unionInsertedLines(["x", "a", "y"], ["x", "y"], ["x", "y", "b"]), ["x", "a", "y", "b"]);
+  assert.deepStrictEqual(unionInsertedLines(["", "a", "x"], ["x"], ["", "b", "x"]), ["", "a", "", "b", "x"]);
+  assert.deepStrictEqual(unionInsertedLines(["s", "a"], ["s"], ["s", "a"]), ["s", "a"], "the same addition on both sides is kept once");
+  assert.strictEqual(unionInsertedLines(["x2", "a"], ["x"], ["x", "b"]), null, "ours changed a base line");
+  assert.strictEqual(unionInsertedLines(["a"], ["x"], ["x", "b"]), null, "ours removed a base line");
+});
+
+test("unionInsertedListNames: names, not lines; refuses anything that isn't a list of string literals", () => {
+  assert.deepStrictEqual(
+    unionInsertedListNames(['  "a", "c",'], ['  "a",'], ['  "a", "b",']),
+    ['  "a", "b", "c",'], "sorted lists stay sorted");
+  assert.deepStrictEqual(
+    unionInsertedListNames(['  "z", "a",'], ['  "z",'], ['  "z", "m",']),
+    ['  "z", "a", "m",'], "an unsorted list: the branch's first");
+  assert.deepStrictEqual(
+    unionInsertedListNames(['  "b", "c",', '  "d",'], ['  "b", "c",', '  "d",'].slice(0, 1), ['  "a", "b", "c",']),
+    ['  "a", "b", "c",', '  "d",'], "a name leading the hunk goes on its first line; untouched lines kept as written");
+  assert.strictEqual(unionInsertedListNames(['  "a", // x'], ['  "a",'], ['  "a", "b",']), null);
+  assert.strictEqual(unionInsertedListNames(['  "b",'], ['  "a",'], ['  "a", "c",']), null, "a removed name");
+});
+
+test("unionMergeConflicts: only allowlisted paths, every hunk or none, and a setext '=======' is not a marker", () => {
+  const M = UNION_MARKER_SIZE;
+  const hunk = (o, b, t) => [`${"<".repeat(M)} current branch`, ...o, `${"|".repeat(M)} before sync`, ...b, "=".repeat(M), ...t, `${">".repeat(M)} this patch`];
+  const doc = ["Title", "=======", "", ...hunk(["- a"], [], ["- b"]), "", "Next", "=======", ""].join("\n");
+  assert.deepStrictEqual(unionMergeConflicts("docs/x.md", doc), { text: "Title\n=======\n\n- a\n- b\n\nNext\n=======\n", hunks: 1 });
+  assert.strictEqual(unionMergeConflicts("backlog-tracker/functions/kanban.js", doc), null, "not allowlisted");
+  assert.strictEqual(unionMergeConflicts("backlog-tracker/test/kanban.js", doc), null, "a test helper, not a *.test.js");
+  assert.ok(unionMergeConflicts("backlog-tracker/test/ui/staff-kanban.test.mjs", doc), "test/ui/ is covered");
+  const mixed = [...hunk(["- a"], [], ["- b"]), ...hunk(["x2"], ["x"], ["x3"])].join("\n");
+  assert.strictEqual(unionMergeConflicts("docs/x.md", mixed), null, "one hunk that is more than an insertion leaves the whole file a conflict");
+});
+
+test("unionMergeNote: names each union-merged file for the card; nothing when there was none", () => {
+  assert.strictEqual(unionMergeNote([]), "");
+  const note = unionMergeNote([{ path: KANBAN_TEST, hunks: 1 }, { path: "backlog-tracker/MCP.md", hunks: 2 }]);
+  assert.match(note, /Union-merged backlog-tracker\/test\/kanban-mcp\.test\.js \(1 place\), backlog-tracker\/MCP\.md \(2 places\)/);
+  assert.match(note, /the branch's first, then this patch's/);
+  // processApplyPatch puts it on the card's "Committed to …" note.
+  const src = fs.readFileSync(path.join(__dirname, "..", "scripts", "run-backlog-automation.js"), "utf8");
+  const body = src.slice(src.indexOf("async function processApplyPatch("));
+  assert.match(body, /unionedPaths = rebase\.unioned;/);
+  assert.match(body, /unionMergeNote\(unionedPaths\)/);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed\n`);

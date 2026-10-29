@@ -356,7 +356,12 @@ on the card. So, in a default build fire:
   lands, so their changes are kept and yours are applied. Without it, your
   whole-file copy would silently undo whatever landed after you read it.
   If both of you changed the same lines, the card is noted and rebuilt once
-  automatically.
+  automatically. Where you both only *added* lines at the same place in a
+  `backlog-tracker/test/**/*.test.{js,mjs}` or `*.md` file (a new test case
+  at the end, a table row, a name in `mcp-client.test.mjs`'s pinned tool
+  list), both additions are kept and the card says "Union-merged". So add,
+  don't rewrite: renumbering or retitling an existing line next to your
+  addition turns it back into a conflict.
 - **A new migration takes the next number on the train as you read it**,
   and if a parallel ticket lands one with the same number first, the
   automation refuses yours (`migrationNumberClashes`) and rebuilds it once
