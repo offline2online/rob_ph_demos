@@ -44,6 +44,7 @@ async function reset() {
     await setDoc(doc(db, "kanbanTasks/PH-7"), task(7, { createdAt: new Date(0), updatedAt: new Date(0) }));
     await setDoc(doc(db, "kanbanCards/PH-7"), { key: "PH-7", type: "task", title: "A task", status: "backlog", resolution: null, open: true, rank: 10, assignee: "", previousAssignee: "", release: "", sprint: "", priority: "medium", flagged: false, estimate: null, logged: 0, due: "", labels: [], epic: "", commentCount: 0, attachmentCount: 0, updatedAt: new Date(0), updatedBy: SAM });
     await setDoc(doc(db, "kanbanTasks/PH-7/comments/c1"), { author: SAM, html: "<p>x</p>", text: "x", at: new Date(0) });
+    for (const [id, author] of [["c4", SAM], ["c5", SAM], ["c6", "ada@personalisationhub.com"]]) await setDoc(doc(db, "kanbanTasks/PH-7/comments/" + id), { author, html: "<p>x</p>", text: "x", at: new Date(0) });
     await setDoc(doc(db, "kanbanTasks/PH-7/activity/a1"), { who: SAM, text: "Backlog → In Progress", at: new Date(0) });
     await setDoc(doc(db, "kanbanNotifications/n1"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: false, at: new Date(0) });
     await setDoc(doc(db, "kanbanNotifications/n3"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: true, at: new Date(0) });
@@ -235,6 +236,21 @@ async function main() {
   });
   await check("A comment can't be written in someone else's name", "deny", () =>
     setDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c2"), { author: "ada@personalisationhub.com", html: "", text: "x", at: serverTimestamp() }));
+  await check("An author edits their own comment (text, mentions, edited-at)", "allow", () =>
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c1"), { html: "<p>edited</p>", text: "edited", mentions: [], editedAt: serverTimestamp() }));
+  await check("A member can't edit someone else's comment", "deny", () =>
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c6"), { html: "<p>mine now</p>", text: "mine now", mentions: [], editedAt: serverTimestamp() }));
+  await check("An admin can't edit a member's comment", "deny", () =>
+    updateDoc(doc(as(ADMIN), "kanbanTasks/PH-7/comments/c4"), { html: "<p>no</p>", text: "no", mentions: [], editedAt: serverTimestamp() }));
+  await check("An edit can't change the author or the time", "deny", () =>
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c4"), { author: "ada@personalisationhub.com", editedAt: serverTimestamp() }));
+  await check("An edit must stamp editedAt with the server time", "deny", () =>
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c4"), { html: "<p>y</p>", text: "y", mentions: [], editedAt: new Date(0) }));
+  await check("A viewer can't edit a comment", "deny", () =>
+    updateDoc(doc(as(VIEWER), "kanbanTasks/PH-7/comments/c4"), { html: "<p>y</p>", text: "y", mentions: [], editedAt: serverTimestamp() }));
+  await check("A member can't delete someone else's comment", "deny", () => deleteDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c6")));
+  await check("An author deletes their own comment", "allow", () => deleteDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c5")));
+  await check("An admin deletes anyone's comment", "allow", () => deleteDoc(doc(as(ADMIN), "kanbanTasks/PH-7/comments/c4")));
   await check("The activity log is append-only", "deny", () =>
     updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/activity/a1"), { text: "rewritten" }));
   await check("An activity line can't be deleted", "deny", () => deleteDoc(doc(as(ADMIN), "kanbanTasks/PH-7/activity/a1")));

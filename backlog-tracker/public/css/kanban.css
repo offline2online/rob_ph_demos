@@ -286,6 +286,16 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 .kb-comment-meta { font-size: 12px; color: var(--text-muted); }
 .kb-comment-meta b { color: var(--text); }
 .kb-comment-text { font-size: 13.5px; white-space: pre-wrap; }
+.kb-comment-body { flex: 1; min-width: 0; }
+.kb-comment-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.kb-comment-edited { font-style: italic; }
+.kb-comment-menu-wrap { position: relative; margin-left: auto; }
+.kb-comment-menu-btn { width: 28px; height: 28px; padding: 0; }
+.kb-comment-menu-btn .material-symbols-outlined { font-size: 18px; }
+.kb-comment-menu { position: absolute; right: 0; top: 100%; z-index: 5; display: flex; flex-direction: column; min-width: 120px; padding: 4px 0; background: var(--surface, #fff); border-radius: var(--ap-radius-sm); box-shadow: 0 0 0 .5px var(--ap-divider), 0 4px 12px rgba(0, 0, 0, .12); }
+.kb-comment-menu[hidden] { display: none; }
+.kb-comment-menu button { text-align: left; padding: 8px 14px; font: inherit; font-size: 13.5px; color: var(--text); background: none; border: 0; cursor: pointer; }
+.kb-comment-menu button:hover, .kb-comment-menu button:focus-visible { background: var(--ap-hover, rgba(0, 0, 0, .06)); }
 .kb-activity { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--text-muted); padding-left: 2px; }
 .kb-activity .material-symbols-outlined { font-size: 17px; width: 24px; text-align: center; }
 .kb-activity b { color: var(--text); font-weight: 600; }

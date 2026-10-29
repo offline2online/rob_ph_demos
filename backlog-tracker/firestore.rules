@@ -892,7 +892,13 @@ service cloud.firestore {
           && incoming().html is string && incoming().html.size() <= 200000
           && incoming().text is string && incoming().text.size() <= 20000
           && incoming().at == request.time;
-        allow update, delete: if isEditor() && resource.data.author == callerEmail();
+        // Edit your own (and only its text, mentions and edited-at); delete your own, or anyone's as an admin (KB-MOD-3).
+        allow update: if isEditor() && resource.data.author == callerEmail()
+          && incoming().diff(resource.data).affectedKeys().hasOnly(["html", "text", "mentions", "editedAt"])
+          && incoming().html is string && incoming().html.size() <= 200000
+          && incoming().text is string && incoming().text.size() <= 20000
+          && incoming().editedAt == request.time;
+        allow delete: if isEditor() && (resource.data.author == callerEmail() || isAdmin());
       }
       // Append-only: who moved, reassigned or flagged what, and when.
       match /activity/{entryId} {

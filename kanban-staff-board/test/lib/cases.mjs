@@ -1171,6 +1171,53 @@ export function defineNewCases(E) {
     await p.done();
   });
 
+  T("TC-67", "comments: the author edits and deletes their own (⋮ menu, console confirm, \"edited\", count follows); an admin deletes anyone's; no one edits another's", (C ? {} : { skip: "Console only: the prototype's comments are a local list with no ids or author rules" }), async (prof) => {
+    const menus = (q) => q.$$eval("#f-comments .kb-comment", (li) => li.map((x) => ({ who: x.querySelector(".kb-comment-meta b").textContent, menu: !!x.querySelector("[data-comment-menu]") })));
+    const commentWrites = (q, re) => E.writes(q, re);
+    // As Linh (an editor): Rob's and Huy's comments on PH-20 have no controls.
+    const q = await open(prof, E.hash("kanban"), { seed: E.roleSeed("editor") });
+    await openTask(q, "PH-20");
+    assert.deepEqual((await menus(q)).filter((m) => m.menu), [], "no ⋮ on someone else's comment");
+    await q.click('[data-field="comments"] .ql-editor'); await q.keyboard.type("First draft");
+    await press(q, "#f-comment-add");
+    await q.waitForSelector("#f-comments [data-comment-menu]", { timeout: 8000 });
+    assert.equal((await stored(q, "PH-20")).commentCount, 3, "posting counts");
+    // Edit: the same compact editor inline.
+    await press(q, "#f-comments [data-comment-menu]");
+    assert.equal(await q.$$eval("#f-comments .kb-comment-menu:not([hidden]) button", (b) => b.map((x) => x.textContent.trim()).join()), "Edit,Delete");
+    await press(q, "#f-comments [data-comment-edit]");
+    await q.waitForSelector("#f-comment-edit .ql-editor");
+    await q.click("#f-comment-edit .ql-editor"); await q.keyboard.press("Control+A"); await q.keyboard.type("Second draft");
+    await press(q, "[data-comment-save]"); await sleep(400);
+    const txt = () => q.$$eval("#f-comments .kb-comment", (li) => li.map((x) => x.textContent));
+    assert.ok((await txt()).some((t) => t.includes("Second draft") && t.includes("edited")), "the edited text and its \"edited\" label");
+    assert.ok((await commentWrites(q, /^kanbanTasks\/PH-20\/activity\//)).some((w) => w.data && w.data.text === "edited a comment"), "the activity log says so");
+    // Delete: asks in the console's own modal; Cancel keeps it, Delete removes it and the count follows.
+    await press(q, "#f-comments [data-comment-menu]"); await press(q, "#f-comments [data-comment-delete]");
+    await q.waitForSelector("#dialog-backdrop:not([hidden])");
+    await press(q, "#dialog-cancel"); await sleep(250);
+    assert.ok((await txt()).some((t) => t.includes("Second draft")), "Cancel keeps the comment");
+    await press(q, "#f-comments [data-comment-menu]"); await press(q, "#f-comments [data-comment-delete]");
+    await q.waitForSelector("#dialog-backdrop:not([hidden])");
+    await press(q, "#dialog-ok"); await sleep(400);
+    assert.ok(!(await txt()).some((t) => t.includes("Second draft")), "deleted");
+    assert.equal((await stored(q, "PH-20")).commentCount, 2, "the count follows");
+    assert.ok((await commentWrites(q, /^kanbanTasks\/PH-20\/activity\//)).some((w) => w.data && w.data.text === "deleted a comment"), "the activity log says so");
+    await q.done();
+    // As Rob (admin): Delete on anyone's, Edit only on his own.
+    const a = await open(prof, E.hash("kanban"));
+    await openTask(a, "PH-20");
+    assert.equal((await menus(a)).filter((m) => m.menu).length, 2, "an admin sees ⋮ on every comment");
+    const huyMenu = '#f-comments .kb-comment:has(b:text-is("Huy")) ';
+    await press(a, huyMenu + "[data-comment-menu]");
+    assert.equal(await a.$$eval(huyMenu + ".kb-comment-menu button", (b) => b.map((x) => x.textContent.trim()).join()), "Delete", "no Edit on someone else's");
+    await press(a, huyMenu + "[data-comment-delete]");
+    await a.waitForSelector("#dialog-backdrop:not([hidden])"); await press(a, "#dialog-ok"); await sleep(400);
+    assert.equal((await menus(a)).some((m) => m.who === "Huy"), false, "Huy's comment is gone");
+    assert.equal((await stored(a, "PH-20")).commentCount, 1);
+    await a.done();
+  });
+
   T("TC-66", "browser Back and Forward and deep links for board, report and settings", async (prof) => {
     const p = await open(prof, E.hash("kanban"));
     const title = () => p.textContent(E.sel.title);

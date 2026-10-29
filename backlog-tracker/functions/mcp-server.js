@@ -272,11 +272,12 @@ exports.syncMemberDirectory = onDocumentWritten("consoleUsers/{userEmail}", (eve
 // notifications read (kanban-notify.js pruneReadFor): no scheduled function.
 const kanbanNotify = require("./kanban-notify");
 exports.kanbanNotifyTask = onDocumentWritten("kanbanTasks/{key}", (event) => kanbanNotify.taskWritten(event));
-// A comment is written once and never edited into a new notification: only its creation counts.
+// A comment's creation notifies as ever; an edit notifies only the people it newly @mentions.
 exports.kanbanNotifyComment = onDocumentWritten("kanbanTasks/{key}/comments/{commentId}", (event) => {
   const before = event.data && event.data.before && event.data.before.exists;
   const after = event.data && event.data.after && event.data.after.exists;
-  return !before && after ? kanbanNotify.commentCreated({ id: event.id, params: event.params, data: event.data.after }) : null;
+  if (!before && after) return kanbanNotify.commentCreated({ id: event.id, params: event.params, data: event.data.after });
+  return before && after ? kanbanNotify.commentEdited({ id: event.id, params: event.params, data: event.data }) : null;
 });
 // The helpers Staff Kanban's browser endpoints share with the rest of this file.
 const kanbanHelpers = {
@@ -4886,15 +4887,15 @@ const PROMPTS = [
 ];
 
 const SERVER_INSTRUCTIONS = [
-  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has the release tools below.",
-  "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
-  "To take over or catch up on a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in its order. A person can start the same plan with the project_handover prompt.",
-  "Reading docs: list_project_documents and get_project_document read one document or section at a time. get_project_docs returns every document in full, so set include to the one block you need.",
+  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor also writes, an admin also has the release tools below.",
+  "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where supported).",
+  "To take over a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in order. A person can start the same plan with the project_handover prompt.",
+  "Reading docs: list_project_documents and get_project_document read one document or section at a time; get_project_docs returns every document in full, so set include.",
   "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first, send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
   REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
   "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
-  "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_attach_file, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
+  "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Skills (all projects): list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
   "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
 ].join(" ");

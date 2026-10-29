@@ -185,7 +185,7 @@ await test("tools/list returns the whole surface", async () => {
     "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_project_docs", "get_project_document",
     "get_ready_for_testing_board", "get_routine_setup_instructions", "get_skill",
     // Staff Kanban (functions/kanban.js, 21 Oct 2026).
-    "kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people",
+    "kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people",
     "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task",
     "list_artifact_versions", "list_backlog_items",
     "list_concept_critiques", "list_concepts", "list_doc_revisions", "list_pending_faq_revisions", "list_project_documents", "list_projects", "list_skill_misses",

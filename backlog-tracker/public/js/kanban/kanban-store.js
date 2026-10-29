@@ -263,7 +263,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   }
   function watchComments(key, cb) {
     return onSnapshot(collection(db, "kanbanTasks", key, "comments"), (snap) => {
-      cb(snap.docs.map((d) => { const x = d.data({ serverTimestamps: "estimate" }); return { id: d.id, author: x.author, html: x.html || "", text: x.text || "", at: isoOf(x.at) }; }));
+      cb(snap.docs.map((d) => { const x = d.data({ serverTimestamps: "estimate" }); return { id: d.id, author: x.author, html: x.html || "", text: x.text || "", at: isoOf(x.at), edited: !!x.editedAt }; }));
     }, onError);
   }
   function watchActivity(key, cb) {
@@ -466,6 +466,28 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     await b.commit();
   }
 
+  // Edit your own comment (KB-MOD-3): html, text, mentions and editedAt only. The
+  // ticket itself isn't written, so the edit tells nobody but the people newly @mentioned
+  // (functions/kanban-notify.js commentEdited).
+  async function editComment(key, id, { html, text }) {
+    const b = writeBatch(db);
+    b.update(doc(db, "kanbanTasks", key, "comments", id), { html, text: String(text || "").slice(0, 20000), mentions: mentionsIn(html), editedAt: serverTimestamp() });
+    activityOps(b, key, ["edited a comment"]);
+    await b.commit();
+  }
+  // Delete a comment: its author, or an admin for anyone's (the rules check which).
+  async function deleteComment(key, id) {
+    const b = writeBatch(db);
+    b.delete(doc(db, "kanbanTasks", key, "comments", id));
+    b.update(doc(db, "kanbanTasks", key), { commentCount: increment(-1), ...stamp() });
+    const cur = await ensure(key);
+    b.set(cardDoc(key), boardColl === "kanbanCards" && tasks.has(key)
+      ? { commentCount: increment(-1), ...stamp() }
+      : { ...cardOf({ ...cur, key }), commentCount: Math.max(0, (cur.commentCount || 0) - 1), ...stamp() }, { merge: true });
+    activityOps(b, key, ["deleted a comment"]);
+    await b.commit();
+  }
+
   // Watch / stop watching a ticket (KB-NAV-2); the fan-out trigger reads watchers[].
   async function setWatching(key, on) {
     const cur = (await fetchTask(key)) || (await ensure(key));
@@ -510,6 +532,6 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
 
   return {
     state, get, getFull, start, stop, watchRelease, fetchTask, fetchChildren, searchServer, watchComments, watchActivity,
-    createTask, updateTask, changeCriteria, deleteTask, addComment, setWatching, upload, externaliseImages, saveSettings, addSprint, backfill: () => (backfill ? backfill() : Promise.resolve()),
+    createTask, updateTask, changeCriteria, deleteTask, addComment, editComment, deleteComment, setWatching, upload, externaliseImages, saveSettings, addSprint, backfill: () => (backfill ? backfill() : Promise.resolve()),
   };
 }

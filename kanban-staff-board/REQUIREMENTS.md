@@ -240,6 +240,7 @@ Storage, the description carrying their download URL — never a `data:` URI, so
 a ticket doesn't fill its size limit and no listener downloads a picture), and
 **screen recording** (record button → playable video). Comments use a compact
 version of the same editor. Stored HTML is sanitised (DOMPurify) when shown.
+**Editing and deleting comments.** Each comment shows its author (and an admin) a **⋮** menu: **Edit** (author only) opens the same compact editor inline and the saved comment carries an "edited" label; **Delete** asks in the console's own confirm modal, removes the comment and takes one off `commentCount` (ticket and card). Nobody edits another person's comment; an admin deletes anyone's. People newly @mentioned by an edit are notified, those it already named are not. Both are written to the activity log ("edited a comment", "deleted a comment"). Rules: a comment is updated only by its author and only `html`, `text`, `mentions` and `editedAt`; deleted by its author or an admin. Over MCP: `kanban_edit_comment` and `kanban_delete_comment` (KB-MCP-1).
 
 **KB-MOD-4 Dictation.** The description (when editing) and the comment box
 each have a round 36 px mic that turns into a red stop button while
@@ -330,7 +331,7 @@ returns it with `projectName`, and `kanban_list_people` lists the projects.
 server, attributed to the calling member: `kanban_list_tasks` (filters as on
 the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,
 `kanban_move_task` (status + resolution; applies the testing hand-off),
-`kanban_assign_task`, `kanban_comment`, `kanban_flag_task`,
+`kanban_assign_task`, `kanban_comment`, `kanban_edit_comment` / `kanban_delete_comment` (by `commentId`, which `kanban_get_task` returns with each comment; your own comments only, an admin deletes any), `kanban_flag_task`,
 `kanban_list_notifications` (unread first; `unread_only`, `limit`), `kanban_mark_notifications_read` (`ids` or `all`),
 `kanban_search_tickets`, `kanban_release_report`, `kanban_check_criteria` (tick or
 untick acceptance criteria by id, KB-TASK-12), `kanban_attach_file` (a
@@ -378,7 +379,7 @@ stored by lowercased email; release ids are the console's `releases` ids.
 |---|---|
 | `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
 | `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}` (on both tickets: "A blocks B" is `{blocks,B}` on A and `{is blocked by,A}` on B, written in one batch by the page and the MCP tools), `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
-| `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at` |
+| `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at`, `editedAt` (once edited) |
 | `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, field changes with old and new value, links, flags); append-only |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |
 | `kanbanSettings/main` | `fields {key: {show, required}}`, `tester`, `currentRelease`, `releaseDates {releaseId: date}`, `labels[]`, `firstNames {email: name}`, `linksTwoSidedAt` (server-stamped), `updatedAt/By` |

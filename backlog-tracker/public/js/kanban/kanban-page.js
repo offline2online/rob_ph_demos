@@ -954,10 +954,10 @@ export function mountStaffKanban(ctx) {
   let returnTo = null;
   // The open ticket's comments and activity arrive from their own listeners.
   let threadUnsubs = [];
-  function unwatchThread() { threadUnsubs.splice(0).forEach((u) => u()); }
+  function unwatchThread() { threadUnsubs.splice(0).forEach((u) => u()); editingComment = ""; editQ = null; }
   function watchThread(key) {
     unwatchThread();
-    const redraw = () => { const el = $("#f-comments"); if (el) el.innerHTML = commentsHTML(); };
+    const redraw = () => redrawComments();
     threadUnsubs.push(store.watchComments(key, (list) => { if (draft && draft.key === key) { draft.comments = list; redraw(); } }));
     threadUnsubs.push(store.watchActivity(key, (list) => { if (draft && draft.key === key) { draft.activity = list; redraw(); } }));
   }
@@ -1256,10 +1256,57 @@ export function mountStaffKanban(ctx) {
   const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const fmtSize = (n) => (typeof n === "number" ? (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB") : String(n || ""));
   const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4|webm)$/i.test(a.name) ? "movie" : "description"}</span>${a.url ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
+  // Edit and Delete in a ⋮ menu: the author edits and deletes their own; an admin deletes anyone's (KB-MOD-3).
+  let editingComment = "", editQ = null;
+  const commentMenuHTML = (c) => {
+    if (!c.id || !canWrite() || c.id === editingComment) return "";
+    const own = c.author === state.me;
+    if (!own && !isAdmin()) return "";
+    return `<span class="kb-comment-menu-wrap"><button type="button" class="icon-btn kb-comment-menu-btn" data-comment-menu="${esc(c.id)}" aria-haspopup="menu" aria-expanded="false" aria-label="Comment actions"><span class="material-symbols-outlined" aria-hidden="true">more_vert</span></button>
+      <span class="kb-comment-menu" role="menu" hidden>${own ? `<button type="button" role="menuitem" data-comment-edit="${esc(c.id)}">Edit</button>` : ""}<button type="button" role="menuitem" data-comment-delete="${esc(c.id)}">Delete</button></span></span>`;
+  };
+  function redrawComments() {
+    const el = $("#f-comments"); if (!el) return;
+    const keep = editQ && editingComment ? KBEditor.getHtml(editQ) : null;
+    editQ = null;
+    el.innerHTML = commentsHTML();
+    if (editingComment) mountCommentEditor(keep);
+  }
+  async function mountCommentEditor(html) {
+    const host = $("#f-comment-edit");
+    if (!host) { editingComment = ""; return; }
+    const id = editingComment;
+    try { await KBEditor.ready(); } catch (e) { toast("The editor couldn't load. Check your connection and try again."); editingComment = ""; redrawComments(); return; }
+    if (!host.isConnected || editingComment !== id) return;
+    editQ = KBEditor.create(host, { compact: true, users: staff(), upload: uploadFor(), placeholder: "Edit your comment", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you save`) });
+    const c = (draft.comments || []).find((x) => x.id === id);
+    KBEditor.setHtml(editQ, html != null ? html : (c && (c.html || esc(c.text))) || "");
+  }
+  async function saveCommentEdit() {
+    if (!editQ || !draft || !editingComment) return;
+    const html = KBEditor.getHtml(editQ);
+    if (!html) { toast("A comment can't be empty. Delete it instead."); return; }
+    const id = editingComment, text = KBEditor.toText(html);
+    editingComment = ""; editQ = null;
+    const c = (draft.comments || []).find((x) => x.id === id);
+    if (c) Object.assign(c, { html, text, edited: true });
+    redrawComments();
+    store.editComment(draft.key, id, { html, text }).then(() => toast("Comment updated")).catch(fail);
+  }
+  async function deleteCommentFlow(id) {
+    if (!draft || !id) return;
+    if (!(await ctx.confirm("Delete this comment? This can't be undone.", { title: "Delete comment", okLabel: "Delete" }))) return;
+    draft.comments = (draft.comments || []).filter((x) => x.id !== id);
+    if (editingComment === id) { editingComment = ""; editQ = null; }
+    redrawComments();
+    store.deleteComment(draft.key, id).then(() => toast("Comment deleted")).catch(fail);
+  }
   const commentsHTML = () => {
     const items = [...(draft.comments || []).map((c) => ({ ...c, kind: "c" })), ...(draft.activity || []).map((a) => ({ ...a, kind: "a" }))].sort((a, b) => String(a.at || "9").localeCompare(String(b.at || "9")));
     return items.map((c) => c.kind === "c"
-      ? `<li class="kb-comment">${avatar(c.author)}<div><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div><div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div></div></li>`
+      ? `<li class="kb-comment" data-comment="${esc(c.id || "")}">${avatar(c.author)}<div class="kb-comment-body"><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${c.edited ? ' · <span class="kb-comment-edited">edited</span>' : ""}${commentMenuHTML(c)}</div>${c.id && c.id === editingComment
+        ? `<div class="kb-editor kb-editor-compact" id="f-comment-edit"></div><div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" data-comment-cancel>Cancel</button><button type="button" class="btn-ghost" data-comment-save>Save</button></div>`
+        : `<div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div>`}</div></li>`
       : `<li class="kb-activity"><span class="material-symbols-outlined" aria-hidden="true">history</span><span><b>${esc(firstName(c.who))}</b> ${esc(c.text)}</span></li>`).join("") || '<li class="kb-none">No comments yet</li>';
   };
 
@@ -1330,6 +1377,22 @@ export function mountStaffKanban(ctx) {
       if (rl) { draft.labels = draft.labels.filter((x) => x !== rl.dataset.rmLabel); $("#f-labels").innerHTML = labelsHTML(); }
       const rk = e.target.closest("[data-rm-link]");
       if (rk) { draft.links.splice(+rk.dataset.rmLink, 1); $("#f-links").innerHTML = linksHTML(); }
+      const cm = e.target.closest("[data-comment-menu]");
+      if (cm) {
+        const menu = cm.nextElementSibling, open = menu.hidden;
+        $$(".kb-comment-menu", form).forEach((m) => { m.hidden = true; });
+        $$("[data-comment-menu]", form).forEach((b) => b.setAttribute("aria-expanded", "false"));
+        menu.hidden = !open; cm.setAttribute("aria-expanded", String(open));
+        return;
+      }
+      if (e.target.closest("[data-comment-edit], [data-comment-delete]")) $$(".kb-comment-menu", form).forEach((m) => { m.hidden = true; });
+      const ce = e.target.closest("[data-comment-edit]");
+      if (ce) { editingComment = ce.dataset.commentEdit; redrawComments(); return; }
+      const cd = e.target.closest("[data-comment-delete]");
+      if (cd) { deleteCommentFlow(cd.dataset.commentDelete); return; }
+      if (e.target.closest("[data-comment-cancel]")) { editingComment = ""; redrawComments(); return; }
+      if (e.target.closest("[data-comment-save]")) { saveCommentEdit(); return; }
+      $$(".kb-comment-menu", form).forEach((m) => { m.hidden = true; });
       const ra = e.target.closest("[data-rm-att]");
       if (ra) { draft.attachments.splice(+ra.dataset.rmAtt, 1); $("#f-attachments").innerHTML = attachmentsHTML(); }
     });
@@ -1552,7 +1615,7 @@ export function mountStaffKanban(ctx) {
     const who = mentioned.map(firstName);
     const pending = { author: state.me, at: new Date().toISOString(), html, text: KBEditor.toText(html) };
     draft.comments = [...(draft.comments || []), pending];
-    const el = $("#f-comments"); if (el) el.innerHTML = commentsHTML();
+    redrawComments();
     commentQ.setContents([]);
     store.addComment(draft.key, { html, text: pending.text }).catch(fail);
     toast(who.length ? `Comment added · ${esc(who.join(", "))} notified` : "Comment added");

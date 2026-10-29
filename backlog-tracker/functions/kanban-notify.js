@@ -10,7 +10,7 @@
 //   testing    handed to you for testing (moved to Ready for Testing)
 //   returned   returned to you from testing
 //   commented  a comment on a ticket you are assignee or reporter of, or watching
-//   mention    @mentioned in a description or comment (wins over the above)
+//   mention    @mentioned in a description or comment, or added to a comment by editing it (wins over the above)
 //   closed     your ticket (assignee/reporter) closed by someone else
 //
 // pruneReadFor() deletes one member's read notifications older than 30 days;
@@ -102,6 +102,20 @@ async function commentCreated(event) {
   return write(event.id, event.params.key, task, comment.author, recipients);
 }
 
+// A comment's edit: only the people newly @mentioned in it are told, never again those it already named.
+async function commentEdited(event) {
+  const before = event.data.before.data(), after = event.data.after.data();
+  const had = new Set(list(before.mentions).map(clean));
+  const fresh = list(after.mentions).filter((m) => !had.has(clean(m)));
+  if (!fresh.length) return null;
+  const snap = await db().collection("kanbanTasks").doc(event.params.key).get();
+  if (!snap.exists) return null;
+  const recipients = recipientsForComment(snap.data(), { author: after.author, mentions: fresh });
+  for (const e of [...recipients.keys()]) if (!fresh.map(clean).includes(e)) recipients.delete(e);
+  if (!recipients.size) return null;
+  return write(event.id, event.params.key, snap.data(), after.author, recipients);
+}
+
 // A member's read notifications older than 30 days go; unread ones stay until
 // read. One query (to, read, at), at most 200 a time, run on the member's own
 // "mark read" so no scheduled job is needed. Best effort: an index still
@@ -122,4 +136,4 @@ async function pruneReadFor(email, now = Date.now()) {
   }
 }
 
-module.exports = { taskWritten, commentCreated, pruneReadFor, recipientsForTask, recipientsForComment, PRUNE_AFTER_DAYS, PRUNE_BATCH };
+module.exports = { taskWritten, commentCreated, commentEdited, pruneReadFor, recipientsForTask, recipientsForComment, PRUNE_AFTER_DAYS, PRUNE_BATCH };

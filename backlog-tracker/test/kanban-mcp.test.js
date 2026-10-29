@@ -103,7 +103,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
 
   await test("the fifteen kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_task", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list|get|search|release)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
@@ -340,6 +340,33 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(row.key, created.json.key); assert.ok(typeof row.ms === "number");
     await tool1(sam, "kanban_move_task", { key: created.json.key, status: "done", resolution: "withdrawn" });
     env.store.col("kanbanTasks").delete(created.json.key); env.store.col("kanbanCards").delete(created.json.key);
+  });
+
+  await test("kanban_edit_comment / kanban_delete_comment: own comments only, an admin deletes any, counts and activity follow", async () => {
+    await tool(sam, "kanban_create_task", { title: "Comment edits" });
+    const key = [...env.store.col("kanbanTasks").keys()].sort((a, b) => a.length - b.length || (a < b ? -1 : 1)).pop();
+    await tool(sam, "kanban_comment", { key, text: "first draft" });
+    const huy = await connect(HUY), rob = await connect(ROB);
+    await tool(huy, "kanban_comment", { key, text: "Huy's note" });
+    const ids = () => tool(sam, "kanban_get_task", { key }).then((g) => g.json.comments);
+    let cs = await ids();
+    const mine = cs.find((c) => c.author === SAM), his = cs.find((c) => c.author === HUY);
+    assert.ok(mine.id && his.id, "kanban_get_task returns comment ids");
+    const e = await tool(sam, "kanban_edit_comment", { key, commentId: mine.id, text: "second draft", mention: [HUY] });
+    assert.ok(!e.isError, JSON.stringify(e));
+    cs = await ids();
+    const edited = cs.find((c) => c.id === mine.id);
+    assert.strictEqual(edited.text, "second draft");
+    assert.ok(edited.edited, "an edited comment says so");
+    assert.ok((await tool(sam, "kanban_edit_comment", { key, commentId: his.id, text: "hijack" })).isError, "someone else's comment can't be edited");
+    assert.ok((await tool(sam, "kanban_delete_comment", { key, commentId: his.id })).isError, "a non-admin can't delete someone else's");
+    assert.ok((await tool(sam, "kanban_edit_comment", { key, commentId: "nope", text: "x" })).isError);
+    assert.ok(!(await tool(sam, "kanban_delete_comment", { key, commentId: mine.id })).isError);
+    assert.strictEqual(task(key).commentCount, 1);
+    assert.ok(!(await tool(rob, "kanban_delete_comment", { key, commentId: his.id })).isError, "an admin deletes anyone's");
+    assert.strictEqual(task(key).commentCount, 0);
+    const texts = (await tool(sam, "kanban_get_task", { key })).json.activity.map((a) => a.text);
+    assert.ok(texts.includes("edited a comment") && texts.filter((t) => t === "deleted a comment").length === 2, texts.join("|"));
   });
 
   // ── member directory ──────────────────────────────────────────────────
@@ -871,6 +898,19 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.deepStrictEqual(notesFor(KIT).map((n) => n.kind), ["commented"], "a watcher");
     assert.deepStrictEqual(notesFor(SAM).map((n) => [n.kind, n.via]), [["mention", "comment"]]);
     assert.strictEqual(notesFor(HUY).length, 0, "the commenter is told nothing");
+  });
+
+  await test("fan-out: editing a comment tells only the people it newly mentions", async () => {
+    env.store.col("kanbanNotifications").clear();
+    env.store.col("kanbanTasks").set("PH-51", { ...base, watchers: [KIT] });
+    const edit = (before, after) => notify.commentEdited({ id: "c2", params: { key: "PH-51" }, data: { before: { data: () => before }, after: { data: () => after } } });
+    await edit({ author: HUY, mentions: [SAM] }, { author: HUY, mentions: [SAM, KIT] });
+    assert.deepStrictEqual(notesFor(KIT).map((n) => [n.kind, n.via]), [["mention", "comment"]], "the newly named person");
+    assert.strictEqual(notesFor(SAM).length, 0, "already named: not told again");
+    assert.strictEqual(notesFor(ROB).length, 0, "the reporter isn't told of an edit");
+    env.store.col("kanbanNotifications").clear();
+    await edit({ author: HUY, mentions: [SAM] }, { author: HUY, mentions: [SAM] });
+    assert.strictEqual(env.store.col("kanbanNotifications").size, 0, "an edit that names nobody new tells nobody");
   });
 
   await test("kanban_list_notifications / kanban_mark_notifications_read: unread first, only your own, count follows", async () => {

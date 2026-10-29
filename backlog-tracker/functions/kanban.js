@@ -784,7 +784,7 @@ function kanbanTools(h) {
           links: (t.links || []).map((l) => ({ type: l.type, key: l.key })), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
           children: kids, childrenOmitted: kidDocs && kidDocs.length > EPIC_CHILDREN ? "more than " + EPIC_CHILDREN : undefined, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
           commentsOmitted: Math.max(0, nCs - cs.docs.length), activityOmitted: Math.max(0, nAct - act.docs.length),
-          comments: cs.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((c) => ({ author: c.author, at: iso(c.at), text: c.text })),
+          comments: cs.docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((c) => ({ id: c.id, author: c.author, at: iso(c.at), edited: c.editedAt ? iso(c.editedAt) : null, text: c.text })),
           activity: act.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((a) => ({ who: a.who, at: iso(a.at), text: a.text })),
         }));
       },
@@ -1125,6 +1125,60 @@ function kanbanTools(h) {
         await b.commit();
         await audit(session, "kanban_comment", { key, chars: text.length, mentions: mention.length });
         return textResult({ added: true, key, author: session.email, notified: mention });
+      },
+    },
+    {
+      name: "kanban_edit_comment",
+      description: "Staff Kanban: edit a comment you wrote (commentId comes from kanban_get_task). Others' comments can't be edited. People newly named in `mention` are notified; those already named are not.",
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: { key: KEY, commentId: { type: "string" }, text: { type: "string", description: "The new text, up to 4000 characters." }, mention: { type: "array", items: { type: "string" }, description: "Emails of everyone the comment should mention." } },
+        required: ["key", "commentId", "text"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const key = normKey(args.key);
+        const cur = key && await getTask(key);
+        if (!cur) return toolError(`No ticket ${args.key}.`);
+        const ref = tasks().doc(key).collection("comments").doc(String(args.commentId || "-"));
+        const c = await ref.get();
+        if (!c.exists) return toolError(`No comment ${args.commentId} on ${key}; kanban_get_task lists the ids.`);
+        if (c.data().author !== session.email) return toolError("You can only edit your own comments.");
+        const text = String(args.text || "").trim();
+        if (!text) return toolError("text is required.");
+        if (text.length > 4000) return toolError("A comment is limited to 4000 characters.");
+        const members = new Set((await people(session)).map((p) => p.email));
+        const mention = [...new Set((args.mention || []).map((e) => String(e).trim().toLowerCase()))].filter((e) => members.has(e) && e !== session.email);
+        const b = db().batch();
+        b.update(ref, { html: asHtml(text), text, mentions: mention, editedAt: FieldValue.serverTimestamp() });
+        activity(b, key, session.email, ["edited a comment"]);
+        await b.commit();
+        await audit(session, "kanban_edit_comment", { key, commentId: ref.id, chars: text.length });
+        return textResult({ edited: true, key, commentId: ref.id });
+      },
+    },
+    {
+      name: "kanban_delete_comment",
+      description: "Staff Kanban: delete a comment you wrote, or any comment if you are an admin (commentId comes from kanban_get_task).",
+      scope: "board.write",
+      inputSchema: { type: "object", properties: { key: KEY, commentId: { type: "string" } }, required: ["key", "commentId"], additionalProperties: false },
+      async run(args, session) {
+        const key = normKey(args.key);
+        const cur = key && await getTask(key);
+        if (!cur) return toolError(`No ticket ${args.key}.`);
+        const ref = tasks().doc(key).collection("comments").doc(String(args.commentId || "-"));
+        const c = await ref.get();
+        if (!c.exists) return toolError(`No comment ${args.commentId} on ${key}; kanban_get_task lists the ids.`);
+        if (c.data().author !== session.email && session.role !== "admin") return toolError("You can only delete your own comments; an admin can delete anyone's.");
+        const n = Math.max(0, (cur.commentCount || 0) - 1);
+        const b = db().batch();
+        b.delete(ref);
+        b.update(tasks().doc(key), Object.assign({ commentCount: FieldValue.increment(-1) }, stamp(session.email)));
+        putCard(b, key, Object.assign({}, cur, { commentCount: n }), session.email);
+        activity(b, key, session.email, ["deleted a comment"]);
+        await b.commit();
+        await audit(session, "kanban_delete_comment", { key, commentId: ref.id, ownComment: c.data().author === session.email });
+        return textResult({ deleted: true, key, commentId: ref.id, commentCount: n });
       },
     },
     {

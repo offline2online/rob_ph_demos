@@ -158,6 +158,7 @@ server instructions. `test/kanban-mcp.test.js` checks both.
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
 | `kanban_release_report` (outstanding, remaining effort, per-person capacity) | `kanban_comment` (`mention` notifies people on the board's bell) |
 | `kanban_list_notifications` (your notifications, unread first; only the unread ones, `limit`: "what's new for me on the board?") | `kanban_check_criteria` (tick or untick acceptance criteria by id; see below) |
+| | `kanban_edit_comment`, `kanban_delete_comment` (your own comment by `commentId` from `kanban_get_task`; an admin may delete any; an edit notifies only newly named people) |
 | | `kanban_attach_file` (a screenshot, image or pdf as base64; see below) |
 | | `kanban_mark_notifications_read` (`ids` or `all: true`; the open bell updates without a reload) |
 
