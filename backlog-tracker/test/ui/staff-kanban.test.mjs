@@ -713,6 +713,33 @@ T("KB-C4", "deep links: a report URL opens the report, and the hash follows the 
   await p.done();
 });
 
+T("KB-C13", "project: set in the modal, named on the card, filtered from Filters and kept in the URL (PH-21)", async (prof) => {
+  const seed = kanbanSeed();
+  seed.docs.projects = { pA: { name: "Staff Kanban", createdAt: { $ts: Date.parse("2026-10-01T00:00:00Z") } }, pB: { name: "Menu Board", createdAt: { $ts: Date.parse("2026-10-02T00:00:00Z") } } };
+  seed.docs.kanbanSettings.main.fields = { ...(seed.docs.kanbanSettings.main.fields || {}), project: { show: true, required: false } };
+  for (const [k, id] of [["PH-20", "pA"], ["PH-21", "pB"]]) { seed.docs.kanbanTasks[k].project = id; seed.docs.kanbanCards[k].project = id; }
+  const p = await open(prof, "#staff-kanban?project=pA", { seed });
+  assert.deepEqual(await p.$$eval(".kb-card", (e) => e.map((x) => x.dataset.key)), ["PH-20"], "the address filters the board");
+  assert.match(await p.textContent('.kb-card[data-key="PH-20"] .kb-project-chip'), /Staff Kanban/);
+  assert.equal(await p.evaluate(() => location.hash), "#staff-kanban?project=pA");
+  await press(p, "#kb-filter-toggle");
+  assert.equal(await p.inputValue("#kb-project"), "pA");
+  await p.selectOption("#kb-project", "pB"); await p.waitForTimeout(150);
+  assert.deepEqual(await p.$$eval(".kb-card", (e) => e.map((x) => x.dataset.key)), ["PH-21"]);
+  assert.equal(await p.evaluate(() => location.hash), "#staff-kanban?project=pB");
+  await p.selectOption("#kb-project", ""); await p.waitForTimeout(150);
+  assert.ok((await p.$$eval(".kb-card", (e) => e.length)) > 2);
+  assert.equal(await p.evaluate(() => location.hash), "#staff-kanban");
+  await press(p, "#kb-filter-done");
+  await press(p, '.kb-card[data-key="PH-22"]');
+  assert.equal(await p.inputValue("#f-project"), "");
+  await p.selectOption("#f-project", "pB");
+  await press(p, "#f-save"); await p.waitForTimeout(200);
+  assert.equal((await stored(p, "PH-22")).project, "pB");
+  assert.match(await p.textContent('.kb-card[data-key="PH-22"] .kb-project-chip'), /Menu Board/);
+  await p.done();
+});
+
 // ── Cards (kanbanCards): the board reads only what a card shows ─────────────
 const readBytes = (p, path) => p.evaluate((x) => (globalThis.__fbStub.readBytes || {})[x] || 0, path);
 const watching = (p, path) => p.evaluate((x) => (globalThis.__fbStub.watching || {})[x] || 0, path);

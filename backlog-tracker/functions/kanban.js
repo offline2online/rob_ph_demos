@@ -394,7 +394,7 @@ function kanbanTools(h) {
     return {
       key: t.key, type: t.type, title: t.title, status: t.status, statusLabel: core.statusLabel(t.status, t.resolution),
       resolution: t.resolution || null, priority: t.priority || null, flagged: !!t.flagged,
-      assignee: t.assignee || null, assigneeName: first(t.assignee), release: t.release || null, sprint: t.sprint || null,
+      assignee: t.assignee || null, assigneeName: first(t.assignee), release: t.release || null, sprint: t.sprint || null, project: t.project || null,
       epic: t.epic || null, estimate: typeof t.estimate === "number" ? core.fmtH(t.estimate) : null,
       logged: t.logged ? core.fmtH(t.logged) : null, remaining: typeof t.estimate === "number" ? core.fmtH(core.remaining(t)) : null,
       due: t.due || null, labels: t.labels || [],
@@ -406,11 +406,13 @@ function kanbanTools(h) {
   // the tickets.
   async function loadTasks(f) {
     const src = f.search ? tasks() : await board();
-    const open = await src.where("open", "==", true).get();
+    // A project filter narrows every read to that project's tickets.
+    const scoped = (q) => (f.project ? q.where("project", "==", f.project) : q);
+    const open = await scoped(src.where("open", "==", true)).get();
     const map = new Map(open.docs.map((d) => [d.id, Object.assign({ key: d.id }, d.data())]));
-    if (f.release) (await src.where("release", "==", f.release).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
+    if (f.release) (await scoped(src.where("release", "==", f.release)).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
     if (f.status === "done" || (f.status || "").startsWith("done:")) {
-      (await src.orderBy("closedAt", "desc").limit(300).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
+      (await scoped(src).orderBy("closedAt", "desc").limit(300).get()).docs.forEach((d) => map.set(d.id, Object.assign({ key: d.id }, d.data())));
     }
     return [...map.values()];
   }
@@ -448,7 +450,8 @@ function kanbanTools(h) {
     title: { type: "string" }, description: { type: "string", description: "Plain text or HTML." },
     type: { type: "string", enum: ["task", "bug", "epic"] }, priority: { type: "string", enum: ["highest", "high", "medium", "low", "lowest", ""] },
     assignee: PERSON, reporter: PERSON, release: { type: "string", description: "A console release id (kanban_list_people returns them too)." },
-    sprint: { type: "string" }, estimate: { type: ["string", "number"], description: "Hours, or a duration like 1d 4h (1d = 8h)." },
+    sprint: { type: "string" }, project: { type: "string", description: "A console project (id or name) the ticket belongs to; empty clears it. kanban_list_people lists them." },
+    estimate: { type: ["string", "number"], description: "Hours, or a duration like 1d 4h (1d = 8h)." },
     logged: { type: ["string", "number"], description: "Time logged: hours or a duration." }, due: { type: "string", description: "YYYY-MM-DD" },
     labels: { type: "array", items: { type: "string" } }, epic: { type: "string", description: "Parent epic key, or empty." },
     links: { type: "array", items: { type: "object", properties: { type: { type: "string", enum: core.LINK_TYPES }, key: { type: "string" } }, required: ["type", "key"] } },
@@ -479,9 +482,22 @@ function kanbanTools(h) {
       const hit = rel.find((d) => d.id === v.release) || rel.find((d) => [d.data().name, d.data().version].some((x) => x != null && String(x).trim().toLowerCase() === want));
       if (hit) v.release = hit.id; else errs.push(`release ${v.release} isn't a release (an id, name or version; kanban_list_people lists them)`);
     }
+    if (v.project) {
+      const hit = await findProject(v.project);
+      if (hit) v.project = hit.id; else errs.push(`project ${v.project} isn't a project (an id or name; kanban_list_people lists them)`);
+    }
     const e = await checkEpic(v.epic, selfKey);
     if (e) errs.push(e);
     return errs;
+  }
+  // A console project by id or (case-insensitively) name: { id, name }, else null.
+  async function findProject(ref) {
+    const want = String(ref).trim().toLowerCase();
+    const byId = await db().collection("projects").doc(String(ref).trim()).get().catch(() => null);
+    if (byId && byId.exists) return { id: byId.id, name: byId.data().name || byId.id };
+    const all = (await db().collection("projects").get()).docs;
+    const hit = all.find((d) => d.data().name != null && String(d.data().name).trim().toLowerCase() === want);
+    return hit ? { id: hit.id, name: hit.data().name } : null;
   }
   // The other end of each typed link, as the board reads it (KB-TASK-5):
   // links are stored on the ticket they were added to, and shown on both.
@@ -504,15 +520,16 @@ function kanbanTools(h) {
   const tools = [
     {
       name: "kanban_list_people",
-      description: "Staff Kanban: who's on the board (email and the first name the board shows), the releases and sprints tickets can belong to, the current release and the tester Ready for Testing hands tickets to.",
+      description: "Staff Kanban: who's on the board (email and the first name the board shows), the releases, sprints and console projects tickets can belong to, the current release and the tester Ready for Testing hands tickets to.",
       scope: "board.read",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       async run(args, session) {
-        const [ppl, s, rel, spr] = await Promise.all([people(session), settings(), db().collection("releases").get(), db().collection("kanbanSprints").get()]);
+        const [ppl, s, rel, spr, prj] = await Promise.all([people(session), settings(), db().collection("releases").get(), db().collection("kanbanSprints").get(), db().collection("projects").get()]);
         return textResult({
           people: ppl.map((p) => ({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null })),
           releases: rel.docs.map((d) => ({ id: d.id, name: d.data().name, version: d.data().version || null, live: d.data().status === "live", date: s.releaseDates[d.id] || null })),
           sprints: spr.docs.map((d) => ({ id: d.id, name: d.data().name, start: d.data().start || null, end: d.data().end || null })),
+          projects: prj.docs.filter((d) => !d.data().archived).map((d) => ({ id: d.id, name: d.data().name || d.id })),
           currentRelease: currentRelease(s, rel.docs) || null, tester: s.tester,
           statuses: core.STATUSES.map((x) => x.key), resolutions: core.RESOLUTIONS.map((x) => x.key),
         });
@@ -526,7 +543,8 @@ function kanbanTools(h) {
         type: "object",
         properties: {
           assignee: { type: "string", description: "An email, \"me\", or \"none\" for unassigned." },
-          release: { type: "string" }, status: { type: "string", description: "A status key, or done:completed / done:withdrawn." },
+          release: { type: "string" }, project: { type: "string", description: "A console project, by id or name." },
+          status: { type: "string", description: "A status key, or done:completed / done:withdrawn." },
           type: { type: "string", enum: ["task", "bug", "epic"] }, priority: { type: "string" }, sprint: { type: "string" }, label: { type: "string" },
           flagged: { type: "boolean" }, search: { type: "string", description: "Words in the key, title, description or labels." },
           limit: { type: "integer", minimum: 1, maximum: 200 },
@@ -535,8 +553,13 @@ function kanbanTools(h) {
       },
       async run(args, session) {
         const f = { ...args };
+        if (f.project) {
+          const hit = await findProject(f.project);
+          if (!hit) return toolError(`project ${f.project} isn't a project (an id or name; kanban_list_people lists them)`);
+          f.project = hit.id;
+        }
         const who = f.assignee === "me" ? session.email : f.assignee;
-        const list = core.filterTasks(await loadTasks(Object.assign({}, f)), { assignees: who ? [who] : [], release: f.release || "", type: f.type || "", priority: f.priority || "", sprint: f.sprint || "", label: f.label || "", flagged: !!f.flagged, status: f.status || "", q: f.search || "" });
+        const list = core.filterTasks(await loadTasks(Object.assign({}, f)), { assignees: who ? [who] : [], release: f.release || "", type: f.type || "", priority: f.priority || "", sprint: f.sprint || "", project: f.project || "", label: f.label || "", flagged: !!f.flagged, status: f.status || "", q: f.search || "" });
         list.sort((a, b) => core.STATUS_KEYS.indexOf(a.status) - core.STATUS_KEYS.indexOf(b.status) || (a.rank || 0) - (b.rank || 0));
         const first = await firstNamer();
         const n = Math.min(args.limit || 100, 200);
@@ -555,7 +578,9 @@ function kanbanTools(h) {
         const [cs, act, first] = await Promise.all([tasks().doc(key).collection("comments").get(), tasks().doc(key).collection("activity").get(), firstNamer()]);
         const iso = (v) => (v && v.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : v || null);
         const kids = t.type === "epic" ? (await (await board()).where("epic", "==", key).get()).docs.map((d) => ({ key: d.id, title: d.data().title, status: core.statusLabel(d.data().status, d.data().resolution) })) : undefined;
+        const project = t.project ? await findProject(t.project) : null;
         return textResult(Object.assign(summary(t, first), {
+          projectName: project ? project.name : null,
           description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
           links: await linksFor(t), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
           children: kids, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
@@ -624,7 +649,7 @@ function kanbanTools(h) {
             key, number: n, type: v.type || "task", title: v.title, description: asHtml(v.description || ""),
             status: "backlog", resolution: null, open: true, rank,
             assignee: v.assignee || "", previousAssignee: "", reporter: v.reporter || session.email,
-            release: v.release || "", sprint: v.sprint || "",
+            release: v.release || "", sprint: v.sprint || "", project: v.project || "",
             estimate: v.estimate == null ? null : v.estimate, logged: v.logged || 0, priority: v.priority || "medium",
             due: v.due || "", labels: v.labels || [], epic: v.epic || "", links: v.links || [], flagged: !!v.flagged,
             attachments: [], commentCount: 0,
@@ -644,7 +669,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_update_task",
-      description: "Staff Kanban: change a ticket's fields (title, description, type, priority, people, release, sprint, estimate, time logged, due date, labels, parent epic, links, flag). To move it between columns use kanban_move_task.",
+      description: "Staff Kanban: change a ticket's fields (title, description, type, priority, people, release, sprint, project, estimate, time logged, due date, labels, parent epic, links, flag). To move it between columns use kanban_move_task.",
       scope: "board.write",
       inputSchema: { type: "object", properties: Object.assign({ key: KEY }, WRITABLE), required: ["key"], additionalProperties: false },
       async run(args, session) {

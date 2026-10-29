@@ -161,6 +161,8 @@ html[data-page="staff-kanban"] .topbar { position: relative; }
 .kb-card-chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
 .kb-est { font-weight: 600; white-space: nowrap; }
 .kb-est-none { font-weight: 400; font-style: italic; }
+.kb-project-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 140px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.kb-project-chip .material-symbols-outlined { font-size: 13px; flex: none; }
 .kb-due { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
 .kb-due .material-symbols-outlined { font-size: 13px; }
 .kb-due.soon { color: var(--warning); background: rgba(201, 138, 10, .12); }

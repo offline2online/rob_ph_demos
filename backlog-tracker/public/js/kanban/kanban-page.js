@@ -18,7 +18,7 @@ import {
 
 export function mountStaffKanban(ctx) {
   "use strict";
-  // ctx: { root, db, storage, auth, me, role(), releases(), confirm(message, opts), go(sub, params) }
+  // ctx: { root, db, storage, auth, me, role(), releases(), projects(), confirm(message, opts), go(sub, params) }
   const me = ctx.me;
   const root = document.documentElement;
   const pageEl = ctx.root;
@@ -66,7 +66,7 @@ export function mountStaffKanban(ctx) {
     return { ...s, currentRelease: currentReleaseId(s, releases()) };
   }
 
-  const board = { q: "", mine: false, flagged: false, assignees: new Set(), type: "", priority: "", sprint: "", release: "", label: "" };
+  const board = { q: "", mine: false, flagged: false, assignees: new Set(), type: "", priority: "", sprint: "", project: "", release: "", label: "" };
   const collapsedCols = new Set();
   let filtersOpen = false;
   const collapsedLanes = new Set();
@@ -101,6 +101,12 @@ export function mountStaffKanban(ctx) {
       id: r.id, name: r.name || r.version || r.id, version: r.version || "", released: r.status === "live", date: dates[r.id] || "",
     }));
   }
+  // Console projects (not archived, unless a ticket still names one), by name.
+  function projects(keep) {
+    return (ctx.projects() || []).filter((p) => !p.archived || p.id === keep).map((p) => ({ id: p.id, name: p.name || p.id }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+  const projectName = (id) => (id ? ((ctx.projects() || []).find((p) => p.id === id) || {}).name || "" : "");
   const release = (id) => releases().find((r) => r.id === id);
   const releaseName = (id) => (release(id) || {}).name || "No release";
   function sprints() {
@@ -205,6 +211,8 @@ export function mountStaffKanban(ctx) {
   function go(route, params) { ctx.go(route === "kanban" ? "" : route, params || null); }
   function show(sub, params) {
     current = { route: sub || "kanban", params: params || new URLSearchParams() };
+    // The board's project filter lives in the address (#staff-kanban?project=<id>).
+    if (current.route === "kanban" && current.params.has("project")) board.project = current.params.get("project") || "";
     root.dataset.page = "staff-kanban";
     render();
   }
@@ -340,12 +348,19 @@ export function mountStaffKanban(ctx) {
   }
   const opt = (v, label, sel) => `<option value="${esc(v)}"${v === sel ? " selected" : ""}>${esc(label)}</option>`;
 
+  function syncBoardUrl() {
+    const h = "#staff-kanban" + (board.project ? "?project=" + encodeURIComponent(board.project) : "");
+    if (window.location.hash !== h) { try { history.replaceState(null, "", h); } catch (e) { /* the filter just isn't kept in the address */ } }
+  }
   function renderKanban(view) {
+    // A project that no longer exists would filter the board to nothing.
+    if (board.project && (ctx.projects() || []).length && !projectName(board.project)) board.project = "";
+    if (!pageEl.hidden) syncBoardUrl();
     const relOpts = opt("", "All releases", board.release) + releases().map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), board.release)).join("");
     store.watchRelease(board.release);
     headSig = ""; // (the view is drawn afresh below)
     // Primary filters: staff, My tasks, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
-    const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.label].filter(Boolean).length;
+    const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.project, board.label].filter(Boolean).length;
     const filtersActive = moreCount || board.mine || board.assignees.size || board.release || board.q;
     view.innerHTML = `
       <div class="page-header">
@@ -377,6 +392,7 @@ export function mountStaffKanban(ctx) {
             <label class="kb-rfilter"><span>Type</span><select id="kb-type">${opt("", "All types", board.type)}${TYPES.map((t) => opt(t.key, t.label, board.type)).join("")}</select></label>
             <label class="kb-rfilter"><span>Priority</span><select id="kb-priority">${opt("", "All priorities", board.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, board.priority)).join("")}</select></label>
             <label class="kb-rfilter"><span>Sprint</span><select id="kb-sprint">${opt("", "All sprints", board.sprint)}${sprints().map((s) => opt(s.id, s.name, board.sprint)).join("")}</select></label>
+            <label class="kb-rfilter"><span>Project</span><select id="kb-project">${opt("", "All projects", board.project)}${projects(board.project).map((p) => opt(p.id, p.name, board.project)).join("")}</select></label>
             <label class="kb-rfilter"><span>Label</span><select id="kb-label">${opt("", "All labels", board.label)}${allLabels().map((l) => opt(l, l, board.label)).join("")}</select></label>
             <div class="kb-filter-panel-foot">${moreCount ? '<button type="button" class="link-btn" id="kb-clear-more">Clear these</button>' : "<span></span>"}<button type="button" class="btn-primary" id="kb-filter-done">Done</button></div>
           </div>
@@ -437,12 +453,12 @@ export function mountStaffKanban(ctx) {
     $("#kb-filter-done").addEventListener("click", () => { filtersOpen = false; $("#kb-filter-panel").hidden = true; $("#kb-filter-toggle").setAttribute("aria-expanded", "false"); });
     $("#kb-mine").addEventListener("click", () => { board.mine = !board.mine; redraw(); });
     $("#kb-flagged").addEventListener("click", () => { board.flagged = !board.flagged; redraw(); });
-    [["kb-release", "release"], ["kb-type", "type"], ["kb-priority", "priority"], ["kb-sprint", "sprint"], ["kb-label", "label"]].forEach(([id, k]) =>
+    [["kb-release", "release"], ["kb-type", "type"], ["kb-priority", "priority"], ["kb-sprint", "sprint"], ["kb-project", "project"], ["kb-label", "label"]].forEach(([id, k]) =>
       $("#" + id).addEventListener("change", (e) => { board[k] = e.target.value; redraw(); }));
     const clearMore = $("#kb-clear-more");
-    if (clearMore) clearMore.addEventListener("click", () => { Object.assign(board, { flagged: false, type: "", priority: "", sprint: "", label: "" }); redraw(); });
+    if (clearMore) clearMore.addEventListener("click", () => { Object.assign(board, { flagged: false, type: "", priority: "", sprint: "", project: "", label: "" }); redraw(); });
     const clear = $("#kb-clear");
-    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, release: "", type: "", priority: "", sprint: "", label: "" }); board.assignees.clear(); redraw(); });
+    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, release: "", type: "", priority: "", sprint: "", project: "", label: "" }); board.assignees.clear(); redraw(); });
     // Phone: swipe the board left / right between columns.
     wrap.addEventListener("scroll", () => { if (mqPhone.matches && !$("#kb-board").classList.contains("kb-board-lanes")) syncPagerFromScroll(); }, { passive: true });
     let sw = null;
@@ -753,6 +769,7 @@ export function mountStaffKanban(ctx) {
       <div class="kb-card-footer">
         <div class="kb-card-chips">
           ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kidsLive.length} done</span>` : res(t) === "withdrawn" ? '<span class="card-cat kb-est kb-withdrawn-chip">Withdrawn</span>' : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
+          ${t.project && projectName(t.project) ? `<span class="card-cat kb-project-chip" title="Project: ${esc(projectName(t.project))}"><span class="material-symbols-outlined" aria-hidden="true">folder</span>${esc(projectName(t.project))}</span>` : ""}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
           ${(t.comments || []).length ? `<span class="kb-meta-ic" title="${t.comments.length} comment${t.comments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.comments.length}</span>` : ""}
           ${t.attachmentCount ? `<span class="kb-meta-ic" title="${t.attachmentCount} attachment${t.attachmentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachmentCount}</span>` : ""}
@@ -973,7 +990,7 @@ export function mountStaffKanban(ctx) {
     draft = t ? { ...clone(t), comments: [], activity: [] } : Object.assign({
       key: "", type: "task", title: "", description: "", status: "backlog",
       assignee: board.mine ? state.me : "", reporter: state.me, release: state.settings.currentRelease,
-      estimate: "", logged: 0, priority: "medium", sprint: "", due: "", labels: [], epic: "",
+      estimate: "", logged: 0, priority: "medium", sprint: "", project: "", due: "", labels: [], epic: "",
       comments: [], attachments: [], links: [], previousAssignee: "", activity: [], flagged: false,
     }, preset ? preset.fields : {});
     if (t) {
@@ -1068,6 +1085,7 @@ export function mountStaffKanban(ctx) {
       case "type": return `<div class="kb-field" data-field="type">${label("type", "f-type-task")}<div class="type-toggle kb-type-toggle" role="radiogroup">${TYPES.map((t) => `<button type="button" class="type-opt${d.type === t.key ? " active" : ""}" id="f-type-${t.key}" data-type="${t.key}" role="radio" aria-checked="${d.type === t.key}"><span class="material-symbols-outlined kb-type-${t.key}" aria-hidden="true">${t.icon}</span>${t.label}</button>`).join("")}</div></div>`;
       case "priority": return `<div class="kb-field" data-field="priority">${label("priority")}<select id="f-priority" class="kb-input">${opt("", "—", d.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, d.priority)).join("")}</select></div>`;
       case "sprint": return `<div class="kb-field" data-field="sprint">${label("sprint")}<select id="f-sprint" class="kb-input">${opt("", "No sprint", d.sprint)}${sprints().map((s) => opt(s.id, s.range ? `${s.name} · ${s.range}` : s.name, d.sprint)).join("")}</select></div>`;
+      case "project": return `<div class="kb-field" data-field="project">${label("project")}<select id="f-project" class="kb-input">${opt("", "No project", d.project)}${projects(d.project).map((p) => opt(p.id, p.name, d.project)).join("")}</select></div>`;
       case "due": return `<div class="kb-field" data-field="due">${label("due")}<input type="date" id="f-due" class="kb-input" value="${esc(d.due)}"></div>`;
       case "logged": {
         const est = +d.estimate || 0, log = +d.logged || 0;
@@ -1122,7 +1140,7 @@ export function mountStaffKanban(ctx) {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
     const main = draftIsNew ? ["voice", "title", "description", "children", "attachments", "links"] : ["title", "description", "children", "links", "attachments", "comments"];
-    const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
+    const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "project", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
     const visible = (k) => k === "voice" || k === "children" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
@@ -1682,6 +1700,7 @@ export function mountStaffKanban(ctx) {
     set("release", val("f-release"));
     set("priority", val("f-priority"));
     set("sprint", val("f-sprint"));
+    set("project", val("f-project"));
     set("due", val("f-due"));
     set("epic", val("f-epic"));
     const errors = [];
@@ -1721,7 +1740,7 @@ export function mountStaffKanban(ctx) {
     try {
       if (existing) {
         const patch = {}, activity = [];
-        for (const k of ["type", "title", "description", "assignee", "reporter", "release", "sprint", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments"]) {
+        for (const k of ["type", "title", "description", "assignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments"]) {
           const a = existing[k], b = next[k];
           if (JSON.stringify(a == null ? "" : a) !== JSON.stringify(b == null ? "" : b)) patch[k] = b;
         }

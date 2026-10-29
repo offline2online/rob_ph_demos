@@ -3024,7 +3024,7 @@ const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || "")
 // to connect — so the board has something on screen within a second or two
 // even when the realtime channel is slow to deliver. Each is a no-op if its
 // listener gets there first.
-primeFromRest("projects", (rows) => { projects = rows; render(); }, byMillis("createdAt", "asc"));
+primeFromRest("projects", (rows) => { projects = rows; render(); if (staffKanban && !staffKanbanPage.hidden) staffKanban.refresh(); }, byMillis("createdAt", "asc"));
 primeItemsFromRest();
 primeFromRest("programs", (rows) => { programs = rows; render(); });
 primeFromRest("releases", (rows) => { releases = rows; onReleasesChanged(); }, byNumber("order"));
@@ -3100,6 +3100,7 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   projects = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   projectsLoaded = true;
   render();
+  if (staffKanban && !staffKanbanPage.hidden) staffKanban.refresh(); // names on cards, the Project filter
   if (archiveProjectId) renderArchivePage();
   if (docsProjectId) renderDocsPage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
@@ -7681,6 +7682,7 @@ function loadStaffKanban() {
         me: normEmail(auth.currentUser && auth.currentUser.email),
         role: currentConsoleRole,
         releases: () => releases,
+        projects: () => projects,
         confirm: (message, opts) => showConfirmDialog(message, opts),
         go: (sub, params) => {
           const qs = params ? new URLSearchParams(params).toString() : "";

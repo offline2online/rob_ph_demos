@@ -73,6 +73,17 @@ t("settings: core fields always shown, title and status always required", () => 
   assert.equal(s.fields.sprint.required, false, "a hidden field can't be required");
   assert.equal(s.firstNames["h@x"], "Huy");
 });
+t("project: a ticket's project is a bounded string, filters, and rides on the card", () => {
+  assert.equal(k.cleanTaskFields({ title: "x", project: " p1 " }).value.project, "p1");
+  assert.match(k.cleanTaskFields({ title: "x", project: "p".repeat(101) }).errors.join(), /project is limited to 100/);
+  const list = [{ key: "PH-1", project: "p1" }, { key: "PH-2", project: "" }, { key: "PH-3" }];
+  assert.deepEqual(k.filterTasks(list, { project: "p1" }).map((t) => t.key), ["PH-1"]);
+  assert.equal(k.filterTasks(list, {}).length, 3);
+  assert.equal(k.cardOf({ key: "PH-1", project: "p1" }).project, "p1");
+  assert.equal(k.cardOf({ key: "PH-3" }).project, "");
+  assert.equal(k.cardPatchOf({ project: "p2" }).project, "p2");
+  assert.ok(k.OPTIONAL_FIELDS.some((f) => f.key === "project") && k.normaliseSettings(null).fields.project.show === true);
+});
 t("local agent fill reads people, priority, estimate, release and type", () => {
   const out = k.agentDraft("there's a bug where the preview shows the wrong price. it's urgent. assign it to Huy. it should take about four hours for the next release", {
     users: [{ id: "huy@x", first: "Huy" }], releases: [{ id: "r1", name: "PH 4.12" }, { id: "r2", name: "PH 4.13" }], currentRelease: "r1", today: new Date("2026-10-21T12:00:00"),

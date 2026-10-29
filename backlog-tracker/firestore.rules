@@ -855,6 +855,7 @@ service cloud.firestore {
         && d.labels is list && d.labels.size() <= 30
         && d.links is list && d.links.size() <= 50
         && d.attachments is list && d.attachments.size() <= 50
+        && d.get("project", "") is string && d.get("project", "").size() <= 100
         && d.searchTokens is list && d.searchTokens.size() <= 600
         && d.updatedBy == callerEmail();
     }
@@ -896,7 +897,7 @@ service cloud.firestore {
     // accepted, so a description can't ride along.
     function isKanbanCard(d) {
       return d.keys().hasOnly(["key", "type", "title", "status", "resolution", "open", "closedAt", "rank", "assignee", "previousAssignee",
-          "release", "sprint", "priority", "flagged", "estimate", "logged", "due", "labels", "epic", "commentCount", "attachmentCount",
+          "release", "sprint", "project", "priority", "flagged", "estimate", "logged", "due", "labels", "epic", "commentCount", "attachmentCount",
           "updatedAt", "updatedBy"])
         && d.key is string && isNonEmptyBoundedString(d.title, 200)
         && d.type in ["task", "bug", "epic"]
@@ -906,6 +907,7 @@ service cloud.firestore {
         && d.rank is number
         && d.labels is list && d.labels.size() <= 30
         && d.commentCount is int && d.attachmentCount is int
+        && d.get("project", "") is string && d.get("project", "").size() <= 100
         && d.updatedBy == callerEmail();
     }
     match /kanbanCards/{key} {

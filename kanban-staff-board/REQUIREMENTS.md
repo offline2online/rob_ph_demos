@@ -120,8 +120,9 @@ the mentions bell panel opens inside the window (KB-NAV-2).
 
 **KB-FLT-1 Primary filters** (always visible, pinned): staff avatars (multi-
 select, first names, "Unassigned"), **My tasks**, **Release**. **Secondary**
-in a **Filters** menu: Flagged only, Type, Priority, Sprint, Label; the button
-shows how many secondary filters are on. Search sits in the page header and
+in a **Filters** menu: Flagged only, Type, Priority, Sprint, Project, Label; the
+button shows how many secondary filters are on. The Project filter is kept in the
+address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. Search sits in the page header and
 matches key, title, description text and labels. **Clear filters** resets all.
 
 **KB-FLT-2 Keep position.** Changing any filter keeps the page's scroll
@@ -147,7 +148,7 @@ once saved it can be chosen as the **Parent epic** of any task or bug.
 
 **KB-TASK-3 Core fields** (always on the form): title, description, reporter,
 assignee, status, release (fix version), estimate. **Optional fields** (Jira
-equivalents): type, priority, sprint, due date, time logged, labels, comments,
+equivalents): type, priority, sprint, project, due date, time logged, labels, comments,
 attachments, parent epic, linked tickets, flag. All fields flow into filters
 and the release report. **Release is optional**: it is never a required field (settings
 can't make it so), a ticket created on the form or over MCP (`kanban_create_task`) may have
@@ -280,6 +281,16 @@ report.
 
 ## 11. MCP
 
+**KB-PRJ-1 Project.** A ticket can name the console project it belongs to (a
+`projects` document id, stored as `project`, at most 100 characters), so
+generated epics trace back to the project and artifact they came from. It is an
+optional field (shown by default; shown and required per Kanban settings),
+sits in the task modal's side panel, filters the board, and shows by name on the
+card. Over MCP `project` takes an id or a project's name (stored as the id), an
+unknown one is refused with every other validation error, and `""` clears it;
+`kanban_list_tasks` filters on it (pushed into the query), `kanban_get_task`
+returns it with `projectName`, and `kanban_list_people` lists the projects.
+
 **KB-MCP-1** Every field is readable and writable over the console's MCP
 server, attributed to the calling member: `kanban_list_tasks` (filters as on
 the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,
@@ -309,8 +320,8 @@ stored by lowercased email; release ids are the console's `releases` ids.
 
 | Collection | Shape |
 |---|---|
-| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
-| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
+| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
+| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}`, `flagged`, `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
 | `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at` |
 | `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, reassignments, flags); append-only |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |

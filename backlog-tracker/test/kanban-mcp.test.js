@@ -471,6 +471,29 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(r.isError);
     for (const re of [/due must be YYYY-MM-DD/, /estimate must be/, /PH-999999 is not an epic/, /isn't a member/, /isn't a release/]) assert.match(r.text, re);
   });
+  await test("project: a ticket names a console project by id or name; unknown is refused with the other errors; '' clears it", async () => {
+    env.store.col("projects").set("pStaff", { name: "Staff Kanban" });
+    env.store.col("projects").set("pOther", { name: "Other Project" });
+    const byName = await tool(sam, "kanban_create_task", { title: "Project by name", project: "staff kanban" });
+    assert.ok(!byName.isError, byName.text); assert.strictEqual(task(byName.json.key).project, "pStaff");
+    assert.strictEqual(env.store.col("kanbanCards").get(byName.json.key).project, "pStaff", "the card carries it");
+    const byId = await tool(sam, "kanban_create_task", { title: "Project by id", project: "pOther" });
+    assert.strictEqual(task(byId.json.key).project, "pOther");
+    const bad = await tool(sam, "kanban_create_task", { title: "x", project: "nope", due: "tomorrow" });
+    assert.ok(bad.isError); assert.match(bad.text, /project nope isn't a project/); assert.match(bad.text, /due must be YYYY-MM-DD/);
+    assert.ok((await tool(sam, "kanban_update_task", { key: byId.json.key, project: "nope" })).isError);
+    const set = await tool(sam, "kanban_update_task", { key: byId.json.key, project: "Staff Kanban" });
+    assert.ok(!set.isError, set.text); assert.strictEqual(task(byId.json.key).project, "pStaff");
+    const clr = await tool(sam, "kanban_update_task", { key: byId.json.key, project: "" });
+    assert.ok(!clr.isError, clr.text); assert.strictEqual(task(byId.json.key).project, ""); assert.strictEqual(env.store.col("kanbanCards").get(byId.json.key).project, "");
+    const l = await tool(sam, "kanban_list_tasks", { project: "pStaff" });
+    assert.deepStrictEqual(l.json.tasks.map((t) => t.key), [byName.json.key]); assert.strictEqual(l.json.tasks[0].project, "pStaff");
+    assert.deepStrictEqual((await tool(sam, "kanban_list_tasks", { project: "Staff Kanban" })).json.tasks.map((t) => t.key), [byName.json.key], "a name filters too");
+    assert.ok((await tool(sam, "kanban_list_tasks", { project: "nope" })).isError);
+    const g = await tool(sam, "kanban_get_task", { key: byName.json.key });
+    assert.strictEqual(g.json.project, "pStaff"); assert.strictEqual(g.json.projectName, "Staff Kanban");
+    assert.ok((await tool(sam, "kanban_list_people")).json.projects.some((x) => x.id === "pStaff" && x.name === "Staff Kanban"));
+  });
   await test("kanban_list_tasks: no status covers open tickets only, as its description says", async () => {
     const desc = mcp.__test.TOOLS.find((x) => x.name === "kanban_list_tasks").description;
     assert.match(desc, /every open ticket/); assert.doesNotMatch(desc, /Without a release it covers every open ticket and the 300/);

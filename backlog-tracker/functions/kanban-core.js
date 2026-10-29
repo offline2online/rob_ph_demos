@@ -53,6 +53,7 @@ const OPTIONAL_FIELDS = [
   { key: "type", label: "Type" },
   { key: "priority", label: "Priority" },
   { key: "sprint", label: "Sprint" },
+  { key: "project", label: "Project" },
   { key: "due", label: "Due date" },
   { key: "logged", label: "Time logged" },
   { key: "labels", label: "Labels" },
@@ -72,7 +73,7 @@ function defaultFields() {
     status: { show: true, required: true }, release: { show: true, required: false },
     estimate: { show: true, required: false },
     type: { show: true, required: true }, priority: { show: true, required: false },
-    sprint: { show: false, required: false }, due: { show: false, required: false },
+    sprint: { show: false, required: false }, project: { show: true, required: false }, due: { show: false, required: false },
     logged: { show: true, required: false }, labels: { show: false, required: false },
     comments: { show: true, required: false }, attachments: { show: false, required: false },
     links: { show: false, required: false },
@@ -292,7 +293,7 @@ function matchesQuery(t, q) {
 }
 
 // Board / MCP filters (KB-FLT-1). f: { q, mine, me, flagged, assignees (Set
-// or array of emails, "none" = unassigned), release, type, priority, sprint, label }.
+// or array of emails, "none" = unassigned), release, type, priority, sprint, project, label }.
 function filterTasks(tasks, f) {
   const who = f.assignees instanceof Set ? f.assignees : new Set(f.assignees || []);
   return tasks.filter((t) => {
@@ -303,6 +304,7 @@ function filterTasks(tasks, f) {
     if (f.type && t.type !== f.type) return false;
     if (f.priority && t.priority !== f.priority) return false;
     if (f.sprint && t.sprint !== f.sprint) return false;
+    if (f.project && t.project !== f.project) return false;
     if (f.label && !(t.labels || []).includes(f.label)) return false;
     if (f.status && (f.status.startsWith("done:") ? "done:" + res(t) !== f.status : t.status !== f.status)) return false;
     if (f.q && !matchesQuery(t, f.q)) return false;
@@ -477,7 +479,7 @@ function cleanTaskFields(input, { partial = false } = {}) {
   if ("type" in input) { if (!TYPES.some((t) => t.key === input.type)) errors.push("type must be task, bug or epic"); else v.type = input.type; }
   if ("priority" in input) { if (input.priority && !PRIORITIES.some((p) => p.key === input.priority)) errors.push("priority must be highest, high, medium, low or lowest"); else v.priority = input.priority || ""; }
   for (const k of ["assignee", "reporter", "previousAssignee"]) if (k in input) { const s = String(input[k] || "").trim().toLowerCase(); if (s && !/^[^@\s]+@[^@\s]+$/.test(s)) errors.push(`${k} must be an email`); else v[k] = s; }
-  str("release", 100); str("sprint", 100); str("epic", 20);
+  str("release", 100); str("sprint", 100); str("project", 100); str("epic", 20);
   if ("due" in input) { const s = String(input.due || ""); if (s && !/^\d{4}-\d{2}-\d{2}$/.test(s)) errors.push("due must be YYYY-MM-DD"); else v.due = s; }
   for (const k of ["estimate", "logged"]) if (k in input) {
     const raw = input[k];
@@ -505,7 +507,7 @@ function cleanTaskFields(input, { partial = false } = {}) {
 // updatedAt/updatedBy ride beside these fields. The server's backfill and the
 // tests use the same functions, so a card and its ticket cannot be derived two ways.
 // (one string, not a list of quoted words: a lone quoted word that is also an icon name fails test/icon-font.test.mjs)
-const CARD_FIELDS = ("key type title status resolution open rank assignee previousAssignee release sprint "
+const CARD_FIELDS = ("key type title status resolution open rank assignee previousAssignee release sprint project "
   + "priority flagged estimate logged due labels epic commentCount attachmentCount").split(" ");
 const CARD_NORM = {
   key: (v) => String(v || ""),
@@ -518,6 +520,7 @@ const CARD_NORM = {
   previousAssignee: (v) => v || "",
   release: (v) => v || "",
   sprint: (v) => v || "",
+  project: (v) => v || "",
   priority: (v) => v || "",
   flagged: (v) => !!v,
   estimate: (v) => (typeof v === "number" ? v : null),

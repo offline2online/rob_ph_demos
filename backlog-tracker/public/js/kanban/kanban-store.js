@@ -64,6 +64,7 @@ export function taskFromDoc(id, d) {
     reporter: d.reporter || "",
     release: d.release || "",
     sprint: d.sprint || "",
+    project: d.project || "",
     estimate: typeof d.estimate === "number" ? d.estimate : "",
     logged: typeof d.logged === "number" ? d.logged : 0,
     priority: d.priority || "",
@@ -93,7 +94,7 @@ export function derivedFields(t) {
 const DERIVED_FROM = ["title", "description", "labels"];
 
 // The fields of a task that are stored as they are.
-export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments"];
+export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments"];
 
 // backfill: asks the server to fill kanbanCards from kanbanTasks (idempotent).
 export function createStore({ db, storage, me, backfill = null, onChange = () => {}, onError = () => {} }) {

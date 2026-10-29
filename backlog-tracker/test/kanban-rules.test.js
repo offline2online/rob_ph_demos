@@ -172,6 +172,12 @@ async function main() {
       tx.set(doc(db, "kanbanCards/PH-8"), card(8));
     });
   });
+  await check("A card carries a project", "allow", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { project: "New5VKTF2QBqT3T4YEla" })));
+  await check("A card's project must be a string", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { project: 7 })));
+  await check("A card's project is at most 100 characters", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { project: "p".repeat(101) })));
+  await check("A ticket's project must be a string", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: ["x"], updatedBy: SAM }));
+  await check("A ticket's project is at most 100 characters", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "p".repeat(101), updatedBy: SAM }));
+  await check("A ticket can name a project", "allow", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "New5VKTF2QBqT3T4YEla", updatedBy: SAM }));
   await check("A card with a description can't be written", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { description: "<p>big</p>" })));
   await check("A card can't carry search tokens", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { searchTokens: ["a"] })));
   await check("A card's key must be its id", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(9)));
