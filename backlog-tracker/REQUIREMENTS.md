@@ -612,6 +612,28 @@ stale base, and Deploy to Main stopped on a conflict in
 `backlog-tracker/MCP.md` that a person had to merge by hand. Tests:
 `test/train-sync.test.js`.
 
+**Append-only conflicts keep both additions (29 Oct 2026).** When the
+three-way merge in `rebasePatchFilesOnto` conflicts on a path in
+`UNION_MERGE_PATHS` (`backlog-tracker/test/**/*.test.{js,mjs}`, `**/*.md`),
+the file is merged again with `git merge-file --diff3` and every conflict
+hunk is checked: if each side's lines are the base's lines with lines added
+(no base line changed or removed), the hunk becomes the base with both
+sides' additions, the branch's before the patch's, and an addition identical
+on both sides kept once (`unionInsertedLines`). In the pinned tool list of
+`test/mcp-client.test.mjs` (`UNION_MERGE_LISTS`) the same rule applies name
+by name, a name going onto the line of the name before it and the gap kept
+sorted when every side was sorted (`unionInsertedListNames`). The file is
+used only if every hunk resolves and, for JavaScript, the result passes
+`node --check` (`parsesAs`); otherwise it is the same-lines conflict it was,
+and the ticket rebuilds. A union-merged file counts as rebased, and
+`rebasePatchFilesOnto` returns it in `unioned` (`{path, hunks}`), which the
+card's "Committed to …" note lists as "Union-merged …" (`unionMergeNote`).
+Not covered: Cloud Functions code such as `functions/kanban.js`'s tools
+array, and merging main into a train (`syncTrainWithMain`, Deploy to Main).
+Evidence: Staff Kanban, 29 Oct 2026 — 8 parallel tickets each appended to
+the same files; one landed per round, the rest rebuilt, about 4 hours lost.
+Tests: `test/train-sync.test.js`.
+
 **Automatic rebuilds after a refused patch are requested, not started**
 (19 Oct 2026, ticket mLCZgemj4wQEW6PTQru1; evidence: OanRebXyEryAXBQrBsVe,
 whose rebuild after a migration-number clash never ran because the Routine

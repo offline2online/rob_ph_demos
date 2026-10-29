@@ -1459,10 +1459,179 @@ function mergeBrokeSyntax(p, ours, theirs, merged, parse = parsesAs) {
   return parse(p, ours) === true && parse(p, theirs) === true;
 }
 
+// ── Both sides only added lines at the same place: keep both ─────────────
+// 29 Oct 2026: Staff Kanban sent 8 tickets to build at once and every one
+// appended to the same places — a case at the end of test/kanban-mcp.test.js,
+// a name in mcp-client.test.mjs's pinned tool list, a row in the tool tables
+// of MCP.md and REQUIREMENTS.md. git merge-file calls two insertions at the
+// same point a conflict, so each round one ticket landed and the rest were
+// rebuilt (automatic rebuilds spent on nothing else) until the operator held
+// them with set_blocked and released them one at a time: about 4 hours.
+//
+// On the paths below, where an addition's place in the file doesn't matter, a
+// conflict hunk that is a pure insertion on both sides — every base line of
+// the hunk still there, in order, on each side, so nothing was changed or
+// removed — keeps both additions: the branch's first, then this patch's. An
+// addition identical on both sides is kept once. Any other hunk in the file
+// leaves the whole file a conflict, and so does a union that doesn't parse.
+const UNION_MERGE_PATHS = [
+  /^backlog-tracker\/test\/(?:[^/]+\/)*[^/]+\.test\.(?:js|mjs)$/,
+  /\.md$/i,
+];
+// mcp-client.test.mjs pins every tool name in one sorted list, several names
+// to a line, so two tickets adding a tool each edit the same line rather than
+// adding one. A hunk inside that list is merged name by name instead.
+const UNION_MERGE_LISTS = [
+  { path: "backlog-tracker/test/mcp-client.test.mjs", opener: /assert\.deepStrictEqual\(names, \[\s*$/ },
+];
+const UNION_MARKER_SIZE = 31; // longer than anything a Markdown file holds (a setext "=======")
+const isUnionMergePath = (p) => UNION_MERGE_PATHS.some((re) => re.test(p));
+
+// `side` as `base` with lines added: the lines it inserts before each base
+// line and after the last (base.length + 1 gaps), or null if a base line is
+// missing — changed or removed.
+function insertionGaps(base, side) {
+  const gaps = [[]];
+  let j = 0;
+  for (const line of side) {
+    if (j < base.length && line === base[j]) { j += 1; gaps.push([]); }
+    else gaps[gaps.length - 1].push(line);
+  }
+  return j === base.length ? gaps : null;
+}
+const sameLines = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+// One conflict hunk, line by line. Pure, for test/train-sync.test.js.
+function unionInsertedLines(ours, base, theirs) {
+  const o = insertionGaps(base, ours), t = insertionGaps(base, theirs);
+  if (!o || !t) return null;
+  const out = [];
+  for (let g = 0; g <= base.length; g++) {
+    out.push(...o[g]);
+    if (!sameLines(o[g], t[g])) out.push(...t[g]);
+    if (g < base.length) out.push(base[g]);
+  }
+  return out;
+}
+
+// One conflict hunk of a pinned list, name by name: every line of all three
+// sides must be nothing but string literals, and each side's names the base's
+// with names added. Each name this patch added (and the branch doesn't
+// already have) goes onto the line of the name before it; within a gap the
+// two sides' additions are kept in order when every side was sorted (the
+// pinned list is compared with a sorted one), the branch's first otherwise.
+// Only lines that gain a name are rewritten.
+const LIST_LINE = /^(\s*)((?:"(?:[^"\\]|\\.)*"\s*,\s*)*"(?:[^"\\]|\\.)*")\s*(,?)\s*$/;
+const isListLine = (l) => LIST_LINE.test(l);
+function unionInsertedListNames(ours, base, theirs) {
+  if (!ours.length || ![...ours, ...base, ...theirs].every(isListLine)) return null;
+  const names = (lines) => lines.flatMap((l, line) => (l.match(/"(?:[^"\\]|\\.)*"/g) || []).map((name) => ({ name, line })));
+  const [o, b, t] = [ours, base, theirs].map(names);
+  const og = insertionGaps(b.map((x) => x.name), o.map((x) => x.name));
+  const tg = insertionGaps(b.map((x) => x.name), t.map((x) => x.name));
+  if (!og || !tg) return null;
+  const value = (n) => { try { return JSON.parse(n); } catch { return n; } };
+  const sorted = (xs) => xs.every((x, i) => i === 0 || value(xs[i - 1].name) <= value(x.name));
+  const keepSorted = sorted(o) && sorted(b) && sorted(t);
+  // Walk ours' names (each with the line it sits on) gap by gap.
+  const merged = [];
+  let k = 0;
+  for (let g = 0; g <= b.length; g++) {
+    const fromOurs = o.slice(k, k + og[g].length);
+    k += og[g].length;
+    const fromTheirs = tg[g].filter((n) => !o.some((x) => x.name === n)).map((name) => ({ name, line: null }));
+    const gap = fromOurs.concat(fromTheirs);
+    if (keepSorted) gap.sort((x, y) => (value(x.name) < value(y.name) ? -1 : value(x.name) > value(y.name) ? 1 : 0));
+    merged.push(...gap);
+    if (g < b.length) { merged.push(o[k]); k += 1; }
+  }
+  // A name of theirs sits on the line of the name before it (the first line
+  // when it leads the hunk).
+  let line = 0;
+  const onLine = ours.map(() => []);
+  for (const n of merged) {
+    if (n.line !== null) line = n.line;
+    onLine[line].push(n);
+  }
+  return ours.map((l, i) => {
+    if (onLine[i].every((n) => n.line !== null)) return l;
+    const [, indent, , comma] = l.match(LIST_LINE);
+    return `${indent}${onLine[i].map((n) => n.name).join(", ")}${comma}`;
+  });
+}
+
+// `merged` is `git merge-file --diff3 --marker-size=UNION_MARKER_SIZE` output
+// for path `p`. Returns { text, hunks } with every conflict hunk resolved, or
+// null when the path isn't allowlisted or any hunk is more than an insertion.
+// Pure, for test/train-sync.test.js.
+function unionMergeConflicts(p, merged, markerSize = UNION_MARKER_SIZE) {
+  if (!isUnionMergePath(p)) return null;
+  const lists = UNION_MERGE_LISTS.filter((l) => l.path === p);
+  const [open, mid, sep, close] = ["<", "|", "=", ">"].map((c) => c.repeat(markerSize));
+  const lines = String(merged).split("\n");
+  const out = [];
+  let hunks = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith(`${open} `)) { out.push(lines[i]); continue; }
+    const parts = [[], [], []]; // ours (the branch), base, theirs (this patch)
+    let side = 0, j = i + 1;
+    for (; j < lines.length && !lines[j].startsWith(`${close} `); j++) {
+      if (side === 0 && lines[j].startsWith(`${mid} `)) { side = 1; continue; }
+      if (side === 1 && lines[j] === sep) { side = 2; continue; }
+      parts[side].push(lines[j]);
+    }
+    if (j >= lines.length || side !== 2) return null;
+    // Inside a pinned list: the lines above the hunk, back to the list's
+    // opener, are all names (or comments).
+    let above = out.length - 1;
+    while (above >= 0 && (isListLine(out[above]) || /^\s*\/\//.test(out[above]))) above -= 1;
+    const inList = above >= 0 && lists.some((l) => l.opener.test(out[above]));
+    const resolved = inList ? unionInsertedListNames(...parts) : unionInsertedLines(...parts);
+    if (!resolved) return null;
+    out.push(...resolved);
+    hunks += 1;
+    i = j;
+  }
+  return hunks ? { text: out.join("\n"), hunks } : null;
+}
+
+// rebasePatchFilesOnto's fallback for a conflicted file: the union above,
+// kept only if it still parses (node --check for JS, as the clean merge is).
+function unionMergePatchFile(p, oursPath, basePath, theirsPath) {
+  if (!isUnionMergePath(p)) return null;
+  let out;
+  try {
+    out = execFileSync("git", ["merge-file", "-p", "--diff3", `--marker-size=${UNION_MARKER_SIZE}`,
+      "-L", "current branch", "-L", "before sync", "-L", "this patch", oursPath, basePath, theirsPath],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    if (!(typeof err.status === "number" && err.status > 0 && err.status < 128)) throw err;
+    out = String(err.stdout || "");
+  }
+  const union = unionMergeConflicts(p, out);
+  if (!union) return null;
+  if (parsesAs(p, union.text) === false) {
+    console.log(`[apply-patch] ${p}: keeping both sides' additions doesn't parse — treating it as a conflict`);
+    return null;
+  }
+  return union;
+}
+
+// What the card says about a union, so whoever tests or reviews the ticket
+// knows those additions were placed by the automation, not the build.
+function unionMergeNote(unioned) {
+  if (!unioned || !unioned.length) return "";
+  const what = unioned.map((u) => `${u.path} (${u.hunks} place${u.hunks === 1 ? "" : "s"})`).join(", ");
+  return ` Union-merged ${what}: a ticket that landed first had added lines at the same place as this patch and neither changed or removed ` +
+    `anything, so both additions were kept — the branch's first, then this patch's — instead of rebuilding this ticket ` +
+    `(JavaScript is checked to parse). Check the order there when reviewing.`;
+}
+
 function rebasePatchFilesOnto(patchFiles, baseRef) {
   const files = [];
   const rebased = [];
   const conflicts = [];
+  const unioned = [];
   const show = (ref, p) => {
     try { return execFileSync("git", ["show", `${ref}:${p}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
     catch { return null; }
@@ -1498,13 +1667,21 @@ function rebasePatchFilesOnto(patchFiles, baseRef) {
     } catch (err) {
       // git merge-file exits with the number of conflicts (1..127); anything
       // else is a real error.
-      if (typeof err.status === "number" && err.status > 0 && err.status < 128) { conflicts.push(f.path); files.push(f); }
-      else throw err;
+      if (!(typeof err.status === "number" && err.status > 0 && err.status < 128)) throw err;
+      const union = unionMergePatchFile(f.path, oursPath, basePath, theirsPath);
+      if (union) {
+        files.push({ ...f, content: union.text });
+        rebased.push(f.path);
+        unioned.push({ path: f.path, hunks: union.hunks });
+      } else {
+        conflicts.push(f.path);
+        files.push(f);
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }
-  return { files, rebased, conflicts };
+  return { files, rebased, conflicts, unioned };
 }
 
 // One push helper for every train write. The run's own GITHUB_TOKEN can
@@ -4441,6 +4618,7 @@ async function processApplyPatch(item) {
   let patchedFiles = item.patchFiles;
   let movedPaths = [];
   let rebasedPaths = [];
+  let unionedPaths = [];
   // The commit this patch's files were read from (see "Parallel builds").
   const patchBase = patchBaseFor(item, sync);
   for (;;) {
@@ -4469,7 +4647,9 @@ async function processApplyPatch(item) {
       }
       patchedFiles = rebase.files;
       rebasedPaths = rebase.rebased;
+      unionedPaths = rebase.unioned;
       if (rebasedPaths.length) console.log(`[apply-patch] ${item.id}: carried this patch's edits onto the branch's newer ${rebasedPaths.join(", ")}`);
+      if (unionedPaths.length) console.log(`[apply-patch] ${item.id}: kept both sides' additions in ${unionedPaths.map((u) => u.path).join(", ")}`);
     }
     applyPatchFiles(patchedFiles);
     // Read while the patched files are still on disk, so testVersion
@@ -4617,7 +4797,8 @@ async function processApplyPatch(item) {
 
   const syncNote = (sync.kind === "current" ? "" :
     ` The branch was first brought up to date with main (${sync.kind === "fast-forwarded" ? "fast-forwarded" : "main merged in"}, ${sync.behind} commit(s)).`) +
-    (rebasedPaths.length ? ` This patch's edits were merged onto the branch's newer ${rebasedPaths.join(", ")} (changed since the patch was written), so nothing that landed meanwhile was overwritten.` : "");
+    (rebasedPaths.length ? ` This patch's edits were merged onto the branch's newer ${rebasedPaths.join(", ")} (changed since the patch was written), so nothing that landed meanwhile was overwritten.` : "") +
+    unionMergeNote(unionedPaths);
   const notes = await appendNote(
     item,
     `Committed to the project's integration branch \`${deployBranch}\` as ${sha.slice(0, 7)} (${changedPaths.join(", ")}). ` +
@@ -7162,7 +7343,7 @@ module.exports = {
   readyForTestingNotifyFields, batchStillBuilding, handOffWaitingOn, revertCommitFor, parsesAs, mergeBrokeSyntax, rerunPending, nextHandOff, attributedShasFor, tv,
   // test/train-sync.test.js — the train is brought up to date with main
   // before a ticket lands, and the patch's edits are carried across
-  syncTrainWithMain, rebasePatchFilesOnto,
+  syncTrainWithMain, rebasePatchFilesOnto, unionMergeConflicts, unionInsertedLines, unionInsertedListNames, unionMergeNote, UNION_MARKER_SIZE,
   // test/docs-sync.test.js, test/docs-sync-all.test.js
   syncDocsAfterMerge, gitDocsIo, syncDocsWhenMainMoves,
   // test/train-checks.test.js — a train merges only once e2e-quick passed
