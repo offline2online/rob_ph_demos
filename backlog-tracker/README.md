@@ -234,6 +234,22 @@ safe and moving:
   file from it onto the train as it is when the patch lands, so a ticket
   that landed in between is never overwritten. A same-lines clash notes the
   card and rebuilds it once automatically (`autoRebuilds`).
+- **Two tickets that only added lines at the same place both land** (29 Oct
+  2026). On 29 Oct Staff Kanban sent 8 tickets at once; each appended a case
+  to `test/kanban-mcp.test.js`, a name to the pinned tool list in
+  `test/mcp-client.test.mjs` and a row to the tool tables in `MCP.md` and
+  `kanban-staff-board/REQUIREMENTS.md`. `git merge-file` calls two
+  insertions at one point a conflict, so one ticket landed per round and
+  the rest were rebuilt, about 4 hours in all. Now, on
+  `backlog-tracker/test/**/*.test.{js,mjs}` and any `*.md`, a conflict hunk
+  where neither side changed or removed a base line keeps both additions,
+  the branch's first, then the patch's (`unionMergeConflicts`, re-merged with
+  `--diff3` so the base is known). Inside `mcp-client.test.mjs`'s pinned list
+  this is done name by name, kept sorted. Any other hunk in the file, a path
+  off that list (`functions/kanban.js` included) or a union that fails
+  `node --check` stays a conflict and rebuilds as before. The card's
+  "Committed to …" note names each union-merged file ("Union-merged …"), so
+  a reviewer can check the order. Tests: `test/train-sync.test.js`.
 - **An automatic rebuild is "requested", then confirmed or reported**
   (19 Oct 2026). The card note says a rebuild was *requested* and stamps
   `rebuildRequestedAt`. The notify function records the outcome of every
