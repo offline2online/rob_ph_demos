@@ -103,7 +103,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
 
   await test("the twenty kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list_(?!notif)|list_notifications|get|search|release|my_work)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
@@ -875,6 +875,113 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(!again.isError, "a new hour starts a new allowance: " + again.text);
   });
 
+
+  // ── kanban_capture_screenshot[s]: the board renders the page itself ─────
+  const captureLib = require("../functions/kanban-capture");
+  const ART = "https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/";
+  const fakePage = (over) => Object.assign({ status: 200, finalUrl: ART, text: "Exchange settings\nSave changes", png: pngBytes(300), warnings: [] }, over);
+  async function withRenderer(fn, body) {
+    const orig = captureLib.renderer.render; const calls = [];
+    captureLib.renderer.render = async (o) => { calls.push(o); return fn(o); };
+    try { return await body(calls); } finally { captureLib.renderer.render = orig; }
+  }
+  const cap = (token, args) => tool(token, "kanban_capture_screenshot", Object.assign({ key: "PH-1", url: ART + "#/exchange" }, args));
+  await test("kanban_capture_screenshot: renders, stores as an attachment, replaces the Screenshot line in the description", async () => {
+    env.authState.uploads = {};
+    env.store.col("kanbanTasks").get("PH-1").description = "<p>Exchange settings page.</p><p>Screenshot: https://example.org/old.png</p><p>After.</p>";
+    await withRenderer((o) => fakePage({ finalUrl: o.url }), async (calls) => {
+      const r = await cap(sam, { caption: "Exchange <settings>" });
+      assert.ok(!r.isError, r.text);
+      assert.strictEqual(r.json.ok, true);
+      assert.strictEqual(calls[0].width, 1440); assert.strictEqual(calls[0].height, 900); assert.strictEqual(calls[0].fullPage, true);
+      assert.match(r.json.path, /^kanban\/PH-1\/\d+-capture-PH-1\.png$/);
+      assert.strictEqual(env.authState.uploads[r.json.path].contentType, "image/png");
+      const t = task("PH-1");
+      assert.ok(t.attachments.some((a) => a.path === r.json.path && a.caption === "Exchange <settings>"));
+      assert.ok(!/Screenshot:/.test(t.description), t.description);
+      assert.match(t.description, /<p>Exchange settings page\.<\/p><p><img src="https:\/\/firebasestorage[^"]+capture-PH-1\.png[^"]*" alt="Exchange &lt;settings&gt;"><br><em>Exchange &lt;settings&gt;<\/em><\/p><p>After\.<\/p>/);
+      assert.ok(!/data:image/.test(t.description));
+      // A second capture replaces the first: one attachment, one picture.
+      const again = await cap(sam, {});
+      assert.ok(!again.isError, again.text);
+      assert.strictEqual(again.json.replacedEarlierCapture, true);
+      const t2 = task("PH-1");
+      assert.strictEqual(t2.attachments.filter((a) => a.name === "capture-PH-1.png").length, 1);
+      assert.strictEqual((t2.description.match(/<img /g) || []).length, 1);
+    });
+  });
+  await test("kanban_capture_screenshot: a URL outside the allowed domains is refused and the browser is never started", async () => {
+    await withRenderer(() => { throw new Error("must not render"); }, async (calls) => {
+      for (const url of ["https://example.com/x", "http://offline2online.github.io/x", "https://offline2online.github.io.evil.com/x", "https://user:pw@offline2online.github.io/x", "https://offline2online.github.io:8443/x", "https://169.254.169.254/latest/meta-data", "file:///etc/passwd", "not a url"]) {
+        const r = await cap(sam, { url });
+        assert.ok(r.isError, url);
+      }
+      assert.strictEqual(calls.length, 0);
+    });
+  });
+  await test("kanban_capture_screenshot: non-200, not-found text and a redirect home are reported and attach nothing", async () => {
+    const before = JSON.stringify(task("PH-1").attachments) + task("PH-1").description;
+    const was = Object.keys(env.authState.uploads).length;
+    const cases = [[{ status: 404 }, /404/], [{ text: "404\nPage not found" }, /doesn't exist/], [{ finalUrl: ART + "#/" }, /redirected/], [{ png: Buffer.alloc(0) }, /no image/]];
+    for (const [over, re] of cases) {
+      await withRenderer((o) => fakePage(Object.assign({ finalUrl: o.url }, over)), async () => {
+        const r = await cap(sam, { url: ART + "#/nope" });
+        assert.ok(r.isError); assert.match(r.text, re);
+      });
+    }
+    await withRenderer(() => { throw new Error("net::ERR_NAME_NOT_RESOLVED"); }, async () => { const r = await cap(sam, {}); assert.ok(r.isError); assert.match(r.text, /couldn't be rendered/); });
+    assert.strictEqual(JSON.stringify(task("PH-1").attachments) + task("PH-1").description, before);
+    assert.strictEqual(Object.keys(env.authState.uploads).length, was);
+  });
+  await test("kanban_capture_screenshot: viewport and wait are validated and passed on; warnings come back", async () => {
+    await withRenderer((o) => fakePage({ finalUrl: o.url, warnings: ["The icon font didn't load"] }), async (calls) => {
+      const r = await cap(sam, { width: 1024, height: 700, fullPage: false, waitMs: 3000 });
+      assert.ok(!r.isError, r.text);
+      assert.deepStrictEqual([calls[0].width, calls[0].height, calls[0].fullPage, calls[0].waitMs], [1024, 700, false, 3000]);
+      assert.deepStrictEqual(r.json.warnings, ["The icon font didn't load"]);
+      assert.ok((await cap(sam, { width: 50 })).isError);
+      assert.ok((await cap(sam, { waitMs: 60000 })).isError);
+      assert.ok((await cap(sam, { caption: "x".repeat(301) })).isError);
+      assert.ok((await cap(sam, { key: "PH-9999" })).isError);
+    });
+  });
+  await test("kanban_capture_screenshot: a viewer is refused (board.write); no browser installed is said plainly", async () => {
+    const r = await cap(kit, {});
+    assert.ok(r.isError);
+    const orig = captureLib.renderer._render;
+    captureLib.renderer._render = async () => { const e = new Error("The screenshot browser isn't installed on the server"); e.code = "no-browser"; throw e; };
+    try { const x = await cap(sam, {}); assert.ok(x.isError); assert.match(x.text, /isn't installed/); } finally { captureLib.renderer._render = orig; }
+  });
+  await test("kanban_capture_screenshots: one call, each page reported on its own; the bad ones attach nothing", async () => {
+    member("lena2@personalisationhub.com", "editor", "Lena Two");
+    const lena = await connect("lena2@personalisationhub.com");
+    await withRenderer((o) => (/nope/.test(o.url) ? fakePage({ status: 404, finalUrl: o.url }) : fakePage({ finalUrl: o.url })), async (calls) => {
+      const r = await tool(lena, "kanban_capture_screenshots", { caption: "As designed", items: [
+        { key: "PH-1", url: ART + "#/exchange" }, { key: "PH-3", url: ART + "#/nope" }, { key: "PH-4", url: "https://example.com/x" }, { key: "PH-9999", url: ART },
+      ] });
+      assert.ok(!r.isError, r.text);
+      assert.strictEqual(r.json.captured, 1); assert.strictEqual(r.json.failed, 3);
+      assert.deepStrictEqual(r.json.results.map((x) => [x.key, x.ok]), [["PH-1", true], ["PH-3", false], ["PH-4", false], ["PH-9999", false]]);
+      assert.match(r.json.results[1].error, /404/); assert.match(r.json.results[2].error, /allowed domain/);
+      assert.strictEqual(calls.length, 2, "the refused URL and the unknown ticket never reach the browser");
+      assert.ok(!(task("PH-3").attachments || []).some((a) => /^capture-/.test(a.name)));
+      assert.match(task("PH-1").description, /<em>As designed<\/em>/);
+      const all = await tool(lena, "kanban_capture_screenshots", { items: [{ key: "PH-3", url: ART + "#/nope" }] });
+      assert.ok(all.isError, "every page failing is an error");
+      const many = await tool(lena, "kanban_capture_screenshots", { items: Array.from({ length: 21 }, () => ({ key: "PH-1", url: ART })) });
+      assert.ok(many.isError);
+    });
+  });
+  await test("capture: route comparison, not-found detection and the description placement", () => {
+    assert.ok(captureLib.sameRoute(ART + "#/a", ART + "index.html#/a/"));
+    assert.ok(!captureLib.sameRoute(ART + "#/a", ART + "#/"));
+    assert.ok(!captureLib.sameRoute(ART + "#/a", "https://offline2online.github.io/other/#/a"));
+    assert.ok(captureLib.looksMissing("Oops\nPage not found")); assert.ok(!captureLib.looksMissing("Exchange settings"));
+    const img = captureLib.imageParagraph("https://x/capture-PH-1.png", "", "capture-PH-1.png");
+    assert.strictEqual(captureLib.placeScreenshot("<p>A</p>", img), "<p>A</p>" + img);
+    assert.strictEqual(captureLib.placeScreenshot("A\nScreenshot: x\nB", img), "A" + "\n" + img + "\nB".replace("\n", "\n"));
+    assert.strictEqual(captureLib.placeScreenshot("<p>Screenshot: a</p><p>Screenshot: b</p>", img), img);
+  });
 
   // ── Notifications (KB-NAV-2): the fan-out, and the two MCP tools ──────────
   const notify = require("../functions/kanban-notify");

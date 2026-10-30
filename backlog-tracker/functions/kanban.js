@@ -28,6 +28,7 @@ const crypto = require("crypto");
 const logger = require("firebase-functions/logger");
 const core = require("./kanban-core");
 const notify = require("./kanban-notify");
+const capture = require("./kanban-capture");
 
 const db = () => require("firebase-admin/firestore").getFirestore();
 const TASKS = "kanbanTasks";
@@ -504,6 +505,80 @@ function kanbanTools(h) {
       criteriaTotal: core.cardOf(t).acTotal, criteriaDone: core.cardOf(t).acDone,
     };
   }
+  // ── Page screenshots (kanban_capture_screenshot[s]) ──────────────────────
+  const CAPTURE_PROPS = {
+    url: { type: "string", description: "The page to capture: https, on an artifact domain (offline2online.github.io, rawcdn.githack.com), e.g. the artifact URL plus a hash route." },
+    caption: { type: "string", description: "Optional caption shown under the image. Up to 300 characters." },
+    width: { type: "integer", description: `Viewport width in px (${capture.LIMITS.width.min}–${capture.LIMITS.width.max}, default ${capture.LIMITS.width.def}).` },
+    height: { type: "integer", description: `Viewport height in px (${capture.LIMITS.height.min}–${capture.LIMITS.height.max}, default ${capture.LIMITS.height.def}).` },
+    fullPage: { type: "boolean", description: "Capture the whole page, not just the viewport (default true; clipped at 12000 px tall)." },
+    waitMs: { type: "integer", description: `Extra wait after load for a hash-route app to render, in ms (0–${capture.LIMITS.waitMs.max}, default ${capture.LIMITS.waitMs.def}).` },
+  };
+  const intIn = (v, lim) => (v === undefined || v === null ? lim.def : Number.isInteger(v) && v >= lim.min && v <= lim.max ? v : null);
+  // One page onto one ticket. Never throws: → { ok: true, ... } or { ok: false, key, url, error }.
+  async function captureOne(session, item, defaults) {
+    const get = (f) => (item[f] !== undefined ? item[f] : (defaults || {})[f]);
+    const key = normKey(item.key);
+    const url = String(item.url || "").trim();
+    const fail = (error) => ({ ok: false, key: key || String(item.key || ""), url, error });
+    if (!key) return fail("Not a ticket key.");
+    const chk = capture.checkUrl(url);
+    if (!chk.ok) return fail(chk.error);
+    const width = intIn(get("width"), capture.LIMITS.width), height = intIn(get("height"), capture.LIMITS.height), waitMs = intIn(get("waitMs"), capture.LIMITS.waitMs);
+    if (width == null) return fail(`width must be a whole number from ${capture.LIMITS.width.min} to ${capture.LIMITS.width.max}.`);
+    if (height == null) return fail(`height must be a whole number from ${capture.LIMITS.height.min} to ${capture.LIMITS.height.max}.`);
+    if (waitMs == null) return fail(`waitMs must be a whole number from ${capture.LIMITS.waitMs.min} to ${capture.LIMITS.waitMs.max}.`);
+    const caption = String(get("caption") || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+    if (caption.length > 300) return fail("A caption is limited to 300 characters.");
+    const cur = await getTask(key);
+    if (!cur) return fail(`No ticket ${item.key}.`);
+    const name = capture.captureName(key);
+    // A refresh replaces this ticket's earlier capture, so it doesn't count toward the 50.
+    if ((cur.attachments || []).filter((a) => a.name !== name).length >= ATTACH_MAX_PER_TICKET) return fail(`${key} already has ${ATTACH_MAX_PER_TICKET} attachments, the most a ticket holds.`);
+    let shot;
+    try {
+      shot = await capture.renderer.render({ url: chk.url, width, height, fullPage: get("fullPage") !== false, waitMs });
+    } catch (err) {
+      if (err && err.code === "no-browser") return fail(err.message);
+      logger.warn("kanban capture failed", { key, url: chk.url, error: String(err && err.message ? err.message : err) });
+      return fail(`The page couldn't be rendered: ${String(err && err.message ? err.message : err).replace(/\s+/g, " ").slice(0, 200)}`);
+    }
+    const bad = capture.judge(chk.url, shot);
+    if (bad) return fail(bad);
+    if (!ATTACH_TYPES["image/png"].magic(shot.png)) return fail("The browser's image wasn't a valid png.");
+    if (!(await takeAttachSlot(session.email))) return fail(`Limit reached: ${ATTACH_PER_HOUR} files an hour per member. Try again later.`);
+    let bytes = shot.png, resized = false;
+    try { const r = await imageResizer.resize(bytes, "image/png"); bytes = r.buf; resized = r.resized; }
+    catch (err) { return fail("The screenshot couldn't be read."); }
+    if (bytes.length > ATTACH_MAX_BYTES) return fail(`The screenshot is ${(bytes.length / 1048576).toFixed(1)} MB; the limit is 5 MB. Try fullPage: false or a smaller viewport.`);
+    const path = `kanban/${key}/${Date.now()}-${name}`;
+    const token = crypto.randomUUID();
+    const bucket = h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET);
+    await bucket.file(path).save(bytes, { contentType: "image/png", metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
+    const imgUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+    const entry = { name, url: imgUrl, path, contentType: "image/png", size: bytes.length };
+    if (caption) entry.caption = caption;
+    const ref = tasks().doc(key);
+    const replaced = [];
+    const count = await db().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return null;
+      const t = Object.assign({ key }, snap.data());
+      replaced.length = 0;
+      const kept = (t.attachments || []).filter((a) => { if (a.name === name) { replaced.push(a); return false; } return true; });
+      const attachments = kept.concat([entry]);
+      const description = capture.placeScreenshot(t.description || "", capture.imageParagraph(imgUrl, caption, name));
+      const patch = Object.assign({ attachments, description }, derived(Object.assign({}, t, { description })), stamp(session.email));
+      tx.update(ref, patch);
+      putCard(tx, key, Object.assign({}, t, patch), session.email);
+      activity(tx, key, session.email, [`captured ${name} from ${chk.url.slice(0, 200)}`]);
+      return attachments.length;
+    });
+    if (count == null) return fail(`No ticket ${item.key}.`);
+    for (const old of replaced) { try { if (old.path) await bucket.file(old.path).delete(); } catch (err) { /* best effort: the file is no longer linked */ } }
+    return { ok: true, key, url: chk.url, name, imageUrl: imgUrl, path, size: bytes.length, downscaled: resized, caption: caption || null, inline: true, replacedEarlierCapture: replaced.length > 0, warnings: shot.warnings || [], attachments: count };
+  }
+
   const board = async () => db().collection(await boardCollection());
   const SUB_LIMIT = 100; // comments and activity lines kanban_get_task returns (the newest)
   const EPIC_CHILDREN = 500;
@@ -1373,6 +1448,54 @@ function kanbanTools(h) {
       },
     },
     {
+      name: "kanban_capture_screenshot",
+      description: "Staff Kanban: the board opens a page in headless Chromium, screenshots it and puts the picture on a ticket, so no image data goes through MCP. The page must be on an artifact domain (offline2online.github.io, rawcdn.githack.com); usually the artifact URL plus a hash route. The image is stored as an attachment and placed in the description, replacing any \"Screenshot: …\" line (or an earlier capture). A page that answers non-200, says it doesn't exist or redirects off its route is reported and nothing is attached. Default viewport 1440×900, full page. Counts against the 60 files an hour per member. For several pages use kanban_capture_screenshots.",
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: Object.assign({ key: KEY }, CAPTURE_PROPS),
+        required: ["key", "url"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const r = await captureOne(session, args, args);
+        await audit(session, "kanban_capture_screenshot", { key: r.key || String(args.key || ""), ok: r.ok, url: String(args.url || "").slice(0, 300) });
+        return r.ok ? textResult(r) : toolError(`${r.key || args.key}: ${r.error} Nothing was attached.`);
+      },
+    },
+    {
+      name: "kanban_capture_screenshots",
+      description: `Staff Kanban: kanban_capture_screenshot for a list of {key, url} pairs in one call, e.g. every page epic of a project (up to ${capture.LIMITS.batchMax} pages, captured one after another). Each page is reported on its own: a failed page (not on an allowed domain, non-200, not found, redirected) has ok: false and the reason, and nothing is attached for it; the others still go through. Viewport, wait and caption apply to every page unless the pair sets its own.`,
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: Object.assign({
+          items: {
+            type: "array", minItems: 1, maxItems: capture.LIMITS.batchMax,
+            items: { type: "object", properties: Object.assign({ key: KEY }, CAPTURE_PROPS), required: ["key", "url"], additionalProperties: false },
+            description: "The pages: [{key, url}], each optionally with its own caption, width, height, fullPage or waitMs.",
+          },
+        }, CAPTURE_PROPS),
+        required: ["items"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const items = Array.isArray(args.items) ? args.items : [];
+        if (!items.length) return toolError("items is required: a list of {key, url}.");
+        if (items.length > capture.LIMITS.batchMax) return toolError(`At most ${capture.LIMITS.batchMax} pages in one call; send the rest in another.`);
+        const defaults = {};
+        for (const f of ["width", "height", "fullPage", "waitMs", "caption"]) if (args[f] !== undefined) defaults[f] = args[f];
+        const started = Date.now();
+        const results = [];
+        for (const it of items) {
+          if (Date.now() - started > capture.LIMITS.batchBudgetMs) { results.push({ ok: false, key: String((it && it.key) || ""), url: String((it && it.url) || ""), error: "Not attempted: the call ran out of time. Send this page again." }); continue; }
+          results.push(await captureOne(session, it || {}, defaults));
+        }
+        const ok = results.filter((r) => r.ok).length;
+        await audit(session, "kanban_capture_screenshots", { pages: results.length, ok, failed: results.length - ok });
+        const out = { captured: ok, failed: results.length - ok, results };
+        return ok === 0 ? Object.assign(toolError(`None of the ${results.length} pages could be captured: ${results.map((r) => `${r.key}: ${r.error}`).join(" | ")}`), { structuredContent: out }) : textResult(out);
+      },
+    },
+    {
       name: "kanban_comment",
       description: "Staff Kanban: comment on a ticket, labelled with your email. Mention people by email in `mention` to notify them; the assignee, reporter and watchers are notified too (the board's notification trigger does it).",
       scope: "board.write",
@@ -1555,4 +1678,4 @@ function kanbanTools(h) {
   }));
 }
 
-module.exports = { clearCaches, imageResizer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, handleBackfillLinks, backfillLinksSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };
+module.exports = { clearCaches, imageResizer, captureRenderer: capture.renderer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, handleBackfillLinks, backfillLinksSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };

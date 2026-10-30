@@ -346,7 +346,12 @@ the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,
 untick acceptance criteria by id, KB-TASK-12), `kanban_attach_file` (a
 screenshot, image or pdf as base64, at most 5 MB decoded, stored under
 `kanban/{PH-n}/`, images over 1400 px shrunk, optionally inline in the
-description; 60 files an hour per member). Viewers get read tools only.
+description; 60 files an hour per member), `kanban_capture_screenshot` and
+`kanban_capture_screenshots` (the board renders the page itself in headless
+Chromium and puts the screenshot inline in the description in place of a
+"Screenshot: …" line, KB-MCP-CAPTURE: only https pages on the artifact
+domains, a non-200, not-found or redirected page is reported and attaches
+nothing; up to 20 pages per call). Viewers get read tools only.
 Staff can add and move tasks verbally through their agent.
 Writes (`kanban_create_task`, `kanban_update_task`, `kanban_assign_task`)
 refuse what the board can't show and report every problem in one error: an
