@@ -115,7 +115,7 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   comment box uses a compact version. Type `@` to mention someone, and they get a notification when you save or comment (the bell in the console topbar; Watch a ticket to follow its comments). Paste,
   drop or upload screenshots; they're downscaled and stored with the ticket. The record button captures your screen as a
   playable video (prototype only: a recording lasts for the browser session, and the real console would upload it to Storage).
-- **Task modal layout**. The panel button in the window header (or the "Details" tab) folds the details column away to
+- **Task modal layout**. The details column runs the full height of the modal, with its panel button at the top of the column (or the "Details" tab when folded) and the Flag button on the same line as Priority. It folds the details column away to
   the right, so the description gets the full width. The choice is remembered, and it reopens by itself if a
   required field in it is empty.
 - **Finding tickets**. "Add an existing ticket" on an epic and "Linked tickets" use a search box, not a dropdown. Type a

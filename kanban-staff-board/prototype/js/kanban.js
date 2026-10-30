@@ -911,8 +911,8 @@
       comments: [], attachments: [], links: [], previousAssignee: "", activity: [],
     }, preset ? preset.fields : {});
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
-    syncModalFlag();
     renderForm();
+    syncModalFlag();
     setSideCollapsed(sideCollapsed);
     syncCreateCta();
     $("#task-backdrop").hidden = false;
@@ -937,6 +937,7 @@
     try { localStorage.setItem(SIDE_KEY, v ? "1" : "0"); } catch { /* ignore */ }
     const g = $(".kb-task-grid");
     if (g) g.classList.toggle("kb-side-collapsed", v);
+    $(".kb-task-panel").classList.toggle("kb-side-collapsed", v);
     const b = $("#task-side-toggle");
     b.setAttribute("aria-expanded", String(!v));
     b.title = v ? "Show details" : "Hide details";
@@ -980,7 +981,7 @@
       case "release": return `<div class="kb-field" data-field="release">${label("release")}<select id="f-release" class="kb-input">${opt("", "No release", d.release)}${SEED.releases.map((r) => opt(r.id, r.name + (r.released ? " (released)" : ""), d.release)).join("")}</select></div>`;
       case "estimate": return `<div class="kb-field" data-field="estimate">${label("estimate")}<input type="text" id="f-estimate" class="kb-input" value="${esc(d.estimate === "" || d.estimate == null ? "" : fmtH(d.estimate))}" placeholder="e.g. 1d 4h" inputmode="text"></div>`;
       case "type": return `<div class="kb-field" data-field="type">${label("type", "f-type-task")}<div class="type-toggle kb-type-toggle" role="radiogroup">${TYPES.map((t) => `<button type="button" class="type-opt${d.type === t.key ? " active" : ""}" id="f-type-${t.key}" data-type="${t.key}" role="radio" aria-checked="${d.type === t.key}"><span class="material-symbols-outlined kb-type-${t.key}" aria-hidden="true">${t.icon}</span>${t.label}</button>`).join("")}</div></div>`;
-      case "priority": return `<div class="kb-field" data-field="priority">${label("priority")}<select id="f-priority" class="kb-input">${opt("", "—", d.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, d.priority)).join("")}</select></div>`;
+      case "priority": return `<div class="kb-field" data-field="priority">${label("priority")}<div class="kb-prio-row"><select id="f-priority" class="kb-input">${opt("", "—", d.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, d.priority)).join("")}</select><button type="button" class="kb-task-flag" id="task-flag" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">flag</span><span id="task-flag-label">Flag</span></button></div></div>`;
       case "sprint": return `<div class="kb-field" data-field="sprint">${label("sprint")}<select id="f-sprint" class="kb-input">${opt("", "No sprint", d.sprint)}${SEED.sprints.map((s) => opt(s.id, `${s.name} · ${s.range}`, d.sprint)).join("")}</select></div>`;
       case "due": return `<div class="kb-field" data-field="due">${label("due")}<input type="date" id="f-due" class="kb-input" value="${esc(d.due)}"></div>`;
       case "logged": {
@@ -1042,8 +1043,8 @@
     form.innerHTML = `
       <div class="kb-task-grid${sideCollapsed ? " kb-side-collapsed" : ""}">
         <div class="kb-task-main">${main.filter(visible).map(fieldHTML).join("")}</div>
-        <div class="kb-task-side" id="kb-task-side">${side.filter(visible).map(fieldHTML).join("")}</div>
-        <button type="button" class="kb-side-tab" id="kb-side-tab" aria-controls="kb-task-side" aria-expanded="false" title="Show details"><span class="material-symbols-outlined" aria-hidden="true">left_panel_open</span><span>Details</span></button>
+        <div class="kb-task-side" id="kb-task-side"><div class="kb-side-head"><span>Details</span><button type="button" class="kb-side-toggle" id="task-side-toggle" aria-controls="kb-task-side" aria-expanded="true" title="Hide details"><span class="material-symbols-outlined" aria-hidden="true">right_panel_close</span></button></div>${side.filter(visible).map(fieldHTML).join("")}</div>
+        <button type="button" class="kb-side-tab" id="kb-side-tab" aria-controls="kb-task-side" aria-expanded="false" title="Show details"><span class="material-symbols-outlined" aria-hidden="true">left_panel_open</span><span>Details</span><span class="material-symbols-outlined kb-rail-flag" aria-hidden="true">flag</span></button>
       </div>
       ${!draftIsNew && hidden.length ? `<details class="kb-more"><summary>${hidden.length} more field${hidden.length > 1 ? "s" : ""}<span class="kb-more-names">${hidden.map((k) => esc(FIELD_LABEL[k])).join(", ")}</span></summary><div class="kb-more-body">${hidden.map(fieldHTML).join("")}</div></details>` : ""}
       ${draftIsNew ? "" : `<p class="kb-created">Created by ${esc(firstName(draft.reporter))} · ${fmtDate(draft.created, { day: "numeric", month: "short", year: "numeric" })}</p>`}
@@ -1727,9 +1728,12 @@
     closeTask(); render();
   }
   function initModal() {
-    $("#task-side-toggle").addEventListener("click", () => setSideCollapsed(!sideCollapsed));
-    $("#task-form").addEventListener("click", (e) => { if (e.target.closest("#kb-side-tab")) setSideCollapsed(false); });
-    $("#task-flag").addEventListener("click", () => { if (draft) { draft.flagged = !draft.flagged; syncModalFlag(); } });
+    // The toggle, flag and rail live inside the re-rendered form, so listen on the form.
+    $("#task-form").addEventListener("click", (e) => {
+      if (e.target.closest("#task-side-toggle")) setSideCollapsed(!sideCollapsed);
+      else if (e.target.closest("#kb-side-tab")) setSideCollapsed(false);
+      else if (e.target.closest("#task-flag") && draft) { draft.flagged = !draft.flagged; syncModalFlag(); }
+    });
     $("#task-close").addEventListener("click", closeTask);
     $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#task-backdrop").hidden) closeTask(); });

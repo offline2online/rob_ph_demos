@@ -161,7 +161,7 @@ can't make it so), a ticket created on the form or over MCP (`kanban_create_task
 none, and one can be added later; unreleased tickets still show on the board and in
 filters, and appear under "All releases" in the report.
 
-**KB-TASK-4 Flags.** Any ticket can be flagged from its card or its modal;
+**KB-TASK-4 Flags.** Any ticket can be flagged from its card or its modal (in the modal the Flag button sits on the same line as Priority);
 flagged cards are amber with a filled flag.
 
 **KB-TASK-5 Linked tickets.** Typed links (blocks, is blocked by, relates to,
@@ -261,7 +261,7 @@ Shared with the console's other mics: `backlog-tracker/public/js/dictation-resul
 `backlog-tracker/test/dictation-results.test.mjs`.
 
 **KB-MOD-5 Layout.** Delete / Cancel / primary button are pinned to the bottom
-of the modal. The details column folds away to the right (header button or
+of the modal. The details column runs the full height of the modal and folds away to the right (the button at the top of the column or the
 "Details" tab) so the description gets the full width; the choice is
 remembered and the column reopens if a required field in it is empty.
 
