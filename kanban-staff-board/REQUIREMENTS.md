@@ -196,6 +196,14 @@ every line, the 500-character limit); the page, MCP and tests see
 `{id, text, done}` through `decodeCriteria`, and a direct write of objects is
 refused. The card carries the counts only (`acTotal`, `acDone`), never the text.
 
+**KB-TASK-13 Save only when something changed.** On an existing ticket the
+modal's **Save** button is disabled until a field on the page differs from what
+was loaded (title, description, any detail field, labels, links, attachments,
+the flag, or text typed in the comment box); changing a value back turns it off
+again. The same holds for **Save** on a comment being edited. A new ticket's
+Create button is unaffected. AC: open a ticket, Save is disabled; edit the title,
+it is enabled; restore the title, it is disabled; TC-69.
+
 **KB-TASK-6 Ticket search picker.** Wherever a ticket is chosen (linked
 tickets, adding an existing ticket to an epic) the user types a number (`36`,
 `PH-36`) or words from the title or description; results rank exact key, key

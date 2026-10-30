@@ -953,7 +953,40 @@
     $("#task-flag-label").textContent = draft.flagged ? "Flagged" : "Flag";
     $(".kb-task-panel").classList.toggle("kb-panel-flagged", !!draft.flagged);
   }
+  // Save on an existing ticket stays off until something on the page differs from what was loaded.
+  const TRACKED = ["f-title", "f-assignee", "f-reporter", "f-release", "f-priority", "f-sprint", "f-project", "f-due", "f-epic", "f-estimate", "f-logged", "f-status"];
+  let changeBase = null, changeTimer = 0;
+  function formState() {
+    const form = $("#task-form");
+    if (!form || !draft) return "";
+    return JSON.stringify({
+      v: TRACKED.map((id) => { const el = $("#" + id, form); return el ? el.value : null; }),
+      type: draft.type, labels: draft.labels, links: draft.links, flagged: !!draft.flagged,
+      att: (draft.attachments || []).map((a) => a.url || a.name || ""),
+      desc: descQ ? KBEditor.getHtml(descQ) : null,
+      comment: commentQ ? KBEditor.getHtml(commentQ) : null,
+    });
+  }
+  function syncSaveState() {
+    const b = $("#f-save");
+    if (b && draft && !draftIsNew) b.disabled = changeBase == null || formState() === changeBase;
+  }
+  function watchChanges() {
+    clearInterval(changeTimer);
+    if (!draft) return;
+    changeBase = formState();
+    // A typed, pasted or dictated edit in either editor counts at once.
+    [descQ, commentQ].forEach((q) => { if (q) q.on("text-change", syncSaveState); });
+    const form = $("#task-form");
+    if (!form._changeBound) {
+      ["input", "change", "click", "keyup"].forEach((ev) => form.addEventListener(ev, () => setTimeout(syncSaveState, 0)));
+      form._changeBound = true;
+    }
+    changeTimer = setInterval(syncSaveState, 100);
+    syncSaveState();
+  }
   function closeTask() {
+    clearInterval(changeTimer); changeBase = null;
     stopRecorder(true); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
     const back = returnTo; returnTo = null;
     if (back && taskByKey(back)) openTask(back);
@@ -1051,7 +1084,7 @@
       <p class="tm-error" id="f-error" hidden></p>
       <div class="form-row kb-form-actions">
         ${draftIsNew ? "<span></span>" : '<button type="button" class="btn-ghost fa-actions-delete" id="f-delete"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>'}
-        <div class="form-actions"><button type="button" class="btn-outline" id="f-cancel">Cancel</button><button type="submit" class="btn-primary" id="f-save">${draftIsNew ? CREATE_CTA[draft.type] || CREATE_CTA.task : "Save"}</button></div>
+        <div class="form-actions"><button type="button" class="btn-outline" id="f-cancel">Cancel</button><button type="submit" class="btn-primary" id="f-save"${draftIsNew ? "" : " disabled"}>${draftIsNew ? CREATE_CTA[draft.type] || CREATE_CTA.task : "Save"}</button></div>
       </div>`;
     bindForm();
   }
@@ -1120,6 +1153,7 @@
     const ca = $("#f-comment-add");
     if (ca) ca.addEventListener("click", () => { if (addCommentFromEditor()) $("#f-comments").innerHTML = commentsHTML(); });
     bindEditors();
+    watchChanges();
     bindVoice();
     bindChildren(form);
     $("#f-cancel").addEventListener("click", closeTask);

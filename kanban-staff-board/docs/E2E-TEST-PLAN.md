@@ -127,7 +127,7 @@ only about one kind of screen (TC-05, TC-10, TC-25 touch and phone; TC-09 and TC
 | TC-24 | KB-BOARD-2, KB-TASK-7 | PH-26 Status → Withdrawn; open epic PH-1 | Status menu lists Completed and Withdrawn separately; card withdrawn and struck through; epic counts it as withdrawn |
 | TC-25 | KB-LANE-1, KB-BOARD-8 | Phone: select Rob and Huy; tab Ready for Testing; swipe left | Every lane shows Ready for Testing; swipe moves all lanes to Approved |
 
-### TC-26 to TC-67, and TC-68
+### TC-26 to TC-67, TC-68 and TC-69
 
 The 41 cases added on 21 Oct 2026 (profile and photos, creating and editing tickets, moving them, filters, search and the report) are in
 [`E2E-TEST-PLAN-TC26-TC66.md`](E2E-TEST-PLAN-TC26-TC66.md), with their steps and expected results. They run in both suites and in the whole matrix like the rest.
