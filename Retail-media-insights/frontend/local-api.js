@@ -633,7 +633,7 @@ function termOf(store, filters, deal, slots) {
 module.exports = { termDays, termPlaysOf, termViewsOf, termOf, loopSlotCountOf };
   },
   "src/query.js": function (module, exports, require) {
-// The one place a request becomes an answer: HTTP routes, QuickSight datasets and MCP tools all go through
+// The one place a request becomes an answer: HTTP routes, Amazon Quick datasets and MCP tools all go through
 // runRoute, so they share the same role check, the same server-side advertiser scoping and the same filters.
 
 const { parseFilters, scopeFilters, ForbiddenError } = require('./filters');

@@ -10,7 +10,7 @@ The README is the functional spec (every chart, hover, rule and sample-data cons
 ## 2. Architecture
 - **Back end:** a new Retail Media Insights service with a versioned read-only API (`/insights/v1/retail-media/...`), deployed self-hosted in the retailer's AWS VPC like the rest of PH. It aggregates from PH Core and DSP Integration; it owns no source-of-truth data, only derived aggregates and caches.
 - **Front end:** a new tab in the existing Insights & Analytics app, built to the PH design system (ph-designer skill), matching Campaign Performance patterns (summary strip, filter bar with Apply / Cancel / Reset Filters, ⓘ tooltips, 14px breadcrumb).
-- The same API is the source for QuickSight datasets and agent access over MCP (no on-page CTAs for either).
+- The same API is the source for Amazon Quick datasets and agent access over MCP (no on-page CTAs for either).
 
 ## 3. Back-end requirements
 ### 3.1 Endpoints (one per page element; all take the page filters)
@@ -85,13 +85,13 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 | Playback / analytics data (plays, per-play targeting tier) | Maturity progress, VAC-d aggregation |
 | Store and visitor insights (footfall, visibility; CV where cameras exist) | VAC-d inputs |
 | Stores and opening hours (to compute inventory only, never displayed) | Operating-hours inventory |
-| Insights & Analytics app shell, auth and roles, design system, QuickSight and MCP plumbing | Front-end hosting and access |
+| Insights & Analytics app shell, auth and roles, design system, Amazon Quick and MCP plumbing | Front-end hosting and access |
 
 ## 7. Delivery order
 1. Back-end foundations: aggregation tables, calculation library, filters, isolation.
 2. Retailer view: summary, Revenue, Deals, Slot value, Slot allocation, Missed revenue, Advertisers, Maturity.
 3. Advertiser view — gated on DSP Integration auth seams.
-4. QuickSight datasets and MCP tools over the same API.
+4. Amazon Quick datasets and MCP tools over the same API.
 
 ## 8. Acceptance criteria
 - Every figure reconciles to source billing and slot records for a test retailer; parts add to totals.

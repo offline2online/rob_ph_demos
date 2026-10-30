@@ -55,7 +55,7 @@ function toolList(principal, routes) {
   }
   tools.push({
     name: 'retail_media_dataset',
-    description: 'A flat table of the same figures, as the QuickSight dataset of that name. Omit name to list the datasets you may read.',
+    description: 'A flat table of the same figures, as the Amazon Quick dataset of that name. Omit name to list the datasets you may read.',
     inputSchema: schema({ name: str('Dataset name.'), ...PAGE_FILTERS, granularity: GRANULARITY, dealType: str('One deal type.'), dealId: str('A deal id or open-auction.') }),
   });
   return tools;

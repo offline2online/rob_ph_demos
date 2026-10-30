@@ -178,7 +178,7 @@ test('filter options come from the back end, with no placeholder names', async (
     assert.deepEqual(await page.$$eval('#f-adv option', (o) => o.map((x) => x.textContent)), ['All Advertisers (11)', 'Bayer Consumer Health', 'Blackmores', 'Haleon', 'Kenvue', "L'Oréal Paris", 'Nestlé Health Science', 'Perrigo', 'Procter & Gamble', 'Reckitt', 'Unilever', 'Vitabiotics']);
     assert.equal((await page.$$eval('#f-display option', (o) => o.map((x) => x.textContent)))[0], 'All Display Types (4)');
     const body = await page.innerText('body');
-    for (const bad of ['Menu board', 'Kiosk', 'Advertiser A', 'QuickSight', 'Engagement']) assert.ok(!body.includes(bad), bad);
+    for (const bad of ['Menu board', 'Kiosk', 'Advertiser A', 'Amazon Quick', 'Engagement']) assert.ok(!body.includes(bad), bad);
     // the breadcrumb follows the selected tab
     await page.click('.tab:has-text("Visitor Insights")');
     assert.match(await page.textContent('#crumb'), /Insights \/ Analytics\s*>\s*Visitor Insights/);
