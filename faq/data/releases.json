@@ -30,8 +30,15 @@
   {
     "id": "pvqov4nOX9SuaJdfZq6f",
     "name": "Live Visitor Profiles",
-    "version": "5.1",
+    "version": "5.2",
     "status": "draft",
     "order": 5
+  },
+  {
+    "id": "s5yIjuAPRmWyh5XkagFl",
+    "name": "Experience Creation",
+    "version": "5.1",
+    "status": "draft",
+    "order": 6
   }
 ]
