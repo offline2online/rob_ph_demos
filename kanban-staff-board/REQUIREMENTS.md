@@ -346,7 +346,20 @@ the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,
 untick acceptance criteria by id, KB-TASK-12), `kanban_attach_file` (a
 screenshot, image or pdf as base64, at most 5 MB decoded, stored under
 `kanban/{PH-n}/`, images over 1400 px shrunk, optionally inline in the
-description; 60 files an hour per member), `kanban_capture_screenshot` and
+description; 60 files an hour per member; only for small files, about 20 KB or less),
+`kanban_create_upload_url` → `kanban_attach_uploaded` (the route for anything
+bigger: a 15-minute, single-use signed Storage upload URL, the agent `curl`s
+the file up from its shell, then attaches it with the returned `uploadId`;
+same types, limits and 1400 px shrink; counted against the hourly 60 when the
+URL is made; pending uploads in the server-only `kanbanUploads`, the staging
+object `kanban-uploads/{PH-n}/{uploadId}` is deleted once attached or refused),
+`kanban_remove_attachment` (by `path`, or `name` when unique: leaves
+`attachments[]`, deletes the Storage object, removes its inline `<img>` and
+caption from the description, adjusts `attachmentCount`, logs activity and
+audit). **Every attach route** accepts an optional `sha256` and `size` and
+refuses on mismatch, and always checks the file is complete and decodes
+(a truncated or undecodable image is refused; nothing is stored or placed
+inline). `kanban_capture_screenshot` and
 `kanban_capture_screenshots` (the board renders the page itself in headless
 Chromium and puts the screenshot inline in the description in place of a
 "Screenshot: …" line, KB-MCP-CAPTURE: only https pages on the artifact
