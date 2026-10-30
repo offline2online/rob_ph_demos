@@ -345,6 +345,12 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     if (afterMs <= beforeMs) {
       return;
     }
+    // A Finalised project is frozen: no builds start, whatever wrote the
+    // request (a stale tab, a direct write). The board and MCP refuse first.
+    if (after.finalised) {
+      logger.info("Build request ignored: project is Finalised", { projectId: event.params.projectId });
+      return;
+    }
 
     const db = getFirestore();
 

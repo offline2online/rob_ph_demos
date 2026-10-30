@@ -164,13 +164,13 @@ async function main() {
   // (see "Editor CANNOT repoint deployBranch" above, which is still denied —
   // this only ever applies to a `create`, never an `update`).
   await check("Editor can set repoFolder freely (not a train field)", "allow", () =>
-    setDoc(doc(as(HUMAN), "projects/newRepoFolder"), { name: "New Project", repoFolder: "dsp-integration" }));
+    setDoc(doc(as(HUMAN), "projects/newRepoFolder"), { name: "New Project", type: "Platform", repoFolder: "dsp-integration" }));
   await check("Editor can seed deployBranch when CREATING a new project", "allow", () =>
-    setDoc(doc(as(HUMAN), "projects/newWithBranch"), { name: "New Project", deployBranch: "deploy/new-project" }));
+    setDoc(doc(as(HUMAN), "projects/newWithBranch"), { name: "New Project", type: "Platform", deployBranch: "deploy/new-project" }));
   await check("Editor CANNOT seed a malformed deployBranch at creation", "deny", () =>
-    setDoc(doc(as(HUMAN), "projects/newBadBranch"), { name: "New Project", deployBranch: "not-a-branch" }));
+    setDoc(doc(as(HUMAN), "projects/newBadBranch"), { name: "New Project", type: "Platform", deployBranch: "not-a-branch" }));
   await check("Editor still cannot set trainReady even when creating the project", "deny", () =>
-    setDoc(doc(as(HUMAN), "projects/newWithTrainReady"), { name: "New Project", deployBranch: "deploy/new-project-2", trainReady: true }));
+    setDoc(doc(as(HUMAN), "projects/newWithTrainReady"), { name: "New Project", type: "Platform", deployBranch: "deploy/new-project-2", trainReady: true }));
 
   // ── The sign-in wall ────────────────────────────────────────────────────
   await check("Stranger cannot read the board", "deny", () => getDoc(doc(as(STRANGER), "projects/p1")));
@@ -342,7 +342,35 @@ async function main() {
   await check("A member may read a concept", "allow", () => getDoc(doc(as(MEMBER), "concepts/cActive")));
   await check("A stranger cannot read a concept", "deny", () => getDoc(doc(as(STRANGER), "concepts/cActive")));
   await check("An editor can create a concept", "allow", () =>
-    setDoc(doc(as(MEMBER), "concepts/cNew"), { name: "A new idea", status: "active", readmeMd: "", requirementsMd: "", comments: [] }));
+    setDoc(doc(as(MEMBER), "concepts/cNew"), { name: "A new idea", type: "Platform", status: "active", readmeMd: "", requirementsMd: "", comments: [] }));
+  await check("A concept can be created as Internal operations", "allow", () =>
+    setDoc(doc(as(MEMBER), "concepts/cInternal"), { name: "Staff kanban", type: "Internal operations", status: "active" }));
+  await check("A concept CANNOT be created without a type", "deny", () =>
+    setDoc(doc(as(MEMBER), "concepts/cNoType"), { name: "No type", status: "active" }));
+  await check("A concept CANNOT be created with an unknown type", "deny", () =>
+    setDoc(doc(as(MEMBER), "concepts/cBadType"), { name: "Bad type", type: "Product", status: "active" }));
+  await check("A concept CANNOT be both types", "deny", () =>
+    setDoc(doc(as(MEMBER), "concepts/cBothTypes"), { name: "Both", type: ["Platform", "Internal operations"], status: "active" }));
+  await check("An editor can change a concept's type", "allow", () =>
+    setDoc(doc(as(MEMBER), "concepts/cInternal"), { type: "Platform" }, { merge: true }));
+  await check("An editor CANNOT set a concept's type to an unknown value", "deny", () =>
+    setDoc(doc(as(MEMBER), "concepts/cInternal"), { type: "Product" }, { merge: true }));
+  await check("An existing concept with no type can still be edited, and given one", "allow", () =>
+    setDoc(doc(as(MEMBER), "concepts/cActive"), { type: "Internal operations" }, { merge: true }));
+  await check("A new project needs a type", "deny", () =>
+    setDoc(doc(as(HUMAN), "projects/newNoType"), { name: "No type" }));
+  await check("A new project with an unknown type is refused", "deny", () =>
+    setDoc(doc(as(HUMAN), "projects/newBadType"), { name: "Bad type", type: "Product" }));
+  await check("A new Internal operations project is allowed", "allow", () =>
+    setDoc(doc(as(HUMAN), "projects/newInternal"), { name: "Internal thing", type: "Internal operations" }));
+  await check("The General project may be created with no type", "allow", () =>
+    setDoc(doc(as(HUMAN), "projects/general"), { name: "General" }));
+  await check("An existing project with no type can still be renamed", "allow", () =>
+    setDoc(doc(as(HUMAN), "projects/p1"), { name: "Renamed again" }, { merge: true }));
+  await check("An editor can set an existing project's type", "allow", () =>
+    setDoc(doc(as(HUMAN), "projects/p1"), { type: "Platform" }, { merge: true }));
+  await check("An editor CANNOT set a project's type to an unknown value", "deny", () =>
+    setDoc(doc(as(HUMAN), "projects/p1"), { type: "Both" }, { merge: true }));
   await check("A viewer CANNOT create a concept", "deny", () =>
     setDoc(doc(as(VIEWER), "concepts/cNew"), { name: "A new idea", status: "active" }));
   await check("A new concept must start active, not promoted", "deny", () =>

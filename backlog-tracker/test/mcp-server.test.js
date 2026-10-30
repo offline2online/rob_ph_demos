@@ -888,7 +888,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   // ── Artifact snapshots (PH-20) ──────────────────────────────────────────
-  const WRITABLE_BEFORE_SNAPSHOTS = ["docs", "artifactUrl", "artifactUpdatedAt", "description"];
+  const WRITABLE_BEFORE_SNAPSHOTS = ["docs", "artifactUrl", "artifactUpdatedAt", "description", "type"];
   await test("snapshot_project_artifact pins a GitHub Pages artifact to main's commit; later calls append", async () => {
     const SHA1 = "a".repeat(40), SHA2 = "b".repeat(40);
     const snap = (args) => rpc(tokens.access_token, "tools/call", { name: "snapshot_project_artifact", arguments: Object.assign({ projectId: "proj1" }, args) });
@@ -1033,12 +1033,13 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("creates a concept, active, then seeds it with the write tools", async () => {
-    const res = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "  Experience Templates  ", description: "Split out of Display Types." } });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "  Experience Templates  ", type: "Internal operations", description: "Split out of Display Types." } });
     const out = JSON.parse(res.body.result.content[0].text);
     assert.ok(out.conceptId);
     const doc = env.store.col("concepts").get(out.conceptId);
     assert.strictEqual(doc.name, "Experience Templates");
     assert.strictEqual(doc.status, "active");
+    assert.strictEqual(doc.type, "Internal operations");
     assert.strictEqual(doc.comments.length, 1);
     const act = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: { status: "active" } })).body.result.content[0].text);
     assert.ok(act.concepts.some((c) => c.id === out.conceptId));
@@ -1046,8 +1047,44 @@ async function rpc(token, method, params, id = 1) {
     assert.ok(!w.body.result.isError);
     const r = await rpc(tokens.access_token, "tools/call", { name: "set_concept_requirements", arguments: { conceptId: out.conceptId, contentMd: "# Req" } });
     assert.ok(!r.body.result.isError);
-    const bad = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "   " } });
+    const bad = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "   ", type: "Platform" } });
     assert.strictEqual(bad.body.result.isError, true);
+  });
+
+  await test("create_concept refuses a missing or unknown type", async () => {
+    for (const args of [{ name: "No type" }, { name: "Bad type", type: "Product" }, { name: "Both", type: "Platform, Internal operations" }]) {
+      const res = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: args });
+      assert.strictEqual(res.body.result.isError, true, JSON.stringify(args));
+      assert.match(res.body.result.content[0].text, /Platform/);
+    }
+  });
+
+  await test("set_concept_type changes the type; list/get_concept return it; promoted concepts are refused", async () => {
+    const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_concept_type", arguments: Object.assign({ conceptId: "con1" }, args) });
+    assert.ok(!(await call({ type: "Platform" })).body.result.isError);
+    assert.strictEqual(env.store.col("concepts").get("con1").type, "Platform");
+    const list = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(list.concepts.find((c) => c.id === "con1").type, "Platform");
+    const only = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: { type: "Internal operations" } })).body.result.content[0].text);
+    assert.ok(!only.concepts.some((c) => c.id === "con1"));
+    const one = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_concept", arguments: { conceptId: "con1" } })).body.result.content[0].text);
+    assert.strictEqual(one.type, "Platform");
+    assert.ok(!(await call({ type: "Internal operations" })).body.result.isError);
+    assert.strictEqual(env.store.col("concepts").get("con1").type, "Internal operations");
+    assert.strictEqual((await call({ type: "Product" })).body.result.isError, true);
+    assert.strictEqual((await call({ conceptId: "con2", type: "Platform" })).body.result.isError, true, "promoted concepts are refused");
+  });
+
+  await test("set_project_type changes the type; list_projects and get_project_docs return it", async () => {
+    const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_project_type", arguments: Object.assign({ projectId: "proj1" }, args) });
+    assert.ok(!(await call({ type: "Internal operations" })).body.result.isError);
+    assert.strictEqual(env.store.col("projects").get("proj1").type, "Internal operations");
+    const lp = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_projects", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(lp.projects.find((p) => p.id === "proj1").type, "Internal operations");
+    const gd = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1", include: ["readme"] } })).body.result.content[0].text);
+    assert.strictEqual(gd.type, "Internal operations");
+    assert.strictEqual((await call({ type: "Both" })).body.result.isError, true);
+    assert.strictEqual((await call({ projectId: "nope", type: "Platform" })).body.result.isError, true);
   });
 
   await test("refuses get_concept on an unknown id", async () => {
@@ -1153,7 +1190,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("every concept write is gated on board.write; the reads aren't", async () => {
-    for (const name of ["add_concept_comment", "set_concept_description", "set_concept_readme", "set_concept_requirements"]) {
+    for (const name of ["add_concept_comment", "set_concept_description", "set_concept_type", "set_project_type", "set_concept_readme", "set_concept_requirements"]) {
       assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.write", `${name} must require board.write`);
     }
     for (const name of ["list_concepts", "get_concept"]) {
@@ -1454,7 +1491,7 @@ async function rpc(token, method, params, id = 1) {
   await test("the project write allowlist holds nothing that could ship code", async () => {
     const allowed = [...mcp.__test.PROJECT_WRITABLE_FIELDS];
     for (const field of allowed) {
-      assert.ok(/^(docs$|artifact|description$)/.test(field), `${field} is not a documentation field but is writable`);
+      assert.ok(/^(docs$|artifact|description$|type$)/.test(field), `${field} is not a documentation field but is writable`);
     }
     for (const forbidden of ["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "trainLocked", "needsHumanMerge", "notifyRequestedAt", "deployNotifyRequestedAt", "name", "programId"]) {
       assert.ok(!mcp.__test.PROJECT_WRITABLE_FIELDS.has(forbidden), `${forbidden} must not be writable`);
@@ -2120,6 +2157,65 @@ async function rpc(token, method, params, id = 1) {
     res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["v1"] });
     assert.strictEqual(res.body.result.isError, true);
     assert.match(res.body.result.content[0].text, /already being built/);
+    env.store.col("projects").set("voiceproj", { name: "Voice Project" });
+  });
+
+  // ── Project freeze (Finalised) ────────────────────────────────────────
+  await test("finalise_project / unfreeze_project are admin-only and refused to an editor", async () => {
+    for (const name of ["finalise_project", "unfreeze_project"]) {
+      const t = mcp.__test.TOOLS.find((x) => x.name === name);
+      assert.ok(t && t.role === "admin" && t.scope === "board.write", `${name} must be an admin board.write tool`);
+      const res = await rpc(tokens.access_token, "tools/call", { name, arguments: { projectId: "voiceproj", reason: "x" } });
+      assert.strictEqual(res.body.result.isError, true);
+      assert.match(res.body.result.content[0].text, /requires the admin role/);
+    }
+  });
+
+  await test("a Finalised project records version, who and when, shows in list_projects, and refuses filing and builds", async () => {
+    env.store.col("projects").set("voiceproj", { name: "Voice Project", artifactUrl: "https://claude.ai/artifact/abc" });
+    seedItem("fz1");
+    let res = await adminCall("finalise_project", { projectId: "voiceproj" });
+    assert.strictEqual(res.body.result.isError, undefined, JSON.stringify(res.body));
+    let project = env.store.col("projects").get("voiceproj");
+    assert.strictEqual(project.finalised.version, 1);
+    assert.strictEqual(project.finalised.byEmail, TEAMMATE);
+    assert.strictEqual(project.finalised.artifactUrl, "https://claude.ai/artifact/abc");
+    assert.ok(project.finalised.at, "must record when");
+    assert.ok([...env.store.col("mcpAuditLog").values()].some((r) => r.tool === "finalise_project" && r.projectId === "voiceproj"));
+
+    res = await adminCall("finalise_project", { projectId: "voiceproj" });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /already Finalised/);
+
+    res = await rpc(tokens.access_token, "tools/call", { name: "list_projects", arguments: {} });
+    const listed = JSON.parse(res.body.result.content[0].text).projects.find((p) => p.id === "voiceproj");
+    assert.strictEqual(listed.finalised.version, 1);
+
+    const before = env.store.col("backlogItems").size;
+    res = await rpc(tokens.access_token, "tools/call", { name: "create_backlog_item", arguments: { projectId: "voiceproj", desc: "Outcome: something new and useful for the voice project." } });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /Finalised/);
+    assert.strictEqual(env.store.col("backlogItems").size, before, "a refused filing must write nothing");
+
+    res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["fz1"] });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /Finalised/);
+    assert.ok(!("notifyRequestedAt" in env.store.col("projects").get("voiceproj")));
+  });
+
+  await test("unfreeze_project needs a reason, records it, and lifts the freeze", async () => {
+    let res = await adminCall("unfreeze_project", { projectId: "voiceproj", reason: "  " });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /reason is required/);
+    assert.ok(env.store.col("projects").get("voiceproj").finalised, "still frozen without a reason");
+    res = await adminCall("unfreeze_project", { projectId: "voiceproj", reason: "Review found a defect" });
+    assert.strictEqual(res.body.result.isError, undefined, JSON.stringify(res.body));
+    const project = env.store.col("projects").get("voiceproj");
+    assert.ok(!project.finalised);
+    assert.ok(JSON.stringify(project.finalisedLog || []).includes("Review found a defect"), "reason must be in the log");
+    assert.ok([...env.store.col("mcpAuditLog").values()].some((r) => r.tool === "unfreeze_project" && r.reason === "Review found a defect"));
+    res = await adminCall("unfreeze_project", { projectId: "voiceproj", reason: "again" });
+    assert.match(res.body.result.content[0].text, /not Finalised/);
     env.store.col("projects").set("voiceproj", { name: "Voice Project" });
   });
 

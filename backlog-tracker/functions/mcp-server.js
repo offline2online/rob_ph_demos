@@ -1225,7 +1225,40 @@ const PROJECT_WRITABLE_FIELDS = new Set([
   "docs",
   "artifactUrl", "artifactUpdatedAt",
   "description",
+  "type",
 ]);
+
+// Every concept and project is exactly one of these two (ticket
+// ufOwuueuj1f5vmeN0xi2). Kept in step with firestore.rules' entityTypeOk and
+// public/js/entity-type.js. Unset is allowed only on items that pre-date the
+// field; nothing here can write it back to unset.
+const ENTITY_TYPES = ["Platform", "Internal operations"];
+function typeError(v) {
+  return ENTITY_TYPES.includes(v) ? null : `type must be exactly one of: ${ENTITY_TYPES.join(", ")}.`;
+}
+
+// ── Project freeze ("Finalised") ─────────────────────────────────────────
+// A permanent freeze, distinct from trainLocked (a release closing). Written
+// by the board's admin-only button and the finalise_project / unfreeze_project
+// tools, never by a train. `finalised` is {version, at, byEmail, artifactUrl,
+// artifactUpdatedAt} while frozen and null otherwise; `finalisedLog` is the
+// append-only record of every freeze and unfreeze (with the reason for the
+// latter). The Staff Kanban has no such state and is unaffected.
+function finalisedOut(p) {
+  const f = p && p.finalised;
+  if (!f || typeof f !== "object") return null;
+  const iso = (v) => (v && typeof v.toDate === "function" ? v.toDate().toISOString() : (v instanceof Date ? v.toISOString() : (typeof v === "string" ? v : null)));
+  return {
+    version: Number(f.version) || 1,
+    at: iso(f.at), byEmail: f.byEmail || null,
+    artifactUrl: f.artifactUrl || null, artifactUpdatedAt: iso(f.artifactUpdatedAt),
+  };
+}
+function finalisedRefusal(project, what) {
+  if (!project || !project.finalised) return null;
+  const f = finalisedOut(project);
+  return `${project.name || "This project"} is Finalised (frozen at version ${f.version}${f.byEmail ? " by " + f.byEmail : ""}), so ${what}. An admin can unfreeze it with a reason (unfreeze_project, or the project's ⋮ menu on the board).`;
+}
 
 // A project's one-or-two-sentence "what this covers" blurb, surfaced in
 // list_projects so an agent can map a loose reference to the right project.
@@ -2160,11 +2193,13 @@ const TOOLS = [
           id: p.id,
           name: p.name || "",
           description: p.description || null,
+          type: ENTITY_TYPES.includes(p.type) ? p.type : null,
           program: p.programId ? (programs.get(p.programId) || null) : null,
           archived: p.archived === true,
           deployBranch: p.deployBranch || null,
           trainStatus: p.trainStatus || null,
           trainLocked: p.trainLocked === true,
+          finalised: finalisedOut(p),
           // trainTestsRed hides Deploy to Main on the board; trainHold/trainNote say
           // why a deploy is waiting on tests; e2eStatus is the Run E2E chip (no breakdown).
           trainTestsRed: trainTestsRedOut(p.trainTestsRed),
@@ -2309,6 +2344,8 @@ const TOOLS = [
       if (desc.length > DESC_MAX) return toolError(`desc is ${desc.length} characters — the limit is ${DESC_MAX} (the board's own limit). Trim it and resubmit.`);
       const projectSnap = await db().collection("projects").doc(String(args.projectId)).get();
       if (!projectSnap.exists) return toolError(`No project with id ${args.projectId}. Call list_projects first.`);
+      const frozen = finalisedRefusal(projectSnap.data(), "no new backlog items can be filed against it");
+      if (frozen) return toolError(frozen);
       // ph-ticket-intake: structure into the four sections, infer type and
       // area, and hold the ticket BLOCKED (gap named) if it isn't buildable.
       const intake = applyIntake(desc);
@@ -2695,6 +2732,75 @@ const TOOLS = [
       });
     },
   },
+  {
+    name: "finalise_project",
+    role: "admin",
+    description: "ADMIN ONLY. Mark a project Finalised: a permanent freeze, distinct from the temporary train lock. From then on no new backlog items can be filed against it and no builds can be sent (the board and MCP both refuse with a message). The project's current artifact link and update time are captured as a numbered frozen version, and the project records that version, who froze it and when. Logged to mcpAuditLog and the project's finalisedLog. Only backlog-tracker projects — the Staff Kanban has no finalised state. An admin undoes it with unfreeze_project, which needs a reason.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "Which project (from list_projects)." } },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const projectRef = db().collection("projects").doc(projectId);
+      const snap = await projectRef.get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const project = snap.data() || {};
+      if (project.finalised) return toolError(`${project.name || projectId} is already Finalised (version ${finalisedOut(project).version}). Nothing changed.`);
+      const log = Array.isArray(project.finalisedLog) ? project.finalisedLog : [];
+      const version = log.filter((e) => e && e.action === "finalise").length + 1;
+      const email = String(session.email || "").trim().toLowerCase();
+      const now = new Date();
+      const finalised = {
+        version, at: now, byEmail: email,
+        artifactUrl: project.artifactUrl || null, artifactUpdatedAt: project.artifactUpdatedAt || null,
+      };
+      await projectRef.set({
+        finalised,
+        finalisedLog: FieldValue.arrayUnion({ action: "finalise", version, at: now, byEmail: email, via: "mcp", artifactUrl: finalised.artifactUrl }),
+      }, { merge: true });
+      await audit(session, "finalise_project", { projectId, version });
+      return textResult({
+        finalised: true, projectId, version, byEmail: email, at: now.toISOString(),
+        artifactUrl: finalised.artifactUrl,
+        note: finalised.artifactUrl ? "The current artifact link is recorded as this frozen version." : "The project has no artifact yet, so the frozen version records none.",
+      });
+    },
+  },
+  {
+    name: "unfreeze_project",
+    role: "admin",
+    description: "ADMIN ONLY. Undo a project's Finalised freeze. A reason is required and is recorded in the project's finalisedLog and mcpAuditLog. Filing items and sending builds work again straight away.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Which project (from list_projects)." },
+        reason: { type: "string", description: "Why the freeze is being lifted. Required." },
+      },
+      required: ["projectId", "reason"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId || "");
+      const reason = String(args.reason || "").trim().slice(0, 1000);
+      if (!reason) return toolError("A reason is required to unfreeze a project.");
+      const projectRef = db().collection("projects").doc(projectId);
+      const snap = await projectRef.get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const project = snap.data() || {};
+      if (!project.finalised) return toolError(`${project.name || projectId} is not Finalised. Nothing changed.`);
+      const version = finalisedOut(project).version;
+      const email = String(session.email || "").trim().toLowerCase();
+      await projectRef.set({
+        finalised: null,
+        finalisedLog: FieldValue.arrayUnion({ action: "unfreeze", version, at: new Date(), byEmail: email, via: "mcp", reason }),
+      }, { merge: true });
+      await audit(session, "unfreeze_project", { projectId, version, reason });
+      return textResult({ finalised: false, projectId, unfrozenVersion: version, reason });
+    },
+  },
   // ── Two more admin-only carve-outs (Rob, 20 Oct 2026, ticket Ysh0yuU9z643E0uisr51) ──
   // So the first two pipeline approvals can be given by voice the way
   // approve_deploy_to_main gives the third. Each makes exactly the writes the
@@ -2725,6 +2831,9 @@ const TOOLS = [
       const projectSnap = await projectRef.get();
       if (!projectSnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
       const project = projectSnap.data() || {};
+
+      const frozen = finalisedRefusal(project, "no builds can be sent");
+      if (frozen) return toolError(frozen);
 
       // The board hides Ready for Dev while the train is closing.
       if (project.trainLocked) {
@@ -2918,7 +3027,7 @@ const TOOLS = [
       const snap = await db().collection("projects").doc(projectId).get();
       if (!snap.exists) return toolError(`No project with id ${projectId}.`);
       const p = snap.data() || {};
-      const out = { projectId, name: p.name || "" };
+      const out = { projectId, name: p.name || "", type: ENTITY_TYPES.includes(p.type) ? p.type : null };
       if (want.includes("requirements")) out.requirementsMd = await readProjectDoc(projectId, "requirements", p);
       if (want.includes("readme")) out.readmeMd = await readProjectDoc(projectId, "readme", p);
       out.artifactUrl = p.artifactUrl || null;
@@ -3356,6 +3465,29 @@ const TOOLS = [
     },
   },
   {
+    name: "set_project_type",
+    description: "Set a project's type to \"Platform\" or \"Internal operations\" (exactly one; never both). It decides which Concept Incubator map the project appears on. Shown by list_projects and get_project_docs.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "From list_projects." },
+        type: { type: "string", enum: ENTITY_TYPES },
+      },
+      required: ["projectId", "type"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const typeErr = typeError(args.type);
+      if (typeErr) return toolError(typeErr);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      await updateProjectFields(projectId, { type: args.type });
+      await audit(session, "set_project_type", { projectId, from: (snap.data() || {}).type || null, to: args.type });
+      return textResult({ updated: true, projectId, type: args.type });
+    },
+  },
+  {
     name: "create_project_document",
     description: "Add a named document to a project — an architecture note, an API spec, a decision record, anything that isn't its Requirements or README. Appears under 'Additional documents' on that project's Docs page.",
     scope: "board.write",
@@ -3646,14 +3778,17 @@ const TOOLS = [
         name: { type: "string", description: "The concept's name. Up to 120 characters." },
         readmeMd: { type: "string", description: "Optional initial README markdown." },
         requirementsMd: { type: "string", description: "Optional initial Requirements markdown." },
+        type: { type: "string", enum: ENTITY_TYPES, description: "Required. \"Platform\" (the Personalisation Hub product) or \"Internal operations\" (how PH runs internally). Never both; carries over when the concept is promoted." },
         description: { type: "string", description: "Optional short description; posted as the first comment on the concept's thread. Up to 4000 characters." },
       },
-      required: ["name"], additionalProperties: false,
+      required: ["name", "type"], additionalProperties: false,
     },
     async run(args, session) {
       const name = String(args.name || "").trim();
       if (!name) return toolError("name is required.");
       if (name.length > 120) return toolError("A concept name is limited to 120 characters.");
+      const typeErr = typeError(args.type);
+      if (typeErr) return toolError(`${typeErr} It is required to create a concept.`);
       const readmeMd = args.readmeMd == null ? "" : String(args.readmeMd);
       const requirementsMd = args.requirementsMd == null ? "" : String(args.requirementsMd);
       if (readmeMd.length > CONCEPT_MD_MAX) return toolError(`A concept README is limited to ${CONCEPT_MD_MAX} characters; that was ${readmeMd.length}.`);
@@ -3662,6 +3797,7 @@ const TOOLS = [
       if (description.length > 4000) return toolError("description is limited to 4000 characters.");
       const ref = await db().collection("concepts").add({
         name,
+        type: args.type,
         readmeMd,
         requirementsMd,
         // A plain Date, not serverTimestamp(): the sentinel is rejected
@@ -3674,8 +3810,8 @@ const TOOLS = [
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      await audit(session, "create_concept", { conceptId: ref.id, name, readmeChars: readmeMd.length, requirementsChars: requirementsMd.length });
-      return textResult({ created: true, conceptId: ref.id, name, status: "active", createdByEmail: session.email });
+      await audit(session, "create_concept", { conceptId: ref.id, name, type: args.type, readmeChars: readmeMd.length, requirementsChars: requirementsMd.length });
+      return textResult({ created: true, conceptId: ref.id, name, type: args.type, status: "active", createdByEmail: session.email });
     },
   },
   {
@@ -3686,6 +3822,7 @@ const TOOLS = [
       type: "object",
       properties: {
         status: { type: "string", enum: ["active", "promoted"], description: "Restrict to one status. Omit to see both." },
+        type: { type: "string", enum: ENTITY_TYPES, description: "Restrict to one type. Omit to see both (items with no type yet are only listed when this is omitted)." },
       },
       additionalProperties: false,
     },
@@ -3697,10 +3834,12 @@ const TOOLS = [
         const v = d.data() || {};
         const status = v.status || "active";
         if (a.status && status !== a.status) return;
+        if (a.type && v.type !== a.type) return;
         out.push({
           id: d.id,
           name: v.name || "",
           description: v.description || null,
+          type: ENTITY_TYPES.includes(v.type) ? v.type : null,
           status,
           promotedProjectId: v.promotedProjectId || null,
           hasReadme: !!(v.readmeMd && v.readmeMd.trim()),
@@ -3735,6 +3874,7 @@ const TOOLS = [
         id: snap.id,
         name: v.name || "",
         description: v.description || null,
+        type: ENTITY_TYPES.includes(v.type) ? v.type : null,
         status: v.status || "active",
         interfaces,
         demotedFromProjectId: v.demotedFromProjectId || null,
@@ -3791,6 +3931,7 @@ const TOOLS = [
       if (total > 700000) return toolError(`Together the project's documents are ${total} characters, too large to carry in one concept document (limit about 700000). Trim them first.`);
       const cref = await db().collection("concepts").add({
         name, readmeMd, requirementsMd, documents,
+        ...(ENTITY_TYPES.includes(project.type) ? { type: project.type } : {}),
         comments: [{ author: session.email, text: `Demoted from project "${project.name || projectId}" (${projectId}). Its interfaces now point here; the archived project keeps its tickets and revision history.`, at: new Date() }],
         status: "active", promotedProjectId: null, promotedAt: null,
         demotedFromProjectId: projectId,
@@ -3963,6 +4104,35 @@ const TOOLS = [
       );
       await audit(session, "set_concept_description", { conceptId, chars: text.length });
       return textResult({ updated: true, conceptId, description: text || null });
+    },
+  },
+  {
+    name: "set_concept_type",
+    description: "Set a concept's type to \"Platform\" or \"Internal operations\" (exactly one; never both). It decides which Concept Incubator map the concept appears on. Refused once the concept has been promoted — use set_project_type on promotedProjectId instead.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        type: { type: "string", enum: ENTITY_TYPES },
+      },
+      required: ["conceptId", "type"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const conceptId = String(args.conceptId);
+      const typeErr = typeError(args.type);
+      if (typeErr) return toolError(typeErr);
+      const snap = await db().collection("concepts").doc(conceptId).get();
+      if (!snap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const c = snap.data() || {};
+      if ((c.status || "active") === "promoted") {
+        return toolError(`Concept ${conceptId} has already been promoted to project ${c.promotedProjectId || "(unknown)"}; use set_project_type on that project instead.`);
+      }
+      await db().collection("concepts").doc(conceptId).set(
+        { type: args.type, updatedAt: FieldValue.serverTimestamp() }, { merge: true },
+      );
+      await audit(session, "set_concept_type", { conceptId, from: c.type || null, to: args.type });
+      return textResult({ updated: true, conceptId, type: args.type });
     },
   },
   {
@@ -4904,14 +5074,14 @@ const SERVER_INSTRUCTIONS = [
   "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in member; writes are attributed to their email. A viewer reads, an editor also writes, an admin has the release tools below.",
   "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (inline cards).",
   "To take over a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in order. The project_handover prompt starts the same plan.",
-  "Reading docs: list_project_documents and get_project_document read one document or section at a time; get_project_docs returns every document in full (set include).",
-  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first and send all of it; a document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover old versions.",
+  "Reading docs: list_project_documents and get_project_document read one document or section at a time; get_project_docs returns all in full.",
+  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, set_project_type, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first and send all of it; a document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover old versions.",
   REPO_WINS + " Board-only documents (including a project with no repo folder) are edited on the board.",
-  "Concepts: list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
+  "Concepts: list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_type, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project reverses a promotion.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_create_upload_url, kanban_attach_uploaded, kanban_remove_attachment, kanban_capture_screenshots, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Skills: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
-  "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
+  "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings sets the skills that build and deploy runs load; finalise_project / unfreeze_project freeze a project.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {

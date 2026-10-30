@@ -1754,6 +1754,28 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .sysmap-edge-bg { fill: var(--bar-bg); }
 .sysmap-edge-label { font-size: 11.5px; fill: var(--text); }
 .sysmap-node.dim, .sysmap-edge.dim { opacity: .18; }
+/* Platform / Internal operations (ticket ufOwuueuj1f5vmeN0xi2) */
+.type-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.type-toggle-btn { background: var(--surface); color: var(--text); border: 0; padding: 7px 16px; font: inherit; font-size: 14px; cursor: pointer; }
+.type-toggle-btn + .type-toggle-btn { border-left: 1px solid var(--border); }
+.type-toggle-btn.active { background: var(--primary); color: #fff; font-weight: 700; }
+.type-toggle-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.type-badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em; padding: 1px 8px; border-radius: 10px; vertical-align: middle; background: var(--tip-bg-muted); color: var(--text-muted); }
+.type-badge.type-platform { background: var(--tip-bg-live); color: var(--primary); }
+.type-badge.type-internal { background: var(--tip-bg-project); color: var(--violet); }
+.type-badge.type-unassigned { background: #fff4e0; color: #8a5300; border: 1px dashed #e07b00; }
+.type-error { color: #b71c1c; }
+.page-header-filter { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; color: var(--text-muted); }
+.page-header-filter + .page-header-action { margin-left: 8px; }
+.sysmap-node-unassigned { fill: #8a5300; font-weight: 700; }
+.sysmap-key.s-bridge::before { background: #fff; border-color: var(--primary); border-style: dashed; }
+.sysmap-key.s-step::before { border-radius: 50%; width: 10px; background: var(--primary); border-color: var(--primary); }
+.intmap-bridge rect { fill: #e8f6fa; stroke: var(--primary); stroke-dasharray: 5 4; }
+.intmap-fixed rect { fill: var(--tip-bg); }
+.intmap-step circle { fill: var(--primary); }
+.intmap-step text { fill: #fff; font-size: 14px; font-weight: 700; }
+.intmap-note-box { fill: #fff9ec; stroke: #e07b00; stroke-width: 1.5; }
+.intmap-note-text { font-size: 14px; }
 @media (max-width: 640px) { .sysmap-legend { margin-left: 0; } }
 
 /* Release editor checklists, and the release number on Concept Incubator tiles */
@@ -2058,3 +2080,11 @@ body { overflow-x: clip; }
 .package-running .material-symbols-outlined { color: var(--primary-text); }
 .package-done .material-symbols-outlined { color: var(--success); }
 .package-failed .material-symbols-outlined { color: var(--danger); }
+
+/* Finalised project badge — see finalisedBadgeHTML() in js/app.js. */
+.project-finalised-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px;
+  background: rgba(201, 138, 10, .12); color: var(--warning); border: 1px solid var(--warning);
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+.project-finalised-badge .material-symbols-outlined { font-size: 14px; }

@@ -176,6 +176,7 @@ service cloud.firestore {
       return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge"])
         && (!changed.hasAny(["trainLocked"]) || incoming().trainLocked == true)
         && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
+        && (!changed.hasAny(["finalised", "finalisedLog"]) || isAdmin())
         && (!changed.hasAny(["notifyRequestedByEmail"]) || requesterIsCaller(incoming().notifyRequestedByEmail))
         && (!changed.hasAny(["deployNotifyRequestedByEmail"]) || requesterIsCaller(incoming().deployNotifyRequestedByEmail))
         && (!changed.hasAny(["groomRequestedByEmail"]) || requesterIsCaller(incoming().groomRequestedByEmail))
@@ -197,15 +198,32 @@ service cloud.firestore {
         && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")));
     }
 
+    // The type every concept and project carries (ticket ufOwuueuj1f5vmeN0xi2):
+    // exactly one of two values. Required when a person creates one; items saved
+    // before the field existed have none, and an update may leave it unset only
+    // while it already is. Kept in step with public/js/entity-type.js and
+    // functions/mcp-server.js' ENTITY_TYPES.
+    function entityTypeOk(v) {
+      return v in ["Platform", "Internal operations"];
+    }
+    function entityTypeKeptValid() {
+      return !("type" in resource.data) || entityTypeOk(incoming().get("type", null));
+    }
+    function entityTypeValidIfSet() {
+      return !("type" in incoming()) || entityTypeOk(incoming().type);
+    }
+
     match /projects/{projectId} {
       allow read: if isBoardReader();
       allow create: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
+        && (isBoardAutomation() || projectId == "general" || entityTypeOk(incoming().get("type", null)))
         && (isBoardAutomation() || (
           (!("deployBranch" in incoming()) || isValidNewDeployBranch(incoming().deployBranch))
           && !("trainReady" in incoming())
           && !("trainStatus" in incoming()) && !("trainPrNumber" in incoming())
           && !("trainNote" in incoming()) && !("needsHumanMerge" in incoming())
-          && !("trainLocked" in incoming())))
+          && !("trainLocked" in incoming())
+          && !("finalised" in incoming()) && !("finalisedLog" in incoming())))
         && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
         && projectDocsBounded()
         && (isBoardAutomation() || (
@@ -217,6 +235,7 @@ service cloud.firestore {
           && (!("e2eRequestedByEmail" in incoming()) || requesterIsCaller(incoming().e2eRequestedByEmail))
           && !("e2eStatus" in incoming())));
       allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
+        && entityTypeValidIfSet() && entityTypeKeptValid()
         && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
         && projectDocsBounded()
         && (isBoardAutomation() || humanProjectUpdateOk());
@@ -355,6 +374,13 @@ service cloud.firestore {
     function approvalFieldsAbsent() {
       return !incoming().keys().hasAny(["approvedByEmail", "approvedAt", "approvedVia"]);
     }
+    function projectNotFinalised(pid) {
+      // The synthesized "General" project has no doc: exists() first.
+      return !exists(/databases/$(database)/documents/projects/$(pid))
+        || !("finalised" in get(/databases/$(database)/documents/projects/$(pid)).data)
+        || get(/databases/$(database)/documents/projects/$(pid)).data.finalised == null;
+    }
+
     function isValidItemCommon() {
       return isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().title, 200) &&
@@ -369,8 +395,11 @@ service cloud.firestore {
     match /backlogItems/{itemId} {
       allow read: if isBoardReader();
 
+      // A Finalised project is frozen: nobody files new tickets against it
+      // from a browser (the board automation is exempt, as everywhere).
       allow create: if isEditor() && isValidItemCommon()
-        && (isBoardAutomation() || (itemPipelineFieldsAbsent() && approvalFieldsAbsent()));
+        && (isBoardAutomation() || (itemPipelineFieldsAbsent() && approvalFieldsAbsent()
+          && projectNotFinalised(incoming().projectId)));
       allow update: if isEditor() && isValidItemCommon()
         && (isBoardAutomation() || (itemPipelineFieldsUnchanged() && approvalFieldsOk()));
 
@@ -536,6 +565,7 @@ service cloud.firestore {
       allow create: if isEditor() &&
         isNonEmptyBoundedString(incoming().name, 120) &&
         incoming().status == "active" &&
+        (entityTypeOk(incoming().get("type", null)) || ("demotedFromProjectId" in incoming() && entityTypeValidIfSet())) &&
         (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 800000)) &&
         (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
         (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*"))) &&
@@ -547,6 +577,7 @@ service cloud.firestore {
         isNonEmptyBoundedString(incoming().name, 120) &&
         incoming().status in ["active", "promoted"] &&
         conceptStatusOnlyPromotes() &&
+        entityTypeValidIfSet() && entityTypeKeptValid() &&
         (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 800000)) &&
         (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
         (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*"))) &&

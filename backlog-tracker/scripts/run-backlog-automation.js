@@ -881,6 +881,62 @@ function selfHealPlan(item, project, why, { ignoreLock = false, nowIso } = {}) {
     sentence: "A rebuild was requested automatically; this card will say when it starts.",
   };
 }
+// ── A question never strands a ticket (30 Oct 2026) ───────────────────────
+// A build that stops on a question flags the card waiting-on-input and waits
+// for a person. Nobody should have to be there: after AUTO_ANSWER_AFTER_MS
+// the senior agent's recommendation (blocked.recommendation, recorded by the
+// build after consulting a higher-ranking agent) is taken as the answer, or,
+// without one, a default "take the best option" decision. The card is
+// unblocked and rebuilt. Twice per ticket at most; a dependency wait
+// (dependsOnItemIds) is never answered this way, it clears itself when the
+// ticket it waits for lands. Pure, for test/self-heal.test.js.
+const AUTO_ANSWER_AFTER_MS = 10 * 60 * 1000;
+const MAX_AUTO_ANSWERS = 2;
+const DEFAULT_SENIOR_ANSWER = "Take the best option, state the assumption you made on the card, and do not ask again.";
+function autoAnswerPlan(item, now = Date.now()) {
+  const b = item && item.blocked;
+  if (!b || b.reason !== "waiting-on-input" || (item.status && item.status !== "backlog") || item.patchReady) return null;
+  if (Array.isArray(item.dependsOnItemIds) && item.dependsOnItemIds.length) return null;
+  if ((Number(item.autoAnswers) || 0) >= MAX_AUTO_ANSWERS) return null;
+  const setAt = timeMs(b.setAt);
+  if (Number.isNaN(setAt) || now - setAt < AUTO_ANSWER_AFTER_MS) return null;
+  const recommendation = typeof b.recommendation === "string" ? b.recommendation.trim() : "";
+  const answer = recommendation || DEFAULT_SENIOR_ANSWER;
+  return {
+    answer,
+    fromRecommendation: !!recommendation,
+    text: `Answer to the build's question (accepted automatically from the senior agent after ${Math.round(AUTO_ANSWER_AFTER_MS / 60000)} minutes without a reply${recommendation ? "" : ", no recommendation recorded, so the default decision"}): ${answer}`,
+    fields: { autoAnswers: (Number(item.autoAnswers) || 0) + 1 },
+  };
+}
+async function sweepAutoAnswers(now = Date.now()) {
+  const blocked = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { compositeFilter: { op: "AND", filters: [
+      { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "backlog" } } },
+      { fieldFilter: { field: { fieldPath: "blocked.reason" }, op: "EQUAL", value: { stringValue: "waiting-on-input" } } },
+    ] } },
+  });
+  for (const item of blocked) {
+    const plan = autoAnswerPlan(item, now);
+    if (!plan) continue;
+    try {
+      const project = await getProject(item.projectId).catch(() => null);
+      if (!project) continue;
+      const notes = await appendNote(item, plan.text);
+      const stamp = new Date(now).toISOString();
+      if (project.trainLocked) {
+        await patchItem(item.id, { ...plan.fields, blocked: null, blockedClearedAt: stamp, buildAfterTrain: true, notes, updatedAt: stamp });
+      } else {
+        await patchItem(item.id, { ...plan.fields, blocked: null, blockedClearedAt: stamp, notes, updatedAt: stamp });
+        queueBuildRequest(project, item.id);
+      }
+      console.log(`[auto-answer] ${item.id}: question unanswered — senior agent's answer accepted, rebuild ${project.trainLocked ? "deferred until the train merges" : "requested"}`);
+    } catch (err) {
+      console.error(`[auto-answer] ${item.id}: ${err.message}`);
+    }
+  }
+}
 async function flushBuildRequests() {
   for (const [projectId, { project, ids, fresh }] of pendingBuildRequests) {
     // Stamped before the project write that makes the function fire, so the
@@ -7182,6 +7238,11 @@ async function main() {
     console.error(`[unbuilt] sweep failed: ${err.message}`);
   }
   try {
+    await sweepAutoAnswers();
+  } catch (err) {
+    console.error(`[auto-answer] sweep failed: ${err.message}`);
+  }
+  try {
     await sweepSilentBuildSessions();
   } catch (err) {
     console.error(`[silent-build] sweep failed: ${err.message}`);
@@ -7360,7 +7421,7 @@ if (require.main === module) {
 // this module loads if not guarded — see the require.main check).
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
-  selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
+  autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
   // test/train-rejudge.test.js — a ticket left with no verdict by a revert is re-tested

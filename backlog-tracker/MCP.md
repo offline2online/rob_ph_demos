@@ -337,7 +337,7 @@ as text until Anthropic switches on its MCP Apps host.
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
 | | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | `mark_skill_reviewed` (clears the review nudge and restarts the clock) | | |
-| | `create_concept` / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` / `set_concept_description` (Concept Incubator; the last four refused once a concept is promoted, except comments) | | | | |
+| | `create_concept` (requires `type`) / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` / `set_concept_description` / `set_concept_type` (Concept Incubator; the last five refused once a concept is promoted, except comments) / `set_project_type` | | | | |
 | | `add_concept_critique` (a structured review of a concept: verdict, arguments for/against, assumptions, recommended changes, optional free-text `role`) | `list_concept_critiques` (also returns every role already used, to reuse) / `synthesise_concept_critiques` (agreement, disagreement, recommended adjustments; optional `role` filter) | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
@@ -456,8 +456,8 @@ including the same `list_doc_revisions`/`get_doc_revision` recovery path
 (pass `conceptId` instead of `projectId`) — except both are refused once
 `status` is `"promoted"`, matching the console's own read-only view of a
 promoted concept: from that point `promotedProjectId` is the real project,
-and its own documentation tools are the ones to use. `create_concept` makes a new
-one (a name, plus optional `readmeMd`, `requirementsMd` and a `description`
+and its own documentation tools are the ones to use. Reads return `type` (`Platform` or `Internal operations`, null if unset); `set_concept_type` and `set_project_type` change it. `create_concept` makes a new
+one (a name, a required `type`, plus optional `readmeMd`, `requirementsMd` and a `description`
 posted as its first comment), always `active`, and returns its `conceptId`
 so the write tools can seed it. There is deliberately no
 `promote_concept_to_project` tool — this server has no `create_project` tool
@@ -752,6 +752,17 @@ sign-in on `/mcp/authorize`.
 
 - `set_blocked` / `clear_blocked` (editor): flag a Backlog ticket as `needs-decision` or `waiting-on-input` with a one-line note. Blocked tickets are skipped by Notify Claude and the build routine, show a flag on the card, and are counted as "need your decision" in the Backlog column header. The flag clears when it is cleared from the card, or when anyone other than whoever set it comments on the ticket. Pipeline status is never touched.
 - `set_phase_skill_bindings` (admin): add/remove skill slugs bound to the `build` or `deploy` phase in `settings/phaseSkillBindings` (the doc's Firestore rules are admin-only because it feeds the Routine's prompt).
+
+## Project freeze: `finalise_project` and `unfreeze_project`
+
+Both are **admin-only** `board.write` tools, logged to `mcpAuditLog`. `finalise_project`
+(`projectId`) marks a project Finalised, a permanent freeze that is not the train
+lock: afterwards `create_backlog_item` and `send_to_build` refuse with a message,
+`list_projects` returns `finalised: {version, at, byEmail, artifactUrl, ...}`, and the
+board shows a Finalised badge. The project's current artifact link is recorded as the
+frozen version. `unfreeze_project` (`projectId`, `reason`) lifts it; the reason is
+required and kept in the project's `finalisedLog`. The Staff Kanban tools are
+unaffected. See `REQUIREMENTS.md` → "Project freeze".
 
 ## Artifact snapshots on sign-off (PH-20)
 

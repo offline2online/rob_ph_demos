@@ -130,6 +130,24 @@ async function test(name, fn) {
     assert.ok(auto.escalationBlock("x".repeat(5000), 3).note.length < 1500, "the flag stays readable");
   });
 
+  await test("autoAnswerPlan: an unanswered question takes the senior agent's answer, twice at most, never for a dependency wait", async () => {
+    const now = Date.parse("2026-10-30T12:00:00Z");
+    const old = "2026-10-30T11:40:00Z";
+    const q = (extra = {}) => ({ status: "backlog", blocked: { reason: "waiting-on-input", note: "Which?", setAt: old, ...(extra.blocked || {}) }, ...extra, blocked: { reason: "waiting-on-input", note: "Which?", setAt: old, ...(extra.blocked || {}) } });
+    const { autoAnswerPlan } = auto;
+    const r = autoAnswerPlan(q({ blocked: { recommendation: "Use option B" } }), now);
+    assert.strictEqual(r.answer, "Use option B");
+    assert.match(r.text, /^Answer to the build's question \(accepted automatically from the senior agent/);
+    assert.deepStrictEqual(r.fields, { autoAnswers: 1 });
+    assert.match(autoAnswerPlan(q(), now).answer, /best option.*do not ask again/);
+    assert.strictEqual(autoAnswerPlan(q({ blocked: { setAt: "2026-10-30T11:55:00Z" } }), now), null, "not before 10 minutes");
+    assert.ok(autoAnswerPlan(q({ autoAnswers: 1 }), now));
+    assert.strictEqual(autoAnswerPlan(q({ autoAnswers: 2 }), now), null, "after 2 it stays flagged for a person");
+    assert.strictEqual(autoAnswerPlan(q({ dependsOnItemIds: ["x"] }), now), null, "a dependency wait is never auto-answered");
+    assert.strictEqual(autoAnswerPlan(q({ blocked: { reason: "needs-decision" } }), now), null);
+    assert.strictEqual(autoAnswerPlan({ status: "backlog" }, now), null);
+  });
+
   await test("latePatchFromDuplicateSession: only a patch written without the card's own landed commit", async () => {
     const is = (answer) => () => answer;
     const onTrain = { status: "ready-for-testing", deployCommit: A, patchBaseSha: B };

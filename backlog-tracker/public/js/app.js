@@ -33,6 +33,8 @@ import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mir
 import { initNavShell } from "./nav-shell.js";
 import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, getAvatarMember, normEmail, checkAvatarFile, avatarBlobFromFile } from "./avatar.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
+import { ENTITY_TYPES, TYPE_PLATFORM, TYPE_INTERNAL, typeOf, matchesTypeFilter, typeBadgeHTML, typeOptionsHTML } from "./entity-type.js";
+import { buildInternalMap, internalMapHTML, internalLegendHTML } from "./internal-map.js";
 import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts, compareReleases, pinnedLayout, mapSnapshot, diffSystemMap, describeChanges } from "./system-map.js";
 import { pickRepoFolder, planPromotionTickets } from "./promote-plan.js";
 import { packageBacklog, groomButtonVisible, DEFAULT_GROOM_THRESHOLD, DEFAULT_PACKAGE_BUDGET } from "./groom-packages.js";
@@ -1417,6 +1419,10 @@ function optionsMenuHTML(project) {
       Grooming settings
       <span class="options-menu-sub">Groom Backlog shows above ${groomThresholdOf(project)} tickets · package budget ${groomBudgetOf(project)}</span>
     </button>`;
+  html += `<button type="button" class="options-menu-item project-finalise-btn" data-admin-only data-project-id="${escapeHTML(pid)}">
+      ${isProjectFinalised(project) ? "Unfreeze project…" : "Finalise project…"}
+      <span class="options-menu-sub">${isProjectFinalised(project) ? "Admin only · needs a recorded reason" : "Admin only · permanent freeze"}</span>
+    </button>`;
   html += `<button type="button" class="options-menu-item options-menu-item-danger project-archive-project-btn" data-project-id="${escapeHTML(pid)}">
     Archive project
   </button>`;
@@ -1570,6 +1576,49 @@ setInterval(() => {
 // it sits there. The way out already exists and needs nothing new — Failed
 // testing sends it back and off the branch, unblocking the deploy without
 // unblocking the build.
+// "Finalised": a permanent freeze set by an admin (project options menu or the
+// finalise_project MCP tool), distinct from the temporary train lock. A
+// finalised project accepts no new backlog items and no builds; its Staff
+// Kanban counterpart does not exist. See REQUIREMENTS.md → "Project freeze".
+function isProjectFinalised(project) {
+  return !!(project && project.finalised && typeof project.finalised === "object");
+}
+function finalisedMessage(project) {
+  const f = project && project.finalised;
+  return `${project && project.name ? project.name : "This project"} is Finalised (frozen at version ${(f && f.version) || 1}${f && f.byEmail ? " by " + f.byEmail : ""}). No new backlog items can be filed and no builds can be sent. An admin can unfreeze it from the project's ⋮ menu.`;
+}
+function finalisedBadgeHTML(project) {
+  if (!isProjectFinalised(project)) return "";
+  const f = project.finalised;
+  const when = f.at && f.at.toMillis ? formatNoteAt(f.at) : "";
+  const title = `Finalised v${f.version || 1}${f.byEmail ? " by " + f.byEmail : ""}${when ? " on " + when : ""}`;
+  return `<span class="project-finalised-badge" title="${escapeHTML(title)}"><span class="material-symbols-outlined">lock</span>Finalised v${escapeHTML(String(f.version || 1))}</span>`;
+}
+async function finaliseProject(pid) {
+  const project = projects.find((p) => p.id === pid);
+  if (!project || !isConsoleAdmin()) return;
+  const email = ((auth.currentUser && auth.currentUser.email) || "").toLowerCase();
+  if (isProjectFinalised(project)) {
+    const reason = await showPromptDialog("", "", { title: `Unfreeze ${project.name}?`, label: "Reason for unfreezing (recorded)", okLabel: "Unfreeze", multiline: true, rows: 3 });
+    if (reason == null) return;
+    if (!reason.trim()) { await showAlert("A reason is required to unfreeze a project."); return; }
+    await setDoc(doc(db, "projects", pid), {
+      finalised: null,
+      finalisedLog: arrayUnion({ action: "unfreeze", version: project.finalised.version || 1, at: new Date(), byEmail: email, via: "board", reason: reason.trim().slice(0, 1000) }),
+    }, { merge: true });
+    return;
+  }
+  const ok = await showConfirmDialog(`Finalise ${project.name}? This is a permanent freeze: no new backlog items can be filed and no builds can be sent until an admin unfreezes it. The current artifact link is recorded as the frozen version.`, { title: "Finalise project", okLabel: "Finalise", danger: true });
+  if (!ok) return;
+  const log = Array.isArray(project.finalisedLog) ? project.finalisedLog : [];
+  const version = log.filter((e) => e && e.action === "finalise").length + 1;
+  const now = new Date();
+  await setDoc(doc(db, "projects", pid), {
+    finalised: { version, at: now, byEmail: email, artifactUrl: project.artifactUrl || null, artifactUpdatedAt: project.artifactUpdatedAt || null },
+    finalisedLog: arrayUnion({ action: "finalise", version, at: now, byEmail: email, via: "board", artifactUrl: project.artifactUrl || null }),
+  }, { merge: true });
+}
+
 function isTrainLocked(project) {
   return !!(project && project.trainLocked);
 }
@@ -1684,7 +1733,7 @@ function notifyClaudeButtonCore(project) {
     // A release is closing on this project's integration branch — see
     // isTrainLocked. Same hidden-when-the-action-isn't-valid rule as the
     // empty-Backlog case right below it.
-    if (isTrainLocked(project)) return "";
+    if (isTrainLocked(project) || isProjectFinalised(project)) return "";
     const backlogCount = backlogCountForProject(pid);
     if (!backlogCount) return waitingOnAnswerChipHTML(pid);
     // A non-empty selection (see the Backlog column's own checkboxes)
@@ -2261,7 +2310,9 @@ function projectSectionHTML(project) {
     ? `<div class="project-name-row"><input type="text" class="project-name-input" id="pname-input-${escapeHTML(project.id)}" data-project-id="${escapeHTML(project.id)}" value="${escapeHTML(project.name)}" maxlength="80"></div>`
     : `<div class="project-name-row"><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
          <button type="button" class="project-rename-btn" data-project-id="${escapeHTML(project.id)}" title="Rename project">&#9998;</button>
+         ${project.id === GENERAL_PROJECT_ID ? "" : typeBadgeHTML(project, escapeHTML)}
          ${projectReleaseBadgeHTML(project)}
+         ${finalisedBadgeHTML(project)}
          <button type="button" class="project-star-btn${isProjectStarred(project.id) ? " starred" : ""}" data-project-id="${escapeHTML(project.id)}" aria-pressed="${isProjectStarred(project.id)}" title="${isProjectStarred(project.id) ? "Unstar project (unpin from top)" : "Star project (pin to top)"}">${isProjectStarred(project.id) ? "&#9733;" : "&#9734;"}</button>
        </div>`;
 
@@ -2522,10 +2573,17 @@ function render() {
   });
 }
 
+document.getElementById("board-type-filter").addEventListener("change", () => render());
+document.getElementById("concept-type-filter").addEventListener("change", () => renderConceptIncubatorPage());
+
 function renderNow() {
   timedSpinnerShown = false;
   migrateOrphanItems();
-  const renderedProjects = getRenderedProjects();
+  const boardTypeEl = document.getElementById("board-type-filter");
+  if (!boardTypeEl.options.length) boardTypeEl.innerHTML = typeOptionsHTML("all", { filter: true });
+  // The board's Type filter hides projects of the other type; General (no
+  // type of its own) always stays.
+  const renderedProjects = getRenderedProjects().filter((p) => p.id === GENERAL_PROJECT_ID || matchesTypeFilter(p, boardTypeEl.value));
 
   // Every render replaces #projects-root's entire innerHTML, which throws
   // away and recreates every .col-list element — including whichever one
@@ -3644,8 +3702,8 @@ function deployBranchForFolder(folder) {
 // derive from the name and stamp on first ticket build, exactly as before
 // this existed — a project with no single folder has no folder-derived name
 // to prefer over that.
-async function addProject(name, programId, repoFolderInfo) {
-  const data = { name: name.trim(), createdAt: serverTimestamp() };
+async function addProject(name, programId, repoFolderInfo, type) {
+  const data = { name: name.trim(), createdAt: serverTimestamp(), type };
   if (programId) data.programId = programId;
   if (repoFolderInfo && repoFolderInfo.none) {
     data.repoFolderNotApplicable = true;
@@ -3692,6 +3750,8 @@ async function setProjectRepoFolder(id, repoFolderInfo) {
 // once projects/{id}.notifyRoutine reflects the click, which is a better
 // signal than a one-time dismissable dialog ever was.
 async function requestNotify(pid) {
+  const frozenProject = projects.find((p) => p.id === pid);
+  if (isProjectFinalised(frozenProject)) { await showAlert(finalisedMessage(frozenProject), { title: "Project is Finalised" }); return; }
   const count = backlogCountForProject(pid);
   if (count === 0) {
     await showAlert("Nothing in Backlog for this project yet — add an item first.");
@@ -4384,6 +4444,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (starBtn) { toggleProjectStarred(starBtn.dataset.projectId); return; }
   const renameBtn = e.target.closest(".project-rename-btn");
   if (renameBtn) { startEditingProjectName(renameBtn.dataset.projectId); return; }
+  const finaliseBtn = e.target.closest(".project-finalise-btn");
+  if (finaliseBtn) { closeAllOptionMenus(); finaliseProject(finaliseBtn.dataset.projectId); return; }
   const newItemBtn = e.target.closest(".new-item-btn");
   if (newItemBtn) { openForm(newItemBtn.dataset.projectId); return; }
   const notifyBtn = e.target.closest(".project-notify-btn");
@@ -5426,6 +5488,8 @@ function resetFormFields() {
   renderNiPendingAttachments();
 }
 function openForm(projectId) {
+  const frozenProject = projects.find((p) => p.id === projectId);
+  if (isProjectFinalised(frozenProject)) { showAlert(finalisedMessage(frozenProject), { title: "Project is Finalised" }); return; }
   activeNewItemProjectId = projectId;
   resetFormFields();
   niBackdrop.hidden = false;
@@ -5741,6 +5805,7 @@ function openProjectModal(onCreated) {
   document.getElementById("np-name-input").value = "";
   updateNpNameCount();
   populateProgramSelect(npProgramSelect, "");
+  document.getElementById("np-type-select").innerHTML = typeOptionsHTML("", { withEmpty: true });
   npRepoFolderInput.value = "";
   npRepoFolderInput.disabled = false;
   npRepoFolderNone.checked = false;
@@ -5759,6 +5824,12 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   const nameEl = document.getElementById("np-name-input");
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
+  const npTypeEl = document.getElementById("np-type-select");
+  if (!ENTITY_TYPES.includes(npTypeEl.value)) {
+    await showAlert("Choose a type: Platform or Internal operations.", { title: "Choose a type" });
+    npTypeEl.focus();
+    return;
+  }
 
   // Required by default (see root CLAUDE.md → "Linking a new project to
   // GitHub") — nothing else ever sets repoFolder for a brand-new project,
@@ -5791,7 +5862,7 @@ document.getElementById("np-submit").addEventListener("click", async () => {
   const programId = npProgramSelect.value !== "__new__" ? npProgramSelect.value : "";
   let newId;
   try {
-    newId = await addProject(name, programId, repoFolderInfo);
+    newId = await addProject(name, programId, repoFolderInfo, npTypeEl.value);
   } catch (err) {
     await showAlert(describeSaveError(err, [{ label: "Name", value: name, max: 80 }, { label: "Repo folder", value: folder, max: 80 }]));
     return;
@@ -5984,6 +6055,16 @@ const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-inpu
 const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
 const docsProgramSelect = document.getElementById("docs-program-select");
 const docsDescriptionInput = document.getElementById("docs-description-input");
+const docsTypeSelect = document.getElementById("docs-type-select");
+docsTypeSelect.addEventListener("change", async () => {
+  if (!docsProjectId || !ENTITY_TYPES.includes(docsTypeSelect.value)) return;
+  if (!(await requireConceptEditor())) { renderDocsPage(); return; }
+  try {
+    await setDoc(doc(db, "projects", docsProjectId), { type: docsTypeSelect.value, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, []));
+  }
+});
 const docsRepoFolderInput = document.getElementById("docs-repo-folder-input");
 const docsRepoFolderNone = document.getElementById("docs-repo-folder-none");
 docsRepoFolderNone.addEventListener("change", () => {
@@ -6082,6 +6163,10 @@ function renderDocsPage() {
   const origin = concepts.find((c) => c.status === "promoted" && c.promotedProjectId === docsProjectId);
   originBlock.hidden = !origin;
   if (origin) document.getElementById("docs-origin-concept-link").textContent = origin.name || "Origin concept";
+  if (document.activeElement !== docsTypeSelect) {
+    const pt = typeOf(project);
+    docsTypeSelect.innerHTML = typeOptionsHTML(pt, { withEmpty: !pt });
+  }
   if (document.activeElement !== docsProgramSelect) {
     populateProgramSelect(docsProgramSelect, project ? project.programId || "" : "");
   }
@@ -6463,12 +6548,23 @@ async function requireConceptEditor() {
   return true;
 }
 
+document.getElementById("concept-type-select").addEventListener("change", async (e) => {
+  if (!conceptDetailId || !ENTITY_TYPES.includes(e.target.value)) return;
+  if (!(await requireConceptEditor())) { renderConceptDetailPage(); return; }
+  try {
+    await setDoc(doc(db, "concepts", conceptDetailId), { type: e.target.value, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, []));
+  }
+});
+
 function conceptStatusLabel(c) { return c.status === "promoted" ? "Promoted" : "Active"; }
 
-async function addConcept(name) {
+async function addConcept(name, type) {
   const email = (auth.currentUser && auth.currentUser.email) || null;
   const ref = await addDoc(conceptsRef, {
     name: name.trim(),
+    type,
     readmeMd: "",
     requirementsMd: "",
     comments: [],
@@ -6537,14 +6633,19 @@ function promoteFolderFor(name) {
   return pickRepoFolder(name, [...RESERVED_ROOT_FOLDERS, ...projects.map((p) => p.repoFolder).filter(Boolean)]);
 }
 const RESERVED_ROOT_FOLDERS = ["backlog-tracker", "faq", "docs", "shared", "scripts", "menu-board-demo", "dsp-integration", "visitor-profile", "brands-suppliers-assets", "github", "node_modules", "functions", "public"];
-async function promoteConceptToProject(conceptId, name, programId, releaseId, onProgress) {
+async function promoteConceptToProject(conceptId, name, programId, releaseId, onProgress, chosenType) {
   const concept = concepts.find((c) => c.id === conceptId);
   if (!concept) return null;
+  // The concept's type carries over; only a concept saved before types
+  // existed lets the person choose one here.
+  const type = typeOf(concept) || chosenType;
+  if (!ENTITY_TYPES.includes(type)) throw new Error("Choose a type (Platform or Internal operations) before promoting.");
   const progress = typeof onProgress === "function" ? onProgress : () => {};
   const folder = promoteFolderFor(name);
   progress("Creating project…");
   const data = {
     name: name.trim(),
+    type,
     createdAt: serverTimestamp(),
     repoFolder: folder,
     deployBranch: deployBranchForFolder(folder),
@@ -6564,6 +6665,7 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId, on
   // move recorded on the interface.
   await repointInterfaces({ type: "concept", id: conceptId }, { type: "project", id: ref.id }, "concept promoted to project");
   await setDoc(doc(db, "concepts", conceptId), {
+    type,
     status: "promoted",
     promotedProjectId: ref.id,
     promotedAt: serverTimestamp(),
@@ -6605,6 +6707,7 @@ async function demoteProjectToConcept(projectId) {
   const email = (auth && auth.currentUser && auth.currentUser.email) || null;
   const ref = await addDoc(conceptsRef, {
     name: project.name, status: "active", readmeMd, requirementsMd, documents,
+    ...(typeOf(project) ? { type: typeOf(project) } : {}),
     comments: [{ author: "viewer", text: `Demoted from project "${project.name}" (${projectId}). Its interfaces now point here; the archived project keeps its tickets and revision history.`, at: new Date() }],
     demotedFromProjectId: projectId, createdByEmail: email,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
@@ -6689,7 +6792,7 @@ function conceptCardHTML(c) {
       <div class="skill-card-top">
         ${relNum}
         <div class="concept-card-main">
-          <div class="skill-card-name">${escapeHTML(c.name || "")}</div>
+          <div class="skill-card-name">${escapeHTML(c.name || "")} ${typeBadgeHTML(c, escapeHTML)}</div>
           <div class="skill-card-meta">${escapeHTML(meta.join(" · "))}</div>
           ${artifactLink}
         </div>
@@ -6715,10 +6818,44 @@ function setSystemMapView(vb) {
   const svg = document.querySelector("#system-map-canvas svg");
   if (svg) svg.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
 }
+// Which of the two maps is showing: Platform (the PH platform map, pinned and
+// saved) or Internal operations (a fixed layout, js/internal-map.js). Remembered
+// per browser only; the choice is a convenience, not shared state.
+let systemMapType = TYPE_PLATFORM;
+try { if (localStorage.getItem("bt-system-map-type") === TYPE_INTERNAL) systemMapType = TYPE_INTERNAL; } catch (_) { /* private mode */ }
+function setSystemMapType(type) {
+  if (!ENTITY_TYPES.includes(type) || type === systemMapType) return;
+  systemMapType = type;
+  try { localStorage.setItem("bt-system-map-type", type); } catch (_) { /* private mode */ }
+  systemMapView = null;
+  renderSystemMap();
+}
 function renderSystemMap() {
   const canvas = document.getElementById("system-map-canvas");
   const page = document.getElementById("concept-incubator-page");
   if (!canvas || !page || page.hidden) return;
+  const internal = systemMapType === TYPE_INTERNAL;
+  document.querySelectorAll("#system-map-type [data-map-type]").forEach((b) => {
+    const on = b.dataset.mapType === systemMapType;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+  for (const id of ["system-map-release", "system-map-rearrange", "system-map-history-btn"]) {
+    const el = document.getElementById(id);
+    el.hidden = internal;
+    const lbl = document.querySelector(`label[for="${id}"]`);
+    if (lbl) lbl.hidden = internal;
+  }
+  if (internal) {
+    document.getElementById("system-map-history").hidden = true;
+    document.getElementById("system-map-legend").innerHTML = internalLegendHTML();
+    systemMapModel = buildInternalMap({ projects, concepts });
+    systemMapLayoutMode = "internal";
+    canvas.innerHTML = internalMapHTML(systemMapModel);
+    setSystemMapView(systemMapView);
+    hideSystemMapTip();
+    return;
+  }
   const sel = document.getElementById("system-map-release");
   const chosen = sel.value;
   const opts = ['<option value="">All releases</option>'].concat(
@@ -6748,6 +6885,7 @@ const systemMapEditor = () => { const r = document.documentElement.dataset.conso
 let systemMapSaveTimer = null;
 let systemMapSaving = false;
 function scheduleSystemMapSave() {
+  if (systemMapType !== TYPE_PLATFORM) return;
   if (systemMapSaved === undefined || !systemMapEditor()) return;
   clearTimeout(systemMapSaveTimer);
   systemMapSaveTimer = setTimeout(() => saveSystemMapLayout(), 1200);
@@ -6763,6 +6901,7 @@ async function writeSystemMapState({ model, mode, pinned, reason, changes, prev 
   await batch.commit();
 }
 async function saveSystemMapLayout() {
+  if (systemMapType !== TYPE_PLATFORM) return;
   if (systemMapSaving || !systemMapModel || !systemMapEditor() || systemMapSaved === undefined || systemMapRearranging) return;
   const model = systemMapModel;
   const mode = model.layout.mode;
@@ -6785,6 +6924,7 @@ async function saveSystemMapLayout() {
 
 // Re-arrange: the one action that lays everything out afresh, and saves it.
 async function rearrangeSystemMap() {
+  if (systemMapType !== TYPE_PLATFORM) return;
   if (!systemMapEditor() || !systemMapModel) return;
   const mode = systemMapModel.layout.mode;
   const prev = (systemMapSaved && systemMapSaved.pinned && systemMapSaved.pinned[mode]) || null;
@@ -6801,6 +6941,7 @@ async function rearrangeSystemMap() {
 // Roll the pinned positions back to what they were before a revision. Nodes
 // and lines follow the board's data, so only positions can be rolled back.
 async function rollbackSystemMap(revId) {
+  if (systemMapType !== TYPE_PLATFORM) return;
   if (!systemMapEditor()) return;
   const snap = await getDoc(doc(systemMapRevisionsRef, revId));
   if (!snap.exists()) return;
@@ -6876,6 +7017,10 @@ if (typeof ResizeObserver === "function") {
   }).observe(document.getElementById("system-map-canvas"));
 }
 document.getElementById("system-map-release").addEventListener("change", renderSystemMap);
+document.getElementById("system-map-type").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-map-type]");
+  if (b) setSystemMapType(b.dataset.mapType);
+});
 function zoomSystemMap(factor, fx = 0.5, fy = 0.5) {
   const v = systemMapView || systemMapFit();
   setSystemMapView(zoomViewBox(v, factor, v.x + v.w * fx, v.y + v.h * fy, systemMapFit()));
@@ -6938,7 +7083,7 @@ function placeSystemMapTip(x, y) {
   systemMapTip.style.top = Math.max(8, Math.min(top, window.innerHeight - th - 8)) + "px";
 }
 function showSystemMapTip(target, x, y) {
-  if (!systemMapModel) return false;
+  if (!systemMapModel || systemMapType !== TYPE_PLATFORM) return false;
   const nodeEl = target.closest("[data-tip-node]");
   const edgeEl = nodeEl ? null : target.closest("[data-tip-edge]");
   const el = nodeEl || edgeEl;
@@ -6965,6 +7110,15 @@ function showSystemMapTip(target, x, y) {
 function systemMapActivate(target, touch) {
   const canvasEl = document.getElementById("system-map-canvas");
   if (canvasEl.dataset.justPanned) { delete canvasEl.dataset.justPanned; return; }
+  if (systemMapType === TYPE_INTERNAL) {
+    const el = target.closest("[data-node-id]");
+    const n = el && systemMapModel && systemMapModel.byId[el.dataset.nodeId];
+    if (!n) return;
+    if (n.kind === "bridge") setSystemMapType(TYPE_PLATFORM); // a bridge opens the Platform map
+    else if (n.kind === "concept") openConceptDetailPage(n.id);
+    else if (n.kind === "project") openDocsPage(n.id);
+    return;
+  }
   // Touch: the first tap shows the tooltip, a second tap on the same thing opens it.
   if (touch) {
     const el = target.closest("[data-tip-node],[data-tip-edge]");
@@ -6995,7 +7149,9 @@ function renderConceptIncubatorPage() {
   const orderOf = (c) => { const r = conceptRelease(c.id); return r ? rank.get(r.id) : Infinity; };
   // Promoted concepts are kept (reachable from the project's "Origin concept"
   // link) but no longer shown as tiles, so a promoted idea isn't listed twice.
-  const sorted = concepts.filter((c) => c.status !== "promoted").sort((a, b) => {
+  const typeFilterEl = document.getElementById("concept-type-filter");
+  if (!typeFilterEl.options.length) typeFilterEl.innerHTML = typeOptionsHTML("all", { filter: true });
+  const sorted = concepts.filter((c) => c.status !== "promoted" && matchesTypeFilter(c, typeFilterEl.value)).sort((a, b) => {
     const oa = orderOf(a), ob = orderOf(b);
     return oa === ob ? 0 : oa < ob ? -1 : 1;
   });
@@ -7026,6 +7182,11 @@ function renderConceptDetailPage() {
     promotedHint.hidden = true;
   }
 
+  const conceptTypeSel = document.getElementById("concept-type-select");
+  if (document.activeElement !== conceptTypeSel) {
+    conceptTypeSel.innerHTML = typeOptionsHTML(typeOf(c), { withEmpty: !typeOf(c) });
+  }
+  conceptTypeSel.disabled = readonly;
   const descInput = document.getElementById("concept-description-input");
   if (document.activeElement !== descInput) descInput.value = c.description || "";
   descInput.disabled = readonly;
@@ -7323,6 +7484,8 @@ const updateNcNameCount = wireCharCount(document.getElementById("nc-name-input")
 function openConceptModal() {
   ncBackdrop.hidden = false;
   document.getElementById("nc-name-input").value = "";
+  document.getElementById("nc-type-select").innerHTML = typeOptionsHTML("", { withEmpty: true });
+  document.getElementById("nc-type-error").hidden = true;
   updateNcNameCount();
   document.getElementById("nc-name-input").focus();
 }
@@ -7331,6 +7494,7 @@ document.getElementById("concept-add-btn").addEventListener("click", async () =>
   if (!(await requireConceptEditor())) return;
   openConceptModal();
 });
+document.getElementById("nc-type-select").addEventListener("change", () => { document.getElementById("nc-type-error").hidden = true; });
 document.getElementById("nc-cancel").addEventListener("click", closeConceptModal);
 document.getElementById("nc-close").addEventListener("click", closeConceptModal);
 ncBackdrop.addEventListener("click", (e) => { if (e.target === ncBackdrop) closeConceptModal(); });
@@ -7341,9 +7505,15 @@ document.getElementById("nc-submit").addEventListener("click", async () => {
   const nameEl = document.getElementById("nc-name-input");
   const name = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
+  const ncTypeEl = document.getElementById("nc-type-select");
+  if (!ENTITY_TYPES.includes(ncTypeEl.value)) {
+    document.getElementById("nc-type-error").hidden = false;
+    ncTypeEl.focus();
+    return;
+  }
   let newId;
   try {
-    newId = await addConcept(name);
+    newId = await addConcept(name, ncTypeEl.value);
   } catch (err) {
     await showAlert(describeSaveError(err, [{ label: "Name", value: name, max: 120 }]));
     return;
@@ -7389,6 +7559,9 @@ function openPromoteConceptModal(conceptId) {
   setPcBusy(false);
   const nameEl = document.getElementById("pc-name-input");
   nameEl.value = c.name || "";
+  const pcType = document.getElementById("pc-type-select");
+  pcType.innerHTML = typeOptionsHTML(typeOf(c), { withEmpty: !typeOf(c) });
+  pcType.disabled = !!typeOf(c);
   updatePcNameCount();
   updatePcFolderHint();
   populateProgramSelect(pcProgramSelect, "");
@@ -7433,12 +7606,18 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
 
   const programId = pcProgramSelect.value !== "__new__" ? pcProgramSelect.value : "";
   const releaseId = pcReleaseSelect.value || "";
+  const pcTypeEl = document.getElementById("pc-type-select");
+  if (!ENTITY_TYPES.includes(pcTypeEl.value)) {
+    await showAlert("Choose a type: Platform or Internal operations.", { title: "Choose a type" });
+    pcTypeEl.focus();
+    return;
+  }
   const conceptId = pcConceptId;
   if (pcBusy) return;
   setPcBusy(true, "Creating project…");
   let result;
   try {
-    result = await promoteConceptToProject(conceptId, name, programId, releaseId, (m) => setPcBusy(true, m));
+    result = await promoteConceptToProject(conceptId, name, programId, releaseId, (m) => setPcBusy(true, m), document.getElementById("pc-type-select").value);
   } catch (err) {
     setPcBusy(false);
     await showAlert(describeSaveError(err, [{ label: "Project name", value: name, max: 80 }]));

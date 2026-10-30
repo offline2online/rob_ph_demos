@@ -56,6 +56,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
 ```
 {
   name: string,
+  type?: "Platform" | "Internal operations", // required when a person creates a project; unset only on projects that pre-date the field (shown "Unassigned"). See "Platform and Internal operations". Writable over MCP (set_project_type)
   createdAt: timestamp,
   readmeMd?: string,              // LEGACY: README text from before docs/{kind}; read only when projects/{id}/docs/readme is missing
   requirementsMd?: string,        // LEGACY: Requirements text, same rule against docs/requirements
@@ -442,6 +443,17 @@ busy. Now:
   Used up, the ticket is flagged `blocked: { reason: "waiting-on-input",
   setBy: "self-heal" }` with the reason, so the board shows it under
   "waiting on your answer" with an Answer button that rebuilds it.
+- **A question never strands a ticket (30 Oct 2026)**: a card flagged
+  `waiting-on-input` for 10 minutes without a reply takes the senior agent's
+  answer. `sweepAutoAnswers` (`autoAnswerPlan`) appends the note "Answer to
+  the build's question (accepted automatically from the senior agent…)" using
+  `blocked.recommendation` (recorded by the build after consulting a
+  higher-ranking agent) or, without one, the default "take the best option,
+  state the assumption, do not ask again"; it clears the flag and requests a
+  rebuild (held until the train merges when the release is closing). At most
+  `MAX_AUTO_ANSWERS` (2) per ticket (`autoAnswers`), after which it stays
+  flagged for a person; a dependency wait (`dependsOnItemIds`) is never
+  auto-answered.
 - **A rebuild due while the release is closing waits for the merge, not a
   click**: the card carries `buildAfterTrain: true` (set by `selfHealPlan`,
   `releaseDependents`, `sweepUnbuiltReports` or the board's Answer while
@@ -1375,6 +1387,7 @@ the UI.
 ```
 {
   name: string,
+  type?: "Platform" | "Internal operations", // required on create (the rules refuse a concept without one, except a demotion of a project that has none); carries over on promotion. See "Platform and Internal operations"
   readmeMd: string,                // up to 800,000 chars
   requirementsMd: string,           // up to 800,000 chars — saved independently of readmeMd
   comments: [ { author: "viewer" | "claude" | string, text: string, at: timestamp }, ... ],
@@ -2261,6 +2274,61 @@ revision list and an opened diff are fetched/computed on demand and cached
 per skill for the page's lifetime, not re-fetched every time
 `renderSkillsPage()` redraws the list (which happens on every Firestore
 update to any skill).
+
+### Platform and Internal operations
+
+Every concept and project carries a **type**: exactly one of `Platform` (the
+Personalisation Hub product) and `Internal operations` (how PH runs
+internally: Staff Kanban, RevOps, customer care, FAQs/help centre, the
+backlog tracker and related tooling). Never both. The word is "Platform",
+not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
+
+- **Required on create.** New concept, New project and the MCP
+  `create_concept` refuse a missing type ("Choose a type");
+  `firestore.rules` (`entityTypeOk`) refuses it for any person. The
+  automation user and the synthetic `general` project are exempt, and a
+  concept made by demoting a project carries the project's type (or none).
+- **Promotion carries it over.** The Promote modal pre-fills the concept's
+  type and locks it; a concept with no type lets the person choose one,
+  which is then written to both the project and the concept.
+- **Shown and filtered.** A type badge sits on every concept card, every
+  project header and the project's Settings page; the concept list has a
+  Type filter (All, Platform, Internal operations, Unassigned) and the board
+  header filters projects the same way. The type is editable from the
+  concept's page (until promoted) and the project's Settings page.
+- **Existing items ship unset.** An item with no type reads as `""`
+  (`typeOf` in `public/js/entity-type.js`), carries an **Unassigned** badge
+  and appears in BOTH map views so it can be sorted. The older name-based
+  `INTERNAL_RE` list still keeps its matches off the Platform map.
+- **Two maps, one toggle.** The Concept Incubator hero has a Platform /
+  Internal operations toggle (remembered per browser). The Platform view is
+  the map described below, showing Platform and unassigned items. The
+  Internal operations view (`public/js/internal-map.js`) is a separate,
+  fixed-layout map following Rob's sketch of 30 Oct 2026, left to right:
+  Customer Success (Clients, one agent per client, the feature request queue
+  that agents vote on and prioritise, Case studies), PH in the middle,
+  Sales on the right (PH website, Sales agents, Prospects & brands, Ads,
+  Social posts & PR, Support email); **Feature Release** along the top
+  (prioritised requests, a release pipeline with a gate, live releases) is
+  **step 2**; the **FAQs DB** under PH (connected to PH by API, to live
+  releases, Support email and the PH website) is **step 1**; a dotted line
+  runs from PH releases to Ads, Social posts and PR. Notes along the bottom
+  show the September focus: get rid of Freshdesk (replaced by the FAQs DB
+  and support, step 1) and of Atlassian at about $60 a seat (replaced by the
+  Feature Release pipeline and Staff Kanban, step 2). Internal operations
+  and unassigned concepts and projects sit in a strip under the sketch.
+  It is not pinned or saved (no Re-arrange, History or release filter).
+- **Bridge links.** An internal operations item that connects to the
+  platform is drawn as a dashed **bridge node** inside the PH box (Embedded
+  support, MCP Access, PH releases), not as a second copy of a platform item;
+  clicking one opens the Platform map. Bridge nodes are drawn on the
+  Internal operations view only.
+- **MCP.** `list_projects`, `get_project_docs`, `list_concepts` and
+  `get_concept` return `type` (null when unset); `list_concepts` takes an
+  optional `type` filter; `create_concept` requires `type`;
+  `set_concept_type` (refused once promoted) and `set_project_type` change it.
+- Tests: `test/entity-type.test.mjs`, `test/firestore-rules.test.js`,
+  `test/mcp-server.test.js`, `test/ui/console-click.test.mjs`.
 
 ### Concept Incubator hero — the live system map
 
@@ -3322,6 +3390,33 @@ Two surfaces sharing this same Firestore project:
   each, independent per site since they deploy separately) — bumped by
   hand on meaningful changes; no build step exists to derive it
   automatically.
+
+## Project freeze ("Finalised")
+
+A permanent freeze on a project, distinct from `trainLocked` (the temporary
+lock while a release closes). Backlog-tracker projects only: the Staff Kanban
+has no finalised state and staff tasks are unaffected.
+
+- **Data:** `projects/{id}.finalised` is `{version, at, byEmail, artifactUrl,
+  artifactUpdatedAt}` while frozen and `null` otherwise. `finalisedLog` is an
+  append-only array of `{action: "finalise"|"unfreeze", version, at, byEmail,
+  via: "board"|"mcp", reason?}`; an unfreeze always carries a `reason`. `version`
+  counts the project's freezes (1, 2, …) and pins the artifact link and update
+  time the project had at that moment. A fuller versioned artifact snapshot
+  (the separate "Versioned artifact snapshot" ticket, not yet on the board)
+  will hang off the same `finalised.version`.
+- **While frozen:** the board hides Ready for Dev and refuses **+ New backlog
+  item** with a message; `create_backlog_item` and `send_to_build` refuse with
+  the same message; `firestore.rules` denies a browser `backlogItems` create
+  for the project; `notifyOnProjectReadyForReview` ignores a build request.
+  The board shows a **Finalised vN** badge and `list_projects` returns
+  `finalised`.
+- **Who:** admin only. The project's ⋮ menu has **Finalise project…** /
+  **Unfreeze project…** (reason required), and MCP has `finalise_project` and
+  `unfreeze_project`; both are logged to `mcpAuditLog` and `finalisedLog`.
+  `firestore.rules` lets only an admin change `finalised` / `finalisedLog`.
+- **First use:** Display Types & DSP Integration and Retail Media Insights &
+  Analytics Dashboards, once their pre-freeze code reviews are complete.
 
 ## Non-goals / explicitly out of scope
 
