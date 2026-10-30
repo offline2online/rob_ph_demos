@@ -219,7 +219,7 @@ const CAMPAIGN_PLAN = {
 };
 
 // What each advertiser's campaigns promote: sales are matched on the SKU, or on the product name where there is none (Kenvue).
-// Kenvue's campaigns do not exclude the Control stores segment, so the Sales uplift chart shows no control line for them.
+// Kenvue's campaigns do not exclude the Control stores segment (the Control stores exclusion is kept for the Sales uplift design under Future work).
 const PRODUCTS = {
   'adv-blackmores': { name: 'Fish Oil 1000mg', sku: 'BLK-FO-1000' },
   'adv-haleon': { name: 'Sensodyne Repair & Protect', sku: 'HLN-SENS-RP' },
