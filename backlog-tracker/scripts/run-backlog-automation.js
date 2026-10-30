@@ -4665,10 +4665,12 @@ async function processApplyPatch(item) {
   }
   if (sync.kind !== "current") {
     console.log(`[apply-patch] ${item.id}: ${deployBranch} was ${sync.behind} commit(s) behind main — ${sync.kind}`);
-    // A drift conflict this same step recorded earlier is over now.
-    if (project.trainStatus === "conflict" && /has drifted from main/.test(String(project.trainNote || ""))) {
-      await patchProject(projectId, { trainStatus: "idle", trainNote: null, updatedAt: new Date().toISOString() });
-    }
+  }
+  // A drift conflict this same step recorded earlier is over now — also when
+  // a person merged main in by hand and the sync found nothing to do.
+  if (staleDriftConflict(project, sync)) {
+    console.log(`[apply-patch] ${item.id}: ${deployBranch} is up to date with main again — clearing the drift conflict on ${projectId}`);
+    await patchProject(projectId, { trainStatus: "idle", trainNote: null, updatedAt: new Date().toISOString() });
   }
 
   // Build onto the head of the integration branch, retrying once if someone
@@ -5010,6 +5012,19 @@ function revertCommitFor(sha) {
 // conflicts forever and keeps the card unapprovable. Pure.
 function staleRevertRequest(item) {
   return !!(item && item.revertRequested === true && ON_TRAIN_STATUSES.has(item.status));
+}
+
+// processApplyPatch parks a project on trainStatus "conflict" with a
+// "… has drifted from main" trainNote when syncTrainWithMain can't merge main
+// into the train. Any sync that didn't conflict ends it, "current" included:
+// that is what a person merging main into the branch by hand leaves behind,
+// and clearing only after this run's own fast-forward or merge kept "Deploy
+// blocked — retry" on the header until the train shipped (30 Oct 2026,
+// 8f664270 on deploy/backlog-tracker-faqs). Only the drift note: a Deploy to
+// Main merge conflict reads differently and is resumeConflictedTrain's. Pure.
+function staleDriftConflict(project, sync) {
+  return !!(project && sync && sync.kind !== "conflict" &&
+    project.trainStatus === "conflict" && /has drifted from main/.test(String(project.trainNote || "")));
 }
 
 // The ids in `ids` that belong to `projectId`. A commit that reached the train
@@ -7448,6 +7463,7 @@ module.exports = {
   // test/train-sync.test.js — the train is brought up to date with main
   // before a ticket lands, and the patch's edits are carried across
   syncTrainWithMain, rebasePatchFilesOnto, unionMergeConflicts, unionInsertedLines, unionInsertedListNames, unionMergeNote, UNION_MARKER_SIZE,
+  staleDriftConflict,
   // test/docs-sync.test.js, test/docs-sync-all.test.js
   syncDocsAfterMerge, gitDocsIo, syncDocsWhenMainMoves,
   // test/train-checks.test.js — a train merges only once e2e-quick passed

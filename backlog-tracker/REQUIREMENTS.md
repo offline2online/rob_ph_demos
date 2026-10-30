@@ -628,7 +628,9 @@ with no ticket of its own is fast-forwarded to main; a train carrying
 tickets gets main merged in (same derived-file resolvers as the Deploy
 step), and a real conflict is surfaced on the card and the project right
 then — the item stays patch-ready and lands by itself once a person
-resolves the branch. Because a Routine hands back whole files it read from
+resolves the branch, and the project's "has drifted from main" conflict
+clears on that run whether the automation or a person merged main in
+(`staleDriftConflict`, 30 Oct 2026). Because a Routine hands back whole files it read from
 the branch, `rebasePatchFilesOnto` then carries each file's edits onto
 whatever the sync brought in with a three-way merge (base: the branch tip
 before the sync; ours: the synced file; theirs: the Routine's file), so

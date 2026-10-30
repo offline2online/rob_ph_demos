@@ -22,6 +22,7 @@ const { execFileSync } = require("child_process");
 const {
   syncTrainWithMain, rebasePatchFilesOnto, mergeCommandChains,
   unionMergeConflicts, unionInsertedLines, unionInsertedListNames, unionMergeNote, UNION_MARKER_SIZE,
+  staleDriftConflict,
 } = require("../scripts/run-backlog-automation.js");
 
 let passed = 0;
@@ -532,6 +533,46 @@ test("unionMergeNote: names each union-merged file for the card; nothing when th
   const body = src.slice(src.indexOf("async function processApplyPatch("));
   assert.match(body, /unionedPaths = rebase\.unioned;/);
   assert.match(body, /unionMergeNote\(unionedPaths\)/);
+});
+
+// 30 Oct 2026: a person merged main into deploy/backlog-tracker-faqs by hand
+// (8f664270), the next run's sync came back "current", and the drift
+// conflict stayed — "Deploy blocked — retry" until the train shipped.
+const DRIFT_NOTE = "deploy/backlog-tracker-faqs has drifted from main: merging main into it conflicted on backlog-tracker/MCP.md, " +
+  "so no new ticket can be built onto it. Resolve it by merging main into deploy/backlog-tracker-faqs by hand (or Failed-testing " +
+  "the ticket whose commit conflicts); patch-ready items then land on the next run.\n\nCONFLICT (content): Merge conflict in backlog-tracker/MCP.md";
+const DEPLOY_CONFLICT_NOTE = "Merging main into deploy/backlog-tracker-faqs conflicted on backlog-tracker/MCP.md, so nothing was merged and " +
+  "no card was moved. Resolve it by merging main into deploy/backlog-tracker-faqs by hand, then click Deploy to Main again.";
+
+test("THE 30 OCT INCIDENT: a drift conflict is cleared once a sync comes back current (main merged in by hand)", () => {
+  const project = { trainStatus: "conflict", trainNote: DRIFT_NOTE };
+  assert.strictEqual(staleDriftConflict(project, { kind: "current", behind: 0 }), true);
+  assert.strictEqual(staleDriftConflict(project, { kind: "fast-forwarded", behind: 3 }), true, "the automation's own fast-forward");
+  assert.strictEqual(staleDriftConflict(project, { kind: "merged", behind: 3 }), true, "the automation's own merge");
+});
+
+test("a Deploy to Main merge conflict is kept on a current sync, and a drift that still conflicts stays", () => {
+  assert.strictEqual(staleDriftConflict({ trainStatus: "conflict", trainNote: DEPLOY_CONFLICT_NOTE }, { kind: "current" }), false,
+    "the deploy step's own conflict is resumeConflictedTrain's to clear");
+  assert.strictEqual(staleDriftConflict({ trainStatus: "conflict", trainNote: DRIFT_NOTE }, { kind: "conflict", behind: 2 }), false);
+  assert.strictEqual(staleDriftConflict({ trainStatus: "deploying", trainNote: DRIFT_NOTE }, { kind: "current" }), false,
+    "a project that has moved on is not reset to idle");
+  assert.strictEqual(staleDriftConflict({ trainStatus: "conflict" }, { kind: "current" }), false, "no note: not this step's conflict");
+  assert.strictEqual(staleDriftConflict(null, { kind: "current" }), false);
+  assert.strictEqual(staleDriftConflict({ trainStatus: "conflict", trainNote: DRIFT_NOTE }, null), false);
+});
+
+test("processApplyPatch writes the note staleDriftConflict matches, and clears it outside the not-current branch", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "scripts", "run-backlog-automation.js"), "utf8");
+  const body = src.slice(src.indexOf("async function processApplyPatch("));
+  assert.match(body, /trainNote: `\$\{deployBranch\} has drifted from main: /, "the conflict branch's note is the one the helper looks for");
+  assert.match(body, /if \(staleDriftConflict\(project, sync\)\) \{\s*\n[^\n]*\n\s*await patchProject\(projectId, \{ trainStatus: "idle", trainNote: null,/);
+  const notCurrent = body.indexOf('if (sync.kind !== "current") {');
+  assert.ok(notCurrent >= 0);
+  const blockEnd = body.indexOf("\n  }\n", notCurrent);
+  assert.ok(!/staleDriftConflict|has drifted/.test(body.slice(notCurrent, blockEnd)),
+    "the clear must not sit inside if (sync.kind !== \"current\") — that is the bug");
+  assert.ok(body.indexOf("staleDriftConflict(project, sync)") > blockEnd);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed\n`);
