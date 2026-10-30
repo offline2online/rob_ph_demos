@@ -411,6 +411,8 @@ export function defineNewCases(E) {
       document.querySelector('[data-field="description"] .ql-editor').dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
     });
     await sleep(250);
+    // Save is off until something changes; a paste that is cleaned away entirely may change nothing, so change the priority too (the title is already at its length limit).
+    await p.selectOption("#f-priority", (await val(p, "#f-priority")) === "high" ? "low" : "high"); await sleep(150);
     await saveTask(p);
     await openTask(p, key);
     assert.equal(await p.evaluate(() => window.__pwned), undefined, "pasted markup did not run");
@@ -1500,6 +1502,22 @@ export function defineNewCases(E) {
     assert.equal(await p.$("#f-save"), null);
     await closeTask(p);
     assert.equal((await E.writes(p, /^kanban/)).length, 0, "nothing written");
+    await p.done();
+  });
+  T("TC-69", "Save on an existing ticket is off until something changes: opening it leaves Save disabled, editing the title enables it, undoing the edit disables it again, and nothing is written until a real change is saved", { timeout: 200000 }, async (prof) => {
+    const p = await open(prof, E.hash("kanban"));
+    await p.waitForSelector(".kb-card");
+    await openTask(p, "PH-20");
+    assert.equal(await p.$eval("#f-save", (e) => e.disabled), true, "Save is off on a freshly opened ticket");
+    const title = await val(p, "#f-title");
+    await p.fill("#f-title", title + " x"); await sleep(120);
+    assert.equal(await p.$eval("#f-save", (e) => e.disabled), false, "Save is on after an edit");
+    await p.fill("#f-title", title); await sleep(120);
+    assert.equal(await p.$eval("#f-save", (e) => e.disabled), true, "Save is off again when the edit is undone");
+    await p.selectOption("#f-priority", (await val(p, "#f-priority")) === "high" ? "low" : "high"); await sleep(120);
+    assert.equal(await p.$eval("#f-save", (e) => e.disabled), false, "Save is on after a priority change");
+    await closeTask(p);
+    if (C) assert.equal((await E.writes(p, /^kanban/)).length, 0, "nothing written");
     await p.done();
   });
 }

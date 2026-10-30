@@ -1046,7 +1046,44 @@ export function mountStaffKanban(ctx) {
     b.setAttribute("aria-pressed", String(on));
     $("#task-watch-label").textContent = on ? "Watching" : "Watch";
   }
+  // Save on an existing ticket (and on a comment being edited) stays off until
+  // something on the page differs from what was loaded (KB-TASK: Save only when changed).
+  const TRACKED = ["f-title", "f-assignee", "f-reporter", "f-release", "f-priority", "f-sprint", "f-project", "f-due", "f-epic", "f-estimate", "f-logged", "f-status"];
+  let changeBase = null, changeTimer = 0;
+  function formState() {
+    const form = $("#task-form");
+    if (!form || !draft) return "";
+    return JSON.stringify({
+      v: TRACKED.map((id) => { const el = $("#" + id, form); return el ? el.value : null; }),
+      type: draft.type, labels: draft.labels, links: draft.links, flagged: !!draft.flagged,
+      att: (draft.attachments || []).map((a) => a.url || a.name || ""),
+      desc: descQ ? KBEditor.getHtml(descQ) : null,
+      comment: commentQ ? KBEditor.getHtml(commentQ) : null,
+    });
+  }
+  function syncSaveState() {
+    const b = $("#f-save");
+    if (b && draft && !draftIsNew) b.disabled = saving || changeBase == null || formState() === changeBase;
+    const cs = $("[data-comment-save]");
+    if (cs) cs.disabled = !editQ || editBase == null || KBEditor.getHtml(editQ) === editBase;
+  }
+  function watchChanges() {
+    clearInterval(changeTimer);
+    if (!draft) return;
+    changeBase = formState();
+    // A typed, pasted or dictated edit in either editor counts at once.
+    [descQ, commentQ].forEach((q) => { if (q) q.on("text-change", syncSaveState); });
+    const form = $("#task-form");
+    if (!form._changeBound) {
+      ["input", "change", "click", "keyup"].forEach((ev) => form.addEventListener(ev, () => setTimeout(syncSaveState, 0)));
+      form._changeBound = true;
+    }
+    // Dictation, uploads and the flag change the page without a form event.
+    changeTimer = setInterval(syncSaveState, 100);
+    syncSaveState();
+  }
   function closeTask() {
+    clearInterval(changeTimer); changeBase = null; editBase = null;
     stopRecorder(true); unwatchThread(); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
     const back = returnTo; returnTo = null;
     if (back && taskByKey(back)) openTask(back);
@@ -1282,6 +1319,7 @@ export function mountStaffKanban(ctx) {
     el.innerHTML = commentsHTML();
     if (editingComment) mountCommentEditor(keep);
   }
+  let editBase = null;
   async function mountCommentEditor(html) {
     const host = $("#f-comment-edit");
     if (!host) { editingComment = ""; return; }
@@ -1291,13 +1329,16 @@ export function mountStaffKanban(ctx) {
     editQ = KBEditor.create(host, { compact: true, users: staff(), upload: uploadFor(), placeholder: "Edit your comment", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you save`) });
     const c = (draft.comments || []).find((x) => x.id === id);
     KBEditor.setHtml(editQ, html != null ? html : (c && (c.html || esc(c.text))) || "");
+    editBase = KBEditor.getHtml(editQ);
+    syncSaveState();
   }
   async function saveCommentEdit() {
     if (!editQ || !draft || !editingComment) return;
     const html = KBEditor.getHtml(editQ);
     if (!html) { toast("A comment can't be empty. Delete it instead."); return; }
+    if (html === editBase) return;
     const id = editingComment, text = KBEditor.toText(html);
-    editingComment = ""; editQ = null;
+    editingComment = ""; editQ = null; editBase = null;
     const c = (draft.comments || []).find((x) => x.id === id);
     if (c) Object.assign(c, { html, text, edited: true });
     redrawComments();
@@ -1315,7 +1356,7 @@ export function mountStaffKanban(ctx) {
     const items = [...(draft.comments || []).map((c) => ({ ...c, kind: "c" })), ...(draft.activity || []).map((a) => ({ ...a, kind: "a" }))].sort((a, b) => String(a.at || "9").localeCompare(String(b.at || "9")));
     return items.map((c) => c.kind === "c"
       ? `<li class="kb-comment" data-comment="${esc(c.id || "")}">${avatar(c.author)}<div class="kb-comment-body"><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${c.edited ? ' · <span class="kb-comment-edited">edited</span>' : ""}${commentMenuHTML(c)}</div>${c.id && c.id === editingComment
-        ? `<div class="kb-editor kb-editor-compact" id="f-comment-edit"></div><div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" data-comment-cancel>Cancel</button><button type="button" class="btn-ghost" data-comment-save>Save</button></div>`
+        ? `<div class="kb-editor kb-editor-compact" id="f-comment-edit"></div><div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" data-comment-cancel>Cancel</button><button type="button" class="btn-ghost" data-comment-save disabled>Save</button></div>`
         : `<div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div>`}</div></li>`
       : `<li class="kb-activity"><span class="material-symbols-outlined" aria-hidden="true">history</span><span><b>${esc(firstName(c.who))}</b> ${esc(c.text)}</span></li>`).join("") || '<li class="kb-none">No comments yet</li>';
   };
@@ -1339,7 +1380,7 @@ export function mountStaffKanban(ctx) {
       <p class="tm-error" id="f-error" hidden></p>
       <div class="form-row kb-form-actions">
         ${draftIsNew || !canWrite() ? "<span></span>" : '<button type="button" class="btn-ghost fa-actions-delete" id="f-delete" aria-label="Delete ticket" title="Delete ticket"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>'}
-        <div class="form-actions"><button type="button" class="btn-outline" id="f-cancel">${canWrite() ? "Cancel" : "Close"}</button>${canWrite() ? `<button type="submit" class="btn-primary" id="f-save">${draftIsNew ? CREATE_CTA[draft.type] || CREATE_CTA.task : "Save"}</button>` : ""}</div>
+        <div class="form-actions"><button type="button" class="btn-outline" id="f-cancel">${canWrite() ? "Cancel" : "Close"}</button>${canWrite() ? `<button type="submit" class="btn-primary" id="f-save"${draftIsNew ? "" : " disabled"}>${draftIsNew ? CREATE_CTA[draft.type] || CREATE_CTA.task : "Save"}</button>` : ""}</div>
       </div>`;
     bindForm();
   }
@@ -1434,7 +1475,7 @@ export function mountStaffKanban(ctx) {
     });
     const ca = $("#f-comment-add");
     if (ca) ca.addEventListener("click", () => { addCommentFromEditor(); });
-    bindEditors();
+    bindEditors().finally(watchChanges);
     bindVoice();
     bindChildren(form);
     bindCriteria(form);

@@ -696,6 +696,8 @@ service cloud.firestore {
     // member's agent, and nothing in the UI has any reason to read it.
     // kanban_attach_file's per-member hourly allowance (functions/kanban.js); server only.
     match /kanbanAttachLimits/{email} { allow read, write: if false; }
+    // kanban_create_upload_url's pending uploads (functions/kanban.js); server only.
+    match /kanbanUploads/{uploadId} { allow read, write: if false; }
     match /mcpClients/{clientId} { allow read, write: if false; }
     match /mcpAuthCodes/{codeHash} { allow read, write: if false; }
     match /mcpTokens/{tokenHash} { allow read, write: if false; }

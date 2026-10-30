@@ -206,7 +206,12 @@ function install() {
       getStorage: () => ({
         bucket: (name) => ({
           name: name || "test-bucket",
-          file: (path) => ({ save: async (buf, opts) => { (authState.uploads ||= {})[path] = { size: buf.length, contentType: opts && opts.contentType, token: opts && opts.metadata && opts.metadata.metadata && opts.metadata.metadata.firebaseStorageDownloadTokens }; } }),
+          file: (path) => ({
+            save: async (buf, opts) => { (authState.uploads ||= {})[path] = { size: buf.length, buf, contentType: opts && opts.contentType, token: opts && opts.metadata && opts.metadata.metadata && opts.metadata.metadata.firebaseStorageDownloadTokens }; },
+            download: async () => { const u = (authState.uploads || {})[path]; if (!u) throw new Error("No such object: " + path); return [u.buf]; },
+            delete: async () => { if (!(authState.uploads || {})[path]) throw new Error("No such object: " + path); delete authState.uploads[path]; (authState.deleted ||= []).push(path); },
+            getSignedUrl: async (o) => { if (authState.signFails) throw new Error("signBlob denied"); (authState.signed ||= []).push(Object.assign({ path }, o)); return [`https://storage.googleapis.com/${name || "test-bucket"}/${path}?X-Goog-Signature=stub`]; },
+          }),
         }),
       }),
     },

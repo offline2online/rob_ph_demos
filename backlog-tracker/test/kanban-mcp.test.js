@@ -103,7 +103,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
 
   await test("the twenty kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_search_tickets", "kanban_update_task"]);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_attach_uploaded", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_create_upload_url", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_remove_attachment", "kanban_search_tickets", "kanban_update_task"]);
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list_(?!notif)|list_notifications|get|search|release|my_work)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
@@ -785,18 +785,31 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   });
 
   // ── kanban_attach_file (PH-19) ────────────────────────────────────────
-  const pngBytes = (n) => Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.alloc(n, 7)]);
+  const pngBytes = (n) => Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.alloc(n, 7)]); // magic bytes only (the screenshot tests stub the browser)
+  // A real, decodable png of about n bytes (random pixels don't compress).
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc32 = (b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => { const h = Buffer.alloc(8); h.writeUInt32BE(data.length, 0); h.write(type, 4, "latin1"); const t = Buffer.concat([h.subarray(4), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc32(t), 0); return Buffer.concat([h.subarray(0, 4), t, c]); };
+  const realPng = (n, w) => {
+    w = w || 300; const rows = Math.max(1, Math.ceil(n / (w * 4 + 1)));
+    const raw = Buffer.alloc(rows * (w * 4 + 1)); require("crypto").randomFillSync(raw); for (let r = 0; r < rows; r++) raw[r * (w * 4 + 1)] = 0;
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(rows, 4); ihdr[8] = 8; ihdr[9] = 6;
+    return Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), chunk("IHDR", ihdr), chunk("IDAT", require("zlib").deflateSync(raw, { level: 0 })), chunk("IEND", Buffer.alloc(0))]);
+  };
+  const sha = (b) => require("crypto").createHash("sha256").update(b).digest("hex");
   const attach = (token, args) => tool(token, "kanban_attach_file", Object.assign({ key: "PH-1", name: "home page.png", contentType: "image/png" }, args));
   await test("kanban_attach_file: stored under kanban/PH-n/, listed with a URL, counted on the card, logged and audited", async () => {
     env.authState.uploads = {};
     const before = (task("PH-1").attachments || []).length;
-    const r = await attach(sam, { data: pngBytes(200 * 1024).toString("base64") });
+    const png = realPng(200 * 1024);
+    const r = await attach(sam, { data: png.toString("base64"), sha256: sha(png), size: png.length });
     assert.ok(!r.isError, r.text);
     assert.strictEqual(r.json.attached, true);
-    assert.match(r.json.path, /^kanban\/PH-1\/\d+-home-page\.png$/);
-    assert.match(r.json.url, /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/kanban%2FPH-1%2F\d+-home-page\.png\?alt=media&token=/);
+    assert.match(r.json.path, /^kanban\/PH-1\/\d+-[0-9a-f]{6}-home-page\.png$/);
+    assert.match(r.json.url, /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/kanban%2FPH-1%2F\d+-[0-9a-f]{6}-home-page\.png\?alt=media&token=/);
     assert.strictEqual(env.authState.uploads[r.json.path].contentType, "image/png");
-    assert.strictEqual(env.authState.uploads[r.json.path].size, 200 * 1024 + 8);
+    assert.strictEqual(env.authState.uploads[r.json.path].size, png.length);
+    assert.strictEqual(sha(env.authState.uploads[r.json.path].buf), sha(png));
     const t = task("PH-1");
     assert.strictEqual(t.attachments.length, before + 1);
     assert.deepStrictEqual(Object.keys(t.attachments[before]).sort(), ["contentType", "name", "path", "size", "url"]);
@@ -808,7 +821,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(log.length, 1); assert.strictEqual(log[0].email, SAM);
   });
   await test("kanban_attach_file: inline puts the Storage URL in the description, never a data: URI", async () => {
-    const r = await attach(sam, { name: "shot.png", data: pngBytes(50).toString("base64"), inline: true, caption: "Home <page>" });
+    const r = await attach(sam, { name: "shot.png", data: realPng(50).toString("base64"), inline: true, caption: "Home <page>" });
     assert.ok(!r.isError, r.text);
     const d = task("PH-1").description;
     assert.ok(!/data:image/.test(d));
@@ -818,7 +831,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(task("PH-1").attachments.length, env.store.col("kanbanCards").get("PH-1").attachmentCount);
   });
   await test("kanban_attach_file: a pdf is a plain attachment, and cannot be inline", async () => {
-    const pdf = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\n").toString("base64");
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n").toString("base64");
     const r = await attach(sam, { name: "spec.pdf", contentType: "application/pdf", data: pdf });
     assert.ok(!r.isError, r.text);
     const bad = await attach(sam, { name: "spec.pdf", contentType: "application/pdf", data: pdf, inline: true });
@@ -827,7 +840,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   await test("kanban_attach_file: refuses 6 MB, other types, wrong bytes, bad base64 and unknown tickets, writing nothing", async () => {
     const snapshot = () => JSON.stringify([Object.keys(env.authState.uploads), task("PH-1").attachments.length, env.store.col("kanbanTasks").get("PH-1").description]);
     const was = snapshot();
-    const big = await attach(sam, { data: pngBytes(6 * 1024 * 1024).toString("base64") });
+    const big = await attach(sam, { data: realPng(6 * 1024 * 1024).toString("base64") });
     assert.ok(big.isError); assert.match(big.text, /5 MB/);
     const html = await attach(sam, { name: "x.html", contentType: "text/html", data: Buffer.from("<script>1</script>").toString("base64") });
     assert.ok(html.isError); assert.match(html.text, /png, jpeg, webp or gif/);
@@ -837,13 +850,13 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(lie.isError); assert.match(lie.text, /aren't a image\/png/);
     const junk = await attach(sam, { data: "not base64!!" });
     assert.ok(junk.isError);
-    const none = await attach(sam, { key: "PH-9999", data: pngBytes(10).toString("base64") });
+    const none = await attach(sam, { key: "PH-9999", data: realPng(10).toString("base64") });
     assert.ok(none.isError);
     assert.strictEqual(snapshot(), was);
   });
   await test("kanban_attach_file: a viewer is refused (board.write)", async () => {
     const was = Object.keys(env.authState.uploads).length;
-    const r = await attach(kit, { data: pngBytes(10).toString("base64") });
+    const r = await attach(kit, { data: realPng(10).toString("base64") });
     assert.ok(r.isError);
     assert.strictEqual(Object.keys(env.authState.uploads).length, was);
   });
@@ -851,7 +864,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const orig = kanban.imageResizer.resize;
     kanban.imageResizer.resize = async (buf) => ({ buf: Buffer.concat([buf.subarray(0, 8), Buffer.alloc(100)]), resized: true });
     try {
-      const r = await attach(sam, { name: "wide.png", data: pngBytes(4000).toString("base64") });
+      const r = await attach(sam, { name: "wide.png", data: realPng(4000).toString("base64") });
       assert.ok(!r.isError, r.text);
       assert.strictEqual(r.json.downscaled, true);
       assert.strictEqual(r.json.size, 108);
@@ -863,18 +876,282 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     member("lena@personalisationhub.com", "editor", "Lena Editor");
     const kitEditor = await connect("lena@personalisationhub.com");
     lim.set(SAM, { windowStart: Date.now() - 60000, count: 59 });
-    const last = await attach(sam, { name: "last.png", data: pngBytes(5).toString("base64") });
+    const last = await attach(sam, { name: "last.png", data: realPng(5).toString("base64") });
     assert.ok(!last.isError, last.text);
-    const over = await attach(sam, { data: pngBytes(5).toString("base64") });
+    const over = await attach(sam, { data: realPng(5).toString("base64") });
     assert.ok(over.isError); assert.match(over.text, /60 files an hour/);
     assert.strictEqual(lim.get(SAM).count, 60);
-    const other = await attach(kitEditor, { data: pngBytes(5).toString("base64") });
+    const other = await attach(kitEditor, { data: realPng(5).toString("base64") });
     assert.ok(!other.isError, "another member has their own allowance");
     lim.set(SAM, { windowStart: Date.now() - 3700000, count: 60 });
-    const again = await attach(sam, { name: "again.png", data: pngBytes(5).toString("base64") });
+    const again = await attach(sam, { name: "again.png", data: realPng(5).toString("base64") });
     assert.ok(!again.isError, "a new hour starts a new allowance: " + again.text);
   });
 
+  await test("kanban_attach_file: a truncated png (valid magic bytes, cut-off data) is refused; nothing stored, description unchanged", async () => {
+    const png = realPng(20000);
+    const snapshot = () => JSON.stringify([Object.keys(env.authState.uploads), task("PH-1").attachments, env.store.col("kanbanTasks").get("PH-1").description]);
+    const was = snapshot();
+    for (const cut of [png.subarray(0, 2385), png.subarray(0, png.length - 12), png.subarray(0, png.length - 1)]) {
+      const r = await attach(sam, { name: "cut.png", data: cut.toString("base64"), inline: true });
+      assert.ok(r.isError); assert.match(r.text, /incomplete|can't be decoded/);
+    }
+    assert.strictEqual(snapshot(), was);
+    const jpg = await attach(sam, { name: "x.jpg", contentType: "image/jpeg", data: Buffer.concat([Buffer.from("ffd8ffe0", "hex"), Buffer.alloc(500, 1)]).toString("base64") });
+    assert.ok(jpg.isError); assert.match(jpg.text, /incomplete|can't be decoded/);
+    assert.strictEqual(snapshot(), was);
+  });
+  await test("kanban_attach_file: a wrong sha256 or size is refused; a right one passes", async () => {
+    const png = realPng(3000);
+    const was = Object.keys(env.authState.uploads).length;
+    const badSha = await attach(sam, { data: png.toString("base64"), sha256: sha(Buffer.from("other")) });
+    assert.ok(badSha.isError); assert.match(badSha.text, /sha256 doesn't match/);
+    const badSize = await attach(sam, { data: png.toString("base64"), size: png.length - 1 });
+    assert.ok(badSize.isError); assert.match(badSize.text, /size says/);
+    const notHex = await attach(sam, { data: png.toString("base64"), sha256: "zz" });
+    assert.ok(notHex.isError); assert.match(notHex.text, /64 hex/);
+    assert.strictEqual(Object.keys(env.authState.uploads).length, was);
+    const ok = await attach(sam, { name: "fine.png", data: png.toString("base64"), sha256: sha(png).toUpperCase(), size: png.length });
+    assert.ok(!ok.isError, ok.text);
+  });
+
+  // ── upload URL route: kanban_create_upload_url → PUT → kanban_attach_uploaded
+  const mkUrl = (token, args) => tool(token, "kanban_create_upload_url", Object.assign({ key: "PH-1", name: "exchange.png", contentType: "image/png" }, args));
+  const put = (r, buf) => { env.authState.uploads[new URL(r.json.uploadUrl).pathname.split("/").slice(2).join("/")] = { size: buf.length, buf }; };
+  const finish = (token, r, args) => tool(token, "kanban_attach_uploaded", Object.assign({ key: "PH-1", uploadId: r.json.uploadId }, args));
+  let uploaded;
+  await test("upload URL: sign, PUT, attach inline; the stored sha256 matches, picture and caption are in the description, staging is gone", async () => {
+    env.authState.uploads = {}; env.authState.signed = [];
+    const png = realPng(500 * 1024);
+    const before = task("PH-1").attachments.length;
+    const r = await mkUrl(sam, { sha256: sha(png), size: png.length });
+    assert.ok(!r.isError, r.text);
+    assert.match(r.json.uploadUrl, /^https:\/\/storage\.googleapis\.com\//);
+    assert.match(r.json.curlExample, /curl .*-X PUT/);
+    assert.strictEqual(r.json.method, "PUT");
+    const sig = env.authState.signed[0];
+    assert.strictEqual(sig.action, "write"); assert.strictEqual(sig.contentType, "image/png");
+    assert.ok(sig.expires - Date.now() <= 15 * 60 * 1000 && sig.expires - Date.now() > 14 * 60 * 1000);
+    assert.ok(sig.extensionHeaders["x-goog-content-length-range"].endsWith("5242880"));
+    put(r, png);
+    const a = await finish(sam, r, { inline: true, caption: "Exchange <page>" });
+    assert.ok(!a.isError, a.text);
+    assert.strictEqual(a.json.attached, true);
+    assert.match(a.json.path, /^kanban\/PH-1\/\d+-[0-9a-f]{6}-exchange\.png$/);
+    assert.strictEqual(sha(env.authState.uploads[a.json.path].buf), sha(png));
+    assert.deepStrictEqual(Object.keys(env.authState.uploads).filter((p) => p.startsWith("kanban-uploads/")), [], "staging object deleted");
+    const t = task("PH-1");
+    assert.strictEqual(t.attachments.length, before + 1);
+    assert.strictEqual(env.store.col("kanbanCards").get("PH-1").attachmentCount, before + 1);
+    assert.ok(t.description.includes(`src="${a.json.url.replace(/&/g, "&amp;")}"`));
+    assert.ok(t.description.includes("<em>Exchange &lt;page&gt;</em>"));
+    assert.ok(t.attachments.at(-1).caption === "Exchange <page>");
+    assert.ok(env.store.col("mcpAuditLog").size && [...env.store.col("mcpAuditLog").values()].some((x) => x.tool === "kanban_attach_uploaded"));
+    const again = await finish(sam, r);
+    assert.ok(again.isError); assert.match(again.text, /No such upload/);
+    uploaded = a.json;
+  });
+  await test("upload URL: a truncated or mismatching upload is refused and deleted; nothing is stored or inlined", async () => {
+    const snapshot = () => JSON.stringify([task("PH-1").attachments, env.store.col("kanbanTasks").get("PH-1").description]);
+    const was = snapshot();
+    const png = realPng(30000);
+    const cut = await mkUrl(sam); put(cut, png.subarray(0, 4000));
+    const c = await finish(sam, cut, { inline: true });
+    assert.ok(c.isError); assert.match(c.text, /incomplete|can't be decoded/);
+    const sh = await mkUrl(sam, { sha256: sha(Buffer.from("nope")) }); put(sh, png);
+    const s2 = await finish(sam, sh);
+    assert.ok(s2.isError); assert.match(s2.text, /sha256 doesn't match/);
+    const sz = await mkUrl(sam); put(sz, png);
+    const s3 = await finish(sam, sz, { size: png.length + 1 });
+    assert.ok(s3.isError); assert.match(s3.text, /size says/);
+    assert.strictEqual(snapshot(), was);
+    assert.deepStrictEqual(Object.keys(env.authState.uploads).filter((p) => p.startsWith("kanban-uploads/")), []);
+  });
+  await test("upload URL: nothing uploaded yet, wrong member, wrong ticket, bad type and oversize are all refused", async () => {
+    const r = await mkUrl(sam);
+    const early = await finish(sam, r);
+    assert.ok(early.isError); assert.match(early.text, /Nothing has been uploaded/);
+    put(r, realPng(100));
+    const other = await finish(await connect("lena@personalisationhub.com"), r);
+    assert.ok(other.isError); assert.match(other.text, /No such upload/);
+    const wrongKey = await tool(sam, "kanban_attach_uploaded", { key: "PH-2", uploadId: r.json.uploadId });
+    assert.ok(wrongKey.isError);
+    const svg = await mkUrl(sam, { name: "x.svg", contentType: "image/svg+xml" });
+    assert.ok(svg.isError);
+    const big = await mkUrl(sam, { size: 6 * 1024 * 1024 });
+    assert.ok(big.isError); assert.match(big.text, /5 MB/);
+    const none = await mkUrl(sam, { key: "PH-9999" });
+    assert.ok(none.isError);
+    const viewer = await mkUrl(kit);
+    assert.ok(viewer.isError);
+  });
+  await test("upload URL: an expired URL is refused and its upload deleted; a signing failure is said plainly", async () => {
+    const r = await mkUrl(sam); put(r, realPng(100));
+    env.store.col("kanbanUploads").get(r.json.uploadId).expiresAt = Date.now() - 1;
+    const e = await finish(sam, r);
+    assert.ok(e.isError); assert.match(e.text, /expired/);
+    assert.ok(!env.store.col("kanbanUploads").has(r.json.uploadId));
+    assert.ok(!Object.keys(env.authState.uploads).some((p) => p.endsWith(r.json.uploadId)));
+    env.authState.signFails = true;
+    try { const f = await mkUrl(sam); assert.ok(f.isError); assert.match(f.text, /Token Creator/); } finally { env.authState.signFails = false; }
+  });
+  await test("upload URL: counts against the 60 files an hour per member", async () => {
+    env.store.col("kanbanAttachLimits").set(SAM, { windowStart: Date.now() - 60000, count: 60 });
+    const r = await mkUrl(sam);
+    assert.ok(r.isError); assert.match(r.text, /60 files an hour/);
+    env.store.col("kanbanAttachLimits").set(SAM, { windowStart: Date.now() - 3700000, count: 60 });
+    const ok = await mkUrl(sam);
+    assert.ok(!ok.isError, ok.text);
+  });
+
+  // ── kanban_remove_attachment ───────────────────────────────────────────
+  await test("kanban_remove_attachment: removes the attachment, its Storage object, its inline picture and caption, and nothing else", async () => {
+    const other = await attach(sam, { name: "keep.png", data: realPng(500).toString("base64"), inline: true, caption: "Keep me" });
+    assert.ok(!other.isError, other.text);
+    const kept = other.json.url;
+    const count = task("PH-1").attachments.length;
+    const descBefore = task("PH-1").description;
+    assert.ok(descBefore.includes(uploaded.url.replace(/&/g, "&amp;")));
+    const r = await tool(sam, "kanban_remove_attachment", { key: "PH-1", path: uploaded.path });
+    assert.ok(!r.isError, r.text);
+    assert.strictEqual(r.json.removedFromDescription, true); assert.strictEqual(r.json.fileDeleted, true);
+    const t = task("PH-1");
+    assert.strictEqual(t.attachments.length, count - 1);
+    assert.strictEqual(env.store.col("kanbanCards").get("PH-1").attachmentCount, count - 1);
+    assert.ok(!t.attachments.some((a) => a.path === uploaded.path));
+    assert.ok(!env.authState.uploads[uploaded.path], "storage object deleted");
+    assert.ok(!t.description.includes("Exchange &lt;page&gt;") && !t.description.includes(uploaded.path.split("/").pop().replace(/\./g, "%2E")) && !t.description.includes("exchange.png"));
+    assert.ok(t.description.includes(kept.replace(/&/g, "&amp;")) && t.description.includes("<em>Keep me</em>"), "other pictures stay");
+    assert.ok(env.authState.uploads[other.json.path], "other file stays");
+    assert.strictEqual(t.descriptionText, require("../functions/kanban-core").htmlToText(t.description).slice(0, 20000));
+    const g = await tool1(sam, "kanban_get_task", { key: "PH-1" });
+    assert.ok(g.json.activity.some((a) => a.who === SAM && a.text === "removed attachment exchange.png over MCP"));
+    assert.ok([...env.store.col("mcpAuditLog").values()].some((x) => x.tool === "kanban_remove_attachment" && x.email === SAM));
+    const gone = await tool(sam, "kanban_remove_attachment", { key: "PH-1", path: uploaded.path });
+    assert.ok(gone.isError);
+  });
+  await test("kanban_remove_attachment: by name; an ambiguous name asks for the path; unknown, no argument, unknown ticket and viewer are refused", async () => {
+    const a = await attach(sam, { name: "dup.png", data: realPng(300).toString("base64") });
+    const b = await attach(sam, { name: "dup.png", data: realPng(310).toString("base64") });
+    const amb = await tool(sam, "kanban_remove_attachment", { key: "PH-1", name: "dup.png" });
+    assert.ok(amb.isError); assert.match(amb.text, /pass the path/);
+    const one = await tool(sam, "kanban_remove_attachment", { key: "PH-1", path: a.json.path });
+    assert.ok(!one.isError, one.text);
+    assert.strictEqual(one.json.removedFromDescription, false);
+    const byName = await tool(sam, "kanban_remove_attachment", { key: "PH-1", name: "dup.png" });
+    assert.ok(!byName.isError, byName.text); assert.strictEqual(byName.json.path, b.json.path);
+    assert.ok((await tool(sam, "kanban_remove_attachment", { key: "PH-1", name: "dup.png" })).isError);
+    assert.ok((await tool(sam, "kanban_remove_attachment", { key: "PH-1" })).isError);
+    assert.ok((await tool(sam, "kanban_remove_attachment", { key: "PH-9999", name: "x" })).isError);
+    assert.ok((await tool(kit, "kanban_remove_attachment", { key: "PH-1", name: "x" })).isError);
+  });
+
+  // ── kanban_capture_screenshot[s]: the board renders the page itself ─────
+  const captureLib = require("../functions/kanban-capture");
+  const ART = "https://offline2online.github.io/rob_ph_demos/dsp-integration/prototype/";
+  const fakePage = (over) => Object.assign({ status: 200, finalUrl: ART, text: "Exchange settings\nSave changes", png: pngBytes(300), warnings: [] }, over);
+  async function withRenderer(fn, body) {
+    const orig = captureLib.renderer.render; const calls = [];
+    captureLib.renderer.render = async (o) => { calls.push(o); return fn(o); };
+    try { return await body(calls); } finally { captureLib.renderer.render = orig; }
+  }
+  const cap = (token, args) => tool(token, "kanban_capture_screenshot", Object.assign({ key: "PH-1", url: ART + "#/exchange" }, args));
+  await test("kanban_capture_screenshot: renders, stores as an attachment, replaces the Screenshot line in the description", async () => {
+    env.authState.uploads = {};
+    env.store.col("kanbanTasks").get("PH-1").description = "<p>Exchange settings page.</p><p>Screenshot: https://example.org/old.png</p><p>After.</p>";
+    await withRenderer((o) => fakePage({ finalUrl: o.url }), async (calls) => {
+      const r = await cap(sam, { caption: "Exchange <settings>" });
+      assert.ok(!r.isError, r.text);
+      assert.strictEqual(r.json.ok, true);
+      assert.strictEqual(calls[0].width, 1440); assert.strictEqual(calls[0].height, 900); assert.strictEqual(calls[0].fullPage, true);
+      assert.match(r.json.path, /^kanban\/PH-1\/\d+-capture-PH-1\.png$/);
+      assert.strictEqual(env.authState.uploads[r.json.path].contentType, "image/png");
+      const t = task("PH-1");
+      assert.ok(t.attachments.some((a) => a.path === r.json.path && a.caption === "Exchange <settings>"));
+      assert.ok(!/Screenshot:/.test(t.description), t.description);
+      assert.match(t.description, /<p>Exchange settings page\.<\/p><p><img src="https:\/\/firebasestorage[^"]+capture-PH-1\.png[^"]*" alt="Exchange &lt;settings&gt;"><br><em>Exchange &lt;settings&gt;<\/em><\/p><p>After\.<\/p>/);
+      assert.ok(!/data:image/.test(t.description));
+      // A second capture replaces the first: one attachment, one picture.
+      const again = await cap(sam, {});
+      assert.ok(!again.isError, again.text);
+      assert.strictEqual(again.json.replacedEarlierCapture, true);
+      const t2 = task("PH-1");
+      assert.strictEqual(t2.attachments.filter((a) => a.name === "capture-PH-1.png").length, 1);
+      assert.strictEqual((t2.description.match(/<img /g) || []).length, 1);
+    });
+  });
+  await test("kanban_capture_screenshot: a URL outside the allowed domains is refused and the browser is never started", async () => {
+    await withRenderer(() => { throw new Error("must not render"); }, async (calls) => {
+      for (const url of ["https://example.com/x", "http://offline2online.github.io/x", "https://offline2online.github.io.evil.com/x", "https://user:pw@offline2online.github.io/x", "https://offline2online.github.io:8443/x", "https://169.254.169.254/latest/meta-data", "file:///etc/passwd", "not a url"]) {
+        const r = await cap(sam, { url });
+        assert.ok(r.isError, url);
+      }
+      assert.strictEqual(calls.length, 0);
+    });
+  });
+  await test("kanban_capture_screenshot: non-200, not-found text and a redirect home are reported and attach nothing", async () => {
+    const before = JSON.stringify(task("PH-1").attachments) + task("PH-1").description;
+    const was = Object.keys(env.authState.uploads).length;
+    const cases = [[{ status: 404 }, /404/], [{ text: "404\nPage not found" }, /doesn't exist/], [{ finalUrl: ART + "#/" }, /redirected/], [{ png: Buffer.alloc(0) }, /no image/]];
+    for (const [over, re] of cases) {
+      await withRenderer((o) => fakePage(Object.assign({ finalUrl: o.url }, over)), async () => {
+        const r = await cap(sam, { url: ART + "#/nope" });
+        assert.ok(r.isError); assert.match(r.text, re);
+      });
+    }
+    await withRenderer(() => { throw new Error("net::ERR_NAME_NOT_RESOLVED"); }, async () => { const r = await cap(sam, {}); assert.ok(r.isError); assert.match(r.text, /couldn't be rendered/); });
+    assert.strictEqual(JSON.stringify(task("PH-1").attachments) + task("PH-1").description, before);
+    assert.strictEqual(Object.keys(env.authState.uploads).length, was);
+  });
+  await test("kanban_capture_screenshot: viewport and wait are validated and passed on; warnings come back", async () => {
+    await withRenderer((o) => fakePage({ finalUrl: o.url, warnings: ["The icon font didn't load"] }), async (calls) => {
+      const r = await cap(sam, { width: 1024, height: 700, fullPage: false, waitMs: 3000 });
+      assert.ok(!r.isError, r.text);
+      assert.deepStrictEqual([calls[0].width, calls[0].height, calls[0].fullPage, calls[0].waitMs], [1024, 700, false, 3000]);
+      assert.deepStrictEqual(r.json.warnings, ["The icon font didn't load"]);
+      assert.ok((await cap(sam, { width: 50 })).isError);
+      assert.ok((await cap(sam, { waitMs: 60000 })).isError);
+      assert.ok((await cap(sam, { caption: "x".repeat(301) })).isError);
+      assert.ok((await cap(sam, { key: "PH-9999" })).isError);
+    });
+  });
+  await test("kanban_capture_screenshot: a viewer is refused (board.write); no browser installed is said plainly", async () => {
+    const r = await cap(kit, {});
+    assert.ok(r.isError);
+    const orig = captureLib.renderer._render;
+    captureLib.renderer._render = async () => { const e = new Error("The screenshot browser isn't installed on the server"); e.code = "no-browser"; throw e; };
+    try { const x = await cap(sam, {}); assert.ok(x.isError); assert.match(x.text, /isn't installed/); } finally { captureLib.renderer._render = orig; }
+  });
+  await test("kanban_capture_screenshots: one call, each page reported on its own; the bad ones attach nothing", async () => {
+    member("lena2@personalisationhub.com", "editor", "Lena Two");
+    const lena = await connect("lena2@personalisationhub.com");
+    await withRenderer((o) => (/nope/.test(o.url) ? fakePage({ status: 404, finalUrl: o.url }) : fakePage({ finalUrl: o.url })), async (calls) => {
+      const r = await tool(lena, "kanban_capture_screenshots", { caption: "As designed", items: [
+        { key: "PH-1", url: ART + "#/exchange" }, { key: "PH-3", url: ART + "#/nope" }, { key: "PH-4", url: "https://example.com/x" }, { key: "PH-9999", url: ART },
+      ] });
+      assert.ok(!r.isError, r.text);
+      assert.strictEqual(r.json.captured, 1); assert.strictEqual(r.json.failed, 3);
+      assert.deepStrictEqual(r.json.results.map((x) => [x.key, x.ok]), [["PH-1", true], ["PH-3", false], ["PH-4", false], ["PH-9999", false]]);
+      assert.match(r.json.results[1].error, /404/); assert.match(r.json.results[2].error, /allowed domain/);
+      assert.strictEqual(calls.length, 2, "the refused URL and the unknown ticket never reach the browser");
+      assert.ok(!(task("PH-3").attachments || []).some((a) => /^capture-/.test(a.name)));
+      assert.match(task("PH-1").description, /<em>As designed<\/em>/);
+      const all = await tool(lena, "kanban_capture_screenshots", { items: [{ key: "PH-3", url: ART + "#/nope" }] });
+      assert.ok(all.isError, "every page failing is an error");
+      const many = await tool(lena, "kanban_capture_screenshots", { items: Array.from({ length: 21 }, () => ({ key: "PH-1", url: ART })) });
+      assert.ok(many.isError);
+    });
+  });
+  await test("capture: route comparison, not-found detection and the description placement", () => {
+    assert.ok(captureLib.sameRoute(ART + "#/a", ART + "index.html#/a/"));
+    assert.ok(!captureLib.sameRoute(ART + "#/a", ART + "#/"));
+    assert.ok(!captureLib.sameRoute(ART + "#/a", "https://offline2online.github.io/other/#/a"));
+    assert.ok(captureLib.looksMissing("Oops\nPage not found")); assert.ok(!captureLib.looksMissing("Exchange settings"));
+    const img = captureLib.imageParagraph("https://x/capture-PH-1.png", "", "capture-PH-1.png");
+    assert.strictEqual(captureLib.placeScreenshot("<p>A</p>", img), "<p>A</p>" + img);
+    assert.strictEqual(captureLib.placeScreenshot("A\nScreenshot: x\nB", img), "A" + "\n" + img + "\nB".replace("\n", "\n"));
+    assert.strictEqual(captureLib.placeScreenshot("<p>Screenshot: a</p><p>Screenshot: b</p>", img), img);
+  });
 
   // ── Notifications (KB-NAV-2): the fan-out, and the two MCP tools ──────────
   const notify = require("../functions/kanban-notify");

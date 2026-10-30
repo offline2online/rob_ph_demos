@@ -4901,16 +4901,16 @@ const PROMPTS = [
 ];
 
 const SERVER_INSTRUCTIONS = [
-  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor also writes, an admin also has the release tools below.",
-  "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: inline cards).",
+  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in member; writes are attributed to their email. A viewer reads, an editor also writes, an admin has the release tools below.",
+  "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (inline cards).",
   "To take over a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in order. The project_handover prompt starts the same plan.",
-  "Reading docs: list_project_documents and get_project_document read one document or section at a time; get_project_docs returns every document in full, so set include.",
-  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first, send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
-  REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
-  "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
+  "Reading docs: list_project_documents and get_project_document read one document or section at a time; get_project_docs returns every document in full (set include).",
+  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first and send all of it; a document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover old versions.",
+  REPO_WINS + " Board-only documents (including a project with no repo folder) are edited on the board.",
+  "Concepts: list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
-  "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
-  "Skills (all projects): list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
+  "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_create_upload_url, kanban_attach_uploaded, kanban_remove_attachment, kanban_capture_screenshots, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
+  "Skills: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
   "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
 ].join(" ");
 
@@ -5231,7 +5231,7 @@ function routePath(req) {
 // sign-in queued behind them. minInstances stays 0: sign-in no longer waits
 // on this function (see public/js/auth-gate.js), so a cold start only ever
 // delays an agent's first call.
-exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512MiB", cpu: 1, concurrency: 40, maxInstances: 20, secrets: [ANTHROPIC_API_KEY] }, async (req, res) => {
+exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB", cpu: 1, concurrency: 40, maxInstances: 20, secrets: [ANTHROPIC_API_KEY] }, async (req, res) => {
   cors(req, res);
   const path = routePath(req);
   // The console-only endpoints are called from the console's own origin

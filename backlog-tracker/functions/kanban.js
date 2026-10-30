@@ -28,6 +28,7 @@ const crypto = require("crypto");
 const logger = require("firebase-functions/logger");
 const core = require("./kanban-core");
 const notify = require("./kanban-notify");
+const capture = require("./kanban-capture");
 
 const db = () => require("firebase-admin/firestore").getFirestore();
 const TASKS = "kanbanTasks";
@@ -409,6 +410,15 @@ const imageResizer = {
   // Shrinks png / jpeg / webp whose longest side is over ATTACH_MAX_SIDE. A gif
   // is kept as it is (resizing would drop its animation). Without the sharp
   // module the original is stored, which is still within the size limit.
+  // Decodes every pixel, so a file that is truncated or corrupt inside its
+  // data is refused. Without the sharp module only the structural check runs.
+  async verify(buf, contentType) {
+    let sharp;
+    try { sharp = require("sharp"); } catch (err) { return; }
+    const meta = await sharp(buf, { failOn: "error" }).metadata();
+    if (!meta.width || !meta.height) throw new Error("no dimensions");
+    await sharp(buf, { failOn: "error" }).raw().toBuffer();
+  },
   async resize(buf, contentType) {
     if (contentType === "image/gif") return { buf, resized: false };
     let sharp;
@@ -419,6 +429,27 @@ const imageResizer = {
     return { buf: out, resized: true };
   },
 };
+// A file that was cut off keeps its first bytes, so the magic check alone lets
+// it through (30 Oct 2026: a 16,641-byte png arrived as 2,385 and was placed
+// inline as a broken picture). Each type is checked for its proper ending.
+const COMPLETE = {
+  "image/png": (b) => {
+    let o = 8, first = true;
+    while (o + 12 <= b.length) {
+      const len = b.readUInt32BE(o), type = b.toString("latin1", o + 4, o + 8);
+      if (first && type !== "IHDR") return false;
+      first = false;
+      o += 12 + len;
+      if (type === "IEND") return o === b.length;
+    }
+    return false;
+  },
+  "image/jpeg": (b) => { let e = b.length; while (e > 2 && b[e - 1] === 0) e--; return b[e - 2] === 0xff && b[e - 1] === 0xd9; },
+  "image/gif": (b) => b[b.length - 1] === 0x3b,
+  "image/webp": (b) => { const n = b.readUInt32LE(4) + 8; return n === b.length || n + 1 === b.length; },
+  "application/pdf": (b) => b.toString("latin1", Math.max(0, b.length - 1024)).includes("%%EOF"),
+};
+const sha256Hex = (buf) => require("crypto").createHash("sha256").update(buf).digest("hex");
 const safeFileName = (name, ext) => {
   let n = String(name || "").split(/[\\/]/).pop().normalize("NFKD").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+|-+$/g, "").replace(/-{2,}/g, "-").slice(0, 80);
   if (!n) n = "file";
@@ -427,6 +458,49 @@ const safeFileName = (name, ext) => {
 };
 const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+const UPLOAD_URL_TTL_MS = 15 * 60 * 1000;
+// name / caption / sha256 / size as an attach call gives them, checked once.
+function attachMeta(args, contentType) {
+  const kind = ATTACH_TYPES[contentType];
+  const name = String(args.name || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 200);
+  if (!name) return { error: "name is required." };
+  const caption = String(args.caption || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+  if (caption.length > 300) return { error: "A caption is limited to 300 characters." };
+  let sha256 = null;
+  if (args.sha256 != null && args.sha256 !== "") {
+    sha256 = String(args.sha256).trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(sha256)) return { error: "sha256 must be 64 hex characters." };
+  }
+  let size = null;
+  if (args.size != null && args.size !== "") {
+    size = Number(args.size);
+    if (!Number.isInteger(size) || size < 1) return { error: "size must be a whole number of bytes." };
+  }
+  return { name, caption, sha256, size, ext: kind.ext };
+}
+// The checks every attach route runs on the bytes it was given, before anything
+// is stored: the caller's own size and sha256, the type's magic bytes, a whole
+// file, and (for images) a full decode. Returns the reason, or null if it's fine.
+async function checkAttachBytes(bytes, contentType, meta) {
+  if (meta.size != null && bytes.length !== meta.size) return `The file arrived as ${bytes.length} bytes but size says ${meta.size}, so it was cut off or changed on the way. Nothing was attached.`;
+  if (meta.sha256 && sha256Hex(bytes) !== meta.sha256) return "The file's sha256 doesn't match the one given, so it was corrupted or changed on the way. Nothing was attached.";
+  if (!ATTACH_TYPES[contentType].magic(bytes)) return `The bytes aren't a ${contentType} file. Nothing was attached.`;
+  if (!COMPLETE[contentType](bytes)) return `The ${contentType} file is incomplete (truncated: its ending is missing), so it can't be shown. Nothing was attached.`;
+  if (contentType.startsWith("image/")) {
+    try { await imageResizer.verify(bytes, contentType); }
+    catch (err) { return `The ${contentType} image can't be decoded (${String(err && err.message ? err.message : err).replace(/\s+/g, " ").slice(0, 120)}), so it is corrupt or cut off. Nothing was attached.`; }
+  }
+  return null;
+}
+// Takes an attachment's picture (the <p> the attach or capture put there, or a
+// bare <img>) out of a description, leaving everything else.
+function withoutImage(html, url) {
+  const u = esc(url).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const img = `<img[^>]*src="${u}"[^>]*>`;
+  return String(html || "")
+    .replace(new RegExp(`<p>\\s*${img}(?:\\s*<br\\s*/?>\\s*<em>[^<]*</em>)?\\s*</p>`, "g"), "")
+    .replace(new RegExp(img, "g"), "");
+}
 // ── MCP tools (KB-MCP-1) ──────────────────────────────────────────────────
 // One sentence, appended to every kanban_* tool description (so tools added
 // later carry it too), saying which board is for what.
@@ -504,6 +578,80 @@ function kanbanTools(h) {
       criteriaTotal: core.cardOf(t).acTotal, criteriaDone: core.cardOf(t).acDone,
     };
   }
+  // ── Page screenshots (kanban_capture_screenshot[s]) ──────────────────────
+  const CAPTURE_PROPS = {
+    url: { type: "string", description: "The page to capture: https, on an artifact domain (offline2online.github.io, rawcdn.githack.com), e.g. the artifact URL plus a hash route." },
+    caption: { type: "string", description: "Optional caption shown under the image. Up to 300 characters." },
+    width: { type: "integer", description: `Viewport width in px (${capture.LIMITS.width.min}–${capture.LIMITS.width.max}, default ${capture.LIMITS.width.def}).` },
+    height: { type: "integer", description: `Viewport height in px (${capture.LIMITS.height.min}–${capture.LIMITS.height.max}, default ${capture.LIMITS.height.def}).` },
+    fullPage: { type: "boolean", description: "Capture the whole page, not just the viewport (default true; clipped at 12000 px tall)." },
+    waitMs: { type: "integer", description: `Extra wait after load for a hash-route app to render, in ms (0–${capture.LIMITS.waitMs.max}, default ${capture.LIMITS.waitMs.def}).` },
+  };
+  const intIn = (v, lim) => (v === undefined || v === null ? lim.def : Number.isInteger(v) && v >= lim.min && v <= lim.max ? v : null);
+  // One page onto one ticket. Never throws: → { ok: true, ... } or { ok: false, key, url, error }.
+  async function captureOne(session, item, defaults) {
+    const get = (f) => (item[f] !== undefined ? item[f] : (defaults || {})[f]);
+    const key = normKey(item.key);
+    const url = String(item.url || "").trim();
+    const fail = (error) => ({ ok: false, key: key || String(item.key || ""), url, error });
+    if (!key) return fail("Not a ticket key.");
+    const chk = capture.checkUrl(url);
+    if (!chk.ok) return fail(chk.error);
+    const width = intIn(get("width"), capture.LIMITS.width), height = intIn(get("height"), capture.LIMITS.height), waitMs = intIn(get("waitMs"), capture.LIMITS.waitMs);
+    if (width == null) return fail(`width must be a whole number from ${capture.LIMITS.width.min} to ${capture.LIMITS.width.max}.`);
+    if (height == null) return fail(`height must be a whole number from ${capture.LIMITS.height.min} to ${capture.LIMITS.height.max}.`);
+    if (waitMs == null) return fail(`waitMs must be a whole number from ${capture.LIMITS.waitMs.min} to ${capture.LIMITS.waitMs.max}.`);
+    const caption = String(get("caption") || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+    if (caption.length > 300) return fail("A caption is limited to 300 characters.");
+    const cur = await getTask(key);
+    if (!cur) return fail(`No ticket ${item.key}.`);
+    const name = capture.captureName(key);
+    // A refresh replaces this ticket's earlier capture, so it doesn't count toward the 50.
+    if ((cur.attachments || []).filter((a) => a.name !== name).length >= ATTACH_MAX_PER_TICKET) return fail(`${key} already has ${ATTACH_MAX_PER_TICKET} attachments, the most a ticket holds.`);
+    let shot;
+    try {
+      shot = await capture.renderer.render({ url: chk.url, width, height, fullPage: get("fullPage") !== false, waitMs });
+    } catch (err) {
+      if (err && err.code === "no-browser") return fail(err.message);
+      logger.warn("kanban capture failed", { key, url: chk.url, error: String(err && err.message ? err.message : err) });
+      return fail(`The page couldn't be rendered: ${String(err && err.message ? err.message : err).replace(/\s+/g, " ").slice(0, 200)}`);
+    }
+    const bad = capture.judge(chk.url, shot);
+    if (bad) return fail(bad);
+    if (!ATTACH_TYPES["image/png"].magic(shot.png)) return fail("The browser's image wasn't a valid png.");
+    if (!(await takeAttachSlot(session.email))) return fail(`Limit reached: ${ATTACH_PER_HOUR} files an hour per member. Try again later.`);
+    let bytes = shot.png, resized = false;
+    try { const r = await imageResizer.resize(bytes, "image/png"); bytes = r.buf; resized = r.resized; }
+    catch (err) { return fail("The screenshot couldn't be read."); }
+    if (bytes.length > ATTACH_MAX_BYTES) return fail(`The screenshot is ${(bytes.length / 1048576).toFixed(1)} MB; the limit is 5 MB. Try fullPage: false or a smaller viewport.`);
+    const path = `kanban/${key}/${Date.now()}-${name}`;
+    const token = crypto.randomUUID();
+    const bucket = h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET);
+    await bucket.file(path).save(bytes, { contentType: "image/png", metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
+    const imgUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+    const entry = { name, url: imgUrl, path, contentType: "image/png", size: bytes.length };
+    if (caption) entry.caption = caption;
+    const ref = tasks().doc(key);
+    const replaced = [];
+    const count = await db().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return null;
+      const t = Object.assign({ key }, snap.data());
+      replaced.length = 0;
+      const kept = (t.attachments || []).filter((a) => { if (a.name === name) { replaced.push(a); return false; } return true; });
+      const attachments = kept.concat([entry]);
+      const description = capture.placeScreenshot(t.description || "", capture.imageParagraph(imgUrl, caption, name));
+      const patch = Object.assign({ attachments, description }, derived(Object.assign({}, t, { description })), stamp(session.email));
+      tx.update(ref, patch);
+      putCard(tx, key, Object.assign({}, t, patch), session.email);
+      activity(tx, key, session.email, [`captured ${name} from ${chk.url.slice(0, 200)}`]);
+      return attachments.length;
+    });
+    if (count == null) return fail(`No ticket ${item.key}.`);
+    for (const old of replaced) { try { if (old.path) await bucket.file(old.path).delete(); } catch (err) { /* best effort: the file is no longer linked */ } }
+    return { ok: true, key, url: chk.url, name, imageUrl: imgUrl, path, size: bytes.length, downscaled: resized, caption: caption || null, inline: true, replacedEarlierCapture: replaced.length > 0, warnings: shot.warnings || [], attachments: count };
+  }
+
   const board = async () => db().collection(await boardCollection());
   const SUB_LIMIT = 100; // comments and activity lines kanban_get_task returns (the newest)
   const EPIC_CHILDREN = 500;
@@ -609,6 +757,40 @@ function kanbanTools(h) {
     });
   }
   const takeAttachSlot = async (email) => (await takeSlots("kanbanAttachLimits", email, 1, ATTACH_PER_HOUR)).ok;
+  // Shrinks, stores under kanban/{key}/ and records one attachment (and, when
+  // asked, its picture in the description) in a single transaction.
+  async function storeAttachment({ key, session, name, contentType, bytes, caption, inline }) {
+    let resized = false;
+    if (contentType.startsWith("image/")) {
+      try { const r = await imageResizer.resize(bytes, contentType); bytes = r.buf; resized = r.resized; }
+      catch (err) { return { error: "That image couldn't be read. Nothing was attached." }; }
+    }
+    const path = `kanban/${key}/${Date.now()}-${crypto.randomBytes(3).toString("hex")}-${safeFileName(name, ATTACH_TYPES[contentType].ext)}`;
+    const token = crypto.randomUUID();
+    const bucket = h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET);
+    await bucket.file(path).save(bytes, { contentType, metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
+    const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+    const entry = { name, url, path, contentType, size: bytes.length };
+    if (caption) entry.caption = caption;
+    const ref = tasks().doc(key);
+    const count = await db().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return null;
+      const t = Object.assign({ key }, snap.data());
+      const attachments = (t.attachments || []).concat([entry]);
+      const patch = Object.assign({ attachments }, stamp(session.email));
+      if (inline) {
+        patch.description = (t.description || "") + `<p><img src="${esc(url)}" alt="${esc(caption || name)}">${caption ? `<br><em>${esc(caption)}</em>` : ""}</p>`;
+        Object.assign(patch, derived(Object.assign({}, t, { description: patch.description })));
+      }
+      tx.update(ref, patch);
+      putCard(tx, key, Object.assign({}, t, patch), session.email);
+      activity(tx, key, session.email, [`attached ${name} over MCP`]);
+      return attachments.length;
+    });
+    if (count == null) { try { await bucket.file(path).delete(); } catch (e) { /* unlinked anyway */ } return { error: `No ticket ${key}.` }; }
+    return { size: bytes.length, out: { name, url, path, contentType, size: bytes.length, downscaled: resized, inline: !!inline, attachments: count } };
+  }
   const stamp = (email) => ({ updatedAt: FieldValue.serverTimestamp(), updatedBy: email });
   const activity = (batch, key, email, texts) => {
     for (const text of texts) if (text) batch.set(tasks().doc(key).collection("activity").doc(), { who: email, text: String(text).slice(0, 500), at: FieldValue.serverTimestamp() });
@@ -798,7 +980,7 @@ function kanbanTools(h) {
           projectName: project ? project.name : null, interface: linked,
           description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
           acceptanceCriteria: core.decodeCriteria(t.acceptanceCriteria),
-          links: (t.links || []).map((l) => ({ type: l.type, key: l.key })), attachments: (t.attachments || []).map((a) => ({ name: a.name, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
+          links: (t.links || []).map((l) => ({ type: l.type, key: l.key })), attachments: (t.attachments || []).map((a) => ({ name: a.name, path: a.path || null, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
           children: kids, childrenOmitted: kidDocs && kidDocs.length > EPIC_CHILDREN ? "more than " + EPIC_CHILDREN : undefined, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
           commentsOmitted: Math.max(0, nCs - cs.docs.length), activityOmitted: Math.max(0, nAct - act.docs.length),
           comments: cs.docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((c) => ({ id: c.id, author: c.author, at: iso(c.at), edited: c.editedAt ? iso(c.editedAt) : null, text: c.text })),
@@ -1301,7 +1483,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_attach_file",
-      description: "Staff Kanban: attach a screenshot, image or PDF to a ticket in one call, sent as base64 `data` (png, jpeg, webp or gif images, or a pdf, at most 5 MB decoded; nothing is fetched from a URL). Images over 1400 px are shrunk, as on the board. It shows under the ticket's Attachments; `inline: true` also puts an image in the description. Limited to 60 files an hour per member.",
+      description: "Staff Kanban: attach a screenshot, image or PDF to a ticket in one call, sent as base64 `data` (png, jpeg, webp or gif images, or a pdf, at most 5 MB decoded; nothing is fetched from a URL). Only for small files (under about 20 KB): reproducing more base64 than that by hand is unreliable, so for anything bigger use kanban_create_upload_url, curl the file up and finish with kanban_attach_uploaded. Pass `sha256` (and `size`) of the original file and a corrupt or cut-off copy is refused; a truncated or undecodable image is always refused, and nothing is stored or placed inline. Images over 1400 px are shrunk, as on the board. It shows under the ticket's Attachments; `inline: true` also puts an image in the description. Limited to 60 files an hour per member.",
       scope: "board.write",
       inputSchema: {
         type: "object",
@@ -1312,6 +1494,8 @@ function kanbanTools(h) {
           data: { type: "string", description: "The file's bytes, base64 encoded." },
           inline: { type: "boolean", description: "Also place the image in the description (images only)." },
           caption: { type: "string", description: "Optional caption, shown under an inline image. Up to 300 characters." },
+          sha256: { type: "string", description: "Optional SHA-256 (hex) of the file; the call is refused if the decoded bytes differ." },
+          size: { type: "integer", minimum: 1, description: "Optional size of the file in bytes; the call is refused if the decoded bytes differ." },
         },
         required: ["key", "name", "contentType", "data"], additionalProperties: false,
       },
@@ -1322,10 +1506,8 @@ function kanbanTools(h) {
         const contentType = String(args.contentType || "").trim().toLowerCase();
         const kind = ATTACH_TYPES[contentType];
         if (!kind) return toolError(`${args.contentType || "That type"} can't be attached. Allowed: ${ATTACH_LIMIT_TEXT}.`);
-        const name = String(args.name || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 200);
-        if (!name) return toolError("name is required.");
-        const caption = String(args.caption || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-        if (caption.length > 300) return toolError("A caption is limited to 300 characters.");
+        const meta = attachMeta(args, contentType);
+        if (meta.error) return toolError(meta.error);
         if (args.inline && !contentType.startsWith("image/")) return toolError("Only an image can go inline in the description; a pdf is attached.");
         let b64 = String(args.data || "");
         const uri = core.dataUriParts(b64);
@@ -1335,41 +1517,204 @@ function kanbanTools(h) {
         if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64) || b64.length % 4 === 1) return toolError("data isn't valid base64.");
         const approx = Math.floor(b64.length * 3 / 4) - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
         if (approx > ATTACH_MAX_BYTES) return toolError(`That file is ${(approx / 1048576).toFixed(1)} MB; the limit is 5 MB decoded (${ATTACH_LIMIT_TEXT}). Nothing was attached.`);
-        let bytes = Buffer.from(b64, "base64");
-        if (!kind.magic(bytes)) return toolError(`The bytes aren't a ${contentType} file. Nothing was attached.`);
+        const bytes = Buffer.from(b64, "base64");
+        const bad = await checkAttachBytes(bytes, contentType, meta);
+        if (bad) return toolError(bad);
         if ((cur.attachments || []).length >= ATTACH_MAX_PER_TICKET) return toolError(`${key} already has ${ATTACH_MAX_PER_TICKET} attachments, the most a ticket holds.`);
         if (!(await takeAttachSlot(session.email))) return toolError(`Limit reached: ${ATTACH_PER_HOUR} files an hour per member. Try again later.`);
-        let resized = false;
-        if (contentType.startsWith("image/")) {
-          try { const r = await imageResizer.resize(bytes, contentType); bytes = r.buf; resized = r.resized; }
-          catch (err) { return toolError("That image couldn't be read. Nothing was attached."); }
-        }
-        const path = `kanban/${key}/${Date.now()}-${safeFileName(name, kind.ext)}`;
-        const token = crypto.randomUUID();
+        const r = await storeAttachment({ key, session, name: meta.name, contentType, bytes, caption: meta.caption, inline: !!args.inline });
+        if (r.error) return toolError(r.error);
+        await audit(session, "kanban_attach_file", { key, name: meta.name, contentType, size: r.size, inline: !!args.inline });
+        return textResult(Object.assign({ attached: true, key }, r.out));
+      },
+    },
+    {
+      name: "kanban_create_upload_url",
+      description: "Staff Kanban, step 1 of 2: get a short-lived signed URL to upload a screenshot, image or PDF to a ticket without putting its bytes in a tool call. Prefer this to kanban_attach_file for anything over about 20 KB. Then PUT the raw file from your shell with curl (use the returned `curlExample`, which carries the required headers), and finish with kanban_attach_uploaded using the returned `uploadId`. Same types, limits (5 MB, 50 per ticket, 60 files an hour per member, counted when the URL is made) and 1400 px shrink as kanban_attach_file. Pass `sha256` and `size` of the local file here or in step 2 and a corrupt or cut-off upload is refused. The URL expires after 15 minutes and works once.",
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: {
+          key: KEY,
+          name: { type: "string", description: "File name, e.g. exchange.png." },
+          contentType: { type: "string", enum: Object.keys(ATTACH_TYPES) },
+          sha256: { type: "string", description: "Optional SHA-256 (hex) of the file you will upload." },
+          size: { type: "integer", minimum: 1, description: "Optional size in bytes of the file you will upload." },
+        },
+        required: ["key", "name", "contentType"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const key = normKey(args.key);
+        const cur = key && await getTask(key);
+        if (!cur) return toolError(`No ticket ${args.key}.`);
+        const contentType = String(args.contentType || "").trim().toLowerCase();
+        if (!ATTACH_TYPES[contentType]) return toolError(`${args.contentType || "That type"} can't be attached. Allowed: ${ATTACH_LIMIT_TEXT}.`);
+        const meta = attachMeta(args, contentType);
+        if (meta.error) return toolError(meta.error);
+        if (meta.size && meta.size > ATTACH_MAX_BYTES) return toolError(`That file is ${(meta.size / 1048576).toFixed(1)} MB; the limit is 5 MB (${ATTACH_LIMIT_TEXT}). Nothing was uploaded.`);
+        if ((cur.attachments || []).length >= ATTACH_MAX_PER_TICKET) return toolError(`${key} already has ${ATTACH_MAX_PER_TICKET} attachments, the most a ticket holds.`);
+        if (!(await takeAttachSlot(session.email))) return toolError(`Limit reached: ${ATTACH_PER_HOUR} files an hour per member. Try again later.`);
+        const uploadId = crypto.randomBytes(12).toString("hex");
+        const stagingPath = `kanban-uploads/${key}/${uploadId}`;
+        const expiresAt = Date.now() + UPLOAD_URL_TTL_MS;
+        const headers = { "Content-Type": contentType, "x-goog-content-length-range": `1,${ATTACH_MAX_BYTES}` };
         const bucket = h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET);
-        await bucket.file(path).save(bytes, { contentType, metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
-        const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
-        const entry = { name, url, path, contentType, size: bytes.length };
-        if (caption) entry.caption = caption;
+        let uploadUrl;
+        try {
+          [uploadUrl] = await bucket.file(stagingPath).getSignedUrl({ version: "v4", action: "write", expires: expiresAt, contentType, extensionHeaders: { "x-goog-content-length-range": headers["x-goog-content-length-range"] } });
+        } catch (err) {
+          logger.error("kanban upload url could not be signed", { error: String(err && err.message ? err.message : err) });
+          return toolError("The upload URL couldn't be signed (the function's service account needs the Service Account Token Creator role). Use kanban_attach_file for a small file.");
+        }
+        await db().collection("kanbanUploads").doc(uploadId).set({ email: session.email, key, stagingPath, name: meta.name, contentType, sha256: meta.sha256 || null, size: meta.size || null, caption: meta.caption || null, expiresAt, createdAt: FieldValue.serverTimestamp() });
+        const hdr = Object.keys(headers).map((k) => `-H '${k}: ${headers[k]}'`).join(" ");
+        await audit(session, "kanban_create_upload_url", { key, name: meta.name, contentType, uploadId });
+        return textResult({
+          key, uploadId, uploadUrl, method: "PUT", headers, expiresAt: new Date(expiresAt).toISOString(),
+          curlExample: `curl -sS -X PUT ${hdr} --data-binary @FILE '${uploadUrl}'`,
+          next: "PUT the raw file to uploadUrl with those headers, then call kanban_attach_uploaded with key and uploadId (optionally inline, caption, sha256, size).",
+        });
+      },
+    },
+    {
+      name: "kanban_attach_uploaded",
+      description: "Staff Kanban, step 2 of 2: attach the file you PUT to a kanban_create_upload_url URL. The server reads the upload, checks it (the type's bytes, a complete file, every pixel of an image decodable, and `sha256` / `size` if you pass them), shrinks images over 1400 px, then stores it and lists it under the ticket's Attachments; `inline: true` also puts an image in the description. A refused upload is deleted and nothing is stored or placed inline. The uploadId works once, for the member who made it, until its URL expires.",
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: {
+          key: KEY,
+          uploadId: { type: "string", description: "From kanban_create_upload_url." },
+          name: { type: "string", description: "Optional: a different file name from the one given in step 1." },
+          inline: { type: "boolean", description: "Also place the image in the description (images only)." },
+          caption: { type: "string", description: "Optional caption, shown under an inline image. Up to 300 characters." },
+          sha256: { type: "string", description: "Optional SHA-256 (hex) of the file; refused if the uploaded bytes differ." },
+          size: { type: "integer", minimum: 1, description: "Optional size in bytes; refused if the uploaded bytes differ." },
+        },
+        required: ["key", "uploadId"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const key = normKey(args.key);
+        const cur = key && await getTask(key);
+        if (!cur) return toolError(`No ticket ${args.key}.`);
+        const ref = db().collection("kanbanUploads").doc(String(args.uploadId || "-").replace(/[^A-Za-z0-9]/g, "").slice(0, 64) || "-");
+        const snap = await ref.get();
+        const up = snap.exists ? snap.data() : null;
+        if (!up || up.email !== session.email || up.key !== key) return toolError("No such upload for this ticket. Make one with kanban_create_upload_url.");
+        const bucket = h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET);
+        const discard = async () => { try { await ref.delete(); } catch (e) { /* best effort */ } try { await bucket.file(up.stagingPath).delete(); } catch (e) { /* best effort */ } };
+        if (Date.now() > up.expiresAt) { await discard(); return toolError("That upload URL has expired. Make a new one with kanban_create_upload_url. Nothing was attached."); }
+        const contentType = up.contentType;
+        const meta = attachMeta({ name: args.name || up.name, caption: args.caption != null ? args.caption : up.caption, sha256: args.sha256 || up.sha256, size: args.size || up.size }, contentType);
+        if (meta.error) return toolError(meta.error);
+        let bytes;
+        try { [bytes] = await bucket.file(up.stagingPath).download(); }
+        catch (err) { return toolError("Nothing has been uploaded to that URL yet. PUT the file with the headers kanban_create_upload_url returned, then call this again."); }
+        if (bytes.length > ATTACH_MAX_BYTES) { await discard(); return toolError(`That file is ${(bytes.length / 1048576).toFixed(1)} MB; the limit is 5 MB. Nothing was attached.`); }
+        const bad = await checkAttachBytes(bytes, contentType, meta);
+        if (bad) { await discard(); return toolError(bad); }
+        if (args.inline && !contentType.startsWith("image/")) return toolError("Only an image can go inline in the description; a pdf is attached.");
+        if ((cur.attachments || []).length >= ATTACH_MAX_PER_TICKET) { await discard(); return toolError(`${key} already has ${ATTACH_MAX_PER_TICKET} attachments, the most a ticket holds.`); }
+        const r = await storeAttachment({ key, session, name: meta.name, contentType, bytes, caption: meta.caption, inline: !!args.inline });
+        await discard();
+        if (r.error) return toolError(r.error);
+        await audit(session, "kanban_attach_uploaded", { key, name: meta.name, contentType, size: r.size, inline: !!args.inline, uploadId: ref.id });
+        return textResult(Object.assign({ attached: true, key }, r.out));
+      },
+    },
+    {
+      name: "kanban_remove_attachment",
+      description: "Staff Kanban: remove one attachment from a ticket — by `path` (from kanban_get_task or the attach result) or by `name` when only one has it. It leaves the ticket's Attachments, its file is deleted from Storage, its inline image and caption are taken out of the description, and the card's attachment count drops by one. Other attachments and the rest of the description are untouched. Logged in the activity and the audit log.",
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: { key: KEY, path: { type: "string", description: "The attachment's storage path, e.g. kanban/PH-24/….png." }, name: { type: "string", description: "The attachment's file name, if the path isn't to hand." } },
+        required: ["key"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const key = normKey(args.key);
+        const cur = key && await getTask(key);
+        if (!cur) return toolError(`No ticket ${args.key}.`);
+        const path = String(args.path || "").trim(), name = String(args.name || "").trim();
+        if (!path && !name) return toolError("Give the attachment's path or name (kanban_get_task lists them).");
+        const list = cur.attachments || [];
+        const hits = list.filter((a) => (path ? a.path === path : a.name === name));
+        if (!hits.length) return toolError(`${key} has no attachment ${path || name}; kanban_get_task lists them.`);
+        if (hits.length > 1) return toolError(`${hits.length} attachments on ${key} are called ${name}; pass the path of the one to remove: ${hits.map((a) => a.path).join(", ")}.`);
+        const target = hits[0];
         const ref = tasks().doc(key);
-        const result = await db().runTransaction(async (tx) => {
+        let removedInline = false;
+        const left = await db().runTransaction(async (tx) => {
           const snap = await tx.get(ref);
           if (!snap.exists) return null;
           const t = Object.assign({ key }, snap.data());
-          const attachments = (t.attachments || []).concat([entry]);
+          const attachments = (t.attachments || []).filter((a) => !(a.path === target.path && a.url === target.url));
+          if (attachments.length === (t.attachments || []).length) return null;
+          const description = withoutImage(t.description || "", target.url);
+          removedInline = description !== (t.description || "");
           const patch = Object.assign({ attachments }, stamp(session.email));
-          if (args.inline) {
-            patch.description = (t.description || "") + `<p><img src="${esc(url)}" alt="${esc(caption || name)}">${caption ? `<br><em>${esc(caption)}</em>` : ""}</p>`;
-            Object.assign(patch, derived(Object.assign({}, t, { description: patch.description })));
-          }
+          if (removedInline) { patch.description = description; Object.assign(patch, derived(Object.assign({}, t, { description }))); }
           tx.update(ref, patch);
           putCard(tx, key, Object.assign({}, t, patch), session.email);
-          activity(tx, key, session.email, [`attached ${name} over MCP`]);
+          activity(tx, key, session.email, [`removed attachment ${target.name} over MCP`]);
           return attachments.length;
         });
-        if (result == null) return toolError(`No ticket ${args.key}.`);
-        await audit(session, "kanban_attach_file", { key, name, contentType, size: bytes.length, inline: !!args.inline });
-        return textResult({ attached: true, key, name, url, path, contentType, size: bytes.length, downscaled: resized, inline: !!args.inline, attachments: result });
+        if (left == null) return toolError(`${key} no longer has that attachment.`);
+        let fileDeleted = false;
+        if (target.path) {
+          try { const bucket = h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET); await bucket.file(target.path).delete(); fileDeleted = true; }
+          catch (err) { logger.warn("kanban attachment file not deleted", { key, path: target.path, error: String(err && err.message ? err.message : err) }); }
+        }
+        await audit(session, "kanban_remove_attachment", { key, name: target.name, path: target.path || null, inline: removedInline });
+        return textResult({ removed: true, key, name: target.name, path: target.path || null, removedFromDescription: removedInline, fileDeleted, attachments: left });
+      },
+    },
+    {
+      name: "kanban_capture_screenshot",
+      description: "Staff Kanban: the board opens a page in headless Chromium, screenshots it and puts the picture on a ticket, so no image data goes through MCP. The page must be on an artifact domain (offline2online.github.io, rawcdn.githack.com); usually the artifact URL plus a hash route. The image is stored as an attachment and placed in the description, replacing any \"Screenshot: …\" line (or an earlier capture). A page that answers non-200, says it doesn't exist or redirects off its route is reported and nothing is attached. Default viewport 1440×900, full page. Counts against the 60 files an hour per member. For several pages use kanban_capture_screenshots.",
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: Object.assign({ key: KEY }, CAPTURE_PROPS),
+        required: ["key", "url"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const r = await captureOne(session, args, args);
+        await audit(session, "kanban_capture_screenshot", { key: r.key || String(args.key || ""), ok: r.ok, url: String(args.url || "").slice(0, 300) });
+        return r.ok ? textResult(r) : toolError(`${r.key || args.key}: ${r.error} Nothing was attached.`);
+      },
+    },
+    {
+      name: "kanban_capture_screenshots",
+      description: `Staff Kanban: kanban_capture_screenshot for a list of {key, url} pairs in one call, e.g. every page epic of a project (up to ${capture.LIMITS.batchMax} pages, captured one after another). Each page is reported on its own: a failed page (not on an allowed domain, non-200, not found, redirected) has ok: false and the reason, and nothing is attached for it; the others still go through. Viewport, wait and caption apply to every page unless the pair sets its own.`,
+      scope: "board.write",
+      inputSchema: {
+        type: "object",
+        properties: Object.assign({
+          items: {
+            type: "array", minItems: 1, maxItems: capture.LIMITS.batchMax,
+            items: { type: "object", properties: Object.assign({ key: KEY }, CAPTURE_PROPS), required: ["key", "url"], additionalProperties: false },
+            description: "The pages: [{key, url}], each optionally with its own caption, width, height, fullPage or waitMs.",
+          },
+        }, CAPTURE_PROPS),
+        required: ["items"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const items = Array.isArray(args.items) ? args.items : [];
+        if (!items.length) return toolError("items is required: a list of {key, url}.");
+        if (items.length > capture.LIMITS.batchMax) return toolError(`At most ${capture.LIMITS.batchMax} pages in one call; send the rest in another.`);
+        const defaults = {};
+        for (const f of ["width", "height", "fullPage", "waitMs", "caption"]) if (args[f] !== undefined) defaults[f] = args[f];
+        const started = Date.now();
+        const results = [];
+        for (const it of items) {
+          if (Date.now() - started > capture.LIMITS.batchBudgetMs) { results.push({ ok: false, key: String((it && it.key) || ""), url: String((it && it.url) || ""), error: "Not attempted: the call ran out of time. Send this page again." }); continue; }
+          results.push(await captureOne(session, it || {}, defaults));
+        }
+        const ok = results.filter((r) => r.ok).length;
+        await audit(session, "kanban_capture_screenshots", { pages: results.length, ok, failed: results.length - ok });
+        const out = { captured: ok, failed: results.length - ok, results };
+        return ok === 0 ? Object.assign(toolError(`None of the ${results.length} pages could be captured: ${results.map((r) => `${r.key}: ${r.error}`).join(" | ")}`), { structuredContent: out }) : textResult(out);
       },
     },
     {
@@ -1555,4 +1900,4 @@ function kanbanTools(h) {
   }));
 }
 
-module.exports = { clearCaches, imageResizer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, handleBackfillLinks, backfillLinksSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };
+module.exports = { clearCaches, imageResizer, captureRenderer: capture.renderer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, handleBackfillLinks, backfillLinksSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };

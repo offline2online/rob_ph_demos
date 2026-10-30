@@ -236,7 +236,9 @@ export async function statusMove(p, key, placeId) {
   }
   await p.waitForSelector("#f-status");
   await p.selectOption("#f-status", pl.status === "done" ? `done:${pl.resolution}` : pl.status);
-  await press(p, "#f-save");
+  await sleep(80);
+  // Save is off when the ticket is already there (nothing changed): close it as Cancel would.
+  await press(p, (await p.$eval("#f-save", (e) => e.disabled)) ? "#f-cancel" : "#f-save");
   await p.waitForFunction(() => document.getElementById("task-backdrop").hidden, null, { timeout: 5000 });
   await sleep(120);
 }

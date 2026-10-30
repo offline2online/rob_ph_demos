@@ -161,7 +161,7 @@ can't make it so), a ticket created on the form or over MCP (`kanban_create_task
 none, and one can be added later; unreleased tickets still show on the board and in
 filters, and appear under "All releases" in the report.
 
-**KB-TASK-4 Flags.** Any ticket can be flagged from its card or its modal;
+**KB-TASK-4 Flags.** Any ticket can be flagged from its card or its modal (in the modal the Flag button sits on the same line as Priority);
 flagged cards are amber with a filled flag.
 
 **KB-TASK-5 Linked tickets.** Typed links (blocks, is blocked by, relates to,
@@ -195,6 +195,14 @@ item by item exceeded that, so the checklist is stored as a list of strings
 every line, the 500-character limit); the page, MCP and tests see
 `{id, text, done}` through `decodeCriteria`, and a direct write of objects is
 refused. The card carries the counts only (`acTotal`, `acDone`), never the text.
+
+**KB-TASK-13 Save only when something changed.** On an existing ticket the
+modal's **Save** button is disabled until a field on the page differs from what
+was loaded (title, description, any detail field, labels, links, attachments,
+the flag, or text typed in the comment box); changing a value back turns it off
+again. The same holds for **Save** on a comment being edited. A new ticket's
+Create button is unaffected. AC: open a ticket, Save is disabled; edit the title,
+it is enabled; restore the title, it is disabled; TC-69.
 
 **KB-TASK-6 Ticket search picker.** Wherever a ticket is chosen (linked
 tickets, adding an existing ticket to an epic) the user types a number (`36`,
@@ -261,7 +269,7 @@ Shared with the console's other mics: `backlog-tracker/public/js/dictation-resul
 `backlog-tracker/test/dictation-results.test.mjs`.
 
 **KB-MOD-5 Layout.** Delete / Cancel / primary button are pinned to the bottom
-of the modal. The details column folds away to the right (header button or
+of the modal. The details column runs the full height of the modal and folds away to the right (the button at the top of the column or the
 "Details" tab) so the description gets the full width; the choice is
 remembered and the column reopens if a required field in it is empty.
 
@@ -338,7 +346,25 @@ the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,
 untick acceptance criteria by id, KB-TASK-12), `kanban_attach_file` (a
 screenshot, image or pdf as base64, at most 5 MB decoded, stored under
 `kanban/{PH-n}/`, images over 1400 px shrunk, optionally inline in the
-description; 60 files an hour per member). Viewers get read tools only.
+description; 60 files an hour per member; only for small files, about 20 KB or less),
+`kanban_create_upload_url` → `kanban_attach_uploaded` (the route for anything
+bigger: a 15-minute, single-use signed Storage upload URL, the agent `curl`s
+the file up from its shell, then attaches it with the returned `uploadId`;
+same types, limits and 1400 px shrink; counted against the hourly 60 when the
+URL is made; pending uploads in the server-only `kanbanUploads`, the staging
+object `kanban-uploads/{PH-n}/{uploadId}` is deleted once attached or refused),
+`kanban_remove_attachment` (by `path`, or `name` when unique: leaves
+`attachments[]`, deletes the Storage object, removes its inline `<img>` and
+caption from the description, adjusts `attachmentCount`, logs activity and
+audit). **Every attach route** accepts an optional `sha256` and `size` and
+refuses on mismatch, and always checks the file is complete and decodes
+(a truncated or undecodable image is refused; nothing is stored or placed
+inline). `kanban_capture_screenshot` and
+`kanban_capture_screenshots` (the board renders the page itself in headless
+Chromium and puts the screenshot inline in the description in place of a
+"Screenshot: …" line, KB-MCP-CAPTURE: only https pages on the artifact
+domains, a non-200, not-found or redirected page is reported and attaches
+nothing; up to 20 pages per call). Viewers get read tools only.
 Staff can add and move tasks verbally through their agent.
 Writes (`kanban_create_task`, `kanban_update_task`, `kanban_assign_task`)
 refuse what the board can't show and report every problem in one error: an

@@ -10,7 +10,7 @@ Promoted from the Concept Incubator concept `vmhUoPiogxiJq1YmtJph`
 | Spec | [`REQUIREMENTS.md`](REQUIREMENTS.md): every requirement (`KB-…`) with acceptance criteria, data model, MCP, security |
 | Prototype | [`prototype/`](prototype/), live at <https://offline2online.github.io/rob_ph_demos/kanban-staff-board/prototype/>. Front-end only, mock data |
 | Tests | [`test/`](test/): Playwright end-to-end suite, one case per test-plan row, run in every profile of the viewport matrix (desktop, tablet, phone; mouse and touch; Chromium, Firefox, WebKit). `cd test && npm install && npx playwright install chromium firefox webkit && npm test` |
-| Test plan | [`docs/E2E-TEST-PLAN.md`](docs/E2E-TEST-PLAN.md) (TC-01 to TC-67, and TC-68); runs: [prototype, 25/25](docs/E2E-REPORT-2026-10-21.md), [console, 30/30](docs/E2E-REPORT-2026-10-21-console.md), [console and prototype across the viewport matrix](docs/E2E-REPORT-2026-10-21-console-matrix.md) |
+| Test plan | [`docs/E2E-TEST-PLAN.md`](docs/E2E-TEST-PLAN.md) (TC-01 to TC-67, TC-68 and TC-69); runs: [prototype, 25/25](docs/E2E-REPORT-2026-10-21.md), [console, 30/30](docs/E2E-REPORT-2026-10-21-console.md), [console and prototype across the viewport matrix](docs/E2E-REPORT-2026-10-21-console-matrix.md) |
 | CI | `.github/workflows/kanban-staff-board-tests.yml` on pull requests touching this folder, and on demand (the backlog automation dispatches it per train commit: one run per commit, 30-minute limit) |
 | Deploy | The prototype is GitHub Pages: live on merge to `main`. The production build lives in `backlog-tracker/` and deploys with the console (`deploy-backlog-tracker.yml`) when its train merges |
 | Data model | The board reads `kanbanCards` (one light card per ticket, written in the same batch as the ticket) and the modal reads the full `kanbanTasks` ticket; screenshots are held in Storage, not inline. `REQUIREMENTS.md` §12–13 |
@@ -115,7 +115,7 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   comment box uses a compact version. Type `@` to mention someone, and they get a notification when you save or comment (the bell in the console topbar; Watch a ticket to follow its comments). Paste,
   drop or upload screenshots; they're downscaled and stored with the ticket. The record button captures your screen as a
   playable video (prototype only: a recording lasts for the browser session, and the real console would upload it to Storage).
-- **Task modal layout**. The panel button in the window header (or the "Details" tab) folds the details column away to
+- **Task modal layout**. The details column runs the full height of the modal, with its panel button at the top of the column (or the "Details" tab when folded) and the Flag button on the same line as Priority. It folds the details column away to
   the right, so the description gets the full width. The choice is remembered, and it reopens by itself if a
   required field in it is empty.
 - **Finding tickets**. "Add an existing ticket" on an epic and "Linked tickets" use a search box, not a dropdown. Type a
