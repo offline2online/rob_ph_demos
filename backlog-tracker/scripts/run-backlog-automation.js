@@ -1281,7 +1281,16 @@ function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewU
   };
   const own = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
   if (own.length) {
-    return { kind: "already-on-train", commits: own, adopted: false, fields: base };
+    // A re-patch identical to what the card already has on the branch answers
+    // Failed testing as fully as a new commit does: the revert request from
+    // that round is spent, and so is its rebuild. Left set, the card sat in
+    // Ready for Testing that approve_for_deployment refused ("marked for
+    // revert") while the automation retried a revert that conflicted forever
+    // (30 Oct 2026, Staff Kanban nscnHeKRqi8TG5AA0gah, ticket xzFgioRYWpdeDfUzzCmp).
+    return {
+      kind: "already-on-train", commits: own, adopted: false,
+      fields: { ...base, revertRequested: false, revertBlockedBy: [], rebuildAfterRevert: false },
+    };
   }
   if (carrying && carrying.sha && carrying.itemId && carrying.itemId === item.id) {
     return {
@@ -1290,6 +1299,7 @@ function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewU
         ...base, deployBranch,
         deployCommit: carrying.sha, deployCommits: [carrying.sha],
         carriedByCommit: null, carriedByItem: null,
+        revertRequested: false, revertBlockedBy: [], rebuildAfterRevert: false,
         ...(previewUrl ? { previewUrl, ...(previewFields || {}) } : {}),
       },
     };
@@ -4937,8 +4947,38 @@ function revertCommitFor(sha) {
   }
 }
 
+// Every writer of revertRequested: true (the board's Failed testing, MCP
+// fail_testing, ejectRedCulprits, board-tickets.mjs --to backlog) moves the
+// card to Backlog in the same write. A card back on the train with the flag
+// still set was re-packaged since, so the request is spent: retrying it only
+// conflicts forever and keeps the card unapprovable. Pure.
+function staleRevertRequest(item) {
+  return !!(item && item.revertRequested === true && ON_TRAIN_STATUSES.has(item.status));
+}
+
+// The ids in `ids` that belong to `projectId`. A commit that reached the train
+// through a main merge belongs to another project's ticket, which nobody on
+// this train can send back, so it is not named as a blocker. A ticket that
+// can't be looked up is kept rather than hidden. Pure.
+function sameProjectIds(ids, itemsById, projectId) {
+  if (!projectId) return ids.slice();
+  return ids.filter((id) => {
+    const it = itemsById.get(id);
+    return !it || !it.projectId || it.projectId === projectId;
+  });
+}
+
 async function processRevertFromTrain(item) {
   console.log(`[train-revert] ${item.id}: ${item.title || item.desc}`);
+  if (staleRevertRequest(item)) {
+    const column = item.status === "ready-to-publish" ? "Approved for Deployment" : "Ready for Testing";
+    const notes = await appendNote(item,
+      `Revert request cleared: this card is back in ${column} on its train commits, so the Failed testing that asked for the revert ` +
+      `was answered by the rebuild. Nothing was reverted, and the card can be approved.`);
+    await patchItem(item.id, { revertRequested: false, revertBlockedBy: [], rebuildAfterRevert: false, updatedAt: new Date().toISOString(), notes });
+    console.log(`[train-revert] ${item.id}: revert request is stale (card is ${item.status}) — cleared`);
+    return;
+  }
   const commits = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
   const deployBranch = item.deployBranch;
   if (!commits.length && item.carriedByCommit) {
@@ -5029,7 +5069,10 @@ async function processRevertFromTrain(item) {
       try { run("git", ["revert", "--abort"]); } catch { /* nothing in progress */ }
       // Whose work sits on top of this commit — that's who a human has to
       // decide about (send them back too, or fix the branch by hand).
-      const blockedBy = itemIdsInRange(`${sha}..HEAD`).filter((id) => id !== item.id);
+      const later = itemIdsInRange(`${sha}..HEAD`).filter((id) => id !== item.id);
+      const laterItems = new Map();
+      for (const id of later) laterItems.set(id, await getItem(id).catch(() => null));
+      const blockedBy = sameProjectIds(later, laterItems, item.projectId);
       discardWorkingTree();
       const previousBlock = Array.isArray(item.revertBlockedBy) ? item.revertBlockedBy : [];
       const sameBlock = previousBlock.length === blockedBy.length && previousBlock.every((id) => blockedBy.includes(id));
@@ -7318,7 +7361,7 @@ if (require.main === module) {
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
-  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
+  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
   // test/train-rejudge.test.js — a ticket left with no verdict by a revert is re-tested
   scanRedTrain, rejudgeReverts, rejudgeKey, rejudgeShaOf, rejudgeRef, rejudgeCards, buildRejudgeCommit, pruneRejudgeRefs, evidenceRunsFor, laterPassFor,
