@@ -37,6 +37,7 @@ const { execFileSync } = require("child_process");
 
 const {
   onTrainItems, trainOwnedPrNumbers, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
+  staleRevertRequest, sameProjectIds,
 } = require("../scripts/run-backlog-automation.js");
 const { isTrainRelevantItem, trainLockShouldClear } = require("../functions/train-lock");
 
@@ -118,6 +119,45 @@ test("a re-patch identical to what the card already put on the branch stays on i
   assert.strictEqual(fields.status, "ready-for-testing");
   assert.ok(!("deployCommit" in fields) && !("carriedByCommit" in fields) && !("noDeploymentRequired" in fields),
     "its own commits are untouched — the sibling's commit is irrelevant to a card that has its own");
+});
+
+// 30 Oct 2026, Staff Kanban nscnHeKRqi8TG5AA0gah (ticket xzFgioRYWpdeDfUzzCmp):
+// sent back (revertRequested), the revert of 418c3b9 conflicted, the rebuild
+// re-packaged identical patchFiles — and the card sat in Ready for Testing
+// still "marked for revert", unapprovable, while every run retried the revert.
+test("an identical re-package after Failed testing clears the spent revert request", () => {
+  const sentBackThenRebuilt = { ...carriedCard, deployCommits: ["418c3b9"], deployCommit: "418c3b9", revertRequested: true, revertBlockedBy: ["eme92DUcRkB2tJDlYDhw"], rebuildAfterRevert: true };
+  const { kind, fields } = noDiffPatchFields(sentBackThenRebuilt, null, { deployBranch: BRANCH });
+  assert.strictEqual(kind, "already-on-train");
+  assert.strictEqual(fields.status, "ready-for-testing");
+  assert.strictEqual(fields.revertRequested, false);
+  assert.deepStrictEqual(fields.revertBlockedBy, []);
+  assert.strictEqual(fields.rebuildAfterRevert, false);
+});
+
+test("an adopted hand-pushed commit clears a spent revert request too", () => {
+  const { fields } = noDiffPatchFields({ ...carriedCard, revertRequested: true }, { sha: "feedface", itemId: carriedCard.id }, { deployBranch: BRANCH });
+  assert.strictEqual(fields.revertRequested, false);
+  assert.deepStrictEqual(fields.revertBlockedBy, []);
+});
+
+test("a revert request on a card back on the train is stale; one on a Backlog card is real", () => {
+  assert.strictEqual(staleRevertRequest({ status: "ready-for-testing", revertRequested: true }), true, "the stuck 30 Oct card: heal it");
+  assert.strictEqual(staleRevertRequest({ status: "ready-to-publish", revertRequested: true }), true);
+  assert.strictEqual(staleRevertRequest({ status: "backlog", revertRequested: true }), false, "Failed testing's own shape: revert it");
+  assert.strictEqual(staleRevertRequest({ status: "ready-for-testing", revertRequested: false }), false);
+  assert.strictEqual(staleRevertRequest(null), false);
+});
+
+test("a revert blocked by later commits names only this project's tickets", () => {
+  const items = new Map([
+    ["eme92DUcRkB2tJDlYDhw", { projectId: "New5VKTF2QBqT3T4YEla" }],
+    ["bhcRgcFJgPTBH2vafrkx", { projectId: "EywksAFxCSfDRdsRvofM" }], // Retail Media, arrived through a main merge
+    ["gone", null],
+  ]);
+  assert.deepStrictEqual(sameProjectIds(["eme92DUcRkB2tJDlYDhw", "bhcRgcFJgPTBH2vafrkx", "gone"], items, "New5VKTF2QBqT3T4YEla"),
+    ["eme92DUcRkB2tJDlYDhw", "gone"], "a ticket that can't be looked up is kept, never hidden");
+  assert.deepStrictEqual(sameProjectIds(["a", "b"], new Map(), ""), ["a", "b"], "no project to compare against: nothing filtered");
 });
 
 test("a hand-pushed commit carrying THIS card's own trailer is adopted as its train commit (CLAUDE.md: 'Putting a commit on a deployment train by hand')", () => {
