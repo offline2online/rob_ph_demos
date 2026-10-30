@@ -1,5 +1,5 @@
 'use strict';
-// QuickSight datasets (REQUIREMENTS section 2 and 7 step 4): the same API figures as flat, typed tables.
+// Amazon Quick datasets (REQUIREMENTS section 2 and 7 step 4): the same API figures as flat, typed tables.
 // Each dataset is one route's answer through runRoute (so the role check, page filters and advertiser
 // scoping are the API's own, not a copy), reshaped to one row per grain with scalar columns only.
 // Retailer datasets are admin only; the advertiser datasets are the advertiser view routes, pinned to the

@@ -1,7 +1,7 @@
 'use strict';
 const { availableDatasets } = require('../datasets');
 
-// QuickSight catalog: the datasets the caller may read. An advertiser sees only the advertiser view ones.
+// Amazon Quick catalog: the datasets the caller may read. An advertiser sees only the advertiser view ones.
 module.exports = {
   path: '/datasets',
   advertiserAccess: true,

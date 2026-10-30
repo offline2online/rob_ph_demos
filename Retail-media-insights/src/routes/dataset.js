@@ -4,7 +4,7 @@ const { buildDataset, toCsv } = require('../datasets');
 const catalog = require('./datasets');
 const { RAW } = require('../query');
 
-// One QuickSight dataset: `name=` picks it (omit it for the catalog), `format=json|csv` (default json), and every parameter of the
+// One Amazon Quick dataset: `name=` picks it (omit it for the catalog), `format=json|csv` (default json), and every parameter of the
 // underlying endpoint (page filters, granularity, ...) is passed through. It answers with exactly what the
 // endpoint answers for the same caller: an advertiser is pinned to itself and a retailer-only dataset is 403.
 module.exports = {

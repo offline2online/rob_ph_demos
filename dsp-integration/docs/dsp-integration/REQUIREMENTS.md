@@ -3759,7 +3759,7 @@ schema-consuming replacement is separately commissioned.
 - A single, versioned, canonical event schema becomes the single source of
   truth for what a play/impression/interaction event looks like, written to
   S3 partitions. DSP Integration reads **from** it, as one consumer among
-  others (a future Amazon QuickSight reporting pipeline, a future analytics
+  others (a future Amazon Quick reporting pipeline, a future analytics
   rebuild) — analytics stops being modelled as a downstream, DSP-specific
   concern and becomes the thing DSP Integration, among others, consumes.
 - **Separates the event model from the transport** (a structural principle
@@ -3837,7 +3837,7 @@ schema-consuming replacement is separately commissioned.
   question 34) evolving from a single per-play multiplier into a fuller
   measured-audience record.
 - CV measurement flows into the **same** S3 partition and eventual Amazon
-  QuickSight pipeline as any other canonical event (§9.1's "one schema, many
+  Amazon Quick pipeline as any other canonical event (§9.1's "one schema, many
   consumers" principle) — not a CV-only parallel pipeline.
 - **Outbound DSP contract** (spec only; extends §6 *API surface*):
   proof-of-audience fields, when populated, should surface to the DSP

@@ -1,5 +1,5 @@
 'use strict';
-// QuickSight datasets and MCP tools: the same figures and the same scoping as the API routes the tab reads.
+// Amazon Quick datasets and MCP tools: the same figures and the same scoping as the API routes the tab reads.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { generateTestRetailer } = require('../src/testdata');

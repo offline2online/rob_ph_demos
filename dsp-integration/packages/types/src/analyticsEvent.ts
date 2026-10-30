@@ -5,7 +5,7 @@
    instead of breaking it. Nothing in this build produces, stores, sends or
    reads these events — the existing Personalisation Hub analytics system
    stays the system of record (§9, "Relationship to existing analytics"),
-   and the transport (S3 partitioning, batching, QuickSight) is deliberately
+   and the transport (S3 partitioning, batching, Amazon Quick) is deliberately
    not decided here: the event MODEL is separate from its TRANSPORT.
 
    What this is not: the exhaustive field reference (types, allowed values,
