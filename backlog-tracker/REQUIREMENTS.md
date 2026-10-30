@@ -93,6 +93,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   releaseId?: string | null,      // see "releases/{releaseId}" below
   artifactUrl?: string,           // published Artifact link for this project — ⋮ → "View Artifact". Written directly (not via patchFiles/patchReady) by the Notify Claude Routine — see ROUTINE_INSTRUCTIONS.md → "Project Artifact"
   artifactUpdatedAt?: timestamp,  // set alongside artifactUrl, shown as "updated <date>" under the menu link
+  // artifactVersions: subcollection projects/{id}/artifactVersions/{n} — append-only sign-off snapshots {version, projectId, sourceUrl, pinnedUrl, commitSha, frozen, signedOffBy, signedOffAt, note}; written only by the MCP server (snapshot_project_artifact), members read, no browser write (firestore.rules). The ⋮ menu's View Artifact row shows the latest as "v<n>, signed off <date>". See MCP.md → "Artifact snapshots on sign-off".
   notifyRoutine?: {                // set by notifyOnProjectReadyForReview on each fire
     status: "in-progress" | "done" | "error" | "stalled", // "stalled" is transient: the sweep notes the cards, then writes "done" (closedAt, stalledItemIds)
     firedAt: timestamp,
@@ -492,7 +493,23 @@ busy. Now:
 - **Build sessions run what CI runs**: `npm run test:offline` in
   `backlog-tracker/test` is the console tests without the emulator, kept
   equal to CI by `ci-coverage.test.js`.
-Tests: `test/self-heal.test.js` (in `test:train-lock`).
+- **A spent revert request never strands a card (30 Oct 2026, xzFgioRYWpdeDfUzzCmp)**:
+  a card sent back whose revert conflicted, then rebuilt to identical
+  patchFiles, went back to Ready for Testing still `revertRequested`, so
+  approval refused it and every run retried the revert. An identical
+  re-package (`noDiffPatchFields`, "already-on-train") now clears
+  `revertRequested`, `revertBlockedBy` and `rebuildAfterRevert`, as a new
+  commit does. `processRevertFromTrain` also clears the flag, with a note,
+  on any card that is back in Ready for Testing or Approved
+  (`staleRevertRequest`): every send-back moves the card to Backlog in the
+  same write. `revertBlockedBy` names only the card's own project's tickets
+  (`sameProjectIds`); a commit that reached the train through a main merge
+  belongs to a ticket nobody on this train can send back. The Staff Kanban
+  E2E loop raises one auto-fix ticket per failing case, naming every
+  viewport it failed at (`groupByCase` in `scripts/kanban-e2e-heal.js`),
+  not one per viewport.
+Tests: `test/self-heal.test.js`, `test/train-carried.test.js` and
+`test/kanban-e2e-heal.test.js` (in `test:train-lock`).
 
 **A ticket is never sent back for a failure main already has (20 Oct
 2026).** `kanban-staff-board/` reached main with no line in START-HERE.md's
@@ -610,6 +627,28 @@ sat four commits behind main, the ticket's full-file patch landed on the
 stale base, and Deploy to Main stopped on a conflict in
 `backlog-tracker/MCP.md` that a person had to merge by hand. Tests:
 `test/train-sync.test.js`.
+
+**Append-only conflicts keep both additions (29 Oct 2026).** When the
+three-way merge in `rebasePatchFilesOnto` conflicts on a path in
+`UNION_MERGE_PATHS` (`backlog-tracker/test/**/*.test.{js,mjs}`, `**/*.md`),
+the file is merged again with `git merge-file --diff3` and every conflict
+hunk is checked: if each side's lines are the base's lines with lines added
+(no base line changed or removed), the hunk becomes the base with both
+sides' additions, the branch's before the patch's, and an addition identical
+on both sides kept once (`unionInsertedLines`). In the pinned tool list of
+`test/mcp-client.test.mjs` (`UNION_MERGE_LISTS`) the same rule applies name
+by name, a name going onto the line of the name before it and the gap kept
+sorted when every side was sorted (`unionInsertedListNames`). The file is
+used only if every hunk resolves and, for JavaScript, the result passes
+`node --check` (`parsesAs`); otherwise it is the same-lines conflict it was,
+and the ticket rebuilds. A union-merged file counts as rebased, and
+`rebasePatchFilesOnto` returns it in `unioned` (`{path, hunks}`), which the
+card's "Committed to …" note lists as "Union-merged …" (`unionMergeNote`).
+Not covered: Cloud Functions code such as `functions/kanban.js`'s tools
+array, and merging main into a train (`syncTrainWithMain`, Deploy to Main).
+Evidence: Staff Kanban, 29 Oct 2026 — 8 parallel tickets each appended to
+the same files; one landed per round, the rest rebuilt, about 4 hours lost.
+Tests: `test/train-sync.test.js`.
 
 **Automatic rebuilds after a refused patch are requested, not started**
 (19 Oct 2026, ticket mLCZgemj4wQEW6PTQru1; evidence: OanRebXyEryAXBQrBsVe,

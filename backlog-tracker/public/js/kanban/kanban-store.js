@@ -2,27 +2,36 @@
 //
 // Collections (see kanban-staff-board/REQUIREMENTS.md §12 and the matching
 // blocks in ../../firestore.rules / ../../storage.rules):
-//   kanbanTasks/{PH-n}                 one ticket; the doc id is its key
+//   kanbanTasks/{PH-n}                 one ticket, in full; the doc id is its key
+//   kanbanCards/{PH-n}                 the light copy the board reads: only what a
+//                                      card shows (core.cardOf). Written in the
+//                                      same batch as its ticket, by every writer
 //   kanbanTasks/{PH-n}/comments/{id}   comments (rich HTML + plain text)
 //   kanbanTasks/{PH-n}/activity/{id}   append-only log: moves, hand-offs, flags
 //   kanbanCounters/main                nextNumber, taken in a transaction
 //   kanbanSettings/main                field settings, tester, current release
 //   kanbanSprints/{id}                 name, start, end
-//   kanbanNotifications/{id}           @mentions, one per recipient
+//   kanbanNotifications/{id}           written by the fan-out trigger (functions/kanban-notify.js); read by kanban-bell.js
 //   memberDirectory/{email}            names and photos of every member,
 //                                      kept by functions/index.js (the full
 //                                      consoleUsers list is admin-only)
 //   Storage kanban/{PH-n}/…            screenshots, recordings, attachments
 //
-// Loading (KB §13 performance): every open ticket, the 300 most recently
-// closed, and — when a release is picked — everything in that release. All
-// single-field queries, so no composite index is needed.
+// Loading (KB §13 performance): the cards of every open ticket, of the 300
+// most recently closed, and — when a release is picked — of everything in that
+// release. All single-field queries, so no composite index is needed. The full
+// ticket (description, links, attachments) is read when its modal opens. While
+// kanbanCards is behind kanbanTasks (before the server's backfill has run) the
+// board reads kanbanTasks, so no ticket ever disappears.
 import {
-  collection, doc, getDoc, getDocs, onSnapshot, query, where, orderBy, limit,
-  serverTimestamp, writeBatch, runTransaction, increment, deleteField,
+  collection, doc, getDoc, getDocs, updateDoc, onSnapshot, query, where, orderBy, limit,
+  serverTimestamp, writeBatch, runTransaction, increment, deleteField, getCountFromServer, arrayUnion, arrayRemove,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
-import { searchTokens, htmlToText, mentionsIn, keyOf, keyNumber, normaliseSettings, queryToken } from "./kanban-core.js";
+import {
+  searchTokens, htmlToText, mentionsIn, keyOf, keyNumber, normaliseSettings, queryToken,
+  cardOf, cardPatchOf, externaliseInlineImages, dataUriParts, decodeCriteria, encodeCriteria, acCounts, linkChanges, inverseOf,
+} from "./kanban-core.js";
 
 export const CLOSED_LIMIT = 300;
 export const SERVER_SEARCH_LIMIT = 200;
@@ -55,6 +64,8 @@ export function taskFromDoc(id, d) {
     reporter: d.reporter || "",
     release: d.release || "",
     sprint: d.sprint || "",
+    project: d.project || "",
+    interfaceId: d.interfaceId || "",
     estimate: typeof d.estimate === "number" ? d.estimate : "",
     logged: typeof d.logged === "number" ? d.logged : 0,
     priority: d.priority || "",
@@ -63,7 +74,12 @@ export function taskFromDoc(id, d) {
     epic: d.epic || "",
     links: Array.isArray(d.links) ? d.links : [],
     flagged: !!d.flagged,
+    watchers: Array.isArray(d.watchers) ? d.watchers : [],
     attachments: Array.isArray(d.attachments) ? d.attachments : [],
+    acceptanceCriteria: decodeCriteria(d.acceptanceCriteria),
+    acTotal: Array.isArray(d.acceptanceCriteria) ? acCounts(d.acceptanceCriteria).total : Number.isInteger(d.acTotal) ? d.acTotal : 0,
+    acDone: Array.isArray(d.acceptanceCriteria) ? acCounts(d.acceptanceCriteria).done : Number.isInteger(d.acDone) ? d.acDone : 0,
+    attachmentCount: Array.isArray(d.attachments) ? d.attachments.length : typeof d.attachmentCount === "number" ? d.attachmentCount : 0,
     commentCount: typeof d.commentCount === "number" ? d.commentCount : 0,
     created: isoOf(d.createdAt),
     createdBy: d.createdBy || "",
@@ -83,47 +99,115 @@ export function derivedFields(t) {
 const DERIVED_FROM = ["title", "description", "labels"];
 
 // The fields of a task that are stored as they are.
-export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments"];
+export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments", "acceptanceCriteria", "watchers"];
 
-export function createStore({ db, storage, me, onChange = () => {}, onError = () => {} }) {
-  const tasks = new Map();       // key -> task (open + closed + release): the board
+// backfill: asks the server to fill kanbanCards from kanbanTasks (idempotent).
+export function createStore({ db, storage, me, backfill = null, onChange = () => {}, onError = () => {} }) {
+  const tasks = new Map();       // key -> card (open + closed + release): the board
   const extra = new Map();       // key -> task fetched on demand: never on the board
+  const full = new Map();        // key -> the full ticket, as last read or saved
+  const texts = new Map();       // key -> description text, from the server's search hits
   const sources = new Map();     // key -> Set of listener names that hold it
+  let boardColl = "kanbanCards"; // "kanbanTasks" while the cards are behind
   const state = {
-    tasks, extra, settings: normaliseSettings(null), settingsLoaded: false, sprints: [], members: [], membersLoaded: false,
-    notifications: [], ready: { open: false, closed: false },
+    tasks, extra, texts, settings: normaliseSettings(null), settingsLoaded: false, sprints: [], members: [], membersLoaded: false,
+    ready: { open: false, closed: false }, rev: 0, doneTotal: null,
   };
   const unsubs = [];
   let releaseUnsub = null, releaseWatched = "";
   const changed = (what) => { try { onChange(what); } catch (e) { onError(e); } };
 
+  // state.rev counts changes to what the board holds, so the page can keep
+  // derived lists (every ticket as an array) until it moves.
+  const bump = () => { state.rev++; };
+  function hold(name, id, data) {
+    tasks.set(id, taskFromDoc(id, data));
+    if (!sources.has(id)) sources.set(id, new Set());
+    sources.get(id).add(name);
+  }
+  function release(name, id) {
+    const set = sources.get(id);
+    if (!set || !set.has(name)) return;
+    set.delete(name);
+    if (!set.size) { sources.delete(id); tasks.delete(id); }
+  }
+  // A listener's first snapshot is the whole result: whatever it held before
+  // and isn't in it any more goes. After that only the changed documents arrive.
   function absorb(name, snap) {
     const seen = new Set();
-    snap.forEach((d) => {
-      seen.add(d.id);
-      tasks.set(d.id, taskFromDoc(d.id, d.data({ serverTimestamps: "estimate" })));
-      if (!sources.has(d.id)) sources.set(d.id, new Set());
-      sources.get(d.id).add(name);
-    });
-    for (const [key, set] of sources) {
-      if (set.has(name) && !seen.has(key)) {
-        set.delete(name);
-        if (!set.size) { sources.delete(key); tasks.delete(key); }
-      }
+    snap.forEach((d) => { seen.add(d.id); hold(name, d.id, d.data({ serverTimestamps: "estimate" })); });
+    for (const [key, set] of [...sources]) if (set.has(name) && !seen.has(key)) release(name, key);
+    bump();
+  }
+  function absorbChanges(name, snap) {
+    for (const ch of snap.docChanges()) {
+      if (ch.type === "removed") release(name, ch.doc.id);
+      else hold(name, ch.doc.id, ch.doc.data({ serverTimestamps: "estimate" }));
     }
+    bump();
   }
   // Tickets fetched on demand (an epic's children, a linked ticket, a search
   // hit) are kept beside the board's own, so they can be named and opened
   // without appearing in its columns.
-  function pin(list) { for (const t of list) if (!tasks.has(t.key)) extra.set(t.key, t); }
+  function pin(list) { for (const t of list) if (!tasks.has(t.key)) extra.set(t.key, t); bump(); }
   const get = (key) => tasks.get(key) || extra.get(key) || null;
 
   const tasksRef = collection(db, "kanbanTasks");
-  const listen = (name, q, after) => onSnapshot(q, (snap) => { absorb(name, snap); if (after) after(); changed("tasks"); }, (err) => onError(err));
+  const cardsRef = collection(db, "kanbanCards");
+  const boardRef = () => collection(db, boardColl);
+  const cardDoc = (key) => doc(db, "kanbanCards", key);
+  const listen = (name, q, after) => {
+    let first = true;
+    return onSnapshot(q, (snap) => {
+      const moved = !first && (name === "open" || name === "closed") && snap.docChanges().some((c) => c.type !== "modified");
+      if (first) absorb(name, snap); else absorbChanges(name, snap);
+      if ((name === "closed" && first) || moved) refreshDoneTotal();
+      first = false;
+      if (after) after();
+      changed("tasks");
+    }, (err) => onError(err));
+  };
+  // The Done column's total: a count() query, asked again only when a ticket
+  // enters or leaves Done, never on every snapshot.
+  let doneTimer = 0;
+  function refreshDoneTotal() {
+    clearTimeout(doneTimer);
+    doneTimer = setTimeout(async () => {
+      try {
+        const n = await countOf(query(boardRef(), where("open", "==", false)));
+        if (n !== state.doneTotal) { state.doneTotal = n; changed("tasks"); }
+      } catch (e) { /* the loaded cards still count */ }
+    }, 250);
+  }
+
+  // The board's two listeners (open tickets, the latest closed), on the cards
+  // or, while they are behind, on the tickets.
+  let boardUnsubs = [];
+  function listenBoard() {
+    boardUnsubs.splice(0).forEach((u) => u());
+    boardUnsubs.push(listen("open", query(boardRef(), where("open", "==", true)), () => { state.ready.open = true; }));
+    boardUnsubs.push(listen("closed", query(boardRef(), orderBy("closedAt", "desc"), limit(CLOSED_LIMIT)), () => { state.ready.closed = true; }));
+    if (releaseWatched) { const r = releaseWatched; releaseWatched = ""; watchRelease(r); }
+  }
+  const countOf = async (ref) => (await getCountFromServer(ref)).data().count;
+  const cardsBehind = async () => (await countOf(cardsRef)) < (await countOf(tasksRef));
+  // Which collection the board reads. Behind: read the tickets, ask the server
+  // to fill the cards, and move to them when they have caught up.
+  async function chooseBoard() {
+    let behind = false;
+    try { behind = await cardsBehind(); } catch (e) { behind = true; }
+    boardColl = behind ? "kanbanTasks" : "kanbanCards";
+    listenBoard();
+    if (!behind || !backfill) return;
+    try {
+      await backfill();
+      if (!(await cardsBehind())) { boardColl = "kanbanCards"; listenBoard(); changed("tasks"); }
+    } catch (e) { console.warn("staff kanban: card backfill:", e); }
+  }
 
   function start() {
-    unsubs.push(listen("open", query(tasksRef, where("open", "==", true)), () => { state.ready.open = true; }));
-    unsubs.push(listen("closed", query(tasksRef, orderBy("closedAt", "desc"), limit(CLOSED_LIMIT)), () => { state.ready.closed = true; }));
+    unsubs.push(() => boardUnsubs.splice(0).forEach((u) => u()));
+    chooseBoard();
     unsubs.push(onSnapshot(doc(db, "kanbanSettings", "main"), (s) => {
       state.settings = normaliseSettings(s.exists() ? s.data() : null);
       state.settingsLoaded = true;
@@ -138,10 +222,6 @@ export function createStore({ db, storage, me, onChange = () => {}, onError = ()
       state.membersLoaded = true;
       changed("members");
     }, onError));
-    unsubs.push(onSnapshot(query(collection(db, "kanbanNotifications"), where("to", "==", me), limit(100)), (snap) => {
-      state.notifications = snap.docs.map((d) => ({ id: d.id, ...d.data(), at: isoOf(d.data({ serverTimestamps: "estimate" }).at) })).sort((a, b) => b.at.localeCompare(a.at));
-      changed("notifications");
-    }, onError));
   }
   function stop() { unsubs.splice(0).forEach((u) => u()); if (releaseUnsub) releaseUnsub(); releaseUnsub = null; releaseWatched = ""; }
 
@@ -150,19 +230,23 @@ export function createStore({ db, storage, me, onChange = () => {}, onError = ()
     if (releaseId === releaseWatched) return;
     if (releaseUnsub) { releaseUnsub(); releaseUnsub = null; absorb("release", { forEach() {} }); }
     releaseWatched = releaseId || "";
-    if (releaseId) releaseUnsub = listen("release", query(tasksRef, where("release", "==", releaseId)));
+    if (releaseId) releaseUnsub = listen("release", query(boardRef(), where("release", "==", releaseId)));
   }
 
   // ── Reads on demand ──────────────────────────────────────────────────
+  // The full ticket, read fresh: what the board holds is only its card.
   async function fetchTask(key) {
     const s = await getDoc(doc(db, "kanbanTasks", key));
-    if (!s.exists()) return null;
+    if (!s.exists()) { full.delete(key); return null; }
     const t = taskFromDoc(s.id, s.data());
+    full.set(key, t);
     pin([t]);
     return t;
   }
+  // A ticket's full record as the page last read or saved it (else the card).
+  const getFull = (key) => full.get(key) || get(key);
   async function fetchChildren(epicKey) {
-    const snap = await getDocs(query(tasksRef, where("epic", "==", epicKey)));
+    const snap = await getDocs(query(boardRef(), where("epic", "==", epicKey)));
     const list = snap.docs.map((d) => taskFromDoc(d.id, d.data()));
     pin(list);
     return list;
@@ -174,12 +258,13 @@ export function createStore({ db, storage, me, onChange = () => {}, onError = ()
     if (!token) return [];
     const snap = await getDocs(query(tasksRef, where("searchTokens", "array-contains", token), limit(SERVER_SEARCH_LIMIT)));
     const list = snap.docs.map((d) => taskFromDoc(d.id, d.data()));
+    for (const t of list) texts.set(t.key, t.descriptionText);
     pin(list);
     return list;
   }
   function watchComments(key, cb) {
     return onSnapshot(collection(db, "kanbanTasks", key, "comments"), (snap) => {
-      cb(snap.docs.map((d) => { const x = d.data({ serverTimestamps: "estimate" }); return { id: d.id, author: x.author, html: x.html || "", text: x.text || "", at: isoOf(x.at) }; }));
+      cb(snap.docs.map((d) => { const x = d.data({ serverTimestamps: "estimate" }); return { id: d.id, author: x.author, html: x.html || "", text: x.text || "", at: isoOf(x.at), edited: !!x.editedAt }; }));
     }, onError);
   }
   function watchActivity(key, cb) {
@@ -202,19 +287,56 @@ export function createStore({ db, storage, me, onChange = () => {}, onError = ()
   function storedPatch(patch) {
     const out = {};
     for (const k of STORED_FIELDS) if (k in patch) out[k] = patch[k] === undefined ? null : patch[k];
+    if ("acceptanceCriteria" in out) out.acceptanceCriteria = encodeCriteria(out.acceptanceCriteria);
     if ("estimate" in out && (out.estimate === "" || out.estimate == null)) out.estimate = null;
     if ("resolution" in out && !out.resolution) out.resolution = null;
     return out;
   }
 
+  // The card of a ticket, written in the same batch or transaction as the
+  // ticket itself. On the cards (the usual case) only the changed fields are
+  // merged, so a concurrent change to another field is kept; while the cards
+  // are behind, the whole card is written from the ticket.
+  function cardOps(b, key, cur, patch, closed) {
+    const part = cardPatchOf(patch);
+    const data = boardColl === "kanbanCards" && cur && tasks.has(key) ? part : { ...cardOf({ ...cur, ...patch, key }), ...part };
+    Object.assign(data, closed || {}, stamp());
+    b.set(cardDoc(key), data, { merge: true });
+  }
+  // The other side of every link added or removed (KB-TASK-5): the other ticket
+  // carries the reverse type, written in the same batch. A ticket that no longer
+  // exists is left alone. Returns the tickets touched, for the local copies.
+  async function linkOps(b, key, before, after) {
+    const { added, removed } = linkChanges(before, after);
+    const touched = [];
+    for (const [list, add] of [[added, true], [removed, false]]) {
+      for (const l of list) {
+        if (l.key === key) continue;
+        const ref = doc(db, "kanbanTasks", l.key);
+        if (!(await getDoc(ref)).exists()) continue;
+        const inv = inverseOf(key, l);
+        b.update(ref, { links: add ? arrayUnion(inv) : arrayRemove(inv), ...stamp() });
+        activityOps(b, l.key, [`${add ? "linked" : "unlinked"}: ${inv.type} ${key}`]);
+        touched.push({ key: l.key, inv, add });
+      }
+    }
+    return touched;
+  }
+  // What a write needs of a ticket that the board may not hold.
+  async function ensure(key) { return get(key) || full.get(key) || (await fetchTask(key)) || {}; }
+
   // New ticket: PH-n from the counter, in one transaction (KB-TASK-1).
   async function createTask(fields, activity) {
+    let linkedOnCreate = [];
     const counterRef = doc(db, "kanbanCounters", "main");
     const key = await runTransaction(db, async (tx) => {
       const c = await tx.get(counterRef);
       const n = c.exists() && typeof c.data().nextNumber === "number" ? c.data().nextNumber : 1;
       const key = keyOf(n);
       const t = { ...fields, key };
+      // Reads first: which linked tickets exist (transactions read before they write).
+      const linked = [];
+      for (const l of t.links || []) if (l.key !== key && (await tx.get(doc(db, "kanbanTasks", l.key))).exists()) linked.push(l);
       const data = {
         ...storedPatch(t), ...derivedFields(t),
         key, number: n, status: t.status || "backlog", ...statusExtras(t.status || "backlog"),
@@ -224,9 +346,16 @@ export function createStore({ db, storage, me, onChange = () => {}, onError = ()
       if (data.open) delete data.closedAt;
       tx.set(counterRef, { nextNumber: n + 1, updatedAt: serverTimestamp() });
       tx.set(doc(db, "kanbanTasks", key), data);
-      return key;
-    });
-    if (activity && activity.length) { const b = writeBatch(db); activityOps(b, key, activity); await b.commit(); }
+      tx.set(cardDoc(key), { ...cardOf({ ...t, key, ...data }), ...(data.open ? {} : { closedAt: data.closedAt }), ...stamp() });
+      for (const l of linked) tx.update(doc(db, "kanbanTasks", l.key), { links: arrayUnion(inverseOf(key, l)), ...stamp() });
+      return { key, linked };
+    }).then((r) => { linkedOnCreate = r.linked; return r.key; });
+    if ((activity && activity.length) || linkedOnCreate.length) {
+      const b = writeBatch(db);
+      activityOps(b, key, activity);
+      for (const l of linkedOnCreate) activityOps(b, l.key, [`linked: ${inverseOf(key, l).type} ${key}`]);
+      await b.commit();
+    }
     return key;
   }
 
@@ -234,64 +363,139 @@ export function createStore({ db, storage, me, onChange = () => {}, onError = ()
   // tickets' patches (an epic's children) ride in the same batch.
   async function updateTask(key, patch, activity, others = []) {
     const b = writeBatch(db);
-    const cur = get(key) || {};
+    const cur = (await ensure(key));
+    // Search words come from the description, which a card doesn't hold.
+    const derive = DERIVED_FROM.some((k) => k in patch);
+    const whole = derive && !("description" in patch) ? (await fetchTask(key)) || cur : cur;
     const data = { ...storedPatch(patch), ...stamp() };
-    if (DERIVED_FROM.some((k) => k in patch)) Object.assign(data, derivedFields({ ...cur, ...patch, key }));
-    if ("status" in patch) Object.assign(data, statusExtras(patch.status));
+    // The other side of a changed link rides in the same batch; the ticket's own
+    // links are read in full, as a card holds none.
+    const touchedLinks = "links" in patch ? await linkOps(b, key, ((await fetchTask(key)) || cur).links || [], patch.links || []) : [];
+    if (derive) Object.assign(data, derivedFields({ ...whole, ...patch, key }));
+    const closed = "status" in patch ? statusExtras(patch.status) : null;
+    if (closed) Object.assign(data, closed);
     b.update(doc(db, "kanbanTasks", key), data);
+    cardOps(b, key, cur, patch, closed);
     activityOps(b, key, activity);
+    const kids = [];
     for (const o of others) {
+      kids.push([o.key, await ensure(o.key)]);
       b.update(doc(db, "kanbanTasks", o.key), { ...storedPatch(o.patch), ...stamp() });
+      cardOps(b, o.key, kids[kids.length - 1][1], o.patch, null);
       activityOps(b, o.key, o.activity);
     }
     // Optimistic: the listener's echo replaces this a moment later; a failed
     // write puts the old values back.
     const before = [[key, get(key)], ...others.map((o) => [o.key, get(o.key)])];
-    const put = (k, v) => { if (!v) return; (tasks.has(k) ? tasks : extra).set(k, v); };
-    put(key, cur.key ? { ...cur, ...patch } : null);
-    for (const o of others) { const t = get(o.key); put(o.key, t ? { ...t, ...o.patch } : null); }
+    const put = (k, v) => { if (!v) return; (tasks.has(k) ? tasks : extra).set(k, v); bump(); };
+    const withCount = (t, p) => ({
+      ...t, ...p,
+      ...("attachments" in p ? { attachmentCount: (p.attachments || []).length } : {}),
+      ...("acceptanceCriteria" in p ? { acTotal: acCounts(p.acceptanceCriteria).total, acDone: acCounts(p.acceptanceCriteria).done } : {}),
+    });
+    put(key, cur.key ? withCount(cur, patch) : null);
+    for (const o of others) { const t = get(o.key); put(o.key, t ? withCount(t, o.patch) : null); }
+    const otherFull = touchedLinks.filter((x) => full.has(x.key)).map((x) => [x.key, full.get(x.key)]);
+    for (const x of touchedLinks) {
+      const f = full.get(x.key);
+      if (f) full.set(x.key, { ...f, links: x.add ? [...(f.links || []).filter((l) => !(l.type === x.inv.type && l.key === x.inv.key)), x.inv] : (f.links || []).filter((l) => !(l.type === x.inv.type && l.key === x.inv.key)) });
+    }
+    const fullBefore = full.get(key);
+    if (fullBefore) full.set(key, { ...withCount(fullBefore, patch), ...(derive ? { descriptionText: data.descriptionText } : {}) });
     try { await b.commit(); }
-    catch (err) { for (const [k, v] of before) put(k, v); changed("tasks"); throw err; }
+    catch (err) { for (const [k, v] of before) put(k, v); for (const [k, v] of otherFull) full.set(k, v); if (fullBefore) full.set(key, fullBefore); changed("tasks"); throw err; }
+  }
+
+  // A change to a ticket's acceptance criteria (KB-TASK-12), made against the
+  // latest copy in a transaction so two people ticking different items never
+  // overwrite each other. `change(list)` gets the current decoded list and
+  // returns { list, activity: [lines] } (or null for no change).
+  async function changeCriteria(key, change) {
+    const ref = doc(db, "kanbanTasks", key);
+    const res = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error(`${key} no longer exists`);
+      const cur = decodeCriteria(snap.data().acceptanceCriteria);
+      const out = change(cur);
+      if (!out) return null;
+      const n = acCounts(out.list);
+      tx.update(ref, { acceptanceCriteria: encodeCriteria(out.list), ...stamp() });
+      // (while the cards are behind, a card is written whole so it is never a fragment)
+      const counts = boardColl === "kanbanCards" ? { acTotal: n.total, acDone: n.done } : cardOf({ ...snap.data(), key, acceptanceCriteria: encodeCriteria(out.list) });
+      tx.set(cardDoc(key), { ...counts, ...stamp() }, { merge: true });
+      for (const text of out.activity || []) if (text) tx.set(doc(collection(db, "kanbanTasks", key, "activity")), { who: me, text: String(text).slice(0, 500), at: serverTimestamp() });
+      return out.list;
+    });
+    if (res) {
+      const n = acCounts(res), fresh = (t) => (t ? { ...t, acceptanceCriteria: res, acTotal: n.total, acDone: n.done } : t);
+      const held = get(key);
+      if (held) { (tasks.has(key) ? tasks : extra).set(key, fresh(held)); bump(); }
+      if (full.has(key)) full.set(key, fresh(full.get(key)));
+      changed("tasks");
+    }
+    return res;
   }
 
   // Deleting an epic unlinks its children (KB-TASK-7).
   async function deleteTask(key) {
     const kids = await fetchChildren(key);
     const b = writeBatch(db);
+    // The tickets it was linked to forget it.
+    const own = (await fetchTask(key).catch(() => null)) || full.get(key) || {};
+    await linkOps(b, key, own.links || [], []);
     for (const k of kids) {
       b.update(doc(db, "kanbanTasks", k.key), { epic: "", ...stamp() });
+      cardOps(b, k.key, k, { epic: "" });
       activityOps(b, k.key, [`removed from epic ${key} (deleted)`]);
     }
     b.delete(doc(db, "kanbanTasks", key));
+    b.delete(cardDoc(key));
     await b.commit();
-    tasks.delete(key); extra.delete(key); sources.delete(key);
+    tasks.delete(key); extra.delete(key); full.delete(key); sources.delete(key); bump();
     changed("tasks");
   }
 
-  async function addComment(key, { html, text }, notifyTo = [], title = "") {
+  async function addComment(key, { html, text }) {
     const b = writeBatch(db);
     b.set(doc(collection(db, "kanbanTasks", key, "comments")), { author: me, html, text: String(text || "").slice(0, 20000), mentions: mentionsIn(html), at: serverTimestamp() });
     b.update(doc(db, "kanbanTasks", key), { commentCount: increment(1), ...stamp() });
-    notifyOps(b, notifyTo, key, title, "comment");
+    // (the card counts it too; before the cards are filled the count is written whole)
+    const cur = await ensure(key);
+    b.set(cardDoc(key), boardColl === "kanbanCards" && tasks.has(key)
+      ? { commentCount: increment(1), ...stamp() }
+      : { ...cardOf({ ...cur, key }), commentCount: (cur.commentCount || 0) + 1, ...stamp() }, { merge: true });
     await b.commit();
   }
 
-  // @mention notifications (KB-MOD-3): one doc per recipient.
-  function notifyOps(b, to, key, title, kind) {
-    for (const email of [...new Set(to)].filter((e) => e && e !== me)) {
-      b.set(doc(collection(db, "kanbanNotifications")), { to: email, from: me, taskKey: key, taskTitle: String(title || "").slice(0, 200), kind, read: false, at: serverTimestamp() });
-    }
-  }
-  async function notify(to, key, title, kind = "description") {
-    if (!to.length) return;
+  // Edit your own comment (KB-MOD-3): html, text, mentions and editedAt only. The
+  // ticket itself isn't written, so the edit tells nobody but the people newly @mentioned
+  // (functions/kanban-notify.js commentEdited).
+  async function editComment(key, id, { html, text }) {
     const b = writeBatch(db);
-    notifyOps(b, to, key, title, kind);
+    b.update(doc(db, "kanbanTasks", key, "comments", id), { html, text: String(text || "").slice(0, 20000), mentions: mentionsIn(html), editedAt: serverTimestamp() });
+    activityOps(b, key, ["edited a comment"]);
     await b.commit();
   }
-  async function markRead(ids) {
+  // Delete a comment: its author, or an admin for anyone's (the rules check which).
+  async function deleteComment(key, id) {
     const b = writeBatch(db);
-    for (const id of ids) b.update(doc(db, "kanbanNotifications", id), { read: true });
+    b.delete(doc(db, "kanbanTasks", key, "comments", id));
+    b.update(doc(db, "kanbanTasks", key), { commentCount: increment(-1), ...stamp() });
+    const cur = await ensure(key);
+    b.set(cardDoc(key), boardColl === "kanbanCards" && tasks.has(key)
+      ? { commentCount: increment(-1), ...stamp() }
+      : { ...cardOf({ ...cur, key }), commentCount: Math.max(0, (cur.commentCount || 0) - 1), ...stamp() }, { merge: true });
+    activityOps(b, key, ["deleted a comment"]);
     await b.commit();
+  }
+
+  // Watch / stop watching a ticket (KB-NAV-2); the fan-out trigger reads watchers[].
+  async function setWatching(key, on) {
+    const cur = (await fetchTask(key)) || (await ensure(key));
+    const list = (cur.watchers || []).filter((x) => x !== me);
+    if (on) list.push(me);
+    await updateDoc(doc(db, "kanbanTasks", key), { watchers: list, ...stamp() });
+    if (full.has(key)) full.set(key, { ...full.get(key), watchers: list });
   }
 
   async function upload(key, blob, name) {
@@ -300,6 +504,20 @@ export function createStore({ db, storage, me, onChange = () => {}, onError = ()
     const r = storageRef(storage, path);
     await uploadBytes(r, blob, { contentType: blob.type || "application/octet-stream" });
     return { url: await getDownloadURL(r), path };
+  }
+
+  // Inline screenshots in a description (a paste the editor kept as a data:
+  // URI) go to Storage and the description holds their URLs. Returns the new HTML.
+  async function externaliseImages(key, html) {
+    return externaliseInlineImages(html, async (uri) => {
+      const parts = dataUriParts(uri);
+      if (!parts) return uri;
+      const bin = atob(parts.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const ext = (parts.contentType.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "").slice(0, 5) || "png";
+      return (await upload(key, new Blob([bytes], { type: parts.contentType }), `screenshot.${ext}`)).url;
+    });
   }
 
   async function saveSettings(patch) {
@@ -314,7 +532,7 @@ export function createStore({ db, storage, me, onChange = () => {}, onError = ()
   }
 
   return {
-    state, get, start, stop, watchRelease, fetchTask, fetchChildren, searchServer, watchComments, watchActivity,
-    createTask, updateTask, deleteTask, addComment, notify, markRead, upload, saveSettings, addSprint,
+    state, get, getFull, start, stop, watchRelease, fetchTask, fetchChildren, searchServer, watchComments, watchActivity,
+    createTask, updateTask, changeCriteria, deleteTask, addComment, editComment, deleteComment, setWatching, upload, externaliseImages, saveSettings, addSprint, backfill: () => (backfill ? backfill() : Promise.resolve()),
   };
 }

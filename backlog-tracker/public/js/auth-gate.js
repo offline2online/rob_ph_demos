@@ -134,6 +134,10 @@ function hideAll() {
   if (redirectBtn) redirectBtn.hidden = true;
   if (verifyBtn) verifyBtn.hidden = true;
 }
+// index.html's <head> sets html[data-restoring] before first paint (keeps the
+// sign-in card off screen on a remembered session). Every state below puts
+// gate/app visibility under this file's control, so the flag goes.
+function endRestoringFlag() { document.documentElement.removeAttribute("data-restoring"); }
 function applyRole(role) {
   if (!ROLES.includes(role)) role = "editor";
   document.documentElement.dataset.consoleRole = role;
@@ -142,6 +146,7 @@ function applyRole(role) {
 // A first visit, or a session we know is gone: the sign-in card, with a
 // neutral status until Firebase has actually answered.
 function showResolving() {
+  endRestoringFlag();
   gate.hidden = false; appRoot.hidden = true;
   delete document.documentElement.dataset.booting;
   hideAll();
@@ -151,6 +156,7 @@ function showResolving() {
 // shell, with a one-line "Restoring your session…" under the topbar and
 // the last-known role applied so the layout doesn't jump when app.js lands.
 function showRestoring() {
+  endRestoringFlag();
   gate.hidden = true; appRoot.hidden = false;
   document.documentElement.dataset.booting = "1";
   const role = readLocal(ROLE_KEY);
@@ -158,6 +164,7 @@ function showRestoring() {
   setBootStatus("Restoring your session…");
 }
 function showSignIn() {
+  endRestoringFlag();
   gate.hidden = false; appRoot.hidden = true;
   delete document.documentElement.dataset.booting;
   hideAll();
@@ -166,6 +173,7 @@ function showSignIn() {
   setStatus("");
 }
 function showRejected(message, { canRetry = false, canVerify = false } = {}) {
+  endRestoringFlag();
   gate.hidden = false; appRoot.hidden = true;
   delete document.documentElement.dataset.booting;
   hideAll();
@@ -435,6 +443,7 @@ async function startApp(user, membership) {
   consoleEmail = membership.email;
   writeLocal(REMEMBER_KEY, "1");
   writeLocal(ROLE_KEY, consoleRole);
+  endRestoringFlag();
   gate.hidden = true;
   appRoot.hidden = false;
   document.documentElement.classList.add("signed-in");

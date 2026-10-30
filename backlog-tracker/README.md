@@ -234,6 +234,22 @@ safe and moving:
   file from it onto the train as it is when the patch lands, so a ticket
   that landed in between is never overwritten. A same-lines clash notes the
   card and rebuilds it once automatically (`autoRebuilds`).
+- **Two tickets that only added lines at the same place both land** (29 Oct
+  2026). On 29 Oct Staff Kanban sent 8 tickets at once; each appended a case
+  to `test/kanban-mcp.test.js`, a name to the pinned tool list in
+  `test/mcp-client.test.mjs` and a row to the tool tables in `MCP.md` and
+  `kanban-staff-board/REQUIREMENTS.md`. `git merge-file` calls two
+  insertions at one point a conflict, so one ticket landed per round and
+  the rest were rebuilt, about 4 hours in all. Now, on
+  `backlog-tracker/test/**/*.test.{js,mjs}` and any `*.md`, a conflict hunk
+  where neither side changed or removed a base line keeps both additions,
+  the branch's first, then the patch's (`unionMergeConflicts`, re-merged with
+  `--diff3` so the base is known). Inside `mcp-client.test.mjs`'s pinned list
+  this is done name by name, kept sorted. Any other hunk in the file, a path
+  off that list (`functions/kanban.js` included) or a union that fails
+  `node --check` stays a conflict and rebuilds as before. The card's
+  "Committed to …" note names each union-merged file ("Union-merged …"), so
+  a reviewer can check the order. Tests: `test/train-sync.test.js`.
 - **An automatic rebuild is "requested", then confirmed or reported**
   (19 Oct 2026). The card note says a rebuild was *requested* and stamps
   `rebuildRequestedAt`. The notify function records the outcome of every
@@ -1074,6 +1090,14 @@ What the board downloads, and when — see `SECURITY-PERFORMANCE.md` for the mea
 - **`patchFiles` never stays on the card (5 Oct 2026).** A ticket's `patchFiles` (the full content of every file it changes, up to ~180 KB) used to sit on the `backlogItems` document. The live listener can't mask fields, so every open tab downloaded it for every in-flight card, and again on every small write to that card. Firestore's bill was almost all internet egress (~99 GB a month). The Routine still writes `patchFiles` + `patchReady` on the card, unchanged. `functions/patch-offload.js` (trigger `onBacklogItemPatchFilesOffload`) then moves it in one transaction to `backlogItems/{id}/pipeline/patch`, which no client listens to or can read (no rule). `run-backlog-automation.js` reads it from either place (`patchFilesFor`). A card written before this shipped moves on its next write. Tests: `test/patch-offload.test.js`.
 - **No size ceiling on a patch (16 Oct 2026).** A card is one Firestore document (1 MiB), and that used to be the most one ticket could change: a build session that hit it built a slice and filed the remainder as a new Backlog ticket, so a ticket looked like it bounced back to Backlog after every Ready for Dev click (Display Types, 24VWhzDd… → nPskZXYO… → pEbqIDwD…, all in one hour). Now the Routine writes the overflow to `backlogItems/{id}/patchParts/1..N` (each `{patchFiles, patchBaseSha}`, automation user only — `firestore.rules`) before setting `patchPartCount: N` + `patchReady` on the card. `patchFilesFor` appends parts 1..N to the card's files; a part from another build (wrong `patchBaseSha`) or a stale count is never applied; `dropPatchFiles` deletes the parts with the rest. `ROUTINE_INSTRUCTIONS.md` now forbids splitting a ticket for size. Tests: `test/patch-offload.test.js`, `test/firestore-rules.test.js`.
 - **`patchFiles` is dropped once shipped.** `run-backlog-automation.js` deletes a card's `patchFiles` when it reaches Merged to Main (`finishTrain`, `processMergePr`), and `dropPatchFiles` also deletes the `pipeline/patch` copy; `sweepShippedPatchFiles()` prunes any shipped or archived card still carrying them (hourly, 25 cards a run, clock kept in `systemStatus/pipeline.patchFilesSweptAt`).
+- **First open of the Staff Kanban (29 Oct 2026).** Measured on the live console: a 3.9 MB icon font, a 612 KB unminified `app.js`, and the Kanban modules starting a second round trip after it. Now:
+  - **Icon font subset.** `index.html` and `whiteboard.html` request Material Symbols with `icon_names=` (a sorted list of the icons the console uses) and fixed axes (`opsz,wght,FILL,GRAD@24,400,0..1,0`; only FILL varies, for the filled icons): about 33 KB instead of 3.9 MB. `test/icon-font.test.mjs` scans `public/js` (incl. `kanban/`), both HTML pages and `functions/mcp-app-views.js` and fails when code names an icon the list lacks. To add an icon, add it to the list in both pages, keeping it sorted. `font-display` is `block`.
+  - **Minified Hosting copy.** `firebase.json` runs `scripts/build-console.js` as the console target's `predeploy` and serves `console-dist/` (git-ignored): every first-party script minified per file with esbuild (no bundling; module graph, gstatic imports and dynamic imports untouched). `public/` keeps the readable sources and is what every other test loads; `test/ui/minified.test.mjs` builds the copy as the deploy does and runs the Staff Kanban suite against it (`HARNESS_PUBLIC_DIR`). `app.js` goes from 626 KB to about 266 KB. If esbuild can't be fetched the deploy ships the copy unminified with a warning rather than failing. No workflow file changed.
+  - **Kanban modules in parallel.** An inline script in `index.html`'s `<head>` adds `modulepreload` links for `kanban-page`, `kanban-store`, `kanban-core` and `kanban-editor` when the URL hash is `#staff-kanban…`, so they download alongside `app.js` and no other route fetches them.
+  - **Quill loads when an editor opens.** `js/quill-loader.js` adds Quill's stylesheet and script on first use (`loadQuill()`); nothing in `<head>` loads them. The Kanban ticket modal (`KBEditor.ready()`) and the FAQ article editor (`ensureFaQuill()`; the editor is created on the first article open) wait for it.
+  - **Archived stats wait on the Kanban route.** `refreshArchivedStats()` (the one `runQuery` that took 1.1–1.3 s) feeds only the Agent Board's health strip and project headers; on `#staff-kanban` it runs 6 s after load so it can't sit ahead of the Kanban's own first listeners. Other routes run it at once.
+  - **No sign-in card on a refresh.** `index.html` sets `html[data-restoring]` before first paint when `ph-console-signed-in` is stored; `styles.css` hides the card and shows the shell while `auth-gate.js` loads, and `auth-gate.js` clears the flag in every state it decides (a 10 s timer clears it if the script never runs).
+  - **Not done:** `system-map.js`, `concept-critiques.js` and `promote-plan.js` are still static imports of `app.js` (about 55 KB of source, a fraction of that minified); making them route-loaded means reworking their call sites in `app.js` and is left for its own ticket.
 - **Public help centre (`faq/`).** Each page `modulepreload`s its whole module graph in `<head>`; `article.html` loads DOMPurify with `defer`.
 
 ## Architecture
@@ -2563,17 +2587,19 @@ the board); the code is here:
 | File | What it does |
 |---|---|
 | `public/js/kanban/kanban-page.js` | The page: board, filters, swimlanes, drag and drop, task modal, voice capture, release report, settings. Loaded by `app.js` (`loadStaffKanban`) the first time the page opens, so the Agent Board's load is unchanged |
-| `public/js/kanban/kanban-store.js` | Firestore and Storage: listeners (open tickets, the 300 most recently closed, the picked release), writes, the PH-n counter transaction, comments, activity, mentions, uploads |
+| `public/js/kanban/kanban-store.js` | Firestore and Storage: listeners on `kanbanCards` (open, the 300 most recently closed, the picked release; `kanbanTasks` until the cards are backfilled), the full ticket read when a modal opens, writes (each also writes the card in the same batch), the PH-n counter transaction, comments, activity (one line per changed field, `editActivity` in `kanban-core.js`), the Watch toggle, uploads, inline screenshots moved to Storage; links are written on both tickets in the same batch (`/mcp/kanban/backfill-links` makes older one-sided links two-sided and stamps `kanbanSettings/main.linksTwoSidedAt`) on save |
+| `public/js/kanban/kanban-bell.js` | The Notifications bell in the console topbar on every page: one `limit(30)` listener ordered by `at` plus a `count()` of unread, grouped by ticket, Mark all read, click to open the ticket (loaded by `app.js` at sign-in) |
 | `public/js/kanban/kanban-core.js` | The rules shared by the page, the MCP tools and the tests: statuses, the testing hand-off, durations, search tokens and ranking, the release report, the local agent fill, and `PERSON_ALIASES` (a second sign-in address that is the same person: `rob@personalisationhub.com` → `rob@offline2online.com`) |
 | `public/js/kanban/kanban-editor.js` | The rich-text editor (the FAQ editor's toolbar, plus @mentions, screenshots, screen recording) |
 | `public/css/kanban.css` | Its styles; anything that would reach the rest of the console is scoped to `html[data-page="staff-kanban"]` |
-| `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, and the eleven `kanban_*` MCP tools |
+| `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, `/mcp/kanban/backfill` (fills `kanbanCards` from `kanbanTasks`, moves inline screenshots to Storage; idempotent, called by the board when the cards are behind), and the thirteen `kanban_*` MCP tools (including `kanban_list_notifications` and `kanban_mark_notifications_read`) |
+| `functions/kanban-notify.js` | The notification fan-out: triggers on `kanbanTasks` and its comments write one `kanbanNotifications` doc per recipient (assigned, testing, returned, commented, mention, closed; never to the actor), and a daily job deletes ones read more than 30 days ago |
 | `scripts/apply-person-aliases.js` | Run on every deploy: removes an alias's `consoleUsers` / `memberDirectory` rows and moves tickets, comments, mentions and Kanban settings that name it onto its owner (idempotent; `--dry` reports only) |
 | `functions/kanban-core.js` | Generated CommonJS copy of `kanban-core.js`: `node test/kanban-core-copy.mjs --write` after changing the source (`kanban-mcp.test.js` fails until you do) |
 
 Rules: `firestore.rules` → "Staff Kanban" (members write, viewers read, admins
 alone change settings and sprints, keys never reused, activity append-only,
-mentions private to their recipient) and `storage.rules` → `kanban/`.
+notifications written only by the server and private to their recipient) and `storage.rules` → `kanban/`.
 
 The voice fill uses Claude once the **`ANTHROPIC_API_KEY`** repo secret is set
 (the deploy workflow syncs it into Secret Manager, as "unset" until then). Until

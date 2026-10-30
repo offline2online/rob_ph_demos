@@ -15,8 +15,10 @@
 // Storage under kanban/<key>/); without it they stay inline (data / blob URLs).
 //
 // Ported from the signed-off prototype (kanban-staff-board/prototype/js/
-// editor.js). Quill and DOMPurify are the console's globals.
-const Quill = window.Quill;
+// editor.js). DOMPurify is the console's global; Quill is loaded the first time
+// a ticket modal opens (js/quill-loader.js), so `Quill` is bound by ready().
+import { loadQuill } from "../quill-loader.js";
+let Quill = window.Quill;
 export const KBEditor = (function () {
 
   const CALLOUT_LEVELS = ["note", "important", "warning"];
@@ -472,5 +474,8 @@ export const KBEditor = (function () {
     return window.DOMPurify ? DOMPurify.sanitize(html, { ADD_TAGS: ["video", "iframe"], ADD_ATTR: ["controls", "playsinline", "data-user", "data-name", "allowfullscreen", "frameborder", "target"] }) : esc(html);
   }
 
-  return { create, setHtml, getHtml, getText, toText, sanitize, mentionsIn, looksLikeHtml };
+  // Resolves once Quill is loaded; call before create().
+  async function ready() { Quill = await loadQuill(); }
+
+  return { ready, create, setHtml, getHtml, getText, toText, sanitize, mentionsIn, looksLikeHtml };
 })();

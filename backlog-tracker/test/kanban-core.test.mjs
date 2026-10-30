@@ -52,11 +52,37 @@ t("settings: release is never required, even if saved so", () => {
   assert.equal(k.normaliseSettings({ fields: { release: { show: true, required: true } } }).fields.release.required, false);
   assert.equal(k.defaultFields().release.required, false);
 });
+t("settings: an unset tester defaults to Rob; a stored one wins (TC-47)", () => {
+  const d = k.normaliseSettings(null);
+  assert.equal(d.tester, "rob@offline2online.com"); assert.equal(d.testerIsDefault, true);
+  assert.equal(k.normaliseSettings({ tester: "" }).tester, k.DEFAULT_TESTER);
+  const s = k.normaliseSettings({ tester: "huy@x" });
+  assert.equal(s.tester, "huy@x"); assert.equal(s.testerIsDefault, false);
+  const ch = k.statusChange({ status: "in-progress", assignee: "duong@x" }, "ready-for-testing", { tester: d.tester });
+  assert.equal(ch.patch.assignee, "rob@offline2online.com"); assert.match(ch.note, /reassigned to .* for testing/);
+});
+t("settings: an unset current release is the earliest unreleased by version (TC-47)", () => {
+  const rels = [{ id: "a", version: "4.12", released: false, order: 1 }, { id: "b", version: "4.9", released: false, order: 2 }, { id: "c", version: "4.1", released: true, order: 3 }];
+  assert.equal(k.currentReleaseId({ currentRelease: "" }, rels), "b");
+  assert.equal(k.currentReleaseId({ currentRelease: "a" }, rels), "a");
+  assert.equal(k.currentReleaseId({}, []), "");
+});
 t("settings: core fields always shown, title and status always required", () => {
   const s = k.normaliseSettings({ fields: { title: { show: false, required: false }, sprint: { show: false, required: true } }, firstNames: { "h@x": "Huy" } });
   assert.deepEqual(s.fields.title, { show: true, required: true });
   assert.equal(s.fields.sprint.required, false, "a hidden field can't be required");
   assert.equal(s.firstNames["h@x"], "Huy");
+});
+t("project: a ticket's project is a bounded string, filters, and rides on the card", () => {
+  assert.equal(k.cleanTaskFields({ title: "x", project: " p1 " }).value.project, "p1");
+  assert.match(k.cleanTaskFields({ title: "x", project: "p".repeat(101) }).errors.join(), /project is limited to 100/);
+  const list = [{ key: "PH-1", project: "p1" }, { key: "PH-2", project: "" }, { key: "PH-3" }];
+  assert.deepEqual(k.filterTasks(list, { project: "p1" }).map((t) => t.key), ["PH-1"]);
+  assert.equal(k.filterTasks(list, {}).length, 3);
+  assert.equal(k.cardOf({ key: "PH-1", project: "p1" }).project, "p1");
+  assert.equal(k.cardOf({ key: "PH-3" }).project, "");
+  assert.equal(k.cardPatchOf({ project: "p2" }).project, "p2");
+  assert.ok(k.OPTIONAL_FIELDS.some((f) => f.key === "project") && k.normaliseSettings(null).fields.project.show === true);
 });
 t("local agent fill reads people, priority, estimate, release and type", () => {
   const out = k.agentDraft("there's a bug where the preview shows the wrong price. it's urgent. assign it to Huy. it should take about four hours for the next release", {
@@ -87,5 +113,57 @@ t("local agent fill gives a note the speaker means for themselves to the speaker
 t("field validation names what's wrong", () => {
   const { errors, value } = k.cleanTaskFields({ title: "x", estimate: "1d", assignee: "Huy", labels: ["Menu Boards", "menu-boards"] });
   assert.deepEqual(errors, ["assignee must be an email"]); assert.equal(value.estimate, 8); assert.deepEqual(value.labels, ["menu-boards"]);
+});
+t("acceptance criteria: cleaned, stored as id/done/text lines, counted, diffed and carried on the card", () => {
+  const { value, errors } = k.cleanCriteria(["  First\n item ", { text: "Second", done: true }]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(value.map((c) => [c.text, c.done]), [["First item", false], ["Second", true]]);
+  assert.ok(value.every((c) => /^[a-z0-9]{8}$/.test(c.id)) && value[0].id !== value[1].id);
+  const stored = k.encodeCriteria(value);
+  assert.ok(stored.every((l) => /^[a-z0-9]{8}\t[01]\t[^\t\n]+$/.test(l)));
+  assert.deepEqual(k.decodeCriteria(stored), value);
+  assert.deepEqual(k.acCounts(stored), { total: 2, done: 1 });
+  assert.deepEqual(k.acCounts(value), { total: 2, done: 1 });
+  // unchanged text keeps its id (and a list sent again is the same list)
+  const again = k.cleanCriteria(["Second", "Brand new"], stored).value;
+  assert.equal(again[0].id, value[1].id); assert.notEqual(again[1].id, value[0].id);
+  // limits
+  assert.match(k.cleanCriteria(Array.from({ length: 51 }, (_, i) => "c" + i)).errors.join(), /limited to 50 items/);
+  assert.deepEqual(k.cleanCriteria(Array.from({ length: 50 }, (_, i) => "c" + i)).errors, []);
+  assert.match(k.cleanCriteria(["x".repeat(501)]).errors.join(), /limited to 500 characters/);
+  assert.deepEqual(k.cleanCriteria(["x".repeat(500)]).errors, []);
+  assert.match(k.cleanCriteria(["ok", "   "]).errors.join(), /item 2 is empty/);
+  assert.match(k.cleanCriteria("nope").errors.join(), /must be a list/);
+  assert.deepEqual(k.cleanTaskFields({ title: "x", acceptanceCriteria: ["a"] }).value.acceptanceCriteria.map((c) => c.text), ["a"]);
+  assert.match(k.cleanTaskFields({ title: "x", acceptanceCriteria: ["x".repeat(501)] }).errors.join(), /500 characters/);
+  // the card carries the counts, never the text
+  const card = k.cardOf({ key: "PH-1", acceptanceCriteria: stored });
+  assert.equal(card.acTotal, 2); assert.equal(card.acDone, 1); assert.ok(!("acceptanceCriteria" in card));
+  assert.equal(k.cardOf({ key: "PH-1" }).acTotal, 0);
+  assert.equal(k.cardOf({ key: "PH-1", acTotal: 4, acDone: 3 }).acDone, 3, "a card read back keeps its counts");
+  assert.deepEqual([k.cardPatchOf({ acceptanceCriteria: stored }).acTotal, k.cardPatchOf({ acceptanceCriteria: stored }).acDone], [2, 1]);
+  assert.ok(k.CARD_FIELDS.includes("acTotal") && k.CARD_FIELDS.includes("acDone"));
+  // activity lines
+  const after = value.map((c) => ({ ...c })); after[0].done = true; after[1].text = "Second, reworded"; after.push({ id: "zzzzzzzz", text: "Third", done: false });
+  assert.deepEqual(k.diffCriteria(value, after), ['ticked criterion "First item"', 'edited criterion "Second" → "Second, reworded"', 'added criterion "Third"']);
+  assert.ok(k.diffCriteria(value, after).includes('ticked criterion "First item"'));
+  assert.deepEqual(k.diffCriteria(value, [value[1], value[0]]), ["reordered the acceptance criteria"]);
+  assert.deepEqual(k.diffCriteria(value, value), []);
+});
+t("links: the reverse type for each, and what a save added or removed", () => {
+  assert.deepEqual(Object.fromEntries(k.LINK_TYPES.map((x) => [x, k.INVERSE_LINK[x]])), { blocks: "is blocked by", "is blocked by": "blocks", "relates to": "relates to", duplicates: "is duplicated by", "is duplicated by": "duplicates" });
+  assert.deepEqual(k.inverseOf("PH-1", { type: "blocks", key: "PH-2" }), { type: "is blocked by", key: "PH-1" });
+  const c = k.linkChanges([{ type: "blocks", key: "PH-2" }, { type: "relates to", key: "PH-3" }], [{ type: "relates to", key: "PH-3" }, { type: "duplicates", key: "PH-4" }]);
+  assert.deepEqual(c, { added: [{ type: "duplicates", key: "PH-4" }], removed: [{ type: "blocks", key: "PH-2" }] });
+  assert.equal(k.cleanTaskFields({ links: [{ type: "blocks", key: "ph-2" }, { type: "blocks", key: "PH-2" }] }, { partial: true }).value.links.length, 1);
+});
+t("an edit writes one activity line per changed field, with old and new values", () => {
+  const before = { title: "A", priority: "medium", assignee: "", estimate: 8, labels: ["x"], links: [], flagged: false, release: "r1" };
+  const after = { ...before, priority: "high", assignee: "d@x", estimate: 16, labels: ["y"], links: [{ type: "blocks", key: "PH-2" }], flagged: true, release: "" };
+  const lines = k.editActivity(before, after, { person: (e) => e.split("@")[0].toUpperCase(), release: (id) => `Rel ${id}` });
+  assert.deepEqual(lines, ["assigned to D", "changed Priority from Medium to High", "changed Estimate from 1d to 2d", "changed Release from Rel r1 to none",
+    "added label y", "removed label x", "linked: blocks PH-2", "flagged this ticket"]);
+  assert.deepEqual(k.editActivity(before, { ...before }), []);
+  assert.deepEqual(k.editActivity({ ...before, assignee: "d@x" }, before, { person: () => "Duong" }), ["unassigned (was Duong)"]);
 });
 console.log(`\n${n} passed`);

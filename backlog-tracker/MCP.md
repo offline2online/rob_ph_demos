@@ -139,13 +139,61 @@ the ticket's activity; a viewer gets the read tools only. Staff can add,
 move and report on tasks by talking to their agent ("add a bug for Huy:
 the offer sweep ignores the store's time zone, about 4 hours, this release").
 
+**Which board is for what.** Staff Kanban is for staff tasks only — work a
+human staff member does. Agent work (agent-built product, docs, prototype
+and tooling changes, including for the Staff Kanban project itself) is filed
+in the agent backlog with `create_backlog_item`. Agents can still create and
+assign staff tasks with `kanban_create_task`; nothing blocks that. The
+delimitation is one sentence per board, so every description says the same
+thing: `KANBAN_SCOPE` (`functions/kanban.js`) is appended to every `kanban_*`
+tool description, including tools added later, and `BACKLOG_SCOPE`
+(`functions/mcp-server.js`) is in `create_backlog_item`'s description and the
+server instructions. `test/kanban-mcp.test.js` checks both.
+
 | Read | Write (editor and admin) |
 | --- | --- |
-| `kanban_list_people` (members by first name, releases, sprints, current release, tester) | `kanban_create_task` (always into Backlog, next PH-n key) |
-| `kanban_list_tasks` (the board's filters: assignee or `me`, release, status, type, priority, sprint, label, flagged, search) | `kanban_update_task` (any field but the column) |
-| `kanban_get_task` (everything, with comments, activity and an epic's children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off) |
+| `kanban_list_people` (members by first name, releases, sprints, projects, current release, tester) | `kanban_create_task` (always into Backlog, next PH-n key) |
+| `kanban_list_tasks` (the board's filters: assignee or `me`, release, status, type, priority, sprint, project, label, flagged, search) | `kanban_update_task` (any field but the column) |
+| `kanban_get_task` (everything, with comments, activity, `descriptionHtml`, links (stored on both tickets) and an epic's children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off) |
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
 | `kanban_release_report` (outstanding, remaining effort, per-person capacity) | `kanban_comment` (`mention` notifies people on the board's bell) |
+| `kanban_list_notifications` (your notifications, unread first; only the unread ones, `limit`: "what's new for me on the board?") | `kanban_check_criteria` (tick or untick acceptance criteria by id; see below) |
+| | `kanban_edit_comment`, `kanban_delete_comment` (your own comment by `commentId` from `kanban_get_task`; an admin may delete any; an edit notifies only newly named people) |
+| | `kanban_attach_file` (a small screenshot, image or pdf as base64), `kanban_create_upload_url` + `kanban_attach_uploaded` (the route for anything over ~20 KB), `kanban_remove_attachment`; see below |
+| | `kanban_capture_screenshot`, `kanban_capture_screenshots` (the board renders an artifact page itself and puts the screenshot on the ticket; see below) |
+| `kanban_my_work` (your open tickets by column, overdue, due this week, flagged, unread count; see below) | `kanban_mark_notifications_read` (`ids` or `all: true`; the open bell updates without a reload) |
+| | `kanban_create_tasks` (up to 100 tickets in one call; see below) |
+| | `kanban_create_contract_ticket` (API contract first: interface, ticket and blocks in one step; see below) |
+
+### Staff Kanban: large files, integrity checks, removing attachments
+
+**Bigger files — `kanban_create_upload_url` → `kanban_attach_uploaded`.** Base64 typed into a call is unreliable (30 Oct 2026: a 16,641-byte png arrived as 2,385 bytes and showed broken), so **use this route for anything over about 20 KB**; keep `kanban_attach_file` for small files. Step 1 (`key`, `name`, `contentType`; optional `sha256`, `size`) returns a signed Storage URL, the `headers` to send and a `curlExample`. The URL lasts 15 minutes, takes one PUT of at most 5 MB, and counts against the 60 files an hour. Step 2, after `curl -X PUT … --data-binary @file`: `kanban_attach_uploaded` (`key`, `uploadId`; optional `inline`, `caption`, `name`, `sha256`, `size`) runs the same checks, limits, 1400 px shrink and storage as `kanban_attach_file`, then deletes the staged copy (`kanban-uploads/{PH-n}/{uploadId}`; accepted or refused). An `uploadId` works once, for the member who made it. **Check live after deploy:** the function's service account needs *Service Account Token Creator* on itself to sign, and the host is `storage.googleapis.com` (not `firebasestorage.googleapis.com`), which the agent's network policy must allow; if signing fails the tool says so.
+
+**Integrity on every attach route.** Both attach tools take an optional `sha256` and `size` and refuse a mismatch. Always: the bytes must match the type, the file must be complete (png ends with IEND; jpeg, gif, webp, pdf likewise) and, with `sharp` installed, every pixel of an image must decode. A refused file is not stored or inlined.
+
+**`kanban_remove_attachment`** (`key`, `path` or `name`): removes the entry from `attachments[]`, deletes the Storage object, takes its inline `<img>` and caption out of the description, and lowers `attachmentCount`. A shared `name` is refused with the paths. Needs `board.write`; logged in the activity and `mcpAuditLog`.
+
+The small-file tool `kanban_attach_file`, screenshots the board takes itself and the rest follow below.
+
+### Staff Kanban: criteria, attachments, bulk upload, API contracts
+
+**Acceptance criteria — `acceptanceCriteria` and `kanban_check_criteria`.** A ticket has a checklist of up to 50 items of at most 500 characters. `kanban_create_task` and `kanban_update_task` take `acceptanceCriteria` as an array of strings or `{text, done}` (an update replaces the list, and an item whose text is unchanged keeps its id and its tick unless you give `done`; `[]` clears it). `kanban_get_task` returns `acceptanceCriteria: [{id, text, done}]` and the list and get results carry `criteriaTotal` / `criteriaDone`. `kanban_check_criteria` (`key`, `ids`, `done`) ticks or unticks items by id without resending the list, in one transaction, and returns the new counts; an unknown id is refused and nothing is written. Each add, edit, removal, tick and untick writes an activity line. More than 50 items, an empty item or one over 500 characters is refused. The board shows the checklist in the ticket's modal and "AC n/m" on the card; the card (`kanbanCards`) carries the counts only. Storage detail: the checklist is saved as strings `<id>\t<0|1>\t<text>` so `firestore.rules` can check it whole (KB-TASK-12).
+
+**Attaching a screenshot or file — `kanban_attach_file`** (`key`, `name`, `contentType`, `data`; optional `inline`, `caption`). `data` is the file's bytes in base64. Allowed: png, jpeg, webp and gif images, and pdf as a plain attachment, at most 5 MB decoded; anything else, an oversized file, bytes that don't match the declared type or a ticket that already has 50 attachments is refused with the reason and nothing is written. Nothing is fetched from a URL. The file is stored at `kanban/{PH-n}/{timestamp}-{safe name}` (images over 1400 px are shrunk first; a gif is kept as it is), and `{name, url, path, contentType, size}` (plus `caption`) is appended to the ticket's `attachments` with the card's `attachmentCount` in the same transaction. `kanban_get_task` lists it with its URL, and the ticket's modal shows it under Attachments. `inline: true` also adds the image to the description as an `<img>` pointing at the Storage URL (never a `data:` URI), with the caption beneath. Logged in the activity and `mcpAuditLog`; 60 files an hour per member (`kanbanAttachLimits/{email}`). Needs `board.write`; viewers are refused.
+
+**Page screenshots the board takes itself — `kanban_capture_screenshot`** (`key`, `url`; optional `caption`, `width`, `height`, `fullPage`, `waitMs`) and **`kanban_capture_screenshots`** (`items`: up to 20 `{key, url}` pairs, plus the same optional fields as defaults). Nobody sends image data: the server opens the page in headless Chromium (default 1440×900, full page, clipped at 12000 px; `waitMs` is the extra wait for a hash-route app to render, default 1500, at most 15000), stores the png under `kanban/{PH-n}/{timestamp}-capture-{PH-n}.png`, adds it to the ticket's `attachments` and puts it in the description — in place of a `Screenshot: …` line, or in place of an earlier capture, else at the end — with the caption beneath. Capturing again replaces the ticket's earlier capture (one attachment, one picture). **Only https pages on the artifact domains can be captured** — `offline2online.github.io`, `rawcdn.githack.com`, `raw.githack.com`, plus any in the `KANBAN_CAPTURE_HOSTS` environment variable (comma separated); a URL with credentials or a port, another host or a look-alike (`offline2online.github.io.evil.com`) is refused before the browser starts, and the browser itself refuses to navigate off the allowed list (a redirect elsewhere fails the page). Each page is reported on its own and **a failing page attaches nothing**: a status other than 200, a page that says it doesn't exist (404 / "not found" near the top), a page that redirected away from the requested route (a hash app that bounces to `#/`), or a render error. `warnings` on a success say what to check: the icon font not loading (the browser must reach `fonts.googleapis.com` and `fonts.gstatic.com`, or Material Symbols show as words) and requests that failed while rendering. Needs `board.write`; each success counts against the 60 files an hour per member. A batch is captured one page after another and stops starting new pages after four minutes (the rest are reported "Not attempted"). **Deploying this needs `npm install` in `backlog-tracker/functions` (`puppeteer-core`, `@sparticuz/chromium`) and `firebase deploy --only functions`; `mcpServer` now has 1 GiB and a 300-second timeout.**
+
+**Bulk upload — `kanban_create_tasks`** (`tasks`, optional `dryRun`, `partial`). Up to 100 tickets per call, each row taking the fields of `kanban_create_task` (including `project` and `acceptanceCriteria`) plus `ref`, a temporary name. A row's `epic` may be that `ref` (give the epic row `type: "epic"` and a `ref`, then `epic: "<ref>"` on its children) or an existing ticket's key, so an epic and its stories upload together. Every row is checked first and every problem comes back in one error, by `row` (1-based), `field` and `message`; nothing is written if any row fails. With `partial: true` the rows that pass are written and the rest are returned as `skipped` (a child whose epic row failed is skipped with it). `dryRun: true` validates only: nothing is written, the counter and your hourly allowance don't move, and the answer lists the keys the rows would get. Keys come from one counter transaction (consecutive, in row order); tickets are written in batches under Firestore's 500-write limit, each ticket with its card and an activity line, and each ticket's rank follows the top of Backlog from one query. If a batch fails part-way the error says which keys were written and which were not (their numbers are skipped). The answer lists `tickets` (`row`, `ref`, `key`, `title`) and the board link; assignment notifications come from the board's server-side fan-out, not this tool. Limit: 500 tickets an hour per member (`kanbanBulkLimits`), refused whole when a call would go over. One `mcpAuditLog` row per call (rows, written, first and last key, batches).
+
+**API contract first — `kanban_create_contract_ticket`** (`title`, `project`, `interface` {`name`, `contentMd`, `with` {`type`, `id`}}, `blocks` [PH keys]; optional `artifactVersion`, usual ticket fields). One all-or-nothing step: it creates the interface (`create_interface`'s rules and 20,000-character cap, between `project` and `with`), a Backlog ticket labelled `api-contract` with `project` and `interfaceId`, and a "blocks" link to each story, stored on both tickets. Every problem (unknown story key, oversized `contentMd`, a missing endpoint, an `artifactVersion` the project lacks) comes back together and nothing is created. `artifactVersion` (PH-20) is stored on the ticket. `kanban_get_task` returns `interface` {`id`, `name`, `docsUrl`}; the modal shows "Interface: <name>", opening that project's Docs page at it (`#docs/<projectId>?interface=<id>`). Needs `board.write`.
+
+**Your own work — `kanban_my_work`** (no arguments): your open tickets grouped by column (`columns`, in board order, empty columns left out), `overdue` (due before today), `dueThisWeek` (today to Sunday, UTC), `flagged`, and `unreadNotifications`: the board's "My tasks" in one call. It reads only your tickets (up to 500; `truncated` says if there are more).
+
+Example prompts: *"Create these 20 tasks from this list in Staff Kanban: one epic 'Menu Board launch' and the rest as its stories, assign the first five to Huy, with kanban_create_tasks. Do a dry run first."* and *"What's on my plate? Use kanban_my_work and tell me what is overdue."* and *"Finalise the Staff Kanban artifact: draft the API contract and block the FE and BE stories on it."*.
+
+Example prompt, for an agent that has just finished a page of the project artifact: *"Screenshot the Pricing page of the finished artifact, create a Staff Kanban epic 'Pricing page' with kanban_create_task, then attach the screenshot to it with kanban_attach_file (inline, caption 'Pricing page as designed')."*
+
+The board reads a light card per ticket (`kanbanCards/{PH-n}`, the fields a card shows); every write above puts the ticket and its card in the same batch or transaction. `kanban_list_tasks` and `kanban_release_report` read cards (a `search` reads tickets, since cards hold no description), `kanban_get_task` and `kanban_search_tickets` read the full ticket. Reads are bounded however large the board grows: `kanban_list_tasks` pushes its filters into the query and reads at most 500 tickets a call (`truncated` and `nextCursor`, passed back as `cursor`); `kanban_get_task` returns the newest 100 comments and 100 activity lines (`commentsOmitted`, `activityOmitted`); the next rank is one `status`+`rank` query; the directory, settings and releases are cached 60 s per function instance; and every `kanban_*` call writes an `mcpAuditLog` row with `ms`. `kanban_mark_notifications_read` also deletes the caller's own read notifications older than 30 days (200 at a time; there is no scheduled job). While the cards are behind the tickets (before `POST /mcp/kanban/backfill` has run) the tools read the tickets.
 
 Every member is on the board, including the bootstrap admins, who have no `consoleUsers` row. Anywhere a person is named (`assignee`, `reporter`) `me` means the authenticated member. An alias address (`PERSON_ALIASES` in `public/js/kanban/kanban-core.js`: `rob@personalisationhub.com` is Rob, `rob@offline2online.com`) is never listed as a person: naming it, mentioning it, or connecting an agent signed in as it all resolve to its owner.
 
@@ -174,7 +222,7 @@ release actions stay on the board apart from `send_to_build`,
 `set_project_requirements` / `set_project_readme` say the same from the
 project's own fields. `test/mcp-server.test.js` keeps them in step with the
 tool list: every name in them is a registered tool, every write and admin tool
-is named, and the instructions stay within 3,400 characters (what Claude Code
+is named, and the instructions stay within 3,600 characters (what Claude Code
 delivers whole).
 
 **Test and link state (server 1.5.0).** All read-only; every URL goes through
@@ -285,7 +333,7 @@ as text until Anthropic switches on its MCP Apps host.
 | --- | --- | --- | --- | --- | --- |
 | `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
 | `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
-| `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
+| `add_item_comment` | `set_project_artifact`, `set_project_description`, `snapshot_project_artifact` (sign-off: the next frozen, numbered artifact version) | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
 | | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | `mark_skill_reviewed` (clears the review nudge and restarts the clock) | | |
@@ -715,3 +763,31 @@ board shows a Finalised badge. The project's current artifact link is recorded a
 frozen version. `unfreeze_project` (`projectId`, `reason`) lifts it; the reason is
 required and kept in the project's `finalisedLog`. The Staff Kanban tools are
 unaffected. See `REQUIREMENTS.md` → "Project freeze".
+
+## Artifact snapshots on sign-off (PH-20)
+
+`snapshot_project_artifact` (editor; `projectId`, optional `note`) signs off
+a project's artifact: it captures the next numbered version of the link set
+with `set_project_artifact`. `list_artifact_versions` and
+`get_artifact_version` read them (any member, viewers included), and
+`list_projects` shows `latestArtifactVersion`. Epics, screenshots and
+descriptions should cite the version, so a ticket does not drift when the
+prototype changes later.
+
+- **What is frozen.** A GitHub Pages artifact of this repo
+  (`offline2online.github.io/rob_ph_demos/<path>`) is pinned to the commit
+  `main` is on at sign-off, as
+  `https://rawcdn.githack.com/offline2online/rob_ph_demos/<sha>/<path>` — an
+  immutable, commit-sha link (CLAUDE.md → test links). Any other URL cannot
+  be frozen: `pinnedUrl` is the same link, `frozen` is `false`, and the reply
+  carries a warning saying so.
+- **Where it lives.** Append-only documents at
+  `projects/{id}/artifactVersions/{n}` — `{version, projectId, sourceUrl,
+  pinnedUrl, commitSha, frozen, signedOffBy, signedOffAt, note}`. They are
+  written only by the MCP server's admin SDK: `firestore.rules` lets members
+  read and nobody write from a browser, and the board reads the latest of each
+  project with one collection-group listener for its ⋮ menu's
+  "v<n>, signed off <date>" line.
+- **Project writes.** The tool writes no project field, so
+  `PROJECT_WRITABLE_FIELDS` is unchanged (`docs`, `artifactUrl`,
+  `artifactUpdatedAt`, `description`); `test/mcp-server.test.js` asserts it.

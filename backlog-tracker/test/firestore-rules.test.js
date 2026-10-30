@@ -8,7 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@firebase/rules-unit-testing");
-const { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, arrayUnion } = require("firebase/firestore");
+const { doc, getDoc, getDocs, collection, collectionGroup, setDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, arrayUnion } = require("firebase/firestore");
 
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
 
@@ -90,6 +90,7 @@ async function reset() {
       notifyRoutine: { status: "done" }, deployRoutine: { status: "done" }, groomRoutine: { status: "done" },
     }));
     await setDoc(doc(db, "projects/pFull/docs/requirements"), { contentMd: "r".repeat(50000), chars: 50000 });
+    await setDoc(doc(db, "projects/pFull/artifactVersions/1"), { version: 1, projectId: "pFull", sourceUrl: "https://claude.ai/x", pinnedUrl: "https://claude.ai/x", frozen: false });
     await setDoc(doc(db, "consoleUsers/sam@personalisationhub.com"), { email: "sam@personalisationhub.com", role: "editor" });
     await setDoc(doc(db, "consoleUsers/kit@personalisationhub.com"), { email: "kit@personalisationhub.com", role: "viewer" });
     await setDoc(doc(db, "consoleUsers/expat@personalisationhub.com"), { email: "expat@personalisationhub.com", role: "editor", disabled: true });
@@ -498,6 +499,21 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/p1/docs/readme"), DOC("x", { trainReady: true })));
   await check("A viewer cannot write a requirements doc", "deny", () =>
     setDoc(doc(as(VIEWER), "projects/p1/docs/requirements"), DOC("x")));
+  // Artifact snapshots (PH-20) are written by the MCP server's admin SDK only.
+  await check("A member can read an artifact version", "allow", () =>
+    getDoc(doc(as(VIEWER), "projects/pFull/artifactVersions/1")));
+  await check("A member can list every project's artifact versions (collection group)", "allow", () =>
+    getDocs(collectionGroup(as(VIEWER), "artifactVersions")));
+  await check("An editor cannot create an artifact version from the browser", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/pFull/artifactVersions/2"), { version: 2, projectId: "pFull" }));
+  await check("An editor cannot rewrite an artifact version", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/pFull/artifactVersions/1"), { version: 1, pinnedUrl: "https://evil.example" }, { merge: true }));
+  await check("An editor cannot delete an artifact version", "deny", () =>
+    deleteDoc(doc(as(MEMBER), "projects/pFull/artifactVersions/1")));
+  await check("An admin cannot write an artifact version from the browser either", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "projects/pFull/artifactVersions/3"), { version: 3 }));
+  await check("Signed-out visitors cannot read artifact versions", "deny", () =>
+    getDoc(doc(as(null), "projects/pFull/artifactVersions/1")));
   await check("A viewer can read a requirements doc", "allow", () =>
     getDoc(doc(as(VIEWER), "projects/pFull/docs/requirements")));
   await check("An anonymous visitor cannot read a requirements doc", "deny", () =>

@@ -5,7 +5,6 @@ import { type Db, prepared, type Awaitable } from '../db/db'
 import { valueOfImpressions } from '@ph-dsp/types'
 
 export type UnsoldReason = 'no_bids' | 'below_floor' | 'uncached' | 'no_creative' | 'other'
-export const UNSOLD_REASONS: UnsoldReason[] = ['no_bids', 'below_floor', 'uncached', 'no_creative', 'other']
 export type UnsoldBy = 'store' | 'display' | 'display_type' | 'hour' | 'day'
 
 export interface UnsoldOpportunity {

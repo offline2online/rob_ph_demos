@@ -42,9 +42,12 @@ async function reset() {
     await setDoc(doc(db, "consoleUsers/ada@personalisationhub.com"), { email: "ada@personalisationhub.com", role: "admin" });
     await setDoc(doc(db, "kanbanCounters/main"), { nextNumber: 8 });
     await setDoc(doc(db, "kanbanTasks/PH-7"), task(7, { createdAt: new Date(0), updatedAt: new Date(0) }));
+    await setDoc(doc(db, "kanbanCards/PH-7"), { key: "PH-7", type: "task", title: "A task", status: "backlog", resolution: null, open: true, rank: 10, assignee: "", previousAssignee: "", release: "", sprint: "", priority: "medium", flagged: false, estimate: null, logged: 0, due: "", labels: [], epic: "", commentCount: 0, attachmentCount: 0, updatedAt: new Date(0), updatedBy: SAM });
     await setDoc(doc(db, "kanbanTasks/PH-7/comments/c1"), { author: SAM, html: "<p>x</p>", text: "x", at: new Date(0) });
+    for (const [id, author] of [["c4", SAM], ["c5", SAM], ["c6", "ada@personalisationhub.com"]]) await setDoc(doc(db, "kanbanTasks/PH-7/comments/" + id), { author, html: "<p>x</p>", text: "x", at: new Date(0) });
     await setDoc(doc(db, "kanbanTasks/PH-7/activity/a1"), { who: SAM, text: "Backlog → In Progress", at: new Date(0) });
     await setDoc(doc(db, "kanbanNotifications/n1"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: false, at: new Date(0) });
+    await setDoc(doc(db, "kanbanNotifications/n3"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: true, at: new Date(0) });
     await setDoc(doc(db, "memberDirectory/sam@personalisationhub.com"), { email: SAM, displayName: "Sam Sample" });
     await setDoc(doc(db, "kanbanSettings/main"), { tester: "rob@offline2online.com" });
   });
@@ -151,6 +154,79 @@ async function main() {
   await check("Server search: array-contains on searchTokens is readable", "allow", () =>
     getDocs(query(collection(as(MEMBER), "kanbanTasks"), where("searchTokens", "array-contains", "task"), limit(200))));
 
+  // ── The board's cards (kanbanCards): the light copy of a ticket ──────────
+  const card = (n, over = {}) => Object.assign({
+    key: `PH-${n}`, type: "task", title: "A task", status: "backlog", resolution: null, open: true, rank: 10, assignee: "", previousAssignee: "",
+    release: "", sprint: "", priority: "medium", flagged: false, estimate: null, logged: 0, due: "", labels: [], epic: "", commentCount: 0, attachmentCount: 0,
+    updatedAt: serverTimestamp(), updatedBy: SAM,
+  }, over);
+  await check("A member reads a card, and so does a viewer", "allow", async () => {
+    await assertSucceeds(getDoc(doc(as(VIEWER), "kanbanCards/PH-7")));
+    return getDocs(query(collection(as(MEMBER), "kanbanCards"), where("open", "==", true)));
+  });
+  await check("Someone who isn't a member can't read a card", "deny", () => getDoc(doc(as(STRANGER), "kanbanCards/PH-7")));
+  await check("A ticket and its card are created together", "allow", () => {
+    const db = as(MEMBER);
+    return runTransaction(db, async (tx) => {
+      await tx.get(doc(db, "kanbanCounters/main"));
+      tx.set(doc(db, "kanbanCounters/main"), { nextNumber: 9, updatedAt: serverTimestamp() });
+      tx.set(doc(db, "kanbanTasks/PH-8"), asUser(MEMBER, task(8)));
+      tx.set(doc(db, "kanbanCards/PH-8"), card(8));
+    });
+  });
+  await check("A card carries a project", "allow", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { project: "New5VKTF2QBqT3T4YEla" })));
+  await check("A card's project must be a string", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { project: 7 })));
+  await check("A card's project is at most 100 characters", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { project: "p".repeat(101) })));
+  await check("A ticket's project must be a string", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: ["x"], updatedBy: SAM }));
+  await check("A ticket's project is at most 100 characters", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "p".repeat(101), updatedBy: SAM }));
+  await check("A ticket can name a project", "allow", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "New5VKTF2QBqT3T4YEla", updatedBy: SAM }));
+  // ── Acceptance criteria (KB-TASK-12): stored as "<id>\t<0|1>\t<text>" lines ──
+  const line = (i, done = 0, text = `Criterion ${i}`) => `${String(i).padStart(8, "a")}\t${done}\t${text}`;
+  const crit = (n, done = 0, text) => Array.from({ length: n }, (_, i) => line(i, done, text));
+  const setCrit = (list, over = {}) => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), Object.assign({ acceptanceCriteria: list, updatedBy: SAM }, over));
+  await check("A ticket can carry 5 criteria", "allow", () => setCrit(crit(5)));
+  await check("A ticket can carry 50 criteria", "allow", () => setCrit(crit(50)));
+  await check("A ticket can't carry 51 criteria", "deny", () => setCrit(crit(51)));
+  await check("A ticket can clear its criteria", "allow", () => setCrit([]));
+  await check("A criterion of 500 characters is accepted", "allow", () => setCrit([line(1, 0, "x".repeat(500))]));
+  await check("A criterion of 501 characters is refused", "deny", () => setCrit([line(1, 0, "x".repeat(501))]));
+  await check("A 501-character criterion is refused in the last of 50 slots", "deny", () => setCrit([...crit(49), line(49, 0, "x".repeat(501))]));
+  await check("A 501-character criterion is refused in the first slot", "deny", () => setCrit([line(0, 0, "x".repeat(501)), ...crit(5).slice(1)]));
+  await check("An empty criterion is refused", "deny", () => setCrit([line(1, 0, "")]));
+  await check("A criterion without an id is refused", "deny", () => setCrit(["\t0\ttext"]));
+  await check("A criterion with a bad done flag is refused", "deny", () => setCrit([line(1, 2)]));
+  await check("A criterion holding a line break is refused", "deny", () => setCrit(["abcdefgh\t0\tone\ntwo"]));
+  await check("Criteria stored as objects are refused", "deny", () => setCrit([{ id: "abcdefgh", text: "x", done: false }]));
+  await check("Criteria that aren't a list are refused", "deny", () => setCrit("abcdefgh\t0\tx"));
+  await check("Ticking one of 50 criteria is accepted", "allow", async () => {
+    await env.withSecurityRulesDisabled((ctx) => updateDoc(doc(ctx.firestore(), "kanbanTasks/PH-7"), { acceptanceCriteria: crit(50) }));
+    return setCrit([line(0, 1), ...crit(50).slice(1)]);
+  });
+  await check("A ticket is created with criteria", "allow", () => create(MEMBER, 8, { acceptanceCriteria: crit(5) }));
+  await check("A ticket is not created with 51 criteria", "deny", () => create(MEMBER, 8, { acceptanceCriteria: crit(51) }));
+  await check("A card carries the criteria counts", "allow", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { acTotal: 5, acDone: 2 })));
+  await check("A card's done count can't exceed its total", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { acTotal: 2, acDone: 3 })));
+  await check("A card's total is at most 50", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { acTotal: 51, acDone: 0 })));
+  await check("A card can't carry the criteria text", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { acceptanceCriteria: crit(2) })));
+  await check("A card with a description can't be written", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { description: "<p>big</p>" })));
+  await check("A card can't carry search tokens", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { searchTokens: ["a"] })));
+  await check("A card's key must be its id", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(9)));
+  await check("A card in Done needs a resolution", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { status: "done", open: false })));
+  await check("A card's open flag follows its status", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { status: "done", resolution: "completed", open: true })));
+  await check("A card can't be written in someone else's name", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { updatedBy: "ada@personalisationhub.com" })));
+  await check("A move writes the ticket, its card and the activity line together", "allow", () => {
+    const db = as(MEMBER), b = writeBatch(db);
+    b.update(doc(db, "kanbanTasks/PH-7"), { status: "in-progress", resolution: null, open: true, rank: 5, updatedAt: serverTimestamp(), updatedBy: SAM });
+    b.set(doc(db, "kanbanCards/PH-7"), { status: "in-progress", open: true, rank: 5, updatedAt: serverTimestamp(), updatedBy: SAM }, { merge: true });
+    return b.commit();
+  });
+  await check("A viewer can't write a card", "deny", () => setDoc(doc(as(VIEWER), "kanbanCards/PH-8"), card(8, { updatedBy: VIEWER.claims.email })));
+  await check("A member deletes a card with its ticket", "allow", () => {
+    const db = as(MEMBER), b = writeBatch(db);
+    b.delete(doc(db, "kanbanTasks/PH-7")); b.delete(doc(db, "kanbanCards/PH-7"));
+    return b.commit();
+  });
+
   // ── Comments and activity ───────────────────────────────────────────────
   await check("A member comments, bumping the count", "allow", () => {
     const db = as(MEMBER), b = writeBatch(db);
@@ -160,6 +236,21 @@ async function main() {
   });
   await check("A comment can't be written in someone else's name", "deny", () =>
     setDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c2"), { author: "ada@personalisationhub.com", html: "", text: "x", at: serverTimestamp() }));
+  await check("An author edits their own comment (text, mentions, edited-at)", "allow", () =>
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c1"), { html: "<p>edited</p>", text: "edited", mentions: [], editedAt: serverTimestamp() }));
+  await check("A member can't edit someone else's comment", "deny", () =>
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c6"), { html: "<p>mine now</p>", text: "mine now", mentions: [], editedAt: serverTimestamp() }));
+  await check("An admin can't edit a member's comment", "deny", () =>
+    updateDoc(doc(as(ADMIN), "kanbanTasks/PH-7/comments/c4"), { html: "<p>no</p>", text: "no", mentions: [], editedAt: serverTimestamp() }));
+  await check("An edit can't change the author or the time", "deny", () =>
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c4"), { author: "ada@personalisationhub.com", editedAt: serverTimestamp() }));
+  await check("An edit must stamp editedAt with the server time", "deny", () =>
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c4"), { html: "<p>y</p>", text: "y", mentions: [], editedAt: new Date(0) }));
+  await check("A viewer can't edit a comment", "deny", () =>
+    updateDoc(doc(as(VIEWER), "kanbanTasks/PH-7/comments/c4"), { html: "<p>y</p>", text: "y", mentions: [], editedAt: serverTimestamp() }));
+  await check("A member can't delete someone else's comment", "deny", () => deleteDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c6")));
+  await check("An author deletes their own comment", "allow", () => deleteDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c5")));
+  await check("An admin deletes anyone's comment", "allow", () => deleteDoc(doc(as(ADMIN), "kanbanTasks/PH-7/comments/c4")));
   await check("The activity log is append-only", "deny", () =>
     updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/activity/a1"), { text: "rewritten" }));
   await check("An activity line can't be deleted", "deny", () => deleteDoc(doc(as(ADMIN), "kanbanTasks/PH-7/activity/a1")));
@@ -176,7 +267,9 @@ async function main() {
   await check("A member can't add a sprint", "deny", () => setDoc(doc(as(MEMBER), "kanbanSprints/s1"), { name: "Sprint 43" }));
 
   // ── Mentions ────────────────────────────────────────────────────────────
-  await check("A member notifies someone they mentioned", "allow", () =>
+  // Notifications are written by the server's fan-out (functions/kanban-notify.js),
+  // never by a browser, so even a well-formed one is refused.
+  await check("A member can't create a notification (the server writes them)", "deny", () =>
     setDoc(doc(as(MEMBER), "kanbanNotifications/n2"), { to: "ada@personalisationhub.com", from: SAM, taskKey: "PH-7", taskTitle: "A task", kind: "comment", read: false, at: serverTimestamp() }));
   await check("A notification can't claim to be from someone else", "deny", () =>
     setDoc(doc(as(MEMBER), "kanbanNotifications/n2"), { to: "ada@personalisationhub.com", from: "rob@offline2online.com", taskKey: "PH-7", taskTitle: "", kind: "comment", read: false, at: serverTimestamp() }));
@@ -186,6 +279,11 @@ async function main() {
     getDocs(query(collection(as(ADMIN), "kanbanNotifications"), where("to", "==", SAM), limit(100))));
   await check("The person notified marks one read", "allow", () => updateDoc(doc(as(MEMBER), "kanbanNotifications/n1"), { read: true }));
   await check("…and can't rewrite it", "deny", () => updateDoc(doc(as(MEMBER), "kanbanNotifications/n1"), { taskTitle: "edited" }));
+  await check("The person notified deletes one that is already read (the 30-day prune)", "allow", () => deleteDoc(doc(as(MEMBER), "kanbanNotifications/n3")));
+  await check("…but not an unread one", "deny", () => deleteDoc(doc(as(MEMBER), "kanbanNotifications/n1")));
+  await check("Nobody deletes someone else's read notification", "deny", () => deleteDoc(doc(as(ADMIN), "kanbanNotifications/n3")));
+  await check("The prune query (own, read, older than 30 days) is allowed", "allow", () =>
+    getDocs(query(collection(as(MEMBER), "kanbanNotifications"), where("to", "==", SAM), where("read", "==", true), where("at", "<", new Date(Date.now() - 30 * 86400000)), limit(200))));
 
   // ── Member directory (written by functions only) ────────────────────────
   await check("A member reads the member directory", "allow", () => getDocs(collection(as(MEMBER), "memberDirectory")));

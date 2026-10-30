@@ -85,9 +85,23 @@
 
   // ── State ───────────────────────────────────────────────────────────────
   const clone = (o) => JSON.parse(JSON.stringify(o));
+  // A link shows on both tickets (KB-TASK-5): "A blocks B" is {blocks, B} on A
+  // and {is blocked by, A} on B. Removing it from either side removes both.
+  const LINK_TYPES = ["blocks", "is blocked by", "relates to", "duplicates", "is duplicated by"];
+  const INVERSE_LINK = { blocks: "is blocked by", "is blocked by": "blocks", "relates to": "relates to", duplicates: "is duplicated by", "is duplicated by": "duplicates" };
+  const hasLink = (t, type, key) => (t.links || []).some((l) => l.type === type && l.key === key);
+  // Makes every stored link two-sided (the seed and older saved boards hold one side).
+  function twoSided(tasks) {
+    const by = new Map(tasks.map((t) => [t.key, t]));
+    for (const t of tasks) for (const l of t.links || []) {
+      const o = by.get(l.key);
+      if (o && o !== t && INVERSE_LINK[l.type] && !hasLink(o, INVERSE_LINK[l.type], t.key)) (o.links = o.links || []).push({ type: INVERSE_LINK[l.type], key: t.key });
+    }
+    return tasks;
+  }
   let state = load() || fresh();
   function fresh() {
-    return { tasks: clone(SEED.tasks), settings: defaultSettings(), me: "rob", nextKey: SEED.nextKey };
+    return { tasks: twoSided(clone(SEED.tasks)), settings: defaultSettings(), me: "rob", nextKey: SEED.nextKey };
   }
   function load() {
     try {
@@ -97,6 +111,7 @@
       if (!s || !Array.isArray(s.tasks)) return null;
       s.settings = Object.assign(defaultSettings(), s.settings || {});
       s.settings.fields = Object.assign(defaultSettings().fields, s.settings.fields || {});
+      twoSided(s.tasks);
       return s;
     } catch { return null; }
   }
@@ -225,6 +240,50 @@
   }
 
   // ── Status changes (the one place the testing hand-off happens) ─────────
+  // One activity line per changed field, with the old and new value (KB-BOARD-5).
+  // The same lines as the console's editActivity in kanban-core.js.
+  function editActivity(before, after) {
+    const out = [];
+    const none = (v) => (v === "" || v == null ? "none" : v);
+    const change = (label, a, b) => out.push(`changed ${label} from ${none(a)} to ${none(b)}`);
+    const differs = (k) => JSON.stringify(before[k] == null ? "" : before[k]) !== JSON.stringify(after[k] == null ? "" : after[k]);
+    const hours = (v) => (v === "" || v == null ? "" : fmtH(v));
+    if (differs("title")) change("Title", before.title, after.title);
+    if (differs("type")) change("Type", typeOf(before.type).label, typeOf(after.type).label);
+    if (differs("description")) out.push("edited the description");
+    if (differs("assignee")) out.push(after.assignee ? `assigned to ${firstName(after.assignee)}` : `unassigned (was ${firstName(before.assignee)})`);
+    if (differs("reporter")) change("Reporter", before.reporter ? firstName(before.reporter) : "", after.reporter ? firstName(after.reporter) : "");
+    if (differs("priority")) change("Priority", prioOf(before.priority).label, prioOf(after.priority).label);
+    if (differs("estimate")) change("Estimate", hours(before.estimate), hours(after.estimate));
+    if (differs("logged")) change("Time logged", hours(before.logged || ""), hours(after.logged || ""));
+    if (differs("release")) change("Release", before.release ? releaseName(before.release) : "", after.release ? releaseName(after.release) : "");
+    if (differs("sprint")) change("Sprint", before.sprint, after.sprint);
+    if (differs("due")) change("Due date", before.due, after.due);
+    if (differs("epic")) change("Epic", before.epic, after.epic);
+    if (differs("labels")) {
+      const a = new Set(before.labels || []), b = new Set(after.labels || []);
+      for (const l of b) if (!a.has(l)) out.push(`added label ${l}`);
+      for (const l of a) if (!b.has(l)) out.push(`removed label ${l}`);
+    }
+    if (differs("links")) {
+      for (const l of after.links || []) if (!hasLink(before, l.type, l.key)) out.push(`linked: ${l.type} ${l.key}`);
+      for (const l of before.links || []) if (!hasLink(after, l.type, l.key)) out.push(`unlinked: ${l.type} ${l.key}`);
+    }
+    if (!!before.flagged !== !!after.flagged) out.push(after.flagged ? "flagged this ticket" : "removed the flag");
+    return out;
+  }
+  // Writes the other side of the links a save added or removed.
+  function syncLinks(key, before, after) {
+    const log = (o, text) => (o.activity = o.activity || []).push({ at: new Date().toISOString(), who: state.me, text });
+    for (const l of after) if (!hasLink({ links: before }, l.type, l.key)) {
+      const o = taskByKey(l.key), inv = INVERSE_LINK[l.type];
+      if (o && o.key !== key && inv && !hasLink(o, inv, key)) { (o.links = o.links || []).push({ type: inv, key }); log(o, `linked: ${inv} ${key}`); }
+    }
+    for (const l of before) if (!hasLink({ links: after }, l.type, l.key)) {
+      const o = taskByKey(l.key), inv = INVERSE_LINK[l.type];
+      if (o && inv && hasLink(o, inv, key)) { o.links = o.links.filter((x) => !(x.type === inv && x.key === key)); log(o, `unlinked: ${inv} ${key}`); }
+    }
+  }
   function setStatus(task, status, opts = {}) {
     const from = task.status, fromRes = res(task);
     const toRes = status === "done" ? opts.resolution || fromRes || "completed" : null;
@@ -852,8 +911,8 @@
       comments: [], attachments: [], links: [], previousAssignee: "", activity: [],
     }, preset ? preset.fields : {});
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
-    syncModalFlag();
     renderForm();
+    syncModalFlag();
     setSideCollapsed(sideCollapsed);
     syncCreateCta();
     $("#task-backdrop").hidden = false;
@@ -878,6 +937,7 @@
     try { localStorage.setItem(SIDE_KEY, v ? "1" : "0"); } catch { /* ignore */ }
     const g = $(".kb-task-grid");
     if (g) g.classList.toggle("kb-side-collapsed", v);
+    $(".kb-task-panel").classList.toggle("kb-side-collapsed", v);
     const b = $("#task-side-toggle");
     b.setAttribute("aria-expanded", String(!v));
     b.title = v ? "Show details" : "Hide details";
@@ -893,7 +953,40 @@
     $("#task-flag-label").textContent = draft.flagged ? "Flagged" : "Flag";
     $(".kb-task-panel").classList.toggle("kb-panel-flagged", !!draft.flagged);
   }
+  // Save on an existing ticket stays off until something on the page differs from what was loaded.
+  const TRACKED = ["f-title", "f-assignee", "f-reporter", "f-release", "f-priority", "f-sprint", "f-project", "f-due", "f-epic", "f-estimate", "f-logged", "f-status"];
+  let changeBase = null, changeTimer = 0;
+  function formState() {
+    const form = $("#task-form");
+    if (!form || !draft) return "";
+    return JSON.stringify({
+      v: TRACKED.map((id) => { const el = $("#" + id, form); return el ? el.value : null; }),
+      type: draft.type, labels: draft.labels, links: draft.links, flagged: !!draft.flagged,
+      att: (draft.attachments || []).map((a) => a.url || a.name || ""),
+      desc: descQ ? KBEditor.getHtml(descQ) : null,
+      comment: commentQ ? KBEditor.getHtml(commentQ) : null,
+    });
+  }
+  function syncSaveState() {
+    const b = $("#f-save");
+    if (b && draft && !draftIsNew) b.disabled = changeBase == null || formState() === changeBase;
+  }
+  function watchChanges() {
+    clearInterval(changeTimer);
+    if (!draft) return;
+    changeBase = formState();
+    // A typed, pasted or dictated edit in either editor counts at once.
+    [descQ, commentQ].forEach((q) => { if (q) q.on("text-change", syncSaveState); });
+    const form = $("#task-form");
+    if (!form._changeBound) {
+      ["input", "change", "click", "keyup"].forEach((ev) => form.addEventListener(ev, () => setTimeout(syncSaveState, 0)));
+      form._changeBound = true;
+    }
+    changeTimer = setInterval(syncSaveState, 100);
+    syncSaveState();
+  }
   function closeTask() {
+    clearInterval(changeTimer); changeBase = null;
     stopRecorder(true); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
     const back = returnTo; returnTo = null;
     if (back && taskByKey(back)) openTask(back);
@@ -921,7 +1014,7 @@
       case "release": return `<div class="kb-field" data-field="release">${label("release")}<select id="f-release" class="kb-input">${opt("", "No release", d.release)}${SEED.releases.map((r) => opt(r.id, r.name + (r.released ? " (released)" : ""), d.release)).join("")}</select></div>`;
       case "estimate": return `<div class="kb-field" data-field="estimate">${label("estimate")}<input type="text" id="f-estimate" class="kb-input" value="${esc(d.estimate === "" || d.estimate == null ? "" : fmtH(d.estimate))}" placeholder="e.g. 1d 4h" inputmode="text"></div>`;
       case "type": return `<div class="kb-field" data-field="type">${label("type", "f-type-task")}<div class="type-toggle kb-type-toggle" role="radiogroup">${TYPES.map((t) => `<button type="button" class="type-opt${d.type === t.key ? " active" : ""}" id="f-type-${t.key}" data-type="${t.key}" role="radio" aria-checked="${d.type === t.key}"><span class="material-symbols-outlined kb-type-${t.key}" aria-hidden="true">${t.icon}</span>${t.label}</button>`).join("")}</div></div>`;
-      case "priority": return `<div class="kb-field" data-field="priority">${label("priority")}<select id="f-priority" class="kb-input">${opt("", "—", d.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, d.priority)).join("")}</select></div>`;
+      case "priority": return `<div class="kb-field" data-field="priority">${label("priority")}<div class="kb-prio-row"><select id="f-priority" class="kb-input">${opt("", "—", d.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, d.priority)).join("")}</select><button type="button" class="kb-task-flag" id="task-flag" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">flag</span><span id="task-flag-label">Flag</span></button></div></div>`;
       case "sprint": return `<div class="kb-field" data-field="sprint">${label("sprint")}<select id="f-sprint" class="kb-input">${opt("", "No sprint", d.sprint)}${SEED.sprints.map((s) => opt(s.id, `${s.name} · ${s.range}`, d.sprint)).join("")}</select></div>`;
       case "due": return `<div class="kb-field" data-field="due">${label("due")}<input type="date" id="f-due" class="kb-input" value="${esc(d.due)}"></div>`;
       case "logged": {
@@ -951,7 +1044,7 @@
       }
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
-        <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${["blocks", "is blocked by", "relates to", "duplicates"].map((x) => opt(x, x, "relates to")).join("")}</select>
+        <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${LINK_TYPES.map((x) => opt(x, x, "relates to")).join("")}</select>
           ${pickerHTML("f-link-key", "Search tickets by number, title or description")}</div></div>`;
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
@@ -983,15 +1076,15 @@
     form.innerHTML = `
       <div class="kb-task-grid${sideCollapsed ? " kb-side-collapsed" : ""}">
         <div class="kb-task-main">${main.filter(visible).map(fieldHTML).join("")}</div>
-        <div class="kb-task-side" id="kb-task-side">${side.filter(visible).map(fieldHTML).join("")}</div>
-        <button type="button" class="kb-side-tab" id="kb-side-tab" aria-controls="kb-task-side" aria-expanded="false" title="Show details"><span class="material-symbols-outlined" aria-hidden="true">left_panel_open</span><span>Details</span></button>
+        <div class="kb-task-side" id="kb-task-side"><div class="kb-side-head"><span>Details</span><button type="button" class="kb-side-toggle" id="task-side-toggle" aria-controls="kb-task-side" aria-expanded="true" title="Hide details"><span class="material-symbols-outlined" aria-hidden="true">right_panel_close</span></button></div>${side.filter(visible).map(fieldHTML).join("")}</div>
+        <button type="button" class="kb-side-tab" id="kb-side-tab" aria-controls="kb-task-side" aria-expanded="false" title="Show details"><span class="material-symbols-outlined" aria-hidden="true">left_panel_open</span><span>Details</span><span class="material-symbols-outlined kb-rail-flag" aria-hidden="true">flag</span></button>
       </div>
       ${!draftIsNew && hidden.length ? `<details class="kb-more"><summary>${hidden.length} more field${hidden.length > 1 ? "s" : ""}<span class="kb-more-names">${hidden.map((k) => esc(FIELD_LABEL[k])).join(", ")}</span></summary><div class="kb-more-body">${hidden.map(fieldHTML).join("")}</div></details>` : ""}
       ${draftIsNew ? "" : `<p class="kb-created">Created by ${esc(firstName(draft.reporter))} · ${fmtDate(draft.created, { day: "numeric", month: "short", year: "numeric" })}</p>`}
       <p class="tm-error" id="f-error" hidden></p>
       <div class="form-row kb-form-actions">
         ${draftIsNew ? "<span></span>" : '<button type="button" class="btn-ghost fa-actions-delete" id="f-delete"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>'}
-        <div class="form-actions"><button type="button" class="btn-outline" id="f-cancel">Cancel</button><button type="submit" class="btn-primary" id="f-save">${draftIsNew ? CREATE_CTA[draft.type] || CREATE_CTA.task : "Save"}</button></div>
+        <div class="form-actions"><button type="button" class="btn-outline" id="f-cancel">Cancel</button><button type="submit" class="btn-primary" id="f-save"${draftIsNew ? "" : " disabled"}>${draftIsNew ? CREATE_CTA[draft.type] || CREATE_CTA.task : "Save"}</button></div>
       </div>`;
     bindForm();
   }
@@ -1033,7 +1126,8 @@
       if (v && !draft.labels.includes(v)) draft.labels.push(v);
       li.value = ""; $("#f-labels").innerHTML = labelsHTML();
     });
-    form.addEventListener("click", (e) => {
+    // The form element outlives every open, so bind this delegated handler once: a handler per open ran N times on the Nth open.
+    if (!form._rmBound) form.addEventListener("click", (e) => {
       const rl = e.target.closest("[data-rm-label]");
       if (rl) { draft.labels = draft.labels.filter((x) => x !== rl.dataset.rmLabel); $("#f-labels").innerHTML = labelsHTML(); }
       const rk = e.target.closest("[data-rm-link]");
@@ -1041,6 +1135,7 @@
       const ra = e.target.closest("[data-rm-att]");
       if (ra) { draft.attachments.splice(+ra.dataset.rmAtt, 1); $("#f-attachments").innerHTML = attachmentsHTML(); }
     });
+    form._rmBound = true;
     bindPicker("f-link-key", {
       candidates: () => state.tasks.filter((t) => t.key !== draft.key && !draft.links.some((l) => l.key === t.key)),
       onPick: (t) => {
@@ -1058,12 +1153,14 @@
     const ca = $("#f-comment-add");
     if (ca) ca.addEventListener("click", () => { if (addCommentFromEditor()) $("#f-comments").innerHTML = commentsHTML(); });
     bindEditors();
+    watchChanges();
     bindVoice();
     bindChildren(form);
     $("#f-cancel").addEventListener("click", closeTask);
     const del = $("#f-delete");
     if (del) del.addEventListener("click", () => {
       if (!confirm(`Delete ${draft.key}? This can't be undone.`)) return;
+      syncLinks(draft.key, (taskByKey(draft.key) || {}).links || [], []);
       state.tasks = state.tasks.filter((t) => t.key !== draft.key);
       state.tasks.forEach((t) => { if (t.epic === draft.key) t.epic = ""; });
       save(); toast(`<b>${esc(draft.key)}</b> deleted`); closeTask(); render();
@@ -1634,7 +1731,12 @@
     if (existing) {
       const prevStatus = existing.status, prevRes = res(existing);
       next.status = prevStatus;
+      const was = clone(existing);
       Object.assign(existing, next);
+      const lines = editActivity(was, existing);
+      existing.activity = existing.activity || [];
+      lines.forEach((text) => existing.activity.push({ at: new Date().toISOString(), who: state.me, text }));
+      syncLinks(existing.key, was.links || [], existing.links || []);
       if (newStatus !== prevStatus || (newStatus === "done" && newRes !== prevRes)) {
         const inCol = state.tasks.filter((t) => t.status === newStatus);
         existing.rank = inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10;
@@ -1647,6 +1749,7 @@
       const inCol = state.tasks.filter((t) => t.status === newStatus);
       next.rank = inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10;
       state.tasks.push(next);
+      syncLinks(next.key, [], next.links || []);
       state.nextKey++;
       if (newStatus !== "backlog") setStatus(next, newStatus, { silent: true, resolution: newRes });
       next.activity = [];
@@ -1659,9 +1762,12 @@
     closeTask(); render();
   }
   function initModal() {
-    $("#task-side-toggle").addEventListener("click", () => setSideCollapsed(!sideCollapsed));
-    $("#task-form").addEventListener("click", (e) => { if (e.target.closest("#kb-side-tab")) setSideCollapsed(false); });
-    $("#task-flag").addEventListener("click", () => { if (draft) { draft.flagged = !draft.flagged; syncModalFlag(); } });
+    // The toggle, flag and rail live inside the re-rendered form, so listen on the form.
+    $("#task-form").addEventListener("click", (e) => {
+      if (e.target.closest("#task-side-toggle")) setSideCollapsed(!sideCollapsed);
+      else if (e.target.closest("#kb-side-tab")) setSideCollapsed(false);
+      else if (e.target.closest("#task-flag") && draft) { draft.flagged = !draft.flagged; syncModalFlag(); }
+    });
     $("#task-close").addEventListener("click", closeTask);
     $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#task-backdrop").hidden) closeTask(); });

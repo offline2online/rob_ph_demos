@@ -225,8 +225,6 @@ export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: Positi
       sellable && andThen(effectivePartnerIds(ctx, p.def, assignedCached(p.def).buyersListIds.length ? (partners ??= ctx.partners.list()) : undefined), (allowed) => allows(p, allowed)))
 }
 
-export const isVisible = async (ctx: Context, p: PositionRef, c: Caller) => (await visibilityFor(ctx, c))(p)
-
 /* Keeps the items the (possibly async) predicate accepts, in order. One at a
    time on purpose: a list of thousands of positions must not become
    thousands of concurrent reads. */
@@ -249,7 +247,6 @@ const HOUR = 3_600_000
    removed on 8 Oct 2026). Without a position: the platform default. */
 export const windowHoursFor = (p?: PositionRef | null): number => (p ? billingUnitHoursOf(p.displayType, p.def) : PLATFORM_DEFAULT_BILLING_UNIT_HOURS)
 export const windowMsFor = (p?: PositionRef | null) => windowHoursFor(p) * HOUR
-export const windowHoursOf = (_ctx: Context, p?: PositionRef | null): number => windowHoursFor(p)
 export const windowMs = (_ctx: Context, p?: PositionRef | null): number => windowMsFor(p)
 /* The length of the window that starts at `startMs`: windows before a billing-unit change (OQ27, 11 Oct 2026) keep the length they were sold at, so billing and hand-off read them at it even once the new unit is in force. */
 export const windowMsAt = (p: PositionRef | null | undefined, startMs: number): number => {

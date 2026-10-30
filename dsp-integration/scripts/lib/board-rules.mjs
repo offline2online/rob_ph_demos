@@ -206,9 +206,6 @@ export function checkMove({ card, to, deployCommit, git, project, actor, reason,
   return { ok: true, fields, appendCommit, notes, lockTrain }
 }
 
-/* A hand-stamp with no status change (--deploy-commit alone, or `@sha`). */
-export const checkStamp = ({ card, deployCommit, git, project }) => checkMove({ card, to: undefined, deployCommit, git, project })
-
 /* ------------------------------------------- test links → an immutable commit */
 
 const PROTOTYPE_LINK = /^https:\/\/(?:rawcdn|raw)\.githack\.com\/offline2online\/rob_ph_demos\/(.+?)\/dsp-integration\/prototype\/(.*)$/

@@ -406,6 +406,9 @@ T("TC-18", "modal: pinned action bar, collapsible details column remembered", { 
     assert.ok(ok, "Save visible");
   }
   const before = await p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
+  const geo = await p.evaluate(() => { document.querySelector(".kb-task-panel").scrollTop = 0; const r = (q) => document.querySelector(q).getBoundingClientRect(), pn = r(".kb-task-panel"), sd = r(".kb-task-side"), f = r("#task-flag"), pr = r("#f-priority"); return { top: Math.abs(sd.top - pn.top), flagDy: Math.abs((f.top + f.height / 2) - (pr.top + pr.height / 2)), flagRight: f.left >= pr.right }; });
+  assert.ok(geo.top <= 1, "details column starts at the top of the modal");
+  assert.ok(geo.flagDy <= 2 && geo.flagRight, "flag sits right of Priority on the same line");
   await press(p, "#task-side-toggle"); await p.waitForTimeout(250);
   const afterW = await p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
   assert.ok(afterW > before + 150);

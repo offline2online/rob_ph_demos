@@ -138,4 +138,4 @@ function handleMessage(msg, ctx) {
   }
 }
 
-module.exports = { handleMessage, toolList, TOOLS, PROTOCOL_VERSION, MAX_RESPONSE_BYTES };
+module.exports = { handleMessage, TOOLS, PROTOCOL_VERSION, MAX_RESPONSE_BYTES };
