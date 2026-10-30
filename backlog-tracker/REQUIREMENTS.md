@@ -442,6 +442,17 @@ busy. Now:
   Used up, the ticket is flagged `blocked: { reason: "waiting-on-input",
   setBy: "self-heal" }` with the reason, so the board shows it under
   "waiting on your answer" with an Answer button that rebuilds it.
+- **A question never strands a ticket (30 Oct 2026)**: a card flagged
+  `waiting-on-input` for 10 minutes without a reply takes the senior agent's
+  answer. `sweepAutoAnswers` (`autoAnswerPlan`) appends the note "Answer to
+  the build's question (accepted automatically from the senior agent…)" using
+  `blocked.recommendation` (recorded by the build after consulting a
+  higher-ranking agent) or, without one, the default "take the best option,
+  state the assumption, do not ask again"; it clears the flag and requests a
+  rebuild (held until the train merges when the release is closing). At most
+  `MAX_AUTO_ANSWERS` (2) per ticket (`autoAnswers`), after which it stays
+  flagged for a person; a dependency wait (`dependsOnItemIds`) is never
+  auto-answered.
 - **A rebuild due while the release is closing waits for the merge, not a
   click**: the card carries `buildAfterTrain: true` (set by `selfHealPlan`,
   `releaseDependents`, `sweepUnbuiltReports` or the board's Answer while

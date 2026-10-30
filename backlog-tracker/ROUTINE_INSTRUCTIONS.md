@@ -737,6 +737,13 @@ path:
   Dev": the Answer button on the card saves the answer as a comment, clears
   the flag and starts that ticket's rebuild itself, whereas Ready for Dev
   skips blocked cards.
+  **Before blocking on a question, put it to a higher-ranking agent**
+  (e.g. an `Agent` subagent briefed as the senior reviewer) and record its
+  recommended answer as `blocked.recommendation` in the same PATCH. If nobody
+  answers within 10 minutes the automation accepts that recommendation as the
+  answer, clears the flag and rebuilds (`sweepAutoAnswers`; twice per ticket,
+  never for a `dependsOnItemIds` wait). So a question is only for what the
+  recommendation cannot settle.
 
 ## Cards that ship together are already grouped — don't stamp a deploymentId
 
