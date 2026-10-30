@@ -888,7 +888,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   // ── Artifact snapshots (PH-20) ──────────────────────────────────────────
-  const WRITABLE_BEFORE_SNAPSHOTS = ["docs", "artifactUrl", "artifactUpdatedAt", "description"];
+  const WRITABLE_BEFORE_SNAPSHOTS = ["docs", "artifactUrl", "artifactUpdatedAt", "description", "type"];
   await test("snapshot_project_artifact pins a GitHub Pages artifact to main's commit; later calls append", async () => {
     const SHA1 = "a".repeat(40), SHA2 = "b".repeat(40);
     const snap = (args) => rpc(tokens.access_token, "tools/call", { name: "snapshot_project_artifact", arguments: Object.assign({ projectId: "proj1" }, args) });
@@ -1033,12 +1033,13 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("creates a concept, active, then seeds it with the write tools", async () => {
-    const res = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "  Experience Templates  ", description: "Split out of Display Types." } });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "  Experience Templates  ", type: "Internal operations", description: "Split out of Display Types." } });
     const out = JSON.parse(res.body.result.content[0].text);
     assert.ok(out.conceptId);
     const doc = env.store.col("concepts").get(out.conceptId);
     assert.strictEqual(doc.name, "Experience Templates");
     assert.strictEqual(doc.status, "active");
+    assert.strictEqual(doc.type, "Internal operations");
     assert.strictEqual(doc.comments.length, 1);
     const act = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: { status: "active" } })).body.result.content[0].text);
     assert.ok(act.concepts.some((c) => c.id === out.conceptId));
@@ -1046,8 +1047,44 @@ async function rpc(token, method, params, id = 1) {
     assert.ok(!w.body.result.isError);
     const r = await rpc(tokens.access_token, "tools/call", { name: "set_concept_requirements", arguments: { conceptId: out.conceptId, contentMd: "# Req" } });
     assert.ok(!r.body.result.isError);
-    const bad = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "   " } });
+    const bad = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "   ", type: "Platform" } });
     assert.strictEqual(bad.body.result.isError, true);
+  });
+
+  await test("create_concept refuses a missing or unknown type", async () => {
+    for (const args of [{ name: "No type" }, { name: "Bad type", type: "Product" }, { name: "Both", type: "Platform, Internal operations" }]) {
+      const res = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: args });
+      assert.strictEqual(res.body.result.isError, true, JSON.stringify(args));
+      assert.match(res.body.result.content[0].text, /Platform/);
+    }
+  });
+
+  await test("set_concept_type changes the type; list/get_concept return it; promoted concepts are refused", async () => {
+    const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_concept_type", arguments: Object.assign({ conceptId: "con1" }, args) });
+    assert.ok(!(await call({ type: "Platform" })).body.result.isError);
+    assert.strictEqual(env.store.col("concepts").get("con1").type, "Platform");
+    const list = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(list.concepts.find((c) => c.id === "con1").type, "Platform");
+    const only = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: { type: "Internal operations" } })).body.result.content[0].text);
+    assert.ok(!only.concepts.some((c) => c.id === "con1"));
+    const one = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_concept", arguments: { conceptId: "con1" } })).body.result.content[0].text);
+    assert.strictEqual(one.type, "Platform");
+    assert.ok(!(await call({ type: "Internal operations" })).body.result.isError);
+    assert.strictEqual(env.store.col("concepts").get("con1").type, "Internal operations");
+    assert.strictEqual((await call({ type: "Product" })).body.result.isError, true);
+    assert.strictEqual((await call({ conceptId: "con2", type: "Platform" })).body.result.isError, true, "promoted concepts are refused");
+  });
+
+  await test("set_project_type changes the type; list_projects and get_project_docs return it", async () => {
+    const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_project_type", arguments: Object.assign({ projectId: "proj1" }, args) });
+    assert.ok(!(await call({ type: "Internal operations" })).body.result.isError);
+    assert.strictEqual(env.store.col("projects").get("proj1").type, "Internal operations");
+    const lp = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_projects", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(lp.projects.find((p) => p.id === "proj1").type, "Internal operations");
+    const gd = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1", include: ["readme"] } })).body.result.content[0].text);
+    assert.strictEqual(gd.type, "Internal operations");
+    assert.strictEqual((await call({ type: "Both" })).body.result.isError, true);
+    assert.strictEqual((await call({ projectId: "nope", type: "Platform" })).body.result.isError, true);
   });
 
   await test("refuses get_concept on an unknown id", async () => {
@@ -1153,7 +1190,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("every concept write is gated on board.write; the reads aren't", async () => {
-    for (const name of ["add_concept_comment", "set_concept_description", "set_concept_readme", "set_concept_requirements"]) {
+    for (const name of ["add_concept_comment", "set_concept_description", "set_concept_type", "set_project_type", "set_concept_readme", "set_concept_requirements"]) {
       assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.write", `${name} must require board.write`);
     }
     for (const name of ["list_concepts", "get_concept"]) {
@@ -1454,7 +1491,7 @@ async function rpc(token, method, params, id = 1) {
   await test("the project write allowlist holds nothing that could ship code", async () => {
     const allowed = [...mcp.__test.PROJECT_WRITABLE_FIELDS];
     for (const field of allowed) {
-      assert.ok(/^(docs$|artifact|description$)/.test(field), `${field} is not a documentation field but is writable`);
+      assert.ok(/^(docs$|artifact|description$|type$)/.test(field), `${field} is not a documentation field but is writable`);
     }
     for (const forbidden of ["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "trainLocked", "needsHumanMerge", "notifyRequestedAt", "deployNotifyRequestedAt", "name", "programId"]) {
       assert.ok(!mcp.__test.PROJECT_WRITABLE_FIELDS.has(forbidden), `${forbidden} must not be writable`);

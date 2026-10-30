@@ -1225,7 +1225,17 @@ const PROJECT_WRITABLE_FIELDS = new Set([
   "docs",
   "artifactUrl", "artifactUpdatedAt",
   "description",
+  "type",
 ]);
+
+// Every concept and project is exactly one of these two (ticket
+// ufOwuueuj1f5vmeN0xi2). Kept in step with firestore.rules' entityTypeOk and
+// public/js/entity-type.js. Unset is allowed only on items that pre-date the
+// field; nothing here can write it back to unset.
+const ENTITY_TYPES = ["Platform", "Internal operations"];
+function typeError(v) {
+  return ENTITY_TYPES.includes(v) ? null : `type must be exactly one of: ${ENTITY_TYPES.join(", ")}.`;
+}
 
 // ── Project freeze ("Finalised") ─────────────────────────────────────────
 // A permanent freeze, distinct from trainLocked (a release closing). Written
@@ -2183,6 +2193,7 @@ const TOOLS = [
           id: p.id,
           name: p.name || "",
           description: p.description || null,
+          type: ENTITY_TYPES.includes(p.type) ? p.type : null,
           program: p.programId ? (programs.get(p.programId) || null) : null,
           archived: p.archived === true,
           deployBranch: p.deployBranch || null,
@@ -3016,7 +3027,7 @@ const TOOLS = [
       const snap = await db().collection("projects").doc(projectId).get();
       if (!snap.exists) return toolError(`No project with id ${projectId}.`);
       const p = snap.data() || {};
-      const out = { projectId, name: p.name || "" };
+      const out = { projectId, name: p.name || "", type: ENTITY_TYPES.includes(p.type) ? p.type : null };
       if (want.includes("requirements")) out.requirementsMd = await readProjectDoc(projectId, "requirements", p);
       if (want.includes("readme")) out.readmeMd = await readProjectDoc(projectId, "readme", p);
       out.artifactUrl = p.artifactUrl || null;
@@ -3454,6 +3465,29 @@ const TOOLS = [
     },
   },
   {
+    name: "set_project_type",
+    description: "Set a project's type to \"Platform\" or \"Internal operations\" (exactly one; never both). It decides which Concept Incubator map the project appears on. Shown by list_projects and get_project_docs.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "From list_projects." },
+        type: { type: "string", enum: ENTITY_TYPES },
+      },
+      required: ["projectId", "type"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const typeErr = typeError(args.type);
+      if (typeErr) return toolError(typeErr);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      await updateProjectFields(projectId, { type: args.type });
+      await audit(session, "set_project_type", { projectId, from: (snap.data() || {}).type || null, to: args.type });
+      return textResult({ updated: true, projectId, type: args.type });
+    },
+  },
+  {
     name: "create_project_document",
     description: "Add a named document to a project — an architecture note, an API spec, a decision record, anything that isn't its Requirements or README. Appears under 'Additional documents' on that project's Docs page.",
     scope: "board.write",
@@ -3744,14 +3778,17 @@ const TOOLS = [
         name: { type: "string", description: "The concept's name. Up to 120 characters." },
         readmeMd: { type: "string", description: "Optional initial README markdown." },
         requirementsMd: { type: "string", description: "Optional initial Requirements markdown." },
+        type: { type: "string", enum: ENTITY_TYPES, description: "Required. \"Platform\" (the Personalisation Hub product) or \"Internal operations\" (how PH runs internally). Never both; carries over when the concept is promoted." },
         description: { type: "string", description: "Optional short description; posted as the first comment on the concept's thread. Up to 4000 characters." },
       },
-      required: ["name"], additionalProperties: false,
+      required: ["name", "type"], additionalProperties: false,
     },
     async run(args, session) {
       const name = String(args.name || "").trim();
       if (!name) return toolError("name is required.");
       if (name.length > 120) return toolError("A concept name is limited to 120 characters.");
+      const typeErr = typeError(args.type);
+      if (typeErr) return toolError(`${typeErr} It is required to create a concept.`);
       const readmeMd = args.readmeMd == null ? "" : String(args.readmeMd);
       const requirementsMd = args.requirementsMd == null ? "" : String(args.requirementsMd);
       if (readmeMd.length > CONCEPT_MD_MAX) return toolError(`A concept README is limited to ${CONCEPT_MD_MAX} characters; that was ${readmeMd.length}.`);
@@ -3760,6 +3797,7 @@ const TOOLS = [
       if (description.length > 4000) return toolError("description is limited to 4000 characters.");
       const ref = await db().collection("concepts").add({
         name,
+        type: args.type,
         readmeMd,
         requirementsMd,
         // A plain Date, not serverTimestamp(): the sentinel is rejected
@@ -3772,8 +3810,8 @@ const TOOLS = [
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      await audit(session, "create_concept", { conceptId: ref.id, name, readmeChars: readmeMd.length, requirementsChars: requirementsMd.length });
-      return textResult({ created: true, conceptId: ref.id, name, status: "active", createdByEmail: session.email });
+      await audit(session, "create_concept", { conceptId: ref.id, name, type: args.type, readmeChars: readmeMd.length, requirementsChars: requirementsMd.length });
+      return textResult({ created: true, conceptId: ref.id, name, type: args.type, status: "active", createdByEmail: session.email });
     },
   },
   {
@@ -3784,6 +3822,7 @@ const TOOLS = [
       type: "object",
       properties: {
         status: { type: "string", enum: ["active", "promoted"], description: "Restrict to one status. Omit to see both." },
+        type: { type: "string", enum: ENTITY_TYPES, description: "Restrict to one type. Omit to see both (items with no type yet are only listed when this is omitted)." },
       },
       additionalProperties: false,
     },
@@ -3795,10 +3834,12 @@ const TOOLS = [
         const v = d.data() || {};
         const status = v.status || "active";
         if (a.status && status !== a.status) return;
+        if (a.type && v.type !== a.type) return;
         out.push({
           id: d.id,
           name: v.name || "",
           description: v.description || null,
+          type: ENTITY_TYPES.includes(v.type) ? v.type : null,
           status,
           promotedProjectId: v.promotedProjectId || null,
           hasReadme: !!(v.readmeMd && v.readmeMd.trim()),
@@ -3833,6 +3874,7 @@ const TOOLS = [
         id: snap.id,
         name: v.name || "",
         description: v.description || null,
+        type: ENTITY_TYPES.includes(v.type) ? v.type : null,
         status: v.status || "active",
         interfaces,
         demotedFromProjectId: v.demotedFromProjectId || null,
@@ -3889,6 +3931,7 @@ const TOOLS = [
       if (total > 700000) return toolError(`Together the project's documents are ${total} characters, too large to carry in one concept document (limit about 700000). Trim them first.`);
       const cref = await db().collection("concepts").add({
         name, readmeMd, requirementsMd, documents,
+        ...(ENTITY_TYPES.includes(project.type) ? { type: project.type } : {}),
         comments: [{ author: session.email, text: `Demoted from project "${project.name || projectId}" (${projectId}). Its interfaces now point here; the archived project keeps its tickets and revision history.`, at: new Date() }],
         status: "active", promotedProjectId: null, promotedAt: null,
         demotedFromProjectId: projectId,
@@ -4061,6 +4104,35 @@ const TOOLS = [
       );
       await audit(session, "set_concept_description", { conceptId, chars: text.length });
       return textResult({ updated: true, conceptId, description: text || null });
+    },
+  },
+  {
+    name: "set_concept_type",
+    description: "Set a concept's type to \"Platform\" or \"Internal operations\" (exactly one; never both). It decides which Concept Incubator map the concept appears on. Refused once the concept has been promoted — use set_project_type on promotedProjectId instead.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        type: { type: "string", enum: ENTITY_TYPES },
+      },
+      required: ["conceptId", "type"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const conceptId = String(args.conceptId);
+      const typeErr = typeError(args.type);
+      if (typeErr) return toolError(typeErr);
+      const snap = await db().collection("concepts").doc(conceptId).get();
+      if (!snap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const c = snap.data() || {};
+      if ((c.status || "active") === "promoted") {
+        return toolError(`Concept ${conceptId} has already been promoted to project ${c.promotedProjectId || "(unknown)"}; use set_project_type on that project instead.`);
+      }
+      await db().collection("concepts").doc(conceptId).set(
+        { type: args.type, updatedAt: FieldValue.serverTimestamp() }, { merge: true },
+      );
+      await audit(session, "set_concept_type", { conceptId, from: c.type || null, to: args.type });
+      return textResult({ updated: true, conceptId, type: args.type });
     },
   },
   {
@@ -5002,10 +5074,10 @@ const SERVER_INSTRUCTIONS = [
   "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in member; writes are attributed to their email. A viewer reads, an editor also writes, an admin has the release tools below.",
   "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (inline cards).",
   "To take over a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in order. The project_handover prompt starts the same plan.",
-  "Reading docs: list_project_documents and get_project_document read one document or section at a time; get_project_docs returns every document in full (set include).",
-  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first and send all of it; a document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover old versions.",
+  "Reading docs: list_project_documents and get_project_document read one document or section at a time; get_project_docs returns all in full.",
+  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, set_project_type, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first and send all of it; a document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover old versions.",
   REPO_WINS + " Board-only documents (including a project with no repo folder) are edited on the board.",
-  "Concepts: list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
+  "Concepts: list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_type, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project reverses a promotion.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_create_upload_url, kanban_attach_uploaded, kanban_remove_attachment, kanban_capture_screenshots, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Skills: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",

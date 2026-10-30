@@ -56,6 +56,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
 ```
 {
   name: string,
+  type?: "Platform" | "Internal operations", // required when a person creates a project; unset only on projects that pre-date the field (shown "Unassigned"). See "Platform and Internal operations". Writable over MCP (set_project_type)
   createdAt: timestamp,
   readmeMd?: string,              // LEGACY: README text from before docs/{kind}; read only when projects/{id}/docs/readme is missing
   requirementsMd?: string,        // LEGACY: Requirements text, same rule against docs/requirements
@@ -1386,6 +1387,7 @@ the UI.
 ```
 {
   name: string,
+  type?: "Platform" | "Internal operations", // required on create (the rules refuse a concept without one, except a demotion of a project that has none); carries over on promotion. See "Platform and Internal operations"
   readmeMd: string,                // up to 800,000 chars
   requirementsMd: string,           // up to 800,000 chars — saved independently of readmeMd
   comments: [ { author: "viewer" | "claude" | string, text: string, at: timestamp }, ... ],
@@ -2272,6 +2274,61 @@ revision list and an opened diff are fetched/computed on demand and cached
 per skill for the page's lifetime, not re-fetched every time
 `renderSkillsPage()` redraws the list (which happens on every Firestore
 update to any skill).
+
+### Platform and Internal operations
+
+Every concept and project carries a **type**: exactly one of `Platform` (the
+Personalisation Hub product) and `Internal operations` (how PH runs
+internally: Staff Kanban, RevOps, customer care, FAQs/help centre, the
+backlog tracker and related tooling). Never both. The word is "Platform",
+not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
+
+- **Required on create.** New concept, New project and the MCP
+  `create_concept` refuse a missing type ("Choose a type");
+  `firestore.rules` (`entityTypeOk`) refuses it for any person. The
+  automation user and the synthetic `general` project are exempt, and a
+  concept made by demoting a project carries the project's type (or none).
+- **Promotion carries it over.** The Promote modal pre-fills the concept's
+  type and locks it; a concept with no type lets the person choose one,
+  which is then written to both the project and the concept.
+- **Shown and filtered.** A type badge sits on every concept card, every
+  project header and the project's Settings page; the concept list has a
+  Type filter (All, Platform, Internal operations, Unassigned) and the board
+  header filters projects the same way. The type is editable from the
+  concept's page (until promoted) and the project's Settings page.
+- **Existing items ship unset.** An item with no type reads as `""`
+  (`typeOf` in `public/js/entity-type.js`), carries an **Unassigned** badge
+  and appears in BOTH map views so it can be sorted. The older name-based
+  `INTERNAL_RE` list still keeps its matches off the Platform map.
+- **Two maps, one toggle.** The Concept Incubator hero has a Platform /
+  Internal operations toggle (remembered per browser). The Platform view is
+  the map described below, showing Platform and unassigned items. The
+  Internal operations view (`public/js/internal-map.js`) is a separate,
+  fixed-layout map following Rob's sketch of 30 Oct 2026, left to right:
+  Customer Success (Clients, one agent per client, the feature request queue
+  that agents vote on and prioritise, Case studies), PH in the middle,
+  Sales on the right (PH website, Sales agents, Prospects & brands, Ads,
+  Social posts & PR, Support email); **Feature Release** along the top
+  (prioritised requests, a release pipeline with a gate, live releases) is
+  **step 2**; the **FAQs DB** under PH (connected to PH by API, to live
+  releases, Support email and the PH website) is **step 1**; a dotted line
+  runs from PH releases to Ads, Social posts and PR. Notes along the bottom
+  show the September focus: get rid of Freshdesk (replaced by the FAQs DB
+  and support, step 1) and of Atlassian at about $60 a seat (replaced by the
+  Feature Release pipeline and Staff Kanban, step 2). Internal operations
+  and unassigned concepts and projects sit in a strip under the sketch.
+  It is not pinned or saved (no Re-arrange, History or release filter).
+- **Bridge links.** An internal operations item that connects to the
+  platform is drawn as a dashed **bridge node** inside the PH box (Embedded
+  support, MCP Access, PH releases), not as a second copy of a platform item;
+  clicking one opens the Platform map. Bridge nodes are drawn on the
+  Internal operations view only.
+- **MCP.** `list_projects`, `get_project_docs`, `list_concepts` and
+  `get_concept` return `type` (null when unset); `list_concepts` takes an
+  optional `type` filter; `create_concept` requires `type`;
+  `set_concept_type` (refused once promoted) and `set_project_type` change it.
+- Tests: `test/entity-type.test.mjs`, `test/firestore-rules.test.js`,
+  `test/mcp-server.test.js`, `test/ui/console-click.test.mjs`.
 
 ### Concept Incubator hero — the live system map
 

@@ -144,6 +144,8 @@
     <div class="page-header" id="board-page-header">
       <h2>Agent Board</h2>
       <span class="page-header-count" id="total-summary">0 items</span>
+      <label class="page-header-filter"><span class="page-header-filter-label">Type</span>
+        <select id="board-type-filter" aria-label="Filter projects by type"></select></label>
       <button class="btn-primary page-header-action" id="new-project-btn" type="button">+ New project</button>
     </div>
 
@@ -297,6 +299,10 @@
         <input type="text" id="np-name-input" maxlength="80" placeholder="e.g. Loyalty App">
         <span class="char-count" id="np-name-count"></span>
 
+        <label class="field-label" for="np-type-select">Type</label>
+        <select id="np-type-select" required></select>
+        <p class="field-hint">Required. Platform is the Personalisation Hub product; Internal operations is how PH runs internally. Never both.</p>
+
         <label class="field-label" for="np-program-select">Program / Product</label>
         <select id="np-program-select"></select>
         <p class="field-hint">Optional — groups this under a shared heading on the board.</p>
@@ -362,6 +368,10 @@
         <label class="field-label" for="nc-name-input">Name</label>
         <input type="text" id="nc-name-input" maxlength="120" placeholder="e.g. Store staff shift handover">
         <span class="char-count" id="nc-name-count"></span>
+        <label class="field-label" for="nc-type-select">Type</label>
+        <select id="nc-type-select" required></select>
+        <p class="field-hint">Required. Platform or Internal operations, never both; it carries over when the concept is promoted.</p>
+        <p class="field-hint type-error" id="nc-type-error" role="alert" hidden>Choose a type.</p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="nc-cancel">Cancel</button>
@@ -388,6 +398,10 @@
         <input type="text" id="pc-name-input" maxlength="80" placeholder="e.g. Loyalty App">
         <span class="char-count" id="pc-name-count"></span>
         <p class="field-hint" id="pc-folder-hint" aria-live="polite"></p>
+
+        <label class="field-label" for="pc-type-select">Type</label>
+        <select id="pc-type-select" disabled></select>
+        <p class="field-hint">Carried over from the concept; it can't change when promoting. Change it on the concept first.</p>
 
         <label class="field-label" for="pc-program-select">Program / Product</label>
         <select id="pc-program-select"></select>
@@ -731,6 +745,12 @@
         <h3>Origin concept</h3>
         <p class="field-hint">This project was promoted from a Concept Incubator idea. Its original README, Requirements and discussion are kept there (read-only).</p>
         <a href="#" id="docs-origin-concept-link"></a>
+      </div>
+
+      <div class="docs-block">
+        <h3>Type</h3>
+        <p class="field-hint">Platform (the Personalisation Hub product) or Internal operations (how PH runs internally). Exactly one; it decides which Concept Incubator map this project is on.</p>
+        <select id="docs-type-select" aria-label="Project type"></select>
       </div>
 
       <div class="docs-block">
@@ -1269,6 +1289,10 @@
       <!-- Hero: ONE live system map (js/system-map.js), built from the
            board's projects, concepts, interface contracts and releases. -->
       <section class="sysmap-hero" id="system-map-hero" aria-label="Personalisation Hub system map">
+        <div class="type-toggle" id="system-map-type" role="group" aria-label="Which map to show">
+          <button type="button" class="type-toggle-btn active" data-map-type="Platform" aria-pressed="true">Platform</button>
+          <button type="button" class="type-toggle-btn" data-map-type="Internal operations" aria-pressed="false">Internal operations</button>
+        </div>
         <div class="sysmap-toolbar">
           <label class="field-label" for="system-map-release">Release</label>
           <select id="system-map-release"><option value="">All releases</option></select>
@@ -1285,7 +1309,9 @@
         <div class="sysmap-scroll" id="system-map-canvas"></div>
       </section>
       <p class="field-hint">Early-stage ideas that need more shape before they become an official project on the board. Each concept keeps its own README, requirements and discussion thread — pick up the conversation any time, then promote it to a real project once its structure is agreed.</p>
-      <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
+      <div class="form-row" style="justify-content:flex-end;align-items:center;gap:8px;margin-bottom:12px;">
+        <label class="field-label" for="concept-type-filter" style="margin:0;">Type</label>
+        <select id="concept-type-filter" aria-label="Filter concepts by type"></select>
         <button type="button" class="btn-primary" id="concept-add-btn" data-editor-only>+ New concept</button>
       </div>
       <div id="concept-incubator-list"></div>
@@ -1306,6 +1332,12 @@
         <h2><span id="concept-detail-name"></span> <span class="skill-owning-team-badge" id="concept-detail-status-badge"></span></h2>
       </div>
       <p class="field-hint" id="concept-detail-promoted-hint" hidden></p>
+
+      <div class="docs-block">
+        <h3>Type</h3>
+        <p class="field-hint">Platform (the Personalisation Hub product) or Internal operations (how PH runs internally). Exactly one; it decides which map this concept is on, and carries over when it is promoted.</p>
+        <select id="concept-type-select" aria-label="Concept type"></select>
+      </div>
 
       <div class="docs-block">
         <h3>Description</h3>

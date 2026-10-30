@@ -50,9 +50,9 @@ const relSeed = () => {
   const s = seed();
   s.docs.projects[PID].releaseId = "r2";
   s.docs.concepts = {
-    c1: { name: "Alpha", status: "active", description: "Alpha does alpha things.", createdAt: t(T0), updatedAt: t(T0 + 5) },
-    c2: { name: "Beta", status: "active", description: "Beta does beta things.", createdAt: t(T0), updatedAt: t(T0 + 4) },
-    c3: { name: "Gamma", status: "active", description: "", createdAt: t(T0), updatedAt: t(T0 + 3) },
+    c1: { name: "Alpha", type: "Platform", status: "active", description: "Alpha does alpha things.", createdAt: t(T0), updatedAt: t(T0 + 5) },
+    c2: { name: "Beta", type: "Platform", status: "active", description: "Beta does beta things.", createdAt: t(T0), updatedAt: t(T0 + 4) },
+    c3: { name: "Gamma", type: "Internal operations", status: "active", description: "", createdAt: t(T0), updatedAt: t(T0 + 3) },
     c4: { name: "Delta", status: "promoted", promotedProjectId: PID, createdAt: t(T0), updatedAt: t(T0 + 2) },
   };
   s.docs.releases = {
@@ -704,6 +704,70 @@ const scenarios = [
       await c.page.fill("#pc-name-input", "Staff Kanban");
       await c.page.press("#pc-name-input", "Enter");
       await c.waitText("#dialog-backdrop", "Project created", "Enter promoted the concept");
+    },
+  },
+  {
+    name: "types: a new concept needs a type, and promotion locks the concept's type in",
+    seed: () => relSeed(),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "build", "concept-incubator-btn", "concept-incubator-page");
+      await c.click("#concept-add-btn", "new concept");
+      await c.visible("#nc-backdrop:not([hidden])", "pop-up");
+      await c.page.fill("#nc-name-input", "Customer care desk");
+      await c.click("#nc-submit", "create without a type");
+      await c.visible("#nc-type-error:not([hidden])", "refused: Choose a type");
+      assert.ok(!(await c.page.locator("#concept-detail-page").isVisible()), "no concept was created");
+      await c.page.selectOption("#nc-type-select", "Internal operations");
+      await c.click("#nc-submit", "create with a type");
+      await c.visible("#concept-detail-page", "concept page opens");
+      assert.strictEqual(await c.page.inputValue("#concept-type-select"), "Internal operations");
+      await c.click("#concept-promote-btn", "promote");
+      await c.visible("#pc-backdrop:not([hidden])", "promote pop-up");
+      assert.strictEqual(await c.page.inputValue("#pc-type-select"), "Internal operations", "type pre-filled");
+      assert.ok(await c.page.locator("#pc-type-select").isDisabled(), "and locked");
+    },
+  },
+  {
+    name: "types: the concept list filters by type and shows Unassigned",
+    seed: () => { const s = relSeed(); s.docs.concepts.c3 = { name: "Gamma", status: "active", description: "", createdAt: t(T0), updatedAt: t(T0 + 3) }; return s; },
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "build", "concept-incubator-btn", "concept-incubator-page");
+      await c.visible("#concept-incubator-list .concept-card", "tiles");
+      const shown = () => c.page.evaluate(() => [...document.querySelectorAll("#concept-incubator-list .concept-card")].map((e) => e.dataset.id).sort());
+      assert.deepStrictEqual(await shown(), ["c1", "c2", "c3"]);
+      assert.ok((await c.text('#concept-incubator-list .concept-card[data-id="c3"]')).includes("Unassigned"), "an untyped concept is badged");
+      await c.page.selectOption("#concept-type-filter", "Platform");
+      assert.deepStrictEqual(await shown(), ["c1", "c2"]);
+      await c.page.selectOption("#concept-type-filter", "unassigned");
+      assert.deepStrictEqual(await shown(), ["c3"]);
+      await c.page.selectOption("#concept-type-filter", "Internal operations");
+      assert.deepStrictEqual(await shown(), []);
+    },
+  },
+  {
+    name: "types: the map toggles between Platform and Internal operations, and a bridge opens the Platform map",
+    seed: () => relSeed(),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "build", "concept-incubator-btn", "concept-incubator-page");
+      await c.visible("#system-map-canvas svg.sysmap-svg", "Platform map renders");
+      const names = () => c.page.evaluate(() => [...document.querySelectorAll("#system-map-canvas .sysmap-node-name")].map((e) => e.textContent));
+      let platform = await names();
+      assert.ok(platform.includes("Alpha") && !platform.includes("Gamma"), `Platform map has Platform items only: ${platform.join(", ")}`);
+      await c.click('#system-map-type [data-map-type="Internal operations"]', "Internal operations view");
+      await c.visible("#system-map-canvas .intmap-bridge", "bridge nodes");
+      const internal = await names();
+      assert.ok(internal.includes("Gamma") && !internal.includes("Alpha"), `Internal view has Internal items only: ${internal.join(", ")}`);
+      for (const n of ["Customer Success agents", "FAQs DB", "Sales agents", "Embedded support", "MCP Access", "PH releases"]) assert.ok(internal.includes(n), `${n} on the Internal map`);
+      const text = await c.page.evaluate(() => document.getElementById("system-map-canvas").textContent);
+      assert.ok(/September focus/.test(text) && /Freshdesk/.test(text) && /Atlassian/.test(text), "September focus notes");
+      assert.strictEqual(await c.page.locator("#system-map-canvas .intmap-step").count() >= 4, true, "steps 1 and 2 marked");
+      await c.click('#system-map-canvas .intmap-bridge', "click a bridge node");
+      await c.visible('#system-map-type [data-map-type="Platform"].active', "opens the Platform map");
+      platform = await names();
+      assert.ok(platform.includes("Alpha"), "back on the Platform map");
     },
   },
   {

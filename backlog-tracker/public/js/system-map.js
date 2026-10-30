@@ -24,6 +24,8 @@
 // A contract may carry an optional `flowLabel` ("audience segments"); without
 // one the line is labelled with the contract's name.
 
+import { typeOf, inTypeView, TYPE_PLATFORM } from "./entity-type.js";
+
 // Core nodes sit in a fixed three-column cluster (x, y are offsets inside it;
 // the layout centres the whole cluster, drawn as the platform boundary, in
 // the available space). Columns are far enough apart for a line label to sit
@@ -200,11 +202,13 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
 
   SYSTEM_MAP_CORE.forEach((c) => add({ ...c, id: `core:${c.key}`, kind: "core", status: "Live" }));
 
-  const live = projects.filter((p) => !p.archived && p.id !== "general" && !INTERNAL_RE.test(p.name || ""));
+  // The Platform view: Platform-typed items, plus any with no type yet (they
+  // carry an "Unassigned" badge). Internal operations items are on the other map.
+  const live = projects.filter((p) => !p.archived && p.id !== "general" && !INTERNAL_RE.test(p.name || "") && inTypeView(p, TYPE_PLATFORM));
   live.forEach((p) => {
     const rel = relById[p.releaseId] || null;
     add({
-      id: p.id, kind: "project", name: p.name || p.id,
+      id: p.id, kind: "project", name: p.name || p.id, unassigned: !typeOf(p),
       status: rel && rel.status === "live" ? "Live" : "Project",
       releaseId: rel ? rel.id : null, release: rel ? releaseLabel(rel) : "",
       href: p.artifactUrl || "",
@@ -214,9 +218,9 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
   // A concept's release is the release whose conceptIds lists it.
   const relOfConcept = {};
   releases.forEach((r) => (Array.isArray(r.conceptIds) ? r.conceptIds : []).forEach((cid) => { if (!relOfConcept[cid]) relOfConcept[cid] = r; }));
-  concepts.filter((c) => c.status !== "promoted" && !INTERNAL_RE.test(c.name || "")).forEach((c) => {
+  concepts.filter((c) => c.status !== "promoted" && !INTERNAL_RE.test(c.name || "") && inTypeView(c, TYPE_PLATFORM)).forEach((c) => {
     const crel = relOfConcept[c.id] || null;
-    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept",
+    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", unassigned: !typeOf(c),
       releaseId: crel ? crel.id : null, release: crel ? releaseLabel(crel) : "", href: c.artifactUrl || "", desc: shortDescription(c.description, c.readmeMd), updatedMs: tsMs(c.updatedAt) });
   });
   // Live Visitor Profile: one node, a concept, in the PH Core slot.
@@ -694,7 +698,7 @@ export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
       <rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="8"/>
       <text class="sysmap-node-name" x="${n.x}" y="${y + 19}" text-anchor="middle">${esc(n.name.length > 25 ? n.name.slice(0, 24) + "…" : n.name)}</text>
       ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${y + 32 + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
-      <text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">${esc(n.status)}</text>
+      <text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">${esc(n.status)}${n.unassigned ? '<tspan class="sysmap-node-unassigned" dx="8">Unassigned</tspan>' : ""}</text>
       ${n.release ? `<text class="sysmap-node-release" x="${x + NODE_W}" y="${y - 5}" text-anchor="end">${esc(n.release)}</text>` : ""}</g>`;
   });
   return svg + "</svg>";

@@ -337,7 +337,7 @@ as text until Anthropic switches on its MCP Apps host.
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
 | | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | `mark_skill_reviewed` (clears the review nudge and restarts the clock) | | |
-| | `create_concept` / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` / `set_concept_description` (Concept Incubator; the last four refused once a concept is promoted, except comments) | | | | |
+| | `create_concept` (requires `type`) / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` / `set_concept_description` / `set_concept_type` (Concept Incubator; the last five refused once a concept is promoted, except comments) / `set_project_type` | | | | |
 | | `add_concept_critique` (a structured review of a concept: verdict, arguments for/against, assumptions, recommended changes, optional free-text `role`) | `list_concept_critiques` (also returns every role already used, to reuse) / `synthesise_concept_critiques` (agreement, disagreement, recommended adjustments; optional `role` filter) | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
@@ -456,8 +456,8 @@ including the same `list_doc_revisions`/`get_doc_revision` recovery path
 (pass `conceptId` instead of `projectId`) — except both are refused once
 `status` is `"promoted"`, matching the console's own read-only view of a
 promoted concept: from that point `promotedProjectId` is the real project,
-and its own documentation tools are the ones to use. `create_concept` makes a new
-one (a name, plus optional `readmeMd`, `requirementsMd` and a `description`
+and its own documentation tools are the ones to use. Reads return `type` (`Platform` or `Internal operations`, null if unset); `set_concept_type` and `set_project_type` change it. `create_concept` makes a new
+one (a name, a required `type`, plus optional `readmeMd`, `requirementsMd` and a `description`
 posted as its first comment), always `active`, and returns its `conceptId`
 so the write tools can seed it. There is deliberately no
 `promote_concept_to_project` tool — this server has no `create_project` tool
