@@ -23,6 +23,10 @@ const LIMITS = {
   batchMax: 20,         // pages in one batch call
   batchBudgetMs: 240000, // stop starting new pages after this (the function allows 300 s)
   navTimeoutMs: 25000,
+  selectorWaitMs: 8000,  // how long an element is waited for before the capture fails
+  selectorsMax: 4,       // elements in one image
+  selectorMaxLen: 200,
+  padding: { min: 0, max: 100, def: 8 },
 };
 
 // → { ok: true, url } or { ok: false, error }. https only, no credentials, no
@@ -69,6 +73,36 @@ function sameRoute(requested, finalUrl) {
 const MISSING_RE = /\b(404|page (?:not found|doesn['’]?t exist|does not exist)|not found|no such page|route (?:not found|doesn['’]?t exist))\b/i;
 const looksMissing = (text) => MISSING_RE.test(String(text || "").trim().slice(0, 240));
 
+// The page rectangle (document coordinates) around the elements the selectors
+// match, grown by `padding`. Waits for each element, scrolls it into view, and
+// throws a "no-element" error when one never appears or has no size.
+async function elementsClip(page, selectors, padding, pageHeight) {
+  const boxes = [];
+  for (const sel of selectors) {
+    let handle;
+    try { handle = await page.waitForSelector(sel, { visible: true, timeout: LIMITS.selectorWaitMs }); }
+    catch (err) {
+      const e = new Error(err && err.name === "TimeoutError"
+        ? `Nothing matching the selector ${JSON.stringify(sel)} appeared within ${LIMITS.selectorWaitMs / 1000} seconds.`
+        : `The selector ${JSON.stringify(sel)} isn't valid or couldn't be used.`);
+      e.code = "no-element"; throw e;
+    }
+    const box = await handle.evaluate((el) => {
+      el.scrollIntoView({ block: "center", inline: "center" });
+      const r = el.getBoundingClientRect();
+      return { x: r.left + window.scrollX, y: r.top + window.scrollY, width: r.width, height: r.height };
+    });
+    await handle.dispose().catch(() => {});
+    if (!(box.width > 0 && box.height > 0)) { const e = new Error(`The element for ${JSON.stringify(sel)} has no size.`); e.code = "no-element"; throw e; }
+    boxes.push(box);
+  }
+  const x0 = Math.max(0, Math.min(...boxes.map((b) => b.x)) - padding);
+  const y0 = Math.max(0, Math.min(...boxes.map((b) => b.y)) - padding);
+  const x1 = Math.max(...boxes.map((b) => b.x + b.width)) + padding;
+  const y1 = Math.min(Math.max(...boxes.map((b) => b.y + b.height)) + padding, Math.max(pageHeight, 1) + padding, LIMITS.maxPageHeight);
+  return { x: x0, y: y0, width: Math.max(1, Math.ceil(x1 - x0)), height: Math.max(1, Math.ceil(y1 - y0)) };
+}
+
 // Browser rendering. Replaceable (tests stub render); the real one needs
 // puppeteer-core and @sparticuz/chromium, loaded only when a capture runs.
 const renderer = {
@@ -79,7 +113,7 @@ const renderer = {
     this._chain = run.catch(() => {});
     return run;
   },
-  async _render({ url, width, height, fullPage, waitMs }) {
+  async _render({ url, width, height, fullPage, waitMs, selectors, padding }) {
     let puppeteer, chromium;
     try { puppeteer = require("puppeteer-core"); chromium = require("@sparticuz/chromium"); }
     catch (err) { const e = new Error("The screenshot browser isn't installed on the server (puppeteer-core / @sparticuz/chromium)."); e.code = "no-browser"; throw e; }
@@ -120,9 +154,14 @@ const renderer = {
       if (!info.iconsLoaded) warnings.push("The icon font didn't load, so icons may show as plain text (fonts.googleapis.com / fonts.gstatic.com unreachable?).");
       if (failedRequests.length) warnings.push(`${failedRequests.length} request(s) failed while rendering (for example ${failedRequests[0]}); the page may be missing data.`);
       const clipH = Math.min(Math.max(info.height, height), LIMITS.maxPageHeight);
-      const png = await page.screenshot(fullPage
-        ? { type: "png", clip: { x: 0, y: 0, width, height: clipH } , captureBeyondViewport: true }
-        : { type: "png" });
+      let shotOpts;
+      if (selectors && selectors.length) {
+        const clip = await elementsClip(page, selectors, padding == null ? LIMITS.padding.def : padding, info.height);
+        shotOpts = { type: "png", clip, captureBeyondViewport: true };
+      } else {
+        shotOpts = fullPage ? { type: "png", clip: { x: 0, y: 0, width, height: clipH }, captureBeyondViewport: true } : { type: "png" };
+      }
+      const png = await page.screenshot(shotOpts);
       return { status: res ? res.status() : 0, finalUrl: info.href, requestedHost: requested.hostname, text: info.text, png: Buffer.from(png), warnings };
     } finally {
       await browser.close().catch(() => {});
@@ -163,4 +202,4 @@ function placeScreenshot(html, imageHtml) {
 
 const captureName = (key) => `capture-${String(key).replace(/[^A-Za-z0-9-]/g, "")}.png`;
 
-module.exports = { DEFAULT_HOSTS, FONT_HOSTS, LIMITS, allowedHosts, checkUrl, subresourceAllowed, sameRoute, looksMissing, renderer, judge, placeScreenshot, imageParagraph, captureName };
+module.exports = { elementsClip, DEFAULT_HOSTS, FONT_HOSTS, LIMITS, allowedHosts, checkUrl, subresourceAllowed, sameRoute, looksMissing, renderer, judge, placeScreenshot, imageParagraph, captureName };
