@@ -493,7 +493,23 @@ busy. Now:
 - **Build sessions run what CI runs**: `npm run test:offline` in
   `backlog-tracker/test` is the console tests without the emulator, kept
   equal to CI by `ci-coverage.test.js`.
-Tests: `test/self-heal.test.js` (in `test:train-lock`).
+- **A spent revert request never strands a card (30 Oct 2026, xzFgioRYWpdeDfUzzCmp)**:
+  a card sent back whose revert conflicted, then rebuilt to identical
+  patchFiles, went back to Ready for Testing still `revertRequested`, so
+  approval refused it and every run retried the revert. An identical
+  re-package (`noDiffPatchFields`, "already-on-train") now clears
+  `revertRequested`, `revertBlockedBy` and `rebuildAfterRevert`, as a new
+  commit does. `processRevertFromTrain` also clears the flag, with a note,
+  on any card that is back in Ready for Testing or Approved
+  (`staleRevertRequest`): every send-back moves the card to Backlog in the
+  same write. `revertBlockedBy` names only the card's own project's tickets
+  (`sameProjectIds`); a commit that reached the train through a main merge
+  belongs to a ticket nobody on this train can send back. The Staff Kanban
+  E2E loop raises one auto-fix ticket per failing case, naming every
+  viewport it failed at (`groupByCase` in `scripts/kanban-e2e-heal.js`),
+  not one per viewport.
+Tests: `test/self-heal.test.js`, `test/train-carried.test.js` and
+`test/kanban-e2e-heal.test.js` (in `test:train-lock`).
 
 **A ticket is never sent back for a failure main already has (20 Oct
 2026).** `kanban-staff-board/` reached main with no line in START-HERE.md's

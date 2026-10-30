@@ -66,12 +66,35 @@ function parseFailedCases(log) {
 }
 
 const healKey = (caseId, viewport) => `${String(caseId).toLowerCase()}@${String(viewport || "default").toLowerCase()}`;
+// A fix ticket is per CASE, whatever viewports it failed at (30 Oct 2026: TC-69
+// failed at desktop, tablet and phone and three tickets were raised and built,
+// all landing as one commit; ticket xzFgioRYWpdeDfUzzCmp). Tickets raised
+// before that carry a per-viewport key ("tc-69@desktop"), and still count as
+// that case's history.
+const caseKey = (caseId) => String(caseId).toLowerCase();
+const caseKeyOf = (rec) => (rec && rec.caseId ? caseKey(rec.caseId) : rec && rec.key ? String(rec.key).split("@")[0] : "");
+
+// parseFailedCases() lists a case once per viewport; this folds them into one
+// failure per case, its viewports in order ("desktop, tablet, phone"), with the
+// first viewport's message.
+function groupByCase(cases) {
+  const byCase = new Map();
+  for (const c of cases || []) {
+    const k = caseKey(c.caseId);
+    if (!byCase.has(k)) byCase.set(k, { ...c, viewports: [] });
+    const g = byCase.get(k);
+    if (c.viewport && c.viewport !== "default" && !g.viewports.includes(c.viewport)) g.viewports.push(c.viewport);
+  }
+  return [...byCase.values()].map((g) => ({ ...g, viewport: g.viewports.length ? g.viewports.join(", ") : "default" }));
+}
 
 // What `e2eAutoFix` on a fix ticket holds (also the shape a test builds).
 function autoFixRecord({ failure, trainBranch, trainProjectId, causedByItemId, workflow, runUrl, sha, attempt }) {
   return {
-    key: healKey(failure.caseId, failure.viewport),
-    caseId: failure.caseId, viewport: failure.viewport, failure: failure.failure || "",
+    key: caseKey(failure.caseId),
+    caseId: failure.caseId, viewport: failure.viewport,
+    viewports: Array.isArray(failure.viewports) ? failure.viewports.slice() : (failure.viewport && failure.viewport !== "default" ? [failure.viewport] : []),
+    failure: failure.failure || "",
     trainBranch, trainProjectId, causedByItemId: causedByItemId || null,
     workflow, runUrl: runUrl || null, sha, attempt,
   };
@@ -91,21 +114,24 @@ function autoFixRecord({ failure, trainBranch, trainProjectId, causedByItemId, w
 function planHeal({ failures, fixes, sha, maxAttempts = MAX_FIX_ATTEMPTS }) {
   const byKey = new Map();
   for (const f of fixes || []) {
-    const k = f.e2eAutoFix && f.e2eAutoFix.key;
+    const k = caseKeyOf(f.e2eAutoFix);
     if (!k) continue;
     if (!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push(f);
   }
   const plan = { raise: [], flag: [], waiting: [] };
-  for (const failure of failures || []) {
-    const history = byKey.get(healKey(failure.caseId, failure.viewport)) || [];
+  for (const failure of groupByCase(failures)) {
+    const history = byKey.get(caseKey(failure.caseId)) || [];
     // In flight: still in Backlog (being built), or landed but not yet inside
     // the commit the failing run tested (`tested` is set by the caller).
     const inFlight = history.find((f) => f.status === "backlog" || (OPEN_FIX_STATUSES.includes(f.status) && !f.tested));
     if (inFlight) { plan.waiting.push({ failure, fixId: inFlight.id }); continue; }
-    const attempt = history.length + 1;
+    // Attempts are rounds, not tickets: the per-viewport tickets one round
+    // raised before 30 Oct 2026 share an attempt number and count once.
+    const rounds = new Set(history.map((f) => (f.e2eAutoFix && f.e2eAutoFix.attempt) || f.id)).size;
+    const attempt = rounds + 1;
     if (attempt > maxAttempts) {
-      if (!history.some((f) => f.flaggedForRob)) plan.flag.push({ failure, attempt: history.length, history });
+      if (!history.some((f) => f.flaggedForRob)) plan.flag.push({ failure, attempt: rounds, history });
       continue;
     }
     plan.raise.push({ failure, attempt });
@@ -124,7 +150,7 @@ function fixDescription(rec, { causedByTitle } = {}) {
   const cause = rec.causedByItemId ? `Introduced by ticket ${rec.causedByItemId}${causedByTitle ? ` ("${causedByTitle}")` : ""}.` : "Which ticket introduced it is not known.";
   return [
     "## Outcome",
-    `Staff Kanban case ${rec.caseId} fails${rec.viewport !== "default" ? ` at the ${rec.viewport} viewport` : ""} on \`${rec.trainBranch}\` at ${String(rec.sha).slice(0, 7)} (${rec.workflow}).`,
+    `Staff Kanban case ${rec.caseId} fails${rec.viewport !== "default" ? ` at the ${rec.viewport} viewport${String(rec.viewport).includes(",") ? "s" : ""}` : ""} on \`${rec.trainBranch}\` at ${String(rec.sha).slice(0, 7)} (${rec.workflow}).`,
     `Failure: ${rec.failure || "(no message in the log)"}`,
     rec.runUrl ? `Run: ${rec.runUrl}` : "",
     cause,
@@ -187,6 +213,6 @@ function shouldAutoApprove(card, { allPassed }) {
 
 module.exports = {
   MAX_FIX_ATTEMPTS, E2E_AUTO_FIX_LABEL, KANBAN_PREFIXES, OPEN_FIX_STATUSES,
-  parseFailedCases, healKey, autoFixRecord, planHeal, fixTitle, fixDescription,
+  parseFailedCases, healKey, caseKey, groupByCase, autoFixRecord, planHeal, fixTitle, fixDescription,
   raisedNote, flagNote, kanbanE2eStatus, shouldAutoApprove,
 };
