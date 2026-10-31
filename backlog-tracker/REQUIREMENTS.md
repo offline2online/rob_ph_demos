@@ -3501,6 +3501,7 @@ Any member can upload, replace or remove their own profile photo from the profil
 
 - **Storage**: `avatars/{lowercased email}.jpg`. `storage.rules`: read for any member; write/delete only by the owner of that address or an admin; under 2 MB, `image/jpeg`.
 - **Record**: `consoleUsers/{email}.photoUrl` + `photoUpdatedAt` (`?v=` cache-bust). `firestore.rules`: a member may change only `lastLoginAt`, `photoUrl` and `photoUpdatedAt` on their OWN row (`photoUrl` ≤ 1000 chars, bucket `avatars` URL or `""`; `photoUpdatedAt == request.time`); admins may write both on any row.
+- **Owner accounts with no row**: the two owner accounts are admitted by the rules without a `consoleUsers` row, so saving the photo URL would fail on a missing document. When the update is refused and the caller is an admin, `saveMemberPhotoFields()` creates the row (`role: admin`, `mcpEnabled: false`) carrying the photo; Remove clears it the same way. Covered by `test/ui/avatars.test.mjs`.
 - **Fallback**: uploaded photo → Google sign-in photo (own avatar only) → coloured circle with the first-name initial.
 - **One component**: `public/js/avatar.js` `avatarHTML(email, size)`, repainted in place when a member row changes (a per-document `onSnapshot` per email). Used on the topbar button, profile menu, card notes/comments (Edit item, quick comment, concept discussion), Team rows and system-map revision history. 24px on cards/notes, 28px in lists, 32–40px in the profile menu and Team list.
 
