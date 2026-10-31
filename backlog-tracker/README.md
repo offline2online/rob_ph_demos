@@ -2576,7 +2576,7 @@ and the console-click scenario "Ready for Dev — N new".
 
 ## Profile photos
 
-`public/js/avatar.js` holds the single `avatarHTML(email, size)` helper (initial-circle fallback, photo when `consoleUsers/{email}.photoUrl` is set) and the client-side crop/scale. Upload lives in the profile menu (`#profile-photo-*` in `index.html`, `setMemberPhoto()` in `app.js`); admins set photos from the Team page. An owner with no `consoleUsers` row gets one created (admin, agent access off) by `saveMemberPhotoFields()` on first upload. Rules: `storage.rules` `avatars/{email}.jpg`, `firestore.rules` `consoleUsers` self-update. Tests: `test/avatar-rules.test.mjs`, `test/ui/avatars.test.mjs`, and emulator cases in `test/firestore-rules.test.js`. See REQUIREMENTS.md → "Profile photos (avatars)".
+`public/js/avatar.js` holds the single `avatarHTML(email, size)` helper (initial-circle fallback, photo when `consoleUsers/{email}.photoUrl` is set) and the client-side crop/scale. Upload lives in the profile menu (`#profile-photo-*` in `index.html`, `setMemberPhoto()` in `app.js`); admins set photos from the Team page. An owner with no `consoleUsers` row gets one created (admin, agent access left on) by `saveMemberPhotoFields()` on first upload. Rules: `storage.rules` `avatars/{email}.jpg`, `firestore.rules` `consoleUsers` self-update. Tests: `test/avatar-rules.test.mjs`, `test/ui/avatars.test.mjs`, and emulator cases in `test/firestore-rules.test.js`. See REQUIREMENTS.md → "Profile photos (avatars)".
 
 ## Staff Kanban (21 Oct 2026)
 

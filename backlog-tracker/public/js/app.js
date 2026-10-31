@@ -9592,20 +9592,40 @@ function watchAvatarMember(email) {
 setUnknownMemberHandler(watchAvatarMember);
 
 // The two owner accounts are admitted by firestore.rules without a consoleUsers
-// row, and updateDoc() cannot write a row that does not exist: the owner's photo
-// upload reached Storage, then failed here with "you aren't on the team list".
-// So when the update is refused and the caller is an admin, create the row
-// (agent access stays off, as it was while there was no row) with the photo.
+// row (mirrors isOwnerAccount there and OWNER_ACCOUNTS in auth-gate.js), and
+// updateDoc() cannot write a row that does not exist.
+const PHOTO_OWNER_ACCOUNTS = ["rob@offline2online.com", "rob@personalisationhub.com"];
+
+// Saves photoUrl/photoUpdatedAt on consoleUsers/{e}. Looks for the row FIRST
+// rather than inferring "missing" from an update's error code and the
+// cached console role: the first fix (1083b14) did that, and an owner still
+// got "you aren't on the team list" after it shipped. With no row, an owner's
+// own row is created (firestore.rules lets an owner create any valid row).
+// mcpEnabled stays TRUE: functions/mcp-server.js cuts agent access for any
+// row with mcpEnabled false, owners included, and with no row the owner's
+// agent had access — creating the row must not take it away.
 async function saveMemberPhotoFields(e, fields) {
   const ref = doc(db, "consoleUsers", e);
-  try { await updateDoc(ref, fields); }
-  catch (err) {
-    const missing = err && (err.code === "permission-denied" || err.code === "not-found");
-    if (!missing || !isConsoleAdmin()) throw err;
-    const snap = await getDoc(ref).catch(() => null);
-    if (snap && snap.exists()) throw err;
-    await setDoc(ref, { email: e, role: "admin", mcpEnabled: false, createdAt: serverTimestamp(), createdBy: e, ...fields });
+  let exists = null;
+  try { exists = (await getDoc(ref)).exists(); } catch (err) { console.warn("backlog-tracker: couldn't read own consoleUsers row", err); }
+  const me = normEmail(auth.currentUser && auth.currentUser.email);
+  if (exists === false) {
+    if (!(e === me && PHOTO_OWNER_ACCOUNTS.includes(e))) {
+      throw Object.assign(new Error("no consoleUsers row"), { code: "no-member-row" });
+    }
+    await setDoc(ref, { email: e, role: "admin", mcpEnabled: true, createdAt: serverTimestamp(), createdBy: e, ...fields });
+    return;
   }
+  await updateDoc(ref, fields);
+}
+
+// Only a confirmed missing row is reported as "not on the team list"; any
+// other refusal names its code so the next report says what actually failed.
+function photoSaveError(err) {
+  const code = err && err.code;
+  if (code === "no-member-row") return new Error("Couldn't save the photo: you aren't on the console's team list, so there is no profile to attach it to. Ask an admin to add you under Settings → Team & agent access.");
+  if (code === "permission-denied") return new Error("Couldn't save the photo: the console refused the change (permission-denied). Reload the page and try again; if it persists, report it with this message.");
+  return new Error(`Couldn't save the photo: ${(err && err.message) || String(err)}${code ? ` (${code})` : ""}`);
 }
 
 async function setMemberPhoto(email, file) {
@@ -9613,7 +9633,8 @@ async function setMemberPhoto(email, file) {
   const path = `avatars/${e}.jpg`;
   if (!file) {
     try { await deleteObject(storageRef(storage, path)); } catch (err) { console.warn("backlog-tracker: couldn't delete avatar file", err); }
-    await saveMemberPhotoFields(e, { photoUrl: "", photoUpdatedAt: serverTimestamp() });
+    try { await saveMemberPhotoFields(e, { photoUrl: "", photoUpdatedAt: serverTimestamp() }); }
+    catch (err) { throw photoSaveError(err); }
     return;
   }
   const problem = checkAvatarFile(file);
@@ -9633,11 +9654,7 @@ async function setMemberPhoto(email, file) {
     catch { throw new Error("Couldn't finish the upload: your sign-in is out of date. Sign out and back in, then try again."); }
   }
   try { await saveMemberPhotoFields(e, { photoUrl: url, photoUpdatedAt: serverTimestamp() }); }
-  catch (err) {
-    throw new Error(err && err.code === "permission-denied"
-      ? "Couldn't save the photo: you aren't on the console's team list, so there is no profile to attach it to. Ask an admin to add you under Settings → Team & agent access."
-      : ((err && err.message) || String(err)));
-  }
+  catch (err) { throw photoSaveError(err); }
 }
 
 function pickAvatarFile(onFile) {

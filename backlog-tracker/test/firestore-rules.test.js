@@ -258,6 +258,16 @@ async function main() {
   await check("An admin can set another member's photo", "allow", () =>
     updateDoc(doc(as(TEAM_ADMIN), "consoleUsers/kit@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
 
+  // An owner with no row: the profile menu reads the row, finds none, and
+  // creates it with the photo (public/js/app.js saveMemberPhotoFields).
+  const OWNER_URL = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Frob%40offline2online.com.jpg?alt=media&token=t";
+  await check("An owner with no row can read that their own row is missing", "allow", () =>
+    getDoc(doc(as(HUMAN), "consoleUsers/rob@offline2online.com")));
+  await check("An owner with no row can create it carrying their photo", "allow", () =>
+    setDoc(doc(as(HUMAN), "consoleUsers/rob@offline2online.com"), { email: "rob@offline2online.com", role: "admin", mcpEnabled: true, createdAt: serverTimestamp(), createdBy: "rob@offline2online.com", photoUrl: OWNER_URL, photoUpdatedAt: serverTimestamp() }));
+  await check("A non-member cannot create their own row to attach a photo", "deny", () =>
+    setDoc(doc(as(STRANGER), "consoleUsers/someone@example.com"), { email: "someone@example.com", role: "admin", mcpEnabled: true, photoUrl: "", photoUpdatedAt: serverTimestamp() }));
+
   // ── The MCP credential store is nobody's business but the server's ─────
   await check("An admin CANNOT read stored MCP tokens", "deny", () => getDoc(doc(as(TEAM_ADMIN), "mcpTokens/deadbeef")));
   await check("An owner CANNOT read stored MCP tokens", "deny", () => getDoc(doc(as(HUMAN), "mcpTokens/deadbeef")));

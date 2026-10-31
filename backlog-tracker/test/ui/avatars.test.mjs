@@ -68,9 +68,13 @@ try {
 
 // An owner account (admitted by the rules with NO consoleUsers row) uploads a
 // photo: the row is created with it, nothing errors, and Remove clears it.
+// The page's role is seeded as "editor" on purpose: the save must not depend
+// on the cached console role (the first fix did, and still failed live), and
+// the created row keeps agent access ON (mcpEnabled false would cut the
+// owner's MCP connection — functions/mcp-server.js).
 {
   const OWNER = "rob@offline2online.com";
-  const o = await h.open({ seed: { user: { email: OWNER, role: "admin" }, docs: { projects: seed.docs.projects, backlogItems: seed.docs.backlogItems } }, width: 1280, height: 900 });
+  const o = await h.open({ seed: { user: { email: OWNER, role: "editor" }, docs: { projects: seed.docs.projects, backlogItems: seed.docs.backlogItems } }, width: 1280, height: 900 });
   const { page } = o;
   try {
     await page.waitForSelector(".edit-item-btn", { state: "attached" });
@@ -83,7 +87,7 @@ try {
     const row = await page.evaluate((e) => globalThis.__fbStub.col("consoleUsers").get(e), OWNER);
     assert.ok(row && row.photoUrl, "consoleUsers row created with the photo");
     assert.equal(row.role, "admin");
-    assert.equal(row.mcpEnabled, false);
+    assert.equal(row.mcpEnabled, true);
     assert.equal(await page.locator("#profile-photo-error").isHidden(), true, "no error shown");
     await page.click("#profile-btn");
     await page.click("#profile-photo-remove");
