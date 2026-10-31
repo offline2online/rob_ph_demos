@@ -9591,12 +9591,29 @@ function watchAvatarMember(email) {
 }
 setUnknownMemberHandler(watchAvatarMember);
 
+// The two owner accounts are admitted by firestore.rules without a consoleUsers
+// row, and updateDoc() cannot write a row that does not exist: the owner's photo
+// upload reached Storage, then failed here with "you aren't on the team list".
+// So when the update is refused and the caller is an admin, create the row
+// (agent access stays off, as it was while there was no row) with the photo.
+async function saveMemberPhotoFields(e, fields) {
+  const ref = doc(db, "consoleUsers", e);
+  try { await updateDoc(ref, fields); }
+  catch (err) {
+    const missing = err && (err.code === "permission-denied" || err.code === "not-found");
+    if (!missing || !isConsoleAdmin()) throw err;
+    const snap = await getDoc(ref).catch(() => null);
+    if (snap && snap.exists()) throw err;
+    await setDoc(ref, { email: e, role: "admin", mcpEnabled: false, createdAt: serverTimestamp(), createdBy: e, ...fields });
+  }
+}
+
 async function setMemberPhoto(email, file) {
   const e = normEmail(email);
   const path = `avatars/${e}.jpg`;
   if (!file) {
     try { await deleteObject(storageRef(storage, path)); } catch (err) { console.warn("backlog-tracker: couldn't delete avatar file", err); }
-    await updateDoc(doc(db, "consoleUsers", e), { photoUrl: "", photoUpdatedAt: serverTimestamp() });
+    await saveMemberPhotoFields(e, { photoUrl: "", photoUpdatedAt: serverTimestamp() });
     return;
   }
   const problem = checkAvatarFile(file);
@@ -9615,7 +9632,7 @@ async function setMemberPhoto(email, file) {
     try { await auth.currentUser.getIdToken(true); url = await getDownloadURL(fileRef); }
     catch { throw new Error("Couldn't finish the upload: your sign-in is out of date. Sign out and back in, then try again."); }
   }
-  try { await updateDoc(doc(db, "consoleUsers", e), { photoUrl: url, photoUpdatedAt: serverTimestamp() }); }
+  try { await saveMemberPhotoFields(e, { photoUrl: url, photoUpdatedAt: serverTimestamp() }); }
   catch (err) {
     throw new Error(err && err.code === "permission-denied"
       ? "Couldn't save the photo: you aren't on the console's team list, so there is no profile to attach it to. Ask an admin to add you under Settings → Team & agent access."
@@ -12015,3 +12032,4 @@ applyRouteFromHash();
 if (window.location.hash !== "#faq-management" && !window.location.hash.startsWith("#faq-article/")) {
   pendingInitialScrollRestore = false;
 }
+

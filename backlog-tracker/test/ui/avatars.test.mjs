@@ -65,5 +65,35 @@ try {
       console.error(`FAIL  avatars @${width}px: ${err && err.stack || err}`);
     } finally { await o.close(); }
   }
+
+// An owner account (admitted by the rules with NO consoleUsers row) uploads a
+// photo: the row is created with it, nothing errors, and Remove clears it.
+{
+  const OWNER = "rob@offline2online.com";
+  const o = await h.open({ seed: { user: { email: OWNER, role: "admin" }, docs: { projects: seed.docs.projects, backlogItems: seed.docs.backlogItems } }, width: 1280, height: 900 });
+  const { page } = o;
+  try {
+    await page.waitForSelector(".edit-item-btn", { state: "attached" });
+    await page.click("#profile-btn");
+    const chooser = page.waitForEvent("filechooser");
+    await page.click("#profile-photo-upload");
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    await (await chooser).setFiles({ name: "me.png", mimeType: "image/png", buffer: png });
+    await until(() => page.locator("#profile-btn-avatar img.ph-avatar-img").count(), "owner photo on the topbar button");
+    const row = await page.evaluate((e) => globalThis.__fbStub.col("consoleUsers").get(e), OWNER);
+    assert.ok(row && row.photoUrl, "consoleUsers row created with the photo");
+    assert.equal(row.role, "admin");
+    assert.equal(row.mcpEnabled, false);
+    assert.equal(await page.locator("#profile-photo-error").isHidden(), true, "no error shown");
+    await page.click("#profile-btn");
+    await page.click("#profile-photo-remove");
+    await until(() => page.evaluate((e) => !globalThis.__fbStub.col("consoleUsers").get(e).photoUrl, OWNER), "photo cleared");
+    if (o.problems.length) throw new Error(`the page reported problems:\n ${o.problems.join("\n ")}`);
+    console.log("PASS  avatars: owner with no team row can upload and remove a photo");
+  } catch (err) {
+    failed++;
+    console.error(`FAIL  avatars owner upload: ${err && err.stack || err}`);
+  } finally { await o.close(); }
+}
 } finally { await h.close(); }
 process.exit(failed ? 1 : 0);

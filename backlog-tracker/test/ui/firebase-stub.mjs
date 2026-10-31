@@ -97,7 +97,7 @@ class Backend {
     if (op === "delete") { col.delete(ref.id); }
     else if (op === "set" && !merge) col.set(ref.id, this.resolveMap(data, {}));
     else if (op === "set" || op === "update") {
-      if (op === "update" && !cur) throw new Error(`firebase-stub: update of missing document ${ref.path}`);
+      if (op === "update" && !cur) throw Object.assign(new Error(`firebase-stub: update of missing document ${ref.path}`), { code: "not-found" });
       const next = { ...(cur || {}) };
       for (const [k, v] of Object.entries(data)) {
         // A dotted update key writes a nested field; the console doesn't use them.
