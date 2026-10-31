@@ -1142,50 +1142,6 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
       assert.ok(many.isError);
     });
   });
-  await test("kanban_capture_screenshot: selector(s) and padding are validated and passed to the browser; a missing element attaches nothing", async () => {
-    await withRenderer((o) => fakePage({ finalUrl: o.url }), async (calls) => {
-      const r = await cap(sam, { selector: "#revenue-card", padding: 12 });
-      assert.ok(!r.isError, r.text);
-      assert.deepStrictEqual(calls[0].selectors, ["#revenue-card"]); assert.strictEqual(calls[0].padding, 12);
-      assert.deepStrictEqual(r.json.selectors, ["#revenue-card"]);
-      const pair = await cap(sam, { selectors: ["#a", ".b"] });
-      assert.ok(!pair.isError, pair.text);
-      assert.deepStrictEqual(calls[1].selectors, ["#a", ".b"]); assert.strictEqual(calls[1].padding, 8);
-      await cap(sam, {});
-      assert.deepStrictEqual(calls[2].selectors, []);
-      for (const bad of [{ padding: 500 }, { selector: 5 }, { selectors: "a" }, { selectors: ["a", "b", "c", "d", "e"] }, { selector: "x".repeat(201) }, { selectors: [""] }]) assert.ok((await cap(sam, bad)).isError, JSON.stringify(bad));
-    });
-    const before = JSON.stringify(task("PH-1").attachments) + task("PH-1").description;
-    const was = Object.keys(env.authState.uploads).length;
-    await withRenderer(() => { const e = new Error('Nothing matching the selector "#nope" appeared within 8 seconds.'); e.code = "no-element"; throw e; }, async () => {
-      const r = await cap(sam, { selector: "#nope" });
-      assert.ok(r.isError); assert.match(r.text, /Nothing matching the selector/); assert.match(r.text, /Nothing was attached/);
-    });
-    assert.strictEqual(JSON.stringify(task("PH-1").attachments) + task("PH-1").description, before);
-    assert.strictEqual(Object.keys(env.authState.uploads).length, was);
-  });
-  await test("kanban_capture_screenshots: each pair crops to its own selector; the call's selector is the default", async () => {
-    member("lena3@personalisationhub.com", "editor", "Lena Three");
-    const lena = await connect("lena3@personalisationhub.com");
-    await withRenderer((o) => (o.selectors.includes("#gone") ? (() => { const e = new Error("Nothing matching the selector"); e.code = "no-element"; throw e; })() : fakePage({ finalUrl: o.url })), async (calls) => {
-      const r = await tool(lena, "kanban_capture_screenshots", { selector: ".card", items: [
-        { key: "PH-1", url: ART, selector: "#revenue" }, { key: "PH-3", url: ART, selectors: ["#a", "#b"] }, { key: "PH-4", url: ART }, { key: "PH-5", url: ART, selector: "#gone" },
-      ] });
-      assert.ok(!r.isError, r.text);
-      assert.deepStrictEqual(calls.map((c) => c.selectors), [["#revenue"], ["#a", "#b"], [".card"], ["#gone"]]);
-      assert.deepStrictEqual(r.json.results.map((x) => x.ok), [true, true, true, false]);
-      assert.ok(!(task("PH-5").attachments || []).some((a) => /^capture-/.test(a.name)));
-    });
-  });
-  await test("capture: elementsClip crops to the box around the elements, with padding", async () => {
-    const boxes = { "#a": { x: 100, y: 200, width: 300, height: 150 }, "#b": { x: 450, y: 220, width: 200, height: 100 }, "#zero": { x: 0, y: 0, width: 0, height: 0 } };
-    const page = { waitForSelector: async (sel) => { if (sel === "#nope") { const e = new Error("t"); e.name = "TimeoutError"; throw e; } if (sel === "!!") throw new Error("syntax"); return { evaluate: async () => boxes[sel], dispose: async () => {} }; } };
-    assert.deepStrictEqual(await captureLib.elementsClip(page, ["#a"], 8, 2000), { x: 92, y: 192, width: 316, height: 166 });
-    assert.deepStrictEqual(await captureLib.elementsClip(page, ["#a", "#b"], 0, 2000), { x: 100, y: 200, width: 550, height: 150 });
-    await assert.rejects(captureLib.elementsClip(page, ["#nope"], 8, 2000), (e) => e.code === "no-element" && /within 8 seconds/.test(e.message));
-    await assert.rejects(captureLib.elementsClip(page, ["!!"], 8, 2000), (e) => e.code === "no-element" && /isn't valid/.test(e.message));
-    await assert.rejects(captureLib.elementsClip(page, ["#zero"], 8, 2000), (e) => e.code === "no-element" && /no size/.test(e.message));
-  });
   await test("capture: route comparison, not-found detection and the description placement", () => {
     assert.ok(captureLib.sameRoute(ART + "#/a", ART + "index.html#/a/"));
     assert.ok(!captureLib.sameRoute(ART + "#/a", ART + "#/"));

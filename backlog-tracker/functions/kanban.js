@@ -585,9 +585,6 @@ function kanbanTools(h) {
     width: { type: "integer", description: `Viewport width in px (${capture.LIMITS.width.min}–${capture.LIMITS.width.max}, default ${capture.LIMITS.width.def}).` },
     height: { type: "integer", description: `Viewport height in px (${capture.LIMITS.height.min}–${capture.LIMITS.height.max}, default ${capture.LIMITS.height.def}).` },
     fullPage: { type: "boolean", description: "Capture the whole page, not just the viewport (default true; clipped at 12000 px tall)." },
-    selector: { type: "string", description: "Optional CSS selector: capture only that element (a chart card, a section) instead of the page. The board waits up to 8 s for it, scrolls it into view and crops to its bounding box; if nothing matches, the capture fails and nothing is attached. fullPage is ignored." },
-    selectors: { type: "array", maxItems: capture.LIMITS.selectorsMax, items: { type: "string" }, description: `Optional list of up to ${capture.LIMITS.selectorsMax} CSS selectors captured into one image (the box around all of them, e.g. a side-by-side pair). All must match. Use instead of selector.` },
-    padding: { type: "integer", description: `Pixels of margin around the selected element(s) (${capture.LIMITS.padding.min}–${capture.LIMITS.padding.max}, default ${capture.LIMITS.padding.def}). Only with selector(s).` },
     waitMs: { type: "integer", description: `Extra wait after load for a hash-route app to render, in ms (0–${capture.LIMITS.waitMs.max}, default ${capture.LIMITS.waitMs.def}).` },
   };
   const intIn = (v, lim) => (v === undefined || v === null ? lim.def : Number.isInteger(v) && v >= lim.min && v <= lim.max ? v : null);
@@ -604,24 +601,6 @@ function kanbanTools(h) {
     if (width == null) return fail(`width must be a whole number from ${capture.LIMITS.width.min} to ${capture.LIMITS.width.max}.`);
     if (height == null) return fail(`height must be a whole number from ${capture.LIMITS.height.min} to ${capture.LIMITS.height.max}.`);
     if (waitMs == null) return fail(`waitMs must be a whole number from ${capture.LIMITS.waitMs.min} to ${capture.LIMITS.waitMs.max}.`);
-    const padding = intIn(get("padding"), capture.LIMITS.padding);
-    if (padding == null) return fail(`padding must be a whole number from ${capture.LIMITS.padding.min} to ${capture.LIMITS.padding.max}.`);
-    // A pair that sets its own selector(s) uses them; otherwise the call's defaults apply.
-    const own = item.selector !== undefined || item.selectors !== undefined;
-    const src = own ? item : (defaults || {});
-    const sel1 = src.selector, selN = src.selectors;
-    if (sel1 !== undefined && sel1 !== null && typeof sel1 !== "string") return fail("selector must be a string.");
-    if (selN !== undefined && selN !== null && !Array.isArray(selN)) return fail("selectors must be a list of strings.");
-    const selectors = [];
-    if (typeof sel1 === "string" && sel1.trim()) selectors.push(sel1);
-    if (Array.isArray(selN)) selectors.push(...selN);
-    if (selectors.length > capture.LIMITS.selectorsMax) return fail(`At most ${capture.LIMITS.selectorsMax} selectors in one image.`);
-    for (let i = 0; i < selectors.length; i++) {
-      const sv = selectors[i];
-      if (typeof sv !== "string" || !sv.trim()) return fail("Each selector must be a non-empty string.");
-      if (sv.length > capture.LIMITS.selectorMaxLen || /[\u0000-\u001f\u007f]/.test(sv)) return fail(`A selector is limited to ${capture.LIMITS.selectorMaxLen} characters, with no control characters.`);
-      selectors[i] = sv.trim();
-    }
     const caption = String(get("caption") || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
     if (caption.length > 300) return fail("A caption is limited to 300 characters.");
     const cur = await getTask(key);
@@ -631,9 +610,9 @@ function kanbanTools(h) {
     if ((cur.attachments || []).filter((a) => a.name !== name).length >= ATTACH_MAX_PER_TICKET) return fail(`${key} already has ${ATTACH_MAX_PER_TICKET} attachments, the most a ticket holds.`);
     let shot;
     try {
-      shot = await capture.renderer.render({ url: chk.url, width, height, fullPage: get("fullPage") !== false, waitMs, selectors, padding });
+      shot = await capture.renderer.render({ url: chk.url, width, height, fullPage: get("fullPage") !== false, waitMs });
     } catch (err) {
-      if (err && (err.code === "no-browser" || err.code === "no-element")) return fail(err.message);
+      if (err && err.code === "no-browser") return fail(err.message);
       logger.warn("kanban capture failed", { key, url: chk.url, error: String(err && err.message ? err.message : err) });
       return fail(`The page couldn't be rendered: ${String(err && err.message ? err.message : err).replace(/\s+/g, " ").slice(0, 200)}`);
     }
@@ -670,7 +649,7 @@ function kanbanTools(h) {
     });
     if (count == null) return fail(`No ticket ${item.key}.`);
     for (const old of replaced) { try { if (old.path) await bucket.file(old.path).delete(); } catch (err) { /* best effort: the file is no longer linked */ } }
-    return { ok: true, key, url: chk.url, name, imageUrl: imgUrl, path, size: bytes.length, downscaled: resized, caption: caption || null, selectors: selectors.length ? selectors : undefined, inline: true, replacedEarlierCapture: replaced.length > 0, warnings: shot.warnings || [], attachments: count };
+    return { ok: true, key, url: chk.url, name, imageUrl: imgUrl, path, size: bytes.length, downscaled: resized, caption: caption || null, inline: true, replacedEarlierCapture: replaced.length > 0, warnings: shot.warnings || [], attachments: count };
   }
 
   const board = async () => db().collection(await boardCollection());
@@ -1692,7 +1671,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_capture_screenshot",
-      description: "Staff Kanban: the board opens a page in headless Chromium, screenshots it and puts the picture on a ticket, so no image data goes through MCP. The page must be on an artifact domain (offline2online.github.io, rawcdn.githack.com); usually the artifact URL plus a hash route. The image is stored as an attachment and placed in the description, replacing any \"Screenshot: …\" line (or an earlier capture). A page that answers non-200, says it doesn't exist or redirects off its route is reported and nothing is attached. Default viewport 1440×900, full page; pass selector (a CSS selector) to crop to one chart or section, or selectors (up to 4) to put several elements in one image: if an element never appears the capture fails and nothing is attached. Counts against the 60 files an hour per member. For several pages use kanban_capture_screenshots.",
+      description: "Staff Kanban: the board opens a page in headless Chromium, screenshots it and puts the picture on a ticket, so no image data goes through MCP. The page must be on an artifact domain (offline2online.github.io, rawcdn.githack.com); usually the artifact URL plus a hash route. The image is stored as an attachment and placed in the description, replacing any \"Screenshot: …\" line (or an earlier capture). A page that answers non-200, says it doesn't exist or redirects off its route is reported and nothing is attached. Default viewport 1440×900, full page. Counts against the 60 files an hour per member. For several pages use kanban_capture_screenshots.",
       scope: "board.write",
       inputSchema: {
         type: "object",
@@ -1707,7 +1686,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_capture_screenshots",
-      description: `Staff Kanban: kanban_capture_screenshot for a list of {key, url} pairs in one call, e.g. every page epic of a project (up to ${capture.LIMITS.batchMax} pages, captured one after another). Each page is reported on its own: a failed page (not on an allowed domain, non-200, not found, redirected) has ok: false and the reason, and nothing is attached for it; the others still go through. Viewport, wait, caption, selector(s) and padding apply to every page unless the pair sets its own; give each pair its own selector to crop each ticket to its own chart.`,
+      description: `Staff Kanban: kanban_capture_screenshot for a list of {key, url} pairs in one call, e.g. every page epic of a project (up to ${capture.LIMITS.batchMax} pages, captured one after another). Each page is reported on its own: a failed page (not on an allowed domain, non-200, not found, redirected) has ok: false and the reason, and nothing is attached for it; the others still go through. Viewport, wait and caption apply to every page unless the pair sets its own.`,
       scope: "board.write",
       inputSchema: {
         type: "object",
@@ -1715,7 +1694,7 @@ function kanbanTools(h) {
           items: {
             type: "array", minItems: 1, maxItems: capture.LIMITS.batchMax,
             items: { type: "object", properties: Object.assign({ key: KEY }, CAPTURE_PROPS), required: ["key", "url"], additionalProperties: false },
-            description: "The pages: [{key, url}], each optionally with its own caption, width, height, fullPage, waitMs, selector, selectors or padding.",
+            description: "The pages: [{key, url}], each optionally with its own caption, width, height, fullPage or waitMs.",
           },
         }, CAPTURE_PROPS),
         required: ["items"], additionalProperties: false,
@@ -1725,7 +1704,7 @@ function kanbanTools(h) {
         if (!items.length) return toolError("items is required: a list of {key, url}.");
         if (items.length > capture.LIMITS.batchMax) return toolError(`At most ${capture.LIMITS.batchMax} pages in one call; send the rest in another.`);
         const defaults = {};
-        for (const f of ["width", "height", "fullPage", "waitMs", "caption", "selector", "selectors", "padding"]) if (args[f] !== undefined) defaults[f] = args[f];
+        for (const f of ["width", "height", "fullPage", "waitMs", "caption"]) if (args[f] !== undefined) defaults[f] = args[f];
         const started = Date.now();
         const results = [];
         for (const it of items) {
