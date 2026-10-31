@@ -364,7 +364,9 @@ inline). `kanban_capture_screenshot` and
 Chromium and puts the screenshot inline in the description in place of a
 "Screenshot: …" line, KB-MCP-CAPTURE: only https pages on the artifact
 domains, a non-200, not-found or redirected page is reported and attaches
-nothing; up to 20 pages per call). Viewers get read tools only.
+nothing; up to 20 pages per call; an optional CSS `selector`, or up to 4 `selectors` in one image, crops the
+capture to those elements with `padding`, per page in a batch, and fails with nothing attached if an
+element doesn't appear within 8 s). Viewers get read tools only.
 Staff can add and move tasks verbally through their agent.
 Writes (`kanban_create_task`, `kanban_update_task`, `kanban_assign_task`)
 refuse what the board can't show and report every problem in one error: an
