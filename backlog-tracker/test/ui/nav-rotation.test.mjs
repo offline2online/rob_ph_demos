@@ -9,7 +9,7 @@ const seed = { user: { email: "editor@personalisationhub.com", role: "editor" },
 const h = await startHarness();
 try {
   const { page } = await h.open({ seed, width: 820, height: 1180 });
-  await until(() => page.locator("#total-summary").count(), "board");
+  await until(() => page.locator(".project-options-btn").count(), "board");
   const st = () => page.evaluate(() => ({
     open: document.getElementById("nav-drawer").classList.contains("open"),
     visible: getComputedStyle(document.getElementById("nav-drawer")).visibility === "visible",

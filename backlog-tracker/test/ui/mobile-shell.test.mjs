@@ -48,7 +48,7 @@ try {
   for (const width of WIDTHS) {
     const o = await h.open({ seed, width, height: 780 });
     const { page } = o;
-    await until(() => page.locator("#total-summary").count(), "board header");
+    await until(() => page.locator(".project-options-btn").count(), "board header");
     for (const [label, how] of PAGES) {
       try {
         await go(page, width, how);
