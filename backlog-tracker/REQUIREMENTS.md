@@ -3548,8 +3548,16 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   reactivate) one or many users. Deactivating sets `consoleUsers.disabled`, which
   the console rules and the MCP server already treat as no access, and signs the
   user's agents out. Changes are written to `consoleUsers` and persist.
-- Roles and Permissions pages exist as empty shells; their content is specified
-  by their own tickets.
+- The Roles page is an AG Grid table of internal IAM roles (Admin, Product,
+  Designer, Engineer, Security by default) with columns role name, description,
+  users and last modified. Admins can create, edit, clone and delete roles; the
+  UI calls them "roles", never "personas". Names are unique ignoring case.
+  Deleting a role is refused ("Role in use") while any user is assigned to it.
+  Roles live in the `roles` collection (members read, admins write); a user's
+  assignment is `consoleUsers.roleId`, set from the Users grid's "Assigned role"
+  column, and drives the Users count.
+- The Permissions page exists as an empty shell; its content is specified by its
+  own ticket.
 ## Console navigation and Settings (31 Oct 2026)
 
 - The primary nav has four groups: **Build** (Agent Board, Staff Kanban,

@@ -259,7 +259,7 @@ const scenarios = [
       await c.visible("#um-grid .ag-row", "the grid lists members");
       assert.strictEqual(await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count(), 3, "three members in the grid");
       const cols = await c.page.evaluate(() => [...document.querySelectorAll("#um-grid .ag-header-cell-text")].map((e) => e.textContent.trim()).filter(Boolean));
-      assert.deepStrictEqual(cols, ["Name", "Email", "Role", "Status", "Last active"]);
+      assert.deepStrictEqual(cols, ["Name", "Email", "Role", "Assigned role", "Status", "Last active"]);
       // search
       await c.page.fill("#um-search", "kim");
       await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 1, "search to filter the grid", 5000);
@@ -292,8 +292,55 @@ const scenarios = [
       await c.click("#um-manage-active", "Deactivate");
       await c.click("#dialog-ok", "confirm deactivation");
       await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("sam@personalisationhub.com").disabled)) === true, "deactivation to persist", 5000);
+      // assign a role on Users, then manage roles
+      await until(async () => (await c.page.locator('select[aria-label="Assigned role for kim@personalisationhub.com"] option').count()) === 6, "default roles to seed and list", 8000);
+      const engineerId = await c.page.evaluate(() => { const m = globalThis.__fbStub.col("roles"); for (const [id, d] of m.entries()) if (d.name === "Engineer") return id; });
+      assert.ok(engineerId, "Engineer role seeded");
+      await c.page.selectOption('select[aria-label="Assigned role for kim@personalisationhub.com"]', engineerId);
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").roleId)) === engineerId, "assigned role to persist", 5000);
       await c.page.evaluate(() => { document.getElementById("um-roles-btn").click(); });
       await c.visible('[data-um-panel="roles"]', "Roles page shows");
+      await c.visible("#roles-grid .ag-row", "roles listed");
+      const rcols = await c.page.evaluate(() => [...document.querySelectorAll("#roles-grid .ag-header-cell-text")].map((e) => e.textContent.trim()).filter(Boolean));
+      assert.deepStrictEqual(rcols, ["Role name", "Description", "Users", "Last modified"]);
+      const rowCount = async () => c.page.locator("#roles-grid .ag-center-cols-container .ag-row").count();
+      await until(async () => (await rowCount()) === 5, "five roles", 5000);
+      const engUsers = async () => c.page.evaluate((id) => document.querySelector(`#roles-grid .ag-row[row-id="${id}"] [col-id="users"]`)?.textContent.trim(), engineerId);
+      await until(async () => (await engUsers()) === "1", "Engineer shows one user", 5000);
+      // create
+      await c.click("#roles-create", "Create role");
+      await c.page.fill("#dialog-field-0", "Support");
+      await c.page.fill("#dialog-field-1", "Answers questions");
+      await c.click("#dialog-ok", "Create");
+      await until(async () => (await rowCount()) === 6, "new role row", 8000);
+      // duplicate name refused (any case)
+      await c.click("#roles-create", "Create role");
+      await c.page.fill("#dialog-field-0", "support");
+      await c.click("#dialog-ok", "Create duplicate");
+      await c.visible("#dialog-message", "duplicate message shows");
+      assert.ok(/already exists/.test(await c.page.textContent("#dialog-message")), "duplicate refused");
+      await c.click("#dialog-cancel", "cancel");
+      assert.strictEqual(await rowCount(), 6, "no duplicate added");
+      // edit
+      await c.page.locator('.role-edit[aria-label="Edit Support"]').click();
+      await c.page.fill("#dialog-field-0", "Support team");
+      await c.click("#dialog-ok", "Save");
+      await until(async () => (await c.page.locator('.role-edit[aria-label="Edit Support team"]').count()) === 1, "renamed role", 8000);
+      // clone
+      await c.page.locator('.role-clone[aria-label="Clone Support team"]').click();
+      assert.strictEqual(await c.page.inputValue("#dialog-field-0"), "Copy of Support team", "clone prefilled");
+      await c.click("#dialog-ok", "Clone");
+      await until(async () => (await rowCount()) === 7, "cloned role row", 8000);
+      // delete blocked while assigned
+      await c.page.locator('.role-delete[aria-label="Delete Engineer"]').click();
+      await c.visible("#dialog-message", "in-use message");
+      assert.ok(/Role in use/.test(await c.page.textContent("#dialog-title")), "blocked: Role in use");
+      await c.click("#dialog-ok", "OK");
+      assert.strictEqual(await rowCount(), 7, "Engineer stays");
+      // delete unused
+      await c.page.locator('.role-delete[aria-label="Delete Copy of Support team"]').click();
+      await c.click("#dialog-ok", "confirm delete");
+      await until(async () => (await rowCount()) === 6, "role removed", 8000);
       const sw = await c.page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
       assert.ok(sw, "no sideways scroll");
     },

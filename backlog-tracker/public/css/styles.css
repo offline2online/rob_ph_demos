@@ -2178,6 +2178,10 @@ body { overflow-x: clip; }
 .um-grid .ag-pinned-left-header .ag-header-cell, .um-grid .ag-pinned-left-cols-container .ag-cell { padding: 0 12px; }
 .um-role-select { font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; width: 100%; }
 .um-role-select:disabled { background: var(--surface-2); color: var(--text-muted); }
+.role-actions { display: inline-flex; gap: 4px; }
+.role-act { background: none; border: 0; cursor: pointer; border-radius: 6px; padding: 4px; color: var(--text); display: inline-flex; }
+.role-act:hover { background: var(--primary-tint); }
+.role-act .material-symbols-outlined { font-size: 20px; }
 .um-status { display: inline-flex; align-items: center; gap: 8px; }
 .um-dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
 .um-dot-on { background: var(--success); }

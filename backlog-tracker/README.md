@@ -2683,8 +2683,8 @@ agents can read or write changed. UI tests serve AG Grid from the
 
 Its own navigation section (admin-only, `[data-admin-only]`), moved out of
 Settings. Sub-menu: **Users**, **Roles**, **Permissions** (`#user-management/<tab>`,
-`user-management-page` in `public/index.html`). Only **Users** is built; Roles
-and Permissions are empty pages for the tickets that fill them.
+`user-management-page` in `public/index.html`). **Users** and **Roles** are
+built; Permissions is an empty page for its own ticket.
 
 **Users** is an AG Grid Community table (`public/js/user-management.js`; the
 library is loaded on first visit by `docs-grid.js`, the Alpine theme restyled
@@ -2696,4 +2696,15 @@ pagination. **Add User** opens a side panel (email, name, role). Tick rows for
 a bulk role change or bulk Deactivate / Reactivate; the row's **⋯** opens
 **Manage** in the same panel (photo, agent on/off, sign-in setup, disconnect
 agents, deactivate, remove). You cannot change, deactivate or remove your own
-row. Tests: the "user management" scenario in `test/ui/console-click.test.mjs`.
+row. An **Assigned role** column (`consoleUsers.roleId`, separate from the
+admin/editor/viewer access level in Role) picks one of the roles below.
+
+**Roles** (`public/js/roles.js`, `roles` collection: members read, admins write)
+are the internal IAM roles, called "roles" in the UI, never "personas". An AG
+Grid lists Role name, Description, Users (people assigned) and Last modified.
+**Create role**, and per row **Edit** (pencil), **Clone** (copy icon, name
+prefilled "Copy of ...") and **Delete**. Names are unique ignoring case. Delete
+is refused with "Role in use" while any user has the role assigned (a page
+check; rules cannot count users). The five defaults (Admin, Product, Designer,
+Engineer, Security) are seeded on the first admin visit. Tests: the "user
+management" scenario in `test/ui/console-click.test.mjs`.

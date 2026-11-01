@@ -18,6 +18,7 @@ export function userRows(members, selfEmail) {
     return {
       email,
       name: m.displayName || "",
+      roleId: m.roleId || "",
       role: ["admin", "editor", "viewer"].includes(m.role) ? m.role : "editor",
       status: m.disabled === true ? "Deactivated" : "Active",
       lastActiveMs: Math.max(tsMs(m.lastLoginAt), tsMs(m.lastMcpAt)),
@@ -29,7 +30,7 @@ export function userRows(members, selfEmail) {
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-export async function mountUsersGrid(host, { roleLabels, relativeAgo, onRoleChange, onManage, onSelection }) {
+export async function mountUsersGrid(host, { roleLabels, relativeAgo, onRoleChange, onManage, onSelection, getRoles = () => [], onAssignedRoleChange = () => {} }) {
   const ag = await loadAgGrid();
   if (!ag) throw new Error("AG Grid didn't load");
   const roleSelect = (params) => {
@@ -41,6 +42,16 @@ export async function mountUsersGrid(host, { roleLabels, relativeAgo, onRoleChan
     if (params.data.isSelf) sel.title = "You can't change your own role.";
     sel.addEventListener("click", (e) => e.stopPropagation());
     sel.addEventListener("change", () => onRoleChange([params.data.email], sel.value));
+    return sel;
+  };
+  const assignedCell = (params) => {
+    const sel = document.createElement("select");
+    sel.className = "um-role-select um-assigned-select";
+    sel.setAttribute("aria-label", `Assigned role for ${params.data.email}`);
+    const roles = getRoles();
+    sel.innerHTML = `<option value="">Not assigned</option>` + roles.map((r) => `<option value="${esc(r.id)}"${r.id === params.data.roleId ? " selected" : ""}>${esc(r.name)}</option>`).join("");
+    sel.addEventListener("click", (e) => e.stopPropagation());
+    sel.addEventListener("change", () => onAssignedRoleChange(params.data.email, sel.value));
     return sel;
   };
   const statusCell = (params) => {
@@ -70,6 +81,7 @@ export async function mountUsersGrid(host, { roleLabels, relativeAgo, onRoleChan
       { field: "name", headerName: "Name", flex: 1, minWidth: 160, cellRenderer: nameCell },
       { field: "email", headerName: "Email", flex: 1.4, minWidth: 220 },
       { field: "role", headerName: "Role", width: 150, cellRenderer: roleSelect, valueFormatter: (p) => roleLabels[p.value] || p.value, filterValueGetter: (p) => roleLabels[p.data.role] || p.data.role },
+      { field: "roleId", headerName: "Assigned role", width: 190, cellRenderer: assignedCell, valueFormatter: (p) => { const r = getRoles().find((x) => x.id === p.value); return r ? r.name : "Not assigned"; }, filterValueGetter: (p) => { const r = getRoles().find((x) => x.id === p.data.roleId); return r ? r.name : "Not assigned"; } },
       { field: "status", headerName: "Status", width: 150, cellRenderer: statusCell },
       {
         field: "lastActiveMs", headerName: "Last active", width: 170,

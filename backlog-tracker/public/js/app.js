@@ -45,6 +45,7 @@ import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirement
 import { createResultReader, useContinuousMode } from "./dictation-results.js";
 import { loadQuill } from "./quill-loader.js";
 import { userRows, mountUsersGrid } from "./user-management.js";
+import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -9977,6 +9978,7 @@ function renderTeamList() {
   const count = document.getElementById("um-count");
   if (count) count.innerHTML = `<b>${rows.length}</b> ${rows.length === 1 ? "User" : "Users"}`;
   if (usersGrid) usersGrid.setRows(rows);
+  renderRolesGrid();
 }
 
 function updateBulkBar(selected) {
@@ -10023,6 +10025,8 @@ async function ensureUsersGrid() {
       onRoleChange: changeUserRoles,
       onManage: openTeamManagePanel,
       onSelection: updateBulkBar,
+      getRoles: () => rolesCache,
+      onAssignedRoleChange: assignUserRole,
     }).then((g) => { usersGrid = g; }).catch((err) => {
       usersGridLoading = null;
       console.error("Failed to load the users grid:", err);
@@ -10061,6 +10065,125 @@ document.getElementById("um-bulk-deactivate")?.addEventListener("click", async (
 });
 document.getElementById("um-bulk-reactivate")?.addEventListener("click", () => setUsersActive(selectedUserEmails(), true));
 
+// ── Roles (internal IAM roles) ───────────────────────────────────────────
+// `roles` docs: { name, description, createdAt, updatedAt, updatedBy }.
+// A person's assignment is consoleUsers.roleId (separate from the
+// admin/editor/viewer access level). Rules cannot count users, so the
+// "can't delete a role in use" check is made here from the loaded members.
+let rolesCache = [];
+let rolesGrid = null;
+let rolesGridLoading = null;
+function showRolesError(msg) {
+  const el = document.getElementById("roles-error");
+  if (!el) return;
+  el.textContent = msg || ""; el.hidden = !msg;
+}
+function renderRolesGrid() {
+  const rows = roleRows(rolesCache, teamRowsCache);
+  const count = document.getElementById("roles-count");
+  if (count) count.innerHTML = `<b>${rows.length}</b> ${rows.length === 1 ? "Role" : "Roles"}`;
+  if (rolesGrid) rolesGrid.setRows(rows);
+  if (usersGrid) usersGrid.api.refreshCells({ columns: ["roleId"], force: true });
+}
+async function saveRole(id, fields) {
+  const by = (auth.currentUser && auth.currentUser.email) || null;
+  if (id) await updateDoc(doc(db, "roles", id), Object.assign({}, fields, { updatedAt: serverTimestamp(), updatedBy: by }));
+  else await addDoc(collection(db, "roles"), Object.assign({}, fields, { createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: by }));
+}
+async function loadRoles() {
+  if (!isConsoleAdmin()) return;
+  showRolesError("");
+  try {
+    if (!rolesGrid && !rolesGridLoading) {
+      rolesGridLoading = mountRolesGrid(document.getElementById("roles-grid"), {
+        relativeAgo, onEdit: editRole, onClone: cloneRole, onDelete: deleteRole,
+      }).then((g) => { rolesGrid = g; }).catch((err) => {
+        rolesGridLoading = null;
+        console.error("Failed to load the roles grid:", err);
+        showRolesError("Couldn't load the roles table. Reload the page to try again.");
+      });
+    }
+    await rolesGridLoading;
+    const snap = await getDocs(collection(db, "roles"));
+    let list = [];
+    snap.forEach((d) => list.push(Object.assign({ id: d.id }, d.data())));
+    if (!list.length) {
+      // First admin visit: seed the default roles once.
+      for (const r of DEFAULT_ROLES) await saveRole(null, r);
+      const again = await getDocs(collection(db, "roles"));
+      list = [];
+      again.forEach((d) => list.push(Object.assign({ id: d.id }, d.data())));
+    }
+    rolesCache = list;
+    const us = await getDocs(collection(db, "consoleUsers"));
+    const members = [];
+    us.forEach((d) => members.push(Object.assign({ id: d.id }, d.data())));
+    teamRowsCache = members;
+    renderRolesGrid();
+  } catch (err) {
+    console.error("Failed to load roles:", err);
+    showRolesError("Couldn't load the roles.");
+  }
+}
+async function assignUserRole(email, roleId) {
+  showUsersGridError("");
+  try { await saveTeamMember(email, { roleId: roleId || "" }); }
+  catch (err) { showUsersGridError(`Couldn't assign that role: ${err && err.message ? err.message : err}`); }
+  await loadTeamMembers();
+}
+async function roleDialog({ title, okLabel, name, description, exceptId }) {
+  let msg = "";
+  for (;;) {
+    const v = await showFieldDialog({
+      title, message: msg, okLabel,
+      fields: [
+        { id: "name", label: "Role name", value: name || "", placeholder: "e.g. Support" },
+        { id: "description", label: "Description", value: description || "", multiline: true, rows: 3, placeholder: "What this role is for" },
+      ],
+    });
+    if (!v) return null;
+    const err = roleNameError(v.name, rolesCache, exceptId);
+    if (!err) return { name: trimmedRoleName(v.name), description: String(v.description || "").trim().slice(0, 300) };
+    msg = err; name = v.name; description = v.description;
+  }
+}
+async function createRole() {
+  const v = await roleDialog({ title: "Create role", okLabel: "Create" });
+  if (!v) return;
+  try { await saveRole(null, v); } catch (err) { showRolesError(`Couldn't create the role: ${err.message || err}`); }
+  await loadRoles();
+}
+async function editRole(id) {
+  const r = rolesCache.find((x) => x.id === id);
+  if (!r) return;
+  const v = await roleDialog({ title: "Edit role", okLabel: "Save", name: r.name, description: r.description, exceptId: id });
+  if (!v) return;
+  try { await saveRole(id, v); } catch (err) { showRolesError(`Couldn't save the role: ${err.message || err}`); }
+  await loadRoles();
+}
+async function cloneRole(id) {
+  const r = rolesCache.find((x) => x.id === id);
+  if (!r) return;
+  const v = await roleDialog({ title: "Clone role", okLabel: "Clone", name: cloneName(r.name, rolesCache), description: r.description });
+  if (!v) return;
+  try { await saveRole(null, v); } catch (err) { showRolesError(`Couldn't clone the role: ${err.message || err}`); }
+  await loadRoles();
+}
+async function deleteRole(id) {
+  const r = rolesCache.find((x) => x.id === id);
+  if (!r) return;
+  const inUse = teamRowsCache.filter((m) => m.roleId === id).length;
+  if (inUse) {
+    await openDialog({ title: "Role in use", message: `${r.name} is assigned to ${inUse} user${inUse === 1 ? "" : "s"}. Reassign ${inUse === 1 ? "them" : "those users"} on the Users page before deleting this role.`, okLabel: "OK", showCancel: false });
+    return;
+  }
+  if (!(await showConfirmDialog(`Delete the role "${r.name}"? This can't be undone.`))) return;
+  try { await deleteDoc(doc(db, "roles", id)); } catch (err) { showRolesError(`Couldn't delete the role: ${err.message || err}`); }
+  await loadRoles();
+}
+document.getElementById("roles-create")?.addEventListener("click", createRole);
+document.getElementById("roles-search")?.addEventListener("input", (e) => { if (rolesGrid) rolesGrid.search(e.target.value); });
+
 // ── User Management page: Users / Roles / Permissions ────────────────────
 const userManagementPage = document.getElementById("user-management-page");
 const UM_TABS = ["users", "roles", "permissions"];
@@ -10081,7 +10204,8 @@ function openUserManagementPage(tab = "users") {
   showUserManagementTab(tab);
   setRouteHash(`#user-management/${tab}`);
   updateTopbarTitle();
-  if (tab === "users") loadTeamMembers();
+  if (tab === "users") { loadRoles().then(loadTeamMembers); }
+  if (tab === "roles") loadRoles();
 }
 function closeUserManagementPage() {
   if (userManagementPage.hidden) return;
