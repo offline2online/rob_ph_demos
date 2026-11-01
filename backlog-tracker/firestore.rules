@@ -677,7 +677,8 @@ service cloud.firestore {
       allow read: if isBoardReader();
       allow create, update: if isAdmin()
         && incoming().name is string && isNonEmptyBoundedString(incoming().name, 60)
-        && (!("description" in incoming()) || (incoming().description is string && incoming().description.size() <= 300));
+        && (!("description" in incoming()) || (incoming().description is string && incoming().description.size() <= 300))
+        && (!("permissions" in incoming()) || incoming().permissions is map);
       allow delete: if isAdmin();
     }
 

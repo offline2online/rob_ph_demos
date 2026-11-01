@@ -894,6 +894,65 @@ const scenarios = [
     },
   },
   {
+    name: "permissions: an admin sets the matrix; an engineer loses Concepts (nav and URL) and gets view-only where granted",
+    seed: () => {
+      const s = seed();
+      s.user = { email: "eng@personalisationhub.com", role: "editor" };
+      s.docs.roles = {
+        rAdmin: { name: "Admin", description: "", createdAt: t(T0) },
+        rEng: { name: "Engineer", description: "", createdAt: t(T0), permissions: { concepts: "none", skills: "view" } },
+      };
+      s.docs.consoleUsers = { "eng@personalisationhub.com": { email: "eng@personalisationhub.com", role: "editor", roleId: "rEng" } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await until(async () => (await c.page.evaluate(() => !!document.getElementById("perm-style")?.textContent)), "the role's permissions to apply", 8000);
+      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("concept-incubator-btn")).display), "none", "Concepts is gone from the nav");
+      await c.page.evaluate(() => { location.hash = "#concept-incubator"; });
+      await c.visible("#access-denied-page", "the Concepts URL is blocked");
+      assert.ok((await c.page.textContent("#access-denied-text")).includes("Concepts"), "the notice names the section");
+      assert.strictEqual(await c.page.evaluate(() => document.getElementById("concept-incubator-page").hidden), true, "the Concepts page never shows");
+      // view-only Skills: the page opens but its add control is gone
+      await c.page.evaluate(() => { location.hash = "#skills"; });
+      await c.visible("#skills-page", "Skills opens at View");
+      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("skills-add-btn")).display), "none", "Add skill is unavailable at View");
+      // User Management is not in this role at all
+      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
+      await c.visible("#access-denied-page", "User Management is blocked for an engineer");
+    },
+  },
+  {
+    name: "permissions: the matrix lists every section by role, saves a change, and the Admin role stays locked",
+    seed: () => {
+      const s = seed();
+      s.user = { email: "admin@personalisationhub.com", role: "admin" };
+      s.docs.roles = {
+        rAdmin: { name: "Admin", description: "", createdAt: t(T0) },
+        rEng: { name: "Engineer", description: "", createdAt: t(T0) },
+      };
+      s.docs.consoleUsers = { "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", roleId: "rEng" } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
+      await c.visible(".perm-table", "the matrix shows");
+      const rows = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table tbody th")].map((e) => e.textContent.trim()));
+      assert.deepStrictEqual(rows, ["Agent board", "Staff Kanban", "Concepts", "FAQ management", "Skills", "Releases", "Project docs", "Settings", "User Management"]);
+      const heads = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table thead th")].map((e) => e.textContent.trim()));
+      assert.deepStrictEqual(heads, ["Section", "Admin", "Engineer"]);
+      assert.strictEqual(await c.page.locator('select[data-perm-role="rAdmin"]:not([disabled])').count(), 0, "the Admin column is locked");
+      await c.page.selectOption('select[data-perm-role="rEng"][data-perm-section="concepts"]', "none");
+      await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);
+      // an admin keeps User Management even when a role they hold says none
+      await c.page.selectOption('select[data-perm-role="rEng"][data-perm-section="user-management"]', "none");
+      await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {})["user-management"])) === "none", "the lock-out attempt to persist", 5000);
+      assert.strictEqual(await c.page.evaluate(() => document.getElementById("user-management-page").hidden), false, "User Management is still open");
+      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("um-permissions-btn")).display === "none"), false, "and still in the nav");
+    },
+  },
+  {
     name: "types: the map toggles between Platform and Internal operations, and a bridge opens the Platform map",
     seed: () => relSeed(),
     async run(c) {

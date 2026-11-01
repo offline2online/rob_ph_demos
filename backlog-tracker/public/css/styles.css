@@ -2216,3 +2216,12 @@ body { overflow-x: clip; }
   .settings-submenu { flex: none; flex-direction: row; overflow-x: auto; position: static; width: 100%; }
   .settings-submenu-item { white-space: nowrap; }
 }
+
+/* ── User Management → Permissions matrix ── */
+.perm-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.perm-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.perm-table th, .perm-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.perm-table thead th { font-weight: 700; background: var(--surface-2); }
+.perm-table tbody th { font-weight: 500; }
+.perm-table tr:last-child th, .perm-table tr:last-child td { border-bottom: 0; }
+.perm-select { min-width: 110px; }

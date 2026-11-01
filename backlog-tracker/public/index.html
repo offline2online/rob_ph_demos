@@ -75,6 +75,7 @@
       }
     })();
   </script>
+  <style id="perm-style"></style>
 </head>
 <body>
   <div class="auth-gate" id="auth-gate">
@@ -1189,8 +1190,16 @@
         <p class="tm-error" id="roles-error" role="alert" hidden></p>
       </div>
       <div class="um-panel-body" data-um-panel="permissions" hidden>
-        <p class="interface-row-empty">Permissions are managed here. Nothing to show yet.</p>
+        <p class="um-count">Choose what each role can open in the console. <b>View</b> opens a section read-only, <b>Edit</b> adds changes, and <b>Admin</b> also lets a person manage this matrix. Admins always keep User Management, so nobody can lock themselves out.</p>
+        <p class="um-count" id="permissions-status" role="status" aria-live="polite"></p>
+        <div id="permissions-matrix"></div>
       </div>
+    </section>
+
+    <section class="faq-admin-page" id="access-denied-page" hidden>
+      <div class="page-header"><h2>No access</h2></div>
+      <p id="access-denied-text" class="interface-row-empty"></p>
+      <button type="button" class="btn-primary" id="access-denied-go" hidden>Go to a section you can open</button>
     </section>
 
     <section class="faq-admin-page" id="faq-settings-page" hidden>

@@ -3556,8 +3556,24 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   Roles live in the `roles` collection (members read, admins write); a user's
   assignment is `consoleUsers.roleId`, set from the Users grid's "Assigned role"
   column, and drives the Users count.
-- The Permissions page exists as an empty shell; its content is specified by its
-  own ticket.
+- **Permissions (1 Nov 2026).** The Permissions tab is a matrix: one row per
+  console section (Agent board, Staff Kanban, Concepts, FAQ management, Skills,
+  Releases, Project docs, Settings, User Management), one column per role, each
+  cell No access / View / Edit / Admin. Stored as `roles/{id}.permissions`
+  (`{sectionKey: level}`); a role with no map gets Edit everywhere except User
+  Management (none). The logic is `public/js/permissions.js`. Enforcement, in
+  the console UI: a section with No access is hidden from the nav and search and
+  its URL shows a "No access" notice; below Edit, the section's add/save
+  controls are removed and its guards refuse the write; a member with no
+  assigned role is unrestricted as before. The **Admin role** is always Admin
+  and its column is locked, and a member whose fixed console role is `admin`
+  always keeps User Management whatever their assigned role says, so nobody can
+  lock themselves out. The fixed `viewer` console role never exceeds View. Only
+  an admin can change the matrix. Admin level currently differs from Edit only
+  by unlocking this matrix; it is reserved for per-section admin controls.
+  **Limit:** this is UI enforcement. `firestore.rules` still gate data by the
+  fixed admin/editor/viewer role, not per section, so it is access control for
+  the console's screens, not a data boundary.
 ## Console navigation and Settings (31 Oct 2026)
 
 - The primary nav has four groups: **Build** (Agent Board, Staff Kanban,

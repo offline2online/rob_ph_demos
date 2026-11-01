@@ -45,6 +45,7 @@ import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirement
 import { createResultReader, useContinuousMode } from "./dictation-results.js";
 import { loadQuill } from "./quill-loader.js";
 import { userRows, mountUsersGrid } from "./user-management.js";
+import { LEVELS, LEVEL_LABELS, SECTIONS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, setLevel, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel } from "./permissions.js";
 import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -534,6 +535,8 @@ document.addEventListener("keydown", (e) => {
 // "Settings" to "FAQ Management" (or back), which rendered both blocks
 // stacked on screen simultaneously.
 function closeAllSubPages() {
+  const deniedPage = document.getElementById("access-denied-page");
+  if (deniedPage) deniedPage.hidden = true;
   closeArchivePage();
   closeArchivedProjectsPage();
   closeDocsPage();
@@ -561,6 +564,11 @@ function closeAllSubPages() {
 }
 function returnToBoard() {
   closeAllSubPages();
+  if (!sectionAllowed("agent-board")) {
+    const next = firstAllowedSection(accessLevels);
+    if (next && SECTION_HASH[next]) { window.location.hash = SECTION_HASH[next]; return; }
+    showAccessDenied("agent-board");
+  }
 }
 document.getElementById("nav-ph-console-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
 // The logo in the top-left corner is clickable from anywhere in the app,
@@ -3096,6 +3104,43 @@ primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
 // projectDocs, skills, concepts and the FAQ collections are not part of the
 // board page: each starts (REST prime + live listener, kept for the rest of
 // the session) the first time a page that uses it opens — see ensureLazy().
+// ── Permissions: what the signed-in person's assigned role lets them open ──
+// `accessLevels` is null until the person's own consoleUsers row and the roles
+// have loaded (unrestricted until then, as before roles existed). See
+// permissions.js; the matrix itself is User Management → Permissions.
+let accessLevels = null;
+let accessSelfRoleId = "";
+let accessRoles = [];
+let accessRolesLoaded = false;
+let accessRowLoaded = false;
+const sectionAllowed = (key) => canView(accessLevels, key);
+const canEditSection = (key) => canEdit(accessLevels, key);
+function showAccessDenied(key) {
+  const label = (SECTIONS.find((s) => s.key === key) || {}).label || "this section";
+  const next = firstAllowedSection(accessLevels);
+  const page = document.getElementById("access-denied-page");
+  document.getElementById("access-denied-text").textContent = `Your role doesn't include access to ${label}. An admin can change that in User Management → Permissions.`;
+  const go = document.getElementById("access-denied-go");
+  go.hidden = !next;
+  go.dataset.hash = next ? SECTION_HASH[next] : "";
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  page.hidden = false;
+}
+// Used at the top of every page-opening function: false means the page was
+// replaced by the "no access" notice and the caller must stop.
+function pageAllowed(key) {
+  if (sectionAllowed(key)) return true;
+  showAccessDenied(key);
+  return false;
+}
+function applyAccessStyles() {
+  const el = document.getElementById("perm-style");
+  if (!el) return;
+  el.textContent = permissionCss(accessLevels);
+}
+
 const lazyStarters = {};
 const lazyStarted = new Set();
 function ensureLazy(...names) {
@@ -6112,6 +6157,7 @@ document.getElementById("docs-origin-concept-link").addEventListener("click", (e
 document.getElementById("docs-open-releases-btn").addEventListener("click", () => openReleasesPage());
 
 function openDocsPage(pid) {
+  if (!pageAllowed("project-docs")) return;
   closeAllSubPages();
   ensureLazy("projectDocs");
   ensureLazy("concepts");
@@ -6667,7 +6713,7 @@ const conceptDetailPage = document.getElementById("concept-detail-page");
 
 async function requireConceptEditor() {
   if (!(await requireFaqEditor())) return false;
-  if (currentConsoleRole() === "viewer") {
+  if (currentConsoleRole() === "viewer" || !canEditSection("concepts")) {
     await showAlert("You have read-only access to this console, so you can't add, edit, comment on or promote concepts. An admin can change your role in User Management → Users.");
     return false;
   }
@@ -6863,6 +6909,7 @@ document.getElementById("docs-demote-btn").addEventListener("click", async () =>
 });
 
 function openConceptIncubatorPage() {
+  if (!pageAllowed("concepts")) return;
   closeAllSubPages();
   ensureLazy("concepts");
   document.getElementById("projects-root").hidden = true;
@@ -6881,6 +6928,7 @@ function closeConceptIncubatorPage() {
 // URL-routed as #concept-<conceptId> (see openConceptRouteFromHash), so a
 // concept's docs page can be linked to and reloaded.
 function openConceptDetailPage(id) {
+  if (!pageAllowed("concepts")) return;
   const target = `#concept-${encodeURIComponent(id)}`;
   const arrivedByLink = window.location.hash === target;
   closeAllSubPages();
@@ -7780,6 +7828,7 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
 const releasesPage = document.getElementById("releases-page");
 
 function openReleasesPage() {
+  if (!pageAllowed("releases")) return;
   ensureLazy("concepts");
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
@@ -7797,7 +7846,7 @@ function closeReleasesPage() {
 
 async function requireReleaseEditor() {
   if (!(await requireFaqEditor())) return false;
-  if (currentConsoleRole() === "viewer") {
+  if (currentConsoleRole() === "viewer" || !canEditSection("releases")) {
     await showAlert("You have read-only access to this console, so you can't create releases or mark them live. An admin can change your role in User Management → Users.");
     return false;
   }
@@ -7995,7 +8044,7 @@ function loadStaffKanban() {
       staffKanban = mountStaffKanban({
         root: staffKanbanPage, db, storage, auth,
         me: normEmail(auth.currentUser && auth.currentUser.email),
-        role: currentConsoleRole,
+        role: () => (canEditSection("staff-kanban") ? currentConsoleRole() : "viewer"),
         releases: () => releases,
         projects: () => projects,
         interfaces: () => interfaces,
@@ -8012,6 +8061,7 @@ function loadStaffKanban() {
   return staffKanbanLoading;
 }
 function openStaffKanbanPage(sub, params) {
+  if (!pageAllowed("staff-kanban")) return;
   if (staffKanbanPage.hidden) closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -8036,6 +8086,7 @@ function closeStaffKanbanPage() {
 }
 
 function openSkillsPage() {
+  if (!pageAllowed("skills")) return;
   closeAllSubPages();
   ensureLazy("skills");
   document.getElementById("projects-root").hidden = true;
@@ -8053,7 +8104,7 @@ function closeSkillsPage() {
 
 async function requireSkillEditor() {
   if (!(await requireFaqEditor())) return false;
-  if (currentConsoleRole() === "viewer") {
+  if (currentConsoleRole() === "viewer" || !canEditSection("skills")) {
     await showAlert("You have read-only access to this console, so you can't add, edit or delete skills. An admin can change your role in User Management → Users.");
     return false;
   }
@@ -9686,6 +9737,7 @@ async function loadPhaseBindings() {
   renderSettingsGrids();
 }
 function showSettingsPage(key) {
+  if (!canView(accessLevels, sectionForSettingsPage(key))) key = SETTINGS_PAGES.map((p) => p.key).find((k) => canView(accessLevels, sectionForSettingsPage(k))) || DEFAULT_SETTINGS_KEY;
   settingsPage = SETTINGS_PAGES.some((p) => p.key === key) ? key : DEFAULT_SETTINGS_KEY;
   faqSettingsPage.querySelectorAll("[data-settings-pane]").forEach((el) => { el.hidden = el.dataset.settingsPane !== settingsPage; });
   faqSettingsPage.querySelectorAll("[data-settings-page]").forEach((b) => {
@@ -9698,6 +9750,7 @@ function showSettingsPage(key) {
   renderSettingsGrids();
 }
 function openFaqSettingsPage(sub) {
+  if (!pageAllowed("settings")) return;
   closeAllSubPages();
   ensureLazy("faqCategories", "faqArticles", "concepts");
   document.getElementById("projects-root").hidden = true;
@@ -9941,6 +9994,96 @@ const MCP_SERVER_URL = `${window.location.origin}/mcp`;
 
 function currentConsoleRole() { return document.documentElement.dataset.consoleRole || "editor"; }
 function isConsoleAdmin() { return currentConsoleRole() === "admin"; }
+
+// ── Permissions: who the signed-in person is, and the matrix page ──────────
+// Two listeners feed `accessLevels`: the person's own consoleUsers row (a
+// self-read the rules always allow) for roleId, and the roles collection (any
+// member may read) for what each role may do.
+function recomputeAccess() {
+  if (!accessRowLoaded || !accessRolesLoaded) return;
+  const role = accessSelfRoleId ? accessRoles.find((r) => r.id === accessSelfRoleId) : null;
+  accessLevels = effectiveLevels(currentConsoleRole(), role || null);
+  applyAccessStyles();
+  enforceAccessNow();
+  renderPermissionsMatrix();
+}
+// Re-check whatever is on screen against the levels that just arrived (or
+// changed), so a restriction applies without a reload.
+function enforceAccessNow() {
+  const sec = sectionForHash(window.location.hash);
+  if (sec && !sectionAllowed(sec)) {
+    if (sec === "agent-board") returnToBoard(); else showAccessDenied(sec);
+    return;
+  }
+  if (!faqSettingsPage.hidden) showSettingsPage(settingsPage);
+  if (navShell) navShell.syncActive();
+}
+onAuthStateChanged(auth, (user) => {
+  if (!user || !user.email) return;
+  const me = normEmail(user.email);
+  onSnapshot(doc(db, "consoleUsers", me), (snap) => {
+    accessSelfRoleId = snap.exists() ? (snap.data().roleId || "") : "";
+    accessRowLoaded = true;
+    recomputeAccess();
+  }, (err) => { console.warn("backlog-tracker: couldn't read own role", err); });
+  onSnapshot(collection(db, "roles"), (snap) => {
+    accessRoles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    accessRolesLoaded = true;
+    recomputeAccess();
+  }, (err) => { console.warn("backlog-tracker: couldn't read roles", err); });
+});
+
+let permissionsMsgTimer = 0;
+function showPermissionsMsg(text, isError) {
+  const el = document.getElementById("permissions-status");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle("tm-error", !!isError);
+  clearTimeout(permissionsMsgTimer);
+  if (text && !isError) permissionsMsgTimer = setTimeout(() => { el.textContent = ""; }, 3000);
+}
+function renderPermissionsMatrix() {
+  const host = document.getElementById("permissions-matrix");
+  if (!host) return;
+  const roles = accessRoles.slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  const editable = isConsoleAdmin() && canAdmin(accessLevels, "user-management");
+  if (!roles.length) {
+    host.innerHTML = '<p class="interface-row-empty">No roles yet. Create them on the Roles tab, then set what each one can open here.</p>';
+    return;
+  }
+  const head = roles.map((r) => `<th scope="col">${escapeHTML(r.name || "")}</th>`).join("");
+  const body = SECTIONS.map((s) => {
+    const cells = roles.map((r) => {
+      const locked = isAdminRole(r) || !editable;
+      const cur = storedLevel(r, s.key);
+      const opts = LEVELS.map((l) => `<option value="${l}"${l === cur ? " selected" : ""}>${LEVEL_LABELS[l]}</option>`).join("");
+      const why = isAdminRole(r) ? "The Admin role always has full access." : !editable ? "Only an admin can change permissions." : "";
+      return `<td><select class="um-role-select perm-select" data-perm-role="${escapeHTML(r.id)}" data-perm-section="${s.key}" aria-label="${escapeHTML(`${r.name} access to ${s.label}`)}"${locked ? " disabled" : ""}${why ? ` title="${escapeHTML(why)}"` : ""}>${opts}</select></td>`;
+    }).join("");
+    return `<tr><th scope="row">${escapeHTML(s.label)}</th>${cells}</tr>`;
+  }).join("");
+  host.innerHTML = `<div class="perm-scroll"><table class="perm-table"><thead><tr><th scope="col">Section</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+document.getElementById("permissions-matrix")?.addEventListener("change", async (e) => {
+  const sel = e.target.closest("select[data-perm-role]");
+  if (!sel) return;
+  const role = accessRoles.find((r) => r.id === sel.dataset.permRole);
+  if (!role || !isConsoleAdmin()) return;
+  try {
+    const permissions = setLevel(role, sel.dataset.permSection, sel.value);
+    await updateDoc(doc(db, "roles", role.id), { permissions, updatedAt: serverTimestamp(), updatedBy: (auth.currentUser && auth.currentUser.email) || "" });
+    const label = (SECTIONS.find((x) => x.key === sel.dataset.permSection) || {}).label;
+    showPermissionsMsg(`${role.name}: ${label} set to ${LEVEL_LABELS[sel.value]}.`, false);
+  } catch (err) {
+    showPermissionsMsg(`Couldn't save that change: ${err && err.message ? err.message : err}`, true);
+    renderPermissionsMatrix();
+  }
+});
+document.getElementById("access-denied-go")?.addEventListener("click", (e) => {
+  const h = e.currentTarget.dataset.hash;
+  document.getElementById("access-denied-page").hidden = true;
+  if (h) window.location.hash = h; else returnToBoard();
+});
 
 // The console-side endpoints on mcp-server.js authenticate with a Firebase
 // ID token in a header of its own — deliberately NOT "Authorization", so a
@@ -10196,6 +10339,7 @@ function showUserManagementTab(tab) {
   });
 }
 function openUserManagementPage(tab = "users") {
+  if (!pageAllowed("user-management")) return;
   if (!UM_TABS.includes(tab)) tab = "users";
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
@@ -10206,6 +10350,7 @@ function openUserManagementPage(tab = "users") {
   updateTopbarTitle();
   if (tab === "users") { loadRoles().then(loadTeamMembers); }
   if (tab === "roles") loadRoles();
+  if (tab === "permissions") { renderPermissionsMatrix(); if (isConsoleAdmin() && !accessRoles.length) loadRoles(); }
 }
 function closeUserManagementPage() {
   if (userManagementPage.hidden) return;
@@ -10468,6 +10613,7 @@ document.getElementById("mcp-copy-btn")?.addEventListener("click", async () => {
 // reopen the page as it was, e.g. backToFaqArticleList(), which keeps
 // whatever filter was already active rather than resetting it.
 function openFaqArticlesPage(filter) {
+  if (!pageAllowed("faq")) return;
   closeAllSubPages();
   ensureLazy("faqCategories", "faqArticles");
   document.getElementById("projects-root").hidden = true;
@@ -11103,14 +11249,15 @@ window.addEventListener("pageshow", (e) => { if (e.persisted) document.getElemen
 function navEntries() {
   ensureLazy("concepts");
   const out = [];
+  const allow = (k) => sectionAllowed(k);
   const pname = (id) => (projects.find((p) => p.id === id) || {}).name || "";
-  for (const i of allItems) {
+  for (const i of (allow("agent-board") ? allItems : [])) {
     if (i.status === "archived" && !archivedLoaded) continue;
     out.push({ kind: "Ticket", label: i.title || "(untitled)", hint: pname(i.projectId), id: i.id });
   }
-  for (const c of concepts) out.push({ kind: "Concept", label: c.name || "(untitled)", hint: c.status || "", id: c.id });
-  for (const p of projects) out.push({ kind: "Project", label: p.name || "(untitled)", hint: "", id: p.id });
-  for (const r of releases) out.push({ kind: "Release", label: r.version ? `${r.name} (${r.version})` : (r.name || "(untitled)"), hint: "", id: r.id });
+  for (const c of (allow("concepts") ? concepts : [])) out.push({ kind: "Concept", label: c.name || "(untitled)", hint: c.status || "", id: c.id });
+  for (const p of (allow("agent-board") ? projects : [])) out.push({ kind: "Project", label: p.name || "(untitled)", hint: "", id: p.id });
+  for (const r of (allow("releases") ? releases : [])) out.push({ kind: "Release", label: r.version ? `${r.name} (${r.version})` : (r.name || "(untitled)"), hint: "", id: r.id });
   return out;
 }
 function openNavEntry(e) {
@@ -11923,6 +12070,7 @@ function openFaqArticleEditorPage(articleId, opts = {}) {
   });
 }
 function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}) {
+  if (!pageAllowed("faq")) return;
   closeAllSubPages();
   ensureLazy("faqCategories", "faqArticles");
   editingFaqArticleId = articleId || null;
