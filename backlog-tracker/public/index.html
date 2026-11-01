@@ -18,7 +18,7 @@
        paint, especially on higher-latency mobile connections. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,block,bolt,brush,bug_report,build,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,content_cut,contract,crop,dashboard,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,map,menu,merge_type,message,mic,monitoring,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,pan_tool,password,payments,pending,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,tune,undo,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,content_copy,content_cut,contract,crop,dashboard,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,pan_tool,password,payments,pending,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/apple.css">
   <link rel="stylesheet" href="css/kanban.css">
@@ -75,6 +75,7 @@
       }
     })();
   </script>
+  <style id="perm-style"></style>
 </head>
 <body>
   <div class="auth-gate" id="auth-gate">
@@ -166,13 +167,21 @@
         <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>Agent Board</button>
         <button type="button" class="nav-drawer-item" id="staff-kanban-btn"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Staff Kanban</button>
         <button type="button" class="nav-drawer-item" id="concept-incubator-btn"><span class="material-symbols-outlined" aria-hidden="true">lightbulb</span>Concepts</button>
-        <button type="button" class="nav-drawer-item" id="releases-btn"><span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>Releases</button>
-        <button type="button" class="nav-drawer-item" id="skills-btn"><span class="material-symbols-outlined" aria-hidden="true">psychology</span>Skills</button>
         <button type="button" class="nav-drawer-item" id="whiteboard-btn"><span class="material-symbols-outlined" aria-hidden="true">draw</span>Whiteboard</button>
       </div>
       <div class="nav-group" data-nav-group="publish" role="group" aria-labelledby="nav-publish-label">
         <div class="nav-drawer-section" id="nav-publish-label">Publish</div>
         <button type="button" class="nav-drawer-item" id="faq-articles-btn"><span class="material-symbols-outlined" aria-hidden="true">help_center</span>Help Centre</button>
+      </div>
+      <div class="nav-group" data-nav-group="user-management" data-admin-only role="group" aria-labelledby="nav-um-label">
+        <div class="nav-drawer-section" id="nav-um-label">User Management</div>
+        <button type="button" class="nav-drawer-item" id="um-users-btn"><span class="material-symbols-outlined" aria-hidden="true">group</span>Users</button>
+        <button type="button" class="nav-drawer-item" id="um-roles-btn"><span class="material-symbols-outlined" aria-hidden="true">badge</span>Roles</button>
+        <button type="button" class="nav-drawer-item" id="um-permissions-btn"><span class="material-symbols-outlined" aria-hidden="true">lock</span>Permissions</button>
+      </div>
+      <div class="nav-group" data-nav-group="settings" role="group" aria-labelledby="nav-settings-label">
+        <div class="nav-drawer-section" id="nav-settings-label">Settings</div>
+        <button type="button" class="nav-drawer-item" id="faq-settings-btn"><span class="material-symbols-outlined" aria-hidden="true">settings</span>Settings</button>
       </div>
       <button type="button" class="nav-drawer-item nav-search-item" id="cmdk-open-btn"><span class="material-symbols-outlined" aria-hidden="true">search</span>Search<kbd class="nav-kbd">&#8984;K</kbd></button>
     </nav>
@@ -189,14 +198,13 @@
         <span class="material-symbols-outlined profile-photo-info" tabindex="0" aria-label="About profile photos" title="Your photo is cropped to a square and shown everywhere your name appears. Any image up to 10 MB. Remove it to fall back to your Google photo, then your initial.">info</span>
       </div>
       <p class="profile-photo-error" id="profile-photo-error" role="alert" hidden></p>
-      <div class="nav-drawer-section">Admin</div>
-      <button type="button" class="profile-menu-item" id="faq-settings-btn" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">settings</span>Settings</button>
       <button type="button" class="profile-menu-item" id="topbar-signout" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">logout</span>Sign out</button>
     </div>
 
     <nav class="tabbar" id="tabbar" aria-label="Primary">
       <button type="button" class="tab" data-tab="build"><span class="material-symbols-outlined" aria-hidden="true">construction</span><span>Build</span></button>
       <button type="button" class="tab" data-tab="publish"><span class="material-symbols-outlined" aria-hidden="true">campaign</span><span>Publish</span></button>
+      <button type="button" class="tab" data-tab="settings"><span class="material-symbols-outlined" aria-hidden="true">settings</span><span>Settings</span></button>
       <button type="button" class="tab" data-tab="search"><span class="material-symbols-outlined" aria-hidden="true">search</span><span>Search</span></button>
       <button type="button" class="tab" data-tab="profile"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span><span>Profile</span></button>
     </nav>
@@ -324,33 +332,48 @@
       </div>
     </div>
 
-    <!-- Add user (Settings → Team & agent access). Bottom sheet on mobile. -->
-    <div class="modal-backdrop tm-backdrop" id="tm-backdrop" hidden>
-      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="tm-title">
+    <!-- Add User / Manage user side panel (User Management → Users). Slides in
+         from the right; a bottom sheet on phones. -->
+    <div class="modal-backdrop tm-backdrop um-side-backdrop" id="tm-backdrop" hidden>
+      <div class="modal-panel um-side" role="dialog" aria-modal="true" aria-labelledby="tm-title">
         <div class="modal-header">
-          <h2 id="tm-title">Add user</h2>
+          <h2 id="tm-title">Add User</h2>
           <button type="button" class="modal-close" id="tm-close" aria-label="Close">&times;</button>
         </div>
-        <label class="field-label" for="team-add-email">Email</label>
-        <input type="email" id="team-add-email" maxlength="200" placeholder="teammate@personalisationhub.com" aria-describedby="tm-error">
+        <div id="um-add-form">
+          <label class="field-label" for="team-add-email">Email</label>
+          <input type="email" id="team-add-email" maxlength="200" placeholder="teammate@personalisationhub.com" aria-describedby="tm-error">
 
-        <label class="field-label" for="team-add-name">Name (optional)</label>
-        <input type="text" id="team-add-name" maxlength="120" placeholder="Sam Patel">
+          <label class="field-label" for="team-add-name">Name (optional)</label>
+          <input type="text" id="team-add-name" maxlength="120" placeholder="Sam Patel">
 
-        <label class="field-label" for="team-add-role">Role
-          <span class="info-tip" tabindex="0" role="note" aria-label="About sign-in" data-tip="Google accounts work as soon as they're added. For someone without one, use Send sign-in setup on their row. It creates their login and emails them a link to choose a password."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
-        </label>
-        <select id="team-add-role">
-          <option value="editor" selected>Editor</option>
-          <option value="viewer">Viewer</option>
-          <option value="admin">Admin</option>
-        </select>
-        <p class="tm-error" id="tm-error" role="alert" hidden></p>
+          <label class="field-label" for="team-add-role">Role
+            <span class="info-tip" tabindex="0" role="note" aria-label="About sign-in" data-tip="Google accounts work as soon as they're added. For someone without one, use Manage → Send sign-in setup on their row. It creates their login and emails them a link to choose a password."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+          </label>
+          <select id="team-add-role">
+            <option value="editor" selected>Editor</option>
+            <option value="viewer">Viewer</option>
+            <option value="admin">Admin</option>
+          </select>
+          <p class="tm-error" id="tm-error" role="alert" hidden></p>
 
-        <div class="form-row" style="justify-content:flex-end;">
-          <div class="form-actions">
-            <button type="button" class="btn-ghost" id="tm-cancel">Cancel</button>
-            <button type="button" class="btn-primary" id="team-add-btn">Add</button>
+          <div class="form-row" style="justify-content:flex-end;">
+            <div class="form-actions">
+              <button type="button" class="btn-ghost" id="tm-cancel">Cancel</button>
+              <button type="button" class="btn-primary" id="team-add-btn">Add</button>
+            </div>
+          </div>
+        </div>
+        <div id="um-manage" hidden data-email="">
+          <p class="um-manage-who" id="um-manage-who"></p>
+          <div class="um-manage-actions">
+            <button type="button" class="btn-ghost" data-team-photo>Set photo</button>
+            <button type="button" class="btn-ghost" data-team-photo-clear>Clear photo</button>
+            <button type="button" class="btn-ghost" data-team-toggle-agent="off" id="um-manage-agent">Turn agent off</button>
+            <button type="button" class="btn-ghost" data-team-provision title="Creates their login and emails them a link to set a password — only needed for someone without a Google account.">Send sign-in setup</button>
+            <button type="button" class="btn-ghost" data-team-revoke title="Signs every agent this person has connected out of the console.">Disconnect agents</button>
+            <button type="button" class="btn-ghost" data-team-toggle-active id="um-manage-active">Deactivate</button>
+            <button type="button" class="btn-ghost" data-team-remove id="um-manage-remove">Remove</button>
           </div>
         </div>
       </div>
@@ -741,25 +764,34 @@
         <h2>Project Settings — <span id="docs-page-project-name"></span></h2>
       </div>
 
-      <div class="docs-block" id="docs-origin-concept" hidden>
+      <div class="docs-tabs" id="docs-tabs" role="tablist" aria-label="Project documentation">
+        <button type="button" role="tab" class="docs-tab active" data-tab="general" aria-selected="true"><span class="material-symbols-outlined">tune</span>General</button>
+        <button type="button" role="tab" class="docs-tab" data-tab="readme" aria-selected="false"><span class="material-symbols-outlined">menu_book</span>README</button>
+        <button type="button" role="tab" class="docs-tab" data-tab="requirements" aria-selected="false"><span class="material-symbols-outlined">fact_check</span>Requirements</button>
+        <button type="button" role="tab" class="docs-tab" data-tab="documents" aria-selected="false"><span class="material-symbols-outlined">description</span>Documents</button>
+        <button type="button" role="tab" class="docs-tab" data-tab="interfaces" aria-selected="false"><span class="material-symbols-outlined">swap_horiz</span>Interfaces</button>
+        <button type="button" role="tab" class="docs-tab" data-tab="revisions" aria-selected="false"><span class="material-symbols-outlined">history</span>Revisions</button>
+      </div>
+
+      <div class="docs-block" data-docs-tab="general" id="docs-origin-concept" hidden>
         <h3>Origin concept</h3>
         <p class="field-hint">This project was promoted from a Concept Incubator idea. Its original README, Requirements and discussion are kept there (read-only).</p>
         <a href="#" id="docs-origin-concept-link"></a>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-docs-tab="general">
         <h3>Type</h3>
         <p class="field-hint">Platform (the Personalisation Hub product) or Internal operations (how PH runs internally). Exactly one; it decides which Concept Incubator map this project is on.</p>
         <select id="docs-type-select" aria-label="Project type"></select>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-docs-tab="general">
         <h3>Program / Product</h3>
         <p class="field-hint">Groups this project on the board.</p>
         <select id="docs-program-select"></select>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-docs-tab="general">
         <div class="docs-block-header">
           <h3>Release</h3>
           <button type="button" class="btn-ghost" id="docs-open-releases-btn">Manage releases</button>
@@ -768,7 +800,7 @@
         <select id="docs-release-select"></select>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-docs-tab="general">
         <h3>Description</h3>
         <p class="field-hint">One or two sentences on what this project covers. Shown to AI agents in <code>list_projects</code> so a loose reference ("the FAQ backlog") maps to the right project.</p>
         <textarea id="docs-description-input" rows="2" maxlength="300" placeholder="e.g. The backlog console itself and the public FAQ / Help Centre."></textarea>
@@ -777,7 +809,7 @@
         </div>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-docs-tab="general">
         <h3>Repo folder</h3>
         <p class="field-hint">The join between this project and its folder in <code>rob_ph_demos</code> — read by <code>projectFolderOf()</code> to place a Routine session's folder-relative <code>patchFiles</code> correctly. Repo-root-relative, no trailing slash.</p>
         <input type="text" id="docs-repo-folder-input" maxlength="80" placeholder="e.g. dsp-integration">
@@ -790,27 +822,31 @@
         </div>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block docs-doc-block" data-docs-tab="readme">
         <h3>README <span id="docs-readme-start"></span></h3>
         <p class="field-hint" id="docs-readme-hint">Keep in sync with this project's README.md in the repo.</p>
         <div class="docs-row-chips" id="docs-readme-mirror" hidden></div>
+        <div class="docs-doc-actions"><button type="button" class="btn-ghost docs-edit-toggle" id="docs-readme-edit" data-kind="readme">Edit</button></div>
+        <div class="docs-md" id="docs-readme-view" aria-live="polite"></div>
         <textarea id="docs-readme-input" rows="12" placeholder="No README written yet — paste or write it here."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-readme-save">Save README</button>
         </div>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block docs-doc-block" data-docs-tab="requirements">
         <h3>Requirements <span id="docs-requirements-start"></span></h3>
         <p class="field-hint" id="docs-requirements-hint">Keep in sync with this project's REQUIREMENTS.md in the repo.</p>
         <div class="docs-row-chips" id="docs-requirements-mirror" hidden></div>
+        <div class="docs-doc-actions"><button type="button" class="btn-ghost docs-edit-toggle" id="docs-requirements-edit" data-kind="requirements">Edit</button></div>
+        <div class="docs-md" id="docs-requirements-view" aria-live="polite"></div>
         <textarea id="docs-requirements-input" rows="16" placeholder="No requirements written yet — paste or write them here."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-requirements-save">Save requirements</button>
         </div>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-docs-tab="documents">
         <div class="docs-block-header">
           <h3>Additional documents</h3>
           <button type="button" class="btn-ghost" id="docs-add-doc-btn">+ New document</button>
@@ -819,7 +855,7 @@
         <div id="docs-extra-docs-list"></div>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-docs-tab="general">
         <h3>Routine instructions</h3>
         <p class="field-hint">Extra context sent to Claude with every Routine run for this project. Optional.</p>
         <textarea id="docs-routine-prompt-input" rows="8" placeholder="No project-specific instructions yet — optional."></textarea>
@@ -828,7 +864,7 @@
         </div>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-docs-tab="general">
         <h3>FAQ review automation</h3>
         <p class="field-hint">Flags linked FAQ articles for review when a ticket for this project merges to main.</p>
         <label class="np-interface-toggle">
@@ -837,7 +873,7 @@
         </label>
       </div>
 
-      <div class="docs-block">
+      <div class="docs-block" data-docs-tab="interfaces">
         <div class="docs-block-header">
           <h3>Interfaces with other projects or concepts</h3>
           <button type="button" class="btn-ghost" id="docs-add-interface-btn">+ New interface</button>
@@ -846,7 +882,15 @@
         <div id="docs-interfaces-list"></div>
       </div>
 
-      <div class="docs-block" data-editor-only>
+      <div class="docs-block" data-docs-tab="revisions">
+        <div class="docs-block-header">
+          <h3>Revisions</h3>
+        </div>
+        <p class="field-hint">Every time README, Requirements, a document or an interface is replaced, the text it replaced is kept here (newest first). This is a read-only history.</p>
+        <div id="docs-revisions-list"></div>
+      </div>
+
+      <div class="docs-block" data-docs-tab="general" data-editor-only>
         <h3>Demote to concept</h3>
         <p class="field-hint">Creates a concept in the Concept Incubator with this project's README, Requirements and additional documents, re-points every interface here to that concept, then archives this project. Nothing is deleted: the archived project keeps its tickets and revision history.</p>
         <button type="button" class="btn-outline" id="docs-demote-btn">Demote to concept&hellip;</button>
@@ -858,36 +902,15 @@
         <h2>Archived — <span id="archive-page-project-name"></span></h2>
         <span class="page-header-count" id="archive-page-count">0 tickets</span>
       </div>
-      <div class="archive-table-wrap">
-        <table class="archive-table">
-          <thead>
-            <tr>
-              <th data-sort="type">Type</th>
-              <th data-sort="category">Area</th>
-              <th data-sort="title">Ticket</th>
-              <th>Version</th>
-              <th data-sort="date">Date</th>
-              <th></th>
-            </tr>
-            <tr class="archive-filter-row">
-              <th>
-                <select id="archive-filter-type" aria-label="Filter by type">
-                  <option value="">All types</option>
-                  <option value="feature">Feature</option>
-                  <option value="bug">Bug</option>
-                </select>
-              </th>
-              <th><select id="archive-filter-category" aria-label="Filter by area"><option value="">All areas</option></select></th>
-              <th><input type="search" id="archive-filter-search" placeholder="Title or description…" aria-label="Search title or description"></th>
-              <th></th>
-              <th></th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="archive-table-body"></tbody>
-        </table>
-        <p class="empty-hint" id="archive-table-empty" hidden>No archived tickets match these filters.</p>
+      <div class="archive-filters">
+        <select id="archive-filter-type" aria-label="Filter by type">
+          <option value="">All types</option>
+          <option value="feature">Feature</option>
+          <option value="bug">Bug</option>
+        </select>
+        <select id="archive-filter-category" aria-label="Filter by area"><option value="">All areas</option></select>
       </div>
+      <div id="archive-grid"></div>
     </section>
 
     <section class="archive-page" id="archived-projects-page" hidden>
@@ -895,20 +918,7 @@
         <h2>Archived projects</h2>
         <span class="page-header-count" id="archived-projects-count">0 projects</span>
       </div>
-      <div class="archive-table-wrap">
-        <table class="archive-table">
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th>Active items</th>
-              <th>Archived</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="archived-projects-table-body"></tbody>
-        </table>
-        <p class="empty-hint" id="archived-projects-empty" hidden>No archived projects.</p>
-      </div>
+      <div id="archived-projects-grid"></div>
     </section>
 
     <section class="faq-admin-page faq-editor-page" id="faq-article-editor-page" hidden>
@@ -1097,97 +1107,201 @@
       </div>
     </section>
 
+    <section class="faq-admin-page" id="user-management-page" hidden>
+      <div class="page-header">
+        <h2>User Management</h2>
+      </div>
+      <nav class="um-subnav" aria-label="User Management">
+        <button type="button" class="um-tab" data-um-tab="users" id="um-tab-users">Users</button>
+        <button type="button" class="um-tab" data-um-tab="roles" id="um-tab-roles">Roles</button>
+        <button type="button" class="um-tab" data-um-tab="permissions" id="um-tab-permissions">Permissions</button>
+      </nav>
+
+      <!-- Users. Moved here from Settings → Team &amp; agent access. One list,
+           two things at once: who can open this console in a browser, and
+           whose AI agent may connect over MCP. Both resolve to the same
+           consoleUsers doc — see ../MCP.md and firestore.rules. -->
+      <div class="um-panel-body" data-um-panel="users" data-admin-only>
+        <p class="um-count" id="um-count" aria-live="polite"></p>
+        <div class="um-toolbar">
+          <div class="um-search">
+            <span class="material-symbols-outlined" aria-hidden="true">search</span>
+            <input type="search" id="um-search" placeholder="Search name, email or role" aria-label="Search users">
+          </div>
+          <button type="button" class="btn-primary" id="team-add-open">Add User</button>
+        </div>
+        <div class="um-bulk" id="um-bulk" hidden>
+          <span id="um-bulk-count"></span>
+          <label class="um-bulk-label" for="um-bulk-role">Set role</label>
+          <select id="um-bulk-role"></select>
+          <button type="button" class="btn-ghost" id="um-bulk-apply">Apply</button>
+          <button type="button" class="btn-ghost" id="um-bulk-deactivate">Deactivate</button>
+          <button type="button" class="btn-ghost" id="um-bulk-reactivate">Reactivate</button>
+        </div>
+        <div class="ag-theme-alpine um-grid" id="um-grid" aria-label="Users"></div>
+        <p class="tm-error" id="um-grid-error" role="alert" hidden></p>
+      </div>
+
+      <!-- Roles: internal IAM roles. Called "roles" in the UI, never "personas". -->
+      <div class="um-panel-body" data-um-panel="roles" data-admin-only hidden>
+        <p class="um-count" id="roles-count" aria-live="polite"></p>
+        <div class="um-toolbar">
+          <div class="um-search">
+            <span class="material-symbols-outlined" aria-hidden="true">search</span>
+            <input type="search" id="roles-search" placeholder="Search roles" aria-label="Search roles">
+          </div>
+          <button type="button" class="btn-primary" id="roles-create">Create role</button>
+        </div>
+        <div class="ag-theme-alpine um-grid" id="roles-grid" aria-label="Roles"></div>
+        <p class="tm-error" id="roles-error" role="alert" hidden></p>
+      </div>
+      <div class="um-panel-body" data-um-panel="permissions" hidden>
+        <p class="um-count">Choose what each role can open in the console. <b>View</b> opens a section read-only, <b>Edit</b> adds changes, and <b>Admin</b> also lets a person manage this matrix. Admins always keep User Management, so nobody can lock themselves out.</p>
+        <p class="um-count" id="permissions-status" role="status" aria-live="polite"></p>
+        <div id="permissions-matrix"></div>
+      </div>
+    </section>
+
+    <section class="faq-admin-page" id="access-denied-page" hidden>
+      <div class="page-header"><h2>No access</h2></div>
+      <p id="access-denied-text" class="interface-row-empty"></p>
+      <button type="button" class="btn-primary" id="access-denied-go" hidden>Go to a section you can open</button>
+    </section>
+
     <section class="faq-admin-page" id="faq-settings-page" hidden>
       <div class="page-header">
         <h2>Settings</h2>
       </div>
+      <div class="settings-layout">
+        <nav class="settings-submenu" id="settings-submenu" aria-label="Settings">
+          <button type="button" class="settings-submenu-item" data-settings-page="projects"><span class="material-symbols-outlined" aria-hidden="true">folder</span>Projects</button>
+          <button type="button" class="settings-submenu-item" data-settings-page="releases"><span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>Releases</button>
+          <button type="button" class="settings-submenu-item" data-settings-page="skills"><span class="material-symbols-outlined" aria-hidden="true">psychology</span>Skills &amp; phase bindings</button>
+          <button type="button" class="settings-submenu-item" data-settings-page="automations"><span class="material-symbols-outlined" aria-hidden="true">bolt</span>Automations</button>
+          <button type="button" class="settings-submenu-item" data-settings-page="integrations"><span class="material-symbols-outlined" aria-hidden="true">api</span>Integrations &amp; MCP</button>
+        </nav>
+        <div class="settings-content">
 
-      <!-- Team & agent access. One list, two things at once: who can open
-           this console in a browser, and whose AI agent may connect to it
-           over MCP. Both resolve to the same consoleUsers Firestore doc, so
-           adding or removing someone is a single act — see ../MCP.md and
-           firestore.rules' isBoardReader/isEditor/isAdmin. -->
-      <div class="docs-block team-admin-block" data-admin-only>
-        <div class="docs-block-header">
-          <h3>Team &amp; agent access
-            <span class="info-tip" tabindex="0" role="note" aria-label="About team and agent access" data-tip="Anyone listed here can sign in to the PH Agent Console (Google, or email and password) and connect their own AI agent. Editor can change the board; viewer can only read it; admin can also manage this list. Turning Agent off disconnects someone's agent immediately and leaves their browser access untouched."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
-          </h3>
-        </div>
-        <div class="team-sort-row">
-          <label class="field-label" for="team-sort">Sort by</label>
-          <select id="team-sort">
-            <option value="email" selected>Email</option>
-            <option value="activity">Last activity</option>
-          </select>
-        </div>
-        <div class="team-list" id="team-list"></div>
-        <button type="button" class="btn-primary team-add-open" id="team-add-open">Add user</button>
-      </div>
-
-      <!-- Every member sees this one: the address their own agent connects
-           to, and the connections they currently have. -->
-      <div class="docs-block">
-        <div class="docs-block-header">
-          <h3>Connect your AI agent</h3>
-        </div>
-        <p class="field-hint">Add the PH Agent Console to Claude (or any MCP client) as a remote MCP server. It will open a sign-in page — use the same account you're signed in with here. Your agent never sees your password, and everything it files or comments is recorded under your email.</p>
-        <div class="mcp-connect-box">
-          <span class="field-label" style="margin-top:0;">Server URL</span>
-          <code id="mcp-url">https://backlog-tracker-e4ed2.web.app/mcp</code>
-          <p class="field-hint">In Claude Code: <code style="display:inline;padding:2px 5px;">claude mcp add --transport http ph-console https://backlog-tracker-e4ed2.web.app/mcp</code></p>
-          <div class="form-row" style="justify-content:flex-start;gap:8px;">
-            <button type="button" class="btn-ghost" id="mcp-copy-btn">Copy URL</button>
-            <button type="button" class="btn-ghost" id="mcp-refresh-connections">Refresh connections</button>
+          <div class="settings-pane" data-settings-pane="projects" hidden>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Projects <span class="page-header-count" id="settings-projects-count"></span>
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About projects" data-tip="Every project on the board, with its type and the repository folder its work lands in. Archived projects can be restored from the archive."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-ghost" id="fa-open-archived-projects-btn">View archived projects</button>
+              </div>
+              <div id="settings-projects-grid"></div>
+            </div>
           </div>
-        </div>
-        <div class="mcp-connections" id="mcp-connections"></div>
-      </div>
 
-      <div class="docs-block" data-admin-only>
-        <h3>Analytics — FAQ / Help Center</h3>
-        <p class="field-hint">A Google Analytics measurement ID (e.g. <code>G-XXXXXXXXXX</code>) or a Google Tag Manager container ID (e.g. <code>GTM-XXXXXXX</code>) — set here once, it gets appended to every customer-facing FAQ page (the front page, category pages, article pages, and search), not just one. Leave blank to track nothing.</p>
-        <input type="text" id="fa-analytics-tag-input" maxlength="40" placeholder="G-XXXXXXXXXX or GTM-XXXXXXX">
-        <div class="form-row" style="justify-content:flex-end;">
-          <button type="button" class="btn-primary" id="fa-analytics-tag-save">Save</button>
-        </div>
-      </div>
-
-      <!-- Per-browser only — localStorage, never Firestore (see
-           createDictationController / bt-dictation-lang / bt-dictation-engine
-           in app.js). Lets a viewer compare Chrome's cloud vs. on-device
-           dictation engines for accuracy on real dictation. -->
-      <div class="docs-block">
-        <div class="docs-block-header">
-          <h3>Dictation</h3>
-        </div>
-        <p class="field-hint">Settings for the mic button on New backlog item and every comment box. Kept in this browser only — nothing here is shared with teammates.</p>
-        <div class="dictation-settings-row">
-          <div>
-            <label class="field-label" for="dictation-lang-select">Language</label>
-            <select id="dictation-lang-select">
-              <option value="en-GB">English (UK)</option>
-              <option value="en-US">English (US)</option>
-            </select>
+          <div class="settings-pane" data-settings-pane="releases" hidden>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Releases <span class="page-header-count" id="settings-releases-count"></span>
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About releases" data-tip="A release groups projects that go live together. Open the release manager to create or edit a release and mark it live."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-primary" id="settings-manage-releases-btn">Manage releases</button>
+              </div>
+              <div id="settings-releases-grid"></div>
+            </div>
           </div>
-          <div>
-            <label class="field-label" for="dictation-engine-select">Engine</label>
-            <select id="dictation-engine-select">
-              <option value="auto">Auto (cloud, English UK)</option>
-              <option value="cloud">Cloud</option>
-              <option value="local">On-device</option>
-            </select>
-          </div>
-          <button type="button" class="btn-ghost" id="dictation-install-btn">Install on-device pack</button>
-        </div>
-        <p class="field-hint" id="dictation-install-status"></p>
-      </div>
 
-      <div class="docs-block">
-        <div class="docs-block-header">
-          <h3>Archived projects</h3>
+          <div class="settings-pane" data-settings-pane="skills" hidden>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Skills bound to phases
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About phase bindings" data-tip="Skills listed here are pulled in and applied automatically whenever a build or a deploy session starts."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <div id="settings-bindings-grid"></div>
+            </div>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Skills library <span class="page-header-count" id="settings-skills-count"></span>
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About the skills library" data-tip="Shared guidance every build session can draw on. Open the skills manager to add, edit or delete a skill, see its history and the misses reported against it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-primary" id="settings-manage-skills-btn">Manage skills</button>
+              </div>
+              <div id="settings-skills-grid"></div>
+            </div>
+          </div>
+
+          <div class="settings-pane" data-settings-pane="automations" hidden>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Automations
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About automations" data-tip="The automations behind the board's buttons. They share one set of instructions kept in the repository. A member can bind a personal automation of their own through the connected AI agent."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <div id="settings-automations-grid"></div>
+            </div>
+          </div>
+
+          <div class="settings-pane" data-settings-pane="integrations" hidden>
+            <!-- Every member sees this one: the address their own agent
+                 connects to, and the connections they currently have. -->
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Connect your AI agent
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About connecting your AI agent" data-tip="Add the console to Claude (or any MCP client) as a remote MCP server. It opens a sign-in page: use the same account you are signed in with here. Your agent never sees your password, and everything it files or comments is recorded under your email."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <div class="mcp-connect-box">
+                <span class="field-label" style="margin-top:0;">Server URL</span>
+                <code id="mcp-url">https://backlog-tracker-e4ed2.web.app/mcp</code>
+                <p class="field-hint">In Claude Code: <code style="display:inline;padding:2px 5px;">claude mcp add --transport http ph-console https://backlog-tracker-e4ed2.web.app/mcp</code></p>
+                <div class="form-row" style="justify-content:flex-start;gap:8px;">
+                  <button type="button" class="btn-ghost" id="mcp-copy-btn">Copy URL</button>
+                  <button type="button" class="btn-ghost" id="mcp-refresh-connections">Refresh connections</button>
+                </div>
+              </div>
+              <div class="mcp-connections" id="mcp-connections"></div>
+            </div>
+
+            <div class="docs-block" data-admin-only>
+              <div class="docs-block-header">
+                <h3>Analytics — Help Centre
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About the analytics tag" data-tip="A Google Analytics measurement ID (for example G-XXXXXXXXXX) or a Google Tag Manager container ID (for example GTM-XXXXXXX). It is added to every customer-facing help centre page. Leave blank to track nothing."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <input type="text" id="fa-analytics-tag-input" maxlength="40" placeholder="G-XXXXXXXXXX or GTM-XXXXXXX" aria-label="Analytics tag ID">
+              <div class="form-row" style="justify-content:flex-end;">
+                <button type="button" class="btn-primary" id="fa-analytics-tag-save">Save</button>
+              </div>
+            </div>
+
+            <!-- Per-browser only — localStorage, never Firestore (see
+                 createDictationController / bt-dictation-lang / bt-dictation-engine
+                 in app.js). -->
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Dictation
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About dictation" data-tip="Settings for the mic button on New backlog item and every comment box. Kept in this browser only; nothing here is shared with teammates."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <div class="dictation-settings-row">
+                <div>
+                  <label class="field-label" for="dictation-lang-select">Language</label>
+                  <select id="dictation-lang-select">
+                    <option value="en-GB">English (UK)</option>
+                    <option value="en-US">English (US)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="dictation-engine-select">Engine</label>
+                  <select id="dictation-engine-select">
+                    <option value="auto">Auto (cloud, English UK)</option>
+                    <option value="cloud">Cloud</option>
+                    <option value="local">On-device</option>
+                  </select>
+                </div>
+                <button type="button" class="btn-ghost" id="dictation-install-btn">Install on-device pack</button>
+              </div>
+              <p class="field-hint" id="dictation-install-status"></p>
+            </div>
+          </div>
+
         </div>
-        <p class="field-hint">Whole projects that have been archived off the board — restore one to bring it back.</p>
-        <button type="button" class="btn-ghost" id="fa-open-archived-projects-btn">View archived projects</button>
       </div>
     </section>
 
@@ -1471,22 +1585,7 @@
       <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
         <button type="button" class="btn-primary" id="releases-add-btn" data-editor-only>+ New release</button>
       </div>
-      <div class="archive-table-wrap">
-        <table class="archive-table">
-          <thead>
-            <tr>
-              <th>Release</th>
-              <th>Version</th>
-              <th>Status</th>
-              <th>Projects</th>
-              <th>Created</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="releases-table-body"></tbody>
-        </table>
-        <p class="empty-hint" id="releases-empty" hidden>No releases yet.</p>
-      </div>
+      <div id="releases-grid"></div>
     </section>
 
     <!-- Phone only: the actions of whichever project you're currently
@@ -1499,7 +1598,7 @@
     <!-- Shown only when auth-gate.js resolves the signed-in person as a
          viewer (see styles.css "Roles"); firestore.rules refuses their
          writes, so saying so up front beats letting clicks fail. -->
-    <div class="readonly-banner" id="readonly-banner">You have read-only access to this console. An admin can change your role in Settings &rarr; Team &amp; agent access.</div>
+    <div class="readonly-banner" id="readonly-banner">You have read-only access to this console. An admin can change your role in User Management &rarr; Users.</div>
 
     <div id="projects-root"></div>
 

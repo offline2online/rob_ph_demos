@@ -31,6 +31,9 @@ import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js"
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
+import { renderMarkdown } from "./docs-markdown.js";
+import { createDocsList } from "./docs-grid.js";
+import { SETTINGS_PAGES, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
 import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, getAvatarMember, normEmail, checkAvatarFile, avatarBlobFromFile } from "./avatar.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { ENTITY_TYPES, TYPE_PLATFORM, TYPE_INTERNAL, typeOf, matchesTypeFilter, typeBadgeHTML, typeOptionsHTML } from "./entity-type.js";
@@ -41,6 +44,9 @@ import { packageBacklog, groomButtonVisible, DEFAULT_GROOM_THRESHOLD, DEFAULT_PA
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 import { createResultReader, useContinuousMode } from "./dictation-results.js";
 import { loadQuill } from "./quill-loader.js";
+import { userRows, mountUsersGrid } from "./user-management.js";
+import { LEVELS, LEVEL_LABELS, SECTIONS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, setLevel, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel } from "./permissions.js";
+import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -529,10 +535,13 @@ document.addEventListener("keydown", (e) => {
 // "Settings" to "FAQ Management" (or back), which rendered both blocks
 // stacked on screen simultaneously.
 function closeAllSubPages() {
+  const deniedPage = document.getElementById("access-denied-page");
+  if (deniedPage) deniedPage.hidden = true;
   closeArchivePage();
   closeArchivedProjectsPage();
   closeDocsPage();
   closeFaqSettingsPage();
+  closeUserManagementPage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
@@ -555,6 +564,11 @@ function closeAllSubPages() {
 }
 function returnToBoard() {
   closeAllSubPages();
+  if (!sectionAllowed("agent-board")) {
+    const next = firstAllowedSection(accessLevels);
+    if (next && SECTION_HASH[next]) { window.location.hash = SECTION_HASH[next]; return; }
+    showAccessDenied("agent-board");
+  }
 }
 document.getElementById("nav-ph-console-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
 // The logo in the top-left corner is clickable from anywhere in the app,
@@ -2822,7 +2836,7 @@ function onListenerError(collectionName) {
           strip.innerHTML = "";
           const note = document.createElement("div");
           note.className = "health-seg health-seg-bad";
-          note.textContent = "The board refused this account's reads. Sign out and back in; if it persists, ask an admin to check your row in Settings → Team & agent access.";
+          note.textContent = "The board refused this account's reads. Sign out and back in; if it persists, ask an admin to check your row in User Management → Users.";
           strip.appendChild(note);
         }
         return;
@@ -3090,6 +3104,43 @@ primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
 // projectDocs, skills, concepts and the FAQ collections are not part of the
 // board page: each starts (REST prime + live listener, kept for the rest of
 // the session) the first time a page that uses it opens — see ensureLazy().
+// ── Permissions: what the signed-in person's assigned role lets them open ──
+// `accessLevels` is null until the person's own consoleUsers row and the roles
+// have loaded (unrestricted until then, as before roles existed). See
+// permissions.js; the matrix itself is User Management → Permissions.
+let accessLevels = null;
+let accessSelfRoleId = "";
+let accessRoles = [];
+let accessRolesLoaded = false;
+let accessRowLoaded = false;
+const sectionAllowed = (key) => canView(accessLevels, key);
+const canEditSection = (key) => canEdit(accessLevels, key);
+function showAccessDenied(key) {
+  const label = (SECTIONS.find((s) => s.key === key) || {}).label || "this section";
+  const next = firstAllowedSection(accessLevels);
+  const page = document.getElementById("access-denied-page");
+  document.getElementById("access-denied-text").textContent = `Your role doesn't include access to ${label}. An admin can change that in User Management → Permissions.`;
+  const go = document.getElementById("access-denied-go");
+  go.hidden = !next;
+  go.dataset.hash = next ? SECTION_HASH[next] : "";
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  page.hidden = false;
+}
+// Used at the top of every page-opening function: false means the page was
+// replaced by the "no access" notice and the caller must stop.
+function pageAllowed(key) {
+  if (sectionAllowed(key)) return true;
+  showAccessDenied(key);
+  return false;
+}
+function applyAccessStyles() {
+  const el = document.getElementById("perm-style");
+  if (!el) return;
+  el.textContent = permissionCss(accessLevels);
+}
+
 const lazyStarters = {};
 const lazyStarted = new Set();
 function ensureLazy(...names) {
@@ -3159,6 +3210,7 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   projectsLoaded = true;
   render();
   if (staffKanban && !staffKanbanPage.hidden) staffKanban.refresh(); // names on cards, the Project filter
+  renderSettingsGrids();
   if (archiveProjectId) renderArchivePage();
   if (docsProjectId) renderDocsPage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
@@ -3222,6 +3274,7 @@ const startSkillsListener = () => onSnapshot(query(skillsRef, orderBy("name", "a
   markLive("skills", snap);
   skills = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
+  renderSettingsGrids();
 }, onListenerError("skills"));
 
 const startConceptsListener = () => onSnapshot(query(conceptsRef, orderBy("updatedAt", "desc")), (snap) => {
@@ -5875,7 +5928,6 @@ document.getElementById("np-submit").addEventListener("click", async () => {
 const archivePage = document.getElementById("archive-page");
 const archiveFilterType = document.getElementById("archive-filter-type");
 const archiveFilterCategory = document.getElementById("archive-filter-category");
-const archiveFilterSearch = document.getElementById("archive-filter-search");
 archiveFilterCategory.innerHTML =
   '<option value="">All areas</option>' +
   CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
@@ -5894,7 +5946,6 @@ function openArchivePage(pid) {
   archiveFilters = { type: "", category: "", search: "" };
   archiveFilterType.value = "";
   archiveFilterCategory.value = "";
-  archiveFilterSearch.value = "";
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   archivePage.hidden = false;
@@ -5908,21 +5959,28 @@ function closeArchivePage() {
   document.getElementById("board-page-header").hidden = false;
 }
 
-function archiveRowHTML(item) {
-  const date = item.archivedAt && item.archivedAt.toDate ? item.archivedAt.toDate() : null;
-  const dateStr = date ? date.toLocaleDateString() : "—";
-  return `
-    <tr data-id="${item.id}">
-      <td><span class="badge badge-${item.type}">${item.type === "bug" ? "Bug" : "Feature"}</span></td>
-      <td><span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span></td>
-      <td>
-        <p class="archive-row-title">${escapeHTML(item.title)}</p>
-        <p class="archive-row-desc">${escapeHTML(item.desc)}</p>
-      </td>
-      <td class="archive-row-version">${item.testVersion ? `v${escapeHTML(item.testVersion)}` : "—"}</td>
-      <td class="archive-row-date">${dateStr}</td>
-      <td><button type="button" class="restore-btn" data-id="${item.id}">Restore</button></td>
-    </tr>`;
+const archiveDateOf = (item) => (item.archivedAt && item.archivedAt.toDate ? item.archivedAt.toDate() : null);
+let archiveList = null;
+function getArchiveList() {
+  if (!archiveList) {
+    archiveList = createDocsList(document.getElementById("archive-grid"), {
+      id: "archived-tickets", searchLabel: "Search title or description", emptyText: "No archived tickets match these filters.",
+      columns: [
+        { key: "type", header: "Type", width: 110, text: (i) => i.type || "", html: (i) => `<span class="badge badge-${escapeHTML(i.type)}">${i.type === "bug" ? "Bug" : "Feature"}</span>` },
+        { key: "category", header: "Area", width: 170, text: (i) => i.category || "Uncategorised", html: (i) => `<span class="card-cat">${escapeHTML(i.category || "Uncategorised")}</span>` },
+        { key: "title", header: "Ticket", flex: 1, minWidth: 260, text: (i) => `${i.title || ""} ${i.desc || ""}`,
+          html: (i) => `<p class="archive-row-title">${escapeHTML(i.title)}</p><p class="archive-row-desc">${escapeHTML(i.desc)}</p>` },
+        { key: "version", header: "Version", width: 110, text: (i) => (i.testVersion ? `v${i.testVersion}` : ""), html: (i) => (i.testVersion ? `v${escapeHTML(i.testVersion)}` : "—") },
+        { key: "date", header: "Date", width: 130, text: (i) => { const d = archiveDateOf(i); return d ? d.toISOString() : ""; }, html: (i) => { const d = archiveDateOf(i); return d ? escapeHTML(d.toLocaleDateString()) : "—"; } },
+        { key: "action", header: "", width: 110, sortable: false, text: () => "", html: (i) => `<button type="button" class="restore-btn" data-id="${escapeHTML(i.id)}">Restore</button>` },
+      ],
+    });
+    document.getElementById("archive-grid").addEventListener("click", (e) => {
+      const btn = e.target.closest(".restore-btn");
+      if (btn) restoreItem(btn.dataset.id);
+    });
+  }
+  return archiveList;
 }
 
 function renderArchivePage() {
@@ -5934,53 +5992,12 @@ function renderArchivePage() {
   );
   if (archiveFilters.type) rows = rows.filter((i) => i.type === archiveFilters.type);
   if (archiveFilters.category) rows = rows.filter((i) => i.category === archiveFilters.category);
-  if (archiveFilters.search) {
-    const q = archiveFilters.search.toLowerCase();
-    rows = rows.filter(
-      (i) => (i.title || "").toLowerCase().includes(q) || (i.desc || "").toLowerCase().includes(q)
-    );
-  }
-
-  const dir = archiveSort.dir === "asc" ? 1 : -1;
-  rows.sort((a, b) => {
-    let av, bv;
-    if (archiveSort.field === "date") {
-      av = a.archivedAt && a.archivedAt.toMillis ? a.archivedAt.toMillis() : 0;
-      bv = b.archivedAt && b.archivedAt.toMillis ? b.archivedAt.toMillis() : 0;
-    } else if (archiveSort.field === "title") {
-      av = (a.title || "").toLowerCase(); bv = (b.title || "").toLowerCase();
-    } else if (archiveSort.field === "category") {
-      av = (a.category || ""); bv = (b.category || "");
-    } else {
-      av = (a.type || ""); bv = (b.type || "");
-    }
-    if (av < bv) return -1 * dir;
-    if (av > bv) return 1 * dir;
-    return 0;
-  });
+  rows.sort((a, b) => (b.archivedAt && b.archivedAt.toMillis ? b.archivedAt.toMillis() : 0) - (a.archivedAt && a.archivedAt.toMillis ? a.archivedAt.toMillis() : 0));
 
   document.getElementById("archive-page-count").textContent =
     `${rows.length} ticket${rows.length === 1 ? "" : "s"}`;
-  document.getElementById("archive-table-body").innerHTML = rows.map(archiveRowHTML).join("");
-  document.getElementById("archive-table-empty").hidden = rows.length !== 0;
-
-  document.querySelectorAll(".archive-table th[data-sort]").forEach((th) => {
-    th.toggleAttribute("data-sort-active", th.dataset.sort === archiveSort.field);
-  });
+  getArchiveList().setRows(rows);
 }
-
-
-document.querySelectorAll(".archive-table th[data-sort]").forEach((th) => {
-  th.addEventListener("click", () => {
-    const field = th.dataset.sort;
-    if (archiveSort.field === field) {
-      archiveSort.dir = archiveSort.dir === "asc" ? "desc" : "asc";
-    } else {
-      archiveSort = { field, dir: "asc" };
-    }
-    renderArchivePage();
-  });
-});
 
 archiveFilterType.addEventListener("change", () => {
   archiveFilters.type = archiveFilterType.value;
@@ -5989,15 +6006,6 @@ archiveFilterType.addEventListener("change", () => {
 archiveFilterCategory.addEventListener("change", () => {
   archiveFilters.category = archiveFilterCategory.value;
   renderArchivePage();
-});
-archiveFilterSearch.addEventListener("input", () => {
-  archiveFilters.search = archiveFilterSearch.value;
-  renderArchivePage();
-});
-
-document.getElementById("archive-table-body").addEventListener("click", (e) => {
-  const btn = e.target.closest(".restore-btn");
-  if (btn) restoreItem(btn.dataset.id);
 });
 
 // ── Archived projects page (top-level — a whole project, not one ticket) ──
@@ -6018,34 +6026,38 @@ function closeArchivedProjectsPage() {
   document.getElementById("board-page-header").hidden = false;
 }
 
-function archivedProjectRowHTML(p) {
-  const activeCount = activeItemCountForProject(p.id);
-  const date = p.archivedAt && p.archivedAt.toDate ? p.archivedAt.toDate() : null;
-  const dateStr = date ? date.toLocaleDateString() : "—";
-  return `
-    <tr data-project-id="${escapeHTML(p.id)}">
-      <td>${escapeHTML(p.name)}</td>
-      <td>${activeCount} active item${activeCount === 1 ? "" : "s"}</td>
-      <td>${dateStr}</td>
-      <td><button type="button" class="restore-btn restore-project-btn" data-project-id="${escapeHTML(p.id)}">Restore</button></td>
-    </tr>`;
+let archivedProjectsList = null;
+function getArchivedProjectsList() {
+  if (!archivedProjectsList) {
+    archivedProjectsList = createDocsList(document.getElementById("archived-projects-grid"), {
+      id: "archived-projects", searchLabel: "Search archived projects", emptyText: "No archived projects.",
+      columns: [
+        { key: "name", header: "Project", flex: 1, minWidth: 220, text: (p) => p.name || "", html: (p) => escapeHTML(p.name) },
+        { key: "active", header: "Active items", width: 150, text: (p) => String(activeItemCountForProject(p.id)).padStart(6, "0"),
+          html: (p) => { const n = activeItemCountForProject(p.id); return `${n} active item${n === 1 ? "" : "s"}`; } },
+        { key: "archived", header: "Archived", width: 140, text: (p) => (p.archivedAt && p.archivedAt.toDate ? p.archivedAt.toDate().toISOString() : ""),
+          html: (p) => (p.archivedAt && p.archivedAt.toDate ? escapeHTML(p.archivedAt.toDate().toLocaleDateString()) : "—") },
+        { key: "action", header: "", width: 110, sortable: false, text: () => "", html: (p) => `<button type="button" class="restore-btn restore-project-btn" data-project-id="${escapeHTML(p.id)}">Restore</button>` },
+      ],
+    });
+    document.getElementById("archived-projects-grid").addEventListener("click", (e) => {
+      const btn = e.target.closest(".restore-project-btn");
+      if (btn) restoreProject(btn.dataset.projectId);
+    });
+  }
+  return archivedProjectsList;
 }
 
 function renderArchivedProjectsPage() {
   const rows = projects.filter((p) => p.archived);
   document.getElementById("archived-projects-count").textContent =
     `${rows.length} project${rows.length === 1 ? "" : "s"}`;
-  document.getElementById("archived-projects-table-body").innerHTML = rows.map(archivedProjectRowHTML).join("");
-  document.getElementById("archived-projects-empty").hidden = rows.length !== 0;
+  getArchivedProjectsList().setRows(rows);
 }
 
 // Reached from the Settings page now, not the nav drawer — see the
 // "Archived projects" docs-block in faq-settings-page.
 document.getElementById("fa-open-archived-projects-btn").addEventListener("click", () => { closeFaqSettingsPage(); openArchivedProjectsPage(); });
-document.getElementById("archived-projects-table-body").addEventListener("click", (e) => {
-  const btn = e.target.closest(".restore-project-btn");
-  if (btn) restoreProject(btn.dataset.projectId);
-});
 
 // ── Docs page (per-project requirements + interfaces with other projects) ─
 const docsPage = document.getElementById("docs-page");
@@ -6104,10 +6116,13 @@ document.getElementById("docs-origin-concept-link").addEventListener("click", (e
 document.getElementById("docs-open-releases-btn").addEventListener("click", () => openReleasesPage());
 
 function openDocsPage(pid) {
+  if (!pageAllowed("project-docs")) return;
   closeAllSubPages();
   ensureLazy("projectDocs");
   ensureLazy("concepts");
   docsProjectId = pid;
+  docsTab = "general";
+  docsEditing.clear();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   docsPage.hidden = false;
@@ -6145,10 +6160,6 @@ function interfaceRowHTML(f, anchorId) {
       ${contentPreview}
     </div>`;
 }
-
-// Whether the "Superseded (N)" fold is open; renderDocsPage rebuilds the
-// list on every snapshot, so the state lives here, not in the DOM.
-let docsSupersededOpen = false;
 
 function renderDocsPage() {
   if (!docsProjectId) return;
@@ -6231,23 +6242,146 @@ function renderDocsPage() {
     syncBanner.hidden = !behind;
     syncBanner.textContent = behind ? `${behind.label || "Docs behind main"} — ${behind.text} The repo file is the source of truth; run the project's docs sync (or fix the cause above) to bring this copy up to date.` : "";
   }
+  applyDocsTab();
+  renderDocsMarkdownViews();
   const rows = interfacesForProject(docsProjectId);
-  document.getElementById("docs-interfaces-list").innerHTML = rows.length
-    ? rows.map((f) => interfaceRowHTML(f, docsProjectId)).join("")
-    : '<p class="interface-row-empty">No interfaces defined with another project or concept yet.</p>';
+  docsInterfacesList().setRows(rows.map((f) => ({ ...f, anchorId: docsProjectId })));
   const docRows = docsForProject(docsProjectId);
   const ordered = orderProjectDocs(docRows, project);
-  const folded = ordered.superseded.length
-    ? `<details class="docs-superseded" id="docs-superseded"${docsSupersededOpen ? " open" : ""}>
-        <summary>Superseded (${ordered.superseded.length})</summary>
-        ${ordered.superseded.map((d) => projectDocRowHTML(d, { showNote: true })).join("")}
-      </details>`
-    : "";
-  document.getElementById("docs-extra-docs-list").innerHTML = docRows.length
-    ? (ordered.startHere ? projectDocRowHTML(ordered.startHere, { startHere: true, showNote: true }) : "") +
-      ordered.current.map((d) => projectDocRowHTML(d)).join("") + folded
-    : '<p class="interface-row-empty">No additional documents yet.</p>';
+  docsDocumentsList().setRows([
+    ...(ordered.startHere ? [{ ...ordered.startHere, startHere: true }] : []),
+    ...ordered.current, ...ordered.superseded,
+  ]);
+  docsRevisionsList().setRows(docsRevisionRows(docsProjectId));
 }
+
+// ── Docs page tabs, reading views and lists (the PH restyle) ─────────────
+let docsTab = "general";
+const docsEditing = new Set();
+const DOCS_TABS = ["general", "readme", "requirements", "documents", "interfaces", "revisions"];
+
+function applyDocsTab() {
+  document.querySelectorAll("#docs-page [data-docs-tab]").forEach((el) => {
+    if (el.classList.contains("docs-tab")) return;
+    el.classList.toggle("docs-tab-off", el.dataset.docsTab !== docsTab);
+  });
+  document.querySelectorAll("#docs-tabs .docs-tab").forEach((b) => {
+    const on = b.dataset.tab === docsTab;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+  });
+}
+
+function renderDocsMarkdownViews() {
+  for (const kind of ["readme", "requirements"]) {
+    const input = document.getElementById(`docs-${kind}-input`);
+    const view = document.getElementById(`docs-${kind}-view`);
+    const block = view.closest(".docs-block");
+    const mirrored = input.readOnly;
+    const editing = docsEditing.has(kind) && !mirrored && !input.disabled;
+    block.classList.toggle("docs-editing", editing);
+    const btn = document.getElementById(`docs-${kind}-edit`);
+    btn.hidden = mirrored;
+    btn.textContent = editing ? "Done" : "Edit";
+    btn.disabled = input.disabled;
+    const text = input.disabled ? input.value : projectDocText.get(`${docsProjectId}/${kind}`);
+    view.innerHTML = text
+      ? (input.disabled ? `<p class="interface-row-empty">${escapeHTML(text)}</p>` : renderMarkdown(text))
+      : `<p class="interface-row-empty">No ${kind === "readme" ? "README" : "requirements"} written yet.</p>`;
+  }
+}
+document.getElementById("docs-tabs").addEventListener("click", (e) => {
+  const b = e.target.closest(".docs-tab");
+  if (!b || !DOCS_TABS.includes(b.dataset.tab)) return;
+  docsTab = b.dataset.tab;
+  if (docsTab === "revisions") { docsRevisionsByProject.delete(docsProjectId); loadDocsRevisions(docsProjectId); }
+  applyDocsTab();
+});
+for (const kind of ["readme", "requirements"]) {
+  document.getElementById(`docs-${kind}-edit`).addEventListener("click", () => {
+    if (docsEditing.has(kind)) docsEditing.delete(kind); else docsEditing.add(kind);
+    renderDocsMarkdownViews();
+    if (docsEditing.has(kind)) document.getElementById(`docs-${kind}-input`).focus();
+  });
+}
+
+let docsListsCache = null;
+function docsLists() {
+  if (docsListsCache) return docsListsCache;
+  const preview = (t, n = 160) => { const x = String(t || "").replace(/\s+/g, " ").trim(); return x.length > n ? x.slice(0, n) + "…" : x; };
+  docsListsCache = {
+    documents: createDocsList(document.getElementById("docs-extra-docs-list"), {
+      id: "documents", searchLabel: "Search documents", emptyText: "No additional documents yet.",
+      columns: [
+        { key: "name", header: "Document", flex: 2, text: (d) => d.name || "",
+          html: (d) => `<div class="interface-row-title">${d.startHere ? '<span class="material-symbols-outlined docs-start-icon">flag</span>' : ""}${escapeHTML(d.name)}</div>` +
+            `<div class="docs-row-chips">${d.startHere ? startHereChipHTML() : ""}${isMirror(d) ? mirrorChipHTML(d) : ""}</div>` +
+            (d.startHere && d.statusNote ? `<p class="docs-status-note">${escapeHTML(d.statusNote)}</p>` : "") },
+        { key: "status", header: "Status", width: 120, text: (d) => (d.status && d.status !== "current" ? d.status : "current"),
+          html: (d) => `<span class="docs-status-chip">${escapeHTML(d.status && d.status !== "current" ? d.status : "current")}</span>` },
+        { key: "excerpt", header: "Content", flex: 3, text: (d) => d.contentMd || "",
+          html: (d) => d.contentMd ? `<span class="docs-cell-preview">${escapeHTML(preview(d.contentMd))}</span>` : '<span class="interface-row-empty">No content written yet.</span>' },
+        { key: "actions", header: "", width: 96, sortable: false, text: () => "",
+          html: (d) => `<div class="interface-row-actions">${isMirror(d) ? openInGithubHTML(d) : `<button type="button" class="icon-btn doc-edit-btn" data-id="${escapeHTML(d.id)}" title="Edit" aria-label="Edit">&#9998;</button>`}<button type="button" class="icon-btn doc-delete-btn" data-id="${escapeHTML(d.id)}" title="Remove" aria-label="Remove">&times;</button></div>` },
+      ],
+    }),
+    interfaces: createDocsList(document.getElementById("docs-interfaces-list"), {
+      id: "interfaces", searchLabel: "Search interfaces", emptyText: "No interfaces defined with another project or concept yet.",
+      columns: [
+        { key: "name", header: "Interface", flex: 2, text: (f) => f.name || "",
+          html: (f) => `<div class="interface-row-title">${escapeHTML(f.name)}</div>${isMirror(f) ? `<div class="docs-row-chips">${mirrorChipHTML(f)}</div>` : ""}` },
+        { key: "with", header: "With", flex: 1, text: (f) => endpointName(endpointOther(f, f.anchorId)) || "",
+          html: (f) => { const o = endpointOther(f, f.anchorId); return `<b>${escapeHTML(endpointName(o))}</b>${o && o.type === "concept" ? " (concept)" : ""}${(f.history || []).length ? ` &middot; re-pointed ${(f.history || []).length}&times;` : ""}`; } },
+        { key: "excerpt", header: "Contract", flex: 3, text: (f) => f.contentMd || "",
+          html: (f) => f.contentMd ? `<span class="docs-cell-preview">${escapeHTML(preview(f.contentMd))}</span>` : '<span class="interface-row-empty">No contract written yet.</span>' },
+        { key: "actions", header: "", width: 96, sortable: false, text: () => "",
+          html: (f) => `<div class="interface-row-actions">${interfaceActionsHTML(f, f.anchorId)}</div>` },
+      ],
+    }),
+    revisions: createDocsList(document.getElementById("docs-revisions-list"), {
+      id: "revisions", searchLabel: "Search revisions", emptyText: "No revisions recorded for this project yet.",
+      columns: [
+        { key: "name", header: "Document", flex: 2, text: (r) => r.name || r.target || "", html: (r) => escapeHTML(r.name || r.target || "(unnamed)") },
+        { key: "target", header: "Kind", width: 150, text: (r) => r.target || "", html: (r) => `<span class="docs-status-chip">${escapeHTML(r.target || "")}</span>` },
+        { key: "at", header: "Replaced", width: 180, text: (r) => String(r.atMs || 0).padStart(15, "0"),
+          html: (r) => escapeHTML(r.atMs ? new Date(r.atMs).toLocaleString() : "") },
+        { key: "by", header: "By", flex: 1, text: (r) => r.replacedByEmail || "", html: (r) => escapeHTML(r.replacedByEmail || "") },
+        { key: "via", header: "Via", width: 110, text: (r) => r.replacedVia || "", html: (r) => escapeHTML(r.replacedVia || "") },
+        { key: "chars", header: "Characters", width: 120, text: (r) => String(r.chars || 0).padStart(9, "0"), html: (r) => escapeHTML(String(r.chars == null ? "" : r.chars)) },
+      ],
+    }),
+  };
+  return docsListsCache;
+}
+const docsDocumentsList = () => docsLists().documents;
+const docsInterfacesList = () => docsLists().interfaces;
+const docsRevisionsList = () => docsLists().revisions;
+
+// Revisions are read over REST with a field mask: contentMd (up to 200k
+// characters a row) never comes down just to draw a list.
+const docsRevisionsByProject = new Map();
+async function loadDocsRevisions(pid) {
+  if (!pid || docsRevisionsByProject.has(pid)) return;
+  docsRevisionsByProject.set(pid, []);
+  try {
+    const docs = await restRunQuery({
+      from: [{ collectionId: "docRevisions" }],
+      where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: pid } } },
+      select: { fields: ["target", "name", "projectId", "chars", "replacedAt", "replacedByEmail", "replacedVia"].map((f) => ({ fieldPath: f })) },
+      limit: 300,
+    });
+    docsRevisionsByProject.set(pid, docs.map((d) => {
+      const r = { id: d.name.split("/").pop(), ...restFields(d.fields) };
+      r.atMs = tsToMs(r.replacedAt);
+      return r;
+    }).sort((a, b) => b.atMs - a.atMs));
+  } catch (err) {
+    docsRevisionsByProject.delete(pid);
+    console.warn("backlog-tracker: couldn't load doc revisions", err);
+  }
+  if (docsProjectId === pid) renderDocsPage();
+}
+function docsRevisionRows(pid) { return docsRevisionsByProject.get(pid) || []; }
 
 document.getElementById("docs-description-save").addEventListener("click", async () => {
   if (!docsProjectId) return;
@@ -6336,9 +6470,6 @@ document.getElementById("docs-extra-docs-list").addEventListener("click", (e) =>
   const delBtn = e.target.closest(".doc-delete-btn");
   if (delBtn) { confirmDeleteProjectDoc(delBtn.dataset.id); return; }
 });
-document.getElementById("docs-extra-docs-list").addEventListener("toggle", (e) => {
-  if (e.target && e.target.id === "docs-superseded") docsSupersededOpen = e.target.open;
-}, true);
 async function confirmDeleteProjectDoc(id) {
   const d = projectDocs.find((x) => x.id === id);
   if (d && isMirror(d) && !(await showConfirmDialog(mirrorDeleteWarning(d), { okLabel: "Delete", danger: true }))) return;
@@ -6541,8 +6672,8 @@ const conceptDetailPage = document.getElementById("concept-detail-page");
 
 async function requireConceptEditor() {
   if (!(await requireFaqEditor())) return false;
-  if (currentConsoleRole() === "viewer") {
-    await showAlert("You have read-only access to this console, so you can't add, edit, comment on or promote concepts. An admin can change your role in Settings → Team & agent access.");
+  if (currentConsoleRole() === "viewer" || !canEditSection("concepts")) {
+    await showAlert("You have read-only access to this console, so you can't add, edit, comment on or promote concepts. An admin can change your role in User Management → Users.");
     return false;
   }
   return true;
@@ -6737,6 +6868,7 @@ document.getElementById("docs-demote-btn").addEventListener("click", async () =>
 });
 
 function openConceptIncubatorPage() {
+  if (!pageAllowed("concepts")) return;
   closeAllSubPages();
   ensureLazy("concepts");
   document.getElementById("projects-root").hidden = true;
@@ -6755,6 +6887,7 @@ function closeConceptIncubatorPage() {
 // URL-routed as #concept-<conceptId> (see openConceptRouteFromHash), so a
 // concept's docs page can be linked to and reloaded.
 function openConceptDetailPage(id) {
+  if (!pageAllowed("concepts")) return;
   const target = `#concept-${encodeURIComponent(id)}`;
   const arrivedByLink = window.location.hash === target;
   closeAllSubPages();
@@ -7654,6 +7787,7 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
 const releasesPage = document.getElementById("releases-page");
 
 function openReleasesPage() {
+  if (!pageAllowed("releases")) return;
   ensureLazy("concepts");
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
@@ -7671,37 +7805,49 @@ function closeReleasesPage() {
 
 async function requireReleaseEditor() {
   if (!(await requireFaqEditor())) return false;
-  if (currentConsoleRole() === "viewer") {
-    await showAlert("You have read-only access to this console, so you can't create releases or mark them live. An admin can change your role in Settings → Team & agent access.");
+  if (currentConsoleRole() === "viewer" || !canEditSection("releases")) {
+    await showAlert("You have read-only access to this console, so you can't create releases or mark them live. An admin can change your role in User Management → Users.");
     return false;
   }
   return true;
 }
 
-function releaseRowHTML(r) {
-  const created = r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString() : "—";
+let releasesList = null;
+function releaseCells(r) {
   const liveOn = r.madeLiveAt && r.madeLiveAt.toDate ? r.madeLiveAt.toDate().toLocaleDateString() : "";
   const isLive = r.status === "live";
   const current = currentLiveRelease();
   const isCurrent = !!(current && current.id === r.id);
   const projectCount = projects.filter((p) => p.releaseId === r.id && !p.archived).length;
   const conceptCount = releaseConceptIds(r).length;
-  return `
-    <tr data-release-id="${escapeHTML(r.id)}">
-      <td><a href="#" class="release-edit-link" data-release-id="${escapeHTML(r.id)}">${escapeHTML(r.name || "")}</a></td>
-      <td>${r.version ? escapeHTML(r.version) : "—"}</td>
-      <td><span class="badge ${isLive ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(RELEASE_STATUS_LABELS[r.status] || r.status || "")}</span>${liveOn ? ` <span class="field-hint">${escapeHTML(isCurrent ? `current · ${liveOn}` : liveOn)}</span>` : ""}</td>
-      <td>${projectCount} project${projectCount === 1 ? "" : "s"}${conceptCount ? `, ${conceptCount} concept${conceptCount === 1 ? "" : "s"}` : ""}</td>
-      <td>${escapeHTML(created)}</td>
-      <td>${isLive ? "" : `<button type="button" class="restore-btn release-mark-live-btn" data-release-id="${escapeHTML(r.id)}" data-editor-only>Mark live</button>`}</td>
-    </tr>`;
+  return { liveOn, isLive, isCurrent, projectCount, conceptCount };
+}
+function getReleasesList() {
+  if (!releasesList) {
+    releasesList = createDocsList(document.getElementById("releases-grid"), {
+      id: "releases", searchLabel: "Search releases", emptyText: "No releases yet.",
+      columns: [
+        { key: "name", header: "Release", flex: 1, minWidth: 200, text: (r) => r.name || "",
+          html: (r) => `<a href="#" class="release-edit-link" data-release-id="${escapeHTML(r.id)}">${escapeHTML(r.name || "")}</a>` },
+        { key: "version", header: "Version", width: 110, text: (r) => r.version || "", html: (r) => (r.version ? escapeHTML(r.version) : "—") },
+        { key: "status", header: "Status", width: 200, text: (r) => RELEASE_STATUS_LABELS[r.status] || r.status || "",
+          html: (r) => { const c = releaseCells(r); return `<span class="badge ${c.isLive ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(RELEASE_STATUS_LABELS[r.status] || r.status || "")}</span>${c.liveOn ? ` <span class="field-hint">${escapeHTML(c.isCurrent ? `current · ${c.liveOn}` : c.liveOn)}</span>` : ""}`; } },
+        { key: "projects", header: "Projects", width: 170, text: (r) => String(releaseCells(r).projectCount).padStart(6, "0"),
+          html: (r) => { const c = releaseCells(r); return `${c.projectCount} project${c.projectCount === 1 ? "" : "s"}${c.conceptCount ? `, ${c.conceptCount} concept${c.conceptCount === 1 ? "" : "s"}` : ""}`; } },
+        { key: "created", header: "Created", width: 130, text: (r) => (r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toISOString() : ""),
+          html: (r) => escapeHTML(r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString() : "—") },
+        { key: "action", header: "", width: 120, sortable: false, text: () => "",
+          html: (r) => (r.status === "live" ? "" : `<button type="button" class="restore-btn release-mark-live-btn" data-release-id="${escapeHTML(r.id)}" data-editor-only>Mark live</button>`) },
+      ],
+    });
+  }
+  return releasesList;
 }
 
 function renderReleasesPage() {
   const rows = releasesInVersionOrder();
   document.getElementById("releases-count").textContent = `${rows.length} release${rows.length === 1 ? "" : "s"}`;
-  document.getElementById("releases-table-body").innerHTML = rows.map(releaseRowHTML).join("");
-  document.getElementById("releases-empty").hidden = rows.length !== 0;
+  getReleasesList().setRows(rows);
 }
 
 // One place every releases update (REST prime or listener) lands, so every
@@ -7713,6 +7859,7 @@ function onReleasesChanged() {
   if (staffKanban && !staffKanbanPage.hidden) staffKanban.refresh();
   renderSystemMap();
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
+  renderSettingsGrids();
   if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
   if (docsProjectId) renderDocsPage();
   if (faqArticleEditorPage && !faqArticleEditorPage.hidden) {
@@ -7817,7 +7964,7 @@ document.getElementById("releases-add-btn").addEventListener("click", async () =
   openReleaseEditor(null);
 });
 
-document.getElementById("releases-table-body").addEventListener("click", async (e) => {
+document.getElementById("releases-grid").addEventListener("click", async (e) => {
   const link = e.target.closest(".release-edit-link");
   if (link) {
     e.preventDefault();
@@ -7868,7 +8015,7 @@ function loadStaffKanban() {
       staffKanban = mountStaffKanban({
         root: staffKanbanPage, db, storage, auth,
         me: normEmail(auth.currentUser && auth.currentUser.email),
-        role: currentConsoleRole,
+        role: () => (canEditSection("staff-kanban") ? currentConsoleRole() : "viewer"),
         releases: () => releases,
         projects: () => projects,
         interfaces: () => interfaces,
@@ -7885,6 +8032,7 @@ function loadStaffKanban() {
   return staffKanbanLoading;
 }
 function openStaffKanbanPage(sub, params) {
+  if (!pageAllowed("staff-kanban")) return;
   if (staffKanbanPage.hidden) closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -7909,6 +8057,7 @@ function closeStaffKanbanPage() {
 }
 
 function openSkillsPage() {
+  if (!pageAllowed("skills")) return;
   closeAllSubPages();
   ensureLazy("skills");
   document.getElementById("projects-root").hidden = true;
@@ -7926,8 +8075,8 @@ function closeSkillsPage() {
 
 async function requireSkillEditor() {
   if (!(await requireFaqEditor())) return false;
-  if (currentConsoleRole() === "viewer") {
-    await showAlert("You have read-only access to this console, so you can't add, edit or delete skills. An admin can change your role in Settings → Team & agent access.");
+  if (currentConsoleRole() === "viewer" || !canEditSection("skills")) {
+    await showAlert("You have read-only access to this console, so you can't add, edit or delete skills. An admin can change your role in User Management → Users.");
     return false;
   }
   return true;
@@ -9480,23 +9629,117 @@ faProjectSelect.addEventListener("change", () => {
 const faIntroducedReleaseSelect = document.getElementById("fa-introduced-release-select");
 const faRemovedReleaseSelect = document.getElementById("fa-removed-release-select");
 
-function openFaqSettingsPage() {
+// ── Settings: a sub-menu of five pages, each an AG Grid table ─────────────
+// Routes are #settings/<page> (settings-section.js); "#settings" opens the
+// first page. The Releases and Skills managers keep their own pages, reached
+// from the Manage buttons on their Settings page.
+const DEFAULT_SETTINGS_KEY = "projects";
+const SETTINGS_GRID_IDS = {
+  projects: "settings-projects-grid", releases: "settings-releases-grid", bindings: "settings-bindings-grid",
+  skills: "settings-skills-grid", automations: "settings-automations-grid",
+};
+const settingsGrids = {};
+let settingsPage = DEFAULT_SETTINGS_KEY;
+let phaseBindings = null; // settings/phaseSkillBindings, { build: [], deploy: [] }
+const sCell = (v) => (v ? escapeHTML(v) : "&mdash;");
+function settingsGrid(key, opts) {
+  if (!settingsGrids[key]) settingsGrids[key] = createDocsList(document.getElementById(SETTINGS_GRID_IDS[key]), { id: `settings-${key}`, ...opts });
+  return settingsGrids[key];
+}
+function renderSettingsGrids() {
+  // By id, not the faqSettingsPage const: the projects listener can call this before that const is initialised.
+  if (document.getElementById("faq-settings-page").hidden) return;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  if (settingsPage === "projects") {
+    const rows = projectRows(projects, { typeOf });
+    document.getElementById("settings-projects-count").textContent = plural(rows.length, "project");
+    settingsGrid("projects", { searchLabel: "Filter projects", emptyText: "No projects yet.", columns: [
+      { key: "name", header: "Project", flex: 2, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "description", header: "Description", flex: 3, text: (r) => r.description, html: (r) => sCell(r.description) },
+      { key: "type", header: "Type", width: 170, text: (r) => r.type, html: (r) => typeBadgeHTML({ type: r.type }, escapeHTML) },
+      { key: "repo", header: "Repository folder", flex: 2, text: (r) => r.repoFolder || r.repoNote,
+        html: (r) => r.repoFolder ? `<a href="https://github.com/offline2online/rob_ph_demos/tree/main/${encodeURI(r.repoFolder)}" target="_blank" rel="noopener"><code>${escapeHTML(r.repoFolder)}</code></a>` : sCell(r.repoNote) },
+    ] }).setRows(rows);
+  } else if (settingsPage === "releases") {
+    const rows = releaseRows(releases, projects, { compare: compareReleases });
+    document.getElementById("settings-releases-count").textContent = plural(rows.length, "release");
+    settingsGrid("releases", { searchLabel: "Filter releases", emptyText: "No releases yet.", columns: [
+      { key: "version", header: "Version", width: 110, text: (r) => r.version, html: (r) => sCell(r.version) },
+      { key: "name", header: "Name", flex: 2, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "created", header: "Created", width: 130, text: (r) => r.created, html: (r) => sCell(r.created) },
+      { key: "madeLive", header: "Made live", width: 130, text: (r) => r.madeLive, html: (r) => sCell(r.madeLive) },
+      { key: "status", header: "Status", width: 120, text: (r) => r.status, html: (r) => `<span class="badge ${r.status === "Live" ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(r.status)}</span>` },
+      { key: "projects", header: "Projects", width: 110, text: (r) => String(r.projectCount), html: (r) => String(r.projectCount) },
+    ] }).setRows(rows);
+  } else if (settingsPage === "skills") {
+    settingsGrid("bindings", { searchLabel: "Filter bindings", emptyText: "No skills are bound to a phase.", columns: [
+      { key: "phase", header: "Phase", width: 120, text: (r) => r.phase, html: (r) => escapeHTML(r.phase) },
+      { key: "skill", header: "Skill", flex: 2, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "slug", header: "Identifier", flex: 2, text: (r) => r.slug, html: (r) => `<code>${escapeHTML(r.slug)}</code>` },
+    ] }).setRows(bindingRows(phaseBindings, skills));
+    const rows = skillRows(skills);
+    document.getElementById("settings-skills-count").textContent = plural(rows.length, "skill");
+    settingsGrid("skills", { searchLabel: "Filter skills", emptyText: "No skills yet.", columns: [
+      { key: "name", header: "Skill", flex: 2, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "slug", header: "Identifier", flex: 2, text: (r) => r.slug, html: (r) => `<code>${escapeHTML(r.slug)}</code>` },
+      { key: "summary", header: "Summary", flex: 3, text: (r) => r.summary, html: (r) => sCell(r.summary) },
+      { key: "version", header: "Version", width: 100, text: (r) => r.version, html: (r) => sCell(r.version) },
+      { key: "fileCount", header: "Files", width: 90, text: (r) => String(r.files), html: (r) => String(r.files) },
+      { key: "team", header: "Owning team", width: 150, text: (r) => r.team, html: (r) => sCell(r.team) },
+    ] }).setRows(rows);
+  } else if (settingsPage === "automations") {
+    settingsGrid("automations", { searchLabel: "Filter automations", columns: [
+      { key: "name", header: "Automation", width: 170, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "trigger", header: "Trigger", flex: 2, text: (r) => r.trigger, html: (r) => escapeHTML(r.trigger) },
+      { key: "does", header: "What it does", flex: 3, text: (r) => r.does, html: (r) => escapeHTML(r.does) },
+      { key: "skills", header: "Skills", flex: 2, text: (r) => r.skills, html: (r) => r.skills === "None" ? "&mdash;" : `<code>${escapeHTML(r.skills)}</code>` },
+      { key: "binding", header: "Binding", width: 150, text: (r) => r.binding, html: (r) => escapeHTML(r.binding) },
+    ] }).setRows(automationRows(phaseBindings));
+  }
+}
+async function loadPhaseBindings() {
+  try {
+    const snap = await getDoc(doc(db, "settings", "phaseSkillBindings"));
+    phaseBindings = snap.exists() ? snap.data() : { build: [], deploy: [] };
+  } catch (err) {
+    console.error("Failed to load phase skill bindings:", err);
+    phaseBindings = phaseBindings || { build: [], deploy: [] };
+  }
+  renderSettingsGrids();
+}
+function showSettingsPage(key) {
+  if (!canView(accessLevels, sectionForSettingsPage(key))) key = SETTINGS_PAGES.map((p) => p.key).find((k) => canView(accessLevels, sectionForSettingsPage(k))) || DEFAULT_SETTINGS_KEY;
+  settingsPage = SETTINGS_PAGES.some((p) => p.key === key) ? key : DEFAULT_SETTINGS_KEY;
+  faqSettingsPage.querySelectorAll("[data-settings-pane]").forEach((el) => { el.hidden = el.dataset.settingsPane !== settingsPage; });
+  faqSettingsPage.querySelectorAll("[data-settings-page]").forEach((b) => {
+    if (b.dataset.settingsPage === settingsPage) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+  if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
+  if (settingsPage === "integrations") { loadFaqSiteSettings(); loadMyAgentConnections(); }
+  setRouteHash(settingsHash(settingsPage));
+  updateTopbarTitle();
+  renderSettingsGrids();
+}
+function openFaqSettingsPage(sub) {
+  if (!pageAllowed("settings")) return;
   closeAllSubPages();
-  ensureLazy("faqCategories", "faqArticles");
+  ensureLazy("faqCategories", "faqArticles", "concepts");
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   faqSettingsPage.hidden = false;
-  setRouteHash("#settings");
-  updateTopbarTitle();
-  loadFaqSiteSettings();
-  loadTeamMembers();
-  loadMyAgentConnections();
+  showSettingsPage(sub);
 }
 function closeFaqSettingsPage() {
   faqSettingsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
+document.getElementById("settings-submenu").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-settings-page]");
+  if (b) showSettingsPage(b.dataset.settingsPage);
+});
+document.getElementById("settings-manage-releases-btn").addEventListener("click", () => openReleasesPage());
+document.getElementById("settings-manage-skills-btn").addEventListener("click", () => openSkillsPage());
 
 // Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
 // — currently just the analytics tag appended to every customer-facing FAQ
@@ -9623,7 +9866,7 @@ async function saveMemberPhotoFields(e, fields) {
 // other refusal names its code so the next report says what actually failed.
 function photoSaveError(err) {
   const code = err && err.code;
-  if (code === "no-member-row") return new Error("Couldn't save the photo: you aren't on the console's team list, so there is no profile to attach it to. Ask an admin to add you under Settings → Team & agent access.");
+  if (code === "no-member-row") return new Error("Couldn't save the photo: you aren't on the console's team list, so there is no profile to attach it to. Ask an admin to add you under User Management → Users.");
   if (code === "permission-denied") return new Error("Couldn't save the photo: the console refused the change (permission-denied). Reload the page and try again; if it persists, report it with this message.");
   return new Error(`Couldn't save the photo: ${(err && err.message) || String(err)}${code ? ` (${code})` : ""}`);
 }
@@ -9705,7 +9948,7 @@ onAuthStateChanged(auth, (user) => {
 // button label and Remove visibility follow the own-row snapshot.
 document.addEventListener("avatar-row-changed", renderProfileMenuPhoto);
 
-// ── Settings → Team & agent access ────────────────────────────────────────
+// ── User Management → Users ────────────────────────────────────────
 //
 // One list that decides two things at once: who may open this console in a
 // browser, and whose AI agent may connect to it over MCP. Both resolve to
@@ -9722,6 +9965,96 @@ const MCP_SERVER_URL = `${window.location.origin}/mcp`;
 
 function currentConsoleRole() { return document.documentElement.dataset.consoleRole || "editor"; }
 function isConsoleAdmin() { return currentConsoleRole() === "admin"; }
+
+// ── Permissions: who the signed-in person is, and the matrix page ──────────
+// Two listeners feed `accessLevels`: the person's own consoleUsers row (a
+// self-read the rules always allow) for roleId, and the roles collection (any
+// member may read) for what each role may do.
+function recomputeAccess() {
+  if (!accessRowLoaded || !accessRolesLoaded) return;
+  const role = accessSelfRoleId ? accessRoles.find((r) => r.id === accessSelfRoleId) : null;
+  accessLevels = effectiveLevels(currentConsoleRole(), role || null);
+  applyAccessStyles();
+  enforceAccessNow();
+  renderPermissionsMatrix();
+}
+// Re-check whatever is on screen against the levels that just arrived (or
+// changed), so a restriction applies without a reload.
+function enforceAccessNow() {
+  const sec = sectionForHash(window.location.hash);
+  if (sec && !sectionAllowed(sec)) {
+    if (sec === "agent-board") returnToBoard(); else showAccessDenied(sec);
+    return;
+  }
+  if (!faqSettingsPage.hidden) showSettingsPage(settingsPage);
+  if (navShell) navShell.syncActive();
+}
+onAuthStateChanged(auth, (user) => {
+  if (!user || !user.email) return;
+  const me = normEmail(user.email);
+  onSnapshot(doc(db, "consoleUsers", me), (snap) => {
+    accessSelfRoleId = snap.exists() ? (snap.data().roleId || "") : "";
+    accessRowLoaded = true;
+    recomputeAccess();
+  }, (err) => { console.warn("backlog-tracker: couldn't read own role", err); });
+  onSnapshot(collection(db, "roles"), (snap) => {
+    accessRoles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    accessRolesLoaded = true;
+    recomputeAccess();
+  }, (err) => { console.warn("backlog-tracker: couldn't read roles", err); });
+});
+
+let permissionsMsgTimer = 0;
+function showPermissionsMsg(text, isError) {
+  const el = document.getElementById("permissions-status");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle("tm-error", !!isError);
+  clearTimeout(permissionsMsgTimer);
+  if (text && !isError) permissionsMsgTimer = setTimeout(() => { el.textContent = ""; }, 3000);
+}
+function renderPermissionsMatrix() {
+  const host = document.getElementById("permissions-matrix");
+  if (!host) return;
+  const roles = accessRoles.slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  const editable = isConsoleAdmin() && canAdmin(accessLevels, "user-management");
+  if (!roles.length) {
+    host.innerHTML = '<p class="interface-row-empty">No roles yet. Create them on the Roles tab, then set what each one can open here.</p>';
+    return;
+  }
+  const head = roles.map((r) => `<th scope="col">${escapeHTML(r.name || "")}</th>`).join("");
+  const body = SECTIONS.map((s) => {
+    const cells = roles.map((r) => {
+      const locked = isAdminRole(r) || !editable;
+      const cur = storedLevel(r, s.key);
+      const opts = LEVELS.map((l) => `<option value="${l}"${l === cur ? " selected" : ""}>${LEVEL_LABELS[l]}</option>`).join("");
+      const why = isAdminRole(r) ? "The Admin role always has full access." : !editable ? "Only an admin can change permissions." : "";
+      return `<td><select class="um-role-select perm-select" data-perm-role="${escapeHTML(r.id)}" data-perm-section="${s.key}" aria-label="${escapeHTML(`${r.name} access to ${s.label}`)}"${locked ? " disabled" : ""}${why ? ` title="${escapeHTML(why)}"` : ""}>${opts}</select></td>`;
+    }).join("");
+    return `<tr><th scope="row">${escapeHTML(s.label)}</th>${cells}</tr>`;
+  }).join("");
+  host.innerHTML = `<div class="perm-scroll"><table class="perm-table"><thead><tr><th scope="col">Section</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+document.getElementById("permissions-matrix")?.addEventListener("change", async (e) => {
+  const sel = e.target.closest("select[data-perm-role]");
+  if (!sel) return;
+  const role = accessRoles.find((r) => r.id === sel.dataset.permRole);
+  if (!role || !isConsoleAdmin()) return;
+  try {
+    const permissions = setLevel(role, sel.dataset.permSection, sel.value);
+    await updateDoc(doc(db, "roles", role.id), { permissions, updatedAt: serverTimestamp(), updatedBy: (auth.currentUser && auth.currentUser.email) || "" });
+    const label = (SECTIONS.find((x) => x.key === sel.dataset.permSection) || {}).label;
+    showPermissionsMsg(`${role.name}: ${label} set to ${LEVEL_LABELS[sel.value]}.`, false);
+  } catch (err) {
+    showPermissionsMsg(`Couldn't save that change: ${err && err.message ? err.message : err}`, true);
+    renderPermissionsMatrix();
+  }
+});
+document.getElementById("access-denied-go")?.addEventListener("click", (e) => {
+  const h = e.currentTarget.dataset.hash;
+  document.getElementById("access-denied-page").hidden = true;
+  if (h) window.location.hash = h; else returnToBoard();
+});
 
 // The console-side endpoints on mcp-server.js authenticate with a Firebase
 // ID token in a header of its own — deliberately NOT "Authorization", so a
@@ -9744,61 +10077,84 @@ function relativeAgo(ms) {
   }
   return "Just now";
 }
-const TEAM_INACTIVE_MS = 30 * 24 * 60 * 60 * 1000;
-function teamLastActivityMs(m) { return Math.max(tsToMs(m.lastLoginAt), tsToMs(m.lastMcpAt)); }
 let teamRowsCache = [];
-let teamSort = "email";
-function teamStampHTML(label, ms) {
-  const exact = ms ? new Date(ms).toLocaleString() : "No activity";
-  return `<span class="team-stamp" title="${escapeHTML(`${label}: ${exact}`)}"><span class="team-stamp-label">${label}</span> ${escapeHTML(relativeAgo(ms))}</span>`;
-}
-function sortedTeamRows(rows) {
-  const out = rows.slice();
-  if (teamSort === "activity") out.sort((a, b) => teamLastActivityMs(b) - teamLastActivityMs(a));
-  else out.sort((a, b) => String(a.email || a.id).localeCompare(String(b.email || b.id)));
-  return out;
-}
-function renderTeamList() {
-  const list = document.getElementById("team-list");
-  if (!list) return;
-  list.innerHTML = teamRowsCache.length
-    ? sortedTeamRows(teamRowsCache).map(teamRowHTML).join("")
-    : '<p class="interface-row-empty">Nobody added yet. The two owner accounts always have access whether or not they are listed here.</p>';
+let usersGrid = null;     // { api, setRows, search, selected } once AG Grid has loaded
+let usersGridLoading = null;
+
+function showUsersGridError(msg) {
+  const el = document.getElementById("um-grid-error");
+  if (!el) return;
+  el.textContent = msg || ""; el.hidden = !msg;
 }
 
-function teamRowHTML(member) {
-  const lastActive = teamLastActivityMs(member);
-  const active = lastActive && Date.now() - lastActive < TEAM_INACTIVE_MS;
-  const email = member.email || member.id;
-  const role = CONSOLE_ROLE_LABELS[member.role] ? member.role : "editor";
-  const agentOn = member.mcpEnabled !== false && member.disabled !== true;
-  const isSelf = email === (auth.currentUser && auth.currentUser.email || "").toLowerCase();
-  return `<div class="team-row" data-email="${escapeHTML(email)}">
-    ${avatarHTML(email, 40)}
-    <div class="team-row-main">
-      <div class="team-row-email">${escapeHTML(email)}${isSelf ? " (you)" : ""}</div>
-      <div class="team-row-name">${escapeHTML(member.displayName || "")}${member.disabled === true ? " · disabled" : ""}</div>
-    </div>
-    <span class="team-stamps">${teamStampHTML("Console", tsToMs(member.lastLoginAt))}${teamStampHTML("MCP", tsToMs(member.lastMcpAt))}</span>
-    <span class="team-badge ${active ? "team-badge-on" : "team-badge-off"}" title="${active ? "Active in the last 30 days" : "No activity in the last 30 days"}">${active ? "Active" : "Inactive"}</span>
-    <select data-team-role aria-label="Role for ${escapeHTML(email)}">
-      ${Object.entries(CONSOLE_ROLE_LABELS).map(([v, l]) => `<option value="${v}"${v === role ? " selected" : ""}>${l}</option>`).join("")}
-    </select>
-    <span class="team-badge ${agentOn ? "team-badge-on" : "team-badge-off"}">Agent ${agentOn ? "on" : "off"}</span>
-    <button type="button" class="btn-ghost" data-team-photo title="Set a profile photo for ${escapeHTML(email)}. Useful for staff who never sign in on desktop.">${member.photoUrl ? "Change photo" : "Set photo"}</button>
-    ${member.photoUrl ? '<button type="button" class="btn-ghost" data-team-photo-clear title="Remove their uploaded photo; they fall back to their initial.">Clear photo</button>' : ""}
-    <button type="button" class="btn-ghost" data-team-toggle-agent="${agentOn ? "off" : "on"}">${agentOn ? "Turn agent off" : "Turn agent on"}</button>
-    <button type="button" class="btn-ghost" data-team-provision title="Creates their login and emails them a link to set a password — only needed for someone without a Google account.">Send sign-in setup</button>
-    <button type="button" class="btn-ghost" data-team-revoke title="Signs every agent this person has connected out of the console.">Disconnect agents</button>
-    ${isSelf ? "" : '<button type="button" class="btn-ghost" data-team-remove>Remove</button>'}
-  </div>`;
+function renderTeamList() {
+  const rows = userRows(teamRowsCache, auth.currentUser && auth.currentUser.email);
+  const count = document.getElementById("um-count");
+  if (count) count.innerHTML = `<b>${rows.length}</b> ${rows.length === 1 ? "User" : "Users"}`;
+  if (usersGrid) usersGrid.setRows(rows);
+  renderRolesGrid();
+}
+
+function updateBulkBar(selected) {
+  const bar = document.getElementById("um-bulk");
+  if (!bar) return;
+  bar.hidden = !selected.length;
+  document.getElementById("um-bulk-count").textContent = `${selected.length} selected`;
+}
+
+// Role change from the grid (one row inline, or the selected rows in bulk).
+async function changeUserRoles(emails, role) {
+  if (!CONSOLE_ROLE_LABELS[role]) return;
+  showUsersGridError("");
+  try {
+    for (const email of emails) await saveTeamMember(email, { role });
+  } catch (err) {
+    showUsersGridError(`Couldn't change that role: ${err && err.message ? err.message : err}`);
+  }
+  await loadTeamMembers();
+}
+
+// Deactivate = the existing `disabled` flag: the console and the MCP server
+// both already refuse a disabled member on every call. Their row stays.
+async function setUsersActive(emails, active) {
+  showUsersGridError("");
+  try {
+    for (const email of emails) {
+      await saveTeamMember(email, { disabled: !active });
+      if (!active) await revokeAgentConnections(email, null, { quiet: true });
+    }
+  } catch (err) {
+    showUsersGridError(`Couldn't update those users: ${err && err.message ? err.message : err}`);
+  }
+  await loadTeamMembers();
+}
+
+async function ensureUsersGrid() {
+  const host = document.getElementById("um-grid");
+  if (usersGrid || !host) return;
+  if (!usersGridLoading) {
+    usersGridLoading = mountUsersGrid(host, {
+      roleLabels: CONSOLE_ROLE_LABELS,
+      relativeAgo,
+      onRoleChange: changeUserRoles,
+      onManage: openTeamManagePanel,
+      onSelection: updateBulkBar,
+      getRoles: () => rolesCache,
+      onAssignedRoleChange: assignUserRole,
+    }).then((g) => { usersGrid = g; }).catch((err) => {
+      usersGridLoading = null;
+      console.error("Failed to load the users grid:", err);
+      showUsersGridError("Couldn't load the users table. Reload the page to try again.");
+    });
+  }
+  await usersGridLoading;
 }
 
 async function loadTeamMembers() {
-  const list = document.getElementById("team-list");
-  if (!list || !isConsoleAdmin()) return;
-  list.innerHTML = '<p class="interface-row-empty">Loading…</p>';
+  if (!isConsoleAdmin()) return;
+  showUsersGridError("");
   try {
+    await ensureUsersGrid();
     const snap = await getDocs(collection(db, "consoleUsers"));
     const rows = [];
     snap.forEach((d) => { rows.push(Object.assign({ id: d.id }, d.data())); setAvatarMember(d.id, d.data()); });
@@ -9806,13 +10162,177 @@ async function loadTeamMembers() {
     renderTeamList();
   } catch (err) {
     console.error("Failed to load console users:", err);
-    list.innerHTML = '<p class="interface-row-empty">Couldn\'t load the team list.</p>';
+    showUsersGridError("Couldn't load the user list.");
   }
 }
 
-document.getElementById("team-sort")?.addEventListener("change", (e) => {
-  teamSort = e.target.value === "activity" ? "activity" : "email";
-  renderTeamList();
+document.getElementById("um-search")?.addEventListener("input", (e) => { if (usersGrid) usersGrid.search(e.target.value); });
+const umBulkRole = document.getElementById("um-bulk-role");
+if (umBulkRole) umBulkRole.innerHTML = Object.entries(CONSOLE_ROLE_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+const selectedUserEmails = () => (usersGrid ? usersGrid.selected().map((r) => r.email) : []);
+document.getElementById("um-bulk-apply")?.addEventListener("click", () => changeUserRoles(selectedUserEmails(), umBulkRole.value));
+document.getElementById("um-bulk-deactivate")?.addEventListener("click", async () => {
+  const emails = selectedUserEmails();
+  if (!emails.length) return;
+  if (!(await showConfirmDialog(`Deactivate ${emails.length} user${emails.length === 1 ? "" : "s"}? They lose access to the board and any connected agent immediately. You can reactivate them later.`))) return;
+  await setUsersActive(emails, false);
+});
+document.getElementById("um-bulk-reactivate")?.addEventListener("click", () => setUsersActive(selectedUserEmails(), true));
+
+// ── Roles (internal IAM roles) ───────────────────────────────────────────
+// `roles` docs: { name, description, createdAt, updatedAt, updatedBy }.
+// A person's assignment is consoleUsers.roleId (separate from the
+// admin/editor/viewer access level). Rules cannot count users, so the
+// "can't delete a role in use" check is made here from the loaded members.
+let rolesCache = [];
+let rolesGrid = null;
+let rolesGridLoading = null;
+function showRolesError(msg) {
+  const el = document.getElementById("roles-error");
+  if (!el) return;
+  el.textContent = msg || ""; el.hidden = !msg;
+}
+function renderRolesGrid() {
+  const rows = roleRows(rolesCache, teamRowsCache);
+  const count = document.getElementById("roles-count");
+  if (count) count.innerHTML = `<b>${rows.length}</b> ${rows.length === 1 ? "Role" : "Roles"}`;
+  if (rolesGrid) rolesGrid.setRows(rows);
+  if (usersGrid) usersGrid.api.refreshCells({ columns: ["roleId"], force: true });
+}
+async function saveRole(id, fields) {
+  const by = (auth.currentUser && auth.currentUser.email) || null;
+  if (id) await updateDoc(doc(db, "roles", id), Object.assign({}, fields, { updatedAt: serverTimestamp(), updatedBy: by }));
+  else await addDoc(collection(db, "roles"), Object.assign({}, fields, { createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: by }));
+}
+async function loadRoles() {
+  if (!isConsoleAdmin()) return;
+  showRolesError("");
+  try {
+    if (!rolesGrid && !rolesGridLoading) {
+      rolesGridLoading = mountRolesGrid(document.getElementById("roles-grid"), {
+        relativeAgo, onEdit: editRole, onClone: cloneRole, onDelete: deleteRole,
+      }).then((g) => { rolesGrid = g; }).catch((err) => {
+        rolesGridLoading = null;
+        console.error("Failed to load the roles grid:", err);
+        showRolesError("Couldn't load the roles table. Reload the page to try again.");
+      });
+    }
+    await rolesGridLoading;
+    const snap = await getDocs(collection(db, "roles"));
+    let list = [];
+    snap.forEach((d) => list.push(Object.assign({ id: d.id }, d.data())));
+    if (!list.length) {
+      // First admin visit: seed the default roles once.
+      for (const r of DEFAULT_ROLES) await saveRole(null, r);
+      const again = await getDocs(collection(db, "roles"));
+      list = [];
+      again.forEach((d) => list.push(Object.assign({ id: d.id }, d.data())));
+    }
+    rolesCache = list;
+    const us = await getDocs(collection(db, "consoleUsers"));
+    const members = [];
+    us.forEach((d) => members.push(Object.assign({ id: d.id }, d.data())));
+    teamRowsCache = members;
+    renderRolesGrid();
+  } catch (err) {
+    console.error("Failed to load roles:", err);
+    showRolesError("Couldn't load the roles.");
+  }
+}
+async function assignUserRole(email, roleId) {
+  showUsersGridError("");
+  try { await saveTeamMember(email, { roleId: roleId || "" }); }
+  catch (err) { showUsersGridError(`Couldn't assign that role: ${err && err.message ? err.message : err}`); }
+  await loadTeamMembers();
+}
+async function roleDialog({ title, okLabel, name, description, exceptId }) {
+  let msg = "";
+  for (;;) {
+    const v = await showFieldDialog({
+      title, message: msg, okLabel,
+      fields: [
+        { id: "name", label: "Role name", value: name || "", placeholder: "e.g. Support" },
+        { id: "description", label: "Description", value: description || "", multiline: true, rows: 3, placeholder: "What this role is for" },
+      ],
+    });
+    if (!v) return null;
+    const err = roleNameError(v.name, rolesCache, exceptId);
+    if (!err) return { name: trimmedRoleName(v.name), description: String(v.description || "").trim().slice(0, 300) };
+    msg = err; name = v.name; description = v.description;
+  }
+}
+async function createRole() {
+  const v = await roleDialog({ title: "Create role", okLabel: "Create" });
+  if (!v) return;
+  try { await saveRole(null, v); } catch (err) { showRolesError(`Couldn't create the role: ${err.message || err}`); }
+  await loadRoles();
+}
+async function editRole(id) {
+  const r = rolesCache.find((x) => x.id === id);
+  if (!r) return;
+  const v = await roleDialog({ title: "Edit role", okLabel: "Save", name: r.name, description: r.description, exceptId: id });
+  if (!v) return;
+  try { await saveRole(id, v); } catch (err) { showRolesError(`Couldn't save the role: ${err.message || err}`); }
+  await loadRoles();
+}
+async function cloneRole(id) {
+  const r = rolesCache.find((x) => x.id === id);
+  if (!r) return;
+  const v = await roleDialog({ title: "Clone role", okLabel: "Clone", name: cloneName(r.name, rolesCache), description: r.description });
+  if (!v) return;
+  try { await saveRole(null, v); } catch (err) { showRolesError(`Couldn't clone the role: ${err.message || err}`); }
+  await loadRoles();
+}
+async function deleteRole(id) {
+  const r = rolesCache.find((x) => x.id === id);
+  if (!r) return;
+  const inUse = teamRowsCache.filter((m) => m.roleId === id).length;
+  if (inUse) {
+    await openDialog({ title: "Role in use", message: `${r.name} is assigned to ${inUse} user${inUse === 1 ? "" : "s"}. Reassign ${inUse === 1 ? "them" : "those users"} on the Users page before deleting this role.`, okLabel: "OK", showCancel: false });
+    return;
+  }
+  if (!(await showConfirmDialog(`Delete the role "${r.name}"? This can't be undone.`))) return;
+  try { await deleteDoc(doc(db, "roles", id)); } catch (err) { showRolesError(`Couldn't delete the role: ${err.message || err}`); }
+  await loadRoles();
+}
+document.getElementById("roles-create")?.addEventListener("click", createRole);
+document.getElementById("roles-search")?.addEventListener("input", (e) => { if (rolesGrid) rolesGrid.search(e.target.value); });
+
+// ── User Management page: Users / Roles / Permissions ────────────────────
+const userManagementPage = document.getElementById("user-management-page");
+const UM_TABS = ["users", "roles", "permissions"];
+function showUserManagementTab(tab) {
+  userManagementPage.querySelectorAll("[data-um-panel]").forEach((p) => { p.hidden = p.dataset.umPanel !== tab; });
+  userManagementPage.querySelectorAll("[data-um-tab]").forEach((b) => {
+    const on = b.dataset.umTab === tab;
+    b.classList.toggle("active", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+}
+function openUserManagementPage(tab = "users") {
+  if (!pageAllowed("user-management")) return;
+  if (!UM_TABS.includes(tab)) tab = "users";
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  userManagementPage.hidden = false;
+  showUserManagementTab(tab);
+  setRouteHash(`#user-management/${tab}`);
+  updateTopbarTitle();
+  if (tab === "users") { loadRoles().then(loadTeamMembers); }
+  if (tab === "roles") loadRoles();
+  if (tab === "permissions") { renderPermissionsMatrix(); if (isConsoleAdmin() && !accessRoles.length) loadRoles(); }
+}
+function closeUserManagementPage() {
+  if (userManagementPage.hidden) return;
+  userManagementPage.hidden = true;
+  closeTeamAddModal();
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+UM_TABS.forEach((t) => {
+  document.getElementById(`um-${t}-btn`).addEventListener("click", () => { closeNavDrawer(); openUserManagementPage(t); });
+  document.getElementById(`um-tab-${t}`).addEventListener("click", () => openUserManagementPage(t));
 });
 
 // The notification bell (KB-NAV-2): in the topbar on every page. The module
@@ -9856,7 +10376,34 @@ async function saveTeamMember(email, fields) {
 const tmBackdrop = document.getElementById("tm-backdrop");
 const tmError = document.getElementById("tm-error");
 function showTeamAddError(msg) { tmError.textContent = msg; tmError.hidden = !msg; }
+function setTeamPanelMode(mode) {
+  document.getElementById("um-add-form").hidden = mode !== "add";
+  document.getElementById("um-manage").hidden = mode !== "manage";
+  document.getElementById("tm-title").textContent = mode === "add" ? "Add User" : "Manage user";
+}
+function openTeamManagePanel(email) {
+  const row = teamRowsCache.find((m) => (m.email || m.id) === email);
+  if (!row) return;
+  const agentOn = row.mcpEnabled !== false && row.disabled !== true;
+  const isSelf = email === (auth.currentUser && auth.currentUser.email || "").toLowerCase();
+  const box = document.getElementById("um-manage");
+  box.dataset.email = email;
+  document.getElementById("um-manage-who").textContent = `${row.displayName ? row.displayName + " · " : ""}${email}`;
+  const agentBtn = document.getElementById("um-manage-agent");
+  agentBtn.dataset.teamToggleAgent = agentOn ? "off" : "on";
+  agentBtn.textContent = agentOn ? "Turn agent off" : "Turn agent on";
+  box.querySelector("[data-team-photo]").textContent = row.photoUrl ? "Change photo" : "Set photo";
+  box.querySelector("[data-team-photo-clear]").hidden = !row.photoUrl;
+  const activeBtn = document.getElementById("um-manage-active");
+  activeBtn.textContent = row.disabled === true ? "Reactivate" : "Deactivate";
+  activeBtn.hidden = isSelf;
+  document.getElementById("um-manage-remove").hidden = isSelf;
+  setTeamPanelMode("manage");
+  showTeamAddError("");
+  tmBackdrop.hidden = false;
+}
 function openTeamAddModal() {
+  setTeamPanelMode("add");
   document.getElementById("team-add-email").value = "";
   document.getElementById("team-add-name").value = "";
   document.getElementById("team-add-role").value = "editor";
@@ -9899,23 +10446,18 @@ document.getElementById("team-add-btn")?.addEventListener("click", async () => {
   }
 });
 
-document.getElementById("team-list")?.addEventListener("change", async (e) => {
-  const select = e.target.closest("[data-team-role]");
-  if (!select) return;
-  const email = select.closest(".team-row").dataset.email;
-  try {
-    await saveTeamMember(email, { role: select.value });
-    await loadTeamMembers();
-  } catch (err) {
-    await showAlert(`Couldn't change that role: ${err && err.message ? err.message : err}`);
-    await loadTeamMembers();
-  }
-});
+document.getElementById("um-manage")?.addEventListener("click", async (e) => {
+  const email = document.getElementById("um-manage").dataset.email;
+  if (!email || !e.target.closest("button")) return;
 
-document.getElementById("team-list")?.addEventListener("click", async (e) => {
-  const row = e.target.closest(".team-row");
-  if (!row) return;
-  const email = row.dataset.email;
+  if (e.target.closest("[data-team-toggle-active]")) {
+    const row = teamRowsCache.find((m) => (m.email || m.id) === email);
+    const deactivating = !(row && row.disabled === true);
+    if (deactivating && !(await showConfirmDialog(`Deactivate ${email}? They lose access to the board and any connected agent immediately. You can reactivate them later.`))) return;
+    closeTeamAddModal();
+    await setUsersActive([email], !deactivating);
+    return;
+  }
 
   const toggle = e.target.closest("[data-team-toggle-agent]");
   if (toggle) {
@@ -9926,6 +10468,7 @@ document.getElementById("team-list")?.addEventListener("click", async (e) => {
     // cached credential.
     if (!turningOn) await revokeAgentConnections(email, null, { quiet: true });
     await loadTeamMembers();
+    openTeamManagePanel(email);
     return;
   }
 
@@ -9975,6 +10518,7 @@ document.getElementById("team-list")?.addEventListener("click", async (e) => {
     try {
       await revokeAgentConnections(email, null, { quiet: true });
       await deleteDoc(doc(db, "consoleUsers", email));
+      closeTeamAddModal();
       await loadTeamMembers();
     } catch (err) {
       await showAlert(`Couldn't remove them: ${err && err.message ? err.message : err}`);
@@ -10040,6 +10584,7 @@ document.getElementById("mcp-copy-btn")?.addEventListener("click", async () => {
 // reopen the page as it was, e.g. backToFaqArticleList(), which keeps
 // whatever filter was already active rather than resetting it.
 function openFaqArticlesPage(filter) {
+  if (!pageAllowed("faq")) return;
   closeAllSubPages();
   ensureLazy("faqCategories", "faqArticles");
   document.getElementById("projects-root").hidden = true;
@@ -10634,9 +11179,7 @@ function wireFaqArticleRowInteractions(containerId) {
 
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
 document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage("all"); });
-document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
 document.getElementById("staff-kanban-btn").addEventListener("click", () => { closeNavDrawer(); openStaffKanbanPage(""); });
-document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
 
 // Whiteboard: each click starts a new board with its own 20-character id and
 // opens it full screen in a new tab with the share panel showing (public/whiteboard.html).
@@ -10677,14 +11220,15 @@ window.addEventListener("pageshow", (e) => { if (e.persisted) document.getElemen
 function navEntries() {
   ensureLazy("concepts");
   const out = [];
+  const allow = (k) => sectionAllowed(k);
   const pname = (id) => (projects.find((p) => p.id === id) || {}).name || "";
-  for (const i of allItems) {
+  for (const i of (allow("agent-board") ? allItems : [])) {
     if (i.status === "archived" && !archivedLoaded) continue;
     out.push({ kind: "Ticket", label: i.title || "(untitled)", hint: pname(i.projectId), id: i.id });
   }
-  for (const c of concepts) out.push({ kind: "Concept", label: c.name || "(untitled)", hint: c.status || "", id: c.id });
-  for (const p of projects) out.push({ kind: "Project", label: p.name || "(untitled)", hint: "", id: p.id });
-  for (const r of releases) out.push({ kind: "Release", label: r.version ? `${r.name} (${r.version})` : (r.name || "(untitled)"), hint: "", id: r.id });
+  for (const c of (allow("concepts") ? concepts : [])) out.push({ kind: "Concept", label: c.name || "(untitled)", hint: c.status || "", id: c.id });
+  for (const p of (allow("agent-board") ? projects : [])) out.push({ kind: "Project", label: p.name || "(untitled)", hint: "", id: p.id });
+  for (const r of (allow("releases") ? releases : [])) out.push({ kind: "Release", label: r.version ? `${r.name} (${r.version})` : (r.name || "(untitled)"), hint: "", id: r.id });
   return out;
 }
 function openNavEntry(e) {
@@ -10717,6 +11261,14 @@ navShell = initNavShell({ getEntries: navEntries, openEntry: openNavEntry, goHom
 const ROUTE_TITLES = {
   "#faq-management": "FAQ Management",
   "#settings": "Settings",
+  "#user-management/users": "Users",
+  "#user-management/roles": "Roles",
+  "#user-management/permissions": "Permissions",
+  "#settings/projects": "Settings: Projects",
+  "#settings/releases": "Settings: Releases",
+  "#settings/skills": "Settings: Skills & phase bindings",
+  "#settings/automations": "Settings: Automations",
+  "#settings/integrations": "Settings: Integrations & MCP",
   "#skills": "Skills",
   "#releases": "Releases",
   "#concept-incubator": "Concept Incubator",
@@ -10853,7 +11405,8 @@ function openDocsRouteFromHash(hash) {
 function applyRouteFromHash() {
   const hash = window.location.hash;
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
-  else if (hash === "#settings") openFaqSettingsPage();
+  else if (settingsPageFromHash(hash)) { const k = settingsPageFromHash(hash); if (faqSettingsPage.hidden) openFaqSettingsPage(k); else if (k !== settingsPage) showSettingsPage(k); }
+  else if (hash.startsWith("#user-management")) openUserManagementPage(hash.split("/")[1]);
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (hash === "#concept-incubator") openConceptIncubatorPage();
@@ -10863,7 +11416,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !userManagementPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
@@ -11488,6 +12041,7 @@ function openFaqArticleEditorPage(articleId, opts = {}) {
   });
 }
 function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}) {
+  if (!pageAllowed("faq")) return;
   closeAllSubPages();
   ensureLazy("faqCategories", "faqArticles");
   editingFaqArticleId = articleId || null;

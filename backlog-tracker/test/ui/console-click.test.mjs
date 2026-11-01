@@ -210,20 +210,19 @@ const scenarios = [
       c.at("sections");
       if (!phone) {
         const labels = await c.page.evaluate(() => [...document.querySelectorAll("#nav-drawer .nav-drawer-section")].map((e) => e.textContent.trim()));
-        assert.deepStrictEqual(labels, ["Build", "Publish"]);
+        assert.deepStrictEqual(labels, ["Build", "Publish", "User Management", "Settings"]);
       }
       await go("build", "concept-incubator-btn", "concept-incubator-page");
-      await go("build", "releases-btn", "releases-page");
-      await go("build", "skills-btn", "skills-page");
+      await go("settings", "faq-settings-btn", "faq-settings-page");
+      for (const [sub, label] of [["releases", "Releases"], ["skills", "Skills & phase bindings"], ["automations", "Automations"], ["integrations", "Integrations & MCP"], ["projects", "Projects"]]) {
+        await c.click(`[data-settings-page="${sub}"]`, `Settings sub-menu ${label}`);
+        await c.visible(`[data-settings-pane="${sub}"]`, `${label} pane shows`);
+        await overflow(`settings ${sub}`);
+      }
+      assert.strictEqual(await c.page.locator(".settings-submenu-item").count(), 5, "five Settings pages");
+      assert.strictEqual(await c.page.locator("#nav-drawer #releases-btn, #nav-drawer #skills-btn").count(), 0, "Releases and Skills are not in the main navigation");
       await go("publish", "faq-articles-btn", "faq-articles-page");
-      // Admin is reached from the profile menu, never the main navigation.
-      assert.strictEqual(await c.page.locator("#nav-drawer #faq-settings-btn").count(), 0, "Settings is not in the main navigation");
-      if (phone) await c.click('#tabbar .tab[data-tab="profile"]', "Profile tab"); else await c.click("#profile-btn", "profile button");
-      await c.visible("#profile-menu", "profile menu shows");
-      assert.ok((await c.text("#profile-menu")).toLowerCase().includes("admin"), "profile menu has an Admin section");
-      await c.click("#faq-settings-btn", "Settings");
-      await c.visible("#faq-settings-page", "Settings shows");
-      await overflow("settings");
+      assert.strictEqual(await c.page.locator("#profile-menu #faq-settings-btn").count(), 0, "Settings is not in the profile menu");
       if (phone) await c.click('#tabbar .tab[data-tab="build"]', "Build tab"); else if (!persistent) await c.click("#nav-open-btn", "open the menu");
       await c.click("#nav-ph-console-btn", "Agent Board");
       await c.boardReady();
@@ -235,6 +234,115 @@ const scenarios = [
         await c.click("#nav-open-btn", "reopen");
         await c.visible("#nav-drawer", "sidebar returns");
       }
+    },
+  },
+  {
+    name: "user management: own nav section, Users grid adds, changes roles inline and in bulk, deactivates",
+    seed: () => {
+      const s = seed();
+      s.user = { email: "admin@personalisationhub.com", role: "admin" };
+      s.docs.consoleUsers = {
+        "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", displayName: "Ada Admin", lastLoginAt: t(T0) },
+        "sam@personalisationhub.com": { email: "sam@personalisationhub.com", role: "editor", displayName: "Sam Patel", lastLoginAt: t(T0 - 3600000) },
+        "kim@personalisationhub.com": { email: "kim@personalisationhub.com", role: "viewer", displayName: "Kim Lee" },
+      };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const phone = c.width <= 640;
+      if (phone) await c.click('#tabbar .tab[data-tab="settings"]', "Settings tab"); else if (c.width < 1024) await c.click("#nav-open-btn", "open the menu");
+      assert.strictEqual(await c.page.locator("#faq-settings-page .team-admin-block").count(), 0, "Team & agent access is no longer under Settings");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll('[data-nav-group="user-management"] .nav-drawer-item')].map((b) => b.textContent.trim().replace(/^(group|badge|lock)/, ""))), ["Users", "Roles", "Permissions"]);
+      await c.click("#um-users-btn", "Users");
+      await c.visible("#user-management-page", "User Management shows");
+      await c.visible("#um-grid .ag-row", "the grid lists members");
+      assert.strictEqual(await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count(), 3, "three members in the grid");
+      const cols = await c.page.evaluate(() => [...document.querySelectorAll("#um-grid .ag-header-cell-text")].map((e) => e.textContent.trim()).filter(Boolean));
+      assert.deepStrictEqual(cols, ["Name", "Email", "Role", "Assigned role", "Status", "Last active"]);
+      // search
+      await c.page.fill("#um-search", "kim");
+      await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 1, "search to filter the grid", 5000);
+      await c.page.fill("#um-search", "");
+      await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 3, "search to clear", 5000);
+      // add from the side panel
+      await c.click("#team-add-open", "Add User");
+      await c.visible("#team-add-email", "side panel opens");
+      await c.page.fill("#team-add-email", "new@personalisationhub.com");
+      await c.page.fill("#team-add-name", "Nina New");
+      await c.page.selectOption("#team-add-role", "viewer");
+      await c.click("#team-add-btn", "Add");
+      await c.click("#dialog-ok", "dismiss the added confirmation");
+      await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 4, "the new user to show in the grid", 8000);
+      const stored = await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com"));
+      assert.ok(stored && stored.role === "viewer", "the new user was saved with the chosen role");
+      // inline role change
+      await c.page.selectOption('select[aria-label="Role for kim@personalisationhub.com"]', "editor");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").role)) === "editor", "inline role change to persist", 5000);
+      // bulk role change
+      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="kim@personalisationhub.com"] .ag-selection-checkbox input').check();
+      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="new@personalisationhub.com"] .ag-selection-checkbox input').check();
+      await c.visible("#um-bulk", "bulk bar shows");
+      await c.page.selectOption("#um-bulk-role", "admin");
+      await c.click("#um-bulk-apply", "Apply");
+      await until(async () => (await c.page.evaluate(() => ["kim", "new"].map((n) => globalThis.__fbStub.col("consoleUsers").get(`${n}@personalisationhub.com`).role).join())) === "admin,admin", "bulk role change to persist", 5000);
+      // deactivate one from Manage
+      await c.page.evaluate(() => document.querySelector('.um-manage[data-manage="sam@personalisationhub.com"]').click());
+      await c.visible("#um-manage", "Manage panel opens");
+      await c.click("#um-manage-active", "Deactivate");
+      await c.click("#dialog-ok", "confirm deactivation");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("sam@personalisationhub.com").disabled)) === true, "deactivation to persist", 5000);
+      // assign a role on Users, then manage roles
+      await until(async () => (await c.page.locator('select[aria-label="Assigned role for kim@personalisationhub.com"] option').count()) === 6, "default roles to seed and list", 8000);
+      const engineerId = await c.page.evaluate(() => { const m = globalThis.__fbStub.col("roles"); for (const [id, d] of m.entries()) if (d.name === "Engineer") return id; });
+      assert.ok(engineerId, "Engineer role seeded");
+      await c.page.selectOption('select[aria-label="Assigned role for kim@personalisationhub.com"]', engineerId);
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").roleId)) === engineerId, "assigned role to persist", 5000);
+      await c.page.evaluate(() => { document.getElementById("um-roles-btn").click(); });
+      await c.visible('[data-um-panel="roles"]', "Roles page shows");
+      await c.visible("#roles-grid .ag-row", "roles listed");
+      const rcols = await c.page.evaluate(() => [...document.querySelectorAll("#roles-grid .ag-header-cell-text")].map((e) => e.textContent.trim()).filter(Boolean));
+      assert.deepStrictEqual(rcols, ["Role name", "Description", "Users", "Last modified"]);
+      const rowCount = async () => c.page.locator("#roles-grid .ag-center-cols-container .ag-row").count();
+      await until(async () => (await rowCount()) === 5, "five roles", 5000);
+      const engUsers = async () => c.page.evaluate((id) => document.querySelector(`#roles-grid .ag-row[row-id="${id}"] [col-id="users"]`)?.textContent.trim(), engineerId);
+      await until(async () => (await engUsers()) === "1", "Engineer shows one user", 5000);
+      // create
+      await c.click("#roles-create", "Create role");
+      await c.page.fill("#dialog-field-0", "Support");
+      await c.page.fill("#dialog-field-1", "Answers questions");
+      await c.click("#dialog-ok", "Create");
+      await until(async () => (await rowCount()) === 6, "new role row", 8000);
+      // duplicate name refused (any case)
+      await c.click("#roles-create", "Create role");
+      await c.page.fill("#dialog-field-0", "support");
+      await c.click("#dialog-ok", "Create duplicate");
+      await c.visible("#dialog-message", "duplicate message shows");
+      assert.ok(/already exists/.test(await c.page.textContent("#dialog-message")), "duplicate refused");
+      await c.click("#dialog-cancel", "cancel");
+      assert.strictEqual(await rowCount(), 6, "no duplicate added");
+      // edit
+      await c.page.locator('.role-edit[aria-label="Edit Support"]').click();
+      await c.page.fill("#dialog-field-0", "Support team");
+      await c.click("#dialog-ok", "Save");
+      await until(async () => (await c.page.locator('.role-edit[aria-label="Edit Support team"]').count()) === 1, "renamed role", 8000);
+      // clone
+      await c.page.locator('.role-clone[aria-label="Clone Support team"]').click();
+      assert.strictEqual(await c.page.inputValue("#dialog-field-0"), "Copy of Support team", "clone prefilled");
+      await c.click("#dialog-ok", "Clone");
+      await until(async () => (await rowCount()) === 7, "cloned role row", 8000);
+      // delete blocked while assigned
+      await c.page.locator('.role-delete[aria-label="Delete Engineer"]').click();
+      await c.visible("#dialog-message", "in-use message");
+      assert.ok(/Role in use/.test(await c.page.textContent("#dialog-title")), "blocked: Role in use");
+      await c.click("#dialog-ok", "OK");
+      assert.strictEqual(await rowCount(), 7, "Engineer stays");
+      // delete unused
+      await c.page.locator('.role-delete[aria-label="Delete Copy of Support team"]').click();
+      await c.click("#dialog-ok", "confirm delete");
+      await until(async () => (await rowCount()) === 6, "role removed", 8000);
+      const sw = await c.page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+      assert.ok(sw, "no sideways scroll");
     },
   },
   {
@@ -348,7 +456,7 @@ const scenarios = [
       await c.openMenu();
       await c.click(".project-archive-btn", "Archived tickets");
       await c.visible("#archive-page");
-      await c.waitText("#archive-table-body", "Archived thing", "archive page lists the seeded archived card");
+      await c.waitText("#archive-grid", "Archived thing", "archive page lists the seeded archived card");
     },
   },
   {
@@ -358,8 +466,8 @@ const scenarios = [
       await c.boardReady();
       await c.openMenu();
       await c.click(".project-archive-btn", "Archived tickets");
-      await c.waitText("#archive-table-body", "Archived thing", "archive page lists the seeded archived card");
-      const row = await c.page.evaluate((ms) => ({ text: document.querySelector("#archive-table-body tr").innerText, want: new Date(ms).toLocaleDateString() }), T0 + 6);
+      await c.waitText("#archive-grid", "Archived thing", "archive page lists the seeded archived card");
+      const row = await c.page.evaluate((ms) => ({ text: document.querySelector("#archive-grid tr[data-id], #archive-grid .ag-row").innerText, want: new Date(ms).toLocaleDateString() }), T0 + 6);
       assert.ok(row.text.includes(row.want), `the Archived row should show ${row.want}, got ${JSON.stringify(row.text)}`);
     },
   },
@@ -373,6 +481,42 @@ const scenarios = [
       await c.visible("#docs-page");
       await c.waitText("#docs-page h2", "Project Settings — Demo Project");
       await c.waitText("#docs-extra-docs-list", "Release checklist", "docs page lists the seeded projectDocs document");
+    },
+  },
+  {
+    name: "Docs page: PH tabs, rendered Markdown, AG Grid lists and search",
+    seed: () => seed(),
+    async run(c) {
+      await c.boardReady();
+      await c.openMenu();
+      await c.click(".project-docs-btn", "Project Settings");
+      await c.visible("#docs-page");
+      // Overview is the landing tab; the document list is on its own tab.
+      assert.deepEqual(await c.page.evaluate(() => [...document.querySelectorAll("#docs-tabs .docs-tab")].map((b) => b.dataset.tab)), ["general", "readme", "requirements", "documents", "interfaces", "revisions"]);
+      assert.equal(await c.page.evaluate(() => getComputedStyle(document.getElementById("docs-extra-docs-list").closest(".docs-block")).display), "none", "Documents block is hidden on Overview");
+      await c.page.click('#docs-tabs [data-tab="documents"]');
+      await c.visible("#docs-extra-docs-list");
+      await c.page.waitForSelector("#docs-extra-docs-list .ag-theme-alpine .ag-row", { timeout: 8000 });
+      await c.waitText("#docs-extra-docs-list", "Release checklist", "AG Grid lists the document");
+      // Search filters the grid.
+      await c.page.fill("#docs-extra-docs-list .docs-list-search", "zzz-no-match");
+      await c.page.waitForFunction(() => !document.querySelector("#docs-extra-docs-list .ag-center-cols-container .ag-row"), null, { timeout: 5000 });
+      await c.page.fill("#docs-extra-docs-list .docs-list-search", "release");
+      await c.page.waitForSelector("#docs-extra-docs-list .ag-center-cols-container .ag-row", { timeout: 5000 });
+      // Editing still opens the existing modal.
+      await c.page.click("#docs-extra-docs-list .doc-edit-btn");
+      await c.visible("#doc-backdrop");
+      await c.page.click("#doc-cancel");
+      // README renders as Markdown, with Edit revealing the textarea.
+      await c.page.click('#docs-tabs [data-tab="readme"]');
+      await c.visible("#docs-readme-view");
+      await c.page.click("#docs-readme-edit");
+      await c.visible("#docs-readme-input");
+      await c.page.click("#docs-readme-edit");
+      await c.page.click('#docs-tabs [data-tab="interfaces"]');
+      await c.visible("#docs-interfaces-list .docs-list-search");
+      await c.page.click('#docs-tabs [data-tab="revisions"]');
+      await c.visible("#docs-revisions-list .docs-list-search");
     },
   },
   {
@@ -635,7 +779,10 @@ const scenarios = [
     seed: () => relSeed(),
     async run(c) {
       await c.boardReady();
-      await openFromNav(c, "build", "releases-btn", "releases-page");
+      await openFromNav(c, "settings", "faq-settings-btn", "faq-settings-page");
+      await c.click('[data-settings-page="releases"]', "Settings > Releases");
+      await c.click("#settings-manage-releases-btn", "Manage releases");
+      await c.visible("#releases-page", "releases page shows");
       await c.visible('.release-edit-link[data-release-id="r1"]', "release name link");
       await c.click('.release-edit-link[data-release-id="r1"]', "click release name");
       await c.visible("#release-editor-backdrop:not([hidden]) #release-editor-name", "editor opens");
@@ -648,7 +795,7 @@ const scenarios = [
       await c.page.check('#release-editor-projects input[value="p1"]');
       await c.click("#release-editor-save", "save");
       await c.hidden("#release-editor-backdrop", "editor closes");
-      await c.page.waitForSelector('#releases-table-body tr[data-release-id="r1"] td:nth-child(2):has-text("2.1.0")');
+      await c.page.waitForSelector('#releases-grid :text("2.1.0")');
       await c.click('.release-edit-link[data-release-id="r1"]', "reopen");
       await c.visible("#release-editor-backdrop:not([hidden])");
       assert.strictEqual(await c.page.inputValue("#release-editor-version"), "2.1.0");
@@ -663,7 +810,7 @@ const scenarios = [
       await c.page.fill("#release-editor-version", "3.0.0");
       await c.click("#release-editor-save", "create");
       await c.hidden("#release-editor-backdrop");
-      await c.waitText("#releases-table-body", "November 2026", "new release listed");
+      await c.waitText("#releases-grid", "November 2026", "new release listed");
     },
   },
   {
@@ -744,6 +891,65 @@ const scenarios = [
       assert.deepStrictEqual(await shown(), ["c3"]);
       await c.page.selectOption("#concept-type-filter", "Internal operations");
       assert.deepStrictEqual(await shown(), []);
+    },
+  },
+  {
+    name: "permissions: an admin sets the matrix; an engineer loses Concepts (nav and URL) and gets view-only where granted",
+    seed: () => {
+      const s = seed();
+      s.user = { email: "eng@personalisationhub.com", role: "editor" };
+      s.docs.roles = {
+        rAdmin: { name: "Admin", description: "", createdAt: t(T0) },
+        rEng: { name: "Engineer", description: "", createdAt: t(T0), permissions: { concepts: "none", skills: "view" } },
+      };
+      s.docs.consoleUsers = { "eng@personalisationhub.com": { email: "eng@personalisationhub.com", role: "editor", roleId: "rEng" } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await until(async () => (await c.page.evaluate(() => !!document.getElementById("perm-style")?.textContent)), "the role's permissions to apply", 8000);
+      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("concept-incubator-btn")).display), "none", "Concepts is gone from the nav");
+      await c.page.evaluate(() => { location.hash = "#concept-incubator"; });
+      await c.visible("#access-denied-page", "the Concepts URL is blocked");
+      assert.ok((await c.page.textContent("#access-denied-text")).includes("Concepts"), "the notice names the section");
+      assert.strictEqual(await c.page.evaluate(() => document.getElementById("concept-incubator-page").hidden), true, "the Concepts page never shows");
+      // view-only Skills: the page opens but its add control is gone
+      await c.page.evaluate(() => { location.hash = "#skills"; });
+      await c.visible("#skills-page", "Skills opens at View");
+      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("skills-add-btn")).display), "none", "Add skill is unavailable at View");
+      // User Management is not in this role at all
+      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
+      await c.visible("#access-denied-page", "User Management is blocked for an engineer");
+    },
+  },
+  {
+    name: "permissions: the matrix lists every section by role, saves a change, and the Admin role stays locked",
+    seed: () => {
+      const s = seed();
+      s.user = { email: "admin@personalisationhub.com", role: "admin" };
+      s.docs.roles = {
+        rAdmin: { name: "Admin", description: "", createdAt: t(T0) },
+        rEng: { name: "Engineer", description: "", createdAt: t(T0) },
+      };
+      s.docs.consoleUsers = { "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", roleId: "rEng" } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
+      await c.visible(".perm-table", "the matrix shows");
+      const rows = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table tbody th")].map((e) => e.textContent.trim()));
+      assert.deepStrictEqual(rows, ["Agent board", "Staff Kanban", "Concepts", "FAQ management", "Skills", "Releases", "Project docs", "Settings", "User Management"]);
+      const heads = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table thead th")].map((e) => e.textContent.trim()));
+      assert.deepStrictEqual(heads, ["Section", "Admin", "Engineer"]);
+      assert.strictEqual(await c.page.locator('select[data-perm-role="rAdmin"]:not([disabled])').count(), 0, "the Admin column is locked");
+      await c.page.selectOption('select[data-perm-role="rEng"][data-perm-section="concepts"]', "none");
+      await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);
+      // an admin keeps User Management even when a role they hold says none
+      await c.page.selectOption('select[data-perm-role="rEng"][data-perm-section="user-management"]', "none");
+      await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {})["user-management"])) === "none", "the lock-out attempt to persist", 5000);
+      assert.strictEqual(await c.page.evaluate(() => document.getElementById("user-management-page").hidden), false, "User Management is still open");
+      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("um-permissions-btn")).display === "none"), false, "and still in the nav");
     },
   },
   {

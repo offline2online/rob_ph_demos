@@ -27,7 +27,7 @@ try {
     const o = await h.open({ seed, width, height: 900 });
     const { page } = o;
     try {
-      await until(() => page.locator("#total-summary").count(), "board header");
+      await until(() => page.locator(".project-options-btn").count(), "board header");
       await page.waitForTimeout(400);
       // Open the modal that holds the most helper copy so the check has data.
       const hints = await page.evaluate(() => {

@@ -27,6 +27,8 @@ export const stubPath = path.join(here, "firebase-stub.mjs");
 const SDK_BASE = "https://www.gstatic.com/firebasejs/10.13.2/";
 export const SDK_MODULES = ["firebase-app.js", "firebase-auth.js", "firebase-firestore.js", "firebase-storage.js"];
 const quillDist = path.dirname(fileURLToPath(import.meta.resolve("quill")));
+// AG Grid (the Docs page lists) is served from the ag-grid-community dev dependency, not jsDelivr.
+const agDist = path.resolve(path.dirname(fileURLToPath(import.meta.resolve("ag-grid-community"))), "..", "..");
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 
 function staticServer() {
@@ -96,6 +98,12 @@ export async function startHarness() {
       }
       if (url.hostname === "cdnjs.cloudflare.com" && url.pathname.endsWith("/quill/1.3.7/quill.min.js")) return route.fulfill({ status: 200, contentType: "text/javascript", path: path.join(quillDist, "quill.min.js") });
       if (url.hostname === "cdnjs.cloudflare.com" && url.pathname.endsWith("/quill/1.3.7/quill.snow.min.css")) return route.fulfill({ status: 200, contentType: "text/css", path: path.join(quillDist, "quill.snow.css") });
+      if (url.hostname === "cdn.jsdelivr.net" && url.pathname.startsWith("/npm/ag-grid-community@")) {
+        const rel = url.pathname.replace(/^\/npm\/ag-grid-community@[^/]+\//, "");
+        const file = path.join(agDist, rel);
+        if (!file.startsWith(agDist) || !fs.existsSync(file)) return route.fulfill({ status: 404, body: "not found" });
+        return route.fulfill({ status: 200, contentType: file.endsWith(".css") ? "text/css" : "text/javascript", path: file });
+      }
       // HARNESS_FONTS_DIR (screenshots only): a folder holding ms.css + ms.woff2, a saved copy of the
       // Material Symbols stylesheet and font, so icons render as glyphs instead of ligature text.
       const fontsDir = process.env.HARNESS_FONTS_DIR;

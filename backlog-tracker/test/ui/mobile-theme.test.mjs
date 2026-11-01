@@ -42,7 +42,7 @@ try {
     const o = await h.open({ seed, width, height: 780, colorScheme: scheme });
     const { page } = o;
     try {
-      await until(() => page.locator("#total-summary").count(), "board header");
+      await until(() => page.locator(".project-options-btn").count(), "board header");
       const shot = async (name) => { if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/${name}-${scheme}-${width}.png` }); };
       const check = async (what, sel) => page.evaluate(([sel, what, probeSrc]) => {
         const { contrast, isDark } = new Function(`return (${probeSrc})()`)();

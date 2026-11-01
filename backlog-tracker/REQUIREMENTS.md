@@ -2939,7 +2939,7 @@ viewers too) must let an agent read every ticket and find why one failed:
 
 No new tool and no write path. Tests: `test/mcp-server.test.js`.
 
-**Membership.** `Settings → Team & agent access` (admin-only) writes
+**Membership.** `User Management → Users` (admin-only) writes
 `consoleUsers` docs; that one row grants browser access and agent access
 together. Roles as in "Data model" above. A member with no Google account is
 provisioned with `POST /mcp/admin/provision` (creates their Firebase Auth
@@ -3497,7 +3497,7 @@ the board in one step.
 
 ## Profile photos (avatars)
 
-Any member can upload, replace or remove their own profile photo from the profile menu (**Profile photo → Upload photo / Remove**); an admin can set or clear anyone's from **Settings → Team & agent access**. The browser crops to a centred square and scales to 256×256 JPEG (~0.85) before upload; images over 10 MB and non-images are refused inline and nothing is uploaded.
+Any member can upload, replace or remove their own profile photo from the profile menu (**Profile photo → Upload photo / Remove**); an admin can set or clear anyone's from **User Management → Users**. The browser crops to a centred square and scales to 256×256 JPEG (~0.85) before upload; images over 10 MB and non-images are refused inline and nothing is uploaded.
 
 - **Storage**: `avatars/{lowercased email}.jpg`. `storage.rules`: read for any member; write/delete only by the owner of that address or an admin; under 2 MB, `image/jpeg`.
 - **Record**: `consoleUsers/{email}.photoUrl` + `photoUpdatedAt` (`?v=` cache-bust). `firestore.rules`: a member may change only `lastLoginAt`, `photoUrl` and `photoUpdatedAt` on their OWN row (`photoUrl` ≤ 1000 chars, bucket `avatars` URL or `""`; `photoUpdatedAt == request.time`); admins may write both on any row.
@@ -3521,3 +3521,74 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
 - **Rules** (`firestore.rules` → "Whiteboard"): a board doc may be `get` by anyone with a valid id; only members `list` boards, create one (`keys` = `shared`, `createdAt`; no email or name is stored) or flip `shared`; only an admin deletes one. While `shared == true`, anyone may read, create and delete strokes (so link holders can also erase and clear, by design — a public scratchpad); strokes are validated (`g` ≤ 40 chars, `#rrggbb` colour, size 0–200, 2–4000 numbers in pairs) and never updated. With `shared: false` only members read. Boards cannot be enumerated by non-members, so an id can be given but not found.
 - **Not built yet**: a control to turn sharing off or list/delete old boards (the `shared` field and rules are ready for it); remote cursors; text and shapes.
 - **Tests**: `test/whiteboard-core.test.mjs` (ids, links, zoom, chunking, hit-testing), `test/whiteboard-rules.test.js` (emulator; part of `npm run test:rules`), `test/ui/whiteboard.test.mjs` (Chromium, 1280 and 390 px; part of `test:ui`), `test/ui/whiteboard-tablet.test.mjs` (iPad sizes 768–1366 px by real touch: the menu item, a dropped click, Back and tap again; draw, colour, size, undo, pinch, Move, reset, eraser, dot, clear, share; plus the toolbar fitting with no sideways scroll from 390 to 1920 px; part of `test:ui`).
+
+## Docs page layout (31 Oct 2026)
+
+- A project's Docs page has tabs General, README, Requirements, Documents,
+  Interfaces and Revisions; every existing control (including editing, mirror
+  read-only rules and the document/interface modals) keeps working.
+- README and Requirements render as Markdown in PH typography; Markdown is
+  escaped before formatting. Edit toggles the textarea; mirrors have no Edit.
+- Documents, Interfaces and Revisions are AG Grid tables with search and
+  column sort, with a plain-table fallback when the grid script cannot load.
+- Revisions lists `docRevisions` for the project (document, kind, when, by,
+  via, size), newest first, read-only, without document text.
+- Explanatory copy is shown as (i) info tooltips. Agent/MCP access to the docs
+  is unchanged.
+
+## User Management section
+
+- Users, Roles and Permissions are one navigation section ("User Management"),
+  visible to admins only. Team & agent access no longer lives in Settings.
+- The Users page is an AG Grid table with columns name, email, role, status and
+  last active; sortable, filterable per column, searchable, paginated; styled to
+  the Personalisation Hub table conventions (`ph-designer`).
+- Add User opens a side panel to add a member and assign a role. An admin can
+  change a role inline or for selected rows in bulk, and deactivate (and
+  reactivate) one or many users. Deactivating sets `consoleUsers.disabled`, which
+  the console rules and the MCP server already treat as no access, and signs the
+  user's agents out. Changes are written to `consoleUsers` and persist.
+- The Roles page is an AG Grid table of internal IAM roles (Admin, Product,
+  Designer, Engineer, Security by default) with columns role name, description,
+  users and last modified. Admins can create, edit, clone and delete roles; the
+  UI calls them "roles", never "personas". Names are unique ignoring case.
+  Deleting a role is refused ("Role in use") while any user is assigned to it.
+  Roles live in the `roles` collection (members read, admins write); a user's
+  assignment is `consoleUsers.roleId`, set from the Users grid's "Assigned role"
+  column, and drives the Users count.
+- **Permissions (1 Nov 2026).** The Permissions tab is a matrix: one row per
+  console section (Agent board, Staff Kanban, Concepts, FAQ management, Skills,
+  Releases, Project docs, Settings, User Management), one column per role, each
+  cell No access / View / Edit / Admin. Stored as `roles/{id}.permissions`
+  (`{sectionKey: level}`); a role with no map gets Edit everywhere except User
+  Management (none). The logic is `public/js/permissions.js`. Enforcement, in
+  the console UI: a section with No access is hidden from the nav and search and
+  its URL shows a "No access" notice; below Edit, the section's add/save
+  controls are removed and its guards refuse the write; a member with no
+  assigned role is unrestricted as before. The **Admin role** is always Admin
+  and its column is locked, and a member whose fixed console role is `admin`
+  always keeps User Management whatever their assigned role says, so nobody can
+  lock themselves out. The fixed `viewer` console role never exceeds View. Only
+  an admin can change the matrix. Admin level currently differs from Edit only
+  by unlocking this matrix; it is reserved for per-section admin controls.
+  **Limit:** this is UI enforcement. `firestore.rules` still gate data by the
+  fixed admin/editor/viewer role, not per section, so it is access control for
+  the console's screens, not a data boundary.
+## Console navigation and Settings (31 Oct 2026)
+
+- The primary nav has four groups: **Build** (Agent Board, Staff Kanban,
+  Concepts, Whiteboard), **Publish** (Help Centre), **User Management** (Users, Roles,
+  Permissions) and **Settings**. Releases and Skills are reachable only
+  from Settings. Settings is not in the profile menu. On a phone the tab bar is
+  Build, Publish, Settings, Search, Profile.
+- Settings has a sub-menu at `#settings/<page>`: Projects (names, descriptions,
+  types, repository folders), Releases (versions, names, dates, status),
+  Skills & phase bindings (the skills bound to the Build and Deploy phases, and
+  the skills library), Automations (Notify Claude, Groom Backlog, Batch review,
+  Run E2E with trigger, skills and binding) and Integrations & MCP (agent
+  connections, help centre analytics tag, dictation). Each page is an AG Grid
+  table with a count line; explanations are info tooltips, not text under a
+  table. No internal project names appear in UI copy.
+- Reloading `#settings/<page>` or `#user-management` reopens the same page.
+- Out of scope: redesigning the Agent Board, Staff Kanban, Concepts or Help
+  Centre pages.

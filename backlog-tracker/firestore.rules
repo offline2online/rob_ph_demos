@@ -661,11 +661,25 @@ service cloud.firestore {
         && (!("displayName" in incoming()) || (incoming().displayName is string && incoming().displayName.size() <= 120))
         && (!("disabled" in incoming()) || incoming().disabled is bool)
         && (!("mcpEnabled" in incoming()) || incoming().mcpEnabled is bool)
+        && (!("roleId" in incoming()) || (incoming().roleId is string && incoming().roleId.size() <= 40))
         && (!("photoUrl" in incoming()) || validPhotoUrl(incoming().photoUrl))
         && (!("photoUpdatedAt" in incoming()) || incoming().photoUpdatedAt is timestamp);
       // Removing yourself is the one way an admin could strand their own
       // session mid-click; disable the row instead if that is really meant.
       allow delete: if isAdmin() && userEmail != callerEmail();
+    }
+
+    // ── Roles (User Management → Roles) ─────────────────────────────────────
+    // Internal IAM roles. Members read; only admins write. A person's
+    // assignment is consoleUsers.roleId. Rules cannot count users, so the
+    // page refuses to delete a role that is still assigned.
+    match /roles/{roleId} {
+      allow read: if isBoardReader();
+      allow create, update: if isAdmin()
+        && incoming().name is string && isNonEmptyBoundedString(incoming().name, 60)
+        && (!("description" in incoming()) || (incoming().description is string && incoming().description.size() <= 300))
+        && (!("permissions" in incoming()) || incoming().permissions is map);
+      allow delete: if isAdmin();
     }
 
     // ── Personal Notify Claude Routine bindings ────────────────────────────

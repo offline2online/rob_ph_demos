@@ -1143,8 +1143,8 @@ a Routine run creates or updates one.
 Access is no longer a hard-coded list of two emails. **One Firestore doc per
 person — `consoleUsers/<lowercased email>` — decides both halves of their
 access**: whether they can open the console in a browser, and whether their
-own AI agent may connect to it. Admins manage the list from **Settings →
-Team & agent access**; `firestore.rules` and `functions/mcp-server.js`
+own AI agent may connect to it. Admins manage the list from **User
+Management → Users**; `firestore.rules` and `functions/mcp-server.js`
 resolve the same doc, so adding or removing someone is a single act.
 
 Roles are `admin` (manages the list), `editor` (read + write) and `viewer`
@@ -2231,7 +2231,7 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   `REQUIREMENTS.md` → "Skills page: change history") with a per-revision
   file diff. An **Add skill** button and each card's Edit/Delete are gated
   behind editor access (`[data-editor-only]`, hidden for a viewer the same
-  way `[data-admin-only]` hides Team & agent access from everyone but an
+  way `[data-admin-only]` hides User Management from everyone but an
   admin) — a viewer can still open the page, read every skill and browse
   its history.
 - **MCP tools** (`functions/mcp-server.js`): `list_skills` and `get_skill`
@@ -2405,7 +2405,7 @@ the full behavior.
   `isEditor` / `isAdmin`) reads that same doc for every read and write of
   the board's collections, and `storage.rules` checks the `consoleEditor`
   custom claim kept in step with it. Admins add and remove people from
-  **Settings → Team & agent access**, and the same row governs whether that
+  **User Management → Users**, and the same row governs whether that
   person's AI agent may connect over MCP (see `MCP.md`). Only the two help-centre collections remain publicly
   readable (the public FAQ site needs them). Automation that used to call
   Firestore's REST API anonymously now authenticates: the GitHub Actions
@@ -2419,7 +2419,7 @@ the full behavior.
   Function proxy (`X-Board-Key` header, also served at
   `https://backlog-tracker-e4ed2.web.app/boardApi/...`) remains as a
   fallback. Adding an editor is now a
-  row in Settings → Team & agent access, not an edit to three files; only
+  row in User Management → Users, not an edit to three files; only
   the two owner accounts are still hard-coded, as the bootstrap that makes
   an empty member list non-fatal.
 - **No drag-and-drop.** Multi-project and an archive page (per-project
@@ -2465,15 +2465,20 @@ documents folded into "Superseded (N)". The logic is the pure module
 `styles.css`) replaced the hamburger-only drawer. Navigation and layout only:
 every destination already existed.
 
-- **Build**: Board, Concepts (Concept Incubator), Releases, Skills.
-  **Publish**: Help Centre (FAQ Management). Brand Guidelines, Roadmap and a
-  Users/Roles page are not built yet, so they are not listed.
-- **Admin** (Settings, Sign out) lives in the profile menu (avatar button in the
-  topbar, the Profile tab on a phone). Settings stays reachable by every role
-  because the page already hides its admin-only blocks (`[data-admin-only]`).
+- **Navigation groups (31 Oct 2026)**: **Build** (Agent Board, Staff Kanban,
+  Concepts, Whiteboard), **Publish** (Help Centre), **User Management** (Users, Roles,
+  Permissions; built by their own tickets) and **Settings**. Releases and Skills are no longer in the nav;
+  they are reached from Settings. Sign out stays in the profile menu.
+- **Settings** (`#settings/<page>`, `public/js/settings-section.js` for routes
+  and row builders): a sub-menu of Projects, Releases, Skills & phase
+  bindings, Automations and Integrations & MCP. Each page is an AG Grid table
+  (`docs-grid.js`) with a count line and info tooltips instead of paragraphs.
+  Releases and Skills have a Manage button that opens the existing page.
+  Phase bindings are read from `settings/phaseSkillBindings`. The settings
+  page stays reachable by every role; admin-only blocks keep `[data-admin-only]`.
 - **Breakpoints**: 1024px and up, a persistent sidebar you can collapse (state
   in `localStorage` `bt-nav-collapsed`); 641 to 1023px, the overlay drawer;
-  640px and down, a bottom tab bar (Build, Publish, Search, Profile) that opens
+  640px and down, a bottom tab bar (Build, Publish, Settings, Search, Profile) that opens
   one section at a time. The Board's columns stay stacked top to bottom on a
   phone (tap a column header to collapse it); a swipe-one-column-at-a-time
   strip was tried and reverted the same day (see below).
@@ -2656,3 +2661,50 @@ builds (board and MCP both refuse), shows a Finalised badge, and records the fro
 version, who and when on `projects/{id}.finalised`. **Unfreeze project…** /
 `unfreeze_project` needs a reason. Not the same as the train lock, and the Staff
 Kanban is unaffected. See `REQUIREMENTS.md` → "Project freeze".
+
+## Docs page: tabs, reading view and AG Grid lists (31 Oct 2026)
+
+A project's Docs page (**⋮ → Project Settings**) is split into PH-style tabs:
+**General** (type, program, release, description, repo folder, routine
+instructions, FAQ automation, demote), **README**, **Requirements**,
+**Documents**, **Interfaces** and **Revisions**. README and Requirements open
+in a reading view rendered from Markdown (`public/js/docs-markdown.js` — HTML
+is escaped first, so document text can never become markup); **Edit** reveals
+the same textarea and Save as before, and a repo mirror stays read-only.
+Documents, Interfaces and Revisions are searchable, sortable AG Grid
+(`ag-theme-alpine`, loaded from jsDelivr by `public/js/docs-grid.js`) lists;
+if the grid cannot load, the same data shows as a plain sortable table.
+Revisions reads `docRevisions` for the project over REST with a field mask
+(no document text is downloaded) and is read-only. Nothing about what MCP
+agents can read or write changed. UI tests serve AG Grid from the
+`ag-grid-community` dev dependency (`test/ui/harness.mjs`).
+
+## User Management (Users / Roles / Permissions)
+
+Its own navigation section (admin-only, `[data-admin-only]`), moved out of
+Settings. Sub-menu: **Users**, **Roles**, **Permissions** (`#user-management/<tab>`,
+`user-management-page` in `public/index.html`). **Users** and **Roles** are
+built; Permissions is an empty page for its own ticket.
+
+**Users** is an AG Grid Community table (`public/js/user-management.js`; the
+library is loaded on first visit by `docs-grid.js`, the Alpine theme restyled
+to the PH tokens in `styles.css`) over the
+`consoleUsers` collection: Name, Email, Role (inline select), Status
+(Active / Deactivated = the existing `disabled` flag), Last active (latest
+console or MCP activity). Sorting, per-column floating filters, a search box and
+pagination. **Add User** opens a side panel (email, name, role). Tick rows for
+a bulk role change or bulk Deactivate / Reactivate; the row's **⋯** opens
+**Manage** in the same panel (photo, agent on/off, sign-in setup, disconnect
+agents, deactivate, remove). You cannot change, deactivate or remove your own
+row. An **Assigned role** column (`consoleUsers.roleId`, separate from the
+admin/editor/viewer access level in Role) picks one of the roles below.
+
+**Roles** (`public/js/roles.js`, `roles` collection: members read, admins write)
+are the internal IAM roles, called "roles" in the UI, never "personas". An AG
+Grid lists Role name, Description, Users (people assigned) and Last modified.
+**Create role**, and per row **Edit** (pencil), **Clone** (copy icon, name
+prefilled "Copy of ...") and **Delete**. Names are unique ignoring case. Delete
+is refused with "Role in use" while any user has the role assigned (a page
+check; rules cannot count users). The five defaults (Admin, Product, Designer,
+Engineer, Security) are seeded on the first admin visit. Tests: the "user
+management" scenario in `test/ui/console-click.test.mjs`.

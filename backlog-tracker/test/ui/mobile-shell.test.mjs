@@ -25,10 +25,8 @@ const seed = {
 const PAGES = [
   ["board", { nav: "nav-ph-console-btn", group: "build" }],
   ["concepts + system map", { nav: "concept-incubator-btn", group: "build" }],
-  ["releases", { nav: "releases-btn", group: "build" }],
-  ["skills", { nav: "skills-btn", group: "build" }],
   ["help centre", { nav: "faq-articles-btn", group: "publish" }],
-  ["settings", { profile: "faq-settings-btn" }],
+  ["settings", { nav: "faq-settings-btn", group: "settings" }],
 ];
 
 async function go(page, width, how) {
@@ -50,7 +48,7 @@ try {
   for (const width of WIDTHS) {
     const o = await h.open({ seed, width, height: 780 });
     const { page } = o;
-    await until(() => page.locator("#total-summary").count(), "board header");
+    await until(() => page.locator(".project-options-btn").count(), "board header");
     for (const [label, how] of PAGES) {
       try {
         await go(page, width, how);
@@ -76,7 +74,7 @@ try {
           assert.ok(m.tabbar && Math.abs(m.tabbar.bottom - m.vh) < 2, "tab bar not pinned to the bottom");
           assert.ok(m.tabbarOnTop, "tab bar is covered");
           const tabs = await page.locator(".tab").count();
-          assert.strictEqual(tabs, 4, "four tabs");
+          assert.strictEqual(tabs, 5, "five tabs: Build, Publish, Settings, Search, Profile");
         } else assert.ok(m.hamburger && m.hamburger.top >= 0 && m.hamburger.bottom <= m.vh, "hamburger not reachable");
         assert.ok(m.overflow <= 0, `scrolls sideways by ${m.overflow}px`);
         assert.strictEqual(m.small, 0, "nav controls under 44px");
