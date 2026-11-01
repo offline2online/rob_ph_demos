@@ -452,8 +452,10 @@ busy. Now:
   state the assumption, do not ask again"; it clears the flag and requests a
   rebuild (held until the train merges when the release is closing). At most
   `MAX_AUTO_ANSWERS` (2) per ticket (`autoAnswers`), after which it stays
-  flagged for a person; a dependency wait (`dependsOnItemIds`) is never
-  auto-answered.
+  flagged for a person; a dependency wait (`dependsOnItemIds`, `blocked.reason`
+  `waiting-on-dependency`) is never a question: it shows "Waiting for: <title>",
+  has no Answer button, and unblocks by itself when its dependencies have left
+  Backlog.
 - **A rebuild due while the release is closing waits for the merge, not a
   click**: the card carries `buildAfterTrain: true` (set by `selfHealPlan`,
   `releaseDependents`, `sweepUnbuiltReports` or the board's Answer while

@@ -1659,6 +1659,9 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .card .blocked-flag-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; max-width: 100%; }
 .card .blocked-flag-actions .blocked-resolve-btn { margin-left: 0; }
 .blocked-flag-needs-decision { color: #cf1322; background: #fff1f0; border-color: #ffa39e; }
+.blocked-flag-waiting-on-dependency { color: #096dd9; background: #e6f7ff; border-color: #91d5ff; cursor: default; }
+.blocked-flag-waiting-on-dependency .dependency-link { color: inherit; text-decoration: underline; }
+.card .blocked-flag-waiting-on-dependency .blocked-flag-status { white-space: normal; }
 .blocked-flag-waiting-on-input { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
 .waiting-answer-chip { cursor: default; padding-right: 8px; }
 .needs-decision-chip { margin-right: 6px; padding-right: 8px; }

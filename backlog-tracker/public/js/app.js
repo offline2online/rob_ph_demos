@@ -961,7 +961,9 @@ function cardHTML(item) {
   // supplies input. Notify Claude / the build routine skip it; the one-line
   // note is the hover, full detail lives in comments. Cleared by the
   // button here or by a newer comment from anyone other than whoever set it.
-  const blockedFlag = (isBacklog && item.blocked && item.blocked.reason)
+  const blockedFlag = (isBacklog && item.blocked && item.blocked.reason === "waiting-on-dependency")
+    ? dependencyFlagHTML(item)
+    : (isBacklog && item.blocked && item.blocked.reason)
     ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}</span><span class="blocked-flag-actions">${item.blocked.note ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="Answer the build's question — this rebuilds the ticket"><span class="material-symbols-outlined">forum</span>Answer</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
     : "";
   const e2eFixBadge = item.e2eAutoFix
@@ -1095,6 +1097,19 @@ function cardHTML(item) {
 function archivedCountForProject(pid) {
   if (archivedLoaded) return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
   return archivedStats.count[pid] || 0;
+}
+
+// A ticket waiting only on other tickets is not a question (1 Nov 2026): it
+// shows "Waiting for: <title>" with a link to each, no Answer button, and is
+// not counted as waiting on anyone. The automation releases it by itself.
+function dependencyFlagHTML(item) {
+  const ids = Array.isArray(item.dependsOnItemIds) ? item.dependsOnItemIds : [];
+  const links = ids.map((id) => {
+    const dep = allItems.find((i) => i.id === id);
+    return `<a class="dependency-link" href="#item-${escapeHTML(id)}" data-goto-item="${escapeHTML(id)}">${escapeHTML((dep && dep.title) || "another ticket")}</a>`;
+  });
+  const label = links.length ? links.join(", ") : escapeHTML(String(item.blocked.note || "other tickets").replace(/^Waiting for:\s*/i, "").split(". ")[0]);
+  return `<span class="blocked-flag blocked-flag-waiting-on-dependency" title="Nothing to answer: this builds by itself once the ticket${ids.length === 1 ? "" : "s"} it waits for ${ids.length === 1 ? "has" : "have"} landed"><span class="blocked-flag-status"><span class="material-symbols-outlined">link</span>Waiting for: ${label}</span></span>`;
 }
 
 function isBlockedItem(i) {

@@ -14,7 +14,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 const {
   rebasePatchFilesOnto, patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
-  parsesAs, mergeBrokeSyntax,
+  parsesAs, mergeBrokeSyntax, dependencyIdsOf, dependencyMigration,
 } = require("../scripts/run-backlog-automation.js");
 
 let passed = 0; const failures = [];
@@ -123,5 +123,22 @@ test("a migration number another ticket already took is a clash (the 4 Oct 0040/
   assert.deepStrictEqual(migrationNumberClashes(["docs/0040_notes.md"], () => ["0040_other.md"]), []);
 });
 
+
+test("dependencyIdsOf: a legacy 'Waits for <id>' question is a dependency; a real question is not", () => {
+  const A = "lQEQDQvBG5e1qqJlxWah";
+  assert.deepStrictEqual(dependencyIdsOf({ blocked: { reason: "waiting-on-input", note: `Waits for ${A} (Roles page) to land. Answer on the card (Answer button)` } }), [A]);
+  assert.deepStrictEqual(dependencyIdsOf({ dependsOnItemIds: ["x1"], blocked: { reason: "waiting-on-input", note: "whatever" } }), ["x1"]);
+  assert.strictEqual(dependencyIdsOf({ blocked: { reason: "waiting-on-input", note: "Which do you want, A or B?" } }), null);
+  assert.strictEqual(dependencyIdsOf({ blocked: { reason: "needs-decision", note: `Waits for ${A}` } }), null);
+});
+
+test("dependencyMigration: converts to waiting-on-dependency with titles, no raw ids", () => {
+  const A = "lQEQDQvBG5e1qqJlxWah";
+  const m = dependencyMigration({ blocked: { reason: "waiting-on-input", note: `Waits for ${A} to land` } }, { [A]: "Roles page" });
+  assert.strictEqual(m.blocked.reason, "waiting-on-dependency");
+  assert.deepStrictEqual(m.dependsOnItemIds, [A]);
+  assert.ok(m.blocked.note.includes("Roles page") && !m.blocked.note.includes(A) && !/Answer/.test(m.blocked.note));
+  assert.strictEqual(dependencyMigration({ dependsOnItemIds: [A], blocked: { reason: "waiting-on-dependency", note: "x" } }, {}), null, "already converted");
+});
 console.log(`\n${passed} passed, ${failures.length} failed`);
 process.exit(failures.length ? 1 : 0);

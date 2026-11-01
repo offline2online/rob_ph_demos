@@ -371,9 +371,11 @@ on the card. So, in a default build fire:
   cannot be built until another open ticket has landed (it needs code or a
   data model that ticket adds — not merely "related"), PATCH it with
   `dependsOnItemIds` (array of those ticket ids) and
-  `blocked: {reason: "waiting-on-input", note: "Waits for <id> to land"}`,
+  `blocked: {reason: "waiting-on-dependency", note: "Waiting for: <ticket titles>"}`
+  (plain English, titles not ids; a dependency is never `waiting-on-input` — that
+  state is for questions and shows an Answer button),
   plus a comment saying exactly what it needs. When every id it waits for
-  reaches Ready for Testing, the automation clears the flag and starts a
+  reaches Ready for Testing (or beyond), the automation clears the flag and starts a
   build of it by itself (`releaseDependents`). Only use this for a real
   code dependency; a ticket that merely touches the same area builds now.
 - **Report on the card, not the project.** When you finish, PATCH
@@ -731,8 +733,10 @@ path:
   Say in your note which commit or ticket built it.
 - **Needs a person's decision**: set
   `blocked: {reason: "waiting-on-input", note: "<the question, with the options>"}`,
-  as for a dependency above, so the card shows as waiting on someone
-  rather than as an ordinary Backlog card. End a waiting-on-input note with
+  so the card shows as waiting on someone
+  rather than as an ordinary Backlog card. The note is ONE plain-English
+  question that states the options (A or B) and what happens with each, with no
+  ticket ids. End a waiting-on-input note with
   "Answer on the card (Answer button)" — never "reply and click Ready for
   Dev": the Answer button on the card saves the answer as a comment, clears
   the flag and starts that ticket's rebuild itself, whereas Ready for Dev
