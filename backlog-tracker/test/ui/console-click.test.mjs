@@ -704,6 +704,16 @@ const scenarios = [
     },
   },
   {
+    name: "Blocked: a dependency wait shows 'Waiting for: <title>', no Answer button, no answer chip",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.dependsOnItemIds = ["b-dep"]; s.docs.backlogItems["b-dep"] = { ...s.docs.backlogItems.b1, title: "Roles page", dependsOnItemIds: [], blocked: null }; s.docs.backlogItems.b1.blocked = { reason: "waiting-on-dependency", note: "Waiting for: Roles page." }; return s; },
+    async run(c) {
+      await c.boardReady();
+      await until(async () => /Waiting for:\s*Roles page/.test(await c.page.locator(".blocked-flag-waiting-on-dependency").first().innerText().catch(() => "")), "the dependency flag to read Waiting for: Roles page");
+      assert.strictEqual(await c.page.locator(".blocked-answer-btn").count(), 0, "no Answer button");
+      assert.strictEqual(await c.page.locator(".waiting-answer-chip").count(), 0, "not counted as waiting on your answer");
+    },
+  },
+  {
     name: "Blocked: a card waiting on an answer shows the chip, not Ready for Dev",
     seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; return s; },
     async run(c) {

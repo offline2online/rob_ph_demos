@@ -262,8 +262,14 @@ safe and moving:
   Dev to build it again." — and `rebuildRequestedAt` is cleared. Tests:
   `test/rebuild-requests.test.js`, `test/notify-fanout.test.js`.
 - **`dependsOnItemIds` + `blocked`** — a ticket that needs another's code
-  waits flagged, and `releaseDependents` clears the flag and starts its
-  build when everything it waits for reaches Ready for Testing.
+  waits flagged `blocked.reason: "waiting-on-dependency"` (not a question:
+  the card reads "Waiting for: <ticket title>" with a link, no Answer button,
+  never counted as waiting on your answer, no notification). `releaseDependents`
+  and `sweepDependencyWaits` clear the flag and start its build when everything
+  it waits for has left Backlog (reached Ready for Testing or beyond); the
+  sweep also converts old dependency waits that were raised as
+  `waiting-on-input` ("Waits for <id>"). `waiting-on-input` is only for one
+  plain-English question with its options. Tests: `test/parallel-builds.test.js`.
 - **Answering a blocked ticket** — a Backlog card with `blocked.reason` and a
   `blocked.note` has an **Answer** button (`forum`). It opens the Resolve modal
   on the note's question; Send appends "Answer to the build's question: …" as
