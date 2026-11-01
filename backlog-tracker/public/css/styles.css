@@ -2225,3 +2225,7 @@ body { overflow-x: clip; }
 .perm-table tbody th { font-weight: 500; }
 .perm-table tr:last-child th, .perm-table tr:last-child td { border-bottom: 0; }
 .perm-select { min-width: 110px; }
+
+/* Archive / Archived projects / Releases pages: AG Grid lists (docs-grid.js) with an optional filter bar. */
+.archive-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
+.archive-filters select { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }

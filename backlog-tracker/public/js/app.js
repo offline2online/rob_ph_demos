@@ -5928,7 +5928,6 @@ document.getElementById("np-submit").addEventListener("click", async () => {
 const archivePage = document.getElementById("archive-page");
 const archiveFilterType = document.getElementById("archive-filter-type");
 const archiveFilterCategory = document.getElementById("archive-filter-category");
-const archiveFilterSearch = document.getElementById("archive-filter-search");
 archiveFilterCategory.innerHTML =
   '<option value="">All areas</option>' +
   CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
@@ -5947,7 +5946,6 @@ function openArchivePage(pid) {
   archiveFilters = { type: "", category: "", search: "" };
   archiveFilterType.value = "";
   archiveFilterCategory.value = "";
-  archiveFilterSearch.value = "";
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   archivePage.hidden = false;
@@ -5961,21 +5959,28 @@ function closeArchivePage() {
   document.getElementById("board-page-header").hidden = false;
 }
 
-function archiveRowHTML(item) {
-  const date = item.archivedAt && item.archivedAt.toDate ? item.archivedAt.toDate() : null;
-  const dateStr = date ? date.toLocaleDateString() : "—";
-  return `
-    <tr data-id="${item.id}">
-      <td><span class="badge badge-${item.type}">${item.type === "bug" ? "Bug" : "Feature"}</span></td>
-      <td><span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span></td>
-      <td>
-        <p class="archive-row-title">${escapeHTML(item.title)}</p>
-        <p class="archive-row-desc">${escapeHTML(item.desc)}</p>
-      </td>
-      <td class="archive-row-version">${item.testVersion ? `v${escapeHTML(item.testVersion)}` : "—"}</td>
-      <td class="archive-row-date">${dateStr}</td>
-      <td><button type="button" class="restore-btn" data-id="${item.id}">Restore</button></td>
-    </tr>`;
+const archiveDateOf = (item) => (item.archivedAt && item.archivedAt.toDate ? item.archivedAt.toDate() : null);
+let archiveList = null;
+function getArchiveList() {
+  if (!archiveList) {
+    archiveList = createDocsList(document.getElementById("archive-grid"), {
+      id: "archived-tickets", searchLabel: "Search title or description", emptyText: "No archived tickets match these filters.",
+      columns: [
+        { key: "type", header: "Type", width: 110, text: (i) => i.type || "", html: (i) => `<span class="badge badge-${escapeHTML(i.type)}">${i.type === "bug" ? "Bug" : "Feature"}</span>` },
+        { key: "category", header: "Area", width: 170, text: (i) => i.category || "Uncategorised", html: (i) => `<span class="card-cat">${escapeHTML(i.category || "Uncategorised")}</span>` },
+        { key: "title", header: "Ticket", flex: 1, minWidth: 260, text: (i) => `${i.title || ""} ${i.desc || ""}`,
+          html: (i) => `<p class="archive-row-title">${escapeHTML(i.title)}</p><p class="archive-row-desc">${escapeHTML(i.desc)}</p>` },
+        { key: "version", header: "Version", width: 110, text: (i) => (i.testVersion ? `v${i.testVersion}` : ""), html: (i) => (i.testVersion ? `v${escapeHTML(i.testVersion)}` : "—") },
+        { key: "date", header: "Date", width: 130, text: (i) => { const d = archiveDateOf(i); return d ? d.toISOString() : ""; }, html: (i) => { const d = archiveDateOf(i); return d ? escapeHTML(d.toLocaleDateString()) : "—"; } },
+        { key: "action", header: "", width: 110, sortable: false, text: () => "", html: (i) => `<button type="button" class="restore-btn" data-id="${escapeHTML(i.id)}">Restore</button>` },
+      ],
+    });
+    document.getElementById("archive-grid").addEventListener("click", (e) => {
+      const btn = e.target.closest(".restore-btn");
+      if (btn) restoreItem(btn.dataset.id);
+    });
+  }
+  return archiveList;
 }
 
 function renderArchivePage() {
@@ -5987,53 +5992,12 @@ function renderArchivePage() {
   );
   if (archiveFilters.type) rows = rows.filter((i) => i.type === archiveFilters.type);
   if (archiveFilters.category) rows = rows.filter((i) => i.category === archiveFilters.category);
-  if (archiveFilters.search) {
-    const q = archiveFilters.search.toLowerCase();
-    rows = rows.filter(
-      (i) => (i.title || "").toLowerCase().includes(q) || (i.desc || "").toLowerCase().includes(q)
-    );
-  }
-
-  const dir = archiveSort.dir === "asc" ? 1 : -1;
-  rows.sort((a, b) => {
-    let av, bv;
-    if (archiveSort.field === "date") {
-      av = a.archivedAt && a.archivedAt.toMillis ? a.archivedAt.toMillis() : 0;
-      bv = b.archivedAt && b.archivedAt.toMillis ? b.archivedAt.toMillis() : 0;
-    } else if (archiveSort.field === "title") {
-      av = (a.title || "").toLowerCase(); bv = (b.title || "").toLowerCase();
-    } else if (archiveSort.field === "category") {
-      av = (a.category || ""); bv = (b.category || "");
-    } else {
-      av = (a.type || ""); bv = (b.type || "");
-    }
-    if (av < bv) return -1 * dir;
-    if (av > bv) return 1 * dir;
-    return 0;
-  });
+  rows.sort((a, b) => (b.archivedAt && b.archivedAt.toMillis ? b.archivedAt.toMillis() : 0) - (a.archivedAt && a.archivedAt.toMillis ? a.archivedAt.toMillis() : 0));
 
   document.getElementById("archive-page-count").textContent =
     `${rows.length} ticket${rows.length === 1 ? "" : "s"}`;
-  document.getElementById("archive-table-body").innerHTML = rows.map(archiveRowHTML).join("");
-  document.getElementById("archive-table-empty").hidden = rows.length !== 0;
-
-  document.querySelectorAll(".archive-table th[data-sort]").forEach((th) => {
-    th.toggleAttribute("data-sort-active", th.dataset.sort === archiveSort.field);
-  });
+  getArchiveList().setRows(rows);
 }
-
-
-document.querySelectorAll(".archive-table th[data-sort]").forEach((th) => {
-  th.addEventListener("click", () => {
-    const field = th.dataset.sort;
-    if (archiveSort.field === field) {
-      archiveSort.dir = archiveSort.dir === "asc" ? "desc" : "asc";
-    } else {
-      archiveSort = { field, dir: "asc" };
-    }
-    renderArchivePage();
-  });
-});
 
 archiveFilterType.addEventListener("change", () => {
   archiveFilters.type = archiveFilterType.value;
@@ -6042,15 +6006,6 @@ archiveFilterType.addEventListener("change", () => {
 archiveFilterCategory.addEventListener("change", () => {
   archiveFilters.category = archiveFilterCategory.value;
   renderArchivePage();
-});
-archiveFilterSearch.addEventListener("input", () => {
-  archiveFilters.search = archiveFilterSearch.value;
-  renderArchivePage();
-});
-
-document.getElementById("archive-table-body").addEventListener("click", (e) => {
-  const btn = e.target.closest(".restore-btn");
-  if (btn) restoreItem(btn.dataset.id);
 });
 
 // ── Archived projects page (top-level — a whole project, not one ticket) ──
@@ -6071,34 +6026,38 @@ function closeArchivedProjectsPage() {
   document.getElementById("board-page-header").hidden = false;
 }
 
-function archivedProjectRowHTML(p) {
-  const activeCount = activeItemCountForProject(p.id);
-  const date = p.archivedAt && p.archivedAt.toDate ? p.archivedAt.toDate() : null;
-  const dateStr = date ? date.toLocaleDateString() : "—";
-  return `
-    <tr data-project-id="${escapeHTML(p.id)}">
-      <td>${escapeHTML(p.name)}</td>
-      <td>${activeCount} active item${activeCount === 1 ? "" : "s"}</td>
-      <td>${dateStr}</td>
-      <td><button type="button" class="restore-btn restore-project-btn" data-project-id="${escapeHTML(p.id)}">Restore</button></td>
-    </tr>`;
+let archivedProjectsList = null;
+function getArchivedProjectsList() {
+  if (!archivedProjectsList) {
+    archivedProjectsList = createDocsList(document.getElementById("archived-projects-grid"), {
+      id: "archived-projects", searchLabel: "Search archived projects", emptyText: "No archived projects.",
+      columns: [
+        { key: "name", header: "Project", flex: 1, minWidth: 220, text: (p) => p.name || "", html: (p) => escapeHTML(p.name) },
+        { key: "active", header: "Active items", width: 150, text: (p) => String(activeItemCountForProject(p.id)).padStart(6, "0"),
+          html: (p) => { const n = activeItemCountForProject(p.id); return `${n} active item${n === 1 ? "" : "s"}`; } },
+        { key: "archived", header: "Archived", width: 140, text: (p) => (p.archivedAt && p.archivedAt.toDate ? p.archivedAt.toDate().toISOString() : ""),
+          html: (p) => (p.archivedAt && p.archivedAt.toDate ? escapeHTML(p.archivedAt.toDate().toLocaleDateString()) : "—") },
+        { key: "action", header: "", width: 110, sortable: false, text: () => "", html: (p) => `<button type="button" class="restore-btn restore-project-btn" data-project-id="${escapeHTML(p.id)}">Restore</button>` },
+      ],
+    });
+    document.getElementById("archived-projects-grid").addEventListener("click", (e) => {
+      const btn = e.target.closest(".restore-project-btn");
+      if (btn) restoreProject(btn.dataset.projectId);
+    });
+  }
+  return archivedProjectsList;
 }
 
 function renderArchivedProjectsPage() {
   const rows = projects.filter((p) => p.archived);
   document.getElementById("archived-projects-count").textContent =
     `${rows.length} project${rows.length === 1 ? "" : "s"}`;
-  document.getElementById("archived-projects-table-body").innerHTML = rows.map(archivedProjectRowHTML).join("");
-  document.getElementById("archived-projects-empty").hidden = rows.length !== 0;
+  getArchivedProjectsList().setRows(rows);
 }
 
 // Reached from the Settings page now, not the nav drawer — see the
 // "Archived projects" docs-block in faq-settings-page.
 document.getElementById("fa-open-archived-projects-btn").addEventListener("click", () => { closeFaqSettingsPage(); openArchivedProjectsPage(); });
-document.getElementById("archived-projects-table-body").addEventListener("click", (e) => {
-  const btn = e.target.closest(".restore-project-btn");
-  if (btn) restoreProject(btn.dataset.projectId);
-});
 
 // ── Docs page (per-project requirements + interfaces with other projects) ─
 const docsPage = document.getElementById("docs-page");
@@ -7853,30 +7812,42 @@ async function requireReleaseEditor() {
   return true;
 }
 
-function releaseRowHTML(r) {
-  const created = r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString() : "—";
+let releasesList = null;
+function releaseCells(r) {
   const liveOn = r.madeLiveAt && r.madeLiveAt.toDate ? r.madeLiveAt.toDate().toLocaleDateString() : "";
   const isLive = r.status === "live";
   const current = currentLiveRelease();
   const isCurrent = !!(current && current.id === r.id);
   const projectCount = projects.filter((p) => p.releaseId === r.id && !p.archived).length;
   const conceptCount = releaseConceptIds(r).length;
-  return `
-    <tr data-release-id="${escapeHTML(r.id)}">
-      <td><a href="#" class="release-edit-link" data-release-id="${escapeHTML(r.id)}">${escapeHTML(r.name || "")}</a></td>
-      <td>${r.version ? escapeHTML(r.version) : "—"}</td>
-      <td><span class="badge ${isLive ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(RELEASE_STATUS_LABELS[r.status] || r.status || "")}</span>${liveOn ? ` <span class="field-hint">${escapeHTML(isCurrent ? `current · ${liveOn}` : liveOn)}</span>` : ""}</td>
-      <td>${projectCount} project${projectCount === 1 ? "" : "s"}${conceptCount ? `, ${conceptCount} concept${conceptCount === 1 ? "" : "s"}` : ""}</td>
-      <td>${escapeHTML(created)}</td>
-      <td>${isLive ? "" : `<button type="button" class="restore-btn release-mark-live-btn" data-release-id="${escapeHTML(r.id)}" data-editor-only>Mark live</button>`}</td>
-    </tr>`;
+  return { liveOn, isLive, isCurrent, projectCount, conceptCount };
+}
+function getReleasesList() {
+  if (!releasesList) {
+    releasesList = createDocsList(document.getElementById("releases-grid"), {
+      id: "releases", searchLabel: "Search releases", emptyText: "No releases yet.",
+      columns: [
+        { key: "name", header: "Release", flex: 1, minWidth: 200, text: (r) => r.name || "",
+          html: (r) => `<a href="#" class="release-edit-link" data-release-id="${escapeHTML(r.id)}">${escapeHTML(r.name || "")}</a>` },
+        { key: "version", header: "Version", width: 110, text: (r) => r.version || "", html: (r) => (r.version ? escapeHTML(r.version) : "—") },
+        { key: "status", header: "Status", width: 200, text: (r) => RELEASE_STATUS_LABELS[r.status] || r.status || "",
+          html: (r) => { const c = releaseCells(r); return `<span class="badge ${c.isLive ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(RELEASE_STATUS_LABELS[r.status] || r.status || "")}</span>${c.liveOn ? ` <span class="field-hint">${escapeHTML(c.isCurrent ? `current · ${c.liveOn}` : c.liveOn)}</span>` : ""}`; } },
+        { key: "projects", header: "Projects", width: 170, text: (r) => String(releaseCells(r).projectCount).padStart(6, "0"),
+          html: (r) => { const c = releaseCells(r); return `${c.projectCount} project${c.projectCount === 1 ? "" : "s"}${c.conceptCount ? `, ${c.conceptCount} concept${c.conceptCount === 1 ? "" : "s"}` : ""}`; } },
+        { key: "created", header: "Created", width: 130, text: (r) => (r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toISOString() : ""),
+          html: (r) => escapeHTML(r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString() : "—") },
+        { key: "action", header: "", width: 120, sortable: false, text: () => "",
+          html: (r) => (r.status === "live" ? "" : `<button type="button" class="restore-btn release-mark-live-btn" data-release-id="${escapeHTML(r.id)}" data-editor-only>Mark live</button>`) },
+      ],
+    });
+  }
+  return releasesList;
 }
 
 function renderReleasesPage() {
   const rows = releasesInVersionOrder();
   document.getElementById("releases-count").textContent = `${rows.length} release${rows.length === 1 ? "" : "s"}`;
-  document.getElementById("releases-table-body").innerHTML = rows.map(releaseRowHTML).join("");
-  document.getElementById("releases-empty").hidden = rows.length !== 0;
+  getReleasesList().setRows(rows);
 }
 
 // One place every releases update (REST prime or listener) lands, so every
@@ -7993,7 +7964,7 @@ document.getElementById("releases-add-btn").addEventListener("click", async () =
   openReleaseEditor(null);
 });
 
-document.getElementById("releases-table-body").addEventListener("click", async (e) => {
+document.getElementById("releases-grid").addEventListener("click", async (e) => {
   const link = e.target.closest(".release-edit-link");
   if (link) {
     e.preventDefault();

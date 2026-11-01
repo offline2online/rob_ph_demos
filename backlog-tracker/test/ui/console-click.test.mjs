@@ -456,7 +456,7 @@ const scenarios = [
       await c.openMenu();
       await c.click(".project-archive-btn", "Archived tickets");
       await c.visible("#archive-page");
-      await c.waitText("#archive-table-body", "Archived thing", "archive page lists the seeded archived card");
+      await c.waitText("#archive-grid", "Archived thing", "archive page lists the seeded archived card");
     },
   },
   {
@@ -466,8 +466,8 @@ const scenarios = [
       await c.boardReady();
       await c.openMenu();
       await c.click(".project-archive-btn", "Archived tickets");
-      await c.waitText("#archive-table-body", "Archived thing", "archive page lists the seeded archived card");
-      const row = await c.page.evaluate((ms) => ({ text: document.querySelector("#archive-table-body tr").innerText, want: new Date(ms).toLocaleDateString() }), T0 + 6);
+      await c.waitText("#archive-grid", "Archived thing", "archive page lists the seeded archived card");
+      const row = await c.page.evaluate((ms) => ({ text: document.querySelector("#archive-grid tr[data-id], #archive-grid .ag-row").innerText, want: new Date(ms).toLocaleDateString() }), T0 + 6);
       assert.ok(row.text.includes(row.want), `the Archived row should show ${row.want}, got ${JSON.stringify(row.text)}`);
     },
   },
@@ -795,7 +795,7 @@ const scenarios = [
       await c.page.check('#release-editor-projects input[value="p1"]');
       await c.click("#release-editor-save", "save");
       await c.hidden("#release-editor-backdrop", "editor closes");
-      await c.page.waitForSelector('#releases-table-body tr[data-release-id="r1"] td:nth-child(2):has-text("2.1.0")');
+      await c.page.waitForSelector('#releases-grid :text("2.1.0")');
       await c.click('.release-edit-link[data-release-id="r1"]', "reopen");
       await c.visible("#release-editor-backdrop:not([hidden])");
       assert.strictEqual(await c.page.inputValue("#release-editor-version"), "2.1.0");
@@ -810,7 +810,7 @@ const scenarios = [
       await c.page.fill("#release-editor-version", "3.0.0");
       await c.click("#release-editor-save", "create");
       await c.hidden("#release-editor-backdrop");
-      await c.waitText("#releases-table-body", "November 2026", "new release listed");
+      await c.waitText("#releases-grid", "November 2026", "new release listed");
     },
   },
   {

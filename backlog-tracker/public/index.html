@@ -902,36 +902,15 @@
         <h2>Archived — <span id="archive-page-project-name"></span></h2>
         <span class="page-header-count" id="archive-page-count">0 tickets</span>
       </div>
-      <div class="archive-table-wrap">
-        <table class="archive-table">
-          <thead>
-            <tr>
-              <th data-sort="type">Type</th>
-              <th data-sort="category">Area</th>
-              <th data-sort="title">Ticket</th>
-              <th>Version</th>
-              <th data-sort="date">Date</th>
-              <th></th>
-            </tr>
-            <tr class="archive-filter-row">
-              <th>
-                <select id="archive-filter-type" aria-label="Filter by type">
-                  <option value="">All types</option>
-                  <option value="feature">Feature</option>
-                  <option value="bug">Bug</option>
-                </select>
-              </th>
-              <th><select id="archive-filter-category" aria-label="Filter by area"><option value="">All areas</option></select></th>
-              <th><input type="search" id="archive-filter-search" placeholder="Title or description…" aria-label="Search title or description"></th>
-              <th></th>
-              <th></th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="archive-table-body"></tbody>
-        </table>
-        <p class="empty-hint" id="archive-table-empty" hidden>No archived tickets match these filters.</p>
+      <div class="archive-filters">
+        <select id="archive-filter-type" aria-label="Filter by type">
+          <option value="">All types</option>
+          <option value="feature">Feature</option>
+          <option value="bug">Bug</option>
+        </select>
+        <select id="archive-filter-category" aria-label="Filter by area"><option value="">All areas</option></select>
       </div>
+      <div id="archive-grid"></div>
     </section>
 
     <section class="archive-page" id="archived-projects-page" hidden>
@@ -939,20 +918,7 @@
         <h2>Archived projects</h2>
         <span class="page-header-count" id="archived-projects-count">0 projects</span>
       </div>
-      <div class="archive-table-wrap">
-        <table class="archive-table">
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th>Active items</th>
-              <th>Archived</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="archived-projects-table-body"></tbody>
-        </table>
-        <p class="empty-hint" id="archived-projects-empty" hidden>No archived projects.</p>
-      </div>
+      <div id="archived-projects-grid"></div>
     </section>
 
     <section class="faq-admin-page faq-editor-page" id="faq-article-editor-page" hidden>
@@ -1619,22 +1585,7 @@
       <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
         <button type="button" class="btn-primary" id="releases-add-btn" data-editor-only>+ New release</button>
       </div>
-      <div class="archive-table-wrap">
-        <table class="archive-table">
-          <thead>
-            <tr>
-              <th>Release</th>
-              <th>Version</th>
-              <th>Status</th>
-              <th>Projects</th>
-              <th>Created</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="releases-table-body"></tbody>
-        </table>
-        <p class="empty-hint" id="releases-empty" hidden>No releases yet.</p>
-      </div>
+      <div id="releases-grid"></div>
     </section>
 
     <!-- Phone only: the actions of whichever project you're currently
