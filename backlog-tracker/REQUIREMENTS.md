@@ -3521,3 +3521,17 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
 - **Rules** (`firestore.rules` → "Whiteboard"): a board doc may be `get` by anyone with a valid id; only members `list` boards, create one (`keys` = `shared`, `createdAt`; no email or name is stored) or flip `shared`; only an admin deletes one. While `shared == true`, anyone may read, create and delete strokes (so link holders can also erase and clear, by design — a public scratchpad); strokes are validated (`g` ≤ 40 chars, `#rrggbb` colour, size 0–200, 2–4000 numbers in pairs) and never updated. With `shared: false` only members read. Boards cannot be enumerated by non-members, so an id can be given but not found.
 - **Not built yet**: a control to turn sharing off or list/delete old boards (the `shared` field and rules are ready for it); remote cursors; text and shapes.
 - **Tests**: `test/whiteboard-core.test.mjs` (ids, links, zoom, chunking, hit-testing), `test/whiteboard-rules.test.js` (emulator; part of `npm run test:rules`), `test/ui/whiteboard.test.mjs` (Chromium, 1280 and 390 px; part of `test:ui`), `test/ui/whiteboard-tablet.test.mjs` (iPad sizes 768–1366 px by real touch: the menu item, a dropped click, Back and tap again; draw, colour, size, undo, pinch, Move, reset, eraser, dot, clear, share; plus the toolbar fitting with no sideways scroll from 390 to 1920 px; part of `test:ui`).
+
+## Docs page layout (31 Oct 2026)
+
+- A project's Docs page has tabs General, README, Requirements, Documents,
+  Interfaces and Revisions; every existing control (including editing, mirror
+  read-only rules and the document/interface modals) keeps working.
+- README and Requirements render as Markdown in PH typography; Markdown is
+  escaped before formatting. Edit toggles the textarea; mirrors have no Edit.
+- Documents, Interfaces and Revisions are AG Grid tables with search and
+  column sort, with a plain-table fallback when the grid script cannot load.
+- Revisions lists `docRevisions` for the project (document, kind, when, by,
+  via, size), newest first, read-only, without document text.
+- Explanatory copy is shown as (i) info tooltips. Agent/MCP access to the docs
+  is unchanged.

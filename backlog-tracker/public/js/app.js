@@ -31,6 +31,8 @@ import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js"
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
+import { renderMarkdown } from "./docs-markdown.js";
+import { createDocsList } from "./docs-grid.js";
 import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, getAvatarMember, normEmail, checkAvatarFile, avatarBlobFromFile } from "./avatar.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { ENTITY_TYPES, TYPE_PLATFORM, TYPE_INTERNAL, typeOf, matchesTypeFilter, typeBadgeHTML, typeOptionsHTML } from "./entity-type.js";
@@ -6108,6 +6110,8 @@ function openDocsPage(pid) {
   ensureLazy("projectDocs");
   ensureLazy("concepts");
   docsProjectId = pid;
+  docsTab = "general";
+  docsEditing.clear();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   docsPage.hidden = false;
@@ -6145,10 +6149,6 @@ function interfaceRowHTML(f, anchorId) {
       ${contentPreview}
     </div>`;
 }
-
-// Whether the "Superseded (N)" fold is open; renderDocsPage rebuilds the
-// list on every snapshot, so the state lives here, not in the DOM.
-let docsSupersededOpen = false;
 
 function renderDocsPage() {
   if (!docsProjectId) return;
@@ -6231,23 +6231,146 @@ function renderDocsPage() {
     syncBanner.hidden = !behind;
     syncBanner.textContent = behind ? `${behind.label || "Docs behind main"} — ${behind.text} The repo file is the source of truth; run the project's docs sync (or fix the cause above) to bring this copy up to date.` : "";
   }
+  applyDocsTab();
+  renderDocsMarkdownViews();
   const rows = interfacesForProject(docsProjectId);
-  document.getElementById("docs-interfaces-list").innerHTML = rows.length
-    ? rows.map((f) => interfaceRowHTML(f, docsProjectId)).join("")
-    : '<p class="interface-row-empty">No interfaces defined with another project or concept yet.</p>';
+  docsInterfacesList().setRows(rows.map((f) => ({ ...f, anchorId: docsProjectId })));
   const docRows = docsForProject(docsProjectId);
   const ordered = orderProjectDocs(docRows, project);
-  const folded = ordered.superseded.length
-    ? `<details class="docs-superseded" id="docs-superseded"${docsSupersededOpen ? " open" : ""}>
-        <summary>Superseded (${ordered.superseded.length})</summary>
-        ${ordered.superseded.map((d) => projectDocRowHTML(d, { showNote: true })).join("")}
-      </details>`
-    : "";
-  document.getElementById("docs-extra-docs-list").innerHTML = docRows.length
-    ? (ordered.startHere ? projectDocRowHTML(ordered.startHere, { startHere: true, showNote: true }) : "") +
-      ordered.current.map((d) => projectDocRowHTML(d)).join("") + folded
-    : '<p class="interface-row-empty">No additional documents yet.</p>';
+  docsDocumentsList().setRows([
+    ...(ordered.startHere ? [{ ...ordered.startHere, startHere: true }] : []),
+    ...ordered.current, ...ordered.superseded,
+  ]);
+  docsRevisionsList().setRows(docsRevisionRows(docsProjectId));
 }
+
+// ── Docs page tabs, reading views and lists (the PH restyle) ─────────────
+let docsTab = "general";
+const docsEditing = new Set();
+const DOCS_TABS = ["general", "readme", "requirements", "documents", "interfaces", "revisions"];
+
+function applyDocsTab() {
+  document.querySelectorAll("#docs-page [data-docs-tab]").forEach((el) => {
+    if (el.classList.contains("docs-tab")) return;
+    el.classList.toggle("docs-tab-off", el.dataset.docsTab !== docsTab);
+  });
+  document.querySelectorAll("#docs-tabs .docs-tab").forEach((b) => {
+    const on = b.dataset.tab === docsTab;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+  });
+}
+
+function renderDocsMarkdownViews() {
+  for (const kind of ["readme", "requirements"]) {
+    const input = document.getElementById(`docs-${kind}-input`);
+    const view = document.getElementById(`docs-${kind}-view`);
+    const block = view.closest(".docs-block");
+    const mirrored = input.readOnly;
+    const editing = docsEditing.has(kind) && !mirrored && !input.disabled;
+    block.classList.toggle("docs-editing", editing);
+    const btn = document.getElementById(`docs-${kind}-edit`);
+    btn.hidden = mirrored;
+    btn.textContent = editing ? "Done" : "Edit";
+    btn.disabled = input.disabled;
+    const text = input.disabled ? input.value : projectDocText.get(`${docsProjectId}/${kind}`);
+    view.innerHTML = text
+      ? (input.disabled ? `<p class="interface-row-empty">${escapeHTML(text)}</p>` : renderMarkdown(text))
+      : `<p class="interface-row-empty">No ${kind === "readme" ? "README" : "requirements"} written yet.</p>`;
+  }
+}
+document.getElementById("docs-tabs").addEventListener("click", (e) => {
+  const b = e.target.closest(".docs-tab");
+  if (!b || !DOCS_TABS.includes(b.dataset.tab)) return;
+  docsTab = b.dataset.tab;
+  if (docsTab === "revisions") { docsRevisionsByProject.delete(docsProjectId); loadDocsRevisions(docsProjectId); }
+  applyDocsTab();
+});
+for (const kind of ["readme", "requirements"]) {
+  document.getElementById(`docs-${kind}-edit`).addEventListener("click", () => {
+    if (docsEditing.has(kind)) docsEditing.delete(kind); else docsEditing.add(kind);
+    renderDocsMarkdownViews();
+    if (docsEditing.has(kind)) document.getElementById(`docs-${kind}-input`).focus();
+  });
+}
+
+let docsListsCache = null;
+function docsLists() {
+  if (docsListsCache) return docsListsCache;
+  const preview = (t, n = 160) => { const x = String(t || "").replace(/\s+/g, " ").trim(); return x.length > n ? x.slice(0, n) + "…" : x; };
+  docsListsCache = {
+    documents: createDocsList(document.getElementById("docs-extra-docs-list"), {
+      id: "documents", searchLabel: "Search documents", emptyText: "No additional documents yet.",
+      columns: [
+        { key: "name", header: "Document", flex: 2, text: (d) => d.name || "",
+          html: (d) => `<div class="interface-row-title">${d.startHere ? '<span class="material-symbols-outlined docs-start-icon">flag</span>' : ""}${escapeHTML(d.name)}</div>` +
+            `<div class="docs-row-chips">${d.startHere ? startHereChipHTML() : ""}${isMirror(d) ? mirrorChipHTML(d) : ""}</div>` +
+            (d.startHere && d.statusNote ? `<p class="docs-status-note">${escapeHTML(d.statusNote)}</p>` : "") },
+        { key: "status", header: "Status", width: 120, text: (d) => (d.status && d.status !== "current" ? d.status : "current"),
+          html: (d) => `<span class="docs-status-chip">${escapeHTML(d.status && d.status !== "current" ? d.status : "current")}</span>` },
+        { key: "excerpt", header: "Content", flex: 3, text: (d) => d.contentMd || "",
+          html: (d) => d.contentMd ? `<span class="docs-cell-preview">${escapeHTML(preview(d.contentMd))}</span>` : '<span class="interface-row-empty">No content written yet.</span>' },
+        { key: "actions", header: "", width: 96, sortable: false, text: () => "",
+          html: (d) => `<div class="interface-row-actions">${isMirror(d) ? openInGithubHTML(d) : `<button type="button" class="icon-btn doc-edit-btn" data-id="${escapeHTML(d.id)}" title="Edit" aria-label="Edit">&#9998;</button>`}<button type="button" class="icon-btn doc-delete-btn" data-id="${escapeHTML(d.id)}" title="Remove" aria-label="Remove">&times;</button></div>` },
+      ],
+    }),
+    interfaces: createDocsList(document.getElementById("docs-interfaces-list"), {
+      id: "interfaces", searchLabel: "Search interfaces", emptyText: "No interfaces defined with another project or concept yet.",
+      columns: [
+        { key: "name", header: "Interface", flex: 2, text: (f) => f.name || "",
+          html: (f) => `<div class="interface-row-title">${escapeHTML(f.name)}</div>${isMirror(f) ? `<div class="docs-row-chips">${mirrorChipHTML(f)}</div>` : ""}` },
+        { key: "with", header: "With", flex: 1, text: (f) => endpointName(endpointOther(f, f.anchorId)) || "",
+          html: (f) => { const o = endpointOther(f, f.anchorId); return `<b>${escapeHTML(endpointName(o))}</b>${o && o.type === "concept" ? " (concept)" : ""}${(f.history || []).length ? ` &middot; re-pointed ${(f.history || []).length}&times;` : ""}`; } },
+        { key: "excerpt", header: "Contract", flex: 3, text: (f) => f.contentMd || "",
+          html: (f) => f.contentMd ? `<span class="docs-cell-preview">${escapeHTML(preview(f.contentMd))}</span>` : '<span class="interface-row-empty">No contract written yet.</span>' },
+        { key: "actions", header: "", width: 96, sortable: false, text: () => "",
+          html: (f) => `<div class="interface-row-actions">${interfaceActionsHTML(f, f.anchorId)}</div>` },
+      ],
+    }),
+    revisions: createDocsList(document.getElementById("docs-revisions-list"), {
+      id: "revisions", searchLabel: "Search revisions", emptyText: "No revisions recorded for this project yet.",
+      columns: [
+        { key: "name", header: "Document", flex: 2, text: (r) => r.name || r.target || "", html: (r) => escapeHTML(r.name || r.target || "(unnamed)") },
+        { key: "target", header: "Kind", width: 150, text: (r) => r.target || "", html: (r) => `<span class="docs-status-chip">${escapeHTML(r.target || "")}</span>` },
+        { key: "at", header: "Replaced", width: 180, text: (r) => String(r.atMs || 0).padStart(15, "0"),
+          html: (r) => escapeHTML(r.atMs ? new Date(r.atMs).toLocaleString() : "") },
+        { key: "by", header: "By", flex: 1, text: (r) => r.replacedByEmail || "", html: (r) => escapeHTML(r.replacedByEmail || "") },
+        { key: "via", header: "Via", width: 110, text: (r) => r.replacedVia || "", html: (r) => escapeHTML(r.replacedVia || "") },
+        { key: "chars", header: "Characters", width: 120, text: (r) => String(r.chars || 0).padStart(9, "0"), html: (r) => escapeHTML(String(r.chars == null ? "" : r.chars)) },
+      ],
+    }),
+  };
+  return docsListsCache;
+}
+const docsDocumentsList = () => docsLists().documents;
+const docsInterfacesList = () => docsLists().interfaces;
+const docsRevisionsList = () => docsLists().revisions;
+
+// Revisions are read over REST with a field mask: contentMd (up to 200k
+// characters a row) never comes down just to draw a list.
+const docsRevisionsByProject = new Map();
+async function loadDocsRevisions(pid) {
+  if (!pid || docsRevisionsByProject.has(pid)) return;
+  docsRevisionsByProject.set(pid, []);
+  try {
+    const docs = await restRunQuery({
+      from: [{ collectionId: "docRevisions" }],
+      where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: pid } } },
+      select: { fields: ["target", "name", "projectId", "chars", "replacedAt", "replacedByEmail", "replacedVia"].map((f) => ({ fieldPath: f })) },
+      limit: 300,
+    });
+    docsRevisionsByProject.set(pid, docs.map((d) => {
+      const r = { id: d.name.split("/").pop(), ...restFields(d.fields) };
+      r.atMs = tsToMs(r.replacedAt);
+      return r;
+    }).sort((a, b) => b.atMs - a.atMs));
+  } catch (err) {
+    docsRevisionsByProject.delete(pid);
+    console.warn("backlog-tracker: couldn't load doc revisions", err);
+  }
+  if (docsProjectId === pid) renderDocsPage();
+}
+function docsRevisionRows(pid) { return docsRevisionsByProject.get(pid) || []; }
 
 document.getElementById("docs-description-save").addEventListener("click", async () => {
   if (!docsProjectId) return;
@@ -6336,9 +6459,6 @@ document.getElementById("docs-extra-docs-list").addEventListener("click", (e) =>
   const delBtn = e.target.closest(".doc-delete-btn");
   if (delBtn) { confirmDeleteProjectDoc(delBtn.dataset.id); return; }
 });
-document.getElementById("docs-extra-docs-list").addEventListener("toggle", (e) => {
-  if (e.target && e.target.id === "docs-superseded") docsSupersededOpen = e.target.open;
-}, true);
 async function confirmDeleteProjectDoc(id) {
   const d = projectDocs.find((x) => x.id === id);
   if (d && isMirror(d) && !(await showConfirmDialog(mirrorDeleteWarning(d), { okLabel: "Delete", danger: true }))) return;

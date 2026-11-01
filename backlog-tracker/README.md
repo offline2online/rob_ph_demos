@@ -2656,3 +2656,20 @@ builds (board and MCP both refuse), shows a Finalised badge, and records the fro
 version, who and when on `projects/{id}.finalised`. **Unfreeze project…** /
 `unfreeze_project` needs a reason. Not the same as the train lock, and the Staff
 Kanban is unaffected. See `REQUIREMENTS.md` → "Project freeze".
+
+## Docs page: tabs, reading view and AG Grid lists (31 Oct 2026)
+
+A project's Docs page (**⋮ → Project Settings**) is split into PH-style tabs:
+**General** (type, program, release, description, repo folder, routine
+instructions, FAQ automation, demote), **README**, **Requirements**,
+**Documents**, **Interfaces** and **Revisions**. README and Requirements open
+in a reading view rendered from Markdown (`public/js/docs-markdown.js` — HTML
+is escaped first, so document text can never become markup); **Edit** reveals
+the same textarea and Save as before, and a repo mirror stays read-only.
+Documents, Interfaces and Revisions are searchable, sortable AG Grid
+(`ag-theme-alpine`, loaded from jsDelivr by `public/js/docs-grid.js`) lists;
+if the grid cannot load, the same data shows as a plain sortable table.
+Revisions reads `docRevisions` for the project over REST with a field mask
+(no document text is downloaded) and is read-only. Nothing about what MCP
+agents can read or write changed. UI tests serve AG Grid from the
+`ag-grid-community` dev dependency (`test/ui/harness.mjs`).

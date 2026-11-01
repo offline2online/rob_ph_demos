@@ -376,6 +376,42 @@ const scenarios = [
     },
   },
   {
+    name: "Docs page: PH tabs, rendered Markdown, AG Grid lists and search",
+    seed: () => seed(),
+    async run(c) {
+      await c.boardReady();
+      await c.openMenu();
+      await c.click(".project-docs-btn", "Project Settings");
+      await c.visible("#docs-page");
+      // Overview is the landing tab; the document list is on its own tab.
+      assert.deepEqual(await c.page.evaluate(() => [...document.querySelectorAll("#docs-tabs .docs-tab")].map((b) => b.dataset.tab)), ["general", "readme", "requirements", "documents", "interfaces", "revisions"]);
+      assert.equal(await c.page.evaluate(() => getComputedStyle(document.getElementById("docs-extra-docs-list").closest(".docs-block")).display), "none", "Documents block is hidden on Overview");
+      await c.page.click('#docs-tabs [data-tab="documents"]');
+      await c.visible("#docs-extra-docs-list");
+      await c.page.waitForSelector("#docs-extra-docs-list .ag-theme-alpine .ag-row", { timeout: 8000 });
+      await c.waitText("#docs-extra-docs-list", "Release checklist", "AG Grid lists the document");
+      // Search filters the grid.
+      await c.page.fill("#docs-extra-docs-list .docs-list-search", "zzz-no-match");
+      await c.page.waitForFunction(() => !document.querySelector("#docs-extra-docs-list .ag-center-cols-container .ag-row"), null, { timeout: 5000 });
+      await c.page.fill("#docs-extra-docs-list .docs-list-search", "release");
+      await c.page.waitForSelector("#docs-extra-docs-list .ag-center-cols-container .ag-row", { timeout: 5000 });
+      // Editing still opens the existing modal.
+      await c.page.click("#docs-extra-docs-list .doc-edit-btn");
+      await c.visible("#doc-backdrop");
+      await c.page.click("#doc-cancel");
+      // README renders as Markdown, with Edit revealing the textarea.
+      await c.page.click('#docs-tabs [data-tab="readme"]');
+      await c.visible("#docs-readme-view");
+      await c.page.click("#docs-readme-edit");
+      await c.visible("#docs-readme-input");
+      await c.page.click("#docs-readme-edit");
+      await c.page.click('#docs-tabs [data-tab="interfaces"]');
+      await c.visible("#docs-interfaces-list .docs-list-search");
+      await c.page.click('#docs-tabs [data-tab="revisions"]');
+      await c.visible("#docs-revisions-list .docs-list-search");
+    },
+  },
+  {
     name: "Ready for Testing: Test this → links to the seeded previewUrl",
     seed: () => only("r1"),
     async run(c) {
