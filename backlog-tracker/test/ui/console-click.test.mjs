@@ -210,20 +210,19 @@ const scenarios = [
       c.at("sections");
       if (!phone) {
         const labels = await c.page.evaluate(() => [...document.querySelectorAll("#nav-drawer .nav-drawer-section")].map((e) => e.textContent.trim()));
-        assert.deepStrictEqual(labels, ["Build", "Publish", "User Management"]);
+        assert.deepStrictEqual(labels, ["Build", "Publish", "User Management", "Settings"]);
       }
       await go("build", "concept-incubator-btn", "concept-incubator-page");
-      await go("build", "releases-btn", "releases-page");
-      await go("build", "skills-btn", "skills-page");
+      await go("settings", "faq-settings-btn", "faq-settings-page");
+      for (const [sub, label] of [["releases", "Releases"], ["skills", "Skills & phase bindings"], ["automations", "Automations"], ["integrations", "Integrations & MCP"], ["projects", "Projects"]]) {
+        await c.click(`[data-settings-page="${sub}"]`, `Settings sub-menu ${label}`);
+        await c.visible(`[data-settings-pane="${sub}"]`, `${label} pane shows`);
+        await overflow(`settings ${sub}`);
+      }
+      assert.strictEqual(await c.page.locator(".settings-submenu-item").count(), 5, "five Settings pages");
+      assert.strictEqual(await c.page.locator("#nav-drawer #releases-btn, #nav-drawer #skills-btn").count(), 0, "Releases and Skills are not in the main navigation");
       await go("publish", "faq-articles-btn", "faq-articles-page");
-      // Admin is reached from the profile menu, never the main navigation.
-      assert.strictEqual(await c.page.locator("#nav-drawer #faq-settings-btn").count(), 0, "Settings is not in the main navigation");
-      if (phone) await c.click('#tabbar .tab[data-tab="profile"]', "Profile tab"); else await c.click("#profile-btn", "profile button");
-      await c.visible("#profile-menu", "profile menu shows");
-      assert.ok((await c.text("#profile-menu")).toLowerCase().includes("admin"), "profile menu has an Admin section");
-      await c.click("#faq-settings-btn", "Settings");
-      await c.visible("#faq-settings-page", "Settings shows");
-      await overflow("settings");
+      assert.strictEqual(await c.page.locator("#profile-menu #faq-settings-btn").count(), 0, "Settings is not in the profile menu");
       if (phone) await c.click('#tabbar .tab[data-tab="build"]', "Build tab"); else if (!persistent) await c.click("#nav-open-btn", "open the menu");
       await c.click("#nav-ph-console-btn", "Agent Board");
       await c.boardReady();
@@ -252,7 +251,7 @@ const scenarios = [
     async run(c) {
       await c.boardReady();
       const phone = c.width <= 640;
-      if (phone) await c.click('#tabbar .tab[data-tab="build"]', "Build tab"); else if (c.width < 1024) await c.click("#nav-open-btn", "open the menu");
+      if (phone) await c.click('#tabbar .tab[data-tab="settings"]', "Settings tab"); else if (c.width < 1024) await c.click("#nav-open-btn", "open the menu");
       assert.strictEqual(await c.page.locator("#faq-settings-page .team-admin-block").count(), 0, "Team & agent access is no longer under Settings");
       assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll('[data-nav-group="user-management"] .nav-drawer-item')].map((b) => b.textContent.trim().replace(/^(group|badge|lock)/, ""))), ["Users", "Roles", "Permissions"]);
       await c.click("#um-users-btn", "Users");
@@ -733,7 +732,10 @@ const scenarios = [
     seed: () => relSeed(),
     async run(c) {
       await c.boardReady();
-      await openFromNav(c, "build", "releases-btn", "releases-page");
+      await openFromNav(c, "settings", "faq-settings-btn", "faq-settings-page");
+      await c.click('[data-settings-page="releases"]', "Settings > Releases");
+      await c.click("#settings-manage-releases-btn", "Manage releases");
+      await c.visible("#releases-page", "releases page shows");
       await c.visible('.release-edit-link[data-release-id="r1"]', "release name link");
       await c.click('.release-edit-link[data-release-id="r1"]', "click release name");
       await c.visible("#release-editor-backdrop:not([hidden]) #release-editor-name", "editor opens");

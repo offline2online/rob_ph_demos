@@ -2465,15 +2465,20 @@ documents folded into "Superseded (N)". The logic is the pure module
 `styles.css`) replaced the hamburger-only drawer. Navigation and layout only:
 every destination already existed.
 
-- **Build**: Board, Concepts (Concept Incubator), Releases, Skills.
-  **Publish**: Help Centre (FAQ Management). Brand Guidelines, Roadmap and a
-  Users/Roles page are not built yet, so they are not listed.
-- **Admin** (Settings, Sign out) lives in the profile menu (avatar button in the
-  topbar, the Profile tab on a phone). Settings stays reachable by every role
-  because the page already hides its admin-only blocks (`[data-admin-only]`).
+- **Navigation groups (31 Oct 2026)**: **Build** (Agent Board, Staff Kanban,
+  Concepts, Whiteboard), **Publish** (Help Centre), **User Management** (Users, Roles,
+  Permissions; built by their own tickets) and **Settings**. Releases and Skills are no longer in the nav;
+  they are reached from Settings. Sign out stays in the profile menu.
+- **Settings** (`#settings/<page>`, `public/js/settings-section.js` for routes
+  and row builders): a sub-menu of Projects, Releases, Skills & phase
+  bindings, Automations and Integrations & MCP. Each page is an AG Grid table
+  (`docs-grid.js`) with a count line and info tooltips instead of paragraphs.
+  Releases and Skills have a Manage button that opens the existing page.
+  Phase bindings are read from `settings/phaseSkillBindings`. The settings
+  page stays reachable by every role; admin-only blocks keep `[data-admin-only]`.
 - **Breakpoints**: 1024px and up, a persistent sidebar you can collapse (state
   in `localStorage` `bt-nav-collapsed`); 641 to 1023px, the overlay drawer;
-  640px and down, a bottom tab bar (Build, Publish, Search, Profile) that opens
+  640px and down, a bottom tab bar (Build, Publish, Settings, Search, Profile) that opens
   one section at a time. The Board's columns stay stacked top to bottom on a
   phone (tap a column header to collapse it); a swipe-one-column-at-a-time
   strip was tried and reverted the same day (see below).

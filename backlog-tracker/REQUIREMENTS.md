@@ -3550,3 +3550,21 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   user's agents out. Changes are written to `consoleUsers` and persist.
 - Roles and Permissions pages exist as empty shells; their content is specified
   by their own tickets.
+## Console navigation and Settings (31 Oct 2026)
+
+- The primary nav has four groups: **Build** (Agent Board, Staff Kanban,
+  Concepts, Whiteboard), **Publish** (Help Centre), **User Management** (Users, Roles,
+  Permissions) and **Settings**. Releases and Skills are reachable only
+  from Settings. Settings is not in the profile menu. On a phone the tab bar is
+  Build, Publish, Settings, Search, Profile.
+- Settings has a sub-menu at `#settings/<page>`: Projects (names, descriptions,
+  types, repository folders), Releases (versions, names, dates, status),
+  Skills & phase bindings (the skills bound to the Build and Deploy phases, and
+  the skills library), Automations (Notify Claude, Groom Backlog, Batch review,
+  Run E2E with trigger, skills and binding) and Integrations & MCP (agent
+  connections, help centre analytics tag, dictation). Each page is an AG Grid
+  table with a count line; explanations are info tooltips, not text under a
+  table. No internal project names appear in UI copy.
+- Reloading `#settings/<page>` or `#user-management` reopens the same page.
+- Out of scope: redesigning the Agent Board, Staff Kanban, Concepts or Help
+  Centre pages.

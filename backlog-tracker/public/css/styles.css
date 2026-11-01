@@ -1867,8 +1867,10 @@ body { overflow-x: clip; }
   }
   .nav-drawer.open { transform: translateY(0); }
   .nav-drawer-header, .nav-search-item { display: none; }
-  .nav-drawer[data-show="build"] [data-nav-group="publish"],
-  .nav-drawer[data-show="publish"] [data-nav-group="build"] { display: none; }
+  .nav-drawer[data-show="build"] [data-nav-group]:not([data-nav-group="build"]),
+  .nav-drawer[data-show="publish"] [data-nav-group]:not([data-nav-group="publish"]),
+  .nav-drawer[data-show="settings"] [data-nav-group="build"],
+  .nav-drawer[data-show="settings"] [data-nav-group="publish"] { display: none; }
   .nav-drawer-item, .profile-menu-item { min-height: 48px; font-size: 16px; }
   .profile-menu { top: auto; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); width: 100%; max-width: none; border-radius: 16px 16px 0 0; border-width: 1px 0 0; }
   .profile-btn { display: none; }
@@ -2194,4 +2196,19 @@ body { overflow-x: clip; }
   .um-side-backdrop { align-items: flex-end; }
   .um-side-backdrop .um-side { max-width: 100%; height: auto; max-height: 90vh; border-radius: 16px 16px 0 0; padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
   .um-toolbar .btn-primary { width: 100%; min-height: 44px; }
+
+/* Settings: sub-menu beside the page (above it on a phone). */
+.settings-layout { display: flex; gap: 24px; align-items: flex-start; }
+.settings-submenu { flex: 0 0 220px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 72px; }
+.settings-submenu-item { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.settings-submenu-item:hover { background: rgba(0, 0, 0, .05); }
+.settings-submenu-item[aria-current="page"] { background: var(--primary-bg, #e6f0ff); color: var(--primary-text, #0b57d0); font-weight: 500; }
+.settings-submenu-item .material-symbols-outlined { font-size: 20px; }
+.settings-content { flex: 1 1 auto; min-width: 0; }
+.settings-pane[hidden] { display: none; }
+.settings-content .docs-block + .docs-block { margin-top: 16px; }
+@media (max-width: 800px) {
+  .settings-layout { flex-direction: column; gap: 12px; }
+  .settings-submenu { flex: none; flex-direction: row; overflow-x: auto; position: static; width: 100%; }
+  .settings-submenu-item { white-space: nowrap; }
 }

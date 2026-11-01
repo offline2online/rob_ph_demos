@@ -33,6 +33,7 @@ import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mir
 import { initNavShell } from "./nav-shell.js";
 import { renderMarkdown } from "./docs-markdown.js";
 import { createDocsList } from "./docs-grid.js";
+import { SETTINGS_PAGES, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
 import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, getAvatarMember, normEmail, checkAvatarFile, avatarBlobFromFile } from "./avatar.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { ENTITY_TYPES, TYPE_PLATFORM, TYPE_INTERNAL, typeOf, matchesTypeFilter, typeBadgeHTML, typeOptionsHTML } from "./entity-type.js";
@@ -3163,6 +3164,7 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   projectsLoaded = true;
   render();
   if (staffKanban && !staffKanbanPage.hidden) staffKanban.refresh(); // names on cards, the Project filter
+  renderSettingsGrids();
   if (archiveProjectId) renderArchivePage();
   if (docsProjectId) renderDocsPage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
@@ -3226,6 +3228,7 @@ const startSkillsListener = () => onSnapshot(query(skillsRef, orderBy("name", "a
   markLive("skills", snap);
   skills = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
+  renderSettingsGrids();
 }, onListenerError("skills"));
 
 const startConceptsListener = () => onSnapshot(query(conceptsRef, orderBy("updatedAt", "desc")), (snap) => {
@@ -7835,6 +7838,7 @@ function onReleasesChanged() {
   if (staffKanban && !staffKanbanPage.hidden) staffKanban.refresh();
   renderSystemMap();
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
+  renderSettingsGrids();
   if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
   if (docsProjectId) renderDocsPage();
   if (faqArticleEditorPage && !faqArticleEditorPage.hidden) {
@@ -9602,22 +9606,115 @@ faProjectSelect.addEventListener("change", () => {
 const faIntroducedReleaseSelect = document.getElementById("fa-introduced-release-select");
 const faRemovedReleaseSelect = document.getElementById("fa-removed-release-select");
 
-function openFaqSettingsPage() {
+// ── Settings: a sub-menu of five pages, each an AG Grid table ─────────────
+// Routes are #settings/<page> (settings-section.js); "#settings" opens the
+// first page. The Releases and Skills managers keep their own pages, reached
+// from the Manage buttons on their Settings page.
+const DEFAULT_SETTINGS_KEY = "projects";
+const SETTINGS_GRID_IDS = {
+  projects: "settings-projects-grid", releases: "settings-releases-grid", bindings: "settings-bindings-grid",
+  skills: "settings-skills-grid", automations: "settings-automations-grid",
+};
+const settingsGrids = {};
+let settingsPage = DEFAULT_SETTINGS_KEY;
+let phaseBindings = null; // settings/phaseSkillBindings, { build: [], deploy: [] }
+const sCell = (v) => (v ? escapeHTML(v) : "&mdash;");
+function settingsGrid(key, opts) {
+  if (!settingsGrids[key]) settingsGrids[key] = createDocsList(document.getElementById(SETTINGS_GRID_IDS[key]), { id: `settings-${key}`, ...opts });
+  return settingsGrids[key];
+}
+function renderSettingsGrids() {
+  // By id, not the faqSettingsPage const: the projects listener can call this before that const is initialised.
+  if (document.getElementById("faq-settings-page").hidden) return;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  if (settingsPage === "projects") {
+    const rows = projectRows(projects, { typeOf });
+    document.getElementById("settings-projects-count").textContent = plural(rows.length, "project");
+    settingsGrid("projects", { searchLabel: "Filter projects", emptyText: "No projects yet.", columns: [
+      { key: "name", header: "Project", flex: 2, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "description", header: "Description", flex: 3, text: (r) => r.description, html: (r) => sCell(r.description) },
+      { key: "type", header: "Type", width: 170, text: (r) => r.type, html: (r) => typeBadgeHTML({ type: r.type }, escapeHTML) },
+      { key: "repo", header: "Repository folder", flex: 2, text: (r) => r.repoFolder || r.repoNote,
+        html: (r) => r.repoFolder ? `<a href="https://github.com/offline2online/rob_ph_demos/tree/main/${encodeURI(r.repoFolder)}" target="_blank" rel="noopener"><code>${escapeHTML(r.repoFolder)}</code></a>` : sCell(r.repoNote) },
+    ] }).setRows(rows);
+  } else if (settingsPage === "releases") {
+    const rows = releaseRows(releases, projects, { compare: compareReleases });
+    document.getElementById("settings-releases-count").textContent = plural(rows.length, "release");
+    settingsGrid("releases", { searchLabel: "Filter releases", emptyText: "No releases yet.", columns: [
+      { key: "version", header: "Version", width: 110, text: (r) => r.version, html: (r) => sCell(r.version) },
+      { key: "name", header: "Name", flex: 2, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "created", header: "Created", width: 130, text: (r) => r.created, html: (r) => sCell(r.created) },
+      { key: "madeLive", header: "Made live", width: 130, text: (r) => r.madeLive, html: (r) => sCell(r.madeLive) },
+      { key: "status", header: "Status", width: 120, text: (r) => r.status, html: (r) => `<span class="badge ${r.status === "Live" ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(r.status)}</span>` },
+      { key: "projects", header: "Projects", width: 110, text: (r) => String(r.projectCount), html: (r) => String(r.projectCount) },
+    ] }).setRows(rows);
+  } else if (settingsPage === "skills") {
+    settingsGrid("bindings", { searchLabel: "Filter bindings", emptyText: "No skills are bound to a phase.", columns: [
+      { key: "phase", header: "Phase", width: 120, text: (r) => r.phase, html: (r) => escapeHTML(r.phase) },
+      { key: "skill", header: "Skill", flex: 2, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "slug", header: "Identifier", flex: 2, text: (r) => r.slug, html: (r) => `<code>${escapeHTML(r.slug)}</code>` },
+    ] }).setRows(bindingRows(phaseBindings, skills));
+    const rows = skillRows(skills);
+    document.getElementById("settings-skills-count").textContent = plural(rows.length, "skill");
+    settingsGrid("skills", { searchLabel: "Filter skills", emptyText: "No skills yet.", columns: [
+      { key: "name", header: "Skill", flex: 2, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "slug", header: "Identifier", flex: 2, text: (r) => r.slug, html: (r) => `<code>${escapeHTML(r.slug)}</code>` },
+      { key: "summary", header: "Summary", flex: 3, text: (r) => r.summary, html: (r) => sCell(r.summary) },
+      { key: "version", header: "Version", width: 100, text: (r) => r.version, html: (r) => sCell(r.version) },
+      { key: "fileCount", header: "Files", width: 90, text: (r) => String(r.files), html: (r) => String(r.files) },
+      { key: "team", header: "Owning team", width: 150, text: (r) => r.team, html: (r) => sCell(r.team) },
+    ] }).setRows(rows);
+  } else if (settingsPage === "automations") {
+    settingsGrid("automations", { searchLabel: "Filter automations", columns: [
+      { key: "name", header: "Automation", width: 170, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
+      { key: "trigger", header: "Trigger", flex: 2, text: (r) => r.trigger, html: (r) => escapeHTML(r.trigger) },
+      { key: "does", header: "What it does", flex: 3, text: (r) => r.does, html: (r) => escapeHTML(r.does) },
+      { key: "skills", header: "Skills", flex: 2, text: (r) => r.skills, html: (r) => r.skills === "None" ? "&mdash;" : `<code>${escapeHTML(r.skills)}</code>` },
+      { key: "binding", header: "Binding", width: 150, text: (r) => r.binding, html: (r) => escapeHTML(r.binding) },
+    ] }).setRows(automationRows(phaseBindings));
+  }
+}
+async function loadPhaseBindings() {
+  try {
+    const snap = await getDoc(doc(db, "settings", "phaseSkillBindings"));
+    phaseBindings = snap.exists() ? snap.data() : { build: [], deploy: [] };
+  } catch (err) {
+    console.error("Failed to load phase skill bindings:", err);
+    phaseBindings = phaseBindings || { build: [], deploy: [] };
+  }
+  renderSettingsGrids();
+}
+function showSettingsPage(key) {
+  settingsPage = SETTINGS_PAGES.some((p) => p.key === key) ? key : DEFAULT_SETTINGS_KEY;
+  faqSettingsPage.querySelectorAll("[data-settings-pane]").forEach((el) => { el.hidden = el.dataset.settingsPane !== settingsPage; });
+  faqSettingsPage.querySelectorAll("[data-settings-page]").forEach((b) => {
+    if (b.dataset.settingsPage === settingsPage) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+  if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
+  if (settingsPage === "integrations") { loadFaqSiteSettings(); loadMyAgentConnections(); }
+  setRouteHash(settingsHash(settingsPage));
+  updateTopbarTitle();
+  renderSettingsGrids();
+}
+function openFaqSettingsPage(sub) {
   closeAllSubPages();
-  ensureLazy("faqCategories", "faqArticles");
+  ensureLazy("faqCategories", "faqArticles", "concepts");
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   faqSettingsPage.hidden = false;
-  setRouteHash("#settings");
-  updateTopbarTitle();
-  loadFaqSiteSettings();
-  loadMyAgentConnections();
+  showSettingsPage(sub);
 }
 function closeFaqSettingsPage() {
   faqSettingsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
+document.getElementById("settings-submenu").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-settings-page]");
+  if (b) showSettingsPage(b.dataset.settingsPage);
+});
+document.getElementById("settings-manage-releases-btn").addEventListener("click", () => openReleasesPage());
+document.getElementById("settings-manage-skills-btn").addEventListener("click", () => openSkillsPage());
 
 // Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
 // — currently just the analytics tag appended to every customer-facing FAQ
@@ -10841,9 +10938,7 @@ function wireFaqArticleRowInteractions(containerId) {
 
 document.getElementById("faq-settings-btn").addEventListener("click", () => { closeNavDrawer(); openFaqSettingsPage(); });
 document.getElementById("faq-articles-btn").addEventListener("click", () => { closeNavDrawer(); openFaqArticlesPage("all"); });
-document.getElementById("skills-btn").addEventListener("click", () => { closeNavDrawer(); openSkillsPage(); });
 document.getElementById("staff-kanban-btn").addEventListener("click", () => { closeNavDrawer(); openStaffKanbanPage(""); });
-document.getElementById("releases-btn").addEventListener("click", () => { closeNavDrawer(); openReleasesPage(); });
 
 // Whiteboard: each click starts a new board with its own 20-character id and
 // opens it full screen in a new tab with the share panel showing (public/whiteboard.html).
@@ -10927,6 +11022,11 @@ const ROUTE_TITLES = {
   "#user-management/users": "Users",
   "#user-management/roles": "Roles",
   "#user-management/permissions": "Permissions",
+  "#settings/projects": "Settings: Projects",
+  "#settings/releases": "Settings: Releases",
+  "#settings/skills": "Settings: Skills & phase bindings",
+  "#settings/automations": "Settings: Automations",
+  "#settings/integrations": "Settings: Integrations & MCP",
   "#skills": "Skills",
   "#releases": "Releases",
   "#concept-incubator": "Concept Incubator",
@@ -11063,7 +11163,7 @@ function openDocsRouteFromHash(hash) {
 function applyRouteFromHash() {
   const hash = window.location.hash;
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
-  else if (hash === "#settings") openFaqSettingsPage();
+  else if (settingsPageFromHash(hash)) { const k = settingsPageFromHash(hash); if (faqSettingsPage.hidden) openFaqSettingsPage(k); else if (k !== settingsPage) showSettingsPage(k); }
   else if (hash.startsWith("#user-management")) openUserManagementPage(hash.split("/")[1]);
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();

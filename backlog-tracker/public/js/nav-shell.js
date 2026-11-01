@@ -21,11 +21,10 @@ function writeCollapsed(v) {
 // Which sidebar entry is "you are here", from the URL hash app.js maintains.
 function activeNavId(hash) {
   const h = (hash || "").split("?")[0];
-  if (h === "#skills") return "skills-btn";
-  if (h === "#releases") return "releases-btn";
+  if (h === "#skills" || h === "#releases") return "faq-settings-btn";
   if (h === "#concept-incubator" || h.startsWith("#concept-")) return "concept-incubator-btn";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq-articles-btn";
-  if (h === "#settings") return "faq-settings-btn";
+  if (h === "#settings" || h.startsWith("#settings/")) return "faq-settings-btn";
   if (h.startsWith("#user-management/")) return `um-${h.split("/")[1]}-btn`;
   if (h === "#staff-kanban" || h.startsWith("#staff-kanban/")) return "staff-kanban-btn";
   return "nav-ph-console-btn";
@@ -141,7 +140,7 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     profileMenu.querySelectorAll(".profile-menu-item").forEach((b) => {
       if (b.id === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
-    const section = id === "faq-articles-btn" ? "publish" : id === "faq-settings-btn" ? "profile" : "build";
+    const section = id === "faq-articles-btn" ? "publish" : (id === "faq-settings-btn" || id.startsWith("um-")) ? "settings" : "build";
     setTab(drawer.classList.contains("open") ? drawer.dataset.show : section);
   }
   window.addEventListener("hashchange", syncActive);

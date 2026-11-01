@@ -166,8 +166,6 @@
         <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>Agent Board</button>
         <button type="button" class="nav-drawer-item" id="staff-kanban-btn"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>Staff Kanban</button>
         <button type="button" class="nav-drawer-item" id="concept-incubator-btn"><span class="material-symbols-outlined" aria-hidden="true">lightbulb</span>Concepts</button>
-        <button type="button" class="nav-drawer-item" id="releases-btn"><span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>Releases</button>
-        <button type="button" class="nav-drawer-item" id="skills-btn"><span class="material-symbols-outlined" aria-hidden="true">psychology</span>Skills</button>
         <button type="button" class="nav-drawer-item" id="whiteboard-btn"><span class="material-symbols-outlined" aria-hidden="true">draw</span>Whiteboard</button>
       </div>
       <div class="nav-group" data-nav-group="publish" role="group" aria-labelledby="nav-publish-label">
@@ -179,6 +177,10 @@
         <button type="button" class="nav-drawer-item" id="um-users-btn"><span class="material-symbols-outlined" aria-hidden="true">group</span>Users</button>
         <button type="button" class="nav-drawer-item" id="um-roles-btn"><span class="material-symbols-outlined" aria-hidden="true">badge</span>Roles</button>
         <button type="button" class="nav-drawer-item" id="um-permissions-btn"><span class="material-symbols-outlined" aria-hidden="true">lock</span>Permissions</button>
+      </div>
+      <div class="nav-group" data-nav-group="settings" role="group" aria-labelledby="nav-settings-label">
+        <div class="nav-drawer-section" id="nav-settings-label">Settings</div>
+        <button type="button" class="nav-drawer-item" id="faq-settings-btn"><span class="material-symbols-outlined" aria-hidden="true">settings</span>Settings</button>
       </div>
       <button type="button" class="nav-drawer-item nav-search-item" id="cmdk-open-btn"><span class="material-symbols-outlined" aria-hidden="true">search</span>Search<kbd class="nav-kbd">&#8984;K</kbd></button>
     </nav>
@@ -195,14 +197,13 @@
         <span class="material-symbols-outlined profile-photo-info" tabindex="0" aria-label="About profile photos" title="Your photo is cropped to a square and shown everywhere your name appears. Any image up to 10 MB. Remove it to fall back to your Google photo, then your initial.">info</span>
       </div>
       <p class="profile-photo-error" id="profile-photo-error" role="alert" hidden></p>
-      <div class="nav-drawer-section">Admin</div>
-      <button type="button" class="profile-menu-item" id="faq-settings-btn" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">settings</span>Settings</button>
       <button type="button" class="profile-menu-item" id="topbar-signout" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">logout</span>Sign out</button>
     </div>
 
     <nav class="tabbar" id="tabbar" aria-label="Primary">
       <button type="button" class="tab" data-tab="build"><span class="material-symbols-outlined" aria-hidden="true">construction</span><span>Build</span></button>
       <button type="button" class="tab" data-tab="publish"><span class="material-symbols-outlined" aria-hidden="true">campaign</span><span>Publish</span></button>
+      <button type="button" class="tab" data-tab="settings"><span class="material-symbols-outlined" aria-hidden="true">settings</span><span>Settings</span></button>
       <button type="button" class="tab" data-tab="search"><span class="material-symbols-outlined" aria-hidden="true">search</span><span>Search</span></button>
       <button type="button" class="tab" data-tab="profile"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span><span>Profile</span></button>
     </nav>
@@ -1186,71 +1187,136 @@
       <div class="page-header">
         <h2>Settings</h2>
       </div>
+      <div class="settings-layout">
+        <nav class="settings-submenu" id="settings-submenu" aria-label="Settings">
+          <button type="button" class="settings-submenu-item" data-settings-page="projects"><span class="material-symbols-outlined" aria-hidden="true">folder</span>Projects</button>
+          <button type="button" class="settings-submenu-item" data-settings-page="releases"><span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>Releases</button>
+          <button type="button" class="settings-submenu-item" data-settings-page="skills"><span class="material-symbols-outlined" aria-hidden="true">psychology</span>Skills &amp; phase bindings</button>
+          <button type="button" class="settings-submenu-item" data-settings-page="automations"><span class="material-symbols-outlined" aria-hidden="true">bolt</span>Automations</button>
+          <button type="button" class="settings-submenu-item" data-settings-page="integrations"><span class="material-symbols-outlined" aria-hidden="true">api</span>Integrations &amp; MCP</button>
+        </nav>
+        <div class="settings-content">
 
-      <!-- Every member sees this one: the address their own agent connects
-           to, and the connections they currently have. -->
-      <div class="docs-block">
-        <div class="docs-block-header">
-          <h3>Connect your AI agent</h3>
-        </div>
-        <p class="field-hint">Add the PH Agent Console to Claude (or any MCP client) as a remote MCP server. It will open a sign-in page — use the same account you're signed in with here. Your agent never sees your password, and everything it files or comments is recorded under your email.</p>
-        <div class="mcp-connect-box">
-          <span class="field-label" style="margin-top:0;">Server URL</span>
-          <code id="mcp-url">https://backlog-tracker-e4ed2.web.app/mcp</code>
-          <p class="field-hint">In Claude Code: <code style="display:inline;padding:2px 5px;">claude mcp add --transport http ph-console https://backlog-tracker-e4ed2.web.app/mcp</code></p>
-          <div class="form-row" style="justify-content:flex-start;gap:8px;">
-            <button type="button" class="btn-ghost" id="mcp-copy-btn">Copy URL</button>
-            <button type="button" class="btn-ghost" id="mcp-refresh-connections">Refresh connections</button>
+          <div class="settings-pane" data-settings-pane="projects" hidden>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Projects <span class="page-header-count" id="settings-projects-count"></span>
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About projects" data-tip="Every project on the board, with its type and the repository folder its work lands in. Archived projects can be restored from the archive."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-ghost" id="fa-open-archived-projects-btn">View archived projects</button>
+              </div>
+              <div id="settings-projects-grid"></div>
+            </div>
           </div>
-        </div>
-        <div class="mcp-connections" id="mcp-connections"></div>
-      </div>
 
-      <div class="docs-block" data-admin-only>
-        <h3>Analytics — FAQ / Help Center</h3>
-        <p class="field-hint">A Google Analytics measurement ID (e.g. <code>G-XXXXXXXXXX</code>) or a Google Tag Manager container ID (e.g. <code>GTM-XXXXXXX</code>) — set here once, it gets appended to every customer-facing FAQ page (the front page, category pages, article pages, and search), not just one. Leave blank to track nothing.</p>
-        <input type="text" id="fa-analytics-tag-input" maxlength="40" placeholder="G-XXXXXXXXXX or GTM-XXXXXXX">
-        <div class="form-row" style="justify-content:flex-end;">
-          <button type="button" class="btn-primary" id="fa-analytics-tag-save">Save</button>
-        </div>
-      </div>
-
-      <!-- Per-browser only — localStorage, never Firestore (see
-           createDictationController / bt-dictation-lang / bt-dictation-engine
-           in app.js). Lets a viewer compare Chrome's cloud vs. on-device
-           dictation engines for accuracy on real dictation. -->
-      <div class="docs-block">
-        <div class="docs-block-header">
-          <h3>Dictation</h3>
-        </div>
-        <p class="field-hint">Settings for the mic button on New backlog item and every comment box. Kept in this browser only — nothing here is shared with teammates.</p>
-        <div class="dictation-settings-row">
-          <div>
-            <label class="field-label" for="dictation-lang-select">Language</label>
-            <select id="dictation-lang-select">
-              <option value="en-GB">English (UK)</option>
-              <option value="en-US">English (US)</option>
-            </select>
+          <div class="settings-pane" data-settings-pane="releases" hidden>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Releases <span class="page-header-count" id="settings-releases-count"></span>
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About releases" data-tip="A release groups projects that go live together. Open the release manager to create or edit a release and mark it live."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-primary" id="settings-manage-releases-btn">Manage releases</button>
+              </div>
+              <div id="settings-releases-grid"></div>
+            </div>
           </div>
-          <div>
-            <label class="field-label" for="dictation-engine-select">Engine</label>
-            <select id="dictation-engine-select">
-              <option value="auto">Auto (cloud, English UK)</option>
-              <option value="cloud">Cloud</option>
-              <option value="local">On-device</option>
-            </select>
-          </div>
-          <button type="button" class="btn-ghost" id="dictation-install-btn">Install on-device pack</button>
-        </div>
-        <p class="field-hint" id="dictation-install-status"></p>
-      </div>
 
-      <div class="docs-block">
-        <div class="docs-block-header">
-          <h3>Archived projects</h3>
+          <div class="settings-pane" data-settings-pane="skills" hidden>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Skills bound to phases
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About phase bindings" data-tip="Skills listed here are pulled in and applied automatically whenever a build or a deploy session starts."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <div id="settings-bindings-grid"></div>
+            </div>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Skills library <span class="page-header-count" id="settings-skills-count"></span>
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About the skills library" data-tip="Shared guidance every build session can draw on. Open the skills manager to add, edit or delete a skill, see its history and the misses reported against it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-primary" id="settings-manage-skills-btn">Manage skills</button>
+              </div>
+              <div id="settings-skills-grid"></div>
+            </div>
+          </div>
+
+          <div class="settings-pane" data-settings-pane="automations" hidden>
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Automations
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About automations" data-tip="The automations behind the board's buttons. They share one set of instructions kept in the repository. A member can bind a personal automation of their own through the connected AI agent."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <div id="settings-automations-grid"></div>
+            </div>
+          </div>
+
+          <div class="settings-pane" data-settings-pane="integrations" hidden>
+            <!-- Every member sees this one: the address their own agent
+                 connects to, and the connections they currently have. -->
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Connect your AI agent
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About connecting your AI agent" data-tip="Add the console to Claude (or any MCP client) as a remote MCP server. It opens a sign-in page: use the same account you are signed in with here. Your agent never sees your password, and everything it files or comments is recorded under your email."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <div class="mcp-connect-box">
+                <span class="field-label" style="margin-top:0;">Server URL</span>
+                <code id="mcp-url">https://backlog-tracker-e4ed2.web.app/mcp</code>
+                <p class="field-hint">In Claude Code: <code style="display:inline;padding:2px 5px;">claude mcp add --transport http ph-console https://backlog-tracker-e4ed2.web.app/mcp</code></p>
+                <div class="form-row" style="justify-content:flex-start;gap:8px;">
+                  <button type="button" class="btn-ghost" id="mcp-copy-btn">Copy URL</button>
+                  <button type="button" class="btn-ghost" id="mcp-refresh-connections">Refresh connections</button>
+                </div>
+              </div>
+              <div class="mcp-connections" id="mcp-connections"></div>
+            </div>
+
+            <div class="docs-block" data-admin-only>
+              <div class="docs-block-header">
+                <h3>Analytics — Help Centre
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About the analytics tag" data-tip="A Google Analytics measurement ID (for example G-XXXXXXXXXX) or a Google Tag Manager container ID (for example GTM-XXXXXXX). It is added to every customer-facing help centre page. Leave blank to track nothing."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <input type="text" id="fa-analytics-tag-input" maxlength="40" placeholder="G-XXXXXXXXXX or GTM-XXXXXXX" aria-label="Analytics tag ID">
+              <div class="form-row" style="justify-content:flex-end;">
+                <button type="button" class="btn-primary" id="fa-analytics-tag-save">Save</button>
+              </div>
+            </div>
+
+            <!-- Per-browser only — localStorage, never Firestore (see
+                 createDictationController / bt-dictation-lang / bt-dictation-engine
+                 in app.js). -->
+            <div class="docs-block">
+              <div class="docs-block-header">
+                <h3>Dictation
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About dictation" data-tip="Settings for the mic button on New backlog item and every comment box. Kept in this browser only; nothing here is shared with teammates."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <div class="dictation-settings-row">
+                <div>
+                  <label class="field-label" for="dictation-lang-select">Language</label>
+                  <select id="dictation-lang-select">
+                    <option value="en-GB">English (UK)</option>
+                    <option value="en-US">English (US)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="dictation-engine-select">Engine</label>
+                  <select id="dictation-engine-select">
+                    <option value="auto">Auto (cloud, English UK)</option>
+                    <option value="cloud">Cloud</option>
+                    <option value="local">On-device</option>
+                  </select>
+                </div>
+                <button type="button" class="btn-ghost" id="dictation-install-btn">Install on-device pack</button>
+              </div>
+              <p class="field-hint" id="dictation-install-status"></p>
+            </div>
+          </div>
+
         </div>
-        <p class="field-hint">Whole projects that have been archived off the board — restore one to bring it back.</p>
-        <button type="button" class="btn-ghost" id="fa-open-archived-projects-btn">View archived projects</button>
       </div>
     </section>
 

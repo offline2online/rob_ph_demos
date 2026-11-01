@@ -164,8 +164,6 @@ $("nav-open-btn").click();
 assert.ok($("nav-drawer").classList.contains("open"), "the hamburger opens the drawer");
 const sections = [
   ["concept-incubator-btn", "concept-incubator-page"],
-  ["releases-btn", "releases-page"],
-  ["skills-btn", "skills-page"],
   ["faq-articles-btn", "faq-articles-page"],
   ["faq-settings-btn", "faq-settings-page"],
   ["um-users-btn", "user-management-page"],
