@@ -1926,7 +1926,7 @@ body { overflow-x: clip; }
 
 /* Settings → Add user: button top right on desktop, bottom on mobile; modal is a bottom sheet on mobile. */
 .team-admin-block { position: relative; }
-.team-add-open { position: absolute; top: 0; right: 0; }
+.team-add-open { }
 .team-admin-block .field-hint:empty { display: none; }
 .info-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; color: var(--text-muted, #6b7280); cursor: help; }
 .info-tip .material-symbols-outlined { font-size: 18px; }
@@ -2148,3 +2148,50 @@ body { overflow-x: clip; }
 .docs-ag-cell { width: 100%; }
 .docs-cell-preview { color: rgba(0, 0, 0, .65); }
 .docs-list .interface-row-actions { justify-content: flex-end; }
+/* ── User Management (Users / Roles / Permissions) ─────────────────────────
+   PH table conventions: AG Grid Alpine, 13px/700 #181d1f header labels over a
+   floating-filter row, 1px rgba(24,29,31,.15) borders, #e8fdff row hover,
+   checkbox column first, ⋯ actions column last, Roboto, Material Symbols. */
+.um-subnav { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 16px; }
+.um-tab { font: inherit; font-size: 14px; background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 16px; color: var(--text-muted); cursor: pointer; margin-bottom: -1px; }
+.um-tab:hover { color: var(--primary-text); }
+.um-tab.active { color: var(--primary-text); border-bottom-color: var(--primary); font-weight: 600; }
+.um-count { margin: 0 0 10px; font-size: 14px; color: var(--text-muted); }
+.um-count b { color: var(--text); }
+.um-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.um-search { position: relative; flex: 1 1 260px; max-width: 360px; }
+.um-search .material-symbols-outlined { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 18px; color: var(--text-muted); }
+.um-search input { width: 100%; padding: 8px 10px 8px 34px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+.um-bulk { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 12px; background: var(--primary-tint); border-radius: 8px; font-size: 13px; }
+.um-bulk select { font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.um-bulk-label { font-weight: 600; margin-left: 8px; }
+.um-grid { width: 100%; font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --ag-font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif; --ag-font-size: 14px;
+  --ag-foreground-color: #333333; --ag-header-foreground-color: #181d1f; --ag-header-background-color: #fff;
+  --ag-border-color: rgba(24, 29, 31, .15); --ag-row-hover-color: #e8fdff; --ag-odd-row-background-color: #fff;
+  --ag-checkbox-checked-color: #169bc2; --ag-selected-row-background-color: rgba(22, 155, 194, .1);
+  --ag-input-focus-border-color: #169bc2; --ag-range-selection-border-color: #169bc2; }
+.um-grid .ag-header-cell-label, .um-grid .ag-header-cell-text { font-size: 13px; font-weight: 700; }
+.um-grid .ag-cell { padding: 0 15px; display: flex; align-items: center; }
+.um-grid .ag-pinned-left-header .ag-header-cell, .um-grid .ag-pinned-left-cols-container .ag-cell { padding: 0 12px; }
+.um-role-select { font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; width: 100%; }
+.um-role-select:disabled { background: var(--surface-2); color: var(--text-muted); }
+.um-status { display: inline-flex; align-items: center; gap: 8px; }
+.um-dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
+.um-dot-on { background: var(--success); }
+.um-dot-off { background: var(--accent-backlog); }
+.um-manage { background: none; border: 0; cursor: pointer; border-radius: 6px; padding: 4px; color: var(--text); display: inline-flex; }
+.um-manage:hover { background: var(--primary-tint); }
+.um-empty { color: var(--text-muted); font-size: 13px; }
+/* Add User / Manage user: a side panel from the right, a bottom sheet on phones. */
+.um-side-backdrop { justify-content: flex-end; align-items: stretch; padding: 0; }
+.um-side-backdrop .um-side { max-width: 420px; max-height: none; height: 100%; border-radius: 0; }
+.um-manage-who { margin: 0 0 12px; font-size: 14px; word-break: break-all; }
+.um-manage-actions { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.um-manage-actions .btn-ghost { text-align: left; }
+.um-manage-actions [hidden] { display: none; }
+@media (max-width: 640px) {
+  .um-side-backdrop { align-items: flex-end; }
+  .um-side-backdrop .um-side { max-width: 100%; height: auto; max-height: 90vh; border-radius: 16px 16px 0 0; padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .um-toolbar .btn-primary { width: 100%; min-height: 44px; }
+}

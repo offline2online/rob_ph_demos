@@ -46,7 +46,7 @@ agent**, which also lists every agent you have connected and lets you
 disconnect any of them.
 
 **If you see "isn't on the PH Agent Console user list"** you have not been
-added yet — ask an admin (Settings → Team & agent access).
+added yet — ask an admin (User Management → Users).
 
 ### Stop the approval prompts: set the tools to *Always allow*
 
@@ -91,7 +91,7 @@ What the server does on its side so clients can be less cautious:
 
 ## For an admin: add someone
 
-**Settings → Team & agent access**, visible only to admins.
+**User Management → Users**, visible only to admins.
 
 1. Type their email, optionally their name, pick a role, **Add**.
 2. If they have a Google account on that address, they can sign in
@@ -696,7 +696,7 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | `firestore.rules` | `consoleUsers` membership model; `mcp*` collections denied to every client |
 | `storage.rules` | the `consoleEditor` claim check |
 | `public/js/auth-gate.js` | the console's own sign-in wall — claim-first, own-row fallback, claim sync in the background, password sign-in (`test/auth-gate.test.mjs`) |
-| `public/js/app.js` | Settings → Team & agent access, and Connect your AI agent |
+| `public/js/app.js` | User Management → Users, and Connect your AI agent |
 | `test/mcp-server.test.js` | in-process test of the whole flow, no emulator needed (`npm run test:mcp` in `test/`) |
 | `test/mcp-client.test.mjs` | the real MCP client SDK against the real server over HTTP (`npm run test:client`) |
 | `test/mcp-live-server.js` | serves the real server on localhost for that test |

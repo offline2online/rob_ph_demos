@@ -29,7 +29,7 @@ export function mountStaffKanban(ctx) {
     db: ctx.db, storage: ctx.storage, me,
     backfill: backfillCards,
     onChange: (what) => onData(what),
-    onError: (err) => { console.warn("staff kanban:", err); if (err && err.code === "permission-denied") toast("You don't have access to that. An admin can change your role in Settings → Team & agent access."); },
+    onError: (err) => { console.warn("staff kanban:", err); if (err && err.code === "permission-denied") toast("You don't have access to that. An admin can change your role in User Management → Users."); },
   });
 
   // The board reads kanbanCards, which a Cloud Function-side endpoint fills
@@ -2248,7 +2248,7 @@ export function mountStaffKanban(ctx) {
           ${admin ? `<div class="kb-add-row kb-sprint-add"><input type="text" class="kb-input" id="st-sprint-name" placeholder="Sprint name" maxlength="80" aria-label="Sprint name"><input type="date" class="kb-input" id="st-sprint-start" aria-label="Start date"><input type="date" class="kb-input" id="st-sprint-end" aria-label="End date"><button type="button" class="btn-ghost" id="st-sprint-add">Add sprint</button></div>` : ""}
         </section>
         <section class="docs-block">
-          <div class="docs-block-header"><h3>Team${tip("Everyone added under Settings → Team & agent access appears in the assignee list by first name. Each person sets their own photo from the profile menu (Upload photo); an admin can set anyone's under Settings → Team & agent access.")}</h3></div>
+          <div class="docs-block-header"><h3>Team${tip("Everyone added under User Management → Users appears in the assignee list by first name. Each person sets their own photo from the profile menu (Upload photo); an admin can set anyone's under User Management → Users.")}</h3></div>
           <ul class="kb-team">${people().map((u) => `<li>${avatar(u.id)}<span><b>${esc(u.first)}</b><span class="kb-none">${esc(u.full)}</span></span><span class="kb-none kb-team-email">${esc(u.email)}</span>${admin ? `<label class="kb-team-name"><span class="kb-none">Shown as</span><input type="text" class="kb-input" data-first-for="${esc(u.id)}" value="${esc(u.first)}" maxlength="40" aria-label="${esc(u.full)} is shown as"></label>` : ""}</li>`).join("")}</ul>
         </section>
       </div>`;

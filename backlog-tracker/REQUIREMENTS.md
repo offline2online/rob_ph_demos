@@ -2939,7 +2939,7 @@ viewers too) must let an agent read every ticket and find why one failed:
 
 No new tool and no write path. Tests: `test/mcp-server.test.js`.
 
-**Membership.** `Settings → Team & agent access` (admin-only) writes
+**Membership.** `User Management → Users` (admin-only) writes
 `consoleUsers` docs; that one row grants browser access and agent access
 together. Roles as in "Data model" above. A member with no Google account is
 provisioned with `POST /mcp/admin/provision` (creates their Firebase Auth
@@ -3497,7 +3497,7 @@ the board in one step.
 
 ## Profile photos (avatars)
 
-Any member can upload, replace or remove their own profile photo from the profile menu (**Profile photo → Upload photo / Remove**); an admin can set or clear anyone's from **Settings → Team & agent access**. The browser crops to a centred square and scales to 256×256 JPEG (~0.85) before upload; images over 10 MB and non-images are refused inline and nothing is uploaded.
+Any member can upload, replace or remove their own profile photo from the profile menu (**Profile photo → Upload photo / Remove**); an admin can set or clear anyone's from **User Management → Users**. The browser crops to a centred square and scales to 256×256 JPEG (~0.85) before upload; images over 10 MB and non-images are refused inline and nothing is uploaded.
 
 - **Storage**: `avatars/{lowercased email}.jpg`. `storage.rules`: read for any member; write/delete only by the owner of that address or an admin; under 2 MB, `image/jpeg`.
 - **Record**: `consoleUsers/{email}.photoUrl` + `photoUpdatedAt` (`?v=` cache-bust). `firestore.rules`: a member may change only `lastLoginAt`, `photoUrl` and `photoUpdatedAt` on their OWN row (`photoUrl` ≤ 1000 chars, bucket `avatars` URL or `""`; `photoUpdatedAt == request.time`); admins may write both on any row.
@@ -3535,3 +3535,18 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   via, size), newest first, read-only, without document text.
 - Explanatory copy is shown as (i) info tooltips. Agent/MCP access to the docs
   is unchanged.
+
+## User Management section
+
+- Users, Roles and Permissions are one navigation section ("User Management"),
+  visible to admins only. Team & agent access no longer lives in Settings.
+- The Users page is an AG Grid table with columns name, email, role, status and
+  last active; sortable, filterable per column, searchable, paginated; styled to
+  the Personalisation Hub table conventions (`ph-designer`).
+- Add User opens a side panel to add a member and assign a role. An admin can
+  change a role inline or for selected rows in bulk, and deactivate (and
+  reactivate) one or many users. Deactivating sets `consoleUsers.disabled`, which
+  the console rules and the MCP server already treat as no access, and signs the
+  user's agents out. Changes are written to `consoleUsers` and persist.
+- Roles and Permissions pages exist as empty shells; their content is specified
+  by their own tickets.

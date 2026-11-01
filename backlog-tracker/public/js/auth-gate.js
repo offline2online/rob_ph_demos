@@ -397,7 +397,7 @@ function syncMembershipInBackground(user) {
       writeLocal(REMEMBER_KEY, null); writeLocal(ROLE_KEY, null);
       try { await signOut(auth); } catch { /* ignore */ }
       await clearFirestoreLocalCache();
-      showRejected(`${user.email} is no longer on the PH Agent Console user list. Ask an admin to add you in Settings → Team & agent access.`);
+      showRejected(`${user.email} is no longer on the PH Agent Console user list. Ask an admin to add you in User Management → Users.`);
       return;
     }
     if (m.claimUpdated) { try { await user.getIdToken(true); } catch { /* not fatal */ } }
@@ -489,7 +489,7 @@ function handleUser(user) {
       const membership = await resolveMembership(user);
       if (membership === null) {
         writeLocal(REMEMBER_KEY, null); writeLocal(ROLE_KEY, null);
-        showRejected(`${user.email} isn't on the PH Agent Console user list. Ask an admin to add you in Settings → Team & agent access, then sign in again.`);
+        showRejected(`${user.email} isn't on the PH Agent Console user list. Ask an admin to add you in User Management → Users, then sign in again.`);
         return;
       }
       if (membership === undefined) {

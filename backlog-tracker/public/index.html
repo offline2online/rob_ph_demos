@@ -18,7 +18,7 @@
        paint, especially on higher-latency mobile connections. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,block,bolt,brush,bug_report,build,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,content_cut,contract,crop,dashboard,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,map,menu,menu_book,merge_type,message,mic,monitoring,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,pan_tool,password,payments,pending,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,content_cut,contract,crop,dashboard,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,pan_tool,password,payments,pending,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/apple.css">
   <link rel="stylesheet" href="css/kanban.css">
@@ -174,6 +174,12 @@
         <div class="nav-drawer-section" id="nav-publish-label">Publish</div>
         <button type="button" class="nav-drawer-item" id="faq-articles-btn"><span class="material-symbols-outlined" aria-hidden="true">help_center</span>Help Centre</button>
       </div>
+      <div class="nav-group" data-nav-group="user-management" data-admin-only role="group" aria-labelledby="nav-um-label">
+        <div class="nav-drawer-section" id="nav-um-label">User Management</div>
+        <button type="button" class="nav-drawer-item" id="um-users-btn"><span class="material-symbols-outlined" aria-hidden="true">group</span>Users</button>
+        <button type="button" class="nav-drawer-item" id="um-roles-btn"><span class="material-symbols-outlined" aria-hidden="true">badge</span>Roles</button>
+        <button type="button" class="nav-drawer-item" id="um-permissions-btn"><span class="material-symbols-outlined" aria-hidden="true">lock</span>Permissions</button>
+      </div>
       <button type="button" class="nav-drawer-item nav-search-item" id="cmdk-open-btn"><span class="material-symbols-outlined" aria-hidden="true">search</span>Search<kbd class="nav-kbd">&#8984;K</kbd></button>
     </nav>
 
@@ -324,33 +330,48 @@
       </div>
     </div>
 
-    <!-- Add user (Settings → Team & agent access). Bottom sheet on mobile. -->
-    <div class="modal-backdrop tm-backdrop" id="tm-backdrop" hidden>
-      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="tm-title">
+    <!-- Add User / Manage user side panel (User Management → Users). Slides in
+         from the right; a bottom sheet on phones. -->
+    <div class="modal-backdrop tm-backdrop um-side-backdrop" id="tm-backdrop" hidden>
+      <div class="modal-panel um-side" role="dialog" aria-modal="true" aria-labelledby="tm-title">
         <div class="modal-header">
-          <h2 id="tm-title">Add user</h2>
+          <h2 id="tm-title">Add User</h2>
           <button type="button" class="modal-close" id="tm-close" aria-label="Close">&times;</button>
         </div>
-        <label class="field-label" for="team-add-email">Email</label>
-        <input type="email" id="team-add-email" maxlength="200" placeholder="teammate@personalisationhub.com" aria-describedby="tm-error">
+        <div id="um-add-form">
+          <label class="field-label" for="team-add-email">Email</label>
+          <input type="email" id="team-add-email" maxlength="200" placeholder="teammate@personalisationhub.com" aria-describedby="tm-error">
 
-        <label class="field-label" for="team-add-name">Name (optional)</label>
-        <input type="text" id="team-add-name" maxlength="120" placeholder="Sam Patel">
+          <label class="field-label" for="team-add-name">Name (optional)</label>
+          <input type="text" id="team-add-name" maxlength="120" placeholder="Sam Patel">
 
-        <label class="field-label" for="team-add-role">Role
-          <span class="info-tip" tabindex="0" role="note" aria-label="About sign-in" data-tip="Google accounts work as soon as they're added. For someone without one, use Send sign-in setup on their row. It creates their login and emails them a link to choose a password."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
-        </label>
-        <select id="team-add-role">
-          <option value="editor" selected>Editor</option>
-          <option value="viewer">Viewer</option>
-          <option value="admin">Admin</option>
-        </select>
-        <p class="tm-error" id="tm-error" role="alert" hidden></p>
+          <label class="field-label" for="team-add-role">Role
+            <span class="info-tip" tabindex="0" role="note" aria-label="About sign-in" data-tip="Google accounts work as soon as they're added. For someone without one, use Manage → Send sign-in setup on their row. It creates their login and emails them a link to choose a password."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+          </label>
+          <select id="team-add-role">
+            <option value="editor" selected>Editor</option>
+            <option value="viewer">Viewer</option>
+            <option value="admin">Admin</option>
+          </select>
+          <p class="tm-error" id="tm-error" role="alert" hidden></p>
 
-        <div class="form-row" style="justify-content:flex-end;">
-          <div class="form-actions">
-            <button type="button" class="btn-ghost" id="tm-cancel">Cancel</button>
-            <button type="button" class="btn-primary" id="team-add-btn">Add</button>
+          <div class="form-row" style="justify-content:flex-end;">
+            <div class="form-actions">
+              <button type="button" class="btn-ghost" id="tm-cancel">Cancel</button>
+              <button type="button" class="btn-primary" id="team-add-btn">Add</button>
+            </div>
+          </div>
+        </div>
+        <div id="um-manage" hidden data-email="">
+          <p class="um-manage-who" id="um-manage-who"></p>
+          <div class="um-manage-actions">
+            <button type="button" class="btn-ghost" data-team-photo>Set photo</button>
+            <button type="button" class="btn-ghost" data-team-photo-clear>Clear photo</button>
+            <button type="button" class="btn-ghost" data-team-toggle-agent="off" id="um-manage-agent">Turn agent off</button>
+            <button type="button" class="btn-ghost" data-team-provision title="Creates their login and emails them a link to set a password — only needed for someone without a Google account.">Send sign-in setup</button>
+            <button type="button" class="btn-ghost" data-team-revoke title="Signs every agent this person has connected out of the console.">Disconnect agents</button>
+            <button type="button" class="btn-ghost" data-team-toggle-active id="um-manage-active">Deactivate</button>
+            <button type="button" class="btn-ghost" data-team-remove id="um-manage-remove">Remove</button>
           </div>
         </div>
       </div>
@@ -1118,31 +1139,52 @@
       </div>
     </section>
 
+    <section class="faq-admin-page" id="user-management-page" hidden>
+      <div class="page-header">
+        <h2>User Management</h2>
+      </div>
+      <nav class="um-subnav" aria-label="User Management">
+        <button type="button" class="um-tab" data-um-tab="users" id="um-tab-users">Users</button>
+        <button type="button" class="um-tab" data-um-tab="roles" id="um-tab-roles">Roles</button>
+        <button type="button" class="um-tab" data-um-tab="permissions" id="um-tab-permissions">Permissions</button>
+      </nav>
+
+      <!-- Users. Moved here from Settings → Team &amp; agent access. One list,
+           two things at once: who can open this console in a browser, and
+           whose AI agent may connect over MCP. Both resolve to the same
+           consoleUsers doc — see ../MCP.md and firestore.rules. -->
+      <div class="um-panel-body" data-um-panel="users" data-admin-only>
+        <p class="um-count" id="um-count" aria-live="polite"></p>
+        <div class="um-toolbar">
+          <div class="um-search">
+            <span class="material-symbols-outlined" aria-hidden="true">search</span>
+            <input type="search" id="um-search" placeholder="Search name, email or role" aria-label="Search users">
+          </div>
+          <button type="button" class="btn-primary" id="team-add-open">Add User</button>
+        </div>
+        <div class="um-bulk" id="um-bulk" hidden>
+          <span id="um-bulk-count"></span>
+          <label class="um-bulk-label" for="um-bulk-role">Set role</label>
+          <select id="um-bulk-role"></select>
+          <button type="button" class="btn-ghost" id="um-bulk-apply">Apply</button>
+          <button type="button" class="btn-ghost" id="um-bulk-deactivate">Deactivate</button>
+          <button type="button" class="btn-ghost" id="um-bulk-reactivate">Reactivate</button>
+        </div>
+        <div class="ag-theme-alpine um-grid" id="um-grid" aria-label="Users"></div>
+        <p class="tm-error" id="um-grid-error" role="alert" hidden></p>
+      </div>
+
+      <div class="um-panel-body" data-um-panel="roles" hidden>
+        <p class="interface-row-empty">Roles are managed here. Nothing to show yet.</p>
+      </div>
+      <div class="um-panel-body" data-um-panel="permissions" hidden>
+        <p class="interface-row-empty">Permissions are managed here. Nothing to show yet.</p>
+      </div>
+    </section>
+
     <section class="faq-admin-page" id="faq-settings-page" hidden>
       <div class="page-header">
         <h2>Settings</h2>
-      </div>
-
-      <!-- Team & agent access. One list, two things at once: who can open
-           this console in a browser, and whose AI agent may connect to it
-           over MCP. Both resolve to the same consoleUsers Firestore doc, so
-           adding or removing someone is a single act — see ../MCP.md and
-           firestore.rules' isBoardReader/isEditor/isAdmin. -->
-      <div class="docs-block team-admin-block" data-admin-only>
-        <div class="docs-block-header">
-          <h3>Team &amp; agent access
-            <span class="info-tip" tabindex="0" role="note" aria-label="About team and agent access" data-tip="Anyone listed here can sign in to the PH Agent Console (Google, or email and password) and connect their own AI agent. Editor can change the board; viewer can only read it; admin can also manage this list. Turning Agent off disconnects someone's agent immediately and leaves their browser access untouched."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
-          </h3>
-        </div>
-        <div class="team-sort-row">
-          <label class="field-label" for="team-sort">Sort by</label>
-          <select id="team-sort">
-            <option value="email" selected>Email</option>
-            <option value="activity">Last activity</option>
-          </select>
-        </div>
-        <div class="team-list" id="team-list"></div>
-        <button type="button" class="btn-primary team-add-open" id="team-add-open">Add user</button>
       </div>
 
       <!-- Every member sees this one: the address their own agent connects
@@ -1520,7 +1562,7 @@
     <!-- Shown only when auth-gate.js resolves the signed-in person as a
          viewer (see styles.css "Roles"); firestore.rules refuses their
          writes, so saying so up front beats letting clicks fail. -->
-    <div class="readonly-banner" id="readonly-banner">You have read-only access to this console. An admin can change your role in Settings &rarr; Team &amp; agent access.</div>
+    <div class="readonly-banner" id="readonly-banner">You have read-only access to this console. An admin can change your role in User Management &rarr; Users.</div>
 
     <div id="projects-root"></div>
 

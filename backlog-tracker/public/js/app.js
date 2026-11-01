@@ -43,6 +43,7 @@ import { packageBacklog, groomButtonVisible, DEFAULT_GROOM_THRESHOLD, DEFAULT_PA
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 import { createResultReader, useContinuousMode } from "./dictation-results.js";
 import { loadQuill } from "./quill-loader.js";
+import { userRows, mountUsersGrid } from "./user-management.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -535,6 +536,7 @@ function closeAllSubPages() {
   closeArchivedProjectsPage();
   closeDocsPage();
   closeFaqSettingsPage();
+  closeUserManagementPage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
@@ -2824,7 +2826,7 @@ function onListenerError(collectionName) {
           strip.innerHTML = "";
           const note = document.createElement("div");
           note.className = "health-seg health-seg-bad";
-          note.textContent = "The board refused this account's reads. Sign out and back in; if it persists, ask an admin to check your row in Settings → Team & agent access.";
+          note.textContent = "The board refused this account's reads. Sign out and back in; if it persists, ask an admin to check your row in User Management → Users.";
           strip.appendChild(note);
         }
         return;
@@ -6662,7 +6664,7 @@ const conceptDetailPage = document.getElementById("concept-detail-page");
 async function requireConceptEditor() {
   if (!(await requireFaqEditor())) return false;
   if (currentConsoleRole() === "viewer") {
-    await showAlert("You have read-only access to this console, so you can't add, edit, comment on or promote concepts. An admin can change your role in Settings → Team & agent access.");
+    await showAlert("You have read-only access to this console, so you can't add, edit, comment on or promote concepts. An admin can change your role in User Management → Users.");
     return false;
   }
   return true;
@@ -7792,7 +7794,7 @@ function closeReleasesPage() {
 async function requireReleaseEditor() {
   if (!(await requireFaqEditor())) return false;
   if (currentConsoleRole() === "viewer") {
-    await showAlert("You have read-only access to this console, so you can't create releases or mark them live. An admin can change your role in Settings → Team & agent access.");
+    await showAlert("You have read-only access to this console, so you can't create releases or mark them live. An admin can change your role in User Management → Users.");
     return false;
   }
   return true;
@@ -8047,7 +8049,7 @@ function closeSkillsPage() {
 async function requireSkillEditor() {
   if (!(await requireFaqEditor())) return false;
   if (currentConsoleRole() === "viewer") {
-    await showAlert("You have read-only access to this console, so you can't add, edit or delete skills. An admin can change your role in Settings → Team & agent access.");
+    await showAlert("You have read-only access to this console, so you can't add, edit or delete skills. An admin can change your role in User Management → Users.");
     return false;
   }
   return true;
@@ -9609,7 +9611,6 @@ function openFaqSettingsPage() {
   setRouteHash("#settings");
   updateTopbarTitle();
   loadFaqSiteSettings();
-  loadTeamMembers();
   loadMyAgentConnections();
 }
 function closeFaqSettingsPage() {
@@ -9743,7 +9744,7 @@ async function saveMemberPhotoFields(e, fields) {
 // other refusal names its code so the next report says what actually failed.
 function photoSaveError(err) {
   const code = err && err.code;
-  if (code === "no-member-row") return new Error("Couldn't save the photo: you aren't on the console's team list, so there is no profile to attach it to. Ask an admin to add you under Settings → Team & agent access.");
+  if (code === "no-member-row") return new Error("Couldn't save the photo: you aren't on the console's team list, so there is no profile to attach it to. Ask an admin to add you under User Management → Users.");
   if (code === "permission-denied") return new Error("Couldn't save the photo: the console refused the change (permission-denied). Reload the page and try again; if it persists, report it with this message.");
   return new Error(`Couldn't save the photo: ${(err && err.message) || String(err)}${code ? ` (${code})` : ""}`);
 }
@@ -9825,7 +9826,7 @@ onAuthStateChanged(auth, (user) => {
 // button label and Remove visibility follow the own-row snapshot.
 document.addEventListener("avatar-row-changed", renderProfileMenuPhoto);
 
-// ── Settings → Team & agent access ────────────────────────────────────────
+// ── User Management → Users ────────────────────────────────────────
 //
 // One list that decides two things at once: who may open this console in a
 // browser, and whose AI agent may connect to it over MCP. Both resolve to
@@ -9864,61 +9865,81 @@ function relativeAgo(ms) {
   }
   return "Just now";
 }
-const TEAM_INACTIVE_MS = 30 * 24 * 60 * 60 * 1000;
-function teamLastActivityMs(m) { return Math.max(tsToMs(m.lastLoginAt), tsToMs(m.lastMcpAt)); }
 let teamRowsCache = [];
-let teamSort = "email";
-function teamStampHTML(label, ms) {
-  const exact = ms ? new Date(ms).toLocaleString() : "No activity";
-  return `<span class="team-stamp" title="${escapeHTML(`${label}: ${exact}`)}"><span class="team-stamp-label">${label}</span> ${escapeHTML(relativeAgo(ms))}</span>`;
-}
-function sortedTeamRows(rows) {
-  const out = rows.slice();
-  if (teamSort === "activity") out.sort((a, b) => teamLastActivityMs(b) - teamLastActivityMs(a));
-  else out.sort((a, b) => String(a.email || a.id).localeCompare(String(b.email || b.id)));
-  return out;
-}
-function renderTeamList() {
-  const list = document.getElementById("team-list");
-  if (!list) return;
-  list.innerHTML = teamRowsCache.length
-    ? sortedTeamRows(teamRowsCache).map(teamRowHTML).join("")
-    : '<p class="interface-row-empty">Nobody added yet. The two owner accounts always have access whether or not they are listed here.</p>';
+let usersGrid = null;     // { api, setRows, search, selected } once AG Grid has loaded
+let usersGridLoading = null;
+
+function showUsersGridError(msg) {
+  const el = document.getElementById("um-grid-error");
+  if (!el) return;
+  el.textContent = msg || ""; el.hidden = !msg;
 }
 
-function teamRowHTML(member) {
-  const lastActive = teamLastActivityMs(member);
-  const active = lastActive && Date.now() - lastActive < TEAM_INACTIVE_MS;
-  const email = member.email || member.id;
-  const role = CONSOLE_ROLE_LABELS[member.role] ? member.role : "editor";
-  const agentOn = member.mcpEnabled !== false && member.disabled !== true;
-  const isSelf = email === (auth.currentUser && auth.currentUser.email || "").toLowerCase();
-  return `<div class="team-row" data-email="${escapeHTML(email)}">
-    ${avatarHTML(email, 40)}
-    <div class="team-row-main">
-      <div class="team-row-email">${escapeHTML(email)}${isSelf ? " (you)" : ""}</div>
-      <div class="team-row-name">${escapeHTML(member.displayName || "")}${member.disabled === true ? " · disabled" : ""}</div>
-    </div>
-    <span class="team-stamps">${teamStampHTML("Console", tsToMs(member.lastLoginAt))}${teamStampHTML("MCP", tsToMs(member.lastMcpAt))}</span>
-    <span class="team-badge ${active ? "team-badge-on" : "team-badge-off"}" title="${active ? "Active in the last 30 days" : "No activity in the last 30 days"}">${active ? "Active" : "Inactive"}</span>
-    <select data-team-role aria-label="Role for ${escapeHTML(email)}">
-      ${Object.entries(CONSOLE_ROLE_LABELS).map(([v, l]) => `<option value="${v}"${v === role ? " selected" : ""}>${l}</option>`).join("")}
-    </select>
-    <span class="team-badge ${agentOn ? "team-badge-on" : "team-badge-off"}">Agent ${agentOn ? "on" : "off"}</span>
-    <button type="button" class="btn-ghost" data-team-photo title="Set a profile photo for ${escapeHTML(email)}. Useful for staff who never sign in on desktop.">${member.photoUrl ? "Change photo" : "Set photo"}</button>
-    ${member.photoUrl ? '<button type="button" class="btn-ghost" data-team-photo-clear title="Remove their uploaded photo; they fall back to their initial.">Clear photo</button>' : ""}
-    <button type="button" class="btn-ghost" data-team-toggle-agent="${agentOn ? "off" : "on"}">${agentOn ? "Turn agent off" : "Turn agent on"}</button>
-    <button type="button" class="btn-ghost" data-team-provision title="Creates their login and emails them a link to set a password — only needed for someone without a Google account.">Send sign-in setup</button>
-    <button type="button" class="btn-ghost" data-team-revoke title="Signs every agent this person has connected out of the console.">Disconnect agents</button>
-    ${isSelf ? "" : '<button type="button" class="btn-ghost" data-team-remove>Remove</button>'}
-  </div>`;
+function renderTeamList() {
+  const rows = userRows(teamRowsCache, auth.currentUser && auth.currentUser.email);
+  const count = document.getElementById("um-count");
+  if (count) count.innerHTML = `<b>${rows.length}</b> ${rows.length === 1 ? "User" : "Users"}`;
+  if (usersGrid) usersGrid.setRows(rows);
+}
+
+function updateBulkBar(selected) {
+  const bar = document.getElementById("um-bulk");
+  if (!bar) return;
+  bar.hidden = !selected.length;
+  document.getElementById("um-bulk-count").textContent = `${selected.length} selected`;
+}
+
+// Role change from the grid (one row inline, or the selected rows in bulk).
+async function changeUserRoles(emails, role) {
+  if (!CONSOLE_ROLE_LABELS[role]) return;
+  showUsersGridError("");
+  try {
+    for (const email of emails) await saveTeamMember(email, { role });
+  } catch (err) {
+    showUsersGridError(`Couldn't change that role: ${err && err.message ? err.message : err}`);
+  }
+  await loadTeamMembers();
+}
+
+// Deactivate = the existing `disabled` flag: the console and the MCP server
+// both already refuse a disabled member on every call. Their row stays.
+async function setUsersActive(emails, active) {
+  showUsersGridError("");
+  try {
+    for (const email of emails) {
+      await saveTeamMember(email, { disabled: !active });
+      if (!active) await revokeAgentConnections(email, null, { quiet: true });
+    }
+  } catch (err) {
+    showUsersGridError(`Couldn't update those users: ${err && err.message ? err.message : err}`);
+  }
+  await loadTeamMembers();
+}
+
+async function ensureUsersGrid() {
+  const host = document.getElementById("um-grid");
+  if (usersGrid || !host) return;
+  if (!usersGridLoading) {
+    usersGridLoading = mountUsersGrid(host, {
+      roleLabels: CONSOLE_ROLE_LABELS,
+      relativeAgo,
+      onRoleChange: changeUserRoles,
+      onManage: openTeamManagePanel,
+      onSelection: updateBulkBar,
+    }).then((g) => { usersGrid = g; }).catch((err) => {
+      usersGridLoading = null;
+      console.error("Failed to load the users grid:", err);
+      showUsersGridError("Couldn't load the users table. Reload the page to try again.");
+    });
+  }
+  await usersGridLoading;
 }
 
 async function loadTeamMembers() {
-  const list = document.getElementById("team-list");
-  if (!list || !isConsoleAdmin()) return;
-  list.innerHTML = '<p class="interface-row-empty">Loading…</p>';
+  if (!isConsoleAdmin()) return;
+  showUsersGridError("");
   try {
+    await ensureUsersGrid();
     const snap = await getDocs(collection(db, "consoleUsers"));
     const rows = [];
     snap.forEach((d) => { rows.push(Object.assign({ id: d.id }, d.data())); setAvatarMember(d.id, d.data()); });
@@ -9926,13 +9947,55 @@ async function loadTeamMembers() {
     renderTeamList();
   } catch (err) {
     console.error("Failed to load console users:", err);
-    list.innerHTML = '<p class="interface-row-empty">Couldn\'t load the team list.</p>';
+    showUsersGridError("Couldn't load the user list.");
   }
 }
 
-document.getElementById("team-sort")?.addEventListener("change", (e) => {
-  teamSort = e.target.value === "activity" ? "activity" : "email";
-  renderTeamList();
+document.getElementById("um-search")?.addEventListener("input", (e) => { if (usersGrid) usersGrid.search(e.target.value); });
+const umBulkRole = document.getElementById("um-bulk-role");
+if (umBulkRole) umBulkRole.innerHTML = Object.entries(CONSOLE_ROLE_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+const selectedUserEmails = () => (usersGrid ? usersGrid.selected().map((r) => r.email) : []);
+document.getElementById("um-bulk-apply")?.addEventListener("click", () => changeUserRoles(selectedUserEmails(), umBulkRole.value));
+document.getElementById("um-bulk-deactivate")?.addEventListener("click", async () => {
+  const emails = selectedUserEmails();
+  if (!emails.length) return;
+  if (!(await showConfirmDialog(`Deactivate ${emails.length} user${emails.length === 1 ? "" : "s"}? They lose access to the board and any connected agent immediately. You can reactivate them later.`))) return;
+  await setUsersActive(emails, false);
+});
+document.getElementById("um-bulk-reactivate")?.addEventListener("click", () => setUsersActive(selectedUserEmails(), true));
+
+// ── User Management page: Users / Roles / Permissions ────────────────────
+const userManagementPage = document.getElementById("user-management-page");
+const UM_TABS = ["users", "roles", "permissions"];
+function showUserManagementTab(tab) {
+  userManagementPage.querySelectorAll("[data-um-panel]").forEach((p) => { p.hidden = p.dataset.umPanel !== tab; });
+  userManagementPage.querySelectorAll("[data-um-tab]").forEach((b) => {
+    const on = b.dataset.umTab === tab;
+    b.classList.toggle("active", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+}
+function openUserManagementPage(tab = "users") {
+  if (!UM_TABS.includes(tab)) tab = "users";
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  userManagementPage.hidden = false;
+  showUserManagementTab(tab);
+  setRouteHash(`#user-management/${tab}`);
+  updateTopbarTitle();
+  if (tab === "users") loadTeamMembers();
+}
+function closeUserManagementPage() {
+  if (userManagementPage.hidden) return;
+  userManagementPage.hidden = true;
+  closeTeamAddModal();
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+UM_TABS.forEach((t) => {
+  document.getElementById(`um-${t}-btn`).addEventListener("click", () => { closeNavDrawer(); openUserManagementPage(t); });
+  document.getElementById(`um-tab-${t}`).addEventListener("click", () => openUserManagementPage(t));
 });
 
 // The notification bell (KB-NAV-2): in the topbar on every page. The module
@@ -9976,7 +10039,34 @@ async function saveTeamMember(email, fields) {
 const tmBackdrop = document.getElementById("tm-backdrop");
 const tmError = document.getElementById("tm-error");
 function showTeamAddError(msg) { tmError.textContent = msg; tmError.hidden = !msg; }
+function setTeamPanelMode(mode) {
+  document.getElementById("um-add-form").hidden = mode !== "add";
+  document.getElementById("um-manage").hidden = mode !== "manage";
+  document.getElementById("tm-title").textContent = mode === "add" ? "Add User" : "Manage user";
+}
+function openTeamManagePanel(email) {
+  const row = teamRowsCache.find((m) => (m.email || m.id) === email);
+  if (!row) return;
+  const agentOn = row.mcpEnabled !== false && row.disabled !== true;
+  const isSelf = email === (auth.currentUser && auth.currentUser.email || "").toLowerCase();
+  const box = document.getElementById("um-manage");
+  box.dataset.email = email;
+  document.getElementById("um-manage-who").textContent = `${row.displayName ? row.displayName + " · " : ""}${email}`;
+  const agentBtn = document.getElementById("um-manage-agent");
+  agentBtn.dataset.teamToggleAgent = agentOn ? "off" : "on";
+  agentBtn.textContent = agentOn ? "Turn agent off" : "Turn agent on";
+  box.querySelector("[data-team-photo]").textContent = row.photoUrl ? "Change photo" : "Set photo";
+  box.querySelector("[data-team-photo-clear]").hidden = !row.photoUrl;
+  const activeBtn = document.getElementById("um-manage-active");
+  activeBtn.textContent = row.disabled === true ? "Reactivate" : "Deactivate";
+  activeBtn.hidden = isSelf;
+  document.getElementById("um-manage-remove").hidden = isSelf;
+  setTeamPanelMode("manage");
+  showTeamAddError("");
+  tmBackdrop.hidden = false;
+}
 function openTeamAddModal() {
+  setTeamPanelMode("add");
   document.getElementById("team-add-email").value = "";
   document.getElementById("team-add-name").value = "";
   document.getElementById("team-add-role").value = "editor";
@@ -10019,23 +10109,18 @@ document.getElementById("team-add-btn")?.addEventListener("click", async () => {
   }
 });
 
-document.getElementById("team-list")?.addEventListener("change", async (e) => {
-  const select = e.target.closest("[data-team-role]");
-  if (!select) return;
-  const email = select.closest(".team-row").dataset.email;
-  try {
-    await saveTeamMember(email, { role: select.value });
-    await loadTeamMembers();
-  } catch (err) {
-    await showAlert(`Couldn't change that role: ${err && err.message ? err.message : err}`);
-    await loadTeamMembers();
-  }
-});
+document.getElementById("um-manage")?.addEventListener("click", async (e) => {
+  const email = document.getElementById("um-manage").dataset.email;
+  if (!email || !e.target.closest("button")) return;
 
-document.getElementById("team-list")?.addEventListener("click", async (e) => {
-  const row = e.target.closest(".team-row");
-  if (!row) return;
-  const email = row.dataset.email;
+  if (e.target.closest("[data-team-toggle-active]")) {
+    const row = teamRowsCache.find((m) => (m.email || m.id) === email);
+    const deactivating = !(row && row.disabled === true);
+    if (deactivating && !(await showConfirmDialog(`Deactivate ${email}? They lose access to the board and any connected agent immediately. You can reactivate them later.`))) return;
+    closeTeamAddModal();
+    await setUsersActive([email], !deactivating);
+    return;
+  }
 
   const toggle = e.target.closest("[data-team-toggle-agent]");
   if (toggle) {
@@ -10046,6 +10131,7 @@ document.getElementById("team-list")?.addEventListener("click", async (e) => {
     // cached credential.
     if (!turningOn) await revokeAgentConnections(email, null, { quiet: true });
     await loadTeamMembers();
+    openTeamManagePanel(email);
     return;
   }
 
@@ -10095,6 +10181,7 @@ document.getElementById("team-list")?.addEventListener("click", async (e) => {
     try {
       await revokeAgentConnections(email, null, { quiet: true });
       await deleteDoc(doc(db, "consoleUsers", email));
+      closeTeamAddModal();
       await loadTeamMembers();
     } catch (err) {
       await showAlert(`Couldn't remove them: ${err && err.message ? err.message : err}`);
@@ -10837,6 +10924,9 @@ navShell = initNavShell({ getEntries: navEntries, openEntry: openNavEntry, goHom
 const ROUTE_TITLES = {
   "#faq-management": "FAQ Management",
   "#settings": "Settings",
+  "#user-management/users": "Users",
+  "#user-management/roles": "Roles",
+  "#user-management/permissions": "Permissions",
   "#skills": "Skills",
   "#releases": "Releases",
   "#concept-incubator": "Concept Incubator",
@@ -10974,6 +11064,7 @@ function applyRouteFromHash() {
   const hash = window.location.hash;
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (hash === "#settings") openFaqSettingsPage();
+  else if (hash.startsWith("#user-management")) openUserManagementPage(hash.split("/")[1]);
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (hash === "#concept-incubator") openConceptIncubatorPage();
@@ -10983,7 +11074,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !userManagementPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

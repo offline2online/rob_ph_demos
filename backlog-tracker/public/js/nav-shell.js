@@ -26,6 +26,7 @@ function activeNavId(hash) {
   if (h === "#concept-incubator" || h.startsWith("#concept-")) return "concept-incubator-btn";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq-articles-btn";
   if (h === "#settings") return "faq-settings-btn";
+  if (h.startsWith("#user-management/")) return `um-${h.split("/")[1]}-btn`;
   if (h === "#staff-kanban" || h.startsWith("#staff-kanban/")) return "staff-kanban-btn";
   return "nav-ph-console-btn";
 }

@@ -210,7 +210,7 @@ const scenarios = [
       c.at("sections");
       if (!phone) {
         const labels = await c.page.evaluate(() => [...document.querySelectorAll("#nav-drawer .nav-drawer-section")].map((e) => e.textContent.trim()));
-        assert.deepStrictEqual(labels, ["Build", "Publish"]);
+        assert.deepStrictEqual(labels, ["Build", "Publish", "User Management"]);
       }
       await go("build", "concept-incubator-btn", "concept-incubator-page");
       await go("build", "releases-btn", "releases-page");
@@ -235,6 +235,68 @@ const scenarios = [
         await c.click("#nav-open-btn", "reopen");
         await c.visible("#nav-drawer", "sidebar returns");
       }
+    },
+  },
+  {
+    name: "user management: own nav section, Users grid adds, changes roles inline and in bulk, deactivates",
+    seed: () => {
+      const s = seed();
+      s.user = { email: "admin@personalisationhub.com", role: "admin" };
+      s.docs.consoleUsers = {
+        "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", displayName: "Ada Admin", lastLoginAt: t(T0) },
+        "sam@personalisationhub.com": { email: "sam@personalisationhub.com", role: "editor", displayName: "Sam Patel", lastLoginAt: t(T0 - 3600000) },
+        "kim@personalisationhub.com": { email: "kim@personalisationhub.com", role: "viewer", displayName: "Kim Lee" },
+      };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const phone = c.width <= 640;
+      if (phone) await c.click('#tabbar .tab[data-tab="build"]', "Build tab"); else if (c.width < 1024) await c.click("#nav-open-btn", "open the menu");
+      assert.strictEqual(await c.page.locator("#faq-settings-page .team-admin-block").count(), 0, "Team & agent access is no longer under Settings");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll('[data-nav-group="user-management"] .nav-drawer-item')].map((b) => b.textContent.trim().replace(/^(group|badge|lock)/, ""))), ["Users", "Roles", "Permissions"]);
+      await c.click("#um-users-btn", "Users");
+      await c.visible("#user-management-page", "User Management shows");
+      await c.visible("#um-grid .ag-row", "the grid lists members");
+      assert.strictEqual(await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count(), 3, "three members in the grid");
+      const cols = await c.page.evaluate(() => [...document.querySelectorAll("#um-grid .ag-header-cell-text")].map((e) => e.textContent.trim()).filter(Boolean));
+      assert.deepStrictEqual(cols, ["Name", "Email", "Role", "Status", "Last active"]);
+      // search
+      await c.page.fill("#um-search", "kim");
+      await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 1, "search to filter the grid", 5000);
+      await c.page.fill("#um-search", "");
+      await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 3, "search to clear", 5000);
+      // add from the side panel
+      await c.click("#team-add-open", "Add User");
+      await c.visible("#team-add-email", "side panel opens");
+      await c.page.fill("#team-add-email", "new@personalisationhub.com");
+      await c.page.fill("#team-add-name", "Nina New");
+      await c.page.selectOption("#team-add-role", "viewer");
+      await c.click("#team-add-btn", "Add");
+      await c.click("#dialog-ok", "dismiss the added confirmation");
+      await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 4, "the new user to show in the grid", 8000);
+      const stored = await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com"));
+      assert.ok(stored && stored.role === "viewer", "the new user was saved with the chosen role");
+      // inline role change
+      await c.page.selectOption('select[aria-label="Role for kim@personalisationhub.com"]', "editor");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").role)) === "editor", "inline role change to persist", 5000);
+      // bulk role change
+      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="kim@personalisationhub.com"] .ag-selection-checkbox input').check();
+      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="new@personalisationhub.com"] .ag-selection-checkbox input').check();
+      await c.visible("#um-bulk", "bulk bar shows");
+      await c.page.selectOption("#um-bulk-role", "admin");
+      await c.click("#um-bulk-apply", "Apply");
+      await until(async () => (await c.page.evaluate(() => ["kim", "new"].map((n) => globalThis.__fbStub.col("consoleUsers").get(`${n}@personalisationhub.com`).role).join())) === "admin,admin", "bulk role change to persist", 5000);
+      // deactivate one from Manage
+      await c.page.evaluate(() => document.querySelector('.um-manage[data-manage="sam@personalisationhub.com"]').click());
+      await c.visible("#um-manage", "Manage panel opens");
+      await c.click("#um-manage-active", "Deactivate");
+      await c.click("#dialog-ok", "confirm deactivation");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("sam@personalisationhub.com").disabled)) === true, "deactivation to persist", 5000);
+      await c.page.evaluate(() => { document.getElementById("um-roles-btn").click(); });
+      await c.visible('[data-um-panel="roles"]', "Roles page shows");
+      const sw = await c.page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+      assert.ok(sw, "no sideways scroll");
     },
   },
   {

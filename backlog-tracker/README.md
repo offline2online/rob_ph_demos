@@ -1143,8 +1143,8 @@ a Routine run creates or updates one.
 Access is no longer a hard-coded list of two emails. **One Firestore doc per
 person — `consoleUsers/<lowercased email>` — decides both halves of their
 access**: whether they can open the console in a browser, and whether their
-own AI agent may connect to it. Admins manage the list from **Settings →
-Team & agent access**; `firestore.rules` and `functions/mcp-server.js`
+own AI agent may connect to it. Admins manage the list from **User
+Management → Users**; `firestore.rules` and `functions/mcp-server.js`
 resolve the same doc, so adding or removing someone is a single act.
 
 Roles are `admin` (manages the list), `editor` (read + write) and `viewer`
@@ -2231,7 +2231,7 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   `REQUIREMENTS.md` → "Skills page: change history") with a per-revision
   file diff. An **Add skill** button and each card's Edit/Delete are gated
   behind editor access (`[data-editor-only]`, hidden for a viewer the same
-  way `[data-admin-only]` hides Team & agent access from everyone but an
+  way `[data-admin-only]` hides User Management from everyone but an
   admin) — a viewer can still open the page, read every skill and browse
   its history.
 - **MCP tools** (`functions/mcp-server.js`): `list_skills` and `get_skill`
@@ -2405,7 +2405,7 @@ the full behavior.
   `isEditor` / `isAdmin`) reads that same doc for every read and write of
   the board's collections, and `storage.rules` checks the `consoleEditor`
   custom claim kept in step with it. Admins add and remove people from
-  **Settings → Team & agent access**, and the same row governs whether that
+  **User Management → Users**, and the same row governs whether that
   person's AI agent may connect over MCP (see `MCP.md`). Only the two help-centre collections remain publicly
   readable (the public FAQ site needs them). Automation that used to call
   Firestore's REST API anonymously now authenticates: the GitHub Actions
@@ -2419,7 +2419,7 @@ the full behavior.
   Function proxy (`X-Board-Key` header, also served at
   `https://backlog-tracker-e4ed2.web.app/boardApi/...`) remains as a
   fallback. Adding an editor is now a
-  row in Settings → Team & agent access, not an edit to three files; only
+  row in User Management → Users, not an edit to three files; only
   the two owner accounts are still hard-coded, as the bootstrap that makes
   an empty member list non-fatal.
 - **No drag-and-drop.** Multi-project and an archive page (per-project
@@ -2673,3 +2673,22 @@ Revisions reads `docRevisions` for the project over REST with a field mask
 (no document text is downloaded) and is read-only. Nothing about what MCP
 agents can read or write changed. UI tests serve AG Grid from the
 `ag-grid-community` dev dependency (`test/ui/harness.mjs`).
+
+## User Management (Users / Roles / Permissions)
+
+Its own navigation section (admin-only, `[data-admin-only]`), moved out of
+Settings. Sub-menu: **Users**, **Roles**, **Permissions** (`#user-management/<tab>`,
+`user-management-page` in `public/index.html`). Only **Users** is built; Roles
+and Permissions are empty pages for the tickets that fill them.
+
+**Users** is an AG Grid Community table (`public/js/user-management.js`; the
+library is loaded on first visit by `docs-grid.js`, the Alpine theme restyled
+to the PH tokens in `styles.css`) over the
+`consoleUsers` collection: Name, Email, Role (inline select), Status
+(Active / Deactivated = the existing `disabled` flag), Last active (latest
+console or MCP activity). Sorting, per-column floating filters, a search box and
+pagination. **Add User** opens a side panel (email, name, role). Tick rows for
+a bulk role change or bulk Deactivate / Reactivate; the row's **⋯** opens
+**Manage** in the same panel (photo, agent on/off, sign-in setup, disconnect
+agents, deactivate, remove). You cannot change, deactivate or remove your own
+row. Tests: the "user management" scenario in `test/ui/console-click.test.mjs`.

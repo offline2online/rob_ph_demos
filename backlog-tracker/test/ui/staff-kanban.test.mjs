@@ -1137,18 +1137,19 @@ const E = {
   photoDims: async (p, url) => { const r = await p.evaluate(async () => { const b = (globalThis.__fbStub.uploads || {})[`avatars/rob@offline2online.com.jpg`] || {}; return { type: b.contentType || "", size: b.size || 0 }; }); assert.equal(r.type, "image/jpeg", "uploaded as a JPEG"); assert.ok(r.size > 0, "something was uploaded"); return { w: 1, h: 1 }; },
   cropDims: (p, file) => p.evaluate(async ({ b64, type }) => { const m = await import("/js/avatar.js"); const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); const blob = await m.avatarBlobFromFile(new File([bytes], "x", { type })); const bmp = await createImageBitmap(blob); return { w: bmp.width, h: bmp.height }; }, { b64: file.buffer.toString("base64"), type: file.mimeType }),
   profileHasPhoto: async (p) => !!(await p.$("#profile-btn-avatar img.ph-avatar-img")) || !!(await p.$("#profile-photo-face img")),
-  // Settings → Team & agent access (admins): Set photo on the member's row.
-  openTeam: async (p) => { await E.openProfile(p); await p.evaluate(() => document.getElementById("faq-settings-btn").click()); await p.waitForSelector(".team-row", { state: "attached", timeout: 8000 }); await sleep(250); },
+  // User Management → Users (admins): Manage → Set photo on the member's row.
+  openTeam: async (p) => { await p.evaluate(() => document.getElementById("um-users-btn").click()); await p.waitForSelector(".um-manage", { state: "attached", timeout: 8000 }); await sleep(250); },
   setOtherPhoto: async (p, who, file) => {
     await E.openTeam(p);
-    const sel = `.team-row[data-email="${pid(who)}"] [data-team-photo]`;
+    await p.evaluate((e) => document.querySelector(`.um-manage[data-manage="${e}"]`).click(), pid(who));
+    const sel = `#um-manage [data-team-photo]`;
     const [fc] = await Promise.all([p.waitForEvent("filechooser"), p.evaluate((s) => document.querySelector(s).click(), sel)]);
     await fc.setFiles(file); await sleep(600);
     const m = await p.evaluate((e) => globalThis.__fbStub.col("consoleUsers").get(e), pid(who));
     assert.ok(m && m.photoUrl, "the member's row has the new photo");
     await E.go(p, "kanban");
   },
-  canSetOtherPhoto: async (p) => { await E.openProfile(p); await p.evaluate(() => document.getElementById("faq-settings-btn").click()); await sleep(600); return !!(await p.$("[data-team-photo]:not([hidden])")) && await p.$eval("[data-team-photo]", (e) => e.getClientRects().length > 0).catch(() => false); },
+  canSetOtherPhoto: async (p) => { await p.evaluate(() => document.getElementById("um-users-btn").click()); await sleep(600); return !!(await p.$(".um-manage")) && await p.$eval(".um-manage", (e) => e.getClientRects().length > 0).catch(() => false); },
   // every ticket as the page holds it
   tasks: (p) => p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks").values()].map((t) => ({ key: t.key, type: t.type, title: t.title, description: t.descriptionText || t.description || "", status: t.status, resolution: t.resolution || null, assignee: t.assignee || "", release: t.release || "", priority: t.priority || "", sprint: t.sprint || "", labels: t.labels || [], flagged: !!t.flagged, estimate: t.estimate, logged: t.logged }))),
   snapshot: async (p, key) => {
