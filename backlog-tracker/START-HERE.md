@@ -26,7 +26,7 @@ The documents on the console, in the order they list:
 - **3 — Help Centre (faq/): how it works and how it is edited** — *copy* ·
   `faq/README.md`
 - **4 — Documentation standard** — *copy, 2 parts* · `docs/CONTRIBUTING-docs.md`
-- **5 — Console security and performance review** — *copy, 2 parts* ·
+- **5 — Console security and performance review** — *copy, 3 parts* ·
   `backlog-tracker/SECURITY-PERFORMANCE.md`
 - The project's **README** and **Requirements** blocks, which sit beside the
   documents: `backlog-tracker/README.md` and `backlog-tracker/REQUIREMENTS.md`.
@@ -47,8 +47,9 @@ Every copy, by the exact name the console lists it under:
 - 3 — Help Centre (faq/): how it works and how it is edited · `faq/README.md`
 - 4 — Documentation standard (1/2): principles, types, repository rules, FAQ standard · `docs/CONTRIBUTING-docs.md`
 - 4 — Documentation standard (2/2): user guides, accessibility, templates, checklist · `docs/CONTRIBUTING-docs.md`
-- 5 — Console security and performance review (1/2): sign-in and what changed · `backlog-tracker/SECURITY-PERFORMANCE.md`
-- 5 — Console security and performance review (2/2): not changed here, the 100-user envelope, how to verify · `backlog-tracker/SECURITY-PERFORMANCE.md`
+- 5 — Console security and performance review (1/3): 2 Nov 2026, the archived-ticket cache · `backlog-tracker/SECURITY-PERFORMANCE.md`
+- 5 — Console security and performance review (2/3): sign-in and what changed · `backlog-tracker/SECURITY-PERFORMANCE.md`
+- 5 — Console security and performance review (3/3): not changed here, the 100-user envelope, how to verify · `backlog-tracker/SECURITY-PERFORMANCE.md`
 
 Where to begin, by role:
 
@@ -60,7 +61,7 @@ Where to begin, by role:
   then "4 — Documentation standard (1/2)" before writing a word. Classify
   every article's `docType` as that standard says.
 - **Changing sign-in, rules or the MCP server**: "5 — Console security and
-  performance review (1/2)" and "(2/2)", then "2 — Console MCP guide (5/5)"
+  performance review (1/3)", "(2/3)" and "(3/3)", then "2 — Console MCP guide (5/5)"
   for how authentication works. Read them before touching
   `backlog-tracker/public/js/auth-gate.js`, `backlog-tracker/firestore.rules`
   or `backlog-tracker/functions/mcp-server.js`.
