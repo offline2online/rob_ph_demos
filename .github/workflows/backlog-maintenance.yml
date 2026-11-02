@@ -1,0 +1,45 @@
+# One-off data maintenance for the PH Agent Console (backlog-tracker-e4ed2).
+# Dry run by default; tick "apply" to write.
+#
+#   offload-shipped-patches — move patchFiles off shipped tickets into
+#   backlogItems/{id}/pipeline/patch (backlog-tracker/scripts/offload-shipped-patches.js).
+name: Backlog maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Which maintenance task'
+        type: choice
+        options: [offload-shipped-patches, drop-legacy-project-docs]
+        default: offload-shipped-patches
+      apply:
+        description: 'Write the change (unticked = dry run: report only)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: backlog-maintenance
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install firebase-admin
+        working-directory: backlog-tracker/scripts
+        run: npm install --no-audit --no-fund
+      - name: Write Firebase service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+      - name: Run
+        working-directory: backlog-tracker/scripts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node ${{ inputs.task }}.js ${{ inputs.apply == true && '--apply' || '' }}

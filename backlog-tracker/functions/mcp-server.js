@@ -1095,7 +1095,7 @@ function skillReviewStatus(skillData, mergeDates) {
 // read every time skills are listed, so an N-skill list must stay one
 // query, not N.
 async function loadPublishedMergeDates() {
-  const snap = await db().collection("backlogItems").where("status", "==", "published-live").limit(MAX_READ_DOCS).get();
+  const snap = await db().collection("backlogItems").where("status", "==", "published-live").select("mergedAt").limit(MAX_READ_DOCS).get();
   const dates = [];
   snap.forEach((doc) => {
     const mergedAt = doc.data().mergedAt;
@@ -2173,7 +2173,8 @@ const TOOLS = [
       const programs = new Map();
       (await db().collection("programs").get()).forEach((d) => programs.set(d.id, (d.data() || {}).name || ""));
       const counts = new Map();
-      const itemsSnap = await db().collection("backlogItems").limit(MAX_READ_DOCS).get();
+      // Two fields, not whole tickets: a full read here was ~100 MB (2 Nov 2026).
+      const itemsSnap = await db().collection("backlogItems").select("projectId", "status").limit(MAX_READ_DOCS).get();
       itemsSnap.forEach((doc) => {
         const d = doc.data() || {};
         const byStatus = counts.get(d.projectId) || {};
@@ -3915,7 +3916,7 @@ const TOOLS = [
       if (!psnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
       const project = psnap.data() || {};
       if (project.archived) return toolError("That project is already archived.");
-      const open = (await db().collection("backlogItems").where("projectId", "==", projectId).get())
+      const open = (await db().collection("backlogItems").where("projectId", "==", projectId).select("status").get())
         .docs.filter((d) => (d.data() || {}).status !== "archived").length;
       if (open && args.acknowledgeOpenTickets !== true) {
         return toolError(`That project has ${open} open ticket${open === 1 ? "" : "s"}. Archive them first, or pass acknowledgeOpenTickets: true to leave them on the archived project.`);
@@ -5003,7 +5004,7 @@ async function buildProjectHandover(args) {
   const p = hits[0];
 
   const counts = {};
-  (await db().collection("backlogItems").where("projectId", "==", p.id).get()).forEach((d) => {
+  (await db().collection("backlogItems").where("projectId", "==", p.id).select("status").get()).forEach((d) => {
     const st = (d.data() || {}).status || "backlog";
     if (st !== "archived") counts[st] = (counts[st] || 0) + 1;
   });

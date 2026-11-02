@@ -1,3 +1,60 @@
+# 2 Nov 2026 — "the console no longer loads": the archived-ticket cache
+
+Measured against the live project for the first time, from a GitHub runner
+(`.github/workflows/console-perf-probe.yml` → `scripts/perf/live-perf-probe.mjs`:
+read-only; sizes every collection the console reads, then loads the real site
+in Chromium as the board automation user and times each page; with
+`PROBE_LOCAL_PUBLIC` it serves a checkout's `public/` against the same data).
+
+**What the data looked like.** `backlogItems` held 1,094 documents and
+101 MB, of which the 8 live cards were 82 KB. The rest was 1,086 archived
+tickets at ~93 KB each, and 92 MB of that was `patchFiles` left on tickets
+that shipped before the 5 Oct offload (the hourly `sweepShippedPatchFiles`
+had not cleared them; worth a look on its own). `projects` carried 321 KB of
+legacy `requirementsMd`/`readmeMd` copies on 7 documents.
+
+**Why it stopped loading.** The Archived tickets / Archived projects /
+revision-review pages called `ensureArchivedItems()`, which read every
+archived ticket in full with the SDK's `getDocs`. That downloaded the lot and
+wrote it into the persistent IndexedDB cache. From then on, every load's
+cached `status != archived` query scanned that cache on the main thread
+before the board could paint, and each later visit to an Archived page added
+more. On the runner (fast CPU, fast network) one visit took 12.7 s, 28 MB and
+a 2.3 s main-thread freeze, left 81 MB in IndexedDB, and slowed the next
+loads from 0.7 s to 1.4–2.5 s; on a laptop that had opened the archive a few
+times it is "doesn't load".
+
+**What changed.**
+
+| | before (1.5.331) | after |
+|---|---|---|
+| Open Archived tickets (564) | 12.7 s, 28 MB | 1.9 s, 2.6 MB |
+| IndexedDB after it | 81 MB | 1 MB |
+| Board reload after it | 1.4–2.5 s | 0.3 s |
+| Board warm reload | 0.71 s | 0.32 s |
+
+- `app.js` `fetchArchivedItems()`: archived tickets are read over REST
+  `runQuery` with `BACKLOG_ITEM_RENDER_FIELDS` as the mask, never through the
+  SDK, so they never reach the cache. The SDK read is only the fallback when
+  REST fails (and what the stubbed test harness exercises).
+- `auth-gate.js`: `CACHE_GEN` clears the Firestore IndexedDB cache once per
+  browser before `app.js` loads (bounded to 4 s), so browsers that already
+  hold the bloated cache recover on their next visit.
+- `functions/mcp-server.js`: `list_projects` counted statuses by reading
+  every ticket in full (~100 MB per call, the first call most agents make);
+  it and three other count-only reads now `select()` the fields they use.
+- Data: `.github/workflows/backlog-maintenance.yml` runs
+  `scripts/offload-shipped-patches.js` (moves `patchFiles` off shipped
+  tickets into `pipeline/patch`, the same move `patch-offload.js` makes for
+  new ones; nothing deleted) and `scripts/drop-legacy-project-docs.js`
+  (drops the legacy project-doc copies; `docs/{kind}` is what every reader
+  uses, and it is never overwritten). Both dry-run by default.
+
+Everything else the probe timed (Staff Kanban, Concepts, FAQ Management,
+Settings, User Management) opened in under 0.4 s once the board was up.
+
+---
+
 # PH Agent Console — security and performance review (27 Sep 2026)
 
 Scope: the backlog tracker / PH Agent Console (`backlog-tracker/`: the

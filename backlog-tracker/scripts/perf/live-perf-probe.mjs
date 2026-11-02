@@ -150,7 +150,7 @@ log("   IndexedDB:", JSON.stringify(await page.evaluate(async () => { const e = 
 const sections = [
   ["#staff-kanban", () => !!document.querySelector(".kb-col-title")],
   ["#concept-incubator", () => !document.getElementById("concept-incubator-page")?.hidden],
-  ["#faq-management", () => !document.getElementById("faq-articles-page")?.hidden && !!document.querySelector("#faq-articles-page .fa-group")],
+  ["#faq-management", () => !document.getElementById("faq-articles-page")?.hidden && /[1-9]/.test(document.getElementById("faq-admin-count")?.textContent || "")],
   ["#settings/projects", () => !document.getElementById("faq-settings-page")?.hidden],
   ["#settings/releases", () => !document.getElementById("faq-settings-page")?.hidden],
   ["#user-management/users", () => true],
