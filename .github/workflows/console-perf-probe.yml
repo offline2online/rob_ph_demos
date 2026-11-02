@@ -1,0 +1,45 @@
+# Live performance probe for the PH Agent Console. Read-only: measures the
+# collections the console reads at start-up and times real page loads in
+# Chromium as the board automation user (viewer claim, nothing written).
+# See backlog-tracker/scripts/perf/live-perf-probe.mjs.
+name: Console perf probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/ph-console-performance-review-*']
+    paths:
+      - 'backlog-tracker/scripts/perf/**'
+      - '.github/workflows/console-perf-probe.yml'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install probe dependencies
+        working-directory: backlog-tracker/scripts/perf
+        run: |
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund firebase-admin@13 playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Write Firebase service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+      - name: Probe
+        working-directory: backlog-tracker/scripts/perf
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: node live-perf-probe.mjs --out "$RUNNER_TEMP/perf-report.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-report
+          path: |
+            ${{ runner.temp }}/perf-report.json
+            ${{ runner.temp }}/perf-report.png
