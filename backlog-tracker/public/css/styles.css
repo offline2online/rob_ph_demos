@@ -2232,3 +2232,10 @@ body { overflow-x: clip; }
 /* Archive / Archived projects / Releases pages: AG Grid lists (docs-grid.js) with an optional filter bar. */
 .archive-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
 .archive-filters select { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }
+
+/* Release audit view (#releases/<id>/audit) */
+.ra-row { border: 1px solid var(--border, #e0e0e0); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; }
+.ra-row .badge { margin-left: 8px; }
+.ra-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ra-log-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ra-log-table th, .ra-log-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border, #e0e0e0); }

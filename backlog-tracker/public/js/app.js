@@ -33,6 +33,7 @@ import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mir
 import { initNavShell } from "./nav-shell.js";
 import { renderMarkdown } from "./docs-markdown.js";
 import { createDocsList } from "./docs-grid.js";
+import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
 import { SETTINGS_PAGES, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
 import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, getAvatarMember, normEmail, checkAvatarFile, avatarBlobFromFile } from "./avatar.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
@@ -547,6 +548,7 @@ function closeAllSubPages() {
   closeFaqRevisionReviewPage();
   closeSkillsPage();
   closeReleasesPage();
+  closeReleaseAuditPage();
   closeConceptIncubatorPage();
   closeConceptDetailPage();
   closeStaffKanbanPage();
@@ -4250,7 +4252,9 @@ function projectReleaseBadgeHTML(project) {
 // range-compared on (articleAppliesToRelease below). Status only ever
 // advances draft → live; there is deliberately no way back in this UI, and
 // the rules refuse one from anywhere else too.
-const RELEASE_STATUS_LABELS = { draft: "Draft", live: "Live" };
+// "live" is the stored key (rules, the help centre and MCP all read it); the
+// name people see is the milestone it stands for.
+const RELEASE_STATUS_LABELS = { draft: "Draft", live: "Live on AWS Marketplace" };
 
 // Earliest to latest by version number (5.0, 5.1 ... 5.10, 6.0), the one
 // order every release list, picker and filter uses.
@@ -7869,14 +7873,16 @@ function getReleasesList() {
         { key: "name", header: "Release", flex: 1, minWidth: 200, text: (r) => r.name || "",
           html: (r) => `<a href="#" class="release-edit-link" data-release-id="${escapeHTML(r.id)}">${escapeHTML(r.name || "")}</a>` },
         { key: "version", header: "Version", width: 110, text: (r) => r.version || "", html: (r) => (r.version ? escapeHTML(r.version) : "—") },
-        { key: "status", header: "Status", width: 200, text: (r) => RELEASE_STATUS_LABELS[r.status] || r.status || "",
+        { key: "status", header: "Status", width: 260, text: (r) => RELEASE_STATUS_LABELS[r.status] || r.status || "",
           html: (r) => { const c = releaseCells(r); return `<span class="badge ${c.isLive ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(RELEASE_STATUS_LABELS[r.status] || r.status || "")}</span>${c.liveOn ? ` <span class="field-hint">${escapeHTML(c.isCurrent ? `current · ${c.liveOn}` : c.liveOn)}</span>` : ""}`; } },
         { key: "projects", header: "Projects", width: 170, text: (r) => String(releaseCells(r).projectCount).padStart(6, "0"),
           html: (r) => { const c = releaseCells(r); return `${c.projectCount} project${c.projectCount === 1 ? "" : "s"}${c.conceptCount ? `, ${c.conceptCount} concept${c.conceptCount === 1 ? "" : "s"}` : ""}`; } },
         { key: "created", header: "Created", width: 130, text: (r) => (r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toISOString() : ""),
           html: (r) => escapeHTML(r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString() : "—") },
-        { key: "action", header: "", width: 120, sortable: false, text: () => "",
-          html: (r) => (r.status === "live" ? "" : `<button type="button" class="restore-btn release-mark-live-btn" data-release-id="${escapeHTML(r.id)}" data-editor-only>Mark live</button>`) },
+        { key: "action", header: "", width: 230, sortable: false, text: () => "",
+          html: (r) => (r.status === "live"
+            ? `<button type="button" class="restore-btn release-audit-btn" data-release-id="${escapeHTML(r.id)}">Help Centre audit</button>`
+            : `<button type="button" class="restore-btn release-mark-live-btn" data-release-id="${escapeHTML(r.id)}" data-editor-only>Mark live on AWS Marketplace</button>`) },
       ],
     });
   }
@@ -8010,6 +8016,8 @@ document.getElementById("releases-grid").addEventListener("click", async (e) => 
     if (await requireReleaseEditor()) openReleaseEditor(link.dataset.releaseId);
     return;
   }
+  const auditBtn = e.target.closest(".release-audit-btn");
+  if (auditBtn) { openReleaseAuditPage(auditBtn.dataset.releaseId); return; }
   const btn = e.target.closest(".release-mark-live-btn");
   if (!btn) return;
   const r = releases.find((x) => x.id === btn.dataset.releaseId);
@@ -8017,8 +8025,8 @@ document.getElementById("releases-grid").addEventListener("click", async (e) => 
   if (!(await requireReleaseEditor())) return;
   const projectCount = projects.filter((p) => p.releaseId === r.id).length;
   const ok = await showConfirmDialog(
-    `Mark "${releaseLabel(r)}" live? This can't be undone. Every approved FAQ update waiting on ${projectCount === 1 ? "the 1 project" : `the ${projectCount} projects`} assigned to this release goes live on the help centre with it.`,
-    { title: "Mark release live", okLabel: "Mark live" },
+    `Mark "${releaseLabel(r)}" Live on AWS Marketplace? This can't be undone. It starts an audit of every Help Centre article against what shipped in ${projectCount === 1 ? "the 1 project" : `the ${projectCount} projects`} assigned to this release. Nothing is published until you approve it in the audit.`,
+    { title: "Mark release Live on AWS Marketplace", okLabel: "Mark live and start audit" },
   );
   if (!ok) return;
   try {
@@ -8029,6 +8037,178 @@ document.getElementById("releases-grid").addEventListener("click", async (e) => 
   }
 });
 
+// ── Release audit (#releases/<id>/audit) ─────────────────────────────────
+// What the audit Routine proposed for one release, as a single batch:
+// updates and new-article drafts (faqArticles.pendingRevision with
+// sourceReleaseId) and retire flags (faqArticles.retireProposal). Each row can
+// be reviewed side by side (the existing proposed-update view), approved,
+// edited or rejected; "Approve selected" / "Reject selected" act on a batch.
+// The audit's own record and log live in releaseAudits/{releaseId}.
+const releaseAuditPage = document.getElementById("release-audit-page");
+let auditReleaseId = null;
+let auditDoc = null;
+let auditUnsub = null;
+const auditSelected = new Set();
+
+function openReleaseAuditPage(releaseId) {
+  if (!pageAllowed("releases")) return;
+  ensureLazy("faqCategories", "faqArticles");
+  closeAllSubPages();
+  auditReleaseId = releaseId;
+  auditDoc = null;
+  auditSelected.clear();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  releaseAuditPage.hidden = false;
+  setRouteHash(`#releases/${encodeURIComponent(releaseId)}/audit`);
+  if (auditUnsub) auditUnsub();
+  auditUnsub = onSnapshot(doc(db, "releaseAudits", releaseId), (snap) => {
+    auditDoc = snap.exists() ? snap.data({ serverTimestamps: "estimate" }) : null;
+    renderReleaseAuditPage();
+  }, (err) => { console.error("backlog-tracker: release audit listener", err); renderReleaseAuditPage(); });
+  renderReleaseAuditPage();
+}
+function closeReleaseAuditPage() {
+  if (!releaseAuditPage || releaseAuditPage.hidden) return;
+  releaseAuditPage.hidden = true;
+  if (auditUnsub) { auditUnsub(); auditUnsub = null; }
+  auditReleaseId = null;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+
+function auditTimeText(v) {
+  const ms = v && typeof v.toMillis === "function" ? v.toMillis() : Date.parse(String(v));
+  return Number.isFinite(ms) ? new Date(ms).toLocaleString() : "";
+}
+
+function renderReleaseAuditPage() {
+  if (!releaseAuditPage || releaseAuditPage.hidden || !auditReleaseId) return;
+  const release = releases.find((r) => r.id === auditReleaseId);
+  document.getElementById("ra-title").textContent = `Help Centre audit${release ? ` — ${releaseLabel(release)}` : ""}`;
+  const rows = classifyAudit(faqArticles, auditReleaseId);
+  const counts = auditCounts(rows);
+  document.getElementById("ra-count").textContent = `${rows.length} proposed change${rows.length === 1 ? "" : "s"}`;
+
+  const st = auditDoc ? auditDoc.status : null;
+  const stText = !auditDoc ? "No audit has been started for this release. An audit starts when the release is marked Live on AWS Marketplace."
+    : st === "requested" ? "Audit requested — waiting for the audit session to start."
+    : st === "running" ? "Audit running — proposals appear here as the session writes them."
+    : st === "failed" ? `Audit failed to run: ${auditDoc.errorMessage || "see the log"}.`
+    : `Audit finished — ${Number(auditDoc.checkedArticleCount) || 0} article${Number(auditDoc.checkedArticleCount) === 1 ? "" : "s"} checked.`;
+  document.getElementById("ra-status").innerHTML =
+    `${escapeHTML(stText)}${auditDoc && auditDoc.sessionUrl ? ` <a href="${escapeHTML(auditDoc.sessionUrl)}" target="_blank" rel="noopener">Open session ↗</a>` : ""}` +
+    (auditDoc && auditDoc.summary ? `<p>${escapeHTML(auditDoc.summary)}</p>` : "") +
+    (rows.length ? `<p>${counts.update} update${counts.update === 1 ? "" : "s"}, ${counts.new} new article${counts.new === 1 ? "" : "s"}, ${counts.retire} to retire — ${counts.awaiting} awaiting review.</p>` : "");
+
+  const batch = document.getElementById("ra-batch");
+  if (!rows.length) {
+    batch.innerHTML = `<p class="field-hint">${auditDoc && (st === "done" || st === "finished") ? "The audit proposed no changes." : "Nothing to review yet."}</p>`;
+  } else {
+    const kinds = ["update", "new", "retire"];
+    batch.innerHTML = kinds.map((k) => {
+      const group = rows.filter((r) => r.kind === k);
+      if (!group.length) return "";
+      return `<h3>${escapeHTML(AUDIT_KIND_LABELS[k])} (${group.length})</h3>` + group.map((r) => {
+        const a = r.article;
+        const approved = r.state === "approved";
+        return `<div class="ra-row" data-article-id="${escapeHTML(a.id)}" data-kind="${k}">
+          <label><input type="checkbox" class="ra-pick" data-article-id="${escapeHTML(a.id)}" data-kind="${k}"${auditSelected.has(`${k}:${a.id}`) ? " checked" : ""}${approved ? " disabled" : ""}> <strong>${escapeHTML((k === "update" || k === "retire") ? a.title : (a.pendingRevision && a.pendingRevision.title) || a.title)}</strong></label>
+          <span class="badge ${approved ? "badge-status-published" : "badge-status-draft"}">${approved ? "Approved" : "Awaiting review"}</span>
+          <div class="field-hint">${escapeHTML(r.reason || "(no reason given)")}</div>
+          <div class="ra-actions">
+            ${k === "retire" ? "" : `<button type="button" class="restore-btn ra-review" data-article-id="${escapeHTML(a.id)}">Review side by side</button>`}
+            ${approved ? "" : `<button type="button" class="restore-btn ra-approve" data-article-id="${escapeHTML(a.id)}" data-kind="${k}" data-editor-only>Approve</button>`}
+            ${approved || k === "retire" ? "" : `<button type="button" class="restore-btn ra-edit" data-article-id="${escapeHTML(a.id)}" data-editor-only>Edit</button>`}
+            <button type="button" class="restore-btn ra-reject" data-article-id="${escapeHTML(a.id)}" data-kind="${k}" data-editor-only>Reject</button>
+          </div>
+        </div>`;
+      }).join("");
+    }).join("");
+  }
+
+  const log = sortedLog(auditDoc);
+  document.getElementById("ra-log").innerHTML = log.length
+    ? `<table class="ra-log-table"><thead><tr><th>When</th><th>Event</th><th>Article</th><th>By</th><th>Note</th></tr></thead><tbody>${log.map((e) =>
+        `<tr><td>${escapeHTML(auditTimeText(e.at))}</td><td>${escapeHTML(AUDIT_LOG_LABELS[e.type] || e.type || "")}</td><td>${escapeHTML(e.title || "")}</td><td>${escapeHTML(e.by || "")}</td><td>${escapeHTML(e.note || "")}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="field-hint">Nothing logged yet.</p>`;
+  const checked = auditDoc && Array.isArray(auditDoc.checked) ? auditDoc.checked : [];
+  if (checked.length) {
+    document.getElementById("ra-log").innerHTML += `<details><summary>What was checked (${checked.length})</summary><ul>${checked.map((c) => `<li>${escapeHTML(typeof c === "string" ? c : `${c.title || c.id || ""}${c.outcome ? ` — ${c.outcome}` : ""}`)}</li>`).join("")}</ul></details>`;
+  }
+}
+
+async function approveRetirement(id, a) {
+  const ret = a.retireProposal;
+  const who = (auth.currentUser && auth.currentUser.email) || "editor";
+  // Retiring unpublishes the article (it drops out of the next export) and
+  // keeps the proposal's reason on it; "retiredAt" marks why it is a draft.
+  await setDoc(doc(db, "faqArticles", id), {
+    status: "draft", retiredAt: new Date().toISOString(), retiredBy: who,
+    retireProposal: { ...ret, reviewStatus: "approved", approvedAt: new Date().toISOString(), approvedBy: who },
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  await logReleaseAudit(ret.sourceReleaseId, { type: "retire-approved", articleId: id, title: a.title });
+  await logReleaseAudit(ret.sourceReleaseId, { type: "went-live", articleId: id, title: a.title, note: "Unpublished from the Help Centre" });
+}
+async function rejectRetirement(id, a) {
+  const ret = a.retireProposal;
+  await setDoc(doc(db, "faqArticles", id), { retireProposal: deleteField(), updatedAt: serverTimestamp() }, { merge: true });
+  await logReleaseAudit(ret.sourceReleaseId, { type: "retire-rejected", articleId: id, title: a.title });
+}
+
+async function auditAct(action, kind, id) {
+  const a = faqArticles.find((x) => x.id === id);
+  if (!a) return;
+  if (kind === "retire") { if (a.retireProposal) await (action === "approve" ? approveRetirement(id, a) : rejectRetirement(id, a)); return; }
+  if (!a.pendingRevision) return;
+  if (action === "approve") await approveFaqRevisionNow(id, a);
+  else if (a.pendingRevision.isNew) { await deleteDoc(doc(db, "faqArticles", id)); await logReleaseAudit(a.pendingRevision.sourceReleaseId, { type: "rejected", articleId: id, title: a.pendingRevision.title, note: "New article draft deleted" }); }
+  else { await setDoc(doc(db, "faqArticles", id), { pendingRevision: deleteField(), needsReview: false, updatedAt: serverTimestamp() }, { merge: true }); await logReleaseAudit(a.pendingRevision.sourceReleaseId, { type: "rejected", articleId: id, title: a.pendingRevision.title || a.title }); }
+}
+
+async function auditBulk(action) {
+  if (!(await requireFaqEditor())) return;
+  const picks = Array.from(auditSelected).map((k) => { const i = k.indexOf(":"); return { kind: k.slice(0, i), id: k.slice(i + 1) }; });
+  if (!picks.length) { await showAlert("Tick the changes to act on first."); return; }
+  const verb = action === "approve" ? "Approve" : "Reject";
+  const ok = await showConfirmDialog(
+    action === "approve"
+      ? `Approve ${picks.length} change${picks.length === 1 ? "" : "s"}? Updates and new articles are published to the Help Centre straight away; approved retirements unpublish their article.`
+      : `Reject ${picks.length} proposed change${picks.length === 1 ? "" : "s"}? The live articles stay as they are and new-article drafts are deleted.`,
+    { title: `${verb} selected`, okLabel: verb, danger: action !== "approve" });
+  if (!ok) return;
+  for (const p of picks) {
+    try { await auditAct(action, p.kind, p.id); } catch (err) { console.error("backlog-tracker: audit action failed", err); await showAlert(`Couldn't ${action} one change: ${err && err.code ? err.code : err}`); break; }
+  }
+  auditSelected.clear();
+}
+
+releaseAuditPage.addEventListener("change", (e) => {
+  const pick = e.target.closest(".ra-pick");
+  if (!pick) return;
+  const key = `${pick.dataset.kind}:${pick.dataset.articleId}`;
+  if (pick.checked) auditSelected.add(key); else auditSelected.delete(key);
+});
+releaseAuditPage.addEventListener("click", async (e) => {
+  const review = e.target.closest(".ra-review");
+  if (review) { openFaqRevisionReviewPage(review.dataset.articleId); return; }
+  const edit = e.target.closest(".ra-edit");
+  if (edit) { openFaqArticleEditorPage(edit.dataset.articleId, { pendingRevision: true }); return; }
+  const btn = e.target.closest(".ra-approve, .ra-reject");
+  if (!btn) return;
+  if (!(await requireFaqEditor())) return;
+  const action = btn.classList.contains("ra-approve") ? "approve" : "reject";
+  const a = faqArticles.find((x) => x.id === btn.dataset.articleId);
+  const ok = await showConfirmDialog(
+    action === "approve" ? `Approve the change to "${a ? a.title : "this article"}"?` : `Reject the change to "${a ? a.title : "this article"}"? The live article stays as it is.`,
+    { title: action === "approve" ? "Approve" : "Reject", okLabel: action === "approve" ? "Approve" : "Reject", danger: action !== "approve" });
+  if (!ok) return;
+  try { await auditAct(action, btn.dataset.kind, btn.dataset.articleId); } catch (err) { console.error(err); await showAlert(`Couldn't ${action} it: ${err && err.code ? err.code : err}`); }
+});
+document.getElementById("ra-approve-selected").addEventListener("click", () => auditBulk("approve"));
+document.getElementById("ra-reject-selected").addEventListener("click", () => auditBulk("reject"));
+document.getElementById("ra-back").addEventListener("click", () => openReleasesPage());
 // ── Skills page ───────────────────────────────────────────────────────────
 // An organisation-wide, shared library of packaged instructions any team
 // member's AI agent can pull in over MCP (list_skills/get_skill/
@@ -9631,6 +9811,7 @@ const startFaqArticlesListener = () => onSnapshot(query(faqArticlesRef, orderBy(
   faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
   if (!faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
+  renderReleaseAuditPage();
   resolvePendingFaqArticleRoute();
 }, onListenerError("faqArticles"));
 const _primeFaqCategories = lazyStarters.faqCategories, _primeFaqArticles = lazyStarters.faqArticles;
@@ -11448,6 +11629,7 @@ function applyRouteFromHash() {
   else if (hash.startsWith("#user-management")) openUserManagementPage(hash.split("/")[1]);
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
+  else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
   else if (hash === "#concept-incubator") openConceptIncubatorPage();
   else if (hash.startsWith("#concept-")) openConceptRouteFromHash(hash);
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
@@ -12474,16 +12656,9 @@ function faqRevisionSourceItems(rev) {
 }
 
 function faqRevisionGoLiveHint(rev) {
-  const sources = faqRevisionSourceItems(rev);
-  const waiting = sources.filter((s) => s.item && !isItemLiveOrLater(s.status));
-  if (rev.reviewStatus === "approved") {
-    return waiting.length
-      ? `Approved. Goes live automatically once ${waiting.length === 1 ? "its ticket reaches" : `all ${waiting.length} tickets reach`} Merged to Main.`
-      : "Approved and every ticket is live — going live now (the page updates when it has).";
-  }
-  return waiting.length
-    ? `On approval this goes live automatically when ${waiting.length === 1 ? "its ticket reaches" : `all ${waiting.length} tickets reach`} Merged to Main — not before.`
-    : "Every ticket behind this is already live, so approving publishes it straight away.";
+  return rev.reviewStatus === "approved"
+    ? "Approved — going live now (the page updates when it has)."
+    : "Approving publishes this to the Help Centre straight away.";
 }
 
 function setFrMode(mode) {
@@ -12504,7 +12679,7 @@ function renderFaqRevisionReviewPage() {
     return;
   }
   const approved = rev.reviewStatus === "approved";
-  document.getElementById("fr-title").textContent = approved ? "Approved update — awaiting merge" : "Review proposed update";
+  document.getElementById("fr-title").textContent = approved ? "Approved update — going live" : "Review proposed update";
   document.getElementById("fr-approve").hidden = approved;
   document.getElementById("fr-edit").hidden = approved;
   document.getElementById("fr-reject").textContent = approved ? "Withdraw approval" : "Reject";
@@ -12514,7 +12689,7 @@ function renderFaqRevisionReviewPage() {
     const label = s.item ? escapeHTML(s.item.title || s.id) : `${escapeHTML(s.id)} (ticket no longer exists)`;
     const st = ITEM_STATUS_LABELS[s.status] || "Unknown";
     return `<span class="fr-ticket">${label} <span class="badge badge-item-status-${escapeHTML(s.status)}">${escapeHTML(st)}</span></span>`;
-  }).join("") : "<em>none recorded</em>";
+  }).join("") : (rev.sourceReleaseId ? `<span class="fr-ticket">Release audit: ${escapeHTML(releaseLabel(releases.find((r) => r.id === rev.sourceReleaseId)) || rev.sourceReleaseId)}</span>` : "<em>none recorded</em>");
   const prs = Array.isArray(rev.sourcePrNumbers) && rev.sourcePrNumbers.length
     ? rev.sourcePrNumbers.map((n) => `<a href="https://github.com/offline2online/rob_ph_demos/pull/${encodeURIComponent(n)}" target="_blank" rel="noopener">#${escapeHTML(String(n))}</a>`).join(", ")
     : "";
@@ -12571,15 +12746,36 @@ async function approveFaqRevision(id) {
   const a = faqArticles.find((x) => x.id === id);
   if (!a || !a.pendingRevision) return;
   const rev = a.pendingRevision;
-  const waiting = faqRevisionSourceItems(rev).filter((s) => s.item && !isItemLiveOrLater(s.status));
-  const msg = waiting.length
-    ? `Approve this update? It will go live automatically once ${waiting.length === 1 ? "its ticket reaches" : `all ${waiting.length} tickets reach`} Merged to Main.`
-    : "Approve this update? Every ticket behind it is already live, so it will be published straight away.";
-  if (!(await showConfirmDialog(msg, { title: "Approve proposed update", okLabel: "Approve" }))) return;
+  if (!(await showConfirmDialog("Approve this update? It is published to the Help Centre straight away.", { title: "Approve proposed update", okLabel: "Approve" }))) return;
+  await approveFaqRevisionNow(id, a);
+}
+
+// The write behind Approve, shared with the release audit's batch approve
+// (which asks once for the whole batch). Approval alone publishes: the audit
+// only proposes after the release is live (functions/index.js
+// promoteFaqRevisionIfReady).
+async function approveFaqRevisionNow(id, a) {
+  const rev = a.pendingRevision;
   await setDoc(doc(db, "faqArticles", id), {
     pendingRevision: { ...rev, reviewStatus: "approved", approvedAt: new Date().toISOString(), approvedBy: (auth.currentUser && auth.currentUser.email) || "editor" },
     updatedAt: serverTimestamp(),
   }, { merge: true });
+  await logReleaseAudit(rev.sourceReleaseId, { type: "approved", articleId: id, title: rev.title || a.title, note: rev.isNew ? "New article" : null });
+}
+
+// Append one line to a release audit's log (no-op for a proposal that did
+// not come from a release audit). Best effort: a failed log write must not
+// undo the approval it describes.
+async function logReleaseAudit(releaseId, entry) {
+  if (!releaseId) return;
+  try {
+    await setDoc(doc(db, "releaseAudits", releaseId), {
+      log: arrayUnion(reviewLogEntry({ ...entry, by: (auth.currentUser && auth.currentUser.email) || "editor" })),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    console.error("backlog-tracker: couldn't write the release audit log", err);
+  }
 }
 
 async function rejectFaqRevision(id) {
@@ -12590,11 +12786,13 @@ async function rejectFaqRevision(id) {
   if (rev.isNew) {
     if (!(await showConfirmDialog("This proposal created a brand-new draft article. Rejecting deletes the draft entirely. Continue?", { title: "Reject new article", okLabel: "Delete draft", danger: true }))) return;
     await deleteDoc(doc(db, "faqArticles", id));
+    await logReleaseAudit(rev.sourceReleaseId, { type: "rejected", articleId: id, title: rev.title || a.title, note: "New article draft deleted" });
     return;
   }
   const approved = rev.reviewStatus === "approved";
   if (!(await showConfirmDialog(approved ? "Withdraw approval and discard this proposed update? The live article stays as it is." : "Reject this proposed update? The live article stays as it is.", { title: approved ? "Withdraw approval" : "Reject proposed update", okLabel: approved ? "Withdraw" : "Reject", danger: true }))) return;
   await setDoc(doc(db, "faqArticles", id), { pendingRevision: deleteField(), needsReview: false, updatedAt: serverTimestamp() }, { merge: true });
+  await logReleaseAudit(rev.sourceReleaseId, { type: "rejected", articleId: id, title: rev.title || a.title });
 }
 
 // Swap a promoted revision back out: the live fields take previousRevision's

@@ -1581,11 +1581,32 @@
         <h2>Releases</h2>
         <span class="page-header-count" id="releases-count">0 releases</span>
       </div>
-      <p class="field-hint">A release bundles projects (and roadmap concepts) so their approved FAQ updates go live on the help centre together, the moment the release is marked live. Marking a release live can't be undone.</p>
+      <p class="field-hint">A release bundles projects (and roadmap concepts). Marking a release <strong>Live on AWS Marketplace</strong> can't be undone, and starts an audit of the whole Help Centre against what shipped: proposed updates, new articles and articles to retire come back as one batch to review under <strong>Audit</strong>.</p>
       <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
         <button type="button" class="btn-primary" id="releases-add-btn" data-editor-only>+ New release</button>
       </div>
       <div id="releases-grid"></div>
+    </section>
+
+    <!-- Release audit (app.js openReleaseAuditPage, #releases/<id>/audit) —
+         the Help Centre changes the audit Routine proposed for one release,
+         as a single batch, plus the audit's log. -->
+    <section class="archive-page" id="release-audit-page" hidden>
+      <div class="page-header">
+        <h2 id="ra-title">Release audit</h2>
+        <span class="page-header-count" id="ra-count"></span>
+      </div>
+      <div class="form-row" style="margin-bottom:12px;">
+        <button type="button" class="btn-secondary" id="ra-back">&larr; Releases</button>
+      </div>
+      <div id="ra-status" class="field-hint"></div>
+      <div class="form-row" id="ra-bulk" style="margin:12px 0;gap:8px;" data-editor-only>
+        <button type="button" class="btn-primary" id="ra-approve-selected">Approve selected</button>
+        <button type="button" class="btn-secondary" id="ra-reject-selected">Reject selected</button>
+      </div>
+      <div id="ra-batch"></div>
+      <h3>Audit log</h3>
+      <div id="ra-log"></div>
     </section>
 
     <!-- Phone only: the actions of whichever project you're currently

@@ -1181,14 +1181,11 @@ name and optional version; a draft row's **Mark live** confirms, then sets
 with `status == "live"`.
 
 - **A project may be assigned to one** — `projects/{id}.releaseId`
-  (nullable), from the project's Docs page → **Release**. While that
-  release is a draft, approved FAQ proposals sourced from the project
-  (`pendingRevision.sourceProjectId`) wait; marking the release live
-  promotes them together (`functions/index.js` `onReleaseMarkedLive`, then
-  the usual `promoteFaqRevisionIfReady`, which still also waits on the
-  proposal's source tickets). A project with no `releaseId`, or a proposal
-  with no `sourceProjectId`, promotes exactly as before releases existed —
-  Backlog Tracker & FAQs itself is deliberately not release-tracked.
+  (nullable), from the project's Docs page → **Release**. The assignment
+  scopes the release's Help Centre audit (see "Release audit" below): the
+  audit reads these projects' tickets, README and Requirements. It no longer
+  holds or releases anything (the per-ticket FAQ proposals it used to hold
+  back were removed 2 Nov 2026).
 - **An FAQ article may be bound to a range** —
   `faqArticles.introducedInReleaseId` / `removedInReleaseId` (both
   nullable), from the article editor's "Article properties" group. An
@@ -2694,25 +2691,76 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
    `notifyOnProjectReadyForReview` (see "Per-project Routine instructions"
    below) — prepended the same way, ahead of the DEPLOY REQUEST block.
 
-3. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
-   — fires on the transition to `status: "published-live"` (the one
-   irreversible status change) and does two things, in order:
-   1. Promotes any **approved** proposed FAQ revision that names this
-      item in `pendingRevision.sourceItemIds`, provided every other source
-      item is also live — see "FAQ revision review" below. Always on; no
-      toggle.
-   2. The older, coarser safety net, still opt-in per project via the Docs
-      page's **FAQ review automation** toggle
-      (`projects/{id}.faqAutoFlagOnLive`): sets `needsReview: true` on
-      every `faqArticles` doc sharing that item's `projectId` that does
-      *not* already carry a specific proposal. A project with the toggle
-      on but no linked FAQ articles is a harmless no-op.
+3. *(Removed 2 Nov 2026.)* `onBacklogItemPublishedLive` used to promote
+   approved FAQ proposals and, behind `faqAutoFlagOnLive`, flag articles
+   when a ticket reached Merged to Main. A ticket moving through the
+   pipeline now triggers **no** FAQ work; the Help Centre is audited once
+   per release instead — see "Release audit".
 4. **`onFaqArticleRevisionApproved`** (`onDocumentUpdated` on
    `faqArticles`) — the other half of the same rule: when
    `pendingRevision.reviewStatus` flips to `"approved"` it promotes the
-   revision immediately if every source ticket is already live, otherwise
-   it leaves it waiting for (3). Both share `promoteFaqRevisionIfReady`, a
-   transaction that re-reads the article and its tickets before writing.
+   revision immediately — approval is the only gate. `promoteFaqRevisionIfReady`
+   is a transaction that re-reads the article, writes the live fields,
+   keeps `previousRevision`, and (for a release-audit proposal) appends a
+   `went-live` line to the audit's log.
+
+### Release audit (Live on AWS Marketplace → audit → review → publish)
+
+**Why (2 Nov 2026, ticket `oGRC10ZobaV4BBkLC16X`).** Customers get a
+feature only after engineering finalises it and the release is live on AWS
+Marketplace, so a help-article update proposed when a ticket merges is too
+early and mostly irrelevant. The per-ticket check (the Deploy flow's FAQ
+impact review step, the `onBacklogItemPublishedLive` trigger and the
+`faqAutoFlagOnLive` flag) was removed for every project.
+
+**The release status.** `releases/{id}.status` is `draft` or `live`; `live`
+is shown as **Live on AWS Marketplace** (the stored key is unchanged so the
+rules, the public help centre and MCP `search_faq` keep working). An editor
+sets it from the Releases page (**Mark live on AWS Marketplace**, one-way,
+confirmed). `firestore.rules` already refuses going back.
+
+**The trigger.** `onReleaseMarkedLive` (`functions/index.js`) creates
+`releaseAudits/{releaseId}` — `status` `requested` → `running` (it stamps the
+session link) → `done` / `failed`, `requestedAt`, `requestedByEmail`,
+`projectIds`, `checkedArticleCount`, `checked` (every article read and its
+outcome), `summary`, and an append-only `log` — and fires the Routine with
+`=== RELEASE AUDIT REQUEST ===` (`functions/release-audit.js`). It uses
+`create()`, so a re-delivered event never starts a second audit.
+
+**The audit agent** (`ROUTINE_INSTRUCTIONS.md` → "The 'Release Audit'
+flow"). Reads what shipped — the release's Merged-to-Main tickets, its
+projects' README and Requirements, release-notes documents — and reads every
+help article. It writes only proposals, never live fields:
+- *update*: `faqArticles.pendingRevision` with `sourceReleaseId` (no
+  `sourceItemIds`);
+- *new article*: a draft article whose `pendingRevision.isNew` is true;
+- *retire*: `faqArticles.retireProposal {reason, sourceReleaseId,
+  reviewStatus}`.
+
+**The review view.** `#releases/<id>/audit` (Releases → **Help Centre
+audit**) shows the batch grouped as Proposed updates / New articles / Articles
+to retire. Per row: **Review side by side** (the existing old-vs-new diff
+view), **Approve**, **Edit**, **Reject**; plus **Approve selected** /
+**Reject selected**. Approving an update or new article publishes it straight
+away (`promoteFaqRevisionIfReady`, previous text kept for revert); approving
+a retirement unpublishes the article (`status: "draft"`, `retiredAt`);
+rejecting discards the proposal (a new-article draft is deleted).
+
+**The audit log.** `releaseAudits/{id}.log` records `audit-requested`,
+`audit-started`, `audit-finished` / `audit-failed`, then per article
+`approved` / `rejected` / `edited` / `retire-approved` / `retire-rejected`
+with who and when, and `went-live` when it was published. The view shows the
+log and a "what was checked" list.
+
+**Public Support Centre.** Approved changes publish to the Help Centre
+(`faq/`, via the hourly export) now. The Support Centre is moving to native
+WordPress pages driven through the Elementor MCP under the PH Website
+project; that hand-off follows the "Support non-GitHub projects: Elementor MCP
+deployment" ticket and is not built here — approval timing (after the release
+is live) is what keeps the content in step with the release being marketed.
+
+**Tests.** `test/release-audit.test.mjs` (classification, log shape on both
+sides, fire text, and guards that the per-ticket flow stays removed).
 
 ### FAQ revision review (Deploy → propose → approve → go live)
 

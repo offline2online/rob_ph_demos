@@ -104,7 +104,7 @@ Functions) unless a file is named.
    reverts that card's commits.
 9. **Deploy to Main**: shown only when the whole train is approved.
    `notifyOnProjectReadyToDeploy()` fires the Deploy Routine, which verifies
-   the train and reviews the help centre for affected articles (FAQ impact review).
+   the train. (The help centre is no longer reviewed per deploy: marking a release Live on AWS Marketplace starts a Release Audit.)
 10. **Merge**: `processDeployTrain()` merges the train PR once its checks
     pass and `finishTrain()` flips the cards to Merged to Main, resets the
     branch to main and dispatches the deploy when the train touched
@@ -143,9 +143,10 @@ the Routine's behaviour:
 - **Build** ("Setup", "Parallel builds — one ticket per session", "Complete the
   intake sections first", "For each Backlog item found"): one session owns one
   ticket, reads at a pinned `patchBaseSha` and hands back a patch.
-- **Deploy** ("The Notify Claude — Deploy flow", with "FAQ impact review"):
-  verifies the approved train and parks corrected help-centre text on the
-  affected articles as `pendingRevision` for a person to approve.
+- **Deploy** ("The Notify Claude — Deploy flow"): verifies the approved train.
+- **Release Audit** ("The 'Release Audit' flow"): fired when a release is marked
+  Live on AWS Marketplace; audits the whole help centre and parks proposed
+  updates, new drafts and retire flags for a person to approve.
 - **Review Batch** ("The Review Batch flow"): the code-review gate between
   Ready for Testing and approval; it writes `reviewStatus` on each ticket.
 - **Run E2E** ("The Run E2E flow"): runs the end-to-end journeys and reports.

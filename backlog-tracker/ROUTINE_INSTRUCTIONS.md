@@ -94,6 +94,11 @@ investigate-and-fix run, or vice versa:
   skip straight to **"The 'Review Batch' flow (a differently-shaped
   fire)"** further down and follow only that section. Do not run "For each
   Backlog item found" on these items.
+- `text` starts with `=== RELEASE AUDIT REQUEST for "<release>"` → this is the
+  release's Help Centre audit (fired when an admin marks a release Live on AWS
+  Marketplace). Do the board access part of Setup, then skip straight to
+  **"The 'Release Audit' flow (a differently-shaped fire)"** below and follow
+  only that section. It builds nothing and moves nothing.
 - `text` starts with `=== E2E REQUEST for "<project>"` → this is the test-run
   shape (the **Run E2E** button). Do the board access part of Setup, then skip
   straight to **"The 'Run E2E' flow (a differently-shaped fire)"** below and
@@ -157,11 +162,9 @@ move on, don't block the run waiting for it.
   through the `ph-designer` skill" — that rule already applies to a
   rendered-output change whether or not a binding names it.
 - **A `DEPLOY` block, on the "Notify Claude — Deploy" flow**: as part of
-  step 3b's deploy verification below (alongside, not replacing, the FAQ
-  impact review), pull and apply the named skills — e.g. a
-  cybersecurity-review or scalability-review skill — against the same
-  combined train diff (`git diff main...origin/<deployBranch>`) step 3b
-  already reads, and report real, verified findings, not a rubber-stamp
+  step 3b's deploy verification below (alongside the other deploy checks), pull and apply the named skills — e.g. a
+  cybersecurity-review or scalability-review skill — against the combined
+  train diff (`git diff main...origin/<deployBranch>`), and report real, verified findings, not a rubber-stamp
   pass, as a `notes` entry on the items on the train (Setup → "Append a note"). This review does not
   gate `trainReady` the same hard way steps 1-2 do — but if a finding is
   severe enough that shipping it would be a mistake, say so plainly in your
@@ -197,7 +200,7 @@ move on, don't block the run waiting for it.
   `source` is `"build"` or `"review"`; `phase` is `"build"` or `"deploy"`,
   matching which block you're in. Only do this for a genuine, specific miss
   you can point at — not a routine note that the skill was applied — the
-  same "don't guess" bar step 3b's own FAQ proposals use.
+  same "don't guess" bar the Release Audit's proposals use.
 
 No skill needs to exist for its slug to be bound, and no binding needs to
 exist for this file to apply — `settings/phaseSkillBindings` is a plain
@@ -984,56 +987,15 @@ own `readyToDeploy` is information, not permission.
    card on the train whose notes contain "Spec not updated", name it with the
    reason after "The build says:" in your report, so a person can judge
    whether the document should have moved. Do not hold `trainReady` for it.
-3b. **FAQ impact review — do this whether or not steps 1-2 cleared the
-   train.** The tickets in a DEPLOY REQUEST are about to change what the
-   product does, and the public help centre (`faq/`, edited from the
-   console's FAQ Management page, Firestore `faqArticles`) describes what
-   the product does — so every deploy is exactly the moment an article
-   silently goes stale. Your job here is to find the articles the *code
-   change* makes wrong or incomplete, write the corrected text, and park it
-   as a **proposed revision** on the article for a human to approve.
-   Nothing you write in this step changes the live help centre by itself:
-   the proposal only goes live once a person approves it in FAQ Management
-   **and** the ticket that caused it has actually reached Merged to Main
-   (`published-live`) — whichever of those two happens last (a Cloud
-   Function, `promoteFaqRevisionIfReady` in `functions/index.js`, does the
-   promotion; see "FAQ revision review" in `backlog-tracker/REQUIREMENTS.md`).
-   Full detail in **"FAQ impact review (Deploy flow, step 3b)"** below —
-   read it before doing this step, it has the exact field shapes. In
-   short:
-   - **Scope by product/program, not by the whole help centre.** Read the
-     project doc's `programId` (and, if set, `programs/{programId}`'s
-     `name`). The candidate articles are only those whose `programId`
-     equals the project's `programId`, plus any whose `projectId` is this
-     project's id. Never touch an article belonging to a different
-     product/program, and if the project has no `programId` at all, only
-     the `projectId`-linked articles are in scope (say so in your note if
-     that leaves zero candidates — it's a configuration gap for a human
-     to fix on the project's Docs page, not something to work around by
-     widening the net).
-   - **Work from the actual diff.** Review the train **once**, as one
-     combined diff — `git diff main...origin/<deployBranch>` — not N
-     separate per-ticket diffs. That is better input, not just less work:
-     it is exactly what is about to land on `main`. List every item id on
-     the train in each proposal's `sourceItemIds`.
-   - For each candidate article, decide from the diff whether its current
-     text (title/summary/body — read `bodyMd`, it's HTML) is now wrong,
-     incomplete, or missing a new step/option/field the change introduces.
-     Most articles will be unaffected — leave those completely untouched
-     (no flag, no note). Only propose a revision where you can point at
-     the specific line(s) in the diff that make the current text wrong.
-   - Where a change introduces something no existing candidate article
-     covers at all, you may propose a **new** draft article (see below) —
-     but prefer revising an existing article over adding one.
-   - Write the proposed revision onto the article (`pendingRevision` map +
-     `needsReview: true`), citing the ticket id(s), with a one-paragraph
-     `reason` a reviewer can verify against the diff.
-   - Then continue with step 4 as normal — a proposed revision never
-     blocks the merge, and a blocked merge never cancels the proposal.
+3b. *(Removed 2 Nov 2026.)* A deploy no longer reviews the help centre: customers
+   only get a feature when its release is live on AWS Marketplace, so the Help
+   Centre is audited once per release instead — see **"The 'Release Audit'
+   flow"** below. Do not read `faqArticles` or write `pendingRevision` in a
+   Deploy run.
 3c. **Spec/docs drift check — every deploy, never blocks the merge.** Fetch
    the `ph-spec-sync-check` skill (query `skills` where `slug ==
    "ph-spec-sync-check"`; it is bound to the DEPLOY phase, and if it does not
-   resolve use this paragraph alone). Read the same combined diff as step 3b
+   resolve use this paragraph alone). Read the train's combined diff
    (`git diff main...origin/<deployBranch>`) and compare it with the
    project's documents: `REQUIREMENTS.md`, `README.md`, additional project
    documents and interface contracts (`get_project_docs`, the repo files,
@@ -1179,208 +1141,118 @@ never touched, so it gets no chip.
 
 If you can't verify the train, leave every item's status as
 `ready-to-publish`, leave `trainReady` unset, and add a note explaining
-why instead of guessing. (Step 3b's FAQ proposals still stand in that case
-— they simply wait until the tickets eventually reach Merged to Main.)
+why instead of guessing. 
 
-## FAQ impact review (Deploy flow, step 3b) — exact procedure
+## The "Release Audit" flow (a differently-shaped fire)
 
-This is the detail behind step 3b of the Deploy flow above. It only ever
-runs inside a `=== DEPLOY REQUEST ===` fire; the Backlog and Groom flows
-never write to `faqArticles`.
+A fire whose `text` starts with `=== RELEASE AUDIT REQUEST for "<release>"
+(releaseId: <id>)` means an admin marked that release **Live on AWS
+Marketplace** (`releases/{id}.status == "live"`; the console shows the status
+under that name). This replaced the per-ticket "FAQ impact review" of the
+Deploy flow (2 Nov 2026, ticket `oGRC10ZobaV4BBkLC16X`): a feature reaches
+customers only when its release is live, so the public Help Centre is checked
+**once, against the whole release**, and nothing is proposed per ticket.
 
-**What the reviewer will see, so you know what you're producing.** In the
-console's FAQ Management page an article with a `pendingRevision` shows a
-"Proposed update" badge and a **Review proposed update** action that opens
-a side-by-side old-vs-new comparison (with a word-level diff of the text),
-your `reason`, and the ticket(s) that caused it, with **Approve** /
-**Reject** / **Edit proposal** buttons. Approve marks it
-`reviewStatus: "approved"`; the moment every ticket in `sourceItemIds` is
-`published-live` (or already was), the Cloud Function swaps the proposal
-into the live article, keeps the previous text under `previousRevision`
-for a one-click revert, clears `needsReview`, and the hourly FAQ export
-carries it to the static site. Reject deletes the proposal and clears the
-flag. So: write the proposal as the finished, publishable article text —
-not notes about what should change.
+Do the board-access part of Setup, then follow only this section. Build
+nothing, set no `patchReady` / `trainReady`, move no card. The only things you
+write are `faqArticles` proposals and the audit record `releaseAudits/<releaseId>`.
+Nothing you write changes the live help centre: a person approves each
+proposal in the console's release audit view (Releases → *Help Centre audit*),
+and only approved changes are published.
 
-### 1. Establish scope (product/program)
+### 1. Mark the audit running
+`releaseAudits/<releaseId>` already exists (the Cloud Function created it with
+`status: "requested"` and started you). PATCH `status` to `"running"` is not
+needed; just keep `updatedAt` current when you write.
 
-```bash
-PROJECT=$(curl -sS -H "$AUTH" "$BOARD/projects/<projectId>")
-# programId is on the project doc (fields.programId.stringValue); it may be absent
-curl -sS -H "$AUTH" "$BOARD/programs/<programId>"     # for its name, only if programId is set
-```
+### 2. Gather what shipped
+- The release: `releases/<releaseId>` (`name`, `version`, `conceptIds`).
+- Its projects: the `Projects in this release` lines of the fire text (or
+  `projects` where `releaseId == <id>`). For each: `get_project_docs`
+  (`requirements`, `readme`, extra documents) and the repo files they mirror
+  (`<repoFolder>/REQUIREMENTS.md`, `README.md`).
+- Its tickets: `backlogItems` of those projects with `status` `published-live`
+  (or `archived` after being live) — read `title`, `desc`, `testSummary`,
+  `mergedAt`. Only tickets that are Merged to Main shipped. A ticket still in
+  Backlog / Testing is **not** part of this release; don't document it.
+- Release notes: any project document whose title mentions release notes /
+  changelog, and the release's concepts.
+Write down, per project, the customer-visible changes (new capability, renamed
+control, changed limit or default, removed feature). Pure refactors, tests and
+tooling are invisible to customers: ignore them.
 
-Candidate articles — public read, no auth needed, but `$AUTH` works too:
+### 3. Audit every help article
+Read `docs/CONTRIBUTING-docs.md` in full first — every draft must follow it.
+List all articles: `runQuery` on `faqArticles` (no filter; skip any with
+`retiredAt`, and skip an article that already has an awaiting-review proposal
+for this release). Scope by product, not blindly: an article whose `programId`
+equals a release project's `programId`, or whose `projectId` is one of them, is
+a candidate; an article of an unrelated product only if the release clearly
+changes what it describes. For every article you read, decide ONE outcome:
+- **unchanged** — still accurate;
+- **update** — a step, field, button, limit, default or described behaviour no
+  longer matches what shipped, or a shipped capability belongs in it;
+- **retire** — the feature it documents was removed or replaced and nothing
+  can be salvaged.
+"Related" is not enough; tie each update or retirement to something that
+shipped (a ticket, a requirement, a release note). Keep a list of **every**
+article you looked at and its outcome — it is the audit's record of what was
+checked.
 
-```bash
-curl -sS -X POST -H "$AUTH" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"faqArticles"}],"where":{"fieldFilter":{"field":{"fieldPath":"programId"},"op":"EQUAL","value":{"stringValue":"<programId>"}}}}}'
-curl -sS -X POST -H "$AUTH" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"faqArticles"}],"where":{"fieldFilter":{"field":{"fieldPath":"projectId"},"op":"EQUAL","value":{"stringValue":"<projectId>"}}}}}'
-```
+### 4. Write the proposals
+**Update** — PATCH the article with `pendingRevision` and `needsReview: true`
+(never touch `title`, `summary`, `bodyMd`, `status` or `keywords` on the live
+article). `pendingRevision` is the full proposed `title`, `summary`, `bodyMd`
+(the editor's HTML: `<p>`, `<h2>`/`<h3>`, `<ol>`/`<ul>`, `<strong>`, `<code>`,
+`<div class="callout callout-note|important|warning">`, `<div
+class="faq-table"><table>…</table></div>`; no markdown/scripts; ≤ 60,000
+chars), optional `keywords`/`docType`, `reason` (one paragraph naming the
+ticket/requirement and what became wrong, ≤ 1,000 chars),
+**`sourceReleaseId`** (this release's id — required; it is what the audit view
+groups by), `sourceProjectId` (optional), `proposedBy: "claude"`, `proposedAt`,
+and `reviewStatus: "awaiting-review"`. Do **not** set `sourceItemIds`: there is
+no ticket to wait for any more, approval publishes. Never write `"approved"`.
 
-Union the two result sets (dedupe by doc id). **That union is the entire
-universe you may touch.** Articles for other products/programs are out of
-scope even if the diff obviously affects them — mention it in your note
-and final report instead, so a human can decide. The DEPLOY REQUEST
-`text` may also carry a `Product/Program:` line naming the program — treat
-it as a hint only; the Firestore `programId` is authoritative.
+**New article** — only for a shipped, customer-visible capability no article
+covers: create a `faqArticles` doc with `status: "draft"`, `needsReview: true`,
+an existing `categoryId`, the program/project links, `docType`, `slug`,
+`order` (max + 1), `createdAt`/`updatedAt`, the live `title`/`summary`/`bodyMd`
+equal to the proposal, and a `pendingRevision` as above plus `isNew: true`.
 
-**If that union comes back empty, find out why before reporting "nothing in
-scope" — an empty union means one of two very different things, and
-conflating them is exactly what let step 3b silently do nothing for an
-entire project's whole lifetime** (backlog item
-`GiceSVMWdEiETinAVLVM` — zero `faqArticles` ever carried the "PH Agent
-Console" program's id, so every deploy on that project reported "nothing
-in scope" whatever shipped, and nobody could tell that from "genuinely
-nothing changed this train"). Distinguish the two cases explicitly in your
-report:
+**Retire** — PATCH `retireProposal` (map) on the article:
+`{reason, sourceReleaseId, proposedBy: "claude", proposedAt, reviewStatus:
+"awaiting-review"}` and `needsReview: true`. Do not unpublish it yourself.
 
-- **"No article changed by this train"** — the union has members (articles
-  really are scoped to this program/project), you read the diff, and none
-  of those specific articles needed a change this time. This is the normal,
-  expected outcome most deploys should have.
-- **"No article is scoped to this program at all"** — the union came back
-  empty, AND the `programId`-only query above it (the first of the two
-  queries — every article carrying this program's id at all, dropping the
-  `projectId` filter) is *also* empty, project-wide, not just among
-  articles that happen to also match this project. That's a stronger check
-  than "the union was empty": it confirms no article anywhere carries this
-  program's id, rather than just no article of this program's happening to
-  match this train. A zero here — with a `programId` set on the project —
-  is a scoping gap that needs a human to fix (route existing articles to
-  this program in FAQ Management, or via
-  `backlog-tracker/scripts/backfill-faq-program.js`), not a quiet "nothing
-  to review." Say so explicitly in the note and final report, the same way
-  a project with no `programId` at all is already called out below — never
-  let this look identical to the routine case above.
-
-Skip articles that have `retiredAt` set, and skip any article that
-already carries a `pendingRevision` whose `reviewStatus` is
-`"approved"` — a human has already signed that off; don't overwrite it.
-If an article already has an *awaiting-review* proposal (from an earlier
-deploy fire) and this deploy changes the same article again, base your
-new proposal on the existing proposal's text (not the live text) and
-append this fire's ticket ids/PR numbers to `sourceItemIds` /
-`sourcePrNumbers` rather than replacing them — that way it still waits
-for all of its tickets to be live.
-
-An existing awaiting-review proposal may instead have come from a person's
-own agent, via the MCP `update_faq_article` tool
-(`backlog-tracker/functions/mcp-server.js` — see REQUIREMENTS.md → "FAQ
-revision review") rather than an earlier deploy fire: recognisable by
-`pendingRevision.proposedVia: "mcp"` and no `sourceItemIds` at all (an
-MCP-originated proposal has no ticket behind it, so it never sets that
-field). Treat it exactly like an earlier deploy's proposal — build your new
-proposal on its text, not the live text — but since your proposal DOES have
-a ticket behind it, set `sourceItemIds`/`sourceProjectId` (and
-`sourcePrNumbers` if applicable) yourself rather than leaving the field
-absent; from that point the merged proposal waits on your ticket(s) the
-normal way.
-
-### 2. Read the change
-
-For each item's confirmed PR (step 1 of the Deploy flow — exact id match,
-never a title guess):
-
-```bash
-git fetch origin main "refs/pull/<PR>/head:pr-<PR>"        # or the claude/<slug>-<id6> branch ref
-git diff main...pr-<PR> --stat
-git diff main...pr-<PR>
-```
-
-Read the real diff. Then read `docs/CONTRIBUTING-docs.md` in full — every
-proposal must follow it (Diátaxis type, FAQ writing rules, formatting) —
-and the affected articles' current `bodyMd` (HTML from the Quill editor;
-legacy markdown-ish text if it doesn't start with `<`).
-
-### 3. Decide, conservatively
-
-An article needs a proposal only if you can tie the change to specific
-text: a step that no longer matches the UI, a field/option/button that
-was renamed, added or removed, a limit or default that changed, a
-described behaviour the diff alters, or a new capability that a how-to
-in scope should now include. "The feature area is related" is **not**
-enough. If the diff is pure refactoring, tests, tooling, or anything
-invisible to a customer, write no proposals at all and say so in the
-note — that's the common case and the correct outcome.
-
-### 4. Write the proposal onto the article
-
-One PATCH per affected article, setting `pendingRevision` (a map) and
-`needsReview: true`, plus `updatedAt`. Do **not** change `title`, `summary`,
-`bodyMd`, `status`, `keywords` or anything else on the live article —
-those are what the reviewer compares against.
-
-`pendingRevision` fields (all strings unless noted):
-
-- `title`, `summary`, `bodyMd` — the complete proposed values (all three,
-  even the ones you didn't change, copied verbatim from the live article
-  so the reviewer sees a full "after"). `bodyMd` must be the same HTML
-  shape the editor produces (`<p>`, `<h2>`/`<h3>`, `<ol>`/`<ul>`, `<strong>`,
-  `<code>`, `<div class="callout callout-note|important|warning">`,
-  `<div class="faq-table"><table>…</table></div>`) — no markdown, no
-  `<script>`/`<style>`, no inline event handlers; it is sanitised on
-  render either way. ≤ 60,000 characters.
-- `keywords` (array of strings, optional) — only if the change warrants
-  new search terms; otherwise omit and the live keywords are kept.
-- `docType` (optional) — only if the article's Diátaxis type was wrong.
-- `reason` — one short paragraph for the reviewer: which ticket/PR, which
-  file(s) in the diff, and what specifically became wrong or missing in
-  the current text. Plain text. ≤ 1,000 characters.
-- `sourceItemIds` (array of strings) — the backlog item id(s) from this
-  DEPLOY REQUEST that caused this proposal. **Required, non-empty** — this
-  is what the promotion function keys the go-live on.
-- `sourceProjectId` — the project id.
-- `sourcePrNumbers` (array of integers, optional) — the PR number(s).
-- `proposedBy` — the literal string `"claude"`.
-- `proposedAt` — ISO-8601 timestamp (string).
-- `proposedVia` — don't set this yourself; it's how an MCP-originated
-  proposal (`proposedVia: "mcp"`, see above) is told apart from yours. Leave
-  it absent on a proposal you write.
-- `reviewStatus` — the literal string `"awaiting-review"`. Never write
-  `"approved"` yourself.
+Validate each body locally with `jq .` first: the rules reject a malformed
+proposal outright.
 
 ```bash
 curl -sS -X PATCH -H "$AUTH" "$BOARD/faqArticles/<ARTICLE_ID>?updateMask.fieldPaths=pendingRevision&updateMask.fieldPaths=needsReview&updateMask.fieldPaths=updatedAt" \
   -H "Content-Type: application/json" \
-  -d '{"fields":{"needsReview":{"booleanValue":true},"updatedAt":{"timestampValue":"<ISO8601 now>"},"pendingRevision":{"mapValue":{"fields":{"title":{"stringValue":"…"},"summary":{"stringValue":"…"},"bodyMd":{"stringValue":"<p>…</p>"},"reason":{"stringValue":"…"},"sourceItemIds":{"arrayValue":{"values":[{"stringValue":"<ITEM_ID>"}]}},"sourceProjectId":{"stringValue":"<projectId>"},"sourcePrNumbers":{"arrayValue":{"values":[{"integerValue":"123"}]}},"proposedBy":{"stringValue":"claude"},"proposedAt":{"stringValue":"<ISO8601 now>"},"reviewStatus":{"stringValue":"awaiting-review"}}}}}}'
+  -d '{"fields":{"needsReview":{"booleanValue":true},"updatedAt":{"timestampValue":"<ISO8601 now>"},"pendingRevision":{"mapValue":{"fields":{"title":{"stringValue":"…"},"summary":{"stringValue":"…"},"bodyMd":{"stringValue":"<p>…</p>"},"reason":{"stringValue":"…"},"sourceReleaseId":{"stringValue":"<releaseId>"},"proposedBy":{"stringValue":"claude"},"proposedAt":{"stringValue":"<ISO8601 now>"},"reviewStatus":{"stringValue":"awaiting-review"}}}}}}'
 ```
 
-Validate the JSON locally (`jq .`) before sending — the Firestore rules
-reject a malformed `pendingRevision` outright, and a rejected PATCH means
-nothing was flagged.
-
-**A brand-new article** (only when nothing in scope covers a genuinely
-new customer-visible capability): create a `faqArticles` doc with
-`status: "draft"`, `needsReview: true`, the correct `categoryId` (pick
-from the existing `faqCategories`, never invent one), `programId` =
-the project's program, `projectId` = the project id, `docType`, a
-`slug`, `order` (max existing order + 1), `createdAt`/`updatedAt`, the
-live `title`/`summary`/`bodyMd` set to the same text as the proposal, and
-a `pendingRevision` as above with the extra boolean `isNew: true`. On
-approval + merge the function flips it to `published`; on rejection the
-console deletes the draft. Prefer revising an existing article; a new one
-is the exception.
-
-### 5. Tell the ticket
-
-Append a `notes` entry (`author: "claude"`, appended with the "Append a
-note" call in Setup, as everywhere else in this file) to each backlog item naming every article
-you proposed a revision for (title + `faqArticles` id) and, in one line
-each, why — or stating plainly that you reviewed N in-scope articles for
-program "<name>" and none needed a change. This note is how the person
-clicking Deploy learns there's something waiting in FAQ Management.
+### 5. Close the audit record
+PATCH `releaseAudits/<releaseId>` with `status: "done"`, `checkedArticleCount`
+(how many articles you read), `checked` (array of `{id, title, outcome}`, one
+per article, outcome `unchanged` | `update` | `new` | `retire`; ≤ 1,000
+entries), `summary` (2–4 plain sentences: what shipped, how many updates / new
+/ retire, anything you could not check), `finishedAt` and `updatedAt` from
+`date -u +%Y-%m-%dT%H:%M:%SZ`. Append (do not replace) one `log` entry
+`{type: "audit-finished", by: "claude", note: "<counts>", at}` with the
+`appendMissingElements` transform from Setup → "Append a note", applied to
+`releaseAudits/<releaseId>.log`. If you stopped early, set `status: "failed"`,
+`errorMessage`, and a `type: "audit-failed"` log entry instead. Never write an
+approval, a `went-live` entry or anything else a person or the promotion
+function writes.
 
 ### 6. What not to do
-
-- Don't set `needsReview` on articles you have no proposal for — the old
-  blanket "flag every article in the project" behaviour is exactly what
-  this replaces; a flag with nothing to review is noise.
-- Don't edit the live fields, don't flip `status`, don't touch articles
-  outside the program/project scope, don't write `reviewStatus:
-  "approved"`, don't touch `previousRevision`.
-- Don't let this step stop the merge: if you run out of time or hit an
-  error here, say so in the note and the final report and still complete
-  step 4 for items that are green.
+- Don't propose changes for a ticket that did not ship in this release, and
+  don't audit per ticket: one pass over the whole help centre.
+- Don't edit live fields, flip `status`, delete an article, or write
+  `reviewStatus: "approved"` / `previousRevision`.
+- Publishing to the WordPress Support Centre (Elementor MCP, PH Website
+  project) is a separate step that follows approval; this flow never calls it.
 
 ## The "Review Batch" flow (a differently-shaped fire)
 
@@ -1681,17 +1553,7 @@ plainly instead of fabricating work. If a PROJECT-SPECIFIC INSTRUCTIONS
 block was present, note in the summary that you followed it and briefly
 how.
 
-**For a Deploy run, also report the FAQ impact review (step 3b):** the
-program/product you scoped to (or that the project has none), how many
-in-scope articles you checked, and for each proposed revision the article
-title, its `faqArticles` id, and the one-line reason — or "no FAQ changes
-needed" with a sentence on why (e.g. "internal refactor, nothing
-customer-visible"). Name any out-of-scope article you believe is affected
-but did not touch. **If the in-scope union came back empty, say plainly
-which of the two cases in step 3b's "Establish scope" section it was** —
-"no article changed by this train" (normal) vs. "no article is scoped to
-this program at all" (a gap needing a human) — never just "0 articles
-in scope" with no indication which one happened.
+**For a Release Audit run, report:** the release and its projects, how many articles you checked, and the counts of updates, new articles and retirements proposed with a one-line reason each; name anything you could not check. Say that nothing is published until a person approves it in the release audit view.
 
 **For a Ready for Testing run (`=== READY FOR TESTING ===`), the report is
 the presentation itself** — the per-ticket blocks from that flow's step 1

@@ -312,6 +312,22 @@ service cloud.firestore {
         && (!("updatedByEmail" in incoming()) || incoming().updatedByEmail == null || isNonEmptyBoundedString(incoming().updatedByEmail, 200))
         && (!("madeLiveAt" in incoming()) || incoming().madeLiveAt == null || incoming().madeLiveAt is timestamp);
     }
+    // The audit of the Help Centre run when a release goes Live on AWS
+    // Marketplace (functions/index.js onReleaseMarkedLive): what was checked,
+    // what changed, who approved it and when it went live. The cloud function
+    // and the audit Routine write the record; a console member appends log
+    // lines as they approve, edit or reject (the log only ever grows by the
+    // client's arrayUnion).
+    match /releaseAudits/{releaseId} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor()
+        && incoming().size() <= 40
+        && (!("log" in incoming()) || incoming().log is list && incoming().log.size() <= 2000)
+        && (!("checked" in incoming()) || incoming().checked is list && incoming().checked.size() <= 1000)
+        && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 6000);
+      allow delete: if false;
+    }
+
     match /releases/{releaseId} {
       allow read: if isBoardReader();
       allow create: if isEditor() && isValidRelease();
@@ -822,6 +838,16 @@ service cloud.firestore {
         && (!("summary" in r) || r.summary is string && r.summary.size() <= 400);
     }
 
+    // A retirement the release audit proposes for an article that no longer
+    // matches the product. Never changes the live article by itself: a person
+    // approves it in the release audit view, which unpublishes the article.
+    function isValidRetireProposal(r) {
+      return r is map
+        && r.reason is string && r.reason.size() <= 2000
+        && (!("sourceReleaseId" in r) || isNonEmptyBoundedString(r.sourceReleaseId, 100))
+        && r.reviewStatus in ["awaiting-review", "approved", "rejected"];
+    }
+
     match /faqArticles/{articleId} {
       // A draft is not public until it's published. The article page's
       // freshness check GETs one published doc anonymously; nothing public
@@ -833,6 +859,7 @@ service cloud.firestore {
         && incoming().size() <= 40
         && (!("pendingRevision" in incoming()) || incoming().pendingRevision == null || isValidPendingRevision(incoming().pendingRevision))
         && (!("previousRevision" in incoming()) || incoming().previousRevision == null || isValidPreviousRevision(incoming().previousRevision))
+        && (!("retireProposal" in incoming()) || incoming().retireProposal == null || isValidRetireProposal(incoming().retireProposal))
         && isNonEmptyBoundedString(incoming().categoryId, 100)
         && isNonEmptyBoundedString(incoming().title, 200)
         && isNonEmptyBoundedString(incoming().slug, 200)
