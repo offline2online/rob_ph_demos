@@ -78,6 +78,13 @@ setPersistence(auth, browserLocalPersistence).catch(() => { /* falls back to in-
 // Neither value is trusted for anything but layout: the rules decide.
 const REMEMBER_KEY = "ph-console-signed-in";
 const ROLE_KEY = "ph-console-role";
+// Bumped when a release must start every browser on an empty Firestore cache.
+// 2026-11-02: the Archived pages used to read every archived ticket in full
+// through the SDK, which left ~100 MB in IndexedDB that each later load had to
+// scan before the board could paint (app.js -> fetchArchivedItems). Clearing
+// it once is what makes those browsers load again.
+const CACHE_GEN_KEY = "ph-console-cache-gen";
+const CACHE_GEN = "2026-11-02";
 // Set by app.js just before it reloads the page because a Firestore
 // listener came back permission-denied (the person was removed or
 // disabled while signed in). Read once here: on such a load the cached
@@ -451,6 +458,13 @@ async function startApp(user, membership) {
   if (who) who.textContent = user.email;
   setBootStatus("Loading the board…");
   syncMembershipInBackground(user);
+  if (readLocal(CACHE_GEN_KEY) !== CACHE_GEN) {
+    setBootStatus("Tidying the local cache…");
+    // Never let a blocked delete (another tab holding the database) hold the board.
+    await withTimeout(clearFirestoreLocalCache(), 4000);
+    writeLocal(CACHE_GEN_KEY, CACHE_GEN);
+    setBootStatus("Loading the board…");
+  }
   try {
     appImport = import("./app.js");
     await appImport;

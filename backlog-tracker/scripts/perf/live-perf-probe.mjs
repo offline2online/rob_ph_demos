@@ -12,6 +12,7 @@
 //
 //   GOOGLE_APPLICATION_CREDENTIALS=sa.json node live-perf-probe.mjs [--out report.json]
 import fs from "node:fs";
+import path from "node:path";
 import admin from "firebase-admin";
 import { chromium } from "playwright";
 
@@ -24,6 +25,10 @@ const report = { at: new Date().toISOString(), site: SITE, collections: {}, load
 const log = (...a) => console.log(...a);
 
 // ── 1. Data volume ─────────────────────────────────────────────────────────
+// PROBE_SKIP_DATA=1 skips this part; PROBE_LOCAL_PUBLIC=<dir> serves that
+// checkout's public/ files in place of the deployed ones (same origin, same
+// data), to measure a fix before it ships.
+if (!process.env.PROBE_SKIP_DATA) {
 const sizeOf = (d) => Buffer.byteLength(JSON.stringify(d.data()));
 async function measure(name, q) {
   const t0 = Date.now();
@@ -52,6 +57,7 @@ for (const c of await db.listCollections()) if (!(c.id in report.collections)) {
   (report.otherCollections ||= {})[c.id] = agg.data().count;
 }
 
+}
 // ── 2. Browser ─────────────────────────────────────────────────────────────
 const user = await admin.auth().getUserByEmail(AUTOMATION_EMAIL);
 const token = await admin.auth().createCustomToken(user.uid, { consoleRole: "viewer" });
@@ -72,6 +78,20 @@ page.on("requestfinished", async (r) => {
   current.requests.push({ url: r.url().slice(0, 160), ms, kb: Math.round((s.responseBodySize || 0) / 1024), status: (await r.response())?.status() });
 });
 page.on("requestfailed", (r) => current && current.requests.push({ url: r.url().slice(0, 160), failed: r.failure()?.errorText }));
+// The membership endpoint refuses the probe identity (it has no consoleUsers
+// row) and auth-gate.js would sign it out; answer it as an outage instead.
+if (process.env.PROBE_LOCAL_PUBLIC) {
+  const root = path.resolve(process.env.PROBE_LOCAL_PUBLIC);
+  const types = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml", ".png": "image/png" };
+  await page.route((u) => u.origin === new URL(SITE).origin && !u.pathname.startsWith("/mcp") && !u.pathname.startsWith("/boardApi") && !u.pathname.startsWith("/__/"), (r) => {
+    const rel = new URL(r.request().url()).pathname;
+    const file = path.join(root, rel === "/" ? "index.html" : rel);
+    if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return r.continue();
+    return r.fulfill({ status: 200, contentType: types[path.extname(file)] || "application/octet-stream", body: fs.readFileSync(file) });
+  });
+  log(`serving ${root} in place of the deployed files`);
+}
+await page.route("**/mcp/claims/sync", (r) => r.fulfill({ status: 503, body: "probe" }));
 await page.addInitScript(() => {
   window.__lt = [];
   try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt.push(Math.round(e.duration)); }).observe({ type: "longtask", buffered: true }); } catch {}
@@ -116,6 +136,17 @@ await page.evaluate(async (tok) => {
 await timed("first sign-in load", async () => {}, ready);
 await timed("reload (warm cache)", () => page.reload({ waitUntil: "domcontentloaded" }), ready);
 await timed("reload 2", () => page.reload({ waitUntil: "domcontentloaded" }), ready);
+// The archive scenario: open one project's Archived tickets, then reload.
+const archiveReady = () => page.evaluate(() => !document.getElementById("archive-page")?.hidden && /[1-9]/.test(document.getElementById("archive-page-count")?.textContent || ""));
+await timed("open Archived tickets (biggest project)", async () => {
+  await page.waitForSelector(".project-archive-btn", { state: "attached", timeout: 20000 });
+  await page.evaluate(() => { const bs = [...document.querySelectorAll(".project-archive-btn")]; const b = bs.find((x) => x.dataset.projectId === "mIPdOCAWevhrgD8g2tCZ") || bs[0]; b.click(); });
+}, archiveReady, 120000);
+log("   archive page count:", await page.evaluate(() => document.getElementById("archive-page-count")?.textContent));
+log("   IndexedDB:", JSON.stringify(await page.evaluate(async () => { const e = await navigator.storage.estimate(); return { usageMB: Math.round(e.usage / 1e6) }; })));
+await timed("reload after Archived", () => page.goto(SITE, { waitUntil: "domcontentloaded" }), ready, 120000);
+await timed("reload after Archived 2", () => page.reload({ waitUntil: "domcontentloaded" }), ready, 120000);
+log("   IndexedDB:", JSON.stringify(await page.evaluate(async () => { const e = await navigator.storage.estimate(); return { usageMB: Math.round(e.usage / 1e6) }; })));
 const sections = [
   ["#staff-kanban", () => !!document.querySelector(".kb-col-title")],
   ["#concept-incubator", () => !document.getElementById("concept-incubator-page")?.hidden],

@@ -15,7 +15,7 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -36,6 +36,14 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: node live-perf-probe.mjs --out "$RUNNER_TEMP/perf-report.json"
+      - name: Probe this checkout's public/ against the same data
+        if: always()
+        working-directory: backlog-tracker/scripts/perf
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          PROBE_SKIP_DATA: '1'
+          PROBE_LOCAL_PUBLIC: ${{ github.workspace }}/backlog-tracker/public
+        run: node live-perf-probe.mjs --out "$RUNNER_TEMP/perf-report-local.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -3071,10 +3071,34 @@ function scheduleArchivedRefresh() {
 // Archived tickets page, the Archived projects page, the revision review's
 // source tickets, or opening a card by id. Kept fresh afterwards by
 // scheduleArchivedRefresh() whenever a card enters or leaves the live set.
+//
+// Read over REST with the same field mask as the live prime, NOT with the SDK's
+// getDocs (2 Nov 2026). The ~1,100 archived documents weigh about 100 MB in
+// full (pipeline payloads nothing here draws), and a getDocs both downloaded
+// all of it and wrote it into the persistent IndexedDB cache. From then on
+// every load's cached "status != archived" query scanned that 100 MB on the
+// main thread before the board could paint: the console stopped loading for
+// anyone who had once opened an Archived page. The REST read is a few MB and
+// never touches the cache. The SDK read stays only as the fallback for a
+// failed REST call (offline, or the test harness, which refuses REST).
 let archivedLoading = null;
+async function fetchArchivedItems() {
+  try {
+    const docs = await restRunQuery({
+      from: [{ collectionId: "backlogItems" }],
+      where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "archived" } } },
+      select: { fields: BACKLOG_ITEM_RENDER_FIELDS.map((f) => ({ fieldPath: f })) },
+    });
+    return docs.map((d) => ({ id: d.name.split("/").pop(), ...restFields(d.fields) }));
+  } catch (err) {
+    console.warn("backlog-tracker: couldn't read archived tickets over REST, using the SDK", err);
+    const snap = await getDocs(query(itemsRef, where("status", "==", "archived")));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+  }
+}
 function loadArchivedItems() {
-  const run = getDocs(query(itemsRef, where("status", "==", "archived"))).then((snap) => {
-    archivedItems = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+  const run = fetchArchivedItems().then((rows) => {
+    archivedItems = rows;
     archivedLoaded = true;
     rebuildAllItems();
     render();
