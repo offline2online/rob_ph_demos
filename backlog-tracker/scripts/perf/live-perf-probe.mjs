@@ -32,6 +32,11 @@ async function measure(name, q) {
   const total = docs.reduce((s, d) => s + d.bytes, 0);
   report.collections[name] = { count: docs.length, kb: Math.round(total / 1024), ms: Date.now() - t0, largest: docs.sort((a, b) => b.bytes - a.bytes).slice(0, 5) };
   log(`${name.padEnd(34)} ${String(docs.length).padStart(6)} docs ${String(Math.round(total / 1024)).padStart(7)} KB`);
+  if (total > 100 * 1024) {
+    const byField = {};
+    for (const d of snap.docs) for (const [k, v] of Object.entries(d.data())) byField[k] = (byField[k] || 0) + Buffer.byteLength(JSON.stringify(v) || "");
+    log(`    heaviest fields: ${Object.entries(byField).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, b]) => `${k}=${Math.round(b / 1024)}KB`).join(", ")}`);
+  }
 }
 const C = (n) => db.collection(n);
 await measure("backlogItems (live)", C("backlogItems").where("status", "!=", "archived"));
@@ -74,9 +79,9 @@ await page.addInitScript(() => {
 
 const ready = () => page.evaluate(() => {
   const app = document.querySelector(".app");
-  return !!(app && !app.hidden && !document.documentElement.dataset.booting && document.querySelector(".project-section .card, .project-section"));
+  return !!(app && !app.hidden && !document.documentElement.dataset.booting && document.querySelector("#projects-root .project-name-row"));
 });
-async function timed(label, fn, until, ms = 120000) {
+async function timed(label, fn, until, ms = 45000) {
   const rec = begin(label);
   const t0 = Date.now();
   await fn();
@@ -84,10 +89,18 @@ async function timed(label, fn, until, ms = 120000) {
   while (Date.now() - t0 < ms) { if (await until().catch(() => false)) { ok = true; break; } await page.waitForTimeout(100); }
   rec.ms = Date.now() - t0; rec.ok = ok;
   rec.longTasks = await page.evaluate(() => { const v = window.__lt.slice(); window.__lt.length = 0; return v; }).catch(() => []);
-  rec.bootStatus = await page.evaluate(() => (document.getElementById("boot-status") || {}).textContent || "").catch(() => "");
+  rec.state = await page.evaluate(() => ({
+    boot: (document.getElementById("boot-status") || {}).textContent || "",
+    gate: document.getElementById("auth-gate")?.hidden ? "hidden" : (document.getElementById("auth-gate-status") || {}).textContent,
+    appHidden: document.querySelector(".app")?.hidden, booting: !!document.documentElement.dataset.booting,
+    hash: location.hash, projects: document.querySelectorAll("#projects-root .project-name-row").length,
+    cards: document.querySelectorAll("#projects-root .card").length,
+    health: (document.getElementById("health-strip") || {}).textContent?.slice(0, 200),
+  })).catch((e) => ({ err: String(e) }));
+  if (ok && !label.includes("#")) { const t1 = Date.now(); while (Date.now() - t1 < 20000 && !(await page.evaluate(() => document.querySelectorAll("#projects-root .card").length).catch(() => 0))) await page.waitForTimeout(100); rec.cardsMs = rec.ms + (Date.now() - t1); }
   await page.waitForTimeout(1500);
   const slow = rec.requests.filter((r) => r.failed || r.ms > 700 || r.kb > 200).sort((a, b) => (b.ms || 0) - (a.ms || 0)).slice(0, 15);
-  log(`\n[${label}] ${ok ? "ready" : "NOT READY"} in ${rec.ms} ms; ${rec.requests.length} requests, ${rec.requests.reduce((s, r) => s + (r.kb || 0), 0)} KB; long tasks: ${JSON.stringify(rec.longTasks.slice(0, 20))}`);
+  log(`\n[${label}] ${ok ? "ready" : "NOT READY"} in ${rec.ms} ms (cards at ${rec.cardsMs ?? "-"} ms) ${JSON.stringify(rec.state)}; ${rec.requests.length} requests, ${rec.requests.reduce((s, r) => s + (r.kb || 0), 0)} KB; long tasks: ${JSON.stringify(rec.longTasks.slice(0, 20))}`);
   for (const r of slow) log(`   ${r.failed ? "FAILED " + r.failed : `${r.ms}ms ${r.kb}KB ${r.status}`}  ${r.url}`);
   for (const e of rec.errors.slice(0, 15)) log(`   ${e}`);
 }
@@ -104,9 +117,9 @@ await timed("first sign-in load", async () => {}, ready);
 await timed("reload (warm cache)", () => page.reload({ waitUntil: "domcontentloaded" }), ready);
 await timed("reload 2", () => page.reload({ waitUntil: "domcontentloaded" }), ready);
 const sections = [
-  ["#staff-kanban", () => !!document.querySelector(".kb-col, .kanban-col, [class*='kb-board']")],
+  ["#staff-kanban", () => !!document.querySelector(".kb-col-title")],
   ["#concept-incubator", () => !document.getElementById("concept-incubator-page")?.hidden],
-  ["#faq-management", () => !document.getElementById("faq-articles-page")?.hidden && !!document.querySelector("#faq-articles-page .fa-row, #faq-articles-page tr, #faq-articles-page li")],
+  ["#faq-management", () => !document.getElementById("faq-articles-page")?.hidden && !!document.querySelector("#faq-articles-page .fa-group")],
   ["#settings/projects", () => !document.getElementById("faq-settings-page")?.hidden],
   ["#settings/releases", () => !document.getElementById("faq-settings-page")?.hidden],
   ["#user-management/users", () => true],
