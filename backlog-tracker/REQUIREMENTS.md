@@ -3420,6 +3420,36 @@ has no finalised state and staff tasks are unaffected.
 - **First use:** Display Types & DSP Integration and Retail Media Insights &
   Analytics Dashboards, once their pre-freeze code reviews are complete.
 
+## Non-GitHub deployment targets (Elementor / WordPress)
+
+A project's `deployTarget` is `github` (default; every existing project) or
+`elementor`. An `elementor` project (first: PH Website, personalisationhub.com)
+has no repo, deploy branch or train: the build output is an **artifact**
+(`kind` page | post | template | media, with Elementor JSON or text) linked on
+the ticket as its test link, and approval publishes it through the Elementor
+MCP. GitHub-only UI (deploy branch, train status, e2e, repo-synced README,
+Deploy to Main) is gated on `usesGithub(project)`.
+
+Pure logic lives in `functions/elementor-deploy.js` (tested by
+`test/elementor-deploy.test.js`, no network):
+
+- `publishArtifact` creates (`elementor-create-page`) or updates
+  (`elementor-publish-document`) and returns the ticket fields to merge:
+  `publishedUrl`, `wpId`, `deployVersion` and an append-only `deployHistory`
+  (each entry keeps the previous version's snapshot). `dryRun` calls nothing.
+- `rollback` restores the previous snapshot as a new version.
+- `prePublishChecks` holds an item in Ready for Testing when a blocked
+  client/brand name appears (whole word, case-insensitive).
+- Recurring jobs: `nextRunAt` (weekday/hour in `Australia/Sydney` plus a random
+  jitter window, DST-correct) and `scheduledRunRecord`, which auto-publishes
+  only when the project's `autoPublish` AND the job's `autoPublish` are set and
+  the checks pass, otherwise leaves the run in Ready for Testing.
+
+Status: the module and tests have landed. Still to wire (follow-up tickets):
+the project setting in the New Project / Docs UI, the Approve → publish
+trigger and Cloud Scheduler job runner, per-ticket deployment log display, and
+release-report/count support for `elementor` projects.
+
 ## Non-goals / explicitly out of scope
 
 - ~~**Authentication/authorization.** Everything here is open by design at

@@ -2715,3 +2715,5 @@ is refused with "Role in use" while any user has the role assigned (a page
 check; rules cannot count users). The five defaults (Admin, Product, Designer,
 Engineer, Security) are seeded on the first admin visit. Tests: the "user
 management" scenario in `test/ui/console-click.test.mjs`.
+
+- `functions/elementor-deploy.js` — pure logic for non-GitHub (`deployTarget: "elementor"`) projects: publish/dry-run, rollback, pre-publish checks, recurring-job scheduling. See REQUIREMENTS.md → "Non-GitHub deployment targets".
