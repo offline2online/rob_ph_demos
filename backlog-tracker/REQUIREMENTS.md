@@ -3695,3 +3695,39 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
 - Reloading `#settings/<page>` or `#user-management` reopens the same page.
 - Out of scope: redesigning the Agent Board, Staff Kanban, Concepts or Help
   Centre pages.
+
+
+## Publishing help articles to WordPress
+
+The console's Help Centre (FAQ Management) stays the master; the Support Centre
+on personalisationhub.com is only where approved articles are published. Nobody
+edits help content in WordPress — the next publish overwrites it.
+
+- **What is published**: articles with status `published` that are in range for the
+  live release (`introducedInReleaseId` / `removedInReleaseId`). Drafts, pending
+  revisions and tombstoned ids (`faq/data/retired.json`) never reach WordPress.
+- **Where**: WordPress REST (`/wp/v2/help-articles`, `/wp/v2/help-categories`), written by
+  `scripts/faq-wp-publish.js` using `functions/help-publisher.js`. Top-level console
+  categories are `ph_help_category` terms, folders are child terms; `menu_order` is the
+  console order. Fields: title, summary (excerpt), body, doc type, SEO title / meta
+  description (SEOPress), slug, direct answer, question variants, keywords, programme and
+  project scope, release range, section picker, hash and version.
+- **Body**: the article HTML (legacy markdown is converted) is sanitised against an
+  allow-list of tags, attributes, URI schemes and embed hosts (YouTube, Vimeo); external
+  images are copied into the media library; article-to-article links are rewritten to the
+  WordPress permalinks (a second pass covers articles created later in the same run).
+  Today's article structure and classes are kept (RC7: no redesign).
+- **Retire**: an article that is deleted, retired, back to draft or out of range is set to
+  draft in WordPress and its old URL is listed in `redirects` (301 to the closest article in
+  its category, else the category).
+- **Batch and single fix**: a dry run is the default; `--apply` publishes the batch,
+  `--only id,id` a single approved fix. Unchanged articles are skipped (content hash).
+- **Record and rollback**: each result is `{wpId, url, version, publishedAt, status}`; with
+  `--record` it is stored as `faqArticles/<id>.wpPublish`. `--rollback <id>` restores the
+  previous WordPress revision and bumps the version.
+- **Migration report and URL map**: `faq-wp-report.json` gives counts per category against
+  the console; `faq-wp-url-map.json` maps help.personalisationhub.com and Freshdesk URLs to
+  the new ones for the redirect ticket.
+- **Not built yet**: the FAQ Management in-sync / waiting / failed badge (the `wpPublish`
+  field is written for it), and triggering the batch from the release audit approval.
+  The hourly pull on the WordPress side remains the interim path until `--apply` is run.
