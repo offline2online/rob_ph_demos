@@ -926,7 +926,7 @@ function kanbanTools(h) {
   const tools = [
     {
       name: "kanban_list_people",
-      description: "Staff Kanban: who's on the board (email and the first name the board shows), the releases, sprints and console projects tickets can belong to, the current release and the releases' current one.",
+      description: "Staff Kanban: who's on the board (email and the first name the board shows), the releases, sprints and console projects tickets can belong to, the current release and the tester Ready for Testing hands tickets to.",
       scope: "board.read",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       async run(args, session) {
@@ -937,7 +937,7 @@ function kanbanTools(h) {
           releases: rel.docs.map((d) => ({ id: d.id, name: d.data().name, version: d.data().version || null, live: d.data().status === "live", date: s.releaseDates[d.id] || null })),
           sprints: spr.docs.map((d) => ({ id: d.id, name: d.data().name, start: d.data().start || null, end: d.data().end || null })),
           projects: prj.docs.filter((d) => !d.data().archived).map((d) => ({ id: d.id, name: d.data().name || d.id })),
-          currentRelease: currentRelease(s, rel.docs) || null,
+          currentRelease: currentRelease(s, rel.docs) || null, tester: s.tester,
           statuses: core.STATUSES.map((x) => x.key), resolutions: core.RESOLUTIONS.map((x) => x.key),
         });
       },
@@ -1433,11 +1433,11 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_move_task",
-      description: "Staff Kanban: move a ticket to another column. Moving to Ready for Testing assigns it to the ticket's designated tester, else to the `tester` you pass (an email); with neither the assignee is left alone and the result says so. There is no default tester. Moving it back to In Progress or Ready for Dev returns it to the developer. To close one, use status done with resolution completed or withdrawn.",
+      description: "Staff Kanban: move a ticket to another column. Moving to Ready for Testing reassigns it to the tester; moving it back to In Progress or Ready for Dev returns it to the developer. To close one, use status done with resolution completed or withdrawn.",
       scope: "board.write",
       inputSchema: {
         type: "object",
-        properties: { key: KEY, status: { type: "string", enum: core.STATUS_KEYS }, resolution: { type: "string", enum: ["completed", "withdrawn"] }, tester: PERSON },
+        properties: { key: KEY, status: { type: "string", enum: core.STATUS_KEYS }, resolution: { type: "string", enum: ["completed", "withdrawn"] } },
         required: ["key", "status"], additionalProperties: false,
       },
       async run(args, session) {
@@ -1445,7 +1445,7 @@ function kanbanTools(h) {
         const cur = key && await getTask(key);
         if (!cur) return toolError(`No ticket ${args.key}.`);
         const [s, first] = await Promise.all([settings(), firstNamer()]);
-        const ch = core.statusChange(cur, args.status, { resolution: args.resolution, tester: args.tester ? core.canonicalEmail(meOr(args.tester, session)) : "", firstName: first });
+        const ch = core.statusChange(cur, args.status, { resolution: args.resolution, tester: s.tester, firstName: first });
         if (!ch) return textResult({ moved: false, key, status: cur.status, note: "Already there." });
         const rank = await nextRank(args.status);
         const patch = Object.assign({}, ch.patch, { rank }, stamp(session.email), args.status === "done" ? { closedAt: FieldValue.serverTimestamp() } : { closedAt: FieldValue.delete() });
@@ -1457,7 +1457,7 @@ function kanbanTools(h) {
         activity(b, key, session.email, [ch.activity]);
         await b.commit();
         await audit(session, "kanban_move_task", { key, status: args.status, resolution: ch.resolution });
-        return textResult({ moved: true, key, status: args.status, resolution: ch.resolution, note: ch.note || (args.status === "ready-for-testing" ? "No tester set, so the assignee is unchanged. Pass `tester` or assign one." : null), assignee: patch.assignee || cur.assignee || null });
+        return textResult({ moved: true, key, status: args.status, resolution: ch.resolution, note: ch.note || null, assignee: patch.assignee || cur.assignee || null });
       },
     },
     {

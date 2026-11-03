@@ -12,7 +12,7 @@ import { createResultReader, useContinuousMode, isAndroidDevice } from "../dicta
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
-  statusChange, currentReleaseId, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
+  statusChange, currentReleaseId, DEFAULT_TESTER, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
   canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity,
 } from "./kanban-core.js";
 
@@ -190,7 +190,7 @@ export function mountStaffKanban(ctx) {
   // ── Status changes (the one place the testing hand-off happens) ─────────
   // Returns { patch, note, activity } for the store, or null when nothing changes.
   function setStatus(task, status, opts = {}) {
-    const ch = statusChange(task, status, { resolution: opts.resolution, tester: opts.tester, firstName });
+    const ch = statusChange(task, status, { resolution: opts.resolution, tester: state.settings.tester, firstName });
     if (!ch) return null;
     if (!opts.silent) toast(`<b>${esc(task.key)}</b> ${status === "done" ? (ch.resolution === "withdrawn" ? "withdrawn" : "completed") : "moved to " + esc(STATUS_LABEL[status])}${ch.note ? ` · ${esc(ch.note)}` : ""}`);
     return ch;
@@ -204,34 +204,7 @@ export function mountStaffKanban(ctx) {
   }
 
   // lane: the swimlane a card was dropped in ("none" = Unassigned); undefined on a plain board.
-  // Ready for Testing needs a tester: the ticket's designated one, else the
-  // mover picks. There is no default tester (never Rob by default).
-  function askTester(task) {
-    return new Promise((resolve) => {
-      const wrap = document.createElement("div");
-      wrap.className = "modal-backdrop"; wrap.id = "kb-tester-backdrop";
-      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-tester-h" style="max-width:420px"><div class="modal-body"><h3 id="kb-tester-h">Who will test ${esc(task.key)}?</h3><p class="kb-none">It moves to Ready for Testing and is assigned to them. Only they are notified.</p><select id="kb-tester-pick" class="kb-input"><option value="">Choose a tester…</option>${people().map((u) => `<option value="${esc(u.id)}">${esc(u.first)}</option>`).join("")}</select></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-tester-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-tester-ok" disabled>Move to Ready for Testing</button></div></div>`;
-      document.body.appendChild(wrap);
-      const pick = wrap.querySelector("#kb-tester-pick"), ok = wrap.querySelector("#kb-tester-ok");
-      const done = (v) => { wrap.remove(); resolve(v); };
-      pick.addEventListener("change", () => { ok.disabled = !pick.value; });
-      ok.addEventListener("click", () => pick.value && done(pick.value));
-      wrap.querySelector("#kb-tester-cancel").addEventListener("click", () => done(null));
-      wrap.addEventListener("click", (e) => { if (e.target === wrap) done(null); });
-      wrap.addEventListener("keydown", (e) => { if (e.key === "Escape") done(null); });
-      pick.focus();
-    });
-  }
   function moveTask(key, status, beforeKey, lane, resolution) {
-    const task = taskByKey(key);
-    if (!task || !canWrite()) return;
-    if (status === "ready-for-testing" && task.status !== status && !task.tester) {
-      askTester(task).then((tester) => { if (tester) moveTaskTo(key, status, beforeKey, lane, resolution, tester); else renderCurrent(); });
-      return;
-    }
-    moveTaskTo(key, status, beforeKey, lane, resolution, "");
-  }
-  function moveTaskTo(key, status, beforeKey, lane, resolution, tester) {
     const task = taskByKey(key);
     if (!task || !canWrite()) return;
     const list = state.tasks.filter((t) => t.status === status && t !== task).sort((a, b) => a.rank - b.rank);
@@ -248,7 +221,7 @@ export function mountStaffKanban(ctx) {
       patch.assignee = toAssignee; patch.previousAssignee = "";
       base = { ...task, assignee: toAssignee, previousAssignee: "" };
     }
-    const ch = setStatus(base, status, { silent: reassigned, resolution, tester });
+    const ch = setStatus(base, status, { silent: reassigned, resolution });
     if (ch) { Object.assign(patch, ch.patch); activity.push(ch.activity); }
     if (reassigned) {
       const moved = task.status !== status ? ` · moved to ${esc(statusLabel(status, resolution))}` : "";
@@ -1425,7 +1398,11 @@ export function mountStaffKanban(ctx) {
     const st = $("#f-status");
     if (st) st.addEventListener("change", () => {
       const note = $("#f-status-note");
-      note.hidden = true; // no automatic tester: set the assignee yourself
+      const tester = state.settings.tester;
+      const asg = $("#f-assignee");
+      if (st.value === "ready-for-testing" && asg && asg.value !== tester) {
+        note.hidden = false; note.textContent = `Will be reassigned to ${firstName(tester)} for testing`;
+      } else note.hidden = true;
     });
     const est = $("#f-estimate"), lg = $("#f-logged");
     const syncLog = () => {
@@ -2281,7 +2258,9 @@ export function mountStaffKanban(ctx) {
           ${OPTIONAL_FIELDS.map((f) => row(f, false)).join("")}
         </section>
         <section class="docs-block">
-          <div class="docs-block-header"><h3>Workflow${tip("Moving a task into Ready for Testing assigns it to its designated tester, or to the tester the person moving it picks. Moving it back to In Progress or Ready for Dev returns it to the developer.")}</h3></div>
+          <div class="docs-block-header"><h3>Workflow${tip("Moving a task into Ready for Testing reassigns it to this person. Moving it back to In Progress or Ready for Dev returns it to the developer.")}</h3></div>
+          <label class="field-label" for="st-tester">Ready for Testing reassigns to</label>
+          <select id="st-tester" class="kb-input"${dis}>${opt("", `Not set (${firstName(S.tester)} is used)`, stored.testerIsDefault ? "" : "-")}${peopleWith(stored.testerIsDefault ? "" : stored.tester).map((u) => opt(u.id, u.first, stored.testerIsDefault ? "" : stored.tester)).join("")}</select>
           <label class="field-label" for="st-release">Current release</label>
           <select id="st-release" class="kb-input"${dis}>${opt("", S.currentRelease ? `Not set (${releaseName(S.currentRelease)} is used)` : rels.length ? "Not set" : "No releases yet (add one on the Releases page)", stored.currentRelease)}${rels.filter((r) => !r.released || r.id === stored.currentRelease).map((r) => opt(r.id, r.date ? `${r.name} · ${fmtDate(r.date, { day: "numeric", month: "short", year: "numeric" })}` : r.name, stored.currentRelease)).join("")}</select>
         </section>
@@ -2311,6 +2290,7 @@ export function mountStaffKanban(ctx) {
       fields[c.dataset.req].required = c.checked;
       saveS({ fields }, `${esc(FIELD_LABEL[c.dataset.req])} ${c.checked ? "required" : "optional"}`);
     }));
+    $("#st-tester").addEventListener("change", (e) => saveS({ tester: e.target.value }, `Ready for Testing now reassigns to <b>${esc(firstName(e.target.value || DEFAULT_TESTER))}</b>`));
     $("#st-release").addEventListener("change", (e) => saveS({ currentRelease: e.target.value }, `Current release is <b>${esc(releaseName(e.target.value || currentReleaseId({}, releases())))}</b>`));
     $$("[data-rel-date]", view).forEach((inp) => inp.addEventListener("change", () => {
       saveS({ releaseDates: { ...(store.state.settings.releaseDates || {}), [inp.dataset.relDate]: inp.value } }, `${esc(releaseName(inp.dataset.relDate))} date saved`);

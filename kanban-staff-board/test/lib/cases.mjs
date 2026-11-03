@@ -495,12 +495,6 @@ export function defineNewCases(E) {
         limits.push(`${from}→${to}`);
         await statusMove(p, key, to);
       }
-      // The console asks who tests when a card is dropped into Ready for Testing (there is no default tester).
-      let picked = false;
-      if (C && to === "ready-for-testing" && how !== "status") {
-        picked = await p.waitForSelector("#kb-tester-pick", { timeout: 1500 }).then(() => true, () => false);
-        if (picked) { await p.selectOption("#kb-tester-pick", E.pid("rob")); await p.click("#kb-tester-ok"); await p.waitForTimeout(200); }
-      }
       const w = await where(p, key);
       const pl = place(to);
       assert.equal(w.status, pl.status, `move ${n} ${from}→${to} (${how}): column`);
@@ -514,7 +508,7 @@ export function defineNewCases(E) {
       if (!isDone(from)) assert.equal(effortOf(after, from), effortOf(before, from) - est, `move ${n} ${from}→${to}: source effort`);
       if (!isDone(to)) assert.equal(effortOf(after, to), effortOf(before, to) + est, `move ${n} ${from}→${to}: target effort`);
       // hand-off
-      if (to === "ready-for-testing" && assignee !== tester && (!C || picked)) { prev = assignee; assignee = tester; }
+      if (to === "ready-for-testing" && assignee !== tester) { prev = assignee; assignee = tester; }
       else if (from === "ready-for-testing" && (to === "in-progress" || to === "ready-for-dev") && prev) { assignee = prev; }
       assert.equal(w.avatar, assignee, `move ${n} ${from}→${to}: assignee`);
       const snap = await E.snapshot(p, key);
@@ -565,23 +559,6 @@ export function defineNewCases(E) {
   T("TC-47", "testing hand-off edges: unassigned, already the tester, from every column, and out to Approved, Backlog and closed", { timeout: 300000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"));
     const tester = E.person("rob");
-    if (C) {
-      // The console has no default tester: a status change in the ticket form assigns nobody
-      // (the drag path asks who tests, covered by TC-03 and TC-45); nobody is handed Rob.
-      await statusMove(p, "PH-32", "ready-for-testing");
-      let c = await where(p, "PH-32");
-      assert.equal(c.status, "ready-for-testing"); assert.notEqual(c.avatar, tester, "Rob is not assigned automatically");
-      assert.doesNotMatch(await toastText(p), /reassigned/);
-      assert.equal(await p.$(`${card("PH-32")} .kb-handoff`), null, "no From chip");
-      const dev = "PH-29";
-      for (const from of ["backlog", "approved", "completed"]) {
-        await statusMove(p, dev, from); await statusMove(p, dev, "ready-for-testing");
-        const x = await where(p, dev);
-        assert.equal(x.status, "ready-for-testing", `from ${from}`); assert.equal(x.avatar, "Huy", `from ${from}: assignee unchanged`);
-      }
-      await p.done();
-      return;
-    }
     // unassigned → the tester takes it; the "From" chip has nobody to name
     await statusMove(p, "PH-32", "ready-for-testing");
     let w = await where(p, "PH-32");

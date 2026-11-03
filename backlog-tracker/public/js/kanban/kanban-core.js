@@ -89,6 +89,9 @@ export function defaultFields() {
   };
 }
 
+// Until an admin picks one, Ready for Testing hands tickets to the console owner (REQUIREMENTS §2).
+export const DEFAULT_TESTER = "rob@offline2online.com";
+
 // Compare dotted versions numerically ("4.9" before "4.12"); unversioned last.
 function cmpVersion(a, b) {
   const pa = String(a || "").match(/\d+/g), pb = String(b || "").match(/\d+/g);
@@ -125,6 +128,8 @@ export function normaliseSettings(raw) {
   for (const k of FIELD_KEYS) if (!fields[k].show) fields[k].required = false;
   return {
     fields,
+    tester: typeof s.tester === "string" && s.tester ? s.tester : DEFAULT_TESTER,
+    testerIsDefault: !(typeof s.tester === "string" && s.tester),
     currentRelease: typeof s.currentRelease === "string" ? s.currentRelease : "",
     releaseDates: s.releaseDates && typeof s.releaseDates === "object" ? { ...s.releaseDates } : {},
     labels: Array.isArray(s.labels) ? s.labels.filter((l) => typeof l === "string") : [],
@@ -209,11 +214,7 @@ export const isAliasEmail = (e) => Object.prototype.hasOwnProperty.call(PERSON_A
 // Returns null when nothing changes, else { patch, note, activity } where
 // patch holds the fields to write and activity is the line for the log.
 // firstName(email) names people in the note.
-// Ready for Testing hands the ticket to its designated tester (task.tester) if
-// it has one, else to the person the mover chose (opts.tester). There is no
-// board-wide default: with neither, the assignee is left alone.
-export function statusChange(task, status, { resolution, tester: chosen, firstName = (x) => x || "Unassigned" } = {}) {
-  const tester = (task && task.tester) || chosen || "";
+export function statusChange(task, status, { resolution, tester, firstName = (x) => x || "Unassigned" } = {}) {
   if (!STATUS_KEYS.includes(status)) throw new Error(`Unknown status ${status}`);
   const from = task.status, fromRes = res(task);
   const toRes = status === "done" ? (RESOLUTIONS.some((r) => r.key === resolution) ? resolution : fromRes || "completed") : null;

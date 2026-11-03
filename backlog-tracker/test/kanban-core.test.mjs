@@ -52,15 +52,14 @@ t("settings: release is never required, even if saved so", () => {
   assert.equal(k.normaliseSettings({ fields: { release: { show: true, required: true } } }).fields.release.required, false);
   assert.equal(k.defaultFields().release.required, false);
 });
-t("no global tester: the ticket's own, else the chosen one, else the assignee stays", () => {
+t("settings: an unset tester defaults to Rob; a stored one wins (TC-47)", () => {
   const d = k.normaliseSettings(null);
-  assert.equal(d.tester, undefined); assert.equal(k.DEFAULT_TESTER, undefined);
-  const none = k.statusChange({ status: "in-progress", assignee: "duong@x" }, "ready-for-testing", {});
-  assert.equal(none.patch.assignee, undefined); assert.equal(none.note, "");
-  const chosen = k.statusChange({ status: "in-progress", assignee: "duong@x" }, "ready-for-testing", { tester: "thuc@x" });
-  assert.equal(chosen.patch.assignee, "thuc@x"); assert.match(chosen.note, /reassigned to .* for testing/);
-  const own = k.statusChange({ status: "in-progress", assignee: "duong@x", tester: "thuc@x" }, "ready-for-testing", { tester: "huy@x" });
-  assert.equal(own.patch.assignee, "thuc@x");
+  assert.equal(d.tester, "rob@offline2online.com"); assert.equal(d.testerIsDefault, true);
+  assert.equal(k.normaliseSettings({ tester: "" }).tester, k.DEFAULT_TESTER);
+  const s = k.normaliseSettings({ tester: "huy@x" });
+  assert.equal(s.tester, "huy@x"); assert.equal(s.testerIsDefault, false);
+  const ch = k.statusChange({ status: "in-progress", assignee: "duong@x" }, "ready-for-testing", { tester: d.tester });
+  assert.equal(ch.patch.assignee, "rob@offline2online.com"); assert.match(ch.note, /reassigned to .* for testing/);
 });
 t("settings: an unset current release is the earliest unreleased by version (TC-47)", () => {
   const rels = [{ id: "a", version: "4.12", released: false, order: 1 }, { id: "b", version: "4.9", released: false, order: 2 }, { id: "c", version: "4.1", released: true, order: 3 }];
