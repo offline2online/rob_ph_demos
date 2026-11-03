@@ -17,8 +17,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
 const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
 const { shouldStampReportedAt, inFlightItemIds } = require("./notify-routine");
-const { auditLogEntry, buildAuditRequestText, zeroResultQueries } = require("./release-audit");
-const { createHelpApi } = require("./help-search");
+const { auditLogEntry, buildAuditRequestText } = require("./release-audit");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 const { advancePackageQueue } = require("./package-queue");
 
@@ -1643,13 +1642,7 @@ exports.onReleaseMarkedLive = onDocumentUpdated(
         return;
       }
       const skillsBlock = await phaseSkillsBlock(db, "deploy", "DEPLOY");
-      let searchGaps = [];
-      try {
-        const since = new Date(Date.now() - 90 * 24 * 3600 * 1000);
-        const logSnap = await db.collection("helpSearchLog").where("at", ">=", since).orderBy("at", "desc").limit(2000).get();
-        searchGaps = zeroResultQueries(logSnap.docs.map((d) => d.data()));
-      } catch (e) { logger.warn("help search gaps unreadable", { error: String(e) }); }
-      const text = `${skillsBlock}${buildAuditRequestText({ releaseId, release: after, projects, requestedByEmail: requestedBy, searchGaps })}${boardAccessBlock()}`;
+      const text = `${skillsBlock}${buildAuditRequestText({ releaseId, release: after, projects, requestedByEmail: requestedBy })}${boardAccessBlock()}`;
       const { sessionUrl, fireError } = await fireRoutineSession(fireUrl, token, text, { releaseId });
       await auditRef.set({
         status: fireError ? "failed" : "running",
@@ -2221,11 +2214,6 @@ exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSec
 // See ../MCP.md for the full flow and the tool list.
 const mcp = require("./mcp-server");
 exports.mcpServer = mcp.mcpServer;
-
-// Public, read-only help search for AI agents (no sign-in) — see help-search.js.
-// Served at /help-api/** on the console's Hosting site (firebase.json rewrite).
-const helpApi = createHelpApi({ db: { collection: (n) => getFirestore().collection(n) }, logger });
-exports.helpSearch = onRequest({ cors: false, timeoutSeconds: 30, memory: "512MiB", concurrency: 80, maxInstances: 10 }, (req, res) => helpApi.handle(req, res));
 exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 exports.syncMemberDirectory = mcp.syncMemberDirectory;
 exports.kanbanNotifyTask = mcp.kanbanNotifyTask;

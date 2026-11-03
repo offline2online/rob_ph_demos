@@ -765,13 +765,6 @@ service cloud.firestore {
     // The audit trail of what agents actually did. Admin-readable so a
     // person can answer "who filed this ticket and from what"; append-only
     // from the server.
-    // One document per query to the public help search (functions/help-search.js),
-    // written by the server only. Members read it: zero-result queries are the
-    // content gaps the release audit works from.
-    match /helpSearchLog/{entryId} {
-      allow read: if isBoardReader();
-      allow write: if false;
-    }
     match /mcpAuditLog/{entryId} {
       allow read: if isAdmin();
       allow write: if false;

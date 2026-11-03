@@ -2765,41 +2765,6 @@ is live) is what keeps the content in step with the release being marketed.
 **Tests.** `test/release-audit.test.mjs` (classification, log shape on both
 sides, fire text, and guards that the per-ticket flow stays removed).
 
-### Public help search for AI agents (3 Nov 2026, ticket `5pNsaRPdnruE0n6Gnd25`)
-
-A public, read-only, no-sign-in endpoint so AI assistants can answer from the
-published help articles without crawling pages. `functions/help-search.js`
-(the `helpSearch` function), served on the console's Hosting site at
-`/help-api/**`:
-
-- `GET /help-api/search?q=…&release=…&limit=…` — ranked results, each with
-  `title`, `directAnswer`, `summary`, `url` (the
-  personalisationhub.com/support-centre/ permalink the publish step recorded in
-  `faqArticles.wpPublish.url`), `articleType`, `category`, `lastUpdated`.
-- `GET /help-api/article?id=…|slug=…` — the full article (`format=md` or
-  `Accept: text/markdown` gives markdown with the source URL).
-- `POST /help-api/mcp` — a stateless public MCP server (tools `search_help`,
-  `get_help_article`, both read-only). `GET /help-api/llms.txt` is the entry to
-  paste into the site's /llms.txt; `GET /help-api/webmcp.js` registers
-  `search_help` as a WebMCP tool on the Support Centre pages.
-- **Never returned:** drafts, retired articles, anything outside the requested
-  release (default: the live release; `release` takes an id or version, same
-  resolution and range check as `search_faq`), articles with no recorded
-  Support Centre URL, and `pendingRevision` text. Only live fields are read.
-- **Rate limit** 60 requests a minute per address per instance (429 with
-  `Retry-After`); **cache** the published set for 60 s and each identical
-  query for 60 s (`X-Cache: HIT|MISS`, `Cache-Control: public, max-age=60`).
-- **Usage log:** one `helpSearchLog` document per search (normalised query,
-  release, result count, `zeroResults`, `via` http|mcp, cached; no address).
-  Members can read it; only the server writes. The release audit's fire text
-  lists the most-asked zero-result queries of the last 90 days as content gaps
-  (`zeroResultQueries` in `release-audit.js`).
-- Scoring is the Help Centre's (title 5, summary 3, keyword 3, body 1) plus
-  question variants 4 and direct answer 2, matching the WordPress index.
-- Falls under the go-live security review (public read-only endpoints).
-
-**Tests.** `test/help-search.test.js`.
-
 ### FAQ revision review (Deploy → propose → approve → go live)
 
 **SEO & agent fields (3 Nov 2026, ticket `rri7DngI2ccd7q4uYdk6`).** Help
