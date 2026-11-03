@@ -34,14 +34,6 @@ const RELEASES_SESSION_KEY = "ph-faq-releases-v1";
 export const ID_RE = /^[a-zA-Z0-9_-]{1,120}$/;
 export function safeId(id) { return typeof id === "string" && ID_RE.test(id) ? id : null; }
 
-// ── Embedding ─────────────────────────────────────────────────────────────
-// This site is both a standalone public Help Center and content iframed
-// into personalisationhub.com's support centre. When embedded we hide our
-// own header (the host page has one) and tell the parent how tall we are
-// so it can size the iframe without a scrollbar.
-export function isEmbedded() {
-  try { return window.self !== window.top; } catch { return true; }
-}
 // "navigate" (a link was clicked/URL typed), "reload" (F5 / pull-to-refresh)
 // or "back_forward" — the one signal that tells us whether a reader is
 // arriving at a NEW page (should start at the top) or coming back to a page
@@ -55,45 +47,6 @@ function navigationType() {
   } catch { /* fall through */ }
   return "navigate";
 }
-export function initEmbedMode() {
-  if (!isEmbedded()) return;
-  document.documentElement.classList.add("embedded");
-  const header = document.querySelector(".ph-header");
-  if (header) header.hidden = true;
-  // Every page here (including an article's own Previous/Next/Related
-  // links) is a plain full navigation, not a client-side route — the new
-  // document always starts scrolled to (0,0) *inside the iframe*. But
-  // because we hand our real height to the host so it can size the iframe
-  // with no scrollbar of its own (see the height postMessage below), it's
-  // the HOST page that actually scrolls, and its scroll position doesn't
-  // reset just because our content underneath it changed. Left alone, a
-  // reader who scrolled down to click "Next article" lands mid-way or at
-  // the bottom of the article that loads next. Ask the host to scroll back
-  // to the top of the iframe on every fresh load so it can't happen — this
-  // is a one-time request per page load, never repeated from the
-  // ResizeObserver below, so it never yanks a reader back to the top while
-  // they're mid-scroll on the article they're already reading.
-  //
-  // wIk1aL99zS8Oy6jAHvGI: this used to fire unconditionally, including on a
-  // plain browser refresh — which meant refreshing an embedded article
-  // always yanked the HOST page's own scroll back to the top of the iframe,
-  // fighting the browser's native (and otherwise correct) scroll
-  // restoration on a top-level reload. Only send it on a genuine forward
-  // navigation to a new page; leave a reload/back-forward alone so whatever
-  // scroll position the host was already at survives, same as it would for
-  // any other iframe on the page.
-  const navType = navigationType();
-  if (navType !== "reload" && navType !== "back_forward") {
-    try { window.parent.postMessage({ type: "ph-faq:scrollTop" }, "*"); } catch { /* ignore */ }
-  }
-  const post = () => {
-    try { window.parent.postMessage({ type: "ph-faq:height", height: document.documentElement.scrollHeight }, "*"); } catch { /* ignore */ }
-  };
-  post();
-  if ("ResizeObserver" in window) new ResizeObserver(post).observe(document.body);
-  window.addEventListener("load", post);
-}
-
 // ── Scroll memory (standalone mode) ─────────────────────────────────────
 // wIk1aL99zS8Oy6jAHvGI: refreshing a long article used to always drop the
 // reader back at the top. The browser's own scroll restoration can't be

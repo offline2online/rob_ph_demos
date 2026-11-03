@@ -218,9 +218,6 @@ a:hover { text-decoration: underline; }
 .ph-footer { border-top: 1px solid var(--divider); padding: 20px 24px; text-align: center; font-size: 13.5px; color: var(--text-muted); }
 
 [hidden] { display: none !important; }
-html.embedded .hero { padding-top: 20px; }
-html.embedded .ph-footer { padding: 14px; }
-html.embedded .footer-admin { display: none; }
 .ph-footer .footer-admin a { color: var(--text-muted); }
 .ph-footer .footer-admin a:hover { color: var(--primary); }
 @media print { .ph-header, .hero, .toc, .article-nav, .related-block, .ph-footer { display: none !important; } .wrap { padding: 0; } }

@@ -9576,7 +9576,7 @@ niEls.desc.addEventListener("input", (e) => {
 // now, same spirit as the rest of this app's prototype-stage features.
 const faqCategoriesRef = collection(db, "faqCategories");
 const faqArticlesRef = collection(db, "faqArticles");
-const FAQ_PUBLIC_BASE_URL = "https://offline2online.github.io/rob_ph_demos/faq/";
+const FAQ_PUBLIC_BASE_URL = "https://personalisationhub.com/support-centre/";
 
 let faqCategories = [];
 let faqArticles = [];

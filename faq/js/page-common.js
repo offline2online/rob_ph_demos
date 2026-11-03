@@ -1,6 +1,6 @@
 // Boot shared by every page: embed mode, version stamp, search box, icons,
 // analytics.
-import { initEmbedMode, initScrollMemory, restoreScrollMemory } from "./faq-data.js";
+import { initScrollMemory, restoreScrollMemory } from "./faq-data.js";
 import { APP_VERSION } from "./version.js";
 import { initSearchBox } from "./search-box.js";
 import { iconSvg } from "./icons.js";
@@ -60,7 +60,6 @@ export function trackEvent(name, params) {
 }
 
 export function bootPage() {
-  initEmbedMode();
   initScrollMemory();
   const v = document.getElementById("app-version");
   if (v) v.textContent = `v${APP_VERSION}`;
