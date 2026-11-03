@@ -1348,6 +1348,28 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(stored.pendingRevision.bodyMd, "<p>New steps.</p>");
   });
 
+  await test("SEO & agent fields: update parks them on the pending revision, validates limits, get_faq_article reports what's missing", async () => {
+    const seoRef = await env.db.collection("faqArticles").add({ categoryId: "cat1", title: "Seo article", slug: "seo-article", summary: "s", bodyMd: "<p>x</p>", status: "published" });
+    const liveArticleId = seoRef.id;
+    const bad = await rpc(tokens.access_token, "tools/call", { name: "update_faq_article", arguments: { articleId: liveArticleId, reason: "x", seoTitle: "x".repeat(61) } });
+    assert.strictEqual(bad.body.result.isError, true);
+    const badType = await rpc(tokens.access_token, "tools/call", { name: "update_faq_article", arguments: { articleId: liveArticleId, reason: "x", articleType: "essay" } });
+    assert.strictEqual(badType.body.result.isError, true);
+    const ok = await rpc(tokens.access_token, "tools/call", {
+      name: "update_faq_article",
+      arguments: { articleId: liveArticleId, reason: "Add SEO fields.", seoTitle: "Set a local price override", metaDescription: "How stores override the RRP.", directAnswer: "Open the product, choose Pricing and add a local offer.", questionVariants: ["How do I set a local price?", "Can a store change the RRP?"], articleType: "guide" },
+    });
+    assert.strictEqual(ok.body.result.isError, undefined);
+    const stored = env.store.col("faqArticles").get(liveArticleId);
+    assert.strictEqual(stored.pendingRevision.seoTitle, "Set a local price override");
+    assert.strictEqual(stored.pendingRevision.articleType, "guide");
+    assert.deepStrictEqual(stored.pendingRevision.questionVariants, ["How do I set a local price?", "Can a store change the RRP?"]);
+    assert.strictEqual(stored.seoTitle, undefined, "the live article must not change");
+    const got = await rpc(tokens.access_token, "tools/call", { name: "get_faq_article", arguments: { articleId: liveArticleId } });
+    const payload = JSON.parse(got.body.result.content[0].text);
+    assert.deepStrictEqual(payload.missingSeoFields, ["seoTitle", "metaDescription", "directAnswer", "questionVariants", "articleType"]);
+  });
+
   await test("refuses update_faq_article with no reason", async () => {
     const res = await rpc(tokens.access_token, "tools/call", {
       name: "update_faq_article", arguments: { articleId: liveArticleId, title: "No reason given" },

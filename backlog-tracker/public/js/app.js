@@ -11674,6 +11674,60 @@ const faBodyViewer = document.getElementById("fa-body-viewer");
 const faNeedsReview = document.getElementById("fa-needs-review");
 const faSectionPickerToggle = document.getElementById("fa-section-picker-toggle");
 const faSectionPickerLabelInput = document.getElementById("fa-section-picker-label-input");
+// SEO & agent fields (rri7DngI2ccd7q4uYdk6): the single source for the
+// WordPress Support Centre's SEO and agent output. Empty means "default to
+// the title/summary", so empty values are never written.
+const faSeoTitleInput = document.getElementById("fa-seo-title-input");
+const faMetaDescriptionInput = document.getElementById("fa-meta-description-input");
+const faDirectAnswerInput = document.getElementById("fa-direct-answer-input");
+const faQuestionVariantsInput = document.getElementById("fa-question-variants-input");
+const faArticleTypeSelect = document.getElementById("fa-article-type-select");
+const FA_ARTICLE_TYPES = ["guide", "faq", "reference"];
+const FA_QUESTION_VARIANTS_MAX = 20;
+function faQuestionVariantsFromText(text) {
+  return String(text || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, FA_QUESTION_VARIANTS_MAX);
+}
+// The five fields as they are saved: only the ones with a value.
+function faSeoFieldsFromEditor() {
+  const out = {};
+  const t = faSeoTitleInput.value.trim().slice(0, 60); if (t) out.seoTitle = t;
+  const m = faMetaDescriptionInput.value.trim().slice(0, 155); if (m) out.metaDescription = m;
+  const d = faDirectAnswerInput.value.trim().slice(0, 300); if (d) out.directAnswer = d;
+  const q = faQuestionVariantsFromText(faQuestionVariantsInput.value); if (q.length) out.questionVariants = q;
+  if (FA_ARTICLE_TYPES.includes(faArticleTypeSelect.value)) out.articleType = faArticleTypeSelect.value;
+  return out;
+}
+// Same five fields, but a field the editor emptied is written as null so a
+// merge-save really clears it (an absent key would keep the old value).
+function faSeoFieldsOrCleared() {
+  const set = faSeoFieldsFromEditor();
+  const out = {};
+  ["seoTitle", "metaDescription", "directAnswer", "questionVariants", "articleType"].forEach((k) => { out[k] = set[k] === undefined ? null : set[k]; });
+  return out;
+}
+function updateFaSeoIndicators() {
+  const over = (el, id, n, max) => {
+    const c = document.getElementById(id);
+    c.textContent = `${n} / ${max}`;
+    c.classList.toggle("fa-count-limit", n >= max);
+    c.style.color = n >= max ? "#b3261e" : "";
+  };
+  over(faSeoTitleInput, "fa-seo-title-count", faSeoTitleInput.value.length, 60);
+  over(faMetaDescriptionInput, "fa-meta-description-count", faMetaDescriptionInput.value.length, 155);
+  over(faDirectAnswerInput, "fa-direct-answer-count", faDirectAnswerInput.value.length, 300);
+  const lines = faQuestionVariantsInput.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).length;
+  over(faQuestionVariantsInput, "fa-question-variants-count", lines, FA_QUESTION_VARIANTS_MAX);
+  const done = Object.keys(faSeoFieldsFromEditor()).length;
+  document.getElementById("fa-seo-completeness").textContent = `SEO fields: ${done} of 5 complete`;
+}
+function loadFaSeoFields(src) {
+  faSeoTitleInput.value = (src && src.seoTitle) || "";
+  faMetaDescriptionInput.value = (src && src.metaDescription) || "";
+  faDirectAnswerInput.value = (src && src.directAnswer) || "";
+  faQuestionVariantsInput.value = ((src && src.questionVariants) || []).join("\n");
+  faArticleTypeSelect.value = src && FA_ARTICLE_TYPES.includes(src.articleType) ? src.articleType : "";
+  updateFaSeoIndicators();
+}
 // Status of the article as last loaded/saved. Save draft (below) never
 // promotes this to "published" on its own — only Publish does; saving an
 // already-published article keeps it published rather than silently
@@ -12190,7 +12244,7 @@ function showFaSaveConfirmation(text) {
 // resets to sensible defaults every time the editor opens (see
 // resetFaGroups, called from openFaqArticleEditorPage below), regardless of
 // what was left open/closed on a previous article.
-const FA_GROUP_TOGGLE_IDS = ["fa-group-properties-toggle", "fa-group-discovery-toggle", "fa-group-reader-toggle", "fa-group-status-toggle"];
+const FA_GROUP_TOGGLE_IDS = ["fa-group-properties-toggle", "fa-group-discovery-toggle", "fa-group-seo-toggle", "fa-group-reader-toggle", "fa-group-status-toggle"];
 function setFaGroupOpen(headerId, open) {
   const header = document.getElementById(headerId);
   const body = document.getElementById(header.getAttribute("aria-controls"));
@@ -12202,6 +12256,7 @@ function resetFaGroups() {
   // article); the rest start collapsed.
   setFaGroupOpen("fa-group-properties-toggle", true);
   setFaGroupOpen("fa-group-discovery-toggle", false);
+  setFaGroupOpen("fa-group-seo-toggle", false);
   setFaGroupOpen("fa-group-reader-toggle", false);
   setFaGroupOpen("fa-group-status-toggle", false);
 }
@@ -12231,6 +12286,7 @@ function faSnapshotState() {
     needsReview: faNeedsReview.checked,
     sectionPicker: faSectionPickerToggle.checked,
     sectionPickerLabel: faSectionPickerLabelInput.value,
+    seo: [faSeoTitleInput.value, faMetaDescriptionInput.value, faDirectAnswerInput.value, faQuestionVariantsInput.value, faArticleTypeSelect.value],
     categoryId: faCategorySelect.value,
     projectId: faProjectSelect.value,
     programId: faProgramSelect.value,
@@ -12295,6 +12351,7 @@ function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}
   faNeedsReview.checked = article ? !!article.needsReview : false;
   faSectionPickerToggle.checked = source ? !!source.sectionPicker : false;
   faSectionPickerLabelInput.value = source && source.sectionPickerLabel ? source.sectionPickerLabel : "";
+  loadFaSeoFields(source);
   faLoadedStatus = article && article.status ? article.status : "draft";
   faLoadedHasPublishedAt = !!(article && article.publishedAt);
   renderFaStatusBadge();
@@ -12374,6 +12431,8 @@ faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 // contenteditable typing (registerFaqEditorFormats below), which never
 // goes through Quill's text APIs at all.
 [faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput, faSectionPickerLabelInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
+[faSeoTitleInput, faMetaDescriptionInput, faDirectAnswerInput, faQuestionVariantsInput].forEach((el) => el.addEventListener("input", () => { updateFaSeoIndicators(); updateFaDirtyState(); }));
+faArticleTypeSelect.addEventListener("change", () => { updateFaSeoIndicators(); updateFaDirtyState(); });
 [faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect, faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
 // (faQuill's own listeners are attached in ensureFaQuill.)
 
@@ -12422,6 +12481,7 @@ async function submitFaqArticleFromEditor(publish) {
         docType: faDocTypeSelect.value || "faq",
         bodyMd: faqBodySourceForSave(),
         keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
+        ...faSeoFieldsOrCleared(),
         // Any human edit resets an approval — what was approved is no longer what would go live.
         reviewStatus: "awaiting-review",
         editedBy: (auth.currentUser && auth.currentUser.email) || "editor",
@@ -12446,6 +12506,7 @@ async function submitFaqArticleFromEditor(publish) {
     docType: faDocTypeSelect.value || "faq",
     bodyMd: faqBodySourceForSave(),
     keywords: faKeywordsInput.value.split(",").map((k) => k.trim()).filter(Boolean),
+    ...faSeoFieldsOrCleared(),
     status,
     needsReview: faNeedsReview.checked,
     sectionPicker: faSectionPickerToggle.checked,
@@ -12710,6 +12771,16 @@ function renderFaqRevisionReviewPage() {
   if (Array.isArray(rev.keywords) && rev.keywords.join(",") !== (a.keywords || []).join(",")) {
     parts.push(`<div class="fr-change-block"><span class="fr-change-label">Keywords</span>${wordDiffHTML((a.keywords || []).join(", "), rev.keywords.join(", "))}</div>`);
   }
+  // SEO & agent fields: only a key the proposal carries is a change (an
+  // absent key leaves the live value alone; null/empty clears it).
+  const seoRows = [["seoTitle", "SEO title"], ["metaDescription", "Meta description"], ["directAnswer", "Direct answer"], ["questionVariants", "Question variants"], ["articleType", "Article type"]];
+  seoRows.forEach(([key, label]) => {
+    if (!(key in rev)) return;
+    const asText = (v) => Array.isArray(v) ? v.join("\n") : (v == null ? "" : String(v));
+    const before = rev.isNew ? "" : asText(a[key]);
+    const after = asText(rev[key]);
+    if (before !== after) parts.push(`<div class="fr-change-block"><span class="fr-change-label">${label}</span>${wordDiffHTML(before, after)}</div>`);
+  });
   const body = renderFaqRevisionChanges(faqBodyTextBlocks(oldBody), faqBodyTextBlocks(rev.bodyMd || ""));
   document.getElementById("fr-changes").innerHTML = parts.join("") + body.html;
   document.getElementById("fr-diff-summary").textContent =

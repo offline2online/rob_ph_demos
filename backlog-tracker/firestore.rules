@@ -818,6 +818,11 @@ service cloud.firestore {
         && (!("summary" in r) || r.summary is string && r.summary.size() <= 400)
         && (!("keywords" in r) || r.keywords is list && r.keywords.size() <= 30)
         && (!("docType" in r) || r.docType in ["faq", "how-to", "reference", "explanation"])
+        && (!("seoTitle" in r) || r.seoTitle == null || r.seoTitle is string && r.seoTitle.size() <= 60)
+        && (!("metaDescription" in r) || r.metaDescription == null || r.metaDescription is string && r.metaDescription.size() <= 155)
+        && (!("directAnswer" in r) || r.directAnswer == null || r.directAnswer is string && r.directAnswer.size() <= 300)
+        && (!("questionVariants" in r) || r.questionVariants == null || r.questionVariants is list && r.questionVariants.size() <= 20)
+        && (!("articleType" in r) || r.articleType == null || r.articleType in ["guide", "faq", "reference"])
         && (!("reason" in r) || r.reason is string && r.reason.size() <= 2000)
         // Required + non-empty for the Deploy flow's own proposals (the
         // Routine — ROUTINE_INSTRUCTIONS.md "FAQ impact review"), which keys
@@ -867,6 +872,11 @@ service cloud.firestore {
         && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 400)
         && (!("keywords" in incoming()) || incoming().keywords is list && incoming().keywords.size() <= 30)
         && (!("docType" in incoming()) || incoming().docType in ["faq", "how-to", "reference", "explanation"])
+        && (!("seoTitle" in incoming()) || incoming().seoTitle == null || incoming().seoTitle is string && incoming().seoTitle.size() <= 60)
+        && (!("metaDescription" in incoming()) || incoming().metaDescription == null || incoming().metaDescription is string && incoming().metaDescription.size() <= 155)
+        && (!("directAnswer" in incoming()) || incoming().directAnswer == null || incoming().directAnswer is string && incoming().directAnswer.size() <= 300)
+        && (!("questionVariants" in incoming()) || incoming().questionVariants == null || incoming().questionVariants is list && incoming().questionVariants.size() <= 20)
+        && (!("articleType" in incoming()) || incoming().articleType == null || incoming().articleType in ["guide", "faq", "reference"])
         // Release binding (see match /releases above): optional release ids,
         // null/absent meaning open-ended on that side.
         && (!("introducedInReleaseId" in incoming()) || incoming().introducedInReleaseId == null || isNonEmptyBoundedString(incoming().introducedInReleaseId, 100))

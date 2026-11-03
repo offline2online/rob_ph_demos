@@ -289,7 +289,7 @@ export async function fetchLiveArticleIfNewer(id, staticUpdatedAt) {
     const f = doc.fields || {};
     const str = (k) => (f[k] && f[k].stringValue) || "";
     const live = {
-      id: sid, title: str("title"), bodyMd: str("bodyMd"), status: str("status"), docType: str("docType"),
+      id: sid, title: str("title"), bodyMd: str("bodyMd"), status: str("status"), docType: str("docType"), directAnswer: str("directAnswer"),
       updatedAt: (f.updatedAt && f.updatedAt.timestampValue) || "",
     };
     if (live.status !== "published" || !live.bodyMd) return null;

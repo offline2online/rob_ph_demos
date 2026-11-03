@@ -791,3 +791,10 @@ prototype changes later.
 - **Project writes.** The tool writes no project field, so
   `PROJECT_WRITABLE_FIELDS` is unchanged (`docs`, `artifactUrl`,
   `artifactUpdatedAt`, `description`); `test/mcp-server.test.js` asserts it.
+
+## Help article SEO and agent fields
+
+`create_faq_article` and `update_faq_article` also take `seoTitle` (≤ 60),
+`metaDescription` (≤ 155), `directAnswer` (≤ 300), `questionVariants` (≤ 20)
+and `articleType` (`guide` | `faq` | `reference`); update still only parks a
+pending revision. `get_faq_article` reports `missingSeoFields`.

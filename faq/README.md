@@ -91,6 +91,16 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   `backlog-tracker/REQUIREMENTS.md` → "FAQ revision review". Neither
   `faq-export.js` nor this site ever reads `pendingRevision`.
 
+## SEO & agent fields
+
+Each article can carry `seoTitle`, `metaDescription`, `directAnswer`,
+`questionVariants` and `articleType` (`guide` | `faq` | `reference`), edited in
+the console's article editor ("SEO & agents") and exported into
+`faq/data/articles/<id>.json` only when set. The article page shows
+`directAnswer` at the top of the article. The WordPress Support Centre publish
+step reads the rest from the export. See `backlog-tracker/REQUIREMENTS.md` →
+"FAQ revision review".
+
 ## Article scoping (`programId` / `projectId`)
 
 Every `faqArticles` document carries two optional scoping fields, both set

@@ -1038,7 +1038,32 @@
           </div>
 
           <div class="fa-group">
-            <button type="button" class="fa-group-header" id="fa-group-reader-toggle" aria-expanded="false" aria-controls="fa-group-reader">
+            <button type="button" class="fa-group-header" id="fa-group-seo-toggle" aria-expanded="false" aria-controls="fa-group-seo">
+              <span>SEO &amp; agents</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
+            </button>
+            <div class="fa-group-body" id="fa-group-seo" hidden>
+              <p class="field-hint" id="fa-seo-completeness" aria-live="polite">SEO fields: 0 of 5 complete</p>
+              <label class="field-label" for="fa-seo-title-input">SEO title <span class="field-hint" id="fa-seo-title-count">0 / 60</span></label>
+              <input type="text" id="fa-seo-title-input" maxlength="60" placeholder="Defaults to the article title">
+              <label class="field-label" for="fa-meta-description-input">Meta description <span class="field-hint" id="fa-meta-description-count">0 / 155</span></label>
+              <textarea id="fa-meta-description-input" rows="3" maxlength="155" placeholder="Defaults to the summary"></textarea>
+              <label class="field-label" for="fa-direct-answer-input">Direct answer <span class="field-hint" id="fa-direct-answer-count">0 / 300</span></label>
+              <textarea id="fa-direct-answer-input" rows="3" maxlength="300" placeholder="One or two plain-text sentences, shown at the top of the article"></textarea>
+              <label class="field-label" for="fa-question-variants-input">Question variants (one per line, max 20) <span class="field-hint" id="fa-question-variants-count">0 / 20</span></label>
+              <textarea id="fa-question-variants-input" rows="4" placeholder="The ways users actually ask this"></textarea>
+              <label class="field-label" for="fa-article-type-select">Article type</label>
+              <select id="fa-article-type-select">
+                <option value="">Not set</option>
+                <option value="guide">Guide (step by step) — HowTo</option>
+                <option value="faq">FAQ (question and answer) — FAQPage</option>
+                <option value="reference">Reference — TechArticle</option>
+              </select>
+              <p class="field-hint">SEO title, meta description and the URL slug (under Search &amp; keywords) default to the title and summary when left empty. Article type decides the schema the WordPress Support Centre generates.</p>
+            </div>
+          </div>
+
+          <div class="fa-group">
+            <button type="button" class="fa-group-header" id="fa-group-reader-toggle"aria-expanded="false" aria-controls="fa-group-reader">
               <span>Reader controls</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
             </button>
             <div class="fa-group-body" id="fa-group-reader" hidden>

@@ -96,6 +96,10 @@ function renderArticle(article, categories, articles) {
   const badge = $("doctype-badge");
   badge.textContent = docTypeLabel(article); badge.hidden = false;
   if (article.summary) $("article-meta").textContent = article.summary;
+  // Direct answer (SEO & agent fields): one or two plain-text sentences at
+  // the top of the article, ahead of the body. Absent on most articles.
+  const direct = $("article-direct-answer");
+  if (direct) { direct.textContent = article.directAnswer || ""; direct.hidden = !article.directAnswer; }
   if (article.updatedAt) { const u = $("article-updated"); u.textContent = `Last updated ${formatDate(article.updatedAt)}`; u.hidden = false; }
 
   if (category) {

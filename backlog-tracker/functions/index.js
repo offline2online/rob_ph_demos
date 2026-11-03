@@ -1514,6 +1514,16 @@ exports.notifyOnItemsReadyForTesting = onDocumentUpdated(
 // under previousRevision (one-click revert in the console), clears the
 // proposal and the flag, and publishes a proposal-created draft. The
 // hourly FAQ export (faq-content.yml) then carries it to the static site.
+const FAQ_SEO_FIELD_KEYS = ["seoTitle", "metaDescription", "directAnswer", "questionVariants", "articleType"];
+function faqSeoFieldsFromRevision(rev) {
+  const out = {};
+  for (const k of FAQ_SEO_FIELD_KEYS) {
+    if (!(k in rev)) continue;
+    const v = rev[k];
+    out[k] = (v === null || v === "" || (Array.isArray(v) && !v.length)) ? null : v;
+  }
+  return out;
+}
 async function promoteFaqRevisionIfReady(db, articleRef, why) {
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(articleRef);
@@ -1535,6 +1545,9 @@ async function promoteFaqRevisionIfReady(db, articleRef, why) {
       bodyMd: typeof rev.bodyMd === "string" ? rev.bodyMd : (a.bodyMd || ""),
       ...(Array.isArray(rev.keywords) ? { keywords: rev.keywords } : {}),
       ...(typeof rev.docType === "string" ? { docType: rev.docType } : {}),
+      // SEO & agent fields: a key present on the proposal wins (null clears
+      // the live value); a key the proposal doesn't carry leaves it alone.
+      ...faqSeoFieldsFromRevision(rev),
       previousRevision: {
         title: a.title || "",
         summary: a.summary || "",

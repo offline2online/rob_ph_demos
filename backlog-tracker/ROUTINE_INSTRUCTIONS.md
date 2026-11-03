@@ -1195,7 +1195,20 @@ changes what it describes. For every article you read, decide ONE outcome:
 - **retire** — the feature it documents was removed or replaced and nothing
   can be salvaged.
 "Related" is not enough; tie each update or retirement to something that
-shipped (a ticket, a requirement, a release note). Keep a list of **every**
+shipped (a ticket, a requirement, a release note).
+
+**SEO and agent fields.** Also check each published article in scope for the
+five SEO and agent fields (`seoTitle`, `metaDescription`, `directAnswer`,
+`questionVariants`, `articleType`). Whatever the outcome above, an article
+missing any of them is flagged: list its id, title and the missing field names
+in the audit `summary` ("N articles are missing SEO fields: …") and, for an
+article you are already proposing an update for, include sensible values for the
+missing fields in its `pendingRevision` (`seoTitle` ≤ 60 chars, `metaDescription`
+≤ 155, `directAnswer` one or two plain sentences ≤ 300, `questionVariants` ≤ 20,
+`articleType` `guide` | `faq` | `reference`). Do not open a proposal for an
+otherwise unchanged article just to add them; the flag is the output.
+
+Keep a list of **every**
 article you looked at and its outcome — it is the audit's record of what was
 checked.
 

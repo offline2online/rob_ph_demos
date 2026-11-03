@@ -1454,9 +1454,12 @@ faqArticles/{id}: {
   introducedInReleaseId (nullable), removedInReleaseId (nullable),   // see `releases` above
   docType: "faq" | "how-to" | "reference" | "explanation",
   keywords: string[], status: "draft" | "published", needsReview: boolean,
+  seoTitle?: string (≤60), metaDescription?: string (≤155), directAnswer?: string (≤300),
+  questionVariants?: string[] (≤20), articleType?: "guide" | "faq" | "reference",   // SEO & agent fields — see "FAQ revision review" → SEO & agent fields
   order, createdAt, updatedAt, publishedAt,
   pendingRevision?: {              // see "FAQ revision review" below
     title, summary, bodyMd, keywords?: string[], docType?,
+    seoTitle?, metaDescription?, directAnswer?, questionVariants?, articleType?,   // a key present wins on promotion (null clears); absent leaves the live value
     reason, sourceItemIds?: string[], sourceProjectId?, sourcePrNumbers?: number[],
     proposedBy: "claude" | string, proposedVia?: "mcp", proposedAt: ISO string,
     reviewStatus: "awaiting-review" | "approved", approvedAt?, approvedBy?,
@@ -2763,6 +2766,26 @@ is live) is what keeps the content in step with the release being marketed.
 sides, fire text, and guards that the per-ticket flow stays removed).
 
 ### FAQ revision review (Deploy → propose → approve → go live)
+
+**SEO & agent fields (3 Nov 2026, ticket `rri7DngI2ccd7q4uYdk6`).** Help
+articles move to native WordPress pages but stay managed here, so each
+`faqArticles` doc carries the five fields the WordPress Support Centre needs
+for SEO and agent output: `seoTitle` (≤ 60 chars), `metaDescription` (≤ 155),
+`directAnswer` (one or two plain-text sentences, ≤ 300, shown at the top of
+the help-centre article), `questionVariants` (≤ 20 ways users ask it) and
+`articleType` (`guide` → HowTo, `faq` → FAQPage, `reference` → TechArticle).
+The URL slug is the existing `slug`. SEO title, meta description and slug
+default to the title/summary/auto-slug when empty (the publish step applies
+the default; nothing is stored). Empty fields are not written. The editor's
+**SEO & agents** group shows live character counts (red at the limit) and
+"SEO fields: N of 5 complete". The fields travel in `pendingRevision` like
+the rest, appear in the review diff, are copied to the live article on
+promotion (a key present on the proposal wins, `null` clears it, an absent key
+leaves the live value alone), are carried by `faq-export.js` into
+`faq/data/articles/<id>.json` (only when set) and read back by `faq-sync.js`.
+MCP `create_faq_article` / `update_faq_article` accept them (update still only
+parks a pending revision) and `get_faq_article` reports `missingSeoFields`.
+The release Help Centre audit flags articles missing them.
 
 **Why.** A ticket merging to `main` changes what the product does; the
 public help centre describes what the product does. The old
