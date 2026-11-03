@@ -1038,7 +1038,32 @@
           </div>
 
           <div class="fa-group">
-            <button type="button" class="fa-group-header" id="fa-group-reader-toggle" aria-expanded="false" aria-controls="fa-group-reader">
+            <button type="button" class="fa-group-header" id="fa-group-seo-toggle" aria-expanded="false" aria-controls="fa-group-seo">
+              <span>SEO &amp; agents</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
+            </button>
+            <div class="fa-group-body" id="fa-group-seo" hidden>
+              <p class="field-hint" id="fa-seo-completeness" aria-live="polite">SEO fields: 0 of 5 complete</p>
+              <label class="field-label" for="fa-seo-title-input">SEO title <span class="field-hint" id="fa-seo-title-count">0 / 60</span></label>
+              <input type="text" id="fa-seo-title-input" maxlength="60" placeholder="Defaults to the article title">
+              <label class="field-label" for="fa-meta-description-input">Meta description <span class="field-hint" id="fa-meta-description-count">0 / 155</span></label>
+              <textarea id="fa-meta-description-input" rows="3" maxlength="155" placeholder="Defaults to the summary"></textarea>
+              <label class="field-label" for="fa-direct-answer-input">Direct answer <span class="field-hint" id="fa-direct-answer-count">0 / 300</span></label>
+              <textarea id="fa-direct-answer-input" rows="3" maxlength="300" placeholder="One or two plain-text sentences, shown at the top of the article"></textarea>
+              <label class="field-label" for="fa-question-variants-input">Question variants (one per line, max 20) <span class="field-hint" id="fa-question-variants-count">0 / 20</span></label>
+              <textarea id="fa-question-variants-input" rows="4" placeholder="The ways users actually ask this"></textarea>
+              <label class="field-label" for="fa-article-type-select">Article type</label>
+              <select id="fa-article-type-select">
+                <option value="">Not set</option>
+                <option value="guide">Guide (step by step) — HowTo</option>
+                <option value="faq">FAQ (question and answer) — FAQPage</option>
+                <option value="reference">Reference — TechArticle</option>
+              </select>
+              <p class="field-hint">SEO title, meta description and the URL slug (under Search &amp; keywords) default to the title and summary when left empty. Article type decides the schema the WordPress Support Centre generates.</p>
+            </div>
+          </div>
+
+          <div class="fa-group">
+            <button type="button" class="fa-group-header" id="fa-group-reader-toggle"aria-expanded="false" aria-controls="fa-group-reader">
               <span>Reader controls</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
             </button>
             <div class="fa-group-body" id="fa-group-reader" hidden>
@@ -1309,6 +1334,7 @@
       <div class="page-header">
         <h2>FAQ Management</h2>
         <span class="page-header-count" id="faq-admin-count">0 published</span>
+        <span class="page-header-count faq-wp-sync" id="faq-wp-sync" role="status">Last WordPress sync: checking…</span>
       </div>
 
       <!-- Two panes: the structure on the left, the articles of whatever is
@@ -1581,11 +1607,32 @@
         <h2>Releases</h2>
         <span class="page-header-count" id="releases-count">0 releases</span>
       </div>
-      <p class="field-hint">A release bundles projects (and roadmap concepts) so their approved FAQ updates go live on the help centre together, the moment the release is marked live. Marking a release live can't be undone.</p>
+      <p class="field-hint">A release bundles projects (and roadmap concepts). Marking a release <strong>Live on AWS Marketplace</strong> can't be undone, and starts an audit of the whole Help Centre against what shipped: proposed updates, new articles and articles to retire come back as one batch to review under <strong>Audit</strong>.</p>
       <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
         <button type="button" class="btn-primary" id="releases-add-btn" data-editor-only>+ New release</button>
       </div>
       <div id="releases-grid"></div>
+    </section>
+
+    <!-- Release audit (app.js openReleaseAuditPage, #releases/<id>/audit) —
+         the Help Centre changes the audit Routine proposed for one release,
+         as a single batch, plus the audit's log. -->
+    <section class="archive-page" id="release-audit-page" hidden>
+      <div class="page-header">
+        <h2 id="ra-title">Release audit</h2>
+        <span class="page-header-count" id="ra-count"></span>
+      </div>
+      <div class="form-row" style="margin-bottom:12px;">
+        <button type="button" class="btn-secondary" id="ra-back">&larr; Releases</button>
+      </div>
+      <div id="ra-status" class="field-hint"></div>
+      <div class="form-row" id="ra-bulk" style="margin:12px 0;gap:8px;" data-editor-only>
+        <button type="button" class="btn-primary" id="ra-approve-selected">Approve selected</button>
+        <button type="button" class="btn-secondary" id="ra-reject-selected">Reject selected</button>
+      </div>
+      <div id="ra-batch"></div>
+      <h3>Audit log</h3>
+      <div id="ra-log"></div>
     </section>
 
     <!-- Phone only: the actions of whichever project you're currently

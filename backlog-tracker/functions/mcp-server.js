@@ -998,6 +998,52 @@ const FAQ_KEYWORDS_MAX = 30;
 const FAQ_REASON_MAX = 2000;
 const FAQ_DOC_TYPES = ["faq", "how-to", "reference", "explanation"];
 
+// SEO & agent fields (rri7DngI2ccd7q4uYdk6) — the single source for the
+// WordPress Support Centre's SEO and agent output. Limits match the console
+// editor and firestore.rules.
+const FAQ_SEO_TITLE_MAX = 60;
+const FAQ_META_DESCRIPTION_MAX = 155;
+const FAQ_DIRECT_ANSWER_MAX = 300;
+const FAQ_QUESTION_VARIANTS_MAX = 20;
+const FAQ_ARTICLE_TYPES = ["guide", "faq", "reference"];
+const FAQ_SEO_FIELDS = ["seoTitle", "metaDescription", "directAnswer", "questionVariants", "articleType"];
+const FAQ_SEO_PROPERTIES = {
+  seoTitle: { type: "string", description: `SEO title, up to ${FAQ_SEO_TITLE_MAX} characters. Defaults to the title when empty.` },
+  metaDescription: { type: "string", description: `Meta description, up to ${FAQ_META_DESCRIPTION_MAX} characters. Defaults to the summary when empty.` },
+  directAnswer: { type: "string", description: `One to two plain-text sentences shown at the top of the article. Up to ${FAQ_DIRECT_ANSWER_MAX} characters.` },
+  questionVariants: { type: "array", items: { type: "string" }, description: `The ways users actually ask this. Up to ${FAQ_QUESTION_VARIANTS_MAX}.` },
+  articleType: { type: "string", enum: FAQ_ARTICLE_TYPES, description: "guide (step by step, HowTo), faq (question and answer, FAQPage) or reference (TechArticle)." },
+};
+// Validates whichever of the five fields were passed. Returns {error} or
+// {fields}; an empty string / empty list is a deliberate clear (null).
+function parseFaqSeoArgs(args) {
+  const fields = {};
+  const str = (k, max) => {
+    if (args[k] == null) return null;
+    const v = String(args[k]).trim();
+    if (v.length > max) return `${k} is limited to ${max} characters; that was ${v.length}.`;
+    fields[k] = v || null;
+    return null;
+  };
+  const err = str("seoTitle", FAQ_SEO_TITLE_MAX) || str("metaDescription", FAQ_META_DESCRIPTION_MAX) || str("directAnswer", FAQ_DIRECT_ANSWER_MAX);
+  if (err) return { error: err };
+  if (args.questionVariants != null) {
+    if (!Array.isArray(args.questionVariants)) return { error: "questionVariants must be an array of strings." };
+    const q = args.questionVariants.map((x) => String(x).trim()).filter(Boolean);
+    if (q.length > FAQ_QUESTION_VARIANTS_MAX) return { error: `questionVariants is limited to ${FAQ_QUESTION_VARIANTS_MAX} entries.` };
+    fields.questionVariants = q.length ? q : null;
+  }
+  if (args.articleType != null) {
+    const t = String(args.articleType);
+    if (t !== "" && !FAQ_ARTICLE_TYPES.includes(t)) return { error: `articleType must be one of: ${FAQ_ARTICLE_TYPES.join(", ")}.` };
+    fields.articleType = t || null;
+  }
+  return { fields };
+}
+function faqMissingSeoFields(a) {
+  return FAQ_SEO_FIELDS.filter((k) => { const v = a[k]; return v == null || v === "" || (Array.isArray(v) && !v.length); });
+}
+
 // ── Skills library write limits ──────────────────────────────────────────
 // An organisation-wide, unscoped-to-any-project library of shareable
 // skills (e.g. this repo's own ph-designer skill) — see firestore.rules'
@@ -4310,6 +4356,9 @@ const TOOLS = [
         category: cat && cat.exists ? (cat.data() || {}).name : null,
         status: a.status || null, summary: a.summary || "", keywords: a.keywords || [],
         bodyMd: a.bodyMd || "",
+        seoTitle: a.seoTitle || null, metaDescription: a.metaDescription || null,
+        directAnswer: a.directAnswer || null, questionVariants: a.questionVariants || [], articleType: a.articleType || null,
+        missingSeoFields: faqMissingSeoFields(a),
         hasPendingRevision: !!a.pendingRevision,
         introducedInReleaseId: a.introducedInReleaseId || null,
         removedInReleaseId: a.removedInReleaseId || null,
@@ -4347,6 +4396,7 @@ const TOOLS = [
         bodyMd: { type: "string", description: `The article body — the same HTML shape the console's rich-text editor saves (paragraphs, headings, lists, callouts; see REQUIREMENTS.md -> "Rich formatting in article bodies"). Up to ${FAQ_BODY_MAX} characters.` },
         programId: { type: "string", description: "An existing programs doc id. Required unless projectId is given and that project itself has a programId set (used as the default) — every article needs to resolve to a program so FAQ impact review on a deploy can find it." },
         projectId: { type: "string", description: "Optional — an existing project id, from list_projects. Also supplies the default programId (see above) when programId is omitted." },
+        ...FAQ_SEO_PROPERTIES,
       },
       required: ["title", "categoryId", "bodyMd"], additionalProperties: false,
     },
@@ -4371,6 +4421,11 @@ const TOOLS = [
       }
       const docType = args.docType != null ? String(args.docType) : "faq";
       if (!FAQ_DOC_TYPES.includes(docType)) return toolError(`docType must be one of: ${FAQ_DOC_TYPES.join(", ")}.`);
+      const seo = parseFaqSeoArgs(args);
+      if (seo.error) return toolError(seo.error);
+      // A new article stores only the SEO fields that have a value.
+      const seoFields = {};
+      Object.keys(seo.fields).forEach((k) => { if (seo.fields[k] != null) seoFields[k] = seo.fields[k]; });
       let projectId = null;
       let projectData = null;
       if (args.projectId != null && String(args.projectId).trim()) {
@@ -4411,6 +4466,7 @@ const TOOLS = [
       const ref = await db().collection("faqArticles").add({
         categoryId, projectId, programId,
         title, slug, summary, bodyMd, docType, keywords,
+        ...seoFields,
         status: "draft",
         needsReview: false,
         order: maxOrder + 1,
@@ -4422,6 +4478,7 @@ const TOOLS = [
       await audit(session, "create_faq_article", { articleId: ref.id, title, slug, categoryId });
       return textResult({
         created: true, articleId: ref.id, title, slug, categoryId, docType, status: "draft",
+        missingSeoFields: faqMissingSeoFields(seoFields),
         note: "Created as a draft. Nothing is published until a person reviews and publishes it from FAQ Management.",
       });
     },
@@ -4440,6 +4497,7 @@ const TOOLS = [
         keywords: { type: "array", items: { type: "string" }, description: `Up to ${FAQ_KEYWORDS_MAX}.` },
         docType: { type: "string", enum: FAQ_DOC_TYPES },
         bodyMd: { type: "string", description: `Up to ${FAQ_BODY_MAX} characters.` },
+        ...FAQ_SEO_PROPERTIES,
       },
       required: ["articleId", "reason"], additionalProperties: false,
     },
@@ -4467,6 +4525,8 @@ const TOOLS = [
       if (Array.isArray(base.keywords)) rev.keywords = base.keywords;
       else if (Array.isArray(a.keywords)) rev.keywords = a.keywords;
       if (base.docType || a.docType) rev.docType = base.docType || a.docType;
+      // Build on an existing proposal's SEO fields too (keys it carries).
+      if (base !== a) FAQ_SEO_FIELDS.forEach((k) => { if (k in base) rev[k] = base[k]; });
 
       let changed = false;
       if (args.title != null) {
@@ -4496,7 +4556,10 @@ const TOOLS = [
         if (!FAQ_DOC_TYPES.includes(args.docType)) return toolError(`docType must be one of: ${FAQ_DOC_TYPES.join(", ")}.`);
         rev.docType = args.docType; changed = true;
       }
-      if (!changed) return toolError("Nothing to propose — pass at least one of title, summary, bodyMd, keywords, docType.");
+      const seo = parseFaqSeoArgs(args);
+      if (seo.error) return toolError(seo.error);
+      if (Object.keys(seo.fields).length) { Object.assign(rev, seo.fields); changed = true; }
+      if (!changed) return toolError("Nothing to propose — pass at least one of title, summary, bodyMd, keywords, docType, seoTitle, metaDescription, directAnswer, questionVariants, articleType.");
 
       // No sourceItemIds: no backlog ticket triggered this, unlike a Deploy-
       // flow proposal. promoteFaqRevisionIfReady (functions/index.js) treats

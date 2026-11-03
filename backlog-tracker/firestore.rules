@@ -312,6 +312,22 @@ service cloud.firestore {
         && (!("updatedByEmail" in incoming()) || incoming().updatedByEmail == null || isNonEmptyBoundedString(incoming().updatedByEmail, 200))
         && (!("madeLiveAt" in incoming()) || incoming().madeLiveAt == null || incoming().madeLiveAt is timestamp);
     }
+    // The audit of the Help Centre run when a release goes Live on AWS
+    // Marketplace (functions/index.js onReleaseMarkedLive): what was checked,
+    // what changed, who approved it and when it went live. The cloud function
+    // and the audit Routine write the record; a console member appends log
+    // lines as they approve, edit or reject (the log only ever grows by the
+    // client's arrayUnion).
+    match /releaseAudits/{releaseId} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor()
+        && incoming().size() <= 40
+        && (!("log" in incoming()) || incoming().log is list && incoming().log.size() <= 2000)
+        && (!("checked" in incoming()) || incoming().checked is list && incoming().checked.size() <= 1000)
+        && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 6000);
+      allow delete: if false;
+    }
+
     match /releases/{releaseId} {
       allow read: if isBoardReader();
       allow create: if isEditor() && isValidRelease();
@@ -749,6 +765,13 @@ service cloud.firestore {
     // The audit trail of what agents actually did. Admin-readable so a
     // person can answer "who filed this ticket and from what"; append-only
     // from the server.
+    // One document per query to the public help search (functions/help-search.js),
+    // written by the server only. Members read it: zero-result queries are the
+    // content gaps the release audit works from.
+    match /helpSearchLog/{entryId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
     match /mcpAuditLog/{entryId} {
       allow read: if isAdmin();
       allow write: if false;
@@ -802,6 +825,11 @@ service cloud.firestore {
         && (!("summary" in r) || r.summary is string && r.summary.size() <= 400)
         && (!("keywords" in r) || r.keywords is list && r.keywords.size() <= 30)
         && (!("docType" in r) || r.docType in ["faq", "how-to", "reference", "explanation"])
+        && (!("seoTitle" in r) || r.seoTitle == null || r.seoTitle is string && r.seoTitle.size() <= 60)
+        && (!("metaDescription" in r) || r.metaDescription == null || r.metaDescription is string && r.metaDescription.size() <= 155)
+        && (!("directAnswer" in r) || r.directAnswer == null || r.directAnswer is string && r.directAnswer.size() <= 300)
+        && (!("questionVariants" in r) || r.questionVariants == null || r.questionVariants is list && r.questionVariants.size() <= 20)
+        && (!("articleType" in r) || r.articleType == null || r.articleType in ["guide", "faq", "reference"])
         && (!("reason" in r) || r.reason is string && r.reason.size() <= 2000)
         // Required + non-empty for the Deploy flow's own proposals (the
         // Routine — ROUTINE_INSTRUCTIONS.md "FAQ impact review"), which keys
@@ -822,6 +850,16 @@ service cloud.firestore {
         && (!("summary" in r) || r.summary is string && r.summary.size() <= 400);
     }
 
+    // A retirement the release audit proposes for an article that no longer
+    // matches the product. Never changes the live article by itself: a person
+    // approves it in the release audit view, which unpublishes the article.
+    function isValidRetireProposal(r) {
+      return r is map
+        && r.reason is string && r.reason.size() <= 2000
+        && (!("sourceReleaseId" in r) || isNonEmptyBoundedString(r.sourceReleaseId, 100))
+        && r.reviewStatus in ["awaiting-review", "approved", "rejected"];
+    }
+
     match /faqArticles/{articleId} {
       // A draft is not public until it's published. The article page's
       // freshness check GETs one published doc anonymously; nothing public
@@ -833,6 +871,7 @@ service cloud.firestore {
         && incoming().size() <= 40
         && (!("pendingRevision" in incoming()) || incoming().pendingRevision == null || isValidPendingRevision(incoming().pendingRevision))
         && (!("previousRevision" in incoming()) || incoming().previousRevision == null || isValidPreviousRevision(incoming().previousRevision))
+        && (!("retireProposal" in incoming()) || incoming().retireProposal == null || isValidRetireProposal(incoming().retireProposal))
         && isNonEmptyBoundedString(incoming().categoryId, 100)
         && isNonEmptyBoundedString(incoming().title, 200)
         && isNonEmptyBoundedString(incoming().slug, 200)
@@ -840,6 +879,11 @@ service cloud.firestore {
         && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 400)
         && (!("keywords" in incoming()) || incoming().keywords is list && incoming().keywords.size() <= 30)
         && (!("docType" in incoming()) || incoming().docType in ["faq", "how-to", "reference", "explanation"])
+        && (!("seoTitle" in incoming()) || incoming().seoTitle == null || incoming().seoTitle is string && incoming().seoTitle.size() <= 60)
+        && (!("metaDescription" in incoming()) || incoming().metaDescription == null || incoming().metaDescription is string && incoming().metaDescription.size() <= 155)
+        && (!("directAnswer" in incoming()) || incoming().directAnswer == null || incoming().directAnswer is string && incoming().directAnswer.size() <= 300)
+        && (!("questionVariants" in incoming()) || incoming().questionVariants == null || incoming().questionVariants is list && incoming().questionVariants.size() <= 20)
+        && (!("articleType" in incoming()) || incoming().articleType == null || incoming().articleType in ["guide", "faq", "reference"])
         // Release binding (see match /releases above): optional release ids,
         // null/absent meaning open-ended on that side.
         && (!("introducedInReleaseId" in incoming()) || incoming().introducedInReleaseId == null || isNonEmptyBoundedString(incoming().introducedInReleaseId, 100))

@@ -1393,6 +1393,12 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .faq-article-row-meta { margin: 0; font-size: 11.5px; color: var(--text-muted); }
 .badge-status-draft { background: var(--surface-2); color: var(--text-muted); }
 .badge-status-published { background: rgba(82, 196, 26, .12); color: var(--success); }
+.badge-wp { margin-left: 6px; }
+.badge-wp-live { background: rgba(82, 196, 26, .12); color: var(--success); }
+.badge-wp-waiting { background: rgba(201, 138, 10, .12); color: var(--warning); }
+.badge-wp-failed { background: var(--danger-tint); color: var(--danger); }
+.badge-wp-not-published, .badge-wp-unavailable { background: rgba(0, 0, 0, .06); color: var(--text-muted); }
+.faq-wp-sync { margin-left: 12px; }
 .badge-needs-review { background: rgba(201, 138, 10, .12); color: var(--warning); margin-left: 6px; }
 .faq-article-row-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .faq-article-options { position: relative; }
@@ -1965,10 +1971,10 @@ body { overflow-x: clip; }
 .critique-verdict.will-work { background: #e3f4e6; color: #1b5e20; }
 .critique-verdict.wont-work { background: #fde7e7; color: #b71c1c; }
 .critique-verdict.conditional { background: #fff3d6; color: #8a5a00; }
-.critique-meta { color: var(--text-muted, #666); font-size: 12px; }
+.critique-meta { color: var(--text-muted); font-size: 12px; }
 .critique-rec { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
 .critique-rec-text { flex: 1 1 240px; }
-.critique-rec-state { font-size: 12px; color: var(--text-muted, #666); }
+.critique-rec-state { font-size: 12px; color: var(--text-muted); }
 .critique-synthesis { margin: 10px 0; }
 .critique-synthesis:empty { display: none; }
 .critique-synthesis > div { border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 10px 12px; }
@@ -2232,3 +2238,10 @@ body { overflow-x: clip; }
 /* Archive / Archived projects / Releases pages: AG Grid lists (docs-grid.js) with an optional filter bar. */
 .archive-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
 .archive-filters select { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }
+
+/* Release audit view (#releases/<id>/audit) */
+.ra-row { border: 1px solid var(--border, #e0e0e0); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; }
+.ra-row .badge { margin-left: 8px; }
+.ra-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ra-log-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ra-log-table th, .ra-log-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border, #e0e0e0); }

@@ -109,6 +109,12 @@ export async function startHarness() {
       const fontsDir = process.env.HARNESS_FONTS_DIR;
       if (url.hostname === "fonts.googleapis.com") return fontsDir ? route.fulfill({ status: 200, contentType: "text/css", path: path.join(fontsDir, "ms.css") }) : route.fulfill({ status: 200, contentType: "text/css", body: "" });
       if (fontsDir && url.hostname === "fonts.gstatic.com") return route.fulfill({ status: 200, contentType: "font/woff2", path: path.join(fontsDir, "ms.woff2") });
+      // WordPress publish-status endpoint (read-only, FAQ Management). seed.wpPublished is its JSON;
+      // seed.wpPublishedDown makes it unreachable, which the page must survive.
+      if (url.hostname === "personalisationhub.com" && url.pathname === "/wp-json/ph-help/v1/published") {
+        if (seed.wpPublishedDown) return route.fulfill({ status: 503, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "{}" });
+        return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(seed.wpPublished || { lastSync: new Date().toISOString(), pending: 0, failed: [], articles: [] }) });
+      }
       if (url.hostname === "firestore.googleapis.com") { refused.push(url.href); return route.abort("failed"); }
       // Storage downloads (the stub's upload URLs): a 1x1 PNG stands in.
       if (url.hostname === "firebasestorage.googleapis.com") return route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64") });
@@ -121,6 +127,7 @@ export async function startHarness() {
       if (msg.type() !== "error") return;
       const where = (msg.location() && msg.location().url) || "";
       if (where.includes("firestore.googleapis.com")) return; // the refused REST prime
+      if (where.includes("/wp-json/ph-help/v1/published")) return; // the WordPress status endpoint, seeded as down
       addProblem(`console error: ${msg.text()}${where ? ` (${where})` : ""}`);
     });
     page.on("dialog", (d) => { addProblem(`native ${d.type()} dialog: ${d.message()}`); d.dismiss().catch(() => {}); });

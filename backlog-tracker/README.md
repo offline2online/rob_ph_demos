@@ -653,8 +653,7 @@ stranded the Backlog Tracker & FAQs train on 28 Sep 2026). `processDeployTrain` 
 consumes a click (so an old click can never re-arm a train) and now
 re-checks the Routine's step 1 itself — every ticket's `deployCommit` must
 be an ancestor of the branch — on top of its existing nothing-in-testing,
-merge and CI guards. The FAQ impact review still runs first, on the intact
-branch, and never gated the merge. `test/train-lock.test.js` and
+merge and CI guards. `test/train-lock.test.js` and
 `test/train-lock-trigger.test.js` cover the predicate and the trigger.
 
 **A merge here must explicitly re-trigger the deploy — it doesn't happen
@@ -2103,65 +2102,35 @@ default.
   seeded articles are all genuinely Personalisation Hub content, so this
   is what gets them all correctly categorized without a one-off manual
   pass through FAQ Management.
-- **Auto-flagging FAQs for review on merge to main** — opt-in per project,
-  toggled from that project's Docs page (**⋮ → Requirements (MD file)**
-  opens the Docs page; "FAQ review automation" is the block below
-  Requirements) as `projects/{id}.faqAutoFlagOnLive`. When on, the Cloud
-  Function `onBacklogItemPublishedLive` (an `onDocumentUpdated` trigger on
-  `backlogItems`) fires the moment one of that project's items transitions
-  to `status: "published-live"` — merge-to-main specifically, since that's
-  the one irreversible transition of the three (ready-for-testing and
-  ready-to-publish can still be reverted) — and sets `needsReview: true` on
-  every `faqArticles` doc sharing that item's `projectId`, the same flag
-  FAQ Center's own manual toggle sets — but only on articles that don't
-  already carry a specific proposal from the mechanism below.
-  `needsReview` otherwise stays a manual toggle for projects that leave
-  this off.
-- **A PR merged by a person is recorded automatically.** Workflow-file PRs
-  (anything under `.github/workflows/`) are never merged by the pipeline —
-  a human merges them on GitHub. `run-backlog-automation.js` →
-  `reconcileHumanMergedPrs()` runs every pass and, for any Approved for
-  Deployment card whose PR GitHub reports as MERGED, sets `mergeReady` so
-  the normal already-merged success path flips it to Deployed in the same
-  run. No second "Deploy to Main" click is needed (it used to be).
-- **Proposed FAQ revisions from a Deploy (`pendingRevision`)** — the
-  precise version of the above, always on. When "Notify Claude — Deploy"
-  fires, the Routine's Deploy flow (`ROUTINE_INSTRUCTIONS.md` step 3b,
-  "FAQ impact review") reads each merging PR's actual diff and, for every
-  article of that project's **product/program** (`programId`, plus
-  `projectId`-linked articles) the change makes wrong or incomplete,
-  writes the corrected article as `faqArticles/{id}.pendingRevision`
-  (full proposed title/summary/body, a `reason`, the `sourceItemIds`) and
-  flags it. The live text is untouched. FAQ Management shows a **Proposed
-  update** badge and a **Review proposed update** action: reason, source
-  tickets with their pipeline status, a *Changes* diff (paragraph + word
-  level) and a *Before / After* rendering, with **Approve** / **Reject** /
-  **Edit proposal**. It goes live only once approved AND every source
-  ticket is `published-live` — `promoteFaqRevisionIfReady` in
-  `functions/index.js`, called from both `onBacklogItemPublishedLive` and
-  `onFaqArticleRevisionApproved`, whichever fires last — keeping the
-  replaced text as `previousRevision` for a **Revert last auto-update**
-  row action. Full spec: `REQUIREMENTS.md` → "FAQ revision review".
-  The function deploys with the console on merge
-  (`deploy-backlog-tracker.yml`), so the promotion works once the train
-  that carries it has merged and that run has succeeded.
-- **Releases — bundling FAQ updates with a product release.** The menu's
-  **Releases** page lists every `releases` doc (newest first) with
-  **+ New release** (name, optional version) and a one-way **Mark live**
-  per draft. A project is assigned to a release from its Docs page →
-  **Release** (`projects/{id}.releaseId`); while that release is a draft,
-  its approved proposals (`pendingRevision.sourceProjectId`) wait, and
-  marking it live promotes them all at once (`onReleaseMarkedLive` in
-  `functions/index.js`). Unassigned projects — including Backlog Tracker &
-  FAQs itself — promote exactly as before. Articles can also be bound to a
+- **Help Centre updates are per release, not per ticket (2 Nov 2026).**
+  Nothing in the ticket pipeline (Backlog → Ready for Testing → Approved →
+  Deployed) touches the Help Centre any more: the Deploy flow's FAQ impact
+  review, `onBacklogItemPublishedLive` and `faqAutoFlagOnLive` are gone.
+  Instead, marking a release **Live on AWS Marketplace** (Releases page)
+  starts a Help Centre audit: the Routine reviews every article against what
+  shipped and leaves proposed updates, new-article drafts and retire flags
+  (`faqArticles.pendingRevision` / `retireProposal`, `sourceReleaseId`). They
+  are reviewed as one batch at **Releases → Help Centre audit**
+  (`#releases/<id>/audit`): side-by-side diff, approve / edit / reject per
+  article or in bulk, and an audit log (`releaseAudits/{id}`) of what was
+  checked, what changed, who approved and when it went live. Approval
+  publishes straight away (`promoteFaqRevisionIfReady`, previous text kept
+  for **Revert last auto-update**). Full spec: `REQUIREMENTS.md` → "Release
+  audit". Publishing to WordPress is done by the
+  "PH Support Centre" snippet on personalisationhub.com (hourly pull of
+  `faq/data`); FAQ Management only reads its public status endpoint and shows
+  a Live / Waiting / Failed / Not published badge per article plus the live
+  link and "Last WordPress sync" (`public/js/wp-publish-status.js`; see
+  `REQUIREMENTS.md` → "WordPress publish status in FAQ Management").
+- **Releases.** The menu's **Releases** page lists every `releases` doc
+  (newest first) with **+ New release** (name, optional version) and a
+  one-way **Mark live on AWS Marketplace** per draft, which starts the audit
+  above. A project is assigned to a release from its Docs page →
+  **Release** (`projects/{id}.releaseId`); that scopes the audit. Articles can also be bound to a
   release range (editor → "Introduced in release" / "Removed in release");
   `scripts/faq-export.js` exports `faq/data/releases.json`, and the public
   site plus the MCP `search_faq`/`get_faq_article` tools show only the
-  articles that apply to the requested release (`?release=` / `release`),
-  by default the current live one — with no releases at all nothing is
-  filtered. `scripts/backfill-release-binding.js` (`--report-only` first;
-  idempotent, never overwrites) binds every unbound article to the current
-  live release. Full spec: `REQUIREMENTS.md` → "`releases/{releaseId}`".
+  articles that apply to the requested release (`?release=` / `release`).
 - **Seeding**: `scripts/seed-faq-data.js` (same insert-only `create()`
   pattern as `migrate-artifact-data.js`) seeds the **real** Help Center
   content — 9 categories and 108 articles. **No longer run automatically on
@@ -2719,3 +2688,6 @@ is refused with "Role in use" while any user has the role assigned (a page
 check; rules cannot count users). The five defaults (Admin, Product, Designer,
 Engineer, Security) are seeded on the first admin visit. Tests: the "user
 management" scenario in `test/ui/console-click.test.mjs`.
+
+- `functions/elementor-deploy.js` — pure logic for non-GitHub (`deployTarget: "elementor"`) projects: publish/dry-run, rollback, pre-publish checks, recurring-job scheduling. See REQUIREMENTS.md → "Non-GitHub deployment targets".
+- `functions/help-search.js` — the public, read-only help search for AI agents (`helpSearch` function, `/help-api/**`: search, article, a stateless public MCP endpoint). Published and in-range only, never drafts or `pendingRevision`; rate limited, cached, logs queries to `helpSearchLog`. See REQUIREMENTS.md → "Public help search for AI agents".

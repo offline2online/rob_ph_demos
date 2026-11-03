@@ -108,7 +108,14 @@ async function main() {
     if (!fs.existsSync(file)) { console.warn(`missing body file for ${meta.id}`); continue; }
     const a = JSON.parse(fs.readFileSync(file, "utf8"));
     const body = a.bodyMd || "";
-    const h = hash(body + "|" + JSON.stringify([a.categoryId, a.order, a.title, a.slug, a.summary, a.keywords, a.docType, a.status]));
+    // SEO & agent fields: only present on the file when set, and only
+    // hashed then, so articles without them keep their existing hash.
+    const seo = {};
+    for (const k of ["seoTitle", "metaDescription", "directAnswer", "questionVariants", "articleType"]) {
+      const v = a[k];
+      if (v && !(Array.isArray(v) && !v.length)) seo[k] = v;
+    }
+    const h = hash(body + "|" + JSON.stringify([a.categoryId, a.order, a.title, a.slug, a.summary, a.keywords, a.docType, a.status]) + (Object.keys(seo).length ? "|" + JSON.stringify(seo) : ""));
     const ref = db.collection("faqArticles").doc(a.id);
     const snap = await ref.get();
     if (!snap.exists && deletedArticles.has(a.id)) {
@@ -118,6 +125,7 @@ async function main() {
     const fields = {
       categoryId: a.categoryId, order: a.order, title: a.title, slug: a.slug, summary: a.summary || "",
       keywords: a.keywords || [], docType: a.docType || "faq", status: a.status || "draft", bodyMd: body,
+      ...seo,
     };
     if (snap.exists) {
       const d = snap.data();

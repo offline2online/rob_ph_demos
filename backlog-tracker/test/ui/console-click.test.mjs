@@ -987,6 +987,78 @@ const scenarios = [
     },
   },
   {
+    name: "FAQ article editor: SEO & agents group counts, limits and completeness",
+    seed: () => seed({ faqCategories: { fc1: { name: "Getting started", order: 0, createdAt: t(T0), updatedAt: t(T0) } } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "publish", "faq-articles-btn", "faq-articles-page");
+      await c.click("#fa-new-article-btn", "new article");
+      await c.visible("#faq-article-editor-page", "editor opens");
+      await c.click("#fa-group-seo-toggle", "open the SEO & agents group");
+      await c.visible("#fa-seo-title-input", "SEO fields show");
+      assert.strictEqual(await c.text("#fa-seo-completeness"), "SEO fields: 0 of 5 complete");
+      c.at("limits");
+      await c.page.fill("#fa-seo-title-input", "x".repeat(70));
+      assert.strictEqual((await c.page.inputValue("#fa-seo-title-input")).length, 60, "SEO title stops at 60");
+      await c.waitText("#fa-seo-title-count", "60 / 60", "the count shows the limit");
+      await c.page.fill("#fa-meta-description-input", "y".repeat(200));
+      assert.strictEqual((await c.page.inputValue("#fa-meta-description-input")).length, 155, "meta description stops at 155");
+      await c.page.fill("#fa-direct-answer-input", "Open Pricing and add a local offer.");
+      await c.page.fill("#fa-question-variants-input", "How do I set a price?\nCan a store change the RRP?");
+      await c.waitText("#fa-question-variants-count", "2 / 20", "one variant per line");
+      await c.page.selectOption("#fa-article-type-select", "guide");
+      await c.waitText("#fa-seo-completeness", "5 of 5", "all five complete");
+    },
+  },
+  {
+    name: "FAQ Management: WordPress publish status badges, Live-at link and last sync",
+    seed: () => ({ ...seed({
+      faqCategories: { fc1: { name: "Getting started", order: 0, createdAt: t(T0), updatedAt: t(T0) } },
+      faqArticles: {
+        w1: { title: "Live one", categoryId: "fc1", order: 0, status: "published", bodyMd: "body one", createdAt: t(T0), updatedAt: t(T0) },
+        w2: { title: "Waiting one", categoryId: "fc1", order: 1, status: "published", bodyMd: "body two", createdAt: t(T0), updatedAt: t(T0) },
+        w3: { title: "Failed one", categoryId: "fc1", order: 2, status: "published", bodyMd: "body three", createdAt: t(T0), updatedAt: t(T0) },
+        w4: { title: "Draft one", categoryId: "fc1", order: 3, status: "draft", bodyMd: "body four", createdAt: t(T0), updatedAt: t(T0) },
+      },
+    }),
+      // sha256("body one").slice(0,16)
+      wpPublished: { lastSync: new Date(Date.now() - 10 * 60000).toISOString(), pending: 0, failed: ["w3"], articles: [
+        { id: "w1", url: "https://personalisationhub.com/support-centre/getting-started/live-one/", wpId: 1, hash: "0e260cb8cd2cc339", updatedAt: "x" },
+        { id: "w2", url: "https://personalisationhub.com/support-centre/getting-started/waiting-one/", wpId: 2, hash: "stale", updatedAt: "x" },
+      ] },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "publish", "faq-articles-btn", "faq-articles-page");
+      const badge = (id) => c.page.locator(`.faq-article-row[data-id="${id}"] .badge-wp`);
+      await c.waitText("#faq-wp-sync", "min ago", "last sync shows a time");
+      await c.page.locator(".faq-article-row .badge-wp").first().waitFor();
+      assert.strictEqual((await badge("w2").textContent()).trim(), "Waiting", "older hash is Waiting");
+      assert.strictEqual((await badge("w3").textContent()).trim(), "Failed", "id in failed");
+      assert.strictEqual((await badge("w4").textContent()).trim(), "Not published", "draft");
+      assert.strictEqual((await badge("w1").textContent()).trim(), "Live", "matching hash is Live");
+      await c.click('.faq-article-row[data-id="w1"] .faq-article-title', "open the live article");
+      await c.click("#fa-group-status-toggle", "open Status & publishing");
+      await c.visible("#fa-live-link-hint a", "live link shows");
+      assert.strictEqual(await c.page.getAttribute("#fa-live-link-hint a", "href"), "https://personalisationhub.com/support-centre/getting-started/live-one/", "uses the endpoint url");
+      assert.match(await c.text("#fa-live-link-hint"), /Live/);
+    },
+  },
+  {
+    name: "FAQ Management: endpoint unreachable still loads, badges say Status unavailable",
+    seed: () => ({ ...seed({
+      faqCategories: { fc1: { name: "Getting started", order: 0, createdAt: t(T0), updatedAt: t(T0) } },
+      faqArticles: { w1: { title: "Live one", categoryId: "fc1", order: 0, status: "published", bodyMd: "body one", createdAt: t(T0), updatedAt: t(T0) } },
+    }), wpPublishedDown: true }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "publish", "faq-articles-btn", "faq-articles-page");
+      await c.page.waitForFunction(() => /Status unavailable/.test((document.querySelector('.faq-article-row[data-id="w1"] .badge-wp') || {}).textContent || ""), null, { timeout: 8000 });
+      await c.page.waitForFunction(() => /unavailable/.test((document.getElementById("faq-wp-sync") || {}).textContent || ""), null, { timeout: 8000 });
+      await c.visible('.faq-article-row[data-id="w1"] .faq-article-title', "the list still renders");
+    },
+  },
+  {
     name: "concepts: the short description shows on the tile and on the concept page",
     seed: () => relSeed(),
     async run(c) {
@@ -1113,6 +1185,7 @@ async function main() {
     fs.mkdirSync(outDir, { recursive: true });
     for (const width of WIDTHS) {
       for (const s of scenarios) {
+        if (process.env.SCENARIO && !s.name.includes(process.env.SCENARIO)) continue; // SCENARIO=<part of a name> runs just those
         const label = `${s.name} @${width}px`;
         const o = await harness.open({ seed: s.seed(), width, height: width < 640 ? 800 : 900 });
         const ctx = makeCtx(o, width);

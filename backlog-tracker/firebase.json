@@ -26,6 +26,13 @@
       ],
       "rewrites": [
         {
+          "source": "/help-api/**",
+          "function": {
+            "functionId": "helpSearch",
+            "region": "us-central1"
+          }
+        },
+        {
           "source": "/boardApi/**",
           "function": {
             "functionId": "boardApi",
@@ -102,6 +109,15 @@
           ]
         },
         {
+          "source": "/help-api/**",
+          "headers": [
+            {
+              "key": "Content-Security-Policy",
+              "value": "default-src 'none'"
+            }
+          ]
+        },
+        {
           "source": "**/*.@(html|js|css)",
           "headers": [
             {
@@ -145,22 +161,37 @@
         },
         {
           "regex": "^/support/solutions/articles/(?P<id>[0-9]+).*$",
-          "destination": "/article.html?id=faq-art-:id",
+          "destination": "https://personalisationhub.com/support-centre/support/solutions/articles/:id",
           "type": 301
         },
         {
-          "source": "/support/home",
-          "destination": "/",
+          "source": "/article.html",
+          "destination": "https://personalisationhub.com/support-centre/article.html",
           "type": 301
         },
         {
-          "source": "/support/solutions",
-          "destination": "/",
+          "source": "/category.html",
+          "destination": "https://personalisationhub.com/support-centre/category.html",
           "type": 301
         },
         {
-          "source": "/support/solutions/**",
-          "destination": "/",
+          "source": "/search.html",
+          "destination": "https://personalisationhub.com/support-centre/search.html",
+          "type": 301
+        },
+        {
+          "source": "/index.html",
+          "destination": "https://personalisationhub.com/support-centre/",
+          "type": 301
+        },
+        {
+          "source": "/",
+          "destination": "https://personalisationhub.com/support-centre/",
+          "type": 301
+        },
+        {
+          "source": "**",
+          "destination": "https://personalisationhub.com/support-centre/",
           "type": 301
         }
       ],
@@ -168,10 +199,6 @@
         {
           "source": "**",
           "headers": [
-            {
-              "key": "Content-Security-Policy",
-              "value": "frame-ancestors 'self' https://personalisationhub.com https://www.personalisationhub.com"
-            },
             {
               "key": "Referrer-Policy",
               "value": "strict-origin-when-cross-origin"
