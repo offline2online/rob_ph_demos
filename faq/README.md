@@ -10,8 +10,14 @@ kept), Freshdesk `/support/solutions/articles/<id>…` goes to WordPress's
 `faq-art-<id>` handler, and anything else goes to `/support-centre/`.
 `/console` still 302s to the admin console. The iframe embed mode, the
 height/scroll postMessage and the frame-ancestors CSP are gone. The pages in
-this folder remain only as the GitHub Pages preview and the source of
-`data/`, which WordPress reads from the repo. Articles are still edited in
+this folder no longer render: each `faq/*.html` is `noindex`, has a canonical
+link to the Support Centre, loads `js/redirect.js` first (an external script,
+as the CSP is `script-src 'self'`) which `location.replace`s to
+`https://personalisationhub.com/support-centre/` (+ `article.html`,
+`category.html` or `search.html`, query string kept), and shows a plain link
+for readers without JavaScript (GitHub Pages cannot send a 301). `data/`
+stays exactly as is: WordPress reads it from the repo and faq-export keeps
+writing it. Articles are still edited in
 the console's FAQ Management; its "Live at" links open the WordPress page.
 **Rollback:** redeploy the previous `firebase.json` help block (git revert of
 this change) and re-add the CSP header.
