@@ -2682,4 +2682,3 @@ Engineer, Security) are seeded on the first admin visit. Tests: the "user
 management" scenario in `test/ui/console-click.test.mjs`.
 
 - `functions/elementor-deploy.js` — pure logic for non-GitHub (`deployTarget: "elementor"`) projects: publish/dry-run, rollback, pre-publish checks, recurring-job scheduling. See REQUIREMENTS.md → "Non-GitHub deployment targets".
-- `functions/help-publisher.js` + `scripts/faq-wp-publish.js` — pushes approved help articles to the Support Centre on personalisationhub.com (WordPress REST: `ph_help_article` / `ph_help_category`). Dry run by default; `--apply`, `--only id,id`, `--rollback id`, `--record`. Needs `WP_AUTH` (base64 `user:application-password`, the same value as `ELEMENTOR_MCP_AUTH`). Writes `faq-wp-report.json` (counts per category vs the console) and `faq-wp-url-map.json` (help.personalisationhub.com and Freshdesk URLs → new URLs). See REQUIREMENTS.md → "Publishing help articles to WordPress".
