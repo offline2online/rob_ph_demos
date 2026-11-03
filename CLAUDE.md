@@ -709,6 +709,32 @@ the menu — click it to create one, same flow as the Docs page's own
 Verify this kind of change with `cd backlog-tracker/test && npm run test:ui`: it loads the real, unchanged `backlog-tracker/public/` files in Chromium with the Firebase SDK stubbed (this sandbox's egress blocks `gstatic.com`), at 1280 px and 390 px.
 The harness and how to add a scenario are in `backlog-tracker/test/ui/` and `backlog-tracker/test/README.md`; never point it at the real `backlog-tracker-e4ed2` project.
 
+### iPad: sidebar taps (Staff Kanban, Concepts) — recurring, read before touching nav or touch code
+
+Rob has reported the console's left-hand menu items (Staff Kanban, Concepts)
+dead on the iPad **three times** (20 Oct, 21 Oct, 3 Nov 2026). Twice the
+ticket closed as "could not reproduce in Chromium" — **Chromium with touch
+emulation never reproduces it; that is not evidence it works.** The cause is
+iPad WebKit's tap handling: it drops some taps' clicks, sends
+`pointercancel` instead of `pointerup` on a slight finger roll inside the
+scrollable sidebar, and delivers a late click re-aimed at whatever is under
+the finger once the slide-over has closed.
+
+- The fix lives in `backlog-tracker/public/js/touch-click.js`
+  (`clickOnTouchTap`, wired on `.nav-drawer-item` in `nav-shell.js` and on
+  the whiteboard's buttons): click on finger-lift, tracking **both** Pointer
+  and Touch Events, timed with `performance.now()`, `touchend` default
+  prevented, late native click swallowed wherever it lands. Don't simplify it
+  back to a single pointerdown/pointerup pair.
+- `backlog-tracker/test/ui/nav-touch.test.mjs` simulates each WebKit failure
+  mode; run it (`npm run test:ui` includes it) for any change to the sidebar,
+  `nav-shell.js`, `touch-click.js`, fixed/overlay layers near the sidebar, or
+  global `click`/`pointer*`/`touch*` listeners. Rules are in
+  `backlog-tracker/REQUIREMENTS.md` → "iPad taps".
+- If it is reported again: ask which orientation, which page they were on,
+  and whether the tap did nothing or opened something else — and look for a
+  new global listener or overlay first.
+
 ### Docs page: per-project requirements + interfaces between projects
 
 Reached via a project's **⋮** menu (or directly, for a specific interface —

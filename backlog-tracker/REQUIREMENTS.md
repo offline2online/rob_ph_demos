@@ -3768,3 +3768,33 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
 - Reloading `#settings/<page>` or `#user-management` reopens the same page.
 - Out of scope: redesigning the Agent Board, Staff Kanban, Concepts or Help
   Centre pages.
+
+### iPad taps: the sidebar must open on every tap (3 Nov 2026)
+
+Staff Kanban and Concepts went dead in the sidebar on the iPad three times
+(20 Oct, 21 Oct, 3 Nov 2026). Chromium with touch emulation never reproduced
+it, so each fix was "could not reproduce". The cause is iPad WebKit, not the
+layout: it drops some taps' clicks, sends `pointercancel` instead of
+`pointerup` when a finger rolls slightly inside the scrollable sidebar, and
+delivers a late click re-aimed at whatever is now under the finger (the
+slide-over has already closed). Rules:
+
+- Every sidebar item (`.nav-drawer-item`) and every whiteboard button is
+  driven by `public/js/touch-click.js` (`clickOnTouchTap`): a touch or pen tap
+  that lifts within 10 px and 800 ms on the item it started on clicks it
+  there and then. It tracks **both** Pointer Events and Touch Events, so a
+  `pointercancel` or missing pointer events cannot lose the tap; it times taps
+  with `performance.now()`, never `Event.timeStamp`; it prevents `touchend`'s
+  default once it has acted; and it swallows the late native click
+  **wherever it lands** within 40 px and 1 s of the tap (a keyboard click,
+  with no coordinates, is never swallowed).
+- A new sidebar item needs only the `nav-drawer-item` class to be covered. Do
+  not bind a sidebar destination to `touchstart`/`pointerdown` itself, and do
+  not put a `click` listener on `window` in the capture phase that stops
+  propagation for nav items.
+- `test/ui/nav-touch.test.mjs` (part of `npm run test:ui`) simulates each
+  WebKit failure (dropped click, `pointercancel`, Touch Events only, late
+  re-targeted click) at 1180×820, 1024×768 and 820×1180 from the board, Staff
+  Kanban and Concepts, and requires every destination to open exactly once.
+  A sidebar or touch-handling change is not done until it passes. Chromium
+  passing a plain tap proves nothing about the iPad.
