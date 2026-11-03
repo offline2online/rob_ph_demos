@@ -710,6 +710,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Staff pronunciations (functions/kanban.js) ─────────────────────────
+    // staffPronunciations/{email} = { pronunciation, updatedBy, updatedAt }:
+    // how a member's name is said, for agents only (kanban_get_staff_names).
+    // Server-only in both directions so the board can never show it, not
+    // even to the member it is about.
+    match /staffPronunciations/{email} {
+      allow read, write: if false;
+    }
+
     // ── Documentation revision history (functions/mcp-server.js) ──────────
     // Every documentation write through MCP records what it replaced here
     // BEFORE overwriting it, and a delete records the whole document. That

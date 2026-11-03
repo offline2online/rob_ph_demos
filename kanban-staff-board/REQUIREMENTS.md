@@ -339,6 +339,17 @@ unknown one is refused with every other validation error, and `""` clears it;
 `kanban_list_tasks` filters on it (pushed into the query), `kanban_get_task`
 returns it with `projectName`, and `kanban_list_people` lists the projects.
 
+**KB-NAME-1 Staff names and pronunciation (agents only).** Every member has the board's
+spelling, a full name and a pronunciation hint (a plain-English sound-alike). The pronunciation is
+stored only in the server-only `staffPronunciations/{email}` collection and is **never shown in the
+UI**: not on the board, a profile (the member's own included) or settings, and it is not on
+`memberDirectory`. Agents read it over MCP (`kanban_list_people`, `kanban_get_staff_names`) and an
+admin sets it with `kanban_set_staff_pronunciation`; anyone else is refused. Current members are
+seeded by first name: Duong "Zuong" (northern Vietnamese), Duy "Zui", Thuc close to "Took" (the
+tech lead), Hong "Hong", Rob. A member with none is listed as `pronunciationNeeded` with a prompt to
+ask the admin. The tool descriptions tell agents to use these spellings and pronunciations whenever
+they refer to staff.
+
 **KB-MCP-1** Every field is readable and writable over the console's MCP
 server, attributed to the calling member: `kanban_list_tasks` (filters as on
 the board), `kanban_get_task`, `kanban_create_task`, `kanban_update_task`,

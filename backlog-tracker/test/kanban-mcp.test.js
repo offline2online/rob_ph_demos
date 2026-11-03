@@ -103,7 +103,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
 
   await test("the twenty kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_attach_uploaded", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_create_upload_url", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_remove_attachment", "kanban_search_tickets", "kanban_update_task"]);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_attach_uploaded", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_create_upload_url", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_staff_names", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_remove_attachment", "kanban_search_tickets", "kanban_set_staff_pronunciation", "kanban_update_task"]);
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list_(?!notif)|list_notifications|get|search|release|my_work)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
@@ -157,6 +157,41 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.match(back.json.note, /returned to Huy/);
     assert.strictEqual(task("PH-1").assignee, HUY);
     assert.ok(activity("PH-1").includes("In Progress → Ready for Testing · reassigned to Rob for testing"));
+  });
+
+  await test("Staff names: seeded pronunciations, admin-only setting, new members prompted, nothing leaks to the board", async () => {
+    const NEWB = "newbie@personalisationhub.com";
+    member("duong@personalisationhub.com", "editor", "Dương Nguyễn");
+    member("duy@personalisationhub.com", "editor", "Duy Tran");
+    member("thuc@personalisationhub.com", "editor", "Thuc Le");
+    member("hong@personalisationhub.com", "editor", "Hong Pham");
+    try {
+      const names = await tool(kit, "kanban_get_staff_names", {});
+      const by = (n) => names.json.staff.find((x) => x.name === n);
+      assert.match(by("Dương").pronunciation, /Zuong/); assert.match(by("Duy").pronunciation, /Zui/);
+      assert.match(by("Thuc").pronunciation, /Took/); assert.match(by("Hong").pronunciation, /Hong/);
+      assert.ok(by("Dương").fullName && by("Rob").pronunciation);
+      const ppl = await tool(kit, "kanban_list_people", {});
+      assert.match(ppl.json.people.find((x) => x.email === "duy@personalisationhub.com").pronunciation, /Zui/);
+      member(NEWB, "editor", "Newbie Person");
+      const again = await tool(kit, "kanban_get_staff_names", {});
+      assert.ok(again.json.pronunciationNeeded.some((x) => x.email === NEWB)); assert.match(again.json.prompt, /ask the admin/i);
+      assert.ok((await tool(kit, "kanban_list_people", {})).json.pronunciationNeeded.some((x) => x.email === NEWB));
+      const denied = await tool(sam, "kanban_set_staff_pronunciation", { person: NEWB, pronunciation: "Said \"New-bee\"" });
+      assert.ok(denied.isError);
+      const rob = await connect(ROB);
+      assert.ok((await tool(rob, "kanban_set_staff_pronunciation", { person: "nobody@example.com", pronunciation: "x" })).isError);
+      assert.ok(!(await tool(rob, "kanban_set_staff_pronunciation", { person: NEWB, pronunciation: "Said \"New-bee\"" })).isError);
+      const after = await tool(kit, "kanban_get_staff_names", {});
+      assert.match(after.json.staff.find((x) => x.email === NEWB).pronunciation, /New-bee/);
+      assert.ok(!(after.json.pronunciationNeeded || []).some((x) => x.email === NEWB));
+      // Server-only: it is never copied onto the member directory the board reads.
+      for (const d of env.store.col("memberDirectory").values()) assert.ok(!("pronunciation" in d));
+      assert.match(env.store.col("staffPronunciations").get(NEWB).pronunciation, /New-bee/);
+    } finally {
+      for (const e of ["duong", "duy", "thuc", "hong"]) { env.store.col("consoleUsers").delete(`${e}@personalisationhub.com`); env.store.col("memberDirectory").delete(`${e}@personalisationhub.com`); }
+      env.store.col("consoleUsers").delete(NEWB); env.store.col("memberDirectory").delete(NEWB); env.store.col("staffPronunciations").delete(NEWB);
+    }
   });
 
   await test("TC-47: with no tester or current release stored, the defaults apply", async () => {
@@ -325,7 +360,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(tools.length >= 8);
     const writes = tools.filter((a) => /^kanban_(create|move|update|assign|flag|comment)/.test(a.tool));
     assert.ok(writes.length >= 8 && writes.every((a) => a.email === SAM));
-    assert.ok(tools.every((a) => [SAM, KIT].includes(a.email)));
+    assert.ok(tools.every((a) => [SAM, KIT, ROB].includes(a.email)));
   });
   await test("every kanban_* call is in the audit log with the milliseconds it took", async () => {
     const rows = [...env.store.col("mcpAuditLog").values()].filter((a) => String(a.tool).startsWith("kanban_"));
