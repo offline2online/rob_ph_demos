@@ -28,8 +28,12 @@
 // term (longer than 1 character) must match; per term title +12 if it starts
 // with the term, else +8 if it contains it; keyword +5; question variant +4;
 // summary +2; sorted by score desc, then article order asc. No body or
-// direct-answer scoring, no any-term matching.
+// direct-answer scoring, no any-term matching. Filler words (STOP_WORDS, the
+// same list the WordPress Support Centre search uses) are dropped before the
+// all-terms rule; a query made only of them keeps its original terms.
 "use strict";
+
+const { htmlToMarkdown } = require("./html-to-md");
 
 const SEARCH_LIMIT_DEFAULT = 8;
 const SEARCH_LIMIT_MAX = 20;
@@ -42,6 +46,11 @@ const RESULT_CACHE_MAX = 500;
 const SUPPORT_HOST = "personalisationhub.com";
 const PUBLISHED_MAP_URL = `https://${SUPPORT_HOST}/wp-json/ph-help/v1/published`;
 const FALLBACK_URL = (id) => `https://${SUPPORT_HOST}/support-centre/article.html?id=${encodeURIComponent(id)}`;
+const MD_TTL_MS = 5 * 60 * 1000;
+const MD_CACHE_MAX = 300;
+const MD_MAX_CHARS = 400000;
+// Keep identical to the WordPress Support Centre search's list.
+const STOP_WORDS = new Set(("a an the and or of to in on for with at by from about into is are am be do does did can could should would will how what when where which who why i my me we our us you your it its this that these those there please").split(" "));
 const URL_MAP_TTL_MS = 5 * 60 * 1000;
 const URL_FETCH_TIMEOUT_MS = 4000;
 const SERVER_INFO = { name: "personalisation-hub-help", version: "1.0.0" };
@@ -82,8 +91,13 @@ function safeSupportUrl(u) {
 function normaliseQuery(q) {
   return String(q == null ? "" : q).toLowerCase().replace(/\s+/g, " ").trim().slice(0, QUERY_MAX);
 }
-function termsOf(q) {
+function rawTermsOf(q) {
   return normaliseQuery(q).split(/[^a-z0-9£$€%+#.'-]+/i).map((t) => t.replace(/^[.'-]+|[.'-]+$/g, "")).filter((t) => t.length > 1);
+}
+function termsOf(q) {
+  const all = rawTermsOf(q);
+  const kept = all.filter((t) => !STOP_WORDS.has(t));
+  return kept.length ? kept : all;
 }
 
 // Returns 0 unless EVERY term matches somewhere.
@@ -106,17 +120,19 @@ function scoreArticle(a, terms) {
 }
 
 // The public shape of an article: live fields only.
-function publicSummary(a, categoryName, url) {
-  return {
+function publicSummary(a, cat, url) {
+  const out = {
     id: a.id,
     title: a.title || "",
     directAnswer: a.directAnswer || null,
     summary: a.summary || "",
     url,
     articleType: a.articleType || a.docType || null,
-    category: categoryName || null,
+    category: (cat && cat.category) || null,
     lastUpdated: toIso(a.updatedAt),
   };
+  if (cat && cat.folder) out.folder = cat.folder;
+  return out;
 }
 
 function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RATE_MAX, fetchImpl = (typeof fetch === "function" ? fetch : null) }) {
@@ -135,7 +151,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     ]);
     const articles = []; const cats = {}; const releases = [];
     artSnap.forEach((d) => { const v = d.data() || {}; if (v.status === "published") articles.push({ ...v, id: d.id }); });
-    catSnap.forEach((d) => { cats[d.id] = (d.data() || {}).name || ""; });
+    catSnap.forEach((d) => { const v = d.data() || {}; cats[d.id] = { name: v.name || "", parentId: v.parentId || null }; });
     relSnap.forEach((d) => { const v = d.data() || {}; releases.push({ id: d.id, name: v.name || "", version: v.version || null, status: v.status || "draft", order: Number(v.order) || 0 }); });
     data = { at: t, articles, cats, releases };
     return data;
@@ -166,6 +182,14 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     } catch (e) { if (logger) logger.warn("help url map unavailable", { error: String(e) }); }
     urlMap = { at: t, urls };
     return urls;
+  }
+  // Top-level category (as in the Support Centre breadcrumb) plus the folder
+  // the article sits in, when it sits in one.
+  function catOf(d, a) {
+    const c = d.cats[a.categoryId];
+    if (!c) return null;
+    const parent = c.parentId ? d.cats[c.parentId] : null;
+    return parent ? { category: parent.name, folder: c.name || null } : { category: c.name, folder: null };
   }
   const urlFor = (urls, a) => urls[a.id] || FALLBACK_URL(a.id);
 
@@ -214,7 +238,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
       query: q,
       release: releaseSummary(rel.release),
       matched: scored.length,
-      results: scored.slice(0, n).map(({ a }, i) => ({ rank: i + 1, ...publicSummary(a, d.cats[a.categoryId], urlFor(urls, a)) })),
+      results: scored.slice(0, n).map(({ a }, i) => ({ rank: i + 1, ...publicSummary(a, catOf(d, a), urlFor(urls, a)) })),
     };
     if (results.size >= RESULT_CACHE_MAX) results.clear();
     results.set(key, { at: now(), body });
@@ -233,7 +257,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     const a = eligible(d, rel.release, rel.byId).find((x) => (wantId && x.id === wantId) || (wantSlug && x.slug === wantSlug));
     if (!a) return { status: 404, body: { error: "not_found", error_description: "No published article with that id or slug for this release. Use search first." } };
     const body = {
-      ...publicSummary(a, d.cats[a.categoryId], urlFor(urls, a)),
+      ...publicSummary(a, catOf(d, a), urlFor(urls, a)),
       slug: a.slug || null,
       keywords: a.keywords || [],
       questionVariants: a.questionVariants || [],
@@ -243,10 +267,43 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     return { status: 200, body };
   }
 
-  function articleMarkdown(b) {
-    const lines = [`# ${b.title}`, ""];
-    if (b.directAnswer) lines.push(`> ${b.directAnswer}`, "");
-    lines.push(b.bodyMd || "", "", `Source: ${b.url}`);
+  // The WordPress page's own markdown twin (<url>?format=md), cached 5 minutes
+  // per article. Null when the article has no recorded WordPress URL or the
+  // site can't be reached; the caller then converts the body itself.
+  const mdTwins = new Map(); // url -> { at, text|null }
+  async function fetchTwin(url) {
+    const t = now();
+    const hit = mdTwins.get(url);
+    if (hit && t - hit.at < MD_TTL_MS) return hit.text;
+    let text = null;
+    try {
+      if (!fetchImpl) throw new Error("no fetch");
+      const ctl = typeof AbortController === "function" ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), URL_FETCH_TIMEOUT_MS) : null;
+      try {
+        const res = await fetchImpl(`${url}${url.includes("?") ? "&" : "?"}format=md`, { headers: { Accept: "text/markdown, text/plain;q=0.8" }, signal: ctl ? ctl.signal : undefined });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const ct = String((res.headers && res.headers.get && res.headers.get("content-type")) || "");
+        const raw = typeof res.text === "function" ? await res.text() : "";
+        // an HTML page here means the twin isn't served for this URL
+        if (raw.trim() && !/text\/html/i.test(ct) && !/^\s*<(!doctype|html)\b/i.test(raw)) text = raw.slice(0, MD_MAX_CHARS).trim();
+      } finally { if (timer) clearTimeout(timer); }
+    } catch (e) { if (logger) logger.warn("help markdown twin unavailable", { error: String(e) }); }
+    if (mdTwins.size >= MD_CACHE_MAX) mdTwins.clear();
+    mdTwins.set(url, { at: t, text });
+    return text;
+  }
+
+  async function articleMarkdown(b) {
+    const twin = b.url && b.url.startsWith(`https://${SUPPORT_HOST}/`) && !b.url.includes("article.html?id=") ? await fetchTwin(b.url) : null;
+    let body = twin != null ? twin : htmlToMarkdown(b.bodyMd || "");
+    const hasTitle = /^#\s+\S/.test(body);
+    const lines = [];
+    if (!hasTitle) {
+      lines.push(`# ${b.title}`, "");
+      if (b.directAnswer) lines.push(`> ${b.directAnswer}`, "");
+    }
+    lines.push(body, "", `Source: ${b.url}`);
     if (b.lastUpdated) lines.push(`Last updated: ${b.lastUpdated}`);
     return lines.join("\n");
   }
@@ -318,7 +375,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     }
     if (name === "get_help_article") {
       const r = await article({ id: a.id, slug: a.slug, release: a.release });
-      return r.status === 200 ? toolText(articleMarkdown(r.body)) : toolText(r.body.error_description, true);
+      return r.status === 200 ? toolText(await articleMarkdown(r.body)) : toolText(r.body.error_description, true);
     }
     return null;
   }
@@ -383,7 +440,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         if (r.status !== 200) { res.status(r.status).json(r.body); return; }
         res.set("Cache-Control", "public, max-age=60");
         const wantsMd = q.format === "md" || /text\/markdown/.test(String((req.get && req.get("accept")) || ""));
-        if (wantsMd) res.status(200).type("text/markdown; charset=utf-8").send(articleMarkdown(r.body));
+        if (wantsMd) res.status(200).type("text/markdown; charset=utf-8").send(await articleMarkdown(r.body));
         else res.status(200).json(r.body);
         return;
       }
@@ -410,7 +467,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     }
   }
 
-  return { handle, search, article, mcpMessage, TOOLS, _reset() { data = null; urlMap = null; results.clear(); buckets.clear(); } };
+  return { handle, search, article, mcpMessage, TOOLS, _reset() { data = null; urlMap = null; mdTwins.clear(); results.clear(); buckets.clear(); } };
 }
 
-module.exports = { createHelpApi, scoreArticle, safeSupportUrl, inRange, termsOf, normaliseQuery, SERVER_INFO };
+module.exports = { createHelpApi, STOP_WORDS, scoreArticle, safeSupportUrl, inRange, termsOf, normaliseQuery, SERVER_INFO };

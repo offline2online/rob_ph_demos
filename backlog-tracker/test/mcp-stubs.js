@@ -147,6 +147,7 @@ function collectionRef(store, name) {
 function makeDb(store) {
   return {
     collection: (name) => collectionRef(store, name),
+    getAll: (...refs) => Promise.all(refs.map((r) => r.get())),
     batch() {
       const ops = [];
       return {

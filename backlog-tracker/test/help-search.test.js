@@ -9,7 +9,7 @@ const U = (slug) => `https://personalisationhub.com/support-centre/stores/${slug
 const fallback = (id) => `https://personalisationhub.com/support-centre/article.html?id=${id}`;
 const docs = {
   faqArticles: {
-    a1: { title: "Add a store", summary: "Create a store in HQ Admin", keywords: ["store", "branch"], questionVariants: ["How do I add a store?"], directAnswer: "Open Stores and choose Add store.", articleType: "guide", categoryId: "c1", status: "published", slug: "add-a-store", bodyMd: "## Steps\nOpen Stores.", updatedAt: "2026-11-01T00:00:00Z", introducedInReleaseId: "r1",
+    a1: { title: "Add a store", summary: "Create a store in HQ Admin", keywords: ["store", "branch"], questionVariants: ["How do I add a store?"], directAnswer: "Open Stores and choose Add store.", articleType: "guide", categoryId: "c1", status: "published", slug: "add-a-store", bodyMd: "<h2>Steps</h2><p>Open <strong>Stores</strong>.</p><table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>", updatedAt: "2026-11-01T00:00:00Z", introducedInReleaseId: "r1",
       pendingRevision: { title: "SECRET PENDING", bodyMd: "SECRET PENDING BODY", summary: "SECRET" } },
     a2: { title: "Draft store thing", summary: "store", categoryId: "c1", status: "draft", slug: "d", bodyMd: "draft body", },
     a3: { title: "Future store feature", summary: "store", categoryId: "c1", status: "published", slug: "future", bodyMd: "x", introducedInReleaseId: "r2" },
@@ -18,9 +18,11 @@ const docs = {
     a6: { title: "Store with a foreign URL in the map", summary: "store", categoryId: "c1", status: "published", slug: "foreign", bodyMd: "x", introducedInReleaseId: "r1", order: 6 },
     a8: { title: "Billing", summary: "invoices and payments", keywords: ["invoice"], questionVariants: ["Where is my invoice?"], categoryId: "c1", status: "published", slug: "billing", bodyMd: "body mentions teleport", introducedInReleaseId: "r1", order: 8 },
     a9: { title: "Invoice history", summary: "see invoices", categoryId: "c1", status: "published", slug: "inv", bodyMd: "x", introducedInReleaseId: "r1", order: 9 },
+    a11: { title: "How QR Control works", summary: "QR control for displays", categoryId: "c2", status: "published", slug: "qr", bodyMd: "x", introducedInReleaseId: "r1", order: 11 },
+    a12: { title: "The only thing", summary: "the", categoryId: "c2", status: "published", slug: "the", bodyMd: "x", introducedInReleaseId: "r1", order: 12 },
     a10: { title: "Invoice exports", summary: "see invoices", categoryId: "c1", status: "published", slug: "inv2", bodyMd: "x", introducedInReleaseId: "r1", order: 3 },
   },
-  faqCategories: { c1: { name: "Stores" } },
+  faqCategories: { c0: { name: "Stores & Retail Data" }, c1: { name: "HQ Admin", parentId: "c0" }, c2: { name: "Top only" } },
   releases: { r1: { name: "5.0", version: "5.0", status: "live", order: 1 }, r2: { name: "6.0", version: "6.0", status: "draft", order: 2 } },
   helpSearchLog: {},
 };
@@ -35,8 +37,13 @@ function snap(name, f = () => true) {
   return { forEach: (fn) => rows.forEach(([id, v]) => fn({ id, data: () => v })) };
 }
 let t = 1_000_000;
-let mapFetches = 0, mapOk = true;
+let mapFetches = 0, mapOk = true, twinFetches = [], twinOk = true;
 const fetchImpl = async (url) => {
+  if (url.endsWith("?format=md")) {
+    twinFetches.push(url);
+    if (!twinOk) return { ok: false, status: 503, text: async () => "" };
+    return { ok: true, status: 200, headers: { get: () => "text/markdown" }, text: async () => "# Add a store\n\n## Steps\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n" };
+  }
   mapFetches++; assert.strictEqual(url, "https://personalisationhub.com/wp-json/ph-help/v1/published");
   if (!mapOk) return { ok: false, status: 503, json: async () => ({}) };
   return { ok: true, status: 200, json: async () => ({ articles: [{ id: "a1", url: U("add-a-store") }, { id: "a6", url: "https://evil.example/x/" }, { id: "a8", url: U("billing") }] }) };
@@ -54,8 +61,17 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1") => { const r
   const top = r.body.results[0];
   assert.strictEqual(top.title, "Add a store"); assert.strictEqual(top.directAnswer, "Open Stores and choose Add store.");
   assert.strictEqual(top.summary, "Create a store in HQ Admin"); assert.strictEqual(top.url, "https://personalisationhub.com/support-centre/stores/add-a-store/");
-  assert.strictEqual(top.articleType, "guide"); assert.strictEqual(top.category, "Stores"); assert.strictEqual(top.lastUpdated, "2026-11-01T00:00:00Z");
+  assert.strictEqual(top.articleType, "guide"); assert.strictEqual(top.category, "Stores & Retail Data"); assert.strictEqual(top.folder, "HQ Admin"); assert.strictEqual(top.lastUpdated, "2026-11-01T00:00:00Z");
   assert.strictEqual(r.body.release.version, "5.0");
+
+  // 1b. questions search like their keywords: stop words dropped, stop-word-only queries kept
+  const ids = (x) => x.body.results.map((y) => y.id);
+  assert.deepStrictEqual(ids(await call("GET", "/help-api/search", { q: "how do I add a store" })), ids(await call("GET", "/help-api/search", { q: "add a store" })));
+  assert.strictEqual((await call("GET", "/help-api/search", { q: "what is QR control" })).body.results[0].id, "a11");
+  r = await call("GET", "/help-api/search", { q: "the" }); assert.strictEqual(r.body.results[0].id, "a12");
+  assert.strictEqual(r.body.results[0].category, "Top only"); assert.ok(!("folder" in r.body.results[0]));
+  const { termsOf } = require("../functions/help-search");
+  assert.deepStrictEqual(termsOf("How do I add a store?"), ["add", "store"]); assert.deepStrictEqual(termsOf("to the"), ["to", "the"]);
 
   // 2. release parameter: id or version; out-of-range gone, unknown release 404
   r = await call("GET", "/help-api/search", { q: "store", release: "6.0" });
@@ -74,11 +90,18 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1") => { const r
   assert.strictEqual((await call("GET", "/help-api/article", { id: "a2" })).code, 404);
   assert.strictEqual((await call("GET", "/help-api/article", { id: "a3" })).code, 404); // out of the live release's range
 
-  // 4. full article as markdown matches the live body
+  // 4. full article as markdown: the WordPress twin, cached; HTML-to-markdown when WordPress is down
   r = await call("GET", "/help-api/article", { id: "a1", format: "md" });
-  assert.ok(String(r.body).includes("## Steps\nOpen Stores.") && String(r.body).includes("Source: https://personalisationhub.com/support-centre/"));
+  assert.ok(String(r.body).includes("## Steps") && String(r.body).includes("| A | B |") && !/<p>/.test(String(r.body)) && String(r.body).includes("Source: https://personalisationhub.com/support-centre/"));
+  assert.deepStrictEqual(twinFetches, [U("add-a-store") + "?format=md"]);
+  await call("GET", "/help-api/article", { id: "a1", format: "md" }); assert.strictEqual(twinFetches.length, 1); // cached 5 minutes
   assert.ok(!String(r.body).includes("SECRET"));
-  r = await call("GET", "/help-api/article", { slug: "add-a-store" }); assert.strictEqual(r.body.bodyMd, "## Steps\nOpen Stores."); assert.strictEqual(r.body.url, top.url);
+  api._reset(); twinOk = false;
+  r = await call("GET", "/help-api/article", { id: "a1", format: "md" });
+  assert.ok(String(r.body).startsWith("# Add a store") && String(r.body).includes("## Steps") && String(r.body).includes("**Stores**") && String(r.body).includes("| A | B |") && !/<[a-z]/.test(String(r.body)), r.body);
+  twinOk = true; api._reset();
+  r = await call("GET", "/help-api/article", { slug: "add-a-store" }); assert.ok(r.body.bodyMd.includes("<h2>Steps</h2>")); assert.strictEqual(r.body.url, top.url);
+  assert.strictEqual(r.body.category, "Stores & Retail Data"); assert.strictEqual(r.body.folder, "HQ Admin");
   assert.strictEqual((await call("GET", "/help-api/search", { q: "" })).code, 400);
 
   // 4b. URLs: from the WordPress map (cached), fallback when missing, foreign host or the map is down
@@ -133,7 +156,7 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1") => { const r
   r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "search_help", arguments: { query: "add a store" } } });
   assert.strictEqual(r.body.result.structuredContent.results[0].id, "a1");
   r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "get_help_article", arguments: { id: "a1" } } });
-  assert.ok(r.body.result.content[0].text.includes("Open Stores."));
+  assert.ok(r.body.result.content[0].text.includes("## Steps") && r.body.result.content[0].text.includes("| A | B |") && !r.body.result.content[0].text.includes("<p>"));
   r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "get_help_article", arguments: { id: "a2" } } });
   assert.strictEqual(r.body.result.isError, true);
   assert.ok(r.body.error === undefined && (await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "nope" } })).body.error.code === -32602);

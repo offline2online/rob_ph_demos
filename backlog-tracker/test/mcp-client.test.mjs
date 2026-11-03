@@ -179,8 +179,8 @@ await test("tools/list returns the whole surface", async () => {
   // on 25 Sep 2026 and were caught on 28 Sep; set_blocked/clear_blocked and
   // set_phase_skill_bindings (PR #270, 30 Sep) likewise, caught the same day.
   assert.deepStrictEqual(names, [
-    "add_concept_comment", "add_concept_critique", "add_item_comment", "approve_deploy_to_main", "approve_for_deployment", "clear_blocked", "comment_on_faq_revision", "create_backlog_item", "create_concept",
-    "create_faq_article", "create_interface", "create_project_document", "delete_interface",
+    "add_concept_comment", "add_concept_critique", "add_item_comment", "approve_deploy_to_main", "approve_for_deployment", "archive_backlog_items", "clear_blocked", "comment_on_faq_revision", "create_backlog_item", "create_concept",
+    "create_faq_article", "create_interface", "create_project_document", "delete_backlog_items", "delete_interface",
     "delete_project_document", "delete_skill", "demote_project", "fail_testing", "finalise_project", "get_approved_for_deployment_board", "get_artifact_version", "get_backlog_item",
     "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_project_docs", "get_project_document",
     "get_ready_for_testing_board", "get_routine_setup_instructions", "get_skill",
@@ -291,7 +291,7 @@ await test("a replaced document is recoverable through the client", async () => 
 await test("the client is told which tools are destructive", async () => {
   const { tools } = await client.listTools();
   const destructive = tools.filter((t) => t.annotations && t.annotations.destructiveHint).map((t) => t.name).sort();
-  assert.deepStrictEqual(destructive, ["delete_interface", "delete_project_document", "delete_skill"]);
+  assert.deepStrictEqual(destructive, ["delete_backlog_items", "delete_interface", "delete_project_document", "delete_skill"]);
   const docWrite = tools.find((t) => t.name === "set_project_requirements");
   assert.strictEqual(docWrite.annotations.readOnlyHint, false);
   assert.strictEqual(docWrite.annotations.destructiveHint, false);
