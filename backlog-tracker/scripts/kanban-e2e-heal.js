@@ -21,6 +21,12 @@ const OPEN_FIX_STATUSES = ["backlog", "ready-for-testing", "ready-to-publish"];
 const stripAnsi = (s) => String(s || "").replace(/\x1b\[[0-9;]*m/g, "");
 const CASE_RE = /\bTC-\d+[a-z]?\b/;
 const VIEWPORT_RE = /[\[(](desktop|tablet|phone|mobile|laptop)\b[^\])]*[\])]/i;
+// matrix-run.mjs prints one "PASS|FAIL  <profile> — N passed, M failed, ..." line per
+// profile and, under a FAIL one, the failing lines indented. That summary line is
+// not a failing case, and it is never the message of the line above it (3 Nov 2026,
+// ticket oNx0AE6LPJnmEk6zhFA7: "PASS  Tablet portrait ... 2 passed, 0 failed" was
+// read as TC-55's failure).
+const SUMMARY_LINE_RE = /^\s*(?:PASS|FAIL)\s+.*[—-]\s*\d+ passed,\s*\d+ failed/;
 const FAIL_LINE_RE = /^\s*(?:FAIL\b|not ok\b|✖|✘|×|✗)\s*(?:\d+\s*-\s*)?(.*)$/;
 
 // Failing cases in a run's log (`gh run view --log-failed`: "job<TAB>step<TAB>
@@ -38,6 +44,7 @@ function parseFailedCases(log) {
   const found = new Map();
   let otherFailures = false;
   for (let i = 0; i < rows.length; i++) {
+    if (SUMMARY_LINE_RE.test(rows[i])) continue;
     const m = FAIL_LINE_RE.exec(rows[i]);
     if (!m) continue;
     const name = m[1].replace(/\s+\(\d+(\.\d+)?m?s\)\s*$/, "").trim();
@@ -51,16 +58,19 @@ function parseFailedCases(log) {
     const viewport = vp ? vp.toLowerCase() : "default";
     const caseId = id || name.slice(0, 60);
     const key = healKey(caseId, viewport);
-    if (found.has(key)) continue;
     let failure = "";
     for (let j = i + 1; j < Math.min(rows.length, i + 6); j++) {
       const t = rows[j].trim();
       if (!t || /^at /.test(t) || /^-+$/.test(t)) continue;
-      if (FAIL_LINE_RE.test(rows[j])) break;
+      if (FAIL_LINE_RE.test(rows[j]) || SUMMARY_LINE_RE.test(rows[j])) break;
       failure = t.replace(/^(AssertionError( \[ERR_ASSERTION\])?|Error):\s*/, "");
       break;
     }
-    found.set(key, { caseId, viewport, name, failure: failure.length > 400 ? `${failure.slice(0, 397)}…` : failure });
+    failure = failure.length > 400 ? `${failure.slice(0, 397)}…` : failure;
+    // The first mention of a case is kept; a later one (the full output of the failing
+    // profile) only supplies the message when the first had none.
+    if (found.has(key)) { if (!found.get(key).failure && failure) found.get(key).failure = failure; continue; }
+    found.set(key, { caseId, viewport, name, failure });
   }
   return { cases: [...found.values()], otherFailures };
 }
