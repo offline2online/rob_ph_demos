@@ -89,9 +89,6 @@ export function defaultFields() {
   };
 }
 
-// Until an admin picks one, Ready for Testing hands tickets to the console owner (REQUIREMENTS §2).
-export const DEFAULT_TESTER = "rob@offline2online.com";
-
 // Compare dotted versions numerically ("4.9" before "4.12"); unversioned last.
 function cmpVersion(a, b) {
   const pa = String(a || "").match(/\d+/g), pb = String(b || "").match(/\d+/g);
@@ -128,8 +125,6 @@ export function normaliseSettings(raw) {
   for (const k of FIELD_KEYS) if (!fields[k].show) fields[k].required = false;
   return {
     fields,
-    tester: typeof s.tester === "string" && s.tester ? s.tester : DEFAULT_TESTER,
-    testerIsDefault: !(typeof s.tester === "string" && s.tester),
     currentRelease: typeof s.currentRelease === "string" ? s.currentRelease : "",
     releaseDates: s.releaseDates && typeof s.releaseDates === "object" ? { ...s.releaseDates } : {},
     labels: Array.isArray(s.labels) ? s.labels.filter((l) => typeof l === "string") : [],
@@ -214,7 +209,11 @@ export const isAliasEmail = (e) => Object.prototype.hasOwnProperty.call(PERSON_A
 // Returns null when nothing changes, else { patch, note, activity } where
 // patch holds the fields to write and activity is the line for the log.
 // firstName(email) names people in the note.
-export function statusChange(task, status, { resolution, tester, firstName = (x) => x || "Unassigned" } = {}) {
+// Ready for Testing hands the ticket to its designated tester (task.tester) if
+// it has one, else to the person the mover chose (opts.tester). There is no
+// board-wide default: with neither, the assignee is left alone.
+export function statusChange(task, status, { resolution, tester: chosen, firstName = (x) => x || "Unassigned" } = {}) {
+  const tester = (task && task.tester) || chosen || "";
   if (!STATUS_KEYS.includes(status)) throw new Error(`Unknown status ${status}`);
   const from = task.status, fromRes = res(task);
   const toRes = status === "done" ? (RESOLUTIONS.some((r) => r.key === resolution) ? resolution : fromRes || "completed") : null;
@@ -325,10 +324,11 @@ export function filterTasks(tasks, f) {
 // ── Release report (KB-REP-1) ─────────────────────────────────────────────
 export const CAPACITY_HOURS_PER_DAY = 6;
 // tasks: every task in scope; f: { release, status, assignee, type, priority,
-// sprint, label, epic }; people: emails in display order.
+// sprint, label }; people: emails in display order.
 export function releaseReport(tasks, f, { people = [], releaseDate = "", released = false, today = new Date() } = {}) {
   const status = f.status || "outstanding";
-  const inScope = tasks.filter((t) => t.type !== "epic" && (!f.release || f.release === "all" || t.release === f.release));
+  // Epics are left out unless Type is Epic, which shows epics only.
+  const inScope = tasks.filter((t) => (f.type === "epic" ? t.type === "epic" : t.type !== "epic") && (!f.release || f.release === "all" || t.release === f.release));
   const filtered = inScope.filter((t) => {
     if (status === "outstanding" ? t.status === "done" : status.startsWith("done:") ? "done:" + res(t) !== status : status !== "all" && t.status !== status) return false;
     if (f.assignee && (t.assignee || "none") !== f.assignee) return false;
@@ -336,7 +336,6 @@ export function releaseReport(tasks, f, { people = [], releaseDate = "", release
     if (f.priority && t.priority !== f.priority) return false;
     if (f.sprint && t.sprint !== f.sprint) return false;
     if (f.label && !(t.labels || []).includes(f.label)) return false;
-    if (f.epic && t.epic !== f.epic) return false;
     return true;
   });
   const outstanding = filtered.filter((t) => t.status !== "done");

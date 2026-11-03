@@ -35,6 +35,16 @@ const TASKS = "kanbanTasks";
 const CARDS = "kanbanCards";
 const BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
 
+// Current members' pronunciations, keyed by first name without accents.
+// Hidden from the board; only agents read them (kanban_get_staff_names).
+const SEED_PRONUNCIATIONS = {
+  duong: 'Said "Zuong" (northern Vietnamese)',
+  duy: 'Said "Zui"',
+  thuc: 'Said close to "Took"',
+  hong: 'Said "Hong"',
+  rob: 'Said "Rob"',
+};
+
 // ── Per-instance cache ─────────────────────────────────────────────────────
 // The member directory, settings, releases, sprints, projects and the
 // cards-or-tickets check change rarely and every tool wants them, so each is
@@ -551,6 +561,38 @@ function kanbanTools(h) {
   }
   // The board's first name for someone, as the page shows it.
   const firstOf = (p, s) => String((s.firstNames || {})[p.email] || "").trim() || String(p.displayName || "").trim().split(/\s+/)[0] || String(p.email).split("@")[0];
+  // ── Staff names and pronunciation (agents only) ──────────────────────────
+  // staffPronunciations/{email} = { pronunciation, updatedBy, updatedAt } is
+  // server-only (firestore.rules deny every client), so the board can never
+  // show it; only these tools read and write it. The current members are
+  // seeded by first name below, and a stored value wins over a seed.
+  const NAME_RULE = "Always spell staff names as given here and say them as their pronunciation says, whenever you write or speak about a member (voice agents especially).";
+  const fold = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase().trim();
+  const pronunciations = () => cached("pronunciations", async () => {
+    const out = new Map();
+    for (const d of (await db().collection("staffPronunciations").get()).docs) out.set(String(d.id).toLowerCase(), String((d.data() || {}).pronunciation || "").trim());
+    return out;
+  });
+  async function pronunciationOf(p, s, stored) {
+    const own = stored.get(core.canonicalEmail(p.email));
+    if (own) return own;
+    return SEED_PRONUNCIATIONS[fold(firstOf(p, s))] || null;
+  }
+  // Every member with the board's spelling, full name and pronunciation, and
+  // those who still have no pronunciation (an agent asks the admin for them).
+  async function staffNames(session) {
+    const [ppl, s, stored] = await Promise.all([people(session), settings(), pronunciations()]);
+    const staff = [];
+    for (const p of ppl) staff.push({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null, pronunciation: await pronunciationOf(p, s, stored) });
+    const needed = staff.filter((x) => !x.pronunciation).map((x) => ({ email: x.email, name: x.name }));
+    const out = { staff, rule: NAME_RULE };
+    if (needed.length) {
+      out.pronunciationNeeded = needed;
+      out.prompt = `No pronunciation is recorded for ${needed.map((x) => x.name).join(", ")}. Ask the admin how to say ${needed.length === 1 ? "this name" : "each name"}, then (as an admin) call kanban_set_staff_pronunciation with a plain-English sound-alike.`;
+    }
+    return out;
+  }
+
   // "me" means the authenticated member.
   const meOr = (v, session) => (String(v || "").trim().toLowerCase() === "me" ? session.email : v);
   const resolveMe = (args, session) => {
@@ -926,20 +968,51 @@ function kanbanTools(h) {
   const tools = [
     {
       name: "kanban_list_people",
-      description: "Staff Kanban: who's on the board (email and the first name the board shows), the releases, sprints and console projects tickets can belong to, the current release and the tester Ready for Testing hands tickets to.",
+      description: "Staff Kanban: who's on the board (email, the first name the board shows, full name and pronunciation), the releases, sprints and console projects tickets can belong to, and the current release.",
       scope: "board.read",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       async run(args, session) {
-        const [ppl, s, relDocs, sprDocs, prjDocs] = await Promise.all([people(session), settings(), releases(), sprints(), projects()]);
+        const [ppl, s, relDocs, sprDocs, prjDocs, names] = await Promise.all([people(session), settings(), releases(), sprints(), projects(), staffNames(session)]);
         const rel = { docs: relDocs }, spr = { docs: sprDocs }, prj = { docs: prjDocs };
+        const pron = new Map(names.staff.map((x) => [x.email, x.pronunciation]));
         return textResult({
-          people: ppl.map((p) => ({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null })),
+          people: ppl.map((p) => ({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null, pronunciation: pron.get(p.email) || null })),
+          nameRule: NAME_RULE,
+          ...(names.pronunciationNeeded ? { pronunciationNeeded: names.pronunciationNeeded, prompt: names.prompt } : {}),
           releases: rel.docs.map((d) => ({ id: d.id, name: d.data().name, version: d.data().version || null, live: d.data().status === "live", date: s.releaseDates[d.id] || null })),
           sprints: spr.docs.map((d) => ({ id: d.id, name: d.data().name, start: d.data().start || null, end: d.data().end || null })),
           projects: prj.docs.filter((d) => !d.data().archived).map((d) => ({ id: d.id, name: d.data().name || d.id })),
-          currentRelease: currentRelease(s, rel.docs) || null, tester: s.tester,
+          currentRelease: currentRelease(s, rel.docs) || null,
           statuses: core.STATUSES.map((x) => x.key), resolutions: core.RESOLUTIONS.map((x) => x.key),
         });
+      },
+    },
+    {
+      name: "kanban_get_staff_names",
+      description: "Staff Kanban: every member's correct spelling (the first name the board shows), full name and pronunciation. Use these spellings and pronunciations whenever you write or speak about staff; voice agents say names as the pronunciation says. The pronunciation is for agents only and is never shown on the board. Members with none recorded are listed under pronunciationNeeded with a prompt to ask the admin.",
+      scope: "board.read",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      async run(args, session) { return textResult(await staffNames(session)); },
+    },
+    {
+      name: "kanban_set_staff_pronunciation",
+      description: "Staff Kanban (admin only): record how a member's name is said, as a plain-English sound-alike (for example 'Said \"Zui\"'). Agents read it through kanban_get_staff_names and kanban_list_people; it is never shown on the board. Call it when a new member appears under pronunciationNeeded, after asking the admin. An empty pronunciation removes the stored one.",
+      scope: "board.write",
+      inputSchema: { type: "object", properties: { person: PERSON, pronunciation: { type: "string", description: "A sound-alike, at most 120 characters; empty removes it." } }, required: ["person", "pronunciation"], additionalProperties: false },
+      async run(args, session) {
+        if (session.role !== "admin") return toolError("Only an admin can record how a name is said.");
+        const email = core.canonicalEmail(meOr(args.person, session));
+        const [ppl, s] = await Promise.all([people(session), settings()]);
+        const hit = ppl.find((p) => core.canonicalEmail(p.email) === email);
+        if (!hit) return toolError(`${args.person} isn't a member of the console; kanban_list_people says who's who`);
+        const text = String(args.pronunciation == null ? "" : args.pronunciation).trim();
+        if (text.length > 120) return toolError("A pronunciation is at most 120 characters.");
+        const ref = db().collection("staffPronunciations").doc(email);
+        if (text) await ref.set({ pronunciation: text, updatedBy: session.email, updatedAt: FieldValue.serverTimestamp() });
+        else await ref.delete();
+        clearCaches("pronunciations");
+        await audit(session, "kanban_set_staff_pronunciation", { person: email, cleared: !text });
+        return textResult({ email, name: firstOf(hit, s), pronunciation: text || null, note: text ? "Saved. Agents see it; the board does not." : "Removed." });
       },
     },
     {
@@ -1433,11 +1506,11 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_move_task",
-      description: "Staff Kanban: move a ticket to another column. Moving to Ready for Testing reassigns it to the tester; moving it back to In Progress or Ready for Dev returns it to the developer. To close one, use status done with resolution completed or withdrawn.",
+      description: "Staff Kanban: move a ticket to another column. Moving to Ready for Testing assigns it to the ticket's designated tester, else to the `tester` you pass (an email); with neither the assignee is left alone and the result says so. There is no default tester. Moving it back to In Progress or Ready for Dev returns it to the developer. To close one, use status done with resolution completed or withdrawn.",
       scope: "board.write",
       inputSchema: {
         type: "object",
-        properties: { key: KEY, status: { type: "string", enum: core.STATUS_KEYS }, resolution: { type: "string", enum: ["completed", "withdrawn"] } },
+        properties: { key: KEY, status: { type: "string", enum: core.STATUS_KEYS }, resolution: { type: "string", enum: ["completed", "withdrawn"] }, tester: PERSON },
         required: ["key", "status"], additionalProperties: false,
       },
       async run(args, session) {
@@ -1445,7 +1518,7 @@ function kanbanTools(h) {
         const cur = key && await getTask(key);
         if (!cur) return toolError(`No ticket ${args.key}.`);
         const [s, first] = await Promise.all([settings(), firstNamer()]);
-        const ch = core.statusChange(cur, args.status, { resolution: args.resolution, tester: s.tester, firstName: first });
+        const ch = core.statusChange(cur, args.status, { resolution: args.resolution, tester: args.tester ? core.canonicalEmail(meOr(args.tester, session)) : "", firstName: first });
         if (!ch) return textResult({ moved: false, key, status: cur.status, note: "Already there." });
         const rank = await nextRank(args.status);
         const patch = Object.assign({}, ch.patch, { rank }, stamp(session.email), args.status === "done" ? { closedAt: FieldValue.serverTimestamp() } : { closedAt: FieldValue.delete() });
@@ -1457,7 +1530,7 @@ function kanbanTools(h) {
         activity(b, key, session.email, [ch.activity]);
         await b.commit();
         await audit(session, "kanban_move_task", { key, status: args.status, resolution: ch.resolution });
-        return textResult({ moved: true, key, status: args.status, resolution: ch.resolution, note: ch.note || null, assignee: patch.assignee || cur.assignee || null });
+        return textResult({ moved: true, key, status: args.status, resolution: ch.resolution, note: ch.note || (args.status === "ready-for-testing" ? "No tester set, so the assignee is unchanged. Pass `tester` or assign one." : null), assignee: patch.assignee || cur.assignee || null });
       },
     },
     {

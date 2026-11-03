@@ -92,9 +92,6 @@ function defaultFields() {
   };
 }
 
-// Until an admin picks one, Ready for Testing hands tickets to the console owner (REQUIREMENTS §2).
-const DEFAULT_TESTER = "rob@offline2online.com";
-
 // Compare dotted versions numerically ("4.9" before "4.12"); unversioned last.
 function cmpVersion(a, b) {
   const pa = String(a || "").match(/\d+/g), pb = String(b || "").match(/\d+/g);
@@ -131,8 +128,6 @@ function normaliseSettings(raw) {
   for (const k of FIELD_KEYS) if (!fields[k].show) fields[k].required = false;
   return {
     fields,
-    tester: typeof s.tester === "string" && s.tester ? s.tester : DEFAULT_TESTER,
-    testerIsDefault: !(typeof s.tester === "string" && s.tester),
     currentRelease: typeof s.currentRelease === "string" ? s.currentRelease : "",
     releaseDates: s.releaseDates && typeof s.releaseDates === "object" ? { ...s.releaseDates } : {},
     labels: Array.isArray(s.labels) ? s.labels.filter((l) => typeof l === "string") : [],
@@ -217,7 +212,11 @@ const isAliasEmail = (e) => Object.prototype.hasOwnProperty.call(PERSON_ALIASES,
 // Returns null when nothing changes, else { patch, note, activity } where
 // patch holds the fields to write and activity is the line for the log.
 // firstName(email) names people in the note.
-function statusChange(task, status, { resolution, tester, firstName = (x) => x || "Unassigned" } = {}) {
+// Ready for Testing hands the ticket to its designated tester (task.tester) if
+// it has one, else to the person the mover chose (opts.tester). There is no
+// board-wide default: with neither, the assignee is left alone.
+function statusChange(task, status, { resolution, tester: chosen, firstName = (x) => x || "Unassigned" } = {}) {
+  const tester = (task && task.tester) || chosen || "";
   if (!STATUS_KEYS.includes(status)) throw new Error(`Unknown status ${status}`);
   const from = task.status, fromRes = res(task);
   const toRes = status === "done" ? (RESOLUTIONS.some((r) => r.key === resolution) ? resolution : fromRes || "completed") : null;
@@ -328,10 +327,11 @@ function filterTasks(tasks, f) {
 // ── Release report (KB-REP-1) ─────────────────────────────────────────────
 const CAPACITY_HOURS_PER_DAY = 6;
 // tasks: every task in scope; f: { release, status, assignee, type, priority,
-// sprint, label, epic }; people: emails in display order.
+// sprint, label }; people: emails in display order.
 function releaseReport(tasks, f, { people = [], releaseDate = "", released = false, today = new Date() } = {}) {
   const status = f.status || "outstanding";
-  const inScope = tasks.filter((t) => t.type !== "epic" && (!f.release || f.release === "all" || t.release === f.release));
+  // Epics are left out unless Type is Epic, which shows epics only.
+  const inScope = tasks.filter((t) => (f.type === "epic" ? t.type === "epic" : t.type !== "epic") && (!f.release || f.release === "all" || t.release === f.release));
   const filtered = inScope.filter((t) => {
     if (status === "outstanding" ? t.status === "done" : status.startsWith("done:") ? "done:" + res(t) !== status : status !== "all" && t.status !== status) return false;
     if (f.assignee && (t.assignee || "none") !== f.assignee) return false;
@@ -339,7 +339,6 @@ function releaseReport(tasks, f, { people = [], releaseDate = "", released = fal
     if (f.priority && t.priority !== f.priority) return false;
     if (f.sprint && t.sprint !== f.sprint) return false;
     if (f.label && !(t.labels || []).includes(f.label)) return false;
-    if (f.epic && t.epic !== f.epic) return false;
     return true;
   });
   const outstanding = filtered.filter((t) => t.status !== "done");
@@ -720,4 +719,4 @@ function dataUriParts(uri) {
   return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
 }
 
-module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, DEFAULT_TESTER, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };
+module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };

@@ -152,7 +152,7 @@ server instructions. `test/kanban-mcp.test.js` checks both.
 
 | Read | Write (editor and admin) |
 | --- | --- |
-| `kanban_list_people` (members by first name, releases, sprints, projects, current release, tester) | `kanban_create_task` (always into Backlog, next PH-n key) |
+| `kanban_list_people` (members by first name, releases, sprints, projects, current release) | `kanban_create_task` (always into Backlog, next PH-n key) |
 | `kanban_list_tasks` (the board's filters: assignee or `me`, release, status, type, priority, sprint, project, label, flagged, search) | `kanban_update_task` (any field but the column) |
 | `kanban_get_task` (everything, with comments, activity, `descriptionHtml`, links (stored on both tickets) and an epic's children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off) |
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
@@ -164,6 +164,21 @@ server instructions. `test/kanban-mcp.test.js` checks both.
 | `kanban_my_work` (your open tickets by column, overdue, due this week, flagged, unread count; see below) | `kanban_mark_notifications_read` (`ids` or `all: true`; the open bell updates without a reload) |
 | | `kanban_create_tasks` (up to 100 tickets in one call; see below) |
 | | `kanban_create_contract_ticket` (API contract first: interface, ticket and blocks in one step; see below) |
+| `kanban_get_staff_names` (every member's spelling, full name and pronunciation; `pronunciationNeeded` lists members with none; see below) | `kanban_set_staff_pronunciation` (admin only; see below) |
+
+### Staff Kanban: staff names and pronunciation
+
+Agents, voice agents especially, must spell and say staff names correctly. Each member has the
+board's spelling (`name`), a `fullName` and a hidden `pronunciation`: a plain-English sound-alike
+such as `Said "Zui"`. It lives in the server-only `staffPronunciations/{email}` collection
+(`firestore.rules` deny every client), so **no board page, profile or settings screen can show it,
+including to the member it is about**; it is not on `memberDirectory`. `kanban_list_people` and
+`kanban_get_staff_names` return it, and their descriptions tell the agent to use these spellings and
+pronunciations whenever it refers to staff. Current members are seeded by first name (Duong "Zuong",
+Duy "Zui", Thuc close to "Took", Hong "Hong", Rob); a stored value wins. A member with none recorded
+is listed under `pronunciationNeeded` with a `prompt` to ask the admin; an admin's agent then calls
+`kanban_set_staff_pronunciation` (`person`, `pronunciation`, at most 120 characters; empty removes
+it). Anyone else is refused. Recorded in the audit log.
 
 ### Staff Kanban: large files, integrity checks, removing attachments
 

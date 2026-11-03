@@ -17,12 +17,22 @@ const parsed = h.parseFailedCases(consoleLog);
 const nodeTest = h.parseFailedCases("✖ TC-05 touch: press-and-hold drag [tablet 820x1180] (1200ms)\n  Error: card did not move\n✖ failing tests:");
 const mixed = h.parseFailedCases("FAIL  mcp-server: tools/list\nFAIL  TC-02 drag a card");
 
+const matrixLog = [
+  "FAIL  Desktop 1440×900 — 40 passed, 1 failed, 0 skipped, 30s",
+  "        FAIL  TC-55 drag with filters on [desktop 1440x900]",
+  "PASS  Tablet portrait 768×1024 · touch · WebKit  — 2 passed, 0 failed, 0 skipped, 8s  (engine not available here)",
+  "── Desktop 1440×900: full output of the failing run ──",
+  "FAIL  TC-55 drag with filters on [desktop 1440x900]",
+  "      card still visible after the move",
+].join("\n");
+const matrix = h.parseFailedCases(matrixLog);
 const fix = (id, status, over = {}) => ({ id, status, tested: false, e2eAutoFix: { key: h.healKey("TC-10", "phone") }, ...over });
 const failure = { caseId: "TC-10", viewport: "phone", failure: "x" };
 const plan = (fixes) => h.planHeal({ failures: [failure], fixes, sha: "head" });
 const verdicts = (...v) => v.map((verdict, i) => ({ workflow: `w${i}`, label: `w${i}`, verdict }));
 
 const cases = [
+  ["a matrix summary line is never a case or a message", [matrix.cases.length, matrix.otherFailures, matrix.cases[0].failure], [1, false, "card still visible after the move"]],
   ["parses each failing case once, with its viewport", parsed.cases.map((c) => `${c.caseId}@${c.viewport}`), ["TC-10@phone", "TC-16b@default"]],
   ["keeps the message under the failure", parsed.cases[0].failure, "expected 6 columns, saw 5"],
   ["node:test ✖ lines and the summary header", nodeTest.cases.map((c) => `${c.caseId}@${c.viewport}`), ["TC-05@tablet"]],

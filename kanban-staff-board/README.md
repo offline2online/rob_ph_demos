@@ -135,9 +135,9 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   outstanding tasks, remaining effort (estimate minus logged), remaining
   effort per staff member against capacity (6 focused hours a working day),
   a breakdown by staff member with totals, and the task list grouped by
-  person.
+  person. Type → Epic shows an epics-only page with an Epic summary.
 - **Kanban settings** (`#settings`). Show and required toggles for each field,
-  the Ready for Testing reassignment target, the current release and the team list.
+  the current release and the team list.
 - **Agent Board** (`#agent-board`). A static copy of the existing board, so
   the two are visibly separate in the navigation.
 

@@ -12,7 +12,7 @@ import { createResultReader, useContinuousMode, isAndroidDevice } from "../dicta
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
-  statusChange, currentReleaseId, DEFAULT_TESTER, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
+  statusChange, currentReleaseId, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
   canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity,
 } from "./kanban-core.js";
 
@@ -190,7 +190,7 @@ export function mountStaffKanban(ctx) {
   // ── Status changes (the one place the testing hand-off happens) ─────────
   // Returns { patch, note, activity } for the store, or null when nothing changes.
   function setStatus(task, status, opts = {}) {
-    const ch = statusChange(task, status, { resolution: opts.resolution, tester: state.settings.tester, firstName });
+    const ch = statusChange(task, status, { resolution: opts.resolution, tester: opts.tester, firstName });
     if (!ch) return null;
     if (!opts.silent) toast(`<b>${esc(task.key)}</b> ${status === "done" ? (ch.resolution === "withdrawn" ? "withdrawn" : "completed") : "moved to " + esc(STATUS_LABEL[status])}${ch.note ? ` · ${esc(ch.note)}` : ""}`);
     return ch;
@@ -204,7 +204,34 @@ export function mountStaffKanban(ctx) {
   }
 
   // lane: the swimlane a card was dropped in ("none" = Unassigned); undefined on a plain board.
+  // Ready for Testing needs a tester: the ticket's designated one, else the
+  // mover picks. There is no default tester (never Rob by default).
+  function askTester(task) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement("div");
+      wrap.className = "modal-backdrop"; wrap.id = "kb-tester-backdrop";
+      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-tester-h" style="max-width:420px"><div class="modal-body"><h3 id="kb-tester-h">Who will test ${esc(task.key)}?</h3><p class="kb-none">It moves to Ready for Testing and is assigned to them. Only they are notified.</p><select id="kb-tester-pick" class="kb-input"><option value="">Choose a tester…</option>${people().map((u) => `<option value="${esc(u.id)}">${esc(u.first)}</option>`).join("")}</select></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-tester-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-tester-ok" disabled>Move to Ready for Testing</button></div></div>`;
+      document.body.appendChild(wrap);
+      const pick = wrap.querySelector("#kb-tester-pick"), ok = wrap.querySelector("#kb-tester-ok");
+      const done = (v) => { wrap.remove(); resolve(v); };
+      pick.addEventListener("change", () => { ok.disabled = !pick.value; });
+      ok.addEventListener("click", () => pick.value && done(pick.value));
+      wrap.querySelector("#kb-tester-cancel").addEventListener("click", () => done(null));
+      wrap.addEventListener("click", (e) => { if (e.target === wrap) done(null); });
+      wrap.addEventListener("keydown", (e) => { if (e.key === "Escape") done(null); });
+      pick.focus();
+    });
+  }
   function moveTask(key, status, beforeKey, lane, resolution) {
+    const task = taskByKey(key);
+    if (!task || !canWrite()) return;
+    if (status === "ready-for-testing" && task.status !== status && !task.tester) {
+      askTester(task).then((tester) => { if (tester) moveTaskTo(key, status, beforeKey, lane, resolution, tester); else renderCurrent(); });
+      return;
+    }
+    moveTaskTo(key, status, beforeKey, lane, resolution, "");
+  }
+  function moveTaskTo(key, status, beforeKey, lane, resolution, tester) {
     const task = taskByKey(key);
     if (!task || !canWrite()) return;
     const list = state.tasks.filter((t) => t.status === status && t !== task).sort((a, b) => a.rank - b.rank);
@@ -221,7 +248,7 @@ export function mountStaffKanban(ctx) {
       patch.assignee = toAssignee; patch.previousAssignee = "";
       base = { ...task, assignee: toAssignee, previousAssignee: "" };
     }
-    const ch = setStatus(base, status, { silent: reassigned, resolution });
+    const ch = setStatus(base, status, { silent: reassigned, resolution, tester });
     if (ch) { Object.assign(patch, ch.patch); activity.push(ch.activity); }
     if (reassigned) {
       const moved = task.status !== status ? ` · moved to ${esc(statusLabel(status, resolution))}` : "";
@@ -1398,11 +1425,7 @@ export function mountStaffKanban(ctx) {
     const st = $("#f-status");
     if (st) st.addEventListener("change", () => {
       const note = $("#f-status-note");
-      const tester = state.settings.tester;
-      const asg = $("#f-assignee");
-      if (st.value === "ready-for-testing" && asg && asg.value !== tester) {
-        note.hidden = false; note.textContent = `Will be reassigned to ${firstName(tester)} for testing`;
-      } else note.hidden = true;
+      note.hidden = true; // no automatic tester: set the assignee yourself
     });
     const est = $("#f-estimate"), lg = $("#f-logged");
     const syncLog = () => {
@@ -2046,7 +2069,7 @@ export function mountStaffKanban(ctx) {
   // Report columns: every status, with the last one split into Completed and Withdrawn.
   const REPORT_COLS = STATUSES.filter((s) => s.key !== "done").map((s) => ({ key: s.key, short: s.short, match: (t) => t.status === s.key }))
     .concat(RESOLUTIONS.map((r) => ({ key: "done:" + r.key, short: r.label, match: (t) => res(t) === r.key })));
-  const REPORT_KEYS = ["release", "assignee", "status", "type", "priority", "sprint", "label", "epic"];
+  const REPORT_KEYS = ["release", "assignee", "status", "type", "priority", "sprint", "label"];
   function renderReport(view, params) {
     const f = Object.fromEntries(REPORT_KEYS.map((k) => [k, params.get(k) || ""]));
     if (!params.has("release")) f.release = state.settings.currentRelease;
@@ -2055,7 +2078,9 @@ export function mountStaffKanban(ctx) {
     store.watchRelease(f.release === "all" ? "" : f.release);
     const staffList = people();
 
-    const inScope = state.tasks.filter((t) => t.type !== "epic" && (!f.release || f.release === "all" || t.release === f.release));
+    // Epics are left out of the effort figures unless Type is Epic: then the whole page is epics only.
+    const epicView = f.type === "epic";
+    const inScope = state.tasks.filter((t) => (epicView ? t.type === "epic" : t.type !== "epic") && (!f.release || f.release === "all" || t.release === f.release));
     const filtered = inScope.filter((t) => {
       if (f.status === "outstanding" ? t.status === "done" : f.status.startsWith("done:") ? "done:" + res(t) !== f.status : f.status !== "all" && t.status !== f.status) return false;
       if (f.assignee && (t.assignee || "none") !== f.assignee) return false;
@@ -2063,7 +2088,6 @@ export function mountStaffKanban(ctx) {
       if (f.priority && t.priority !== f.priority) return false;
       if (f.sprint && t.sprint !== f.sprint) return false;
       if (f.label && !(t.labels || []).includes(f.label)) return false;
-      if (f.epic && t.epic !== f.epic) return false;
       return true;
     });
     const outstanding = filtered.filter((t) => t.status !== "done");
@@ -2098,7 +2122,7 @@ export function mountStaffKanban(ctx) {
 
     const sel = (k, all, items) => `<label class="kb-rfilter"><span>${esc(all[0])}</span><select data-rf="${k}">${items}</select></label>`;
     const relItems = releases().map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), f.release)).join("") + opt("all", "All releases", f.release);
-    const anyExtra = f.assignee || f.type || f.priority || f.sprint || f.label || f.epic || f.status !== "outstanding" || f.release !== state.settings.currentRelease;
+    const anyExtra = f.assignee || f.type || f.priority || f.sprint || f.label || f.status !== "outstanding" || f.release !== state.settings.currentRelease;
 
     const capState = (p) => {
       if (!capPer || !p.id) return "";
@@ -2107,6 +2131,30 @@ export function mountStaffKanban(ctx) {
       return `<span class="kb-cap"><span class="health-dot health-dot-${s[0]}" aria-hidden="true"></span>${s[1]}</span>`;
     };
 
+    // Epic summary: each epic with a roll-up of the tickets under it (any release).
+    const epicSummary = epicView ? (() => {
+      const rows = filtered.slice().sort(byKey).map((e) => {
+        const live = childrenOf(e.key).filter((k) => res(k) !== "withdrawn");
+        const done = live.filter((k) => k.status === "done").length;
+        const est = live.reduce((n, k) => n + (+k.estimate || 0), 0);
+        const log = live.reduce((n, k) => n + (+k.logged || 0), 0);
+        const rem = live.filter((k) => k.status !== "done").reduce((n, k) => n + remaining(k), 0);
+        return `<tr class="kb-click-row" data-open="${esc(e.key)}"><td><span class="kb-task-cell"><span class="kb-type kb-type-epic"><span class="material-symbols-outlined" aria-hidden="true">bolt</span></span><span class="kb-key">${esc(e.key)}</span><span class="archive-row-title">${esc(e.title)}</span></span></td>
+          <td>${statusPill(e)}</td><td>${avatar(e.assignee)}</td>
+          <td class="num">${live.length}</td><td class="num">${done}</td><td class="num">${live.length - done}</td>
+          <td><div class="kb-progress kb-epic-progress" title="${done} of ${live.length} tickets completed"><span style="width:${live.length ? (done / live.length) * 100 : 0}%"></span></div></td>
+          <td class="num">${fmtH(est)}</td><td class="num">${fmtH(log)}</td><td class="num"><b>${fmtH(rem)}</b></td></tr>`;
+      }).join("");
+      return `<section class="docs-block kb-report-block" id="rp-epics">
+        <div class="docs-block-header"><h3>Epic summary <span class="kb-h-count">${filtered.length}</span>${tip("Each epic with a roll-up of the tickets under it, in any release. Withdrawn tickets are left out. Click an epic to open it.")}</h3></div>
+        <div class="archive-table-wrap">
+          <table class="archive-table kb-table">
+            <thead><tr><th>Epic</th><th>Status</th><th>Owner</th><th class="num">Tickets</th><th class="num">Done</th><th class="num">Open</th><th>Progress</th><th class="num">Estimate</th><th class="num">Logged</th><th class="num">Remaining</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="10" class="empty-hint">No epics match these filters</td></tr>'}</tbody>
+          </table>
+        </div>
+      </section>`;
+    })() : "";
     view.innerHTML = `
       <div class="page-header">
         <button type="button" class="btn-ghost kb-back" data-route="kanban" aria-label="Back to Staff Kanban" title="Back to Staff Kanban"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span></button>
@@ -2117,20 +2165,21 @@ export function mountStaffKanban(ctx) {
         ${sel("release", ["Release"], relItems)}
         ${sel("status", ["Status"], opt("outstanding", "Outstanding (not completed)", f.status) + opt("all", "All, including completed / withdrawn", f.status) + STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, f.status)).join("") + RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, f.status)).join(""))}
         ${sel("assignee", ["Staff member"], opt("", "Everyone", f.assignee) + staffList.map((u) => opt(u.id, u.first, f.assignee)).join("") + opt("none", "Unassigned", f.assignee))}
-        ${sel("type", ["Type"], opt("", "All types", f.type) + TYPES.filter((t) => t.key !== "epic").map((t) => opt(t.key, t.label, f.type)).join(""))}
+        ${sel("type", ["Type"], opt("", "All types", f.type) + TYPES.map((t) => opt(t.key, t.label, f.type)).join(""))}
         ${sel("priority", ["Priority"], opt("", "All priorities", f.priority) + PRIORITIES.map((p) => opt(p.key, p.label, f.priority)).join(""))}
         ${sel("sprint", ["Sprint"], opt("", "All sprints", f.sprint) + sprints().map((s) => opt(s.id, s.name, f.sprint)).join(""))}
         ${sel("label", ["Label"], opt("", "All labels", f.label) + allLabels().map((l) => opt(l, l, f.label)).join(""))}
-        ${sel("epic", ["Epic"], opt("", "All epics", f.epic) + epics().map((e) => opt(e.key, e.title, f.epic)).join(""))}
         ${anyExtra ? '<button type="button" class="link-btn kb-clear" id="rp-reset">Reset to current release</button>' : ""}
       </div>
 
       <div class="kb-kpis">
-        <div class="kb-kpi"><div class="kb-kpi-label">Outstanding tasks${tip("Tasks in the selected release and filters that are not in Completed / Withdrawn.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} completed${withdrawnInRel ? ` · ${withdrawnInRel} withdrawn` : ""}${outstanding.filter((t) => t.flagged).length ? ` · <span class="kb-kpi-flag"><span class="material-symbols-outlined" aria-hidden="true">flag</span>${outstanding.filter((t) => t.flagged).length} flagged</span>` : ""}</div></div>
+        <div class="kb-kpi"><div class="kb-kpi-label">${epicView ? "Outstanding epics" : "Outstanding tasks"}${tip("Tasks in the selected release and filters that are not in Completed / Withdrawn.")}</div><div class="kb-kpi-value">${outstanding.length}</div><div class="kb-kpi-sub">${doneInRel} completed${withdrawnInRel ? ` · ${withdrawnInRel} withdrawn` : ""}${outstanding.filter((t) => t.flagged).length ? ` · <span class="kb-kpi-flag"><span class="material-symbols-outlined" aria-hidden="true">flag</span>${outstanding.filter((t) => t.flagged).length} flagged</span>` : ""}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Remaining effort${tip("Sum of estimate minus time logged on each outstanding task, never below zero. 1d = 8h.")}</div><div class="kb-kpi-value">${fmtH(totalRem)}</div><div class="kb-kpi-sub">${noEstimate ? `${noEstimate} without estimate` : "All estimated"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Time logged${tip("Time logged against the filtered tasks, as a share of their total estimate.")}</div><div class="kb-kpi-value">${fmtH(totalLog)}</div><div class="kb-kpi-sub">${totalEst ? Math.round((totalLog / totalEst) * 100) + "% of " + fmtH(totalEst) : "—"}</div></div>
         <div class="kb-kpi"><div class="kb-kpi-label">Release date${tip("Working days (Mon–Fri) from today to the release date.")}</div><div class="kb-kpi-value">${rel && rel.date ? fmtDate(rel.date) : "—"}</div><div class="kb-kpi-sub">${rel ? (rel.released ? "Released" : rel.date ? `${wd} working days left` : "No date set (Kanban settings)") : "Pick a release"}</div></div>
       </div>
+
+      ${epicSummary}
 
       <section class="docs-block kb-report-block">
         <div class="docs-block-header"><h3>Remaining effort by staff member${tip(capPer ? `Bar length is remaining effort. Capacity assumes 6 focused hours per working day until release: ${fmtH(capPer)} each.` : "Bar length is remaining effort.")}</h3></div>
@@ -2232,9 +2281,7 @@ export function mountStaffKanban(ctx) {
           ${OPTIONAL_FIELDS.map((f) => row(f, false)).join("")}
         </section>
         <section class="docs-block">
-          <div class="docs-block-header"><h3>Workflow${tip("Moving a task into Ready for Testing reassigns it to this person. Moving it back to In Progress or Ready for Dev returns it to the developer.")}</h3></div>
-          <label class="field-label" for="st-tester">Ready for Testing reassigns to</label>
-          <select id="st-tester" class="kb-input"${dis}>${opt("", `Not set (${firstName(S.tester)} is used)`, stored.testerIsDefault ? "" : "-")}${peopleWith(stored.testerIsDefault ? "" : stored.tester).map((u) => opt(u.id, u.first, stored.testerIsDefault ? "" : stored.tester)).join("")}</select>
+          <div class="docs-block-header"><h3>Workflow${tip("Moving a task into Ready for Testing assigns it to its designated tester, or to the tester the person moving it picks. Moving it back to In Progress or Ready for Dev returns it to the developer.")}</h3></div>
           <label class="field-label" for="st-release">Current release</label>
           <select id="st-release" class="kb-input"${dis}>${opt("", S.currentRelease ? `Not set (${releaseName(S.currentRelease)} is used)` : rels.length ? "Not set" : "No releases yet (add one on the Releases page)", stored.currentRelease)}${rels.filter((r) => !r.released || r.id === stored.currentRelease).map((r) => opt(r.id, r.date ? `${r.name} · ${fmtDate(r.date, { day: "numeric", month: "short", year: "numeric" })}` : r.name, stored.currentRelease)).join("")}</select>
         </section>
@@ -2264,7 +2311,6 @@ export function mountStaffKanban(ctx) {
       fields[c.dataset.req].required = c.checked;
       saveS({ fields }, `${esc(FIELD_LABEL[c.dataset.req])} ${c.checked ? "required" : "optional"}`);
     }));
-    $("#st-tester").addEventListener("change", (e) => saveS({ tester: e.target.value }, `Ready for Testing now reassigns to <b>${esc(firstName(e.target.value || DEFAULT_TESTER))}</b>`));
     $("#st-release").addEventListener("change", (e) => saveS({ currentRelease: e.target.value }, `Current release is <b>${esc(releaseName(e.target.value || currentReleaseId({}, releases())))}</b>`));
     $$("[data-rel-date]", view).forEach((inp) => inp.addEventListener("change", () => {
       saveS({ releaseDates: { ...(store.state.settings.releaseDates || {}), [inp.dataset.relDate]: inp.value } }, `${esc(releaseName(inp.dataset.relDate))} date saved`);
