@@ -2682,3 +2682,4 @@ Engineer, Security) are seeded on the first admin visit. Tests: the "user
 management" scenario in `test/ui/console-click.test.mjs`.
 
 - `functions/elementor-deploy.js` — pure logic for non-GitHub (`deployTarget: "elementor"`) projects: publish/dry-run, rollback, pre-publish checks, recurring-job scheduling. See REQUIREMENTS.md → "Non-GitHub deployment targets".
+- `functions/help-search.js` — the public, read-only help search for AI agents (`helpSearch` function, `/help-api/**`: search, article, a stateless public MCP endpoint, `llms.txt` entry, WebMCP snippet). Published and in-range only, never drafts or `pendingRevision`; rate limited, cached, logs queries to `helpSearchLog`. See REQUIREMENTS.md → "Public help search for AI agents".
