@@ -152,7 +152,7 @@ server instructions. `test/kanban-mcp.test.js` checks both.
 
 | Read | Write (editor and admin) |
 | --- | --- |
-| `kanban_list_people` (members by first name, releases, sprints, projects, current release) | `kanban_create_task` (always into Backlog, next PH-n key) |
+| `kanban_list_people` (members by first name and pronunciation hint, releases, sprints, projects, current release), `kanban_get_staff_names` (correct spelling, full name and pronunciation of every member; agents only, never in the board UI) | `kanban_create_task` (always into Backlog, next PH-n key), `kanban_set_staff_pronunciation` (admin only; stored in the server-only `staffPronunciations` collection) |
 | `kanban_list_tasks` (the board's filters: assignee or `me`, release, status, type, priority, sprint, project, label, flagged, search) | `kanban_update_task` (any field but the column) |
 | `kanban_get_task` (everything, with comments, activity, `descriptionHtml`, links (stored on both tickets) and an epic's children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off) |
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |

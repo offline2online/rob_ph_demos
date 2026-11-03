@@ -103,7 +103,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
 
   await test("the twenty kanban_* tools are registered, reads as board.read", async () => {
     const t = mcp.__test.TOOLS.filter((x) => x.name.startsWith("kanban_"));
-    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_attach_uploaded", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_create_upload_url", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_remove_attachment", "kanban_search_tickets", "kanban_update_task"]);
+    assert.deepStrictEqual(t.map((x) => x.name).sort(), ["kanban_assign_task", "kanban_attach_file", "kanban_attach_uploaded", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_create_upload_url", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_staff_names", "kanban_get_task", "kanban_list_notifications", "kanban_list_people", "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_remove_attachment", "kanban_search_tickets", "kanban_set_staff_pronunciation", "kanban_update_task"]);
     for (const x of t) assert.strictEqual(x.scope, /^kanban_(list_(?!notif)|list_notifications|get|search|release|my_work)/.test(x.name) ? "board.read" : "board.write", x.name);
   });
 
@@ -1581,6 +1581,36 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(s.json.unreadNotifications, 1);
     const v = await tool(kit, "kanban_my_work", {});
     assert.ok(!v.isError); assert.strictEqual(v.json.open, 0);
+  });
+
+  await test("Staff names: seeded pronunciations, admin-only set, new member prompt, never in the UI data", async () => {
+    const rob = await connect(ROB);
+    member("duong@personalisationhub.com", "editor", "Duong Nguyen");
+    member("zed@personalisationhub.com", "editor", "Zed Newhire");
+    const r = await tool(sam, "kanban_get_staff_names", {});
+    assert.ok(!r.isError);
+    const by = (e) => r.json.staff.find((x) => x.email === e);
+    assert.match(by("duong@personalisationhub.com").pronunciation, /Zuong/);
+    assert.strictEqual(by("duong@personalisationhub.com").spelling, "Duong");
+    assert.match(by(ROB).pronunciation, /Rob/);
+    assert.match(r.json.rule, /spell staff names/);
+    assert.deepStrictEqual(r.json.pronunciationNeeded.members.includes("zed@personalisationhub.com"), true);
+    const lp = await tool(kit, "kanban_list_people", {});
+    assert.match(lp.json.people.find((x) => x.email === "duong@personalisationhub.com").pronunciation, /Zuong/);
+    assert.ok(lp.json.pronunciationNeeded.prompt.includes("kanban_set_staff_pronunciation"));
+    const denied = await tool(sam, "kanban_set_staff_pronunciation", { member: "zed@personalisationhub.com", pronunciation: 'said "Zed"' });
+    assert.ok(denied.isError); assert.match(denied.text, /admin/);
+    const bad = await tool(rob, "kanban_set_staff_pronunciation", { member: "nobody@example.com", pronunciation: "x" });
+    assert.ok(bad.isError);
+    const ok = await tool(rob, "kanban_set_staff_pronunciation", { member: "zed@personalisationhub.com", pronunciation: 'said "Zed"' });
+    assert.ok(!ok.isError); assert.strictEqual(ok.json.staff.pronunciationSource, "recorded");
+    const again = await tool(kit, "kanban_get_staff_names", {});
+    assert.strictEqual(again.json.staff.find((x) => x.email === "zed@personalisationhub.com").pronunciation, 'said "Zed"');
+    assert.ok(!again.json.pronunciationNeeded || !again.json.pronunciationNeeded.members.includes("zed@personalisationhub.com"));
+    // Hidden from the board: not in the member directory the page reads.
+    for (const d of env.store.col("memberDirectory").values()) assert.ok(!("pronunciation" in d));
+    assert.ok(env.store.col("staffPronunciations").has("zed@personalisationhub.com"));
+    assert.match(require("fs").readFileSync(path.join(__dirname, "../firestore.rules"), "utf8"), /match \/staffPronunciations\/\{memberEmail\} \{\s*allow read, write: if false;/);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
