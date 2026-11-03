@@ -40,7 +40,7 @@ external (non-member) users.
 | Member (editor) | `consoleUsers/{email}`, role `editor` | create, edit, move, comment on any task; upload their own photo |
 | Admin | role `admin` | everything a member can, plus Kanban settings and other people's photos |
 | Viewer | role `viewer` | read the board and report only |
-| Tester | `kanbanSettings.tester` (default Rob) | receives every task moved to Ready for Testing |
+| Tester | the ticket's designated tester, else the person who moves it picks | receives the task moved to Ready for Testing; there is no board-wide default (Rob is never assigned automatically) |
 
 People are shown by **first name** everywhere (from `consoleUsers.displayName`,
 first word), with their profile photo or initial.
@@ -99,8 +99,11 @@ the drag began (letting go where the target appeared under the finger does
 not close the card).
 
 **KB-BOARD-5 Testing hand-off.** Moving a task into Ready for Testing
-reassigns it to the tester and remembers the developer; moving it back to In
-Progress or Ready for Dev returns it to that developer. AC: card shows "From
+reassigns it to the ticket's designated tester, or, when it has none, to the
+tester the person moving it picks in a prompt (over MCP, `kanban_move_task`'s
+`tester`; with none the assignee is left alone). There is no board-wide default
+tester, and only the chosen tester is notified. It remembers the developer;
+moving it back to In Progress or Ready for Dev returns it to that developer. AC: card shows "From
 <developer>"; a toast states the reassignment; the activity log records it.
 Every edit of a ticket's fields on the board also writes one activity line per
 changed field, with the old and new value ("changed Priority from Medium to
@@ -298,8 +301,8 @@ rolled up from its non-withdrawn child tickets in any release). Explanations liv
 Core fields always shown (title and status always required). Hidden fields
 stay editable on an existing ticket under "N more fields" and over MCP.
 
-**KB-SET-2** Ready for Testing reassignment target; current release (when none is
-stored the tester is Rob and the current release is the earliest unreleased one
+**KB-SET-2** Current release (when none is
+stored the current release is the earliest unreleased one
 by version, on the board, the report and `kanban_release_report`; the page shows
 an unset field as "Not set (X is used)", never a value the server lacks); each
 release's date (releases themselves are the console's Releases page); sprints

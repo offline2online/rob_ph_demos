@@ -148,9 +148,17 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(e.isError); assert.match(e.text, /PH-1 is not an epic/);
   });
 
-  await test("kanban_move_task: Ready for Testing hands it to the tester, and back returns it", async () => {
+  await test("kanban_move_task: Ready for Testing with no tester leaves the assignee (never defaults to Rob)", async () => {
     await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
     const r = await tool(sam, "kanban_move_task", { key: "ph1", status: "ready-for-testing" });
+    assert.strictEqual(r.json.assignee, HUY); assert.match(r.json.note, /No tester set/);
+    assert.strictEqual(task("PH-1").assignee, HUY);
+    await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
+  });
+
+  await test("kanban_move_task: Ready for Testing hands it to the chosen tester, and back returns it", async () => {
+    await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
+    const r = await tool(sam, "kanban_move_task", { key: "ph1", status: "ready-for-testing", tester: ROB });
     assert.strictEqual(r.json.assignee, ROB); assert.match(r.json.note, /reassigned to Rob for testing/);
     assert.strictEqual(task("PH-1").previousAssignee, HUY);
     const back = await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
@@ -194,7 +202,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     }
   });
 
-  await test("TC-47: with no tester or current release stored, the defaults apply", async () => {
+  await test("TC-47: with no current release stored, the default applies", async () => {
     const saved = env.store.col("kanbanSettings").get("main");
     const savedRel = env.store.col("releases").get("r412");
     env.store.col("kanbanSettings").set("main", { releaseDates: {}, firstNames: { [HUY]: "Huy" } });
@@ -202,12 +210,11 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     env.store.col("releases").set("r412", { name: "PH 4.12", version: "4.12", status: "draft", order: 1 });
     try {
       const people = await tool(kit, "kanban_list_people", {});
-      assert.strictEqual(people.json.tester, ROB); assert.strictEqual(people.json.currentRelease, "r409");
+      assert.strictEqual(people.json.tester, undefined); assert.strictEqual(people.json.currentRelease, "r409");
       assert.strictEqual((await tool(kit, "kanban_release_report", {})).json.release, "r409");
       await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
       const r = await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-testing" });
-      assert.strictEqual(r.json.assignee, ROB); assert.match(r.json.note, /reassigned to Rob for testing/);
-      assert.strictEqual(task("PH-1").previousAssignee, HUY);
+      assert.strictEqual(r.json.assignee, HUY);
       assert.match((await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" })).json.note, /returned to Huy/);
     } finally {
       env.store.col("kanbanSettings").set("main", saved);
@@ -344,7 +351,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(huy.name, "Huy");
     const people = await tool(kit, "kanban_list_people", {});
     assert.ok(people.json.people.some((p) => p.email === HUY && p.name === "Huy"));
-    assert.strictEqual(people.json.tester, ROB);
+    assert.strictEqual(people.json.tester, undefined);
   });
 
   await test("a viewer reads but can't write", async () => {
@@ -475,7 +482,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     for (const [i, [from, to]] of moves.entries()) {
       const pl = PLACES.find((p) => p.id === to);
       const before = activity(key).length;
-      const r = await tool(sam, "kanban_move_task", pl.status === "done" ? { key, status: "done", resolution: pl.resolution } : { key, status: pl.status });
+      const r = await tool(sam, "kanban_move_task", pl.status === "done" ? { key, status: "done", resolution: pl.resolution }   : pl.status === "ready-for-testing" ? { key, status: pl.status, tester: ROB } : { key, status: pl.status });
       const at = `move ${i + 1} ${from} → ${to}`;
       assert.ok(!r.isError && r.json.moved === true, `${at}: ${r.text}`);
       const t = task(key);
