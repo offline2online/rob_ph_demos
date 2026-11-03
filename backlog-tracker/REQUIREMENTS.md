@@ -2801,6 +2801,43 @@ article shows a badge in the list and in the editor's "Live at" line:
 page header shows "Last WordPress sync: <time>". Tests:
 `test/wp-publish-status.test.mjs` and two scenarios in `test/ui/console-click.test.mjs`.
 
+### Public help search for AI agents (3 Nov 2026, ticket `5pNsaRPdnruE0n6Gnd25`)
+
+A public, read-only, no-sign-in endpoint so AI assistants can answer from the
+published help articles without crawling pages. `functions/help-search.js`
+(the `helpSearch` function), served on the console's Hosting site at
+`/help-api/**`:
+
+- `GET /help-api/search?q=…&release=…&limit=…` — ranked results, each with
+  `title`, `directAnswer`, `summary`, `url` (the
+  personalisationhub.com/support-centre/ URL from the WordPress site's public
+  `GET /wp-json/ph-help/v1/published` map, cached 5 minutes, falling back to
+  `/support-centre/article.html?id=<id>`), `articleType` (falling back to `docType`), `category`, `lastUpdated`.
+- `GET /help-api/article?id=…|slug=…` — the full article (`format=md` or
+  `Accept: text/markdown` gives markdown with the source URL).
+- `POST /help-api/mcp` — a stateless public MCP server (tools `search_help`,
+  `get_help_article`, both read-only). The WebMCP `search_help` tool and the
+  `/llms.txt` entry are out of scope here: they live in the WordPress snippets
+  and are added there once `/help-api` is live.
+- **Never returned:** drafts, retired articles, anything outside the requested
+  release (default: the live release; `release` takes an id or version, same
+  resolution and range check as `search_faq`), and `pendingRevision` text. Only live fields are read.
+- **Rate limit** 60 requests a minute per address per instance (429 with
+  `Retry-After`); **cache** the published set for 60 s and each identical
+  query for 60 s (`X-Cache: HIT|MISS`, `Cache-Control: public, max-age=60`).
+- **Usage log:** one `helpSearchLog` document per search (normalised query,
+  release, result count, `zeroResults`, `via` http|mcp, cached; no address).
+  Members can read it; only the server writes. The release audit's fire text
+  lists the most-asked zero-result queries of the last 90 days as content gaps
+  (`zeroResultQueries` in `release-audit.js`).
+- Scoring is the Support Centre's exactly: every query term (over 1 character)
+  must match; per term title +12 if it starts with it, else +8 if it contains
+  it; keyword +5; question variant +4; summary +2; sorted by score, then
+  article `order`. No body or direct-answer scoring.
+- Falls under the go-live security review (public read-only endpoints).
+
+**Tests.** `test/help-search.test.js`.
+
 ### FAQ revision review (Deploy → propose → approve → go live)
 
 **SEO & agent fields (3 Nov 2026, ticket `rri7DngI2ccd7q4uYdk6`).** Help
