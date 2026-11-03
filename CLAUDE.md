@@ -12,6 +12,7 @@ This is a static site repository used to publish HTML and static resources (CSS,
 
 - `index.html` — Main entry point
 - Static assets (CSS, JS, images) go directly in the repo root or organized subdirectories
+- `ph-website/` — the PHP, JS and CSS running on personalisationhub.com (four Angie snippets, `snippets/MANIFEST.json`); the PH Website session deploys it through the Elementor MCP. See `ph-website/README.md`
 
 ## The offline2online.com WordPress site is an MCP server — `.mcp.json`
 

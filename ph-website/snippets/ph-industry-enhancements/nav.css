@@ -1,0 +1,14 @@
+/* PH Industry: icons in front of the industry links in the site menus */
+li.menu-item>a[href$="/industries/"]::before,li.menu-item>a[href$="/industries/convenience/"]::before,li.menu-item>a[href$="/industries/hospitality/"]::before,li.menu-item>a[href$="/industries/telco/"]::before,li.menu-item>a[href$="/industries/pharmacy/"]::before,li.menu-item>a[href$="/industries/retail-media/"]::before,li.menu-item>a[href$="/industries/grocery/"]::before,li.menu-item>a[href$="/industries/fashion/"]::before,li.menu-item>a[href$="/industries/qsr/"]::before,li.menu-item>a[href$="/industries/banking/"]::before{content:"";display:inline-block;flex:0 0 auto;width:20px;height:20px;margin:0 10px 0 0;vertical-align:-5px;background:transparent center/contain no-repeat}
+li.menu-item>a[href$="/industries/convenience/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-local-gas-station.png)}
+li.menu-item>a[href$="/industries/hospitality/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-sports-bar.png)}
+li.menu-item>a[href$="/industries/telco/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-cell-tower.png)}
+li.menu-item>a[href$="/industries/pharmacy/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-local-pharmacy.png)}
+li.menu-item>a[href$="/industries/retail-media/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-campaign.png)}
+li.menu-item>a[href$="/industries/grocery/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-local-grocery-store.png)}
+li.menu-item>a[href$="/industries/fashion/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-apparel.png)}
+li.menu-item>a[href$="/industries/qsr/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-fastfood.png)}
+li.menu-item>a[href$="/industries/banking/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-account-balance.png)}
+li.menu-item>a[href$="/industries/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-storefront.png)}
+li.menu-item>a[href*="/industries/"]{justify-content:flex-start!important;align-items:center}
+@media (min-width:1025px){.elementskit-submenu-panel:has(>li>a[href$="/industries/convenience/"]){min-width:330px!important;width:330px!important}}
