@@ -704,6 +704,26 @@ const scenarios = [
     },
   },
   {
+    name: "Backlog bulk bar: ticking cards offers Archive N / Delete N behind one confirmation",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.b2 = { ...s.docs.backlogItems.b1, title: "Second junk ticket", createdAt: t(T0 + 9), updatedAt: t(T0 + 9) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      assert.strictEqual(await c.page.locator(".backlog-bulk-bar").count(), 0, "no bar until something is ticked");
+      await c.click(".col-select-all-cb", "select all Backlog cards");
+      await c.visible(".backlog-bulk-archive-btn", "Archive button");
+      assert.ok(/Archive 2/.test(await c.page.locator(".backlog-bulk-archive-btn").innerText()), "counts the selection");
+      await c.click(".backlog-bulk-archive-btn", "Archive 2");
+      await c.click("#dialog-ok", "confirm the archive");
+      const writes = await until(async () => { const w = await c.writes(); return w.filter((x) => x.path.startsWith("backlogItems/") && x.data && x.data.status === "archived").length >= 2 ? w : null; }, "both tickets archived");
+      c.at("what the bulk archive wrote");
+      assert.deepStrictEqual(writes.filter((x) => x.data && x.data.status === "archived").map((x) => x.path).sort(), ["backlogItems/b1", "backlogItems/b2"]);
+    },
+  },
+  {
     name: "Blocked: a dependency wait shows 'Waiting for: <title>', no Answer button, no answer chip",
     seed: () => { const s = only("b1"); s.docs.backlogItems.b1.dependsOnItemIds = ["b-dep"]; s.docs.backlogItems["b-dep"] = { ...s.docs.backlogItems.b1, title: "Roles page", dependsOnItemIds: [], blocked: null }; s.docs.backlogItems.b1.blocked = { reason: "waiting-on-dependency", note: "Waiting for: Roles page." }; return s; },
     async run(c) {

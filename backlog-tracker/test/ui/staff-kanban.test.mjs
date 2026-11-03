@@ -219,14 +219,28 @@ T("TC-02", "drag a card from Backlog to In Progress", { on: on.notPhone }, async
   await p.done();
 });
 
-T("TC-03", "Ready for Testing reassigns to the tester; moving back returns it to the developer", async (prof) => {
+T("TC-03", "Ready for Testing asks who tests (never Rob by default); moving back returns it to the developer", async (prof) => {
   const p = await open(prof, "#staff-kanban", TALL);
   const m = methodOf(p);
   await moveBy(p, m, "PH-19", "ready-for-testing");
-  let w = await where(p, "PH-19");
+  let w;
+  if (m === "status") {
+    // The edit form has its own Assignee field: the status change alone assigns nobody.
+    w = await where(p, "PH-19");
+    assert.equal(w.status, "ready-for-testing"); assert.equal(w.avatar, "Đức", "no automatic tester");
+    assert.equal((await stored(p, "PH-19")).assignee, emailOf("Đức"));
+    await moveBy(p, m, "PH-19", "in-progress");
+    assert.equal((await where(p, "PH-19")).status, "in-progress");
+    await p.done();
+    return;
+  }
+  await p.waitForSelector("#kb-tester-pick");
+  assert.equal((await where(p, "PH-19")).status, "in-progress", "nothing is written until a tester is chosen");
+  await p.selectOption("#kb-tester-pick", emailOf("Huy")); await press(p, "#kb-tester-ok"); await p.waitForTimeout(150);
+  w = await where(p, "PH-19");
   assert.equal(w.status, "ready-for-testing");
-  assert.equal(w.avatar, "Rob");
-  assert.match(await p.textContent("#kb-toast"), /reassigned to Rob for testing/);
+  assert.equal(w.avatar, "Huy");
+  assert.match(await p.textContent("#kb-toast"), /reassigned to Huy for testing/);
   assert.match(await p.textContent('.kb-card[data-key="PH-19"] .kb-handoff'), /From Đức/);
   assert.equal((await stored(p, "PH-19")).previousAssignee, emailOf("Đức"));
   await moveBy(p, m, "PH-19", "in-progress");
@@ -542,19 +556,18 @@ T("TC-18", "modal: pinned action bar, collapsible details column remembered", { 
   await p.done();
 });
 
-T("TC-19", "settings: hide or require an optional field; change the tester", async (prof) => {
+T("TC-19", "settings: hide or require an optional field", async (prof) => {
   const p = await open(prof, "#staff-kanban/settings");
   await press(p, '[data-show="sprint"]'); await p.waitForTimeout(100);
   await press(p, '[data-req="sprint"]'); await p.waitForTimeout(100);
-  await p.selectOption("#st-tester", MINH); await p.waitForTimeout(100);
   const s = await p.evaluate(() => globalThis.__fbStub.col("kanbanSettings").get("main"));
-  assert.deepEqual(s.fields.sprint, { show: true, required: true }); assert.equal(s.tester, emailOf("Minh")); assert.equal(s.updatedBy, ROB);
+  assert.deepEqual(s.fields.sprint, { show: true, required: true }); assert.equal(s.updatedBy, ROB);
   await press(p, '#kb-view [data-route="kanban"]'); await p.waitForSelector(".kb-card");
   await press(p, "#kb-new-btn"); await p.fill("#f-title", "Needs a sprint"); await press(p, "#f-save");
   assert.match(await p.textContent("#f-error"), /Sprint is required/);
   await press(p, "#f-cancel");
   await moveBy(p, methodOf(p), "PH-19", "ready-for-testing");
-  assert.equal((await where(p, "PH-19")).avatar, "Minh");
+  if (methodOf(p) !== "status") { await p.selectOption("#kb-tester-pick", MINH); await press(p, "#kb-tester-ok"); await p.waitForTimeout(150); assert.equal((await where(p, "PH-19")).avatar, "Minh"); }
   await p.done();
 });
 
@@ -573,6 +586,15 @@ T("TC-20", "release report: defaults to current release, filters in the URL, per
   await p.evaluate(() => { location.hash = "#staff-kanban/report?release=4-12&status=done%3Awithdrawn"; });
   await p.waitForTimeout(250);
   assert.deepEqual((await p.$$eval("[data-open]", (e) => e.map((x) => x.dataset.open))).sort(), ["PH-38", "PH-39"]);
+  // No Epic drop-down; Epic is a Type option and shows an epics-only page with an epic summary.
+  assert.equal(await p.$$eval('[data-rf="epic"]', (e) => e.length), 0);
+  assert.ok((await p.$$eval('[data-rf="type"] option', (e) => e.map((x) => x.value))).includes("epic"));
+  await p.evaluate(() => { location.hash = "#staff-kanban/report?release=all&status=all&type=epic"; });
+  await p.waitForTimeout(300);
+  assert.equal(await p.$$eval("#rp-epics", (e) => e.length), 1);
+  const opened = await p.$$eval("[data-open]", (e) => e.map((x) => x.dataset.open));
+  assert.ok(opened.length >= 1);
+  assert.equal(await p.$$eval("#rp-epics + * .kb-type-task, .kb-task-cell .kb-type-task", (e) => e.length), 0);
   await p.done();
 });
 
@@ -681,7 +703,7 @@ T("KB-C2", "notifications bell: unread count, opening one marks it read and open
   await p.done();
 });
 
-T("KB-C2c", "notifications bell: the newest 30 of 150, the badge counts them all, Mark all read clears them, and it is in the topbar of every page", async (prof) => {
+T("KB-C2c", "notifications bell: the newest 30 of 150, the badge counts them all, Mark all as read clears them, and it is in the topbar of every page", async (prof) => {
   const seed = kanbanSeed({ extra: { kanbanNotifications: Object.fromEntries(Array.from({ length: 150 }, (_, i) => [`n${i}`, { to: ROB, from: HUY, taskKey: i % 2 ? "PH-20" : "PH-21", taskTitle: i % 2 ? "Menu board preview shows RRP" : "Other", kind: i === 149 ? "assigned" : "commented", read: false, at: { $ts: Date.UTC(2026, 9, 29, 0, 0, i) } }])) } });
   const p = await open(prof, "#staff-kanban", { seed });
   await goAgentBoard(p);
@@ -692,8 +714,22 @@ T("KB-C2c", "notifications bell: the newest 30 of 150, the badge counts them all
   assert.match(await p.textContent(".kb-bell-item"), /Huy assigned this to you/, "newest first");
   assert.equal((await p.$$(".kb-bell-ticket")).length, 2, "grouped by ticket");
   await press(p, "#kb-bell-read");
-  await until(async () => !/\d/.test(await p.textContent("#kb-bell")), "Mark all read");
+  await until(async () => !/\d/.test(await p.textContent("#kb-bell")), "Mark all as read");
   assert.equal(await p.evaluate(() => [...globalThis.__fbStub.col("kanbanNotifications").values()].filter((n) => !n.read).length), 0, "every note, not only the 30 shown");
+  await p.done();
+});
+
+T("KB-C2e", "notifications bell: Mark all as read clears the badge when the unread ones are all older than the newest 30", async (prof) => {
+  // The newest 30 are already read, so the bell's own listener sees no change when the rest are marked.
+  const seed = kanbanSeed({ extra: { kanbanNotifications: Object.fromEntries(Array.from({ length: 45 }, (_, i) => [`n${i}`, { to: ROB, from: HUY, taskKey: "PH-20", taskTitle: "Menu board preview shows RRP", kind: "commented", read: i >= 15, at: { $ts: Date.UTC(2026, 9, 29, 0, 0, i) } }])) } });
+  const p = await open(prof, "#staff-kanban", { seed });
+  await until(async () => (await p.textContent("#kb-bell")).includes("15"), "the unread count");
+  await press(p, "#kb-bell");
+  assert.equal((await p.$$(".kb-bell-item.unread")).length, 0, "none of the newest 30 is unread");
+  assert.match(await p.textContent("#kb-bell-read"), /Mark all as read/);
+  await press(p, "#kb-bell-read");
+  await until(async () => !/\d/.test(await p.textContent("#kb-bell")), "the badge clears");
+  assert.equal(await p.evaluate(() => [...globalThis.__fbStub.col("kanbanNotifications").values()].filter((n) => !n.read).length), 0, "every note is read in the store");
   await p.done();
 });
 

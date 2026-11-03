@@ -40,7 +40,7 @@ external (non-member) users.
 | Member (editor) | `consoleUsers/{email}`, role `editor` | create, edit, move, comment on any task; upload their own photo |
 | Admin | role `admin` | everything a member can, plus Kanban settings and other people's photos |
 | Viewer | role `viewer` | read the board and report only |
-| Tester | `kanbanSettings.tester` (default Rob) | receives every task moved to Ready for Testing |
+| Tester | the ticket's designated tester, else the person who moves it picks | receives the task moved to Ready for Testing; there is no board-wide default (Rob is never assigned automatically) |
 
 People are shown by **first name** everywhere (from `consoleUsers.displayName`,
 first word), with their profile photo or initial.
@@ -99,8 +99,11 @@ the drag began (letting go where the target appeared under the finger does
 not close the card).
 
 **KB-BOARD-5 Testing hand-off.** Moving a task into Ready for Testing
-reassigns it to the tester and remembers the developer; moving it back to In
-Progress or Ready for Dev returns it to that developer. AC: card shows "From
+reassigns it to the ticket's designated tester, or, when it has none, to the
+tester the person moving it picks in a prompt (over MCP, `kanban_move_task`'s
+`tester`; with none the assignee is left alone). There is no board-wide default
+tester, and only the chosen tester is notified. It remembers the developer;
+moving it back to In Progress or Ready for Dev returns it to that developer. AC: card shows "From
 <developer>"; a toast states the reassignment; the activity log records it.
 Every edit of a ticket's fields on the board also writes one activity line per
 changed field, with the old and new value ("changed Priority from Medium to
@@ -279,13 +282,17 @@ checked on save; estimate and time logged accept `1d 4h`, `6h`, `30m`.
 ## 8. Release report
 
 **KB-REP-1** Linked from the board; defaults to the current release; every
-filter (release, status, staff member, type, priority, sprint, label, epic) is
+filter (release, status, staff member, type, priority, sprint, label) is
 kept in the URL so a view can be shared. Shows: outstanding tasks (with
 completed / withdrawn / flagged counts), remaining effort, time logged,
 release date with working days left; remaining effort per staff member against
 capacity (6 focused hours per working day); a breakdown table per person with
 totals (Completed and Withdrawn as separate columns when shown); the task list
-grouped by person. Epics are excluded from effort figures. Explanations live in
+grouped by person. Epics are excluded from effort figures. There is no Epic
+drop-down: **Epic is an option of the Type filter**, and choosing it turns the
+whole page into an epics-only view with an **Epic summary** table (per epic:
+status, owner, tickets, done, open, progress, estimate, logged, remaining,
+rolled up from its non-withdrawn child tickets in any release). Explanations live in
 (i) tooltips only.
 
 ## 9. Settings (admin)
@@ -294,8 +301,8 @@ grouped by person. Epics are excluded from effort figures. Explanations live in
 Core fields always shown (title and status always required). Hidden fields
 stay editable on an existing ticket under "N more fields" and over MCP.
 
-**KB-SET-2** Ready for Testing reassignment target; current release (when none is
-stored the tester is Rob and the current release is the earliest unreleased one
+**KB-SET-2** Current release (when none is
+stored the current release is the earliest unreleased one
 by version, on the board, the report and `kanban_release_report`; the page shows
 an unset field as "Not set (X is used)", never a value the server lacks); each
 release's date (releases themselves are the console's Releases page); sprints
@@ -334,6 +341,17 @@ card. Over MCP `project` takes an id or a project's name (stored as the id), an
 unknown one is refused with every other validation error, and `""` clears it;
 `kanban_list_tasks` filters on it (pushed into the query), `kanban_get_task`
 returns it with `projectName`, and `kanban_list_people` lists the projects.
+
+**KB-NAME-1 Staff names and pronunciation (agents only).** Every member has the board's
+spelling, a full name and a pronunciation hint (a plain-English sound-alike). The pronunciation is
+stored only in the server-only `staffPronunciations/{email}` collection and is **never shown in the
+UI**: not on the board, a profile (the member's own included) or settings, and it is not on
+`memberDirectory`. Agents read it over MCP (`kanban_list_people`, `kanban_get_staff_names`) and an
+admin sets it with `kanban_set_staff_pronunciation`; anyone else is refused. Current members are
+seeded by first name: Duong "Zuong" (northern Vietnamese), Duy "Zui", Thuc close to "Took" (the
+tech lead), Hong "Hong", Rob. A member with none is listed as `pronunciationNeeded` with a prompt to
+ask the admin. The tool descriptions tell agents to use these spellings and pronunciations whenever
+they refer to staff.
 
 **KB-MCP-1** Every field is readable and writable over the console's MCP
 server, attributed to the calling member: `kanban_list_tasks` (filters as on
