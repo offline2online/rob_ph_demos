@@ -2847,7 +2847,38 @@ published help articles without crawling pages. `functions/help-search.js`
   article `order`. No body or direct-answer scoring.
 - Falls under the go-live security review (public read-only endpoints).
 
-**Tests.** `test/help-search.test.js`.
+**Live data feed and refresh ping (4 Nov 2026, ticket `tvqrtjTYu1icx9fHrydq`).**
+A publish, approval, edit or retire reaches personalisationhub.com/support-centre/
+in about two minutes, without waiting for the hourly export and WordPress's
+hourly sync (up to two hours before):
+
+- `GET /help-api/data/index.json`, `/data/releases.json` and
+  `/data/articles/<id>.json` serve the published content in `faq/data`'s own
+  shape and file layout. The field allow-list is the export script's, shared
+  by code (`functions/faq-feed.js`: `articleRecord`, `categoryRecord`,
+  `releaseRecord`, `serializeIndex`; `scripts/faq-export.js` and
+  `faq-index-lib.js` use the same functions), so the WordPress sync reads it
+  unchanged. Published articles only: never a draft, retired article,
+  `pendingRevision`, `retireProposal` or any editor-only field. `Cache-Control:
+  public, max-age=60` and an `ETag` (`If-None-Match` gives 304); the help API's
+  per-address rate limit applies. Its `generatedAt` is the newest article
+  `updatedAt` so the ETag only changes when content does.
+- Firestore triggers on `faqArticles` and `faqCategories`
+  (`pingSupportCentreOnArticleChange`, `pingSupportCentreOnCategoryChange`)
+  fire only when the public projection changes (status, body, title, order,
+  category, release range, the SEO/agent fields; a draft or `pendingRevision`
+  edit does not). They call `POST https://personalisationhub.com/wp-json/ph-help/v1/refresh`
+  with no body: 4 s timeout, failures logged and never retried. Debounced across
+  instances through `settings/faqRefreshPing`: edits within 5 s share one call,
+  and calls are at least 60 s apart (an edit inside the gap fires when it ends).
+  The endpoint itself is added on the WordPress side (PH Website ticket
+  "Support Centre syncs from the live help feed on refresh").
+- The hourly export to GitHub is unchanged: it stays the versioned record and
+  the fallback source. **Functions changes go live on the next
+  `deploy-backlog-tracker.yml` run on `main`.**
+
+**Tests.** `test/help-search.test.js`, `test/faq-feed.test.js` (allow-list,
+published-only, ETag, retire, change detection, debounce, timeout).
 
 ### FAQ revision review (Deploy → propose → approve → go live)
 

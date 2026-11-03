@@ -8,6 +8,11 @@
 //   POST /help-api/mcp                            a stateless public MCP server
 //                                                  (initialize, tools/list, tools/call:
 //                                                  search_help, get_help_article)
+//   GET  /help-api/data/index.json                the live feed the WordPress Support
+//        /help-api/data/releases.json             Centre sync reads: the published
+//        /help-api/data/articles/<id>.json        content in faq/data's own shape (the
+//                                                  fields come from faq-feed.js, the code
+//                                                  faq-export.js uses), published only
 //
 // What it will NEVER return: a draft, a retired article, an article outside
 // the requested (default: live) release range, or `pendingRevision` text.
@@ -33,7 +38,9 @@
 // all-terms rule; a query made only of them keeps its original terms.
 "use strict";
 
+const crypto = require("crypto");
 const { htmlToMarkdown } = require("./html-to-md");
+const feed = require("./faq-feed");
 
 const SEARCH_LIMIT_DEFAULT = 8;
 const SEARCH_LIMIT_MAX = 20;
@@ -149,11 +156,11 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
       db.collection("faqCategories").get(),
       db.collection("releases").get(),
     ]);
-    const articles = []; const cats = {}; const releases = [];
+    const articles = []; const cats = {}; const releases = []; const catRows = []; const releaseRows = [];
     artSnap.forEach((d) => { const v = d.data() || {}; if (v.status === "published") articles.push({ ...v, id: d.id }); });
-    catSnap.forEach((d) => { const v = d.data() || {}; cats[d.id] = { name: v.name || "", parentId: v.parentId || null }; });
-    relSnap.forEach((d) => { const v = d.data() || {}; releases.push({ id: d.id, name: v.name || "", version: v.version || null, status: v.status || "draft", order: Number(v.order) || 0 }); });
-    data = { at: t, articles, cats, releases };
+    catSnap.forEach((d) => { const v = d.data() || {}; cats[d.id] = { name: v.name || "", parentId: v.parentId || null }; catRows.push(feed.categoryRecord(d.id, v)); });
+    relSnap.forEach((d) => { const v = d.data() || {}; releases.push({ id: d.id, name: v.name || "", version: v.version || null, status: v.status || "draft", order: Number(v.order) || 0 }); releaseRows.push(feed.releaseRecord(d.id, v)); });
+    data = { at: t, articles, cats, releases, catRows, releaseRows };
     return data;
   }
 
@@ -331,6 +338,25 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     return e.count > rateMax ? Math.max(1, Math.ceil((e.resetAt - t) / 1000)) : 0;
   }
 
+  // ── Live data feed (same files as faq/data, published articles only) ──────
+  // Built from the same 60 s snapshot as search, so a retire or publish shows
+  // within a minute. Text is rendered once per snapshot and carries an ETag.
+  let feedCache = null; // { at: data.at, files: Map(path -> text) }
+  async function feedFile(file) {
+    const d = await load();
+    if (!feedCache || feedCache.at !== d.at) {
+      const records = d.articles.filter((a) => a.status === "published").map((a) => feed.articleRecord(a.id, a, new Date(d.at).toISOString()));
+      const cats = feed.sortCategories(d.catRows.slice());
+      const stamp = records.map((r) => r.updatedAt).sort().pop() || "1970-01-01T00:00:00Z";
+      const files = new Map();
+      files.set("index.json", feed.serializeIndex(feed.buildIndex(cats, records, stamp)));
+      files.set("releases.json", feed.serializeReleases(feed.sortReleases(d.releaseRows.slice())));
+      for (const r of records) files.set(`articles/${r.id}.json`, feed.serializeArticle(r));
+      feedCache = { at: d.at, files };
+    }
+    return feedCache.files.get(file) || null;
+  }
+
   // ── MCP (stateless, public, read-only) ──────────────────────────────────
   const TOOLS = [
     {
@@ -444,6 +470,15 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         else res.status(200).json(r.body);
         return;
       }
+      if (req.method === "GET" && /^\/data\/(index\.json|releases\.json|articles\/[A-Za-z0-9_-]{1,128}\.json)$/.test(path)) {
+        const text = await feedFile(path.slice("/data/".length));
+        if (text == null) { res.status(404).json({ error: "not_found", error_description: "No published article with that id." }); return; }
+        const etag = `"${crypto.createHash("sha1").update(text).digest("hex")}"`;
+        res.set("Cache-Control", "public, max-age=60").set("ETag", etag);
+        if (String((req.get && req.get("if-none-match")) || "").split(",").map((x) => x.trim().replace(/^W\//, "")).includes(etag)) { res.status(304).send(""); return; }
+        res.status(200).type("application/json; charset=utf-8").send(text);
+        return;
+      }
       if (path === "/mcp") {
         if (req.method === "GET") { res.status(405).set("Allow", "POST").json({ error: "method_not_allowed", error_description: "POST JSON-RPC messages to this endpoint." }); return; }
         if (req.method !== "POST") { res.status(405).set("Allow", "POST").json({ error: "method_not_allowed" }); return; }
@@ -460,14 +495,14 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         res.status(200).json(out);
         return;
       }
-      res.status(404).json({ error: "not_found", error_description: "Endpoints: GET /help-api/search, GET /help-api/article, POST /help-api/mcp." });
+      res.status(404).json({ error: "not_found", error_description: "Endpoints: GET /help-api/search, GET /help-api/article, GET /help-api/data/*, POST /help-api/mcp." });
     } catch (err) {
       if (logger) logger.error("help search failed", { path, error: String(err && err.stack ? err.stack : err) });
       if (!res.headersSent) res.status(500).json({ error: "server_error" });
     }
   }
 
-  return { handle, search, article, mcpMessage, TOOLS, _reset() { data = null; urlMap = null; mdTwins.clear(); results.clear(); buckets.clear(); } };
+  return { handle, search, article, mcpMessage, TOOLS, _reset() { data = null; feedCache = null; urlMap = null; mdTwins.clear(); results.clear(); buckets.clear(); } };
 }
 
 module.exports = { createHelpApi, STOP_WORDS, scoreArticle, safeSupportUrl, inRange, termsOf, normaliseQuery, SERVER_INFO };

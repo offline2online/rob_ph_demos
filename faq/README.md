@@ -76,6 +76,11 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   Run workflow), and the article page also fetches the single article
   document from Firestore's REST API in the background and swaps in a newer
   published revision, so an edit is visible on its page immediately.
+- The same published content is also served live (no commit) at
+  `https://backlog-tracker-e4ed2.web.app/help-api/data/index.json`, `releases.json`
+  and `articles/<id>.json` for the WordPress Support Centre sync; a change
+  pings that site to re-read it. The hourly export stays the versioned record
+  and fallback.
 - Bulk content work done in git (like the rewrite) lands in `data/` and the
   same workflow syncs it repo → Firestore on push, without overwriting
   anything edited in the console since the last sync. A deployment-train
