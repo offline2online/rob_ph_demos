@@ -690,7 +690,7 @@ T("KB-C2", "notifications bell: unread count, opening one marks it read and open
   await p.done();
 });
 
-T("KB-C2c", "notifications bell: the newest 30 of 150, the badge counts them all, Mark all read clears them, and it is in the topbar of every page", async (prof) => {
+T("KB-C2c", "notifications bell: the newest 30 of 150, the badge counts them all, Mark all as read clears them, and it is in the topbar of every page", async (prof) => {
   const seed = kanbanSeed({ extra: { kanbanNotifications: Object.fromEntries(Array.from({ length: 150 }, (_, i) => [`n${i}`, { to: ROB, from: HUY, taskKey: i % 2 ? "PH-20" : "PH-21", taskTitle: i % 2 ? "Menu board preview shows RRP" : "Other", kind: i === 149 ? "assigned" : "commented", read: false, at: { $ts: Date.UTC(2026, 9, 29, 0, 0, i) } }])) } });
   const p = await open(prof, "#staff-kanban", { seed });
   await goAgentBoard(p);
@@ -701,8 +701,22 @@ T("KB-C2c", "notifications bell: the newest 30 of 150, the badge counts them all
   assert.match(await p.textContent(".kb-bell-item"), /Huy assigned this to you/, "newest first");
   assert.equal((await p.$$(".kb-bell-ticket")).length, 2, "grouped by ticket");
   await press(p, "#kb-bell-read");
-  await until(async () => !/\d/.test(await p.textContent("#kb-bell")), "Mark all read");
+  await until(async () => !/\d/.test(await p.textContent("#kb-bell")), "Mark all as read");
   assert.equal(await p.evaluate(() => [...globalThis.__fbStub.col("kanbanNotifications").values()].filter((n) => !n.read).length), 0, "every note, not only the 30 shown");
+  await p.done();
+});
+
+T("KB-C2e", "notifications bell: Mark all as read clears the badge when the unread ones are all older than the newest 30", async (prof) => {
+  // The newest 30 are already read, so the bell's own listener sees no change when the rest are marked.
+  const seed = kanbanSeed({ extra: { kanbanNotifications: Object.fromEntries(Array.from({ length: 45 }, (_, i) => [`n${i}`, { to: ROB, from: HUY, taskKey: "PH-20", taskTitle: "Menu board preview shows RRP", kind: "commented", read: i >= 15, at: { $ts: Date.UTC(2026, 9, 29, 0, 0, i) } }])) } });
+  const p = await open(prof, "#staff-kanban", { seed });
+  await until(async () => (await p.textContent("#kb-bell")).includes("15"), "the unread count");
+  await press(p, "#kb-bell");
+  assert.equal((await p.$$(".kb-bell-item.unread")).length, 0, "none of the newest 30 is unread");
+  assert.match(await p.textContent("#kb-bell-read"), /Mark all as read/);
+  await press(p, "#kb-bell-read");
+  await until(async () => !/\d/.test(await p.textContent("#kb-bell")), "the badge clears");
+  assert.equal(await p.evaluate(() => [...globalThis.__fbStub.col("kanbanNotifications").values()].filter((n) => !n.read).length), 0, "every note is read in the store");
   await p.done();
 });
 

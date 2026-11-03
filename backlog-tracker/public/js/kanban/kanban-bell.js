@@ -45,7 +45,7 @@ export function groupByTicket(list) {
 // host: the element to put the bell in. openTicket(key) shows that ticket.
 export function mountNotificationBell({ db, me, host, openTicket, onError = () => {} }) {
   const mine = normEmail(me);
-  const state = { list: [], unread: 0, open: false, firstNames: {} };
+  const state = { list: [], unread: 0, open: false, firstNames: {}, error: "", busy: false };
   // The first names the Kanban settings give people ("Huy"), else the first word of their name.
   const firstOf = (e) => state.firstNames[normEmail(e)] || String(memberLabel(e) || "").split(/[\s@]/)[0] || "Someone";
   host.classList.add("kb-bell-wrap");
@@ -60,7 +60,8 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
     panel.hidden = !state.open;
     if (!state.open) return;
     const groups = groupByTicket(state.list);
-    panel.innerHTML = `<div class="kb-bell-head"><b>Notifications</b>${unread ? '<button type="button" class="link-btn" id="kb-bell-read">Mark all read</button>' : ""}</div>`
+    panel.innerHTML = `<div class="kb-bell-head"><b>Notifications</b>${unread ? `<button type="button" class="link-btn" id="kb-bell-read"${state.busy ? " disabled" : ""}>Mark all as read</button>` : ""}</div>`
+      + (state.error ? `<p class="kb-none kb-bell-empty" role="alert" id="kb-bell-error">${esc(state.error)}</p>` : "")
       + (groups.map((g) => `<div class="kb-bell-group"><div class="kb-bell-ticket"><b>${esc(g.key)}</b> ${esc(g.title)}</div>${g.items.map((n) => `<button type="button" class="kb-bell-item${n.read ? "" : " unread"}" data-note="${esc(n.id)}" data-key="${esc(n.taskKey)}">${avatarHTML(n.from, 24)}<span>${describe(n, firstOf)}<span class="kb-none">${esc(when(n.at))}</span></span></button>`).join("")}</div>`).join("")
         || '<p class="kb-none kb-bell-empty">Nothing yet</p>');
   }
@@ -88,15 +89,32 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
     const b = writeBatch(db);
     for (const id of ids) b.update(doc(db, "kanbanNotifications", id), { read: true });
     await b.commit();
+    // The newest-30 listener may not change (the note can be older than that), so re-count.
+    recount();
   }
   async function markAllRead() {
-    // Every unread one, not only the 30 shown (500 to a batch).
-    const snap = await getDocs(query(collection(db, "kanbanNotifications"), where("to", "==", mine), where("read", "==", false)));
-    for (let i = 0; i < snap.docs.length; i += 450) {
-      const b = writeBatch(db);
-      snap.docs.slice(i, i + 450).forEach((d) => b.update(d.ref, { read: true }));
-      await b.commit();
+    if (state.busy) return;
+    state.busy = true; state.error = "";
+    // Clear the badge and the list straight away; the server write below makes it stick.
+    const before = { list: state.list, unread: state.unread };
+    state.list = state.list.map((n) => ({ ...n, read: true })); state.unread = 0; draw();
+    try {
+      // Every unread one, not only the 30 shown (500 to a batch).
+      const snap = await getDocs(query(collection(db, "kanbanNotifications"), where("to", "==", mine), where("read", "==", false)));
+      for (let i = 0; i < snap.docs.length; i += 450) {
+        const b = writeBatch(db);
+        snap.docs.slice(i, i + 450).forEach((d) => b.update(d.ref, { read: true }));
+        await b.commit();
+      }
+    } catch (err) {
+      // Put the real state back and say so: a silent failure looked like a button that does nothing.
+      state.list = before.list; state.unread = before.unread; state.error = "Couldn't mark them read. Try again.";
+      onError(err);
+    } finally {
+      state.busy = false; draw();
     }
+    // The listener only sees the newest 30, so count again whatever it showed.
+    recount();
     pruneRead().catch((e) => console.warn("staff kanban: notifications not pruned:", e));
   }
   // The member's own read notifications older than 30 days: one query, 200 at most.
@@ -118,7 +136,7 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
       openTicket(item.dataset.key);
       return;
     }
-    if (e.target.closest("#kb-bell-read")) { markAllRead().catch(onError); return; }
+    if (e.target.closest("#kb-bell-read")) { markAllRead(); return; }
     if (state.open && !e.target.closest("#kb-bell-panel")) { state.open = false; draw(); }
   };
   document.addEventListener("click", onClick);
