@@ -2810,9 +2810,14 @@ published help articles without crawling pages. `functions/help-search.js`
   `title`, `directAnswer`, `summary`, `url` (the
   personalisationhub.com/support-centre/ URL from the WordPress site's public
   `GET /wp-json/ph-help/v1/published` map, cached 5 minutes, falling back to
-  `/support-centre/article.html?id=<id>`), `articleType` (falling back to `docType`), `category`, `lastUpdated`.
+  `/support-centre/article.html?id=<id>`), `articleType` (falling back to `docType`), `category` (the top-level category, as in the Support Centre breadcrumb), `folder` (only when the article sits in a folder) and `lastUpdated`.
 - `GET /help-api/article?id=…|slug=…` — the full article (`format=md` or
-  `Accept: text/markdown` gives markdown with the source URL).
+  `Accept: text/markdown` gives real markdown with the source URL, as does the
+  MCP `get_help_article`): the article's WordPress markdown twin
+  `<url>?format=md` (cached 5 minutes), or, when WordPress can't be reached or
+  the article has no recorded URL, an HTML-to-markdown conversion of the body
+  (`functions/html-to-md.js`: headings, lists, tables, links, code). The JSON
+  `bodyMd` is the stored body unchanged.
 - `POST /help-api/mcp` — a stateless public MCP server (tools `search_help`,
   `get_help_article`, both read-only). The WebMCP `search_help` tool and the
   `/llms.txt` entry are out of scope here: they live in the WordPress snippets
@@ -2828,8 +2833,10 @@ published help articles without crawling pages. `functions/help-search.js`
   Members can read it; only the server writes. The release audit's fire text
   lists the most-asked zero-result queries of the last 90 days as content gaps
   (`zeroResultQueries` in `release-audit.js`).
-- Scoring is the Support Centre's exactly: every query term (over 1 character)
-  must match; per term title +12 if it starts with it, else +8 if it contains
+- Scoring is the Support Centre's exactly: filler words are dropped first
+  (`STOP_WORDS` in `help-search.js`, the list the WordPress search uses; a query
+  of only stop words keeps its original terms), then every remaining query term
+  (over 1 character) must match; per term title +12 if it starts with it, else +8 if it contains
   it; keyword +5; question variant +4; summary +2; sorted by score, then
   article `order`. No body or direct-answer scoring.
 - Falls under the go-live security review (public read-only endpoints).
