@@ -17,13 +17,9 @@
 // ({articles:[{id,url,…}]}, cached here), falling back to
 // /support-centre/article.html?id=<id>, which always resolves.
 //
-// Rate limited per address and per endpoint class (search/article 60 a minute,
-// MCP 30; instance-local fixed window, like mcp-server.js's open endpoints;
-// 429 with Retry-After and X-RateLimit-* headers), cached for a short time
-// (the whole published set for 60 s, each identical search or article for
-// 60 s, X-Cache HIT|MISS), monitored in 5-minute windows (a burst of 429s or
-// of 5xx posts one alert to the team webhook, then stays quiet 30 minutes),
-// and every search is logged to
+// Rate limited per address (instance-local fixed window, like mcp-server.js's
+// open endpoints), cached for a short time (the whole published set for 60 s,
+// each identical query for 60 s), and every search is logged to
 // helpSearchLog by query so zero-result queries show up as content gaps in
 // the next release audit (release-audit.js -> zeroResultQueries).
 //
@@ -40,18 +36,6 @@ const SEARCH_LIMIT_MAX = 20;
 const QUERY_MAX = 300;
 const RATE_WINDOW_MS = 60 * 1000;
 const RATE_MAX = 60;
-// The MCP endpoint takes up to 20 messages per request, so it gets half the
-// budget of the single-call search/article routes (counted per request).
-const MCP_RATE_DIVISOR = 2;
-// Monitoring (5-minute windows): an alert goes to the team's webhook when a
-// window shows abuse (many 429s) or trouble (5xx count or share), then stays
-// quiet for ALERT_COOLDOWN_MS per kind so one incident is one message.
-const MONITOR_WINDOW_MS = 5 * 60 * 1000;
-const ALERT_COOLDOWN_MS = 30 * 60 * 1000;
-const ALERT_RATE_LIMITED_MIN = 50;
-const ALERT_ERRORS_MIN = 5;
-const ALERT_ERROR_SHARE = 0.2;
-const ALERT_ERROR_SHARE_MIN_REQUESTS = 20;
 const DATA_TTL_MS = 60 * 1000;
 const RESULT_TTL_MS = 60 * 1000;
 const RESULT_CACHE_MAX = 500;
@@ -135,16 +119,10 @@ function publicSummary(a, categoryName, url) {
   };
 }
 
-// `alert({kind, text, stats})` is called (not awaited) when monitoring trips;
-// the function in index.js posts it to NOTIFY_WEBHOOK_URL so it reaches Rob.
-function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RATE_MAX, alert = null, fetchImpl = (typeof fetch === "function" ? fetch : null) }) {
-  const mcpRateMax = Math.max(1, Math.floor(rateMax / MCP_RATE_DIVISOR));
-  let mon = { startedAt: 0, requests: 0, rateLimited: 0, errors: 0, clients: new Map() };
-  const lastAlert = new Map(); // kind -> time
+function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RATE_MAX, fetchImpl = (typeof fetch === "function" ? fetch : null) }) {
   let data = null; // { at, articles, cats, releases }
   let urlMap = null; // { at, urls: {id -> url} }
   const results = new Map(); // key -> { at, body }
-  const articles = new Map(); // key -> { at, res }
   const buckets = new Map();
 
   async function load() {
@@ -245,25 +223,13 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
   }
 
   async function article({ id, slug, release }) {
-    const wantId = typeof id === "string" ? id.trim() : "";
-    const wantSlug = typeof slug === "string" ? slug.trim() : "";
-    if (!wantId && !wantSlug) return { status: 400, body: { error: "bad_request", error_description: "id or slug is required." } };
-    const ckey = `${wantId.slice(0, 200)}|${wantSlug.slice(0, 200)}|${typeof release === "string" ? release.trim().slice(0, 80) : ""}`;
-    const cached = articles.get(ckey);
-    if (cached && now() - cached.at < RESULT_TTL_MS) return { ...cached.res, cached: true };
-    const out = await articleUncached({ wantId, wantSlug, release });
-    if (out.status === 200) {
-      if (articles.size >= RESULT_CACHE_MAX) articles.clear();
-      articles.set(ckey, { at: now(), res: out });
-    }
-    return { ...out, cached: false };
-  }
-
-  async function articleUncached({ wantId, wantSlug, release }) {
     const d = await load();
     const rel = resolveRelease(d, release);
     if (rel.error) return { status: 404, body: { error: "unknown_release", error_description: rel.error } };
     const urls = await loadUrls();
+    const wantId = typeof id === "string" ? id.trim() : "";
+    const wantSlug = typeof slug === "string" ? slug.trim() : "";
+    if (!wantId && !wantSlug) return { status: 400, body: { error: "bad_request", error_description: "id or slug is required." } };
     const a = eligible(d, rel.release, rel.byId).find((x) => (wantId && x.id === wantId) || (wantSlug && x.slug === wantSlug));
     if (!a) return { status: 404, body: { error: "not_found", error_description: "No published article with that id or slug for this release. Use search first." } };
     const body = {
@@ -298,59 +264,14 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     const fwd = String((req.get && req.get("x-forwarded-for")) || "").split(",")[0].trim();
     return fwd || req.ip || "unknown";
   }
-  // Per client AND per endpoint class, so a client hammering the MCP route
-  // cannot use up its search budget, and the reverse. Returns
-  // { wait, limit, remaining, reset }; wait is seconds when over, else 0.
-  function limited(req, klass) {
-    const t = now(); const key = `${clientIp(req)}|${klass}`;
-    const limit = klass === "mcp" ? mcpRateMax : rateMax;
+  // Returns seconds to wait when over the limit, else 0.
+  function limited(req) {
+    const t = now(); const key = clientIp(req);
     let e = buckets.get(key);
     if (!e || e.resetAt <= t) { e = { count: 0, resetAt: t + RATE_WINDOW_MS }; buckets.set(key, e); }
     e.count += 1;
     if (buckets.size > 5000) for (const [k, v] of buckets) if (v.resetAt <= t) buckets.delete(k);
-    const over = e.count > limit;
-    return { wait: over ? Math.max(1, Math.ceil((e.resetAt - t) / 1000)) : 0, limit, remaining: Math.max(0, limit - e.count), reset: Math.ceil(e.resetAt / 1000) };
-  }
-
-  // ── Monitoring and alerting ─────────────────────────────────────────────
-  function sendAlert(kind, text, stats) {
-    const t = now();
-    const prev = lastAlert.get(kind);
-    if (kind !== "test" && prev !== undefined && t - prev < ALERT_COOLDOWN_MS) return false;
-    lastAlert.set(kind, t);
-    if (logger) logger.error(`help api alert: ${kind}`, { text, stats });
-    if (alert) Promise.resolve().then(() => alert({ kind, text, stats })).catch((e) => { if (logger) logger.warn("help api alert delivery failed", { error: String(e) }); });
-    return true;
-  }
-  function snapshot() {
-    const top = [...mon.clients.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
-    return { windowMinutes: MONITOR_WINDOW_MS / 60000, requests: mon.requests, rateLimited: mon.rateLimited, errors: mon.errors, topLimitedClients: top.map(([c, n]) => ({ client: c, rateLimited: n })) };
-  }
-  function checkThresholds() {
-    const s = snapshot();
-    if (s.rateLimited >= ALERT_RATE_LIMITED_MIN) {
-      sendAlert("abuse", `Help API abuse: ${s.rateLimited} rate-limited (429) requests in ${s.windowMinutes} minutes out of ${s.requests}. Top clients: ${s.topLimitedClients.map((c) => `${c.client} (${c.rateLimited})`).join(", ") || "n/a"}.`, s);
-    }
-    if (s.errors >= ALERT_ERRORS_MIN || (s.requests >= ALERT_ERROR_SHARE_MIN_REQUESTS && s.errors / s.requests >= ALERT_ERROR_SHARE)) {
-      sendAlert("errors", `Help API errors: ${s.errors} server errors (5xx) out of ${s.requests} requests in ${s.windowMinutes} minutes.`, s);
-    }
-  }
-  // Called once per request with its outcome. The client address is kept in
-  // memory for the window only (to name the top offenders) and never stored.
-  function record(outcome, req) {
-    const t = now();
-    if (!mon.startedAt || t - mon.startedAt >= MONITOR_WINDOW_MS) mon = { startedAt: t, requests: 0, rateLimited: 0, errors: 0, clients: new Map() };
-    mon.requests += 1;
-    if (outcome === "rate_limited") {
-      mon.rateLimited += 1;
-      if (mon.clients.size < 500) { const c = clientIp(req); mon.clients.set(c, (mon.clients.get(c) || 0) + 1); }
-    } else if (outcome === "error") mon.errors += 1;
-    if (outcome !== "ok") checkThresholds();
-  }
-  // A deliberate test alert, to prove delivery end to end (index.js exposes it
-  // behind the board key). Returns true when it was handed to the webhook.
-  function testAlert() {
-    return sendAlert("test", "Test alert from the Help API monitoring: if you can read this, abuse and error alerts reach you.", snapshot());
+    return e.count > rateMax ? Math.max(1, Math.ceil((e.resetAt - t) / 1000)) : 0;
   }
 
   // ── MCP (stateless, public, read-only) ──────────────────────────────────
@@ -444,17 +365,12 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     res.set("X-Content-Type-Options", "nosniff");
     if (req.method === "OPTIONS") { res.status(204).send(""); return; }
     const path = route(req);
-    let outcome = "ok";
     try {
-      const klass = path === "/mcp" ? "mcp" : "read";
-      const rl = limited(req, klass);
-      res.set("X-RateLimit-Limit", String(rl.limit)).set("X-RateLimit-Remaining", String(rl.remaining)).set("X-RateLimit-Reset", String(rl.reset));
-      if (rl.wait) {
-        outcome = "rate_limited";
-        res.status(429).set("Retry-After", String(rl.wait)).set("Cache-Control", "no-store").json({ error: "rate_limited", error_description: `Too many requests from this address. Try again in ${rl.wait} seconds.` });
+      const wait = limited(req);
+      if (wait) {
+        res.status(429).set("Retry-After", String(wait)).json({ error: "rate_limited", error_description: `Too many requests from this address. Try again in ${wait} seconds.` });
         return;
       }
-
       const q = req.query || {};
       if (path === "/search" && req.method === "GET") {
         const r = await search({ query: q.q || q.query, release: q.release, limit: q.limit });
@@ -465,7 +381,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
       if (path === "/article" && req.method === "GET") {
         const r = await article({ id: q.id, slug: q.slug, release: q.release });
         if (r.status !== 200) { res.status(r.status).json(r.body); return; }
-        res.set("Cache-Control", "public, max-age=60").set("X-Cache", r.cached ? "HIT" : "MISS");
+        res.set("Cache-Control", "public, max-age=60");
         const wantsMd = q.format === "md" || /text\/markdown/.test(String((req.get && req.get("accept")) || ""));
         if (wantsMd) res.status(200).type("text/markdown; charset=utf-8").send(articleMarkdown(r.body));
         else res.status(200).json(r.body);
@@ -490,14 +406,11 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
       res.status(404).json({ error: "not_found", error_description: "Endpoints: GET /help-api/search, GET /help-api/article, POST /help-api/mcp." });
     } catch (err) {
       if (logger) logger.error("help search failed", { path, error: String(err && err.stack ? err.stack : err) });
-      outcome = "error";
       if (!res.headersSent) res.status(500).json({ error: "server_error" });
-    } finally {
-      try { record(outcome, req); } catch (e) { if (logger) logger.warn("help api monitor failed", { error: String(e) }); }
     }
   }
 
-  return { handle, search, article, mcpMessage, testAlert, TOOLS, _reset() { data = null; urlMap = null; results.clear(); articles.clear(); buckets.clear(); lastAlert.clear(); mon = { startedAt: 0, requests: 0, rateLimited: 0, errors: 0, clients: new Map() }; } };
+  return { handle, search, article, mcpMessage, TOOLS, _reset() { data = null; urlMap = null; results.clear(); buckets.clear(); } };
 }
 
 module.exports = { createHelpApi, scoreArticle, safeSupportUrl, inRange, termsOf, normaliseQuery, SERVER_INFO };

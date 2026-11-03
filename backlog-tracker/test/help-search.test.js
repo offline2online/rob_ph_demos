@@ -159,57 +159,5 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1") => { const r
   const text = buildAuditRequestText({ releaseId: "R", release: { name: "x" }, projects: [], searchGaps: gaps });
   assert.ok(text.includes('"quantum teleport" (2x)'));
   assert.ok(!buildAuditRequestText({ releaseId: "R", release: {}, projects: [] }).includes("content gaps"));
-
-  // 8. agent-endpoint hardening: per-endpoint limits, headers, article cache, alerting
-  {
-    const alerts = [];
-    api = createHelpApi({ db, now: () => t, rateMax: 10, fetchImpl, alert: async (a) => { alerts.push(a); } });
-    // headers on every response; MCP has its own, smaller budget (5 of 10)
-    r = await call("GET", "/help-api/search", { q: "store" }, undefined, "7.7.7.7");
-    assert.strictEqual(r.headers["X-RateLimit-Limit"], "10"); assert.strictEqual(r.headers["X-RateLimit-Remaining"], "9");
-    for (let i = 0; i < 5; i++) assert.strictEqual((await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: i, method: "ping" }, "8.8.8.8")).code, 200);
-    r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 9, method: "ping" }, "8.8.8.8");
-    assert.strictEqual(r.code, 429); assert.strictEqual(r.headers["X-RateLimit-Limit"], "5"); assert.ok(Number(r.headers["Retry-After"]) >= 1);
-    assert.strictEqual(r.headers["Cache-Control"], "no-store"); assert.strictEqual(r.body.error, "rate_limited");
-    // the MCP limit does not eat the same client's search budget, and article is limited too
-    assert.strictEqual((await call("GET", "/help-api/search", { q: "store" }, undefined, "8.8.8.8")).code, 200);
-    for (let i = 0; i < 10; i++) await call("GET", "/help-api/article", { id: "a1" }, undefined, "6.6.6.6");
-    assert.strictEqual((await call("GET", "/help-api/article", { id: "a1" }, undefined, "6.6.6.6")).code, 429);
-    // article repeat calls are served from cache without re-reading
-    api._reset();
-    await call("GET", "/help-api/article", { id: "a1" }, undefined, "4.4.4.4");
-    const rd = reads;
-    r = await call("GET", "/help-api/article", { id: "a1" }, undefined, "4.4.4.4");
-    assert.strictEqual(r.headers["X-Cache"], "HIT"); assert.strictEqual(reads, rd); assert.strictEqual(r.code, 200);
-    assert.strictEqual((await call("GET", "/help-api/article", { id: "a2" }, undefined, "4.4.4.4")).code, 404); // never cached into a draft leak
-    // abuse alert: a burst of 429s sends exactly one alert naming the top client, then cools down
-    api._reset(); alerts.length = 0;
-    for (let i = 0; i < 70; i++) await call("GET", "/help-api/search", { q: "store" }, undefined, "5.4.3.2");
-    await new Promise((x) => setImmediate(x));
-    assert.strictEqual(alerts.length, 1, JSON.stringify(alerts));
-    assert.strictEqual(alerts[0].kind, "abuse"); assert.ok(alerts[0].text.includes("5.4.3.2")); assert.ok(alerts[0].stats.rateLimited >= 50);
-    for (let i = 0; i < 20; i++) await call("GET", "/help-api/search", { q: "store" }, undefined, "5.4.3.2");
-    assert.strictEqual(alerts.length, 1); // cooldown
-    t += 31 * 60 * 1000;
-    for (let i = 0; i < 70; i++) await call("GET", "/help-api/search", { q: "store" }, undefined, "5.4.3.2");
-    await new Promise((x) => setImmediate(x));
-    assert.strictEqual(alerts.length, 2);
-    // error alert: failing reads (5xx) trip it
-    const broken = createHelpApi({ db: { collection: () => ({ where: () => ({ get: async () => { throw new Error("boom"); } }), get: async () => { throw new Error("boom"); } }) }, now: () => t, rateMax: 1000, fetchImpl, alert: async (a) => { alerts.push(a); } });
-    alerts.length = 0;
-    for (let i = 0; i < 6; i++) { const res = mkRes(); await broken.handle({ method: "GET", path: "/help-api/search", query: { q: "store" }, ip: "1.2.3.4", get: () => "" }, res); assert.strictEqual(res.code, 500); }
-    await new Promise((x) => setImmediate(x));
-    assert.deepStrictEqual(alerts.map((a) => a.kind), ["errors"]);
-    // a test alert always goes out and carries the stats
-    alerts.length = 0;
-    assert.strictEqual(api.testAlert(), true); assert.strictEqual(api.testAlert(), true);
-    await new Promise((x) => setImmediate(x));
-    assert.deepStrictEqual(alerts.map((a) => a.kind), ["test", "test"]);
-    // an alert that fails to deliver never breaks the request
-    const bad = createHelpApi({ db, now: () => t, rateMax: 1, fetchImpl, alert: async () => { throw new Error("webhook down"); } });
-    api = bad; await call("GET", "/help-api/search", { q: "store" }, undefined, "9.1.1.1");
-    for (let i = 0; i < 60; i++) assert.ok([200, 429].includes((await call("GET", "/help-api/search", { q: "store" }, undefined, "9.1.1.1")).code));
-    api = createHelpApi({ db, now: () => t, rateMax: 100000 });
-  }
   console.log("help-search ok");
 })().catch((e) => { console.error(e); process.exit(1); });
