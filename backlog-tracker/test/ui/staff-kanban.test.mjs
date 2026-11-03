@@ -573,6 +573,15 @@ T("TC-20", "release report: defaults to current release, filters in the URL, per
   await p.evaluate(() => { location.hash = "#staff-kanban/report?release=4-12&status=done%3Awithdrawn"; });
   await p.waitForTimeout(250);
   assert.deepEqual((await p.$$eval("[data-open]", (e) => e.map((x) => x.dataset.open))).sort(), ["PH-38", "PH-39"]);
+  // No Epic drop-down; Epic is a Type option and shows an epics-only page with an epic summary.
+  assert.equal(await p.$$eval('[data-rf="epic"]', (e) => e.length), 0);
+  assert.ok((await p.$$eval('[data-rf="type"] option', (e) => e.map((x) => x.value))).includes("epic"));
+  await p.evaluate(() => { location.hash = "#staff-kanban/report?release=all&status=all&type=epic"; });
+  await p.waitForTimeout(300);
+  assert.equal(await p.$$eval("#rp-epics", (e) => e.length), 1);
+  const opened = await p.$$eval("[data-open]", (e) => e.map((x) => x.dataset.open));
+  assert.ok(opened.length >= 1);
+  assert.equal(await p.$$eval("#rp-epics + * .kb-type-task, .kb-task-cell .kb-type-task", (e) => e.length), 0);
   await p.done();
 });
 

@@ -328,10 +328,11 @@ function filterTasks(tasks, f) {
 // ── Release report (KB-REP-1) ─────────────────────────────────────────────
 const CAPACITY_HOURS_PER_DAY = 6;
 // tasks: every task in scope; f: { release, status, assignee, type, priority,
-// sprint, label, epic }; people: emails in display order.
+// sprint, label }; people: emails in display order.
 function releaseReport(tasks, f, { people = [], releaseDate = "", released = false, today = new Date() } = {}) {
   const status = f.status || "outstanding";
-  const inScope = tasks.filter((t) => t.type !== "epic" && (!f.release || f.release === "all" || t.release === f.release));
+  // Epics are left out unless Type is Epic, which shows epics only.
+  const inScope = tasks.filter((t) => (f.type === "epic" ? t.type === "epic" : t.type !== "epic") && (!f.release || f.release === "all" || t.release === f.release));
   const filtered = inScope.filter((t) => {
     if (status === "outstanding" ? t.status === "done" : status.startsWith("done:") ? "done:" + res(t) !== status : status !== "all" && t.status !== status) return false;
     if (f.assignee && (t.assignee || "none") !== f.assignee) return false;
@@ -339,7 +340,6 @@ function releaseReport(tasks, f, { people = [], releaseDate = "", released = fal
     if (f.priority && t.priority !== f.priority) return false;
     if (f.sprint && t.sprint !== f.sprint) return false;
     if (f.label && !(t.labels || []).includes(f.label)) return false;
-    if (f.epic && t.epic !== f.epic) return false;
     return true;
   });
   const outstanding = filtered.filter((t) => t.status !== "done");

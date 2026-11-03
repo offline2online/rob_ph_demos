@@ -279,13 +279,17 @@ checked on save; estimate and time logged accept `1d 4h`, `6h`, `30m`.
 ## 8. Release report
 
 **KB-REP-1** Linked from the board; defaults to the current release; every
-filter (release, status, staff member, type, priority, sprint, label, epic) is
+filter (release, status, staff member, type, priority, sprint, label) is
 kept in the URL so a view can be shared. Shows: outstanding tasks (with
 completed / withdrawn / flagged counts), remaining effort, time logged,
 release date with working days left; remaining effort per staff member against
 capacity (6 focused hours per working day); a breakdown table per person with
 totals (Completed and Withdrawn as separate columns when shown); the task list
-grouped by person. Epics are excluded from effort figures. Explanations live in
+grouped by person. Epics are excluded from effort figures. There is no Epic
+drop-down: **Epic is an option of the Type filter**, and choosing it turns the
+whole page into an epics-only view with an **Epic summary** table (per epic:
+status, owner, tickets, done, open, progress, estimate, logged, remaining,
+rolled up from its non-withdrawn child tickets in any release). Explanations live in
 (i) tooltips only.
 
 ## 9. Settings (admin)
