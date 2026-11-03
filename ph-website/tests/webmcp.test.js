@@ -19,7 +19,7 @@ function run(nav, extra) {
     return Promise.resolve({ json: () => Promise.resolve(body) });
   };
   const win = Object.assign({ PH_AE_REST: BASE }, extra || {});
-  vm.runInNewContext(loader, { navigator: nav, window: win, fetch, encodeURIComponent, JSON, Promise });
+  vm.runInNewContext(loader, { navigator: nav, window: win, fetch, encodeURIComponent, JSON, Promise, document: { referrer: (extra && extra.__ref) || "" }, location: { pathname: "/digital-signage/" }, Date });
   return { calls, win };
 }
 const tick = () => new Promise((r) => setTimeout(r, 10));
@@ -44,6 +44,21 @@ const tick = () => new Promise((r) => setTimeout(r, 10));
   assert.strictEqual(out.content[0].text.indexOf("result of tools/search_help"), 0, "execute returns the endpoint's CallToolResult");
   await reg[7].execute();
   assert.ok(r.calls[2].endsWith("tools/book_demo?args=%7B%7D"), "no-arg tool sends {}");
+
+  // RevOps: one ph_agent_tool event per call; path and referrer host only; nothing from the arguments.
+  const r2 = run({ modelContext: { registerTool: (t) => reg.push(t) } }, { __ref: "https://agent.example/chat?q=secret" });
+  await tick();
+  const mine = reg[reg.length - 8 + 4];
+  await mine.execute({ query: "my email is a@b.c" });
+  await reg[reg.length - 1].execute();
+  const ev = r2.win.dataLayer;
+  assert.strictEqual(ev.length, 2, "one event per tool call");
+  assert.deepStrictEqual(Array.from(ev, (e) => e.tool), ["search_help", "book_demo"]);
+  assert.strictEqual(ev[0].event, "ph_agent_tool"); assert.strictEqual(ev[0].source, "webmcp");
+  assert.strictEqual(ev[0].page_path, "/digital-signage/"); assert.strictEqual(ev[0].referrer, "agent.example");
+  assert.ok(!isNaN(Date.parse(ev[0].at)), "timestamp");
+  assert.ok(!JSON.stringify(ev).includes("a@b.c") && !JSON.stringify(ev).includes("secret"), "no arguments or query in the event");
+  assert.strictEqual(ev[1].referrer, "agent.example");
 
   // provideContext fallback.
   let ctx;

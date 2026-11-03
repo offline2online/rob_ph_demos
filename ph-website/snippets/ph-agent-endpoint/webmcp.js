@@ -3,7 +3,14 @@
   if (!mc || (!mc.registerTool && !mc.provideContext) || window.__phAe) return;
   window.__phAe = 1;
   var base = window.PH_AE_REST || "/wp-json/ph-agent/v1/";
+  function seen(name) {
+    try {
+      var h = (document.referrer.split("/")[2] || "").toLowerCase();
+      (window.dataLayer = window.dataLayer || []).push({ event: "ph_agent_tool", tool: name, source: "webmcp", page_path: location.pathname, referrer: h || "none", at: new Date().toISOString() });
+    } catch (e) {}
+  }
   function call(name, args) {
+    seen(name);
     return fetch(base + "tools/" + name + "?args=" + encodeURIComponent(JSON.stringify(args || {})), { credentials: "omit" })
       .then(function (r) { return r.json(); })
       .catch(function () { return { isError: true, content: [{ type: "text", text: "Could not reach the Personalisation Hub tools. Try again later." }] }; });

@@ -1,6 +1,6 @@
 <?php
 /**
- * PH Agent Endpoint (Angie snippet). Version 1.1.0
+ * PH Agent Endpoint (Angie snippet). Version 1.2.0
  *
  * Markdown twins (?format=md), one shared JSON-LD graph and llms.txt sections
  * for the allow-listed pages in lib.php. Industries, Blog and Support Centre
@@ -311,3 +311,28 @@ add_action( 'wp_footer', function () {
 	}
 	echo '<script>window.PH_AE_REST=' . wp_json_encode( rest_url( 'ph-agent/v1/' ) ) . ';' . $js . "</script>\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- our own file.
 }, 99 );
+
+/* ------------------------------------------------------------------ RevOps: tracked CTA hop */
+/* /go/free-trial/ and /go/demo/ (ticket 5). Records one ph_agent_cta event and 302s to the exact link held in tools.php. */
+
+const CTA_LOG_OPTION = 'ph_ae_cta_log';
+const CTA_LOG_MAX    = 500;
+
+add_action( 'template_redirect', function () {
+	$hit = go_target( isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '' ); // phpcs:ignore WordPress.Security
+	if ( ! $hit ) {
+		return;
+	}
+	$via = go_via( isset( $_GET['via'] ) ? (string) wp_unslash( $_GET['via'] ) : '' ); // phpcs:ignore WordPress.Security.NonceVerification
+	$ev  = cta_event( $hit[0], $via, isset( $_SERVER['HTTP_REFERER'] ) ? wp_unslash( $_SERVER['HTTP_REFERER'] ) : '', time() ); // phpcs:ignore WordPress.Security
+	$log = get_option( CTA_LOG_OPTION, array() );
+	$log = is_array( $log ) ? $log : array();
+	$log[] = $ev;
+	update_option( CTA_LOG_OPTION, array_slice( $log, -CTA_LOG_MAX ), false );
+	do_action( 'ph_agent_cta', $ev ); // RevOps listeners (and GTM server-side) hook here.
+	nocache_headers();
+	header( 'X-Robots-Tag: noindex, nofollow' );
+	header( 'Referrer-Policy: no-referrer' );
+	wp_redirect( $hit[1], 302, 'PH Agent Endpoint' ); // phpcs:ignore WordPress.Security.SafeRedirect -- fixed constants, never request input.
+	exit;
+}, 0 );

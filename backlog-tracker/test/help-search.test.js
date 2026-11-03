@@ -25,12 +25,13 @@ const docs = {
   faqCategories: { c0: { name: "Stores & Retail Data" }, c1: { name: "HQ Admin", parentId: "c0" }, c2: { name: "Top only" } },
   releases: { r1: { name: "5.0", version: "5.0", status: "live", order: 1 }, r2: { name: "6.0", version: "6.0", status: "draft", order: 2 } },
   helpSearchLog: {},
+  agentToolLog: {},
 };
 let reads = 0, logSeq = 0;
 const db = { collection: (name) => ({
   where: () => ({ get: async () => { reads++; return snap(name, (a) => a.status === "published"); } }),
   get: async () => { reads++; return snap(name); },
-  add: async (v) => { docs.helpSearchLog["l" + logSeq++] = v; },
+  add: async (v) => { docs[name]["l" + logSeq++] = v; },
 }) };
 function snap(name, f = () => true) {
   const rows = Object.entries(docs[name]).filter(([, v]) => f(v));
@@ -41,7 +42,8 @@ let mapFetches = 0, mapOk = true, twinFetches = [], twinOk = true;
 const WPT = "https://personalisationhub.com/wp-json/ph-agent/v1/tools";
 const NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo"];
 let wpCalls = [], wpMode = "ok", wpText = "v1";
-const wpResult = (name, q) => ({ content: [{ type: "text", text: `${name} ${q} ${wpText}` }], structuredContent: { name } });
+let wpResultOverride = null;
+const wpResult = (name, q) => wpResultOverride && name === "book_demo" ? wpResultOverride(name) : ({ content: [{ type: "text", text: `${name} ${q} ${wpText}` }], structuredContent: { name } });
 const wpFetch = async (url, opts) => {
   wpCalls.push(url);
   if (wpMode === "down") return { ok: false, status: 503, headers: { get: () => null }, text: async () => "" };
@@ -66,7 +68,7 @@ const fetchImpl = async (url, opts) => {
 let api = createHelpApi({ db, now: () => t, rateMax: 100000, fetchImpl });
 const small = () => createHelpApi({ db, now: () => t, rateMax: 5, fetchImpl });
 const mkRes = () => { const r = { code: 200, headers: {}, body: undefined, set(k, v) { r.headers[k] = v; return r; }, status(c) { r.code = c; return r; }, json(b) { r.body = b; return r; }, send(b) { r.body = b; return r; }, type(x) { r.headers["Content-Type"] = x; return r; } }; return r; };
-const call = async (method, path, query = {}, body, ip = "1.1.1.1") => { const res = mkRes(); await api.handle({ method, path, query, body, ip, get: () => "" }, res); await new Promise((r) => setImmediate(r)); return res; };
+const call = async (method, path, query = {}, body, ip = "1.1.1.1", hdr = {}) => { const res = mkRes(); await api.handle({ method, path, query, body, ip, get: (k) => hdr[String(k).toLowerCase()] || "" }, res); await new Promise((r) => setImmediate(r)); return res; };
 
 (async () => {
   // 1. relevant, linked, complete, and only the right articles
@@ -179,6 +181,27 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1") => { const r
     assert.deepStrictEqual(r.body.result, JSON.parse(direct).content ? JSON.parse(direct) : null, n);
     assert.strictEqual(r.headers["X-Cache"], "MISS");
   }
+  // RevOps: one agentToolLog row per tool call, no IP / arguments / user agent; CTA tools point at the tracked hop for this source
+  const rows = () => Object.values(docs.agentToolLog);
+  assert.strictEqual(rows().length, NAMES.length, "one row per tools/call");
+  assert.ok(rows().every((x) => x.source === "remote-mcp" && x.referrer === null && x.at instanceof Date && typeof x.cached === "boolean"));
+  assert.ok(rows().every((x) => Object.keys(x).sort().join() === "at,cached,ok,referrer,source,tool"), "no fields beyond tool, source, referrer, time, cache, ok");
+  assert.deepStrictEqual(rows().map((x) => x.tool), NAMES);
+  logSeq += 0;
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 20, method: "tools/call", params: { name: "get_industry", arguments: { slug: "secret-customer" } } }, "9.9.9.9", { referer: "https://agent.example/chat?q=private#x", "user-agent": "X" });
+  const last = rows()[rows().length - 1];
+  assert.strictEqual(last.referrer, "agent.example"); assert.ok(!JSON.stringify(last).includes("secret-customer") && !JSON.stringify(last).includes("9.9.9.9") && !JSON.stringify(last).includes("private"));
+  const nRows = rows().length;
+  await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 21, method: "tools/list" });
+  await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 22, method: "tools/call", params: { name: "secret_write_tool" } });
+  assert.strictEqual(rows().length, nRows, "tools/list and unknown tools are not tool-call events");
+  // the CTA tools: trackedUrl is rewritten for this source, the exact url is untouched
+  wpResultOverride = (n) => ({ content: [{ type: "text", text: `x https://personalisationhub.com/go/demo/?via=webmcp` }], structuredContent: { url: "https://calendly.com/rob-offline2online", trackedUrl: "https://personalisationhub.com/go/demo/?via=webmcp" } });
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 23, method: "tools/call", params: { name: "book_demo", arguments: { cta: 1 } } });
+  assert.strictEqual(r.body.result.structuredContent.trackedUrl, "https://personalisationhub.com/go/demo/?via=remote-mcp");
+  assert.strictEqual(r.body.result.structuredContent.url, "https://calendly.com/rob-offline2online");
+  assert.ok(!JSON.stringify(r.body.result).includes("via=webmcp"));
+  wpResultOverride = null;
   // a repeat is a HIT with no new site request; different args are a different entry; key order doesn't matter
   const wpBefore = wpCalls.length;
   r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "get_industry", arguments: { slug: "telco" } } });

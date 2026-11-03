@@ -17,7 +17,7 @@ function ok( $cond, $msg ) {
 
 $dir = dirname( __DIR__ ) . '/snippets/ph-agent-endpoint';
 require $dir . '/lib.php';
-use function PhAgentEndpoint\{allow_list,is_exposable,graph_for,json_ld,organization_node,software_node,html_to_markdown,markdown_twin,llms_sections,twin_url,page_url};
+use function PhAgentEndpoint\{go_target,go_via,tracked_url,cta_event,referrer_host,allow_list,is_exposable,graph_for,json_ld,organization_node,software_node,html_to_markdown,markdown_twin,llms_sections,twin_url,page_url};
 
 /* allow-list: only the agreed pages, none of the demo/campaign ones */
 $paths = array_column( allow_list(), 0 );
@@ -204,6 +204,20 @@ ok( strpos( $dp['content'][0]['text'], '[Digital Signage](https://personalisatio
 ok( run_tool( 'start_free_trial', array(), $src )['structuredContent']['url'] === 'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76', 'exact free trial link' );
 ok( run_tool( 'book_demo', array(), $src )['structuredContent']['url'] === 'https://calendly.com/rob-offline2online', 'exact demo link' );
 ok( ! empty( run_tool( 'start_free_trial', array( 'a' => 1 ), $src )['isError'] ), 'no-arg tools refuse arguments' );
+/* RevOps (ticket 5): tracked hop keeps the exact link, fixed targets, no personal data */
+$ft = run_tool( 'start_free_trial', array(), $src )['structuredContent'];
+ok( $ft['trackedUrl'] === 'https://personalisationhub.com/go/free-trial/?via=webmcp', 'free trial trackedUrl' );
+ok( run_tool( 'book_demo', array(), $src )['structuredContent']['trackedUrl'] === 'https://personalisationhub.com/go/demo/?via=webmcp', 'demo trackedUrl' );
+ok( go_target( '/go/free-trial/?via=webmcp' ) === array( 'free-trial', 'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76' ), 'hop leads to the exact trial link' );
+ok( go_target( '/go/demo' )[1] === 'https://calendly.com/rob-offline2online', 'hop leads to the exact demo link' );
+foreach ( array( '/go/', '/go/evil/', '/go/demo/../x', '/go//evil.example/', '/go/https://evil.example', '/other/demo/', '/go/demo/extra/' ) as $bad ) {
+	ok( go_target( $bad ) === null, "no hop for $bad" );
+}
+ok( go_via( 'remote-mcp' ) === 'remote-mcp' && go_via( 'webmcp' ) === 'webmcp' && go_via( 'https://evil' ) === 'agent' && go_via( '' ) === 'agent', 'via is allow-listed' );
+$ev = cta_event( 'demo', 'remote-mcp', 'https://agent.example/chat?email=a@b.c#x', 1700000000 );
+ok( $ev['agent'] === true && $ev['event'] === 'ph_agent_cta' && $ev['referrer'] === 'agent.example' && $ev['source'] === 'remote-mcp', 'agent CTA event flagged, referrer is a host' );
+ok( array_keys( $ev ) === array( 'event', 'cta', 'source', 'agent', 'referrer', 'at' ) && strpos( json_encode( $ev ), '@' ) === false, 'CTA event holds no IP, email or free text' );
+ok( referrer_host( 'javascript:alert(1)' ) === null && referrer_host( '' ) === null, 'bad referrer is none' );
 ok( run_tool( 'get_help_article', array( 'url' => 'https://personalisationhub.com/support-centre/x/add-a-store/' ), $src )['content'][0]['text'] === "# Add a store\n", 'get_help_article returns the markdown' );
 ok( run_tool( 'get_help_article', array( 'url' => '/support-centre/x/add-a-store' ), $src )['content'][0]['text'] === "# Add a store\n", 'path form works' );
 foreach ( array( 'https://personalisationhub.com/digital-signage/', 'https://evil.example/support-centre/x/add-a-store/', 'https://personalisationhub.com/support-centre/../wp-admin/', 'https://personalisationhub.com/support-centre/%2e%2e/x/', '/support-centre/', 'https://personalisationhub.com.evil.example/support-centre/a/', 'javascript:alert(1)', 'ftp://personalisationhub.com/support-centre/a/', "/support-centre/a\n/b/", 'https://user@personalisationhub.com/support-centre/a/' ) as $u ) {

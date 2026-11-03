@@ -10,6 +10,42 @@ namespace PhAgentEndpoint;
 const INDUSTRY_SLUGS = array( 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' );
 const SC_BASE_PATH   = '/support-centre/';
 
+/** The tracked CTA hop (ticket 5, RevOps): /go/<slug>/ records a click and 302s to the exact link below. The target is never read from the request. */
+function go_targets() {
+	return array( 'free-trial' => FREE_TRIAL_URL, 'demo' => DEMO_URL );
+}
+
+/** Where a request path leads, or null: only /go/free-trial/ and /go/demo/ exist. */
+function go_target( $path ) {
+	$p = rtrim( (string) parse_url( (string) $path, PHP_URL_PATH ), '/' );
+	if ( 0 !== strpos( $p, '/go/' ) ) {
+		return null;
+	}
+	$slug = substr( $p, 4 );
+	return isset( go_targets()[ $slug ] ) ? array( $slug, go_targets()[ $slug ] ) : null;
+}
+
+/** Which surface sent the agent: only these two values are ever recorded, anything else is plain "agent". */
+function go_via( $raw ) {
+	return in_array( $raw, array( 'webmcp', 'remote-mcp' ), true ) ? $raw : 'agent';
+}
+
+/** The tracked link a tool result carries for a CTA slug, for a source. */
+function tracked_url( $slug, $via = 'webmcp' ) {
+	return PH_AE_SITE . '/go/' . $slug . '/?via=' . go_via( $via );
+}
+
+/** Host of a referrer or origin header, lower case, or null. Never the path or query. */
+function referrer_host( $ref ) {
+	$h = parse_url( trim( (string) $ref ), PHP_URL_HOST );
+	return ( is_string( $h ) && '' !== $h && strlen( $h ) <= 100 ) ? strtolower( $h ) : null;
+}
+
+/** One agent CTA click: nothing but the CTA, source, referrer host and time. No IP, user agent, query or free text. */
+function cta_event( $slug, $via, $referrer, $time ) {
+	return array( 'event' => 'ph_agent_cta', 'cta' => $slug, 'source' => go_via( $via ), 'agent' => true, 'referrer' => referrer_host( $referrer ), 'at' => gmdate( 'c', (int) $time ) );
+}
+
 /** Feature slugs, from the allow-list (one source of truth). */
 function feature_slugs() {
 	$out = array();
@@ -273,10 +309,10 @@ function run_tool( $name, $args, array $src ) {
 				return null === $md ? tool_error( 'No published Support Centre article at that address. Use search_help to find one.' ) : tool_text( $md );
 
 			case 'start_free_trial':
-				return tool_text( 'Start a free trial of Personalisation Hub on AWS Marketplace: ' . FREE_TRIAL_URL, array( 'url' => FREE_TRIAL_URL, 'text' => 'Start a free trial on AWS Marketplace' ) );
+				return tool_text( 'Start a free trial of Personalisation Hub on AWS Marketplace: ' . tracked_url( 'free-trial' ) . ' (redirects to ' . FREE_TRIAL_URL . ')', array( 'url' => FREE_TRIAL_URL, 'trackedUrl' => tracked_url( 'free-trial' ), 'text' => 'Start a free trial on AWS Marketplace' ) );
 
 			case 'book_demo':
-				return tool_text( 'Book a Personalisation Hub demo: ' . DEMO_URL, array( 'url' => DEMO_URL, 'text' => 'Book a demo' ) );
+				return tool_text( 'Book a Personalisation Hub demo: ' . tracked_url( 'demo' ) . ' (redirects to ' . DEMO_URL . ')', array( 'url' => DEMO_URL, 'trackedUrl' => tracked_url( 'demo' ), 'text' => 'Book a demo' ) );
 		}
 	} catch ( \Throwable $e ) {
 		return tool_error( 'That did not work. Try again later.' );

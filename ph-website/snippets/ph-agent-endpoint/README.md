@@ -22,7 +22,7 @@ No assets, no remote calls while rendering.
 
 `GET /wp-json/ph-agent/v1/tools` lists the eight tools (the public remote MCP server `POST https://backlog-tracker-e4ed2.web.app/help-api/mcp` proxies this contract live, cached 5 minutes) (`describe_platform`, `list_industries`, `get_industry`, `get_feature`, `search_help`, `get_help_article`, `start_free_trial`, `book_demo`) with `inputSchema` and `annotations.readOnlyHint`. `GET /wp-json/ph-agent/v1/tools/{name}?args=<json>` returns an MCP CallToolResult (`content`, `structuredContent`, `isError`). Public and read-only. It reads live published content at call time: allow-listed pages through `twin_for()`, industries through the Industries snippet's markdown, help through the Support Centre's own `search_articles()` / `markdown()` on its live catalogue (always the live release; `?release=` is ignored). Results are cached 5 minutes (transient plus `Cache-Control: public, max-age=300`); errors are never cached. Saving an allow-listed page, an industry page or a help article starts a new cache generation. Bad input returns `isError` with a plain message.
 
-The Support Centre no longer registers WebMCP tools itself (sc.js `initWebMcp` removed in 1.3.1); this snippet registers all eight on every allow-listed page, industries, blog, and Support Centre page. Ticket 5 (RevOps) adds `trackedUrl` to the two CTA tools.
+The Support Centre no longer registers WebMCP tools itself (sc.js `initWebMcp` removed in 1.3.1); this snippet registers all eight on every allow-listed page, industries, blog, and Support Centre page. Ticket 5 (RevOps): see below.
 
 ## Deploying (PH Website session, after Deploy to Main)
 
@@ -46,3 +46,15 @@ lands. Before publishing, in those snippets:
    `## Company` and `## For AI agents`, deduplicating by section heading.
 3. Compare the three snippets' twin routes with `main.php` so a URL is
    served by one of them only (this one answers only its own allow-list).
+
+## RevOps signals (ticket "RevOps signals from agent tool calls and CTAs")
+
+Agent traffic is logged without personal data. No IP, user agent, query string, email or free-text argument is ever stored.
+
+| Signal | Where | Fields |
+| --- | --- | --- |
+| Tool call from a WebMCP browser | `webmcp.js` pushes a `dataLayer` event `ph_agent_tool` (the `ph_ind_calculator` pattern, so GTM forwards it to RevOps) | `tool`, `source: "webmcp"`, `page_path` (path only), `referrer` (host or `none`), `at` |
+| Tool call from an MCP client | `backlog-tracker/functions/help-search.js` writes one `agentToolLog` Firestore row per `tools/call` (server-written, members read) | `tool`, `source: "remote-mcp"`, `referrer` (Origin/Referer host or null), `at`, `cached`, `ok` |
+| CTA click by an agent | `start_free_trial` and `book_demo` return `trackedUrl` (`/go/free-trial/?via=webmcp`, `/go/demo/?via=webmcp`; the remote server rewrites `via` to `remote-mcp`) beside the exact `url`. `main.php` serves `/go/<slug>/`, records `ph_agent_cta` and answers a 302 to the exact link | `cta`, `source` (`webmcp`, `remote-mcp` or `agent`), `agent: true`, `referrer` host, `at` |
+
+The hop's target comes from `go_targets()` in `tools.php`, never from the request, so it cannot be used as an open redirect. Events are appended to a capped option (`ph_ae_cta_log`, last 500) and passed to `do_action( 'ph_agent_cta', $event )` for RevOps listeners. A human click on the same CTA goes straight to the link (or through the site's existing `ph_ind_cta` event) and never carries `agent: true`.

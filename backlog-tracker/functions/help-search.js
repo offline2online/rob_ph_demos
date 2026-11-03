@@ -490,6 +490,27 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     return { ...r, value: r.value.tools.filter((x) => x && WP_TOOL_NAMES.includes(x.name)) };
   }
 
+  // Agent traffic as RevOps signals (ticket "RevOps signals"): one row per
+  // tools/call in agentToolLog. Tool, source, referrer HOST (never the full
+  // URL), time and whether the answer came from cache. No IP, no user agent,
+  // no arguments, no result text.
+  function referrerHost(req) {
+    const h = (k) => String((req && req.get && req.get(k)) || "");
+    const raw = h("origin") || h("referer");
+    try { const host = raw ? new URL(raw).hostname.toLowerCase() : ""; return host && host.length <= 100 ? host : null; } catch (e) { return null; }
+  }
+  function logAgentTool(tool, referrer, cached, ok) {
+    Promise.resolve().then(() => db.collection("agentToolLog").add({
+      tool, source: "remote-mcp", referrer: referrer || null, at: new Date(now()), cached: !!cached, ok: !!ok,
+    })).catch((e) => { if (logger) logger.warn("agent tool log failed", { error: String(e) }); });
+  }
+  // The site's CTA tools carry trackedUrl with via=webmcp; for this server it is via=remote-mcp.
+  const CTA_TOOLS = ["start_free_trial", "book_demo"];
+  function forRemote(name, result) {
+    if (!CTA_TOOLS.includes(name) || !result || result.isError) return result;
+    return JSON.parse(JSON.stringify(result).split("?via=webmcp").join("?via=remote-mcp"));
+  }
+
   async function callTool(name, args) {
     if (typeof name !== "string" || !WP_TOOL_NAMES.includes(name)) return null;
     const a = args === undefined || args === null ? {} : args;
@@ -530,7 +551,8 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         const out = await callTool(p.name, p.arguments);
         if (!out) return fail(-32602, `Unknown tool: ${String(p.name).slice(0, 80)}`);
         if (ctx && ctx.cache) ctx.cache.push(out.cached);
-        return reply(out.result);
+        logAgentTool(p.name, ctx && ctx.referrer, out.cached, !out.result.isError);
+        return reply(forRemote(p.name, out.result));
       }
       default: return fail(-32601, `Method not found: ${msg.method.slice(0, 80)}`);
     }
@@ -584,14 +606,14 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         const body = req.body;
         if (Array.isArray(body)) {
           if (body.length > 20) { res.status(400).json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Batch too large" } }); return; }
-          const ctx = { cache: [] };
+          const ctx = { cache: [], referrer: referrerHost(req) };
           const out = (await Promise.all(body.map((m) => mcpMessage(m, ctx)))).filter(Boolean);
           if (ctx.cache.length) res.set("X-Cache", ctx.cache.every(Boolean) ? "HIT" : "MISS");
           if (!out.length) { res.status(202).send(""); return; }
           res.status(200).json(out);
           return;
         }
-        const ctx = { cache: [] };
+        const ctx = { cache: [], referrer: referrerHost(req) };
         const out = await mcpMessage(body, ctx);
         if (ctx.cache.length) res.set("X-Cache", ctx.cache.every(Boolean) ? "HIT" : "MISS");
         if (!out) { res.status(202).send(""); return; }
