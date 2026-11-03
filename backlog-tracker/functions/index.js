@@ -2224,8 +2224,27 @@ exports.mcpServer = mcp.mcpServer;
 
 // Public, read-only help search for AI agents (no sign-in) — see help-search.js.
 // Served at /help-api/** on the console's Hosting site (firebase.json rewrite).
-const helpApi = createHelpApi({ db: { collection: (n) => getFirestore().collection(n) }, logger });
-exports.helpSearch = onRequest({ cors: false, timeoutSeconds: 30, memory: "512MiB", concurrency: 80, maxInstances: 10 }, (req, res) => helpApi.handle(req, res));
+// Alerts (abuse = many 429s, errors = 5xx) go to NOTIFY_WEBHOOK_URL, the same
+// channel as Notify Claude, so they reach Rob. Nothing is posted when it is unset.
+async function postHelpApiAlert({ kind, text, stats }) {
+  const url = NOTIFY_WEBHOOK_URL.value();
+  if (!url) { logger.warn("NOTIFY_WEBHOOK_URL is not set - help API alert not delivered", { kind }); return; }
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: `:rotating_light: ${text}`, kind: `help-api-${kind}`, stats }) });
+  if (!res.ok) logger.error("Help API alert webhook responded with a non-2xx status", { status: res.status });
+}
+const helpApi = createHelpApi({ db: { collection: (n) => getFirestore().collection(n) }, logger, alert: postHelpApiAlert });
+exports.helpSearch = onRequest({ cors: false, timeoutSeconds: 30, memory: "512MiB", concurrency: 80, maxInstances: 10, secrets: [NOTIFY_WEBHOOK_URL] }, (req, res) => helpApi.handle(req, res));
+// Proves alert delivery end to end: POST with the board key (X-Board-Key) and
+// the test alert lands in the webhook channel. Not served on the public Hosting site.
+exports.helpApiTestAlert = onRequest({ cors: false, timeoutSeconds: 30, secrets: [NOTIFY_WEBHOOK_URL, BOARD_API_KEY] }, async (req, res) => {
+  const presented = String(req.get("x-board-key") || "");
+  const configured = BOARD_API_KEY.value();
+  if (req.method !== "POST") { res.status(405).set("Allow", "POST").json({ error: "method_not_allowed" }); return; }
+  if (!configured || !presented || !timingSafeEqual(presented, configured)) { res.status(401).json({ error: "missing or invalid X-Board-Key" }); return; }
+  const sent = helpApi.testAlert();
+  await new Promise((r) => setTimeout(r, 1500));
+  res.status(200).json({ sent, webhookConfigured: !!NOTIFY_WEBHOOK_URL.value() });
+});
 exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 exports.syncMemberDirectory = mcp.syncMemberDirectory;
 exports.kanbanNotifyTask = mcp.kanbanNotifyTask;
