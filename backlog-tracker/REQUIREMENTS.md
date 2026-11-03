@@ -290,6 +290,12 @@ folder — none of their top-level path segments exist at the repo root —
 a project missing this link can never again silently write to the repo
 root the way PR #185 did.
 
+**A declared `repoFolder` that doesn't exist yet is a new project, not a typo**
+(3 Nov 2026): `pendingRepoFolderOf()` finds it and `placePatchInNewFolder()`
+accepts a patch whose paths already start with `<repoFolder>/` (creating the
+folder) or rewrites folder-relative paths under it. The PR #185 refusal now
+applies only to a project with no `repoFolder` at all.
+
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
 Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `Menu Board`,
 `Backend / Infrastructure`, `Uncategorised`.

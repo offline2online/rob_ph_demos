@@ -877,6 +877,12 @@ that correctly has no single folder) always has at least one path whose
 top segment already exists there, so it's never caught by this check — see
 `test/patch-paths.test.js` for the exact cases.
 
+**A declared `repoFolder` that doesn't exist yet is a new project, not a typo**
+(3 Nov 2026): `pendingRepoFolderOf()` finds it and `placePatchInNewFolder()`
+accepts a patch whose paths already start with `<repoFolder>/` (creating the
+folder) or rewrites folder-relative paths under it. The PR #185 refusal now
+applies only to a project with no `repoFolder` at all.
+
 **A change to an API or schema without its spec is refused too**
 (`docsImpact`). A project's `board-docs.json` may carry
 `"docsImpact": [{"when": ["<glob>"], "require": ["<repo path>"], "why": "<optional, max 200 chars>"}]`.
