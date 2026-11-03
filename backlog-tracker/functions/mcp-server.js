@@ -2471,6 +2471,48 @@ const TOOLS = [
       return textResult({ updated: true, itemId: ref.id, changed: Object.keys(fields) });
     },
   },
+  // Archive / delete Backlog tickets (Rob, 3 Nov 2026, ticket gXRKfJjDsXf3prrZnWiX):
+  // the same two writes the board's bulk Archive / Delete make on ticked
+  // Backlog cards. Past Backlog a ticket is the audit trail, so both refuse it.
+  ...[
+    { name: "archive_backlog_items", verb: "archive", past: "archived", extra: "Archived tickets keep their data and drop off the columns; a person can restore them from the project's Archived tickets page." },
+    { name: "delete_backlog_items", verb: "delete", past: "deleted", extra: "Deleting is permanent: prefer archive_backlog_items unless the tickets are junk." },
+  ].map((spec) => ({
+    name: spec.name,
+    description: `${spec["verb"][0].toUpperCase()}${spec.verb.slice(1)} one or more Backlog tickets by id (a single ticket is a list of one). ${spec.extra} Refuses the whole call, changing nothing, if any ticket is not found or is past Backlog (Ready for Testing, on a train, shipped or already archived). Logged to mcpAuditLog under your email.`,
+    scope: "board.write",
+    destructive: spec.verb === "delete",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 100, description: "Ids of the Backlog tickets (from list_backlog_items)." },
+      },
+      required: ["itemIds"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ids = [...new Set((Array.isArray(args.itemIds) ? args.itemIds : []).map((x) => String(x || "").trim()).filter(Boolean))];
+      if (!ids.length) return toolError("itemIds must name at least one Backlog ticket.");
+      if (ids.length > 100) return toolError("At most 100 tickets per call.");
+      const refs = ids.map((id) => db().collection("backlogItems").doc(id));
+      const snaps = await db().getAll(...refs);
+      const problems = [];
+      snaps.forEach((snap, i) => {
+        if (!snap.exists) { problems.push(`${ids[i]}: no such ticket`); return; }
+        const st = (snap.data() || {}).status || "backlog";
+        if (st !== "backlog") problems.push(`${ids[i]}: is in ${st}, not Backlog`);
+      });
+      if (problems.length) return toolError(`Nothing was ${spec.past}. ${problems.join("; ")}.`);
+      const batch = db().batch();
+      refs.forEach((ref) => {
+        if (spec.verb === "delete") batch.delete(ref);
+        else batch.update(ref, { status: "archived", archivedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email });
+      });
+      await batch.commit();
+      const titles = snaps.map((s) => String((s.data() || {}).title || "").slice(0, 80));
+      await audit(session, spec.name, { itemIds: ids, count: ids.length, titles });
+      return textResult({ [spec.past]: true, count: ids.length, itemIds: ids });
+    },
+  })),
   {
     name: "set_blocked",
     description: "Flag a Backlog ticket as blocked: it cannot be built until a person decides something (reason \"needs-decision\") or supplies input/a file (\"waiting-on-input\"). Blocked tickets are skipped by Notify Claude and the build routine, and show a flag with your one-line note on the board. Put the full detail in a comment. Does not change pipeline status. Clears when the flag is cleared or someone else comments.",
@@ -5136,7 +5178,7 @@ const PROMPTS = [
 
 const SERVER_INSTRUCTIONS = [
   "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in member; writes are attributed to their email. A viewer reads, an editor also writes, an admin has the release tools below.",
-  "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (inline cards).",
+  "Tickets: list_projects, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked, clear_blocked, archive_backlog_items and delete_backlog_items act on tickets. To show what waits on a person: get_ready_for_testing_board or get_approved_for_deployment_board.",
   "To take over a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in order. The project_handover prompt starts the same plan.",
   "Reading docs: list_project_documents and get_project_document read one document or section at a time; get_project_docs returns all in full.",
   "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, set_project_type, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first and send all of it; a document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover old versions.",

@@ -2439,15 +2439,13 @@ page it's laid out like):
   committed by the first ticket that lands — the browser cannot write to
   GitHub); creates the `projects` doc seeded with the concept's
   `readmeMd`/`requirementsMd` and documents; flips the concept to
-  `status: "promoted"`; and raises Backlog tickets from the Requirements
-  (`planPromotionTickets`, using the Feed in requirements splitter): one
-  front-end and/or back-end build ticket per requirement (a requirement
-  touching both gets one of each), one end-to-end test suite ticket, a
-  README ticket, a specs/Requirements ticket and one ticket per additional
-  document. A concept with only a name still gets one front-end, one
-  back-end, the E2E and the two document tickets. Every ticket starts in
-  Backlog — nothing is approved or sent for build — and a confirmation
-  dialog summarises the project, folder and ticket counts.
+  `status: "promoted"`. **It raises no tickets** (3 Nov 2026: splitting
+  the text filed 41 junk tickets for work already live): the new project's
+  Backlog starts empty and tickets are filed deliberately afterwards. A
+  confirmation dialog says so.
+  **Bulk select on the Backlog column**: ticking cards shows Archive N /
+  Delete N in the column header, each behind one confirmation (Backlog
+  cards only).
 - **Delete this concept** — active concepts only; a promoted concept's
   delete control is hidden and its rules write is refused regardless, since
   it is the provenance record for the project it became.
@@ -3131,6 +3129,8 @@ searched, and read a page or section at a time — see MCP.md),
 `get_concept`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category only),
+`archive_backlog_items` / `delete_backlog_items` (Backlog tickets only, by id,
+single or batch; refused for any ticket past Backlog; logged to mcpAuditLog),
 `add_item_comment`; documentation: `set_project_requirements`,
 `set_project_readme`, `set_project_artifact`, `create_project_document`,
 `update_project_document`, `delete_project_document`, `create_interface`,

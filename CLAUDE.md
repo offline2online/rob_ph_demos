@@ -591,6 +591,7 @@ the ticket and in `mcpAuditLog`.
   `list_projects`, `list_backlog_items`, `get_backlog_item`, `search_faq`,
   `get_faq_article`. Write: `create_backlog_item` (always into Backlog),
   `update_backlog_item` (title, desc, type, category — **no status**),
+  `archive_backlog_items` / `delete_backlog_items` (Backlog tickets only),
   `add_item_comment`.
 - **`get_ready_for_testing_board` / `get_approved_for_deployment_board`
   are MCP Apps (SEP-1865), not embedded HTML.** The tool's
