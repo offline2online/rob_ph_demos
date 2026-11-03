@@ -219,14 +219,28 @@ T("TC-02", "drag a card from Backlog to In Progress", { on: on.notPhone }, async
   await p.done();
 });
 
-T("TC-03", "Ready for Testing reassigns to the tester; moving back returns it to the developer", async (prof) => {
+T("TC-03", "Ready for Testing asks who tests (never Rob by default); moving back returns it to the developer", async (prof) => {
   const p = await open(prof, "#staff-kanban", TALL);
   const m = methodOf(p);
   await moveBy(p, m, "PH-19", "ready-for-testing");
-  let w = await where(p, "PH-19");
+  let w;
+  if (m === "status") {
+    // The edit form has its own Assignee field: the status change alone assigns nobody.
+    w = await where(p, "PH-19");
+    assert.equal(w.status, "ready-for-testing"); assert.equal(w.avatar, "Đức", "no automatic tester");
+    assert.equal((await stored(p, "PH-19")).assignee, emailOf("Đức"));
+    await moveBy(p, m, "PH-19", "in-progress");
+    assert.equal((await where(p, "PH-19")).status, "in-progress");
+    await p.done();
+    return;
+  }
+  await p.waitForSelector("#kb-tester-pick");
+  assert.equal((await where(p, "PH-19")).status, "in-progress", "nothing is written until a tester is chosen");
+  await p.selectOption("#kb-tester-pick", emailOf("Huy")); await press(p, "#kb-tester-ok"); await p.waitForTimeout(150);
+  w = await where(p, "PH-19");
   assert.equal(w.status, "ready-for-testing");
-  assert.equal(w.avatar, "Rob");
-  assert.match(await p.textContent("#kb-toast"), /reassigned to Rob for testing/);
+  assert.equal(w.avatar, "Huy");
+  assert.match(await p.textContent("#kb-toast"), /reassigned to Huy for testing/);
   assert.match(await p.textContent('.kb-card[data-key="PH-19"] .kb-handoff'), /From Đức/);
   assert.equal((await stored(p, "PH-19")).previousAssignee, emailOf("Đức"));
   await moveBy(p, m, "PH-19", "in-progress");
@@ -542,19 +556,18 @@ T("TC-18", "modal: pinned action bar, collapsible details column remembered", { 
   await p.done();
 });
 
-T("TC-19", "settings: hide or require an optional field; change the tester", async (prof) => {
+T("TC-19", "settings: hide or require an optional field", async (prof) => {
   const p = await open(prof, "#staff-kanban/settings");
   await press(p, '[data-show="sprint"]'); await p.waitForTimeout(100);
   await press(p, '[data-req="sprint"]'); await p.waitForTimeout(100);
-  await p.selectOption("#st-tester", MINH); await p.waitForTimeout(100);
   const s = await p.evaluate(() => globalThis.__fbStub.col("kanbanSettings").get("main"));
-  assert.deepEqual(s.fields.sprint, { show: true, required: true }); assert.equal(s.tester, emailOf("Minh")); assert.equal(s.updatedBy, ROB);
+  assert.deepEqual(s.fields.sprint, { show: true, required: true }); assert.equal(s.updatedBy, ROB);
   await press(p, '#kb-view [data-route="kanban"]'); await p.waitForSelector(".kb-card");
   await press(p, "#kb-new-btn"); await p.fill("#f-title", "Needs a sprint"); await press(p, "#f-save");
   assert.match(await p.textContent("#f-error"), /Sprint is required/);
   await press(p, "#f-cancel");
   await moveBy(p, methodOf(p), "PH-19", "ready-for-testing");
-  assert.equal((await where(p, "PH-19")).avatar, "Minh");
+  if (methodOf(p) !== "status") { await p.selectOption("#kb-tester-pick", MINH); await press(p, "#kb-tester-ok"); await p.waitForTimeout(150); assert.equal((await where(p, "PH-19")).avatar, "Minh"); }
   await p.done();
 });
 
