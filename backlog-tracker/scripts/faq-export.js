@@ -56,6 +56,14 @@ async function main() {
       // snapshot line — every article, until the backfill runs — is
       // byte-for-byte what it was before releases existed. faq-data.js reads
       // these against releases.json below.
+      // SEO & agent fields (rri7DngI2ccd7q4uYdk6) — the WordPress Support
+      // Centre publish reads these from the export. Only written when set, so
+      // an article without them keeps its snapshot line exactly as it was.
+      ...(a.seoTitle ? { seoTitle: a.seoTitle } : {}),
+      ...(a.metaDescription ? { metaDescription: a.metaDescription } : {}),
+      ...(a.directAnswer ? { directAnswer: a.directAnswer } : {}),
+      ...(Array.isArray(a.questionVariants) && a.questionVariants.length ? { questionVariants: a.questionVariants } : {}),
+      ...(a.articleType ? { articleType: a.articleType } : {}),
       ...(a.introducedInReleaseId ? { introducedInReleaseId: a.introducedInReleaseId } : {}),
       ...(a.removedInReleaseId ? { removedInReleaseId: a.removedInReleaseId } : {}),
       updatedAt: iso(a.updatedAt) || iso(a.publishedAt) || new Date().toISOString(),

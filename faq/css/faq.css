@@ -138,6 +138,7 @@ a:hover { text-decoration: underline; }
 .toc a:hover { color: var(--primary); }
 .article-header h1 { margin: 0 0 8px; font-size: 29.5px; font-weight: 700; line-height: 1.25; }
 .article-meta { margin: 0; color: var(--text-muted); font-size: 16px; }
+.article-direct-answer { margin: 0 0 24px; padding: 12px 16px; border-left: 4px solid var(--primary, #0075c9); background: var(--surface-muted, #f4f6f8); font-size: 16px; line-height: 1.5; }
 .article-updated { margin: 28px 0 0; font-size: 13.5px; color: var(--text-muted); }
 .related-title { margin: 0 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .article-cat-badge {
@@ -217,9 +218,6 @@ a:hover { text-decoration: underline; }
 .ph-footer { border-top: 1px solid var(--divider); padding: 20px 24px; text-align: center; font-size: 13.5px; color: var(--text-muted); }
 
 [hidden] { display: none !important; }
-html.embedded .hero { padding-top: 20px; }
-html.embedded .ph-footer { padding: 14px; }
-html.embedded .footer-admin { display: none; }
 .ph-footer .footer-admin a { color: var(--text-muted); }
 .ph-footer .footer-admin a:hover { color: var(--primary); }
 @media print { .ph-header, .hero, .toc, .article-nav, .related-block, .ph-footer { display: none !important; } .wrap { padding: 0; } }

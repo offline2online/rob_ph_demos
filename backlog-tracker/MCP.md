@@ -791,3 +791,14 @@ prototype changes later.
 - **Project writes.** The tool writes no project field, so
   `PROJECT_WRITABLE_FIELDS` is unchanged (`docs`, `artifactUrl`,
   `artifactUpdatedAt`, `description`); `test/mcp-server.test.js` asserts it.
+
+## Help article SEO and agent fields
+
+`create_faq_article` and `update_faq_article` also take `seoTitle` (≤ 60),
+`metaDescription` (≤ 155), `directAnswer` (≤ 300), `questionVariants` (≤ 20)
+and `articleType` (`guide` | `faq` | `reference`); update still only parks a
+pending revision. `get_faq_article` reports `missingSeoFields`.
+
+## Public help search (no sign-in)
+
+Separate from this authenticated server: `https://backlog-tracker-e4ed2.web.app/help-api/mcp` is a public, stateless, read-only MCP endpoint with two read-only search and fetch tools, plus `/help-api/search` and `/help-api/article`. It only serves published, in-range articles, linked to their personalisationhub.com/support-centre/ URL. See REQUIREMENTS.md → "Public help search for AI agents".

@@ -1181,14 +1181,11 @@ name and optional version; a draft row's **Mark live** confirms, then sets
 with `status == "live"`.
 
 - **A project may be assigned to one** — `projects/{id}.releaseId`
-  (nullable), from the project's Docs page → **Release**. While that
-  release is a draft, approved FAQ proposals sourced from the project
-  (`pendingRevision.sourceProjectId`) wait; marking the release live
-  promotes them together (`functions/index.js` `onReleaseMarkedLive`, then
-  the usual `promoteFaqRevisionIfReady`, which still also waits on the
-  proposal's source tickets). A project with no `releaseId`, or a proposal
-  with no `sourceProjectId`, promotes exactly as before releases existed —
-  Backlog Tracker & FAQs itself is deliberately not release-tracked.
+  (nullable), from the project's Docs page → **Release**. The assignment
+  scopes the release's Help Centre audit (see "Release audit" below): the
+  audit reads these projects' tickets, README and Requirements. It no longer
+  holds or releases anything (the per-ticket FAQ proposals it used to hold
+  back were removed 2 Nov 2026).
 - **An FAQ article may be bound to a range** —
   `faqArticles.introducedInReleaseId` / `removedInReleaseId` (both
   nullable), from the article editor's "Article properties" group. An
@@ -1457,9 +1454,12 @@ faqArticles/{id}: {
   introducedInReleaseId (nullable), removedInReleaseId (nullable),   // see `releases` above
   docType: "faq" | "how-to" | "reference" | "explanation",
   keywords: string[], status: "draft" | "published", needsReview: boolean,
+  seoTitle?: string (≤60), metaDescription?: string (≤155), directAnswer?: string (≤300),
+  questionVariants?: string[] (≤20), articleType?: "guide" | "faq" | "reference",   // SEO & agent fields — see "FAQ revision review" → SEO & agent fields
   order, createdAt, updatedAt, publishedAt,
   pendingRevision?: {              // see "FAQ revision review" below
     title, summary, bodyMd, keywords?: string[], docType?,
+    seoTitle?, metaDescription?, directAnswer?, questionVariants?, articleType?,   // a key present wins on promotion (null clears); absent leaves the live value
     reason, sourceItemIds?: string[], sourceProjectId?, sourcePrNumbers?: number[],
     proposedBy: "claude" | string, proposedVia?: "mcp", proposedAt: ISO string,
     reviewStatus: "awaiting-review" | "approved", approvedAt?, approvedBy?,
@@ -2694,27 +2694,171 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
    `notifyOnProjectReadyForReview` (see "Per-project Routine instructions"
    below) — prepended the same way, ahead of the DEPLOY REQUEST block.
 
-3. **`onBacklogItemPublishedLive`** (`onDocumentUpdated` on `backlogItems`)
-   — fires on the transition to `status: "published-live"` (the one
-   irreversible status change) and does two things, in order:
-   1. Promotes any **approved** proposed FAQ revision that names this
-      item in `pendingRevision.sourceItemIds`, provided every other source
-      item is also live — see "FAQ revision review" below. Always on; no
-      toggle.
-   2. The older, coarser safety net, still opt-in per project via the Docs
-      page's **FAQ review automation** toggle
-      (`projects/{id}.faqAutoFlagOnLive`): sets `needsReview: true` on
-      every `faqArticles` doc sharing that item's `projectId` that does
-      *not* already carry a specific proposal. A project with the toggle
-      on but no linked FAQ articles is a harmless no-op.
+3. *(Removed 2 Nov 2026.)* `onBacklogItemPublishedLive` used to promote
+   approved FAQ proposals and, behind `faqAutoFlagOnLive`, flag articles
+   when a ticket reached Merged to Main. A ticket moving through the
+   pipeline now triggers **no** FAQ work; the Help Centre is audited once
+   per release instead — see "Release audit".
 4. **`onFaqArticleRevisionApproved`** (`onDocumentUpdated` on
    `faqArticles`) — the other half of the same rule: when
    `pendingRevision.reviewStatus` flips to `"approved"` it promotes the
-   revision immediately if every source ticket is already live, otherwise
-   it leaves it waiting for (3). Both share `promoteFaqRevisionIfReady`, a
-   transaction that re-reads the article and its tickets before writing.
+   revision immediately — approval is the only gate. `promoteFaqRevisionIfReady`
+   is a transaction that re-reads the article, writes the live fields,
+   keeps `previousRevision`, and (for a release-audit proposal) appends a
+   `went-live` line to the audit's log.
+
+### Release audit (Live on AWS Marketplace → audit → review → publish)
+
+**Why (2 Nov 2026, ticket `oGRC10ZobaV4BBkLC16X`).** Customers get a
+feature only after engineering finalises it and the release is live on AWS
+Marketplace, so a help-article update proposed when a ticket merges is too
+early and mostly irrelevant. The per-ticket check (the Deploy flow's FAQ
+impact review step, the `onBacklogItemPublishedLive` trigger and the
+`faqAutoFlagOnLive` flag) was removed for every project.
+
+**The release status.** `releases/{id}.status` is `draft` or `live`; `live`
+is shown as **Live on AWS Marketplace** (the stored key is unchanged so the
+rules, the public help centre and MCP `search_faq` keep working). An editor
+sets it from the Releases page (**Mark live on AWS Marketplace**, one-way,
+confirmed). `firestore.rules` already refuses going back.
+
+**The trigger.** `onReleaseMarkedLive` (`functions/index.js`) creates
+`releaseAudits/{releaseId}` — `status` `requested` → `running` (it stamps the
+session link) → `done` / `failed`, `requestedAt`, `requestedByEmail`,
+`projectIds`, `checkedArticleCount`, `checked` (every article read and its
+outcome), `summary`, and an append-only `log` — and fires the Routine with
+`=== RELEASE AUDIT REQUEST ===` (`functions/release-audit.js`). It uses
+`create()`, so a re-delivered event never starts a second audit.
+
+**The audit agent** (`ROUTINE_INSTRUCTIONS.md` → "The 'Release Audit'
+flow"). Reads what shipped — the release's Merged-to-Main tickets, its
+projects' README and Requirements, release-notes documents — and reads every
+help article. It writes only proposals, never live fields:
+- *update*: `faqArticles.pendingRevision` with `sourceReleaseId` (no
+  `sourceItemIds`);
+- *new article*: a draft article whose `pendingRevision.isNew` is true;
+- *retire*: `faqArticles.retireProposal {reason, sourceReleaseId,
+  reviewStatus}`.
+
+**The review view.** `#releases/<id>/audit` (Releases → **Help Centre
+audit**) shows the batch grouped as Proposed updates / New articles / Articles
+to retire. Per row: **Review side by side** (the existing old-vs-new diff
+view), **Approve**, **Edit**, **Reject**; plus **Approve selected** /
+**Reject selected**. Approving an update or new article publishes it straight
+away (`promoteFaqRevisionIfReady`, previous text kept for revert); approving
+a retirement unpublishes the article (`status: "draft"`, `retiredAt`);
+rejecting discards the proposal (a new-article draft is deleted).
+
+**The audit log.** `releaseAudits/{id}.log` records `audit-requested`,
+`audit-started`, `audit-finished` / `audit-failed`, then per article
+`approved` / `rejected` / `edited` / `retire-approved` / `retire-rejected`
+with who and when, and `went-live` when it was published. The view shows the
+log and a "what was checked" list.
+
+**Public Support Centre.** Approved changes publish to the Help Centre
+(`faq/`, via the hourly export) now. The Support Centre is moving to native
+WordPress pages driven through the Elementor MCP under the PH Website
+project; that hand-off follows the "Support non-GitHub projects: Elementor MCP
+deployment" ticket and is not built here — approval timing (after the release
+is live) is what keeps the content in step with the release being marketed.
+
+**Tests.** `test/release-audit.test.mjs` (classification, log shape on both
+sides, fire text, and guards that the per-ticket flow stays removed).
+
+### WordPress publish status in FAQ Management (3 Nov 2026, ticket `LYbxv1nqC3EaJ53ryaa8`)
+
+Publishing to WordPress is **not** done from the console. The "PH Support
+Centre" snippet on personalisationhub.com pulls the console's export
+(`faq/data`) hourly and creates, updates and retires the Help articles itself
+(all fields, sanitising, image copy, link rewrite, 301s, revisions, URL map).
+The console holds no WordPress credential and never writes to WordPress; an
+earlier push publisher (`help-publisher.js`, `faq-wp-publish.js`) duplicated
+that sync and was reverted. Content stays mastered here; release-audit
+approvals reach WordPress through the export with no extra step.
+
+FAQ Management only **reads** the public, read-only endpoint
+`GET https://personalisationhub.com/wp-json/ph-help/v1/published` (cached
+5 minutes on the WordPress side): `{lastSync, pending, failed: [articleId…],
+articles: [{id, url, wpId, hash, updatedAt}]}`, where `hash` is the
+`contentHash` WordPress last synced (first 16 hex chars of sha256 of
+`bodyMd`, as `scripts/faq-export.js` computes it; the page computes the same
+digest in the browser). It is fetched client-side on opening the page and
+every 5 minutes while it is open (`public/js/wp-publish-status.js`). Each
+article shows a badge in the list and in the editor's "Live at" line:
+
+- **Live**: present, and its hash equals the article's current contentHash.
+- **Waiting**: published and in range here, but absent or with an older hash
+  (WordPress picks it up within about 2 hours: hourly export, then hourly sync).
+- **Failed**: its id is in `failed`.
+- **Not published**: draft, retired, or outside the live release's range
+  (same range rule as `articleAppliesToRelease`; no live release means no
+  range filter).
+- **Status unavailable**: the endpoint could not be read (blocked, non-200,
+  malformed). The page still loads.
+
+"Live at" uses the endpoint's `url`, falling back to
+`https://personalisationhub.com/support-centre/article.html?id=<id>`. The
+page header shows "Last WordPress sync: <time>". Tests:
+`test/wp-publish-status.test.mjs` and two scenarios in `test/ui/console-click.test.mjs`.
+
+### Public help search for AI agents (3 Nov 2026, ticket `5pNsaRPdnruE0n6Gnd25`)
+
+A public, read-only, no-sign-in endpoint so AI assistants can answer from the
+published help articles without crawling pages. `functions/help-search.js`
+(the `helpSearch` function), served on the console's Hosting site at
+`/help-api/**`:
+
+- `GET /help-api/search?q=…&release=…&limit=…` — ranked results, each with
+  `title`, `directAnswer`, `summary`, `url` (the
+  personalisationhub.com/support-centre/ URL from the WordPress site's public
+  `GET /wp-json/ph-help/v1/published` map, cached 5 minutes, falling back to
+  `/support-centre/article.html?id=<id>`), `articleType` (falling back to `docType`), `category`, `lastUpdated`.
+- `GET /help-api/article?id=…|slug=…` — the full article (`format=md` or
+  `Accept: text/markdown` gives markdown with the source URL).
+- `POST /help-api/mcp` — a stateless public MCP server (tools `search_help`,
+  `get_help_article`, both read-only). The WebMCP `search_help` tool and the
+  `/llms.txt` entry are out of scope here: they live in the WordPress snippets
+  and are added there once `/help-api` is live.
+- **Never returned:** drafts, retired articles, anything outside the requested
+  release (default: the live release; `release` takes an id or version, same
+  resolution and range check as `search_faq`), and `pendingRevision` text. Only live fields are read.
+- **Rate limit** 60 requests a minute per address per instance (429 with
+  `Retry-After`); **cache** the published set for 60 s and each identical
+  query for 60 s (`X-Cache: HIT|MISS`, `Cache-Control: public, max-age=60`).
+- **Usage log:** one `helpSearchLog` document per search (normalised query,
+  release, result count, `zeroResults`, `via` http|mcp, cached; no address).
+  Members can read it; only the server writes. The release audit's fire text
+  lists the most-asked zero-result queries of the last 90 days as content gaps
+  (`zeroResultQueries` in `release-audit.js`).
+- Scoring is the Support Centre's exactly: every query term (over 1 character)
+  must match; per term title +12 if it starts with it, else +8 if it contains
+  it; keyword +5; question variant +4; summary +2; sorted by score, then
+  article `order`. No body or direct-answer scoring.
+- Falls under the go-live security review (public read-only endpoints).
+
+**Tests.** `test/help-search.test.js`.
 
 ### FAQ revision review (Deploy → propose → approve → go live)
+
+**SEO & agent fields (3 Nov 2026, ticket `rri7DngI2ccd7q4uYdk6`).** Help
+articles move to native WordPress pages but stay managed here, so each
+`faqArticles` doc carries the five fields the WordPress Support Centre needs
+for SEO and agent output: `seoTitle` (≤ 60 chars), `metaDescription` (≤ 155),
+`directAnswer` (one or two plain-text sentences, ≤ 300, shown at the top of
+the help-centre article), `questionVariants` (≤ 20 ways users ask it) and
+`articleType` (`guide` → HowTo, `faq` → FAQPage, `reference` → TechArticle).
+The URL slug is the existing `slug`. SEO title, meta description and slug
+default to the title/summary/auto-slug when empty (the publish step applies
+the default; nothing is stored). Empty fields are not written. The editor's
+**SEO & agents** group shows live character counts (red at the limit) and
+"SEO fields: N of 5 complete". The fields travel in `pendingRevision` like
+the rest, appear in the review diff, are copied to the live article on
+promotion (a key present on the proposal wins, `null` clears it, an absent key
+leaves the live value alone), are carried by `faq-export.js` into
+`faq/data/articles/<id>.json` (only when set) and read back by `faq-sync.js`.
+MCP `create_faq_article` / `update_faq_article` accept them (update still only
+parks a pending revision) and `get_faq_article` reports `missingSeoFields`.
+The release Help Centre audit flags articles missing them.
 
 **Why.** A ticket merging to `main` changes what the product does; the
 public help centre describes what the product does. The old
@@ -3419,6 +3563,36 @@ has no finalised state and staff tasks are unaffected.
   `firestore.rules` lets only an admin change `finalised` / `finalisedLog`.
 - **First use:** Display Types & DSP Integration and Retail Media Insights &
   Analytics Dashboards, once their pre-freeze code reviews are complete.
+
+## Non-GitHub deployment targets (Elementor / WordPress)
+
+A project's `deployTarget` is `github` (default; every existing project) or
+`elementor`. An `elementor` project (first: PH Website, personalisationhub.com)
+has no repo, deploy branch or train: the build output is an **artifact**
+(`kind` page | post | template | media, with Elementor JSON or text) linked on
+the ticket as its test link, and approval publishes it through the Elementor
+MCP. GitHub-only UI (deploy branch, train status, e2e, repo-synced README,
+Deploy to Main) is gated on `usesGithub(project)`.
+
+Pure logic lives in `functions/elementor-deploy.js` (tested by
+`test/elementor-deploy.test.js`, no network):
+
+- `publishArtifact` creates (`elementor-create-page`) or updates
+  (`elementor-publish-document`) and returns the ticket fields to merge:
+  `publishedUrl`, `wpId`, `deployVersion` and an append-only `deployHistory`
+  (each entry keeps the previous version's snapshot). `dryRun` calls nothing.
+- `rollback` restores the previous snapshot as a new version.
+- `prePublishChecks` holds an item in Ready for Testing when a blocked
+  client/brand name appears (whole word, case-insensitive).
+- Recurring jobs: `nextRunAt` (weekday/hour in `Australia/Sydney` plus a random
+  jitter window, DST-correct) and `scheduledRunRecord`, which auto-publishes
+  only when the project's `autoPublish` AND the job's `autoPublish` are set and
+  the checks pass, otherwise leaves the run in Ready for Testing.
+
+Status: the module and tests have landed. Still to wire (follow-up tickets):
+the project setting in the New Project / Docs UI, the Approve → publish
+trigger and Cloud Scheduler job runner, per-ticket deployment log display, and
+release-report/count support for `elementor` projects.
 
 ## Non-goals / explicitly out of scope
 

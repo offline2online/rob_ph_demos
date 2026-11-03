@@ -17,6 +17,8 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
 const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
 const { shouldStampReportedAt, inFlightItemIds } = require("./notify-routine");
+const { auditLogEntry, buildAuditRequestText, zeroResultQueries } = require("./release-audit");
+const { createHelpApi } = require("./help-search");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 const { advancePackageQueue } = require("./package-queue");
 
@@ -686,24 +688,12 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       // deploy was actually running or hadn't been requested yet.
       const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with deployRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and deployRoutine.finishedAt set to now — the board shows a working/spinning state on its Deploy to Main button until it sees this. Name the sub-fields in the update mask (updateMask.fieldPaths=deployRoutine.status&updateMask.fieldPaths=deployRoutine.finishedAt, plus deployRoutine.errorMessage if set) so the record's firedAt and sessionUrl are kept; do not PATCH the whole deployRoutine map. A "done" report IS the hand-over: the pipeline sets trainReady itself the moment it lands (onDeployRoutineSettled), so do not attempt the trainReady write.`;
 
-      // Which product/program this project belongs to — the Deploy flow's
-      // FAQ impact review (ROUTINE_INSTRUCTIONS.md step 3b) scopes the help
-      // centre articles it may propose changes to by this. A hint only: the
-      // Routine re-reads projects/{id}.programId itself as the authority.
-      let programLine = "Product/Program: (none set on this project — only articles linked directly to this projectId are in scope for the FAQ impact review)\n";
-      if (after.programId) {
-        const programSnap = await getFirestore().collection("programs").doc(after.programId).get().catch(() => null);
-        const pname = programSnap && programSnap.exists ? (programSnap.data().name || "") : "";
-        programLine = `Product/Program: "${pname || "(unnamed)"}" (programId: ${after.programId}) — FAQ impact review scope: faqArticles with this programId, plus any with projectId ${event.params.projectId}\n`;
-      }
-
       const skillsBlock = await phaseSkillsBlock(getFirestore(), "deploy", "DEPLOY");
 
       const built = buildDeployFireText(items, (itemLines) =>
         `${projectPromptBlock}${skillsBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
         trainLine +
-        programLine +
-        `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one, including its FAQ impact review step (3b), which proposes help-centre updates for a human to approve. Item descriptions are not included; read any card from Firestore (backlogItems/<id>) if you need it.\n\n` +
+        `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one. The deploy no longer touches the help centre (that is audited once per release, when it goes live on AWS Marketplace). Item descriptions are not included; read any card from Firestore (backlogItems/<id>) if you need it.\n\n` +
         `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`);
       const text = built.text;
       if (built.error) {
@@ -1507,87 +1497,12 @@ exports.notifyOnItemsReadyForTesting = onDocumentUpdated(
   }
 );
 
-// A shipped feature can leave the FAQ articles that document it stale.
-// Opt-in per project (Docs page → "FAQ review automation", projects/{id}
-// .faqAutoFlagOnLive) — when on, the moment one of that project's backlog
-// items is actually merged to main (status flips to "published-live", the
-// one irreversible transition of the three — ready-for-testing and
-// ready-to-publish can still be reverted), every faqArticles doc whose own
-// optional `projectId` link points at this project gets needsReview:true,
-// the same flag the FAQ Center's own manual toggle sets.
-exports.onBacklogItemPublishedLive = onDocumentUpdated(
-  "backlogItems/{itemId}",
-  async (event) => {
-    const before = event.data?.before?.data();
-    const after = event.data?.after?.data();
-    if (!before || !after) {
-      return;
-    }
-    if (before.status === "published-live" || after.status !== "published-live") {
-      return;
-    }
-
-    const db = getFirestore();
-    const itemId = event.params.itemId;
-
-    // 1. Proposed FAQ revisions this ticket is a source of (written by the
-    //    Deploy-flow Routine — ROUTINE_INSTRUCTIONS.md "FAQ impact review").
-    //    Each goes live only once a person has approved it AND every source
-    //    ticket is live; this ticket going live may be the last thing it was
-    //    waiting on.
-    const pendingSnap = await db.collection("faqArticles")
-      .where("pendingRevision.sourceItemIds", "array-contains", itemId)
-      .get();
-    const handled = new Set();
-    for (const articleDoc of pendingSnap.docs) {
-      handled.add(articleDoc.id);
-      await promoteFaqRevisionIfReady(db, articleDoc.ref, `ticket ${itemId} reached published-live`);
-    }
-
-    // 2. The older, coarser per-project safety net: opt-in via the Docs
-    //    page's "FAQ review automation" toggle, flags every article linked
-    //    to the project for a human look. Skips articles that already carry
-    //    a specific proposal from step 1 — those have something concrete to
-    //    review; a bare flag on top would be noise.
-    if (!after.projectId) {
-      return;
-    }
-    const projectSnap = await db.collection("projects").doc(after.projectId).get();
-    if (!projectSnap.exists || !projectSnap.data().faqAutoFlagOnLive) {
-      return;
-    }
-
-    const articlesSnap = await db.collection("faqArticles")
-      .where("projectId", "==", after.projectId)
-      .get();
-    const toFlag = articlesSnap.docs.filter((d) => !handled.has(d.id) && !d.data().pendingRevision);
-    if (!toFlag.length) {
-      logger.info("FAQ auto-flag enabled but nothing left to flag for this project", {
-        itemId,
-        projectId: after.projectId,
-      });
-      return;
-    }
-
-    // Chunked: a Firestore batch takes at most 500 writes.
-    for (let i = 0; i < toFlag.length; i += 400) {
-      const batch = db.batch();
-      toFlag.slice(i, i + 400).forEach((articleDoc) => {
-        batch.set(articleDoc.ref, {
-          needsReview: true,
-          updatedAt: new Date(),
-        }, { merge: true });
-      });
-      await batch.commit();
-    }
-
-    logger.info("Flagged linked FAQ articles for review after merge to main", {
-      itemId,
-      projectId: after.projectId,
-      articleCount: toFlag.length,
-    });
-  }
-);
+// Help-centre updates are no longer part of the per-ticket flow (2 Nov 2026,
+// ticket oGRC10ZobaV4BBkLC16X): a ticket reaching Merged to Main neither
+// promotes nor flags FAQ articles. Customers only get a feature when its
+// release is live on AWS Marketplace, so the help centre is audited once per
+// release — see onReleaseMarkedLive below and "Release audit" in
+// REQUIREMENTS.md.
 
 // ── Proposed FAQ revisions: approve + merge ⇒ go live ─────────────────────
 // The Deploy-flow Routine parks a corrected article as faqArticles/{id}.
@@ -1600,8 +1515,16 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
 // under previousRevision (one-click revert in the console), clears the
 // proposal and the flag, and publishes a proposal-created draft. The
 // hourly FAQ export (faq-content.yml) then carries it to the static site.
-const LIVE_OR_LATER = new Set(["published-live", "archived"]);
-
+const FAQ_SEO_FIELD_KEYS = ["seoTitle", "metaDescription", "directAnswer", "questionVariants", "articleType"];
+function faqSeoFieldsFromRevision(rev) {
+  const out = {};
+  for (const k of FAQ_SEO_FIELD_KEYS) {
+    if (!(k in rev)) continue;
+    const v = rev[k];
+    out[k] = (v === null || v === "" || (Array.isArray(v) && !v.length)) ? null : v;
+  }
+  return out;
+}
 async function promoteFaqRevisionIfReady(db, articleRef, why) {
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(articleRef);
@@ -1610,38 +1533,11 @@ async function promoteFaqRevisionIfReady(db, articleRef, why) {
     const rev = a.pendingRevision;
     if (!rev || rev.reviewStatus !== "approved") return;
 
+    // Approval is the only gate. The release audit proposes changes only
+    // after the release is live on AWS Marketplace, so there is no ticket or
+    // release left to wait on (the per-ticket wait was removed 2 Nov 2026).
     const ids = Array.isArray(rev.sourceItemIds) ? rev.sourceItemIds.filter((s) => typeof s === "string" && s) : [];
-    // Every source ticket must be live (or archived, which only happens
-    // after live). A ticket that no longer exists can't hold it up forever.
-    for (const id of ids) {
-      const itemSnap = await tx.get(db.collection("backlogItems").doc(id));
-      if (itemSnap.exists && !LIVE_OR_LATER.has(itemSnap.data().status)) {
-        logger.info("Approved FAQ revision still waiting on a source ticket", { articleId: articleRef.id, waitingOn: id, why });
-        return;
-      }
-    }
-
-    // Releases: a project assigned to a release (projects/{id}.releaseId,
-    // set from its Docs page) holds its approved FAQ proposals until that
-    // release is marked live, so a release's whole bundle of help-centre
-    // changes goes out together — onReleaseMarkedLive below is the other
-    // half, re-running this for every such proposal at that moment. Fully
-    // opt-in: no sourceProjectId on the proposal (an MCP-originated one, or
-    // one written before the field existed), no releaseId on the project,
-    // or a project/release doc that no longer exists all fall straight
-    // through to promotion exactly as before releases existed.
-    const sourceProjectId = typeof rev.sourceProjectId === "string" && rev.sourceProjectId ? rev.sourceProjectId : null;
-    if (sourceProjectId) {
-      const projectSnap = await tx.get(db.collection("projects").doc(sourceProjectId));
-      const releaseId = projectSnap.exists ? projectSnap.data().releaseId : null;
-      if (typeof releaseId === "string" && releaseId) {
-        const releaseSnap = await tx.get(db.collection("releases").doc(releaseId));
-        if (releaseSnap.exists && releaseSnap.data().status !== "live") {
-          logger.info("Approved FAQ revision waiting on its project's release to go live", { articleId: articleRef.id, projectId: sourceProjectId, waitingOnRelease: releaseId, why });
-          return;
-        }
-      }
-    }
+    const sourceReleaseId = typeof rev.sourceReleaseId === "string" && rev.sourceReleaseId ? rev.sourceReleaseId : null;
 
     const now = new Date();
     const update = {
@@ -1650,6 +1546,9 @@ async function promoteFaqRevisionIfReady(db, articleRef, why) {
       bodyMd: typeof rev.bodyMd === "string" ? rev.bodyMd : (a.bodyMd || ""),
       ...(Array.isArray(rev.keywords) ? { keywords: rev.keywords } : {}),
       ...(typeof rev.docType === "string" ? { docType: rev.docType } : {}),
+      // SEO & agent fields: a key present on the proposal wins (null clears
+      // the live value); a key the proposal doesn't carry leaves it alone.
+      ...faqSeoFieldsFromRevision(rev),
       previousRevision: {
         title: a.title || "",
         summary: a.summary || "",
@@ -1669,7 +1568,14 @@ async function promoteFaqRevisionIfReady(db, articleRef, why) {
     // "none", so keep null (simpler to query against) and let the client
     // read either.
     tx.set(articleRef, update, { merge: true });
-    logger.info("Promoted approved FAQ revision to live", { articleId: articleRef.id, sourceItemIds: ids, why });
+    // The release audit's log records when each approved change went live.
+    if (sourceReleaseId) {
+      tx.set(db.collection("releaseAudits").doc(sourceReleaseId), {
+        log: FieldValue.arrayUnion(auditLogEntry({ type: "went-live", by: "system", articleId: articleRef.id, title: update.title, at: now.toISOString() })),
+        updatedAt: now,
+      }, { merge: true });
+    }
+    logger.info("Promoted approved FAQ revision to live", { articleId: articleRef.id, sourceItemIds: ids, sourceReleaseId, why });
   });
 }
 
@@ -1686,79 +1592,76 @@ exports.onFaqArticleRevisionApproved = onDocumentUpdated(
   }
 );
 
-// ── A release marked live ⇒ its bundle of approved FAQ proposals goes live ─
-// The third event that can be the last thing a proposal is waiting on (see
-// promoteFaqRevisionIfReady's release check above): the release its source
-// project is assigned to moving draft -> live (Releases page → Mark live;
-// firestore.rules only ever lets status advance that way). Finds every
-// project on this release, then every approved proposal sourced from one of
-// them, and runs each through the same promotion path — which still checks
-// its source tickets, so a proposal whose ticket hasn't merged yet keeps
-// waiting and goes live when that ticket does.
-//
-// Firestore's `in` takes up to 30 values on firebase-admin 12, but this
-// chunks at 10 so the query stays valid on any SDK/backend limit this
-// codebase might meet.
-const RELEASE_PROJECT_IN_CHUNK = 10;
-
+// ── A release marked "Live on AWS Marketplace" ⇒ audit the Help Centre ────
+// The release status "live" is shown as "Live on AWS Marketplace" (Releases
+// page → Mark live; firestore.rules only ever lets status advance
+// draft → live). Customers get a feature only then, so this is the one moment
+// the Help Centre is reviewed (2 Nov 2026, ticket oGRC10ZobaV4BBkLC16X — it
+// used to happen per ticket, inside the Deploy flow). This opens
+// releaseAudits/{releaseId} and fires the Routine with a RELEASE AUDIT
+// REQUEST; the Routine drafts pending revisions, new-article drafts and retire
+// flags, a person reviews them as one batch in the console's release audit
+// view, and approvals go live through promoteFaqRevisionIfReady above.
 exports.onReleaseMarkedLive = onDocumentUpdated(
-  "releases/{releaseId}",
+  { document: "releases/{releaseId}", secrets: [CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
-    if (!before || !after) {
-      return;
-    }
-    if (before.status === "live" || after.status !== "live") {
+    if (!before || !after || before.status === "live" || after.status !== "live") {
       return;
     }
 
     const db = getFirestore();
     const releaseId = event.params.releaseId;
-    const why = `release ${releaseId} marked live`;
+    const requestedBy = after.updatedByEmail || null;
+    const nowIso = new Date().toISOString();
+    const auditRef = db.collection("releaseAudits").doc(releaseId);
 
     try {
       const projectsSnap = await db.collection("projects").where("releaseId", "==", releaseId).get();
-      const projectIds = projectsSnap.docs.map((d) => d.id);
-      if (!projectIds.length) {
-        logger.info("Release marked live with no projects assigned to it", { releaseId });
+      const projects = projectsSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => !p.archived);
+
+      // create() fails if an audit already exists, so a re-delivered event
+      // never starts a second audit of the same release.
+      await auditRef.create({
+        releaseId,
+        releaseName: after.name || "",
+        releaseVersion: after.version || null,
+        status: "requested",
+        requestedAt: new Date(),
+        requestedByEmail: requestedBy,
+        projectIds: projects.map((p) => p.id),
+        checkedArticleCount: 0,
+        updatedAt: new Date(),
+        log: [auditLogEntry({ type: "audit-requested", by: requestedBy || "system", note: `Release marked Live on AWS Marketplace; ${projects.length} project${projects.length === 1 ? "" : "s"} in scope.`, at: nowIso })],
+      });
+
+      const { fireUrl, token } = await resolveRoutineCredentials(db, requestedBy, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value());
+      if (!fireUrl || !token) {
+        await auditRef.set({ status: "failed", errorMessage: "No Routine is configured to run the audit.", updatedAt: new Date(),
+          log: FieldValue.arrayUnion(auditLogEntry({ type: "audit-failed", note: "No Routine is configured to run the audit.", at: new Date().toISOString() })) }, { merge: true });
         return;
       }
-
-      const articleRefs = new Map();
-      for (let i = 0; i < projectIds.length; i += RELEASE_PROJECT_IN_CHUNK) {
-        const chunk = projectIds.slice(i, i + RELEASE_PROJECT_IN_CHUNK);
-        const snap = await db.collection("faqArticles")
-          .where("pendingRevision.sourceProjectId", "in", chunk)
-          .where("pendingRevision.reviewStatus", "==", "approved")
-          .get();
-        snap.docs.forEach((d) => articleRefs.set(d.id, d.ref));
-      }
-
-      for (const ref of articleRefs.values()) {
-        try {
-          await promoteFaqRevisionIfReady(db, ref, why);
-        } catch (err) {
-          // One article failing (a contended transaction, say) mustn't stop
-          // the rest of the release's bundle from going live.
-          logger.error("Failed to promote FAQ revision for live release", {
-            releaseId,
-            articleId: ref.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-
-      logger.info("Release marked live — ran approved FAQ proposals through promotion", {
-        releaseId,
-        projectCount: projectIds.length,
-        articleCount: articleRefs.size,
-      });
+      const skillsBlock = await phaseSkillsBlock(db, "deploy", "DEPLOY");
+      let searchGaps = [];
+      try {
+        const since = new Date(Date.now() - 90 * 24 * 3600 * 1000);
+        const logSnap = await db.collection("helpSearchLog").where("at", ">=", since).orderBy("at", "desc").limit(2000).get();
+        searchGaps = zeroResultQueries(logSnap.docs.map((d) => d.data()));
+      } catch (e) { logger.warn("help search gaps unreadable", { error: String(e) }); }
+      const text = `${skillsBlock}${buildAuditRequestText({ releaseId, release: after, projects, requestedByEmail: requestedBy, searchGaps })}${boardAccessBlock()}`;
+      const { sessionUrl, fireError } = await fireRoutineSession(fireUrl, token, text, { releaseId });
+      await auditRef.set({
+        status: fireError ? "failed" : "running",
+        sessionUrl: sessionUrl || null,
+        ...(fireError ? { errorMessage: fireError } : {}),
+        updatedAt: new Date(),
+        log: FieldValue.arrayUnion(fireError
+          ? auditLogEntry({ type: "audit-failed", note: fireError, at: new Date().toISOString() })
+          : auditLogEntry({ type: "audit-started", note: sessionUrl || null, at: new Date().toISOString() })),
+      }, { merge: true });
     } catch (err) {
-      logger.error("Failed to process release marked live", {
-        releaseId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      logger.error("Failed to start the release audit", { releaseId, error: err instanceof Error ? err.message : String(err) });
     }
   }
 );
@@ -2318,6 +2221,11 @@ exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSec
 // See ../MCP.md for the full flow and the tool list.
 const mcp = require("./mcp-server");
 exports.mcpServer = mcp.mcpServer;
+
+// Public, read-only help search for AI agents (no sign-in) — see help-search.js.
+// Served at /help-api/** on the console's Hosting site (firebase.json rewrite).
+const helpApi = createHelpApi({ db: { collection: (n) => getFirestore().collection(n) }, logger });
+exports.helpSearch = onRequest({ cors: false, timeoutSeconds: 30, memory: "512MiB", concurrency: 80, maxInstances: 10 }, (req, res) => helpApi.handle(req, res));
 exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 exports.syncMemberDirectory = mcp.syncMemberDirectory;
 exports.kanbanNotifyTask = mcp.kanbanNotifyTask;

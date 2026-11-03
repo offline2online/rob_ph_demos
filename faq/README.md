@@ -1,16 +1,26 @@
 # faq — Personalisation Hub Help Centre (public site)
 
-Consumer-facing help centre: front page + search, category pages (with
-folders), article pages, search results. Served at the ROOT of its own
-Firebase Hosting site (`ph-help-centre` in project `backlog-tracker-e4ed2`,
-hosting target `help` in `backlog-tracker/firebase.json`, custom domain
-**help.personalisationhub.com**) and iframed into the support centre on
-personalisationhub.com. The same folder is also published by GitHub Pages
-at `/faq/` like the rest of the repo root, which is handy for previews.
-The footer's "Agent portal sign-in" link (hidden when embedded) and the
-`/console` redirect lead to the admin console at
-backlog-tracker-e4ed2.web.app. Old Freshdesk article URLs
-(`/support/solutions/articles/<id>…`) redirect to the matching article.
+**Retired as a public site (3 Nov 2026).** The Help Centre is now the native
+Support Centre on personalisationhub.com (WordPress, `/support-centre/`).
+Every `help.personalisationhub.com` URL 301s there from the Firebase Hosting
+site `ph-help-centre` (hosting target `help`, `backlog-tracker/firebase.json`):
+`/article.html`, `/category.html`, `/search.html` and `/index.html` forward to
+the same path under `/support-centre/` (WordPress resolves them, query string
+kept), Freshdesk `/support/solutions/articles/<id>…` goes to WordPress's
+`faq-art-<id>` handler, and anything else goes to `/support-centre/`.
+`/console` still 302s to the admin console. The iframe embed mode, the
+height/scroll postMessage and the frame-ancestors CSP are gone. The pages in
+this folder no longer render: each `faq/*.html` is `noindex`, has a canonical
+link to the Support Centre, loads `js/redirect.js` first (an external script,
+as the CSP is `script-src 'self'`) which `location.replace`s to
+`https://personalisationhub.com/support-centre/` (+ `article.html`,
+`category.html` or `search.html`, query string kept), and shows a plain link
+for readers without JavaScript (GitHub Pages cannot send a 301). `data/`
+stays exactly as is: WordPress reads it from the repo and faq-export keeps
+writing it. Articles are still edited in
+the console's FAQ Management; its "Live at" links open the WordPress page.
+**Rollback:** redeploy the previous `firebase.json` help block (git revert of
+this change) and re-add the CSP header.
 
 ## How content flows
 
@@ -90,6 +100,16 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   in the console's FAQ Management and the ticket is Merged to Main — see
   `backlog-tracker/REQUIREMENTS.md` → "FAQ revision review". Neither
   `faq-export.js` nor this site ever reads `pendingRevision`.
+
+## SEO & agent fields
+
+Each article can carry `seoTitle`, `metaDescription`, `directAnswer`,
+`questionVariants` and `articleType` (`guide` | `faq` | `reference`), edited in
+the console's article editor ("SEO & agents") and exported into
+`faq/data/articles/<id>.json` only when set. The article page shows
+`directAnswer` at the top of the article. The WordPress Support Centre publish
+step reads the rest from the export. See `backlog-tracker/REQUIREMENTS.md` →
+"FAQ revision review".
 
 ## Article scoping (`programId` / `projectId`)
 
