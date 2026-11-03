@@ -40,7 +40,7 @@ import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, rol
 import { ENTITY_TYPES, TYPE_PLATFORM, TYPE_INTERNAL, typeOf, matchesTypeFilter, typeBadgeHTML, typeOptionsHTML } from "./entity-type.js";
 import { buildInternalMap, internalMapHTML, internalLegendHTML } from "./internal-map.js";
 import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, fitViewBox, layoutSystemMap, systemMapModeFor, nodeTipHTML, edgeTipHTML, ticketCounts, compareReleases, pinnedLayout, mapSnapshot, diffSystemMap, describeChanges } from "./system-map.js";
-import { pickRepoFolder, planPromotionTickets } from "./promote-plan.js";
+import { pickRepoFolder } from "./promote-plan.js";
 import { packageBacklog, groomButtonVisible, DEFAULT_GROOM_THRESHOLD, DEFAULT_PACKAGE_BUDGET } from "./groom-packages.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 import { createResultReader, useContinuousMode } from "./dictation-results.js";
@@ -2282,6 +2282,41 @@ function columnCardsHTML(listItems) {
   }).join("");
 }
 
+// Bulk Archive / Delete for the ticked Backlog cards (3 Nov 2026). Only
+// Backlog cards: past Backlog a card is the audit trail and is archived from
+// its own column, never deleted.
+function selectedBacklogIds(pid) {
+  const sel = getSelectedSet(pid);
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && sel.has(i.id)).map((i) => i.id);
+}
+function backlogBulkBarHTML(pid) {
+  const n = selectedBacklogIds(pid).length;
+  if (!n) return "";
+  const p = escapeHTML(pid);
+  return `<span class="backlog-bulk-bar">
+    <button type="button" class="backlog-bulk-archive-btn" data-project-id="${p}" title="Archive the ${n} selected ticket${n === 1 ? "" : "s"}">Archive ${n}</button>
+    <button type="button" class="backlog-bulk-delete-btn" data-project-id="${p}" title="Delete the ${n} selected ticket${n === 1 ? "" : "s"}">Delete ${n}</button>
+  </span>`;
+}
+async function bulkBacklogAction(pid, del) {
+  const ids = selectedBacklogIds(pid);
+  if (!ids.length) return;
+  const n = ids.length, noun = `ticket${n === 1 ? "" : "s"}`;
+  const ok = await showConfirmDialog(
+    del ? `Delete ${n} selected ${noun}? This cannot be undone.` : `Archive ${n} selected ${noun}? They move to this project's Archived tickets, where each can be restored.`,
+    { title: del ? "Delete selected" : "Archive selected", okLabel: del ? "Delete" : "Archive", danger: del }
+  );
+  if (!ok) return;
+  const batch = writeBatch(db);
+  ids.forEach((id) => {
+    if (del) batch.delete(doc(db, "backlogItems", id));
+    else batch.update(doc(db, "backlogItems", id), { status: "archived", archivedAt: serverTimestamp() });
+  });
+  await batch.commit();
+  getSelectedSet(pid).clear();
+  render();
+}
+
 function projectSectionHTML(project) {
   const collapsed = isProjectCollapsed(project.id);
   const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -2330,7 +2365,7 @@ function projectSectionHTML(project) {
     // 640px media query, so desktop is completely unaffected.
     const colCollapsed = isColumnCollapsed(project.id, col.key);
     return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
-      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? needsDecisionChipHTML(project.id) + groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? reviewBatchInlineHTML(project) : "")}</div>
+      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? backlogBulkBarHTML(project.id) + needsDecisionChipHTML(project.id) + groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? reviewBatchInlineHTML(project) : "")}</div>
       ${col.key === "backlog" ? groomPackagesHTML(project) : ""}
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
@@ -4453,6 +4488,10 @@ projectsRoot.addEventListener("click", async (e) => {
     render();
     return;
   }
+  const bulkArchBtn = e.target.closest(".backlog-bulk-archive-btn");
+  if (bulkArchBtn) { bulkBacklogAction(bulkArchBtn.dataset.projectId, false); return; }
+  const bulkDelBtn = e.target.closest(".backlog-bulk-delete-btn");
+  if (bulkDelBtn) { bulkBacklogAction(bulkDelBtn.dataset.projectId, true); return; }
   const archiveSelectedBtn = e.target.closest(".archive-selected-btn");
   if (archiveSelectedBtn) { archiveSelected(archiveSelectedBtn.dataset.projectId); return; }
   const deploySelectCb = e.target.closest(".card-deploy-select-cb");
@@ -6797,8 +6836,7 @@ async function deleteConcept(id) {
 // brand-new project, picks and links its repo folder (root CLAUDE.md →
 // "Linking a new project to GitHub" — the folder itself is committed by the
 // first ticket that lands, since the browser can't write to GitHub), raises
-// the build / E2E / document tickets in Backlog (promote-plan.js), and marks
-// the concept promoted. The writes aren't one batch — a project with no
+// and marks the concept promoted (no tickets are raised; Backlog starts empty). The writes aren't one batch — a project with no
 // concept pointing at it yet is harmless, and a re-click of Promote would
 // just create a second project, which is why the concept's own detail page
 // hides Promote the moment `status` flips (see renderConceptDetailPage).
@@ -6846,20 +6884,11 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId, on
     promotedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
-  // Tickets last: a failure here leaves a promoted project with fewer
-  // tickets, reported in the summary, never a half-promoted concept.
+  // No tickets are raised here (3 Nov 2026): auto-splitting the concept's text
+  // filed dozens of junk tickets for work already live. The Backlog starts
+  // empty and tickets are filed deliberately afterwards.
   const tickets = [];
-  let ticketError = null;
-  try {
-    const plan = planPromotionTickets({ name: data.name, folder, readmeMd: concept.readmeMd, requirementsMd: concept.requirementsMd, documents: concept.documents });
-    for (const t of plan) {
-      progress(`Raising tickets ${tickets.length + 1}/${plan.length}…`);
-      const id = await addItem(ref.id, t.title, t.desc, t.type, t.category, { effort: t.effort, priority: t.priority });
-      tickets.push({ id, title: t.title, kind: t.kind });
-    }
-  } catch (err) {
-    ticketError = err && err.message ? err.message : String(err);
-  }
+  const ticketError = null;
   return { projectId: ref.id, folder, tickets, ticketError };
 }
 
@@ -7806,16 +7835,10 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
     return;
   }
   closePromoteConceptModal();
-  {
-    const by = (k) => result.tickets.filter((t) => t.kind === k).length;
-    await showAlert(
-      `"${name}" is now a project, with repo folder "${result.folder}/" linked (the folder itself appears in the repo when its first ticket lands).\n\n` +
-      `${result.tickets.length} ticket${result.tickets.length === 1 ? "" : "s"} raised in its Backlog, none approved: ` +
-      `${by("frontend")} front-end, ${by("backend")} back-end, ${by("e2e")} end-to-end test suite, ${by("doc")} documents.` +
-      (result.ticketError ? `\n\nSome tickets were not created (${result.ticketError}) — add the missing ones with Feed in requirements.` : "") +
-      "\n\nProgram and release can be set later from the project's Docs page.",
-      { title: "Project created" });
-  }
+  await showAlert(
+    `"${name}" is now a project, with repo folder "${result.folder}/" linked (the folder itself appears in the repo when its first ticket lands).\n\n` +
+    "Its Backlog is empty: file tickets deliberately, for example from drafts on the concept thread.\n\nProgram and release can be set later from the project's Docs page.",
+    { title: "Project created" });
 });
 // The concept comment box's own mic is wired up further down, with the
 // other three dictation controllers — see the note on SpeechRecognitionCtor.

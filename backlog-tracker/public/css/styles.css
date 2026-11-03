@@ -2245,3 +2245,8 @@ body { overflow-x: clip; }
 .ra-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .ra-log-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .ra-log-table th, .ra-log-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border, #e0e0e0); }
+
+/* Bulk Archive / Delete for ticked Backlog cards */
+.backlog-bulk-bar { display: inline-flex; gap: 6px; margin-left: 8px; }
+.backlog-bulk-bar button { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; border: 1px solid #c4c4c4; background: #fff; cursor: pointer; }
+.backlog-bulk-bar .backlog-bulk-delete-btn { color: #b3261e; border-color: #b3261e; }

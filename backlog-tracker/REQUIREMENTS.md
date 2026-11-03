@@ -2439,15 +2439,13 @@ page it's laid out like):
   committed by the first ticket that lands — the browser cannot write to
   GitHub); creates the `projects` doc seeded with the concept's
   `readmeMd`/`requirementsMd` and documents; flips the concept to
-  `status: "promoted"`; and raises Backlog tickets from the Requirements
-  (`planPromotionTickets`, using the Feed in requirements splitter): one
-  front-end and/or back-end build ticket per requirement (a requirement
-  touching both gets one of each), one end-to-end test suite ticket, a
-  README ticket, a specs/Requirements ticket and one ticket per additional
-  document. A concept with only a name still gets one front-end, one
-  back-end, the E2E and the two document tickets. Every ticket starts in
-  Backlog — nothing is approved or sent for build — and a confirmation
-  dialog summarises the project, folder and ticket counts.
+  `status: "promoted"`. **It raises no tickets** (3 Nov 2026: splitting
+  the text filed 41 junk tickets for work already live): the new project's
+  Backlog starts empty and tickets are filed deliberately afterwards. A
+  confirmation dialog says so.
+  **Bulk select on the Backlog column**: ticking cards shows Archive N /
+  Delete N in the column header, each behind one confirmation (Backlog
+  cards only).
 - **Delete this concept** — active concepts only; a promoted concept's
   delete control is hidden and its rules write is refused regardless, since
   it is the provenance record for the project it became.
@@ -2812,9 +2810,14 @@ published help articles without crawling pages. `functions/help-search.js`
   `title`, `directAnswer`, `summary`, `url` (the
   personalisationhub.com/support-centre/ URL from the WordPress site's public
   `GET /wp-json/ph-help/v1/published` map, cached 5 minutes, falling back to
-  `/support-centre/article.html?id=<id>`), `articleType` (falling back to `docType`), `category`, `lastUpdated`.
+  `/support-centre/article.html?id=<id>`), `articleType` (falling back to `docType`), `category` (the top-level category, as in the Support Centre breadcrumb), `folder` (only when the article sits in a folder) and `lastUpdated`.
 - `GET /help-api/article?id=…|slug=…` — the full article (`format=md` or
-  `Accept: text/markdown` gives markdown with the source URL).
+  `Accept: text/markdown` gives real markdown with the source URL, as does the
+  MCP `get_help_article`): the article's WordPress markdown twin
+  `<url>?format=md` (cached 5 minutes), or, when WordPress can't be reached or
+  the article has no recorded URL, an HTML-to-markdown conversion of the body
+  (`functions/html-to-md.js`: headings, lists, tables, links, code). The JSON
+  `bodyMd` is the stored body unchanged.
 - `POST /help-api/mcp` — a stateless public MCP server (tools `search_help`,
   `get_help_article`, both read-only). The WebMCP `search_help` tool and the
   `/llms.txt` entry are out of scope here: they live in the WordPress snippets
@@ -2830,8 +2833,10 @@ published help articles without crawling pages. `functions/help-search.js`
   Members can read it; only the server writes. The release audit's fire text
   lists the most-asked zero-result queries of the last 90 days as content gaps
   (`zeroResultQueries` in `release-audit.js`).
-- Scoring is the Support Centre's exactly: every query term (over 1 character)
-  must match; per term title +12 if it starts with it, else +8 if it contains
+- Scoring is the Support Centre's exactly: filler words are dropped first
+  (`STOP_WORDS` in `help-search.js`, the list the WordPress search uses; a query
+  of only stop words keeps its original terms), then every remaining query term
+  (over 1 character) must match; per term title +12 if it starts with it, else +8 if it contains
   it; keyword +5; question variant +4; summary +2; sorted by score, then
   article `order`. No body or direct-answer scoring.
 - Falls under the go-live security review (public read-only endpoints).
@@ -3131,6 +3136,8 @@ searched, and read a page or section at a time — see MCP.md),
 `get_concept`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category only),
+`archive_backlog_items` / `delete_backlog_items` (Backlog tickets only, by id,
+single or batch; refused for any ticket past Backlog; logged to mcpAuditLog),
 `add_item_comment`; documentation: `set_project_requirements`,
 `set_project_readme`, `set_project_artifact`, `create_project_document`,
 `update_project_document`, `delete_project_document`, `create_interface`,
