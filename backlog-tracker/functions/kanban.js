@@ -33,15 +33,6 @@ const capture = require("./kanban-capture");
 const db = () => require("firebase-admin/firestore").getFirestore();
 const TASKS = "kanbanTasks";
 const CARDS = "kanbanCards";
-// Seed pronunciations (kanban_get_staff_names falls back to these by first name).
-const STAFF_SEED_PRONUNCIATIONS = {
-  duong: { spelling: "Duong", pronunciation: 'said "Zuong" (northern Vietnamese)' },
-  duy: { spelling: "Duy", pronunciation: 'said "Zui"' },
-  thuc: { spelling: "Thuc", pronunciation: 'said close to "Took"', role: "tech lead" },
-  hong: { spelling: "Hong", pronunciation: 'said "Hong"' },
-  rob: { spelling: "Rob", pronunciation: 'said "Rob"' },
-};
-const STAFF_NAMES_RULE = "Always spell staff names exactly as given here and use the pronunciation hint whenever you speak or write a name aloud (voice agents especially). Never show a pronunciation hint to staff in the board UI.";
 const BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
 
 // ── Per-instance cache ─────────────────────────────────────────────────────
@@ -560,31 +551,6 @@ function kanbanTools(h) {
   }
   // The board's first name for someone, as the page shows it.
   const firstOf = (p, s) => String((s.firstNames || {})[p.email] || "").trim() || String(p.displayName || "").trim().split(/\s+/)[0] || String(p.email).split("@")[0];
-  // ── Staff names & pronunciation (agents only) ─────────────────────────────
-  // staffPronunciations/{email} = { pronunciation, spelling?, updatedBy, updatedAt }
-  // is server-only in firestore.rules (no client reads or writes it) and never
-  // copied into memberDirectory, so the board cannot show it. Until an admin
-  // records one, a first name in STAFF_SEED_PRONUNCIATIONS supplies it.
-  const nameKey = (v) => String(v || "").trim().toLowerCase();
-  async function pronunciations() {
-    return cached("pronunciations", async () => {
-      const m = new Map();
-      (await db().collection("staffPronunciations").get()).docs.forEach((d) => m.set(d.id.toLowerCase(), d.data() || {}));
-      return m;
-    });
-  }
-  function staffName(p, s, stored) {
-    const rec = stored.get(String(p.email).toLowerCase()) || {};
-    const first = firstOf(p, s);
-    const seed = STAFF_SEED_PRONUNCIATIONS[nameKey(first)] || null;
-    const spelling = String(rec.spelling || "").trim() || (seed && seed.spelling) || first;
-    const pronunciation = String(rec.pronunciation || "").trim() || (seed && seed.pronunciation) || null;
-    return {
-      email: p.email, spelling, fullName: p.displayName || null, pronunciation,
-      pronunciationSource: rec.pronunciation ? "recorded" : (pronunciation ? "seed" : null),
-      role: seed && seed.role ? seed.role : undefined,
-    };
-  }
   // "me" means the authenticated member.
   const meOr = (v, session) => (String(v || "").trim().toLowerCase() === "me" ? session.email : v);
   const resolveMe = (args, session) => {
@@ -960,69 +926,20 @@ function kanbanTools(h) {
   const tools = [
     {
       name: "kanban_list_people",
-      description: "Staff Kanban: who's on the board (email, the first name the board shows, and each person's pronunciation hint, agents only), the releases, sprints and console projects tickets can belong to, the current release and the releases' current one.",
+      description: "Staff Kanban: who's on the board (email and the first name the board shows), the releases, sprints and console projects tickets can belong to, the current release and the releases' current one.",
       scope: "board.read",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       async run(args, session) {
-        const [ppl, s, relDocs, sprDocs, prjDocs, stored] = await Promise.all([people(session), settings(), releases(), sprints(), projects(), pronunciations()]);
-        const staff = ppl.map((p) => staffName(p, s, stored));
-        const missing = staff.filter((x) => !x.pronunciation).map((x) => x.email);
+        const [ppl, s, relDocs, sprDocs, prjDocs] = await Promise.all([people(session), settings(), releases(), sprints(), projects()]);
         const rel = { docs: relDocs }, spr = { docs: sprDocs }, prj = { docs: prjDocs };
         return textResult({
-          people: ppl.map((p, i) => ({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null, pronunciation: staff[i].pronunciation })),
-          staffNamesRule: STAFF_NAMES_RULE,
-          pronunciationNeeded: missing.length ? { members: missing, prompt: `No pronunciation is recorded for ${missing.join(", ")}. Ask the admin how each name is said, then call kanban_set_staff_pronunciation (admin only).` } : null,
+          people: ppl.map((p) => ({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null })),
           releases: rel.docs.map((d) => ({ id: d.id, name: d.data().name, version: d.data().version || null, live: d.data().status === "live", date: s.releaseDates[d.id] || null })),
           sprints: spr.docs.map((d) => ({ id: d.id, name: d.data().name, start: d.data().start || null, end: d.data().end || null })),
           projects: prj.docs.filter((d) => !d.data().archived).map((d) => ({ id: d.id, name: d.data().name || d.id })),
           currentRelease: currentRelease(s, rel.docs) || null,
           statuses: core.STATUSES.map((x) => x.key), resolutions: core.RESOLUTIONS.map((x) => x.key),
         });
-      },
-    },
-    {
-      name: "kanban_get_staff_names",
-      description: "Staff Kanban: every member's correct spelling, full name and pronunciation hint (a plain-English sound-alike). " + STAFF_NAMES_RULE + " Pronunciations are held for agents only: the board never shows them. Members with none recorded come back in pronunciationNeeded; ask the admin how the name is said and record it with kanban_set_staff_pronunciation.",
-      scope: "board.read",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      async run(args, session) {
-        const [ppl, s, stored] = await Promise.all([people(session), settings(), pronunciations()]);
-        const staff = ppl.map((p) => staffName(p, s, stored));
-        const missing = staff.filter((x) => !x.pronunciation).map((x) => x.email);
-        return textResult({
-          rule: STAFF_NAMES_RULE,
-          staff: staff.map((x) => JSON.parse(JSON.stringify(x))),
-          pronunciationNeeded: missing.length ? { members: missing, prompt: `No pronunciation is recorded for ${missing.join(", ")}. Ask the admin how each name is said, then call kanban_set_staff_pronunciation.` } : null,
-        });
-      },
-    },
-    {
-      name: "kanban_set_staff_pronunciation",
-      description: "Staff Kanban (admin only): record how a member's name is said (a plain-English sound-alike such as 'said \"Zui\"') and, if the display spelling is wrong, the correct spelling. Do this whenever a new member joins. It is stored for agents only and is never shown in the board UI. Empty pronunciation clears the recorded one.",
-      scope: "board.write",
-      inputSchema: {
-        type: "object",
-        properties: {
-          member: { type: "string", description: "The member's email address." },
-          pronunciation: { type: "string", maxLength: 200, description: "A plain-English sound-alike hint." },
-          spelling: { type: "string", maxLength: 80, description: "Optional: the correct display spelling of the name." },
-        },
-        required: ["member"], additionalProperties: false,
-      },
-      async run(args, session) {
-        if (session.role !== "admin") return toolError("Only an admin can record pronunciations.");
-        const ppl = await people(session);
-        const email = core.canonicalEmail(String(args.member || "").trim().toLowerCase());
-        if (!ppl.some((p) => String(p.email).toLowerCase() === email)) return toolError(`${args.member} isn't a member of the console; kanban_list_people says who's who`);
-        if (args.pronunciation === undefined && args.spelling === undefined) return toolError("Give a pronunciation and/or a spelling.");
-        const data = { updatedBy: session.email, updatedAt: FieldValue.serverTimestamp() };
-        if (args.pronunciation !== undefined) data.pronunciation = String(args.pronunciation).trim().slice(0, 200);
-        if (args.spelling !== undefined) data.spelling = String(args.spelling).trim().slice(0, 80);
-        await db().collection("staffPronunciations").doc(email).set(data, { merge: true });
-        clearCaches("pronunciations");
-        const [s, stored] = await Promise.all([settings(), pronunciations()]);
-        const p = ppl.find((x) => String(x.email).toLowerCase() === email);
-        return textResult({ ok: true, staff: JSON.parse(JSON.stringify(staffName(p, s, stored))) });
       },
     },
     {
