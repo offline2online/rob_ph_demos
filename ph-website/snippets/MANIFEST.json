@@ -78,13 +78,13 @@
   {
     "id": 10156,
     "title": "PH Support Centre",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "folder": "ph-support-centre",
     "files": [
       {
         "name": "main.php",
         "bytes": 81806,
-        "sha256": "21020ce81a145ba797dc88acfddc885609e516856c807c417a87e4db3f68b307"
+        "sha256": "841f1b38b81992dc7a24a802989838aad37a10ac704ff70ccaa2ed38a39266ac"
       },
       {
         "name": "sc-template.php",
@@ -98,8 +98,8 @@
       },
       {
         "name": "sc.js",
-        "bytes": 17134,
-        "sha256": "ebf1839b9cbf30ba9ed8c2fee9800d9a22fa41ed9133b71ad4de8aa39ed89479"
+        "bytes": 13919,
+        "sha256": "a41d4c95a19a3165c4c6c8a0414af498ee74e64f2d25bfb8df46ed742e1979c8"
       }
     ]
   },

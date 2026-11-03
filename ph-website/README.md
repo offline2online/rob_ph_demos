@@ -8,7 +8,7 @@ Every line of code running on personalisationhub.com, versioned here. Four Angie
 | --- | --- | --- | --- | --- |
 | PH Industry Enhancements | 10063 | 1.6.0 | `snippets/ph-industry-enhancements/` | /industries/ hub (9502) and 9 industry pages; their JSON-LD (Organization `#organization`, SoftwareApplication `#software`, WebPage, Service, BreadcrumbList, FAQPage) and markdown twins; **/llms.txt itself** (`llms.php`: intro, `## Industries`, `## Platform`) and the `ph_llms_txt` filter; header/footer CSS; blog CTA Calendly |
 | PH Blog | 10116 | 1.0.6 | `snippets/ph-blog/` | /blog/ (10147) and single posts: kick line, byline, right-hand article menu (section filter, sort dropdown, count), series bar, Read next, progress bar; Blog/BlogPosting/BreadcrumbList JSON-LD with Organization `#org`; twins; `## Blog` in llms.txt |
-| PH Support Centre | 10156 | 1.3.0 | `snippets/ph-support-centre/` | everything under /support-centre/; Organization `#org`, WebSite `/support-centre/#site`; twins; `## Support Centre` in llms.txt; WebMCP `search_help` and `get_help_article` (`sc.js` `initWebMcp`); public `ph-help/v1/index`, `/redirects`, `/published` |
+| PH Support Centre | 10156 | 1.3.1 | `snippets/ph-support-centre/` | everything under /support-centre/; Organization `#org`, WebSite `/support-centre/#site`; twins; `## Support Centre` in llms.txt; (its WebMCP tools moved to the PH Agent Endpoint snippet in 1.3.1); public `ph-help/v1/index`, `/redirects`, `/published` |
 | PH Site Icon | 10157 | 1.0.1 | `snippets/ph-site-icon/` | /favicon.ico from the Site Icon |
 
 `snippets/MANIFEST.json` lists every file with its byte count and sha256, so a deploy can check what is live against the repo.

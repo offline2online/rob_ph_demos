@@ -12,4 +12,7 @@ if (probe.error || probe.status !== 0) {
 const r = spawnSync("php", [path.join(__dirname, "..", "..", "ph-website", "tests", "run.php")], { encoding: "utf8" });
 process.stdout.write(r.stdout || "");
 process.stderr.write(r.stderr || "");
-process.exit(r.status === 0 ? 0 : 1);
+const w = spawnSync("node", [path.join(__dirname, "..", "..", "ph-website", "tests", "webmcp.test.js")], { encoding: "utf8" });
+process.stdout.write(w.stdout || "");
+process.stderr.write(w.stderr || "");
+process.exit(r.status === 0 && w.status === 0 ? 0 : 1);

@@ -115,53 +115,6 @@
     (window.requestIdleCallback || function (f) { return setTimeout(f, 300); })(function () { load(); });
   })();
 
-  /* ---------- WebMCP: lets an AI agent in the visitor's browser search and read the Support Centre ----------
-     Read-only, same-origin, and only what any visitor can already see. Browsers without navigator.modelContext skip it. */
-  (function initWebMcp() {
-    var mc = navigator.modelContext;
-    if (!mc || (typeof mc.registerTool !== "function" && typeof mc.provideContext !== "function")) return;
-    var text = function (t) { return { content: [{ type: "text", text: t }] }; };
-    var base = new URL((root.getAttribute("data-search") || "/support-centre/search/").replace(/search\/?$/, ""), location.href);
-    var tools = [
-      {
-        name: "search_help",
-        description: "Search the Personalisation Hub Support Centre (set-up guides, how-tos and reference). Plain questions work. Returns matching articles with their URLs.",
-        inputSchema: { type: "object", properties: { query: { type: "string", description: "What to look for, e.g. 'how do I add a store'" }, limit: { type: "integer", minimum: 1, maximum: 20, description: "Most results to return (default 8)" } }, required: ["query"] },
-        annotations: { readOnlyHint: true },
-        execute: function (input) {
-          var q = String((input && input.query) || "").trim();
-          var n = Math.min(20, Math.max(1, parseInt(input && input.limit, 10) || 8));
-          if (!q) return Promise.resolve(text("Give a query to search for."));
-          return load().then(function (articles) {
-            var hits = searchArticles(articles, q).slice(0, n).map(function (a) {
-              return { title: a.t, url: new URL(a.u, location.href).href, category: a.c, summary: a.s || "" };
-            });
-            return text(hits.length ? JSON.stringify({ query: q, results: hits }) : "No Support Centre articles match \"" + q + "\".");
-          });
-        }
-      },
-      {
-        name: "get_help_article",
-        description: "Read one Personalisation Hub Support Centre article as markdown. Pass the article URL from search_help.",
-        inputSchema: { type: "object", properties: { url: { type: "string", description: "The article's Support Centre URL" } }, required: ["url"] },
-        annotations: { readOnlyHint: true },
-        execute: function (input) {
-          var u;
-          try { u = new URL(String((input && input.url) || ""), location.href); } catch (e) { return Promise.resolve(text("That is not a valid URL.")); }
-          if (u.origin !== base.origin || u.pathname.indexOf(base.pathname) !== 0) return Promise.resolve(text("Only Support Centre articles (" + base.href + ") can be read."));
-          u.search = "?format=md"; u.hash = "";
-          return fetch(u.href, { credentials: "same-origin", headers: { Accept: "text/markdown" } })
-            .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
-            .then(text, function (st) { return text("Could not read that article (" + st + ")."); });
-        }
-      }
-    ];
-    try {
-      if (typeof mc.registerTool === "function") tools.forEach(function (t) { mc.registerTool(t); });
-      else mc.provideContext({ tools: tools });
-    } catch (err) { /* another script owns the context; nothing to do */ }
-  })();
-
   /* ---------- one-click copy on code blocks, long blocks collapsed behind Show more ---------- */
   var seq = 0;
   function blockText(pre) { var code = pre.querySelector("code"); return (code || pre).textContent.replace(/\n$/, ""); }

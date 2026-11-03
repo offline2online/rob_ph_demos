@@ -1,6 +1,6 @@
 <?php
 /**
- * PH Agent Endpoint (Angie snippet). Version 1.0.0
+ * PH Agent Endpoint (Angie snippet). Version 1.1.0
  *
  * Markdown twins (?format=md), one shared JSON-LD graph and llms.txt sections
  * for the allow-listed pages in lib.php. Industries, Blog and Support Centre
@@ -15,6 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	return;
 }
 require_once __DIR__ . '/lib.php';
+require_once __DIR__ . '/tools.php';
 
 /** Plain-array view of a post for is_exposable(). No extra queries beyond meta. */
 function post_view( $post ) {
@@ -47,6 +48,23 @@ function page_title( $post ) {
 	return trim( wp_strip_all_tags( get_the_title( $post ) ) );
 }
 
+/** The markdown twin of an exposable page, cached 5 minutes in a transient. */
+function twin_for( $post ) {
+	$key = 'ph_ae_md_' . $post->ID . '_' . md5( $post->post_modified_gmt );
+	$md  = get_transient( $key );
+	if ( ! is_string( $md ) || $md === '' ) {
+		$html = class_exists( '\Elementor\Plugin' )
+			? \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( $post->ID )
+			: '';
+		if ( trim( (string) $html ) === '' ) {
+			$html = apply_filters( 'the_content', $post->post_content );
+		}
+		$md = markdown_twin( page_title( $post ), page_summary( $post ), page_url( $post->ID ), $html );
+		set_transient( $key, $md, 300 );
+	}
+	return $md;
+}
+
 function current_exposable() {
 	if ( ! is_singular( 'page' ) ) {
 		return null;
@@ -76,18 +94,7 @@ add_action( 'template_redirect', function () {
 	if ( ! $post ) {
 		return; // not ours: other snippets may serve their own twin; otherwise normal page.
 	}
-	$key = 'ph_ae_md_' . $post->ID . '_' . md5( $post->post_modified_gmt );
-	$md  = get_transient( $key );
-	if ( ! is_string( $md ) || $md === '' ) {
-		$html = class_exists( '\Elementor\Plugin' )
-			? \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( $post->ID )
-			: '';
-		if ( trim( (string) $html ) === '' ) {
-			$html = apply_filters( 'the_content', $post->post_content );
-		}
-		$md = markdown_twin( page_title( $post ), page_summary( $post ), page_url( $post->ID ), $html );
-		set_transient( $key, $md, 300 );
-	}
+	$md = twin_for( $post );
 	status_header( 200 );
 	header( 'Content-Type: text/markdown; charset=utf-8' );
 	header( 'Link: <' . page_url( $post->ID ) . '>; rel="canonical"' );
@@ -118,3 +125,189 @@ add_action( 'save_post_page', function ( $id ) {
 		}
 	}
 } );
+
+/* ------------------------------------------------------------------ tools */
+/* Shared tool contract (tools.php). The WebMCP loader and the remote MCP server both call this endpoint. */
+
+const IND_NS = 'AngieSnippets\PhIndustryEnhancements_10063\\';
+const SC_NS  = 'AngieSnippets\PhSupportCentre_10156\\';
+const SC_PT  = 'ph_help_article';
+
+function tools_generation() {
+	return (int) get_option( 'ph_ae_gen', 1 );
+}
+
+/** Exposable allow-listed pages: id => [title, summary]. */
+function live_pages() {
+	$pages = array();
+	foreach ( array_keys( allow_list() ) as $id ) {
+		$post = exposable_post( $id );
+		if ( $post ) {
+			$pages[ $id ] = array( page_title( $post ), page_summary( $post ) );
+		}
+	}
+	return $pages;
+}
+
+/** The nine live industry pages: published, public, not noindex, with markdown held by the Industries snippet. */
+function live_industries() {
+	if ( ! function_exists( IND_NS . 'data' ) ) {
+		return array();
+	}
+	$md  = call_user_func( IND_NS . 'data', 'md.php' );
+	$out = array();
+	foreach ( INDUSTRY_SLUGS as $slug ) {
+		$post = get_page_by_path( 'industries/' . $slug );
+		if ( ! $post || 'publish' !== $post->post_status || ! empty( $post->post_password ) || 'yes' === get_post_meta( $post->ID, '_seopress_robots_index', true ) || ! isset( $md[ $slug ] ) ) {
+			continue;
+		}
+		$lines = explode( "\n", $md[ $slug ] );
+		$title = trim( preg_replace( '/^#\s*/', '', $lines[0] ) );
+		$sum   = page_summary( $post );
+		if ( '' === $sum ) {
+			foreach ( array_slice( $lines, 1 ) as $l ) {
+				if ( '' !== trim( $l ) && '#' !== $l[0] ) {
+					$sum = trim( $l );
+					break;
+				}
+			}
+		}
+		$out[] = array( $slug, $title, home_url( '/industries/' . $slug . '/' ), mb_strimwidth( $sum, 0, 300, '…' ) );
+	}
+	return $out;
+}
+
+function tool_source() {
+	return array(
+		'pages'       => __NAMESPACE__ . '\live_pages',
+		'page_md'     => function ( $id ) {
+			$post = exposable_post( $id );
+			return $post ? twin_for( $post ) : null;
+		},
+		'industries'  => __NAMESPACE__ . '\live_industries',
+		'industry_md' => function ( $slug ) {
+			foreach ( live_industries() as $r ) {
+				if ( $r[0] === $slug ) {
+					$md = call_user_func( IND_NS . 'data', 'md.php' );
+					return $md[ $slug ];
+				}
+			}
+			return null;
+		},
+		'search'      => function ( $q, $limit ) {
+			if ( ! function_exists( SC_NS . 'search_articles' ) || ! defined( SC_NS . 'LIVE' ) || ! constant( SC_NS . 'LIVE' ) ) {
+				return null;
+			}
+			$had = $_GET['release'] ?? null; // Never let a visitor pick a release: only the live one is served.
+			unset( $_GET['release'] );
+			$out = array();
+			foreach ( array_slice( call_user_func( SC_NS . 'search_articles', call_user_func( SC_NS . 'visible' ), $q ), 0, $limit ) as $a ) {
+				$top    = call_user_func( SC_NS . 'parent_cat', $a['cat'] );
+				$folder = call_user_func( SC_NS . 'cats' )[ $a['cat'] ] ?? null;
+				$out[]  = array( $a['title'], call_user_func( SC_NS . 'art_url', $a ), $top ? $top['name'] : '', ( $top && $folder && $folder['id'] !== $top['id'] ) ? $folder['name'] : '', $a['summary'] );
+			}
+			if ( null !== $had ) {
+				$_GET['release'] = $had;
+			}
+			return $out;
+		},
+		'article_md'  => function ( $path ) {
+			if ( ! function_exists( SC_NS . 'markdown' ) || ! constant( SC_NS . 'LIVE' ) ) {
+				return null;
+			}
+			unset( $_GET['release'] );
+			foreach ( call_user_func( SC_NS . 'visible' ) as $a ) {
+				$p = rtrim( (string) wp_parse_url( call_user_func( SC_NS . 'art_url', $a ), PHP_URL_PATH ), '/' ) . '/';
+				if ( $p === $path ) {
+					return call_user_func( SC_NS . 'markdown', array( 'type' => 'article', 'art' => $a ) );
+				}
+			}
+			return null;
+		},
+	);
+}
+
+/** Run a tool through the 5-minute cache. Only successful results are cached. */
+function call_tool_cached( $name, $args ) {
+	$key = 'ph_ae_t_' . md5( tools_generation() . '|' . $name . '|' . wp_json_encode( $args ) );
+	$hit = get_transient( $key );
+	if ( is_array( $hit ) ) {
+		return $hit;
+	}
+	$res = run_tool( $name, $args, tool_source() );
+	if ( empty( $res['isError'] ) ) {
+		set_transient( $key, $res, 300 );
+	}
+	return $res;
+}
+
+add_action( 'rest_api_init', function () {
+	register_rest_route( 'ph-agent/v1', '/tools', array(
+		'methods'             => 'GET',
+		'permission_callback' => '__return_true',
+		'callback'            => function () {
+			$r = rest_ensure_response( array( 'tools' => tool_defs() ) );
+			$r->header( 'Cache-Control', 'public, max-age=300' );
+			return $r;
+		},
+	) );
+	register_rest_route( 'ph-agent/v1', '/tools/(?P<name>[a-z_]{1,40})', array(
+		'methods'             => 'GET',
+		'permission_callback' => '__return_true',
+		'callback'            => function ( $req ) {
+			$raw  = $req->get_param( 'args' );
+			$args = array();
+			if ( is_string( $raw ) && '' !== $raw ) {
+				$args = strlen( $raw ) <= 2000 ? json_decode( $raw, true ) : null;
+			}
+			$res = ( is_array( $args ) ) ? call_tool_cached( (string) $req['name'], $args ) : tool_error( 'args must be a JSON object of at most 2000 characters.' );
+			$r   = rest_ensure_response( $res );
+			$r->header( 'Cache-Control', empty( $res['isError'] ) ? 'public, max-age=300' : 'no-store' );
+			return $r;
+		},
+	) );
+} );
+
+/* Content changed: start a new cache generation (tool results and twins), only for content the tools read. */
+add_action( 'save_post', function ( $id, $post ) {
+	if ( ! $post ) {
+		return;
+	}
+	$hit = SC_PT === $post->post_type || isset( allow_list()[ (int) $id ] )
+		|| ( 'page' === $post->post_type && 0 === strpos( (string) get_page_uri( $post ), 'industries' ) );
+	if ( $hit ) {
+		update_option( 'ph_ae_gen', tools_generation() + 1, false );
+	}
+}, 10, 2 );
+
+/* ------------------------------------------------------------------ WebMCP loader */
+/* Inline, under 2 KB, exits at once without navigator.modelContext: no request, no work in other browsers. */
+
+function loader_wanted() {
+	if ( is_admin() || is_feed() || is_404() ) {
+		return false;
+	}
+	if ( is_singular( 'page' ) ) {
+		$post = get_queried_object();
+		if ( ! $post ) {
+			return false;
+		}
+		if ( isset( allow_list()[ (int) $post->ID ] ) ) {
+			return (bool) exposable_post( $post->ID );
+		}
+		$uri = (string) get_page_uri( $post );
+		return 'industries' === $uri || 0 === strpos( $uri, 'industries/' ) || 'support-centre' === $uri || 'blog' === $uri;
+	}
+	return is_singular( SC_PT ) || is_tax( 'ph_help_category' ) || is_singular( 'post' );
+}
+
+add_action( 'wp_footer', function () {
+	if ( ! loader_wanted() ) {
+		return;
+	}
+	$js = @file_get_contents( __DIR__ . '/webmcp.js' ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+	if ( ! is_string( $js ) || '' === $js ) {
+		return;
+	}
+	echo '<script>window.PH_AE_REST=' . wp_json_encode( rest_url( 'ph-agent/v1/' ) ) . ';' . $js . "</script>\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- our own file.
+}, 99 );

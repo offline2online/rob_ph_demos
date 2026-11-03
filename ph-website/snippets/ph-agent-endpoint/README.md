@@ -8,13 +8,21 @@ design and build guide", sections 1 to 3 and 7.
 | File | What it does |
 | --- | --- |
 | `lib.php` | Pure helpers, no WordPress calls: the page allow-list (ids in one constant), shared Organization (`#organization`) and SoftwareApplication (`#software`, AWS free trial offer) nodes, HTML to markdown, llms.txt sections |
+| `tools.php` | Pure: the shared tool contract (design guide s.4): the eight tool definitions, argument validation, `/support-centre/` URL check, `run_tool()` returning a CallToolResult |
+| `webmcp.js` | The WebMCP loader (under 2 KB), printed inline in the footer of allow-listed pages: does nothing without `navigator.modelContext`, otherwise fetches the tool list once and registers each tool; `execute` calls the endpoint |
 | `main.php` | WordPress glue: inline JSON-LD in `wp_head`, `?format=md` twin (text/markdown, canonical Link header, 5 min transient plus `max-age=300`), `ph_llms_txt` filter at priority 20 |
-| `../../tests/run.php` | Offline tests: `php ph-website/tests/run.php` (also run by `backlog-tracker/test`'s `test:mcp`) |
+| `../../tests/run.php`, `../../tests/webmcp.test.js` | Offline tests: `php ph-website/tests/run.php` and `node ph-website/tests/webmcp.test.js` (both run by `backlog-tracker/test`'s `test:mcp`) |
 
 Covers Home, the 8 feature pages and /privacy-policy/, /legal/, /support/.
 Drafts, scheduled, private, password-protected and noindex pages, and
 anything off the allow-list, get no twin, no JSON-LD and no llms.txt line.
 No assets, no remote calls while rendering.
+
+## Tools endpoint (ticket "WebMCP tools on site pages")
+
+`GET /wp-json/ph-agent/v1/tools` lists the eight tools (`describe_platform`, `list_industries`, `get_industry`, `get_feature`, `search_help`, `get_help_article`, `start_free_trial`, `book_demo`) with `inputSchema` and `annotations.readOnlyHint`. `GET /wp-json/ph-agent/v1/tools/{name}?args=<json>` returns an MCP CallToolResult (`content`, `structuredContent`, `isError`). Public and read-only. It reads live published content at call time: allow-listed pages through `twin_for()`, industries through the Industries snippet's markdown, help through the Support Centre's own `search_articles()` / `markdown()` on its live catalogue (always the live release; `?release=` is ignored). Results are cached 5 minutes (transient plus `Cache-Control: public, max-age=300`); errors are never cached. Saving an allow-listed page, an industry page or a help article starts a new cache generation. Bad input returns `isError` with a plain message.
+
+The Support Centre no longer registers WebMCP tools itself (sc.js `initWebMcp` removed in 1.3.1); this snippet registers all eight on every allow-listed page, industries, blog, and Support Centre page. Ticket 5 (RevOps) adds `trackedUrl` to the two CTA tools.
 
 ## Deploying (PH Website session, after Deploy to Main)
 

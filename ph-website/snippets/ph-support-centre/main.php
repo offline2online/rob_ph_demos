@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER          = '1.3.0';
+const VER          = '1.3.1';
 const SYNC_VER     = '2';
 const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api';
 const LIVE         = true;

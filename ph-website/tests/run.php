@@ -107,10 +107,10 @@ $GLOBALS['hooks'] = array();
 function add_action( $h, $f, $p = 10 ) { $GLOBALS['hooks'][ $h ][] = $f; }
 function add_filter( $h, $f, $p = 10 ) { $GLOBALS['hooks'][ $h ][] = $f; }
 $GLOBALS['posts'] = array(
-	7020 => (object) array( 'ID' => 7020, 'post_type' => 'page', 'post_status' => 'publish', 'post_password' => '', 'post_title' => 'Digital Signage', 'post_excerpt' => 'Sig', 'post_modified_gmt' => 'x' ),
-	3477 => (object) array( 'ID' => 3477, 'post_type' => 'page', 'post_status' => 'draft', 'post_password' => '', 'post_title' => 'Store Sites', 'post_excerpt' => '', 'post_modified_gmt' => 'x' ),
-	3566 => (object) array( 'ID' => 3566, 'post_type' => 'page', 'post_status' => 'publish', 'post_password' => 'pw', 'post_title' => 'Personalisation', 'post_excerpt' => '', 'post_modified_gmt' => 'x' ),
-	555  => (object) array( 'ID' => 555, 'post_type' => 'page', 'post_status' => 'publish', 'post_password' => '', 'post_title' => 'Lindt Chocolate', 'post_excerpt' => '', 'post_modified_gmt' => 'x' ),
+	7020 => (object) array( 'ID' => 7020, 'post_type' => 'page', 'post_status' => 'publish', 'post_password' => '', 'post_title' => 'Digital Signage', 'post_excerpt' => 'Sig', 'post_modified_gmt' => 'x', 'post_content' => '<h1>' . 'T' . '</h1><p>Body</p>' ),
+	3477 => (object) array( 'ID' => 3477, 'post_type' => 'page', 'post_status' => 'draft', 'post_password' => '', 'post_title' => 'Store Sites', 'post_excerpt' => '', 'post_modified_gmt' => 'x', 'post_content' => '<h1>' . 'T' . '</h1><p>Body</p>' ),
+	3566 => (object) array( 'ID' => 3566, 'post_type' => 'page', 'post_status' => 'publish', 'post_password' => 'pw', 'post_title' => 'Personalisation', 'post_excerpt' => '', 'post_modified_gmt' => 'x', 'post_content' => '<h1>' . 'T' . '</h1><p>Body</p>' ),
+	555  => (object) array( 'ID' => 555, 'post_type' => 'page', 'post_status' => 'publish', 'post_password' => '', 'post_title' => 'Lindt Chocolate', 'post_excerpt' => '', 'post_modified_gmt' => 'x', 'post_content' => '<h1>' . 'T' . '</h1><p>Body</p>' ),
 );
 function get_post( $id ) { return $GLOBALS['posts'][ (int) $id ] ?? null; }
 function get_post_meta( $id, $k, $s = true ) { return ''; }
@@ -136,6 +136,160 @@ foreach ( array( 3477, 3566, 555 ) as $id ) {
 	$GLOBALS['q'] = $id;
 	$GLOBALS['hooks']['wp_head'][0]();
 	ok( ob_get_clean() === '', "no JSON-LD or twin link for $id" );
+}
+
+
+/* ------------------------------------------------------------ tool contract */
+use function PhAgentEndpoint\{tool_defs,run_tool,validate_args,help_article_path,feature_slugs};
+const SC_NS_T = 'AngieSnippets\PhSupportCentre_10156';
+
+$defs  = tool_defs();
+$names = array_column( $defs, 'name' );
+ok( $names === array( 'describe_platform', 'list_industries', 'get_industry', 'get_feature', 'search_help', 'get_help_article', 'start_free_trial', 'book_demo' ), 'exactly the eight tools, in order' );
+foreach ( $defs as $d ) {
+	ok( ! empty( $d['annotations']['readOnlyHint'] ) && isset( $d['inputSchema']['type'] ) && $d['description'] !== '', "{$d['name']} is read-only with a schema" );
+}
+ok( count( array_unique( feature_slugs() ) ) === 8 && in_array( 'ai-agents', feature_slugs(), true ), 'eight feature slugs from the allow-list' );
+ok( strpos( json_encode( $defs ), '"properties":{}' ) !== false, 'no-arg tools encode properties as an object' );
+
+/* the Support Centre's own search, extracted from its snippet source and run unchanged */
+$sc  = file_get_contents( dirname( __DIR__ ) . '/snippets/ph-support-centre/main.php' );
+preg_match( '/^const STOPWORDS = .*?;$/ms', $sc, $m1 );
+preg_match( '/^function search_terms\(.*?^}\n/ms', $sc, $m2 );
+preg_match( '/^function search_articles\(.*?^}\n/ms', $sc, $m3 );
+ok( $m1 && $m2 && $m3, 'found the Support Centre search in its snippet' );
+eval( 'namespace AngieSnippets\PhSupportCentre_10156; ' . $m1[0] . $m2[0] . $m3[0] );
+$arts = array(
+	array( 'title' => 'Add a store', 'summary' => 'Create a store record', 'kw' => array( 'stores' ), 'q' => array( 'How do I add a store?' ), 'order' => 2, 'cat' => 1, 'slug' => 'add-a-store' ),
+	array( 'title' => 'Store opening hours', 'summary' => 'Set hours for a store', 'kw' => array(), 'q' => array(), 'order' => 1, 'cat' => 1, 'slug' => 'store-hours' ),
+	array( 'title' => 'Order a display', 'summary' => 'Add a display to a store', 'kw' => array(), 'q' => array(), 'order' => 3, 'cat' => 1, 'slug' => 'order-display' ),
+);
+$siteHits = \AngieSnippets\PhSupportCentre_10156\search_articles( $arts, 'How do I add a store?' );
+ok( $siteHits[0]['title'] === 'Add a store', 'site search puts "Add a store" first' );
+
+/* fake live source */
+$pagesLive = array( 2389 => array( 'Home', 'Run every screen.' ), 7020 => array( 'Digital Signage', 'Screens.' ), 3477 => array( 'Store Sites', '' ) );
+$src = array(
+	'pages'       => function () use ( $pagesLive ) { return $pagesLive; },
+	'page_md'     => function ( $id ) use ( $pagesLive ) { return isset( $pagesLive[ $id ] ) ? '# ' . $pagesLive[ $id ][0] . "\n" : null; },
+	'industries'  => function () { return array( array( 'retail-media', 'Retail Media', 'https://personalisationhub.com/industries/retail-media/', 'Sell media.' ) ); },
+	'industry_md' => function ( $s ) { return 'retail-media' === $s ? "# Retail Media\n" : null; },
+	'search'      => function ( $q, $limit ) use ( $arts ) {
+		$out = array();
+		foreach ( array_slice( \AngieSnippets\PhSupportCentre_10156\search_articles( $arts, $q ), 0, $limit ) as $a ) {
+			$out[] = array( $a['title'], 'https://personalisationhub.com/support-centre/x/' . $a['slug'] . '/', 'Setup', '', $a['summary'] );
+		}
+		return $out;
+	},
+	'article_md'  => function ( $p ) { return '/support-centre/x/add-a-store/' === $p ? "# Add a store\n" : null; },
+);
+$r = run_tool( 'search_help', array( 'query' => 'How do I add a store?' ), $src );
+ok( empty( $r['isError'] ) && $r['structuredContent']['results'][0]['title'] === 'Add a store', 'search_help returns "Add a store" first, as the site search does' );
+ok( count( run_tool( 'search_help', array( 'query' => 'store', 'limit' => 2 ), $src )['structuredContent']['results'] ) === 2, 'search_help honours limit' );
+ok( strpos( json_encode( $r ), 'ph_help_' ) === false && strpos( json_encode( $r ), '"cid"' ) === false, 'search results carry no internal fields' );
+ok( ! empty( run_tool( 'search_help', array( 'query' => 'x', 'limit' => 999 ), $src )['isError'] ), 'limit 999 is an error' );
+ok( ! empty( run_tool( 'search_help', array( 'query' => '' ), $src )['isError'] ) && ! empty( run_tool( 'search_help', array(), $src )['isError'] ), 'empty or missing query is an error' );
+ok( ! empty( run_tool( 'search_help', array( 'query' => 'x', 'extra' => 1 ), $src )['isError'] ), 'unknown argument is an error' );
+ok( ! empty( run_tool( 'search_help', array( 'query' => 'x', 'limit' => '3' ), $src )['isError'] ), 'limit must be an integer' );
+ok( ! empty( run_tool( 'search_help', 'nope', $src )['isError'] ), 'non-object args are an error' );
+ok( ! empty( run_tool( 'nope', array(), $src )['isError'] ), 'unknown tool is an error' );
+ok( ! empty( run_tool( 'get_industry', array( 'slug' => 'lindt' ), $src )['isError'] ) && ! empty( run_tool( 'get_feature', array( 'slug' => 'webdemo' ), $src )['isError'] ), 'unknown slugs are errors' );
+ok( empty( run_tool( 'get_feature', array( 'slug' => 'digital-signage' ), $src )['isError'] ), 'get_feature works for a feature slug' );
+ok( ! empty( run_tool( 'get_feature', array( 'slug' => 'localisation-geo-targeting' ), $src )['isError'] ), 'a feature that is not exposable is an error, not an empty page' );
+ok( empty( run_tool( 'get_industry', array( 'slug' => 'retail-media' ), $src )['isError'] ) && ! empty( run_tool( 'get_industry', array( 'slug' => 'grocery' ), $src )['isError'] ), 'get_industry only for live industries' );
+$li = run_tool( 'list_industries', array(), $src );
+ok( $li['structuredContent']['industries'][0]['slug'] === 'retail-media', 'list_industries returns the live ones' );
+$dp = run_tool( 'describe_platform', array(), $src );
+ok( strpos( $dp['content'][0]['text'], '[Digital Signage](https://personalisationhub.com/digital-signage/)' ) !== false && strpos( $dp['content'][0]['text'], 'Localisation' ) === false, 'describe_platform lists only exposable product areas' );
+ok( run_tool( 'start_free_trial', array(), $src )['structuredContent']['url'] === 'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76', 'exact free trial link' );
+ok( run_tool( 'book_demo', array(), $src )['structuredContent']['url'] === 'https://calendly.com/rob-offline2online', 'exact demo link' );
+ok( ! empty( run_tool( 'start_free_trial', array( 'a' => 1 ), $src )['isError'] ), 'no-arg tools refuse arguments' );
+ok( run_tool( 'get_help_article', array( 'url' => 'https://personalisationhub.com/support-centre/x/add-a-store/' ), $src )['content'][0]['text'] === "# Add a store\n", 'get_help_article returns the markdown' );
+ok( run_tool( 'get_help_article', array( 'url' => '/support-centre/x/add-a-store' ), $src )['content'][0]['text'] === "# Add a store\n", 'path form works' );
+foreach ( array( 'https://personalisationhub.com/digital-signage/', 'https://evil.example/support-centre/x/add-a-store/', 'https://personalisationhub.com/support-centre/../wp-admin/', 'https://personalisationhub.com/support-centre/%2e%2e/x/', '/support-centre/', 'https://personalisationhub.com.evil.example/support-centre/a/', 'javascript:alert(1)', 'ftp://personalisationhub.com/support-centre/a/', "/support-centre/a\n/b/", 'https://user@personalisationhub.com/support-centre/a/' ) as $u ) {
+	ok( help_article_path( $u ) === null && ! empty( run_tool( 'get_help_article', array( 'url' => $u ), $src )['isError'] ), "refused: $u" );
+}
+ok( ! empty( run_tool( 'get_help_article', array( 'url' => 'https://personalisationhub.com/support-centre/x/none/' ), $src )['isError'] ), 'unknown article is an error' );
+$throws = array_merge( $src, array( 'pages' => function () { throw new Exception( 'secret path /var/www' ); } ) );
+$te = run_tool( 'describe_platform', array(), $throws );
+ok( ! empty( $te['isError'] ) && strpos( json_encode( $te ), 'secret' ) === false, 'a failure becomes a plain isError, never a PHP error' );
+foreach ( $defs as $d ) {
+	$all = json_encode( array( $d, run_tool( $d['name'], array(), $src ) ) );
+	foreach ( array( 'lindt', 'mipharmacy', 'amazon-signage', 'australian-pork', 'coca-cola', 'webdemo' ) as $bad ) {
+		ok( stripos( $all, $bad ) === false, "{$d['name']} output omits $bad" );
+	}
+}
+
+/* REST glue against stubs: routes, allow-list through the source, cache flush, loader */
+$GLOBALS['routes'] = array();
+function register_rest_route( $ns, $route, $a ) { $GLOBALS['routes'][ $ns . $route ] = $a; }
+function rest_ensure_response( $d ) { return new class( $d ) { public $d; public $h = array(); function __construct( $d ) { $this->d = $d; } function header( $k, $v ) { $this->h[ $k ] = $v; } }; }
+function get_option( $k, $d = false ) { return $GLOBALS['opts'][ $k ] ?? $d; }
+function update_option( $k, $v ) { $GLOBALS['opts'][ $k ] = $v; }
+function get_transient( $k ) { return $GLOBALS['tr'][ $k ] ?? false; }
+function set_transient( $k, $v ) { $GLOBALS['tr'][ $k ] = $v; }
+function wp_json_encode( $v ) { return json_encode( $v, JSON_UNESCAPED_SLASHES ); }
+function rest_url( $p = '' ) { return 'https://personalisationhub.com/wp-json/' . $p; }
+function get_page_by_path( $p ) { return $GLOBALS['byPath'][ $p ] ?? null; }
+function get_page_uri( $p ) { return $p->uri ?? ''; }
+function home_url( $p = '' ) { return 'https://personalisationhub.com' . $p; }
+function apply_filters( $h, $v ) { return $v; }
+function is_admin() { return false; }
+function is_feed() { return false; }
+function is_404() { return false; }
+function is_tax() { return false; }
+function get_queried_object() { return $GLOBALS['posts'][ $GLOBALS['q'] ] ?? null; }
+function __return_true() { return true; }
+$GLOBALS['opts'] = array();
+$GLOBALS['tr']   = array();
+$GLOBALS['byPath'] = array();
+$GLOBALS['hooks']['rest_api_init'][0]();
+ok( isset( $GLOBALS['routes']['ph-agent/v1/tools'], $GLOBALS['routes']['ph-agent/v1/tools/(?P<name>[a-z_]{1,40})'] ), 'both routes registered' );
+$list = $GLOBALS['routes']['ph-agent/v1/tools']['callback']();
+ok( count( $list->d['tools'] ) === 8 && $list->h['Cache-Control'] === 'public, max-age=300', 'list: eight tools, cacheable five minutes' );
+ok( $GLOBALS['routes']['ph-agent/v1/tools']['permission_callback']() === true, 'public read-only' );
+$call = $GLOBALS['routes']['ph-agent/v1/tools/(?P<name>[a-z_]{1,40})']['callback'];
+class Req implements ArrayAccess { public $p; function __construct( $p ) { $this->p = $p; } function get_param( $k ) { return $this->p[ $k ] ?? null; } function offsetGet( $k ): mixed { return $this->p[ $k ]; } function offsetExists( $k ): bool { return isset( $this->p[ $k ] ); } function offsetSet( $k, $v ): void {} function offsetUnset( $k ): void {} }
+$res = $call( new Req( array( 'name' => 'get_feature', 'args' => '{"slug":"digital-signage"}' ) ) );
+ok( empty( $res->d['isError'] ) && strpos( $res->d['content'][0]['text'], '# Digital Signage' ) !== false, 'endpoint serves the published allow-listed feature page' );
+ok( $res->h['Cache-Control'] === 'public, max-age=300', 'success is cacheable' );
+$n1 = count( $GLOBALS['tr'] );
+$call( new Req( array( 'name' => 'get_feature', 'args' => '{"slug":"digital-signage"}' ) ) );
+ok( count( $GLOBALS['tr'] ) === $n1, 'second identical call is a cache hit' );
+$bad = $call( new Req( array( 'name' => 'get_feature', 'args' => '{"slug":"store-sites"}' ) ) );
+ok( ! empty( $bad->d['isError'] ) && $bad->h['Cache-Control'] === 'no-store', 'draft page: isError, not cached' );
+$bad = $call( new Req( array( 'name' => 'get_feature', 'args' => '{"slug":"personalisation"}' ) ) );
+ok( ! empty( $bad->d['isError'] ), 'password-protected page: isError' );
+foreach ( array( '{bad', '[1]', '"x"', str_repeat( 'a', 2001 ) ) as $badArgs ) {
+	$x = $call( new Req( array( 'name' => 'book_demo', 'args' => $badArgs ) ) );
+	ok( ! empty( $x->d['isError'] ), 'bad args JSON is an isError: ' . substr( $badArgs, 0, 8 ) );
+}
+ok( empty( $call( new Req( array( 'name' => 'book_demo' ) ) )->d['isError'] ), 'no args means empty object' );
+ok( ! empty( $call( new Req( array( 'name' => 'drop_tables', 'args' => '{}' ) ) )->d['isError'] ), 'unknown tool over REST is isError' );
+$x = $call( new Req( array( 'name' => 'search_help', 'args' => '{"query":"store"}' ) ) );
+ok( ! empty( $x->d['isError'] ), 'search_help is isError (not a crash) when the Support Centre snippet is absent' );
+$g0 = $GLOBALS['opts']['ph_ae_gen'] ?? 1;
+$GLOBALS['hooks']['save_post'][0]( 7020, $GLOBALS['posts'][7020] );
+ok( ( $GLOBALS['opts']['ph_ae_gen'] ?? 1 ) === $g0 + 1, 'saving an allow-listed page starts a new cache generation' );
+$GLOBALS['hooks']['save_post'][0]( 555, $GLOBALS['posts'][555] );
+ok( ( $GLOBALS['opts']['ph_ae_gen'] ?? 1 ) === $g0 + 1, 'saving a demo page does not' );
+$GLOBALS['hooks']['save_post'][0]( 9, (object) array( 'ID' => 9, 'post_type' => 'ph_help_article' ) );
+ok( ( $GLOBALS['opts']['ph_ae_gen'] ?? 1 ) === $g0 + 2, 'saving a help article does' );
+
+/* the loader: printed only on exposable allow-listed pages, inline and small */
+$js = file_get_contents( $dir . '/webmcp.js' );
+ok( strlen( $js ) < 2048, 'loader under 2 KB (' . strlen( $js ) . ' bytes)' );
+ok( strpos( $js, 'navigator.modelContext' ) !== false && strpos( $js, 'src=' ) === false, 'loader checks modelContext' );
+$GLOBALS['q'] = 7020;
+ob_start();
+$GLOBALS['hooks']['wp_footer'][0]();
+$foot = ob_get_clean();
+ok( strpos( $foot, '<script>window.PH_AE_REST="https://personalisationhub.com/wp-json/ph-agent/v1/"' ) === 0 && strpos( $foot, ' src=' ) === false, 'allow-listed page prints the loader inline, no extra request' );
+foreach ( array( 3477, 3566, 555 ) as $id ) {
+	$GLOBALS['q'] = $id;
+	ob_start();
+	$GLOBALS['hooks']['wp_footer'][0]();
+	ok( ob_get_clean() === '', "no loader on $id (draft, protected or demo page)" );
 }
 
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
