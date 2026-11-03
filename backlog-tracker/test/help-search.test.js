@@ -38,7 +38,22 @@ function snap(name, f = () => true) {
 }
 let t = 1_000_000;
 let mapFetches = 0, mapOk = true, twinFetches = [], twinOk = true;
-const fetchImpl = async (url) => {
+const WPT = "https://personalisationhub.com/wp-json/ph-agent/v1/tools";
+const NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo"];
+let wpCalls = [], wpMode = "ok", wpText = "v1";
+const wpResult = (name, q) => ({ content: [{ type: "text", text: `${name} ${q} ${wpText}` }], structuredContent: { name } });
+const wpFetch = async (url, opts) => {
+  wpCalls.push(url);
+  if (wpMode === "down") return { ok: false, status: 503, headers: { get: () => null }, text: async () => "" };
+  if (wpMode === "hang") return new Promise((_, rej) => opts.signal && opts.signal.addEventListener("abort", () => rej(new Error("aborted"))));
+  if (wpMode === "huge") return { ok: true, status: 200, headers: { get: () => String(10 * 1024 * 1024) }, text: async () => "{}" };
+  const body = url === WPT
+    ? { tools: [...NAMES, "secret_write_tool"].map((n) => ({ name: n, description: n, inputSchema: { type: "object" }, annotations: { readOnlyHint: true } })) }
+    : wpResult(url.slice(WPT.length + 1).split("?")[0], decodeURIComponent((url.split("?args=")[1]) || ""));
+  return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(body) };
+};
+const fetchImpl = async (url, opts) => {
+  if (url.startsWith(WPT)) return wpFetch(url, opts);
   if (url.endsWith("?format=md")) {
     twinFetches.push(url);
     if (!twinOk) return { ok: false, status: 503, text: async () => "" };
@@ -144,23 +159,69 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1") => { const r
   t += 61_000;
   assert.strictEqual((await call("GET", "/help-api/search", { q: "store" }, undefined, "2.2.2.2")).code, 200);
 
-  api = createHelpApi({ db, now: () => t, rateMax: 100000 });
-  // 6. MCP: initialize, list, call search + fetch; notifications get 202; unknown tool errors
-  api._reset();
+  api = createHelpApi({ db, now: () => t, rateMax: 100000, fetchImpl });
+  // 6. MCP: a live proxy of the site's eight tools. initialize, list, call; notifications get 202; unknown tool errors
+  api._reset(); wpCalls = []; wpMode = "ok";
   r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
   assert.strictEqual(r.body.result.serverInfo.name, "personalisation-hub-help");
   assert.strictEqual((await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", method: "notifications/initialized" })).code, 202);
   r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 2, method: "tools/list" });
-  assert.deepStrictEqual(r.body.result.tools.map((x) => x.name), ["search_help", "get_help_article"]);
+  assert.deepStrictEqual(r.body.result.tools.map((x) => x.name), NAMES); // the site's list, allow-listed: secret_write_tool is dropped
   assert.ok(r.body.result.tools.every((x) => x.annotations.readOnlyHint));
-  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "search_help", arguments: { query: "add a store" } } });
-  assert.strictEqual(r.body.result.structuredContent.results[0].id, "a1");
-  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "get_help_article", arguments: { id: "a1" } } });
-  assert.ok(r.body.result.content[0].text.includes("## Steps") && r.body.result.content[0].text.includes("| A | B |") && !r.body.result.content[0].text.includes("<p>"));
-  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "get_help_article", arguments: { id: "a2" } } });
-  assert.strictEqual(r.body.result.isError, true);
-  assert.ok(r.body.error === undefined && (await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "nope" } })).body.error.code === -32602);
+  assert.strictEqual(r.headers["X-Cache"], "MISS");
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 2, method: "tools/list" });
+  assert.strictEqual(r.headers["X-Cache"], "HIT"); assert.strictEqual(wpCalls.length, 1);
+  // every tool answers exactly what the site's endpoint answers, for the same arguments
+  for (const n of NAMES) {
+    const args = n === "get_industry" ? { slug: "telco" } : {};
+    r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: n, arguments: args } });
+    const direct = await (await wpFetch(`${WPT}/${n}${n === "get_industry" ? "?args=" + encodeURIComponent(JSON.stringify(args)) : ""}`)).text();
+    assert.deepStrictEqual(r.body.result, JSON.parse(direct).content ? JSON.parse(direct) : null, n);
+    assert.strictEqual(r.headers["X-Cache"], "MISS");
+  }
+  // a repeat is a HIT with no new site request; different args are a different entry; key order doesn't matter
+  const wpBefore = wpCalls.length;
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "get_industry", arguments: { slug: "telco" } } });
+  assert.strictEqual(r.headers["X-Cache"], "HIT"); assert.strictEqual(wpCalls.length, wpBefore);
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "search_help", arguments: { query: "store", limit: 3 } } });
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "search_help", arguments: { limit: 3, query: "store" } } });
+  assert.strictEqual(r.headers["X-Cache"], "HIT");
+  assert.ok(wpCalls.every((u) => u.startsWith(WPT)), "fixed origin only");
+  // not on the allow-list: never reaches the site
+  const n0 = wpCalls.length;
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "secret_write_tool" } });
+  assert.strictEqual(r.body.error.code, -32602);
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "../../wp-admin" } });
+  assert.strictEqual(r.body.error.code, -32602); assert.strictEqual(wpCalls.length, n0);
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "search_help", arguments: { query: "x".repeat(2500) } } });
+  assert.strictEqual(r.body.result.isError, true); assert.strictEqual(wpCalls.length, n0);
   assert.strictEqual((await call("GET", "/help-api/mcp")).code, 405);
+  // 5 minutes later the site is read again, so a published change shows up with no redeploy
+  wpText = "v2"; t += 5 * 60_000 + 1;
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "describe_platform" } });
+  assert.ok(r.body.result.content[0].text.endsWith("v2")); assert.strictEqual(r.headers["X-Cache"], "MISS");
+
+  // 6a. the site is unreachable: a plain isError within the timeout, the failure remembered 30 s only, the last good answer kept
+  api = createHelpApi({ db, now: () => t, rateMax: 100000, fetchImpl, wpTimeoutMs: 150 });
+  wpMode = "hang"; wpCalls = [];
+  let t0 = Date.now();
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "book_demo" } });
+  assert.ok(Date.now() - t0 < 1000);
+  assert.strictEqual(r.body.result.isError, true); assert.ok(!/Error:|at \w/.test(r.body.result.content[0].text));
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "book_demo" } });
+  assert.strictEqual(r.body.result.isError, true); assert.strictEqual(wpCalls.length, 1, "failure cached, no hammering");
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 9, method: "tools/list" });
+  assert.strictEqual(r.body.error.code, -32603);
+  wpMode = "ok"; t += 31_000;
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 10, method: "tools/call", params: { name: "book_demo" } });
+  assert.ok(!r.body.result.isError, "recovers after 30 s");
+  wpMode = "down"; wpText = "v3"; t += 5 * 60_000 + 1;
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 11, method: "tools/call", params: { name: "book_demo" } });
+  assert.ok(!r.body.result.isError && r.body.result.content[0].text.endsWith("v2"), "last good answer kept"); // v2 was the last good text for this entry
+  wpMode = "huge"; t += 31_000 + 5 * 60_000;
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 12, method: "tools/call", params: { name: "get_feature", arguments: { slug: "x" } } });
+  assert.strictEqual(r.body.result.isError, true, "oversized site response refused");
+  wpMode = "ok"; wpText = "v1"; api = createHelpApi({ db, now: () => t, rateMax: 100000, fetchImpl }); api._reset();
 
   // 6b. WebMCP and llms.txt are WordPress-side: not served here. CORS open, no writes possible
   assert.strictEqual((await call("GET", "/help-api/llms.txt")).code, 404);
@@ -232,7 +293,7 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1") => { const r
     const bad = createHelpApi({ db, now: () => t, rateMax: 1, fetchImpl, alert: async () => { throw new Error("webhook down"); } });
     api = bad; await call("GET", "/help-api/search", { q: "store" }, undefined, "9.1.1.1");
     for (let i = 0; i < 60; i++) assert.ok([200, 429].includes((await call("GET", "/help-api/search", { q: "store" }, undefined, "9.1.1.1")).code));
-    api = createHelpApi({ db, now: () => t, rateMax: 100000 });
+    api = createHelpApi({ db, now: () => t, rateMax: 100000, fetchImpl });
   }
   // 9. the published map failing: retried after 30 s (not 5 min), last good map kept, map-less results not cached
   {
@@ -257,7 +318,7 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1") => { const r
     assert.strictEqual(mapFetches, 1); assert.strictEqual(r.body.results[0].url, U("add-a-store"));
     assert.strictEqual((await call("GET", "/help-api/search", { q: "add a store" })).headers["X-Cache"], "HIT");
     mapOk = true;
-    api = createHelpApi({ db, now: () => t, rateMax: 100000 });
+    api = createHelpApi({ db, now: () => t, rateMax: 100000, fetchImpl });
   }
   console.log("help-search ok");
 })().catch((e) => { console.error(e); process.exit(1); });

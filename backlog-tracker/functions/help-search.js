@@ -7,7 +7,9 @@
 //                                                  markdown with format=md / Accept: text/markdown)
 //   POST /help-api/mcp                            a stateless public MCP server
 //                                                  (initialize, tools/list, tools/call:
-//                                                  search_help, get_help_article)
+//                                                  the eight read-only tools the site's
+//                                                  WebMCP defines, proxied live from
+//                                                  /wp-json/ph-agent/v1/tools)
 //
 // What it will NEVER return: a draft, a retired article, an article outside
 // the requested (default: live) release range, or `pendingRevision` text.
@@ -71,7 +73,16 @@ const URL_MAP_TTL_MS = 5 * 60 * 1000;
 // A failed map fetch is retried after this, not after the full TTL.
 const URL_MAP_FAIL_TTL_MS = 30 * 1000;
 const URL_FETCH_TIMEOUT_MS = 4000;
-const SERVER_INFO = { name: "personalisation-hub-help", version: "1.0.0" };
+// The remote MCP server proxies the WordPress tool contract (ph-agent/v1).
+const WP_TOOLS_BASE = `https://${SUPPORT_HOST}/wp-json/ph-agent/v1/tools`;
+const WP_TOOL_NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo"];
+const WP_TTL_MS = 5 * 60 * 1000;
+const WP_FAIL_TTL_MS = 30 * 1000;
+const WP_TIMEOUT_MS = 4000;
+const WP_MAX_BYTES = 256 * 1024;
+const WP_ARGS_MAX = 2000;
+const WP_CACHE_MAX = 300;
+const SERVER_INFO = { name: "personalisation-hub-help", version: "2.0.0" };
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
 function inRange(a, releasesById, targetOrder) {
@@ -155,7 +166,7 @@ function publicSummary(a, cat, url) {
 
 // `alert({kind, text, stats})` is called (not awaited) when monitoring trips;
 // the function in index.js posts it to NOTIFY_WEBHOOK_URL so it reaches Rob.
-function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RATE_MAX, alert = null, fetchImpl = (typeof fetch === "function" ? fetch : null) }) {
+function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RATE_MAX, alert = null, fetchImpl = (typeof fetch === "function" ? fetch : null), wpTimeoutMs = WP_TIMEOUT_MS }) {
   const mcpRateMax = Math.max(1, Math.floor(rateMax / MCP_RATE_DIVISOR));
   let mon = { startedAt: 0, requests: 0, rateLimited: 0, errors: 0, clients: new Map() };
   const lastAlert = new Map(); // kind -> time
@@ -419,55 +430,80 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
   }
 
   // ── MCP (stateless, public, read-only) ──────────────────────────────────
-  const TOOLS = [
-    {
-      name: "search_help",
-      title: "Search Personalisation Hub help",
-      description: "Search the published Personalisation Hub help articles. Returns ranked results with title, direct answer, summary, personalisationhub.com URL, article type, category and last updated. Call get_help_article for the full text.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "The question or words to look for." },
-          limit: { type: "integer", minimum: 1, maximum: SEARCH_LIMIT_MAX, description: `Default ${SEARCH_LIMIT_DEFAULT}.` },
-          release: { type: "string", description: "Only articles that apply to this release (id or version string). Default: the current live release." },
-        },
-        required: ["query"], additionalProperties: false,
-      },
-      annotations: { readOnlyHint: true, openWorldHint: false },
-    },
-    {
-      name: "get_help_article",
-      title: "Get a help article as markdown",
-      description: "The full markdown text of one published help article, by the id or slug returned from search_help.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "Article id from search_help." },
-          slug: { type: "string", description: "Article slug, if you have no id." },
-          release: { type: "string", description: "Only return the article if it applies to this release (id or version string)." },
-        },
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: true, openWorldHint: false },
-    },
-  ];
+  // Not a copy of anything: tools/list and tools/call read the WordPress
+  // site's own tool contract live (GET /wp-json/ph-agent/v1/tools[/{name}]),
+  // the same one the WebMCP tools on its pages use, so the two always agree
+  // and a published change reaches agents with no redeploy. Fixed origin,
+  // allow-listed names only, 5 minutes per (tool, args), 4 s timeout, size cap.
+  // A failure is remembered 30 s only and the last good answer is kept.
+  const wp = new Map(); // key -> { at, good: {at, value} | null, failAt }
+  const stable = (v) => (v && typeof v === "object" ? (Array.isArray(v) ? `[${v.map(stable).join(",")}]` : `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`) : JSON.stringify(v));
 
-  const toolText = (obj, isError = false) => ({ content: [{ type: "text", text: typeof obj === "string" ? obj : JSON.stringify(obj, null, 2) }], ...(isError ? { isError: true } : {}) });
-
-  async function callTool(name, args) {
-    const a = args && typeof args === "object" ? args : {};
-    if (name === "search_help") {
-      const r = await search({ query: a.query, release: a.release, limit: a.limit, via: "mcp" });
-      return r.status === 200 ? { ...toolText(r.body), structuredContent: r.body } : toolText(r.body.error_description, true);
-    }
-    if (name === "get_help_article") {
-      const r = await article({ id: a.id, slug: a.slug, release: a.release });
-      return r.status === 200 ? toolText(await articleMarkdown(r.body)) : toolText(r.body.error_description, true);
-    }
-    return null;
+  async function wpFetchJson(url) {
+    if (!fetchImpl) throw new Error("no fetch");
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    let timer;
+    const timeout = new Promise((_, rej) => { timer = setTimeout(() => { if (ctl) ctl.abort(); rej(new Error("timeout")); }, wpTimeoutMs); });
+    try {
+      return await Promise.race([(async () => {
+        const r = await fetchImpl(url, { headers: { Accept: "application/json" }, ...(ctl ? { signal: ctl.signal } : {}) });
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        const len = Number(r.headers && r.headers.get && r.headers.get("content-length"));
+        if (len > WP_MAX_BYTES) throw new Error("too large");
+        const text = await r.text();
+        if (text.length > WP_MAX_BYTES) throw new Error("too large");
+        return JSON.parse(text);
+      })(), timeout]);
+    } finally { clearTimeout(timer); }
   }
 
-  async function mcpMessage(msg) {
+  // Returns { value, cached } or { error } (never throws).
+  async function wpCached(key, url, valid) {
+    const t = now();
+    let e = wp.get(key);
+    if (e && e.good && t - e.good.at < WP_TTL_MS) return { value: e.good.value, cached: true };
+    if (e && e.failAt && t - e.failAt < WP_FAIL_TTL_MS) return e.good ? { value: e.good.value, cached: true, stale: true } : { error: "unavailable" };
+    try {
+      const value = await wpFetchJson(url);
+      if (!valid(value)) throw new Error("unexpected shape");
+      e = { at: t, good: { at: t, value }, failAt: 0 };
+      wp.set(key, e);
+      if (wp.size > WP_CACHE_MAX) { for (const [k, v] of wp) { if (!v.good || t - v.good.at >= WP_TTL_MS) wp.delete(k); if (wp.size <= WP_CACHE_MAX) break; } if (wp.size > WP_CACHE_MAX) wp.delete(wp.keys().next().value); }
+      return { value, cached: false };
+    } catch (err) {
+      if (logger) logger.warn("remote MCP: site fetch failed", { key, error: String(err && err.message ? err.message : err) });
+      const prev = wp.get(key);
+      wp.set(key, { at: t, good: prev ? prev.good : null, failAt: t });
+      return prev && prev.good ? { value: prev.good.value, cached: true, stale: true } : { error: "unavailable" };
+    }
+  }
+
+  const isTools = (v) => v && Array.isArray(v.tools) && v.tools.length > 0;
+  const isResult = (v) => v && typeof v === "object" && Array.isArray(v.content);
+  const errResult = (msg) => ({ content: [{ type: "text", text: msg }], isError: true });
+  const UNAVAILABLE = "The Personalisation Hub site could not be reached just now. Try again in a minute.";
+
+  async function listTools() {
+    const r = await wpCached("tools", WP_TOOLS_BASE, isTools);
+    if (r.error) return r;
+    // Only the allow-listed names are ever served, exactly as the site defines them.
+    return { ...r, value: r.value.tools.filter((x) => x && WP_TOOL_NAMES.includes(x.name)) };
+  }
+
+  async function callTool(name, args) {
+    if (typeof name !== "string" || !WP_TOOL_NAMES.includes(name)) return null;
+    const a = args === undefined || args === null ? {} : args;
+    if (typeof a !== "object" || Array.isArray(a)) return { result: errResult("arguments must be an object."), cached: false };
+    const json = stable(a);
+    if (json.length > WP_ARGS_MAX) return { result: errResult("arguments are too long."), cached: false };
+    const url = `${WP_TOOLS_BASE}/${name}${json === "{}" ? "" : `?args=${encodeURIComponent(JSON.stringify(a))}`}`;
+    const r = await wpCached(`${name}|${json}`, url, isResult);
+    if (r.error) return { result: errResult(UNAVAILABLE), cached: false };
+    return { result: r.value, cached: !!r.cached };
+  }
+
+  // ctx.cache collects each upstream answer's HIT/MISS for the X-Cache header.
+  async function mcpMessage(msg, ctx) {
     const id = msg && Object.prototype.hasOwnProperty.call(msg, "id") ? msg.id : undefined;
     const reply = (result) => ({ jsonrpc: "2.0", id, result });
     const fail = (code, message) => ({ jsonrpc: "2.0", id: id === undefined ? null : id, error: { code, message } });
@@ -480,15 +516,21 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: SERVER_INFO,
-          instructions: "Read-only search over Personalisation Hub's published help articles. Call search_help with a question, then get_help_article for the full text. Always cite the article url.",
+          instructions: "Read-only access to Personalisation Hub's public site content: describe_platform, list_industries, get_industry, get_feature, search_help, get_help_article, start_free_trial, book_demo. Always cite the url you are given.",
         });
       }
       case "ping": return reply({});
-      case "tools/list": return reply({ tools: TOOLS });
+      case "tools/list": {
+        const r = await listTools();
+        if (ctx && ctx.cache) ctx.cache.push(!!r.cached);
+        return r.error ? fail(-32603, UNAVAILABLE) : reply({ tools: r.value });
+      }
       case "tools/call": {
         const p = msg.params || {};
         const out = await callTool(p.name, p.arguments);
-        return out ? reply(out) : fail(-32602, `Unknown tool: ${String(p.name).slice(0, 80)}`);
+        if (!out) return fail(-32602, `Unknown tool: ${String(p.name).slice(0, 80)}`);
+        if (ctx && ctx.cache) ctx.cache.push(out.cached);
+        return reply(out.result);
       }
       default: return fail(-32601, `Method not found: ${msg.method.slice(0, 80)}`);
     }
@@ -542,12 +584,16 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         const body = req.body;
         if (Array.isArray(body)) {
           if (body.length > 20) { res.status(400).json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Batch too large" } }); return; }
-          const out = (await Promise.all(body.map(mcpMessage))).filter(Boolean);
+          const ctx = { cache: [] };
+          const out = (await Promise.all(body.map((m) => mcpMessage(m, ctx)))).filter(Boolean);
+          if (ctx.cache.length) res.set("X-Cache", ctx.cache.every(Boolean) ? "HIT" : "MISS");
           if (!out.length) { res.status(202).send(""); return; }
           res.status(200).json(out);
           return;
         }
-        const out = await mcpMessage(body);
+        const ctx = { cache: [] };
+        const out = await mcpMessage(body, ctx);
+        if (ctx.cache.length) res.set("X-Cache", ctx.cache.every(Boolean) ? "HIT" : "MISS");
         if (!out) { res.status(202).send(""); return; }
         res.status(200).json(out);
         return;
@@ -562,7 +608,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     }
   }
 
-  return { handle, search, article, mcpMessage, testAlert, TOOLS, _reset() { data = null; urlMap = null; mdTwins.clear(); results.clear(); articles.clear(); buckets.clear(); lastAlert.clear(); mon = { startedAt: 0, requests: 0, rateLimited: 0, errors: 0, clients: new Map() }; } };
+  return { handle, search, article, mcpMessage, testAlert, TOOL_NAMES: WP_TOOL_NAMES, _reset() { wp.clear(); data = null; urlMap = null; mdTwins.clear(); results.clear(); articles.clear(); buckets.clear(); lastAlert.clear(); mon = { startedAt: 0, requests: 0, rateLimited: 0, errors: 0, clients: new Map() }; } };
 }
 
 module.exports = { createHelpApi, STOP_WORDS, scoreArticle, safeSupportUrl, inRange, termsOf, normaliseQuery, SERVER_INFO };
