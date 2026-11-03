@@ -23,3 +23,7 @@ After Deploy to Main, the PH Website session (the one with the Elementor MCP) pu
 4. Roll back by republishing the previous version.
 
 Spec: project document "Agent endpoint release: design and build guide" (PH Website project), sections 1 and 2.
+
+## Leak tests
+
+`php ph-website/tests/leak.php` seeds a draft, scheduled, private, password-protected and noindex page, demo pages outside the allow-list, an out-of-range help article and internal fields (`ph_help_*`, hash, programme, project), then checks llms.txt, markdown twins, JSON-LD, the `ph-agent/v1` tools list and every tool call, the WebMCP loader and the Support Centre's public routes. `node backlog-tracker/test/help-leak.test.js` does the same for `/help-api/search`, `/help-api/article` and the remote MCP server (stubbed fetch). Both run without network inside the console's `npm run test:offline` (via `test:mcp`), so every train runs them and a leak blocks the deploy; a failure names the endpoint.
