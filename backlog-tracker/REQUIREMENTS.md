@@ -2765,6 +2765,42 @@ is live) is what keeps the content in step with the release being marketed.
 **Tests.** `test/release-audit.test.mjs` (classification, log shape on both
 sides, fire text, and guards that the per-ticket flow stays removed).
 
+### WordPress publish status in FAQ Management (3 Nov 2026, ticket `LYbxv1nqC3EaJ53ryaa8`)
+
+Publishing to WordPress is **not** done from the console. The "PH Support
+Centre" snippet on personalisationhub.com pulls the console's export
+(`faq/data`) hourly and creates, updates and retires the Help articles itself
+(all fields, sanitising, image copy, link rewrite, 301s, revisions, URL map).
+The console holds no WordPress credential and never writes to WordPress; an
+earlier push publisher (`help-publisher.js`, `faq-wp-publish.js`) duplicated
+that sync and was reverted. Content stays mastered here; release-audit
+approvals reach WordPress through the export with no extra step.
+
+FAQ Management only **reads** the public, read-only endpoint
+`GET https://personalisationhub.com/wp-json/ph-help/v1/published` (cached
+5 minutes on the WordPress side): `{lastSync, pending, failed: [articleId…],
+articles: [{id, url, wpId, hash, updatedAt}]}`, where `hash` is the
+`contentHash` WordPress last synced (first 16 hex chars of sha256 of
+`bodyMd`, as `scripts/faq-export.js` computes it; the page computes the same
+digest in the browser). It is fetched client-side on opening the page and
+every 5 minutes while it is open (`public/js/wp-publish-status.js`). Each
+article shows a badge in the list and in the editor's "Live at" line:
+
+- **Live**: present, and its hash equals the article's current contentHash.
+- **Waiting**: published and in range here, but absent or with an older hash
+  (WordPress picks it up within about 2 hours: hourly export, then hourly sync).
+- **Failed**: its id is in `failed`.
+- **Not published**: draft, retired, or outside the live release's range
+  (same range rule as `articleAppliesToRelease`; no live release means no
+  range filter).
+- **Status unavailable**: the endpoint could not be read (blocked, non-200,
+  malformed). The page still loads.
+
+"Live at" uses the endpoint's `url`, falling back to
+`https://personalisationhub.com/support-centre/article.html?id=<id>`. The
+page header shows "Last WordPress sync: <time>". Tests:
+`test/wp-publish-status.test.mjs` and two scenarios in `test/ui/console-click.test.mjs`.
+
 ### FAQ revision review (Deploy → propose → approve → go live)
 
 **SEO & agent fields (3 Nov 2026, ticket `rri7DngI2ccd7q4uYdk6`).** Help

@@ -1393,6 +1393,12 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .faq-article-row-meta { margin: 0; font-size: 11.5px; color: var(--text-muted); }
 .badge-status-draft { background: var(--surface-2); color: var(--text-muted); }
 .badge-status-published { background: rgba(82, 196, 26, .12); color: var(--success); }
+.badge-wp { margin-left: 6px; }
+.badge-wp-live { background: rgba(82, 196, 26, .12); color: var(--success); }
+.badge-wp-waiting { background: rgba(201, 138, 10, .12); color: var(--warning); }
+.badge-wp-failed { background: var(--danger-tint); color: var(--danger); }
+.badge-wp-not-published, .badge-wp-unavailable { background: rgba(0, 0, 0, .06); color: var(--text-muted); }
+.faq-wp-sync { margin-left: 12px; }
 .badge-needs-review { background: rgba(201, 138, 10, .12); color: var(--warning); margin-left: 6px; }
 .faq-article-row-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .faq-article-options { position: relative; }
@@ -1965,10 +1971,10 @@ body { overflow-x: clip; }
 .critique-verdict.will-work { background: #e3f4e6; color: #1b5e20; }
 .critique-verdict.wont-work { background: #fde7e7; color: #b71c1c; }
 .critique-verdict.conditional { background: #fff3d6; color: #8a5a00; }
-.critique-meta { color: var(--text-muted, #666); font-size: 12px; }
+.critique-meta { color: var(--text-muted); font-size: 12px; }
 .critique-rec { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
 .critique-rec-text { flex: 1 1 240px; }
-.critique-rec-state { font-size: 12px; color: var(--text-muted, #666); }
+.critique-rec-state { font-size: 12px; color: var(--text-muted); }
 .critique-synthesis { margin: 10px 0; }
 .critique-synthesis:empty { display: none; }
 .critique-synthesis > div { border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 10px 12px; }

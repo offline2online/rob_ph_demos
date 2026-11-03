@@ -45,6 +45,7 @@ import { packageBacklog, groomButtonVisible, DEFAULT_GROOM_THRESHOLD, DEFAULT_PA
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 import { createResultReader, useContinuousMode } from "./dictation-results.js";
 import { loadQuill } from "./quill-loader.js";
+import { fetchPublished, contentHashOf, articleStatus, liveUrlFor, lastSyncLabel, wpStatusBadgeHTML, WP_STATUS_LABELS } from "./wp-publish-status.js";
 import { userRows, mountUsersGrid } from "./user-management.js";
 import { LEVELS, LEVEL_LABELS, SECTIONS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, setLevel, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel } from "./permissions.js";
 import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
@@ -10816,9 +10817,11 @@ function openFaqArticlesPage(filter) {
   setRouteHash(faqStatusFilter === "all" ? "#faq-management" : `#faq-management?filter=${faqStatusFilter}`);
   updateTopbarTitle();
   renderFaqArticlesPage();
+  startWpRefresh();
   maybeRestoreInitialScroll();
 }
 function closeFaqArticlesPage() {
+  stopWpRefresh();
   faqArticlesPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
@@ -11284,6 +11287,8 @@ function renderFaqArticlesPage() {
   renderFaqTree();
   renderFaqArticleList();
   renderFaqAdminCount();
+  renderWpSyncLine();
+  if (wpPublishedState === "ok") refreshWpHashes().then((changed) => { if (changed) renderFaqArticleList(); });
 }
 
 // The header's "N published, N draft[, N awaiting review]" line — each part
@@ -11328,13 +11333,95 @@ function setFaqStatusFilter(filter) {
 // pattern as the per-project options menu (toggleOptionMenu/
 // closeAllOptionMenus, extended below to also close an open
 // .faq-article-options-menu).
+// ── WordPress publish status (read-only) ─────────────────────────────────
+// The WordPress "PH Support Centre" snippet publishes the console's export on
+// its own; this only reads its public status endpoint and shows, per article,
+// Live / Waiting / Failed / Not published, plus the live page link. Content
+// stays mastered here; nothing is written to WordPress. If the endpoint can't
+// be reached, every badge says "Status unavailable" and the page still works.
+let wpPublished = null;          // parsed endpoint, or null when unreachable / not loaded
+let wpPublishedState = "idle";   // idle | loading | ok | error
+const wpHashCache = new Map();   // article id -> { body, hash }
+let wpRefreshTimer = null;
+
+function wpTargetOrder() {
+  const live = releases.filter((r) => r.status === "live").sort((a, b) => (Number(b.order) || 0) - (Number(a.order) || 0));
+  return live.length ? Number(live[0].order) || 0 : null;
+}
+function wpArticleInRange(a) {
+  const target = wpTargetOrder();
+  return target === null ? true : articleAppliesToRelease(a, releasesByIdMap(), target);
+}
+function wpStatusOf(a) {
+  if (wpPublishedState === "error" || (wpPublishedState !== "ok" && !wpPublished)) return wpPublishedState === "error" ? "unavailable" : null;
+  const cached = wpHashCache.get(a.id);
+  const body = a.bodyMd || "";
+  return articleStatus({ article: a, inRange: wpArticleInRange(a), hash: cached && cached.body === body ? cached.hash : null, published: wpPublished });
+}
+function wpBadgeHTML(a) {
+  const st = wpStatusOf(a);
+  return st ? wpStatusBadgeHTML(st, escapeHTML) : "";
+}
+async function refreshWpHashes() {
+  let changed = false;
+  for (const a of faqArticles) {
+    if (a.status !== "published") continue;
+    const body = a.bodyMd || "";
+    const c = wpHashCache.get(a.id);
+    if (c && c.body === body) continue;
+    try { wpHashCache.set(a.id, { body, hash: await contentHashOf(body) }); changed = true; } catch { /* no SubtleCrypto: badges stay Waiting */ }
+  }
+  return changed;
+}
+function renderWpSyncLine() {
+  const el = document.getElementById("faq-wp-sync");
+  if (!el) return;
+  el.textContent = wpPublishedState === "loading" && !wpPublished ? "Last WordPress sync: checking…" : wpPublishedState === "error" ? "Last WordPress sync: status unavailable" : lastSyncLabel(wpPublished);
+}
+function rerenderWpStatus() {
+  renderWpSyncLine();
+  if (typeof faqArticlesPage !== "undefined" && faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticleList();
+  if (editingFaqArticleId) renderFaqLiveHint(faqArticles.find((x) => x.id === editingFaqArticleId));
+}
+async function loadWpPublished() {
+  if (wpPublishedState === "loading") return;
+  wpPublishedState = "loading";
+  renderWpSyncLine();
+  try {
+    wpPublished = await fetchPublished();
+    wpPublishedState = "ok";
+  } catch {
+    wpPublished = null;
+    wpPublishedState = "error";
+  }
+  await refreshWpHashes();
+  rerenderWpStatus();
+}
+function startWpRefresh() {
+  loadWpPublished();
+  clearInterval(wpRefreshTimer);
+  wpRefreshTimer = setInterval(() => { if (faqArticlesPage && !faqArticlesPage.hidden) loadWpPublished(); else stopWpRefresh(); }, 5 * 60 * 1000);
+}
+function stopWpRefresh() { clearInterval(wpRefreshTimer); wpRefreshTimer = null; }
+
+// The editor's "Live at" line, with the same status badge.
+function renderFaqLiveHint(article) {
+  const liveHint = document.getElementById("fa-live-link-hint");
+  if (!liveHint) return;
+  if (!article || article.status !== "published") { liveHint.hidden = true; return; }
+  const url = liveUrlFor(article.id, wpPublished);
+  liveHint.hidden = false;
+  liveHint.innerHTML = `${wpBadgeHTML(article)} Live at <a href="${escapeHTML(url)}" target="_blank" rel="noopener">${escapeHTML(url)}</a>`;
+}
+
 function faqArticleRowHTML(a, orderable) {
-  const liveUrl = `${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(a.id)}`;
+  const liveUrl = escapeHTML(liveUrlFor(a.id, wpPublished));
   const drag = orderable ? ` draggable="true" data-order-id="${escapeHTML(a.id)}"` : "";
   return `
       <div class="faq-article-row" data-id="${escapeHTML(a.id)}"${drag}>
         <div class="faq-article-row-main">
           <span class="badge badge-status-${a.status}">${a.status === "published" ? "Published" : "Draft"}</span>
+          ${wpBadgeHTML(a)}
           ${faqRevisionBadgeHTML(a)}
           <h4 class="faq-article-title" role="button" tabindex="0" title="Edit article">${escapeHTML(a.title)}</h4>
           <p class="faq-article-row-meta">${escapeHTML(faqCategoryName(a.categoryId))}${a.programId && programName(a.programId) ? " &middot; " + escapeHTML(programName(a.programId)) : ""}${a.projectId ? " &middot; " + escapeHTML(projectName(a.projectId)) : ""}</p>
@@ -12366,13 +12453,7 @@ function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}
   populateReleaseSelect(faIntroducedReleaseSelect, article && article.introducedInReleaseId ? article.introducedInReleaseId : "", { emptyLabel: "Not set" });
   populateReleaseSelect(faRemovedReleaseSelect, article && article.removedInReleaseId ? article.removedInReleaseId : "", { emptyLabel: "Not set" });
 
-  const liveHint = document.getElementById("fa-live-link-hint");
-  if (article && article.status === "published") {
-    liveHint.hidden = false;
-    liveHint.innerHTML = `Live at <a href="${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(article.id)}" target="_blank" rel="noopener">${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(article.id)}</a>`;
-  } else {
-    liveHint.hidden = true;
-  }
+  renderFaqLiveHint(article);
 
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -12532,13 +12613,7 @@ async function submitFaqArticleFromEditor(publish) {
   faLoadedStatus = status;
   faLoadedHasPublishedAt = faLoadedHasPublishedAt || !!publish;
   renderFaStatusBadge();
-  const liveHint = document.getElementById("fa-live-link-hint");
-  if (status === "published") {
-    liveHint.hidden = false;
-    liveHint.innerHTML = `Live at <a href="${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(savedId)}" target="_blank" rel="noopener">${FAQ_PUBLIC_BASE_URL}article.html?id=${encodeURIComponent(savedId)}</a>`;
-  } else {
-    liveHint.hidden = true;
-  }
+  renderFaqLiveHint({ ...(faqArticles.find((x) => x.id === savedId) || {}), id: savedId, status, bodyMd: (faqArticles.find((x) => x.id === savedId) || {}).bodyMd });
   document.getElementById("fa-title").textContent = "Edit article";
   document.title = "Edit article — PH Agent Console";
   setRouteHash(`#faq-article/${encodeURIComponent(savedId)}`);

@@ -2116,8 +2116,12 @@ default.
   checked, what changed, who approved and when it went live. Approval
   publishes straight away (`promoteFaqRevisionIfReady`, previous text kept
   for **Revert last auto-update**). Full spec: `REQUIREMENTS.md` → "Release
-  audit". The WordPress Support Centre hand-off (Elementor MCP) is a separate
-  ticket.
+  audit". Publishing to WordPress is done by the
+  "PH Support Centre" snippet on personalisationhub.com (hourly pull of
+  `faq/data`); FAQ Management only reads its public status endpoint and shows
+  a Live / Waiting / Failed / Not published badge per article plus the live
+  link and "Last WordPress sync" (`public/js/wp-publish-status.js`; see
+  `REQUIREMENTS.md` → "WordPress publish status in FAQ Management").
 - **Releases.** The menu's **Releases** page lists every `releases` doc
   (newest first) with **+ New release** (name, optional version) and a
   one-way **Mark live on AWS Marketplace** per draft, which starts the audit
