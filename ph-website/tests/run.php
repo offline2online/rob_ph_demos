@@ -454,6 +454,10 @@ foreach ( $ihpages as $pg ) {
 ok( count( array_unique( $ihdescs ) ) === count( $ihdescs ), 'fallback descriptions are unique' );
 $ihsrc = file_get_contents( $ihd . 'ai-hygiene.php' );
 ok( strpos( $ihsrc, 'seopress_titles_title' ) === false, 'curated SEOPress titles are never filtered' );
+ok( strpos( $ihsrc, '<div class="ph-ai-lead">' ) === false, 'no .ph-ai-lead block is printed before the content' );
+ok( strpos( $ihsrc, 'return $html . $tail;' ) !== false && strpos( $ihsrc, 'return $lead . $html' ) === false, 'content filter does not prepend anything' );
+ok( preg_match( '/<\/h2>\'\s*\. \$lead\s*\. \$facts/', $ihsrc ) === 1 && strpos( $ihsrc, 'class="ph-ai-summary"' ) !== false, '.ph-ai-summary sits inside .ph-ai-facts before the facts' );
+ok( strpos( $ihsrc, 'ph-ai-lead-move' ) === false, 'no script moves the summary' );
 ok( ( $ihns . 'ai_desc_needs_fallback' )( '', array() ) && ( $ihns . 'ai_desc_needs_fallback' )( 'Ditch the Queue', array( 'Ditch the Queue' ) ), 'description filled when empty or duplicated' );
 ok( ! ( $ihns . 'ai_desc_needs_fallback' )( 'Own curated description', array( 'Another page' ) ), 'a unique curated description is kept' );
 

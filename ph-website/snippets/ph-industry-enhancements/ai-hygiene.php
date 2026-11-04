@@ -249,7 +249,8 @@ add_filter( 'the_content', function ( $html ) {
 	}
 	list( $type, $key ) = $page;
 	$name  = ai_name( $type, $key );
-	$lead  = '<div class="ph-ai-lead"><p>' . esc_html( ai_summary( $type, $key ) ) . '</p></div>';
+	/* Summary sits at the top of the Key facts section (it looked out of place above the hero). */
+	$lead  = '<p class="ph-ai-summary">' . esc_html( ai_summary( $type, $key ) ) . '</p>';
 	$facts = '';
 	foreach ( ai_facts( $type, $key ) as $label => $text ) {
 		$facts .= '<h3>' . esc_html( ai_question( $label, $name ) ) . '</h3><p>' . esc_html( $text ) . '</p>';
@@ -261,8 +262,9 @@ add_filter( 'the_content', function ( $html ) {
 	$post = get_queried_object();
 	$mod  = get_post_modified_time( 'c', true, $post );
 	$tail = '<section class="ph-ai-facts" aria-label="Key facts"><h2>' . esc_html( $name ? 'What should I know about Personalisation Hub for ' . $name . '?' : 'What should I know about Personalisation Hub?' ) . '</h2>'
+		. $lead
 		. $facts
 		. '<h3>Where can I read more?</h3><ul>' . $links . '</ul>'
 		. '<p class="ph-ai-updated">Last updated <time datetime="' . esc_attr( $mod ) . '">' . esc_html( get_the_modified_date( 'j F Y', $post ) ) . '</time></p></section>';
-	return $lead . $html . $tail;
+	return $html . $tail;
 }, 20 );
