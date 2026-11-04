@@ -236,7 +236,7 @@ add_action( 'wp_head', function () {
 	if ( ! ai_page() ) {
 		return;
 	}
-	echo '<style id="ph-ai-hygiene">.ph-ai-lead{max-width:960px;margin:0 auto;padding:24px 20px 8px;font-size:18px;line-height:1.6}.ph-ai-lead p{margin:0;color:inherit}.ph-ai-lead.ph-ai-lead--hero{max-width:none;margin:16px 0 0;padding:0}.ph-ai-facts{max-width:960px;margin:0 auto;padding:32px 20px}.ph-ai-facts h2{font-size:28px;line-height:1.25;margin:0 0 16px}.ph-ai-facts h3{font-size:18px;line-height:1.35;margin:20px 0 4px}.ph-ai-facts p{margin:0;line-height:1.6}.ph-ai-facts ul{margin:8px 0 0;padding-left:20px}.ph-ai-facts li{margin:4px 0}.ph-ai-updated{margin-top:24px;font-size:14px;opacity:.75}</style>' . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- static CSS.
+	echo '<style id="ph-ai-hygiene">.ph-ai-lead{max-width:960px;margin:0 auto;padding:16px 20px;font-size:16px;line-height:1.6}.ph-ai-lead p{margin:0}.ph-ai-facts{max-width:960px;margin:0 auto;padding:32px 20px}.ph-ai-facts h2{font-size:28px;line-height:1.25;margin:0 0 16px}.ph-ai-facts h3{font-size:18px;line-height:1.35;margin:20px 0 4px}.ph-ai-facts p{margin:0;line-height:1.6}.ph-ai-facts ul{margin:8px 0 0;padding-left:20px}.ph-ai-facts li{margin:4px 0}.ph-ai-updated{margin-top:24px;font-size:14px;opacity:.75}</style>' . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- static CSS.
 }, 25 );
 
 add_filter( 'the_content', function ( $html ) {
@@ -266,23 +266,3 @@ add_filter( 'the_content', function ( $html ) {
 		. '<p class="ph-ai-updated">Last updated <time datetime="' . esc_attr( $mod ) . '">' . esc_html( get_the_modified_date( 'j F Y', $post ) ) . '</time></p></section>';
 	return $lead . $html . $tail;
 }, 20 );
-
-/**
- * The summary stays in the server-rendered HTML ahead of the main content (crawlers read it first). For people it is
- * moved into the hero, after the subheading, and given the subheading's colour, size and width. It is never hidden:
- * with no script, or no hero found, it stays where it is as a styled intro line.
- */
-add_action( 'wp_footer', function () {
-	if ( ! ai_page() ) {
-		return;
-	}
-	echo '<script id="ph-ai-lead-move">(function(){var l=document.querySelector(".ph-ai-lead"),h=document.querySelector("h1");if(!l||!h||l.contains(h))return;'
-		. 'var hw=h.closest(".elementor-widget")||h,box=hw.parentNode;if(!box||box.contains(l))return;'
-		. 'var ref=h,n=hw.nextElementSibling;'
-		. 'if(n&&/elementor-widget-(text-editor|heading)/.test(n.className)){ref=n.querySelector("p")||n.querySelector(".elementor-heading-title,h2,h3,h4")||n;}'
-		. 'var cs=getComputedStyle(ref),p=l.firstElementChild;'
-		. 'var at=ref===h?hw:n;at.parentNode.insertBefore(l,at.nextSibling);l.classList.add("ph-ai-lead--hero");'
-		. 'l.style.textAlign=cs.textAlign;if( ref!==h){l.style.maxWidth=cs.maxWidth!=="none"?cs.maxWidth:"";}'
-		. 'p.style.color=cs.color;p.style.fontSize=ref===h?"18px":cs.fontSize;p.style.lineHeight=ref===h?"1.6":cs.lineHeight;p.style.fontFamily=cs.fontFamily;p.style.fontWeight=ref===h?"400":cs.fontWeight;'
-		. '})();</script>' . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- static script.
-}, 30 );

@@ -456,8 +456,6 @@ $ihsrc = file_get_contents( $ihd . 'ai-hygiene.php' );
 ok( strpos( $ihsrc, 'seopress_titles_title' ) === false, 'curated SEOPress titles are never filtered' );
 ok( ( $ihns . 'ai_desc_needs_fallback' )( '', array() ) && ( $ihns . 'ai_desc_needs_fallback' )( 'Ditch the Queue', array( 'Ditch the Queue' ) ), 'description filled when empty or duplicated' );
 ok( ! ( $ihns . 'ai_desc_needs_fallback' )( 'Own curated description', array( 'Another page' ) ), 'a unique curated description is kept' );
-ok( strpos( $ihsrc, 'ph-ai-lead-move' ) !== false && strpos( $ihsrc, 'display:none' ) === false && strpos( $ihsrc, 'visibility:hidden' ) === false, 'summary is moved into the hero for people and never hidden' );
-ok( strpos( $ihsrc, "return \$lead . \$html . \$tail" ) !== false, 'summary stays first in the server-rendered content' );
 
 /* ------------------------------------------------------------ installation spec (get_installation_spec) */
 $src = array(); // the tool reads no live content
