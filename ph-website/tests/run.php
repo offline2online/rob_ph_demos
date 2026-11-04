@@ -371,6 +371,14 @@ foreach ( $nodes as $pair ) {
 	$allids[ $pair[1]['@id'] ] = 1;
 }
 ok( count( $allids ) === 2, 'one Organization id and one SoftwareApplication id across all pages' );
+
+/* Entity clarity: legal name, founding date, founder, logo and sameAs; no location anywhere in the schema */
+$o = organization_node();
+ok( $o['legalName'] === 'Personalisation Hub Pty Ltd' && $o['foundingDate'] === '2018' && $o['founder']['name'] === 'Rob Geerdink', 'Organization has legalName, foundingDate 2018 and founder' );
+ok( strpos( $o['logo'], 'https://personalisationhub.com/' ) === 0, 'Organization has a logo' );
+ok( count( $o['sameAs'] ) === 5 && in_array( 'https://www.linkedin.com/company/personalisation-hub/', $o['sameAs'], true ) && in_array( 'https://signage.amazon.com/cms-partners/personalisation-hub', $o['sameAs'], true ), 'Organization sameAs: LinkedIn, AWS Marketplace, Amazon Signage CMS, X, seller profile' );
+$oj = json_encode( $o ) . json_encode( software_node() );
+ok( ! preg_match( '/Sydney|Australia|crunchbase|g2\.com|address|areaServed|2016/i', $oj ), 'no location, Crunchbase, G2 or 2016 in the entity schema' );
 ok( strpos( file_get_contents( $snips . '/ph-support-centre/main.php' ), "const SITE_NAME    = 'Personalisation Hub Support Centre'" ) !== false, 'Support Centre WebSite is named Support Centre' );
 
 /* Support Centre 1.4.0: live feed first, refresh endpoint, no Google Fonts request */

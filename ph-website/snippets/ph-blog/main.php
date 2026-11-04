@@ -375,8 +375,19 @@ function org() {
 		'@type'       => 'Organization',
 		'@id'         => home_url( '/#organization' ),
 		'name'        => 'Personalisation Hub',
+		'legalName'   => 'Personalisation Hub Pty Ltd',
 		'url'         => home_url( '/' ),
+		'logo'        => 'https://personalisationhub.com/wp-content/uploads/2022/12/Website-Logo.png',
 		'description' => "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud.",
+		'foundingDate' => '2018',
+		'founder'     => [ '@type' => 'Person', 'name' => 'Rob Geerdink' ],
+		'sameAs'      => [
+			'https://www.linkedin.com/company/personalisation-hub/',
+			'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76',
+			'https://signage.amazon.com/cms-partners/personalisation-hub',
+			'https://twitter.com/Digital_retail',
+			'https://aws.amazon.com/marketplace/seller-profile?id=seller-ipgfe4tzltv24'
+		],
 	];
 }
 

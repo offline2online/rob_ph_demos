@@ -81,8 +81,19 @@ function organization_node() {
 		'@type'       => 'Organization',
 		'@id'         => PH_AE_SITE . '/#organization',
 		'name'        => 'Personalisation Hub',
+		'legalName'   => 'Personalisation Hub Pty Ltd',
 		'url'         => PH_AE_SITE . '/',
+		'logo'        => 'https://personalisationhub.com/wp-content/uploads/2022/12/Website-Logo.png',
 		'description' => ENTITY_DESCRIPTION,
+		'foundingDate' => '2018',
+		'founder'     => array( '@type' => 'Person', 'name' => 'Rob Geerdink' ),
+		'sameAs'      => array(
+			'https://www.linkedin.com/company/personalisation-hub/',
+			'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76',
+			'https://signage.amazon.com/cms-partners/personalisation-hub',
+			'https://twitter.com/Digital_retail',
+			'https://aws.amazon.com/marketplace/seller-profile?id=seller-ipgfe4tzltv24'
+		),
 	);
 }
 
