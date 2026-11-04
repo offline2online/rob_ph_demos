@@ -36,7 +36,7 @@ No critical findings. No open high findings.
 ### Accepted residual risk (not findings)
 
 * **R-1 Per-instance counters.** The help API's buckets live in each Cloud Function instance (`maxInstances: 10`), so a determined client spread across instances can get up to ten times the limit. The 5-minute cache in front of WordPress (WP_TTL 5 min, 4 s timeout, 256 KB cap) bounds what that costs. Moving the counters to Firestore would add a write per request; not worth it at this traffic. Revisit if the abuse alert fires.
-* **R-2 `REMOTE_ADDR` behind a proxy.** The WordPress limit keys on `REMOTE_ADDR`. If production WordPress sits behind a CDN or proxy that does not rewrite it, all visitors share one budget of 120 a minute. The remote MCP server's own 5-minute cache keeps its share small. **Check on deploy** (section 5, item 1): if `e2e-live.mjs` shows a 429 on the tool route in the first minute of normal use, raise `ph_ae_rate_max_tools` or trust the CDN's header with a filter.
+* **R-2 `REMOTE_ADDR` behind a proxy. CLOSED (4 Nov 2026, Rob).** The WordPress limit keys on `REMOTE_ADDR`. Checked on 4 Nov 2026: behind Cloudflare, WordPress sees the real client address in `REMOTE_ADDR`, not a Cloudflare range, so visitors do not share one budget. No filter or `ph_ae_rate_max_tools` change is needed. Re-check only if the CDN or proxy setup changes; a `429` on the tool route in the first minute of normal use would be the sign.
 * **R-3 The publishing account stays admin** (Rob, 3 Nov 2026). Moving the Elementor MCP account to least privilege is out of scope for this release.
 
 ## 3. Pen test checklist and results
@@ -145,7 +145,7 @@ Live: `e2e-live.mjs` "help API answers 429" always; "WordPress tool route answer
 
 Do these after Deploy to Main and after publishing the changed snippets (`README.md` → How a deploy works). Attach the output to the ticket.
 
-1. **End-to-end check on production:** `node ph-website/tests/e2e-live.mjs`. It covers every page type, every tool, the twins, JSON-LD, llms.txt, the CTA links, 429 on the help API, the headers and the console. Add `--stress` once to see the WordPress route's 429 (it spends that address's minute). Any FAIL stops the release; a failure on the first minute of normal use that is a `429` from the tool route is R-2.
+1. **End-to-end check on production:** `node ph-website/tests/e2e-live.mjs`. It covers every page type, every tool, the twins, JSON-LD, llms.txt, the CTA links, 429 on the help API, the headers and the console. Add `--stress` once to see the WordPress route's 429 (it spends that address's minute). Any FAIL stops the release; a `429` from the tool route in the first minute of normal use would mean the R-2 check (closed 4 Nov 2026) no longer holds.
 2. **Alert delivery:** call `helpApiTestAlert` with the board key (it posts the test alert to the webhook) and confirm the alert reaches Rob.
 3. **RevOps:** call `start_free_trial` through the remote MCP server (`/help-api/mcp`) and through a WebMCP page, follow each `trackedUrl`, then check that one `agentToolLog` row (`source: "remote-mcp"`), one `ph_agent_tool` dataLayer event and one `ph_agent_cta` event exist, and that none of them holds an IP, user agent or free text.
 4. **Roll back** if (1) fails and the cause is not a flaky page: republish the previous snippet versions from the snapshot taken before the deploy.
