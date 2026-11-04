@@ -219,6 +219,54 @@ is Rejected and the host passes the prop. `unreject` (`POST
 reverses `Rejected` back to `Awaiting approval` for a fresh decision; it
 never auto-approves. Same permission as approve/reject.
 
+### Advertiser column and Advertiser Bookings button (4 Nov 2026)
+
+Two more props-only components, for the Campaigns table (Home > Campaigns).
+They change nothing else on the page; Status keeps showing campaign state.
+
+**Advertiser column.** One column: advertiser name, the DSP beneath it in
+small grey text (or "Direct"), and the approval badge. Display only; approve
+and reject stay in the Upcoming Campaign Approval table. An HQ campaign
+(no advertiser) shows a dash. Rejected shows the reason, who and when on
+hover; an approved campaign with a pending edit reads "Approved · edit
+pending"; an advertiser that doesn't require approval gets a small "Auto" tag.
+
+```tsx
+// before
+columnDefs = [ …, { headerName: 'Status', cellRenderer: StatusDot }, … ]
+// after: same approvals map as the Status example above (one bulk listApprovals)
+columnDefs = [ …, { headerName: 'Status', cellRenderer: StatusDot },
+  { headerName: 'Advertiser',
+    cellRenderer: ({ data }) => <AdvertiserCell advertiserName={data.advertiserName} dspName={data.partnerName} approval={approvals[data.id]} /> }, … ]
+```
+
+**Advertiser filter.** `rows` → `filterByAdvertiser(rows, advertiserId, user.advertiserId)`.
+For a logged-in direct advertiser pass their id as `lockedTo`: the control is
+disabled and shows only them. The server must apply the same scope.
+
+```tsx
+<AdvertiserFilter advertisers={advertisers} value={advertiserId} onChange={setAdvertiserId} lockedTo={user.advertiserId} />
+```
+
+**Advertiser Bookings button.** Left of "Launch a New Campaign"; the count
+comes from the same approvals map, no extra request.
+
+```tsx
+// before
+<div className="flex gap-8"><LaunchCampaignButton /></div>
+// after
+<div className="flex gap-8">
+  <AdvertiserBookingsButton awaitingCount={awaitingCount(approvals)} onClick={() => navigate('/advertiser-bookings?tab=campaign-status')} />
+  <LaunchCampaignButton />
+</div>
+```
+
+Note `awaitingCount(approvals)` counts the rows loaded; for the true total
+use the `awaiting_approval` count from `GET /admin/v1/approvals` (the same
+counts that feed `ApprovalStatusFilter`).
+
+---
+
 ## 3. Where the main repo must call `isCampaignEligible`
 
 `approvals.isCampaignEligible(campaignId)` returns `true` only for an HQ

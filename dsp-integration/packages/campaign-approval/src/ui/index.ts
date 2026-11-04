@@ -8,3 +8,6 @@ export { ApprovalStatusFilter, RETAILER_VISIBLE_STATUSES } from './ApprovalStatu
 export { ApprovalReviewPanel } from './ApprovalReviewPanel'
 export { useCampaignApprovals, type ApprovalClient } from './useCampaignApprovals'
 export * from '../types'
+export { AdvertiserCell, awaitingCount, type AdvertiserCellProps } from './AdvertiserCell'
+export { AdvertiserFilter, filterByAdvertiser, type AdvertiserOption } from './AdvertiserFilter'
+export { AdvertiserBookingsButton } from './AdvertiserBookingsButton'
