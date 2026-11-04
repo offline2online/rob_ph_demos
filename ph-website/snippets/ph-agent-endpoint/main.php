@@ -1,6 +1,6 @@
 <?php
 /**
- * PH Agent Endpoint (Angie snippet). Version 1.3.0
+ * PH Agent Endpoint (Angie snippet). Version 1.4.0
  *
  * Markdown twins (?format=md), one shared JSON-LD graph and llms.txt sections
  * for the allow-listed pages in lib.php. Industries, Blog and Support Centre
@@ -16,6 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 require_once __DIR__ . '/lib.php';
 require_once __DIR__ . '/tools.php';
+require_once __DIR__ . '/faq.php';
 
 /** Plain-array view of a post for is_exposable(). No extra queries beyond meta. */
 function post_view( $post ) {
@@ -59,7 +60,7 @@ function twin_for( $post ) {
 		if ( trim( (string) $html ) === '' ) {
 			$html = apply_filters( 'the_content', $post->post_content );
 		}
-		$md = markdown_twin( page_title( $post ), page_summary( $post ), page_url( $post->ID ), $html );
+		$md = markdown_twin( page_title( $post ), page_summary( $post ), page_url( $post->ID ), $html . faq_html( $post->ID ) );
 		set_transient( $key, $md, 300 );
 	}
 	return $md;
@@ -84,6 +85,34 @@ add_action( 'wp_head', function () {
 	}
 	echo '<link rel="alternate" type="text/markdown" href="' . esc_url( twin_url( $post->ID ) ) . "\" />\n";
 }, 20 );
+
+/* Feature Q&A: FAQPage JSON-LD (its own script tag, same data as the visible block) and the block itself. */
+add_action( 'wp_head', function () {
+	$post = current_exposable();
+	$g    = $post ? faq_graph( $post->ID ) : null;
+	if ( $g ) {
+		$j = json_ld( $g );
+		if ( $j !== '' ) {
+			echo '<script type="application/ld+json">' . $j . "</script>\n";
+		}
+	}
+}, 21 );
+
+add_filter( 'the_content', function ( $content ) {
+	static $done = array();
+	if ( is_admin() || ! is_singular( 'page' ) || ! in_the_loop() || ! is_main_query() ) {
+		return $content;
+	}
+	$post = current_exposable();
+	if ( ! $post || isset( $done[ $post->ID ] ) || ! faq_for( $post->ID ) ) {
+		return $content;
+	}
+	if ( class_exists( '\Elementor\Plugin' ) && ( \Elementor\Plugin::$instance->editor->is_edit_mode() || \Elementor\Plugin::$instance->preview->is_preview_mode() ) ) {
+		return $content;
+	}
+	$done[ $post->ID ] = true;
+	return $content . faq_html( $post->ID ); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in faq_html().
+}, 99 );
 
 /* Markdown twin. */
 add_action( 'template_redirect', function () {

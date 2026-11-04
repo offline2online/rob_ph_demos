@@ -5,6 +5,10 @@ return '# Personalisation Hub
 
 Try it: 30-day free trial on AWS Marketplace (https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76?trk=59c672e4-15c4-4782-aee9-4352db108809&sc_channel=el&source=personalisationhub).
 
+## Overview
+
+- [Personalisation Hub home](https://personalisationhub.com/?format=md): what the platform is, who it is for and how it works.
+
 ## Industries
 
 - [Personalisation Hub by industry](https://personalisationhub.com/industries/?format=md): overview of every industry.
@@ -18,6 +22,10 @@ Try it: 30-day free trial on AWS Marketplace (https://aws.amazon.com/marketplace
 - [Quick Service Restaurants](https://personalisationhub.com/industries/qsr/?format=md): Higher order value from every screen.
 - [Banking](https://personalisationhub.com/industries/banking/?format=md): More home loan applications from branches.
 
+## Pricing and trial
+
+- [Personalisation Hub on AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76?trk=59c672e4-15c4-4782-aee9-4352db108809&sc_channel=el&source=personalisationhub): buy and deploy into your own AWS account; 30-day free trial. Pricing is listed on the Marketplace page.
+
 ## Platform
 
 - [Digital Signage](https://personalisationhub.com/digital-signage/)
@@ -25,6 +33,9 @@ Try it: 30-day free trial on AWS Marketplace (https://aws.amazon.com/marketplace
 - [Appointment Booking](https://personalisationhub.com/retail-appointment-bookings/)
 - [Retail Media Platform](https://personalisationhub.com/retail-media-platform/)
 - [Store Sites](https://personalisationhub.com/store-sites/)
+- [Personalisation](https://personalisationhub.com/personalisation/)
+- [Localisation and Geo-Targeting](https://personalisationhub.com/localisation-geo-targeting/)
+- [AI Agents](https://personalisationhub.com/ai-agents/)
 - [Support Centre](https://personalisationhub.com/support-centre/)
 - [Blog](https://personalisationhub.com/blog/)
 ';

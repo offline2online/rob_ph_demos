@@ -5,7 +5,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.6.1';
+const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.7.0';
+require_once __DIR__ . '/telco-lead.php';
+
 const KEYS = [ 'industries', 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' ];
 
 function page_key() {
@@ -90,9 +92,27 @@ add_action( 'template_redirect', function () {
 
 /**
  * ElementsKit's icon font (ekiticons.css -> elementskit.woff, 455 KB) only drew the header burger and submenu chevron,
- * which nav.css now draws as SVG. Drop the stylesheet everywhere on the front end.
+ * which nav.css now draws as SVG. Drop the stylesheet everywhere on the front end, but keep it in the Elementor editor and preview.
+ * Elementor enqueues the handle while rendering the Icon widget and the ElementsKit nav, after wp_enqueue_scripts has run,
+ * so it is dropped again at print time (footer scripts, priority 1) and, as a last resort, filtered out of the printed tag.
  */
-add_action( 'wp_enqueue_scripts', function () {
+function drop_ekiticons_here() {
+	if ( is_admin() || is_customize_preview() ) {
+		return false;
+	}
+	if ( isset( $_GET['elementor-preview'] ) || isset( $_GET['preview_id'] ) || isset( $_GET['elementor_library'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+		return false;
+	}
+	if ( class_exists( '\\Elementor\\Plugin' ) && isset( \Elementor\Plugin::$instance->preview ) && \Elementor\Plugin::$instance->preview->is_preview_mode() ) {
+		return false;
+	}
+	return true;
+}
+
+function drop_ekiticons() {
+	if ( ! drop_ekiticons_here() ) {
+		return;
+	}
 	$styles = wp_styles();
 	foreach ( $styles->registered as $handle => $style ) {
 		if ( is_string( $style->src ) && false !== strpos( $style->src, 'ekiticons.css' ) ) {
@@ -107,7 +127,18 @@ add_action( 'wp_enqueue_scripts', function () {
 			} ) );
 		}
 	}
-}, 9999 );
+}
+
+add_action( 'wp_enqueue_scripts', __NAMESPACE__ . '\\drop_ekiticons', 9999 );
+add_action( 'elementor/frontend/after_enqueue_styles', __NAMESPACE__ . '\\drop_ekiticons', 9999 );
+add_action( 'wp_print_footer_scripts', __NAMESPACE__ . '\\drop_ekiticons', 1 );
+
+add_filter( 'style_loader_tag', function ( $tag, $handle, $href ) {
+	if ( is_string( $href ) && false !== strpos( $href, 'ekiticons.css' ) && drop_ekiticons_here() ) {
+		return '';
+	}
+	return $tag;
+}, 10, 3 );
 
 /** Home hero background (Elementor container 155fba3): found early so it loads with the HTML, not after the CSS. */
 function hero_bg_url() {
