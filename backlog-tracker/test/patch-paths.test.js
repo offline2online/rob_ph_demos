@@ -6,7 +6,7 @@
    repo's shape at the time. */
 const assert = require("node:assert");
 
-const { normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative } = require("../scripts/run-backlog-automation.js");
+const { normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative, pendingRepoFolderOf, placePatchInNewFolder } = require("../scripts/run-backlog-automation.js");
 
 // The tree of main on 22 Sep, as a set of existing paths (files and dirs).
 const TREE = new Set([
@@ -139,6 +139,23 @@ assert.strictEqual(projectFolderOf(null, isDir), null);
   // applyPatchFiles's own checks handle those.
   assert.strictEqual(patchFilesLookFolderRelative([], exists), false);
   assert.strictEqual(patchFilesLookFolderRelative([{ path: "../etc/passwd", content: "x" }], exists), false);
+}
+
+// A new project's first patch: repoFolder declared, folder absent from disk.
+{
+  assert.strictEqual(pendingRepoFolderOf({ repoFolder: "new-proj" }, exists), "new-proj");
+  assert.strictEqual(pendingRepoFolderOf({ repoFolder: "dsp-integration" }, (p) => TREE.has(p)), null, "an existing folder is not pending");
+  assert.strictEqual(pendingRepoFolderOf({ repoFolder: "new-proj", repoFolderNotApplicable: true }, exists), null);
+  assert.strictEqual(pendingRepoFolderOf({ deployBranch: "deploy/x" }, exists), null, "no repoFolder: the PR #185 guard still applies");
+  let r = placePatchInNewFolder([{ path: "new-proj/a.php", content: "x" }], "new-proj", exists);
+  assert.deepStrictEqual(paths(r.files), ["new-proj/a.php"]);
+  assert.deepStrictEqual(r.moved, []);
+  r = placePatchInNewFolder([{ path: "a.php", content: "x" }, { path: "lib/b.js", content: "x" }], "new-proj", exists);
+  assert.deepStrictEqual(paths(r.files), ["new-proj/a.php", "new-proj/lib/b.js"]);
+  assert.strictEqual(r.moved.length, 2);
+  // touches a real root entry: trusted as root-relative, left alone
+  r = placePatchInNewFolder([{ path: "a.php", content: "x" }, { path: "CLAUDE.md", content: "x" }], "new-proj", exists);
+  assert.deepStrictEqual(paths(r.files), ["a.php", "CLAUDE.md"]);
 }
 
 console.log("patch-paths: all assertions passed");
