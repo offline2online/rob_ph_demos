@@ -2,18 +2,18 @@
   {
     "id": 10063,
     "title": "PH Industry Enhancements",
-    "version": "1.6.1",
+    "version": "1.7.0",
     "folder": "ph-industry-enhancements",
     "files": [
       {
         "name": "enhance.css",
-        "bytes": 5637,
-        "sha256": "807dad6916e93a61f1e3e31aa6ab872effca54251a896537d74140ac60d11bfb"
+        "bytes": 7321,
+        "sha256": "f0e0c40d0ceab8be7bf3a5cb70de6eac1374f39d795b01a38686b3765893c031"
       },
       {
         "name": "enhance.js",
-        "bytes": 25868,
-        "sha256": "0b05c8dff2e04cd95bbd94da7d677283d80f595e2fb312b2d40700a994a50009"
+        "bytes": 30933,
+        "sha256": "6c9c2c89cd3e8e37244f7ee20bafdb4c803c497999756ee504e244c171bca803"
       },
       {
         "name": "footer.css",
@@ -32,8 +32,8 @@
       },
       {
         "name": "main.php",
-        "bytes": 5448,
-        "sha256": "95a05dfe849dfc5db69dd3af221ee9e820d94d0131088cb024413daf2d13c9a8"
+        "bytes": 5491,
+        "sha256": "1be1aec64b6adb9160c1542b3fdb16ded6db706ef023cd6de2c433b635aba2ce"
       },
       {
         "name": "md.php",
@@ -42,13 +42,23 @@
       },
       {
         "name": "nav.css",
-        "bytes": 3594,
-        "sha256": "37b4bbeeca4b3109acc8cce504751a683d3b651ee87adb720f25baa385181df4"
+        "bytes": 4116,
+        "sha256": "491d2d9c2dc7fc09b5bf02fa7f58876392e535d6aec53db68eae9938e94ada90"
       },
       {
         "name": "site.js",
-        "bytes": 1315,
-        "sha256": "d0d82bd4b9a0e13df4d34cdd93bd4a1f377c3359e3e3f75416842ee1c794710a"
+        "bytes": 2374,
+        "sha256": "a2518616b593877292f07b590318f168a2be12d1647ac6c630d10898762fd60e"
+      },
+      {
+        "name": "telco-lead.php",
+        "bytes": 5102,
+        "sha256": "345630d74bee049435dbc70d480aee033e9a75850fb4bc86f705fe23c4daed40"
+      },
+      {
+        "name": "telco-model.php",
+        "bytes": 20512,
+        "sha256": "349a480a5d8ef186a59424ade7b18e81fe43dd36eed244756081939b0bca502a"
       }
     ]
   },
