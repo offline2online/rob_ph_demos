@@ -53,3 +53,7 @@ Agent traffic is logged without personal data. No IP, user agent, query string, 
 | CTA click by an agent | `start_free_trial` and `book_demo` return `trackedUrl` (`/go/free-trial/?via=webmcp`, `/go/demo/?via=webmcp`; the remote server rewrites `via` to `remote-mcp`) beside the exact `url`. `main.php` serves `/go/<slug>/`, records `ph_agent_cta` and answers a 302 to the exact link | `cta`, `source` (`webmcp`, `remote-mcp` or `agent`), `agent: true`, `referrer` host, `at` |
 
 The hop's target comes from `go_targets()` in `tools.php`, never from the request, so it cannot be used as an open redirect. Events are appended to a capped option (`ph_ae_cta_log`, last 500) and passed to `do_action( 'ph_agent_cta', $event )` for RevOps listeners. A human click on the same CTA goes straight to the link (or through the site's existing `ph_ind_cta` event) and never carries `agent: true`.
+
+## Security gate (ticket "Security gate and go-live")
+
+1.3.0 adds, from the pen test in `../../SECURITY-GATE.md`: a per-address rate limit on `/ph-agent/v1/tools/{name}` (120 a minute, `429` with `Retry-After`; `ph_ae_rate_max_tools` filter) and on the CTA hop's recording (30 a minute; the redirect always happens), a cache key built from sorted arguments, CORS `*` without credentials plus `nosniff` on `/ph-agent/v1` responses only, and a sanitised "Unknown argument" error. The address is hashed with the site salt for the counter and never stored.

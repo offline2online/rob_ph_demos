@@ -237,7 +237,8 @@ foreach ( $defs as $d ) {
 /* REST glue against stubs: routes, allow-list through the source, cache flush, loader */
 $GLOBALS['routes'] = array();
 function register_rest_route( $ns, $route, $a ) { $GLOBALS['routes'][ $ns . $route ] = $a; }
-function rest_ensure_response( $d ) { return new class( $d ) { public $d; public $h = array(); function __construct( $d ) { $this->d = $d; } function header( $k, $v ) { $this->h[ $k ] = $v; } }; }
+function rest_ensure_response( $d ) { return new class( $d ) { public $d; public $h = array(); function __construct( $d ) { $this->d = $d; } function header( $k, $v ) { $this->h[ $k ] = $v; } function set_status( $c ) { $this->status = $c; } public $status = 200; }; }
+function wp_salt() { return 'test-salt'; }
 function get_option( $k, $d = false ) { return $GLOBALS['opts'][ $k ] ?? $d; }
 function update_option( $k, $v ) { $GLOBALS['opts'][ $k ] = $v; }
 function get_transient( $k ) { return $GLOBALS['tr'][ $k ] ?? false; }
@@ -289,6 +290,31 @@ $GLOBALS['hooks']['save_post'][0]( 555, $GLOBALS['posts'][555] );
 ok( ( $GLOBALS['opts']['ph_ae_gen'] ?? 1 ) === $g0 + 1, 'saving a demo page does not' );
 $GLOBALS['hooks']['save_post'][0]( 9, (object) array( 'ID' => 9, 'post_type' => 'ph_help_article' ) );
 ok( ( $GLOBALS['opts']['ph_ae_gen'] ?? 1 ) === $g0 + 2, 'saving a help article does' );
+
+/* Pen test fixes (PT-02, PT-04, PT-05): rate limit, stable cache key, sanitised errors, CORS filter */
+use function PhAgentEndpoint\{rate_wait,args_key,rate_hit,tool_def};
+ok( rate_wait( 120, 120, 30 ) === 0 && rate_wait( 121, 120, 30 ) === 30 && rate_wait( 500, 120, 0 ) === 1, 'rate_wait: at the limit passes, over it waits at least 1 s' );
+ok( args_key( array( 'b' => 2, 'a' => 1 ) ) === args_key( array( 'a' => 1, 'b' => 2 ) ), 'cache key ignores argument order' );
+$ua = validate_args( tool_def( 'search_help' )['inputSchema'], array( 'query' => 'x', '<script>alert(1)</script>' => 1 ) );
+ok( strpos( $ua, '<' ) === false && strpos( $ua, '(' ) === false, 'unknown-argument error does not echo markup' );
+$_SERVER['REMOTE_ADDR'] = '203.0.113.5';
+$GLOBALS['tr'] = array();
+$last = 0;
+for ( $i = 0; $i < 31; $i++ ) {
+	$last = rate_hit( 'cta', 30 );
+}
+ok( $last >= 1, 'the 31st CTA hop in a minute is over the limit' );
+$_SERVER['REMOTE_ADDR'] = '203.0.113.6';
+ok( rate_hit( 'cta', 30 ) === 0, 'another address has its own budget' );
+$GLOBALS['tr'] = array();
+$_SERVER['REMOTE_ADDR'] = '203.0.113.7';
+for ( $i = 0; $i < 120; $i++ ) {
+	$call( new Req( array( 'name' => 'book_demo' ) ) );
+}
+$lim = $call( new Req( array( 'name' => 'book_demo' ) ) );
+ok( $lim->status === 429 && isset( $lim->h['Retry-After'] ) && $lim->h['Cache-Control'] === 'no-store' && ! empty( $lim->d['isError'] ), 'tool route answers 429 with Retry-After and no-store after 120 calls' );
+ok( strpos( json_encode( $lim->d ), '203.0.113' ) === false, '429 body does not echo the address' );
+ok( isset( $GLOBALS['hooks']['rest_pre_serve_request'] ), 'CORS/nosniff filter registered for the agent routes' );
 
 /* the loader: printed only on exposable allow-listed pages, inline and small */
 $js = file_get_contents( $dir . '/webmcp.js' );

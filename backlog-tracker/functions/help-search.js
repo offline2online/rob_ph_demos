@@ -378,8 +378,16 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
   }
 
   function clientIp(req) {
-    const fwd = String((req.get && req.get("x-forwarded-for")) || "").split(",")[0].trim();
-    return fwd || req.ip || "unknown";
+    // The first x-forwarded-for entry is whatever the caller wrote, so keying on it lets
+    // anyone dodge the limit by changing a header (pen test PT-01). Use the edge's own
+    // client address; failing that count from the RIGHT, where our proxies append: the
+    // entry before the last hop. Anything a caller prepends only moves entries left.
+    const hdr = (k) => String((req.get && req.get(k)) || "").trim();
+    const edge = hdr("fastly-client-ip");
+    if (edge) return edge;
+    const hops = hdr("x-forwarded-for").split(",").map((x) => x.trim()).filter(Boolean);
+    if (hops.length >= 2) return hops[hops.length - 2];
+    return hops[0] || req.ip || "unknown";
   }
   // Per client AND per endpoint class, so a client hammering the MCP route
   // cannot use up its search budget, and the reverse. Returns
@@ -620,7 +628,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
       if (path === "/article" && req.method === "GET") {
         const r = await article({ id: q.id, slug: q.slug, release: q.release });
         if (r.status !== 200) { res.status(r.status).json(r.body); return; }
-        res.set("Cache-Control", "public, max-age=60").set("X-Cache", r.cached ? "HIT" : "MISS");
+        res.set("Cache-Control", "public, max-age=60").set("Vary", "Accept").set("X-Cache", r.cached ? "HIT" : "MISS"); // Accept picks JSON or markdown at one URL: a shared cache must not mix them (PT-06)
         const wantsMd = q.format === "md" || /text\/markdown/.test(String((req.get && req.get("accept")) || ""));
         if (wantsMd) res.status(200).type("text/markdown; charset=utf-8").send(await articleMarkdown(r.body));
         else res.status(200).json(r.body);
@@ -641,6 +649,8 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         const body = req.body;
         if (Array.isArray(body)) {
           if (body.length > 20) { res.status(400).json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Batch too large" } }); return; }
+          // A batch is up to 20 calls: charge the extra 19 to the same budget (PT-03).
+          for (let i = 1; i < body.length; i += 1) limited(req, "mcp");
           const ctx = { cache: [], referrer: referrerHost(req) };
           const out = (await Promise.all(body.map((m) => mcpMessage(m, ctx)))).filter(Boolean);
           if (ctx.cache.length) res.set("X-Cache", ctx.cache.every(Boolean) ? "HIT" : "MISS");

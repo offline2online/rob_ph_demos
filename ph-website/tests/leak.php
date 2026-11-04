@@ -76,7 +76,8 @@ function get_queried_object_id() { return $GLOBALS['q']; }
 function esc_url( $u ) { return $u; }
 function delete_transient() {}
 function register_rest_route( $ns, $route, $a ) { $GLOBALS['routes'][ $ns . $route ] = $a; }
-function rest_ensure_response( $d ) { return new class( $d ) { public $d; public $h = array(); function __construct( $d ) { $this->d = $d; } function header( $k, $v ) { $this->h[ $k ] = $v; } }; }
+function rest_ensure_response( $d ) { return new class( $d ) { public $d; public $h = array(); function __construct( $d ) { $this->d = $d; } function header( $k, $v ) { $this->h[ $k ] = $v; } function set_status( $c ) { $this->status = $c; } public $status = 200; }; }
+function wp_salt() { return 'test-salt'; }
 function get_option( $k, $d = false ) { return $GLOBALS['opts'][ $k ] ?? $d; }
 function update_option( $k, $v ) { $GLOBALS['opts'][ $k ] = $v; }
 function get_transient( $k ) { return $GLOBALS['tr'][ $k ] ?? false; }

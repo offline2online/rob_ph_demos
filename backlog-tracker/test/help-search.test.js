@@ -161,6 +161,23 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1", hdr = {}) =>
   t += 61_000;
   assert.strictEqual((await call("GET", "/help-api/search", { q: "store" }, undefined, "2.2.2.2")).code, 200);
 
+  // 5c. pen test PT-01: a caller-written X-Forwarded-For must not buy a fresh budget; PT-03: a batch is charged per message
+  api = small(); // 5 per minute on read, 2 on mcp
+  for (let i = 0; i < 5; i++) assert.strictEqual((await call("GET", "/help-api/search", { q: "store" }, undefined, "10.0.0.1", { "x-forwarded-for": `${i}.${i}.${i}.${i}, 198.51.100.7, 35.1.1.1` })).code, 200);
+  r = await call("GET", "/help-api/search", { q: "store" }, undefined, "10.0.0.1", { "x-forwarded-for": "6.6.6.6, 198.51.100.7, 35.1.1.1" });
+  assert.strictEqual(r.code, 429, "spoofed leading X-Forwarded-For entries share one budget");
+  r = await call("GET", "/help-api/search", { q: "store" }, undefined, "10.0.0.1", { "fastly-client-ip": "198.51.100.99", "x-forwarded-for": "6.6.6.6, 198.51.100.7, 35.1.1.1" });
+  assert.strictEqual(r.code, 200, "the edge's own client address wins and is its own budget");
+  api = small();
+  const batch = Array.from({ length: 4 }, (_, i) => ({ jsonrpc: "2.0", id: i + 1, method: "ping" }));
+  assert.strictEqual((await call("POST", "/help-api/mcp", {}, batch, "4.4.4.4")).code, 200);
+  r = await call("POST", "/help-api/mcp", {}, [{ jsonrpc: "2.0", id: 1, method: "ping" }], "4.4.4.4");
+  assert.strictEqual(r.code, 429, "a 4-message batch used up the budget of 4 single calls");
+  // PT-06: the article route answers JSON or markdown at one URL, so a shared cache must key on Accept
+  api = createHelpApi({ db, now: () => t, rateMax: 100000, fetchImpl });
+  r = await call("GET", "/help-api/article", { id: "a1" });
+  assert.strictEqual(r.code, 200); assert.strictEqual(r.headers.Vary, "Accept");
+
   api = createHelpApi({ db, now: () => t, rateMax: 100000, fetchImpl });
   // 6. MCP: a live proxy of the site's eight tools. initialize, list, call; notifications get 202; unknown tool errors
   api._reset(); wpCalls = []; wpMode = "ok";

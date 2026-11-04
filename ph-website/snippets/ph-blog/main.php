@@ -518,6 +518,7 @@ add_action( 'template_redirect', function () {
 	status_header( 200 );
 	header( 'Content-Type: text/markdown; charset=utf-8' );
 	header( 'X-Robots-Tag: noindex' );
+	header( 'X-Content-Type-Options: nosniff' );
 	echo $md; // phpcs:ignore WordPress.Security.EscapeOutput -- plain-text markdown.
 	exit;
 }, 1 );

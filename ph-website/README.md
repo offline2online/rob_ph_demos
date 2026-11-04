@@ -27,3 +27,9 @@ Spec: project document "Agent endpoint release: design and build guide" (PH Webs
 ## Leak tests
 
 `php ph-website/tests/leak.php` seeds a draft, scheduled, private, password-protected and noindex page, demo pages outside the allow-list, an out-of-range help article and internal fields (`ph_help_*`, hash, programme, project), then checks llms.txt, markdown twins, JSON-LD, the `ph-agent/v1` tools list and every tool call, the WebMCP loader and the Support Centre's public routes. `node backlog-tracker/test/help-leak.test.js` does the same for `/help-api/search`, `/help-api/article` and the remote MCP server (stubbed fetch). Both run without network inside the console's `npm run test:offline` (via `test:mcp`), so every train runs them and a leak blocks the deploy; a failure names the endpoint.
+
+## Security gate and the production check
+
+`SECURITY-GATE.md` is the go-live record for the agent endpoint release: the pen test checklist and results for every public endpoint, the findings (PT-01 to PT-08) and the fix for each, the leak, rate-limit, alert and RevOps results, and the post-deploy steps. `node ph-website/tests/e2e-live.mjs` is the check the PH Website session runs against production after the WordPress deploy (every page type, every tool, the twins, JSON-LD, llms.txt, the CTA links, 429 behaviour, headers and console errors; prints a pass/fail table; `--dry-run` lists the checks without network, `--stress` also exercises the WordPress route's 429). The dry run is part of `test:mcp`.
+
+`snippets/MANIFEST.json` describes what is live. The security fixes change `ph-agent-endpoint/` (1.3.0) and `ph-blog/main.php`; regenerate the manifest entries for those files after the deploy snapshot, not before.

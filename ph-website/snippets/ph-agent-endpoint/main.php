@@ -1,6 +1,6 @@
 <?php
 /**
- * PH Agent Endpoint (Angie snippet). Version 1.2.0
+ * PH Agent Endpoint (Angie snippet). Version 1.3.0
  *
  * Markdown twins (?format=md), one shared JSON-LD graph and llms.txt sections
  * for the allow-listed pages in lib.php. Industries, Blog and Support Centre
@@ -227,9 +227,23 @@ function tool_source() {
 	);
 }
 
+/**
+ * Fixed-window rate limit per address and bucket (pen test PT-04). The address
+ * is hashed with the site salt for the transient key and never stored or logged.
+ * Returns seconds to wait when over the limit, else 0.
+ */
+function rate_hit( $bucket, $max ) {
+	$ip  = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : 'unknown';
+	$win = (int) floor( time() / 60 );
+	$key = 'ph_ae_rl_' . $bucket . '_' . substr( md5( $ip . '|' . wp_salt() . '|' . $win ), 0, 20 );
+	$n   = (int) get_transient( $key ) + 1;
+	set_transient( $key, $n, 90 );
+	return rate_wait( $n, (int) apply_filters( 'ph_ae_rate_max_' . $bucket, $max ), ( $win + 1 ) * 60 - time() );
+}
+
 /** Run a tool through the 5-minute cache. Only successful results are cached. */
 function call_tool_cached( $name, $args ) {
-	$key = 'ph_ae_t_' . md5( tools_generation() . '|' . $name . '|' . wp_json_encode( $args ) );
+	$key = 'ph_ae_t_' . md5( tools_generation() . '|' . $name . '|' . args_key( $args ) );
 	$hit = get_transient( $key );
 	if ( is_array( $hit ) ) {
 		return $hit;
@@ -255,6 +269,14 @@ add_action( 'rest_api_init', function () {
 		'methods'             => 'GET',
 		'permission_callback' => '__return_true',
 		'callback'            => function ( $req ) {
+			$wait = rate_hit( 'tools', RATE_TOOLS_MAX );
+			if ( $wait ) {
+				$r = rest_ensure_response( tool_error( "Too many requests from this address. Try again in $wait seconds." ) );
+				$r->set_status( 429 );
+				$r->header( 'Retry-After', (string) $wait );
+				$r->header( 'Cache-Control', 'no-store' );
+				return $r;
+			}
 			$raw  = $req->get_param( 'args' );
 			$args = array();
 			if ( is_string( $raw ) && '' !== $raw ) {
@@ -267,6 +289,22 @@ add_action( 'rest_api_init', function () {
 		},
 	) );
 } );
+
+/*
+ * Headers on our routes only (pen test PT-05). WordPress reflects any Origin and
+ * allows credentials on REST responses; these routes are public, read-only and
+ * never use cookies, so answer "*" without credentials and add nosniff.
+ */
+add_filter( 'rest_pre_serve_request', function ( $served, $result, $request ) {
+	if ( 0 === strpos( (string) $request->get_route(), '/ph-agent/v1' ) ) {
+		header_remove( 'Access-Control-Allow-Credentials' );
+		header( 'Access-Control-Allow-Origin: *' );
+		header( 'Access-Control-Allow-Methods: GET, OPTIONS' );
+		header( 'X-Content-Type-Options: nosniff' );
+		header( 'Cross-Origin-Resource-Policy: cross-origin' );
+	}
+	return $served;
+}, 20, 3 );
 
 /* Content changed: start a new cache generation (tool results and twins), only for content the tools read. */
 add_action( 'save_post', function ( $id, $post ) {
@@ -323,13 +361,16 @@ add_action( 'template_redirect', function () {
 	if ( ! $hit ) {
 		return;
 	}
+	$over = rate_hit( 'cta', RATE_CTA_MAX ); // Past the limit the visitor is still sent on, but nothing is written (PT-02: no unbounded option writes).
 	$via = go_via( isset( $_GET['via'] ) ? (string) wp_unslash( $_GET['via'] ) : '' ); // phpcs:ignore WordPress.Security.NonceVerification
-	$ev  = cta_event( $hit[0], $via, isset( $_SERVER['HTTP_REFERER'] ) ? wp_unslash( $_SERVER['HTTP_REFERER'] ) : '', time() ); // phpcs:ignore WordPress.Security
-	$log = get_option( CTA_LOG_OPTION, array() );
-	$log = is_array( $log ) ? $log : array();
-	$log[] = $ev;
-	update_option( CTA_LOG_OPTION, array_slice( $log, -CTA_LOG_MAX ), false );
-	do_action( 'ph_agent_cta', $ev ); // RevOps listeners (and GTM server-side) hook here.
+	if ( ! $over ) {
+		$ev  = cta_event( $hit[0], $via, isset( $_SERVER['HTTP_REFERER'] ) ? wp_unslash( $_SERVER['HTTP_REFERER'] ) : '', time() ); // phpcs:ignore WordPress.Security
+		$log = get_option( CTA_LOG_OPTION, array() );
+		$log = is_array( $log ) ? $log : array();
+		$log[] = $ev;
+		update_option( CTA_LOG_OPTION, array_slice( $log, -CTA_LOG_MAX ), false );
+		do_action( 'ph_agent_cta', $ev ); // RevOps listeners (and GTM server-side) hook here.
+	}
 	nocache_headers();
 	header( 'X-Robots-Tag: noindex, nofollow' );
 	header( 'Referrer-Policy: no-referrer' );

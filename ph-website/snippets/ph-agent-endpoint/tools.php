@@ -25,6 +25,21 @@ function go_target( $path ) {
 	return isset( go_targets()[ $slug ] ) ? array( $slug, go_targets()[ $slug ] ) : null;
 }
 
+/** Requests per address per minute on the public tool routes and on the CTA hop (pen test PT-04). Filterable in main.php. */
+const RATE_TOOLS_MAX = 120;
+const RATE_CTA_MAX   = 30;
+
+/** Seconds to wait when $count requests have been seen in the current window and $max is the limit, else 0. */
+function rate_wait( $count, $max, $window_left ) {
+	return $count > $max ? max( 1, (int) $window_left ) : 0;
+}
+
+/** Stable form of decoded args for a cache key: sorted keys, so {"a":1,"b":2} and {"b":2,"a":1} share one entry. */
+function args_key( array $args ) {
+	ksort( $args );
+	return json_encode( $args, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+}
+
 /** Which surface sent the agent: only these two values are ever recorded, anything else is plain "agent". */
 function go_via( $raw ) {
 	return in_array( $raw, array( 'webmcp', 'remote-mcp' ), true ) ? $raw : 'agent';
@@ -171,7 +186,7 @@ function validate_args( array $schema, $args ) {
 	}
 	foreach ( $args as $k => $v ) {
 		if ( ! array_key_exists( $k, $props ) ) {
-			return "Unknown argument: $k.";
+			return 'Unknown argument: ' . mb_substr( preg_replace( '/[^\w .\/-]/u', '', (string) $k ), 0, 40 ) . '.';
 		}
 		$p = $props[ $k ];
 		if ( 'string' === $p['type'] ) {
