@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER       = '1.0.7';
+const VER       = '1.0.8';
 const BLOG_ID   = 10147;
 const AVATAR_ID = 10097;
 const WPM       = 200;
@@ -171,7 +171,7 @@ function menu_html( $current_id ) {
 	$n = $count['all'];
 	return '<nav class="ph-blog-menu" aria-label="Articles"><div class="ph-blog-menu-in"><div class="ph-blog-menu-top">'
 		. '<div class="ph-blog-menu-h"><h2>Articles</h2><label class="screen-reader-text" for="ph-blog-section">Filter by section</label><select id="ph-blog-section" class="ph-blog-sel">' . $opts . '</select></div>'
-		. '<div class="ph-blog-menu-sub"><span class="ph-blog-count" aria-live="polite">' . esc_html( $n . ( 1 === $n ? ' article' : ' articles' ) ) . '</span><span class="ph-blog-sortw"><label for="ph-blog-sort">Sort</label><select id="ph-blog-sort" class="ph-blog-sel ph-blog-sel-min"><option value="new">Newest first</option><option value="old">Oldest first</option><option value="quick">Quickest reads</option></select></span></div>'
+		. '<div class="ph-blog-menu-sub"><span class="ph-blog-count" aria-live="polite">' . esc_html( $n . ( 1 === $n ? ' article' : ' articles' ) ) . '</span></div>'
 		. '</div><div class="ph-blog-mwrap"><div class="ph-blog-mlist">' . $items . '<p class="ph-blog-empty" hidden>No articles in this section yet.</p></div><div class="ph-blog-sbar" aria-hidden="true"><span></span></div></div></div></nav>';
 }
 

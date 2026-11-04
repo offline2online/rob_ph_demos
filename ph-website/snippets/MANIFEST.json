@@ -55,23 +55,23 @@
   {
     "id": 10116,
     "title": "PH Blog",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "folder": "ph-blog",
     "files": [
       {
         "name": "blog.css",
-        "bytes": 21020,
-        "sha256": "d6275c632288f6a2febc0d84fa221b4722b839f48ba51c604684ea0a1770a673"
+        "bytes": 20928,
+        "sha256": "e99f959f44b46c7e1de9b342f874e3a01fd307d21a1b723e6aa96180607b46bf"
       },
       {
         "name": "blog.js",
-        "bytes": 6535,
-        "sha256": "832e13d359b0974d66cc8e50b6ef1ae3ca360263f56377d2a4f8779f577c28c3"
+        "bytes": 6055,
+        "sha256": "1f8e425aecda85000a358207c36a4824e7dbf210a3ad87afaf1b533e99efc949"
       },
       {
         "name": "main.php",
-        "bytes": 24067,
-        "sha256": "f1410032b506a3a2d4a05d870bbbb19c469ddb490b9f7b6371d039a5db19c54d"
+        "bytes": 23842,
+        "sha256": "cafe6617da778ee60a7a3afa1321641fcdaf758db3fb94b0f0232c317b1ae906"
       }
     ]
   },

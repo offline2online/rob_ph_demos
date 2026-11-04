@@ -36,7 +36,7 @@ session substitutes the real id for `___ID__` at first deploy and records it in 
 
 Every page declares the same `Organization` (`https://personalisationhub.com/#organization`) and
 `SoftwareApplication` (`#software`) nodes, with identical properties. `organization_node()` and
-`software_node()` in `lib.php` are the source; the Blog (1.0.7), Support Centre (1.3.2) and Industries
+`software_node()` in `lib.php` are the source; the Blog (1.0.8), Support Centre (1.3.2) and Industries
 (`ld.php`) snippets carry identical copies (their own functions, so none depends on this snippet being
 loaded). `tests/run.php` renders Home, a Blog post, the Support Centre and an industry page through each
 snippet's own code and fails if the nodes differ or any `#org` id remains. Change a property in all four

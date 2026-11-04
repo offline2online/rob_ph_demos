@@ -42,24 +42,19 @@
   window.addEventListener("load", setTop);
   setTop();
 
-  /* article menu: section filter and sort */
+  /* article menu: section filter */
   var menu = document.querySelector(".ph-blog-menu");
   if (menu) {
     var list = menu.querySelector(".ph-blog-mlist");
     var items = [].slice.call(list.querySelectorAll(".ph-blog-mi"));
     var sec = menu.querySelector("#ph-blog-section");
-    var sort = menu.querySelector("#ph-blog-sort");
     var empty = menu.querySelector(".ph-blog-empty");
     var count = menu.querySelector(".ph-blog-count");
     var KEY = "phblog-menu";
-    var save = function () { try { sessionStorage.setItem(KEY, JSON.stringify({d: sec.value, s: sort.value})); } catch (e) {} };
+    var save = function () { try { sessionStorage.setItem(KEY, JSON.stringify({d: sec.value})); } catch (e) {} };
     var apply = function () {
-      var d = sec.value, s = sort.value, shown = 0;
-      items.sort(function (a, b) {
-        if (s === "old") return a.dataset.date - b.dataset.date || b.dataset.i - a.dataset.i;
-        if (s === "quick") return a.dataset.mins - b.dataset.mins || a.dataset.i - b.dataset.i;
-        return a.dataset.i - b.dataset.i;
-      }).forEach(function (it) {
+      var d = sec.value, shown = 0;
+      items.sort(function (a, b) { return a.dataset.i - b.dataset.i; }).forEach(function (it) {
         var on = d === "all" || it.dataset.desk === d;
         it.hidden = !on;
         if (on) shown++;
@@ -69,7 +64,7 @@
       if (count) count.textContent = shown + (shown === 1 ? " article" : " articles");
     };
     var has = function (el, v) { return !!el.querySelector('option[value="' + String(v).replace(/[^a-z]/g, "") + '"]'); };
-    try { var st = JSON.parse(sessionStorage.getItem(KEY) || "null"); if (st) { if (has(sec, st.d)) sec.value = st.d; if (has(sort, st.s)) sort.value = st.s; } } catch (e) {}
+    try { var st = JSON.parse(sessionStorage.getItem(KEY) || "null"); if (st) { if (has(sec, st.d)) sec.value = st.d; } } catch (e) {}
     var q = new URLSearchParams(location.search).get("section");
     if (q && has(sec, q)) sec.value = q;
     var showCur = function () {
@@ -78,7 +73,6 @@
       else list.scrollTop = 0;
     };
     sec.addEventListener("change", function () { apply(); save(); showCur(); });
-    sort.addEventListener("change", function () { apply(); save(); showCur(); });
     apply();
     showCur();
 
@@ -100,7 +94,7 @@
       var end = function (e) { bar.classList.remove("drag"); try { bar.releasePointerCapture(e.pointerId); } catch (err) {} };
       bar.addEventListener("pointerup", end); bar.addEventListener("pointercancel", end);
       window.addEventListener("resize", function () { upd(false); });
-      sec.addEventListener("change", function () { upd(false); }); sort.addEventListener("change", function () { upd(false); });
+      sec.addEventListener("change", function () { upd(false); });
       requestAnimationFrame(function () { upd(false); });
     }
   }
