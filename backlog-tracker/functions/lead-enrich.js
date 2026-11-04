@@ -195,6 +195,7 @@ function createLeadEnrich({ db, verifyIdToken, resolveConsoleUser, encKey, fetch
     const ref = db.collection("leads").doc(leadId);
     const snap = await ref.get();
     if (!snap.exists) return send(res, 404, { error: "no such lead" });
+    if ((snap.data() || {}).test === true) return send(res, 400, { error: "test leads are not enriched" });
     const lead = core.normaliseLead(snap.id, snap.data());
     const website = core.normaliseUrl(lead.company.website);
     if (!website) return send(res, 400, { error: "Add the company's website first; that's what is looked up." });

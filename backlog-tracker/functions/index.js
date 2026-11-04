@@ -2268,6 +2268,16 @@ exports.leadEnrich = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY], cors: false, tim
   return leadEnrichApi.handle(req, res);
 });
 
+// Promote › Leads: website form submissions (lead-ingest.js). Server-to-server,
+// guarded by the LEAD_INGEST_KEY secret the website holds.
+const LEAD_INGEST_KEY = defineSecret("LEAD_INGEST_KEY");
+const { createLeadIngest } = require("./lead-ingest");
+let leadIngestApi = null;
+exports.leadIngest = onRequest({ secrets: [LEAD_INGEST_KEY], cors: false, timeoutSeconds: 30, maxInstances: 5 }, (req, res) => {
+  if (!leadIngestApi) leadIngestApi = createLeadIngest({ db: getFirestore(), key: () => LEAD_INGEST_KEY.value(), logger });
+  return leadIngestApi.handle(req, res);
+});
+
 // Public, read-only help search for AI agents (no sign-in) — see help-search.js.
 // Served at /help-api/** on the console's Hosting site (firebase.json rewrite).
 // Alerts (abuse = many 429s, errors = 5xx) go to NOTIFY_WEBHOOK_URL, the same

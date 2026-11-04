@@ -10,6 +10,8 @@
 //   assignee       a member's email, or ""
 //   customerAccount { id, name } once the lead has converted, else null
 //   enrichment     { at, by, techStack[], summary, sources[{source,status,message}] }
+//   test           true for a lead submitted with the website's test flag
+//   sourcePage / sourceIndustry  the page and industry a website lead came from
 //   createdAt / updatedAt / stageChangedAt / createdByEmail / updatedByEmail
 
 export const STAGES = [
@@ -131,6 +133,31 @@ export function leadFromForm(form) {
   };
 }
 
+// A website form submission -> a lead's fields (Field mapping is the Leads
+// form's own: the same names, so nothing is re-keyed). Accepts the lead form's
+// keys (name/company, website, industry, countries, storeCount, contactName,
+// jobTitle, email, linkedin) plus page, industry and test. `test` is true for
+// true/"1"/"true"/"yes"/"on". Returns { errors } or { errors: [], fields, contact, test }.
+export const truthy = (v) => v === true || ["1", "true", "yes", "on"].includes(String(v == null ? "" : v).trim().toLowerCase());
+export function leadFromWebsite(p) {
+  const x = p || {};
+  const test = truthy(x.test);
+  const contactName = str(x.contactName || x.contact_name || x.fullName || x.full_name, LIMITS.name);
+  const r = leadFromForm({
+    name: x.company || x.companyName || x.company_name || x.name,
+    website: x.website, industry: x.industry, countries: x.countries || x.country, storeCount: x.storeCount || x.stores,
+    contacts: [{ name: contactName || String(x.email || "").split("@")[0], jobTitle: x.jobTitle || x.job_title, email: x.email, linkedin: x.linkedin }],
+    stage: DEFAULT_STAGE, source: "Website", assignee: "",
+  });
+  if (r.errors.length) return { errors: r.errors };
+  const page = str(x.page || x.pageUrl || x.page_url, 300);
+  return {
+    errors: [], test,
+    fields: { ...r.fields, source: "website", sourcePage: page, sourceIndustry: str(x.pageIndustry || x.page_industry || x.industry, LIMITS.industry), test },
+    contact: r.fields.contacts[0] || null,
+  };
+}
+
 // A stored document, tolerant of anything an older writer left out.
 export function normaliseLead(id, d) {
   const x = d || {};
@@ -150,6 +177,9 @@ export function normaliseLead(id, d) {
     stage: isStage(x.stage) ? x.stage : DEFAULT_STAGE,
     source: String(x.source || ""),
     assignee: String(x.assignee || ""),
+    test: x.test === true,
+    sourcePage: String(x.sourcePage || ""),
+    sourceIndustry: String(x.sourceIndustry || ""),
     customerAccount: x.customerAccount && typeof x.customerAccount === "object" ? { id: String(x.customerAccount.id || ""), name: String(x.customerAccount.name || "") } : null,
     enrichment: x.enrichment && typeof x.enrichment === "object" ? x.enrichment : null,
     updatedAtMs: ms(x.updatedAt), createdAtMs: ms(x.createdAt), stageChangedAtMs: ms(x.stageChangedAt),

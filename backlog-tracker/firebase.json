@@ -54,6 +54,13 @@
           }
         },
         {
+          "source": "/leadIngest/**",
+          "function": {
+            "functionId": "leadIngest",
+            "region": "us-central1"
+          }
+        },
+        {
           "source": "/mcp",
           "function": {
             "functionId": "mcpServer",

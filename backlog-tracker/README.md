@@ -2532,6 +2532,9 @@ every destination already existed.
   Agents use `list_leads` and `update_lead_stage` (`functions/leads.js`).
   LinkedIn has no public lookup API: the company's LinkedIn page is taken from
   its website, and contacts' LinkedIn addresses are stored as typed.
+  **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
+  `LEAD_INGEST_KEY`); a `test` flag stores a test lead that shows only under
+  the page's Test filter and is bulk-deleted there. See REQUIREMENTS.md → Promote section: Leads.
 - **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
   any ticket, concept, project or release. Archived tickets are included once
   the archive has been loaded.

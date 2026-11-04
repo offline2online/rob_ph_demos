@@ -29,6 +29,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
+  let showTest = false;       // the Test filter: test leads only appear there
 
   const me = () => String((auth.currentUser && auth.currentUser.email) || "").toLowerCase();
   const memberName = (email) => {
@@ -64,7 +65,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       ${l.customerAccount ? `<p class="lead-card-line lead-card-account"><span class="material-symbols-outlined" aria-hidden="true">link</span>${esc(l.customerAccount.name || l.customerAccount.id)}</p>` : ""}
       <div class="lead-card-foot">
         <span class="lead-card-who">${l.assignee ? esc(memberName(l.assignee)) : "Unassigned"}</span>
-        ${l.source ? `<span class="lead-card-source">${esc(l.source)}</span>` : ""}
+        ${l.source ? `<span class="lead-card-source">${esc(l.source)}${l.sourcePage ? ` · ${esc(l.sourcePage)}` : ""}</span>` : ""}
       </div>
       <label class="lead-move" data-editor-only><span class="lead-move-label">Move to</span>
         <select class="lead-move-select" aria-label="Move ${esc(l.company.name)} to stage">${options}</select></label>
@@ -73,8 +74,15 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
 
   function render() {
     if (page.hidden) return;
-    const lanes = groupByStage(leads);
-    $("leads-empty").hidden = leads.length > 0;
+    const testCount = leads.filter((l) => l.test).length;
+    const shown = leads.filter((l) => l.test === showTest);
+    $("leads-test-count").textContent = String(testCount);
+    $("leads-filter-real").setAttribute("aria-pressed", String(!showTest));
+    $("leads-filter-test").setAttribute("aria-pressed", String(showTest));
+    $("leads-test-delete").hidden = !showTest || testCount === 0;
+    const lanes = groupByStage(shown);
+    $("leads-empty").textContent = showTest ? "No test leads." : "No leads yet. Add one with the button above.";
+    $("leads-empty").hidden = shown.length > 0;
     board.innerHTML = STAGES.map((s) => `<section class="lead-lane lead-lane-${s.key}" data-stage="${s.key}" aria-label="${esc(s.label)}">
       <header class="lead-lane-head"><h3>${esc(s.label)}</h3><span class="lead-lane-count">${lanes[s.key].length}</span></header>
       <div class="lead-lane-body">${lanes[s.key].map(cardHTML).join("")}</div>
@@ -92,6 +100,23 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     }
   }
   function showBoardError(msg) { const e = $("leads-empty"); e.textContent = msg; e.hidden = false; }
+
+  $("leads-filter-real").addEventListener("click", () => { showTest = false; render(); });
+  $("leads-filter-test").addEventListener("click", () => { showTest = true; render(); });
+  // One click removes every test lead and nothing else.
+  $("leads-test-delete").addEventListener("click", async () => {
+    const tests = leads.filter((l) => l.test);
+    if (!tests.length || !canEdit()) return;
+    const btn = $("leads-test-delete");
+    if (!btn.dataset.armed) { // a second click confirms, in the page (no native dialog)
+      btn.dataset.armed = "1"; btn.textContent = `Click again to delete ${tests.length} test lead${tests.length === 1 ? "" : "s"}`;
+      setTimeout(() => { delete btn.dataset.armed; btn.textContent = "Delete all test leads"; }, 6000);
+      return;
+    }
+    delete btn.dataset.armed; btn.textContent = "Delete all test leads";
+    try { await Promise.all(tests.map((l) => deleteDoc(doc(db, "leads", l.id)))); }
+    catch (err) { showBoardError(`Couldn't delete test leads: ${err && err.message ? err.message : err}`); }
+  });
 
   board.addEventListener("dragstart", (e) => {
     const card = e.target.closest && e.target.closest(".lead-card");

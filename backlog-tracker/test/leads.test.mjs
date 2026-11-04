@@ -69,6 +69,16 @@ t("enrichment fills blanks and never overwrites what a person typed", () => {
   const blank = L.mergeCompanyEnrichment({ name: "A", industry: "", countries: [], storeCount: null }, { industry: "Retail", storeCount: 40 });
   assert.deepEqual(blank.changed.sort(), ["industry", "storeCount"]);
 });
+t("a website submission maps onto the lead form: source website, page and industry kept, test flag read", () => {
+  const r = L.leadFromWebsite({ company: "Acme", email: "jo@acme.example", page: "/retail/", pageIndustry: "Retail", test: "1" });
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.test, true);
+  assert.equal(r.fields.source, "website"); assert.equal(r.fields.stage, "lead");
+  assert.equal(r.fields.sourcePage, "/retail/"); assert.equal(r.fields.sourceIndustry, "Retail");
+  assert.equal(L.leadFromWebsite({ company: "Acme", email: "jo@acme.example" }).test, false);
+  assert.equal(L.normaliseLead("a", { company: { name: "A" }, test: true }).test, true);
+  assert.ok(L.leadFromWebsite({ email: "jo@acme.example" }).errors.length);
+});
 t("functions/leads-core.js is the generated copy of the page's leads-core.js", () => {
   const have = fs.readFileSync(path.join(here, "..", "functions", "leads-core.js"), "utf8");
   assert.equal(have, buildCopy(fs.readFileSync(path.join(here, "..", "public", "js", "leads-core.js"), "utf8")), "run: node test/leads-core-copy.mjs --write");

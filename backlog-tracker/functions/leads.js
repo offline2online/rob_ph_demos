@@ -52,6 +52,7 @@ function leadsTools(h) {
         const want = String(a.company || "").trim().toLowerCase();
         const leads = [];
         snap.forEach((d) => {
+          if (d.data().test === true) return; // test leads stay out of reporting
           const v = view(d.id, d.data());
           if (a.stage && v.stage !== a.stage) return;
           if (want && !v.company.toLowerCase().includes(want)) return;

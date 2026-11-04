@@ -3949,6 +3949,23 @@ slide-over has already closed). Rules:
   name and/or id, moves the lead to Closed Won and stores `customerAccount`,
   shown on the card. The RevOps lifecycle's customer account record is not in
   this console yet, so the link is the id and name as given.
-- Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js`, the Leads tools in
+- **Website leads and test mode** (`functions/lead-ingest.js`, served at
+  `POST /leadIngest/v1/submit`): personalisationhub.com's lead forms (the
+  industry pages, telco and retail first) post server-to-server with the
+  `X-Lead-Key` header, which must equal the `LEAD_INGEST_KEY` secret (set it
+  with `firebase functions:secrets:set LEAD_INGEST_KEY`; the website holds
+  the same value, never a browser). The body uses the Leads form's own names
+  (`company`, `website`, `industry`, `countries`, `storeCount`, `contactName`,
+  `jobTitle`, `email`, `linkedin`) plus `page`, `pageIndustry` and `test`.
+  It creates the lead in the Lead lane with `source: "website"`, `sourcePage`
+  and `sourceIndustry`, or, for a company already there, fills blanks and adds
+  the contact. A submission with `test` true (a hidden form field the test
+  link's URL parameter switches on) stores `test: true`: it is never merged
+  with a real lead, only shows under the Leads page's **Test** filter, is
+  refused by Enrich, is left out of `list_leads`, and **Delete all test
+  leads** removes every one in one click without touching real leads. Leads
+  send no notifications and feed no report today, so a test lead has nothing
+  else to be excluded from.
+- Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js`, `test/lead-ingest.test.js`, the Leads tools in
   `test/mcp-server.test.js` and `test/mcp-client.test.mjs`, a scenario in
   `test/ui/console-click.test.mjs`.

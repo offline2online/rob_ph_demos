@@ -582,7 +582,7 @@ service cloud.firestore {
     // leadEnrich function as the service account (rules bypassed); an editor's
     // save keeps them, since request.resource is the whole document.
     function isLead(d) {
-      return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "enrichment",
+      return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "enrichment", "test", "sourcePage", "sourceIndustry",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
         && d.company is map && isNonEmptyBoundedString(d.company.get("name", null), 120)
         && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300
@@ -593,7 +593,10 @@ service cloud.firestore {
         && d.stage in ["lead", "hot-lead", "demo", "post-demo", "closed-won", "closed-lost"]
         && d.get("source", "") is string && d.get("source", "").size() <= 80
         && d.get("assignee", "") is string && d.get("assignee", "").size() <= 200
-        && (d.get("customerAccount", null) == null || d.get("customerAccount", null) is map);
+        && (d.get("customerAccount", null) == null || d.get("customerAccount", null) is map)
+        && d.get("test", false) is bool
+        && d.get("sourcePage", "") is string && d.get("sourcePage", "").size() <= 300
+        && d.get("sourceIndustry", "") is string && d.get("sourceIndustry", "").size() <= 120;
     }
     match /leads/{leadId} {
       allow read: if isBoardReader();

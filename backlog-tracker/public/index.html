@@ -1161,6 +1161,11 @@
         <h2>Leads</h2>
         <button type="button" class="btn-primary" id="leads-add-btn" data-editor-only>+ New lead</button>
       </div>
+      <div class="leads-filter" role="group" aria-label="Which leads to show">
+        <button type="button" class="btn-ghost" id="leads-filter-real" aria-pressed="true">Leads</button>
+        <button type="button" class="btn-ghost" id="leads-filter-test" aria-pressed="false">Test <span id="leads-test-count">0</span></button>
+        <button type="button" class="btn-ghost" id="leads-test-delete" data-editor-only hidden>Delete all test leads</button>
+      </div>
       <p class="promote-empty" id="leads-empty" hidden>No leads yet. Add one with the button above.</p>
       <div class="leads-board-wrap"><div class="leads-board" id="leads-board"></div></div>
     </section>

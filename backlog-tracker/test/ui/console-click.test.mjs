@@ -1080,6 +1080,32 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Leads test mode - test leads only under Test, bulk delete leaves real leads",
+    seed: () => seed({ leads: {
+      real: { company: { name: "Real Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", sourcePage: "/telco/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+      t1: { company: { name: "Test One", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", sourcePage: "/retail/", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+      t2: { company: { name: "Test Two", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the real lead is in the Lead lane");
+      const lane = () => c.text('.lead-lane[data-stage="lead"]');
+      assert.ok((await lane()).includes("Real Co") && !(await lane()).includes("Test One"), "test leads are not on the normal board");
+      assert.strictEqual((await c.text("#leads-test-count")).trim(), "2");
+      await c.page.click("#leads-filter-test");
+      await until(async () => (await lane()).includes("Test One"), "the Test filter to show test leads", 5000);
+      assert.ok(!(await lane()).includes("Real Co"), "real leads are hidden under Test");
+      assert.ok((await lane()).includes("/retail/"), "the page the lead came from is shown");
+      await c.page.click("#leads-test-delete");
+      assert.ok((await c.text("#leads-test-delete")).includes("Click again"), "the first click asks to confirm");
+      await c.page.click("#leads-test-delete");
+      await until(async () => (await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].map(([k]) => k))).join() === "real", "only the real lead to remain", 5000);
+      await c.page.click("#leads-filter-real");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the real lead is still on the board");
+    },
+  },
+  {
     name: "FAQ article editor: SEO & agents group counts, limits and completeness",
     seed: () => seed({ faqCategories: { fc1: { name: "Getting started", order: 0, createdAt: t(T0), updatedAt: t(T0) } } }),
     async run(c) {
