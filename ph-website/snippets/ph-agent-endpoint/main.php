@@ -1,6 +1,6 @@
 <?php
 /**
- * PH Agent Endpoint (Angie snippet). Version 1.4.0
+ * PH Agent Endpoint (Angie snippet). Version 1.4.1
  *
  * Markdown twins (?format=md), one shared JSON-LD graph and llms.txt sections
  * for the allow-listed pages in lib.php. Industries, Blog and Support Centre
@@ -97,6 +97,14 @@ add_action( 'wp_head', function () {
 		}
 	}
 }, 21 );
+
+/* Feature Q&A styling: one small scoped stylesheet, only on pages that have a block. */
+add_action( 'wp_head', function () {
+	$post = current_exposable();
+	if ( $post && faq_for( $post->ID ) ) {
+		echo '<style id="ph-faq-css">' . faq_css() . "</style>\n";
+	}
+}, 22 );
 
 add_filter( 'the_content', function ( $content ) {
 	static $done = array();

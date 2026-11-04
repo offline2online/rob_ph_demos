@@ -49,3 +49,10 @@ foreach ( faq_for( 7020 )['questions'] as $i => $q ) {
 	ok( strpos( $d['mainEntity'][ $i ]['acceptedAnswer']['text'], $q['a'] ) === 0 && $d['mainEntity'][ $i ]['name'] === $q['q'], 'faq: JSON-LD matches the visible text ' . $i );
 }
 ok( strpos( $html, '<script' ) === false && strpos( $html, 'position:fixed' ) === false, 'faq: no script, nothing fixed' );
+
+use function AngieSnippets\PhAgentEndpoint___ID__\faq_css;
+$css = faq_css();
+ok( strpos( $html, 'style=' ) === false && strpos( $html, '<style' ) === false, 'faq: styles live in the scoped stylesheet, not inline' );
+ok( strpos( $css, '#169BC2' ) !== false && strpos( $css, '#0F7A9A' ) !== false && strpos( $css, 'text-transform:none' ) !== false, 'faq css: brand teal links, no title-casing' );
+ok( strpos( $css, '@media (max-width:767px)' ) !== false && strpos( $css, 'position:fixed' ) === false, 'faq css: mobile rule, nothing fixed' );
+ok( strlen( $css ) < 2500, 'faq css: small (design guide s.7)' );

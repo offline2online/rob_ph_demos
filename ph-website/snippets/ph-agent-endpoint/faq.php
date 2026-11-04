@@ -81,17 +81,35 @@ function faq_esc( $s ) {
 	return htmlspecialchars( (string) $s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 }
 
+/**
+ * Scoped stylesheet for the block, printed once in wp_head on pages that have one (never inside
+ * the block, so the markdown twin stays clean). Overrides the theme's raw h2/h3/link styles.
+ */
+function faq_css() {
+	return '.ph-faq{max-width:1140px;margin:64px auto;padding:0 24px;box-sizing:border-box;color:inherit}'
+		. '.ph-faq .ph-faq-h{font-size:clamp(28px,3.2vw,40px);font-weight:700;line-height:1.2;letter-spacing:-.01em;text-transform:none;margin:0 0 32px}'
+		. '.ph-faq .ph-faq-item{margin:0 0 32px;padding:0 0 32px;border-bottom:1px solid rgba(0,0,0,.1)}'
+		. '.ph-faq .ph-faq-item:last-child{margin-bottom:0;padding-bottom:0;border-bottom:0}'
+		. '.ph-faq .ph-faq-q{font-size:21px;font-weight:600;line-height:1.3;text-transform:none;margin:0 0 12px}'
+		. '.ph-faq .ph-faq-item p{font-size:16px;line-height:1.6;margin:0 0 12px;text-transform:none}'
+		. '.ph-faq .ph-faq-item p:last-child{margin-bottom:0}'
+		. '.ph-faq .ph-faq-a{font-weight:600}'
+		. '.ph-faq a{color:#169BC2;text-decoration:none}'
+		. '.ph-faq a:hover,.ph-faq a:focus{color:#0F7A9A;text-decoration:underline}'
+		. '@media (max-width:767px){.ph-faq{margin:40px auto;padding:0 16px}.ph-faq .ph-faq-h{margin-bottom:24px}.ph-faq .ph-faq-q{font-size:19px}.ph-faq .ph-faq-item{margin-bottom:24px;padding-bottom:24px}}';
+}
+
 /** The visible block. Inherits the site's fonts and colours; nothing is fixed-position. */
 function faq_html( $id ) {
 	$f = faq_for( $id );
 	if ( ! $f ) {
 		return '';
 	}
-	$h  = '<section class="ph-faq" id="questions" aria-labelledby="ph-faq-h" style="max-width:1140px;margin:48px auto;padding:0 24px;">';
-	$h .= '<h2 id="ph-faq-h">' . faq_esc( $f['heading'] ) . '</h2>';
+	$h  = '<section class="ph-faq" id="questions" aria-labelledby="ph-faq-h">';
+	$h .= '<h2 class="ph-faq-h" id="ph-faq-h">' . faq_esc( $f['heading'] ) . '</h2>';
 	foreach ( $f['questions'] as $q ) {
-		$h .= '<div class="ph-faq-item" style="margin:0 0 24px;"><h3>' . faq_esc( $q['q'] ) . '</h3>';
-		$h .= '<p><strong>' . faq_esc( $q['a'] ) . '</strong></p>';
+		$h .= '<div class="ph-faq-item"><h3 class="ph-faq-q">' . faq_esc( $q['q'] ) . '</h3>';
+		$h .= '<p class="ph-faq-a"><strong>' . faq_esc( $q['a'] ) . '</strong></p>';
 		$h .= '<p>' . faq_esc( $q['d'] ) . '</p>';
 		if ( ! empty( $q['links'] ) ) {
 			$a = array();

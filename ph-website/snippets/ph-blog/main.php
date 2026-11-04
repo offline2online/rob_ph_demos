@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER       = '1.0.8';
+const VER       = '1.0.9';
 const BLOG_ID   = 10147;
 const AVATAR_ID = 10097;
 const WPM       = 200;
@@ -375,8 +375,19 @@ function org() {
 		'@type'       => 'Organization',
 		'@id'         => home_url( '/#organization' ),
 		'name'        => 'Personalisation Hub',
+		'legalName'   => 'Personalisation Hub Pty Ltd',
 		'url'         => home_url( '/' ),
+		'logo'        => 'https://personalisationhub.com/wp-content/uploads/2022/12/Website-Logo.png',
 		'description' => "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud.",
+		'foundingDate' => '2018',
+		'founder'     => [ '@type' => 'Person', 'name' => 'Rob Geerdink' ],
+		'sameAs'      => [
+			'https://www.linkedin.com/company/personalisation-hub/',
+			'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76',
+			'https://signage.amazon.com/cms-partners/personalisation-hub',
+			'https://twitter.com/Digital_retail',
+			'https://aws.amazon.com/marketplace/seller-profile?id=seller-ipgfe4tzltv24'
+		],
 	];
 }
 
@@ -413,7 +424,7 @@ function post_ld( $post ) {
 	$tags = wp_get_post_tags( $post->ID, [ 'fields' => 'names' ] );
 	$desc = (string) get_post_meta( $post->ID, '_seopress_titles_desc', true );
 	$item = [
-		'@type'            => 'BlogPosting',
+		'@type'            => [ 'BlogPosting', 'Article' ],
 		'@id'              => $url . '#article',
 		'headline'         => get_the_title( $post ),
 		'description'      => $desc ? $desc : get_the_excerpt( $post ),
