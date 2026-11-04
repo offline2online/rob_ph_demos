@@ -2,9 +2,14 @@
   {
     "id": 10063,
     "title": "PH Industry Enhancements",
-    "version": "1.7.0",
+    "version": "1.8.0",
     "folder": "ph-industry-enhancements",
     "files": [
+      {
+        "name": "ai-hygiene.php",
+        "bytes": 12468,
+        "sha256": "ba2d8f2e40dfdb097de4dd6056f3624fbee078c71b0b5c18f9257fbc8fb93ac1"
+      },
       {
         "name": "enhance.css",
         "bytes": 7321,
@@ -32,8 +37,8 @@
       },
       {
         "name": "main.php",
-        "bytes": 5491,
-        "sha256": "1be1aec64b6adb9160c1542b3fdb16ded6db706ef023cd6de2c433b635aba2ce"
+        "bytes": 6801,
+        "sha256": "22b3362a5703afb9d0b0e46238f5486de136e728c0c0bf31a4de7689706587c6"
       },
       {
         "name": "md.php",
@@ -65,7 +70,7 @@
   {
     "id": 10116,
     "title": "PH Blog",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "folder": "ph-blog",
     "files": [
       {
@@ -80,8 +85,8 @@
       },
       {
         "name": "main.php",
-        "bytes": 23842,
-        "sha256": "cafe6617da778ee60a7a3afa1321641fcdaf758db3fb94b0f0232c317b1ae906"
+        "bytes": 23857,
+        "sha256": "58b8c23bfe2eb9f0ee665b42bef7b3c032901e5c5d9013b2b8300fd6215ea801"
       }
     ]
   },
@@ -106,8 +111,8 @@
     "files": [
       {
         "name": "main.php",
-        "bytes": 84234,
-        "sha256": "17f07cad07bc7a272c96ee309515a8bb7fce33413fd296c0bb6d17696a4c40a9"
+        "bytes": 84363,
+        "sha256": "4af76d142abc183c8d3a16adb6eb39275e98de711bd97e0c21c61787ab16a1e1"
       },
       {
         "name": "sc-template.php",
@@ -121,8 +126,8 @@
       },
       {
         "name": "sc.js",
-        "bytes": 13919,
-        "sha256": "a41d4c95a19a3165c4c6c8a0414af498ee74e64f2d25bfb8df46ed742e1979c8"
+        "bytes": 16759,
+        "sha256": "f5562c180e811d442d3d8632471c650846859d96fe82266b37fe2ce7d24c28ba"
       }
     ]
   },

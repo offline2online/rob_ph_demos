@@ -394,5 +394,37 @@ ok( preg_match( "/register_rest_route\\( 'ph-help\\/v1', '\\/refresh', \\[\\s*'m
 
 require __DIR__ . '/faq.test.php';
 
+/* AI search hygiene (industry snippet 1.7.0): unique meta, live-only wording, summary and facts per page */
+if ( ! defined( 'ABSPATH' ) ) { define( 'ABSPATH', '/' ); }
+foreach ( array( 'add_filter', 'add_action', 'is_page' ) as $ihf ) { if ( ! function_exists( $ihf ) ) { eval( "function $ihf() {}" ); } }
+if ( ! function_exists( 'home_url' ) ) { function home_url( $p = '' ) { return 'https://personalisationhub.com' . $p; } }
+require_once dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/ai-hygiene.php';
+$ihd = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/';
+$ihns = 'AngieSnippets\\PhIndustryEnhancements_10063\\';
+eval( 'namespace AngieSnippets\\PhIndustryEnhancements_10063; function data( $f ) { return require \'' . $ihd . '\' . $f; } function page_url( $k ) { return \'industries\' === $k ? home_url( \'/industries/\' ) : home_url( \'/industries/\' . $k . \'/\' ); }' );
+$ihdescs = array();
+$ihpages = array();
+foreach ( array_keys( ( $ihns . 'ai_industry_names' )() ) as $k ) { $ihpages[] = array( 'industry', $k ); }
+foreach ( array_keys( ( $ihns . 'ai_feature_pages' )() ) as $k ) { $ihpages[] = array( '/' === $k ? 'home' : 'feature', $k ); }
+foreach ( $ihpages as $pg ) {
+	list( $t, $k ) = $pg;
+	$d = ( $ihns . 'ai_meta_desc' )( $t, $k );
+	$ihdescs[] = $d;
+	ok( strlen( $d ) <= 170, "fallback description length ok for $k" );
+	$sum = ( $ihns . 'ai_summary' )( $t, $k );
+	ok( stripos( $sum, 'Personalisation Hub' ) !== false && stripos( $sum, 'AWS' ) !== false || 'industry' === $t, "summary names the product and where it runs for $k" );
+	$facts = ( $ihns . 'ai_facts' )( $t, $k );
+	$all = $d . $sum . implode( ' ', $facts ) . implode( ' ', ( $ihns . 'ai_related' )( $t, $k ) );
+	ok( ! preg_match( '/\bDSP\b|programmatic|personaliz/i', $all ), "no DSP, programmatic or Z spelling for $k" );
+	ok( count( ( $ihns . 'ai_related' )( $t, $k ) ) >= 3, "at least 3 internal links for $k" );
+	ok( count( $facts ) >= 5, "at least 5 facts for $k" );
+	ok( isset( $facts['Installation time'] ) && strpos( $facts['Installation time'], '1 hour 15 minutes' ) !== false, "installation time states the Marketplace figure for $k" );
+}
+ok( count( array_unique( $ihdescs ) ) === count( $ihdescs ), 'fallback descriptions are unique' );
+$ihsrc = file_get_contents( $ihd . 'ai-hygiene.php' );
+ok( strpos( $ihsrc, 'seopress_titles_title' ) === false, 'curated SEOPress titles are never filtered' );
+ok( ( $ihns . 'ai_desc_needs_fallback' )( '', array() ) && ( $ihns . 'ai_desc_needs_fallback' )( 'Ditch the Queue', array( 'Ditch the Queue' ) ), 'description filled when empty or duplicated' );
+ok( ! ( $ihns . 'ai_desc_needs_fallback' )( 'Own curated description', array( 'Another page' ) ), 'a unique curated description is kept' );
+
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );
