@@ -76,6 +76,19 @@
     ]
   },
   {
+    "id": 10644,
+    "title": "PH Blog Layout",
+    "version": "1.0.0",
+    "folder": "ph-blog-layout",
+    "files": [
+      {
+        "name": "main.php",
+        "bytes": 1388,
+        "sha256": "2380bc8d2f4a0b204906eb72cb416d98a90b098529d812ab05de4e55041b3d0e"
+      }
+    ]
+  },
+  {
     "id": 10156,
     "title": "PH Support Centre",
     "version": "1.4.0",
