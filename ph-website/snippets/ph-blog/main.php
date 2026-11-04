@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER       = '1.0.9';
+const VER       = '1.0.8';
 const BLOG_ID   = 10147;
 const AVATAR_ID = 10097;
 const WPM       = 200;
@@ -413,7 +413,7 @@ function post_ld( $post ) {
 	$tags = wp_get_post_tags( $post->ID, [ 'fields' => 'names' ] );
 	$desc = (string) get_post_meta( $post->ID, '_seopress_titles_desc', true );
 	$item = [
-		'@type'            => [ 'BlogPosting', 'Article' ],
+		'@type'            => 'BlogPosting',
 		'@id'              => $url . '#article',
 		'headline'         => get_the_title( $post ),
 		'description'      => $desc ? $desc : get_the_excerpt( $post ),

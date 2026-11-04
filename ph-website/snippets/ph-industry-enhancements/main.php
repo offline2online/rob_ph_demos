@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.8.0';
+const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.7.0';
 require_once __DIR__ . '/telco-lead.php';
 
 const KEYS = [ 'industries', 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' ];
@@ -41,8 +41,6 @@ function data( $file ) {
 function page_url( $key ) {
 	return 'industries' === $key ? home_url( '/industries/' ) : home_url( '/industries/' . $key . '/' );
 }
-
-require_once __DIR__ . '/ai-hygiene.php';
 
 add_action( 'wp_enqueue_scripts', function () {
 	wp_enqueue_style( 'ph-ind-footer-10063', angie_cs_get_snippet_asset_url( __FILE__, 'footer.css' ), [], PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 );

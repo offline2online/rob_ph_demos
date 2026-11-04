@@ -392,31 +392,5 @@ ok( strpos( $rf, 'get_transient( \'ph_sc_refresh\' )' ) !== false && strpos( $rf
 ok( strpos( $rf, '$req' ) === false && strpos( $rf, '$_' ) === false && strpos( $rf, 'get_param' ) === false, 'refresh reads no input' );
 ok( preg_match( "/register_rest_route\\( 'ph-help\\/v1', '\\/refresh', \\[\\s*'methods'\\s*=> 'POST',\\s*'permission_callback' => '__return_true'/", $scs ) === 1, 'refresh is a public POST route' );
 
-/* AI search hygiene (industry snippet 1.7.0): unique meta, live-only wording, summary and facts per page */
-if ( ! defined( 'ABSPATH' ) ) { define( 'ABSPATH', '/' ); }
-foreach ( array( 'add_filter', 'add_action', 'is_page' ) as $ihf ) { if ( ! function_exists( $ihf ) ) { eval( "function $ihf() {}" ); } }
-if ( ! function_exists( 'home_url' ) ) { function home_url( $p = '' ) { return 'https://personalisationhub.com' . $p; } }
-require_once dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/ai-hygiene.php';
-$ihd = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/';
-$ihns = 'AngieSnippets\\PhIndustryEnhancements_10063\\';
-eval( 'namespace AngieSnippets\\PhIndustryEnhancements_10063; function data( $f ) { return require \'' . $ihd . '\' . $f; } function page_url( $k ) { return \'industries\' === $k ? home_url( \'/industries/\' ) : home_url( \'/industries/\' . $k . \'/\' ); }' );
-$ihtitles = array(); $ihdescs = array();
-$ihpages = array();
-foreach ( array_keys( ( $ihns . 'ai_industry_names' )() ) as $k ) { $ihpages[] = array( 'industry', $k ); }
-foreach ( array_keys( ( $ihns . 'ai_feature_pages' )() ) as $k ) { $ihpages[] = array( '/' === $k ? 'home' : 'feature', $k ); }
-foreach ( $ihpages as $pg ) {
-	list( $t, $k ) = $pg;
-	$m = ( $ihns . 'ai_meta' )( $t, $k );
-	$ihtitles[] = $m[0]; $ihdescs[] = $m[1];
-	ok( strlen( $m[0] ) <= 60 && strlen( $m[1] ) <= 170, "meta length ok for $k" );
-	$sum = ( $ihns . 'ai_summary' )( $t, $k );
-	ok( stripos( $sum, 'Personalisation Hub' ) !== false && stripos( $sum, 'AWS' ) !== false || 'industry' === $t, "summary names the product and where it runs for $k" );
-	$all = $m[0] . $m[1] . $sum . implode( ' ', ( $ihns . 'ai_facts' )( $t, $k ) ) . implode( ' ', ( $ihns . 'ai_related' )( $t, $k ) );
-	ok( ! preg_match( '/\bDSP\b|programmatic|personaliz/i', $all ), "no DSP, programmatic or Z spelling for $k" );
-	ok( count( ( $ihns . 'ai_related' )( $t, $k ) ) >= 3, "at least 3 internal links for $k" );
-	ok( count( ( $ihns . 'ai_facts' )( $t, $k ) ) >= 5, "at least 5 facts for $k" );
-}
-ok( count( array_unique( $ihtitles ) ) === count( $ihtitles ) && count( array_unique( $ihdescs ) ) === count( $ihdescs ), 'meta titles and descriptions are unique' );
-
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );
