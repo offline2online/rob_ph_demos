@@ -392,5 +392,7 @@ ok( strpos( $rf, 'get_transient( \'ph_sc_refresh\' )' ) !== false && strpos( $rf
 ok( strpos( $rf, '$req' ) === false && strpos( $rf, '$_' ) === false && strpos( $rf, 'get_param' ) === false, 'refresh reads no input' );
 ok( preg_match( "/register_rest_route\\( 'ph-help\\/v1', '\\/refresh', \\[\\s*'methods'\\s*=> 'POST',\\s*'permission_callback' => '__return_true'/", $scs ) === 1, 'refresh is a public POST route' );
 
+require __DIR__ . '/faq.test.php';
+
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );
