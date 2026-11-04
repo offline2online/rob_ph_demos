@@ -2,7 +2,7 @@
   {
     "id": 10063,
     "title": "PH Industry Enhancements",
-    "version": "1.6.0",
+    "version": "1.6.1",
     "folder": "ph-industry-enhancements",
     "files": [
       {
@@ -32,8 +32,8 @@
       },
       {
         "name": "main.php",
-        "bytes": 3435,
-        "sha256": "d4cae2fe8ec3ac39f428423e30e0bc68b52cbac59d0faf5fcf801d09ec6515c1"
+        "bytes": 5448,
+        "sha256": "95a05dfe849dfc5db69dd3af221ee9e820d94d0131088cb024413daf2d13c9a8"
       },
       {
         "name": "md.php",
@@ -42,8 +42,8 @@
       },
       {
         "name": "nav.css",
-        "bytes": 2360,
-        "sha256": "e89cacb3ebf04a4ef069beb145b9c4376db81bc566a880fc78489fac56f071a2"
+        "bytes": 3594,
+        "sha256": "37b4bbeeca4b3109acc8cce504751a683d3b651ee87adb720f25baa385181df4"
       },
       {
         "name": "site.js",

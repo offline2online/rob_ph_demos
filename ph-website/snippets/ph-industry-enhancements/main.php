@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.6.0';
+const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.6.1';
 const KEYS = [ 'industries', 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' ];
 
 function page_key() {
@@ -87,3 +87,65 @@ add_action( 'template_redirect', function () {
 		}
 	}
 }, 0 );
+
+/**
+ * ElementsKit's icon font (ekiticons.css -> elementskit.woff, 455 KB) only drew the header burger and submenu chevron,
+ * which nav.css now draws as SVG. Drop the stylesheet everywhere on the front end.
+ */
+add_action( 'wp_enqueue_scripts', function () {
+	$styles = wp_styles();
+	foreach ( $styles->registered as $handle => $style ) {
+		if ( is_string( $style->src ) && false !== strpos( $style->src, 'ekiticons.css' ) ) {
+			wp_dequeue_style( $handle );
+			wp_deregister_style( $handle );
+		}
+	}
+	foreach ( $styles->registered as $style ) {
+		if ( ! empty( $style->deps ) ) {
+			$style->deps = array_values( array_filter( $style->deps, function ( $dep ) use ( $styles ) {
+				return isset( $styles->registered[ $dep ] );
+			} ) );
+		}
+	}
+}, 9999 );
+
+/** Home hero background (Elementor container 155fba3): found early so it loads with the HTML, not after the CSS. */
+function hero_bg_url() {
+	$fallback = 'https://personalisationhub.com/wp-content/uploads/2026/11/home-hero-bg.webp';
+	$id       = (int) get_option( 'page_on_front' );
+	if ( $id ) {
+		$data = get_post_meta( $id, '_elementor_data', true );
+		$tree = is_string( $data ) ? json_decode( $data, true ) : $data;
+		$url  = is_array( $tree ) ? find_bg( $tree ) : '';
+		if ( '' !== $url ) {
+			return $url;
+		}
+	}
+	return $fallback;
+}
+
+function find_bg( array $nodes ) {
+	foreach ( $nodes as $node ) {
+		if ( ! is_array( $node ) ) {
+			continue;
+		}
+		if ( isset( $node['id'] ) && '155fba3' === $node['id'] ) {
+			$url = isset( $node['settings']['background_image']['url'] ) ? $node['settings']['background_image']['url'] : '';
+			return is_string( $url ) ? $url : '';
+		}
+		if ( ! empty( $node['elements'] ) && is_array( $node['elements'] ) ) {
+			$url = find_bg( $node['elements'] );
+			if ( '' !== $url ) {
+				return $url;
+			}
+		}
+	}
+	return '';
+}
+
+add_action( 'wp_head', function () {
+	if ( ! is_front_page() ) {
+		return;
+	}
+	echo '<link rel="preload" as="image" href="' . esc_url( hero_bg_url() ) . '" fetchpriority="high">' . "\n";
+}, 1 );
