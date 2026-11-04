@@ -3882,3 +3882,30 @@ slide-over has already closed). Rules:
   Kanban and Concepts, and requires every destination to open exactly once.
   A sidebar or touch-handling change is not done until it passes. Chromium
   passing a plain tap proves nothing about the iPad.
+
+## Promote section: Brand Guidelines (5 Nov 2026)
+
+- A **Promote** group sits in the sidebar between Build and Publish (a
+  Promote tab on a phone). Its first item is **Brand Guidelines**
+  (`#promote/brand-guidelines`, `public/js/promote-section.js`). Its section
+  key for roles is `promote` (User Management → Permissions); a hash under
+  `#promote/` routes to it.
+- The page is **read-only** and shows two `projectDocs` rows found by
+  `mirrorKey` (`brand-guidelines`, `brand-requirements`), which mirror
+  `backlog-tracker/promote/brand-guidelines.md` and `brand-requirements.md`
+  (declared in `board-docs.json`, copied on every merge to main). The
+  sync's "Copy of…" line is hidden. Until the first sync it says the
+  guidelines haven't arrived yet.
+- The content is the PH Brand concept's README and Requirements as of
+  5 Nov 2026, including the **founder tone of voice** section. Industry and
+  vertical content is **not held** in the guidelines: they link to the
+  personalisationhub.com industry pages. Logos, AWS Marketplace logos and
+  the templates page are reachable from the guidelines (Brand assets and
+  Reusable templates sections).
+- **Agents read the guidelines over MCP** with `list_project_documents` and
+  `get_project_document` on the Backlog Tracker & FAQs project; no new tool.
+- Built so a **Leads** page can sit beneath Brand Guidelines: add an entry
+  to `PROMOTE_PAGES` and a nav button.
+- Tests: `test/promote-section.test.mjs`, `test/permissions.test.mjs`, a
+  scenario in `test/ui/console-click.test.mjs` and a page in
+  `test/ui/mobile-shell.test.mjs`.

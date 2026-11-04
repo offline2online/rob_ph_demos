@@ -2,7 +2,7 @@
 import assert from "node:assert";
 import { SECTION_KEYS, effectiveLevels, storedLevel, roleLevels, setLevel, canView, canEdit, canAdmin, sectionForHash, firstAllowedSection, permissionCss, matrixRows, isAdminRole } from "../public/js/permissions.js";
 
-assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "faq", "skills", "releases", "project-docs", "settings", "user-management"]);
+assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "promote", "faq", "skills", "releases", "project-docs", "settings", "user-management"]);
 
 const engineer = { id: "e", name: "Engineer", permissions: { concepts: "none", faq: "view" } };
 const lv = effectiveLevels("editor", engineer);
@@ -39,6 +39,7 @@ assert.throws(() => setLevel(engineer, "concepts", "owner"));
 assert.strictEqual(sectionForHash(""), "agent-board");
 assert.strictEqual(sectionForHash("#concept-incubator"), "concepts");
 assert.strictEqual(sectionForHash("#concept-abc"), "concepts");
+assert.strictEqual(sectionForHash("#promote/brand-guidelines"), "promote");
 assert.strictEqual(sectionForHash("#faq-article/x"), "faq");
 assert.strictEqual(sectionForHash("#docs/p1?interface=2"), "project-docs");
 assert.strictEqual(sectionForHash("#user-management/permissions"), "user-management");

@@ -210,7 +210,7 @@ const scenarios = [
       c.at("sections");
       if (!phone) {
         const labels = await c.page.evaluate(() => [...document.querySelectorAll("#nav-drawer .nav-drawer-section")].map((e) => e.textContent.trim()));
-        assert.deepStrictEqual(labels, ["Build", "Publish", "User Management", "Settings"]);
+        assert.deepStrictEqual(labels, ["Build", "Promote", "Publish", "User Management", "Settings"]);
       }
       await go("build", "concept-incubator-btn", "concept-incubator-page");
       await go("settings", "faq-settings-btn", "faq-settings-page");
@@ -969,7 +969,7 @@ const scenarios = [
       await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
       await c.visible(".perm-table", "the matrix shows");
       const rows = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table tbody th")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(rows, ["Agent board", "Staff Kanban", "Concepts", "FAQ management", "Skills", "Releases", "Project docs", "Settings", "User Management"]);
+      assert.deepStrictEqual(rows, ["Agent board", "Staff Kanban", "Concepts", "Promote", "FAQ management", "Skills", "Releases", "Project docs", "Settings", "User Management"]);
       const heads = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table thead th")].map((e) => e.textContent.trim()));
       assert.deepStrictEqual(heads, ["Section", "Admin", "Engineer"]);
       assert.strictEqual(await c.page.locator('select[data-perm-role="rAdmin"]:not([disabled])').count(), 0, "the Admin column is locked");
@@ -1004,6 +1004,24 @@ const scenarios = [
       await c.visible('#system-map-type [data-map-type="Platform"].active', "opens the Platform map");
       platform = await names();
       assert.ok(platform.includes("Alpha"), "back on the Platform map");
+    },
+  },
+  {
+    name: "Promote: Brand Guidelines opens from the nav and shows the mirrored guidelines",
+    seed: () => seed({ projectDocs: {
+      bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
+        sourcePrefix: "> Copy of the file.\n\n", contentMd: "> Copy of the file.\n\n# Brand Guidelines\n\n## Founder tone of voice\n\nShort, direct sentences.\n\n## Industry content lives on the website\n\nSee [industries](https://personalisationhub.com/industries/).", createdAt: t(T0), updatedAt: t(T0) },
+      br: { projectId: PID, name: "6 — Brand Guidelines requirements (Promote)", mirrorKey: "brand-requirements", sourcePath: "backlog-tracker/promote/brand-requirements.md",
+        sourcePrefix: "", contentMd: "# Requirements\n\n- R7.1 Founder tone of voice.", createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
+      await c.waitText("#promote-guidelines", "Founder tone of voice", "the guidelines show");
+      assert.ok(!(await c.text("#promote-guidelines")).includes("Copy of the file"), "the sync's copy line is not shown");
+      assert.strictEqual(await c.page.locator('#promote-guidelines a[href="https://personalisationhub.com/industries/"]').count(), 1, "industry content links to the website");
+      await c.visible("#promote-requirements-wrap", "requirements section shows");
+      assert.ok(new URL(c.page.url()).hash === "#promote/brand-guidelines", "the page has its own URL");
     },
   },
   {

@@ -32,6 +32,7 @@ import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROV
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
 import { renderMarkdown } from "./docs-markdown.js";
+import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES } from "./promote-section.js";
 import { createDocsList } from "./docs-grid.js";
 import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
 import { SETTINGS_PAGES, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
@@ -544,6 +545,7 @@ function closeAllSubPages() {
   closeDocsPage();
   closeFaqSettingsPage();
   closeUserManagementPage();
+  closePromotePage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
@@ -3227,7 +3229,7 @@ function ensureLazy(...names) {
     lazyStarters[n]();
   }
 }
-lazyStarters.projectDocs = () => primeFromRest("projectDocs", (rows) => { projectDocs = rows; if (docsProjectId) renderDocsPage(); });
+lazyStarters.projectDocs = () => primeFromRest("projectDocs", (rows) => { projectDocs = rows; if (docsProjectId) renderDocsPage(); renderPromotePage(); });
 lazyStarters.skills = () => primeFromRest("skills", (rows) => {
   skills = rows;
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
@@ -3345,6 +3347,7 @@ const startProjectDocsListener = () => onSnapshot(projectDocsRef, (snap) => {
   markLive("projectDocs", snap);
   projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (docsProjectId) renderDocsPage();
+  renderPromotePage();
 }, onListenerError("projectDocs"));
 
 const startSkillsListener = () => onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
@@ -10579,6 +10582,48 @@ UM_TABS.forEach((t) => {
   document.getElementById(`um-tab-${t}`).addEventListener("click", () => openUserManagementPage(t));
 });
 
+// ── Promote › Brand Guidelines (#promote/brand-guidelines) ───────────────
+// Read-only. The text is two board documents that mirror
+// backlog-tracker/promote/*.md (board-docs.json), found by mirrorKey; the repo
+// file wins, so there is nothing to edit here. Agents read the same documents
+// over MCP (list_project_documents / get_project_document).
+const promotePage = document.getElementById("promote-page");
+let promotePageKey = "";
+function renderPromotePage() {
+  if (promotePage.hidden) return;
+  const page = PROMOTE_PAGES.find((p) => p.key === promotePageKey);
+  if (!page) return;
+  document.getElementById("promote-title").textContent = page.label;
+  const docs = promoteDocsFor(page.key, projectDocs);
+  const g = document.getElementById("promote-guidelines");
+  const r = document.getElementById("promote-requirements");
+  g.innerHTML = docs.guidelines ? renderMarkdown(docs.guidelines.body) : "";
+  r.innerHTML = docs.requirements ? renderMarkdown(docs.requirements.body) : "";
+  document.getElementById("promote-empty").hidden = !!docs.guidelines;
+  document.getElementById("promote-requirements-wrap").hidden = !docs.requirements;
+}
+function openPromotePage(key = PROMOTE_PAGES[0].key) {
+  if (!pageAllowed("promote")) return;
+  closeAllSubPages();
+  ensureLazy("projectDocs");
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  promotePageKey = key;
+  promotePage.hidden = false;
+  setRouteHash(promoteHash(key));
+  updateTopbarTitle();
+  renderPromotePage();
+}
+function closePromotePage() {
+  if (promotePage.hidden) return;
+  promotePage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+PROMOTE_PAGES.forEach((p) => {
+  document.getElementById(p.navId).addEventListener("click", () => { closeNavDrawer(); openPromotePage(p.key); });
+});
+
 // The notification bell (KB-NAV-2): in the topbar on every page. The module
 // loads when someone signs in; a ticket opened from it goes to the Staff Kanban.
 let notificationBell = null;
@@ -11693,6 +11738,7 @@ const ROUTE_TITLES = {
   "#user-management/users": "Users",
   "#user-management/roles": "Roles",
   "#user-management/permissions": "Permissions",
+  "#promote/brand-guidelines": "Promote: Brand Guidelines",
   "#settings/projects": "Settings: Projects",
   "#settings/releases": "Settings: Releases",
   "#settings/skills": "Settings: Skills & phase bindings",
@@ -11836,6 +11882,7 @@ function applyRouteFromHash() {
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (settingsPageFromHash(hash)) { const k = settingsPageFromHash(hash); if (faqSettingsPage.hidden) openFaqSettingsPage(k); else if (k !== settingsPage) showSettingsPage(k); }
   else if (hash.startsWith("#user-management")) openUserManagementPage(hash.split("/")[1]);
+  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePage.hidden) openPromotePage(k); }
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
@@ -11846,7 +11893,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !userManagementPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !userManagementPage.hidden || !promotePage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

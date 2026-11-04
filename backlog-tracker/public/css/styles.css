@@ -1893,8 +1893,10 @@ body { overflow-x: clip; }
   .nav-drawer.open { transform: translateY(0); }
   .nav-drawer-header, .nav-search-item { display: none; }
   .nav-drawer[data-show="build"] [data-nav-group]:not([data-nav-group="build"]),
+  .nav-drawer[data-show="promote"] [data-nav-group]:not([data-nav-group="promote"]),
   .nav-drawer[data-show="publish"] [data-nav-group]:not([data-nav-group="publish"]),
   .nav-drawer[data-show="settings"] [data-nav-group="build"],
+  .nav-drawer[data-show="settings"] [data-nav-group="promote"],
   .nav-drawer[data-show="settings"] [data-nav-group="publish"] { display: none; }
   .nav-drawer-item, .profile-menu-item { min-height: 48px; font-size: 16px; }
   .profile-menu { top: auto; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); width: 100%; max-width: none; border-radius: 16px 16px 0 0; border-width: 1px 0 0; }
@@ -2266,3 +2268,9 @@ body { overflow-x: clip; }
 .backlog-bulk-bar { display: inline-flex; gap: 6px; margin-left: 8px; }
 .backlog-bulk-bar button { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; border: 1px solid #c4c4c4; background: #fff; cursor: pointer; }
 .backlog-bulk-bar .backlog-bulk-delete-btn { color: #b3261e; border-color: #b3261e; }
+
+/* Promote › Brand Guidelines */
+.promote-doc { max-width: 80ch; margin-bottom: 16px; }
+.promote-requirements { max-width: 80ch; margin: 8px 0 24px; }
+.promote-requirements > summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+.promote-empty { color: #666; }
