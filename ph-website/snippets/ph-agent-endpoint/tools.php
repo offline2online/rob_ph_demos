@@ -7,6 +7,8 @@
  */
 namespace AngieSnippets\PhAgentEndpoint___ID__;
 
+require_once __DIR__ . '/install-spec.php';
+
 const INDUSTRY_SLUGS = array( 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' );
 const SC_BASE_PATH   = '/support-centre/';
 
@@ -142,6 +144,12 @@ function tool_defs() {
 		array(
 			'name'        => 'book_demo',
 			'description' => 'The link to book a Personalisation Hub demo.',
+			'inputSchema' => $none,
+			'annotations' => $ro,
+		),
+		array(
+			'name'        => 'get_installation_spec',
+			'description' => 'Everything an agent needs to provision Personalisation Hub in a retailer\'s own AWS account and start the free trial: AWS Marketplace listing, product ID and subscribe link, pricing, prerequisites, CloudFormation launch steps and parameters, deployment expectations, verification, recovery and teardown. Items not yet public are marked unconfirmed, never guessed. Subscribing, the EULA and the IAM acknowledgement need a human.',
 			'inputSchema' => $none,
 			'annotations' => $ro,
 		),
@@ -325,6 +333,11 @@ function run_tool( $name, $args, array $src ) {
 
 			case 'start_free_trial':
 				return tool_text( 'Start a free trial of Personalisation Hub on AWS Marketplace: ' . tracked_url( 'free-trial' ) . ' (redirects to ' . FREE_TRIAL_URL . ')', array( 'url' => FREE_TRIAL_URL, 'trackedUrl' => tracked_url( 'free-trial' ), 'text' => 'Start a free trial on AWS Marketplace' ) );
+
+			case 'get_installation_spec':
+				$spec = installation_spec();
+				$spec['marketplace']['trackedTrialUrl'] = tracked_url( 'free-trial' );
+				return tool_text( installation_spec_md( $spec ), $spec );
 
 			case 'book_demo':
 				return tool_text( 'Book a Personalisation Hub demo: ' . tracked_url( 'demo' ) . ' (redirects to ' . DEMO_URL . ')', array( 'url' => DEMO_URL, 'trackedUrl' => tracked_url( 'demo' ), 'text' => 'Book a demo' ) );

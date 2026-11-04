@@ -2827,14 +2827,17 @@ published help articles without crawling pages. `functions/help-search.js`
   (`functions/html-to-md.js`: headings, lists, tables, links, code). The JSON
   `bodyMd` is the stored body unchanged.
 - `POST /help-api/mcp` — a stateless, public, read-only remote MCP server
-  (streamable HTTP, no sign-in) serving exactly the eight tools the WebMCP
+  (streamable HTTP, no sign-in) serving exactly the nine tools the WebMCP
   tools on the site pages define: `describe_platform`, `list_industries`,
   `get_industry`, `get_feature`, `search_help`, `get_help_article`,
-  `start_free_trial`, `book_demo` (3 Nov 2026, "Public read-only remote MCP
-  server"). It holds no content of its own: `tools/list` is
+  `start_free_trial`, `book_demo`, `get_installation_spec` (3 Nov 2026,
+  "Public read-only remote MCP server"; the install spec 4 Nov 2026, "Agent-ready
+  installation spec" — the AWS Marketplace listing, pricing, prerequisites,
+  CloudFormation launch steps and parameters, verification and recovery,
+  with anything not yet public marked `unconfirmed`). It holds no content of its own: `tools/list` is
   `GET https://personalisationhub.com/wp-json/ph-agent/v1/tools` and
   `tools/call` is `GET …/tools/{name}?args=<json>`, always to that fixed
-  origin and only for those eight names (anything else is a JSON-RPC
+  origin and only for those nine names (anything else is a JSON-RPC
   `-32602` without a request to the site). The result is passed through
   unchanged, so it matches the WebMCP tools exactly, and it is always live
   published content (blog posts, pages, industries, and help articles after

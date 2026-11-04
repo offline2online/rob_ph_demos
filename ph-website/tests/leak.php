@@ -181,7 +181,7 @@ $call = $GLOBALS['routes']['ph-agent/v1/tools/(?P<name>[a-z_]{1,40})']['callback
 class LReq implements ArrayAccess { public $p; function __construct( $p ) { $this->p = $p; } function get_param( $k ) { return $this->p[ $k ] ?? null; } function offsetGet( $k ): mixed { return $this->p[ $k ]; } function offsetExists( $k ): bool { return isset( $this->p[ $k ] ); } function offsetSet( $k, $v ): void {} function offsetUnset( $k ): void {} }
 $slugs = \AngieSnippets\PhAgentEndpoint___ID__\feature_slugs();
 $probes = array(
-	array( 'describe_platform', '{}' ), array( 'list_industries', '{}' ), array( 'start_free_trial', '{}' ), array( 'book_demo', '{}' ),
+	array( 'describe_platform', '{}' ), array( 'list_industries', '{}' ), array( 'start_free_trial', '{}' ), array( 'book_demo', '{}' ), array( 'get_installation_spec', '{}' ),
 	array( 'get_industry', '{"slug":"lindt"}' ), array( 'get_industry', '{"slug":"webdemo"}' ),
 	array( 'get_help_article', '{"url":"https://personalisationhub.com/support-centre/hq-admin/future/"}' ),
 	array( 'get_help_article', '{"url":"https://personalisationhub.com/support-centre/hq-admin/gone/"}' ),
