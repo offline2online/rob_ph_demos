@@ -12,7 +12,7 @@ name: Main red alert
 # repo's watchers) rather than a line in a log nobody reads.
 on:
   workflow_run:
-    workflows: ["Rules & MCP server tests", "e2e-quick", "Retail Media Insights tests", "Staff Kanban tests"]
+    workflows: ["Rules & MCP server tests", "e2e-quick", "Retail Media Insights tests", "Staff Kanban tests", "Media Studio tests"]
     types: [completed]
     branches: [main]
 

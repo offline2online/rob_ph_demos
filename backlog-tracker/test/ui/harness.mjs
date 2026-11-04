@@ -71,6 +71,7 @@ export async function startHarness() {
     const context = await (engines.get(engineName) || browser).newContext({ viewport: { width, height }, ...(colorScheme ? { colorScheme } : {}), ...contextOptions });
     const problems = [];
     const refused = [];
+    const mediaKeyWrites = [];
     const addProblem = (p) => problems.push(p);
     await context.addInitScript((s) => { window.__FB_SEED = s; }, seed);
     if (init) await context.addInitScript(init.fn, init.arg);
@@ -90,6 +91,15 @@ export async function startHarness() {
         if (url.pathname === "/mcp/kanban/backfill") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ done: true, after: "", tickets: 0 }) });
         if (url.pathname === "/mcp/kanban/agent-fill") {
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.agentDraft ? { draft: seed.agentDraft, source: "claude" } : { draft: null, reason: "not-configured" }) });
+        }
+        // Media Studio key settings (functions/media-keys.js). seed.mediaKeys is
+        // the status answer; every other call is answered OK and returned to the
+        // test as mediaKeyWrites.
+        if (url.pathname.startsWith("/mediaKeys/")) {
+          const req = route.request();
+          if (url.pathname === "/mediaKeys/v1/status") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.mediaKeys || { encryptionReady: true, providers: [] }) });
+          mediaKeyWrites.push({ method: req.method(), path: url.pathname, body: req.postData() });
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, message: "Key works" }) });
         }
         return route.fallback();
       }
@@ -132,7 +142,7 @@ export async function startHarness() {
     });
     page.on("dialog", (d) => { addProblem(`native ${d.type()} dialog: ${d.message()}`); d.dismiss().catch(() => {}); });
     await page.goto(`${origin}/${hash}`, { waitUntil: "domcontentloaded" });
-    return { page, context, problems, refused, origin, close: () => context.close() };
+    return { page, context, problems, refused, mediaKeyWrites, origin, close: () => context.close() };
   }
 
   return {

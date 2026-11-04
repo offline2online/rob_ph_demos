@@ -1,2 +1,4 @@
 .DS_Store
 backlog-tracker/help-site/
+media-studio/.env
+media-studio/output/

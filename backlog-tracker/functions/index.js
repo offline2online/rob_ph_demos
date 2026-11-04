@@ -2222,6 +2222,33 @@ exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSec
 const mcp = require("./mcp-server");
 exports.mcpServer = mcp.mcpServer;
 
+// ── Media Studio provider keys ────────────────────────────────────────────
+// Settings → Integrations & MCP → "Media Studio API keys": admins store the
+// Gemini / LTX / WordPress keys media-studio/ uses, encrypted (AES-256-GCM)
+// under MEDIA_KEYS_ENC_KEY — a random 32-byte key that deploy-backlog-
+// tracker.yml creates once and never replaces, and that only this function
+// is bound to. The ciphertexts live in mediaProviderKeys/{provider}, closed
+// to every client by firestore.rules. Media Studio (its workflow, or any
+// run holding BOARD_API_KEY) reads them back decrypted from /v1/runtime.
+// See media-keys.js and media-studio/README.md.
+const MEDIA_KEYS_ENC_KEY = defineSecret("MEDIA_KEYS_ENC_KEY");
+const { createMediaKeysApi } = require("./media-keys");
+let mediaKeysApi = null;
+exports.mediaKeys = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY], cors: false, timeoutSeconds: 30, maxInstances: 5 }, (req, res) => {
+  if (!mediaKeysApi) {
+    const { getAuth } = require("firebase-admin/auth");
+    mediaKeysApi = createMediaKeysApi({
+      db: getFirestore(),
+      verifyIdToken: (t) => getAuth().verifyIdToken(t, true),
+      resolveConsoleUser: mcp.resolveConsoleUser,
+      encKey: () => MEDIA_KEYS_ENC_KEY.value(),
+      boardKey: () => BOARD_API_KEY.value(),
+      logger,
+    });
+  }
+  return mediaKeysApi.handle(req, res);
+});
+
 // Public, read-only help search for AI agents (no sign-in) — see help-search.js.
 // Served at /help-api/** on the console's Hosting site (firebase.json rewrite).
 // Alerts (abuse = many 429s, errors = 5xx) go to NOTIFY_WEBHOOK_URL, the same

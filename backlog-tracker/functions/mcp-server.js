@@ -5549,6 +5549,11 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
   }
 });
 
+// The same member lookup the console endpoints use, for functions/index.js's
+// mediaKeys endpoint (media-keys.js), so both answer "who is this, and what
+// role" identically.
+exports.resolveConsoleUser = resolveConsoleUser;
+
 // Exported for the unit tests in test/mcp-server.test.js — none of these
 // touch Firestore or Auth, so they can be checked without an emulator.
 exports.__test = {

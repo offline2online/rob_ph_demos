@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Media Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <!-- Content frame only: this page may be iframed into HQ Admin, whose shell
+       owns the header, sidebar and breadcrumb. Nothing here is position:fixed. -->
+  <main class="frame">
+    <div class="title-row">
+      <span class="page-title">Media Studio</span>
+      <button class="btn btn-text" type="button" id="refresh"><span class="material-symbols-outlined">refresh</span>Refresh</button>
+    </div>
+    <div class="divider"></div>
+    <div class="count-line"><b id="asset-count">0</b> assets · images by Nano Banana Pro, video by Veo 3.1 and LTX 2.5</div>
+
+    <div id="alerts"></div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" role="tab" data-tab="image" aria-selected="true">Create Image</button>
+      <button class="tab" role="tab" data-tab="video" aria-selected="false">Create Video</button>
+      <button class="tab" role="tab" data-tab="library" aria-selected="false">Library</button>
+    </nav>
+
+    <section class="panel" data-panel="image">
+      <div class="two-col">
+        <form id="image-form" class="form" autocomplete="off">
+          <div class="field">
+            <label for="img-prompt"><span class="req">*</span> Describe the image</label>
+            <textarea id="img-prompt" name="prompt" rows="5" required placeholder="A shopper scanning a QR code on a digital menu board in a bright café, morning light"></textarea>
+          </div>
+          <div class="row">
+            <div class="field"><label for="img-preset">Format</label><select id="img-preset" name="preset" data-kind="image"></select></div>
+            <div class="field"><label for="img-style">Style</label><select id="img-style" name="style"></select></div>
+          </div>
+          <div class="row">
+            <div class="field"><label for="img-aspect">Aspect ratio</label>
+              <select id="img-aspect" name="aspectRatio">
+                <option value="">From format</option>
+                <option>16:9</option><option>21:9</option><option>3:2</option><option>4:3</option><option>1:1</option>
+                <option>4:5</option><option>3:4</option><option>2:3</option><option>9:16</option><option>5:4</option>
+              </select>
+            </div>
+            <div class="field"><label for="img-size">Resolution</label>
+              <select id="img-size" name="imageSize"><option value="">From format</option><option>1K</option><option>2K</option><option>4K</option></select>
+            </div>
+            <div class="field narrow"><label for="img-count">Variations</label>
+              <select id="img-count" name="count"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+            </div>
+          </div>
+
+          <div class="section-label">Reference images (optional)</div>
+          <div class="hint">Product shots, a logo, or a picture whose style to match — up to 14.</div>
+          <div class="refs" id="img-refs"></div>
+          <label class="drop" for="img-ref-input">
+            <span class="material-symbols-outlined">add_photo_alternate</span>
+            <span>Drop images here or <u>browse</u></span>
+            <input id="img-ref-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+          </label>
+
+          <div class="section-label">Options</div>
+          <label class="check"><input type="checkbox" name="groundWithSearch" /> Ground in Google Search (for current facts, products, places)</label>
+          <label class="check wp-only"><input type="checkbox" name="publish" value="wordpress" /> Also upload to the WordPress media library</label>
+
+          <div class="actions">
+            <button class="btn btn-ai" type="submit"><span class="material-symbols-outlined">auto_awesome</span><span class="ai-text">Generate Image</span></button>
+          </div>
+        </form>
+        <aside class="jobs-col"><div class="section-label first">Recent jobs</div><div class="jobs" data-jobs></div></aside>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="video" hidden>
+      <div class="two-col">
+        <form id="video-form" class="form" autocomplete="off">
+          <div class="field">
+            <label>Model</label>
+            <div class="segmented" id="video-provider" role="radiogroup"></div>
+            <div class="hint" id="provider-hint"></div>
+          </div>
+          <div class="field">
+            <label for="vid-prompt"><span class="req">*</span> Describe the shot</label>
+            <textarea id="vid-prompt" name="prompt" rows="5" required placeholder="Slow push-in on a store window display as the digital screen changes from breakfast to lunch offers"></textarea>
+          </div>
+          <div class="row">
+            <div class="field"><label for="vid-preset">Format</label><select id="vid-preset" name="preset" data-kind="video"></select></div>
+            <div class="field"><label for="vid-style">Style</label><select id="vid-style" name="style"></select></div>
+          </div>
+          <div class="row">
+            <div class="field"><label for="vid-aspect">Aspect ratio</label>
+              <select id="vid-aspect" name="aspectRatio"><option value="">From format</option><option>16:9</option><option>9:16</option></select>
+            </div>
+            <div class="field"><label for="vid-res">Resolution</label><select id="vid-res" name="resolution"></select></div>
+            <div class="field narrow"><label for="vid-duration">Length</label><select id="vid-duration" name="durationSeconds"></select></div>
+          </div>
+
+          <div class="section-label">Frames (optional)</div>
+          <div class="hint">Start from a still to animate it — upload one, or use <b>Animate</b> on any image in the Library.</div>
+          <div class="row">
+            <div class="field"><label>First frame</label><div class="frame-slot" data-slot="image"></div></div>
+            <div class="field"><label>Last frame</label><div class="frame-slot" data-slot="lastFrame"></div></div>
+          </div>
+
+          <div class="veo-only">
+            <div class="field"><label for="vid-negative">Avoid (negative prompt)</label><input id="vid-negative" name="negativePrompt" placeholder="text, watermarks, logos" /></div>
+          </div>
+          <div class="ltx-only">
+            <div class="row">
+              <div class="field"><label for="vid-camera">Camera motion</label><select id="vid-camera" name="cameraMotion"><option value="">Model decides</option></select></div>
+              <div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" name="generateAudio" checked /> Generate audio</label></div>
+            </div>
+          </div>
+          <label class="check wp-only"><input type="checkbox" name="publish" value="wordpress" /> Also upload to the WordPress media library</label>
+
+          <div class="actions">
+            <button class="btn btn-ai" type="submit"><span class="material-symbols-outlined">auto_awesome</span><span class="ai-text">Generate Video</span></button>
+            <span class="hint inline">Video takes 1–5 minutes. You can keep working; it lands in the Library.</span>
+          </div>
+        </form>
+        <aside class="jobs-col"><div class="section-label first">Recent jobs</div><div class="jobs" data-jobs></div></aside>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="library" hidden>
+      <div class="library-bar">
+        <div class="segmented light" id="lib-filter">
+          <button type="button" class="seg active" data-kind="">All</button>
+          <button type="button" class="seg" data-kind="image"><span class="material-symbols-outlined">image</span>Images</button>
+          <button type="button" class="seg" data-kind="video"><span class="material-symbols-outlined">movie</span>Videos</button>
+        </div>
+        <input type="search" id="lib-search" placeholder="Search prompts" />
+      </div>
+      <div class="grid" id="library"></div>
+    </section>
+  </main>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

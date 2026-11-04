@@ -9959,7 +9959,7 @@ function showSettingsPage(key) {
     if (b.dataset.settingsPage === settingsPage) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   });
   if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
-  if (settingsPage === "integrations") { loadFaqSiteSettings(); loadMyAgentConnections(); }
+  if (settingsPage === "integrations") { loadFaqSiteSettings(); loadMyAgentConnections(); if (isConsoleAdmin()) loadMediaKeys(); }
   setRouteHash(settingsHash(settingsPage));
   updateTopbarTitle();
   renderSettingsGrids();
@@ -10813,6 +10813,105 @@ document.getElementById("mcp-connections")?.addEventListener("click", async (e) 
 });
 
 document.getElementById("mcp-refresh-connections")?.addEventListener("click", loadMyAgentConnections);
+
+// ── Settings → Media Studio API keys ─────────────────────────────────────
+// Write-only key management for media-studio/ (functions/media-keys.js,
+// served at /mediaKeys/**). The browser sends a key once, over HTTPS, to an
+// admin-only endpoint that encrypts it before it is stored; nothing here can
+// read a key back — status rows carry only "…last4", who and when.
+async function mediaKeysCall(path, opts = {}) {
+  const resp = await fetch(`/mediaKeys/v1/${path}`, { ...opts, headers: await consoleApiHeaders() });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+function mediaKeyDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d) ? "" : d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function renderMediaKeys(status) {
+  const box = document.getElementById("media-keys-list");
+  if (!box) return;
+  const warn = status.encryptionReady ? "" : '<p class="field-hint" style="color:#c62828;">Encryption isn\'t set up yet: the next console deploy creates its key. Until then keys can\'t be saved.</p>';
+  box.innerHTML = warn + status.providers.map((p) => {
+    const bits = [];
+    if (p.set) {
+      bits.push(`Saved, ends <code>${escapeHTML((p.hint || "").replace(/^…/, ""))}</code>`);
+      if (p.updatedBy) bits.push(`by ${escapeHTML(p.updatedBy)}`);
+      if (p.updatedAt) bits.push(escapeHTML(mediaKeyDate(p.updatedAt)));
+      if (p.siteUrl) bits.push(`for ${escapeHTML(p.siteUrl)}`);
+      if (p.lastUsedAt) bits.push(`last used ${escapeHTML(mediaKeyDate(p.lastUsedAt))}`);
+    }
+    const test = p.lastTest
+      ? `<div class="media-key-state ${p.lastTest.ok ? "media-key-test-ok" : "media-key-test-bad"}"><span class="material-symbols-outlined" aria-hidden="true">${p.lastTest.ok ? "check_circle" : "error"}</span> ${escapeHTML(p.lastTest.message || "")}${p.lastTest.at ? ` · ${escapeHTML(mediaKeyDate(p.lastTest.at))}` : ""}</div>`
+      : "";
+    const unreadable = p.set && !p.readable && status.encryptionReady
+      ? '<div class="media-key-state media-key-test-bad">Saved under a different encryption key, so it can\'t be used. Paste it again.</div>' : "";
+    const placeholder = p.id === "wordpress" ? "username:application password" : (p.set ? "Paste a new key to replace it" : "Paste the API key");
+    return `<div class="media-key-row" data-media-key="${escapeHTML(p.id)}">
+      <div class="media-key-head">
+        <div>
+          <div class="media-key-title">${escapeHTML(p.label)}</div>
+          <div class="media-key-state${p.set ? " is-set" : ""}"><span class="media-key-dot" aria-hidden="true"></span>${p.set ? bits.join(" · ") : "Not set"}</div>
+          ${test}${unreadable}
+        </div>
+        <div class="form-row" style="gap:6px;margin:0;">
+          ${p.set ? '<button type="button" class="btn-ghost" data-media-key-act="test-key">Test</button><button type="button" class="btn-ghost" data-media-key-act="remove-key">Remove</button>' : ""}
+        </div>
+      </div>
+      <div class="media-key-form">
+        ${p.id === "wordpress" ? `<input type="url" data-media-key-site placeholder="https://personalisationhub.com" value="${escapeHTML(p.siteUrl || "")}" aria-label="WordPress site URL" autocomplete="off" spellcheck="false">` : ""}
+        <input type="password" data-media-key-value placeholder="${escapeHTML(placeholder)}" aria-label="${escapeHTML(p.label)} key" autocomplete="new-password" spellcheck="false">
+        <button type="button" class="btn-primary" data-media-key-act="save-key"${status.encryptionReady ? "" : " disabled"}>Save</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+async function loadMediaKeys() {
+  const box = document.getElementById("media-keys-list");
+  if (!box) return;
+  try {
+    renderMediaKeys(await mediaKeysCall("status", { method: "GET" }));
+  } catch (err) {
+    box.innerHTML = `<p class="interface-row-empty">Couldn't load the Media Studio keys: ${escapeHTML(err.message)}</p>`;
+  }
+}
+document.getElementById("media-keys-list")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-media-key-act]");
+  if (!btn) return;
+  const row = btn.closest("[data-media-key]");
+  const provider = row.dataset.mediaKey;
+  const label = row.querySelector(".media-key-title")?.textContent || provider;
+  const act = btn.dataset.mediaKeyAct;
+  btn.disabled = true;
+  try {
+    if (act === "save-key") {
+      const input = row.querySelector("[data-media-key-value]");
+      const value = input.value.trim();
+      if (!value) { await showAlert("Paste the key first."); return; }
+      const body = { value };
+      const site = row.querySelector("[data-media-key-site]");
+      if (site) body.siteUrl = site.value.trim();
+      await mediaKeysCall(`keys/${provider}`, { method: "POST", body: JSON.stringify(body) });
+      input.value = ""; // never leave a key sitting in the page
+      await mediaKeysCall(`keys/${provider}/test`, { method: "POST", body: "{}" }).catch(() => {});
+      await loadMediaKeys();
+    } else if (act === "test-key") {
+      const r = await mediaKeysCall(`keys/${provider}/test`, { method: "POST", body: "{}" });
+      await loadMediaKeys();
+      if (!r.ok) await showAlert(`${label}: ${r.message}`);
+    } else if (act === "remove-key") {
+      if (!(await showConfirmDialog(`Remove the ${label} key? Media Studio stops being able to use it until someone saves a new one.`, { title: "Remove key", okLabel: "Remove", danger: true }))) return;
+      await mediaKeysCall(`keys/${provider}`, { method: "DELETE" });
+      await loadMediaKeys();
+    }
+  } catch (err) {
+    await showAlert(`${label}: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
 document.getElementById("mcp-copy-btn")?.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(MCP_SERVER_URL);
