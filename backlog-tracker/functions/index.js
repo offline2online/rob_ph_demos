@@ -2245,6 +2245,28 @@ exports.helpApiTestAlert = onRequest({ cors: false, timeoutSeconds: 30, secrets:
   await new Promise((r) => setTimeout(r, 1500));
   res.status(200).json({ sent, webhookConfigured: !!NOTIFY_WEBHOOK_URL.value() });
 });
+
+// Refresh ping: a change to what the Support Centre shows (an article's
+// published fields, a category) tells the WordPress site to re-read
+// /help-api/data/* now, instead of waiting for its hourly sync. Debounced
+// across instances through settings/faqRefreshPing (5 s to coalesce quick
+// edits, then at most one call per 60 s); 4 s timeout; failures are logged
+// and never retried. See faq-feed.js.
+const faqFeed = require("./faq-feed");
+const refreshPinger = faqFeed.createRefreshPinger({ store: faqFeed.firestoreRefreshStore({ doc: (p) => getFirestore().doc(p), runTransaction: (fn) => getFirestore().runTransaction(fn) }), logger });
+const REFRESH_OPTS = { timeoutSeconds: 90, memory: "256MiB", maxInstances: 5 };
+exports.pingSupportCentreOnArticleChange = onDocumentWritten({ document: "faqArticles/{articleId}", ...REFRESH_OPTS }, async (event) => {
+  const before = event.data?.before?.exists ? event.data.before.data() : null;
+  const after = event.data?.after?.exists ? event.data.after.data() : null;
+  if (!faqFeed.articleChangesPublished(event.params.articleId, before, after)) return;
+  await refreshPinger.request();
+});
+exports.pingSupportCentreOnCategoryChange = onDocumentWritten({ document: "faqCategories/{categoryId}", ...REFRESH_OPTS }, async (event) => {
+  const before = event.data?.before?.exists ? event.data.before.data() : null;
+  const after = event.data?.after?.exists ? event.data.after.data() : null;
+  if (!faqFeed.categoryChangesPublished(event.params.categoryId, before, after)) return;
+  await refreshPinger.request();
+});
 exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 exports.syncMemberDirectory = mcp.syncMemberDirectory;
 exports.kanbanNotifyTask = mcp.kanbanNotifyTask;

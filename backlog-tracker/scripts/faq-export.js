@@ -14,24 +14,20 @@
 // ever renders status "published".
 const path = require("path");
 const fs = require("fs");
-const crypto = require("crypto");
 const { initializeApp, applicationDefault } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeIndex } = require("./faq-index-lib");
+// The field allow-list is shared with the live feed (GET /help-api/data/*), so
+// the two can never disagree about what a published article looks like.
+const { categoryRecord, articleRecord, releaseRecord, serializeArticle, serializeReleases } = require("../functions/faq-feed");
 
 const DATA_DIR = path.resolve(__dirname, "../../faq/data");
 initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
 
-const hash = (s) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 16);
-const iso = (v) => (v && typeof v.toDate === "function" ? v.toDate().toISOString().replace(/\.\d{3}Z$/, "Z") : typeof v === "string" ? v : null);
-
 async function main() {
   const catsSnap = await db.collection("faqCategories").orderBy("order", "asc").get();
-  const categories = catsSnap.docs.map((d) => {
-    const c = d.data();
-    return { id: d.id, name: c.name || "", icon: c.icon || "help", description: c.description || "", order: c.order || 0, parentId: c.parentId || null };
-  });
+  const categories = catsSnap.docs.map((d) => categoryRecord(d.id, d.data()));
 
   const artsSnap = await db.collection("faqArticles").get();
   const articlesDir = path.join(DATA_DIR, "articles");
@@ -40,37 +36,9 @@ async function main() {
   for (const d of artsSnap.docs) {
     const a = d.data();
     if (a.retiredAt && a.status !== "published") continue; // retired: not part of the snapshot
-    const body = a.bodyMd || "";
-    const meta = {
-      id: d.id, categoryId: a.categoryId || "", order: a.order || 0, title: a.title || "", slug: a.slug || d.id,
-      summary: a.summary || "", keywords: Array.isArray(a.keywords) ? a.keywords : [], docType: a.docType || "faq",
-      status: a.status === "published" ? "published" : "draft",
-      // Editor-controlled topic/industry picker (fJ4kR2vTsWmXoP81nQeH) — splits
-      // the rendered body into one block per <h2> and lets a reader narrow to
-      // just one, right under the introduction. Off (the default) leaves every
-      // article rendering exactly as before.
-      sectionPicker: !!a.sectionPicker,
-      sectionPickerLabel: a.sectionPickerLabel || "",
-      // Release binding (console article editor → "Introduced in release" /
-      // "Removed in release"). Only written when set, so an unbound article's
-      // snapshot line — every article, until the backfill runs — is
-      // byte-for-byte what it was before releases existed. faq-data.js reads
-      // these against releases.json below.
-      // SEO & agent fields (rri7DngI2ccd7q4uYdk6) — the WordPress Support
-      // Centre publish reads these from the export. Only written when set, so
-      // an article without them keeps its snapshot line exactly as it was.
-      ...(a.seoTitle ? { seoTitle: a.seoTitle } : {}),
-      ...(a.metaDescription ? { metaDescription: a.metaDescription } : {}),
-      ...(a.directAnswer ? { directAnswer: a.directAnswer } : {}),
-      ...(Array.isArray(a.questionVariants) && a.questionVariants.length ? { questionVariants: a.questionVariants } : {}),
-      ...(a.articleType ? { articleType: a.articleType } : {}),
-      ...(a.introducedInReleaseId ? { introducedInReleaseId: a.introducedInReleaseId } : {}),
-      ...(a.removedInReleaseId ? { removedInReleaseId: a.removedInReleaseId } : {}),
-      updatedAt: iso(a.updatedAt) || iso(a.publishedAt) || new Date().toISOString(),
-      contentHash: hash(body),
-    };
+    const record = articleRecord(d.id, a);
     keep.add(d.id);
-    fs.writeFileSync(path.join(articlesDir, `${d.id}.json`), JSON.stringify({ ...meta, bodyMd: body }, null, 0) + "\n");
+    fs.writeFileSync(path.join(articlesDir, `${d.id}.json`), serializeArticle(record));
   }
   // Remove body files for articles that no longer exist in Firestore.
   for (const f of fs.readdirSync(articlesDir)) {
@@ -122,16 +90,13 @@ async function main() {
   // which is also creation order (order is assigned once and never moves).
   // Same "only rewrite if it changed" treatment as the files above.
   const releasesSnap = await db.collection("releases").get();
-  const releases = releasesSnap.docs.map((d) => {
-    const r = d.data();
-    return { id: d.id, name: r.name || "", version: r.version || null, status: r.status === "live" ? "live" : "draft", order: Number(r.order) || 0 };
-  });
+  const releases = releasesSnap.docs.map((d) => releaseRecord(d.id, d.data()));
   releases.sort((x, y) => x.order - y.order || x.id.localeCompare(y.id));
   const releasesPath = path.join(DATA_DIR, "releases.json");
   let previousReleases = null;
   try { previousReleases = JSON.parse(fs.readFileSync(releasesPath, "utf8")); } catch { /* first export */ }
   if (JSON.stringify(previousReleases) !== JSON.stringify(releases)) {
-    fs.writeFileSync(releasesPath, JSON.stringify(releases, null, 2) + "\n");
+    fs.writeFileSync(releasesPath, serializeReleases(releases));
     console.log(`faq-export: releases.json updated (${releases.length} releases, ${releases.filter((r) => r.status === "live").length} live)`);
   }
 }

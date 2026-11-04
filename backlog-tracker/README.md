@@ -877,6 +877,12 @@ that correctly has no single folder) always has at least one path whose
 top segment already exists there, so it's never caught by this check — see
 `test/patch-paths.test.js` for the exact cases.
 
+**A declared `repoFolder` that doesn't exist yet is a new project, not a typo**
+(3 Nov 2026): `pendingRepoFolderOf()` finds it and `placePatchInNewFolder()`
+accepts a patch whose paths already start with `<repoFolder>/` (creating the
+folder) or rewrites folder-relative paths under it. The PR #185 refusal now
+applies only to a project with no `repoFolder` at all.
+
 **A change to an API or schema without its spec is refused too**
 (`docsImpact`). A project's `board-docs.json` may carry
 `"docsImpact": [{"when": ["<glob>"], "require": ["<repo path>"], "why": "<optional, max 200 chars>"}]`.
@@ -2692,3 +2698,4 @@ management" scenario in `test/ui/console-click.test.mjs`.
 - `functions/elementor-deploy.js` — pure logic for non-GitHub (`deployTarget: "elementor"`) projects: publish/dry-run, rollback, pre-publish checks, recurring-job scheduling. See REQUIREMENTS.md → "Non-GitHub deployment targets".
 - `functions/html-to-md.js` — HTML-to-markdown conversion used by the help API when WordPress's markdown twin is unreachable.
 - `functions/help-search.js` — the public, read-only help search for AI agents (`helpSearch` function, `/help-api/**`: search, article, a stateless public read-only remote MCP server that proxies the site's eight WebMCP tools live from `/wp-json/ph-agent/v1/tools`, cached 5 min with `X-Cache`). Published and in-range only, never drafts or `pendingRevision`; rate limited per address and endpoint (429 + `X-RateLimit-*`), cached (search and article, `X-Cache`), monitored with abuse/error alerts to `NOTIFY_WEBHOOK_URL` (test with the `helpApiTestAlert` function), logs queries to `helpSearchLog`. See REQUIREMENTS.md → "Public help search for AI agents".
+- `functions/faq-feed.js` — the published-content record builders shared with `scripts/faq-export.js`, the live feed `GET /help-api/data/{index,releases}.json` / `articles/<id>.json` (served by `help-search.js`), and the debounced Support Centre refresh ping (`pingSupportCentreOnArticleChange` / `…OnCategoryChange` in `index.js`). See REQUIREMENTS.md → "Live data feed and refresh ping".

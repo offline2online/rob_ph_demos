@@ -57,20 +57,8 @@ function validateIndexAgainstArticleFiles(index, articlesDir) {
   }
 }
 
-function serializeIndex(index) {
-  const catLines = index.categories.map((c) => "    " + JSON.stringify(c)).join(",\n");
-  const artLines = index.articles.map((a) => "    " + JSON.stringify(a)).join(",\n");
-  return (
-    "{\n" +
-    `  "generatedAt": ${JSON.stringify(index.generatedAt)},\n` +
-    '  "categories": [\n' +
-    (catLines ? catLines + "\n" : "") +
-    "  ],\n" +
-    '  "articles": [\n' +
-    (artLines ? artLines + "\n" : "") +
-    "  ]\n" +
-    "}\n"
-  );
-}
+// serializeIndex lives with the shared record builders so the live feed
+// (functions/faq-feed.js) writes exactly the same bytes.
+const { serializeIndex } = require("../functions/faq-feed");
 
 module.exports = { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeIndex };

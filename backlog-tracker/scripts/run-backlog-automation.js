@@ -2051,6 +2051,37 @@ function patchFilesLookFolderRelative(patchFiles, exists = (p) => fs.existsSync(
   return !real.some((f) => f.path.startsWith(WORKFLOW_PATH_PREFIX) || exists(f.path.split("/")[0]));
 }
 
+// The folder a project has declared (projects/{id}.repoFolder) that does not
+// exist in the repo yet — a newly promoted project, whose first ticket creates
+// it ("the folder itself appears in the repo when its first ticket lands").
+// null when no folder is declared, the project opted out of one, or the
+// declared folder already exists (normalisePatchPaths covers that case).
+function pendingRepoFolderOf(project, exists) {
+  if (!project || project.repoFolderNotApplicable) return null;
+  const folder = String(project.repoFolder || "").trim().replace(/^\/+|\/+$/g, "");
+  if (!folder || folder.includes("..")) return null;
+  return projectFolderOf({ repoFolder: folder }, exists) ? null : folder;
+}
+
+// A patch into a folder that does not exist yet. Paths already under
+// `<folder>/` apply as they are (creating it); when every other path looks
+// folder-relative (none of their top-level segments exist at the root) they
+// are rewritten under the folder. Safe because the folder is new, so nothing
+// in it can be overwritten. A patch that touches real root entries is left
+// alone. The PR #185 guard still applies to projects with no repoFolder.
+function placePatchInNewFolder(patchFiles, folder, exists = (p) => fs.existsSync(path.join(process.cwd(), p))) {
+  const files = (patchFiles || []).map((f) => (f && typeof f === "object" ? { ...f } : f));
+  const moved = [];
+  if (!folder) return { files, moved };
+  const others = files.filter((f) => f && typeof f.path === "string" && !f.path.includes("..") && !f.path.startsWith(`${folder}/`) && !f.path.startsWith(".github/"));
+  if (!others.length || !patchFilesLookFolderRelative(others, exists)) return { files, moved };
+  for (const f of others) {
+    moved.push({ from: f.path, to: `${folder}/${f.path}` });
+    f.path = `${folder}/${f.path}`;
+  }
+  return { files, moved };
+}
+
 function applyPatchFiles(patchFiles) {
   for (const f of patchFiles || []) {
     if (!f || typeof f.path !== "string" || f.path.includes("..")) {
@@ -4693,7 +4724,9 @@ async function processApplyPatch(item) {
   // folder gets a comment instead of files quietly written to the repo
   // root. Checked before ensureDeployBranch/checkoutTrain — a refused item
   // gets no branch work at all.
-  if (!projectFolderOf(project) && patchFilesLookFolderRelative(item.patchFiles)) {
+  // A declared repoFolder that doesn't exist yet is a new project's first
+  // patch, not a typo: it is placed under that folder below instead.
+  if (!projectFolderOf(project) && !pendingRepoFolderOf(project) && patchFilesLookFolderRelative(item.patchFiles)) {
     console.log(`[apply-patch] ${item.id}: refusing — patchFiles look folder-relative but project ${projectId} has no resolvable repoFolder`);
     const notes = await appendNote(
       item,
@@ -4701,8 +4734,7 @@ async function processApplyPatch(item) {
       `which is exactly the shape a patch written relative to a project's own folder has — writing it as given ` +
       `would create new files at the repo root instead of touching the real ones (see PR #185, 22 Sep 2026). ` +
       (project.repoFolder
-        ? `This project's repoFolder is set to "${project.repoFolder}", but that folder doesn't exist in this repo ` +
-          `— check it for a typo.`
+        ? `This project's repoFolder is set to "${project.repoFolder}", which isn't usable here.`
         : `This project has no repoFolder set.`) +
       ` patchReady has been cleared. Set this project's repo folder correctly (its Docs page → "Repo folder", or ` +
       `a direct Firestore write to projects/${projectId}.repoFolder) and set patchReady again — or, if this ` +
@@ -4767,8 +4799,11 @@ async function processApplyPatch(item) {
     checkoutTrain(deployBranch);
     // Paths written relative to the project's folder go under it (see
     // normalisePatchPaths); decided against the train's actual tree.
-    ({ files: patchedFiles, moved: movedPaths } = normalisePatchPaths(item.patchFiles, projectFolderOf(project)));
-    if (movedPaths.length) console.log(`[apply-patch] ${item.id}: ${movedPaths.length} patch path(s) were relative to ${projectFolderOf(project)}/ — placed under it (${movedPaths.map((m) => m.from).join(", ")})`);
+    const newFolder = projectFolderOf(project) ? null : pendingRepoFolderOf(project);
+    ({ files: patchedFiles, moved: movedPaths } = newFolder
+      ? placePatchInNewFolder(item.patchFiles, newFolder)
+      : normalisePatchPaths(item.patchFiles, projectFolderOf(project)));
+    if (movedPaths.length) console.log(`[apply-patch] ${item.id}: ${movedPaths.length} patch path(s) were relative to ${newFolder || projectFolderOf(project)}/ — placed under it (${movedPaths.map((m) => m.from).join(", ")})`);
     if (patchBase && patchBase !== headSha()) {
       // The branch moved under this patch — main was merged in, or another
       // ticket (built in parallel) landed first: carry this patch's edits
@@ -4948,7 +4983,7 @@ async function processApplyPatch(item) {
     `Nothing merges to main until every ticket on the train is approved and someone clicks Deploy to Main.` +
     syncNote +
     (movedPaths.length
-      ? ` Note: ${movedPaths.length} of this patch's paths were relative to the project's folder rather than the repo root (${movedPaths.map((m) => m.from).join(", ")}) and were placed under ${projectFolderOf(project)}/ — patchFiles paths must start at the repo root.`
+      ? ` Note: ${movedPaths.length} of this patch's paths were relative to the project's folder rather than the repo root (${movedPaths.map((m) => m.from).join(", ")}) and were placed under ${projectFolderOf(project) || pendingRepoFolderOf(project)}/ — patchFiles paths must start at the repo root.`
       : "") +
     rebuildNote(rebuilds, sha) +
     (docsImpactWaivers.length ? ` ${docsImpactWaivers.join(" ")}` : "") +
@@ -7520,7 +7555,7 @@ module.exports = {
   isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict, deployWorkflowsFor,
   tryAutoResolvePackageJsonConflict, tryAutoResolveTrainMergeConflict, mergeCommandChains, resumeConflictedTrain, trainConflictKey,
   // test/patch-paths.test.js
-  normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative,
+  normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative, pendingRepoFolderOf, placePatchInNewFolder,
   // test/patch-offload.test.js — patchFiles read from the card or its sub-document
   patchFilesFor, dropPatchFiles, patchPartPath,
   // test/preview-url-pin.test.js
