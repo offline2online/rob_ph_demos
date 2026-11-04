@@ -42,6 +42,7 @@ function slice(from, to) {
 const editorCode = [
   slice("function escapeHTML(s) {", "\n}\n") + "\n}\n",
   slice("const FAQ_CALLOUT_LEVELS =", "// Insert a brand-new table at the cursor"),
+  slice("let faqTableActiveCell = null;", "// Rich-text body editor"),
   slice("let faQuill = null;", "// The editor is created the first time an article opens"),
   slice("function faqBodySourceForSave() {", "\n}\n") + "\n}\n",
 ].join("\n");
@@ -63,6 +64,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8">
 <script src="/quill.min.js"></script><script src="/purify.min.js"></script></head>
 <body><p id="fa-load-notice" hidden></p><div id="fa-body-editor"></div>
 <script>${editorCode}
+function updateFaDirtyState(){}
 createFaQuill();
 function renderFaqBodyMd(c){const t=(c||"").trim();return t.startsWith("<")?DOMPurify.sanitize(t,{ADD_TAGS:["iframe"],ADD_ATTR:["allowfullscreen","frameborder"]}):t;}
 window.loadArticle=(html)=>{faqSetEditorHtml(renderFaqBodyMd(html));return faqBodySourceForSave();};
@@ -100,6 +102,41 @@ const structure = (html) => ({
   blocks: count(html, /<pre[\s>]/g), code: count(html, /<code[\s>]/g) - count(html, /<pre[^>]*>\s*<code[\s>]/g),
 });
 let failures = 0, checked = 0;
+
+// Table toolbar: rows/columns are inserted next to the selected cell and the
+// selected row/column is the one deleted (not just the last one).
+{
+  const out = await tab.evaluate(() => {
+    window.loadArticle("<div class=\"faq-table\"><table><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1a</td><td>1b</td></tr><tr><td>2a</td><td>2b</td></tr></tbody></table></div>");
+    const wrap = faQuill.root.querySelector(".faq-table");
+    const table = wrap.querySelector("table");
+    const click = (action) => wrap.querySelector(`[data-action="${action}"]`).click();
+    const grid = () => [...table.rows].map((r) => [...r.cells].map((c) => c.textContent).join(",")).join("|");
+    const pick = (r, c) => { table.rows[r].cells[c].focus(); };
+    const log = [];
+    pick(1, 0); click("row-below"); log.push(grid());       // between row 1 and 2
+    pick(1, 0); click("row-above"); log.push(grid());       // above row 1
+    pick(3, 1); click("remove-row"); log.push(grid());      // deletes the selected (blank) row, not the last
+    pick(1, 0); click("col-right"); log.push(grid());       // between A and B
+    pick(1, 0); click("col-left"); log.push(grid());        // before A
+    pick(0, 1); click("remove-col"); log.push(grid());      // deletes the selected column
+    pick(0, 0); click("remove-row"); log.push(grid());      // header row is kept
+    return log;
+  });
+  const exact = [
+    "A,B|1a,1b|,|2a,2b",
+    "A,B|,|1a,1b|,|2a,2b",
+    "A,B|,|1a,1b|2a,2b",
+  ];
+  // Inserted rows/columns are blank, so after the column steps compare shape only.
+  const ok = out[0] === exact[0] && out[1] === exact[1] && out[2] === exact[2]
+    && out[3].split("|").every((r) => r.split(",").length === 3)
+    && out[4].split("|").every((r) => r.split(",").length === 4)
+    && out[5].split("|").every((r) => r.split(",").length === 3) && out[5].startsWith(",")
+    && out[6] === out[5];
+  checked++;
+  if (!ok) { failures++; console.log(`FAIL table toolbar\n  ${out.join("\n  ")}`); }
+}
 for (const file of fs.readdirSync(articlesDir).sort()) {
   const article = JSON.parse(fs.readFileSync(path.join(articlesDir, file), "utf8"));
   if (only.length && !only.includes(article.id)) continue;

@@ -11920,12 +11920,11 @@ function faqTableRowsToText(rows) {
 // without ever going through FaqTableBlot.create — content saved before
 // this toolbar existed, or reloaded from the legacy-markdown upgrade path.
 function faqTableToolbarHtml() {
+  const b = (action, label, extra) => '<button type="button" class="faq-table-btn' + (extra || "") + '" data-action="' + action + '">' + label + '</button>';
   return '<div class="faq-table-toolbar" contenteditable="false">'
-    + '<button type="button" class="faq-table-btn" data-action="add-row">+ Row</button>'
-    + '<button type="button" class="faq-table-btn" data-action="remove-row">&minus; Row</button>'
-    + '<button type="button" class="faq-table-btn" data-action="add-col">+ Column</button>'
-    + '<button type="button" class="faq-table-btn" data-action="remove-col">&minus; Column</button>'
-    + '<button type="button" class="faq-table-btn faq-table-btn-danger" data-action="delete-table">Delete table</button>'
+    + '<span class="faq-table-group">' + b("row-above", "+ Row above") + b("row-below", "+ Row below") + b("remove-row", "&minus; Delete row") + '</span>'
+    + '<span class="faq-table-group">' + b("col-left", "+ Column left") + b("col-right", "+ Column right") + b("remove-col", "&minus; Delete column") + '</span>'
+    + b("delete-table", "Delete table", " faq-table-btn-danger")
     + '</div>';
 }
 // Adds that toolbar and contenteditable cells to any table already present
@@ -12145,35 +12144,78 @@ async function openFaqTableDialog() {
 // faqBodySourceForSave, and the plain bodyMd save) all read a table's
 // current state straight off its DOM, not off anything Quill is tracking
 // internally for this atomic embed.
-function faqTableAddRow(table) {
-  const headCols = table.tHead && table.tHead.rows[0] ? table.tHead.rows[0].cells.length : 1;
-  const cols = table.rows[0] ? table.rows[0].cells.length : headCols;
-  let tbody = table.tBodies[0];
-  if (!tbody) { tbody = document.createElement("tbody"); table.appendChild(tbody); }
+// The "selected" row/column is the one holding the cell last clicked or typed
+// in (faqTableActiveCell, kept by the editor's focusin listener). With none
+// selected yet, insert falls back to the end of the table and delete to the
+// last row/column, as the buttons always did.
+let faqTableActiveCell = null;
+function faqTableCellOf(table) {
+  return faqTableActiveCell && table.contains(faqTableActiveCell) ? faqTableActiveCell : null;
+}
+function faqTableNewCell(tag) {
+  const cell = document.createElement(tag);
+  cell.setAttribute("contenteditable", "true");
+  return cell;
+}
+// where: "above" | "below"
+function faqTableAddRow(table, where) {
+  const cell = faqTableCellOf(table);
+  const cols = table.rows[0] ? table.rows[0].cells.length : 1;
   const tr = document.createElement("tr");
-  for (let i = 0; i < cols; i++) {
-    const td = document.createElement("td");
-    td.setAttribute("contenteditable", "true");
-    tr.appendChild(td);
+  for (let i = 0; i < cols; i++) tr.appendChild(faqTableNewCell("td"));
+  const ref = cell ? cell.parentNode : null;
+  if (ref && ref.parentNode.tagName === "THEAD") {
+    // The header row stays the header: a new row next to it joins the body's top.
+    let tbody = table.tBodies[0];
+    if (!tbody) { tbody = document.createElement("tbody"); table.appendChild(tbody); }
+    tbody.insertBefore(tr, tbody.firstChild);
+  } else if (ref) {
+    ref.parentNode.insertBefore(tr, where === "above" ? ref : ref.nextSibling);
+  } else {
+    let tbody = table.tBodies[0];
+    if (!tbody) { tbody = document.createElement("tbody"); table.appendChild(tbody); }
+    tbody.appendChild(tr);
   }
-  tbody.appendChild(tr);
+  tr.cells[cell ? Math.min(cell.cellIndex, cols - 1) : 0].focus();
 }
 function faqTableRemoveRow(table) {
-  const tbody = table.tBodies[0];
-  if (!tbody || !tbody.rows.length) return;
-  tbody.deleteRow(tbody.rows.length - 1);
+  const cell = faqTableCellOf(table);
+  const row = cell ? cell.parentNode : (table.tBodies[0] && table.tBodies[0].rows[table.tBodies[0].rows.length - 1]);
+  if (!row || row.parentNode.tagName === "THEAD") return; // the header row is kept
+  const next = row.nextElementSibling || row.previousElementSibling;
+  const idx = cell ? cell.cellIndex : 0;
+  row.parentNode.removeChild(row);
+  faqTableActiveCell = null;
+  if (next && next.cells[idx]) next.cells[idx].focus();
 }
-function faqTableAddColumn(table) {
+// where: "left" | "right"
+function faqTableAddColumn(table, where) {
+  const cell = faqTableCellOf(table);
+  const at = cell ? cell.cellIndex + (where === "left" ? 0 : 1) : (table.rows[0] ? table.rows[0].cells.length : 0);
   [...table.rows].forEach((row) => {
-    const cell = document.createElement(row.parentNode.tagName === "THEAD" ? "th" : "td");
-    cell.setAttribute("contenteditable", "true");
-    row.appendChild(cell);
+    const c = faqTableNewCell(row.parentNode.tagName === "THEAD" ? "th" : "td");
+    row.insertBefore(c, row.cells[at] || null);
   });
+  const row = cell ? cell.parentNode : table.rows[0];
+  if (row && row.cells[at]) row.cells[at].focus();
 }
 function faqTableRemoveColumn(table) {
   const cols = table.rows[0] ? table.rows[0].cells.length : 0;
   if (cols <= 1) return;
-  [...table.rows].forEach((row) => { if (row.cells.length) row.deleteCell(row.cells.length - 1); });
+  const cell = faqTableCellOf(table);
+  const at = cell ? cell.cellIndex : cols - 1;
+  const row = cell ? cell.parentNode : table.rows[0];
+  [...table.rows].forEach((r) => { if (r.cells[at]) r.deleteCell(at); });
+  faqTableActiveCell = null;
+  const target = row.cells[Math.min(at, row.cells.length - 1)];
+  if (target) target.focus();
+}
+function faqTableMarkActive(table) {
+  table.querySelectorAll(".faq-cell-active, .faq-row-active").forEach((el) => el.classList.remove("faq-cell-active", "faq-row-active"));
+  const cell = faqTableCellOf(table);
+  if (!cell) return;
+  cell.classList.add("faq-cell-active");
+  cell.parentNode.classList.add("faq-row-active");
 }
 
 // Rich-text body editor (Quill, loaded from the CDN the first time the editor opens
@@ -12274,11 +12316,25 @@ faQuill.root.addEventListener("click", (event) => {
   }
   const table = wrap.querySelector("table");
   if (!table) return;
-  if (action === "add-row") faqTableAddRow(table);
+  if (action === "row-above") faqTableAddRow(table, "above");
+  else if (action === "row-below") faqTableAddRow(table, "below");
   else if (action === "remove-row") faqTableRemoveRow(table);
-  else if (action === "add-col") faqTableAddColumn(table);
+  else if (action === "col-left") faqTableAddColumn(table, "left");
+  else if (action === "col-right") faqTableAddColumn(table, "right");
   else if (action === "remove-col") faqTableRemoveColumn(table);
+  faqTableMarkActive(table);
   updateFaDirtyState();
+});
+// Toolbar buttons must not steal focus from the cell they act on.
+faQuill.root.addEventListener("mousedown", (event) => {
+  if (event.target.closest(".faq-table-btn")) event.preventDefault();
+});
+faQuill.root.addEventListener("focusin", (event) => {
+  const cell = event.target.closest && event.target.closest(".faq-table td, .faq-table th");
+  if (!cell) return;
+  faqTableActiveCell = cell;
+  const table = cell.closest("table");
+  if (table) faqTableMarkActive(table);
 });
 }
 
@@ -12309,6 +12365,10 @@ function faqBodySourceForSave() {
   const clone = faQuill.root.cloneNode(true);
   clone.querySelectorAll(".faq-table-toolbar").forEach((el) => el.remove());
   clone.querySelectorAll("[contenteditable]").forEach((el) => el.removeAttribute("contenteditable"));
+  clone.querySelectorAll(".faq-cell-active, .faq-row-active").forEach((el) => {
+    el.classList.remove("faq-cell-active", "faq-row-active");
+    if (!el.getAttribute("class")) el.removeAttribute("class");
+  });
   return clone.innerHTML;
 }
 
