@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER          = '1.4.0';
+const VER          = '1.4.1';
 const SYNC_VER     = '2';
 const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api';
 const LIVE         = true;
@@ -1001,6 +1001,8 @@ function refresh_request() {
 	if ( ! $next || $next > time() + 60 ) {
 		wp_schedule_single_event( time() + 5, 'ph_sc_sync' );
 	}
+	/* Non-blocking loopback to wp-cron.php: this host does not spawn cron from front-end traffic, so ask for it. */
+	spawn_cron();
 	return new \WP_REST_Response( [ 'queued' => true ], 202 );
 }
 
