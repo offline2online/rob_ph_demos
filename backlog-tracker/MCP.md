@@ -816,4 +816,4 @@ pending revision. `get_faq_article` reports `missingSeoFields`.
 
 ## Public help search (no sign-in)
 
-Separate from this authenticated server: `https://backlog-tracker-e4ed2.web.app/help-api/mcp` is a public, stateless, read-only MCP endpoint with two read-only search and fetch tools, plus `/help-api/search` and `/help-api/article`. It only serves published, in-range articles, linked to their personalisationhub.com/support-centre/ URL. See REQUIREMENTS.md → "Public help search for AI agents".
+Separate from this authenticated server: `https://backlog-tracker-e4ed2.web.app/help-api/mcp` is a public, stateless, read-only remote MCP server (no sign-in) with the eight tools the personalisationhub.com WebMCP defines (describe platform, list industries, get industry, get feature, search help, get help article, start free trial, book demo), read live from the site and cached 5 minutes (`X-Cache`), plus `/help-api/search` and `/help-api/article`. It only serves published, in-range articles, linked to their personalisationhub.com/support-centre/ URL. See REQUIREMENTS.md → "Public help search for AI agents".

@@ -7,7 +7,9 @@
 //                                                  markdown with format=md / Accept: text/markdown)
 //   POST /help-api/mcp                            a stateless public MCP server
 //                                                  (initialize, tools/list, tools/call:
-//                                                  search_help, get_help_article)
+//                                                  the eight read-only tools the site's
+//                                                  WebMCP defines, proxied live from
+//                                                  /wp-json/ph-agent/v1/tools)
 //   GET  /help-api/data/index.json                the live feed the WordPress Support
 //        /help-api/data/releases.json             Centre sync reads: the published
 //        /help-api/data/articles/<id>.json        content in faq/data's own shape (the
@@ -22,9 +24,13 @@
 // ({articles:[{id,url,…}]}, cached here), falling back to
 // /support-centre/article.html?id=<id>, which always resolves.
 //
-// Rate limited per address (instance-local fixed window, like mcp-server.js's
-// open endpoints), cached for a short time (the whole published set for 60 s,
-// each identical query for 60 s), and every search is logged to
+// Rate limited per address and per endpoint class (search/article 60 a minute,
+// MCP 30; instance-local fixed window, like mcp-server.js's open endpoints;
+// 429 with Retry-After and X-RateLimit-* headers), cached for a short time
+// (the whole published set for 60 s, each identical search or article for
+// 60 s, X-Cache HIT|MISS), monitored in 5-minute windows (a burst of 429s or
+// of 5xx posts one alert to the team webhook, then stays quiet 30 minutes),
+// and every search is logged to
 // helpSearchLog by query so zero-result queries show up as content gaps in
 // the next release audit (release-audit.js -> zeroResultQueries).
 //
@@ -47,6 +53,18 @@ const SEARCH_LIMIT_MAX = 20;
 const QUERY_MAX = 300;
 const RATE_WINDOW_MS = 60 * 1000;
 const RATE_MAX = 60;
+// The MCP endpoint takes up to 20 messages per request, so it gets half the
+// budget of the single-call search/article routes (counted per request).
+const MCP_RATE_DIVISOR = 2;
+// Monitoring (5-minute windows): an alert goes to the team's webhook when a
+// window shows abuse (many 429s) or trouble (5xx count or share), then stays
+// quiet for ALERT_COOLDOWN_MS per kind so one incident is one message.
+const MONITOR_WINDOW_MS = 5 * 60 * 1000;
+const ALERT_COOLDOWN_MS = 30 * 60 * 1000;
+const ALERT_RATE_LIMITED_MIN = 50;
+const ALERT_ERRORS_MIN = 5;
+const ALERT_ERROR_SHARE = 0.2;
+const ALERT_ERROR_SHARE_MIN_REQUESTS = 20;
 const DATA_TTL_MS = 60 * 1000;
 const RESULT_TTL_MS = 60 * 1000;
 const RESULT_CACHE_MAX = 500;
@@ -59,8 +77,19 @@ const MD_MAX_CHARS = 400000;
 // Keep identical to the WordPress Support Centre search's list.
 const STOP_WORDS = new Set(("a an the and or of to in on for with at by from about into is are am be do does did can could should would will how what when where which who why i my me we our us you your it its this that these those there please").split(" "));
 const URL_MAP_TTL_MS = 5 * 60 * 1000;
+// A failed map fetch is retried after this, not after the full TTL.
+const URL_MAP_FAIL_TTL_MS = 30 * 1000;
 const URL_FETCH_TIMEOUT_MS = 4000;
-const SERVER_INFO = { name: "personalisation-hub-help", version: "1.0.0" };
+// The remote MCP server proxies the WordPress tool contract (ph-agent/v1).
+const WP_TOOLS_BASE = `https://${SUPPORT_HOST}/wp-json/ph-agent/v1/tools`;
+const WP_TOOL_NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo"];
+const WP_TTL_MS = 5 * 60 * 1000;
+const WP_FAIL_TTL_MS = 30 * 1000;
+const WP_TIMEOUT_MS = 4000;
+const WP_MAX_BYTES = 256 * 1024;
+const WP_ARGS_MAX = 2000;
+const WP_CACHE_MAX = 300;
+const SERVER_INFO = { name: "personalisation-hub-help", version: "2.0.0" };
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
 function inRange(a, releasesById, targetOrder) {
@@ -142,10 +171,16 @@ function publicSummary(a, cat, url) {
   return out;
 }
 
-function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RATE_MAX, fetchImpl = (typeof fetch === "function" ? fetch : null) }) {
+// `alert({kind, text, stats})` is called (not awaited) when monitoring trips;
+// the function in index.js posts it to NOTIFY_WEBHOOK_URL so it reaches Rob.
+function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RATE_MAX, alert = null, fetchImpl = (typeof fetch === "function" ? fetch : null), wpTimeoutMs = WP_TIMEOUT_MS }) {
+  const mcpRateMax = Math.max(1, Math.floor(rateMax / MCP_RATE_DIVISOR));
+  let mon = { startedAt: 0, requests: 0, rateLimited: 0, errors: 0, clients: new Map() };
+  const lastAlert = new Map(); // kind -> time
   let data = null; // { at, articles, cats, releases }
-  let urlMap = null; // { at, urls: {id -> url} }
+  let urlMap = null; // { at, urls: {id -> url}, ok } ok = a map (fresh or last good) is in hand
   const results = new Map(); // key -> { at, body }
+  const articles = new Map(); // key -> { at, res }
   const buckets = new Map();
 
   async function load() {
@@ -169,8 +204,9 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
   // result then uses the always-resolving article.html?id= fallback).
   async function loadUrls() {
     const t = now();
-    if (urlMap && t - urlMap.at < URL_MAP_TTL_MS) return urlMap.urls;
+    if (urlMap && t - urlMap.at < (urlMap.ok && !urlMap.failed ? URL_MAP_TTL_MS : URL_MAP_FAIL_TTL_MS)) return urlMap.urls;
     let urls = urlMap ? urlMap.urls : {};
+    let failed = false;
     try {
       if (!fetchImpl) throw new Error("no fetch");
       const ctl = typeof AbortController === "function" ? new AbortController() : null;
@@ -186,8 +222,10 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         }
         urls = next;
       } finally { if (timer) clearTimeout(timer); }
-    } catch (e) { if (logger) logger.warn("help url map unavailable", { error: String(e) }); }
-    urlMap = { at: t, urls };
+    } catch (e) { failed = true; if (logger) logger.warn("help url map unavailable", { error: String(e) }); }
+    // A failed refresh keeps the last good map and retries in 30 s; with no
+    // good map at all it is cached as failed for 30 s only.
+    urlMap = { at: t, urls, failed, ok: !failed || Object.keys(urls).length > 0 };
     return urls;
   }
   // Top-level category (as in the Support Centre breadcrumb) plus the folder
@@ -247,20 +285,35 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
       matched: scored.length,
       results: scored.slice(0, n).map(({ a }, i) => ({ rank: i + 1, ...publicSummary(a, catOf(d, a), urlFor(urls, a)) })),
     };
-    if (results.size >= RESULT_CACHE_MAX) results.clear();
-    results.set(key, { at: now(), body });
+    // Results built without any map (all article.html?id= fallbacks) are not cached.
+    if (urlMap && urlMap.ok) {
+      if (results.size >= RESULT_CACHE_MAX) results.clear();
+      results.set(key, { at: now(), body });
+    }
     log(q, rel.release, scored.length, via, false);
     return { status: 200, body, cached: false };
   }
 
   async function article({ id, slug, release }) {
+    const wantId = typeof id === "string" ? id.trim() : "";
+    const wantSlug = typeof slug === "string" ? slug.trim() : "";
+    if (!wantId && !wantSlug) return { status: 400, body: { error: "bad_request", error_description: "id or slug is required." } };
+    const ckey = `${wantId.slice(0, 200)}|${wantSlug.slice(0, 200)}|${typeof release === "string" ? release.trim().slice(0, 80) : ""}`;
+    const cached = articles.get(ckey);
+    if (cached && now() - cached.at < RESULT_TTL_MS) return { ...cached.res, cached: true };
+    const out = await articleUncached({ wantId, wantSlug, release });
+    if (out.status === 200 && urlMap && urlMap.ok) {
+      if (articles.size >= RESULT_CACHE_MAX) articles.clear();
+      articles.set(ckey, { at: now(), res: out });
+    }
+    return { ...out, cached: false };
+  }
+
+  async function articleUncached({ wantId, wantSlug, release }) {
     const d = await load();
     const rel = resolveRelease(d, release);
     if (rel.error) return { status: 404, body: { error: "unknown_release", error_description: rel.error } };
     const urls = await loadUrls();
-    const wantId = typeof id === "string" ? id.trim() : "";
-    const wantSlug = typeof slug === "string" ? slug.trim() : "";
-    if (!wantId && !wantSlug) return { status: 400, body: { error: "bad_request", error_description: "id or slug is required." } };
     const a = eligible(d, rel.release, rel.byId).find((x) => (wantId && x.id === wantId) || (wantSlug && x.slug === wantSlug));
     if (!a) return { status: 404, body: { error: "not_found", error_description: "No published article with that id or slug for this release. Use search first." } };
     const body = {
@@ -325,17 +378,70 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
   }
 
   function clientIp(req) {
-    const fwd = String((req.get && req.get("x-forwarded-for")) || "").split(",")[0].trim();
-    return fwd || req.ip || "unknown";
+    // The first x-forwarded-for entry is whatever the caller wrote, so keying on it lets
+    // anyone dodge the limit by changing a header (pen test PT-01). Use the edge's own
+    // client address; failing that count from the RIGHT, where our proxies append: the
+    // entry before the last hop. Anything a caller prepends only moves entries left.
+    const hdr = (k) => String((req.get && req.get(k)) || "").trim();
+    const edge = hdr("fastly-client-ip");
+    if (edge) return edge;
+    const hops = hdr("x-forwarded-for").split(",").map((x) => x.trim()).filter(Boolean);
+    if (hops.length >= 2) return hops[hops.length - 2];
+    return hops[0] || req.ip || "unknown";
   }
-  // Returns seconds to wait when over the limit, else 0.
-  function limited(req) {
-    const t = now(); const key = clientIp(req);
+  // Per client AND per endpoint class, so a client hammering the MCP route
+  // cannot use up its search budget, and the reverse. Returns
+  // { wait, limit, remaining, reset }; wait is seconds when over, else 0.
+  function limited(req, klass) {
+    const t = now(); const key = `${clientIp(req)}|${klass}`;
+    const limit = klass === "mcp" ? mcpRateMax : rateMax;
     let e = buckets.get(key);
     if (!e || e.resetAt <= t) { e = { count: 0, resetAt: t + RATE_WINDOW_MS }; buckets.set(key, e); }
     e.count += 1;
     if (buckets.size > 5000) for (const [k, v] of buckets) if (v.resetAt <= t) buckets.delete(k);
-    return e.count > rateMax ? Math.max(1, Math.ceil((e.resetAt - t) / 1000)) : 0;
+    const over = e.count > limit;
+    return { wait: over ? Math.max(1, Math.ceil((e.resetAt - t) / 1000)) : 0, limit, remaining: Math.max(0, limit - e.count), reset: Math.ceil(e.resetAt / 1000) };
+  }
+
+  // ── Monitoring and alerting ─────────────────────────────────────────────
+  function sendAlert(kind, text, stats) {
+    const t = now();
+    const prev = lastAlert.get(kind);
+    if (kind !== "test" && prev !== undefined && t - prev < ALERT_COOLDOWN_MS) return false;
+    lastAlert.set(kind, t);
+    if (logger) logger.error(`help api alert: ${kind}`, { text, stats });
+    if (alert) Promise.resolve().then(() => alert({ kind, text, stats })).catch((e) => { if (logger) logger.warn("help api alert delivery failed", { error: String(e) }); });
+    return true;
+  }
+  function snapshot() {
+    const top = [...mon.clients.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    return { windowMinutes: MONITOR_WINDOW_MS / 60000, requests: mon.requests, rateLimited: mon.rateLimited, errors: mon.errors, topLimitedClients: top.map(([c, n]) => ({ client: c, rateLimited: n })) };
+  }
+  function checkThresholds() {
+    const s = snapshot();
+    if (s.rateLimited >= ALERT_RATE_LIMITED_MIN) {
+      sendAlert("abuse", `Help API abuse: ${s.rateLimited} rate-limited (429) requests in ${s.windowMinutes} minutes out of ${s.requests}. Top clients: ${s.topLimitedClients.map((c) => `${c.client} (${c.rateLimited})`).join(", ") || "n/a"}.`, s);
+    }
+    if (s.errors >= ALERT_ERRORS_MIN || (s.requests >= ALERT_ERROR_SHARE_MIN_REQUESTS && s.errors / s.requests >= ALERT_ERROR_SHARE)) {
+      sendAlert("errors", `Help API errors: ${s.errors} server errors (5xx) out of ${s.requests} requests in ${s.windowMinutes} minutes.`, s);
+    }
+  }
+  // Called once per request with its outcome. The client address is kept in
+  // memory for the window only (to name the top offenders) and never stored.
+  function record(outcome, req) {
+    const t = now();
+    if (!mon.startedAt || t - mon.startedAt >= MONITOR_WINDOW_MS) mon = { startedAt: t, requests: 0, rateLimited: 0, errors: 0, clients: new Map() };
+    mon.requests += 1;
+    if (outcome === "rate_limited") {
+      mon.rateLimited += 1;
+      if (mon.clients.size < 500) { const c = clientIp(req); mon.clients.set(c, (mon.clients.get(c) || 0) + 1); }
+    } else if (outcome === "error") mon.errors += 1;
+    if (outcome !== "ok") checkThresholds();
+  }
+  // A deliberate test alert, to prove delivery end to end (index.js exposes it
+  // behind the board key). Returns true when it was handed to the webhook.
+  function testAlert() {
+    return sendAlert("test", "Test alert from the Help API monitoring: if you can read this, abuse and error alerts reach you.", snapshot());
   }
 
   // ── Live data feed (same files as faq/data, published articles only) ──────
@@ -358,55 +464,101 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
   }
 
   // ── MCP (stateless, public, read-only) ──────────────────────────────────
-  const TOOLS = [
-    {
-      name: "search_help",
-      title: "Search Personalisation Hub help",
-      description: "Search the published Personalisation Hub help articles. Returns ranked results with title, direct answer, summary, personalisationhub.com URL, article type, category and last updated. Call get_help_article for the full text.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "The question or words to look for." },
-          limit: { type: "integer", minimum: 1, maximum: SEARCH_LIMIT_MAX, description: `Default ${SEARCH_LIMIT_DEFAULT}.` },
-          release: { type: "string", description: "Only articles that apply to this release (id or version string). Default: the current live release." },
-        },
-        required: ["query"], additionalProperties: false,
-      },
-      annotations: { readOnlyHint: true, openWorldHint: false },
-    },
-    {
-      name: "get_help_article",
-      title: "Get a help article as markdown",
-      description: "The full markdown text of one published help article, by the id or slug returned from search_help.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "Article id from search_help." },
-          slug: { type: "string", description: "Article slug, if you have no id." },
-          release: { type: "string", description: "Only return the article if it applies to this release (id or version string)." },
-        },
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: true, openWorldHint: false },
-    },
-  ];
+  // Not a copy of anything: tools/list and tools/call read the WordPress
+  // site's own tool contract live (GET /wp-json/ph-agent/v1/tools[/{name}]),
+  // the same one the WebMCP tools on its pages use, so the two always agree
+  // and a published change reaches agents with no redeploy. Fixed origin,
+  // allow-listed names only, 5 minutes per (tool, args), 4 s timeout, size cap.
+  // A failure is remembered 30 s only and the last good answer is kept.
+  const wp = new Map(); // key -> { at, good: {at, value} | null, failAt }
+  const stable = (v) => (v && typeof v === "object" ? (Array.isArray(v) ? `[${v.map(stable).join(",")}]` : `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`) : JSON.stringify(v));
 
-  const toolText = (obj, isError = false) => ({ content: [{ type: "text", text: typeof obj === "string" ? obj : JSON.stringify(obj, null, 2) }], ...(isError ? { isError: true } : {}) });
-
-  async function callTool(name, args) {
-    const a = args && typeof args === "object" ? args : {};
-    if (name === "search_help") {
-      const r = await search({ query: a.query, release: a.release, limit: a.limit, via: "mcp" });
-      return r.status === 200 ? { ...toolText(r.body), structuredContent: r.body } : toolText(r.body.error_description, true);
-    }
-    if (name === "get_help_article") {
-      const r = await article({ id: a.id, slug: a.slug, release: a.release });
-      return r.status === 200 ? toolText(await articleMarkdown(r.body)) : toolText(r.body.error_description, true);
-    }
-    return null;
+  async function wpFetchJson(url) {
+    if (!fetchImpl) throw new Error("no fetch");
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    let timer;
+    const timeout = new Promise((_, rej) => { timer = setTimeout(() => { if (ctl) ctl.abort(); rej(new Error("timeout")); }, wpTimeoutMs); });
+    try {
+      return await Promise.race([(async () => {
+        const r = await fetchImpl(url, { headers: { Accept: "application/json" }, ...(ctl ? { signal: ctl.signal } : {}) });
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        const len = Number(r.headers && r.headers.get && r.headers.get("content-length"));
+        if (len > WP_MAX_BYTES) throw new Error("too large");
+        const text = await r.text();
+        if (text.length > WP_MAX_BYTES) throw new Error("too large");
+        return JSON.parse(text);
+      })(), timeout]);
+    } finally { clearTimeout(timer); }
   }
 
-  async function mcpMessage(msg) {
+  // Returns { value, cached } or { error } (never throws).
+  async function wpCached(key, url, valid) {
+    const t = now();
+    let e = wp.get(key);
+    if (e && e.good && t - e.good.at < WP_TTL_MS) return { value: e.good.value, cached: true };
+    if (e && e.failAt && t - e.failAt < WP_FAIL_TTL_MS) return e.good ? { value: e.good.value, cached: true, stale: true } : { error: "unavailable" };
+    try {
+      const value = await wpFetchJson(url);
+      if (!valid(value)) throw new Error("unexpected shape");
+      e = { at: t, good: { at: t, value }, failAt: 0 };
+      wp.set(key, e);
+      if (wp.size > WP_CACHE_MAX) { for (const [k, v] of wp) { if (!v.good || t - v.good.at >= WP_TTL_MS) wp.delete(k); if (wp.size <= WP_CACHE_MAX) break; } if (wp.size > WP_CACHE_MAX) wp.delete(wp.keys().next().value); }
+      return { value, cached: false };
+    } catch (err) {
+      if (logger) logger.warn("remote MCP: site fetch failed", { key, error: String(err && err.message ? err.message : err) });
+      const prev = wp.get(key);
+      wp.set(key, { at: t, good: prev ? prev.good : null, failAt: t });
+      return prev && prev.good ? { value: prev.good.value, cached: true, stale: true } : { error: "unavailable" };
+    }
+  }
+
+  const isTools = (v) => v && Array.isArray(v.tools) && v.tools.length > 0;
+  const isResult = (v) => v && typeof v === "object" && Array.isArray(v.content);
+  const errResult = (msg) => ({ content: [{ type: "text", text: msg }], isError: true });
+  const UNAVAILABLE = "The Personalisation Hub site could not be reached just now. Try again in a minute.";
+
+  async function listTools() {
+    const r = await wpCached("tools", WP_TOOLS_BASE, isTools);
+    if (r.error) return r;
+    // Only the allow-listed names are ever served, exactly as the site defines them.
+    return { ...r, value: r.value.tools.filter((x) => x && WP_TOOL_NAMES.includes(x.name)) };
+  }
+
+  // Agent traffic as RevOps signals (ticket "RevOps signals"): one row per
+  // tools/call in agentToolLog. Tool, source, referrer HOST (never the full
+  // URL), time and whether the answer came from cache. No IP, no user agent,
+  // no arguments, no result text.
+  function referrerHost(req) {
+    const h = (k) => String((req && req.get && req.get(k)) || "");
+    const raw = h("origin") || h("referer");
+    try { const host = raw ? new URL(raw).hostname.toLowerCase() : ""; return host && host.length <= 100 ? host : null; } catch (e) { return null; }
+  }
+  function logAgentTool(tool, referrer, cached, ok) {
+    Promise.resolve().then(() => db.collection("agentToolLog").add({
+      tool, source: "remote-mcp", referrer: referrer || null, at: new Date(now()), cached: !!cached, ok: !!ok,
+    })).catch((e) => { if (logger) logger.warn("agent tool log failed", { error: String(e) }); });
+  }
+  // The site's CTA tools carry trackedUrl with via=webmcp; for this server it is via=remote-mcp.
+  const CTA_TOOLS = ["start_free_trial", "book_demo"];
+  function forRemote(name, result) {
+    if (!CTA_TOOLS.includes(name) || !result || result.isError) return result;
+    return JSON.parse(JSON.stringify(result).split("?via=webmcp").join("?via=remote-mcp"));
+  }
+
+  async function callTool(name, args) {
+    if (typeof name !== "string" || !WP_TOOL_NAMES.includes(name)) return null;
+    const a = args === undefined || args === null ? {} : args;
+    if (typeof a !== "object" || Array.isArray(a)) return { result: errResult("arguments must be an object."), cached: false };
+    const json = stable(a);
+    if (json.length > WP_ARGS_MAX) return { result: errResult("arguments are too long."), cached: false };
+    const url = `${WP_TOOLS_BASE}/${name}${json === "{}" ? "" : `?args=${encodeURIComponent(JSON.stringify(a))}`}`;
+    const r = await wpCached(`${name}|${json}`, url, isResult);
+    if (r.error) return { result: errResult(UNAVAILABLE), cached: false };
+    return { result: r.value, cached: !!r.cached };
+  }
+
+  // ctx.cache collects each upstream answer's HIT/MISS for the X-Cache header.
+  async function mcpMessage(msg, ctx) {
     const id = msg && Object.prototype.hasOwnProperty.call(msg, "id") ? msg.id : undefined;
     const reply = (result) => ({ jsonrpc: "2.0", id, result });
     const fail = (code, message) => ({ jsonrpc: "2.0", id: id === undefined ? null : id, error: { code, message } });
@@ -419,15 +571,22 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: SERVER_INFO,
-          instructions: "Read-only search over Personalisation Hub's published help articles. Call search_help with a question, then get_help_article for the full text. Always cite the article url.",
+          instructions: "Read-only access to Personalisation Hub's public site content: describe_platform, list_industries, get_industry, get_feature, search_help, get_help_article, start_free_trial, book_demo. Always cite the url you are given.",
         });
       }
       case "ping": return reply({});
-      case "tools/list": return reply({ tools: TOOLS });
+      case "tools/list": {
+        const r = await listTools();
+        if (ctx && ctx.cache) ctx.cache.push(!!r.cached);
+        return r.error ? fail(-32603, UNAVAILABLE) : reply({ tools: r.value });
+      }
       case "tools/call": {
         const p = msg.params || {};
         const out = await callTool(p.name, p.arguments);
-        return out ? reply(out) : fail(-32602, `Unknown tool: ${String(p.name).slice(0, 80)}`);
+        if (!out) return fail(-32602, `Unknown tool: ${String(p.name).slice(0, 80)}`);
+        if (ctx && ctx.cache) ctx.cache.push(out.cached);
+        logAgentTool(p.name, ctx && ctx.referrer, out.cached, !out.result.isError);
+        return reply(forRemote(p.name, out.result));
       }
       default: return fail(-32601, `Method not found: ${msg.method.slice(0, 80)}`);
     }
@@ -448,12 +607,17 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     res.set("X-Content-Type-Options", "nosniff");
     if (req.method === "OPTIONS") { res.status(204).send(""); return; }
     const path = route(req);
+    let outcome = "ok";
     try {
-      const wait = limited(req);
-      if (wait) {
-        res.status(429).set("Retry-After", String(wait)).json({ error: "rate_limited", error_description: `Too many requests from this address. Try again in ${wait} seconds.` });
+      const klass = path === "/mcp" ? "mcp" : "read";
+      const rl = limited(req, klass);
+      res.set("X-RateLimit-Limit", String(rl.limit)).set("X-RateLimit-Remaining", String(rl.remaining)).set("X-RateLimit-Reset", String(rl.reset));
+      if (rl.wait) {
+        outcome = "rate_limited";
+        res.status(429).set("Retry-After", String(rl.wait)).set("Cache-Control", "no-store").json({ error: "rate_limited", error_description: `Too many requests from this address. Try again in ${rl.wait} seconds.` });
         return;
       }
+
       const q = req.query || {};
       if (path === "/search" && req.method === "GET") {
         const r = await search({ query: q.q || q.query, release: q.release, limit: q.limit });
@@ -464,7 +628,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
       if (path === "/article" && req.method === "GET") {
         const r = await article({ id: q.id, slug: q.slug, release: q.release });
         if (r.status !== 200) { res.status(r.status).json(r.body); return; }
-        res.set("Cache-Control", "public, max-age=60");
+        res.set("Cache-Control", "public, max-age=60").set("Vary", "Accept").set("X-Cache", r.cached ? "HIT" : "MISS"); // Accept picks JSON or markdown at one URL: a shared cache must not mix them (PT-06)
         const wantsMd = q.format === "md" || /text\/markdown/.test(String((req.get && req.get("accept")) || ""));
         if (wantsMd) res.status(200).type("text/markdown; charset=utf-8").send(await articleMarkdown(r.body));
         else res.status(200).json(r.body);
@@ -485,12 +649,18 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         const body = req.body;
         if (Array.isArray(body)) {
           if (body.length > 20) { res.status(400).json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Batch too large" } }); return; }
-          const out = (await Promise.all(body.map(mcpMessage))).filter(Boolean);
+          // A batch is up to 20 calls: charge the extra 19 to the same budget (PT-03).
+          for (let i = 1; i < body.length; i += 1) limited(req, "mcp");
+          const ctx = { cache: [], referrer: referrerHost(req) };
+          const out = (await Promise.all(body.map((m) => mcpMessage(m, ctx)))).filter(Boolean);
+          if (ctx.cache.length) res.set("X-Cache", ctx.cache.every(Boolean) ? "HIT" : "MISS");
           if (!out.length) { res.status(202).send(""); return; }
           res.status(200).json(out);
           return;
         }
-        const out = await mcpMessage(body);
+        const ctx = { cache: [], referrer: referrerHost(req) };
+        const out = await mcpMessage(body, ctx);
+        if (ctx.cache.length) res.set("X-Cache", ctx.cache.every(Boolean) ? "HIT" : "MISS");
         if (!out) { res.status(202).send(""); return; }
         res.status(200).json(out);
         return;
@@ -498,11 +668,14 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
       res.status(404).json({ error: "not_found", error_description: "Endpoints: GET /help-api/search, GET /help-api/article, GET /help-api/data/*, POST /help-api/mcp." });
     } catch (err) {
       if (logger) logger.error("help search failed", { path, error: String(err && err.stack ? err.stack : err) });
+      outcome = "error";
       if (!res.headersSent) res.status(500).json({ error: "server_error" });
+    } finally {
+      try { record(outcome, req); } catch (e) { if (logger) logger.warn("help api monitor failed", { error: String(e) }); }
     }
   }
 
-  return { handle, search, article, mcpMessage, TOOLS, _reset() { data = null; feedCache = null; urlMap = null; mdTwins.clear(); results.clear(); buckets.clear(); } };
+  return { handle, search, article, mcpMessage, testAlert, TOOL_NAMES: WP_TOOL_NAMES, _reset() { wp.clear(); data = null; feedCache = null; urlMap = null; mdTwins.clear(); results.clear(); articles.clear(); buckets.clear(); lastAlert.clear(); mon = { startedAt: 0, requests: 0, rateLimited: 0, errors: 0, clients: new Map() }; } };
 }
 
 module.exports = { createHelpApi, STOP_WORDS, scoreArticle, safeSupportUrl, inRange, termsOf, normaliseQuery, SERVER_INFO };

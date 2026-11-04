@@ -1,0 +1,19 @@
+/* PH Industry: icons in front of the industry links in the site menus */
+li.menu-item>a[href$="/industries/"]::before,li.menu-item>a[href$="/industries/convenience/"]::before,li.menu-item>a[href$="/industries/hospitality/"]::before,li.menu-item>a[href$="/industries/telco/"]::before,li.menu-item>a[href$="/industries/pharmacy/"]::before,li.menu-item>a[href$="/industries/retail-media/"]::before,li.menu-item>a[href$="/industries/grocery/"]::before,li.menu-item>a[href$="/industries/fashion/"]::before,li.menu-item>a[href$="/industries/qsr/"]::before,li.menu-item>a[href$="/industries/banking/"]::before{content:"";display:inline-block;flex:0 0 auto;width:20px;height:20px;margin:0 10px 0 0;vertical-align:-5px;background:transparent center/contain no-repeat}
+li.menu-item>a[href$="/industries/convenience/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-local-gas-station.png)}
+li.menu-item>a[href$="/industries/hospitality/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-sports-bar.png)}
+li.menu-item>a[href$="/industries/telco/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-cell-tower.png)}
+li.menu-item>a[href$="/industries/pharmacy/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-local-pharmacy.png)}
+li.menu-item>a[href$="/industries/retail-media/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-campaign.png)}
+li.menu-item>a[href$="/industries/grocery/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-local-grocery-store.png)}
+li.menu-item>a[href$="/industries/fashion/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-apparel.png)}
+li.menu-item>a[href$="/industries/qsr/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-fastfood.png)}
+li.menu-item>a[href$="/industries/banking/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-account-balance.png)}
+li.menu-item>a[href$="/industries/"]::before{background-image:url(/wp-content/uploads/2026/11/ph-ind-ic-teal-storefront.png)}
+li.menu-item>a[href*="/industries/"]{justify-content:flex-start!important;align-items:center}
+@media (min-width:1025px){.elementskit-submenu-panel:has(>li>a[href$="/industries/convenience/"]){min-width:330px!important;width:330px!important}}
+/* PH Industry: header burger and submenu chevron drawn as SVG masks (outlines from elementskit.woff), so the 455 KB ElementsKit icon font is never requested. 1em box + currentColor: ElementsKit's own size, colour, hover and rotate rules still apply. */
+i.icon-burger-menu,i.icon-down-arrow1{display:inline-block;width:1em;height:1em;vertical-align:-.0625em;background-color:currentColor;-webkit-mask:var(--ph-ic) center/contain no-repeat;mask:var(--ph-ic) center/contain no-repeat;font-size:inherit;line-height:1}
+i.icon-burger-menu::before,i.icon-down-arrow1::before{content:none!important}
+i.icon-burger-menu{--ph-ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Cpath d='M0 585L1024 585L1024 503L0 503ZM369 831L1024 831L1024 749L369 749ZM205 258L205 340L1024 340L1024 258Z'/%3E%3C/svg%3E")}
+i.icon-down-arrow1{--ph-ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Cpath d='M1011 272Q997 257 976.5 256.5Q956 256 942 270L512 677L82 270Q68 256 47.5 256.5Q27 257 13 272Q-1 287 0 307Q1 327 15 341L478 780Q485 786 494 789.5Q503 793 512 793Q521 793 529.5 789.5Q538 786 546 780L1009 341Q1023 327 1024 307Q1025 287 1011 272Z'/%3E%3C/svg%3E")}

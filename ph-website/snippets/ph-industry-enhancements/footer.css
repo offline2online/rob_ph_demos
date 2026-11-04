@@ -1,0 +1,15 @@
+/* PH Industry footer: styles for the site-wide footer (global class CSS is not loaded for theme-builder parts) */
+body .elementor-location-footer .ph-ind-footer{display:flex;flex-direction:column;align-items:center;width:100%;padding:48px 20px 0;background-color:#FFFFFF;border-top:1px solid #DCE1EB;font-family:"Kantumruy Pro",system-ui,sans-serif;color:#5A6479;font-size:14px}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-inner{display:flex;flex-direction:row;flex-wrap:wrap;column-gap:32px;row-gap:32px;width:100%;max-width:1160px;padding:0 0 48px}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-brand{display:flex;flex-direction:column;row-gap:16px;flex:1.5 1 280px;width:auto;padding:0}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-col{display:flex;flex-direction:column;align-items:flex-start;row-gap:0;flex:1 1 140px;width:auto;padding:0}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-h{font-family:"Kantumruy Pro",system-ui,sans-serif;font-size:12px;font-weight:600;line-height:1.3;letter-spacing:.12em;text-transform:uppercase;color:#1C2540;margin:0 0 12px}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-link{display:block;padding:4px 0;border:0;border-radius:0;background-color:transparent;color:#5A6479;font-family:"Kantumruy Pro",system-ui,sans-serif;font-size:14px;font-weight:400;line-height:1.5;text-align:left;text-decoration:none;text-transform:none;letter-spacing:normal}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-link:hover,.elementor-location-footer .ph-ind-footer .ph-ind-footer-link:focus{color:#1C2540;background-color:transparent}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-text{font-family:"Kantumruy Pro",system-ui,sans-serif;font-size:14px;line-height:1.55;color:#5A6479;max-width:30ch;margin:0}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-logo{width:200px;height:auto}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-social{display:flex;flex-direction:row;align-items:center;column-gap:14px;padding:0;margin-top:4px;width:auto}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-social-icon{width:20px;height:20px;opacity:.85}
+.elementor-location-footer .ph-ind-footer a:hover .ph-ind-footer-social-icon{opacity:1}
+.elementor-location-footer .ph-ind-footer .ph-ind-footer-bottom{width:100%;max-width:1160px;padding:20px 0;border-top:1px solid #DCE1EB;font-family:"Kantumruy Pro",system-ui,sans-serif;font-size:14px;color:#5A6479;margin:0}
+@media (max-width:767px){.elementor-location-footer .ph-ind-footer .ph-ind-footer-inner{column-gap:24px}}
