@@ -5,7 +5,7 @@
   "use strict";
   var root = document.querySelector("main.ph-sc");
   if (!root) return;
-  var ICONS = {"content_copy":"M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z","check":"M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z","expand_more":"M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z","expand_less":"m296-345-56-56 240-240 240 240-56 56-184-184-184 184Z"};
+  var ICONS = {"content_copy":"M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z","check":"M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z","expand_more":"M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z","expand_less":"m296-345-56-56 240-240 240 240-56 56-184-184-184 184Z","chevron_right":"M530-481 332-679l43-43 241 241-241 241-43-43 198-198Z"};
   var icon = function (n, s) { return '<svg class="icon" width="' + s + '" height="' + s + '" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path fill="currentColor" d="' + ICONS[n] + '"/></svg>'; };
   var esc = function (s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); };
   function track(name, params) {
@@ -105,11 +105,54 @@
       else if (e.key === "Enter") {
         var items = results.querySelectorAll("a");
         if (active >= 0 && items[active]) { e.preventDefault(); window.location.href = items[active].getAttribute("href"); }
-        else if (!input.value.trim()) e.preventDefault();
+        else { e.preventDefault(); if (input.value.trim()) showInline(input.value); }
       }
       else if (e.key === "Escape") { close(); input.blur(); }
     });
-    if (input.form) input.form.addEventListener("submit", function (e) { if (!input.value.trim()) e.preventDefault(); });
+    /* Enter (or the form submitting some other way) shows the full results on this page; it never navigates away. Without JavaScript the form still goes to /search/?q=. */
+    var inline = null, hidden = [];
+    function inlineBox() {
+      if (inline) return inline;
+      var anchor = input.closest("section") || input.closest(".search-wrap");
+      inline = document.createElement("div");
+      inline.className = "wrap";
+      inline.id = "inline-results";
+      inline.hidden = true;
+      anchor.parentNode.insertBefore(inline, anchor.nextSibling);
+      return inline;
+    }
+    function restore() {
+      if (!inline || inline.hidden) return;
+      inline.hidden = true; inline.innerHTML = "";
+      hidden.forEach(function (el) { el.hidden = false; });
+      hidden = [];
+    }
+    function showInline(q) {
+      q = q.trim();
+      if (!q) { restore(); return; }
+      load().then(function (articles) {
+        if (input.value.trim() !== q) return;
+        var matches = searchArticles(articles, q), box = inlineBox(), n = matches.length;
+        close();
+        if (inline.hidden) {
+          hidden = [].slice.call(box.parentNode.children).filter(function (el) { return el !== box && el.classList.contains("wrap") && !el.hidden; });
+          hidden.forEach(function (el) { el.hidden = true; });
+        }
+        box.innerHTML = '<h1 id="results-heading" class="results-heading" aria-live="polite" tabindex="-1">' + n + " result" + (n === 1 ? "" : "s") + ' for "' + esc(q) + '"</h1>' +
+          (n ? '<div class="article-list" id="results-list">' + matches.map(function (a) {
+            return '<a class="article-row" href="' + esc(a.u) + '"><span class="row-main"><h3>' + esc(a.t) + '</h3><p><span class="row-cat">' + esc(a.c) + "</span>" + (a.s ? " &middot; " + esc(a.s) : "") + '</p></span><span class="row-chevron">' + icon("chevron_right", 20) + "</span></a>";
+          }).join("") + "</div>" : '<p class="empty-hint" id="results-empty">No articles matched your search. Try different words.</p>');
+        box.hidden = false;
+        try { history.replaceState(null, "", searchUrl(q)); } catch (err) { /* ignore */ }
+        track("faq_search", { query: q, results: n });
+      });
+    }
+    if (input.form) input.form.addEventListener("submit", function (e) { e.preventDefault(); if (input.value.trim()) showInline(input.value); });
+    input.addEventListener("input", function () { if (!input.value.trim()) restore(); });
+    /* The search box is ready to type in as soon as the page loads (front page and results page). */
+    if (/^ph-sc-(front|search)$/.test([].slice.call(root.classList).filter(function (c) { return /^ph-sc-/.test(c) && c !== "ph-sc"; })[0] || "") && !location.hash) {
+      try { input.focus({ preventScroll: true }); var l = input.value.length; input.setSelectionRange(l, l); } catch (err) { /* ignore */ }
+    }
     document.addEventListener("click", function (e) { if (!results.contains(e.target) && e.target !== input) close(); });
     /* Load the index in the background, as the Help Centre preloads index.json, so the first keystroke is instant. */
     (window.requestIdleCallback || function (f) { return setTimeout(f, 300); })(function () { load(); });
