@@ -1,6 +1,6 @@
 # ph-website
 
-Every line of code running on personalisationhub.com, versioned here. Four Angie code snippets, copied byte for byte from WordPress on 4 Nov 2026 (the live files have `__ID__` already replaced by the snippet id). Do not reformat them.
+Every line of code running on personalisationhub.com, versioned here. Five Angie code snippets, copied byte for byte from WordPress on 4 Nov 2026 (the live files have `__ID__` already replaced by the snippet id). Do not reformat them.
 
 ## Snippets
 
@@ -10,6 +10,7 @@ Every line of code running on personalisationhub.com, versioned here. Four Angie
 | PH Blog | 10116 | 1.0.8 | `snippets/ph-blog/` | /blog/ (10147) and single posts: kick line, byline, right-hand article menu (section filter, count; newest first, only the current article bold), series bar, Read next, progress bar; Blog/BlogPosting/BreadcrumbList JSON-LD with shared Organization `#organization` and SoftwareApplication `#software`; twins; `## Blog` in llms.txt |
 | PH Support Centre | 10156 | 1.4.0 | `snippets/ph-support-centre/` | everything under /support-centre/; shared Organization `#organization` and SoftwareApplication `#software`, WebSite `/support-centre/#site`; twins; `## Support Centre` in llms.txt; (its WebMCP tools moved to the PH Agent Endpoint snippet in 1.3.1); public `ph-help/v1/index`, `/redirects`, `/published`; 1.4.0: syncs from the live console feed first (GitHub raw, then help site, as fallbacks), public rate-limited `POST ph-help/v1/refresh` (202 or 429, schedules one sync in 5 s, never inline), no Google Fonts request |
 | PH Site Icon | 10157 | 1.0.1 | `snippets/ph-site-icon/` | /favicon.ico from the Site Icon |
+| PH Media | not published yet | 1.0.0 | `snippets/ph-media/` | new JPEG/PNG uploads get WebP sizes (quality 80, GIF/SVG untouched, only while sub-sizes are generated so the favicon stays PNG); fixes Elementor `elementor/thumbs` srcset URLs; admin `POST ph-site/v1/media/webp-status` (read-only) |
 
 `snippets/MANIFEST.json` lists every file with its byte count and sha256, so a deploy can check what is live against the repo.
 

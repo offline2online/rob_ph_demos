@@ -143,5 +143,18 @@
         "sha256": "2136426a4b18b4eb8c352c8310e96de7967f45de280bbb358c928c2818e86765"
       }
     ]
+  },
+  {
+    "id": null,
+    "title": "PH Media",
+    "version": "1.0.0",
+    "folder": "ph-media",
+    "files": [
+      {
+        "name": "main.php",
+        "bytes": 4509,
+        "sha256": "dc52e5a2d230ebb639fcafebf78838b48552c8c47531a07652c0df0fa5e9109b"
+      }
+    ]
   }
 ]
