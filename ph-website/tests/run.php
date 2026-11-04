@@ -292,7 +292,7 @@ $GLOBALS['hooks']['save_post'][0]( 9, (object) array( 'ID' => 9, 'post_type' => 
 ok( ( $GLOBALS['opts']['ph_ae_gen'] ?? 1 ) === $g0 + 2, 'saving a help article does' );
 
 /* Pen test fixes (PT-02, PT-04, PT-05): rate limit, stable cache key, sanitised errors, CORS filter */
-use function PhAgentEndpoint\{rate_wait,args_key,rate_hit,tool_def};
+use function AngieSnippets\PhAgentEndpoint___ID__\{rate_wait,args_key,rate_hit,tool_def};
 ok( rate_wait( 120, 120, 30 ) === 0 && rate_wait( 121, 120, 30 ) === 30 && rate_wait( 500, 120, 0 ) === 1, 'rate_wait: at the limit passes, over it waits at least 1 s' );
 ok( args_key( array( 'b' => 2, 'a' => 1 ) ) === args_key( array( 'a' => 1, 'b' => 2 ) ), 'cache key ignores argument order' );
 $ua = validate_args( tool_def( 'search_help' )['inputSchema'], array( 'query' => 'x', '<script>alert(1)</script>' => 1 ) );
@@ -372,6 +372,23 @@ foreach ( $nodes as $pair ) {
 }
 ok( count( $allids ) === 2, 'one Organization id and one SoftwareApplication id across all pages' );
 ok( strpos( file_get_contents( $snips . '/ph-support-centre/main.php' ), "const SITE_NAME    = 'Personalisation Hub Support Centre'" ) !== false, 'Support Centre WebSite is named Support Centre' );
+
+/* Support Centre 1.4.0: live feed first, refresh endpoint, no Google Fonts request */
+$scs = file_get_contents( $snips . '/ph-support-centre/main.php' );
+ok( strpos( $scs, "const VER          = '1.4.0'" ) !== false, 'Support Centre is 1.4.0' );
+ok( preg_match( "/const SOURCES\\s*=\\s*\\[\\s*HELP_API \\. '\\/data\\/', 'https:\\/\\/raw\\.githubusercontent\\.com[^']*', 'https:\\/\\/help\\.personalisationhub\\.com\\/data\\/'/", $scs ) === 1, 'sources: live feed, GitHub raw, help site, in that order' );
+ok( strpos( $scs, "const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api'" ) !== false, 'HELP_API is the live console feed' );
+ok( strpos( $scs, "const SYNC_VER     = '2'" ) !== false, 'SYNC_VER unchanged' );
+ok( strpos( $scs, 'fonts.googleapis.com' ) === false, 'no request to fonts.googleapis.com from the snippet' );
+preg_match( '/function refresh_request\(\) \{.*?\n\}\n/s', $scs, $m );
+$rf = $m[0] ?? '';
+ok( $rf !== '', 'refresh_request exists' );
+ok( strpos( $rf, 'sync(' ) === false && strpos( $rf, 'do_action' ) === false && strpos( $rf, 'spawn_cron' ) === false, 'refresh never calls the sync inline' );
+ok( strpos( $rf, 'wp_schedule_single_event( time() + 5' ) !== false && strpos( $rf, "'ph_sc_sync'" ) !== false, 'refresh schedules one ph_sc_sync in 5 s' );
+ok( strpos( $rf, '429' ) !== false && strpos( $rf, '202' ) !== false && strpos( $rf, 'retryAfter' ) !== false, 'refresh answers 202 or 429 with retryAfter' );
+ok( strpos( $rf, 'get_transient( \'ph_sc_refresh\' )' ) !== false && strpos( $rf, 'set_transient( \'ph_sc_refresh\', time() + 60, 60 )' ) !== false, 'refresh is rate-limited to 60 s by a transient' );
+ok( strpos( $rf, '$req' ) === false && strpos( $rf, '$_' ) === false && strpos( $rf, 'get_param' ) === false, 'refresh reads no input' );
+ok( preg_match( "/register_rest_route\\( 'ph-help\\/v1', '\\/refresh', \\[\\s*'methods'\\s*=> 'POST',\\s*'permission_callback' => '__return_true'/", $scs ) === 1, 'refresh is a public POST route' );
 
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );

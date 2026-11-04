@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER          = '1.3.2';
+const VER          = '1.4.0';
 const SYNC_VER     = '2';
 const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api';
 const LIVE         = true;
@@ -27,7 +27,7 @@ const PAGE_ID      = 2780;
 const BASE         = 'support-centre';
 const PT           = 'ph_help_article';
 const TAX          = 'ph_help_category';
-const SOURCES      = [ 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/faq/data/', 'https://help.personalisationhub.com/data/' ];
+const SOURCES      = [ HELP_API . '/data/', 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/faq/data/', 'https://help.personalisationhub.com/data/' ];
 const START        = 'faq-art-new-customer-journey';
 const BATCH        = 45;
 const SITE_NAME    = 'Personalisation Hub Support Centre';
@@ -988,6 +988,22 @@ function report( $idx, $tmap, $retired ) {
 	return $rows;
 }
 
+/* Rate-limited ping that queues a single sync event; the sync itself always runs from cron, never in the request. */
+function refresh_request() {
+	$until = (int) get_transient( 'ph_sc_refresh' );
+	if ( $until > time() ) {
+		$res = new \WP_REST_Response( [ 'queued' => false, 'retryAfter' => max( 1, $until - time() ) ], 429 );
+		$res->header( 'Retry-After', (string) max( 1, $until - time() ) );
+		return $res;
+	}
+	set_transient( 'ph_sc_refresh', time() + 60, 60 );
+	$next = wp_next_scheduled( 'ph_sc_sync' );
+	if ( ! $next || $next > time() + 60 ) {
+		wp_schedule_single_event( time() + 5, 'ph_sc_sync' );
+	}
+	return new \WP_REST_Response( [ 'queued' => true ], 202 );
+}
+
 /* ---------- REST: sync, status, redirect map, search index ---------- */
 add_action( 'rest_api_init', function () {
 	$admin = function () {
@@ -1005,6 +1021,15 @@ add_action( 'rest_api_init', function () {
 		'permission_callback' => $admin,
 		'callback'            => function () {
 			return rest_ensure_response( [ 'live' => LIVE, 'ver' => VER, 'state' => get_option( 'ph_sc_state', [] ), 'releases' => releases(), 'next_sync' => wp_next_scheduled( 'ph_sc_sync' ) ] );
+		},
+	] );
+	/* Public refresh ping: asks for one sync soon. Takes no input, never syncs inline, at most once per 60 s site-wide. */
+	register_rest_route( 'ph-help/v1', '/refresh', [
+		'methods'             => 'POST',
+		'permission_callback' => '__return_true',
+		'args'                => [],
+		'callback'            => function () {
+			return refresh_request();
 		},
 	] );
 	/* Old help.personalisationhub.com URLs (and the Freshdesk paths it redirected) mapped to Support Centre URLs. Public once live: it lists only public pages. */
@@ -1800,7 +1825,7 @@ add_action( 'wp_enqueue_scripts', function () {
 	if ( ! view() ) {
 		return;
 	}
-	wp_enqueue_style( 'ph-sc-roboto', 'https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap', [], null ); // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion
+	/* Roboto comes from Elementor's local fonts on every page; no third-party font request from this snippet. */
 	wp_enqueue_style( 'ph-sc-10156', angie_cs_get_snippet_asset_url( __FILE__, 'sc.css' ), [], VER );
 	wp_enqueue_script( 'ph-sc-10156', angie_cs_get_snippet_asset_url( __FILE__, 'sc.js' ), [], VER, [ 'in_footer' => true, 'strategy' => 'defer' ] );
 }, 20 );

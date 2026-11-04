@@ -78,13 +78,13 @@
   {
     "id": 10156,
     "title": "PH Support Centre",
-    "version": "1.3.2",
+    "version": "1.4.0",
     "folder": "ph-support-centre",
     "files": [
       {
         "name": "main.php",
-        "bytes": 83265,
-        "sha256": "97242ab1ced2fdd4f411bb8888a3dd2e8600c12e8ed4823104f7766b6edf2215"
+        "bytes": 84234,
+        "sha256": "17f07cad07bc7a272c96ee309515a8bb7fce33413fd296c0bb6d17696a4c40a9"
       },
       {
         "name": "sc-template.php",
