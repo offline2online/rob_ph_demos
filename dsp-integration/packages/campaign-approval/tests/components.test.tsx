@@ -4,7 +4,7 @@
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { Switch } from 'antd'
 import { describe, expect, it, vi } from 'vitest'
-import { ApprovalActions, ApprovalReviewPanel, ApprovalStatusBadge, ApprovalStatusFilter, useCampaignApprovals, type Approval } from '../src/ui'
+import { AdvertiserBookingsButton, AdvertiserCell, AdvertiserFilter, ApprovalActions, ApprovalReviewPanel, ApprovalStatusBadge, ApprovalStatusFilter, awaitingCount, filterByAdvertiser, useCampaignApprovals, type Approval } from '../src/ui'
 
 const approval = (over: Partial<Approval> = {}): Approval => ({
   campaignId: 'c1', campaignName: 'Swisse spring', advertiserName: 'Swisse', partnerName: 'Google DSP', status: 'awaiting_approval', mode: 'manual',
@@ -175,5 +175,73 @@ describe('useCampaignApprovals', () => {
     const { result } = renderHook(() => useCampaignApprovals(['c1'], client))
     await waitFor(() => expect(Object.keys(result.current.approvals)).toEqual(['c1']))
     expect(client.listApprovals).not.toHaveBeenCalled()
+  })
+})
+
+describe('AdvertiserCell (Campaigns table Advertiser column)', () => {
+  const a = (over: Partial<Approval> = {}) => approval(over)
+  it('shows advertiser, DSP and badge', () => {
+    render(<AdvertiserCell advertiserName="Swisse" dspName="Google DSP" approval={a()} />)
+    expect(screen.getByText('Swisse')).toBeInTheDocument()
+    expect(screen.getByText('Google DSP')).toBeInTheDocument()
+    expect(screen.getByText('Awaiting approval')).toBeInTheDocument()
+  })
+  it('says Direct with no DSP', () => {
+    render(<AdvertiserCell advertiserName="Swisse" dspName={null} approval={a({ status: 'approved' })} />)
+    expect(screen.getByText('Direct')).toBeInTheDocument()
+  })
+  it('HQ campaign: a dash, no badge', () => {
+    render(<AdvertiserCell advertiserName={null} />)
+    expect(screen.getByLabelText('No advertiser')).toHaveTextContent('–')
+  })
+  it('Auto tag and edit pending', () => {
+    const { rerender } = render(<AdvertiserCell advertiserName="S" approval={a({ status: 'approved', mode: 'auto' })} />)
+    expect(screen.getByText('Auto')).toBeInTheDocument()
+    rerender(<AdvertiserCell advertiserName="S" approval={a({ status: 'approved', pendingEdit: true })} />)
+    expect(screen.getByText('Approved · edit pending')).toBeInTheDocument()
+  })
+  it('Rejected: hover shows reason, who and when', async () => {
+    render(<AdvertiserCell advertiserName="S" approval={a({ status: 'rejected', reason: 'Price in artwork', reviewedBy: 'hq@x.com', reviewedAt: '2026-10-01T10:00:00.000Z' })} />)
+    fireEvent.mouseEnter(screen.getByText('Rejected'))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('Price in artwork')
+    expect(tip).toHaveTextContent('hq@x.com')
+  })
+  it('has no approve / reject actions', () => {
+    render(<AdvertiserCell advertiserName="S" approval={a()} />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+  it('draft shows no badge', () => {
+    render(<AdvertiserCell advertiserName="S" approval={a({ status: 'draft' })} />)
+    expect(screen.queryByText('Draft')).not.toBeInTheDocument()
+  })
+})
+
+describe('AdvertiserFilter', () => {
+  const advertisers = [{ id: 'a1', name: 'Swisse' }, { id: 'a2', name: 'Nike' }]
+  it('locked to one advertiser: disabled and forced', () => {
+    render(<AdvertiserFilter advertisers={advertisers} value={null} onChange={() => {}} lockedTo="a2" />)
+    expect(screen.getByText('Nike')).toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toBeDisabled()
+  })
+  it('filterByAdvertiser: lock wins over the chosen value', () => {
+    const rows = [{ advertiserId: 'a1' }, { advertiserId: 'a2' }, { advertiserId: null }]
+    expect(filterByAdvertiser(rows, null)).toHaveLength(3)
+    expect(filterByAdvertiser(rows, 'a1')).toEqual([{ advertiserId: 'a1' }])
+    expect(filterByAdvertiser(rows, 'a1', 'a2')).toEqual([{ advertiserId: 'a2' }])
+  })
+})
+
+describe('AdvertiserBookingsButton', () => {
+  it('shows the awaiting count, none at zero, and opens', () => {
+    const onClick = vi.fn()
+    const { rerender } = render(<AdvertiserBookingsButton awaitingCount={3} onClick={onClick} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advertiser Bookings (3)' }))
+    expect(onClick).toHaveBeenCalled()
+    rerender(<AdvertiserBookingsButton awaitingCount={0} onClick={onClick} />)
+    expect(screen.getByRole('button', { name: 'Advertiser Bookings' })).toBeInTheDocument()
+  })
+  it('awaitingCount counts only awaiting rows', () => {
+    expect(awaitingCount({ a: { status: 'awaiting_approval' }, b: { status: 'approved' }, c: undefined })).toBe(1)
   })
 })

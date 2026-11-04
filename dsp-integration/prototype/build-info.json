@@ -1,7 +1,7 @@
 {
-  "sourceStamp": "8579d305b1fceed2012ac7bb90e24ab257be5924",
-  "commit": "094ff876dd30373e84a264a4ddfb35c3251bde04",
-  "branch": "deploy/retail-media-insights",
-  "builtAt": "2026-10-30T22:23:56.461Z",
+  "sourceStamp": "8dd8c3db309cdbcac407f07d99e8a4c8d9f4ef92",
+  "commit": "538bce4fdf98ef13a893dd1f0706ea2451711a9d",
+  "branch": "deploy/dsp-integration",
+  "builtAt": "2026-11-04T21:02:47.468Z",
   "note": "What this hosted prototype was built from. Compare commit with the ticket to know whether the test link shows the change yet."
 }
