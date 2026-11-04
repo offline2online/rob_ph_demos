@@ -1506,6 +1506,8 @@ into the editor before this existed:
 | Code | Toolbar inline-code and code-block buttons (Quill built-ins) | `<code>` / `<pre class="ql-syntax">` | same file, `.article-body code` / `pre` |
 | Callout | Toolbar "Callout" picker — Note / Important / Warning | `<div class="callout callout-note">` | same file, `.article-body .callout` |
 
+Each table in the editor carries its own toolbar: **+ Row above / + Row below / − Delete row** and **+ Column left / + Column right / − Delete column**. They act on the cell last clicked (highlighted), so rows and columns can be inserted between existing ones and the selected row/column is the one deleted; with no cell selected they append / remove the last. The header row is never deleted. (`faqTableAddRow` etc. in `app.js`; covered by `test/faq-editor-load.test.mjs`.)
+
 They are registered as real Quill blots (`FaqCalloutBlot`, `FaqTableBlot` in
 `app.js`) rather than raw HTML pasted into the body, because Quill silently
 normalises away any element it has no blot for the first time it re-parses

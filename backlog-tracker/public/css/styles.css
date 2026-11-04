@@ -1457,6 +1457,9 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .faq-table-btn:hover { background: var(--border); }
 .faq-table-btn-danger { color: var(--danger); border-color: var(--danger); }
+.faq-table-group { display: inline-flex; flex-wrap: wrap; gap: 6px; padding-right: 8px; margin-right: 2px; border-right: 1px solid var(--border); }
+.faq-table .faq-row-active { background: rgba(0, 0, 0, 0.03); }
+.faq-table .faq-cell-active { outline: 2px solid var(--primary, #1a73e8); outline-offset: -2px; }
 .faq-table-btn-danger:hover { background: var(--danger); color: #fff; }
 .ql-editor .faq-table th[contenteditable], .ql-editor .faq-table td[contenteditable] { cursor: text; }
 .ql-editor .faq-table th[contenteditable]:focus, .ql-editor .faq-table td[contenteditable]:focus {
