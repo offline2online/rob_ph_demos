@@ -140,12 +140,12 @@ foreach ( array( 3477, 3566, 555 ) as $id ) {
 
 
 /* ------------------------------------------------------------ tool contract */
-use function AngieSnippets\PhAgentEndpoint___ID__\{tool_defs,run_tool,validate_args,help_article_path,feature_slugs};
+use function AngieSnippets\PhAgentEndpoint___ID__\{installation_spec,installation_spec_md,unconfirmed_paths,tool_defs,run_tool,validate_args,help_article_path,feature_slugs};
 const SC_NS_T = 'AngieSnippets\PhSupportCentre_10156';
 
 $defs  = tool_defs();
 $names = array_column( $defs, 'name' );
-ok( $names === array( 'describe_platform', 'list_industries', 'get_industry', 'get_feature', 'search_help', 'get_help_article', 'start_free_trial', 'book_demo' ), 'exactly the eight tools, in order' );
+ok( $names === array( 'describe_platform', 'list_industries', 'get_industry', 'get_feature', 'search_help', 'get_help_article', 'start_free_trial', 'book_demo', 'get_installation_spec' ), 'exactly the nine tools, in order' );
 foreach ( $defs as $d ) {
 	ok( ! empty( $d['annotations']['readOnlyHint'] ) && isset( $d['inputSchema']['type'] ) && $d['description'] !== '', "{$d['name']} is read-only with a schema" );
 }
@@ -261,7 +261,7 @@ $GLOBALS['byPath'] = array();
 $GLOBALS['hooks']['rest_api_init'][0]();
 ok( isset( $GLOBALS['routes']['ph-agent/v1/tools'], $GLOBALS['routes']['ph-agent/v1/tools/(?P<name>[a-z_]{1,40})'] ), 'both routes registered' );
 $list = $GLOBALS['routes']['ph-agent/v1/tools']['callback']();
-ok( count( $list->d['tools'] ) === 8 && $list->h['Cache-Control'] === 'public, max-age=300', 'list: eight tools, cacheable five minutes' );
+ok( count( $list->d['tools'] ) === 9 && $list->h['Cache-Control'] === 'public, max-age=300', 'list: nine tools, cacheable five minutes' );
 ok( $GLOBALS['routes']['ph-agent/v1/tools']['permission_callback']() === true, 'public read-only' );
 $call = $GLOBALS['routes']['ph-agent/v1/tools/(?P<name>[a-z_]{1,40})']['callback'];
 class Req implements ArrayAccess { public $p; function __construct( $p ) { $this->p = $p; } function get_param( $k ) { return $this->p[ $k ] ?? null; } function offsetGet( $k ): mixed { return $this->p[ $k ]; } function offsetExists( $k ): bool { return isset( $this->p[ $k ] ); } function offsetSet( $k, $v ): void {} function offsetUnset( $k ): void {} }
@@ -458,6 +458,38 @@ ok( ( $ihns . 'ai_desc_needs_fallback' )( '', array() ) && ( $ihns . 'ai_desc_ne
 ok( ! ( $ihns . 'ai_desc_needs_fallback' )( 'Own curated description', array( 'Another page' ) ), 'a unique curated description is kept' );
 ok( strpos( $ihsrc, 'ph-ai-lead-move' ) !== false && strpos( $ihsrc, 'display:none' ) === false && strpos( $ihsrc, 'visibility:hidden' ) === false, 'summary is moved into the hero for people and never hidden' );
 ok( strpos( $ihsrc, "return \$lead . \$html . \$tail" ) !== false, 'summary stays first in the server-rendered content' );
+
+/* ------------------------------------------------------------ installation spec (get_installation_spec) */
+$src = array(); // the tool reads no live content
+$is = run_tool( 'get_installation_spec', array(), $src );
+ok( empty( $is['isError'] ) && isset( $is['structuredContent'] ), 'install spec: tool answers with structured content' );
+$sp = $is['structuredContent'];
+ok( $sp['marketplace']['listingUrl'] === 'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76' && $sp['marketplace']['listingUrl'] === \AngieSnippets\PhAgentEndpoint___ID__\FREE_TRIAL_URL, 'install spec: listing URL is the one free-trial URL' );
+ok( $sp['marketplace']['productId'] === '76fb12fb-ca7e-4352-b691-6aa83d9be3e2' && $sp['marketplace']['subscribeUrl'] === 'https://aws.amazon.com/marketplace/procurement?productId=76fb12fb-ca7e-4352-b691-6aa83d9be3e2', 'install spec: product id and subscribe link' );
+ok( $sp['marketplace']['trackedTrialUrl'] === 'https://personalisationhub.com/go/free-trial/?via=webmcp', 'install spec: tracked trial link' );
+ok( array_column( $sp['pricing']['dimensions'], 'usd' ) === array( 6.94, 0.1375, 0.1375 ), 'install spec: three pricing dimensions' );
+ok( ! empty( $sp['humanApproval']['required'] ) && count( $sp['humanApproval']['steps'] ) === 3, 'install spec: EULA, subscription and IAM acknowledgement left to a human' );
+foreach ( array( 'prerequisites', 'template', 'deployment', 'verification', 'recovery', 'handOff', 'pricing', 'marketplace' ) as $k ) {
+	ok( ! empty( $sp[ $k ] ), "install spec: has $k" );
+}
+ok( count( $sp['template']['parameters'] ) >= 3 && isset( $sp['template']['parameters'][1]['validation'] ) && false !== strpos( $sp['template']['parameters'][1]['validation'], '15' ), 'install spec: ResourcePrefix rule is present' );
+ok( 'EC2InstancePublicURL' === $sp['deployment']['outputs'][0]['key'], 'install spec: wizard URL output' );
+/* Honesty: nothing unpublished may be invented. Each of these stays null until the owner supplies it. */
+$un = unconfirmed_paths( $sp );
+foreach ( array( 'prerequisites.iamPolicy', 'template.url', 'verification.healthCheckEndpoint', 'pricing.estimatedRunningCost' ) as $k ) {
+	ok( isset( $un[ $k ] ) && null === $un[ $k ]['value'] && '' !== $un[ $k ]['note'], "install spec: $k is marked unconfirmed with a null value" );
+}
+$raw = json_encode( $sp );
+ok( false === strpos( $raw, '"Statement"' ) && false === strpos( $raw, 'cloudformation.amazonaws.com' ) && false === strpos( $raw, 's3.amazonaws.com' ), 'install spec: no invented IAM policy or template URL' );
+ok( 0 === preg_match( '/AKIA[0-9A-Z]{16}|BEGIN [A-Z ]*PRIVATE|password\s*[:=]/i', $raw ), 'install spec: public content only, no credentials' );
+/* One source: the text is built from the same array, and a second source (the remote server) sees identical data. */
+ok( $is['content'][0]['text'] === installation_spec_md( $sp ), 'install spec: markdown text is built from the structured data' );
+$sp2 = run_tool( 'get_installation_spec', array(), $src )['structuredContent'];
+ok( $sp2 === $sp, 'install spec: identical on every call' );
+$bare = installation_spec();
+ok( null === $bare['marketplace']['trackedTrialUrl'], 'install spec: source data holds no per-surface link' );
+ok( ! empty( run_tool( 'get_installation_spec', array( 'x' => 1 ), $src )['isError'] ), 'install spec: takes no arguments' );
+ok( false === stripos( $is['content'][0]['text'], 'seamless' ) && false === stripos( $is['content'][0]['text'], 'leverage' ), 'install spec: no banned words' );
 
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );

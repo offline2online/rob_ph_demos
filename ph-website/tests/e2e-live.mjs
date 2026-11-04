@@ -111,8 +111,8 @@ add("llms.txt", "every link is on the site or the help API and resolves", async 
   ok(n > 0, "no site links to check");
 });
 
-/* ---- the eight tools, over the WordPress REST route ---- */
-add("tools", "tool list has all eight, read-only", async () => {
+/* ---- the nine tools, over the WordPress REST route ---- */
+add("tools", "tool list has all nine, read-only", async () => {
   const d = (await get(TOOLS)).json();
   ok(JSON.stringify((d.tools || []).map((t) => t.name).sort()) === JSON.stringify([...TOOL_NAMES].sort()), `tool names are ${(d.tools || []).map((t) => t.name)}`);
   ok(d.tools.every((t) => t.annotations && t.annotations.readOnlyHint === true && t.inputSchema), "a tool is missing readOnlyHint or inputSchema");
@@ -205,10 +205,10 @@ add("security", "help API article: unknown id is 404, json and markdown do not s
 
 /* ---- the remote MCP server ---- */
 const rpc = async (body) => get(`${HELP}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body) });
-add("mcp", "initialize, tools/list (eight tools), tools/call", async () => {
+add("mcp", "initialize, tools/list (nine tools), tools/call", async () => {
   const i = (await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } } })).json();
   ok(i.result && i.result.serverInfo, "initialize failed");
-  const l = (await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" })).json(); ok(l.result.tools.length === 8, `tools/list has ${l.result.tools && l.result.tools.length}`);
+  const l = (await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" })).json(); ok(l.result.tools.length === 9, `tools/list has ${l.result.tools && l.result.tools.length}`);
   const c = (await rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "start_free_trial", arguments: {} } })).json();
   ok(/via=remote-mcp/.test(JSON.stringify(c.result)) && !/via=webmcp/.test(JSON.stringify(c.result)), "CTA via not rewritten for remote MCP");
 });

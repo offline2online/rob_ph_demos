@@ -8,7 +8,7 @@ const assert = require("assert");
 const snip = path.join(__dirname, "..", "snippets");
 const loader = fs.readFileSync(path.join(snip, "ph-agent-endpoint", "webmcp.js"), "utf8");
 const BASE = "https://personalisationhub.com/wp-json/ph-agent/v1/";
-const NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo"];
+const NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo", "get_installation_spec"];
 const tools = NAMES.map((n) => ({ name: n, description: n, inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true } }));
 
 function run(nav, extra) {
@@ -32,12 +32,12 @@ const tick = () => new Promise((r) => setTimeout(r, 10));
   r = run({ modelContext: {} });
   assert.strictEqual(r.calls.length, 0, "no requests with an empty modelContext");
 
-  // registerTool: the list is fetched once, eight tools registered once each.
+  // registerTool: the list is fetched once, nine tools registered once each.
   const reg = [];
   r = run({ modelContext: { registerTool: (t) => reg.push(t) } });
   await tick();
   assert.deepStrictEqual(r.calls, [BASE + "tools"], "one request: the list");
-  assert.deepStrictEqual(reg.map((t) => t.name), NAMES, "eight tools registered once");
+  assert.deepStrictEqual(reg.map((t) => t.name), NAMES, "nine tools registered once");
   reg.forEach((t) => assert.strictEqual(t.annotations.readOnlyHint, true));
   const out = await reg[4].execute({ query: "add a store" });
   assert.strictEqual(r.calls[1], BASE + "tools/search_help?args=" + encodeURIComponent('{"query":"add a store"}'), "execute calls the endpoint");
@@ -48,9 +48,9 @@ const tick = () => new Promise((r) => setTimeout(r, 10));
   // RevOps: one ph_agent_tool event per call; path and referrer host only; nothing from the arguments.
   const r2 = run({ modelContext: { registerTool: (t) => reg.push(t) } }, { __ref: "https://agent.example/chat?q=secret" });
   await tick();
-  const mine = reg[reg.length - 8 + 4];
+  const mine = reg[reg.length - 9 + 4];
   await mine.execute({ query: "my email is a@b.c" });
-  await reg[reg.length - 1].execute();
+  await reg[reg.length - 2].execute();
   const ev = r2.win.dataLayer;
   assert.strictEqual(ev.length, 2, "one event per tool call");
   assert.deepStrictEqual(Array.from(ev, (e) => e.tool), ["search_help", "book_demo"]);
@@ -64,7 +64,7 @@ const tick = () => new Promise((r) => setTimeout(r, 10));
   let ctx;
   r = run({ modelContext: { provideContext: (c) => (ctx = c) } });
   await tick();
-  assert.strictEqual(ctx.tools.length, 8, "provideContext fallback registers eight");
+  assert.strictEqual(ctx.tools.length, 9, "provideContext fallback registers nine");
 
   // A second copy of the loader on the same page does nothing.
   const reg2 = [];
@@ -74,7 +74,7 @@ const tick = () => new Promise((r) => setTimeout(r, 10));
   const fetch = () => { calls.push(1); return Promise.resolve({ json: () => Promise.resolve({ tools }) }); };
   for (let i = 0; i < 2; i++) vm.runInNewContext(loader, { navigator: nav, window: win, fetch, encodeURIComponent, JSON, Promise });
   await tick();
-  assert.strictEqual(reg2.length, 8, "registered once even if loaded twice");
+  assert.strictEqual(reg2.length, 9, "registered once even if loaded twice");
 
   // A failing list is silent; a failing call becomes isError.
   r = run({ modelContext: { registerTool: () => { throw new Error("duplicate"); } } });
