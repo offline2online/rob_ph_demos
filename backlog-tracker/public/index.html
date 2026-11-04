@@ -175,14 +175,8 @@
         <button type="button" class="nav-drawer-item" id="promote-leads-btn"><span class="material-symbols-outlined" aria-hidden="true">group</span>Leads</button>
       </div>
       <div class="nav-group" data-nav-group="publish" role="group" aria-labelledby="nav-publish-label">
-        <div class="nav-drawer-section" id="nav-publish-label">Publish</div>
+        <div class="nav-drawer-section" id="nav-publish-label">Support</div>
         <button type="button" class="nav-drawer-item" id="faq-articles-btn"><span class="material-symbols-outlined" aria-hidden="true">help_center</span>Help Centre</button>
-      </div>
-      <div class="nav-group" data-nav-group="user-management" data-admin-only role="group" aria-labelledby="nav-um-label">
-        <div class="nav-drawer-section" id="nav-um-label">User Management</div>
-        <button type="button" class="nav-drawer-item" id="um-users-btn"><span class="material-symbols-outlined" aria-hidden="true">group</span>Users</button>
-        <button type="button" class="nav-drawer-item" id="um-roles-btn"><span class="material-symbols-outlined" aria-hidden="true">badge</span>Roles</button>
-        <button type="button" class="nav-drawer-item" id="um-permissions-btn"><span class="material-symbols-outlined" aria-hidden="true">lock</span>Permissions</button>
       </div>
       <div class="nav-group" data-nav-group="settings" role="group" aria-labelledby="nav-settings-label">
         <div class="nav-drawer-section" id="nav-settings-label">Settings</div>
@@ -209,7 +203,7 @@
     <nav class="tabbar" id="tabbar" aria-label="Primary">
       <button type="button" class="tab" data-tab="build"><span class="material-symbols-outlined" aria-hidden="true">construction</span><span>Build</span></button>
       <button type="button" class="tab" data-tab="promote"><span class="material-symbols-outlined" aria-hidden="true">palette</span><span>Promote</span></button>
-      <button type="button" class="tab" data-tab="publish"><span class="material-symbols-outlined" aria-hidden="true">campaign</span><span>Publish</span></button>
+      <button type="button" class="tab" data-tab="publish"><span class="material-symbols-outlined" aria-hidden="true">campaign</span><span>Support</span></button>
       <button type="button" class="tab" data-tab="settings"><span class="material-symbols-outlined" aria-hidden="true">settings</span><span>Settings</span></button>
       <button type="button" class="tab" data-tab="search"><span class="material-symbols-outlined" aria-hidden="true">search</span><span>Search</span></button>
       <button type="button" class="tab" data-tab="profile"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span><span>Profile</span></button>
@@ -1230,16 +1224,57 @@
       </div>
     </div>
 
-    <section class="faq-admin-page" id="user-management-page" hidden>
+    <section class="faq-admin-page" id="role-detail-page" hidden>
       <div class="page-header">
-        <h2>User Management</h2>
+        <button type="button" class="btn-ghost" id="role-back-btn"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>Roles</button>
+        <h2 id="role-detail-title">Role</h2>
       </div>
-      <nav class="um-subnav" aria-label="User Management">
-        <button type="button" class="um-tab" data-um-tab="users" id="um-tab-users">Users</button>
-        <button type="button" class="um-tab" data-um-tab="roles" id="um-tab-roles">Roles</button>
-        <button type="button" class="um-tab" data-um-tab="permissions" id="um-tab-permissions">Permissions</button>
-      </nav>
+      <div class="docs-block role-detail">
+        <div class="role-field">
+          <label class="field-label" for="role-name">Role name</label>
+          <input type="text" id="role-name" maxlength="60">
+        </div>
+        <div class="role-field">
+          <label class="field-label" for="role-description">Description</label>
+          <textarea id="role-description" rows="3" maxlength="300" placeholder="What this role is for"></textarea>
+        </div>
+        <p class="um-count" id="role-locked-note" hidden>The Admin role always has full access, so its permissions are locked.</p>
+        <p class="um-count">Choose what this role can open in the console. <b>View</b> opens a section read-only, <b>Edit</b> adds changes, and <b>Admin</b> also lets a person manage users and roles.</p>
+        <div id="role-permissions"></div>
+        <p class="tm-error" id="role-error" role="alert" hidden></p>
+        <div class="role-actions-bar">
+          <button type="button" class="btn-primary" id="role-save">Save role</button>
+          <span class="um-count" id="role-status" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+    </section>
 
+    <section class="faq-admin-page" id="access-denied-page" hidden>
+      <div class="page-header"><h2>No access</h2></div>
+      <p id="access-denied-text" class="interface-row-empty"></p>
+      <button type="button" class="btn-primary" id="access-denied-go" hidden>Go to a section you can open</button>
+    </section>
+
+    <section class="faq-admin-page" id="faq-settings-page" hidden>
+      <div class="page-header">
+        <h2>Settings</h2>
+      </div>
+      <div class="settings-layout">
+        <nav class="settings-tabs" id="settings-submenu" role="tablist" aria-label="Settings">
+          <button type="button" class="settings-tab" role="tab" data-settings-page="user-management" data-admin-only>User Management</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="projects">Projects</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="releases">Releases</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="skills">Skills &amp; phase bindings</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="automations">Automations</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="integrations">Integrations &amp; MCP</button>
+        </nav>
+        <div class="settings-content">
+
+          <div class="settings-pane" data-settings-pane="user-management" hidden>
+            <nav class="um-subnav" role="tablist" aria-label="User Management">
+              <button type="button" class="um-tab" role="tab" data-um-tab="users" id="um-tab-users">Users</button>
+              <button type="button" class="um-tab" role="tab" data-um-tab="roles" id="um-tab-roles">Roles</button>
+            </nav>
       <!-- Users. Moved here from Settings → Team &amp; agent access. One list,
            two things at once: who can open this console in a browser, and
            whose AI agent may connect over MCP. Both resolve to the same
@@ -1278,32 +1313,7 @@
         <div class="ag-theme-alpine um-grid" id="roles-grid" aria-label="Roles"></div>
         <p class="tm-error" id="roles-error" role="alert" hidden></p>
       </div>
-      <div class="um-panel-body" data-um-panel="permissions" hidden>
-        <p class="um-count">Choose what each role can open in the console. <b>View</b> opens a section read-only, <b>Edit</b> adds changes, and <b>Admin</b> also lets a person manage this matrix. Admins always keep User Management, so nobody can lock themselves out.</p>
-        <p class="um-count" id="permissions-status" role="status" aria-live="polite"></p>
-        <div id="permissions-matrix"></div>
-      </div>
-    </section>
-
-    <section class="faq-admin-page" id="access-denied-page" hidden>
-      <div class="page-header"><h2>No access</h2></div>
-      <p id="access-denied-text" class="interface-row-empty"></p>
-      <button type="button" class="btn-primary" id="access-denied-go" hidden>Go to a section you can open</button>
-    </section>
-
-    <section class="faq-admin-page" id="faq-settings-page" hidden>
-      <div class="page-header">
-        <h2>Settings</h2>
-      </div>
-      <div class="settings-layout">
-        <nav class="settings-submenu" id="settings-submenu" aria-label="Settings">
-          <button type="button" class="settings-submenu-item" data-settings-page="projects"><span class="material-symbols-outlined" aria-hidden="true">folder</span>Projects</button>
-          <button type="button" class="settings-submenu-item" data-settings-page="releases"><span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>Releases</button>
-          <button type="button" class="settings-submenu-item" data-settings-page="skills"><span class="material-symbols-outlined" aria-hidden="true">psychology</span>Skills &amp; phase bindings</button>
-          <button type="button" class="settings-submenu-item" data-settings-page="automations"><span class="material-symbols-outlined" aria-hidden="true">bolt</span>Automations</button>
-          <button type="button" class="settings-submenu-item" data-settings-page="integrations"><span class="material-symbols-outlined" aria-hidden="true">api</span>Integrations &amp; MCP</button>
-        </nav>
-        <div class="settings-content">
+          </div>
 
           <div class="settings-pane" data-settings-pane="projects" hidden>
             <div class="docs-block">

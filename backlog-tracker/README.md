@@ -2487,8 +2487,7 @@ every destination already existed.
 
 - **Navigation groups (31 Oct 2026)**: **Build** (Agent Board, Staff Kanban,
   Concepts, Whiteboard), **Promote** (Brand Guidelines, 5 Nov 2026; see
-  below), **Publish** (Help Centre), **User Management** (Users, Roles,
-  Permissions; built by their own tickets) and **Settings**. Releases and Skills are no longer in the nav;
+  below), **Support** (Help Centre; labelled Publish before 4 Nov 2026) and **Settings**. Releases and Skills are no longer in the nav;
   they are reached from Settings. Sign out stays in the profile menu.
 - **Settings** (`#settings/<page>`, `public/js/settings-section.js` for routes
   and row builders): a sub-menu of Projects, Releases, Skills & phase
@@ -2736,12 +2735,17 @@ Revisions reads `docRevisions` for the project over REST with a field mask
 agents can read or write changed. UI tests serve AG Grid from the
 `ag-grid-community` dev dependency (`test/ui/harness.mjs`).
 
-## User Management (Users / Roles / Permissions)
+## User Management (Settings → User Management: Users / Roles)
 
-Its own navigation section (admin-only, `[data-admin-only]`), moved out of
-Settings. Sub-menu: **Users**, **Roles**, **Permissions** (`#user-management/<tab>`,
-`user-management-page` in `public/index.html`). **Users** and **Roles** are
-built; Permissions is an empty page for its own ticket.
+The first tab of Settings (admin-only, `[data-admin-only]`; 4 Nov 2026). Settings
+tabs follow PH Core's campaign-editor underline style (`.settings-tab` in
+`styles.css`). Sub-tabs: **Users** and **Roles**
+(`#settings/user-management/<tab>`, `data-settings-pane="user-management"` in
+`public/index.html`); the old `#user-management/*` links redirect. Opening a
+role (edit icon) shows its page, `#settings/user-management/roles/<id>`
+(`role-detail-page`): name, description and the permissions grouped Build /
+Support / Settings, with **Save role**; the Admin role is locked. There is no
+Permissions tab or matrix.
 
 **Users** is an AG Grid Community table (`public/js/user-management.js`; the
 library is loaded on first visit by `docs-grid.js`, the Alpine theme restyled

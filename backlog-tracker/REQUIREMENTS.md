@@ -3801,8 +3801,15 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
 
 ## User Management section
 
-- Users, Roles and Permissions are one navigation section ("User Management"),
-  visible to admins only. Team & agent access no longer lives in Settings.
+- **User Management is the first tab of Settings (4 Nov 2026)**, visible to
+  admins only, with two sub-tabs: **Users** and **Roles** (`#settings/user-management/<users|roles>`;
+  a role's own page is `#settings/user-management/roles/<id>`; the old
+  `#user-management/*` links redirect). There is no User Management, Roles or
+  Permissions item in the left nav and no standalone Permissions section.
+  Settings tabs use PH Core's campaign-editor tab style (46px, underline ink
+  bar, the active tab in brand teal with a 10% tint). The remaining tabs keep
+  their order after it: Projects, Releases, Skills & phase bindings,
+  Automations, Integrations & MCP. A non-admin opens Settings on Projects.
 - The Users page is an AG Grid table with columns name, email, role, status and
   last active; sortable, filterable per column, searchable, paginated; styled to
   the Personalisation Hub table conventions (`ph-designer`).
@@ -3819,10 +3826,13 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   Roles live in the `roles` collection (members read, admins write); a user's
   assignment is `consoleUsers.roleId`, set from the Users grid's "Assigned role"
   column, and drives the Users count.
-- **Permissions (1 Nov 2026).** The Permissions tab is a matrix: one row per
-  console section (Agent board, Staff Kanban, Concepts, FAQ management, Skills,
-  Releases, Project docs, Settings, User Management), one column per role, each
-  cell No access / View / Edit / Admin. Stored as `roles/{id}.permissions`
+- **Permissions (1 Nov 2026; moved onto the role page 4 Nov 2026).** Permissions
+  are edited only inside a role: the edit icon on the Roles grid opens the role
+  page (name, description, then every console section grouped Build / Support /
+  Settings, each No access / View / Edit / Admin, and **Save role**). There is
+  no comparison matrix. The sections are Agent board, Staff Kanban, Concepts,
+  Promote, Project docs (Build); FAQ management (Support); Settings, Skills,
+  Releases, User Management (Settings). Stored as `roles/{id}.permissions`
   (`{sectionKey: level}`); a role with no map gets Edit everywhere except User
   Management (none). The logic is `public/js/permissions.js`. Enforcement, in
   the console UI: a section with No access is hidden from the nav and search and
@@ -3832,16 +3842,16 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   and its column is locked, and a member whose fixed console role is `admin`
   always keeps User Management whatever their assigned role says, so nobody can
   lock themselves out. The fixed `viewer` console role never exceeds View. Only
-  an admin can change the matrix. Admin level currently differs from Edit only
-  by unlocking this matrix; it is reserved for per-section admin controls.
+  an admin can change a role's permissions. Admin level currently differs from
+  Edit only by unlocking user and role management; it is reserved for
+  per-section admin controls.
   **Limit:** this is UI enforcement. `firestore.rules` still gate data by the
   fixed admin/editor/viewer role, not per section, so it is access control for
   the console's screens, not a data boundary.
 ## Console navigation and Settings (31 Oct 2026)
 
 - The primary nav has four groups: **Build** (Agent Board, Staff Kanban,
-  Concepts, Whiteboard), **Publish** (Help Centre), **User Management** (Users, Roles,
-  Permissions) and **Settings**. Releases and Skills are reachable only
+  Concepts, Whiteboard), **Support** (Help Centre; labelled Publish before 4 Nov 2026) and **Settings**. Releases and Skills are reachable only
   from Settings. Settings is not in the profile menu. On a phone the tab bar is
   Build, Publish, Settings, Search, Profile.
 - Settings has a sub-menu at `#settings/<page>`: Projects (names, descriptions,
@@ -3891,7 +3901,7 @@ slide-over has already closed). Rules:
 - A **Promote** group sits in the sidebar between Build and Publish (a
   Promote tab on a phone). Its first item is **Brand Guidelines**
   (`#promote/brand-guidelines`, `public/js/promote-section.js`). Its section
-  key for roles is `promote` (User Management → Permissions); a hash under
+  key for roles is `promote` (Settings → User Management → Roles); a hash under
   `#promote/` routes to it.
 - The page is **read-only** and shows two `projectDocs` rows found by
   `mirrorKey` (`brand-guidelines`, `brand-requirements`), which mirror

@@ -187,7 +187,7 @@ const scenarios = [
     },
   },
   {
-    name: "nav: Build, Publish and Admin destinations are all reachable, with no sideways scroll",
+    name: "nav: Build, Support and Admin destinations are all reachable, with no sideways scroll",
     seed: () => seed(),
     async run(c) {
       await c.boardReady();
@@ -210,7 +210,7 @@ const scenarios = [
       c.at("sections");
       if (!phone) {
         const labels = await c.page.evaluate(() => [...document.querySelectorAll("#nav-drawer .nav-drawer-section")].map((e) => e.textContent.trim()));
-        assert.deepStrictEqual(labels, ["Build", "Promote", "Publish", "User Management", "Settings"]);
+        assert.deepStrictEqual(labels, ["Build", "Promote", "Support", "Settings"]);
       }
       await go("build", "concept-incubator-btn", "concept-incubator-page");
       await go("settings", "faq-settings-btn", "faq-settings-page");
@@ -219,7 +219,9 @@ const scenarios = [
         await c.visible(`[data-settings-pane="${sub}"]`, `${label} pane shows`);
         await overflow(`settings ${sub}`);
       }
-      assert.strictEqual(await c.page.locator(".settings-submenu-item").count(), 5, "five Settings pages");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#settings-submenu .settings-tab")].map((b) => b.dataset.settingsPage)), ["user-management", "projects", "releases", "skills", "automations", "integrations"], "User Management first, the rest in their old order");
+      assert.strictEqual(await c.page.locator('#settings-submenu .settings-tab[aria-selected="true"]').count(), 1, "exactly one Settings tab is selected");
+      assert.strictEqual(await c.page.locator('#nav-drawer [data-nav-group="user-management"], #nav-drawer #um-users-btn, #nav-drawer #um-roles-btn, #nav-drawer #um-permissions-btn').count(), 0, "no User Management, Roles or Permissions items in the nav");
       assert.strictEqual(await c.page.locator("#nav-drawer #releases-btn, #nav-drawer #skills-btn").count(), 0, "Releases and Skills are not in the main navigation");
       await go("publish", "faq-articles-btn", "faq-articles-page");
       assert.strictEqual(await c.page.locator("#profile-menu #faq-settings-btn").count(), 0, "Settings is not in the profile menu");
@@ -237,7 +239,7 @@ const scenarios = [
     },
   },
   {
-    name: "user management: own nav section, Users grid adds, changes roles inline and in bulk, deactivates",
+    name: "user management: first Settings tab, Users grid adds, changes roles inline and in bulk, deactivates",
     seed: () => {
       const s = seed();
       s.user = { email: "admin@personalisationhub.com", role: "admin" };
@@ -253,9 +255,12 @@ const scenarios = [
       const phone = c.width <= 640;
       if (phone) await c.click('#tabbar .tab[data-tab="settings"]', "Settings tab"); else if (c.width < 1024) await c.click("#nav-open-btn", "open the menu");
       assert.strictEqual(await c.page.locator("#faq-settings-page .team-admin-block").count(), 0, "Team & agent access is no longer under Settings");
-      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll('[data-nav-group="user-management"] .nav-drawer-item')].map((b) => b.textContent.trim().replace(/^(group|badge|lock)/, ""))), ["Users", "Roles", "Permissions"]);
-      await c.click("#um-users-btn", "Users");
-      await c.visible("#user-management-page", "User Management shows");
+      assert.strictEqual(await c.page.locator('#nav-drawer [data-nav-group="user-management"]').count(), 0, "User Management is not a nav group");
+      await c.click("#faq-settings-btn", "Settings");
+      await c.visible('[data-settings-pane="user-management"]', "Settings opens on User Management");
+      assert.strictEqual(await c.page.evaluate(() => document.querySelector("#settings-submenu .settings-tab").dataset.settingsPage), "user-management", "first tab");
+      assert.strictEqual(await c.page.getAttribute('#settings-submenu [data-settings-page="user-management"]', "aria-selected"), "true", "its tab is selected");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll(".um-tab")].map((b) => b.textContent.trim())), ["Users", "Roles"]);
       await c.visible("#um-grid .ag-row", "the grid lists members");
       assert.strictEqual(await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count(), 3, "three members in the grid");
       const cols = await c.page.evaluate(() => [...document.querySelectorAll("#um-grid .ag-header-cell-text")].map((e) => e.textContent.trim()).filter(Boolean));
@@ -298,7 +303,7 @@ const scenarios = [
       assert.ok(engineerId, "Engineer role seeded");
       await c.page.selectOption('select[aria-label="Assigned role for kim@personalisationhub.com"]', engineerId);
       await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").roleId)) === engineerId, "assigned role to persist", 5000);
-      await c.page.evaluate(() => { document.getElementById("um-roles-btn").click(); });
+      await c.click("#um-tab-roles", "Roles sub-tab");
       await c.visible('[data-um-panel="roles"]', "Roles page shows");
       await c.visible("#roles-grid .ag-row", "roles listed");
       const rcols = await c.page.evaluate(() => [...document.querySelectorAll("#roles-grid .ag-header-cell-text")].map((e) => e.textContent.trim()).filter(Boolean));
@@ -323,9 +328,22 @@ const scenarios = [
       assert.strictEqual(await rowCount(), 6, "no duplicate added");
       // edit
       await c.page.locator('.role-edit[aria-label="Edit Support"]').click();
-      await c.page.fill("#dialog-field-0", "Support team");
-      await c.click("#dialog-ok", "Save");
+      await c.visible("#role-detail-page", "the role page opens");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-group h3")].map((e) => e.textContent)), ["Build", "Support", "Settings"]);
+      await c.page.fill("#role-name", "Support team");
+      await c.page.selectOption("#role-perm-concepts", "view");
+      await c.click("#role-save", "Save role");
+      await until(async () => (await c.page.evaluate(() => { for (const d of globalThis.__fbStub.col("roles").values()) if (d.name === "Support team") return (d.permissions || {}).concepts; })) === "view", "the renamed role and its permission to persist", 8000);
+      await c.click("#role-back-btn", "back to Roles");
+      await c.visible("#roles-grid .ag-row", "roles listed again");
       await until(async () => (await c.page.locator('.role-edit[aria-label="Edit Support team"]').count()) === 1, "renamed role", 8000);
+      // the Admin role's permissions are locked
+      await c.page.locator('.role-edit[aria-label="Edit Admin"]').click();
+      await c.visible("#role-detail-page", "Admin role page");
+      assert.strictEqual(await c.page.locator("#role-permissions select:not([disabled])").count(), 0, "Admin permissions are locked");
+      assert.strictEqual(await c.page.isDisabled("#role-save"), true, "Admin cannot be saved");
+      await c.click("#role-back-btn", "back to Roles");
+      await c.visible("#roles-grid .ag-row", "roles listed again");
       // clone
       await c.page.locator('.role-clone[aria-label="Clone Support team"]').click();
       assert.strictEqual(await c.page.inputValue("#dialog-field-0"), "Copy of Support team", "clone prefilled");
@@ -948,12 +966,12 @@ const scenarios = [
       await c.visible("#skills-page", "Skills opens at View");
       assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("skills-add-btn")).display), "none", "Add skill is unavailable at View");
       // User Management is not in this role at all
-      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
+      await c.page.evaluate(() => { location.hash = "#settings/user-management/roles"; });
       await c.visible("#access-denied-page", "User Management is blocked for an engineer");
     },
   },
   {
-    name: "permissions: the matrix lists every section by role, saves a change, and the Admin role stays locked",
+    name: "permissions: a role's page lists sections by area, saves a change, and the Admin role stays locked",
     seed: () => {
       const s = seed();
       s.user = { email: "admin@personalisationhub.com", role: "admin" };
@@ -966,20 +984,24 @@ const scenarios = [
     },
     async run(c) {
       await c.boardReady();
-      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
-      await c.visible(".perm-table", "the matrix shows");
-      const rows = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table tbody th")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(rows, ["Agent board", "Staff Kanban", "Concepts", "Promote", "FAQ management", "Skills", "Releases", "Project docs", "Settings", "User Management"]);
-      const heads = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table thead th")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(heads, ["Section", "Admin", "Engineer"]);
-      assert.strictEqual(await c.page.locator('select[data-perm-role="rAdmin"]:not([disabled])').count(), 0, "the Admin column is locked");
-      await c.page.selectOption('select[data-perm-role="rEng"][data-perm-section="concepts"]', "none");
+      await c.page.evaluate(() => { location.hash = "#settings/user-management/roles/rEng"; });
+      await c.visible("#role-detail-page", "the role page shows");
+      assert.strictEqual(await c.page.locator(".perm-table").count(), 0, "there is no permissions matrix");
+      await c.visible("#role-permissions .role-perm-row", "the permissions render");
+      const rows = await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-perm-row label")].map((e) => e.textContent.trim()));
+      assert.deepStrictEqual(rows, ["Agent board", "Staff Kanban", "Concepts", "Promote", "Project docs", "FAQ management", "Settings", "Skills", "Releases", "User Management"]);
+      await c.page.selectOption("#role-perm-concepts", "none");
+      await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);
       // an admin keeps User Management even when a role they hold says none
-      await c.page.selectOption('select[data-perm-role="rEng"][data-perm-section="user-management"]', "none");
+      await c.page.selectOption("#role-perm-user-management", "none");
+      await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {})["user-management"])) === "none", "the lock-out attempt to persist", 5000);
-      assert.strictEqual(await c.page.evaluate(() => document.getElementById("user-management-page").hidden), false, "User Management is still open");
-      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("um-permissions-btn")).display === "none"), false, "and still in the nav");
+      assert.strictEqual(await c.page.evaluate(() => document.getElementById("role-detail-page").hidden), false, "User Management is still open");
+      // legacy links redirect
+      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
+      await until(async () => (await c.page.evaluate(() => location.hash)) === "#settings/user-management/roles", "the legacy link to redirect", 5000);
+      await c.visible('[data-settings-pane="user-management"]', "Settings → User Management shows");
     },
   },
   {
