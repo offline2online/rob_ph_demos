@@ -375,7 +375,7 @@ ok( strpos( file_get_contents( $snips . '/ph-support-centre/main.php' ), "const 
 
 /* Support Centre 1.4.0: live feed first, refresh endpoint, no Google Fonts request */
 $scs = file_get_contents( $snips . '/ph-support-centre/main.php' );
-ok( strpos( $scs, "const VER          = '1.4.1'" ) !== false, 'Support Centre is 1.4.1' );
+ok( strpos( $scs, "const VER          = '1.4.2'" ) !== false, 'Support Centre is 1.4.2' );
 ok( preg_match( "/const SOURCES\\s*=\\s*\\[\\s*HELP_API \\. '\\/data\\/', 'https:\\/\\/raw\\.githubusercontent\\.com[^']*', 'https:\\/\\/help\\.personalisationhub\\.com\\/data\\/'/", $scs ) === 1, 'sources: live feed, GitHub raw, help site, in that order' );
 ok( strpos( $scs, "const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api'" ) !== false, 'HELP_API is the live console feed' );
 ok( strpos( $scs, "const SYNC_VER     = '2'" ) !== false, 'SYNC_VER unchanged' );
@@ -386,10 +386,33 @@ ok( $rf !== '', 'refresh_request exists' );
 ok( strpos( $rf, 'sync(' ) === false && strpos( $rf, 'do_action' ) === false, 'refresh never calls the sync inline' );
 ok( strpos( $rf, 'spawn_cron()' ) !== false && strpos( $rf, 'wp_schedule_single_event' ) < strpos( $rf, 'spawn_cron()' ), 'refresh calls spawn_cron() after scheduling the event (1.4.1)' );
 ok( strpos( $rf, 'do_action( \'ph_sc_sync' ) === false && strpos( $rf, 'wp_cron(' ) === false && strpos( $rf, 'do_action_ref_array' ) === false, 'refresh still never runs the sync (spawn is a non-blocking loopback)' );
-ok( strpos( $rf, 'wp_schedule_single_event( time() + 5' ) !== false && strpos( $rf, "'ph_sc_sync'" ) !== false, 'refresh schedules one ph_sc_sync in 5 s' );
+ok( strpos( $rf, 'wp_schedule_single_event( time(),' ) !== false && strpos( $rf, 'time() + 5' ) === false && strpos( $rf, "'ph_sc_sync'" ) !== false, 'refresh schedules one ph_sc_sync due now (1.4.2), so spawn_cron() finds it due' );
 ok( strpos( $rf, '429' ) !== false && strpos( $rf, '202' ) !== false && strpos( $rf, 'retryAfter' ) !== false, 'refresh answers 202 or 429 with retryAfter' );
 ok( strpos( $rf, 'get_transient( \'ph_sc_refresh\' )' ) !== false && strpos( $rf, 'set_transient( \'ph_sc_refresh\', time() + 60, 60 )' ) !== false, 'refresh is rate-limited to 60 s by a transient' );
 ok( strpos( $rf, '$req' ) === false && strpos( $rf, '$_' ) === false && strpos( $rf, 'get_param' ) === false, 'refresh reads no input' );
+/* Behaviour (1.4.2): run refresh_request() against stubbed WP functions. The event must be due when spawn_cron() runs; the sync is never called inline. */
+{
+	$GLOBALS['phsc'] = [ 'sched' => [], 'spawn' => [], 'inline' => 0, 'tr' => 0, 'next' => false ];
+	$stubs = <<<'PHPSTUB'
+namespace AngieSnippets\PhSupportCentre_10156;
+function get_transient( $k ) { return $GLOBALS['phsc']['tr']; }
+function set_transient( $k, $v, $e ) { $GLOBALS['phsc']['tr'] = $v; return true; }
+function wp_next_scheduled( $h ) { return $GLOBALS['phsc']['next']; }
+function wp_schedule_single_event( $t, $h ) { $GLOBALS['phsc']['sched'][] = $t; return true; }
+function spawn_cron() { $g = &$GLOBALS['phsc']; $g['spawn'][] = array_map( fn( $t ) => $t <= time(), $g['sched'] ); return true; }
+function sync() { $GLOBALS['phsc']['inline']++; }
+class WPRR { public $d; public $s; public $h = []; function __construct( $d, $s ) { $this->d = $d; $this->s = $s; } function header( $k, $v ) { $this->h[ $k ] = $v; } }
+PHPSTUB;
+	$code  = $stubs . "\n" . str_replace( 'new \\WP_REST_Response', 'new WPRR', $rf );
+	eval( $code );
+	$r1 = \AngieSnippets\PhSupportCentre_10156\refresh_request();
+	ok( $r1->s === 202 && count( $GLOBALS['phsc']['sched'] ) === 1, 'refresh: first ping answers 202 and schedules one event' );
+	ok( $GLOBALS['phsc']['sched'][0] <= time(), 'refresh: the event timestamp is <= time() when spawn_cron() is called' );
+	ok( $GLOBALS['phsc']['spawn'] === [ [ true ] ], 'refresh: spawn_cron() saw an already-due event' );
+	ok( $GLOBALS['phsc']['inline'] === 0, 'refresh: sync() is never called inline' );
+	$r2 = \AngieSnippets\PhSupportCentre_10156\refresh_request();
+	ok( $r2->s === 429 && isset( $r2->h['Retry-After'] ) && count( $GLOBALS['phsc']['sched'] ) === 1, 'refresh: a second ping within 60 s answers 429 with Retry-After and schedules nothing' );
+}
 ok( preg_match( "/register_rest_route\\( 'ph-help\\/v1', '\\/refresh', \\[\\s*'methods'\\s*=> 'POST',\\s*'permission_callback' => '__return_true'/", $scs ) === 1, 'refresh is a public POST route' );
 
 require __DIR__ . '/faq.test.php';

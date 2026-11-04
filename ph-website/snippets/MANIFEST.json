@@ -106,13 +106,13 @@
   {
     "id": 10156,
     "title": "PH Support Centre",
-    "version": "1.4.0",
+    "version": "1.4.2",
     "folder": "ph-support-centre",
     "files": [
       {
         "name": "main.php",
-        "bytes": 84363,
-        "sha256": "4af76d142abc183c8d3a16adb6eb39275e98de711bd97e0c21c61787ab16a1e1"
+        "bytes": 84488,
+        "sha256": "8e0db2c505661e7bedcf3981d5141d4e51619e1f5d0efeaad228c8d00c537b9c"
       },
       {
         "name": "sc-template.php",
@@ -147,9 +147,30 @@
   {
     "id": 10646,
     "title": "PH Agent Endpoint",
-    "version": "1.2.0",
+    "version": "1.4.0",
     "folder": "ph-agent-endpoint",
     "files": [
+      {
+        "name": "README.md",
+        "bytes": 7746,
+        "sha256": "3bbfbfdcf15454380e341cce4578e4752d8c44681006bdefad2ef52193ab7ff0",
+        "liveBytes": 7744,
+        "liveSha256": "d94f903c89e1f975a702dab7e8edb660e5955c23b7ee86d49dd41cfca0d008b2"
+      },
+      {
+        "name": "faq-data.php",
+        "bytes": 32529,
+        "sha256": "980444c3ad79040b08970fd5ec490d5d0bc9802fea5dfd794d6dd13b93fe6260",
+        "liveBytes": 32529,
+        "liveSha256": "980444c3ad79040b08970fd5ec490d5d0bc9802fea5dfd794d6dd13b93fe6260"
+      },
+      {
+        "name": "faq.php",
+        "bytes": 3274,
+        "sha256": "1f9080e8ed59e8c23e86d97bbe14b86bbbf82ce141d8950a1a95d0309a2e6052",
+        "liveBytes": 3273,
+        "liveSha256": "618f0d3649393b212e6d3ba0ee9a80b3099f6411a68ac393fdd8bdd292ce2def"
+      },
       {
         "name": "lib.php",
         "bytes": 11854,
@@ -159,10 +180,10 @@
       },
       {
         "name": "main.php",
-        "bytes": 13986,
-        "sha256": "880898b7da0b8097f412b0bb8d0823db3b05fda047229218f05c0673abf412c3",
-        "liveBytes": 13985,
-        "liveSha256": "978578a61538ba6400313fc8e650f4482333a7bbbaf937dcbb1a18115693059f"
+        "bytes": 15066,
+        "sha256": "2c9c72990b25e21302ae364c4d018851eac9e58a82e753f4142815b0da8b324f",
+        "liveBytes": 15065,
+        "liveSha256": "9e170f1fcd1e6e4665f89aaeafede77bf30cf50a7ccf40311ad9b8ba84ed622e"
       },
       {
         "name": "tools.php",
