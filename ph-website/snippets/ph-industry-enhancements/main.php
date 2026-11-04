@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.6.1';
+const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.6.2';
 const KEYS = [ 'industries', 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' ];
 
 function page_key() {
