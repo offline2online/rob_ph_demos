@@ -163,11 +163,11 @@ foreach ( array_keys( $GLOBALS['posts'] ) as $id ) {
 		leak_ok( strpos( $head, 'application/ld+json' ) !== false, 'good page gets JSON-LD' );
 		clean( 'JSON-LD / head of 7020', $head );
 		clean( 'WebMCP loader on 7020', $foot );
-		clean( 'markdown twin of 7020', \PhAgentEndpoint\twin_for( $GLOBALS['posts'][7020] ) );
+		clean( 'markdown twin of 7020', \AngieSnippets\PhAgentEndpoint___ID__\twin_for( $GLOBALS['posts'][7020] ) );
 	} else {
 		leak_ok( $head === '', "JSON-LD / head output for non-exposable page $id is empty" );
 		leak_ok( $foot === '', "WebMCP loader printed on non-exposable page $id" );
-		leak_ok( \PhAgentEndpoint\exposable_post( $id ) === null, "page $id is not exposable (so no markdown twin)" );
+		leak_ok( \AngieSnippets\PhAgentEndpoint___ID__\exposable_post( $id ) === null, "page $id is not exposable (so no markdown twin)" );
 		clean( "head of $id", $head );
 	}
 }
@@ -178,7 +178,7 @@ $list = $GLOBALS['routes']['ph-agent/v1/tools']['callback']();
 clean( 'ph-agent/v1/tools', $list->d );
 $call = $GLOBALS['routes']['ph-agent/v1/tools/(?P<name>[a-z_]{1,40})']['callback'];
 class LReq implements ArrayAccess { public $p; function __construct( $p ) { $this->p = $p; } function get_param( $k ) { return $this->p[ $k ] ?? null; } function offsetGet( $k ): mixed { return $this->p[ $k ]; } function offsetExists( $k ): bool { return isset( $this->p[ $k ] ); } function offsetSet( $k, $v ): void {} function offsetUnset( $k ): void {} }
-$slugs = \PhAgentEndpoint\feature_slugs();
+$slugs = \AngieSnippets\PhAgentEndpoint___ID__\feature_slugs();
 $probes = array(
 	array( 'describe_platform', '{}' ), array( 'list_industries', '{}' ), array( 'start_free_trial', '{}' ), array( 'book_demo', '{}' ),
 	array( 'get_industry', '{"slug":"lindt"}' ), array( 'get_industry', '{"slug":"webdemo"}' ),

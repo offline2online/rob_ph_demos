@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER          = '1.3.1';
+const VER          = '1.3.2';
 const SYNC_VER     = '2';
 const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api';
 const LIVE         = true;
@@ -30,7 +30,7 @@ const TAX          = 'ph_help_category';
 const SOURCES      = [ 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/faq/data/', 'https://help.personalisationhub.com/data/' ];
 const START        = 'faq-art-new-customer-journey';
 const BATCH        = 45;
-const SITE_NAME    = 'Personalisation Hub Help Centre';
+const SITE_NAME    = 'Personalisation Hub Support Centre';
 const PROTOCOLS    = [ 'http', 'https', 'mailto', 'tel' ];
 const IFRAME_HOSTS = [ 'www.youtube.com', 'www.youtube-nocookie.com', 'player.vimeo.com' ];
 const DOC_TYPES    = [ 'faq' => 'FAQ', 'how-to' => 'How-to guide', 'reference' => 'Reference', 'explanation' => 'Explanation' ];
@@ -1457,12 +1457,42 @@ function markdown( $v ) {
 }
 
 /* ---------- structured data ---------- */
+/** Identical to PH Agent Endpoint's organization_node(): one Organization on every page. */
 function org() {
-	return [ '@type' => 'Organization', '@id' => home_url( '/#org' ), 'name' => 'Personalisation Hub', 'url' => home_url( '/' ) ];
+	return [
+		'@type'       => 'Organization',
+		'@id'         => home_url( '/#organization' ),
+		'name'        => 'Personalisation Hub',
+		'url'         => home_url( '/' ),
+		'description' => "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud.",
+	];
+}
+
+/** Identical to PH Agent Endpoint's software_node(): one SoftwareApplication on every page. */
+function software() {
+	return [
+		'@type'               => 'SoftwareApplication',
+		'@id'                 => home_url( '/#software' ),
+		'name'                => 'Personalisation Hub',
+		'url'                 => home_url( '/' ),
+		'description'         => "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud.",
+		'applicationCategory' => 'BusinessApplication',
+		'operatingSystem'     => 'Web',
+		'publisher'           => [ '@id' => home_url( '/#organization' ) ],
+		'offers'              => [
+			'@type'         => 'Offer',
+			'name'          => 'Free trial on AWS Marketplace',
+			'price'         => '0',
+			'priceCurrency' => 'USD',
+			'url'           => 'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76',
+			'availability'  => 'https://schema.org/InStock',
+			'description'   => "30-day free trial on AWS Marketplace, then billed through the customer's AWS account",
+		],
+	];
 }
 
 function crumbs( array $items ) {
-	$list = [ [ '@type' => 'ListItem', 'position' => 1, 'name' => 'Help Centre', 'item' => base_url() ] ];
+	$list = [ [ '@type' => 'ListItem', 'position' => 1, 'name' => 'Support Centre', 'item' => base_url() ] ];
 	foreach ( $items as $i => $it ) {
 		$list[] = [ '@type' => 'ListItem', 'position' => $i + 2, 'name' => $it[0], 'item' => $it[1] ];
 	}
@@ -1489,7 +1519,7 @@ function article_ld( $a ) {
 	$cat  = parent_cat( $a['cat'] );
 	$body = body_html( $a );
 	$desc = $a['answer'] ? $a['answer'] : $a['summary'];
-	$base = [ 'url' => $url, 'inLanguage' => 'en-GB', 'dateModified' => $a['updated'], 'publisher' => [ '@id' => home_url( '/#org' ) ], 'isPartOf' => [ '@type' => 'WebSite', 'name' => SITE_NAME, 'url' => base_url() ] ];
+	$base = [ 'url' => $url, 'inLanguage' => 'en-GB', 'dateModified' => $a['updated'], 'publisher' => [ '@id' => home_url( '/#organization' ) ], 'isPartOf' => [ '@type' => 'WebSite', 'name' => SITE_NAME, 'url' => base_url() ] ];
 	if ( $a['kw'] ) {
 		$base['keywords'] = implode( ', ', $a['kw'] );
 	}
@@ -1521,7 +1551,7 @@ function article_ld( $a ) {
 		$main = $base + [ '@type' => 'FAQPage', '@id' => $url . '#faq', 'name' => $a['title'], 'mainEntity' => [ $q ] ];
 	}
 	if ( ! $main ) {
-		$main = $base + [ '@type' => 'TechArticle', '@id' => $url . '#article', 'headline' => $a['title'], 'description' => $desc, 'mainEntityOfPage' => $url, 'author' => [ '@id' => home_url( '/#org' ) ] ];
+		$main = $base + [ '@type' => 'TechArticle', '@id' => $url . '#article', 'headline' => $a['title'], 'description' => $desc, 'mainEntityOfPage' => $url, 'author' => [ '@id' => home_url( '/#organization' ) ] ];
 		if ( $cat ) {
 			$main['articleSection'] = $cat['name'];
 		}
@@ -1532,7 +1562,7 @@ function article_ld( $a ) {
 		$trail[] = [ $cat['name'], cat_url( $cat ) ];
 	}
 	$trail[] = [ $a['title'], $url ];
-	return [ $main, crumbs( $trail ), org() ];
+	return [ $main, crumbs( $trail ), org(), software() ];
 }
 
 function ld_graph( $v ) {
@@ -1545,7 +1575,7 @@ function ld_graph( $v ) {
 		foreach ( arts_under( $c['id'] ) as $i => $a ) {
 			$items[] = [ '@type' => 'ListItem', 'position' => $i + 1, 'name' => $a['title'], 'url' => art_url( $a ) ];
 		}
-		return [ [ '@type' => 'CollectionPage', '@id' => cat_url( $c ) . '#page', 'name' => $c['name'], 'description' => $c['desc'], 'url' => cat_url( $c ), 'inLanguage' => 'en-GB', 'isPartOf' => [ '@type' => 'WebSite', 'name' => SITE_NAME, 'url' => base_url() ], 'mainEntity' => [ '@type' => 'ItemList', 'itemListElement' => $items ] ], crumbs( [ [ $c['name'], cat_url( $c ) ] ] ), org() ];
+		return [ [ '@type' => 'CollectionPage', '@id' => cat_url( $c ) . '#page', 'name' => $c['name'], 'description' => $c['desc'], 'url' => cat_url( $c ), 'inLanguage' => 'en-GB', 'isPartOf' => [ '@type' => 'WebSite', 'name' => SITE_NAME, 'url' => base_url() ], 'mainEntity' => [ '@type' => 'ItemList', 'itemListElement' => $items ] ], crumbs( [ [ $c['name'], cat_url( $c ) ] ] ), org(), software() ];
 	}
 	if ( 'front' === $v['type'] ) {
 		$items = [];
@@ -1553,9 +1583,10 @@ function ld_graph( $v ) {
 			$items[] = [ '@type' => 'ListItem', 'position' => $i + 1, 'name' => $c['name'], 'url' => cat_url( $c ) ];
 		}
 		return [
-			[ '@type' => 'WebSite', '@id' => base_url() . '#site', 'name' => SITE_NAME, 'url' => base_url(), 'inLanguage' => 'en-GB', 'publisher' => [ '@id' => home_url( '/#org' ) ], 'potentialAction' => [ '@type' => 'SearchAction', 'target' => [ '@type' => 'EntryPoint', 'urlTemplate' => base_url( 'search/' ) . '?q={search_term_string}' ], 'query-input' => 'required name=search_term_string' ] ],
+			[ '@type' => 'WebSite', '@id' => base_url() . '#site', 'name' => SITE_NAME, 'url' => base_url(), 'inLanguage' => 'en-GB', 'publisher' => [ '@id' => home_url( '/#organization' ) ], 'potentialAction' => [ '@type' => 'SearchAction', 'target' => [ '@type' => 'EntryPoint', 'urlTemplate' => base_url( 'search/' ) . '?q={search_term_string}' ], 'query-input' => 'required name=search_term_string' ] ],
 			[ '@type' => 'CollectionPage', '@id' => base_url() . '#page', 'name' => SITE_NAME, 'description' => 'Set-up guides, how-tos and reference for the Personalisation Hub platform.', 'url' => base_url(), 'isPartOf' => [ '@id' => base_url() . '#site' ], 'mainEntity' => [ '@type' => 'ItemList', 'itemListElement' => $items ] ],
 			org(),
+			software(),
 		];
 	}
 	return null;

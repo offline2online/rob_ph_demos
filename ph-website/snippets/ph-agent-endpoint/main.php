@@ -9,7 +9,7 @@
  * Performance (design guide s.7): inline JSON-LD only, no assets, no remote
  * calls; twins are cached in a transient (5 min) plus max-age=300.
  */
-namespace PhAgentEndpoint;
+namespace AngieSnippets\PhAgentEndpoint___ID__;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	return;

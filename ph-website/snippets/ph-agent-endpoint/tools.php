@@ -5,7 +5,7 @@
  * supplies a "source" (callables that read live published content); the WebMCP
  * loader and the remote MCP server both call the REST endpoint that runs this.
  */
-namespace PhAgentEndpoint;
+namespace AngieSnippets\PhAgentEndpoint___ID__;
 
 const INDUSTRY_SLUGS = array( 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' );
 const SC_BASE_PATH   = '/support-centre/';

@@ -17,7 +17,7 @@ function ok( $cond, $msg ) {
 
 $dir = dirname( __DIR__ ) . '/snippets/ph-agent-endpoint';
 require $dir . '/lib.php';
-use function PhAgentEndpoint\{go_target,go_via,tracked_url,cta_event,referrer_host,allow_list,is_exposable,graph_for,json_ld,organization_node,software_node,html_to_markdown,markdown_twin,llms_sections,twin_url,page_url};
+use function AngieSnippets\PhAgentEndpoint___ID__\{go_target,go_via,tracked_url,cta_event,referrer_host,allow_list,is_exposable,graph_for,json_ld,organization_node,software_node,html_to_markdown,markdown_twin,llms_sections,twin_url,page_url};
 
 /* allow-list: only the agreed pages, none of the demo/campaign ones */
 $paths = array_column( allow_list(), 0 );
@@ -140,7 +140,7 @@ foreach ( array( 3477, 3566, 555 ) as $id ) {
 
 
 /* ------------------------------------------------------------ tool contract */
-use function PhAgentEndpoint\{tool_defs,run_tool,validate_args,help_article_path,feature_slugs};
+use function AngieSnippets\PhAgentEndpoint___ID__\{tool_defs,run_tool,validate_args,help_article_path,feature_slugs};
 const SC_NS_T = 'AngieSnippets\PhSupportCentre_10156';
 
 $defs  = tool_defs();
@@ -305,6 +305,47 @@ foreach ( array( 3477, 3566, 555 ) as $id ) {
 	$GLOBALS['hooks']['wp_footer'][0]();
 	ok( ob_get_clean() === '', "no loader on $id (draft, protected or demo page)" );
 }
+
+/* One shared Organization and SoftwareApplication on every page (Home, Blog, Support Centre, Industries) */
+$snips = dirname( __DIR__ ) . '/snippets';
+$org   = $snips . '/ph-agent-endpoint/lib.php';
+$nodes = array(
+	'home' => array( organization_node(), software_node() ),
+);
+foreach ( array( 'blog' => array( 'ph-blog', 'AngieSnippets\PhBlog_10116' ), 'support-centre' => array( 'ph-support-centre', 'AngieSnippets\PhSupportCentre_10156' ) ) as $key => $def ) {
+	$src = file_get_contents( $snips . '/' . $def[0] . '/main.php' );
+	ok( preg_match( '/^function org\(\) \{.*?^\}\n/ms', $src, $mo ) && preg_match( '/^function software\(\) \{.*?^\}\n/ms', $src, $ms ), "$key defines org() and software()" );
+	eval( 'namespace ' . $def[1] . '; ' . $mo[0] . $ms[0] );
+	$nodes[ $key ] = array( call_user_func( '\\' . $def[1] . '\\org' ), call_user_func( '\\' . $def[1] . '\\software' ) );
+	ok( strpos( $src, "/#org'" ) === false && strpos( $src, '/#org"' ) === false, "$key has no #org" );
+	/* every graph that includes the organization includes the software application beside it */
+	$calls_org = preg_match_all( '/(?<!function )\borg\(\)/', $src );
+	$calls_sw  = preg_match_all( '/(?<!function )\bsoftware\(\)/', $src );
+	ok( $calls_org >= 2 && $calls_org === $calls_sw, "$key prints org() and software() in every graph" );
+}
+$ind = include $snips . '/ph-industry-enhancements/ld.php';
+ok( count( $ind ) === 10, 'ten industry graphs' );
+foreach ( $ind as $slug => $json ) {
+	$g = json_decode( $json, true );
+	ok( is_array( $g ), "industry $slug decodes" );
+	$nodes[ 'industry-' . $slug ] = array( $g['@graph'][0], $g['@graph'][1] );
+	$gids = array_column( $g['@graph'], '@id' );
+	ok( count( array_keys( $gids, 'https://personalisationhub.com/#organization', true ) ) === 1 && count( array_keys( $gids, 'https://personalisationhub.com/#software', true ) ) === 1, "industry $slug declares each shared id once" );
+	ok( strpos( $json, '/#org"' ) === false, "industry $slug has no #org" );
+}
+foreach ( $nodes as $key => $pair ) {
+	ok( $pair[0]['@id'] === 'https://personalisationhub.com/#organization', "$key organization id" );
+	ok( $pair[1]['@id'] === 'https://personalisationhub.com/#software', "$key software id" );
+	ok( json_encode( $pair[0] ) === json_encode( $nodes['home'][0] ), "$key Organization has the same properties as Home" );
+	ok( json_encode( $pair[1] ) === json_encode( $nodes['home'][1] ), "$key SoftwareApplication has the same properties as Home" );
+}
+$allids = array();
+foreach ( $nodes as $pair ) {
+	$allids[ $pair[0]['@id'] ] = 1;
+	$allids[ $pair[1]['@id'] ] = 1;
+}
+ok( count( $allids ) === 2, 'one Organization id and one SoftwareApplication id across all pages' );
+ok( strpos( file_get_contents( $snips . '/ph-support-centre/main.php' ), "const SITE_NAME    = 'Personalisation Hub Support Centre'" ) !== false, 'Support Centre WebSite is named Support Centre' );
 
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );

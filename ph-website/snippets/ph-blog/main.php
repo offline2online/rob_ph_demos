@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER       = '1.0.6';
+const VER       = '1.0.7';
 const BLOG_ID   = 10147;
 const AVATAR_ID = 10097;
 const WPM       = 200;
@@ -369,12 +369,42 @@ add_action( 'template_redirect', function () {
 }, 5 );
 
 /* ---------- structured data ---------- */
+/** Identical to PH Agent Endpoint's organization_node(): one Organization on every page. */
 function org() {
-	return [ '@type' => 'Organization', '@id' => home_url( '/#org' ), 'name' => 'Personalisation Hub', 'url' => home_url( '/' ), 'description' => "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud." ];
+	return [
+		'@type'       => 'Organization',
+		'@id'         => home_url( '/#organization' ),
+		'name'        => 'Personalisation Hub',
+		'url'         => home_url( '/' ),
+		'description' => "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud.",
+	];
+}
+
+/** Identical to PH Agent Endpoint's software_node(): one SoftwareApplication on every page. */
+function software() {
+	return [
+		'@type'               => 'SoftwareApplication',
+		'@id'                 => home_url( '/#software' ),
+		'name'                => 'Personalisation Hub',
+		'url'                 => home_url( '/' ),
+		'description'         => "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud.",
+		'applicationCategory' => 'BusinessApplication',
+		'operatingSystem'     => 'Web',
+		'publisher'           => [ '@id' => home_url( '/#organization' ) ],
+		'offers'              => [
+			'@type'         => 'Offer',
+			'name'          => 'Free trial on AWS Marketplace',
+			'price'         => '0',
+			'priceCurrency' => 'USD',
+			'url'           => 'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76',
+			'availability'  => 'https://schema.org/InStock',
+			'description'   => "30-day free trial on AWS Marketplace, then billed through the customer's AWS account",
+		],
+	];
 }
 
 function author() {
-	return [ '@type' => 'Person', 'name' => 'Rob Geerdink', 'jobTitle' => 'Founder and CEO', 'worksFor' => [ '@id' => home_url( '/#org' ) ], 'sameAs' => [ 'https://www.linkedin.com/in/robertgeerdink/' ] ];
+	return [ '@type' => 'Person', 'name' => 'Rob Geerdink', 'jobTitle' => 'Founder and CEO', 'worksFor' => [ '@id' => home_url( '/#organization' ) ], 'sameAs' => [ 'https://www.linkedin.com/in/robertgeerdink/' ] ];
 }
 
 function post_ld( $post ) {
@@ -397,7 +427,7 @@ function post_ld( $post ) {
 		'wordCount'        => str_word_count( wp_strip_all_tags( do_blocks( $post->post_content ) ) ),
 		'timeRequired'     => 'PT' . mins_of( $post ) . 'M',
 		'author'           => author(),
-		'publisher'        => [ '@id' => home_url( '/#org' ) ],
+		'publisher'        => [ '@id' => home_url( '/#organization' ) ],
 		'isPartOf'         => [ '@type' => 'Blog', '@id' => home_url( '/blog/#blog' ), 'name' => 'Personalisation Hub Blog', 'url' => home_url( '/blog/' ) ],
 		'about'            => array_map( function ( $t ) {
 			return [ '@type' => 'Thing', 'name' => $t ];
@@ -419,7 +449,7 @@ add_action( 'wp_head', function () {
 	}
 	if ( is_blog_post() ) {
 		$post  = get_queried_object();
-		$graph = [ post_ld( $post ), org(), [ '@type' => 'BreadcrumbList', 'itemListElement' => [
+		$graph = [ post_ld( $post ), org(), software(), [ '@type' => 'BreadcrumbList', 'itemListElement' => [
 			[ '@type' => 'ListItem', 'position' => 1, 'name' => 'Blog', 'item' => home_url( '/blog/' ) ],
 			[ '@type' => 'ListItem', 'position' => 2, 'name' => get_the_title( $post ), 'item' => get_permalink( $post ) ],
 		] ] ];
@@ -428,7 +458,7 @@ add_action( 'wp_head', function () {
 		$posts = array_map( function ( $p ) {
 			return [ '@type' => 'BlogPosting', 'headline' => get_the_title( $p ), 'url' => get_permalink( $p ), 'datePublished' => get_post_time( 'c', true, $p ) ];
 		}, all_posts() );
-		$graph = [ [ '@type' => 'Blog', '@id' => home_url( '/blog/#blog' ), 'name' => 'Personalisation Hub Blog', 'url' => home_url( '/blog/' ), 'inLanguage' => 'en-GB', 'description' => 'Practical analysis of retail media, in-store personalisation and AI for people building the next generation of retail.', 'publisher' => [ '@id' => home_url( '/#org' ) ], 'author' => author(), 'blogPost' => $posts ], org(), [ '@type' => 'BreadcrumbList', 'itemListElement' => [ [ '@type' => 'ListItem', 'position' => 1, 'name' => 'Blog', 'item' => home_url( '/blog/' ) ] ] ] ];
+		$graph = [ [ '@type' => 'Blog', '@id' => home_url( '/blog/#blog' ), 'name' => 'Personalisation Hub Blog', 'url' => home_url( '/blog/' ), 'inLanguage' => 'en-GB', 'description' => 'Practical analysis of retail media, in-store personalisation and AI for people building the next generation of retail.', 'publisher' => [ '@id' => home_url( '/#organization' ) ], 'author' => author(), 'blogPost' => $posts ], org(), software(), [ '@type' => 'BreadcrumbList', 'itemListElement' => [ [ '@type' => 'ListItem', 'position' => 1, 'name' => 'Blog', 'item' => home_url( '/blog/' ) ] ] ] ];
 		$md    = add_query_arg( 'format', 'md', home_url( '/blog/' ) );
 	}
 	echo '<script type="application/ld+json">' . wp_json_encode( [ '@context' => 'https://schema.org', '@graph' => $graph ], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG ) . '</script>' . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput

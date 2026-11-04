@@ -28,24 +28,19 @@ The Support Centre no longer registers WebMCP tools itself (sc.js `initWebMcp` r
 
 `main.php` requires `lib.php` by `__DIR__`; if Angie snippets can't hold two
 files, concatenate `lib.php` above `main.php` (drop the second `<?php` and
-the `require_once`). Namespace is `PhAgentEndpoint`; apply the snippet-id
-suffix convention used by the other snippets when it is created.
+the `require_once`). Namespace is `AngieSnippets\PhAgentEndpoint___ID__`, the convention of the other snippets; the PH Website
+session substitutes the real id for `___ID__` at first deploy and records it in `snippets/MANIFEST.json`
+(`"id": null` until then).
 
-## Still to do at deploy (not in this repo yet)
+## Shared entities across the site
 
-The live Industries (10063), Blog (10116) and Support Centre (10156) snippets
-are not versioned here until the "Version the live site snippets" ticket
-lands. Before publishing, in those snippets:
-
-1. Blog and Support Centre: replace their own `#org` Organization with
-   `{"@id": "https://personalisationhub.com/#organization"}`, and emit
-   `\PhAgentEndpoint\organization_node()` / `software_node()` once per page
-   (or inline identical copies), so entities match across pages.
-2. Industries `llms.php`: link `## Platform` pages with `?format=md`. This
-   snippet already rewrites those links and adds a missing `## Platform`,
-   `## Company` and `## For AI agents`, deduplicating by section heading.
-3. Compare the three snippets' twin routes with `main.php` so a URL is
-   served by one of them only (this one answers only its own allow-list).
+Every page declares the same `Organization` (`https://personalisationhub.com/#organization`) and
+`SoftwareApplication` (`#software`) nodes, with identical properties. `organization_node()` and
+`software_node()` in `lib.php` are the source; the Blog (1.0.7), Support Centre (1.3.2) and Industries
+(`ld.php`) snippets carry identical copies (their own functions, so none depends on this snippet being
+loaded). `tests/run.php` renders Home, a Blog post, the Support Centre and an industry page through each
+snippet's own code and fails if the nodes differ or any `#org` id remains. Change a property in all four
+places together.
 
 ## RevOps signals (ticket "RevOps signals from agent tool calls and CTAs")
 

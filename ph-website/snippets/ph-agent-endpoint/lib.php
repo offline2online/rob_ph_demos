@@ -3,12 +3,13 @@
  * PH Agent Endpoint: pure helpers (no WordPress calls), so tests run offline.
  * Allow-list, shared entity nodes, HTML to markdown, llms.txt sections.
  */
-namespace PhAgentEndpoint;
+namespace AngieSnippets\PhAgentEndpoint___ID__;
 
 if ( ! defined( 'PH_AE_SITE' ) ) {
 	define( 'PH_AE_SITE', 'https://personalisationhub.com' );
 }
 const FREE_TRIAL_URL = 'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76';
+const ENTITY_DESCRIPTION = "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud.";
 const DEMO_URL       = 'https://calendly.com/rob-offline2online';
 const MCP_URL        = 'https://backlog-tracker-e4ed2.web.app/help-api/mcp';
 const HELP_API_URL   = 'https://backlog-tracker-e4ed2.web.app/help-api/';
@@ -77,10 +78,11 @@ function twin_url( $id ) {
 /** Organization node: identical on every page (@id #organization). */
 function organization_node() {
 	return array(
-		'@type' => 'Organization',
-		'@id'   => PH_AE_SITE . '/#organization',
-		'name'  => 'Personalisation Hub',
-		'url'   => PH_AE_SITE . '/',
+		'@type'       => 'Organization',
+		'@id'         => PH_AE_SITE . '/#organization',
+		'name'        => 'Personalisation Hub',
+		'url'         => PH_AE_SITE . '/',
+		'description' => ENTITY_DESCRIPTION,
 	);
 }
 
@@ -91,6 +93,7 @@ function software_node() {
 		'@id'                 => PH_AE_SITE . '/#software',
 		'name'                => 'Personalisation Hub',
 		'url'                 => PH_AE_SITE . '/',
+		'description'         => ENTITY_DESCRIPTION,
 		'applicationCategory' => 'BusinessApplication',
 		'operatingSystem'     => 'Web',
 		'publisher'           => array( '@id' => PH_AE_SITE . '/#organization' ),
@@ -101,6 +104,7 @@ function software_node() {
 			'priceCurrency' => 'USD',
 			'url'           => FREE_TRIAL_URL,
 			'availability'  => 'https://schema.org/InStock',
+			'description'   => '30-day free trial on AWS Marketplace, then billed through the customer\'s AWS account',
 		),
 	);
 }
@@ -336,9 +340,9 @@ function llms_sections( $text, array $pages ) {
 	}
 	if ( ! has_section( $text, 'For AI agents' ) ) {
 		$add .= "\n## For AI agents\n\n"
-			. '- [Remote MCP server](' . MCP_URL . "): search the Help Centre from any MCP client, no sign-in\n"
+			. '- [Remote MCP server](' . MCP_URL . "): search the Support Centre from any MCP client, no sign-in\n"
 			. "- WebMCP: pages expose the same tools to browser agents through navigator.modelContext when the browser supports it\n"
-			. '- [Help API](' . HELP_API_URL . "): search and fetch Help Centre articles over HTTP\n"
+			. '- [Help API](' . HELP_API_URL . "): search and fetch Support Centre articles over HTTP\n"
 			. '- Every page listed here has a markdown version at the same address with ?format=md' . "\n";
 	}
 	return rtrim( $text ) . "\n" . $add;
