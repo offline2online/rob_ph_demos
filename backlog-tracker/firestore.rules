@@ -575,6 +575,32 @@ service cloud.firestore {
       return (!("documents" in incoming()) || (incoming().documents is list && incoming().documents.size() <= 200))
         && (!("demotedFromProjectId" in incoming()) || incoming().demotedFromProjectId == null || isNonEmptyBoundedString(incoming().demotedFromProjectId, 100));
     }
+    // ── Promote › Leads (public/js/leads-page.js, functions/leads.js) ──────
+    // One document per company: contacts live inside it (up to 25). Members
+    // read; editors create, edit, drag between stages and delete. The
+    // enrichment map and each contact's enrichment are written by the
+    // leadEnrich function as the service account (rules bypassed); an editor's
+    // save keeps them, since request.resource is the whole document.
+    function isLead(d) {
+      return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "enrichment",
+          "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
+        && d.company is map && isNonEmptyBoundedString(d.company.get("name", null), 120)
+        && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300
+        && d.company.get("industry", "") is string && d.company.get("industry", "").size() <= 120
+        && d.company.get("countries", []) is list && d.company.get("countries", []).size() <= 60
+        && (d.company.get("storeCount", null) == null || d.company.get("storeCount", null) is number)
+        && d.get("contacts", []) is list && d.get("contacts", []).size() <= 25
+        && d.stage in ["lead", "hot-lead", "demo", "post-demo", "closed-won", "closed-lost"]
+        && d.get("source", "") is string && d.get("source", "").size() <= 80
+        && d.get("assignee", "") is string && d.get("assignee", "").size() <= 200
+        && (d.get("customerAccount", null) == null || d.get("customerAccount", null) is map);
+    }
+    match /leads/{leadId} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor() && isLead(incoming());
+      allow delete: if isEditor();
+    }
+
     match /concepts/{conceptId} {
       allow read: if isBoardReader();
 

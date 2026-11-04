@@ -172,6 +172,7 @@
       <div class="nav-group" data-nav-group="promote" role="group" aria-labelledby="nav-promote-label">
         <div class="nav-drawer-section" id="nav-promote-label">Promote</div>
         <button type="button" class="nav-drawer-item" id="promote-brand-btn"><span class="material-symbols-outlined" aria-hidden="true">palette</span>Brand Guidelines</button>
+        <button type="button" class="nav-drawer-item" id="promote-leads-btn"><span class="material-symbols-outlined" aria-hidden="true">group</span>Leads</button>
       </div>
       <div class="nav-group" data-nav-group="publish" role="group" aria-labelledby="nav-publish-label">
         <div class="nav-drawer-section" id="nav-publish-label">Publish</div>
@@ -1151,6 +1152,78 @@
         <article class="docs-md promote-doc" id="promote-requirements" aria-label="Brand Guidelines requirements"></article>
       </details>
     </section>
+
+    <!-- Promote › Leads (#promote/leads): one card per company on a Kanban of
+         the sales pipeline. Cards drag between lanes; the "Move to" select does
+         the same without dragging. Rendered by js/leads-page.js. -->
+    <section class="faq-admin-page" id="leads-page" hidden>
+      <div class="page-header">
+        <h2>Leads</h2>
+        <button type="button" class="btn-primary" id="leads-add-btn" data-editor-only>+ New lead</button>
+      </div>
+      <p class="promote-empty" id="leads-empty" hidden>No leads yet. Add one with the button above.</p>
+      <div class="leads-board-wrap"><div class="leads-board" id="leads-board"></div></div>
+    </section>
+
+    <div class="modal-backdrop" id="lead-backdrop" hidden>
+      <div class="modal-panel lead-panel" role="dialog" aria-modal="true" aria-labelledby="lead-title">
+        <div class="modal-header">
+          <h2 id="lead-title">New lead</h2>
+          <button type="button" class="modal-close" id="lead-close" aria-label="Close">&times;</button>
+        </div>
+        <form id="lead-form" novalidate>
+          <h3 class="lead-section">Company</h3>
+          <label class="field-label" for="lead-name">Company name</label>
+          <input type="text" id="lead-name" maxlength="120" autocomplete="off">
+          <label class="field-label" for="lead-website">Website</label>
+          <input type="text" id="lead-website" maxlength="300" placeholder="example.com" autocomplete="off">
+          <label class="field-label" for="lead-industry">Industry</label>
+          <input type="text" id="lead-industry" maxlength="120" autocomplete="off">
+          <label class="field-label" for="lead-countries">Countries</label>
+          <input type="text" id="lead-countries" placeholder="UK, France" autocomplete="off">
+          <label class="field-label" for="lead-stores">Store count</label>
+          <input type="text" id="lead-stores" inputmode="numeric" autocomplete="off">
+
+          <h3 class="lead-section">Contacts</h3>
+          <div id="lead-contacts"></div>
+          <button type="button" class="btn-ghost" id="lead-add-contact" data-editor-only>+ Add contact</button>
+
+          <h3 class="lead-section">Pipeline</h3>
+          <label class="field-label" for="lead-stage">Stage</label>
+          <select id="lead-stage"></select>
+          <label class="field-label" for="lead-source">Source</label>
+          <input type="text" id="lead-source" maxlength="80" placeholder="Website form" autocomplete="off">
+          <label class="field-label" for="lead-assignee">Assigned to</label>
+          <select id="lead-assignee"></select>
+
+          <div id="lead-existing" hidden>
+            <h3 class="lead-section">Enrichment</h3>
+            <div id="lead-enrichment" class="lead-enrichment"></div>
+            <p class="field-hint" id="lead-enrich-status" role="status" aria-live="polite"></p>
+            <button type="button" class="btn-outline" id="lead-enrich-btn" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Enrich</button>
+
+            <h3 class="lead-section">Customer account</h3>
+            <p class="field-hint" id="lead-account-line"></p>
+            <div id="lead-convert" data-editor-only>
+              <label class="field-label" for="lead-account-name">Customer account name</label>
+              <input type="text" id="lead-account-name" maxlength="120" autocomplete="off">
+              <label class="field-label" for="lead-account-id">Account id <span class="field-optional">(optional)</span></label>
+              <input type="text" id="lead-account-id" maxlength="100" autocomplete="off">
+              <button type="button" class="btn-outline" id="lead-convert-btn">Convert and link account</button>
+            </div>
+          </div>
+
+          <p class="field-hint lead-error" id="lead-error" role="alert" hidden></p>
+          <div class="form-row" style="justify-content:space-between;">
+            <button type="button" class="btn-ghost lead-delete" id="lead-delete" data-editor-only hidden>Delete lead</button>
+            <div class="form-actions">
+              <button type="button" class="btn-ghost" id="lead-cancel">Cancel</button>
+              <button type="submit" class="btn-primary" id="lead-save" data-editor-only>Save</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <section class="faq-admin-page" id="user-management-page" hidden>
       <div class="page-header">

@@ -2514,8 +2514,24 @@ every destination already existed.
   links to personalisationhub.com/industries. Logos and templates are linked
   from its Brand assets and Reusable templates sections. Agents read the same
   documents with `list_project_documents` / `get_project_document` on this
-  project. Gated by the `promote` permission section. More pages (Leads) go in
+  project. Gated by the `promote` permission section. More pages go in
   `PROMOTE_PAGES` beneath Brand Guidelines.
+- **Promote › Leads** (`#promote/leads`, 5 Nov 2026; `public/js/leads-page.js`,
+  rules in `leads-core.js`, copied to `functions/leads-core.js` by
+  `node test/leads-core-copy.mjs --write`): one card per company on a Kanban,
+  lanes Lead → Hot Lead → Demo → Post-demo → Closed Won / Lost. Firestore
+  `leads/{id}` holds `company {name, website, industry, countries[],
+  storeCount}`, `contacts[] {id, name, jobTitle, buyingRole, email,
+  linkedin, enrichment?}`, `stage`, `source`, `assignee`, `customerAccount
+  {id, name}`, `enrichment`. Cards drag between lanes or use their "Move to"
+  select (the way on a tablet). **Enrich** (`functions/lead-enrich.js`, served
+  at `/leadEnrich/v1/enrich`) reads the company's website and, when a
+  BuiltWith key is stored under Settings → Integrations & MCP, its tech stack,
+  company details and named contacts; it fills blanks only. **Convert and link
+  account** moves the lead to Closed Won and records the customer account.
+  Agents use `list_leads` and `update_lead_stage` (`functions/leads.js`).
+  LinkedIn has no public lookup API: the company's LinkedIn page is taken from
+  its website, and contacts' LinkedIn addresses are stored as typed.
 - **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
   any ticket, concept, project or release. Archived tickets are included once
   the archive has been loaded.

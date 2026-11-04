@@ -47,6 +47,13 @@
           }
         },
         {
+          "source": "/leadEnrich/**",
+          "function": {
+            "functionId": "leadEnrich",
+            "region": "us-central1"
+          }
+        },
+        {
           "source": "/mcp",
           "function": {
             "functionId": "mcpServer",

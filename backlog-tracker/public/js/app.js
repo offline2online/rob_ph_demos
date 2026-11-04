@@ -10588,7 +10588,21 @@ UM_TABS.forEach((t) => {
 // file wins, so there is nothing to edit here. Agents read the same documents
 // over MCP (list_project_documents / get_project_document).
 const promotePage = document.getElementById("promote-page");
+const leadsPage = document.getElementById("leads-page");
 let promotePageKey = "";
+// Promote › Leads (leads-page.js): mounted the first time the page opens.
+let leadsUi = null;
+let leadsUiLoading = null;
+function ensureLeadsUi() {
+  if (leadsUi) return Promise.resolve(leadsUi);
+  if (!leadsUiLoading) {
+    leadsUiLoading = import("./leads-page.js").then(({ mountLeadsPage }) => {
+      leadsUi = mountLeadsPage({ db, auth, canEdit: () => canEditSection("promote"), apiHeaders: consoleApiHeaders });
+      return leadsUi;
+    });
+  }
+  return leadsUiLoading;
+}
 function renderPromotePage() {
   if (promotePage.hidden) return;
   const page = PROMOTE_PAGES.find((p) => p.key === promotePageKey);
@@ -10609,14 +10623,20 @@ function openPromotePage(key = PROMOTE_PAGES[0].key) {
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   promotePageKey = key;
-  promotePage.hidden = false;
+  if (key === "leads") {
+    leadsPage.hidden = false;
+    ensureLeadsUi().then((ui) => { ui.start(); ui.render(); });
+  } else {
+    promotePage.hidden = false;
+  }
   setRouteHash(promoteHash(key));
   updateTopbarTitle();
   renderPromotePage();
 }
 function closePromotePage() {
-  if (promotePage.hidden) return;
+  if (promotePage.hidden && leadsPage.hidden) return;
   promotePage.hidden = true;
+  leadsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
@@ -11739,6 +11759,7 @@ const ROUTE_TITLES = {
   "#user-management/roles": "Roles",
   "#user-management/permissions": "Permissions",
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
+  "#promote/leads": "Promote: Leads",
   "#settings/projects": "Settings: Projects",
   "#settings/releases": "Settings: Releases",
   "#settings/skills": "Settings: Skills & phase bindings",
@@ -11882,7 +11903,7 @@ function applyRouteFromHash() {
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (settingsPageFromHash(hash)) { const k = settingsPageFromHash(hash); if (faqSettingsPage.hidden) openFaqSettingsPage(k); else if (k !== settingsPage) showSettingsPage(k); }
   else if (hash.startsWith("#user-management")) openUserManagementPage(hash.split("/")[1]);
-  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePage.hidden) openPromotePage(k); }
+  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : promotePage.hidden)) openPromotePage(k); }
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
@@ -11893,7 +11914,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !userManagementPage.hidden || !promotePage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !userManagementPage.hidden || !promotePage.hidden || !leadsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

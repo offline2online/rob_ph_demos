@@ -142,7 +142,7 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     profileMenu.querySelectorAll(".profile-menu-item").forEach((b) => {
       if (b.id === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
-    const section = id === "promote-brand-btn" ? "promote" : id === "faq-articles-btn" ? "publish" : (id === "faq-settings-btn" || id.startsWith("um-")) ? "settings" : "build";
+    const section = id.startsWith("promote-") ? "promote" : id === "faq-articles-btn" ? "publish" : (id === "faq-settings-btn" || id.startsWith("um-")) ? "settings" : "build";
     setTab(drawer.classList.contains("open") ? drawer.dataset.show : section);
   }
   window.addEventListener("hashchange", syncActive);

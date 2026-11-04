@@ -2249,6 +2249,25 @@ exports.mediaKeys = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY], co
   return mediaKeysApi.handle(req, res);
 });
 
+// Promote › Leads: the page's Enrich button (lead-enrich.js). Reads the
+// website, and the technology-lookup key from the same encrypted store as the
+// Media Studio keys, so it is bound to the same MEDIA_KEYS_ENC_KEY secret.
+const { createLeadEnrich } = require("./lead-enrich");
+let leadEnrichApi = null;
+exports.leadEnrich = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY], cors: false, timeoutSeconds: 60, maxInstances: 5 }, (req, res) => {
+  if (!leadEnrichApi) {
+    const { getAuth } = require("firebase-admin/auth");
+    leadEnrichApi = createLeadEnrich({
+      db: getFirestore(),
+      verifyIdToken: (t) => getAuth().verifyIdToken(t, true),
+      resolveConsoleUser: mcp.resolveConsoleUser,
+      encKey: () => MEDIA_KEYS_ENC_KEY.value(),
+      logger,
+    });
+  }
+  return leadEnrichApi.handle(req, res);
+});
+
 // Public, read-only help search for AI agents (no sign-in) — see help-search.js.
 // Served at /help-api/** on the console's Hosting site (firebase.json rewrite).
 // Alerts (abuse = many 429s, errors = 5xx) go to NOTIFY_WEBHOOK_URL, the same

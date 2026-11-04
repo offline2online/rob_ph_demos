@@ -33,6 +33,8 @@ const PROVIDERS = {
   gemini: { label: "Google Gemini — Nano Banana Pro and Veo 3.1", env: "GEMINI_API_KEY", min: 20, max: 200 },
   ltx: { label: "LTX 2.5 (Lightricks)", env: "LTX_API_KEY", min: 16, max: 400 },
   wordpress: { label: "WordPress media library (application password)", env: "WP_AUTH", min: 8, max: 300 },
+  // Not a Media Studio key: Promote › Leads reads it (functions/lead-enrich.js) for the tech-stack lookup.
+  builtwith: { label: "BuiltWith — technology lookup for lead enrichment", env: "BUILTWITH_API_KEY", min: 16, max: 200 },
 };
 const COLLECTION = "mediaProviderKeys";
 const AUDIT = "mediaKeyAudit";
@@ -180,6 +182,14 @@ function createMediaKeysApi({ db, verifyIdToken, resolveConsoleUser, encKey, boa
         if (r.status === 401 || r.status === 403) return { ok: false, message: `LTX rejected the key (HTTP ${r.status})` };
         if (r.status === 400 || r.status === 422) return { ok: true, message: "Key accepted by LTX" };
         return { ok: false, message: `Unexpected answer from LTX (HTTP ${r.status})` };
+      }
+      if (provider === "builtwith") {
+        // The free counts endpoint costs no credit; a bad key is refused.
+        const r = await fetchImpl(`https://api.builtwith.com/free1/api.json?KEY=${encodeURIComponent(value)}&LOOKUP=builtwith.com`);
+        if (r.status === 401 || r.status === 403) return { ok: false, message: `BuiltWith rejected the key (HTTP ${r.status})` };
+        if (!r.ok) return { ok: false, message: `Unexpected answer from BuiltWith (HTTP ${r.status})` };
+        const body = await r.json().catch(() => ({}));
+        return body && body.Errors && body.Errors.length ? { ok: false, message: `BuiltWith: ${String(body.Errors[0].Message || "key not accepted").slice(0, 120)}` } : { ok: true, message: "Key accepted by BuiltWith" };
       }
       if (provider === "wordpress") {
         if (!doc.siteUrl) return { ok: false, message: "No site URL saved" };

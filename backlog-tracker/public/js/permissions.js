@@ -24,7 +24,7 @@ export const SECTIONS = [
   { key: "staff-kanban", label: "Staff Kanban", nav: ["#staff-kanban-btn"], edit: [] },
   { key: "concepts", label: "Concepts", nav: ["#concept-incubator-btn"],
     edit: ["#concept-add-btn", "#concept-incubator-page [data-editor-only]", "#concept-detail-page [data-editor-only]", "#concept-description-save"] },
-  { key: "promote", label: "Promote", nav: ["#promote-brand-btn"], edit: [] },
+  { key: "promote", label: "Promote", nav: ["#promote-brand-btn", "#promote-leads-btn"], edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
   { key: "faq", label: "FAQ management", nav: ["#faq-articles-btn"],
     edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#fa-analytics-tag-save", "#faq-cat-edit-save-btn"] },
   { key: "skills", label: "Skills", nav: ['[data-settings-page="skills"]'], edit: ["#skills-add-btn", "#skills-page [data-editor-only]", "#skill-add-file-btn"] },

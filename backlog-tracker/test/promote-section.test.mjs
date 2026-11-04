@@ -11,7 +11,13 @@ assert.strictEqual(promotePageFromHash("#promoted"), null);
 assert.strictEqual(promoteHash("brand-guidelines"), "#promote/brand-guidelines");
 assert.strictEqual(promoteNavId("#promote/brand-guidelines"), "promote-brand-btn");
 assert.strictEqual(promoteNavId("#skills"), null);
-assert.ok(PROMOTE_PAGES.every((p) => p.navId && p.docs.guidelines));
+assert.ok(PROMOTE_PAGES.every((p) => p.navId));
+assert.ok(PROMOTE_PAGES.filter((p) => p.key !== "leads").every((p) => p.docs.guidelines));
+assert.deepStrictEqual(PROMOTE_PAGES.map((p) => p.key), ["brand-guidelines", "leads"], "Leads sits beneath Brand Guidelines");
+assert.strictEqual(promotePageFromHash("#promote/leads"), "leads");
+assert.strictEqual(promoteHash("leads"), "#promote/leads");
+assert.strictEqual(promoteNavId("#promote/leads"), "promote-leads-btn");
+assert.deepStrictEqual(promoteDocsFor("leads", [{ id: "b", mirrorKey: "brand-guidelines", contentMd: "x" }]), {}, "Leads shows no mirrored documents");
 
 assert.strictEqual(mirrorBody({ contentMd: "> Copy\n\n# Hi", sourcePrefix: "> Copy\n\n" }), "# Hi");
 assert.strictEqual(mirrorBody({ contentMd: "# Hi", sourcePrefix: "> Copy\n\n" }), "# Hi", "a body without the prefix is left alone");

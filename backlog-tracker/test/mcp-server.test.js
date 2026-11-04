@@ -1036,6 +1036,43 @@ async function rpc(token, method, params, id = 1) {
     assert.ok(!names.includes("list_concept_items"), "a concept has no backlog of its own");
   });
 
+  // ── Promote › Leads ──────────────────────────────────────────────────────
+  await test("exposes list_leads (read) and update_lead_stage (write), and nothing else for leads", async () => {
+    const tools = mcp.__test.TOOLS.filter((t) => /lead/.test(t.name));
+    assert.deepStrictEqual(tools.map((t) => [t.name, t.scope]).sort(), [["list_leads", "board.read"], ["update_lead_stage", "board.write"]]);
+  });
+  env.store.col("leads").set("ld1", { company: { name: "Acme Retail", countries: ["UK"], storeCount: 120 }, contacts: [{ id: "c1", name: "Jo", buyingRole: "decision-maker" }], stage: "lead", source: "Website form" });
+  env.store.col("leads").set("ld2", { company: { name: "Acme Foods" }, contacts: [], stage: "demo" });
+  env.store.col("leads").set("ld3", { company: { name: "Brightside" }, contacts: [], stage: "demo" });
+  const leadCall = async (name, args) => (await rpc(tokens.access_token, "tools/call", { name, arguments: args })).body.result;
+  await test("list_leads lists by stage and company, in pipeline order", async () => {
+    const all = JSON.parse((await leadCall("list_leads", {})).content[0].text);
+    assert.deepStrictEqual(all.leads.map((l) => l.id), ["ld1", "ld2", "ld3"]);
+    assert.strictEqual(all.leads[0].contacts[0].buyingRole, "decision-maker");
+    const demo = JSON.parse((await leadCall("list_leads", { stage: "demo" })).content[0].text);
+    assert.deepStrictEqual(demo.leads.map((l) => l.id), ["ld2", "ld3"]);
+    const bright = JSON.parse((await leadCall("list_leads", { company: "bright" })).content[0].text);
+    assert.deepStrictEqual(bright.leads.map((l) => l.id), ["ld3"]);
+  });
+  await test("update_lead_stage moves one company by name or id and stamps who", async () => {
+    const out = JSON.parse((await leadCall("update_lead_stage", { company: "Acme Retail", stage: "hot-lead" })).content[0].text);
+    assert.strictEqual(out.updated, true); assert.strictEqual(out.from, "lead"); assert.strictEqual(out.stageLabel, "Hot Lead");
+    const doc = env.store.col("leads").get("ld1");
+    assert.strictEqual(doc.stage, "hot-lead");
+    assert.ok(doc.updatedByEmail);
+    assert.strictEqual(doc.company.name, "Acme Retail", "nothing else changes");
+    const again = JSON.parse((await leadCall("update_lead_stage", { leadId: "ld1", stage: "hot-lead" })).content[0].text);
+    assert.strictEqual(again.updated, false);
+  });
+  await test("update_lead_stage refuses an unknown stage, an unknown company and an ambiguous name", async () => {
+    assert.strictEqual((await leadCall("update_lead_stage", { leadId: "ld1", stage: "won-ish" })).isError, true);
+    assert.strictEqual((await leadCall("update_lead_stage", { company: "Nobody Ltd", stage: "demo" })).isError, true);
+    const amb = await leadCall("update_lead_stage", { company: "Acme", stage: "demo" });
+    assert.strictEqual(amb.isError, true); assert.match(amb.content[0].text, /More than one/);
+    assert.strictEqual((await leadCall("update_lead_stage", { stage: "demo" })).isError, true);
+    assert.strictEqual(env.store.col("leads").get("ld2").stage, "demo");
+  });
+
   env.store.col("concepts").set("con1", {
     name: "Customer support concept", status: "active",
     readmeMd: "# Support concept\n\nEarly idea.", requirementsMd: "# Requirements\n\nTBD.",

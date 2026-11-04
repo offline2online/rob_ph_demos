@@ -1025,6 +1025,61 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Leads board - add a lead with contacts, drag it to Hot Lead, convert it",
+    seed: () => seed({ leads: {
+      lx: { company: { name: "Existing Co", website: "https://existing.example", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [{ id: "k1", name: "Pat", jobTitle: "", buyingRole: "champion", email: "", linkedin: "" }], stage: "demo", source: "Website form", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      assert.ok(new URL(c.page.url()).hash === "#promote/leads", "the page has its own URL");
+      await c.visible('.lead-lane[data-stage="demo"] .lead-card', "the seeded lead is in the Demo lane");
+      const lanes = await c.page.evaluate(() => [...document.querySelectorAll("#leads-board .lead-lane-head h3")].map((e) => e.textContent.trim()));
+      assert.deepStrictEqual(lanes, ["Lead", "Hot Lead", "Demo", "Post-demo", "Closed Won", "Lost"]);
+      // New lead with two contacts and buying roles lands in the Lead lane.
+      await c.page.click("#leads-add-btn");
+      await c.visible("#lead-form", "the lead form opens");
+      await c.page.fill("#lead-name", "Acme Retail");
+      await c.page.fill("#lead-website", "acme.example");
+      await c.page.fill("#lead-countries", "UK, France");
+      await c.page.fill("#lead-stores", "250");
+      await c.page.fill(".lead-contact[data-index=\"0\"] .lc-name", "Jo Bloggs");
+      await c.page.selectOption(".lead-contact[data-index=\"0\"] .lc-role", "decision-maker");
+      await c.page.click("#lead-add-contact");
+      await c.page.fill(".lead-contact[data-index=\"1\"] .lc-name", "Sam Tech");
+      await c.page.selectOption(".lead-contact[data-index=\"1\"] .lc-role", "technical-evaluator");
+      await c.page.click("#lead-save");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the new lead is in the Lead lane");
+      assert.ok((await c.text('.lead-lane[data-stage="lead"]')).includes("Acme Retail"));
+      assert.ok((await c.text('.lead-lane[data-stage="lead"]')).includes("2 contacts"));
+      // Move it to Hot Lead with the Move to select, and it persists.
+      await c.page.selectOption('.lead-lane[data-stage="lead"] .lead-move-select', "hot-lead");
+      await c.visible('.lead-lane[data-stage="hot-lead"] .lead-card', "the card is in Hot Lead");
+      const stored = await c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.company.name === "Acme Retail") return v; return null; });
+      assert.ok(stored, "the lead was written");
+      assert.strictEqual(stored.stage, "hot-lead", "the stage was written");
+      assert.strictEqual(stored.contacts[0].buyingRole, "decision-maker");
+      assert.strictEqual(stored.createdByEmail, "editor@personalisationhub.com");
+      // Drag the other card between lanes.
+      // Pointer drag on a pointer layout; on a phone the lanes stack and the select is the way to move.
+      if (c.page.viewportSize().width > 700) await c.page.dragAndDrop('.lead-lane[data-stage="demo"] .lead-card', '.lead-lane[data-stage="post-demo"] .lead-lane-head');
+      else await c.page.selectOption('.lead-lane[data-stage="demo"] .lead-move-select', "post-demo");
+      await c.visible('.lead-lane[data-stage="post-demo"] .lead-card', "dragging moved the card to Post-demo");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("lx").stage)) === "post-demo", "the dragged stage to persist", 5000);
+      // Convert and link a customer account.
+      await c.page.click('.lead-lane[data-stage="post-demo"] .lead-card .lead-card-name');
+      await c.visible("#lead-account-name", "the customer account fields show for a saved lead");
+      await c.page.click("#lead-convert-btn");
+      assert.ok((await c.text("#lead-error")).includes("Name the customer account"), "an account is required");
+      await c.page.fill("#lead-account-name", "Existing Co Ltd");
+      await c.page.fill("#lead-account-id", "acc_42");
+      await c.page.click("#lead-convert-btn");
+      await c.visible('.lead-lane[data-stage="closed-won"] .lead-card', "the converted lead is in Closed Won");
+      assert.ok((await c.text('.lead-lane[data-stage="closed-won"]')).includes("Existing Co Ltd"), "the card shows the linked account");
+      assert.deepStrictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("lx").customerAccount), { id: "acc_42", name: "Existing Co Ltd" });
+    },
+  },
+  {
     name: "FAQ article editor: SEO & agents group counts, limits and completeness",
     seed: () => seed({ faqCategories: { fc1: { name: "Getting started", order: 0, createdAt: t(T0), updatedAt: t(T0) } } }),
     async run(c) {

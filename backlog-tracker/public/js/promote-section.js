@@ -9,11 +9,12 @@
 // which is what a page looks them up by. Agents read the same documents over
 // MCP with list_project_documents / get_project_document.
 //
-// A later "Leads" page adds one entry to PROMOTE_PAGES beneath Brand Guidelines.
+// Leads (leads-page.js) is the second entry: a board of its own, not a document page.
 
 export const PROMOTE_PAGES = [
   { key: "brand-guidelines", label: "Brand Guidelines", icon: "palette", navId: "promote-brand-btn",
     docs: { guidelines: "brand-guidelines", requirements: "brand-requirements" } },
+  { key: "leads", label: "Leads", icon: "group", navId: "promote-leads-btn", docs: {} },
 ];
 export const DEFAULT_PROMOTE_PAGE = PROMOTE_PAGES[0].key;
 

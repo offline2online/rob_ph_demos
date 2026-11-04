@@ -3904,8 +3904,48 @@ slide-over has already closed). Rules:
   Reusable templates sections).
 - **Agents read the guidelines over MCP** with `list_project_documents` and
   `get_project_document` on the Backlog Tracker & FAQs project; no new tool.
-- Built so a **Leads** page can sit beneath Brand Guidelines: add an entry
-  to `PROMOTE_PAGES` and a nav button.
+- **Leads** sits beneath it (next section): an entry in `PROMOTE_PAGES` and a
+  nav button.
 - Tests: `test/promote-section.test.mjs`, `test/permissions.test.mjs`, a
   scenario in `test/ui/console-click.test.mjs` and a page in
   `test/ui/mobile-shell.test.mjs`.
+
+## Promote section: Leads (5 Nov 2026)
+
+- **Promote › Leads** (`#promote/leads`, nav item beneath Brand Guidelines,
+  same `promote` permission section: viewers read, editors change). One card
+  per company on a Kanban in the style of the Staff Kanban; lanes **Lead, Hot
+  Lead, Demo, Post-demo, Closed Won, Lost** (`STAGES` in `leads-core.js`).
+- **Data**: `leads/{id}` = `company {name (required), website, industry,
+  countries[], storeCount}`, `contacts[]` (up to 25; `name`, `jobTitle`,
+  `buyingRole` one of decision maker, champion, influencer, technical
+  evaluator, procurement; `email`, `linkedin`), `stage`, `source` (e.g. Website
+  form), `assignee` (a member's email), `customerAccount {id, name}` once
+  converted, `enrichment`, and the usual created/updated stamps. Members read;
+  editors write (`firestore.rules` → `isLead`, with the cases in
+  `test/firestore-rules.test.js`).
+- **Moving a card**: drag it to another lane, or use its "Move to" select
+  (touch). The write is live for every open tab. Over MCP, `update_lead_stage`
+  moves one company (by `leadId` or company name) and `list_leads` reads the
+  pipeline; there is no other lead tool (the website capture that creates
+  leads is a separate ticket, and writes the same `leads` documents).
+- **Enrichment**: the lead's **Enrich** button saves the form, then
+  `leadEnrich` (`functions/lead-enrich.js`) reads the company's website (title,
+  description, its LinkedIn page) and, if a BuiltWith key is stored in the
+  encrypted key store (Settings → Integrations & MCP, provider `builtwith`),
+  the tech stack, company country and industry and any named contacts. It
+  fills blanks only (a typed store count or industry is never overwritten),
+  writes `enrichment` on the card and an `enrichment` note on each matching
+  contact, and reports each source as ok, not configured or error. Only public
+  addresses are fetched (private, loopback and metadata addresses, and
+  redirects to them, are refused). Store count is filled only when a source
+  supplies one; none of the current two does. LinkedIn: there is no public
+  lookup API, so only the company's LinkedIn page found on its own website is
+  recorded, and contacts' LinkedIn addresses are kept as entered.
+- **Converting**: **Convert and link account** needs the customer account's
+  name and/or id, moves the lead to Closed Won and stores `customerAccount`,
+  shown on the card. The RevOps lifecycle's customer account record is not in
+  this console yet, so the link is the id and name as given.
+- Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js`, the Leads tools in
+  `test/mcp-server.test.js` and `test/mcp-client.test.mjs`, a scenario in
+  `test/ui/console-click.test.mjs`.
