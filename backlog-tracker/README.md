@@ -1842,6 +1842,44 @@ Once the token is in place, the acceptance check is simply that setting
 ~10, and that the triggering run shows **repository_dispatch** (not
 `schedule`) as its event on the Actions tab.
 
+### Media Studio provider keys — the `MEDIA_KEYS_ENC_KEY` secret (4 Nov 2026)
+
+**Settings → Integrations & MCP → Media Studio API keys** (admins only) is
+where the keys `media-studio/` uses are kept: Google Gemini (Nano Banana Pro
+and Veo 3.1), LTX 2.5, and an optional WordPress application password for
+uploading to the media library. `functions/media-keys.js` (function
+`mediaKeys`, Hosting rewrite `/mediaKeys/**`) owns them:
+
+- **Encrypted before storage**: AES-256-GCM with a fresh IV per write and the
+  provider id as additional authenticated data, under `MEDIA_KEYS_ENC_KEY`.
+  Ciphertexts live in `mediaProviderKeys/{gemini|ltx|wordpress}` and every
+  set, test, delete and runtime read is logged in `mediaKeyAudit`. Both
+  collections are closed to every client by `firestore.rules`, and the
+  rules tests assert it.
+- **Write-only from the browser**: the page shows "Saved, ends WXYZ", who
+  saved it, when, the last test and the last use. There is no route that
+  returns a value to a signed-in person, admins included. **Test** checks the
+  stored key with its provider without generating anything: Gemini lists
+  models, LTX is sent an empty job that it rejects, and WordPress reads
+  `users/me`. Saving a key runs the test straight away.
+- **Read back only by the automation**: `GET /mediaKeys/v1/runtime` with
+  `X-Board-Key: <BOARD_API_KEY>` returns the decrypted keys under their
+  environment-variable names. This is what `media-studio/src/console-keys.js`
+  calls, so `.github/workflows/media-studio.yml` needs no provider secrets of
+  its own. Ten wrong keys from one address lock that address out for ten
+  minutes.
+- **The encryption key is created once and never replaced.**
+  `deploy-backlog-tracker.yml` → "Create the Media Studio key-encryption
+  key" generates 32 random bytes only when Secret Manager answers
+  `NOT_FOUND`. There is no repository secret for it and nobody needs to see
+  it. Each ciphertext records a fingerprint of the key that made it, so if
+  the key were ever replaced the console would say "paste it again" rather
+  than fail silently.
+- Tests: `node test/media-keys.test.js` (encryption, roles, write-only
+  status, runtime, throttle and the provider checks) and
+  `node test/ui/media-keys.test.mjs` (the block at 1280 px and 390 px, and
+  hidden for editors).
+
 ### The workflow-push GitHub App — letting the pipeline change `.github/workflows/`
 
 GitHub refuses any push from a workflow's own `GITHUB_TOKEN` that creates

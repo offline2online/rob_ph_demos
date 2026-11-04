@@ -162,3 +162,22 @@ test('helpers: .env parsing and basic auth', () => {
   assert.deepEqual(parseEnvFile('# c\nA=1\nexport B="two words"\n\nC=\'x=y\''), { A: '1', B: 'two words', C: 'x=y' });
   assert.equal(basicAuth('cm9iOnB3'), 'cm9iOnB3');
 });
+
+test('console keys: fetched with the board key, never override what is already set', async () => {
+  const { loadConsoleKeys } = require('../src/console-keys');
+  const env = { BOARD_API_KEY: 'bk', LTX_API_KEY: 'local-ltx' };
+  const fetch = fakeFetch([['GET', /backlog-tracker-e4ed2\.web\.app\/mediaKeys\/v1\/runtime$/, (req) => {
+    assert.equal(req.headers['X-Board-Key'], 'bk');
+    return { json: { env: { GEMINI_API_KEY: 'g-from-console', LTX_API_KEY: 'ltx-from-console', WP_SITE_URL: 'https://wp.test' }, problems: [] } };
+  }]]);
+  const r = await loadConsoleKeys({ env, fetch });
+  assert.deepEqual(r.loaded, ['GEMINI_API_KEY', 'WP_SITE_URL']);
+  assert.equal(env.GEMINI_API_KEY, 'g-from-console');
+  assert.equal(env.LTX_API_KEY, 'local-ltx');
+
+  assert.equal((await loadConsoleKeys({ env: {}, fetch })).used, false, 'no board key, no call');
+  assert.equal((await loadConsoleKeys({ env: { BOARD_API_KEY: 'bk', MEDIA_STUDIO_CONSOLE: 'off' }, fetch })).used, false);
+  const denied = fakeFetch([['GET', /runtime$/, () => ({ status: 401, json: { error: 'missing or invalid X-Board-Key' } })]]);
+  const d = await loadConsoleKeys({ env: { BOARD_API_KEY: 'bad' }, fetch: denied });
+  assert.match(d.problems[0], /HTTP 401: missing or invalid X-Board-Key/);
+});

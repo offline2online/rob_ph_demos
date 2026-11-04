@@ -79,6 +79,8 @@ async function reset() {
     for (const n of ["iApp1", "iApp2", "iApp3", "iApp4", "iApp5"]) await setDoc(doc(db, "backlogItems/" + n), ITEM);
     await setDoc(doc(db, "routineBindings/sam@personalisationhub.com"), { fireUrl: "https://api.anthropic.com/fire", token: "sk-ant-secret" });
     await setDoc(doc(db, "settings/faqSite"), { analyticsTag: null });
+    await setDoc(doc(db, "mediaProviderKeys/gemini"), { box: { v: 1, ct: "x" }, hint: "…abcd" });
+    await setDoc(doc(db, "mediaKeyAudit/a1"), { action: "set", provider: "gemini" });
     // A project doc as it really looks after a few weeks: every optional
     // field present. Rules evaluation has a hard 1,000-expression budget,
     // and the projects update rule sits closest to it for a non-admin.
@@ -415,6 +417,14 @@ async function main() {
     getDoc(doc(as(MEMBER), "routineBindings/sam@personalisationhub.com")));
   await check("Nobody can write a routineBindings doc from a client", "deny", () =>
     setDoc(doc(as(TEAM_ADMIN), "routineBindings/kit@personalisationhub.com"), { fireUrl: "https://x", token: "y" }));
+  await check("Not even an owner can read an encrypted Media Studio key", "deny", () =>
+    getDoc(doc(as(HUMAN), "mediaProviderKeys/gemini")));
+  await check("A team admin cannot write a Media Studio key from a client", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "mediaProviderKeys/ltx"), { box: { v: 1 } }));
+  await check("The automation user cannot read a Media Studio key over Firestore", "deny", () =>
+    getDoc(doc(as(BOT), "mediaProviderKeys/gemini")));
+  await check("Nobody can read the Media Studio key audit log from a client", "deny", () =>
+    getDocs(collection(as(TEAM_ADMIN), "mediaKeyAudit")));
   await check("The automation user cannot list the roster either", "deny", () =>
     getDocs(collection(as(BOT), "consoleUsers")));
 

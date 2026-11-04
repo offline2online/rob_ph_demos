@@ -1594,6 +1594,19 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 .mcp-connect-box code { display: block; font-size: 12.5px; word-break: break-all; padding: 6px 8px; background: #fff; border: 1px solid #e3e6eb; border-radius: 6px; margin: 6px 0; }
 .mcp-connections { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .mcp-connection-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; padding: 8px 10px; border: 1px solid #e3e6eb; border-radius: 8px; background: #fff; }
+/* Settings → Media Studio API keys (functions/media-keys.js) */
+.media-keys-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.media-key-row { padding: 12px 14px; border: 1px solid #e3e6eb; border-radius: 8px; background: #fff; }
+.media-key-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.media-key-title { font-weight: 600; font-size: 13.5px; }
+.media-key-state { font-size: 12.5px; color: var(--text-muted, #6b7280); margin-top: 2px; }
+.media-key-state .material-symbols-outlined { font-size: 16px; vertical-align: -3px; }
+.media-key-state.is-set .media-key-dot { background: #52c41a; }
+.media-key-dot { display: inline-block; width: 8px; height: 8px; border-radius: 9999px; background: #d9d9d9; margin-right: 6px; }
+.media-key-test-ok { color: #1e6b32; }
+.media-key-test-bad { color: #c62828; }
+.media-key-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.media-key-form input { flex: 1 1 220px; min-width: 0; padding: 7px 11px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; font-family: inherit; }
 /* Lives in the nav-drawer footer now, not the topbar (qMJeQkmhYwcXFTjeOJw0-2)
    — the drawer has room for the email on every viewport width, so this no
    longer needs to hide on mobile the way it did next to the sticky topbar. */

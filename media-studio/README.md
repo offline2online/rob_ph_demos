@@ -5,9 +5,9 @@ screens through one API, using:
 
 | Model | What it makes | Key |
 |---|---|---|
-| **Nano Banana Pro** (`gemini-3-pro-image-preview`) | Images up to 4K in 10 aspect ratios. Takes up to 14 reference images (product shots, logos, a style to match) and can edit an existing picture. | `GEMINI_API_KEY` |
-| **Veo 3.1** / **Veo 3.1 Fast** (`veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`) | 4, 6 or 8 second clips at 720p, 1080p or 4K, 16:9 or 9:16, with sound. Can animate a still or run between a first and last frame. | `GEMINI_API_KEY` (the same key) |
-| **LTX 2.5 Pro** / **LTX 2.5 Fast** (`ltx-2-5-pro`, `ltx-2-5-fast`) | Text-to-video and image-to-video. Pro goes up to 1080p. Fast goes up to 4K and 20 seconds. You can set the camera motion and turn audio off. | `LTX_API_KEY` |
+| **Nano Banana Pro** (`gemini-3-pro-image-preview`) | Images up to 4K in 10 aspect ratios. Takes up to 14 reference images (product shots, logos, a style to match) and can edit an existing picture. | Gemini |
+| **Veo 3.1** / **Veo 3.1 Fast** (`veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`) | 4, 6 or 8 second clips at 720p, 1080p or 4K, 16:9 or 9:16, with sound. Can animate a still or run between a first and last frame. | Gemini (the same key) |
+| **LTX 2.5 Pro** / **LTX 2.5 Fast** (`ltx-2-5-pro`, `ltx-2-5-fast`) | Text-to-video and image-to-video. Pro goes up to 1080p. Fast goes up to 4K and 20 seconds. You can set the camera motion and turn audio off. | LTX |
 
 You can use it in three ways. All three share `src/studio.js`.
 
@@ -25,28 +25,54 @@ It needs nothing beyond Node 20 or later: no `npm install` and no build step.
 
 ## Set up
 
+### Keys: store them in the PH Agent Console (recommended)
+
+An admin opens the console at <https://backlog-tracker-e4ed2.web.app>, goes to
+**Settings → Integrations & MCP → Media Studio API keys** and pastes:
+
+- the **Google Gemini** key (aistudio.google.com/apikey). This one key covers
+  Nano Banana Pro and Veo 3.1.
+- the **LTX** key (console.ltx.io → API keys).
+- optionally, the **WordPress** site URL and `username:application password`.
+
+Each key is encrypted (AES-256-GCM) before it is stored. After that the
+console shows only its last four characters, who saved it and when, so
+nobody, admins included, can read a key back there. Saving runs a free check
+with the provider, and **Test** runs it again later.
+
+Media Studio fetches the keys when it starts, using `BOARD_API_KEY`, the
+board automation key. That key is already a repository secret, so **the
+GitHub workflow needs no other setup**. To use the keys on your own machine
+or in a Claude session, set `BOARD_API_KEY` there. In a cloud session, also
+allow `backlog-tracker-e4ed2.web.app` in the network settings. How it works:
+`backlog-tracker/functions/media-keys.js` and the console README →
+"Media Studio provider keys".
+
+### Or: keys in `.env`
+
 ```bash
 cd media-studio
 cp .env.example .env      # gitignored. Never commit keys: this repo is public
-#   GEMINI_API_KEY=...    aistudio.google.com/apikey (covers Nano Banana Pro + Veo)
-#   LTX_API_KEY=...       console.ltx.io → API keys
-npm run check             # shows which keys are set and checks the Gemini key against the model list
+#   GEMINI_API_KEY=...    (covers Nano Banana Pro + Veo)
+#   LTX_API_KEY=...
+```
+
+A key set in the environment or in `.env` always wins over the console's.
+`MEDIA_STUDIO_CONSOLE=off` skips the console altogether.
+
+```bash
+npm run check             # shows where each key came from, then checks the Gemini key against the model list
 ```
 
 Generated files go in `media-studio/output/<yyyy-mm>/`, which is gitignored.
 Each file has a `.json` sidecar beside it recording the prompt, model and
 settings, so any asset on the site can be traced back and made again.
 
-**Cloud Claude sessions:** add `GEMINI_API_KEY` and `LTX_API_KEY` to the
-environment's Environment variables. The default network policy blocks the
-provider hosts, so also set Network access to **Custom** and allow
-`generativelanguage.googleapis.com` and `api.ltx.io`, plus your WordPress
-host if you use the upload. That is the same place `ELEMENTOR_MCP_AUTH` is
-set (see the root `CLAUDE.md`).
-
-**GitHub Actions:** add the repository secrets `GEMINI_API_KEY` and
-`LTX_API_KEY`. For the WordPress upload, also add the secret `WP_AUTH` and
-the variable `WP_SITE_URL`.
+**Cloud Claude sessions:** the default network policy blocks the provider
+hosts, so set Network access to **Custom** and allow
+`generativelanguage.googleapis.com`, `api.ltx.io`, your WordPress host if
+you use the upload, and `backlog-tracker-e4ed2.web.app` if the keys come
+from the console.
 
 ## Command line
 
@@ -127,8 +153,12 @@ gh workflow run media-studio.yml -f kind=video -f provider=ltx -f prompt="…" -
 
 The files are attached to the run as the artifact `media-<run id>` and kept
 for 30 days. The run summary lists them. Tick `wordpress` to upload them as
-well. Every input reaches the script as an environment variable, never as
-part of the shell command, so a prompt can't run code.
+well. The run fetches the keys from the console with the `BOARD_API_KEY`
+repository secret. Repository secrets named `GEMINI_API_KEY`,
+`LTX_API_KEY` or `WP_AUTH` (and the variable `WP_SITE_URL`) still work
+and win over the console. Every input reaches the script as an
+environment variable, never as part of the shell command, so a prompt
+can't run code.
 
 ## Files
 
@@ -141,6 +171,7 @@ part of the shell command, so a prompt can't run code.
 | `src/studio.js` | Shared pipeline: preset → input images → provider → library → WordPress |
 | `src/library.js` | Saves files and their sidecars in `output/` and lists them |
 | `src/wordpress.js` | Uploads to `wp/v2/media` and sets the alt text |
+| `src/console-keys.js` | Fetches the encrypted-at-rest keys from the PH Agent Console with `BOARD_API_KEY`. A key already in the environment wins. |
 | `src/server.js` | The HTTP API and the web page |
 | `src/cli.js` | The command line |
 | `public/` | The web page: the Personalisation Hub design system, content frame only, so it can be iframed into HQ Admin |

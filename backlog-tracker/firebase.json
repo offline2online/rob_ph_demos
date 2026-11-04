@@ -40,6 +40,13 @@
           }
         },
         {
+          "source": "/mediaKeys/**",
+          "function": {
+            "functionId": "mediaKeys",
+            "region": "us-central1"
+          }
+        },
+        {
           "source": "/mcp",
           "function": {
             "functionId": "mcpServer",

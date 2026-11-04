@@ -6,9 +6,11 @@ name: Media Studio (generate an image or video)
 # The result is attached to the run as an artifact (kept 30 days) and, if
 # asked, uploaded to the WordPress media library. Nothing is committed.
 #
-# Secrets: GEMINI_API_KEY (Nano Banana Pro + Veo), LTX_API_KEY (LTX 2.5),
-#          WP_AUTH (optional, "<user>:<application-password>").
-# Variable: WP_SITE_URL (optional, e.g. https://personalisationhub.com).
+# Keys: an admin saves them in the PH Agent Console (Settings → Integrations
+# & MCP → Media Studio API keys), where they are stored encrypted; the run
+# fetches them with BOARD_API_KEY, which this repo already holds. Repository
+# secrets GEMINI_API_KEY / LTX_API_KEY / WP_AUTH and the variable WP_SITE_URL
+# still work, and win over the console when set.
 on:
   workflow_dispatch:
     inputs:
@@ -78,6 +80,7 @@ jobs:
       - name: Generate
         working-directory: media-studio
         env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           LTX_API_KEY: ${{ secrets.LTX_API_KEY }}
           WP_AUTH: ${{ secrets.WP_AUTH }}

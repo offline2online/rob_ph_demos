@@ -710,6 +710,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Media Studio provider keys (functions/media-keys.js) ───────────────
+    // mediaProviderKeys/{provider} holds an AES-256-GCM ciphertext of an API
+    // key (Gemini, LTX, a WordPress application password); mediaKeyAudit is
+    // the log of every set, test, delete and runtime read. Both are
+    // server-only in both directions: the console reads status through the
+    // mediaKeys function, which never returns a stored value to a browser.
+    match /mediaProviderKeys/{provider} {
+      allow read, write: if false;
+    }
+    match /mediaKeyAudit/{entry} {
+      allow read, write: if false;
+    }
+
     // ── Staff pronunciations (functions/kanban.js) ─────────────────────────
     // staffPronunciations/{email} = { pronunciation, updatedBy, updatedAt }:
     // how a member's name is said, for agents only (kanban_get_staff_names).

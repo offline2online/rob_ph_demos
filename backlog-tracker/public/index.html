@@ -1283,6 +1283,19 @@
               <div class="mcp-connections" id="mcp-connections"></div>
             </div>
 
+            <!-- Media Studio provider keys (functions/media-keys.js). Write-only:
+                 the server encrypts each key (AES-256-GCM) before storing it and
+                 only ever sends back "set, ends …a1b2, by, when". -->
+            <div class="docs-block" data-admin-only id="media-keys-block">
+              <div class="docs-block-header">
+                <h3>Media Studio API keys
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About Media Studio API keys" data-tip="The keys Media Studio uses to make images (Nano Banana Pro) and video (Veo 3.1, LTX 2.5) for the website and blog, and to upload them to WordPress. Each key is encrypted before it is stored and can't be read back here, by anyone. Media Studio's workflow fetches them when it runs."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <p class="field-hint" style="margin-top:4px;">Encrypted before they are saved. Saved keys show only their last four characters; to change one, paste the new key and save.</p>
+              <div class="media-keys-list" id="media-keys-list"><p class="interface-row-empty">Loading…</p></div>
+            </div>
+
             <div class="docs-block" data-admin-only>
               <div class="docs-block-header">
                 <h3>Analytics — Help Centre

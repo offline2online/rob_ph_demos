@@ -4,6 +4,7 @@
 const { parseArgs } = require('node:util');
 const path = require('node:path');
 const { loadEnvFile, getConfig } = require('./config');
+const { loadConsoleKeys } = require('./console-keys');
 const { createStudio } = require('./studio');
 const { FORMATS, STYLES } = require('./presets');
 
@@ -71,6 +72,11 @@ async function main(argv) {
   if (!cmd || v.help) { process.stdout.write(HELP); return 0; }
 
   loadEnvFile();
+  const fromConsole = await loadConsoleKeys();
+  if (fromConsole.used && !v.json) {
+    process.stderr.write(`· PH Agent Console: ${fromConsole.loaded.length ? `loaded ${fromConsole.loaded.join(', ')}` : 'no keys loaded'}\n`);
+  }
+  for (const p of fromConsole.problems) process.stderr.write(`! PH Agent Console: ${p}\n`);
   const config = getConfig();
   const studio = createStudio({ config, allowLocalPaths: true });
   const log = (m) => { if (!v.json) process.stderr.write(`· ${m}\n`); };
