@@ -29,8 +29,8 @@ The Support Centre no longer registers WebMCP tools itself (sc.js `initWebMcp` r
 `main.php` requires `lib.php` by `__DIR__`; if Angie snippets can't hold two
 files, concatenate `lib.php` above `main.php` (drop the second `<?php` and
 the `require_once`). Namespace is `AngieSnippets\PhAgentEndpoint___ID__`, the convention of the other snippets; the PH Website
-session substitutes the real id for `___ID__` at first deploy and records it in `snippets/MANIFEST.json`
-(`"id": null` until then).
+session substituted the real id for `___ID__` at first deploy (snippet 10646, 4 Nov 2026) and recorded it in `snippets/MANIFEST.json`
+(repo and live hashes both).
 
 ## Shared entities across the site
 

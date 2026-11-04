@@ -130,7 +130,7 @@
     ]
   },
   {
-    "id": null,
+    "id": 10646,
     "title": "PH Agent Endpoint",
     "version": "1.2.0",
     "folder": "ph-agent-endpoint",
@@ -138,27 +138,40 @@
       {
         "name": "lib.php",
         "bytes": 11854,
-        "sha256": "927e0334e4e207cce20c61dbbe5916bd5d0a567a41a0663299b51890d4614e7a"
+        "sha256": "927e0334e4e207cce20c61dbbe5916bd5d0a567a41a0663299b51890d4614e7a",
+        "liveBytes": 11853,
+        "liveSha256": "153b39715eba180e6a5b9c174fbd9811d1433af4e12c8739d5748c1f817e9dc6"
       },
       {
         "name": "main.php",
-        "bytes": 12126,
-        "sha256": "9e8907b7eee8b373b8ffb2950ef1a94dc6d9a5dd29f1964522a6811354da5004"
+        "bytes": 13986,
+        "sha256": "880898b7da0b8097f412b0bb8d0823db3b05fda047229218f05c0673abf412c3",
+        "liveBytes": 13985,
+        "liveSha256": "978578a61538ba6400313fc8e650f4482333a7bbbaf937dcbb1a18115693059f"
       },
       {
         "name": "tools.php",
-        "bytes": 13684,
-        "sha256": "09fa57efb245c199b304f077c6c03c9651a3d1d2fc5e716f08d0aa7f215338d7"
+        "bytes": 14415,
+        "sha256": "b8e575785952a6d914471896fdb0531750c067c4023d895a0f0194c128a23e83",
+        "liveBytes": 14414,
+        "liveSha256": "ebb87f3c4b001f64e2adcd74b44cbb6ef7fc0aeb865fe33ae4a39b039a060e8c"
       },
       {
         "name": "webmcp.js",
         "bytes": 1440,
-        "sha256": "2136426a4b18b4eb8c352c8310e96de7967f45de280bbb358c928c2818e86765"
+        "sha256": "2136426a4b18b4eb8c352c8310e96de7967f45de280bbb358c928c2818e86765",
+        "liveBytes": 1440,
+        "liveSha256": "2136426a4b18b4eb8c352c8310e96de7967f45de280bbb358c928c2818e86765"
       }
-    ]
+    ],
+    "placeholder": {
+      "token": "__ID__",
+      "liveValue": "10646",
+      "note": "Repo files carry __ID__ (namespace AngieSnippets\\PhAgentEndpoint___ID__); the live snippet has it replaced by 10646 (AngieSnippets\\PhAgentEndpoint_10646), 1 byte shorter per file that contains it. bytes/sha256 are the repo file; liveBytes/liveSha256 are the live file (= repo file with __ID__ replaced by 10646)."
+    }
   },
   {
-    "id": null,
+    "id": 10645,
     "title": "PH Media",
     "version": "1.0.0",
     "folder": "ph-media",

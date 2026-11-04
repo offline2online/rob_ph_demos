@@ -1,6 +1,6 @@
 # ph-website
 
-Every line of code running on personalisationhub.com, versioned here. Five Angie code snippets, copied byte for byte from WordPress on 4 Nov 2026 (the live files have `__ID__` already replaced by the snippet id). Do not reformat them. PH Blog Layout (10644) was written here first and published the same day, as a hotfix.
+Every line of code running on personalisationhub.com, versioned here. Seven Angie code snippets, copied byte for byte from WordPress on 4 Nov 2026 (the live files have `__ID__` already replaced by the snippet id). Do not reformat them. PH Blog Layout (10644) was written here first and published the same day, as a hotfix.
 
 ## Snippets
 
@@ -11,13 +11,18 @@ Every line of code running on personalisationhub.com, versioned here. Five Angie
 | PH Blog Layout | 10644 | 1.0.0 | `snippets/ph-blog-layout/` | single posts always render through the Theme Builder template "PH Blog · Single post" (10142): on the public front end a post is never treated as built with Elementor, so the kit's default Full Width layout (which prints only the post content, no title, byline, hero or article menu) can't take over. Published 4 Nov 2026 as a hotfix after all 25 posts were re-saved through Elementor on 3 Nov and every article lost its layout. wp-admin, the Elementor editor/preview, AJAX and REST see the real `_elementor_edit_mode`. Can be folded into PH Blog at its next release |
 | PH Support Centre | 10156 | 1.4.1 | `snippets/ph-support-centre/` | everything under /support-centre/; shared Organization `#organization` and SoftwareApplication `#software`, WebSite `/support-centre/#site`; twins; `## Support Centre` in llms.txt; (its WebMCP tools moved to the PH Agent Endpoint snippet in 1.3.1); public `ph-help/v1/index`, `/redirects`, `/published`; 1.4.0: syncs from the live console feed first (GitHub raw, then help site, as fallbacks), public rate-limited `POST ph-help/v1/refresh` (202 or 429, schedules one sync in 5 s, never inline), no Google Fonts request; 1.4.1: the refresh also calls `spawn_cron()` (non-blocking loopback) because this host does not spawn WP-Cron from front-end traffic, so the queued sync starts within seconds; backstop if the loopback is blocked is a console-side GET of `/wp-cron.php` about 6 s after a 202 |
 | PH Site Icon | 10157 | 1.0.1 | `snippets/ph-site-icon/` | /favicon.ico from the Site Icon |
-| PH Media | not published yet | 1.0.0 | `snippets/ph-media/` | new JPEG/PNG uploads get WebP sizes (quality 80, GIF/SVG untouched, only while sub-sizes are generated so the favicon stays PNG); fixes Elementor `elementor/thumbs` srcset URLs; admin `POST ph-site/v1/media/webp-status` (read-only) |
+| PH Agent Endpoint | 10646 ("PH Agent Endpoint (new)") | 1.2.0 | `snippets/ph-agent-endpoint/` | the `ph-agent/v1` REST endpoint and its eight tools, and the WebMCP loader (`webmcp.js`) |
+| PH Media | 10645 ("PH Media (new)") | 1.0.0 | `snippets/ph-media/` | new JPEG/PNG uploads get WebP sizes (quality 80, GIF/SVG untouched, only while sub-sizes are generated so the favicon stays PNG); fixes Elementor `elementor/thumbs` srcset URLs; admin `POST ph-site/v1/media/webp-status` (read-only) |
 
 `snippets/MANIFEST.json` lists every file with its byte count and sha256, so a deploy can check what is live against the repo.
 
+**PH Agent Endpoint placeholder.** Its repo files carry `__ID__` once each in `lib.php`, `main.php` and `tools.php` (namespace `AngieSnippets\PhAgentEndpoint___ID__`). Live, `__ID__` is replaced by `10646` (namespace `AngieSnippets\PhAgentEndpoint_10646`), so those three files are 1 byte shorter live. The manifest records both: `bytes`/`sha256` are the repo file, `liveBytes`/`liveSha256` the live file (the repo file with `__ID__` replaced by `10646`). A byte check of the live snippet compares against the `live*` values. Live sizes 4 Nov 2026: lib 11853, main 13985, tools 14414, webmcp.js 1440.
+
+The earlier agent-endpoint and media drafts (no id) are superseded by 10646 and 10645; the PR #514 release (4 Nov 2026) deployed these two as new snippets.
+
 ## How a deploy works
 
-After Deploy to Main, the PH Website session (the one with the Elementor MCP) publishes the changed snippets from `main` through the Elementor MCP (`angie-*` snippet tools):
+After Deploy to Main, the PH Website session (the one with the Elementor MCP) publishes, through the dedicated `ph-mcp` WordPress user (not a personal account), the changed snippets from `main` through the Elementor MCP (`angie-*` snippet tools):
 
 1. Snapshot the live snippet files before.
 2. Publish the changed files.
