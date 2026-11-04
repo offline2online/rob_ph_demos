@@ -781,6 +781,12 @@ service cloud.firestore {
       allow read: if isBoardReader();
       allow write: if false;
     }
+    // One document per tools/call on the public remote MCP server (RevOps
+    // signal): tool, source, referrer host, time. Server-written; members read.
+    match /agentToolLog/{entryId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
     match /mcpAuditLog/{entryId} {
       allow read: if isAdmin();
       allow write: if false;

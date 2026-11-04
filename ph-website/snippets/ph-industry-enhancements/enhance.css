@@ -1,0 +1,46 @@
+/* PH Industry enhancements: live calculator inputs, tooltips and live-flow progress */
+.ph-ind-calc .ph-ind-in{display:inline-flex;align-items:center;gap:4px;background:#FFFFFF;border:1px solid #DCE1EB;border-radius:10px;padding:7px 12px;font:600 15px/1.2 "Kantumruy Pro",system-ui,sans-serif;color:#1C2540;flex-shrink:0}
+.ph-ind-calc .ph-ind-in:focus-within{border-color:#1C2540;box-shadow:0 0 0 3px rgba(28,37,64,.12)}
+.ph-ind-calc .ph-ind-in i{font-style:normal;color:#5A6479}
+.ph-ind-calc .ph-ind-in input[type="number"]{width:88px;min-width:0;border:0;background:transparent;font:inherit;color:inherit;text-align:right;padding:0;margin:0;box-shadow:none;outline:none;-moz-appearance:textfield;appearance:textfield}
+.ph-ind-calc .ph-ind-in input[type="number"]::-webkit-inner-spin-button,.ph-ind-calc .ph-ind-in input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.ph-ind-calc .ph-ind-in-range{background:transparent;border:0;padding:0;gap:10px}
+.ph-ind-calc .ph-ind-in-range:focus-within{box-shadow:none}
+.ph-ind-calc .ph-ind-in-range input{width:130px;accent-color:var(--ph-ind-a,#169BC2);margin:0;padding:0;border:0;background:transparent}
+.ph-ind-calc .ph-ind-in-range output{min-width:56px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.ph-ind-calc .ph-ind-tip,.ph-ind-calc .ph-ind-tip:hover,.ph-ind-calc .ph-ind-tip:focus{position:relative;display:inline-grid;place-items:center;width:18px;height:18px;min-height:0;margin:0 0 0 6px;padding:0;border-radius:50%;border:1px solid currentColor;background:transparent;color:inherit;font:700 11px/1 "Kantumruy Pro",system-ui,sans-serif;letter-spacing:0;text-transform:none;cursor:help;vertical-align:middle;box-shadow:none}
+.ph-ind-calc .ph-ind-tip:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.ph-ind-calc .ph-ind-tip:hover::after,.ph-ind-calc .ph-ind-tip:focus::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);left:-12px;width:max-content;max-width:min(300px,75vw);background:#1C2540;color:#F5F7FB;font:400 13px/1.45 "Kantumruy Pro",system-ui,sans-serif;letter-spacing:0;text-transform:none;text-align:left;white-space:normal;padding:10px 12px;border-radius:10px;box-shadow:0 12px 30px -12px rgba(0,0,0,.55);z-index:30}
+.ph-ind-calc .ph-ind-how{display:flex;align-items:center;gap:8px;margin:12px 0 0;color:#A3ACC0;font:400 14px/1.4 "Kantumruy Pro",system-ui,sans-serif}
+.ph-ind-calc .ph-ind-how .ph-ind-tip{margin:0}
+@media (max-width:767px){.ph-ind-calc .ph-ind-cf{flex-wrap:wrap}.ph-ind-calc .ph-ind-in-range input{width:110px}}
+.ph-ind-inf-fig{position:relative;width:100%;max-width:520px;margin:0 auto;padding:72px 0;box-sizing:border-box}
+.ph-ind-inf-fig svg{display:block;width:100%;height:auto;overflow:visible}
+.ph-ind-inf-lab{position:absolute;max-width:46%;font-family:"Kantumruy Pro",system-ui,sans-serif;color:#1C2540}
+.ph-ind-inf-lab b{display:block;font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+.ph-ind-inf-lab span{display:block;font-size:14px;color:#5A6479;line-height:1.4}
+.ph-ind-inf-lab.ph-ind-tl{top:0;left:0}.ph-ind-inf-lab.ph-ind-tr{top:0;right:0;text-align:right}.ph-ind-inf-lab.ph-ind-bl{bottom:0;left:0}.ph-ind-inf-lab.ph-ind-br{bottom:0;right:0;text-align:right}
+.ph-ind-inf-fig .ph-ind-s0{animation:ph-ind-inf0 16s linear infinite}.ph-ind-inf-fig .ph-ind-s1{animation:ph-ind-inf1 16s linear infinite}.ph-ind-inf-fig .ph-ind-s2{animation:ph-ind-inf2 16s linear infinite}.ph-ind-inf-fig .ph-ind-s3{animation:ph-ind-inf3 16s linear infinite}
+@keyframes ph-ind-inf0{from{stroke-dashoffset:-12.5}to{stroke-dashoffset:-112.5}}
+@keyframes ph-ind-inf1{from{stroke-dashoffset:-37.5}to{stroke-dashoffset:-137.5}}
+@keyframes ph-ind-inf2{from{stroke-dashoffset:-62.5}to{stroke-dashoffset:-162.5}}
+@keyframes ph-ind-inf3{from{stroke-dashoffset:-87.5}to{stroke-dashoffset:-187.5}}
+@media (max-width:767px){.ph-ind-inf-fig{padding:56px 0}.ph-ind-inf-lab b{font-size:15px}.ph-ind-inf-lab span{font-size:12.5px}}
+@media (prefers-reduced-motion:reduce){.ph-ind-inf-fig .ph-ind-seg{animation:none}}
+.ph-ind-flow.ph-ind-lined .ph-ind-panel{position:relative;row-gap:46px}
+.ph-ind-flow.ph-ind-lined .ph-ind-data,.ph-ind-flow.ph-ind-lined .ph-ind-hubrow,.ph-ind-flow.ph-ind-lined .ph-ind-tps{position:relative;z-index:1}
+.ph-ind-flow .ph-ind-lines{position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:0}
+.ph-ind-flow .ph-ind-lines .ph-ind-fl{fill:none;stroke-width:2;stroke-linecap:round;stroke-dasharray:3 9;animation:ph-ind-dash 1.1s linear infinite}
+.ph-ind-flow .ph-ind-lines .ph-ind-fl.loc{stroke:#5A6479}
+.ph-ind-flow .ph-ind-lines .ph-ind-fl.per,.ph-ind-flow .ph-ind-lines .ph-ind-fl.out{stroke:var(--ph-ind-a,#169BC2)}
+.ph-ind-flow .ph-ind-lines .ph-ind-fd.loc{fill:#5A6479}
+.ph-ind-flow .ph-ind-lines .ph-ind-fd.per,.ph-ind-flow .ph-ind-lines .ph-ind-fd.out{fill:var(--ph-ind-a,#169BC2)}
+@keyframes ph-ind-dash{to{stroke-dashoffset:-12}}
+@media (prefers-reduced-motion:reduce){.ph-ind-flow .ph-ind-lines .ph-ind-fl{animation:none}}
+.ph-ind-flow .ph-ind-tabmenu>*{position:relative;overflow:hidden}
+.ph-ind-flow .ph-ind-prog{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--ph-ind-a,#169BC2);pointer-events:none}
+.ph-ind-flow.ph-ind-anim .ph-ind-tabmenu>.e--selected{box-shadow:none}
+.ph-ind-flow.ph-ind-anim .ph-ind-tabmenu>.e--selected .ph-ind-prog{animation:ph-ind-prog 7s linear forwards}
+.ph-ind-flow.ph-ind-hold .ph-ind-prog{animation-play-state:paused}
+@keyframes ph-ind-prog{to{width:100%}}
+@media (prefers-reduced-motion:reduce){.ph-ind-flow .ph-ind-prog{display:none}}

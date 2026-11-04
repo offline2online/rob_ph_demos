@@ -2826,16 +2826,54 @@ published help articles without crawling pages. `functions/help-search.js`
   the article has no recorded URL, an HTML-to-markdown conversion of the body
   (`functions/html-to-md.js`: headings, lists, tables, links, code). The JSON
   `bodyMd` is the stored body unchanged.
-- `POST /help-api/mcp` — a stateless public MCP server (tools `search_help`,
-  `get_help_article`, both read-only). The WebMCP `search_help` tool and the
-  `/llms.txt` entry are out of scope here: they live in the WordPress snippets
-  and are added there once `/help-api` is live.
+- `POST /help-api/mcp` — a stateless, public, read-only remote MCP server
+  (streamable HTTP, no sign-in) serving exactly the eight tools the WebMCP
+  tools on the site pages define: `describe_platform`, `list_industries`,
+  `get_industry`, `get_feature`, `search_help`, `get_help_article`,
+  `start_free_trial`, `book_demo` (3 Nov 2026, "Public read-only remote MCP
+  server"). It holds no content of its own: `tools/list` is
+  `GET https://personalisationhub.com/wp-json/ph-agent/v1/tools` and
+  `tools/call` is `GET …/tools/{name}?args=<json>`, always to that fixed
+  origin and only for those eight names (anything else is a JSON-RPC
+  `-32602` without a request to the site). The result is passed through
+  unchanged, so it matches the WebMCP tools exactly, and it is always live
+  published content (blog posts, pages, industries, and help articles after
+  the hourly help sync), never a copy or a build-time export. **Cached 5
+  minutes per (tool, args)** with `X-Cache: HIT|MISS` (a request is a HIT only
+  if every upstream answer came from the cache); **4 s timeout** and a
+  256 KB size cap, then a plain `isError` result (`tools/list` a `-32603`
+  error); a **failed fetch is remembered for 30 seconds only**, and the last
+  good answer is kept and served in the meantime. Arguments longer than 2,000
+  characters are refused. The 30-a-minute MCP rate limit below applies.
+  `/llms.txt` lists the server URL (For AI agents section).
 - **Never returned:** drafts, retired articles, anything outside the requested
   release (default: the live release; `release` takes an id or version, same
   resolution and range check as `search_faq`), and `pendingRevision` text. Only live fields are read.
-- **Rate limit** 60 requests a minute per address per instance (429 with
-  `Retry-After`); **cache** the published set for 60 s and each identical
-  query for 60 s (`X-Cache: HIT|MISS`, `Cache-Control: public, max-age=60`).
+- **Rate limit** per address and per endpoint class, per instance: 60 a
+  minute for search and article, 30 a minute for `/mcp` (separate budgets, so
+  one cannot use up the other). Over the limit is a 429 with `Retry-After`,
+  `Cache-Control: no-store` and a JSON `rate_limited` body; every response
+  carries `X-RateLimit-Limit|Remaining|Reset`. **Cache** the published set for
+  60 s and each identical search *and* article for 60 s (`X-Cache: HIT|MISS`,
+  `Cache-Control: public, max-age=60`). The WebMCP tools on site pages call
+  these same endpoints, so they share the limits and the cache (the remote MCP
+  server's own site-read cache is the 5-minute one above).
+- **The published URL map is resilient** (3 Nov 2026): if
+  `personalisationhub.com/wp-json/ph-help/v1/published` fails to load, that
+  failure is remembered for 30 seconds only (not the 5-minute success TTL),
+  a refresh that fails keeps the last good map, and results or articles built
+  with no map at all (every link the `article.html?id=` fallback) are not put
+  in the result cache, so they recover as soon as the map does.
+- **Monitoring and alerts** (3 Nov 2026, ticket `jB00AFT7B5KPB8kOnWng`): each
+  instance counts requests, 429s and 5xx in 5-minute windows. 50 or more 429s
+  is an `abuse` alert (naming the top clients, kept in memory only); 5 or more
+  5xx, or 20% of at least 20 requests, is an `errors` alert. Each posts once to
+  `NOTIFY_WEBHOOK_URL` (the channel Notify Claude uses, so it reaches Rob) and
+  logs at error level, then stays quiet 30 minutes per kind. An alert that
+  fails to send never affects the request. **Test it:** `POST` the
+  `helpApiTestAlert` function (not on the public Hosting site) with the
+  `X-Board-Key` header; a "Test alert" message should arrive in the channel
+  (the response says `webhookConfigured`).
 - **Usage log:** one `helpSearchLog` document per search (normalised query,
   release, result count, `zeroResults`, `via` http|mcp, cached; no address).
   Members can read it; only the server writes. The release audit's fire text
