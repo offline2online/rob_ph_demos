@@ -40,7 +40,7 @@ function snap(name, f = () => true) {
 let t = 1_000_000;
 let mapFetches = 0, mapOk = true, twinFetches = [], twinOk = true;
 const WPT = "https://personalisationhub.com/wp-json/ph-agent/v1/tools";
-const NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo"];
+const NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo", "get_installation_spec"];
 let wpCalls = [], wpMode = "ok", wpText = "v1";
 let wpResultOverride = null;
 const wpResult = (name, q) => wpResultOverride && name === "book_demo" ? wpResultOverride(name) : ({ content: [{ type: "text", text: `${name} ${q} ${wpText}` }], structuredContent: { name } });

@@ -82,7 +82,7 @@ const URL_MAP_FAIL_TTL_MS = 30 * 1000;
 const URL_FETCH_TIMEOUT_MS = 4000;
 // The remote MCP server proxies the WordPress tool contract (ph-agent/v1).
 const WP_TOOLS_BASE = `https://${SUPPORT_HOST}/wp-json/ph-agent/v1/tools`;
-const WP_TOOL_NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo"];
+const WP_TOOL_NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo", "get_installation_spec"];
 const WP_TTL_MS = 5 * 60 * 1000;
 const WP_FAIL_TTL_MS = 30 * 1000;
 const WP_TIMEOUT_MS = 4000;
@@ -539,7 +539,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
     })).catch((e) => { if (logger) logger.warn("agent tool log failed", { error: String(e) }); });
   }
   // The site's CTA tools carry trackedUrl with via=webmcp; for this server it is via=remote-mcp.
-  const CTA_TOOLS = ["start_free_trial", "book_demo"];
+  const CTA_TOOLS = ["start_free_trial", "book_demo", "get_installation_spec"];
   function forRemote(name, result) {
     if (!CTA_TOOLS.includes(name) || !result || result.isError) return result;
     return JSON.parse(JSON.stringify(result).split("?via=webmcp").join("?via=remote-mcp"));
@@ -571,7 +571,7 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: SERVER_INFO,
-          instructions: "Read-only access to Personalisation Hub's public site content: describe_platform, list_industries, get_industry, get_feature, search_help, get_help_article, start_free_trial, book_demo. Always cite the url you are given.",
+          instructions: "Read-only access to Personalisation Hub's public site content: describe_platform, list_industries, get_industry, get_feature, search_help, get_help_article, start_free_trial, book_demo, get_installation_spec. Always cite the url you are given.",
         });
       }
       case "ping": return reply({});
