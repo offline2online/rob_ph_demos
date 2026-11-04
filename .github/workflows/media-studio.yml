@@ -1,0 +1,127 @@
+name: Media Studio (generate an image or video)
+
+# Runs media-studio/ on a runner, using the repository's own secrets, so
+# nobody needs the keys on their laptop and any Claude session can make an
+# asset with `gh workflow run media-studio.yml -f prompt="…"`.
+# The result is attached to the run as an artifact (kept 30 days) and, if
+# asked, uploaded to the WordPress media library. Nothing is committed.
+#
+# Secrets: GEMINI_API_KEY (Nano Banana Pro + Veo), LTX_API_KEY (LTX 2.5),
+#          WP_AUTH (optional, "<user>:<application-password>").
+# Variable: WP_SITE_URL (optional, e.g. https://personalisationhub.com).
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: 'image or video'
+        type: choice
+        options: [image, video]
+        default: image
+      prompt:
+        description: 'What to make'
+        type: string
+        required: true
+      provider:
+        description: 'Video model (ignored for images, which always use Nano Banana Pro)'
+        type: choice
+        options: [veo, veo-fast, ltx, ltx-fast]
+        default: veo
+      preset:
+        description: 'Format: blog-hero, website-banner, og-image, inline, social-square, social-portrait, story, signage-landscape, signage-portrait (blank = custom)'
+        type: string
+        default: blog-hero
+      style:
+        description: 'Style: none, photo, ph-brand, illustration, cinematic'
+        type: string
+        default: none
+      aspect_ratio:
+        description: 'Override the format, e.g. 16:9, 1:1, 9:16 (blank = from format)'
+        type: string
+        default: ''
+      duration:
+        description: 'Video seconds (Veo 4/6/8, LTX 6-20 or auto; blank = default)'
+        type: string
+        default: ''
+      image_url:
+        description: 'Optional https URL: a reference image (image) or the first frame to animate (video)'
+        type: string
+        default: ''
+      count:
+        description: 'Image variations, 1-4'
+        type: string
+        default: '1'
+      wordpress:
+        description: 'Also upload to the WordPress media library'
+        type: boolean
+        default: false
+
+concurrency:
+  group: media-studio-${{ github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: media-studio
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate
+        working-directory: media-studio
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LTX_API_KEY: ${{ secrets.LTX_API_KEY }}
+          WP_AUTH: ${{ secrets.WP_AUTH }}
+          WP_SITE_URL: ${{ vars.WP_SITE_URL }}
+          # Every input reaches the script as an environment variable, never
+          # spliced into the shell line, so a prompt can't run commands.
+          IN_KIND: ${{ inputs.kind }}
+          MEDIA_PROMPT: ${{ inputs.prompt }}
+          IN_PROVIDER: ${{ inputs.provider }}
+          IN_PRESET: ${{ inputs.preset }}
+          IN_STYLE: ${{ inputs.style }}
+          IN_ASPECT: ${{ inputs.aspect_ratio }}
+          IN_DURATION: ${{ inputs.duration }}
+          IN_IMAGE_URL: ${{ inputs.image_url }}
+          IN_COUNT: ${{ inputs.count }}
+          IN_WORDPRESS: ${{ inputs.wordpress }}
+        run: |
+          args=("$IN_KIND")
+          [ -n "$IN_PRESET" ] && args+=(--preset "$IN_PRESET")
+          [ -n "$IN_STYLE" ] && [ "$IN_STYLE" != none ] && args+=(--style "$IN_STYLE")
+          [ -n "$IN_ASPECT" ] && args+=(--aspect "$IN_ASPECT")
+          if [ "$IN_KIND" = video ]; then
+            args+=(--provider "$IN_PROVIDER")
+            [ -n "$IN_DURATION" ] && args+=(--duration "$IN_DURATION")
+            [ -n "$IN_IMAGE_URL" ] && args+=(--image "$IN_IMAGE_URL")
+          else
+            [ -n "$IN_COUNT" ] && args+=(--count "$IN_COUNT")
+            [ -n "$IN_IMAGE_URL" ] && args+=(--ref "$IN_IMAGE_URL")
+          fi
+          [ "$IN_WORDPRESS" = true ] && args+=(--wordpress)
+          mkdir -p output
+          node src/cli.js check
+          node src/cli.js "${args[@]}" --json > output/result.json
+          node -e '
+            const r = require("./output/result.json");
+            const lines = [`### ${r.kind === "video" ? "Video" : "Image"} ready`, "", `**Prompt:** ${r.prompt}`, "",
+              `**Model:** ${r.provider} · ${r.model}`, "", "Files (in the run artifact):", ...r.files.map((f) => `- \`${f.path}\``)];
+            for (const p of r.published || []) lines.push(`- WordPress: ${p.url}`);
+            require("fs").appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: media-${{ github.run_id }}
+          path: media-studio/output/
+          if-no-files-found: ignore
+          retention-days: 30

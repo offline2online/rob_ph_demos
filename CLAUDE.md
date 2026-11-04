@@ -13,6 +13,7 @@ This is a static site repository used to publish HTML and static resources (CSS,
 - `index.html` — Main entry point
 - `ph-website/` — PHP snippets for the WordPress site personalisationhub.com (versioned and reviewed here, deployed through the Elementor MCP; not served by GitHub Pages). Start with `ph-website/snippets/ph-agent-endpoint/README.md`
 - Static assets (CSS, JS, images) go directly in the repo root or organized subdirectories
+- `media-studio/` — image and video generation for the website and blog (Nano Banana Pro, Veo 3.1, LTX 2.5): a local API + web UI + CLI, and `.github/workflows/media-studio.yml` to run it on a runner with the `GEMINI_API_KEY` / `LTX_API_KEY` secrets. Not served by GitHub Pages. See `media-studio/README.md`
 - `ph-website/` — the PHP, JS and CSS running on personalisationhub.com (four Angie snippets, `snippets/MANIFEST.json`); the PH Website session deploys it through the Elementor MCP. See `ph-website/README.md`
 
 ## The offline2online.com WordPress site is an MCP server — `.mcp.json`

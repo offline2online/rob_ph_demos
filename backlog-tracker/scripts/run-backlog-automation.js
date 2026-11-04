@@ -2332,6 +2332,7 @@ const TRAIN_TEST_WORKFLOWS = [
   { workflow: "firestore-rules-test.yml", prefix: "backlog-tracker/", extraPrefixes: ["kanban-staff-board/"], label: "console tests", kanban: "console" },
   { workflow: "e2e-quick.yml", prefix: "dsp-integration/", label: "DSP tests (e2e-quick)" },
   { workflow: "retail-media-insights-tests.yml", prefix: "Retail-media-insights/", label: "Retail Media Insights tests" },
+  { workflow: "media-studio-tests.yml", prefix: "media-studio/", label: "Media Studio tests" },
   // The prototype suite runs on any train that changes backlog-tracker/ too:
   // the console and the prototype are tested twice against one plan.
   { workflow: "kanban-staff-board-tests.yml", prefix: "kanban-staff-board/", extraPrefixes: ["backlog-tracker/"], label: "Staff Kanban tests", kanban: "all" },
