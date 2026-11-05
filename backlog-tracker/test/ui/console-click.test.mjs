@@ -329,7 +329,7 @@ const scenarios = [
       // edit
       await c.page.locator('.role-edit[aria-label="Edit Support"]').click();
       await c.visible("#role-detail-page", "the role page opens");
-      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-group h3")].map((e) => e.textContent)), ["Build", "Support", "Settings"]);
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-group h3")].map((e) => e.textContent)), ["Build", "Promote", "Support", "Settings", "Other"]);
       await c.page.fill("#role-name", "Support team");
       await c.page.selectOption("#role-perm-concepts", "view");
       await c.click("#role-save", "Save role");
@@ -992,7 +992,7 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".perm-table").count(), 0, "there is no permissions matrix");
       await c.visible("#role-permissions .role-perm-row", "the permissions render");
       const rows = await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-perm-row label")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(rows, ["Agent board", "Staff Kanban", "Concepts", "Promote", "Project docs", "FAQ management", "Settings", "Skills", "Releases", "User Management"]);
+      assert.deepStrictEqual(rows, ["Agent Board", "Staff Kanban", "Concepts", "Whiteboard", "Brand Guidelines", "Leads", "Help Centre", "Settings", "Settings > User Management", "Releases", "Skills & phase bindings", "Project docs"]);
       await c.page.selectOption("#role-perm-concepts", "none");
       await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);

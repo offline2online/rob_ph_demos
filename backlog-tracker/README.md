@@ -2745,8 +2745,10 @@ tabs follow PH Core's campaign-editor underline style (`.settings-tab` in
 (`#settings/user-management/<tab>`, `data-settings-pane="user-management"` in
 `public/index.html`); the old `#user-management/*` links redirect. Opening a
 role (edit icon) shows its page, `#settings/user-management/roles/<id>`
-(`role-detail-page`): name, description and the permissions grouped Build /
-Support / Settings, with **Save role**; the Admin role is locked. There is no
+(`role-detail-page`): name, description and the permissions grouped as the
+sidebar is (Build / Promote / Support / Settings, then Other) and named as the
+menu names them, with **Save role**; the Admin role is locked. Roles lists
+whatever the menu holds: a sidebar button no section owns is added at load. There is no
 Permissions tab or matrix.
 
 **Users** is an AG Grid Community table (`public/js/user-management.js`; the

@@ -19,23 +19,26 @@ const RANK = { none: 0, view: 1, edit: 2, admin: 3 };
 // `nav` is the sidebar button (or buttons) the section owns; `edit` lists the
 // controls that mutate data and disappear below Edit access.
 export const SECTIONS = [
-  { key: "agent-board", label: "Agent board", nav: ["#nav-ph-console-btn"],
+  { key: "agent-board", label: "Agent Board", nav: ["#nav-ph-console-btn"],
     edit: ["#new-project-btn", ".new-item-btn", ".project-rename-btn", ".card-move", ".card-select-cb"] },
   { key: "staff-kanban", label: "Staff Kanban", nav: ["#staff-kanban-btn"], edit: [] },
   { key: "concepts", label: "Concepts", nav: ["#concept-incubator-btn"],
     edit: ["#concept-add-btn", "#concept-incubator-page [data-editor-only]", "#concept-detail-page [data-editor-only]", "#concept-description-save"] },
-  { key: "promote", label: "Promote", nav: ["#promote-brand-btn", "#promote-leads-btn"], edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
-  { key: "faq", label: "FAQ management", nav: ["#faq-articles-btn"],
+  { key: "whiteboard", label: "Whiteboard", nav: ["#whiteboard-btn"], edit: ["#whiteboard-page [data-editor-only]"] },
+  { key: "promote", label: "Brand Guidelines", nav: ["#promote-brand-btn"], edit: [] },
+  // Leads used to sit under the single "promote" grant, so it inherits it.
+  { key: "promote-leads", label: "Leads", nav: ["#promote-leads-btn"], inherits: "promote", edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
+  { key: "faq", label: "Help Centre", nav: ["#faq-articles-btn"],
     edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#fa-analytics-tag-save", "#faq-cat-edit-save-btn"] },
-  { key: "skills", label: "Skills", nav: ['[data-settings-page="skills"]'], edit: ["#skills-add-btn", "#skills-page [data-editor-only]", "#skill-add-file-btn"] },
+  { key: "settings", label: "Settings", nav: ["#faq-settings-btn"], edit: ["#faq-settings-page .btn-primary"] },
+  { key: "user-management", label: "Settings > User Management", nav: ['[data-settings-page="user-management"]'],
+    edit: ["#team-add-open", "#roles-create", ".role-actions", "#um-bulk", ".um-manage"] },
   { key: "releases", label: "Releases", nav: ['[data-settings-page="releases"]'], edit: ["#releases-add-btn", ".release-mark-live-btn", "#release-editor-save"] },
+  { key: "skills", label: "Skills & phase bindings", nav: ['[data-settings-page="skills"]'], edit: ["#skills-add-btn", "#skills-page [data-editor-only]", "#skill-add-file-btn"] },
   { key: "project-docs", label: "Project docs", nav: [],
     edit: ["#docs-description-save", "#docs-repo-folder-save", "#docs-readme-save", "#docs-requirements-save", "#docs-add-doc-btn", "#docs-routine-prompt-save", "#docs-add-interface-btn"] },
-  { key: "settings", label: "Settings", nav: ["#faq-settings-btn"], edit: ["#faq-settings-page .btn-primary"] },
-  { key: "user-management", label: "User Management", nav: ['[data-settings-page="user-management"]'],
-    edit: ["#team-add-open", "#roles-create", ".role-actions", "#um-bulk", ".um-manage"] },
 ];
-export const SECTION_KEYS = SECTIONS.map((s) => s.key);
+export const SECTION_KEYS = SECTIONS.map((s) => s.key); // mutated in place by registerSection()
 export const DEFAULT_LEVEL = "edit";
 export const LOCKED_SECTION = "user-management"; // an admin can never lose this
 
@@ -49,6 +52,8 @@ export function storedLevel(role, key) {
   if (isAdminRole(role)) return "admin";
   const p = role && role.permissions;
   if (p && validLevel(p[key])) return p[key];
+  const parent = (SECTIONS.find((s) => s.key === key) || {}).inherits;
+  if (parent && p && validLevel(p[parent])) return p[parent];
   return key === LOCKED_SECTION ? "none" : DEFAULT_LEVEL;
 }
 
@@ -98,9 +103,13 @@ export function sectionForHash(hash) {
   const h = String(hash || "").split("?")[0];
   if (h === "" || h === "#") return "agent-board";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq";
-  if (h === "#promote" || h.startsWith("#promote/")) return "promote";
+  if (h === "#promote" || h.startsWith("#promote/")) {
+    const k = "promote-" + h.slice(9).split("/")[0];
+    return SECTION_KEYS.includes(k) ? k : "promote";
+  }
   if (h === "#skills") return "skills";
   if (h === "#releases") return "releases";
+  if (h === "#whiteboard" || h.startsWith("#whiteboard/")) return "whiteboard";
   if (h === "#concept-incubator" || h.startsWith("#concept-")) return "concepts";
   if (h.startsWith("#docs/")) return "project-docs";
   if (h === "#staff-kanban" || h.startsWith("#staff-kanban/")) return "staff-kanban";
@@ -111,7 +120,7 @@ export function sectionForHash(hash) {
 
 // The hash a section opens at, for the redirect.
 export const SECTION_HASH = {
-  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", promote: "#promote/brand-guidelines", faq: "#faq-management",
+  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", whiteboard: "#whiteboard", promote: "#promote/brand-guidelines", "promote-leads": "#promote/leads", faq: "#faq-management",
   skills: "#settings/skills", releases: "#settings/releases", "project-docs": "", settings: "#settings",
   "user-management": "#settings/user-management/users",
 };
@@ -121,12 +130,45 @@ export function sectionForSettingsPage(page) {
   return page === "releases" ? "releases" : page === "skills" ? "skills" : page === "user-management" ? "user-management" : "settings";
 }
 
-// The role page groups sections the way the sidebar does.
+// The role page groups sections the way the sidebar does, in the sidebar's
+// order. `sectionsByGroup()` builds it from SECTIONS plus the "Other" group.
 export const PERMISSION_GROUPS = [
-  { label: "Build", keys: ["agent-board", "staff-kanban", "concepts", "promote", "project-docs"] },
+  { label: "Build", keys: ["agent-board", "staff-kanban", "concepts", "whiteboard"] },
+  { label: "Promote", keys: ["promote", "promote-leads"] },
   { label: "Support", keys: ["faq"] },
-  { label: "Settings", keys: ["settings", "skills", "releases", "user-management"] },
+  { label: "Settings", keys: ["settings", "user-management", "releases", "skills"] },
+  { label: "Other", keys: ["project-docs"] },
 ];
+
+// Add a section for a sidebar button no section owns, so a new menu item shows
+// up in Roles without anyone editing this file. `inherits` (optional) is the
+// section whose stored grant a role without its own entry should follow.
+export function registerSection(section, groupLabel) {
+  if (SECTION_KEYS.includes(section.key)) return false;
+  SECTIONS.push({ edit: [], ...section });
+  SECTION_KEYS.push(section.key);
+  let g = PERMISSION_GROUPS.find((x) => x.label === groupLabel);
+  if (!g) { g = { label: groupLabel, keys: [] }; PERMISSION_GROUPS.splice(Math.max(0, PERMISSION_GROUPS.length - 1), 0, g); }
+  g.keys.push(section.key);
+  return true;
+}
+
+// `items`: [{ id, label, group }] for every sidebar button, read from the DOM
+// by app.js. Buttons a section already owns (or that are not pages, like Search
+// and the collapse toggle) are skipped; the rest are registered.
+const NOT_A_PAGE = new Set(["cmdk-open-btn", "nav-collapse-btn"]);
+export function discoverNavSections(items) {
+  const owned = new Set(SECTIONS.flatMap((s) => s.nav));
+  const added = [];
+  for (const it of items || []) {
+    if (!it.id || !it.label || NOT_A_PAGE.has(it.id) || owned.has("#" + it.id)) continue;
+    const key = it.id.replace(/-btn$/, "");
+    const firstInGroup = PERMISSION_GROUPS.find((g) => g.label === it.group);
+    const inherits = firstInGroup && firstInGroup.keys.length ? firstInGroup.keys[0] : undefined;
+    if (registerSection({ key, label: it.label, nav: ["#" + it.id], inherits }, it.group || "Other")) added.push(key);
+  }
+  return added;
+}
 
 // Stylesheet text that hides what the levels remove. Selectors come only from
 // SECTIONS above, never from user input.

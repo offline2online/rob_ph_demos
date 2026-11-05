@@ -3846,11 +3846,21 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   column, and drives the Users count.
 - **Permissions (1 Nov 2026; moved onto the role page 4 Nov 2026).** Permissions
   are edited only inside a role: the edit icon on the Roles grid opens the role
-  page (name, description, then every console section grouped Build / Support /
-  Settings, each No access / View / Edit / Admin, and **Save role**). There is
-  no comparison matrix. The sections are Agent board, Staff Kanban, Concepts,
-  Promote, Project docs (Build); FAQ management (Support); Settings, Skills,
-  Releases, User Management (Settings). Stored as `roles/{id}.permissions`
+  page (name, description, then every console section grouped as the sidebar is,
+  Build / Promote / Support / Settings, then Other, each No access / View / Edit /
+  Admin, and **Save role**). There is no comparison matrix. The sections carry the
+  sidebar's own names and order: Agent Board, Staff Kanban, Concepts, Whiteboard
+  (Build); Brand Guidelines, Leads (Promote); Help Centre (Support); Settings,
+  Settings > User Management, Releases, Skills & phase bindings (Settings);
+  Project docs (Other, no menu item). The list is **derived from the menu**:
+  `permissions.js` names the known sections, and any sidebar button no section
+  owns is added to Roles at load (`discoverNavSections`), in its menu group, so a
+  new menu item appears in Roles without editing the file (a role's grant for its
+  first sibling in the group carries to it until set). `test/permissions.test.mjs`
+  reads `index.html` and fails if a menu button, name, group or order differs.
+  Settings sub-tabs Projects, Automations and Integrations stay under Settings.
+  Leads has its own key, `promote-leads`; a role saved before it existed follows
+  its old `promote` grant, so Brand Guidelines and Leads both keep it. Stored as `roles/{id}.permissions`
   (`{sectionKey: level}`); a role with no map gets Edit everywhere except User
   Management (none). The logic is `public/js/permissions.js`. Enforcement, in
   the console UI: a section with No access is hidden from the nav and search and
@@ -3967,7 +3977,7 @@ Rules:
 - A **Promote** group sits in the sidebar between Build and Publish (a
   Promote tab on a phone). Its first item is **Brand Guidelines**
   (`#promote/brand-guidelines`, `public/js/promote-section.js`). Its section
-  key for roles is `promote` (Settings → User Management → Roles); a hash under
+  key for roles is `promote` (labelled Brand Guidelines; Settings → User Management → Roles); a hash under
   `#promote/` routes to it.
 - The page is **read-only** and shows two `projectDocs` rows found by
   `mirrorKey` (`brand-guidelines`, `brand-requirements`), which mirror
@@ -3992,7 +4002,7 @@ Rules:
 ## Promote section: Leads (5 Nov 2026)
 
 - **Promote › Leads** (`#promote/leads`, nav item beneath Brand Guidelines,
-  same `promote` permission section: viewers read, editors change). One card
+  own `promote-leads` permission section: viewers read, editors change). One card
   per company on a Kanban in the style of the Staff Kanban; lanes **Lead, Hot
   Lead, Demo, Post-demo, Closed Won, Lost** (`STAGES` in `leads-core.js`).
 - **Data**: `leads/{id}` = `company {name (required), website, industry,

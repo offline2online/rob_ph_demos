@@ -48,7 +48,7 @@ import { createResultReader, useContinuousMode } from "./dictation-results.js";
 import { loadQuill } from "./quill-loader.js";
 import { fetchPublished, contentHashOf, articleStatus, liveUrlFor, lastSyncLabel, wpStatusBadgeHTML, WP_STATUS_LABELS } from "./wp-publish-status.js";
 import { userRows, mountUsersGrid } from "./user-management.js";
-import { LEVELS, LEVEL_LABELS, SECTIONS, PERMISSION_GROUPS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, roleLevels, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel } from "./permissions.js";
+import { LEVELS, LEVEL_LABELS, SECTIONS, PERMISSION_GROUPS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, roleLevels, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel, discoverNavSections } from "./permissions.js";
 import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -3188,6 +3188,16 @@ primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
 // have loaded (unrestricted until then, as before roles existed). See
 // permissions.js; the matrix itself is User Management → Permissions.
 let accessLevels = null;
+// Any sidebar button no section owns becomes a permission section, so a new
+// menu item (or a rename) shows up in Roles by itself.
+discoverNavSections([...document.querySelectorAll("#nav-drawer .nav-group")].flatMap((g) => {
+  const group = ((g.querySelector(".nav-drawer-section") || {}).textContent || "").trim();
+  return [...g.querySelectorAll("button.nav-drawer-item[id]")].map((b) => {
+    const c = b.cloneNode(true);
+    c.querySelectorAll(".material-symbols-outlined,kbd").forEach((e) => e.remove());
+    return { id: b.id, label: c.textContent.trim(), group };
+  });
+}));
 let accessSelfRoleId = "";
 let accessRoles = [];
 let accessRolesLoaded = false;
@@ -3201,7 +3211,7 @@ function showAccessDenied(key) {
   document.getElementById("access-denied-text").textContent = `Your role doesn't include access to ${label}. An admin can change that in Settings → User Management → Roles.`;
   const go = document.getElementById("access-denied-go");
   go.hidden = !next;
-  go.dataset.hash = next ? SECTION_HASH[next] : "";
+  go.dataset.hash = next ? (SECTION_HASH[next] || "") : "";
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
