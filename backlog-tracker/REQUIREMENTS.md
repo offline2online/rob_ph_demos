@@ -3914,7 +3914,12 @@ Rules:
   not a tap target) failed to open when tapped just after closing a ticket.
 - **What it covers** (`TAP_TARGETS`): `button`, `a[href]`, `[role=button|tab|
   menuitem|option|link]`, `summary`, checkbox and radio inputs (and a `label`
-  for one), and anything marked `[data-touch-tap]`. A new control written as
+  for one), and anything marked `[data-touch-tap]`. Checkboxes, radios and
+  their labels are the exception to "clicked on lift": the browser's own click
+  toggles them, and only if it has not arrived 350 ms after the lift (WebKit
+  dropped it) does the handler click them. Swallowing a duplicate click
+  reverts a checkbox, which is how Staff Kanban's Settings switches turned
+  themselves back on 5 Nov 2026. A new control written as
   one of those is covered with no extra wiring. A clickable element that is
   not (a `div` or `li` with a click handler) must get `data-touch-tap`, or
   better, be a `<button>`. Text fields, selects and contenteditable areas are

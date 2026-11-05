@@ -44,11 +44,32 @@ const firedAt = new WeakMap();
 // One window-level guard for every root: the late native click of a tap
 // already handled, wherever it lands.
 let swallow = null;
+// Checkboxes, radios and their labels are NOT clicked on finger-lift: the
+// browser's own click toggles them, and swallowing a duplicate click reverts a
+// checkbox (Staff Kanban's Settings switches turned themselves back, 5 Nov
+// 2026). For those the browser's click is awaited, and only if it never comes
+// (WebKit dropped it) is the control clicked, FALLBACK_MS after the lift.
+const FALLBACK_MS = 350;
+let pending = null; // { el, x, y, timer }
+const isToggle = (el) => el.tagName === "LABEL" || (el.tagName === "INPUT" && (el.type === "checkbox" || el.type === "radio"));
+function firePending() {
+  const p = pending;
+  pending = null;
+  if (!p) return;
+  clearTimeout(p.timer);
+  if (!p.el.isConnected || p.el.disabled) return;
+  swallow = { x: p.x, y: p.y, until: performance.now() + SWALLOW_MS };
+  p.el.click();
+}
 let guardInstalled = false;
 function installGuard() {
   if (guardInstalled) return;
   guardInstalled = true;
   window.addEventListener("click", (ev) => {
+    // The browser's own click for an awaited toggle arrived: it does the work.
+    if (pending && ev.isTrusted && Math.hypot(ev.clientX - pending.x, ev.clientY - pending.y) <= LATE_CLICK_PX) {
+      clearTimeout(pending.timer); pending = null; return;
+    }
     const s = swallow;
     if (!s || !ev.isTrusted) return;
     if (performance.now() > s.until) { swallow = null; return; }
@@ -63,7 +84,9 @@ function installGuard() {
   // touch disarms the guard. Without this, when the browser sent no click for
   // the tap (WebKit drops some), the armed guard ate the NEXT tap's real click
   // on anything that is not a tap target, e.g. a Staff Kanban card.
-  const disarm = () => { swallow = null; };
+  // A toggle still waiting for its click when the next finger comes down
+  // gets its fallback click now, so taps keep their order.
+  const disarm = () => { swallow = null; if (pending) firePending(); };
   window.addEventListener("touchstart", disarm, { capture: true, passive: true });
   window.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch" || e.pointerType === "pen") disarm(); }, { capture: true, passive: true });
 }
@@ -95,6 +118,11 @@ export function clickOnTouchTap(root, selector, { accept } = {}) {
     if (performance.now() - (firedAt.get(t.el) || -1e9) < 150) return false; // another root already clicked it for this tap
     lastFired = performance.now();
     firedAt.set(t.el, lastFired);
+    if (isToggle(t.el)) {
+      if (pending) firePending();
+      pending = { el: t.el, x, y, timer: setTimeout(firePending, FALLBACK_MS) };
+      return true;
+    }
     swallow = { x, y, until: lastFired + SWALLOW_MS };
     t.el.click();
     return true;

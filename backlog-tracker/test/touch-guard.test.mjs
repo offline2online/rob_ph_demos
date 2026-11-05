@@ -46,6 +46,9 @@ assert.ok(!/\.timeStamp\b/.test(tc.replace(/\/\/.*$/gm, "")), "taps must be time
 assert.match(tc, /window\.addEventListener\("click"[\s\S]*?stopImmediatePropagation[\s\S]*?\}, true\)/, "the late native click must be swallowed by a window capture listener");
 assert.match(tc, /window\.addEventListener\("touchstart", disarm/, "a new touch must disarm the late-click guard, or it eats the next tap's real click (Staff Kanban cards, 5 Nov 2026)");
 
+assert.match(tc, /const isToggle = /, "checkboxes, radios and labels must await the browser's own click (fallback only), not be clicked on lift: swallowing a duplicate click reverts a checkbox (5 Nov 2026)");
+assert.match(tc, /setTimeout\(firePending, FALLBACK_MS\)/, "a toggle whose click WebKit dropped must still get a fallback click");
+
 // 3. mousedown/mouseup handlers: each one reviewed for the iPad.
 // file → number of addEventListener("mousedown"|"mouseup") calls, and why it is safe.
 const REVIEWED = {

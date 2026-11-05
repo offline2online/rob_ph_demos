@@ -159,6 +159,30 @@ try {
         }
       }
     }
+    // A checkbox, bare and inside a <label>: toggles exactly once per tap, in every mode
+    // (5 Nov 2026: swallowing a duplicate click reverted Staff Kanban's Settings switches).
+    for (const inLabel of [false, true]) {
+      await go("", "page");
+      const at = await page.evaluate((lab) => {
+        const box = document.createElement("div");
+        box.id = "__cb-box"; box.style.cssText = "position:fixed;left:400px;top:300px;z-index:2147483647;background:#fff;padding:8px";
+        box.innerHTML = lab ? '<label id="__cb-lab" style="display:inline-block;padding:10px"><input type="checkbox" id="__cb" class="no-switch"> Switch</label>' : '<input type="checkbox" id="__cb" class="no-switch" style="width:30px;height:30px">';
+        document.body.appendChild(box);
+        const cb = document.getElementById("__cb");
+        window.__changes = 0; cb.addEventListener("change", () => { window.__changes++; });
+        const r = (lab ? document.getElementById("__cb-lab") : cb).getBoundingClientRect();
+        return { x: lab ? r.right - 15 : r.left + r.width / 2, y: r.top + r.height / 2 };
+      }, inLabel);
+      for (const want of [true, false]) {
+        await tap(at.x, at.y);
+        if (mode === "late") { await page.waitForTimeout(80); await page.evaluate(() => { window.__dropping = false; }); await page.mouse.click(at.x, at.y); await page.evaluate(() => { window.__dropping = true; }); }
+        await page.waitForTimeout(450);
+        const st = await page.evaluate(() => ({ checked: document.getElementById("__cb").checked, changes: window.__changes }));
+        taps++;
+        if (st.checked !== want || st.changes !== (want ? 1 : 2)) { failures++; console.log(`FAIL ${mode} ${w}x${ht} checkbox${inLabel ? " in label" : ""}: wanted ${want} after ${want ? 1 : 2} change(s), got ${JSON.stringify(st)}`); }
+      }
+      await page.evaluate(() => document.getElementById("__cb-box").remove());
+    }
     assert.deepStrictEqual(o.problems.filter((x) => !/unrouted host/.test(x)), [], `${mode} ${w}: page problems`);
     console.log(`PASS-SET ${mode} ${w}x${ht}`);
     await o.close();

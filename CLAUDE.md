@@ -732,7 +732,8 @@ late clicks re-aimed at whatever is now under the finger.
   whole document. It clicks any `button`, link, `role=tab|button|menuitem|
   option` element, checkbox/radio or `[data-touch-tap]` element when the
   finger lifts. Never narrow it back to one menu, and never "fix" one control
-  on its own.
+  on its own. Checkboxes and radios are the one exception: they wait for
+  the browser's own click and are clicked only if it never comes.
 - **Writing a control**: make it a `<button>` (or a link or tab) and act on
   `click`. A clickable `div` gets `data-touch-tap`. Only a picker that must
   act on `mousedown` goes inside `[data-native-tap]`, and then it must be added
