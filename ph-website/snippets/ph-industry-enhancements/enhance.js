@@ -113,29 +113,39 @@
   }
 
   function buildGate(current) {
-    var wrap = el("div", "ph-ind-gate"), h = el("h3", "ph-ind-gate-h", "Get the detailed business model"), p = el("p", "ph-ind-gate-p", "A 3-year monthly spreadsheet with your figures filled in, so you can adjust every assumption. Tell us who you are and we will send it straight to you.");
+    var wrap = el("section", "ph-ind-gate"), h = el("h3", "ph-ind-gate-h", "Get the detailed business model"), p = el("p", "ph-ind-gate-p", "Provide your details to download the business model.");
+    wrap.setAttribute("aria-label", "Download the business model");
     var form = el("form", "ph-ind-gate-f"); form.noValidate = true;
-    var defs = [["name", "Full name", "text", "name"], ["company", "Company", "text", "organization"], ["role", "Role", "text", "organization-title"], ["email", "Work email", "email", "email"]];
+    var defs = [["name", "Full name", "text", "name"], ["company", "Company", "text", "organization"], ["email", "Work email", "email", "email"]];
     defs.forEach(function (d) { var l = el("label", "ph-ind-gate-l"); l.appendChild(el("span", "", d[1])); var i = el("input"); i.type = d[2]; i.name = d[0]; i.required = true; i.autocomplete = d[3]; i.maxLength = 120; l.appendChild(i); form.appendChild(l); });
     var hp = el("input"); hp.type = "text"; hp.name = "website"; hp.tabIndex = -1; hp.autocomplete = "off"; hp.setAttribute("aria-hidden", "true"); hp.className = "ph-ind-gate-hp"; form.appendChild(hp);
     var cl = el("label", "ph-ind-gate-c"), cb = el("input"); cb.type = "checkbox"; cb.name = "consent"; cl.appendChild(cb);
-    var ct = el("span", "", "I agree to be contacted about Personalisation Hub. See the "); var pa = el("a", "", "privacy policy"); pa.href = "/privacy-policy/"; ct.appendChild(pa); ct.appendChild(document.createTextNode(".")); cl.appendChild(ct); form.appendChild(cl);
-    var btn = el("button", "ph-ind-gate-b", "Download the model"); btn.type = "submit"; form.appendChild(btn);
+    var ct = el("span", "", "I agree to be contacted. See the "); var pa = el("a", "", "privacy policy"); pa.href = "/privacy-policy/"; ct.appendChild(pa); ct.appendChild(document.createTextNode(".")); cl.appendChild(ct); form.appendChild(cl);
+    var btn = el("button", "ph-ind-gate-b", "Download the model"); btn.type = "submit"; btn.disabled = true; form.appendChild(btn);
     var msg = el("p", "ph-ind-gate-m"); msg.setAttribute("role", "status"); msg.setAttribute("aria-live", "polite"); form.appendChild(msg);
+    var busy = false;
+    var valid = function () {
+      var f = form.elements;
+      return !!(f.name.value.trim() && f.company.value.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.value.trim()) && cb.checked);
+    };
+    var sync = function () { btn.disabled = busy || !valid(); };
+    form.addEventListener("input", sync); form.addEventListener("change", sync);
     form.addEventListener("submit", function (e) {
-      e.preventDefault(); msg.className = "ph-ind-gate-m"; msg.textContent = "";
+      e.preventDefault(); if (busy || !valid()) { sync(); return; }
+      msg.className = "ph-ind-gate-m"; msg.textContent = "";
       var body = {inputs: current(), consent: cb.checked};
       defs.forEach(function (d) { body[d[0]] = form.elements[d[0]].value; }); body.website = hp.value;
-      btn.disabled = true; btn.textContent = "Preparing\u2026";
+      busy = true; sync(); btn.textContent = "Preparing\u2026";
+      var done = function () { busy = false; btn.textContent = "Download the model"; sync(); };
       fetch("/wp-json/ph-site/v1/telco-model", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
         .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
         .then(function (o) {
-          btn.disabled = false; btn.textContent = "Download the model";
+          done();
           if (!o.ok || !o.j.download) { msg.className = "ph-ind-gate-m ph-ind-gate-err"; msg.textContent = (o.j && o.j.error) || "Something went wrong. Please try again."; return; }
           push({event: "ph_ind_lead", ph_industry: page, ph_form: "business_model", ph_estimate: Math.round(MODELS.tel3(body.inputs).total)});
           msg.textContent = "Thanks. Your download is starting. If it does not, use this link: "; var a = el("a", "", "Download the model"); a.href = o.j.download; msg.appendChild(a);
           window.location.href = o.j.download;
-        }).catch(function () { btn.disabled = false; btn.textContent = "Download the model"; msg.className = "ph-ind-gate-m ph-ind-gate-err"; msg.textContent = "Something went wrong. Please try again."; });
+        }).catch(function () { done(); msg.className = "ph-ind-gate-m ph-ind-gate-err"; msg.textContent = "Something went wrong. Please try again."; });
     });
     wrap.appendChild(h); wrap.appendChild(p); wrap.appendChild(form);
     return wrap;
@@ -181,7 +191,7 @@
     crows[crows.length - 1].after(how);
     var totLabel = cout.querySelector(".ph-ind-ctot-l"); if (c.gate && totLabel) totLabel.textContent = "Estimated 3-year incremental revenue";
     var current = function () { var v = {}; fields.forEach(function (f) { v[f.id] = get[f.id] ? get[f.id]() : f.def; }); return v; };
-    if (c.gate) how.after(buildGate(current));
+    if (c.gate && root.parentNode) { var gate = buildGate(current); gate.style.setProperty("--ph-ind-a", c.acc); root.parentNode.insertBefore(gate, root.nextSibling); }
     var timer = null;
     function update() {
       var v = {}; fields.forEach(function (f) { v[f.id] = get[f.id] ? get[f.id]() : f.def; });
