@@ -1148,8 +1148,8 @@
     </section>
 
     <!-- Promote › Leads (#promote/leads): one card per company on a Kanban of
-         the sales pipeline. Cards drag between lanes; the "Move to" select does
-         the same without dragging. Rendered by js/leads-page.js. -->
+         the sales pipeline. Tiles drag between lanes; clicking one opens the lead
+         summary drawer, whose Stage select moves it without dragging. Rendered by js/leads-page.js. -->
     <section class="faq-admin-page" id="leads-page" hidden>
       <div class="page-header">
         <h2>Leads</h2>
@@ -1163,6 +1163,22 @@
       <p class="promote-empty" id="leads-empty" hidden>No leads yet. Add one with the button above.</p>
       <div class="leads-board-wrap"><div class="leads-board" id="leads-board"></div></div>
     </section>
+
+    <div class="modal-backdrop lead-drawer-backdrop" id="lead-summary-backdrop" hidden>
+      <aside class="modal-panel lead-drawer" id="lead-summary-panel" role="dialog" aria-modal="true" aria-labelledby="lead-sum-title">
+        <div class="modal-header">
+          <div class="lead-sum-head"><h2 id="lead-sum-title">Lead</h2><div id="lead-sum-badges" class="lead-card-chips"></div></div>
+          <button type="button" class="modal-close" id="lead-sum-close" aria-label="Close">&times;</button>
+        </div>
+        <div id="lead-sum-body" class="lead-sum-body"></div>
+        <p class="field-hint" id="lead-sum-status" role="status" aria-live="polite"></p>
+        <div class="lead-sum-actions">
+          <button type="button" class="btn-primary" id="lead-sum-edit" data-editor-only>Edit</button>
+          <button type="button" class="btn-outline" id="lead-sum-enrich" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Enrich</button>
+          <button type="button" class="btn-ghost lead-delete" id="lead-sum-delete" data-editor-only hidden>Delete test lead</button>
+        </div>
+      </aside>
+    </div>
 
     <div class="modal-backdrop" id="lead-backdrop" hidden>
       <div class="modal-panel lead-panel" role="dialog" aria-modal="true" aria-labelledby="lead-title">

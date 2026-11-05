@@ -1076,9 +1076,13 @@ const scenarios = [
       await c.page.click("#lead-save");
       await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the new lead is in the Lead lane");
       assert.ok((await c.text('.lead-lane[data-stage="lead"]')).includes("Acme Retail"));
-      assert.ok((await c.text('.lead-lane[data-stage="lead"]')).includes("2 contacts"));
-      // Move it to Hot Lead with the Move to select, and it persists.
-      await c.page.selectOption('.lead-lane[data-stage="lead"] .lead-move-select', "hot-lead");
+      // The tile is compact: no "Move to" select, no contact count.
+      assert.strictEqual(await c.page.locator(".lead-move-select").count(), 0, "the tile has no Move to select");
+      // Move it to Hot Lead with the summary's stage select, and it persists.
+      await c.page.click('.lead-lane[data-stage="lead"] .lead-card .lead-card-name');
+      await c.visible("#lead-sum-stage", "the summary drawer opens");
+      await c.page.selectOption("#lead-sum-stage", "hot-lead");
+      await c.page.keyboard.press("Escape");
       await c.visible('.lead-lane[data-stage="hot-lead"] .lead-card', "the card is in Hot Lead");
       const stored = await c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.company.name === "Acme Retail") return v; return null; });
       assert.ok(stored, "the lead was written");
@@ -1086,13 +1090,15 @@ const scenarios = [
       assert.strictEqual(stored.contacts[0].buyingRole, "decision-maker");
       assert.strictEqual(stored.createdByEmail, "editor@personalisationhub.com");
       // Drag the other card between lanes.
-      // Pointer drag on a pointer layout; on a phone the lanes stack and the select is the way to move.
-      if (c.page.viewportSize().width > 700) await c.page.dragAndDrop('.lead-lane[data-stage="demo"] .lead-card', '.lead-lane[data-stage="post-demo"] .lead-lane-head');
-      else await c.page.selectOption('.lead-lane[data-stage="demo"] .lead-move-select', "post-demo");
+      // Pointer drag on a wide layout where both lanes are on screen; narrower, the summary drawer's stage select is the way to move.
+      if (c.page.viewportSize().width > 1000) await c.page.dragAndDrop('.lead-lane[data-stage="demo"] .lead-card', '.lead-lane[data-stage="post-demo"] .lead-lane-head');
+      else { await c.page.click('.lead-lane[data-stage="demo"] .lead-card .lead-card-name'); await c.page.selectOption("#lead-sum-stage", "post-demo"); await c.page.keyboard.press("Escape"); }
       await c.visible('.lead-lane[data-stage="post-demo"] .lead-card', "dragging moved the card to Post-demo");
       await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("lx").stage)) === "post-demo", "the dragged stage to persist", 5000);
       // Convert and link a customer account.
       await c.page.click('.lead-lane[data-stage="post-demo"] .lead-card .lead-card-name');
+      await c.visible("#lead-sum-edit", "the summary opens");
+      await c.page.click("#lead-sum-edit");
       await c.visible("#lead-account-name", "the customer account fields show for a saved lead");
       await c.page.click("#lead-convert-btn");
       assert.ok((await c.text("#lead-error")).includes("Name the customer account"), "an account is required");
@@ -1100,8 +1106,57 @@ const scenarios = [
       await c.page.fill("#lead-account-id", "acc_42");
       await c.page.click("#lead-convert-btn");
       await c.visible('.lead-lane[data-stage="closed-won"] .lead-card', "the converted lead is in Closed Won");
-      assert.ok((await c.text('.lead-lane[data-stage="closed-won"]')).includes("Existing Co Ltd"), "the card shows the linked account");
+      await c.page.click('.lead-lane[data-stage="closed-won"] .lead-card .lead-card-name');
+      await c.visible("#lead-summary-panel", "the summary opens");
+      assert.ok((await c.text("#lead-summary-panel")).includes("Existing Co Ltd"), "the summary shows the linked account");
+      await c.page.keyboard.press("Escape");
       assert.deepStrictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("lx").customerAccount), { id: "acc_42", name: "Existing Co Ltd" });
+    },
+  },
+  {
+    name: "Promote: Leads tiles - industry colours, nothing overflows, summary opens, stage changes, Esc closes",
+    seed: () => seed({ leads: {
+      w1: { company: { name: "Telco With A Really Long Company Name That Keeps Going And Going Plc", website: "https://telco.example", industry: "", countries: ["UK"], storeCount: 1200 }, contacts: [{ id: "k1", name: "Ana Lyst", jobTitle: "CTO", buyingRole: "decision-maker", email: "ana@telco.example", linkedin: "https://linkedin.com/in/ana" }], stage: "lead", source: "website", sourcePage: "https://personalisationhub.com/industries/telco/", sourceIndustry: "Telco retail", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+      p1: { company: { name: "Pharma Co", website: "", industry: "Pharmacy", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+      n1: { company: { name: "No Industry Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.page.click("#leads-filter-test");
+      await c.visible('.lead-card[data-lead-id="w1"]', "the test tile shows");
+      const info = await c.page.evaluate(() => {
+        const out = {};
+        for (const el of document.querySelectorAll(".lead-card")) {
+          const lane = el.closest(".lead-lane-body").getBoundingClientRect(); const r = el.getBoundingClientRect();
+          out[el.dataset.leadId] = { industry: el.dataset.industry, inside: r.left >= lane.left - 1 && r.right <= lane.right + 1, scrollOk: el.scrollWidth <= el.clientWidth + 1,
+            text: el.textContent, chip: getComputedStyle(el.querySelector(".lead-chip")).backgroundColor, bar: getComputedStyle(el).borderLeftColor, badge: !!el.querySelector(".lead-test-badge") };
+        }
+        return out;
+      });
+      assert.strictEqual(info.w1.industry, "telco", "source industry 'Telco retail' colours the tile Telco");
+      assert.strictEqual(info.p1.industry, "pharmacy");
+      assert.strictEqual(info.n1.industry, "other");
+      assert.notStrictEqual(info.w1.chip, info.p1.chip, "industries have their own colours");
+      assert.notStrictEqual(info.p1.bar, info.n1.bar);
+      for (const id of ["w1", "p1", "n1"]) { assert.ok(info[id].inside && info[id].scrollOk, `${id} stays inside its lane`); assert.ok(info[id].badge, `${id} has the Test badge`); }
+      assert.ok(!info.w1.text.includes("personalisationhub.com"), "the tile shows no URL");
+      // Click -> summary drawer.
+      await c.page.click('.lead-card[data-lead-id="w1"]');
+      await c.visible("#lead-summary-panel", "the summary drawer opens");
+      const sum = await c.text("#lead-summary-panel");
+      for (const want of ["Company", "Lead", "Contacts", "Ana Lyst", "ana@telco.example", "Source page"]) assert.ok(sum.includes(want), `summary shows ${want}`);
+      assert.strictEqual(await c.page.locator('#lead-summary-panel a[href="https://personalisationhub.com/industries/telco/"]').count(), 1, "the source page is a link");
+      assert.strictEqual(await c.page.locator("#lead-sum-tam").count(), 0, "the TAM section stays hidden without data");
+      await c.page.selectOption("#lead-sum-stage", "demo");
+      await c.visible('.lead-lane[data-stage="demo"] .lead-card[data-lead-id="w1"]', "changing the stage moves the tile");
+      await c.page.keyboard.press("Escape");
+      await until(async () => (await c.page.locator("#lead-summary-backdrop").isHidden()), "Esc to close the summary", 3000);
+      // Keyboard: Enter on a focused tile opens it too.
+      await c.page.focus('.lead-card[data-lead-id="p1"]');
+      await c.page.keyboard.press("Enter");
+      await c.visible("#lead-summary-panel", "Enter opens the summary");
+      await c.page.keyboard.press("Escape");
     },
   },
   {
@@ -1121,7 +1176,8 @@ const scenarios = [
       await c.page.click("#leads-filter-test");
       await until(async () => (await lane()).includes("Test One"), "the Test filter to show test leads", 5000);
       assert.ok(!(await lane()).includes("Real Co"), "real leads are hidden under Test");
-      assert.ok((await lane()).includes("/retail/"), "the page the lead came from is shown");
+      assert.ok(!(await lane()).includes("/retail/"), "the tile does not show the source page");
+      assert.ok((await lane()).includes("Test"), "test tiles carry the Test badge");
       await c.page.click("#leads-test-delete");
       assert.ok((await c.text("#leads-test-delete")).includes("Click again"), "the first click asks to confirm");
       await c.page.click("#leads-test-delete");
