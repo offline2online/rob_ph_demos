@@ -14,7 +14,9 @@ on:
 
 jobs:
   probe:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is now Ubuntu 26.04, which Playwright 1.56.1 cannot install Chromium on.
+    # Unpin once the repo's Playwright version supports Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
