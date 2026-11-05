@@ -17,7 +17,7 @@ Personalisation Hub is a self-hosted personalisation platform for any business w
 - [Fuel & Convenience](https://personalisationhub.com/industries/convenience/): Fuel stops into baskets, plus supplier-funded media.
 - [Pubs & Hospitality](https://personalisationhub.com/industries/hospitality/): Higher revenue per head, every session.
 - [Telco Retail](https://personalisationhub.com/industries/telco/): More walk-ins and post-pay conversions.
-- [Pharmacy](https://personalisationhub.com/industries/pharmacy/): No queues, more walk-ins and sales.
+- [Pharmacy](https://personalisationhub.com/industries/pharmacy/): Contextual campaigns and a seamless pharmacist handover.
 - [Retail Media](https://personalisationhub.com/industries/retail-media/): Every screen, sold as targeted, measurable media.
 - [Grocery & Supermarkets](https://personalisationhub.com/industries/grocery/): Bigger baskets and new retail media revenue.
 - [Fashion & Department Stores](https://personalisationhub.com/industries/fashion/): More browsers become buyers in store.
@@ -159,11 +159,11 @@ Try it: [Try Free with AWS](https://aws.amazon.com/marketplace/pp/prodview-3uiwc
 ',
 	'pharmacy' => '# Personalisation Hub for Pharmacy
 
-Personalisation Hub is a self-hosted personalisation platform that removes queues from pharmacies, brings in more walk-ins and turns waiting time into sales. It combines live store context (time, weather, stock) with your own customer data from your CDP, CRM, loyalty and decisioning systems, and uses it to personalise website, mobile app, entrance screen and smart shelf in real time. Results are measured from screen to sale, and everything runs in your own AWS account.
+Personalisation Hub is a self-hosted personalisation platform for pharmacies. Contextual campaigns on in-store screens lift conversion, grow front-of-house baskets and bring more people in, and a seamless handover gives the pharmacist and staff relevant insights at the point of care. It combines live store context (time, weather, stock) with your own customer data from your CDP, CRM, loyalty and decisioning systems, in real time. Results are measured from screen to sale, and everything runs in your own AWS account.
 
 ## Key facts
 - **Best for:** Community pharmacies and pharmacy groups
-- **Outcomes:** Walk-ins, Wait time, In-pharmacy conversion, Front-of-shop basket
+- **Outcomes:** In-pharmacy conversion, Front-of-house basket, Walk-ins, Media revenue
 - **Touchpoints:** Website, Mobile app, Entrance screen, Smart shelf
 - **Data used:** Time, weather and stock, plus your own CDP, CRM, loyalty and decisioning data
 - **Deployment:** Self-hosted in your own AWS account (VPC) and on your own domain
@@ -171,22 +171,22 @@ Personalisation Hub is a self-hosted personalisation platform that removes queue
 - **Try it:** 30-day free trial on AWS Marketplace, then billed through your AWS account
 
 ## Outcome
-More walk-ins, more in-pharmacy sales and a far better pharmacy experience, with contextual campaigns on screen and a personalised handover to the pharmacist.
+Contextual campaigns on screen lift conversion, grow front-of-house baskets and bring more people in. A seamless handover makes every pharmacist conversation personal.
 
 ## How a visit is personalised
 1. **Passing by** (App and pharmacy site): Customers nearby are invited in for services such as walk-in vaccinations. Result: Incremental walk-ins.
-2. **Arriving** (Virtual queue check-in): Customers drop off a script or join the queue from their phone. Result: No line at the counter.
-3. **The wait** (Screens and smart shelves): Customers browse while they wait and get a message when ready. Screens show relevant services and ranges. Result: Waiting time becomes shopping time.
-4. **At the counter** (Staff handover): The pharmacist sees the reason for the visit before the conversation starts. Result: Faster, more relevant care.
-5. **Front of shop** (Shelf and counter screens): Supplier campaigns run at the shelf and are measured to the sale. Result: Bigger baskets and new media revenue.
+2. **Arriving** (Check-in on arrival): Customers check in by appointment, QR code, proximity or queue, or drop off a script from their phone. Result: Staff know who\'s in, and why.
+3. **Browsing** (Screens and smart shelves): Screens show contextual campaigns for relevant ranges, matched to time, weather and stock. Result: Higher in-pharmacy conversion.
+4. **At the counter** (Staff handover): The pharmacist and staff get relevant insights at the point of care, so the conversation starts personalised. Result: Faster, more relevant care.
+5. **Front of house** (Shelf and counter screens): Supplier campaigns run at the shelf and are measured to the sale. Result: Bigger baskets and new media revenue.
 
 ## Examples
-- **Script drop-off · no standing in line:** localisation (Mon 10:15am · morning; Cool · 13°C; Script wait · 12 min); customer data (New to pharmacy; Skincare shopper · buys front of shop monthly; While you wait · 20% off skincare); campaign "No need to stand in line." shown on website, mobile app, entrance screen and smart shelf.
+- **Script drop-off · pharmacist handover:** localisation (Mon 10:15am · morning; Cool · 13°C; Script wait · 12 min); customer data (New to pharmacy; Skincare shopper · buys front of shop monthly; While you wait · 20% off skincare); campaign "We\'ve got your script." shown on website, mobile app, entrance screen and smart shelf.
 - **Passing by · walk-in flu vaccine:** localisation (Thu 8:10am · commute; Cool · 11°C · flu season; Flu vaccines · 40 doses · walk-ins today); customer data (Lapsed · 6 months; Opted in to health reminders; Walk-in invite · no booking needed); campaign "Walk in for your flu vaccine." shown on website, mobile app, entrance screen and smart shelf.
-- **While you wait · Silver member:** localisation (Sat 11:00am · weekend; Sunny · 29°C · high UV; Sun care · new range in); customer data (Rewards member · Silver; Skincare and sun care shopper; In-pharmacy offer · double points on sun care); campaign "While you wait: sun care." shown on website, mobile app, entrance screen and smart shelf.
+- **High UV day · sun care campaign:** localisation (Sat 11:00am · weekend; Sunny · 29°C · high UV; Sun care · new range in); customer data (Rewards member · Silver; Skincare and sun care shopper; In-pharmacy offer · double points on sun care); campaign "High UV today: sun care." shown on website, mobile app, entrance screen and smart shelf.
 
 ## Contextual campaigns on digital signage
-Campaigns are targeted on any available data, so they are contextual: season, weather, local trends, stock levels and time of day. For advertisers that means higher conversion and bigger baskets. For the pharmacy it means more people through the door. Pharmacy is also a strong retail media channel: shoppers are high-intent and have real dwell time while they wait for a prescription, and front-of-house categories such as wellness, vitamins, skincare and beauty have strong brand demand.
+Campaigns are targeted on any available data, so they are contextual: season, weather, local trends, stock levels and time of day. For advertisers and for the pharmacy, that means higher conversion, bigger front-of-house baskets and more people through the door. Pharmacy is also a strong retail media channel: shoppers are high-intent and have real dwell time while they wait for a prescription, and front-of-house categories such as wellness, vitamins, skincare and beauty have strong brand demand.
 
 ## Seamless handover to the pharmacist and store staff
 A customer checks in by queue, appointment, QR code or proximity (the list of check-in options keeps growing). The pharmacist and staff then get relevant insights and information at the point of care, so the conversation starts personalised. This one-to-one view is for serving the customer only, never for advertising.
