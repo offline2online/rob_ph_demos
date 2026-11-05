@@ -223,43 +223,5 @@
         "sha256": "dc52e5a2d230ebb639fcafebf78838b48552c8c47531a07652c0df0fa5e9109b"
       }
     ]
-  },
-  {
-    "id": null,
-    "title": "PH Consent",
-    "version": "1.0.0",
-    "folder": "ph-consent",
-    "files": [
-      {
-        "name": "config.php",
-        "bytes": 3445,
-        "sha256": "9599ff43b7f0cf94d9482fa768316a5a7db23435a588ff9a2710ff56a33352c6"
-      },
-      {
-        "name": "consent.css",
-        "bytes": 1375,
-        "sha256": "79d4375cf88f05ac357f624f6b4f0ca4c6053e58cd905052847b50643cad90d0"
-      },
-      {
-        "name": "consent.js",
-        "bytes": 8189,
-        "sha256": "711006faa8f0798a8af7bd9a321c0f81ff56963738dced2e5ffff75f170d7b17"
-      },
-      {
-        "name": "helpers.php",
-        "bytes": 2017,
-        "sha256": "7b6ff9a9060bde41d9c34981b66bf53706916dccb1f43c76327d5785053480e3"
-      },
-      {
-        "name": "main.php",
-        "bytes": 9702,
-        "sha256": "e318d2987a8890d2c61a29ce2834335d07089683e74658d73e0b4c86edb03e5c"
-      }
-    ],
-    "placeholder": {
-      "token": "__ID__",
-      "liveValue": "<snippet id assigned at deploy>",
-      "note": "main.php carries __ID__ twice (namespace AngieSnippets\\PhConsent___ID__ and the script handle ph-consent-__ID__); replace it with the new snippet id when creating the snippet, then record the id here and the live bytes/sha256."
-    }
   }
 ]
