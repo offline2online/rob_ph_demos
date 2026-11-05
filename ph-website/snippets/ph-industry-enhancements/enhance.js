@@ -145,7 +145,8 @@
     form.addEventListener("submit", function (e) {
       e.preventDefault(); if (busy || !valid()) { sync(); return; }
       msg.className = "ph-ind-gate-m"; msg.textContent = "";
-      var body = {inputs: current(), consent: cb.checked};
+      var body = {inputs: current(), consent: cb.checked, page: location.origin + location.pathname};
+      if (testMode()) body.test = true;
       defs.forEach(function (d) { body[d[0]] = form.elements[d[0]].value; }); body.website = hp.value;
       busy = true; sync(); btn.textContent = "Preparing\u2026";
       var done = function () { busy = false; btn.textContent = "Download the model"; sync(); };
@@ -161,6 +162,47 @@
     });
     wrap.appendChild(h); wrap.appendChild(p); wrap.appendChild(form);
     return wrap;
+  }
+
+  // Test mode: open a page with ?ph_test=1 (kept for the tab) and every lead sent from it is a test lead in the console.
+  function testMode() {
+    try {
+      if (/[?&]ph_test=1(&|$)/.test(location.search)) sessionStorage.setItem("ph_test", "1");
+      return sessionStorage.getItem("ph_test") === "1";
+    } catch (e) { return /[?&]ph_test=1(&|$)/.test(location.search); }
+  }
+
+  var LEAD_FORM = {telco: "Telco", retail: "Retail"};
+  function setupLeadForm() {
+    if (!LEAD_FORM[page]) return;
+    var host = document.querySelector("[data-elementor-type='wp-page']") || document.querySelector("main") || document.body;
+    var wrap = el("section", "ph-ind-lead"), h = el("h3", "ph-ind-gate-h", "Talk to us about " + LEAD_FORM[page].toLowerCase()), p = el("p", "ph-ind-gate-p", "Tell us about your business and we will get back to you.");
+    var form = el("form", "ph-ind-gate-f"); form.noValidate = true;
+    var defs = [["company", "Company name", "text", "organization", 1], ["website", "Website", "text", "url", 0], ["company_industry", "Industry", "text", "off", 0], ["countries", "Countries", "text", "off", 0], ["store_count", "Number of stores", "text", "off", 0], ["contact_name", "Your name", "text", "name", 1], ["job_title", "Job title", "text", "organization-title", 0], ["email", "Work email", "email", "email", 1], ["linkedin", "LinkedIn profile", "text", "off", 0]];
+    defs.forEach(function (d) { var l = el("label", "ph-ind-gate-l"); l.appendChild(el("span", "", d[1] + (d[4] ? "" : " (optional)"))); var i = el("input"); i.type = d[2]; i.name = d[0]; i.required = !!d[4]; i.autocomplete = d[3]; i.maxLength = 300; if (d[0] === "company_industry") i.value = LEAD_FORM[page]; l.appendChild(i); form.appendChild(l); });
+    var hp = el("input"); hp.type = "text"; hp.name = "hp_url"; hp.tabIndex = -1; hp.autocomplete = "off"; hp.setAttribute("aria-hidden", "true"); hp.className = "ph-ind-gate-hp"; form.appendChild(hp);
+    var cl = el("label", "ph-ind-gate-c"), cb = el("input"); cb.type = "checkbox"; cb.name = "consent"; cl.appendChild(cb);
+    var ct = el("span", "", "I agree to be contacted about Personalisation Hub. See the "); var pa = el("a", "", "privacy policy"); pa.href = "/privacy-policy/"; ct.appendChild(pa); ct.appendChild(document.createTextNode(".")); cl.appendChild(ct); form.appendChild(cl);
+    var btn = el("button", "ph-ind-gate-b", "Send"); btn.type = "submit"; form.appendChild(btn);
+    var msg = el("p", "ph-ind-gate-m"); msg.setAttribute("role", "status"); msg.setAttribute("aria-live", "polite"); form.appendChild(msg);
+    if (testMode()) wrap.appendChild(el("p", "ph-ind-lead-test", "Test mode: submissions are flagged as test leads."));
+    form.addEventListener("submit", function (e) {
+      e.preventDefault(); msg.className = "ph-ind-gate-m"; msg.textContent = "";
+      var body = {pageIndustry: page, page: location.origin + location.pathname, consent: cb.checked, hp_url: hp.value};
+      defs.forEach(function (d) { body[d[0]] = form.elements[d[0]].value; });
+      if (testMode()) body.test = true;
+      btn.disabled = true;
+      fetch("/wp-json/ph-site/v1/industry-lead", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
+        .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+        .then(function (o) {
+          btn.disabled = false;
+          if (!o.ok) { msg.className = "ph-ind-gate-m ph-ind-gate-err"; msg.textContent = (o.j && o.j.error) || "Something went wrong. Please try again."; return; }
+          push({event: "ph_ind_lead", ph_industry: page, ph_form: "contact"});
+          form.reset(); msg.textContent = "Thanks. We will be in touch.";
+        }).catch(function () { btn.disabled = false; msg.className = "ph-ind-gate-m ph-ind-gate-err"; msg.textContent = "Something went wrong. Please try again."; });
+    });
+    wrap.appendChild(h); wrap.appendChild(p); wrap.appendChild(form);
+    host.appendChild(wrap);
   }
 
   function setupCalc() {
@@ -265,6 +307,6 @@
   }
 
   if (typeof module !== "undefined" && module.exports) { module.exports = {CALC: CALC, pharmCalc: pharmCalc, MODELS: MODELS}; return; }
-  function start() { setupLoop(); setupFlow(); setupLines(); setupCalc(); trackCtas(); }
+  function start() { setupLoop(); setupFlow(); setupLines(); setupCalc(); setupLeadForm(); trackCtas(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();

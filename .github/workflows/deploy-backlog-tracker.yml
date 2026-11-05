@@ -109,6 +109,13 @@ jobs:
       # "unset" as missing (boardApi answers 503, dispatch falls back to
       # backlog-automation.yml's own schedule). NOTIFY_WEBHOOK_URL and the
       # Routine pair are skipped when unset, as before.
+      #
+      # LEAD_INGEST_KEY (functions/lead-ingest.js, the website's lead
+      # submissions) is the same: PR #520 declared it with defineSecret() but
+      # nothing created it, so the deploy stopped on the CLI's "Enter a value
+      # for LEAD_INGEST_KEY" prompt (run 41949163510, 5 Nov 2026). Unset, the
+      # endpoint refuses every key. test/deploy-secrets.test.js fails when a
+      # declared secret has no line here.
       - name: Sync secrets into Firebase Secret Manager
         if: steps.dedupe.outputs.skip != 'true'
         env:
@@ -118,6 +125,7 @@ jobs:
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LEAD_INGEST_KEY: ${{ secrets.LEAD_INGEST_KEY }}
         run: |
           gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json" --quiet
           sync() { printf '%s' "$2" | bash scripts/sync-function-secret.sh "$1"; }
@@ -131,6 +139,7 @@ jobs:
           sync GH_DISPATCH_TOKEN "${GH_DISPATCH_TOKEN:-unset}"
           sync BOARD_API_KEY "${BOARD_API_KEY:-unset}"
           sync ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-unset}"
+          sync LEAD_INGEST_KEY "${LEAD_INGEST_KEY:-unset}"
 
       # MEDIA_KEYS_ENC_KEY encrypts the Media Studio provider keys admins
       # enter in Settings (functions/media-keys.js). It is generated here,
@@ -268,13 +277,25 @@ jobs:
       # while functions deploy. Deliberately WITHOUT --force: with --force the
       # CLI deletes every index in the project that the file doesn't list
       # (firebase-tools lib/firestore/api.js), including any made by hand
-      # from a console link. Without it, non-interactive, it only creates.
+      # from a console link. But without it, non-interactive, an index the
+      # file doesn't list is not skipped either: the CLI's "delete these?"
+      # question throws "Pass the --force flag" before it creates anything
+      # (run 41949163510, 5 Nov 2026). So the live indexes are merged into
+      # the runner's copy of the file first (scripts/merge-live-indexes.js,
+      # which warns about each one): nothing is left to delete, and the
+      # deploy only creates.
       - name: Deploy Firestore indexes (create only, never delete)
         if: steps.dedupe.outputs.skip != 'true'
         continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: |
+          if ! npx firebase-tools@13 firestore:indexes --project backlog-tracker-e4ed2 --non-interactive --json > "$RUNNER_TEMP/live-indexes.json"; then
+            cat "$RUNNER_TEMP/live-indexes.json" || true
+            echo "::error title=Firestore indexes not deployed::couldn't list the project's live indexes (firebase firestore:indexes), so the deploy can't tell which ones to keep. The deploy service account needs the Cloud Datastore Index Admin role."
+            exit 1
+          fi
+          node scripts/merge-live-indexes.js "$RUNNER_TEMP/live-indexes.json" firestore.indexes.json
           if ! npx firebase-tools@13 deploy --only firestore:indexes --project backlog-tracker-e4ed2 --non-interactive; then
             echo "::error title=Firestore indexes not deployed::firebase deploy --only firestore:indexes failed, so queries that need a composite index in backlog-tracker/firestore.indexes.json will fail in production until it succeeds. The deploy service account needs the Cloud Datastore Index Admin role."
             exit 1

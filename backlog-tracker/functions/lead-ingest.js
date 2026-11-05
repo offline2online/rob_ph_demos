@@ -14,7 +14,9 @@ const core = require("./leads-core");
 const keyMatches = (given, want) => {
   const a = crypto.createHash("sha256").update(String(given || "")).digest();
   const b = crypto.createHash("sha256").update(String(want || "")).digest();
-  return Boolean(want) && crypto.timingSafeEqual(a, b);
+  // "unset" is the placeholder deploy-backlog-tracker.yml stores when the
+  // LEAD_INGEST_KEY repo secret is empty: it means no key, never a key.
+  return Boolean(want) && want !== "unset" && crypto.timingSafeEqual(a, b);
 };
 
 function createLeadIngest({ db, key, logger }) {
