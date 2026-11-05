@@ -485,8 +485,11 @@ const scenarios = [
       await c.openMenu();
       await c.click(".project-archive-btn", "Archived tickets");
       await c.waitText("#archive-grid", "Archived thing", "archive page lists the seeded archived card");
-      const row = await c.page.evaluate((ms) => ({ text: document.querySelector("#archive-grid tr[data-id], #archive-grid .ag-row").innerText, want: new Date(ms).toLocaleDateString() }), T0 + 6);
-      assert.ok(row.text.includes(row.want), `the Archived row should show ${row.want}, got ${JSON.stringify(row.text)}`);
+      // Wait for the date the same way as for the title: AG Grid renders a row in
+      // several containers, so reading the first .ag-row at once raced the render
+      // (failed intermittently at 390 and 1180 px, 5 Nov 2026).
+      const want = await c.page.evaluate((ms) => new Date(ms).toLocaleDateString(), T0 + 6);
+      await c.waitText("#archive-grid", want, `the Archived row shows the archived date ${want}`);
     },
   },
   {

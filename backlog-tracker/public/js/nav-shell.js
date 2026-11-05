@@ -6,7 +6,7 @@
 // sidebar, and lets the person jump straight to a ticket, concept, project or
 // release. It keeps no data of its own: app.js passes in getters and openers.
 
-import { clickOnTouchTap } from "./touch-click.js";
+import { installTouchTaps } from "./touch-click.js";
 import { promoteNavId } from "./promote-section.js";
 
 const COLLAPSE_KEY = "bt-nav-collapsed";
@@ -128,9 +128,10 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
   });
   backdrop.addEventListener("click", () => { delete drawer.dataset.show; closeProfile(); setTab(null); });
 
-  // Touch taps open the item when the finger lifts: iPad WebKit drops or delays
-  // some taps' clicks (touch-click.js).
-  clickOnTouchTap(drawer, ".nav-drawer-item");
+  // Touch taps act when the finger lifts, everywhere in the console, not only
+  // in this sidebar: iPad WebKit drops or delays some taps' clicks
+  // (touch-click.js, REQUIREMENTS.md → "iPad taps").
+  installTouchTaps();
 
   // ── Active destination ─────────────────────────────────────────────────
   function syncActive() {

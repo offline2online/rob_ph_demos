@@ -29,7 +29,9 @@ concurrency:
 jobs:
   e2e-quick:
     name: e2e-quick
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is now Ubuntu 26.04, which Playwright 1.56.1 cannot install Chromium on.
+    # Unpin once the repo's Playwright version supports Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     # 30, not 15 (11 Oct 2026): the full suites alone had grown to ~13 min,
     # green runs were finishing in 14m46s, and PR #363's train sat blocked
     # for two hours while run after run hit the 15-minute limit. GitHub

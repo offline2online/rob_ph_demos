@@ -24,21 +24,52 @@
 //  3. The native click was only swallowed if it landed on the same button.
 //     The slide-over closes the instant the item is clicked, so WebKit's late
 //     click hit whatever was underneath (a card, another link) and opened
-//     that instead. It is now swallowed wherever it lands near the tap, and
-//     touchend's default is prevented so WebKit doesn't synthesise it at all.
+//     that instead. It is now swallowed wherever it lands near the tap.
+//
+// touchend's default is deliberately NOT prevented (5 Nov 2026). Preventing it
+// made the browser drop the click of a second tap on the same spot within
+// about 100 ms (measured in Chromium), and it suppresses iOS's mouse events for
+// the tap. The guard below swallows the browser's own click instead.
 const SWALLOW_MS = 1000;
 const MOVE_PX = 10;
 const MAX_TAP_MS = 800;
 const LATE_CLICK_PX = 40;
 
+// Opt-out: a control inside [data-native-tap] keeps the browser's own tap
+// handling. For pickers that choose on mousedown (the click this file sends
+// would do nothing there): Staff Kanban's mention and ticket pickers.
+export const NATIVE_TAP = "[data-native-tap]";
+const firedAt = new WeakMap();
+
 // One window-level guard for every root: the late native click of a tap
 // already handled, wherever it lands.
 let swallow = null;
+// Checkboxes, radios and their labels are NOT clicked on finger-lift: the
+// browser's own click toggles them, and swallowing a duplicate click reverts a
+// checkbox (Staff Kanban's Settings switches turned themselves back, 5 Nov
+// 2026). For those the browser's click is awaited, and only if it never comes
+// (WebKit dropped it) is the control clicked, FALLBACK_MS after the lift.
+const FALLBACK_MS = 350;
+let pending = null; // { el, x, y, timer }
+const isToggle = (el) => el.tagName === "LABEL" || (el.tagName === "INPUT" && (el.type === "checkbox" || el.type === "radio"));
+function firePending() {
+  const p = pending;
+  pending = null;
+  if (!p) return;
+  clearTimeout(p.timer);
+  if (!p.el.isConnected || p.el.disabled) return;
+  swallow = { x: p.x, y: p.y, until: performance.now() + SWALLOW_MS };
+  p.el.click();
+}
 let guardInstalled = false;
 function installGuard() {
   if (guardInstalled) return;
   guardInstalled = true;
   window.addEventListener("click", (ev) => {
+    // The browser's own click for an awaited toggle arrived: it does the work.
+    if (pending && ev.isTrusted && Math.hypot(ev.clientX - pending.x, ev.clientY - pending.y) <= LATE_CLICK_PX) {
+      clearTimeout(pending.timer); pending = null; return;
+    }
     const s = swallow;
     if (!s || !ev.isTrusted) return;
     if (performance.now() > s.until) { swallow = null; return; }
@@ -49,16 +80,41 @@ function installGuard() {
     ev.preventDefault();
     ev.stopImmediatePropagation();
   }, true);
+  // The browser also sends the tap's compatibility mousedown/mouseup AFTER
+  // this file has acted, hit-tested against the page as it is now. A
+  // backdrop that closes on mousedown (Command-K, the Leads drawers) then
+  // closed the overlay the tap had just opened: Search in the sidebar opened
+  // and shut at once (5 Nov 2026). They are duplicates of a handled tap, so
+  // they are swallowed too; the click (above) ends the window.
+  for (const type of ["mousedown", "mouseup"]) {
+    window.addEventListener(type, (ev) => {
+      const s = swallow;
+      if (!s || !ev.isTrusted || performance.now() > s.until) return;
+      if (Math.hypot(ev.clientX - s.x, ev.clientY - s.y) > LATE_CLICK_PX) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+    }, true);
+  }
+  // A late click always arrives before the next finger comes down, so a new
+  // touch disarms the guard. Without this, when the browser sent no click for
+  // the tap (WebKit drops some), the armed guard ate the NEXT tap's real click
+  // on anything that is not a tap target, e.g. a Staff Kanban card.
+  // A toggle still waiting for its click when the next finger comes down
+  // gets its fallback click now, so taps keep their order.
+  const disarm = () => { swallow = null; if (pending) firePending(); };
+  window.addEventListener("touchstart", disarm, { capture: true, passive: true });
+  window.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch" || e.pointerType === "pen") disarm(); }, { capture: true, passive: true });
 }
 
-export function clickOnTouchTap(root, selector) {
+export function clickOnTouchTap(root, selector, { accept } = {}) {
   installGuard();
   let tap = null;
   let lastFired = 0;
   const isTouch = (e) => e.pointerType === "touch" || e.pointerType === "pen";
   const itemAt = (target) => {
     const el = target && target.closest ? target.closest(selector) : null;
-    return el && root.contains(el) ? el : null;
+    if (!el || !root.contains(el) || el.closest(NATIVE_TAP)) return null;
+    return !accept || accept(el) ? el : null;
   };
 
   function begin(target, x, y) {
@@ -74,7 +130,14 @@ export function clickOnTouchTap(root, selector) {
     if (!t || itemAt(target) !== t.el) return false;
     if (Math.hypot(x - t.x, y - t.y) > MOVE_PX || performance.now() - t.at > MAX_TAP_MS) return false;
     if (!t.el.isConnected || t.el.disabled) return false;
+    if (performance.now() - (firedAt.get(t.el) || -1e9) < 150) return false; // another root already clicked it for this tap
     lastFired = performance.now();
+    firedAt.set(t.el, lastFired);
+    if (isToggle(t.el)) {
+      if (pending) firePending();
+      pending = { el: t.el, x, y, timer: setTimeout(firePending, FALLBACK_MS) };
+      return true;
+    }
     swallow = { x, y, until: lastFired + SWALLOW_MS };
     t.el.click();
     return true;
@@ -98,13 +161,28 @@ export function clickOnTouchTap(root, selector) {
   root.addEventListener("touchcancel", () => { tap = null; });
   root.addEventListener("touchend", (e) => {
     const p = e.changedTouches && e.changedTouches[0];
-    let fired = performance.now() - lastFired < 120; // pointerup handled it just now
-    if (!fired && p && tap) {
-      const under = document.elementFromPoint(p.clientX, p.clientY);
-      fired = finish(under, p.clientX, p.clientY);
-    }
-    // Stop WebKit synthesising its own (late, re-targeted) click for a tap
-    // already acted on.
-    if (fired && e.cancelable) e.preventDefault();
-  }, { passive: false });
+    if (performance.now() - lastFired < 120) return; // pointerup handled it just now
+    if (p && tap) finish(document.elementFromPoint(p.clientX, p.clientY), p.clientX, p.clientY);
+  }, { passive: true }); // never preventDefault here: see the note at the top
+}
+
+// The whole console (3 Nov 2026 → 5 Nov 2026): after the sidebar fix, the
+// iPad lost taps on everything else that relied on the browser's own click
+// (Settings and User Management tabs, Leads, page buttons). So every control a
+// person taps is covered, including ones added later, without anyone having to
+// remember to wire it: buttons, links, tabs, menu items, options, summaries,
+// checkbox/radio controls (or a label for one), and anything marked
+// [data-touch-tap] (a clickable element that is not a button). Text fields, selects and
+// contenteditable areas are never covered: they need the native tap for focus
+// and the keyboard.
+export const TAP_TARGETS = '[data-touch-tap], button, a[href], [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="link"], summary, input[type="checkbox"], input[type="radio"], label';
+const acceptTarget = (el) => {
+  if (el.tagName === "LABEL") {
+    const c = el.control;
+    return !!c && (c.type === "checkbox" || c.type === "radio") && !c.disabled;
+  }
+  return el.getAttribute("aria-disabled") !== "true";
+};
+export function installTouchTaps(root = document.documentElement) {
+  clickOnTouchTap(root, TAP_TARGETS, { accept: acceptTarget });
 }

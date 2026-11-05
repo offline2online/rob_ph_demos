@@ -607,6 +607,15 @@ ticket once automatically.
      (`npm run test:ui`), so it needs a Chromium: a cloud session has one
      (`/opt/pw-browsers`). A ticket that changes console UI adds or updates
      a scenario in `backlog-tracker/test/ui/console-click.test.mjs`.
+     **iPad taps (5 Nov 2026, after the fourth report):** a console control
+     must be a `<button>`, a link, a `role=tab|button|menuitem|option`
+     element or carry `data-touch-tap`, and must act on `click`, never on
+     `mousedown` alone. Then `touch-click.js` covers it on the iPad by
+     itself. Don't stop pointer/touch events on `window`/`document`.
+     `test:offline` runs `touch-guard.test.mjs` and `ui/nav-touch.test.mjs`.
+     If your ticket adds a page with a new kind of control, add its start
+     page to `PLAN` in `nav-touch.test.mjs`. See `REQUIREMENTS.md` →
+     "iPad taps".
    - **Before setting `patchReady`, run the DSP tests** if the patch
      touches `dsp-integration/` — the same steps as the train PR's required
      `e2e-quick` check: `cd dsp-integration && npm ci && export CI=1 &&
