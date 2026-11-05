@@ -31,14 +31,19 @@
         "sha256": "834463d2638c5a93d9bdfd1169349b6bc242ec44e53b0f8f9effbe2d2cb3e3c6"
       },
       {
+        "name": "legacy-copy.php",
+        "bytes": 7531,
+        "sha256": "849aa4681265084aa4ad26d5b3753ea68567985b3fd024c86250144c851d3445"
+      },
+      {
         "name": "llms.php",
         "bytes": 3099,
         "sha256": "cfd0aabddeb354e0ad60cadd041f615aa3d405fe3d2cf24d984961f0e4ea8267"
       },
       {
         "name": "main.php",
-        "bytes": 6801,
-        "sha256": "22b3362a5703afb9d0b0e46238f5486de136e728c0c0bf31a4de7689706587c6"
+        "bytes": 6927,
+        "sha256": "65fc13efdf0319c81911fae906d9e4b266292b9586b7695765841f966fd2330c"
       },
       {
         "name": "md.php",
