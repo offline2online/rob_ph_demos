@@ -582,7 +582,7 @@ service cloud.firestore {
     // leadEnrich function as the service account (rules bypassed); an editor's
     // save keeps them, since request.resource is the whole document.
     function isLead(d) {
-      return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
+      return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "enrichment", "test", "sourcePage", "sourceIndustry",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
         && d.company is map && isNonEmptyBoundedString(d.company.get("name", null), 120)
         && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300
@@ -594,7 +594,6 @@ service cloud.firestore {
         && d.get("source", "") is string && d.get("source", "").size() <= 80
         && d.get("assignee", "") is string && d.get("assignee", "").size() <= 200
         && (d.get("customerAccount", null) == null || d.get("customerAccount", null) is map)
-        && d.get("prospectId", "") is string && d.get("prospectId", "").size() <= 100
         && d.get("test", false) is bool
         && d.get("sourcePage", "") is string && d.get("sourcePage", "").size() <= 300
         && d.get("sourceIndustry", "") is string && d.get("sourceIndustry", "").size() <= 120;
@@ -602,34 +601,6 @@ service cloud.firestore {
     match /leads/{leadId} {
       allow read: if isBoardReader();
       allow create, update: if isEditor() && isLead(incoming());
-      allow delete: if isEditor();
-    }
-
-    // ── Promote › Prospects (TAM) (public/js/prospects-page.js, functions/prospects.js) ──
-    // One document per company. Members read; editors create, edit and delete.
-    // Agents write through the MCP tools as the service account (rules bypassed).
-    function isProspect(d) {
-      return d.keys().hasOnly(["name", "website", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand",
-          "vendors", "campaigns", "status", "leadId", "source", "notes", "createdAt", "updatedAt", "createdByEmail", "updatedByEmail"])
-        && isNonEmptyBoundedString(d.get("name", null), 120)
-        && d.get("website", "") is string && d.get("website", "").size() <= 300
-        && d.get("industry", "") is string && d.get("industry", "").size() <= 120
-        && d.get("subIndustry", "") is string && d.get("subIndustry", "").size() <= 120
-        && d.get("hqCountry", "") is string && d.get("hqCountry", "").size() <= 60
-        && d.get("markets", []) is list && d.get("markets", []).size() <= 60
-        && d.get("awsRegion", "") is string && d.get("awsRegion", "").size() <= 40
-        && (d.get("storeCount", null) == null || d.get("storeCount", null) is number)
-        && d.get("sizeBand", "unknown") in ["unknown", "small", "mid", "large", "xlarge"]
-        && d.get("vendors", []) is list && d.get("vendors", []).size() <= 60
-        && d.get("campaigns", []) is list && d.get("campaigns", []).size() <= 60
-        && d.get("status", "new") in ["new", "researching", "targeted", "engaged", "converted", "disqualified"]
-        && d.get("leadId", "") is string && d.get("leadId", "").size() <= 120
-        && d.get("source", "") is string && d.get("source", "").size() <= 80
-        && d.get("notes", "") is string && d.get("notes", "").size() <= 2000;
-    }
-    match /prospects/{prospectId} {
-      allow read: if isBoardReader();
-      allow create, update: if isEditor() && isProspect(incoming());
       allow delete: if isEditor();
     }
 

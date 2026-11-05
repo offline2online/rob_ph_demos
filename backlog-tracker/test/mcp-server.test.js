@@ -1073,48 +1073,6 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("leads").get("ld2").stage, "demo");
   });
 
-  // ── Promote › Prospects (TAM) ────────────────────────────────────────────
-  await test("exposes list_prospects (read) and upsert_prospects (write), and nothing else for prospects", async () => {
-    const tools = mcp.__test.TOOLS.filter((t) => /prospect/.test(t.name));
-    assert.deepStrictEqual(tools.map((t) => [t.name, t.scope]).sort(), [["list_prospects", "board.read"], ["upsert_prospects", "board.write"]]);
-    for (const t of tools) assert.ok(!JSON.stringify(t.inputSchema).includes("leadId"), "an agent can't set a prospect's lead link");
-  });
-  env.store.col("prospects").set("pr1", { name: "Acme Grocer", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom", "Ireland"], awsRegion: "eu-west-2", storeCount: 400, status: "new", campaigns: ["Spring"] });
-  env.store.col("prospects").set("pr2", { name: "Beta Pharma", industry: "Pharmacy", hqCountry: "Germany", markets: ["Germany"], awsRegion: "eu-central-1", storeCount: 30, status: "targeted" });
-  const prCall = async (name, args) => (await rpc(tokens.access_token, "tools/call", { name, arguments: args })).body.result;
-  await test("list_prospects filters by industry, market, region, campaign, size and status", async () => {
-    const ids = async (a) => JSON.parse((await prCall("list_prospects", a)).content[0].text).prospects.map((p) => p.id);
-    assert.deepStrictEqual(await ids({}), ["pr1", "pr2"]);
-    assert.deepStrictEqual(await ids({ industry: "pharmacy" }), ["pr2"]);
-    assert.deepStrictEqual(await ids({ market: "Ireland" }), ["pr1"]);
-    assert.deepStrictEqual(await ids({ awsRegion: "eu-central-1" }), ["pr2"]);
-    assert.deepStrictEqual(await ids({ campaign: "spring" }), ["pr1"]);
-    assert.deepStrictEqual(await ids({ sizeBand: "large" }), ["pr1"]);
-    assert.deepStrictEqual(await ids({ status: "targeted", minStores: 10 }), ["pr2"]);
-  });
-  await test("upsert_prospects creates new companies and merges into existing ones by name", async () => {
-    const out = JSON.parse((await prCall("upsert_prospects", { prospects: [
-      { name: "acme grocer", vendors: ["Signage Co"] },
-      { name: "Gamma Fashion", hqCountry: "France", storeCount: 1500, industry: "Fashion" },
-    ] })).content[0].text);
-    assert.strictEqual(out.created, 1); assert.strictEqual(out.updated, 1);
-    const acme = env.store.col("prospects").get("pr1");
-    assert.deepStrictEqual(acme.vendors, ["Signage Co"]);
-    assert.strictEqual(acme.industry, "Grocery", "a field not sent is kept");
-    assert.strictEqual(acme.storeCount, 400);
-    const gamma = env.store.col("prospects").get("gammafashion");
-    assert.strictEqual(gamma.awsRegion, "eu-west-3"); assert.strictEqual(gamma.sizeBand, "xlarge"); assert.strictEqual(gamma.status, "new");
-    assert.ok(gamma.createdByEmail);
-  });
-  await test("upsert_prospects writes nothing when any entry is invalid, and never converts", async () => {
-    const before = env.store.col("prospects").get("pr2").storeCount;
-    const bad = await prCall("upsert_prospects", { prospects: [{ name: "Beta Pharma", storeCount: 99 }, { name: "Bad", status: "converted" }] });
-    assert.strictEqual(bad.isError, true);
-    assert.strictEqual(env.store.col("prospects").get("pr2").storeCount, before);
-    assert.strictEqual((await prCall("upsert_prospects", { prospects: [{ name: "X", awsRegion: "mars" }] })).isError, true);
-    assert.strictEqual((await prCall("upsert_prospects", { prospects: [] })).isError, true);
-  });
-
   env.store.col("concepts").set("con1", {
     name: "Customer support concept", status: "active",
     readmeMd: "# Support concept\n\nEarly idea.", requirementsMd: "# Requirements\n\nTBD.",

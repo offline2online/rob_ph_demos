@@ -2534,16 +2534,6 @@ every destination already existed.
   **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
   `LEAD_INGEST_KEY`); a `test` flag stores a test lead that shows only under
   the page's Test filter and is bulk-deleted there. See REQUIREMENTS.md → Promote section: Leads.
-- **Promote › Prospects (TAM)** (`#promote/prospects`, 5 Nov 2026; `public/js/prospects-page.js`,
-  rules in `prospects-core.js` copied to `functions/prospects-core.js` by
-  `node test/prospects-core-copy.mjs --write`, starter data in
-  `prospects-seed.js`): the global target-company database as an AG Grid below
-  Leads, with search, filters (industry, market, AWS region, campaign, size,
-  status, store range), saved filters (per browser), CSV export and a row
-  **Convert to lead** that writes one linked Leads card (`prospect-<id>`).
-  Firestore `prospects/{id}`; own permission section `prospects` in
-  User Management › Roles. Agents use `list_prospects` and `upsert_prospects`
-  (`functions/prospects.js`). See REQUIREMENTS.md → Promote section: Prospects (TAM).
 - **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
   any ticket, concept, project or release. Archived tickets are included once
   the archive has been loaded.

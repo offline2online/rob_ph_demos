@@ -177,10 +177,6 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (!entries.length) return ""; // hidden until a TAM record is linked
     return `<section class="lead-sum-section" id="lead-sum-tam"><h3>TAM record</h3><dl class="lead-sum-dl">${entries.map(([k, v]) => row(k, esc(v))).join("")}</dl></section>`;
   }
-  function prospectHTML(l) {
-    if (!l.prospectId) return "";
-    return `<section class="lead-sum-section" id="lead-sum-prospect"><h3>Prospect record</h3><dl class="lead-sum-dl">${row("From", '<a href="#promote/prospects">Prospects (TAM)</a>')}</dl></section>`;
-  }
   function renderSummary() {
     const l = leads.find((x) => x.id === summaryId);
     if (!l) { closeSummary(); return; }
@@ -206,7 +202,6 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
         ${row("Last enriched", esc(enrichedAt))}
       </dl></section>
       ${tamHTML(l)}
-      ${prospectHTML(l)}
       <section class="lead-sum-section"><h3>Lead</h3><dl class="lead-sum-dl">
         ${row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`)}
         ${row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned"))}
