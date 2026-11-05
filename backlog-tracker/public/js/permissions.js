@@ -29,7 +29,7 @@ export const SECTIONS = [
   // Leads used to sit under the single "promote" grant, so it inherits it.
   { key: "promote-leads", label: "Leads", nav: ["#promote-leads-btn"], inherits: "promote", edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
   { key: "faq", label: "Help Centre", nav: ["#faq-articles-btn"],
-    edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#fa-analytics-tag-save", "#faq-cat-edit-save-btn"] },
+    edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#faq-cat-edit-save-btn"] },
   { key: "settings", label: "Settings", nav: ["#faq-settings-btn"], edit: ["#faq-settings-page .btn-primary"] },
   { key: "user-management", label: "Settings > User Management", nav: ['[data-settings-page="user-management"]'],
     edit: ["#team-add-open", "#roles-create", ".role-actions", "#um-bulk", ".um-manage"] },

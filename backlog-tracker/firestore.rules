@@ -1118,14 +1118,6 @@ service cloud.firestore {
       allow read: if isBoardReader();
     }
 
-    // Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
-    // — currently just the analytics tag id appended to every customer-facing
-    // FAQ page (see faq/js/page-common.js). Read/write here is editor-only,
-    // from the console's Settings page; faq-export.js reads this doc as the
-    // service account (bypasses these rules, same as every other export
-    // step) and republishes it as a public static file
-    // (faq/data/settings.json) — the public site itself never talks to
-    // Firestore for this.
     // Also holds settings/phaseSkillBindings (l5mjAANU0dfveGhxmDjm) — which
     // shared skills.slug values notifyOnProjectReadyForReview (build phase)
     // and notifyOnProjectReadyToDeploy (deploy phase) prepend a pointer to
@@ -1133,14 +1125,10 @@ service cloud.firestore {
     // console UI writes this doc yet (edited directly in Firestore, or by a
     // future settings page) — read/write rules still apply the same as any
     // other doc in this collection.
-    // Admin-only to write: analyticsTag loads a Google Tag Manager
-    // container — arbitrary script — on every public help-centre page,
-    // and phaseSkillBindings feeds the Routine's prompt.
+    // Admin-only to write: phaseSkillBindings feeds the Routine's prompt.
     match /settings/{docId} {
       allow read: if isBoardReader();
       allow create, update: if isAdmin()
-        && (!("analyticsTag" in incoming()) || incoming().analyticsTag == null
-          || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40))
         && (!("build" in incoming()) || (incoming().build is list && incoming().build.size() <= 20))
         && (!("deploy" in incoming()) || (incoming().deploy is list && incoming().deploy.size() <= 20));
       allow delete: if isAdmin();
