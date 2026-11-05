@@ -10,6 +10,7 @@ import { buildCopy } from "./leads-core-copy.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let n = 0;
+import * as P from "../public/js/industry-palette.js";
 const t = (name, fn) => { fn(); n++; console.log(`  ok  ${name}`); };
 
 t("the stages are the pipeline in order, ending in Closed Won and Lost", () => {
@@ -78,6 +79,25 @@ t("a website submission maps onto the lead form: source website, page and indust
   assert.equal(L.leadFromWebsite({ company: "Acme", email: "jo@acme.example" }).test, false);
   assert.equal(L.normaliseLead("a", { company: { name: "A" }, test: true }).test, true);
   assert.ok(L.leadFromWebsite({ email: "jo@acme.example" }).errors.length);
+});
+t("industry palette: aliases, source-industry fallback, grey for none, AA contrast in both themes", () => {
+  const key = (lead) => P.leadIndustryEntry(lead).key;
+  assert.equal(P.industryEntry("TELCO").key, "telco");
+  assert.equal(P.industryEntry("Telco retail").key, "telco");
+  assert.equal(P.industryEntry("Fuel").key, "convenience-fuel");
+  assert.equal(P.industryEntry("convenience stores").key, "convenience-fuel");
+  assert.equal(P.industryEntry("Retail Media").key, "retail-media");
+  assert.equal(P.industryEntry("Quick service restaurants").key, "qsr");
+  assert.equal(P.industryEntry("Retail").key, "other");
+  assert.equal(P.industryEntry("").key, "other");
+  assert.equal(key({ company: { industry: "Pharmacy" }, sourceIndustry: "Telco" }), "pharmacy", "own industry wins");
+  assert.equal(key({ company: { industry: "" }, sourceIndustry: "telco" }), "telco", "falls back to the source industry");
+  assert.equal(key({ company: { industry: "" }, sourceIndustry: "" }), "other");
+  assert.equal(P.industryChipText({ company: { industry: "" }, sourceIndustry: "" }), "Other / not set");
+  for (const e of [...P.INDUSTRIES, P.OTHER_INDUSTRY]) for (const th of ["light", "dark"]) {
+    assert.ok(P.contrastRatio(e[th].fg, e[th].bg) >= 4.5, `${e.key} ${th} chip text contrast`);
+  }
+  assert.equal(new Set([...P.INDUSTRIES, P.OTHER_INDUSTRY].map((e) => e.light.bar)).size, P.INDUSTRIES.length + 1, "each industry has its own colour");
 });
 t("functions/leads-core.js is the generated copy of the page's leads-core.js", () => {
   const have = fs.readFileSync(path.join(here, "..", "functions", "leads-core.js"), "utf8");
