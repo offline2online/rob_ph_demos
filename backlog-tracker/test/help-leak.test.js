@@ -35,7 +35,7 @@ const snap = (name, f = () => true) => { const rows = Object.entries(docs[name])
 const db = { collection: (name) => ({ where: () => ({ get: async () => snap(name, (a) => a.status === "published") }), get: async () => snap(name), add: async () => {} }) };
 
 const WPT = "https://personalisationhub.com/wp-json/ph-agent/v1/tools";
-const NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo", "get_installation_spec"];
+const NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo", "get_installation_spec", "calculate_business_model"];
 const fetched = [];
 const fetchImpl = async (url) => {
   fetched.push(url);
@@ -86,7 +86,7 @@ function assertClean(endpoint, res, allow = []) {
   const rpc = (method, params, id = 1) => call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id, method, params });
   let r = await rpc("tools/list");
   assertClean("/help-api/mcp tools/list", r);
-  assert.deepStrictEqual(r.body.result.tools.map((t) => t.name), NAMES, "tools/list: only the nine allow-listed tools");
+  assert.deepStrictEqual(r.body.result.tools.map((t) => t.name), NAMES, "tools/list: only the ten allow-listed tools");
   r = await rpc("initialize", { protocolVersion: "2025-03-26" });
   assertClean("/help-api/mcp initialize", r);
   const before = fetched.length;

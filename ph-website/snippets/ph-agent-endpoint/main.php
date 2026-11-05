@@ -1,6 +1,6 @@
 <?php
 /**
- * PH Agent Endpoint (Angie snippet). Version 1.5.0
+ * PH Agent Endpoint (Angie snippet). Version 1.6.0
  *
  * Markdown twins (?format=md), one shared JSON-LD graph and llms.txt sections
  * for the allow-listed pages in lib.php. Industries, Blog and Support Centre

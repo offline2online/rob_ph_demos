@@ -140,12 +140,17 @@ foreach ( array( 3477, 3566, 555 ) as $id ) {
 
 
 /* ------------------------------------------------------------ tool contract */
+/* the calculators list lives in the Industries snippet; the tool reads it from there (tests/calculators.test.php covers it in depth) */
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', __DIR__ );
+}
+require_once dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/calculators.php';
 use function AngieSnippets\PhAgentEndpoint___ID__\{installation_spec,installation_spec_md,unconfirmed_paths,tool_defs,run_tool,validate_args,help_article_path,feature_slugs};
 const SC_NS_T = 'AngieSnippets\PhSupportCentre_10156';
 
 $defs  = tool_defs();
 $names = array_column( $defs, 'name' );
-ok( $names === array( 'describe_platform', 'list_industries', 'get_industry', 'get_feature', 'search_help', 'get_help_article', 'start_free_trial', 'book_demo', 'get_installation_spec' ), 'exactly the nine tools, in order' );
+ok( $names === array( 'describe_platform', 'list_industries', 'get_industry', 'get_feature', 'search_help', 'get_help_article', 'start_free_trial', 'book_demo', 'get_installation_spec', 'calculate_business_model' ), 'exactly the ten tools, in order' );
 foreach ( $defs as $d ) {
 	ok( ! empty( $d['annotations']['readOnlyHint'] ) && isset( $d['inputSchema']['type'] ) && $d['description'] !== '', "{$d['name']} is read-only with a schema" );
 }
@@ -261,7 +266,7 @@ $GLOBALS['byPath'] = array();
 $GLOBALS['hooks']['rest_api_init'][0]();
 ok( isset( $GLOBALS['routes']['ph-agent/v1/tools'], $GLOBALS['routes']['ph-agent/v1/tools/(?P<name>[a-z_]{1,40})'] ), 'both routes registered' );
 $list = $GLOBALS['routes']['ph-agent/v1/tools']['callback']();
-ok( count( $list->d['tools'] ) === 9 && $list->h['Cache-Control'] === 'public, max-age=300', 'list: nine tools, cacheable five minutes' );
+ok( count( $list->d['tools'] ) === 10 && $list->h['Cache-Control'] === 'public, max-age=300', 'list: ten tools, cacheable five minutes' );
 ok( $GLOBALS['routes']['ph-agent/v1/tools']['permission_callback']() === true, 'public read-only' );
 $call = $GLOBALS['routes']['ph-agent/v1/tools/(?P<name>[a-z_]{1,40})']['callback'];
 class Req implements ArrayAccess { public $p; function __construct( $p ) { $this->p = $p; } function get_param( $k ) { return $this->p[ $k ] ?? null; } function offsetGet( $k ): mixed { return $this->p[ $k ]; } function offsetExists( $k ): bool { return isset( $this->p[ $k ] ); } function offsetSet( $k, $v ): void {} function offsetUnset( $k ): void {} }

@@ -30,7 +30,7 @@ const DEMO = "https://calendly.com/rob-offline2online";
 const FEATURES = ["digital-signage", "retail-queue-management", "retail-appointment-bookings", "retail-media-platform", "store-sites", "personalisation", "localisation-geo-targeting", "ai-agents"];
 const LEGAL = ["privacy-policy", "legal", "support"];
 const INDUSTRIES = ["convenience", "hospitality", "telco", "pharmacy", "retail-media", "grocery", "fashion", "qsr", "banking"];
-const TOOL_NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo"];
+const TOOL_NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo", "get_installation_spec", "calculate_business_model"];
 const LEAKS = /Fatal error|Warning:|Notice:|Stack trace|Traceback|\/var\/www|\/home\/|wp-content\/plugins|PDOException|mysqli|at .+\.(js|php):\d+/i;
 const DEMO_NAMES = /lindt|mipharmacy|amazon-signage|australian-pork|coca-cola|webdemo|lego-comp/i;
 
@@ -111,8 +111,8 @@ add("llms.txt", "every link is on the site or the help API and resolves", async 
   ok(n > 0, "no site links to check");
 });
 
-/* ---- the nine tools, over the WordPress REST route ---- */
-add("tools", "tool list has all nine, read-only", async () => {
+/* ---- the ten tools, over the WordPress REST route ---- */
+add("tools", "tool list has all ten, read-only", async () => {
   const d = (await get(TOOLS)).json();
   ok(JSON.stringify((d.tools || []).map((t) => t.name).sort()) === JSON.stringify([...TOOL_NAMES].sort()), `tool names are ${(d.tools || []).map((t) => t.name)}`);
   ok(d.tools.every((t) => t.annotations && t.annotations.readOnlyHint === true && t.inputSchema), "a tool is missing readOnlyHint or inputSchema");
@@ -120,6 +120,12 @@ add("tools", "tool list has all nine, read-only", async () => {
 add("tools", "describe_platform", async () => { const r = await callTool("describe_platform"); ok(!r.isError && /Personalisation Hub/.test(textOf(r)), "no platform text"); });
 add("tools", "list_industries lists live industries", async () => { const r = await callTool("list_industries"); ok(!r.isError && r.structuredContent.industries.length >= 1, "no industries"); });
 for (const s of INDUSTRIES.slice(0, 3)) add("tools", `get_industry ${s}`, async () => { const r = await callTool("get_industry", { slug: s }); ok(!r.isError && /^#/m.test(textOf(r)), `no markdown for ${s}`); });
+add("tools", "calculate_business_model lists Telco Retail and returns an estimate with a pre-filled link", async () => {
+  const l = await callTool("calculate_business_model", {}); ok(!l.isError && (l.structuredContent.calculators || []).some((c) => c.industry === "telco"), "telco calculator not listed");
+  const r = await callTool("calculate_business_model", { industry: "telco", inputs: { stores: 100 } });
+  ok(!r.isError && r.structuredContent.estimate.total > 0 && /\/industries\/telco\/\?.*stores=100/.test(r.structuredContent.link), "no estimate or pre-filled link");
+});
+add("llms", "llms.txt lists the business model calculator", async () => { const t = (await get(`${SITE}/llms.txt`)).text; ok(/## Business model calculator/.test(t) && /Telco Retail/.test(t), "no calculator section"); });
 add("tools", "get_feature digital-signage", async () => { const r = await callTool("get_feature", { slug: "digital-signage" }); ok(!r.isError && /^#/m.test(textOf(r)), "no markdown"); });
 add("tools", "search_help returns articles on the Support Centre", async () => {
   const r = await callTool("search_help", { query: "how do I add a store", limit: 3 });
@@ -205,10 +211,10 @@ add("security", "help API article: unknown id is 404, json and markdown do not s
 
 /* ---- the remote MCP server ---- */
 const rpc = async (body) => get(`${HELP}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body) });
-add("mcp", "initialize, tools/list (nine tools), tools/call", async () => {
+add("mcp", "initialize, tools/list (ten tools), tools/call", async () => {
   const i = (await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } } })).json();
   ok(i.result && i.result.serverInfo, "initialize failed");
-  const l = (await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" })).json(); ok(l.result.tools.length === 9, `tools/list has ${l.result.tools && l.result.tools.length}`);
+  const l = (await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" })).json(); ok(l.result.tools.length === 10, `tools/list has ${l.result.tools && l.result.tools.length}`);
   const c = (await rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "start_free_trial", arguments: {} } })).json();
   ok(/via=remote-mcp/.test(JSON.stringify(c.result)) && !/via=webmcp/.test(JSON.stringify(c.result)), "CTA via not rewritten for remote MCP");
 });
