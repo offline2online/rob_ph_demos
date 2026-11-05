@@ -389,6 +389,23 @@ on the card. So, in a default build fire:
   the board waits for every session in the click, and the first one to
   finish would otherwise unlock cards still being built.
 
+## PH Website builds: the personalisationhub.com WordPress MCP is the only site connection
+
+For a ticket on the PH Website project (`ph-website/`), the target site is
+**personalisationhub.com** and the only connection is the **personalisationhub.com
+WordPress MCP**, acting as the dedicated `ph-mcp` admin user. It is already
+included in the build routine. **offline2online.com is an unrelated company and
+is never used for PH Website work**: never the `offline2online-elementor` server
+from `.mcp.json`, never its pages. The Calendly demo link (`rob-offline2online`)
+is only a booking URL.
+
+Before declaring a PH Website ticket unbuildable, unverifiable or "pages
+missing" for lack of site access, check for that MCP (list your tools, wait for
+connecting servers) and use it. Flag the ticket blocked only if the
+personalisationhub.com WordPress MCP is genuinely unavailable, and say exactly
+that ("personalisationhub.com WordPress MCP not available in this session"),
+never "no personalisationhub.com access" while it is there.
+
 ## Complete the intake sections first (4 Oct 2026)
 
 Every ticket's description is structured into four sections by
@@ -1264,8 +1281,8 @@ function writes.
   don't audit per ticket: one pass over the whole help centre.
 - Don't edit live fields, flip `status`, delete an article, or write
   `reviewStatus: "approved"` / `previousRevision`.
-- Publishing to the WordPress Support Centre (Elementor MCP, PH Website
-  project) is a separate step that follows approval; this flow never calls it.
+- Publishing to the WordPress Support Centre (the personalisationhub.com WordPress MCP as `ph-mcp`, PH
+  Website project) is a separate step that follows approval; this flow never calls it.
 
 ## The "Review Batch" flow (a differently-shaped fire)
 

@@ -1,6 +1,8 @@
 # PH Agent Endpoint (snippet)
 
 Makes the public pages of personalisationhub.com readable by AI agents.
+
+**Target and connection.** Build and deploy on personalisationhub.com through the personalisationhub.com WordPress MCP (user `ph-mcp`). offline2online.com is an unrelated company and is never used for PH Website work. If a ticket seems to need site access, use that MCP first; only if it is genuinely unavailable is the ticket blocked, and it says exactly that.
 Part 1 of the agent endpoint release (ticket "Site-wide llms.txt, markdown
 twins and JSON-LD"). Design: project document "Agent endpoint release:
 design and build guide", sections 1 to 3 and 7.

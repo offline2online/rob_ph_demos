@@ -14,9 +14,11 @@ This is a static site repository used to publish HTML and static resources (CSS,
 - `ph-website/` — PHP snippets for the WordPress site personalisationhub.com (versioned and reviewed here, deployed through the Elementor MCP; not served by GitHub Pages). Start with `ph-website/snippets/ph-agent-endpoint/README.md`
 - Static assets (CSS, JS, images) go directly in the repo root or organized subdirectories
 - `media-studio/` — image and video generation for the website and blog (Nano Banana Pro, Veo 3.1, LTX 2.5): a local API + web UI + CLI, and `.github/workflows/media-studio.yml` to run it on a runner. Its provider keys are kept **encrypted in the PH Agent Console** (Settings → Integrations & MCP → Media Studio API keys, `backlog-tracker/functions/media-keys.js`) and fetched at run time with `BOARD_API_KEY`. Not served by GitHub Pages. See `media-studio/README.md`
-- `ph-website/` — the PHP, JS and CSS running on personalisationhub.com (four Angie snippets, `snippets/MANIFEST.json`); the PH Website session deploys it through the Elementor MCP. See `ph-website/README.md`
+- `ph-website/` — the PHP, JS and CSS running on personalisationhub.com (Angie snippets, `snippets/MANIFEST.json`); the PH Website session deploys it through the personalisationhub.com WordPress MCP (`ph-mcp`), never offline2online.com. See `ph-website/README.md`
 
 ## The offline2online.com WordPress site is an MCP server — `.mcp.json`
+
+**Not for PH Website work.** offline2online.com is an unrelated company's site. PH Website (`ph-website/`, personalisationhub.com) builds and deploys use only the personalisationhub.com WordPress MCP as the `ph-mcp` admin user, never the server below. Leave `ELEMENTOR_MCP_AUTH` unset in PH Website routine environments. The Calendly link `rob-offline2online` is a booking URL, not a reason to connect to offline2online.com.
 
 `.mcp.json` at the repo root registers the Elementor MCP endpoint on
 offline2online.com (`https://offline2online.com/wp-json/elementor/mcp/`)

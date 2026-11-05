@@ -2,6 +2,8 @@
 
 Every line of code running on personalisationhub.com, versioned here. Seven Angie code snippets, copied byte for byte from WordPress on 4 Nov 2026 (the live files have `__ID__` already replaced by the snippet id). Do not reformat them. PH Blog Layout (10644) was written here first and published the same day, as a hotfix.
 
+**Target site and connection (read first).** PH Website work targets **personalisationhub.com** only. The one connection is the **personalisationhub.com WordPress MCP**, acting as the dedicated `ph-mcp` admin user; it is already included in the build routine. **offline2online.com is an unrelated company's site and must never be used for PH Website work**: not its Elementor MCP (`offline2online-elementor` in `.mcp.json`), not its pages. The Calendly demo link (`rob-offline2online`) is just a booking URL; it is not a reason to connect to offline2online.com. Before calling a ticket unbuildable for lack of site access, check for and use the personalisationhub.com WordPress MCP; flag it blocked only if that MCP is genuinely unavailable, and say exactly that.
+
 ## Snippets
 
 | Snippet | Id | Version | Folder | Owns |
@@ -22,7 +24,7 @@ The earlier agent-endpoint and media drafts (no id) are superseded by 10646 and 
 
 ## How a deploy works
 
-After Deploy to Main, the PH Website session (the one with the Elementor MCP) publishes, through the dedicated `ph-mcp` WordPress user (not a personal account), the changed snippets from `main` through the Elementor MCP (`angie-*` snippet tools):
+After Deploy to Main, the PH Website session publishes, through the personalisationhub.com WordPress MCP as the dedicated `ph-mcp` WordPress user (not a personal account), the changed snippets from `main` (`angie-*` snippet tools). Never offline2online.com:
 
 1. Snapshot the live snippet files before.
 2. Publish the changed files.
@@ -44,3 +46,7 @@ Spec: project document "Agent endpoint release: design and build guide" (PH Webs
 ## Entity schema (5 Nov 2026)
 
 The shared Organization node (`#organization`) now carries `legalName` Personalisation Hub Pty Ltd, `foundingDate` 2018, `founder` Rob Geerdink, `logo` and `sameAs` (LinkedIn, AWS Marketplace listing, Amazon Signage CMS partner page, X, AWS Marketplace seller profile). No address, `areaServed`, city or country, and no Crunchbase or G2 link. It is built in four places that must stay identical: `ph-agent-endpoint/lib.php`, `ph-blog/main.php`, `ph-support-centre/main.php` and the ten static copies in `ph-industry-enhancements/ld.php`. Not in the repo, for the PH Website deploy session: the footer and About page copy, and the Rich Results Test on the live site. Logo dimensions (at least 112x112) could not be checked from the build sandbox. MANIFEST.json is regenerated after the deploy snapshot.
+
+## Pharmacy page (5 Nov 2026)
+
+`/industries/pharmacy/` calculator (`enhance.js`, `CALC.pharmacy`, model `pharm`): six inputs, all USD (pharmacies, screens per pharmacy, daily visits per pharmacy, average front-of-house basket for promotable products only, media CPM default 25 with an "indicative" tooltip, front-of-house basket uplift default 5%); preset, not user-entered: 4 ad plays seen per visit per screen, 40% fill, 30% of visits buy front of house, 3% foot-traffic uplift. Output is estimated three-year incremental revenue = media revenue from front-of-house brands + basket uplift + extra foot traffic; nothing is earned from products that need pharmacist approval. The calculator rebuilds its rows to the field list (`relabel`), so the Elementor page needs no row count to match, and shows no "How it's calculated" line (`nohow`). The markdown twin (`md.php`) carries the new sections: contextual signage, pharmacist handover, "Responsible by design". Test: `node ph-website/tests/pharmacy-model.test.mjs`. **Not in the repo, for the PH Website deploy session:** the visible page copy in Elementor (same three sections, same wording as the twin) and the SEOPress check. `MANIFEST.json` is regenerated after the deploy snapshot.
