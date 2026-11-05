@@ -171,7 +171,7 @@ Personalisation Hub is a self-hosted personalisation platform that removes queue
 - **Try it:** 30-day free trial on AWS Marketplace, then billed through your AWS account
 
 ## Outcome
-More walk-ins, more in-pharmacy sales and a far better pharmacy experience.
+More walk-ins, more in-pharmacy sales and a far better pharmacy experience, with contextual campaigns on screen and a personalised handover to the pharmacist.
 
 ## How a visit is personalised
 1. **Passing by** (App and pharmacy site): Customers nearby are invited in for services such as walk-in vaccinations. Result: Incremental walk-ins.
@@ -185,15 +185,26 @@ More walk-ins, more in-pharmacy sales and a far better pharmacy experience.
 - **Passing by · walk-in flu vaccine:** localisation (Thu 8:10am · commute; Cool · 11°C · flu season; Flu vaccines · 40 doses · walk-ins today); customer data (Lapsed · 6 months; Opted in to health reminders; Walk-in invite · no booking needed); campaign "Walk in for your flu vaccine." shown on website, mobile app, entrance screen and smart shelf.
 - **While you wait · Silver member:** localisation (Sat 11:00am · weekend; Sunny · 29°C · high UV; Sun care · new range in); customer data (Rewards member · Silver; Skincare and sun care shopper; In-pharmacy offer · double points on sun care); campaign "While you wait: sun care." shown on website, mobile app, entrance screen and smart shelf.
 
+## Contextual campaigns on digital signage
+Campaigns are targeted on any available data, so they are contextual: season, weather, local trends, stock levels and time of day. For advertisers that means higher conversion and bigger baskets. For the pharmacy it means more people through the door. Pharmacy is also a strong retail media channel: shoppers are high-intent and have real dwell time while they wait for a prescription, and front-of-house categories such as wellness, vitamins, skincare and beauty have strong brand demand.
+
+## Seamless handover to the pharmacist and store staff
+A customer checks in by queue, appointment, QR code or proximity (the list of check-in options keeps growing). The pharmacist and staff then get relevant insights and information at the point of care, so the conversation starts personalised. This one-to-one view is for serving the customer only, never for advertising.
+
+## Responsible by design
+- **Front of house only:** promotions and basket-building apply to front-of-house products only. There are no promotions or targeting for products that need pharmacist approval. The two are kept clearly separate, and it is a line Personalisation Hub never crosses.
+- **Aggregate or de-identified data only:** targeting and advertising use aggregate or de-identified data.
+- **Local rules:** campaigns stay within local advertising rules for medicines.
+
 ## Benefits calculator
-Inputs: pharmacies, customers per pharmacy per day, customers who buy front of shop today, average front-of-shop basket. Assumptions: extra walk-ins (default 4%), uplift in conversion from personalised offers (default 15%). Customers per day × 365 × today\'s conversion gives today\'s purchases. Personalised offers lift that conversion rate by the uplift percentage, e.g. 20% with a 15% uplift becomes 23% (and, where shown, extra walk-ins come in at the new rate). Extra purchases × value = incremental revenue.
+Six inputs, all in USD: number of pharmacies, screens per pharmacy, daily visits per pharmacy, average front-of-house basket value (promotable products only), media CPM (default USD 25, indicative: pharmacy and point-of-care screens typically sell at USD 15-40 CPM, a premium over general in-store screens at USD 10-30) and front-of-house basket uplift (default 5%). Fill rate and foot-traffic uplift are preset. The pharmacist handover is folded into the basket uplift. Output: estimated three-year incremental revenue from media revenue from front-of-house brands, front-of-house basket uplift and extra foot traffic. No revenue comes from products that need pharmacist approval.
 
 ## FAQ
 **Do we need new screens?**
 No. Personalisation Hub works with any digital signage device, alongside the check-in, app and data systems you already run.
 
 **Is customer health information used for targeting?**
-You decide. Screens can be personalised from visit reason and context, such as season and time of day, and all data stays in your own cloud behind your security controls.
+No. Targeting and advertising use aggregate or de-identified data only, and promotions apply to front-of-house products only, never to products that need pharmacist approval. The pharmacist view is for serving the customer, never for advertising.
 
 **How do we get started?**
 Start a 30-day free trial on AWS Marketplace and run it in one pharmacy. After that it\'s simply added to your AWS bill, and you can cancel any time.
