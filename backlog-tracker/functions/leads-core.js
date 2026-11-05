@@ -185,6 +185,7 @@ function normaliseLead(id, d) {
     sourceIndustry: String(x.sourceIndustry || ""),
     customerAccount: x.customerAccount && typeof x.customerAccount === "object" ? { id: String(x.customerAccount.id || ""), name: String(x.customerAccount.name || "") } : null,
     enrichment: x.enrichment && typeof x.enrichment === "object" ? x.enrichment : null,
+    tam: x.tam && typeof x.tam === "object" && !Array.isArray(x.tam) ? x.tam : null, // read-only: no TAM data model yet
     updatedAtMs: ms(x.updatedAt), createdAtMs: ms(x.createdAt), stageChangedAtMs: ms(x.stageChangedAt),
   };
 }

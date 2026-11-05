@@ -1,9 +1,10 @@
 // Promote › Leads (#promote/leads): the board and the lead form.
 //
 // One card per company in `leads/{id}`; the lanes are leads-core.js STAGES.
-// A card drags between lanes (HTML5 drag and drop), and has a "Move to"
-// select that does the same without a pointer drag, which is how it moves on
-// a tablet. A write is live for everyone at once through onSnapshot. The
+// A tile drags between lanes (HTML5 drag and drop); clicking it (or Enter)
+// opens the lead summary drawer, whose stage select moves it without a pointer
+// drag, which is how it moves on a tablet. Tiles are coloured by industry
+// (industry-palette.js). A write is live for everyone at once through onSnapshot. The
 // Enrich button calls /leadEnrich/v1/enrich (functions/lead-enrich.js), which
 // writes the company's findings back onto the lead and its contacts.
 import {
@@ -13,6 +14,7 @@ import {
   STAGES, BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
   companyLine, conversionFields, isStage,
 } from "./leads-core.js";
+import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 // Addresses come from Firestore, which an agent can write: http(s) only.
@@ -53,22 +55,25 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   function stop() { if (unsub) unsub(); unsub = null; started = false; }
 
   // ── The board ───────────────────────────────────────────────────────────
+  const initials = (nameOrEmail) => {
+    const base = String(nameOrEmail || "").split("@")[0];
+    const parts = base.split(/[\s._-]+/).filter(Boolean);
+    return ((parts[0] || "?")[0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+  };
+  const isWebsite = (l) => /^web/i.test(l.source);
+  const sourceLabel = (l) => (isWebsite(l) ? "Website" : (l.source && l.source.toLowerCase() !== "manual" ? l.source : "Manual"));
   function cardHTML(l) {
-    const dm = l.contacts.find((c) => c.buyingRole === "decision-maker");
     const line = companyLine(l);
-    const options = STAGES.map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
-    return `<article class="lead-card" draggable="${canEdit() ? "true" : "false"}" data-lead-id="${esc(l.id)}" tabindex="0">
+    const entry = leadIndustryEntry(l);
+    const who = l.assignee ? memberName(l.assignee) : "";
+    return `<article class="lead-card" draggable="${canEdit() ? "true" : "false"}" data-lead-id="${esc(l.id)}" data-industry="${esc(entry.key)}" style="${industryStyle(entry)}" tabindex="0" role="button" aria-label="${esc(l.company.name)}, open lead summary">
       <h4 class="lead-card-name">${esc(l.company.name)}</h4>
+      <div class="lead-card-chips"><span class="lead-chip" title="${esc(industryChipText(l))}">${esc(industryChipText(l))}</span>${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
       ${line ? `<p class="lead-card-line">${esc(line)}</p>` : ""}
-      ${l.company.industry ? `<p class="lead-card-line">${esc(l.company.industry)}</p>` : ""}
-      <p class="lead-card-line">${l.contacts.length} contact${l.contacts.length === 1 ? "" : "s"}${dm ? ` · ${esc(dm.name)} (decision maker)` : ""}</p>
-      ${l.customerAccount ? `<p class="lead-card-line lead-card-account"><span class="material-symbols-outlined" aria-hidden="true">link</span>${esc(l.customerAccount.name || l.customerAccount.id)}</p>` : ""}
       <div class="lead-card-foot">
-        <span class="lead-card-who">${l.assignee ? esc(memberName(l.assignee)) : "Unassigned"}</span>
-        ${l.source ? `<span class="lead-card-source">${esc(l.source)}${l.sourcePage ? ` · ${esc(l.sourcePage)}` : ""}</span>` : ""}
+        <span class="lead-card-who" title="${esc(who || "Unassigned")}">${who ? `<span class="lead-avatar" aria-hidden="true">${esc(initials(who))}</span><span class="visually-hidden">${esc(who)}</span>` : "Unassigned"}</span>
+        <span class="lead-card-source" title="${esc(sourceLabel(l))}"><span class="material-symbols-outlined" aria-hidden="true">${isWebsite(l) ? "public" : "edit"}</span>${esc(sourceLabel(l))}</span>
       </div>
-      <label class="lead-move" data-editor-only><span class="lead-move-label">Move to</span>
-        <select class="lead-move-select" aria-label="Move ${esc(l.company.name)} to stage">${options}</select></label>
     </article>`;
   }
 
@@ -87,6 +92,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       <header class="lead-lane-head"><h3>${esc(s.label)}</h3><span class="lead-lane-count">${lanes[s.key].length}</span></header>
       <div class="lead-lane-body">${lanes[s.key].map(cardHTML).join("")}</div>
     </section>`).join("");
+    if (summaryId) renderSummary();
   }
 
   async function moveTo(id, stage) {
@@ -144,20 +150,117 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const id = e.dataTransfer.getData("text/plain");
     if (id) moveTo(id, lane.dataset.stage);
   });
-  board.addEventListener("change", (e) => {
-    const sel = e.target.closest && e.target.closest(".lead-move-select");
-    if (!sel) return;
-    moveTo(sel.closest(".lead-card").dataset.leadId, sel.value);
-  });
   board.addEventListener("click", (e) => {
-    if (e.target.closest(".lead-move")) return;
     const card = e.target.closest && e.target.closest(".lead-card");
-    if (card) openLead(card.dataset.leadId);
+    if (card) openSummary(card.dataset.leadId);
   });
   board.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" || e.target.closest(".lead-move")) return;
+    if (e.key !== "Enter" && e.key !== " ") return;
     const card = e.target.closest && e.target.closest(".lead-card");
-    if (card) openLead(card.dataset.leadId);
+    if (card && e.target === card) { e.preventDefault(); openSummary(card.dataset.leadId); }
+  });
+
+  // ── The lead summary (click-through drawer) ─────────────────────────────
+  const sumBackdrop = $("lead-summary-backdrop");
+  let summaryId = null;
+  const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "");
+  const row = (label, valueHtml) => (valueHtml ? `<div class="lead-sum-row"><dt>${esc(label)}</dt><dd>${valueHtml}</dd></div>` : "");
+  const linkOf = (u, text) => { const h = safeUrl(u); return h ? `<a href="${esc(h)}" target="_blank" rel="noopener noreferrer">${esc(text || u)}</a>` : esc(text || u); };
+  const pageLink = (l) => {
+    if (!l.sourcePage) return "";
+    const h = safeUrl(l.sourcePage) || (l.sourcePage.startsWith("/") && l.company.website ? safeUrl(new URL(l.sourcePage, l.company.website).href) : "");
+    return h ? linkOf(h, l.sourcePage) : esc(l.sourcePage);
+  };
+  function tamHTML(l) {
+    const t = l.tam;
+    const entries = t ? Object.entries(t).filter(([, v]) => v != null && typeof v !== "object" && String(v) !== "") : [];
+    if (!entries.length) return ""; // hidden until a TAM record is linked
+    return `<section class="lead-sum-section" id="lead-sum-tam"><h3>TAM record</h3><dl class="lead-sum-dl">${entries.map(([k, v]) => row(k, esc(v))).join("")}</dl></section>`;
+  }
+  function renderSummary() {
+    const l = leads.find((x) => x.id === summaryId);
+    if (!l) { closeSummary(); return; }
+    const entry = leadIndustryEntry(l);
+    const e = l.enrichment;
+    const at = e && e.at && typeof e.at.toDate === "function" ? e.at.toDate() : (e && e.at ? new Date(e.at) : null);
+    const enrichedAt = at && !Number.isNaN(at.getTime()) ? at.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "";
+    const stageOptions = STAGES.map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
+    $("lead-sum-title").textContent = l.company.name;
+    const panel = $("lead-summary-panel");
+    panel.style.cssText = industryStyle(entry);
+    panel.dataset.industry = entry.key;
+    $("lead-sum-badges").innerHTML = `<span class="lead-chip">${esc(industryChipText(l))}</span>${l.test ? '<span class="lead-test-badge">Test</span>' : ""}`;
+    const keepStage = document.activeElement && document.activeElement.id === "lead-sum-stage";
+    $("lead-sum-body").innerHTML = `
+      <section class="lead-sum-section"><h3>Company</h3><dl class="lead-sum-dl">
+        ${row("Name", esc(l.company.name))}
+        ${row("Website", l.company.website ? linkOf(l.company.website) : "")}
+        ${row("Industry", l.company.industry ? esc(l.company.industry) : "")}
+        ${row("Countries", l.company.countries.length ? esc(l.company.countries.join(", ")) : "")}
+        ${row("Stores", l.company.storeCount != null ? esc(l.company.storeCount.toLocaleString("en-GB")) : "")}
+        ${row("Enrichment", e && e.summary ? esc(e.summary) : (e ? "Enriched; no summary." : "Not enriched yet."))}
+        ${row("Last enriched", esc(enrichedAt))}
+      </dl></section>
+      ${tamHTML(l)}
+      <section class="lead-sum-section"><h3>Lead</h3><dl class="lead-sum-dl">
+        ${row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`)}
+        ${row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned"))}
+        ${row("Source", esc(sourceLabel(l)))}
+        ${row("Source page", pageLink(l))}
+        ${row("Source industry", esc(l.sourceIndustry))}
+        ${row("Created", esc(fmtDate(l.createdAtMs)))}
+        ${row("Updated", esc(fmtDate(l.updatedAtMs)))}
+        ${row("Customer account", l.customerAccount ? esc(l.customerAccount.name || l.customerAccount.id) + (l.customerAccount.id && l.customerAccount.name ? ` (${esc(l.customerAccount.id)})` : "") : "")}
+      </dl></section>
+      <section class="lead-sum-section"><h3>Contacts</h3>${l.contacts.length ? l.contacts.map((c) => `<div class="lead-sum-contact">
+        <p class="lead-sum-contact-name">${esc(c.name)}${c.buyingRole ? ` <span class="lead-sum-role">${esc(roleLabel(c.buyingRole))}</span>` : ""}</p>
+        ${c.jobTitle ? `<p class="lead-card-line">${esc(c.jobTitle)}</p>` : ""}
+        ${c.email ? `<p class="lead-card-line"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></p>` : ""}
+        ${c.linkedin ? `<p class="lead-card-line">${linkOf(c.linkedin, "LinkedIn")}</p>` : ""}
+      </div>`).join("") : '<p class="field-hint">No contacts yet.</p>'}</section>`;
+    $("lead-sum-delete").hidden = !l.test;
+    if (keepStage) $("lead-sum-stage").focus();
+  }
+  function openSummary(id) {
+    if (!leads.some((x) => x.id === id)) return;
+    summaryId = id;
+    $("lead-sum-status").textContent = "";
+    renderSummary();
+    sumBackdrop.hidden = false;
+    $("lead-sum-close").focus();
+  }
+  function closeSummary(restoreFocus = true) {
+    const id = summaryId;
+    summaryId = null; sumBackdrop.hidden = true;
+    if (restoreFocus && id) { const t = board.querySelector(`.lead-card[data-lead-id="${CSS.escape(id)}"]`); if (t) t.focus(); }
+  }
+  $("lead-sum-close").addEventListener("click", () => closeSummary());
+  sumBackdrop.addEventListener("mousedown", (e) => { if (e.target === sumBackdrop) closeSummary(); });
+  sumBackdrop.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.stopPropagation(); closeSummary(); return; }
+    if (e.key !== "Tab") return; // keep focus inside the drawer
+    const f = [...$("lead-summary-panel").querySelectorAll("button, a[href], select, [tabindex]:not([tabindex='-1'])")].filter((x) => !x.disabled && x.offsetParent !== null);
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  });
+  $("lead-sum-body").addEventListener("change", (e) => {
+    const sel = e.target.closest && e.target.closest("#lead-sum-stage");
+    if (sel && summaryId) moveTo(summaryId, sel.value);
+  });
+  $("lead-sum-edit").addEventListener("click", () => { const id = summaryId; closeSummary(false); openLead(id); });
+  $("lead-sum-delete").addEventListener("click", async () => {
+    const l = leads.find((x) => x.id === summaryId);
+    if (!l || !l.test || !canEdit()) return;
+    if (!window.confirm(`Delete the test lead for ${l.company.name}? This cannot be undone.`)) return;
+    try { await deleteDoc(doc(db, "leads", l.id)); closeSummary(false); } catch (err) { $("lead-sum-status").textContent = `Couldn't delete: ${err && err.message ? err.message : err}`; }
+  });
+  $("lead-sum-enrich").addEventListener("click", async () => {
+    if (!canEdit() || !summaryId) return;
+    const btn = $("lead-sum-enrich"); const status = $("lead-sum-status");
+    btn.disabled = true; status.textContent = "Looking the company up…";
+    try { status.textContent = (await runEnrich(summaryId)).message; } catch (err) { status.textContent = `Enrichment failed: ${err && err.message ? err.message : err}`; }
+    finally { btn.disabled = false; }
   });
 
   // ── The form ────────────────────────────────────────────────────────────
@@ -315,6 +418,23 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     try { await deleteDoc(doc(db, "leads", l.id)); closeLead(); } catch (err) { setError(`Couldn't delete: ${err && err.message ? err.message : err}`); }
   });
 
+  // Calls the enrich function for a saved lead and re-reads what it wrote.
+  async function runEnrich(id) {
+    const resp = await fetch("/leadEnrich/v1/enrich", { method: "POST", headers: await apiHeaders(), body: JSON.stringify({ leadId: id }) });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: body.error || `Enrichment failed (HTTP ${resp.status}).` };
+    const snap = await getDoc(doc(db, "leads", id));
+    let lead = null;
+    if (snap.exists()) {
+      lead = normaliseLead(snap.id, snap.data());
+      const i = leads.findIndex((x) => x.id === lead.id);
+      if (i >= 0) leads[i] = lead;
+      if (summaryId === id) renderSummary();
+    }
+    const added = (body.companyFieldsAdded || []).length + (body.contactsEnriched || 0);
+    return { ok: true, lead, message: added || body.techStack ? `Done: ${body.techStack || 0} technologies, ${added} details added.` : "Done: nothing new was found." };
+  }
+
   $("lead-enrich-btn").addEventListener("click", async () => {
     if (!canEdit() || !openId) return;
     const status = $("lead-enrich-status");
@@ -323,19 +443,9 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     status.textContent = "Saving, then looking the company up…";
     try {
       if (!(await persist())) { status.textContent = ""; return; }
-      const resp = await fetch("/leadEnrich/v1/enrich", { method: "POST", headers: await apiHeaders(), body: JSON.stringify({ leadId: openId }) });
-      const body = await resp.json().catch(() => ({}));
-      if (!resp.ok) { status.textContent = body.error || `Enrichment failed (HTTP ${resp.status}).`; return; }
-      // Re-read what the function wrote, so the form shows it straight away.
-      const snap = await getDoc(doc(db, "leads", openId));
-      if (snap.exists()) {
-        const l = normaliseLead(snap.id, snap.data());
-        const i = leads.findIndex((x) => x.id === l.id);
-        if (i >= 0) leads[i] = l;
-        fill(l); renderEnrichment(l);
-      }
-      const added = (body.companyFieldsAdded || []).length + (body.contactsEnriched || 0);
-      status.textContent = added || body.techStack ? `Done: ${body.techStack || 0} technologies, ${added} details added.` : "Done: nothing new was found.";
+      const r = await runEnrich(openId);
+      if (r.lead) { fill(r.lead); renderEnrichment(r.lead); }
+      status.textContent = r.message;
     } catch (err) {
       status.textContent = `Enrichment failed: ${err && err.message ? err.message : err}`;
     } finally { btn.disabled = false; }
@@ -350,5 +460,5 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     } catch (err) { setError(`Couldn't convert: ${err && err.message ? err.message : err}`); }
   });
 
-  return { start, stop, render, stageLabel, roleLabel, open: openLead };
+  return { start, stop, render, stageLabel, roleLabel, open: openLead, openSummary };
 }
