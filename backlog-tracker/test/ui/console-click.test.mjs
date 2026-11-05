@@ -1205,41 +1205,81 @@ const scenarios = [
       assert.ok(order.label.endsWith("Prospects (TAM)"), "the entry is labelled Prospects (TAM)");
       const rowIds = () => c.page.evaluate(() => [...document.querySelectorAll("#prospects-grid .ag-center-cols-container .ag-row")].map((r) => r.getAttribute("row-id")).sort().join());
       await until(async () => (await rowIds()) === "pa,pb,pc", "the grid to show all three prospects", 8000);
-      assert.strictEqual((await c.text("#prospects-count")).trim(), "3 prospects");
+      const count = async () => (await c.text("#prospects-count")).replace(/\s+/g, " ").trim();
+      assert.strictEqual(await count(), "3 Prospects");
       assert.strictEqual(await c.page.locator("#prospects-page > p:not(.field-hint):not([hidden])").count(), 0, "no explanatory copy under the grid");
       assert.ok((await c.page.getAttribute("#prospects-info", "title")).length > 20, "help is an info tooltip");
-      // Filters: market matches HQ or operated countries; then AWS region, industry, campaign.
-      await c.page.selectOption("#prospects-f-market", "Ireland");
-      await until(async () => (await rowIds()) === "pa,pc", "the market filter to apply", 5000);
-      await c.page.selectOption("#prospects-f-region", "eu-west-3");
+      // Same grid as User Management: theme, floating filter row, checkbox column, pagination, one pinned "..." menu per row.
+      assert.ok(await c.page.locator("#prospects-grid.ag-theme-alpine.um-grid").count(), "uses the standard console grid");
+      assert.ok(await c.page.locator("#prospects-grid .ag-floating-filter").count() > 3, "floating filter row");
+      assert.ok(await c.page.locator('#prospects-grid .ag-pinned-left-cols-container .ag-selection-checkbox, #prospects-grid .ag-pinned-left-cols-container input[type=checkbox]').count() >= 3, "checkbox column");
+      assert.ok(await c.page.locator("#prospects-grid .ag-paging-panel").count(), "pagination footer");
+      assert.strictEqual(await c.page.locator("#prospects-grid .prospect-act, #prospects-grid .btn-ghost").count(), 0, "no per-row text buttons");
+      assert.strictEqual(await c.page.locator("#prospects-grid button.um-manage").count(), 3, "a row menu button per row");
+      const overflow = await c.page.evaluate(() => { const v = document.querySelector("#prospects-grid .ag-body-horizontal-scroll-viewport"); return v ? v.scrollWidth - v.clientWidth : 0; });
+      assert.ok(c.width < 1280 || overflow <= 1, `default columns fit without horizontal scrolling (overflow ${overflow}px)`);
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-header-cell[col-id="subIndustry"]').count(), 0, "Sub-industry is hidden by default");
+      // Company is a link only when there is a website.
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pa"] [col-id="name"] a').count(), 1);
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pb"] [col-id="name"] a').count(), 0);
+      // Quick search, then the Markets floating filter (matches HQ or any market).
+      await c.page.fill("#prospects-q", "Beta");
+      await until(async () => (await rowIds()) === "pb", "the search to apply", 5000);
+      assert.strictEqual(await count(), "1 of 3 Prospects");
+      await c.page.fill("#prospects-q", "");
+      await until(async () => (await rowIds()) === "pa,pb,pc", "the search to clear", 5000);
+      await c.page.fill('#prospects-grid input[aria-label="Markets Filter Input"]', "Ireland");
+      await until(async () => (await rowIds()) === "pa,pc", "the Markets filter to apply", 5000);
+      // The AWS region floating filter is a dropdown.
+      await c.page.selectOption('select[aria-label="Filter AWS region"]', "eu-west-3");
       await until(async () => (await rowIds()) === "pc", "the AWS region filter to apply", 5000);
-      assert.strictEqual((await c.text("#prospects-count")).trim(), "1 of 3 prospects");
-      // Save the filter, clear, reload it from the list.
-      await c.page.click("#prospects-save-filter");
+      assert.strictEqual(await count(), "1 of 3 Prospects");
+      // Save the filter, clear, reapply from Saved filters.
+      await c.page.click("#prospects-saved-btn");
+      await c.page.click('[data-pop="savefilter"]');
       await c.page.fill("#dialog-field-0", "Ireland west-3");
       await c.click("#dialog-ok", "Save filter");
-      await c.page.click("#prospects-clear");
+      await c.page.click("#prospects-saved-btn");
+      await c.page.click('[data-pop="reset"]');
       await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to show everything again", 5000);
-      await c.page.selectOption("#prospects-saved", "Ireland west-3");
+      await c.page.click("#prospects-saved-btn");
+      await c.page.click('[data-pop="apply"][data-arg="Ireland west-3"]');
       await until(async () => (await rowIds()) === "pc", "the saved filter to apply", 5000);
-      await c.page.click("#prospects-clear");
-      await c.page.selectOption("#prospects-f-industry", "Pharmacy");
-      await until(async () => (await rowIds()) === "pb", "the industry filter to apply", 5000);
-      await c.page.click("#prospects-clear");
-      await c.page.selectOption("#prospects-f-campaign", "Spring");
-      await until(async () => (await rowIds()) === "pa", "the campaign filter to apply", 5000);
-      await c.page.click("#prospects-clear");
+      await c.page.click("#prospects-saved-btn");
+      await c.page.click('[data-pop="reset"]');
       await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to show everything again", 5000);
-      // Convert to lead: one Leads card linked back, status converted, and a second click doesn't duplicate.
-      await c.page.click('.prospect-convert[data-prospect-id="pa"]');
+      // Columns chooser brings back a hidden column.
+      await c.page.click("#prospects-columns-btn");
+      await c.page.check('[data-pop="col"][data-arg="campaigns"]');
+      await c.visible('#prospects-grid .ag-header-cell[col-id="campaigns"]', "Campaigns shows after choosing it");
+      await c.page.keyboard.press("Escape");
+      // Bulk: select two rows, set status, export selected.
+      await c.page.click('#prospects-grid .ag-row[row-id="pa"] .ag-selection-checkbox input, #prospects-grid .ag-row[row-id="pa"] input[type=checkbox]');
+      await c.page.click('#prospects-grid .ag-row[row-id="pb"] .ag-selection-checkbox input, #prospects-grid .ag-row[row-id="pb"] input[type=checkbox]');
+      await c.visible("#prospects-bulk", "the bulk bar appears");
+      await c.page.selectOption("#prospects-bulk-status", "researching");
+      await c.click("#prospects-bulk-apply", "Apply status");
+      await until(async () => (await c.page.evaluate(() => ["pa", "pb"].map((i) => globalThis.__fbStub.col("prospects").get(i).status).join())) === "researching,researching", "both rows to take the status", 5000);
+      assert.strictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pc").status), "new");
+      const dl = c.page.waitForEvent("download");
+      await c.page.click("#prospects-export-selected");
+      const csv = fs.readFileSync(await (await dl).path());
+      assert.ok(csv.includes("Alpha Grocer") && csv.includes("Beta Pharmacy") && !csv.includes("Gamma Fashion"), "Export selected has only the selected rows");
+      await c.page.click('#prospects-grid .ag-header-cell[col-id="select"] input[type=checkbox]');
+      await c.page.click('#prospects-grid .ag-header-cell[col-id="select"] input[type=checkbox]');
+      // Convert to lead from the row menu: one Leads card linked back, status converted, and no second Convert.
+      await c.page.evaluate(() => document.querySelector('button[data-prospect-menu="pa"]').click());
+      await c.page.click('[data-pop="convert"]');
       await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").leadId)) === "prospect-pa", "the prospect to link to its lead", 5000);
       const lead = await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("prospect-pa"));
       assert.strictEqual(lead.prospectId, "pa");
       assert.strictEqual(lead.company.name, "Alpha Grocer");
       assert.strictEqual(lead.stage, "lead");
       assert.strictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").status), "converted");
-      await c.visible('.prospect-view-lead[data-prospect-id="pa"]', "the row now offers View lead");
-      assert.strictEqual(await c.page.locator('.prospect-convert[data-prospect-id="pa"]').count(), 0, "no second Convert button");
+      await c.page.evaluate(() => document.querySelector('button[data-prospect-menu="pa"]').click());
+      await c.visible('[data-pop="view"]', "the row menu now offers View lead");
+      assert.strictEqual(await c.page.locator('[data-pop="convert"]').count(), 0, "no second Convert");
+      await c.page.keyboard.press("Escape");
       assert.strictEqual(await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].length), 1, "exactly one lead");
       // The Leads board shows it, and its drawer links back to the prospect.
       await c.page.evaluate(() => { location.hash = "#promote/leads"; });
