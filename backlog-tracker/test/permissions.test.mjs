@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { SECTION_KEYS, effectiveLevels, storedLevel, roleLevels, setLevel, canView, canEdit, canAdmin, sectionForHash, firstAllowedSection, permissionCss, isAdminRole, PERMISSION_GROUPS, sectionForSettingsPage, SECTIONS, discoverNavSections } from "../public/js/permissions.js";
 
-assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "whiteboard", "promote", "promote-leads", "faq", "settings", "user-management", "releases", "skills", "project-docs"]);
+assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "whiteboard", "promote", "promote-leads", "prospects", "faq", "settings", "user-management", "releases", "skills", "project-docs"]);
 
 const engineer = { id: "e", name: "Engineer", permissions: { concepts: "none", faq: "view" } };
 const lv = effectiveLevels("editor", engineer);
@@ -41,7 +41,20 @@ assert.strictEqual(sectionForHash(""), "agent-board");
 assert.strictEqual(sectionForHash("#concept-incubator"), "concepts");
 assert.strictEqual(sectionForHash("#concept-abc"), "concepts");
 assert.strictEqual(sectionForHash("#promote/brand-guidelines"), "promote");
+assert.strictEqual(sectionForHash("#promote/prospects"), "prospects", "Prospects (TAM) has its own permission section");
 assert.strictEqual(sectionForHash("#faq-article/x"), "faq");
+{
+  // Removing Prospects from a role hides its nav entry and blocks the route; Leads is untouched.
+  const noTam = effectiveLevels("editor", { name: "Sales", permissions: { prospects: "none" } });
+  assert.ok(!canView(noTam, "prospects") && canView(noTam, "promote"));
+  const hidden = permissionCss(noTam);
+  assert.ok(hidden.includes("#promote-prospects-btn{display:none"), "the Prospects nav entry is hidden");
+  assert.ok(!hidden.includes("#promote-leads-btn{display:none"), "Leads stays visible");
+  const viewOnly = permissionCss(effectiveLevels("editor", { name: "Sales", permissions: { prospects: "view" } }));
+  assert.ok(viewOnly.includes("#prospects-grid [data-editor-only]"), "Convert to lead is removed at View");
+  assert.ok(!viewOnly.includes("#promote-prospects-btn{display:none"));
+  assert.strictEqual(canView(effectiveLevels("editor", { name: "Old", permissions: {} }), "prospects"), true, "roles saved before this keep access");
+}
 assert.strictEqual(sectionForHash("#docs/p1?interface=2"), "project-docs");
 assert.strictEqual(sectionForHash("#user-management/permissions"), "user-management");
 assert.strictEqual(sectionForHash("#settings/user-management/roles/r1"), "user-management");
@@ -97,11 +110,11 @@ assert.deepStrictEqual(SECTIONS.filter((s) => s.nav[0] && s.nav[0].startsWith("[
 
 // A new menu item shows up in Roles automatically, and a role's grant for its
 // siblings carries to it until someone sets it.
-const added = discoverNavSections([...menu, { id: "promote-prospects-btn", label: "Prospects (TAM)", group: "Promote" }, { id: "cmdk-open-btn", label: "Search", group: "" }]);
-assert.deepStrictEqual(added, ["promote-prospects"]);
-assert.ok(SECTION_KEYS.includes("promote-prospects") && PERMISSION_GROUPS.find((g) => g.label === "Promote").keys.at(-1) === "promote-prospects");
-assert.strictEqual(sectionForHash("#promote/prospects"), "promote-prospects");
-assert.strictEqual(storedLevel({ name: "Old", permissions: { promote: "view" } }, "promote-prospects"), "view");
+const added = discoverNavSections([...menu, { id: "promote-reports-btn", label: "Reports", group: "Promote" }, { id: "cmdk-open-btn", label: "Search", group: "" }]);
+assert.deepStrictEqual(added, ["promote-reports"]);
+assert.ok(SECTION_KEYS.includes("promote-reports") && PERMISSION_GROUPS.find((g) => g.label === "Promote").keys.at(-1) === "promote-reports");
+assert.strictEqual(sectionForHash("#promote/reports"), "promote-reports");
+assert.strictEqual(storedLevel({ name: "Old", permissions: { promote: "view" } }, "promote-reports"), "view");
 assert.deepStrictEqual(discoverNavSections(menu), [], "nothing is added twice");
 assert.deepStrictEqual(PERMISSION_GROUPS.flatMap((g) => g.keys).sort(), [...SECTION_KEYS].sort());
 console.log("permissions: ok");

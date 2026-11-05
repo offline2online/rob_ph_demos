@@ -992,7 +992,7 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".perm-table").count(), 0, "there is no permissions matrix");
       await c.visible("#role-permissions .role-perm-row", "the permissions render");
       const rows = await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-perm-row label")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(rows, ["Agent Board", "Staff Kanban", "Concepts", "Whiteboard", "Brand Guidelines", "Leads", "Help Centre", "Settings", "Settings > User Management", "Releases", "Skills & phase bindings", "Project docs"]);
+      assert.deepStrictEqual(rows, ["Agent Board", "Staff Kanban", "Concepts", "Whiteboard", "Brand Guidelines", "Leads", "Prospects (TAM)", "Help Centre", "Settings", "Settings > User Management", "Releases", "Skills & phase bindings", "Project docs"]);
       await c.page.selectOption("#role-perm-concepts", "none");
       await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);
@@ -1184,6 +1184,68 @@ const scenarios = [
       await until(async () => (await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].map(([k]) => k))).join() === "real", "only the real lead to remain", 5000);
       await c.page.click("#leads-filter-real");
       await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the real lead is still on the board");
+    },
+  },
+  {
+    name: "Promote: Prospects (TAM) - sits below Leads, filters, status edit, saved filter, convert to lead without duplicating",
+    seed: () => seed({ prospects: {
+      pa: { name: "Alpha Grocer", website: "https://alpha.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom", "Ireland"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pb: { name: "Beta Pharmacy", industry: "Pharmacy", hqCountry: "Germany", markets: ["Germany"], awsRegion: "eu-central-1", storeCount: 40, sizeBand: "small", vendors: [], campaigns: ["Autumn"], status: "targeted", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pc: { name: "Gamma Fashion", industry: "Fashion", hqCountry: "France", markets: ["France", "Ireland"], awsRegion: "eu-west-3", storeCount: null, vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      assert.ok(new URL(c.page.url()).hash === "#promote/prospects", "the page has its own URL");
+      const order = await c.page.evaluate(() => {
+        const a = document.getElementById("promote-leads-btn"), b = document.getElementById("promote-prospects-btn");
+        return { after: !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), label: b.textContent.trim(), sibling: a.nextElementSibling === b };
+      });
+      assert.ok(order.after && order.sibling, "Prospects (TAM) sits directly below Leads");
+      assert.ok(order.label.endsWith("Prospects (TAM)"), "the entry is labelled Prospects (TAM)");
+      const rowIds = () => c.page.evaluate(() => [...document.querySelectorAll("#prospects-grid .ag-center-cols-container .ag-row")].map((r) => r.getAttribute("row-id")).sort().join());
+      await until(async () => (await rowIds()) === "pa,pb,pc", "the grid to show all three prospects", 8000);
+      assert.strictEqual((await c.text("#prospects-count")).trim(), "3 prospects");
+      assert.strictEqual(await c.page.locator("#prospects-page > p:not(.field-hint):not([hidden])").count(), 0, "no explanatory copy under the grid");
+      assert.ok((await c.page.getAttribute("#prospects-info", "title")).length > 20, "help is an info tooltip");
+      // Filters: market matches HQ or operated countries; then AWS region, industry, campaign.
+      await c.page.selectOption("#prospects-f-market", "Ireland");
+      await until(async () => (await rowIds()) === "pa,pc", "the market filter to apply", 5000);
+      await c.page.selectOption("#prospects-f-region", "eu-west-3");
+      await until(async () => (await rowIds()) === "pc", "the AWS region filter to apply", 5000);
+      assert.strictEqual((await c.text("#prospects-count")).trim(), "1 of 3 prospects");
+      // Save the filter, clear, reload it from the list.
+      await c.page.click("#prospects-save-filter");
+      await c.page.fill("#dialog-field-0", "Ireland west-3");
+      await c.click("#dialog-ok", "Save filter");
+      await c.page.click("#prospects-clear");
+      await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to show everything again", 5000);
+      await c.page.selectOption("#prospects-saved", "Ireland west-3");
+      await until(async () => (await rowIds()) === "pc", "the saved filter to apply", 5000);
+      await c.page.click("#prospects-clear");
+      await c.page.selectOption("#prospects-f-industry", "Pharmacy");
+      await until(async () => (await rowIds()) === "pb", "the industry filter to apply", 5000);
+      await c.page.click("#prospects-clear");
+      await c.page.selectOption("#prospects-f-campaign", "Spring");
+      await until(async () => (await rowIds()) === "pa", "the campaign filter to apply", 5000);
+      await c.page.click("#prospects-clear");
+      await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to show everything again", 5000);
+      // Convert to lead: one Leads card linked back, status converted, and a second click doesn't duplicate.
+      await c.page.click('.prospect-convert[data-prospect-id="pa"]');
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").leadId)) === "prospect-pa", "the prospect to link to its lead", 5000);
+      const lead = await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("prospect-pa"));
+      assert.strictEqual(lead.prospectId, "pa");
+      assert.strictEqual(lead.company.name, "Alpha Grocer");
+      assert.strictEqual(lead.stage, "lead");
+      assert.strictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").status), "converted");
+      await c.visible('.prospect-view-lead[data-prospect-id="pa"]', "the row now offers View lead");
+      assert.strictEqual(await c.page.locator('.prospect-convert[data-prospect-id="pa"]').count(), 0, "no second Convert button");
+      assert.strictEqual(await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].length), 1, "exactly one lead");
+      // The Leads board shows it, and its drawer links back to the prospect.
+      await c.page.evaluate(() => { location.hash = "#promote/leads"; });
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card[data-lead-id="prospect-pa"]', "the converted prospect is on the Leads board");
+      await c.page.click('.lead-card[data-lead-id="prospect-pa"]');
+      await c.visible("#lead-sum-prospect", "the lead's drawer links to its prospect");
     },
   },
   {

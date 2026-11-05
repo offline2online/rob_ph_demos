@@ -363,6 +363,19 @@ async function main() {
   await check("A viewer cannot move a lead", "deny", () => updateDoc(doc(as(VIEWER), "leads/l1"), { stage: "demo" }));
   await check("A stranger cannot read a lead", "deny", () => getDoc(doc(as(STRANGER), "leads/l1")));
   await check("An editor can delete a lead", "allow", () => deleteDoc(doc(as(MEMBER), "leads/l1")));
+  // Promote › Prospects (TAM)
+  const PROSPECT = { name: "Acme Grocer", website: "https://acme.example", industry: "Grocery", subIndustry: "Supermarkets", hqCountry: "United Kingdom", markets: ["United Kingdom"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", source: "Manual", notes: "" };
+  await check("An editor can create a prospect", "allow", () => setDoc(doc(as(MEMBER), "prospects/p1"), PROSPECT));
+  await check("An editor can link a prospect to its lead", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { leadId: "prospect-p1", status: "converted" }));
+  await check("A prospect cannot take a status that is not on the list", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { status: "won-ish" }));
+  await check("A prospect needs a name", "deny", () => setDoc(doc(as(MEMBER), "prospects/p2"), { ...PROSPECT, name: "" }));
+  await check("A prospect takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "prospects/p3"), { ...PROSPECT, patchFiles: [] }));
+  await check("A member may read a prospect", "allow", () => getDoc(doc(as(MEMBER), "prospects/p1")));
+  await check("A viewer may read a prospect", "allow", () => getDoc(doc(as(VIEWER), "prospects/p1")));
+  await check("A viewer cannot create a prospect", "deny", () => setDoc(doc(as(VIEWER), "prospects/p4"), PROSPECT));
+  await check("A stranger cannot read a prospect", "deny", () => getDoc(doc(as(STRANGER), "prospects/p1")));
+  await check("A lead may carry the prospect it came from", "allow", () => setDoc(doc(as(MEMBER), "leads/prospect-p1"), { ...LEAD, prospectId: "p1" }));
+  await check("An editor can delete a prospect", "allow", () => deleteDoc(doc(as(MEMBER), "prospects/p1")));
   await check("A member may read a concept", "allow", () => getDoc(doc(as(MEMBER), "concepts/cActive")));
   await check("A stranger cannot read a concept", "deny", () => getDoc(doc(as(STRANGER), "concepts/cActive")));
   await check("An editor can create a concept", "allow", () =>
