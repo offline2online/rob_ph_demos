@@ -1420,6 +1420,17 @@
               <div class="media-keys-list" id="media-keys-list"><p class="interface-row-empty">Loading…</p></div>
             </div>
 
+            <div class="docs-block" data-admin-only>
+              <div class="docs-block-header">
+                <h3>Analytics — Help Centre
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About the analytics tag" data-tip="A Google Analytics measurement ID (for example G-XXXXXXXXXX) or a Google Tag Manager container ID (for example GTM-XXXXXXX). It is added to every customer-facing help centre page. Leave blank to track nothing."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <input type="text" id="fa-analytics-tag-input" maxlength="40" placeholder="G-XXXXXXXXXX or GTM-XXXXXXX" aria-label="Analytics tag ID">
+              <div class="form-row" style="justify-content:flex-end;">
+                <button type="button" class="btn-primary" id="fa-analytics-tag-save">Save</button>
+              </div>
+            </div>
 
             <!-- Per-browser only — localStorage, never Firestore (see
                  createDictationController / bt-dictation-lang / bt-dictation-engine

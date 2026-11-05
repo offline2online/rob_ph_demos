@@ -3877,7 +3877,7 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   Skills & phase bindings (the skills bound to the Build and Deploy phases, and
   the skills library), Automations (Notify Claude, Groom Backlog, Batch review,
   Run E2E with trigger, skills and binding) and Integrations & MCP (agent
-  connections, Media Studio keys, dictation). Each page is an AG Grid
+  connections, help centre analytics tag, dictation). Each page is an AG Grid
   table with a count line; explanations are info tooltips, not text under a
   table. No internal project names appear in UI copy.
 - Reloading `#settings/<page>` or `#user-management` reopens the same page.

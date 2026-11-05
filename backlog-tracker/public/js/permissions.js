@@ -26,7 +26,7 @@ export const SECTIONS = [
     edit: ["#concept-add-btn", "#concept-incubator-page [data-editor-only]", "#concept-detail-page [data-editor-only]", "#concept-description-save"] },
   { key: "promote", label: "Promote", nav: ["#promote-brand-btn", "#promote-leads-btn"], edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
   { key: "faq", label: "FAQ management", nav: ["#faq-articles-btn"],
-    edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#faq-cat-edit-save-btn"] },
+    edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#fa-analytics-tag-save", "#faq-cat-edit-save-btn"] },
   { key: "skills", label: "Skills", nav: ['[data-settings-page="skills"]'], edit: ["#skills-add-btn", "#skills-page [data-editor-only]", "#skill-add-file-btn"] },
   { key: "releases", label: "Releases", nav: ['[data-settings-page="releases"]'], edit: ["#releases-add-btn", ".release-mark-live-btn", "#release-editor-save"] },
   { key: "project-docs", label: "Project docs", nav: [],
