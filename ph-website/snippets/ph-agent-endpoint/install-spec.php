@@ -69,7 +69,7 @@ function installation_spec() {
 				'Create CloudFormation stacks that include IAM resources (the IAM acknowledgement on the review page)',
 				'Request service quota increases through AWS Support',
 				'View billing and usage information (optional)',
-				'Create and manage the stack\'s components: IAM, EKS, EC2, VPC, RDS, ElastiCache, MSK, OpenSearch Service, S3, ELB, ACM, KMS and Systems Manager',
+				'Create and manage the stack\'s components: IAM, EKS, EC2, VPC, RDS, ElastiCache, OpenSearch Service, S3, ELB, ACM, KMS and Systems Manager',
 			),
 			'iamPolicy'     => unconfirmed( 'The least-privilege IAM policy JSON is not published. It will be added once the owner supplies it. Do not invent or widen a policy: until then use the permissions summary above with the account owner.' ),
 			'regions'       => array(
@@ -140,7 +140,7 @@ function installation_spec() {
 				'IAM roles, users, groups and policies for provisioning and operations, named with the stack name and stack ID prefix',
 				'Supporting resources',
 			),
-			'resourcesCreatedByWizard' => array( 'EKS cluster and node groups', 'RDS (PostgreSQL)', 'ElastiCache (Redis)', 'MSK (Kafka)', 'OpenSearch Service', 'S3 buckets', 'Application Load Balancer', 'ACM certificate', 'KMS keys', 'CloudWatch log groups and alarms' ),
+			'resourcesCreatedByWizard' => array( 'EKS cluster and node groups', 'RDS (PostgreSQL)', 'ElastiCache (Redis)', 'OpenSearch Service', 'S3 buckets', 'Application Load Balancer', 'ACM certificate', 'KMS keys', 'CloudWatch log groups and alarms' ),
 			'outputs' => array(
 				array( 'key' => 'EC2InstancePublicURL', 'description' => 'Public URL of the Installation Wizard (the installer EC2 instance). Open it to hand over to the browser agent.' ),
 			),
@@ -149,7 +149,7 @@ function installation_spec() {
 		'verification' => array(
 			'stackSucceeded' => 'The stack status is CREATE_COMPLETE and its Outputs tab lists EC2InstancePublicURL.',
 			'wizardReachable' => 'Opening the EC2InstancePublicURL value in a browser loads the Installation Wizard.',
-			'fullInstall'     => 'After the wizard and DNS: the sign-in link in the confirmation email opens the platform, every EKS pod is Running, the OpenSearch domain is Active, and RDS, ElastiCache and MSK report available.',
+			'fullInstall'     => 'After the wizard and DNS: the sign-in link in the confirmation email opens the platform, every EKS pod is Running, the OpenSearch domain is Active, and RDS and ElastiCache report available.',
 			'healthCheckEndpoint' => unconfirmed( 'No public health-check endpoint is published. Verify with the CloudFormation Outputs and the wizard URL loading.' ),
 			'docs'            => HELP_BASE . '/support/home',
 		),
