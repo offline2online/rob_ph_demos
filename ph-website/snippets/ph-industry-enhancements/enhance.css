@@ -58,7 +58,10 @@
 .ph-ind-gate .ph-ind-gate-c span,.ph-ind-gate .ph-ind-gate-c a{font:400 14px/1.4 "Kantumruy Pro",system-ui,sans-serif;white-space:nowrap}
 .ph-ind-gate .ph-ind-gate-c a{color:#1C2540;text-decoration:underline}
 .ph-ind-gate .ph-ind-gate-b{grid-column:1/-1;justify-self:start;min-height:44px;padding:10px 22px;border:0;border-radius:999px;background:var(--ph-ind-a,#169BC2);color:#fff;font:700 14px/1 "Kantumruy Pro",system-ui,sans-serif;cursor:pointer}
-.ph-ind-gate .ph-ind-gate-b:disabled{opacity:.5;cursor:not-allowed}
+.ph-ind-gate .ph-ind-gate-b:disabled{background:#DCE1EB;color:#5A6479;opacity:1;cursor:not-allowed}
+.ph-ind-gate .ph-ind-gate-b:disabled:hover{background:#B3261E;color:#fff}
+.ph-ind-gate .ph-ind-gate-b:not(:disabled):hover{background:#3B8F1C;color:#fff}
+.ph-ind-gate .ph-ind-gate-m a{font:inherit;color:#0F7A9A;text-decoration:underline}
 .ph-ind-gate .ph-ind-gate-m{grid-column:1/-1;margin:0;font:400 14px/1.4 "Kantumruy Pro",system-ui,sans-serif}
 .ph-ind-gate .ph-ind-gate-m:empty{display:none}
 .ph-ind-gate .ph-ind-gate-err{color:#B3261E}
