@@ -41,28 +41,7 @@ jobs:
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/sa.json"
           gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json" --quiet
 
-      - name: 1. leadIngest requests (time + HTTP status only)
-        continue-on-error: true
-        run: |
-          for win in 30m 6h; do
-            [ "$win" = 6h ] && since=$(date -u -d '-6 hours' +%FT%TZ)
-            [ "$win" = 30m ] && since=$(date -u -d '-30 minutes' +%FT%TZ)
-            echo "=== requests since $since ($win) ==="
-            gcloud logging read \
-              "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"leadingest\" AND log_id(\"run.googleapis.com/requests\") AND timestamp>=\"$since\"" \
-              --project "$PROJECT" --order=asc --limit=500 \
-              --format='value(timestamp,httpRequest.requestMethod,httpRequest.status)' 2>&1 \
-              | sed -E 's/https?:[^ ]*//g'
-            echo "=== end ($win) ==="
-          done
-          echo "=== function errors in the last 6h (severity + time only) ==="
-          gcloud logging read \
-            "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"leadingest\" AND severity>=ERROR AND timestamp>=\"$(date -u -d '-6 hours' +%FT%TZ)\"" \
-            --project "$PROJECT" --order=asc --limit=100 --format='value(timestamp,severity)' 2>&1
-          echo "=== end errors ==="
-
-      - name: 2. leads collection
-        continue-on-error: true
+      - name: Delete the key-check test lead
         working-directory: backlog-tracker/scripts
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
@@ -72,37 +51,12 @@ jobs:
             const admin = require("firebase-admin");
             admin.initializeApp({ projectId: process.env.PROJECT });
             (async () => {
-              const snap = await admin.firestore().collection("leads").get();
-              const rows = snap.docs.map((d) => {
-                const x = d.data(), c = x.createdAt;
-                return { id: d.id, test: x.test === true, source: x.source || "", company: (x.company || {}).name || "",
-                  createdAt: c && c.toDate ? c.toDate().toISOString() : String(c || "") };
-              }).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-              const t = rows.filter((r) => r.test).length;
-              console.log(`leads: ${rows.length} total, test==true ${t}, test==false ${rows.length - t}`);
-              require("fs").writeFileSync(process.env.RUNNER_TEMP + "/leads.json", JSON.stringify(rows, null, 1));
-            })().catch((e) => { console.log("leads read failed: " + e.message); process.exit(1); });
+              const ref = admin.firestore().collection("leads").doc("SoBMjUN9OVPcte5QG9gJ");
+              const d = await ref.get();
+              if (!d.exists) return console.log("already gone");
+              if (d.data().test !== true) { console.log("not a test lead, leaving it"); process.exit(1); }
+              await ref.delete();
+              const left = await admin.firestore().collection("leads").get();
+              console.log("deleted test lead; leads left: " + left.size);
+            })().catch((e) => { console.log("failed: " + e.message); process.exit(1); });
           '
-          printf '%s\n' "$DIAG_PUBKEY" > "$RUNNER_TEMP/pub.pem"
-          openssl rand -hex 32 > "$RUNNER_TEMP/k"
-          echo "=== ENC_KEY ==="
-          openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/pub.pem" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in "$RUNNER_TEMP/k" | base64 -w0; echo
-          echo "=== ENC_DATA ==="
-          openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:"$RUNNER_TEMP/k" -in "$RUNNER_TEMP/leads.json" | base64 -w0; echo
-          echo "=== END_ENC ==="
-          rm -f "$RUNNER_TEMP/k" "$RUNNER_TEMP/leads.json"
-
-      - name: 3. Direct test with the stored LEAD_INGEST_KEY
-        continue-on-error: true
-        run: |
-          echo "=== Secret Manager versions ==="
-          gcloud secrets versions list LEAD_INGEST_KEY --project "$PROJECT" --format='value(name,state,createTime)' 2>&1
-          KEY="$(gcloud secrets versions access latest --secret=LEAD_INGEST_KEY --project "$PROJECT")"
-          echo "::add-mask::$KEY"
-          if [ "$KEY" = unset ]; then echo "stored key: the 'unset' placeholder"; else echo "stored key: ${#KEY} chars, sha256 prefix $(printf '%s' "$KEY" | sha256sum | cut -c1-8)"; fi
-          code=$(curl -sS -o "$RUNNER_TEMP/body" -w '%{http_code}' -X POST \
-            -H "X-Lead-Key: $KEY" -H 'Content-Type: application/json' \
-            -d '{"company":"TEST key check 2 - delete","email":"e2e-test@example.com","contactName":"Key Check","test":true}' \
-            https://backlog-tracker-e4ed2.web.app/leadIngest/v1/submit)
-          echo "POST status: $code"
-          echo "POST body: $(cat "$RUNNER_TEMP/body")"
