@@ -21,6 +21,60 @@ const NODE_H = 56;
 const STRIP_COLS = 7;
 const STRIP_GAP_X = 210;
 const STRIP_GAP_Y = 96;
+const STRIP_TOP = 1750;
+
+
+// Sales detail (ticket 6nnKlR0vVtRjNBnRUQzc): five lanes under the three columns
+// spell out the TAM database, the TAM-to-prospect flow, AWS ACE co-sell, AWS
+// funding and the per-opportunity documentation pack. Boxes run left to right.
+const LANE_TOP = 880;
+const LANE_GAP = 170;
+const LANE_H = 150;
+const SALES_LANES = [
+  { key: "tam", name: "Sales: TAM database (per market, AWS-supported markets first)", nodes: [
+    ["tam", "TAM database", "Every retailer and signage buyer, per market"],
+    ["industry", "Industry mapping", "Flags industries missing on the website"],
+    ["profile", "Company profile", "Cloud provider, Marketplace buyer, stack, logo"],
+    ["mentions", "Mentions monitor", "Press and online mentions to chase"],
+    ["owner", "Staff linking", "Each prospect has a PH staff owner"],
+    ["fresh", "Freshness", "Last-researched date; agent refreshes monthly"],
+  ] },
+  { key: "flow", name: "Sales: TAM to prospect flow", nodes: [
+    ["stage1", "Stage 1: awareness", "TAM segments as DSP or PH campaigns"],
+    ["indpage", "Industry pages", "Calculator download or demo booking"],
+    ["prospect", "Prospect / Hot prospect", "Promote leads Kanban, with staff owner"],
+    ["stage2", "Stage 2: engagement", "Higher bids, role and industry messaging"],
+  ] },
+  { key: "ace", name: "Sales: cloud co-sell, AWS ACE via Partner Central Selling API (Azure, Google Cloud later)", nodes: [
+    ["hotlead", "ACE opportunity", "Created at Prospect stage for AWS companies"],
+    ["qualified", "ACE Qualified", "Demo done, AWS assigns account manager"],
+    ["validation", "Tech & Biz validation", "Pilot scoping and business case"],
+    ["committed", "ACE Committed", "Consideration and purchase"],
+    ["offer", "Marketplace private offer", "Self-hosted in their VPC"],
+    ["launched", "Launched", "On rollout"],
+    ["acescore", "ACE score tracking", "Target 60/100+; shows fields that lift it"],
+  ] },
+  { key: "fund", name: "Sales: AWS funding via Partner Central Benefits API (drafts only)", nodes: [
+    ["fundtrig", "Funding prompted", "When a company becomes a lead"],
+    ["eligibility", "Eligibility check", "Against the linked ACE opportunity"],
+    ["poc", "POC funding draft", "Scope, criteria, cost, supporting docs"],
+    ["sandbox", "Sandbox credits draft", "AWS environments and usage costs"],
+    ["manual", "Manual submission", "Account manager submits, never automatic"],
+    ["claim", "Claim sign-off document", "Customer signs; reminder before deadline"],
+    ["fundstatus", "Funding status", "Approved, credits used, expiry alerts"],
+  ] },
+  { key: "docs", name: "Sales: documentation pack attached to the ACE opportunity, refreshed on every stage change", nodes: [
+    ["pack", "Customised pack", "Per company, latest logo"],
+    ["onepager", "Industry one-pager", "Use cases and case studies"],
+    ["bizcase", "Business case", "From their calculator model"],
+    ["brief", "Solution brief", "Products in scope, AWS architecture"],
+    ["deploynotes", "Deployment notes", "VPC and Marketplace private offer"],
+    ["acctsum", "Account summary", "TAM profile, vendors, contacts, next steps"],
+    ["leadcard", "Lead card", "ACE stage, score, funding, credits, claim"],
+  ] },
+];
+const laneNodes = SALES_LANES.flatMap((l, i) => l.nodes.map(([key, name, sub], k) => ({ key, kind: "fixed", lane: l.key, name, sub, x: 130 + k * 205, y: LANE_TOP + i * LANE_GAP + 85 })));
+const laneEdges = SALES_LANES.flatMap((l) => l.nodes.slice(1).map((n, k) => ({ from: l.nodes[k][0], to: n[0] })));
 
 // Fixed zones: the three columns and the Feature Release band.
 export const INTERNAL_ZONES = [
@@ -28,6 +82,7 @@ export const INTERNAL_ZONES = [
   { key: "cs", name: "Customer Success", x: 24, y: 190, w: 320, h: 660 },
   { key: "ph", name: "Personalisation Hub (PH)", x: 560, y: 190, w: 380, h: 430 },
   { key: "sales", name: "Sales", x: 1060, y: 190, w: 416, h: 660 },
+  ...SALES_LANES.map((l, i) => ({ key: l.key, name: l.name, x: 24, y: LANE_TOP + i * LANE_GAP, w: 1452, h: LANE_H, lane: true })),
 ];
 
 // kind: fixed (an internal part of the sketch) | bridge (a PH platform node,
@@ -53,6 +108,7 @@ export const INTERNAL_NODES = [
   { key: "prospects", kind: "fixed", name: "Prospects & brands", sub: "Talk to Sales agents", x: 1370, y: 260 },
   { key: "salesagents", kind: "fixed", name: "Sales agents", sub: "Talk to prospects", x: 1370, y: 440 },
   { key: "email", kind: "fixed", name: "Support email", sub: "Sales agents and the FAQs DB", x: 1370, y: 700 },
+  ...laneNodes,
 ];
 
 // `via` are waypoints; the line leaves and enters on each box's edge.
@@ -74,6 +130,12 @@ export const INTERNAL_EDGES = [
   { from: "ads", to: "salesagents", label: "feeds in" },
   { from: "salesagents", to: "prospects", label: "talk to", both: true },
   { from: "salesagents", to: "email", label: "connect", both: true },
+  ...laneEdges,
+  { from: "tam", to: "stage1", label: "segments" },
+  { from: "prospect", to: "hotlead", label: "hot lead" },
+  { from: "hotlead", to: "fundtrig", label: "prompts funding" },
+  { from: "poc", to: "claim", label: "once approved", dotted: true, via: [[540, 1420], [1155, 1420]] },
+  { from: "pack", to: "hotlead", dotted: true, via: [[34, 1645], [34, 1305]] },
 ];
 
 // September focus, shown as notes under the sketch.
@@ -118,7 +180,7 @@ export function buildInternalMap({ projects = [], concepts = [] } = {}) {
   });
   items.sort((a, b) => a.name.localeCompare(b.name));
 
-  const stripTop = 910;
+  const stripTop = STRIP_TOP;
   const rows = Math.max(1, Math.ceil(items.length / STRIP_COLS));
   items.forEach((it, i) => {
     it.x = 24 + NODE_W / 2 + (i % STRIP_COLS) * STRIP_GAP_X + 6;
@@ -169,12 +231,12 @@ export function internalMapHTML(model) {
   });
   model.edges.forEach((e) => {
     const d = e.path.map((pt, i) => `${i ? "L" : "M"}${Math.round(pt.x * 10) / 10} ${Math.round(pt.y * 10) / 10}`).join(" ");
-    const lines = wrap(e.label, 16);
-    const lw = Math.max(...lines.map((t) => t.length)) * 6.3 + 10;
+    const lines = e.label ? wrap(e.label, 16) : [];
+    const lw = Math.max(0, ...lines.map((t) => t.length)) * 6.3 + 10;
     const lh = lines.length * 12 + 6;
     const lbl = lines.map((t, k) => `<text class="sysmap-edge-label" x="${Math.round(e.labelAt.x)}" y="${Math.round(e.labelAt.y + (k - (lines.length - 1) / 2) * 12 + 4)}" text-anchor="middle">${esc(t)}</text>`).join("");
     svg += `<g class="sysmap-edge${e.dotted ? " dotted" : ""}"><path class="sysmap-line" d="${d}" marker-end="url(#im-arrow)"${e.both ? ' marker-start="url(#im-arrow)"' : ""}/>
-      <rect class="sysmap-edge-bg" x="${Math.round(e.labelAt.x - lw / 2)}" y="${Math.round(e.labelAt.y - lh / 2)}" width="${Math.round(lw)}" height="${lh}" rx="3"/>${lbl}</g>`;
+      ${lines.length ? `<rect class="sysmap-edge-bg" x="${Math.round(e.labelAt.x - lw / 2)}" y="${Math.round(e.labelAt.y - lh / 2)}" width="${Math.round(lw)}" height="${lh}" rx="3"/>${lbl}` : ""}</g>`;
   });
   svg += `<text class="sysmap-boundary-label" x="24" y="${model.strip.top + 22}">Internal operations items on the board</text>`;
   if (!model.items.length) {

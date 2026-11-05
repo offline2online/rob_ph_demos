@@ -2328,6 +2328,24 @@ not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
   Feature Release pipeline and Staff Kanban, step 2). Internal operations
   and unassigned concepts and projects sit in a strip under the sketch.
   It is not pinned or saved (no Re-arrange, History or release filter).
+- **Sales detail lanes** (ticket 6nnKlR0vVtRjNBnRUQzc, 5 Nov 2026). Five
+  full-width lanes under the three columns spell out the Sales process:
+  (1) the **TAM database** (per market, AWS-supported first; industry mapping
+  with website gaps flagged; company profile with cloud provider, Marketplace
+  buying, stack, vendors, logo; mentions monitor; staff linking; last-researched
+  dates with a scheduled refresh agent); (2) the **TAM to prospect flow**
+  (Stage 1 awareness campaigns, industry-page conversion by calculator download
+  or demo, Prospect / Hot prospect on the Promote leads Kanban, Stage 2 adapted
+  campaigns); (3) **cloud co-sell**: AWS ACE through the Partner Central Selling
+  API (opportunity at Prospect, Qualified, Technical/Business Validation,
+  Committed, Marketplace private offer, Launched; score tracked per submission,
+  target 60/100+; Azure and Google Cloud later on the same stages);
+  (4) **AWS funding** through the Partner Central Benefits API (eligibility
+  check, POC funding and Sandbox credit drafts, submitted manually, never
+  automatically; post-approval customer sign-off document for the claim; status
+  and expiry alerts); (5) the **customised, logo-branded documentation pack**
+  attached to the ACE opportunity and refreshed on every stage change, plus the
+  combined lead card. This is a diagram only; none of the integrations is built.
 - **Bridge links.** An internal operations item that connects to the
   platform is drawn as a dashed **bridge node** inside the PH box (Embedded
   support, MCP Access, PH releases), not as a second copy of a platform item;

@@ -83,4 +83,10 @@ for (const a of INTERNAL_NODES) for (const b of INTERNAL_NODES) {
   if (a === b) continue;
   assert.ok(Math.abs(a.x - b.x) >= 180 || Math.abs(a.y - b.y) >= 56, `${a.key} overlaps ${b.key}`);
 }
+// Sales detail lanes (TAM database, flow, ACE, funding, docs pack)
+for (const k of ["tam", "flow", "ace", "fund", "docs"]) assert.ok(zone(k) && zone(k).y >= zone("sales").y + zone("sales").h, `${k} lane sits under the columns`);
+for (const n of INTERNAL_NODES.filter((n) => n.lane)) assert.ok(inZone(n, zone(n.lane)), `${n.key} is inside lane ${n.lane}`);
+for (const [a, b] of [["tam", "stage1"], ["indpage", "prospect"], ["prospect", "hotlead"], ["hotlead", "qualified"], ["qualified", "validation"], ["validation", "committed"], ["committed", "offer"], ["offer", "launched"], ["hotlead", "fundtrig"], ["eligibility", "poc"], ["poc", "claim"], ["pack", "hotlead"]]) assert.ok(has(a, b), `${a} - ${b}`);
+for (const re of [/Selling API/, /Benefits API/, /drafts only/, /Sandbox credits/, /ACE score/, /Calculator download/, /latest logo/]) assert.match(html, re);
+assert.ok(internal.strip.top >= zone("docs").y + zone("docs").h, "board strip sits under the lanes");
 console.log("entity-type + internal map: ok");
