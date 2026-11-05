@@ -34,6 +34,11 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     await api.handle(req(FORM, ""), r); assert.equal(r.code, 401);
     assert.equal(db.docs.size, 0);
   });
+  await test("the deploy's \"unset\" placeholder is never a valid key", async () => {
+    const db = fakeDb(); const api = createLeadIngest({ db, key: () => "unset" }); const r = res();
+    await api.handle(req(FORM, "unset"), r); assert.equal(r.code, 401);
+    assert.equal(db.docs.size, 0);
+  });
   await test("only POST /v1/submit is served", async () => {
     const { api } = mkApi(); const r = res();
     await api.handle(req(FORM, "k", "GET"), r); assert.equal(r.code, 405);
