@@ -24,16 +24,20 @@
 //  3. The native click was only swallowed if it landed on the same button.
 //     The slide-over closes the instant the item is clicked, so WebKit's late
 //     click hit whatever was underneath (a card, another link) and opened
-//     that instead. It is now swallowed wherever it lands near the tap, and
-//     touchend's default is prevented so WebKit doesn't synthesise it at all.
+//     that instead. It is now swallowed wherever it lands near the tap.
+//
+// touchend's default is deliberately NOT prevented (5 Nov 2026). Preventing it
+// made the browser drop the click of a second tap on the same spot within
+// about 100 ms (measured in Chromium), and it suppresses iOS's mouse events for
+// the tap. The guard below swallows the browser's own click instead.
 const SWALLOW_MS = 1000;
 const MOVE_PX = 10;
 const MAX_TAP_MS = 800;
 const LATE_CLICK_PX = 40;
 
 // Opt-out: a control inside [data-native-tap] keeps the browser's own tap
-// handling. For pickers that choose on mousedown (iOS sends no mousedown once
-// touchend's default is prevented): Staff Kanban's mention and ticket pickers.
+// handling. For pickers that choose on mousedown (the click this file sends
+// would do nothing there): Staff Kanban's mention and ticket pickers.
 export const NATIVE_TAP = "[data-native-tap]";
 const firedAt = new WeakMap();
 
@@ -56,10 +60,9 @@ function installGuard() {
     ev.stopImmediatePropagation();
   }, true);
   // A late click always arrives before the next finger comes down, so a new
-  // touch disarms the guard. Without this, when the browser did NOT send a
-  // late click (touchend's default was prevented, as it should be), the
-  // armed guard ate the NEXT tap's real click on anything that is not a tap
-  // target, e.g. a Staff Kanban card tapped just after closing a ticket.
+  // touch disarms the guard. Without this, when the browser sent no click for
+  // the tap (WebKit drops some), the armed guard ate the NEXT tap's real click
+  // on anything that is not a tap target, e.g. a Staff Kanban card.
   const disarm = () => { swallow = null; };
   window.addEventListener("touchstart", disarm, { capture: true, passive: true });
   window.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch" || e.pointerType === "pen") disarm(); }, { capture: true, passive: true });
@@ -115,15 +118,9 @@ export function clickOnTouchTap(root, selector, { accept } = {}) {
   root.addEventListener("touchcancel", () => { tap = null; });
   root.addEventListener("touchend", (e) => {
     const p = e.changedTouches && e.changedTouches[0];
-    let fired = performance.now() - lastFired < 120; // pointerup handled it just now
-    if (!fired && p && tap) {
-      const under = document.elementFromPoint(p.clientX, p.clientY);
-      fired = finish(under, p.clientX, p.clientY);
-    }
-    // Stop WebKit synthesising its own (late, re-targeted) click for a tap
-    // already acted on.
-    if (fired && e.cancelable) e.preventDefault();
-  }, { passive: false });
+    if (performance.now() - lastFired < 120) return; // pointerup handled it just now
+    if (p && tap) finish(document.elementFromPoint(p.clientX, p.clientY), p.clientX, p.clientY);
+  }, { passive: true }); // never preventDefault here: see the note at the top
 }
 
 // The whole console (3 Nov 2026 → 5 Nov 2026): after the sidebar fix, the

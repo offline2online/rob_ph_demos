@@ -40,7 +40,7 @@ for (const never of ["input[type=\"text\"]", "select", "textarea", "[contentedit
 }
 
 // 4. The four WebKit failure modes stay handled.
-assert.match(tc, /addEventListener\("touchend"[\s\S]*?\{ passive: false \}/, "touchend must be a non-passive listener (it prevents the native click)");
+assert.match(tc, /addEventListener\("touchend"[\s\S]*?\{ passive: true \}/, "touchend must stay passive: preventing its default made the browser drop the next quick tap's click (5 Nov 2026); the window click guard swallows the duplicate instead");
 assert.match(tc, /addEventListener\("touchstart"/, "Touch Events must be tracked (pointercancel / missing pointer events)");
 assert.ok(!/\.timeStamp\b/.test(tc.replace(/\/\/.*$/gm, "")), "taps must be timed with performance.now(), not Event.timeStamp");
 assert.match(tc, /window\.addEventListener\("click"[\s\S]*?stopImmediatePropagation[\s\S]*?\}, true\)/, "the late native click must be swallowed by a window capture listener");

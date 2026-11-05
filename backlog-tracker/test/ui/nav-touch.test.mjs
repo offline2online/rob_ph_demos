@@ -59,9 +59,11 @@ function initMode(mode) {
   window.__locate = (key) => [...document.querySelectorAll("#nav-drawer .nav-drawer-item, [role=tab]")].find((b) => keyOf(b) === key && b.getClientRects().length) || null;
   // Route plus whichever tabs are selected: what a click changes.
   window.__sig = () => location.hash.split("?")[0] + " | " + [...document.querySelectorAll("[role=tab][aria-selected=true]")].filter((b) => b.getClientRects().length).map(keyOf).sort().join(",");
-  const drops = mode === "noclick" || mode === "cancel" || mode === "noptr";
+  // late: WebKit does not send the click on time; it arrives later, re-aimed (the test sends it).
+  const drops = mode === "noclick" || mode === "cancel" || mode === "noptr" || mode === "late";
+  window.__dropping = true;
   window.addEventListener("click", (e) => {
-    if (drops && e.isTrusted) { e.stopImmediatePropagation(); e.preventDefault(); }
+    if (drops && e.isTrusted && window.__dropping) { e.stopImmediatePropagation(); e.preventDefault(); }
   }, true);
   // Counted in the bubble phase: only clicks that reach the app's own handlers.
   document.addEventListener("click", (e) => {
@@ -122,7 +124,12 @@ try {
         if (!p) { failures++; console.log(`FAIL ${mode} ${w}x${ht} ${start || "board"} → ${key}: not on screen`); continue; }
         await page.evaluate(() => { window.__taps = {}; });
         await tap(p.x, p.y);
-        if (mode === "late") await page.mouse.click(p.x, p.y); // WebKit's late click, re-hit-tested
+        if (mode === "late") { // WebKit's late click, re-hit-tested after the page changed
+          await page.waitForTimeout(80);
+          await page.evaluate(() => { window.__dropping = false; });
+          await page.mouse.click(p.x, p.y);
+          await page.evaluate(() => { window.__dropping = true; });
+        }
         taps++;
         try {
           await until(() => page.evaluate((e) => window.__sig() === e, expected), `${key} → ${expected}`, 1500);

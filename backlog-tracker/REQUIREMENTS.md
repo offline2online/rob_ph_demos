@@ -3904,9 +3904,11 @@ Rules:
   touch or pen tap that lifts within 10 px and 800 ms on the control it
   started on clicks that control there and then. It tracks **both** Pointer
   Events and Touch Events, times taps with `performance.now()` (never
-  `Event.timeStamp`), prevents `touchend`'s default once it has acted, and
-  swallows the late native click **wherever it lands** within 40 px and 1 s of
-  the tap. A keyboard click, which has no coordinates, is never swallowed. The
+  `Event.timeStamp`), and swallows the browser's own click for that tap
+  **wherever it lands** within 40 px and 1 s, so the tap never acts twice.
+  It never prevents `touchend`'s default: doing so made the browser drop the
+  click of a second tap on the same spot within about 100 ms, which broke
+  opening a Staff Kanban card straight after closing a ticket. A keyboard click, which has no coordinates, is never swallowed. The
   guard is disarmed by the next touch, so it can never eat the next tap's
   own click: before that existed it did, and Staff Kanban cards (`<article>`,
   not a tap target) failed to open when tapped just after closing a ticket.
@@ -3917,9 +3919,10 @@ Rules:
   not (a `div` or `li` with a click handler) must get `data-touch-tap`, or
   better, be a `<button>`. Text fields, selects and contenteditable areas are
   never covered: they need the native tap for focus and the keyboard.
-- **Act on `click`, not `mousedown`.** Once `touchend`'s default is
-  prevented, iOS sends no `mousedown`/`mouseup` for that tap. A control that
-  must act on `mousedown` (a picker that keeps an input's focus) goes inside
+- **Act on `click`, not `mousedown`.** The handler sends a `click`, and the
+  browser's own `mousedown` for a tap is the event WebKit is least reliable
+  about. A control that must act on `mousedown` (a picker that keeps an
+  input's focus) goes inside
   `[data-native-tap]`, which keeps the browser's own handling: Staff Kanban's
   mention picker and ticket picker. `test/touch-guard.test.mjs` fails the
   build on any new `mousedown`/`mouseup` handler until it has been reviewed
