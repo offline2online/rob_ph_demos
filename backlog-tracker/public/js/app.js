@@ -48,7 +48,7 @@ import { createResultReader, useContinuousMode } from "./dictation-results.js";
 import { loadQuill } from "./quill-loader.js";
 import { fetchPublished, contentHashOf, articleStatus, liveUrlFor, lastSyncLabel, wpStatusBadgeHTML, WP_STATUS_LABELS } from "./wp-publish-status.js";
 import { userRows, mountUsersGrid } from "./user-management.js";
-import { LEVELS, LEVEL_LABELS, SECTIONS, PERMISSION_GROUPS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, roleLevels, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel } from "./permissions.js";
+import { LEVELS, LEVEL_LABELS, SECTIONS, PERMISSION_GROUPS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, roleLevels, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel, discoverNavSections } from "./permissions.js";
 import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -3188,6 +3188,16 @@ primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
 // have loaded (unrestricted until then, as before roles existed). See
 // permissions.js; the matrix itself is User Management → Permissions.
 let accessLevels = null;
+// Any sidebar button no section owns becomes a permission section, so a new
+// menu item (or a rename) shows up in Roles by itself.
+discoverNavSections([...document.querySelectorAll("#nav-drawer .nav-group")].flatMap((g) => {
+  const group = ((g.querySelector(".nav-drawer-section") || {}).textContent || "").trim();
+  return [...g.querySelectorAll("button.nav-drawer-item[id]")].map((b) => {
+    const c = b.cloneNode(true);
+    c.querySelectorAll(".material-symbols-outlined,kbd").forEach((e) => e.remove());
+    return { id: b.id, label: c.textContent.trim(), group };
+  });
+}));
 let accessSelfRoleId = "";
 let accessRoles = [];
 let accessRolesLoaded = false;
@@ -3201,7 +3211,7 @@ function showAccessDenied(key) {
   document.getElementById("access-denied-text").textContent = `Your role doesn't include access to ${label}. An admin can change that in Settings → User Management → Roles.`;
   const go = document.getElementById("access-denied-go");
   go.hidden = !next;
-  go.dataset.hash = next ? SECTION_HASH[next] : "";
+  go.dataset.hash = next ? (SECTION_HASH[next] || "") : "";
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -9971,7 +9981,7 @@ function showSettingsPage(key, sub) {
     return;
   }
   if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
-  if (settingsPage === "integrations") { loadFaqSiteSettings(); loadMyAgentConnections(); if (isConsoleAdmin()) loadMediaKeys(); }
+  if (settingsPage === "integrations") { loadMyAgentConnections(); if (isConsoleAdmin()) loadMediaKeys(); }
   setRouteHash(settingsHash(settingsPage));
   updateTopbarTitle();
   renderSettingsGrids();
@@ -10005,38 +10015,6 @@ document.getElementById("settings-submenu").addEventListener("keydown", (e) => {
 });
 document.getElementById("settings-manage-releases-btn").addEventListener("click", () => openReleasesPage());
 document.getElementById("settings-manage-skills-btn").addEventListener("click", () => openSkillsPage());
-
-// Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
-// — currently just the analytics tag appended to every customer-facing FAQ
-// page. This console only ever writes the tag to Firestore
-// (settings/faqSite); faq-export.js is what carries it into
-// faq/data/settings.json, the static file the public site (which never
-// talks to Firestore directly for anything but article content) actually
-// reads — see faq/js/page-common.js.
-async function loadFaqSiteSettings() {
-  const input = document.getElementById("fa-analytics-tag-input");
-  input.value = "";
-  try {
-    const snap = await getDoc(doc(db, "settings", "faqSite"));
-    input.value = (snap.exists() && snap.data().analyticsTag) || "";
-  } catch (err) {
-    console.error("Failed to load FAQ site settings:", err);
-  }
-}
-document.getElementById("fa-analytics-tag-save").addEventListener("click", async () => {
-  if (!(await requireFaqEditor())) return;
-  const tag = document.getElementById("fa-analytics-tag-input").value.trim();
-  if (tag && !/^[A-Za-z0-9-]{1,40}$/.test(tag)) {
-    await showAlert("That doesn't look like a Google Analytics or Tag Manager ID — expected something like G-XXXXXXXXXX or GTM-XXXXXXX.");
-    return;
-  }
-  await setDoc(doc(db, "settings", "faqSite"), {
-    analyticsTag: tag || null,
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-  if (!faqUser) return; // sign-in was declined — nothing was saved
-  await showAlert(tag ? "Saved — it'll appear on the public FAQ site after the next export." : "Cleared — no analytics tag will be sent.");
-});
 
 // ── Settings → Dictation ─────────────────────────────────────────────────
 // Per-browser only (bt-dictation-lang/bt-dictation-engine, read by
@@ -10609,7 +10587,21 @@ document.getElementById("role-save").addEventListener("click", async () => {
 // over MCP (list_project_documents / get_project_document).
 const promotePage = document.getElementById("promote-page");
 const leadsPage = document.getElementById("leads-page");
+const prospectsPage = document.getElementById("prospects-page");
 let promotePageKey = "";
+// Promote › Prospects (TAM) (prospects-page.js): the AG Grid database, mounted on first open.
+let prospectsUi = null;
+let prospectsUiLoading = null;
+function ensureProspectsUi() {
+  if (prospectsUi) return Promise.resolve(prospectsUi);
+  if (!prospectsUiLoading) {
+    prospectsUiLoading = import("./prospects-page.js").then(({ mountProspectsPage }) => {
+      prospectsUi = mountProspectsPage({ db, auth, canEdit: () => canEditSection("prospects"), askName: (m) => showPromptDialog(m, "", { title: "Save filter", okLabel: "Save" }) });
+      return prospectsUi;
+    });
+  }
+  return prospectsUiLoading;
+}
 // Promote › Leads (leads-page.js): mounted the first time the page opens.
 let leadsUi = null;
 let leadsUiLoading = null;
@@ -10637,7 +10629,7 @@ function renderPromotePage() {
   document.getElementById("promote-requirements-wrap").hidden = !docs.requirements;
 }
 function openPromotePage(key = PROMOTE_PAGES[0].key) {
-  if (!pageAllowed("promote")) return;
+  if (!pageAllowed(key === "prospects" ? "prospects" : "promote")) return;
   closeAllSubPages();
   ensureLazy("projectDocs");
   document.getElementById("projects-root").hidden = true;
@@ -10646,6 +10638,9 @@ function openPromotePage(key = PROMOTE_PAGES[0].key) {
   if (key === "leads") {
     leadsPage.hidden = false;
     ensureLeadsUi().then((ui) => { ui.start(); ui.render(); });
+  } else if (key === "prospects") {
+    prospectsPage.hidden = false;
+    ensureProspectsUi().then((ui) => { ui.start(); ui.render(); });
   } else {
     promotePage.hidden = false;
   }
@@ -10654,9 +10649,10 @@ function openPromotePage(key = PROMOTE_PAGES[0].key) {
   renderPromotePage();
 }
 function closePromotePage() {
-  if (promotePage.hidden && leadsPage.hidden) return;
+  if (promotePage.hidden && leadsPage.hidden && prospectsPage.hidden) return;
   promotePage.hidden = true;
   leadsPage.hidden = true;
+  prospectsPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
@@ -11779,6 +11775,7 @@ const ROUTE_TITLES = {
   "#settings/user-management/roles": "Settings: Roles",
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
   "#promote/leads": "Promote: Leads",
+  "#promote/prospects": "Promote: Prospects (TAM)",
   "#settings/projects": "Settings: Projects",
   "#settings/releases": "Settings: Releases",
   "#settings/skills": "Settings: Skills & phase bindings",
@@ -11929,7 +11926,7 @@ function applyRouteFromHash() {
     if (faqSettingsPage.hidden) openFaqSettingsPage(k, um && um.tab);
     else if (k !== settingsPage || (um && um.tab !== umTab)) showSettingsPage(k, um && um.tab);
   }
-  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : promotePage.hidden)) openPromotePage(k); }
+  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : promotePage.hidden)) openPromotePage(k); }
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
@@ -11940,7 +11937,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

@@ -12,6 +12,7 @@
 //   source         where it came from ("Website form", "Manual", ...)
 //   assignee       a member's email, or ""
 //   customerAccount { id, name } once the lead has converted, else null
+//   prospectId     the Prospects (TAM) record it was converted from, else absent
 //   enrichment     { at, by, techStack[], summary, sources[{source,status,message}] }
 //   test           true for a lead submitted with the website's test flag
 //   sourcePage / sourceIndustry  the page and industry a website lead came from
@@ -183,6 +184,7 @@ function normaliseLead(id, d) {
     test: x.test === true,
     sourcePage: String(x.sourcePage || ""),
     sourceIndustry: String(x.sourceIndustry || ""),
+    prospectId: String(x.prospectId || ""),
     customerAccount: x.customerAccount && typeof x.customerAccount === "object" ? { id: String(x.customerAccount.id || ""), name: String(x.customerAccount.name || "") } : null,
     enrichment: x.enrichment && typeof x.enrichment === "object" ? x.enrichment : null,
     tam: x.tam && typeof x.tam === "object" && !Array.isArray(x.tam) ? x.tam : null, // read-only: no TAM data model yet

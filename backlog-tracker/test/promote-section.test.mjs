@@ -12,8 +12,11 @@ assert.strictEqual(promoteHash("brand-guidelines"), "#promote/brand-guidelines")
 assert.strictEqual(promoteNavId("#promote/brand-guidelines"), "promote-brand-btn");
 assert.strictEqual(promoteNavId("#skills"), null);
 assert.ok(PROMOTE_PAGES.every((p) => p.navId));
-assert.ok(PROMOTE_PAGES.filter((p) => p.key !== "leads").every((p) => p.docs.guidelines));
-assert.deepStrictEqual(PROMOTE_PAGES.map((p) => p.key), ["brand-guidelines", "leads"], "Leads sits beneath Brand Guidelines");
+assert.ok(PROMOTE_PAGES.filter((p) => p.key !== "leads" && p.key !== "prospects").every((p) => p.docs.guidelines));
+assert.deepStrictEqual(PROMOTE_PAGES.map((p) => p.key), ["brand-guidelines", "leads", "prospects"], "Leads sits beneath Brand Guidelines and Prospects (TAM) directly below Leads");
+assert.strictEqual(promotePageFromHash("#promote/prospects"), "prospects");
+assert.strictEqual(promoteHash("prospects"), "#promote/prospects");
+assert.strictEqual(promoteNavId("#promote/prospects"), "promote-prospects-btn");
 assert.strictEqual(promotePageFromHash("#promote/leads"), "leads");
 assert.strictEqual(promoteHash("leads"), "#promote/leads");
 assert.strictEqual(promoteNavId("#promote/leads"), "promote-leads-btn");

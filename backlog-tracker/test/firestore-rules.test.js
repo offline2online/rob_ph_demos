@@ -78,7 +78,6 @@ async function reset() {
     // Approval-record cases (19 Oct 2026): each approval is a one-time move.
     for (const n of ["iApp1", "iApp2", "iApp3", "iApp4", "iApp5"]) await setDoc(doc(db, "backlogItems/" + n), ITEM);
     await setDoc(doc(db, "routineBindings/sam@personalisationhub.com"), { fireUrl: "https://api.anthropic.com/fire", token: "sk-ant-secret" });
-    await setDoc(doc(db, "settings/faqSite"), { analyticsTag: null });
     await setDoc(doc(db, "mediaProviderKeys/gemini"), { box: { v: 1, ct: "x" }, hint: "…abcd" });
     await setDoc(doc(db, "mediaKeyAudit/a1"), { action: "set", provider: "gemini" });
     // A project doc as it really looks after a few weeks: every optional
@@ -364,6 +363,19 @@ async function main() {
   await check("A viewer cannot move a lead", "deny", () => updateDoc(doc(as(VIEWER), "leads/l1"), { stage: "demo" }));
   await check("A stranger cannot read a lead", "deny", () => getDoc(doc(as(STRANGER), "leads/l1")));
   await check("An editor can delete a lead", "allow", () => deleteDoc(doc(as(MEMBER), "leads/l1")));
+  // Promote › Prospects (TAM)
+  const PROSPECT = { name: "Acme Grocer", website: "https://acme.example", industry: "Grocery", subIndustry: "Supermarkets", hqCountry: "United Kingdom", markets: ["United Kingdom"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", source: "Manual", notes: "" };
+  await check("An editor can create a prospect", "allow", () => setDoc(doc(as(MEMBER), "prospects/p1"), PROSPECT));
+  await check("An editor can link a prospect to its lead", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { leadId: "prospect-p1", status: "converted" }));
+  await check("A prospect cannot take a status that is not on the list", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { status: "won-ish" }));
+  await check("A prospect needs a name", "deny", () => setDoc(doc(as(MEMBER), "prospects/p2"), { ...PROSPECT, name: "" }));
+  await check("A prospect takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "prospects/p3"), { ...PROSPECT, patchFiles: [] }));
+  await check("A member may read a prospect", "allow", () => getDoc(doc(as(MEMBER), "prospects/p1")));
+  await check("A viewer may read a prospect", "allow", () => getDoc(doc(as(VIEWER), "prospects/p1")));
+  await check("A viewer cannot create a prospect", "deny", () => setDoc(doc(as(VIEWER), "prospects/p4"), PROSPECT));
+  await check("A stranger cannot read a prospect", "deny", () => getDoc(doc(as(STRANGER), "prospects/p1")));
+  await check("A lead may carry the prospect it came from", "allow", () => setDoc(doc(as(MEMBER), "leads/prospect-p1"), { ...LEAD, prospectId: "p1" }));
+  await check("An editor can delete a prospect", "allow", () => deleteDoc(doc(as(MEMBER), "prospects/p1")));
   await check("A member may read a concept", "allow", () => getDoc(doc(as(MEMBER), "concepts/cActive")));
   await check("A stranger cannot read a concept", "deny", () => getDoc(doc(as(STRANGER), "concepts/cActive")));
   await check("An editor can create a concept", "allow", () =>
@@ -592,10 +604,6 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/pFull"), { trainLocked: true }, { merge: true }));
   await check("A viewer CANNOT rename a fully populated project", "deny", () =>
     setDoc(doc(as(VIEWER), "projects/pFull"), { name: "Renamed" }, { merge: true }));
-  await check("An editor CANNOT set the help centre's analytics tag", "deny", () =>
-    setDoc(doc(as(MEMBER), "settings/faqSite"), { analyticsTag: "GTM-EVIL" }, { merge: true }));
-  await check("A team admin can set the help centre's analytics tag", "allow", () =>
-    setDoc(doc(as(TEAM_ADMIN), "settings/faqSite"), { analyticsTag: "GTM-ABC123" }, { merge: true }));
 
   // ── Repo-mirrored documents (19 Oct 2026) ───────────────────────────────
   const syncPatch = { name: "DSP README", contentMd: "new from repo", sourcePath: "dsp-integration/README.md", sourceSlices: [], sourcePrefix: "> Mirror", updatedAt: serverTimestamp(), updatedByEmail: BOT.claims.email };

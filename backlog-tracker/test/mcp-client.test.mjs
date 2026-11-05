@@ -188,12 +188,12 @@ await test("tools/list returns the whole surface", async () => {
     "kanban_assign_task", "kanban_attach_file", "kanban_attach_uploaded", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_create_upload_url", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_staff_names", "kanban_get_task", "kanban_list_notifications", "kanban_list_people",
     "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_remove_attachment", "kanban_search_tickets", "kanban_set_staff_pronunciation", "kanban_update_task",
     "list_artifact_versions", "list_backlog_items",
-    "list_concept_critiques", "list_concepts", "list_doc_revisions", "list_leads", "list_pending_faq_revisions", "list_project_documents", "list_projects", "list_skill_misses",
+    "list_concept_critiques", "list_concepts", "list_doc_revisions", "list_leads", "list_pending_faq_revisions", "list_project_documents", "list_projects", "list_prospects", "list_skill_misses",
     "list_skills", "mark_skill_reviewed", "report_skill_miss", "search_faq", "send_to_build", "set_blocked", "set_concept_artifact", "set_concept_description", "set_concept_readme",
     "set_concept_requirements", "set_concept_type", "set_my_routine_binding", "set_phase_skill_bindings",
     "set_project_artifact", "set_project_description", "set_project_readme", "set_project_requirements", "set_project_type", "snapshot_project_artifact", "synthesise_concept_critiques", "unfreeze_project", "update_backlog_item",
     "update_faq_article", "update_interface", "update_lead_stage", "update_project_document", "update_skill",
-    "upload_skill", "whoami",
+    "upload_skill", "upsert_prospects", "whoami",
   ]);
 });
 

@@ -24,6 +24,7 @@ function view(id, data) {
     source: l.source || null,
     assignee: l.assignee || null,
     customerAccount: l.customerAccount,
+    prospectId: l.prospectId || null,
     contacts: l.contacts.map((c) => ({ name: c.name, jobTitle: c.jobTitle || null, buyingRole: c.buyingRole || null, email: c.email || null, linkedin: c.linkedin || null })),
     techStack: l.enrichment && Array.isArray(l.enrichment.techStack) ? l.enrichment.techStack : [],
     enrichedAt: l.enrichment ? iso(l.enrichment.at) || l.enrichment.at || null : null,

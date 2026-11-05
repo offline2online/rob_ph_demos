@@ -3846,11 +3846,21 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   column, and drives the Users count.
 - **Permissions (1 Nov 2026; moved onto the role page 4 Nov 2026).** Permissions
   are edited only inside a role: the edit icon on the Roles grid opens the role
-  page (name, description, then every console section grouped Build / Support /
-  Settings, each No access / View / Edit / Admin, and **Save role**). There is
-  no comparison matrix. The sections are Agent board, Staff Kanban, Concepts,
-  Promote, Project docs (Build); FAQ management (Support); Settings, Skills,
-  Releases, User Management (Settings). Stored as `roles/{id}.permissions`
+  page (name, description, then every console section grouped as the sidebar is,
+  Build / Promote / Support / Settings, then Other, each No access / View / Edit /
+  Admin, and **Save role**). There is no comparison matrix. The sections carry the
+  sidebar's own names and order: Agent Board, Staff Kanban, Concepts, Whiteboard
+  (Build); Brand Guidelines, Leads (Promote); Help Centre (Support); Settings,
+  Settings > User Management, Releases, Skills & phase bindings (Settings);
+  Project docs (Other, no menu item). The list is **derived from the menu**:
+  `permissions.js` names the known sections, and any sidebar button no section
+  owns is added to Roles at load (`discoverNavSections`), in its menu group, so a
+  new menu item appears in Roles without editing the file (a role's grant for its
+  first sibling in the group carries to it until set). `test/permissions.test.mjs`
+  reads `index.html` and fails if a menu button, name, group or order differs.
+  Settings sub-tabs Projects, Automations and Integrations stay under Settings.
+  Leads has its own key, `promote-leads`; a role saved before it existed follows
+  its old `promote` grant, so Brand Guidelines and Leads both keep it. Stored as `roles/{id}.permissions`
   (`{sectionKey: level}`); a role with no map gets Edit everywhere except User
   Management (none). The logic is `public/js/permissions.js`. Enforcement, in
   the console UI: a section with No access is hidden from the nav and search and
@@ -3877,7 +3887,7 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   Skills & phase bindings (the skills bound to the Build and Deploy phases, and
   the skills library), Automations (Notify Claude, Groom Backlog, Batch review,
   Run E2E with trigger, skills and binding) and Integrations & MCP (agent
-  connections, help centre analytics tag, dictation). Each page is an AG Grid
+  connections, Media Studio API keys, dictation). Each page is an AG Grid
   table with a count line; explanations are info tooltips, not text under a
   table. No internal project names appear in UI copy.
 - Reloading `#settings/<page>` or `#user-management` reopens the same page.
@@ -3967,7 +3977,7 @@ Rules:
 - A **Promote** group sits in the sidebar between Build and Publish (a
   Promote tab on a phone). Its first item is **Brand Guidelines**
   (`#promote/brand-guidelines`, `public/js/promote-section.js`). Its section
-  key for roles is `promote` (Settings → User Management → Roles); a hash under
+  key for roles is `promote` (labelled Brand Guidelines; Settings → User Management → Roles); a hash under
   `#promote/` routes to it.
 - The page is **read-only** and shows two `projectDocs` rows found by
   `mirrorKey` (`brand-guidelines`, `brand-requirements`), which mirror
@@ -3992,7 +4002,7 @@ Rules:
 ## Promote section: Leads (5 Nov 2026)
 
 - **Promote › Leads** (`#promote/leads`, nav item beneath Brand Guidelines,
-  same `promote` permission section: viewers read, editors change). One card
+  own `promote-leads` permission section: viewers read, editors change). One card
   per company on a Kanban in the style of the Staff Kanban; lanes **Lead, Hot
   Lead, Demo, Post-demo, Closed Won, Lost** (`STAGES` in `leads-core.js`).
 - **Data**: `leads/{id}` = `company {name (required), website, industry,
@@ -4044,4 +4054,49 @@ Rules:
   else to be excluded from.
 - Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js`, `test/lead-ingest.test.js`, the Leads tools in
   `test/mcp-server.test.js` and `test/mcp-client.test.mjs`, a scenario in
+  `test/ui/console-click.test.mjs`.
+
+## Promote section: Prospects (TAM) (5 Nov 2026)
+
+- **Promote › Prospects (TAM)** (`#promote/prospects`, nav item directly below
+  Leads) is the global prospects database: every possible target company for
+  Personalisation Hub, in one filterable AG Grid, so the team can size the
+  market, find targets and turn them into leads. It is its own permission
+  section, `prospects` (User Management › Roles): No access hides the nav
+  entry and blocks the route; View hides **Convert to lead** and the status
+  editor; roles saved before it existed keep Edit.
+- **Data**: `prospects/{id}` = `name` (required), `website`, `industry`,
+  `subIndustry`, `hqCountry`, `markets[]` (countries operated in; the HQ
+  country is always included), `awsRegion` (defaults from the HQ country),
+  `storeCount`, `sizeBand` (unknown / small 1-49 / mid 50-249 / large 250-999
+  / enterprise 1,000+, derived from the store count), `vendors[]` (current
+  vendors where known), `campaigns[]`, `status` (new, researching, targeted,
+  engaged, converted, disqualified), `leadId`, `source`, `notes` and the usual
+  stamps. One company is one prospect (name matched ignoring case and
+  punctuation). Rules: `prospects-core.js`, copied to
+  `functions/prospects-core.js` by `node test/prospects-core-copy.mjs --write`.
+  Members read; editors write (`firestore.rules` → `isProspect`).
+- **Grid**: search; filters for industry, market (HQ or operated country),
+  AWS region, campaign, size band, status and a store-count range; sortable
+  columns; **saved filters** (named, kept in the browser); **Export CSV** of
+  the rows the filters match (cells that start like a formula are prefixed so a
+  spreadsheet shows text). Help is an info tooltip beside the title; there is
+  no explanatory copy under the grid. Editors change a row's status in place.
+- **Convert to lead**: writes one Leads card (stage Lead, source "Prospects
+  (TAM)", assigned to the person, `prospectId` on the lead) whose id is derived
+  from the prospect (`prospect-<id>`), sets the prospect's `leadId` and status
+  Converted, and the row then offers **View lead**. Converting twice, or from
+  two tabs, writes the same lead: a prospect can never become two leads. The
+  lead's summary drawer shows a Prospect record link back.
+- **Data in**: the empty page offers **Load starter set** (editors): about 60
+  well-known retail and related operators worldwide (`prospects-seed.js`),
+  store counts rounded public figures marked source "Starter set
+  (approximate)". It is a start, not a verified dataset; vendors and campaigns
+  start blank. Loading twice adds nothing. Agents add and enrich companies over
+  MCP: `list_prospects` (all filters) and `upsert_prospects` (up to 50 per
+  call, merged by name, only the fields sent change, nothing deleted; it cannot
+  set `leadId` or convert).
+- Tests: `test/prospects.test.mjs`, the Prospects tools in
+  `test/mcp-server.test.js` and `test/mcp-client.test.mjs`,
+  `test/permissions.test.mjs`, `test/promote-section.test.mjs`, a scenario in
   `test/ui/console-click.test.mjs`.
