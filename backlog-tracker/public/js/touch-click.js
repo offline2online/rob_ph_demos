@@ -80,6 +80,21 @@ function installGuard() {
     ev.preventDefault();
     ev.stopImmediatePropagation();
   }, true);
+  // The browser also sends the tap's compatibility mousedown/mouseup AFTER
+  // this file has acted, hit-tested against the page as it is now. A
+  // backdrop that closes on mousedown (Command-K, the Leads drawers) then
+  // closed the overlay the tap had just opened: Search in the sidebar opened
+  // and shut at once (5 Nov 2026). They are duplicates of a handled tap, so
+  // they are swallowed too; the click (above) ends the window.
+  for (const type of ["mousedown", "mouseup"]) {
+    window.addEventListener(type, (ev) => {
+      const s = swallow;
+      if (!s || !ev.isTrusted || performance.now() > s.until) return;
+      if (Math.hypot(ev.clientX - s.x, ev.clientY - s.y) > LATE_CLICK_PX) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+    }, true);
+  }
   // A late click always arrives before the next finger comes down, so a new
   // touch disarms the guard. Without this, when the browser sent no click for
   // the tap (WebKit drops some), the armed guard ate the NEXT tap's real click

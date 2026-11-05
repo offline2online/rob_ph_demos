@@ -49,12 +49,14 @@ assert.match(tc, /window\.addEventListener\("touchstart", disarm/, "a new touch 
 assert.match(tc, /const isToggle = /, "checkboxes, radios and labels must await the browser's own click (fallback only), not be clicked on lift: swallowing a duplicate click reverts a checkbox (5 Nov 2026)");
 assert.match(tc, /setTimeout\(firePending, FALLBACK_MS\)/, "a toggle whose click WebKit dropped must still get a fallback click");
 
+assert.match(tc, /for \(const type of \["mousedown", "mouseup"\]\)/, "a handled tap's compatibility mousedown/mouseup must be swallowed, or a backdrop that closes on mousedown closes the overlay the tap just opened (Search, 5 Nov 2026)");
+
 // 3. mousedown/mouseup handlers: each one reviewed for the iPad.
 // file → number of addEventListener("mousedown"|"mouseup") calls, and why it is safe.
 const REVIEWED = {
   "app.js": [1, "FAQ table toolbar keeps focus in the cell; the buttons act on click, which the touch path sends"],
-  "leads-page.js": [1, "backdrop <div> closes on mousedown; a <div> is not a tap target, so iOS still sends mousedown"],
-  "nav-shell.js": [1, "Command-K backdrop <div>, same as leads-page.js"],
+  "leads-page.js": [2, "lead form and lead summary backdrops close on mousedown; a tapped control's compatibility mousedown is swallowed by touch-click.js, so a tap that opens one cannot close it"],
+  "nav-shell.js": [1, "Command-K backdrop closes on mousedown, same as leads-page.js"],
   "kanban/kanban-editor.js": [1, "mention picker acts on mousedown; its box is [data-native-tap]"],
   "kanban/kanban-page.js": [1, "ticket picker acts on mousedown; its box is [data-native-tap]"],
 };

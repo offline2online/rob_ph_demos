@@ -28,6 +28,7 @@ const seed = {
     projects: { p1: { name: "Demo", createdAt: T } },
     backlogItems: { b1: { projectId: "p1", title: "Purple widget", desc: "x", type: "feature", category: "HQ Admin", status: "backlog", createdAt: T, updatedAt: T } },
     concepts: { c1: { name: "Alpha", type: "Platform", status: "active", description: "Alpha", createdAt: T, updatedAt: T } },
+    leads: { l1: { company: { name: "Acme Retail", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", assignee: "", customerAccount: null, createdAt: T, updatedAt: T } },
   },
 };
 // iPad landscape (persistent sidebar) and portrait (slide-over), plus the 1024 edge.
@@ -158,6 +159,27 @@ try {
           console.log(`FAIL ${mode} ${w}x${ht} ${start || "board"} → ${key}: ${e.message.split("\n")[0]} (state: ${got})`);
         }
       }
+    }
+    // Taps that OPEN an overlay must leave it open: the tap's compatibility mousedown
+    // arrives after the overlay is up and used to close it on its mousedown backdrop
+    // (Search in the sidebar and a Leads tile opened and shut at once, 5 Nov 2026).
+    for (const [what, start, kind, sel, openSel, close] of [
+      ["Search", "", "sidebar", "#cmdk-open-btn", "#cmdk-backdrop", "#cmdk-close"],
+      ["a Leads tile", "#promote/leads", "page", '.lead-card[data-lead-id="l1"]', "#lead-summary-backdrop", "#lead-sum-close"],
+    ]) {
+      await go(start, kind);
+      try { await until(() => page.evaluate((q) => !!document.querySelector(q) && document.querySelector(q).getClientRects().length > 0, sel), `${what} on screen`, 5000); }
+      catch { failures++; console.log(`FAIL ${mode} ${w}x${ht} ${what}: not on screen`); continue; }
+      const q = await page.evaluate((x) => { const b = document.querySelector(x); b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
+      await tap(q.x, q.y);
+      if (mode === "late") { await page.waitForTimeout(80); await page.evaluate(() => { window.__dropping = false; }); await page.mouse.click(q.x, q.y); await page.evaluate(() => { window.__dropping = true; }); }
+      await page.waitForTimeout(500);
+      taps++;
+      const open = await page.evaluate((x) => { const e = document.querySelector(x); return !!e && !e.hidden && getComputedStyle(e).display !== "none"; }, openSel);
+      if (!open) { failures++; console.log(`FAIL ${mode} ${w}x${ht} ${what}: the overlay it opens did not stay open`); }
+      await page.evaluate((x) => { const b = document.querySelector(x); if (b && b.getClientRects().length) b.click(); }, close);
+      await page.keyboard.press("Escape").catch(() => {});
+      await page.waitForTimeout(150);
     }
     // A checkbox, bare and inside a <label>: toggles exactly once per tap, in every mode
     // (5 Nov 2026: swallowing a duplicate click reverted Staff Kanban's Settings switches).

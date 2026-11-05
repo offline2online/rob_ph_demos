@@ -3908,7 +3908,12 @@ Rules:
   **wherever it lands** within 40 px and 1 s, so the tap never acts twice.
   It never prevents `touchend`'s default: doing so made the browser drop the
   click of a second tap on the same spot within about 100 ms, which broke
-  opening a Staff Kanban card straight after closing a ticket. A keyboard click, which has no coordinates, is never swallowed. The
+  opening a Staff Kanban card straight after closing a ticket. The tap's
+  compatibility `mousedown`/`mouseup` are swallowed the same way: they arrive
+  after the handler has acted and land on whatever is now under the finger,
+  so a backdrop that closes on `mousedown` used to close the overlay the tap
+  had just opened (Search in the sidebar and a Leads tile both opened and
+  shut at once, 5 Nov 2026). A keyboard click, which has no coordinates, is never swallowed. The
   guard is disarmed by the next touch, so it can never eat the next tap's
   own click: before that existed it did, and Staff Kanban cards (`<article>`,
   not a tap target) failed to open when tapped just after closing a ticket.
@@ -3941,7 +3946,10 @@ Rules:
   `test/touch-guard.test.mjs` (no browser) checks the handler is installed
   console-wide, that `TAP_TARGETS` was not narrowed, that the four WebKit
   failure modes are still handled, and the `mousedown` review list.
-  `test/ui/nav-touch.test.mjs` (Chromium) taps every visible sidebar item from
+  `test/ui/nav-touch.test.mjs` (Chromium) checks that a tap which opens an
+  overlay (Search, a Leads tile) leaves it open, that a checkbox toggles
+  exactly once, and that the next tap's own click survives. It also taps
+  every visible sidebar item from
   the board, Staff Kanban and Settings, and every visible tab on the Settings
   and User Management pages, at 1180×820, 1024×768 and 820×1180. It does this
   under each simulated WebKit failure: the native click dropped everywhere,
