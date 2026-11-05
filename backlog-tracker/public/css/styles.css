@@ -2274,6 +2274,19 @@ body { overflow-x: clip; }
 .promote-requirements > summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
 .promote-empty { color: #666; }
 
+/* Promote › Prospects (TAM) */
+.prospects-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; }
+.prospects-toolbar select, .prospects-toolbar input { min-height: 36px; max-width: 100%; }
+.prospects-q { flex: 1 1 200px; min-width: 160px; }
+.prospects-num { width: 110px; }
+.prospects-count { margin-left: auto; font-size: 13px; color: var(--text-muted); }
+.prospects-info { font-size: 18px; vertical-align: middle; color: var(--text-muted); cursor: help; }
+.prospects-grid { width: 100%; }
+.prospect-act { white-space: nowrap; }
+#prospects-status.is-error { color: var(--danger, #c62828); }
+#prospects-status:empty { display: none; }
+@media (max-width: 640px) { .prospects-toolbar select, .prospects-num { flex: 1 1 45%; width: auto; } }
+
 /* Promote › Leads */
 .leads-board-wrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px 8px; }
 .leads-board { display: grid; grid-template-columns: repeat(6, 236px); gap: 12px; align-items: start; }

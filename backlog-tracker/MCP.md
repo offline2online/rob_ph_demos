@@ -346,14 +346,14 @@ as text until Anthropic switches on its MCP Apps host.
 
 | Tickets | Documentation | Help centre | Skills library | Release (admin only) | Your own routine binding |
 | --- | --- | --- | --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
+| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
 | `update_backlog_item` (title, description, type, area); `archive_backlog_items`, `delete_backlog_items` (Backlog only) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
 | `add_item_comment` | `set_project_artifact`, `set_project_description`, `snapshot_project_artifact` (sign-off: the next frozen, numbered artifact version) | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
 | | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | `mark_skill_reviewed` (clears the review nudge and restarts the clock) | | |
 | | `create_concept` (requires `type`) / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` / `set_concept_description` / `set_concept_type` (Concept Incubator; the last five refused once a concept is promoted, except comments) / `set_project_type` | | | | |
-| | `update_lead_stage` | `list_leads` | | | |
+| | `update_lead_stage`, `upsert_prospects` | `list_leads`, `list_prospects` | | | |
 | | `add_concept_critique` (a structured review of a concept: verdict, arguments for/against, assumptions, recommended changes, optional free-text `role`) | `list_concept_critiques` (also returns every role already used, to reuse) / `synthesise_concept_critiques` (agreement, disagreement, recommended adjustments; optional `role` filter) | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
