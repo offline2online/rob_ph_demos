@@ -58,6 +58,7 @@ add_action( 'rest_api_init', function () {
 			if ( empty( $b['consent'] ) ) {
 				return new \WP_REST_Response( array( 'error' => 'Please tick the box to continue.', 'field' => 'consent' ), 400 );
 			}
+			$test = ! empty( $b['test'] ) && in_array( strtolower( (string) $b['test'] ), array( '1', 'true', 'yes', 'on' ), true );
 			$vals = telco_clean( isset( $b['inputs'] ) ? $b['inputs'] : array() );
 			$calc = telco_calc( $vals );
 			$id   = wp_insert_post( array( 'post_type' => 'ph_lead', 'post_status' => 'private', 'post_title' => $lead['company'] . ' / ' . $lead['name'] ) );
@@ -66,13 +67,18 @@ add_action( 'rest_api_init', function () {
 					update_post_meta( $id, 'ph_lead_' . $k, $v );
 				}
 				update_post_meta( $id, 'ph_lead_source', 'telco-business-model' );
+				if ( $test ) {
+					update_post_meta( $id, 'ph_lead_test', '1' );
+				}
 				update_post_meta( $id, 'ph_lead_source_label', 'Telco business model download' );
 				update_post_meta( $id, 'ph_lead_consent', 1 );
 				update_post_meta( $id, 'ph_lead_inputs', wp_json_encode( $vals ) );
 				update_post_meta( $id, 'ph_lead_estimate', round( $calc['total'] ) );
 			}
-			do_action( 'ph_lead_captured', array_merge( $lead, array( 'source' => 'telco-business-model', 'source_label' => 'Telco business model download', 'consent' => true, 'industry' => 'telco', 'inputs' => $vals, 'estimate_3yr' => round( $calc['total'] ), 'post_id' => (int) $id ) ) );
-			wp_mail( get_option( 'admin_email' ), 'New Telco business model lead: ' . $lead['company'], "Name: {$lead['name']}\nCompany: {$lead['company']}\nEmail: {$lead['email']}\n3-year estimate: " . round( $calc['total'] ) . "\nInputs: " . wp_json_encode( $vals ) );
+			do_action( 'ph_lead_captured', array_merge( $lead, array( 'source' => 'telco-business-model', 'source_label' => 'Telco business model download', 'consent' => true, 'industry' => 'telco', 'inputs' => $vals, 'estimate_3yr' => round( $calc['total'] ), 'test' => $test, 'page' => isset( $b['page'] ) && is_string( $b['page'] ) ? esc_url_raw( $b['page'] ) : '', 'post_id' => (int) $id ) ) );
+			if ( ! $test ) {
+				wp_mail( get_option( 'admin_email' ), 'New Telco business model lead: ' . $lead['company'], "Name: {$lead['name']}\nCompany: {$lead['company']}\nEmail: {$lead['email']}\n3-year estimate: " . round( $calc['total'] ) . "\nInputs: " . wp_json_encode( $vals ) );
+			}
 			$exp = time() + DAY_IN_SECONDS;
 			$url = add_query_arg( array_merge( $vals, array( 'exp' => $exp, 'sig' => telco_sign( $vals, $exp ) ) ), rest_url( 'ph-site/v1/telco-model/download' ) );
 			return new \WP_REST_Response( array( 'ok' => true, 'download' => $url ), 200 );

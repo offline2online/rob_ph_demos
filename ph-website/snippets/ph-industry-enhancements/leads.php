@@ -81,6 +81,34 @@ function lead_forward( array $lead ) {
 
 add_action( 'ph_lead_captured', __NAMESPACE__ . '\\lead_forward', 20 );
 
+/** Settings -> General: a "PH lead ingest key" password field (manage_options only). The saved value is never echoed back. */
+function lead_key_state() {
+	if ( defined( 'PH_LEAD_INGEST_KEY' ) && '' !== PH_LEAD_INGEST_KEY ) {
+		return 'set (wp-config.php)';
+	}
+	return '' !== (string) get_option( 'ph_lead_ingest_key', '' ) ? 'set' : 'not set';
+}
+
+/** Blank input keeps the stored key; a value replaces it. Returns the string to store. */
+function lead_key_sanitize( $v ) {
+	$v = is_string( $v ) ? trim( sanitize_text_field( $v ) ) : '';
+	if ( '' === $v ) {
+		return (string) get_option( 'ph_lead_ingest_key', '' );
+	}
+	return substr( $v, 0, 200 );
+}
+
+add_action( 'admin_init', function () {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+	register_setting( 'general', 'ph_lead_ingest_key', array( 'type' => 'string', 'sanitize_callback' => __NAMESPACE__ . '\\lead_key_sanitize', 'default' => '', 'show_in_rest' => false ) );
+	add_settings_field( 'ph_lead_ingest_key', 'PH lead ingest key', function () {
+		echo '<input type="password" name="ph_lead_ingest_key" id="ph_lead_ingest_key" value="" class="regular-text" autocomplete="new-password" />';
+		echo '<p class="description">Currently: <strong>' . esc_html( lead_key_state() ) . '</strong>. Paste the console lead key to set or replace it; leave blank to keep the current one.</p>';
+	}, 'general' );
+} );
+
 add_action( 'rest_api_init', function () {
 	register_rest_route( 'ph-site/v1', '/industry-lead', array(
 		'methods'             => 'POST',

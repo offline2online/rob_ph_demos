@@ -505,5 +505,19 @@ ok( true === $lb['test'], 'test flag forwarded' );
 $lb2 = \AngieSnippets\PhIndustryEnhancements_10063\lead_ingest_body( array( 'name' => 'Bo', 'company' => 'Zed', 'role' => 'Head', 'email' => 'b@z.com', 'industry' => 'telco', 'source' => 'telco-business-model' ) );
 ok( $lb2['contactName'] === 'Bo' && $lb2['jobTitle'] === 'Head' && $lb2['industry'] === 'telco' && ! isset( $lb2['test'] ), 'telco gate lead maps and is a real lead without the flag' );
 
+/* regression guard: the lead form, test mode and page field must not be dropped by a later edit of enhance.js / telco-lead.php */
+$dir = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/';
+$ejs = file_get_contents( $dir . 'enhance.js' );
+ok( false !== strpos( $ejs, 'LEAD_FORM' ) && false !== strpos( $ejs, 'function setupLeadForm' ) && false !== strpos( $ejs, 'setupLeadForm();' ), 'enhance.js: LEAD_FORM and setupLeadForm are wired' );
+ok( false !== strpos( $ejs, 'function testMode' ) && false !== strpos( $ejs, 'ph_test=1' ), 'enhance.js: testMode reads ?ph_test=1' );
+ok( 1 === preg_match( '/var body = \{inputs: current\(\), consent: cb\.checked, page: location\.origin \+ location\.pathname\};\s*if \(testMode\(\)\) body\.test = true;/', $ejs ), 'enhance.js: telco gate body carries page and test' );
+ok( false !== strpos( $ejs, 'pageIndustry: page, page: location.origin' ) && false !== strpos( $ejs, 'body.test = true' ), 'enhance.js: lead form body carries page and test' );
+ok( false !== strpos( file_get_contents( $dir . 'enhance.css' ), '.ph-ind-lead{' ), 'enhance.css: .ph-ind-lead styles present' );
+$tl = file_get_contents( $dir . 'telco-lead.php' );
+ok( false !== strpos( $tl, "'ph_lead_test'" ) && false !== strpos( $tl, "'test' => \$test" ) && false !== strpos( $tl, "'page' =>" ) && 1 === preg_match( '/if \( ! \$test \) \{\s*wp_mail/', $tl ), 'telco-lead.php: test flag, page, ph_lead_test and no admin email for test leads' );
+$mp = file_get_contents( $dir . 'main.php' );
+ok( 1 === preg_match( "/ASSETS_VERSION_10063 = '(\d+)\.(\d+)\.(\d+)'/", $mp, $vm ) && ( (int) $vm[2] > 8 || ( (int) $vm[2] === 8 && (int) $vm[3] >= 2 ) ), 'main.php: assets version bumped past 1.8.1' );
+ok( false !== strpos( file_get_contents( $dir . 'leads.php' ), "'ph_lead_ingest_key'" ) && false !== strpos( file_get_contents( $dir . 'leads.php' ), 'PH lead ingest key' ), 'leads.php: ingest key settings field' );
+
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );
