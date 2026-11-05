@@ -9971,7 +9971,7 @@ function showSettingsPage(key, sub) {
     return;
   }
   if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
-  if (settingsPage === "integrations") { loadFaqSiteSettings(); loadMyAgentConnections(); if (isConsoleAdmin()) loadMediaKeys(); }
+  if (settingsPage === "integrations") { loadMyAgentConnections(); if (isConsoleAdmin()) loadMediaKeys(); }
   setRouteHash(settingsHash(settingsPage));
   updateTopbarTitle();
   renderSettingsGrids();
@@ -10005,38 +10005,6 @@ document.getElementById("settings-submenu").addEventListener("keydown", (e) => {
 });
 document.getElementById("settings-manage-releases-btn").addEventListener("click", () => openReleasesPage());
 document.getElementById("settings-manage-skills-btn").addEventListener("click", () => openSkillsPage());
-
-// Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
-// — currently just the analytics tag appended to every customer-facing FAQ
-// page. This console only ever writes the tag to Firestore
-// (settings/faqSite); faq-export.js is what carries it into
-// faq/data/settings.json, the static file the public site (which never
-// talks to Firestore directly for anything but article content) actually
-// reads — see faq/js/page-common.js.
-async function loadFaqSiteSettings() {
-  const input = document.getElementById("fa-analytics-tag-input");
-  input.value = "";
-  try {
-    const snap = await getDoc(doc(db, "settings", "faqSite"));
-    input.value = (snap.exists() && snap.data().analyticsTag) || "";
-  } catch (err) {
-    console.error("Failed to load FAQ site settings:", err);
-  }
-}
-document.getElementById("fa-analytics-tag-save").addEventListener("click", async () => {
-  if (!(await requireFaqEditor())) return;
-  const tag = document.getElementById("fa-analytics-tag-input").value.trim();
-  if (tag && !/^[A-Za-z0-9-]{1,40}$/.test(tag)) {
-    await showAlert("That doesn't look like a Google Analytics or Tag Manager ID — expected something like G-XXXXXXXXXX or GTM-XXXXXXX.");
-    return;
-  }
-  await setDoc(doc(db, "settings", "faqSite"), {
-    analyticsTag: tag || null,
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-  if (!faqUser) return; // sign-in was declined — nothing was saved
-  await showAlert(tag ? "Saved — it'll appear on the public FAQ site after the next export." : "Cleared — no analytics tag will be sent.");
-});
 
 // ── Settings → Dictation ─────────────────────────────────────────────────
 // Per-browser only (bt-dictation-lang/bt-dictation-engine, read by

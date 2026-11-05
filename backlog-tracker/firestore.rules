@@ -1133,14 +1133,10 @@ service cloud.firestore {
     // console UI writes this doc yet (edited directly in Firestore, or by a
     // future settings page) — read/write rules still apply the same as any
     // other doc in this collection.
-    // Admin-only to write: analyticsTag loads a Google Tag Manager
-    // container — arbitrary script — on every public help-centre page,
-    // and phaseSkillBindings feeds the Routine's prompt.
+    // Admin-only to write: phaseSkillBindings feeds the Routine's prompt.
     match /settings/{docId} {
       allow read: if isBoardReader();
       allow create, update: if isAdmin()
-        && (!("analyticsTag" in incoming()) || incoming().analyticsTag == null
-          || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40))
         && (!("build" in incoming()) || (incoming().build is list && incoming().build.size() <= 20))
         && (!("deploy" in incoming()) || (incoming().deploy is list && incoming().deploy.size() <= 20));
       allow delete: if isAdmin();
