@@ -25,6 +25,7 @@ export const SECTIONS = [
   { key: "concepts", label: "Concepts", nav: ["#concept-incubator-btn"],
     edit: ["#concept-add-btn", "#concept-incubator-page [data-editor-only]", "#concept-detail-page [data-editor-only]", "#concept-description-save"] },
   { key: "promote", label: "Promote", nav: ["#promote-brand-btn", "#promote-leads-btn"], edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
+  { key: "prospects", label: "Prospects (TAM)", nav: ["#promote-prospects-btn"], edit: ["#prospects-page [data-editor-only]", "#prospects-grid [data-editor-only]"] },
   { key: "faq", label: "FAQ management", nav: ["#faq-articles-btn"],
     edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#fa-analytics-tag-save", "#faq-cat-edit-save-btn"] },
   { key: "skills", label: "Skills", nav: ['[data-settings-page="skills"]'], edit: ["#skills-add-btn", "#skills-page [data-editor-only]", "#skill-add-file-btn"] },
@@ -98,6 +99,7 @@ export function sectionForHash(hash) {
   const h = String(hash || "").split("?")[0];
   if (h === "" || h === "#") return "agent-board";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq";
+  if (h === "#promote/prospects") return "prospects";
   if (h === "#promote" || h.startsWith("#promote/")) return "promote";
   if (h === "#skills") return "skills";
   if (h === "#releases") return "releases";
@@ -111,7 +113,7 @@ export function sectionForHash(hash) {
 
 // The hash a section opens at, for the redirect.
 export const SECTION_HASH = {
-  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", promote: "#promote/brand-guidelines", faq: "#faq-management",
+  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", promote: "#promote/brand-guidelines", prospects: "#promote/prospects", faq: "#faq-management",
   skills: "#settings/skills", releases: "#settings/releases", "project-docs": "", settings: "#settings",
   "user-management": "#settings/user-management/users",
 };
@@ -123,7 +125,7 @@ export function sectionForSettingsPage(page) {
 
 // The role page groups sections the way the sidebar does.
 export const PERMISSION_GROUPS = [
-  { label: "Build", keys: ["agent-board", "staff-kanban", "concepts", "promote", "project-docs"] },
+  { label: "Build", keys: ["agent-board", "staff-kanban", "concepts", "promote", "prospects", "project-docs"] },
   { label: "Support", keys: ["faq"] },
   { label: "Settings", keys: ["settings", "skills", "releases", "user-management"] },
 ];
