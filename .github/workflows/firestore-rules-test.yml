@@ -67,7 +67,9 @@ concurrency:
 
 jobs:
   rules:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is now Ubuntu 26.04; this job's Chrome/Playwright setup may break there.
+    # Unpin once the repo's Playwright version supports Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: backlog-tracker/test
