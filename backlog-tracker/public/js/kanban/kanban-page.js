@@ -1843,6 +1843,7 @@ export function mountStaffKanban(ctx) {
     const root = $("#" + id);
     if (!root) return;
     const input = $(".kb-picker-input", root), box = $(".kb-picker-list", root);
+    box.dataset.nativeTap = ""; // picks on mousedown, so the console-wide touch tap (touch-click.js) leaves it alone
     let results = [], active = 0, serverTimer = 0, asked = "";
     const draw = () => {
       const all = searchTickets(candidates(), input.value, descText);

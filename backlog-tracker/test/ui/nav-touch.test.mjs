@@ -1,15 +1,21 @@
-// iPad sidebar taps (3 Nov 2026: Staff Kanban and Concepts dead on the iPad
-// again, after the 21 Oct and 25 Oct fixes). Chromium is not WebKit, so each
-// way iPad WebKit has been seen to lose a tap is reproduced on purpose, and
-// every sidebar destination must still open, exactly once, by touch, at iPad
-// sizes in both orientations and from every page:
+// iPad taps across the console (3 Nov 2026: Staff Kanban and Concepts dead in
+// the sidebar; 5 Nov 2026: "many of the links" dead again, after new Settings
+// tabs, User Management tabs and the Promote section were added). Chromium is
+// not WebKit, so each way iPad WebKit has been seen to lose a tap is
+// reproduced on purpose:
 //   - plain:     a real tap through Chromium's touch pipeline;
-//   - noclick:   the browser drops the tap's native click (WebKit, 21 Oct);
-//   - cancel:    the browser sends pointercancel instead of pointerup (a pan
-//                starting inside the scrollable sidebar), and no click;
-//   - noptr:     no pointer events at all, only Touch Events;
+//   - noclick:   the browser drops the tap's native click — ANYWHERE, not only
+//                in the sidebar (WebKit, 21 Oct and 5 Nov);
+//   - cancel:    pointercancel instead of pointerup, and no click;
+//   - noptr:     no pointer events at all, only Touch Events, and no click;
 //   - late:      the native click arrives late and re-targeted at whatever is
 //                now under the finger (the slide-over has already closed).
+//
+// The targets are FOUND, not listed: every visible sidebar item, and every
+// visible tab on the Settings and User Management pages, so a control added
+// later is tested without anyone editing this file. Each tap must leave the
+// console in the same state a real click does (route + selected tabs) and run
+// the control's handler exactly once.
 // See backlog-tracker/REQUIREMENTS.md → "iPad taps" and public/js/touch-click.js.
 // Run with:  cd backlog-tracker/test && node ui/nav-touch.test.mjs
 import assert from "node:assert";
@@ -17,33 +23,53 @@ import { startHarness, until } from "./harness.mjs";
 
 const T = { $ts: 1_760_000_000_000 };
 const seed = {
-  user: { email: "editor@personalisationhub.com", role: "admin" },
+  user: { email: "admin@personalisationhub.com", role: "admin" },
   docs: {
     projects: { p1: { name: "Demo", createdAt: T } },
     backlogItems: { b1: { projectId: "p1", title: "Purple widget", desc: "x", type: "feature", category: "HQ Admin", status: "backlog", createdAt: T, updatedAt: T } },
     concepts: { c1: { name: "Alpha", type: "Platform", status: "active", description: "Alpha", createdAt: T, updatedAt: T } },
+    leads: { l1: { company: { name: "Acme Retail", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", assignee: "", customerAccount: null, createdAt: T, updatedAt: T } },
   },
 };
 // iPad landscape (persistent sidebar) and portrait (slide-over), plus the 1024 edge.
 const SIZES = [[1180, 820], [1024, 768], [820, 1180]];
-const STARTS = ["", "#staff-kanban", "#concept-incubator"];
-const ITEMS = [["staff-kanban-btn", "#staff-kanban"], ["concept-incubator-btn", "#concept-incubator"], ["faq-articles-btn", "#faq-management"], ["nav-ph-console-btn", ""]];
 const MODES = ["plain", "noclick", "cancel", "noptr", "late"];
+// Sidebar items that leave the page or open an overlay are checked elsewhere
+// (whiteboard.test.mjs, console-click.test.mjs).
+const SIDEBAR_SKIP = ["whiteboard-btn", "cmdk-open-btn"];
+// [start page, which controls to find there]
+const PLAN = [
+  ["", "sidebar"],
+  ["#staff-kanban", "sidebar"],
+  ["#settings", "sidebar"],
+  ["#settings", "tabs"],
+  ["#settings/user-management/users", "tabs"],
+];
 
-// Installed before the app: counts the app's own handler runs per item, and
-// simulates the WebKit behaviour the mode names.
 function initMode(mode) {
-  window.__navClicks = {};
+  window.__taps = {};
+  const keyOf = (b) => b.id || b.dataset.settingsPage || b.dataset.umTab || b.textContent.trim();
+  const vis = (el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && !el.closest("[hidden]"); };
+  // Every visible sidebar item, or every visible tab in the page.
+  window.__targets = (kind, skip) => {
+    const els = kind === "sidebar"
+      ? [...document.querySelectorAll("#nav-drawer .nav-drawer-item")].filter((b) => !skip.includes(b.id) && !b.closest("[hidden]") && getComputedStyle(b).display !== "none")
+      : [...document.querySelectorAll("[role=tab]")].filter((b) => !b.closest("#nav-drawer, #tabbar") && vis(b));
+    return [...new Set(els.map(keyOf))];
+  };
+  window.__locate = (key) => [...document.querySelectorAll("#nav-drawer .nav-drawer-item, [role=tab]")].find((b) => keyOf(b) === key && b.getClientRects().length) || null;
+  // Route plus whichever tabs are selected: what a click changes.
+  window.__sig = () => location.hash.split("?")[0] + " | " + [...document.querySelectorAll("[role=tab][aria-selected=true]")].filter((b) => b.getClientRects().length).map(keyOf).sort().join(",");
+  // late: WebKit does not send the click on time; it arrives later, re-aimed (the test sends it).
+  const drops = mode === "noclick" || mode === "cancel" || mode === "noptr" || mode === "late";
+  window.__dropping = true;
   window.addEventListener("click", (e) => {
-    const b = e.target.closest && e.target.closest(".nav-drawer-item");
-    if (!b) return;
-    // noclick/cancel/noptr: the browser's own click for a tap never arrives.
-    if (e.isTrusted && mode !== "plain" && mode !== "late") { e.stopImmediatePropagation(); e.preventDefault(); }
+    if (drops && e.isTrusted && window.__dropping) { e.stopImmediatePropagation(); e.preventDefault(); }
   }, true);
   // Counted in the bubble phase: only clicks that reach the app's own handlers.
   document.addEventListener("click", (e) => {
-    const b = e.target.closest && e.target.closest(".nav-drawer-item");
-    if (b) window.__navClicks[b.id] = (window.__navClicks[b.id] || 0) + 1;
+    const b = e.target.closest && e.target.closest(".nav-drawer-item, [role=tab]");
+    if (b) window.__taps[keyOf(b)] = (window.__taps[keyOf(b)] || 0) + 1;
   });
   const kill = (e) => { if (e.pointerType === "touch") e.stopImmediatePropagation(); };
   if (mode === "noptr") for (const t of ["pointerdown", "pointerup", "pointercancel"]) window.addEventListener(t, kill, true);
@@ -57,7 +83,8 @@ function initMode(mode) {
 }
 
 const h = await startHarness();
-let failures = 0;
+let failures = 0, taps = 0;
+const expectedCache = new Map(); // `${w}|${start}|${key}` → state a real click leaves
 try {
   for (const mode of MODES) for (const [w, ht] of SIZES) {
     const o = await h.open({ seed, width: w, height: ht, contextOptions: { hasTouch: true, isMobile: true }, init: { fn: initMode, arg: mode } });
@@ -68,36 +95,120 @@ try {
       await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y, id: 1 }] });
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     };
-    for (const start of STARTS) {
-      for (const [id, want] of ITEMS) {
-        await page.evaluate((s) => { if (location.hash !== s) location.hash = s; }, start);
-        await page.waitForTimeout(250);
-        if (w < 1024) {
-          await page.evaluate(() => document.getElementById("nav-open-btn").click());
-          await until(() => page.evaluate(() => getComputedStyle(document.getElementById("nav-drawer")).visibility === "visible"), "slide-over open");
-          await page.waitForTimeout(260);
+    const go = async (start, kind) => {
+      await page.evaluate((s) => { if (location.hash !== s) location.hash = s; }, start);
+      await page.waitForTimeout(120);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      if (kind === "sidebar" && w < 1024) {
+        await page.evaluate(() => document.getElementById("nav-open-btn").click());
+        await until(() => page.evaluate(() => getComputedStyle(document.getElementById("nav-drawer")).visibility === "visible"), "slide-over open");
+        await page.waitForTimeout(260);
+      }
+    };
+    for (const [start, kind] of PLAN) {
+      await go(start, kind);
+      const keys = await page.evaluate(([k, sk]) => window.__targets(k, sk), [kind, SIDEBAR_SKIP]);
+      assert.ok(keys.length >= (kind === "sidebar" ? 6 : 2), `${mode} ${w}: found only ${keys.length} ${kind} targets on ${start || "board"}`);
+      for (const key of keys) {
+        // What a real click does, from the same starting point (once per size).
+        const ck = `${w}|${start}|${key}`;
+        if (!expectedCache.has(ck)) {
+          await go(start, kind);
+          await page.evaluate((k) => { const b = window.__locate(k); if (b) b.click(); }, key);
+          await page.waitForTimeout(250);
+          expectedCache.set(ck, await page.evaluate(() => window.__sig()));
         }
-        await page.evaluate(() => { window.__navClicks = {}; });
-        const p = await page.evaluate((i) => { const r = document.getElementById(i).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, id);
+        const expected = expectedCache.get(ck);
+        // The tap, from the same starting point.
+        await go(start, kind);
+        const p = await page.evaluate((k) => { const b = window.__locate(k); if (!b) return null; b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, key);
+        if (!p) { failures++; console.log(`FAIL ${mode} ${w}x${ht} ${start || "board"} → ${key}: not on screen`); continue; }
+        await page.evaluate(() => { window.__taps = {}; });
         await tap(p.x, p.y);
-        if (mode === "late") await page.mouse.click(p.x, p.y); // WebKit's late click, re-hit-tested
-        let ok = true, why = "";
+        if (mode === "late") { // WebKit's late click, re-hit-tested after the page changed
+          await page.waitForTimeout(80);
+          await page.evaluate(() => { window.__dropping = false; });
+          await page.mouse.click(p.x, p.y);
+          await page.evaluate(() => { window.__dropping = true; });
+        }
+        taps++;
         try {
-          await until(() => page.evaluate((h) => location.hash.split("?")[0] === h, want), `${id} opens`, 1500);
-          await page.waitForTimeout(150);
-          const n = await page.evaluate((i) => window.__navClicks[i] || 0, id);
-          assert.strictEqual(n, 1, `${id} handler ran ${n} times`);
+          await until(() => page.evaluate((e) => window.__sig() === e, expected), `${key} → ${expected}`, 1500);
+          await page.waitForTimeout(60);
+          const n = await page.evaluate((k) => window.__taps[k] || 0, key);
+          assert.strictEqual(n, 1, `handler ran ${n} times`);
           const stray = await page.evaluate(() => [...document.querySelectorAll(".modal-backdrop, #task-backdrop")].filter((m) => !m.hidden && getComputedStyle(m).display !== "none").map((m) => m.id));
           assert.deepStrictEqual(stray, [], "a late click opened something under the finger");
-          if (w < 1024) assert.strictEqual(await page.evaluate(() => document.getElementById("nav-drawer-backdrop").classList.contains("open")), false, "slide-over left open");
-        } catch (e) { ok = false; why = e.message.split("\n")[0]; }
-        if (!ok) { failures++; console.log(`FAIL ${mode} ${w}x${ht} from ${start || "board"} → ${id}: ${why}`); }
+          if (kind === "sidebar" && w < 1024) assert.strictEqual(await page.evaluate(() => document.getElementById("nav-drawer-backdrop").classList.contains("open")), false, "slide-over left open");
+          // The late-click guard must not eat the NEXT tap's click on an element that is
+          // not a tap target (a Staff Kanban card is an <article>): 5 Nov 2026.
+          if (mode === "plain") {
+            await page.evaluate(({ x, y }) => {
+              const d = document.createElement("div");
+              d.id = "__next-tap"; d.style.cssText = `position:fixed;left:${x - 20}px;top:${y - 20}px;width:40px;height:40px;z-index:2147483647;background:transparent`;
+              d.addEventListener("click", () => { d.dataset.clicked = "1"; });
+              document.body.appendChild(d);
+            }, p);
+            await tap(p.x, p.y);
+            const ok = await page.evaluate(() => { const d = document.getElementById("__next-tap"); const r = d.dataset.clicked === "1"; d.remove(); return r; });
+            assert.ok(ok, "the next tap's own click was swallowed by the late-click guard");
+          }
+        } catch (e) {
+          failures++;
+          const got = await page.evaluate(() => window.__sig());
+          console.log(`FAIL ${mode} ${w}x${ht} ${start || "board"} → ${key}: ${e.message.split("\n")[0]} (state: ${got})`);
+        }
       }
+    }
+    // Taps that OPEN an overlay must leave it open: the tap's compatibility mousedown
+    // arrives after the overlay is up and used to close it on its mousedown backdrop
+    // (Search in the sidebar and a Leads tile opened and shut at once, 5 Nov 2026).
+    for (const [what, start, kind, sel, openSel, close] of [
+      ["Search", "", "sidebar", "#cmdk-open-btn", "#cmdk-backdrop", "#cmdk-close"],
+      ["a Leads tile", "#promote/leads", "page", '.lead-card[data-lead-id="l1"]', "#lead-summary-backdrop", "#lead-sum-close"],
+    ]) {
+      await go(start, kind);
+      try { await until(() => page.evaluate((q) => !!document.querySelector(q) && document.querySelector(q).getClientRects().length > 0, sel), `${what} on screen`, 5000); }
+      catch { failures++; console.log(`FAIL ${mode} ${w}x${ht} ${what}: not on screen`); continue; }
+      const q = await page.evaluate((x) => { const b = document.querySelector(x); b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
+      await tap(q.x, q.y);
+      if (mode === "late") { await page.waitForTimeout(80); await page.evaluate(() => { window.__dropping = false; }); await page.mouse.click(q.x, q.y); await page.evaluate(() => { window.__dropping = true; }); }
+      await page.waitForTimeout(500);
+      taps++;
+      const open = await page.evaluate((x) => { const e = document.querySelector(x); return !!e && !e.hidden && getComputedStyle(e).display !== "none"; }, openSel);
+      if (!open) { failures++; console.log(`FAIL ${mode} ${w}x${ht} ${what}: the overlay it opens did not stay open`); }
+      await page.evaluate((x) => { const b = document.querySelector(x); if (b && b.getClientRects().length) b.click(); }, close);
+      await page.keyboard.press("Escape").catch(() => {});
+      await page.waitForTimeout(150);
+    }
+    // A checkbox, bare and inside a <label>: toggles exactly once per tap, in every mode
+    // (5 Nov 2026: swallowing a duplicate click reverted Staff Kanban's Settings switches).
+    for (const inLabel of [false, true]) {
+      await go("", "page");
+      const at = await page.evaluate((lab) => {
+        const box = document.createElement("div");
+        box.id = "__cb-box"; box.style.cssText = "position:fixed;left:400px;top:300px;z-index:2147483647;background:#fff;padding:8px";
+        box.innerHTML = lab ? '<label id="__cb-lab" style="display:inline-block;padding:10px"><input type="checkbox" id="__cb" class="no-switch"> Switch</label>' : '<input type="checkbox" id="__cb" class="no-switch" style="width:30px;height:30px">';
+        document.body.appendChild(box);
+        const cb = document.getElementById("__cb");
+        window.__changes = 0; cb.addEventListener("change", () => { window.__changes++; });
+        const r = (lab ? document.getElementById("__cb-lab") : cb).getBoundingClientRect();
+        return { x: lab ? r.right - 15 : r.left + r.width / 2, y: r.top + r.height / 2 };
+      }, inLabel);
+      for (const want of [true, false]) {
+        await tap(at.x, at.y);
+        if (mode === "late") { await page.waitForTimeout(80); await page.evaluate(() => { window.__dropping = false; }); await page.mouse.click(at.x, at.y); await page.evaluate(() => { window.__dropping = true; }); }
+        await page.waitForTimeout(450);
+        const st = await page.evaluate(() => ({ checked: document.getElementById("__cb").checked, changes: window.__changes }));
+        taps++;
+        if (st.checked !== want || st.changes !== (want ? 1 : 2)) { failures++; console.log(`FAIL ${mode} ${w}x${ht} checkbox${inLabel ? " in label" : ""}: wanted ${want} after ${want ? 1 : 2} change(s), got ${JSON.stringify(st)}`); }
+      }
+      await page.evaluate(() => document.getElementById("__cb-box").remove());
     }
     assert.deepStrictEqual(o.problems.filter((x) => !/unrouted host/.test(x)), [], `${mode} ${w}: page problems`);
     console.log(`PASS-SET ${mode} ${w}x${ht}`);
     await o.close();
   }
 } finally { await h.close(); }
-if (failures) { console.error(`nav-touch: ${failures} failure(s)`); process.exit(1); }
-console.log("nav-touch: ok");
+if (failures) { console.error(`nav-touch: ${failures} failure(s) of ${taps} taps`); process.exit(1); }
+console.log(`nav-touch: ok (${taps} taps)`);

@@ -289,6 +289,7 @@ export const KBEditor = (function () {
   function bindMentions(q, users, onMention) {
     const box = document.createElement("div");
     box.className = "kb-mention-menu";
+    box.dataset.nativeTap = ""; // picks on mousedown, so the console-wide touch tap (touch-click.js) leaves it alone
     box.hidden = true;
     q.container.appendChild(box);
     let state = null; // { start, query, items, active }

@@ -2539,10 +2539,12 @@ every destination already existed.
   the archive has been loaded.
 - Tests: `npm run test:ui` now runs at 1440, 1180, 820 and 390px and includes
   nav reachability, no sideways scroll and Command-K.
-- **iPad taps** (3 Nov 2026): sidebar items open on finger-lift through
-  `public/js/touch-click.js`, which survives iPad WebKit's dropped clicks,
-  `pointercancel` and late re-targeted clicks. `test/ui/nav-touch.test.mjs`
-  simulates each one; see REQUIREMENTS.md → "iPad taps" before touching it.
+- **iPad taps** (3 Nov, widened 5 Nov 2026): every button, link, tab and menu
+  item in the console acts on finger-lift through one console-wide handler,
+  `installTouchTaps()` in `public/js/touch-click.js`. It survives iPad
+  WebKit's dropped clicks, `pointercancel` and late re-targeted clicks.
+  `test/touch-guard.test.mjs` and `test/ui/nav-touch.test.mjs` enforce it;
+  read REQUIREMENTS.md → "iPad taps" before touching either.
   Pixel snapshot baselines are not part of the suite yet.
 
 ### Mobile repair (20 Oct 2026)
