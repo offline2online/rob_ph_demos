@@ -31,6 +31,12 @@ const MOVE_PX = 10;
 const MAX_TAP_MS = 800;
 const LATE_CLICK_PX = 40;
 
+// Opt-out: a control inside [data-native-tap] keeps the browser's own tap
+// handling. For pickers that choose on mousedown (iOS sends no mousedown once
+// touchend's default is prevented): Staff Kanban's mention and ticket pickers.
+export const NATIVE_TAP = "[data-native-tap]";
+const firedAt = new WeakMap();
+
 // One window-level guard for every root: the late native click of a tap
 // already handled, wherever it lands.
 let swallow = null;
@@ -51,14 +57,15 @@ function installGuard() {
   }, true);
 }
 
-export function clickOnTouchTap(root, selector) {
+export function clickOnTouchTap(root, selector, { accept } = {}) {
   installGuard();
   let tap = null;
   let lastFired = 0;
   const isTouch = (e) => e.pointerType === "touch" || e.pointerType === "pen";
   const itemAt = (target) => {
     const el = target && target.closest ? target.closest(selector) : null;
-    return el && root.contains(el) ? el : null;
+    if (!el || !root.contains(el) || el.closest(NATIVE_TAP)) return null;
+    return !accept || accept(el) ? el : null;
   };
 
   function begin(target, x, y) {
@@ -74,7 +81,9 @@ export function clickOnTouchTap(root, selector) {
     if (!t || itemAt(target) !== t.el) return false;
     if (Math.hypot(x - t.x, y - t.y) > MOVE_PX || performance.now() - t.at > MAX_TAP_MS) return false;
     if (!t.el.isConnected || t.el.disabled) return false;
+    if (performance.now() - (firedAt.get(t.el) || -1e9) < 150) return false; // another root already clicked it for this tap
     lastFired = performance.now();
+    firedAt.set(t.el, lastFired);
     swallow = { x, y, until: lastFired + SWALLOW_MS };
     t.el.click();
     return true;
@@ -107,4 +116,25 @@ export function clickOnTouchTap(root, selector) {
     // already acted on.
     if (fired && e.cancelable) e.preventDefault();
   }, { passive: false });
+}
+
+// The whole console (3 Nov 2026 → 5 Nov 2026): after the sidebar fix, the
+// iPad lost taps on everything else that relied on the browser's own click
+// (Settings and User Management tabs, Leads, page buttons). So every control a
+// person taps is covered, including ones added later, without anyone having to
+// remember to wire it: buttons, links, tabs, menu items, options, summaries,
+// checkbox/radio controls (or a label for one), and anything marked
+// [data-touch-tap] (a clickable element that is not a button). Text fields, selects and
+// contenteditable areas are never covered: they need the native tap for focus
+// and the keyboard.
+export const TAP_TARGETS = '[data-touch-tap], button, a[href], [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="link"], summary, input[type="checkbox"], input[type="radio"], label';
+const acceptTarget = (el) => {
+  if (el.tagName === "LABEL") {
+    const c = el.control;
+    return !!c && (c.type === "checkbox" || c.type === "radio") && !c.disabled;
+  }
+  return el.getAttribute("aria-disabled") !== "true";
+};
+export function installTouchTaps(root = document.documentElement) {
+  clickOnTouchTap(root, TAP_TARGETS, { accept: acceptTarget });
 }

@@ -3884,35 +3884,64 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
 - Out of scope: redesigning the Agent Board, Staff Kanban, Concepts or Help
   Centre pages.
 
-### iPad taps: the sidebar must open on every tap (3 Nov 2026)
+### iPad taps: every control must work on every tap (3 Nov, 5 Nov 2026)
 
-Staff Kanban and Concepts went dead in the sidebar on the iPad three times
-(20 Oct, 21 Oct, 3 Nov 2026). Chromium with touch emulation never reproduced
-it, so each fix was "could not reproduce". The cause is iPad WebKit, not the
+The iPad lost taps in the console four times: 20 Oct and 21 Oct (Staff Kanban
+link), 3 Nov (Staff Kanban and Concepts in the sidebar), and 5 Nov ("many of
+the links": the Settings and User Management tabs and the new pages added on
+4 Nov). Chromium with touch emulation never reproduces it, so the early
+tickets closed as "could not reproduce". The cause is iPad WebKit, not the
 layout: it drops some taps' clicks, sends `pointercancel` instead of
-`pointerup` when a finger rolls slightly inside the scrollable sidebar, and
-delivers a late click re-aimed at whatever is now under the finger (the
-slide-over has already closed). Rules:
+`pointerup` when a finger rolls slightly, and delivers a late click re-aimed at
+whatever is under the finger after the page has changed. The 3 Nov fix covered
+the sidebar only, so every control added afterwards was unprotected; that is
+why it came back.
 
-- Every sidebar item (`.nav-drawer-item`) and every whiteboard button is
-  driven by `public/js/touch-click.js` (`clickOnTouchTap`): a touch or pen tap
-  that lifts within 10 px and 800 ms on the item it started on clicks it
-  there and then. It tracks **both** Pointer Events and Touch Events, so a
-  `pointercancel` or missing pointer events cannot lose the tap; it times taps
-  with `performance.now()`, never `Event.timeStamp`; it prevents `touchend`'s
-  default once it has acted; and it swallows the late native click
-  **wherever it lands** within 40 px and 1 s of the tap (a keyboard click,
-  with no coordinates, is never swallowed).
-- A new sidebar item needs only the `nav-drawer-item` class to be covered. Do
-  not bind a sidebar destination to `touchstart`/`pointerdown` itself, and do
-  not put a `click` listener on `window` in the capture phase that stops
-  propagation for nav items.
-- `test/ui/nav-touch.test.mjs` (part of `npm run test:ui`) simulates each
-  WebKit failure (dropped click, `pointercancel`, Touch Events only, late
-  re-targeted click) at 1180×820, 1024×768 and 820×1180 from the board, Staff
-  Kanban and Concepts, and requires every destination to open exactly once.
-  A sidebar or touch-handling change is not done until it passes. Chromium
-  passing a plain tap proves nothing about the iPad.
+Rules:
+
+- **One console-wide handler, not per control.** `nav-shell.js` calls
+  `installTouchTaps()` (`public/js/touch-click.js`) for the whole document. A
+  touch or pen tap that lifts within 10 px and 800 ms on the control it
+  started on clicks that control there and then. It tracks **both** Pointer
+  Events and Touch Events, times taps with `performance.now()` (never
+  `Event.timeStamp`), prevents `touchend`'s default once it has acted, and
+  swallows the late native click **wherever it lands** within 40 px and 1 s of
+  the tap. A keyboard click, which has no coordinates, is never swallowed.
+- **What it covers** (`TAP_TARGETS`): `button`, `a[href]`, `[role=button|tab|
+  menuitem|option|link]`, `summary`, checkbox and radio inputs (and a `label`
+  for one), and anything marked `[data-touch-tap]`. A new control written as
+  one of those is covered with no extra wiring. A clickable element that is
+  not (a `div` or `li` with a click handler) must get `data-touch-tap`, or
+  better, be a `<button>`. Text fields, selects and contenteditable areas are
+  never covered: they need the native tap for focus and the keyboard.
+- **Act on `click`, not `mousedown`.** Once `touchend`'s default is
+  prevented, iOS sends no `mousedown`/`mouseup` for that tap. A control that
+  must act on `mousedown` (a picker that keeps an input's focus) goes inside
+  `[data-native-tap]`, which keeps the browser's own handling: Staff Kanban's
+  mention picker and ticket picker. `test/touch-guard.test.mjs` fails the
+  build on any new `mousedown`/`mouseup` handler until it has been reviewed
+  and listed there.
+- Do not stop propagation of `pointerdown`/`pointerup`/`touchstart`/
+  `touchend` on `window` or `document`, and do not add a capture-phase
+  `click` listener on `window` that stops propagation for controls: either
+  one disables the handler for the whole console.
+- **Tests, both in `npm run test:app-boots`, so in CI on every console pull
+  request and train, where a red result holds Deploy to Main:**
+  `test/touch-guard.test.mjs` (no browser) checks the handler is installed
+  console-wide, that `TAP_TARGETS` was not narrowed, that the four WebKit
+  failure modes are still handled, and the `mousedown` review list.
+  `test/ui/nav-touch.test.mjs` (Chromium) taps every visible sidebar item from
+  the board, Staff Kanban and Settings, and every visible tab on the Settings
+  and User Management pages, at 1180×820, 1024×768 and 820×1180. It does this
+  under each simulated WebKit failure: the native click dropped everywhere,
+  `pointercancel`, Touch Events only, and a late re-targeted click. Each tap
+  must leave the console in the state a real click does and run the handler
+  exactly once. Its targets are found on the page, not listed, so a new
+  sidebar item or tab is tested automatically. A page with a new kind of
+  control (not a sidebar item or a tab) adds its start page to `PLAN` there.
+- A change to the sidebar, `touch-click.js`, `nav-shell.js`, overlays, or any
+  global `click`/`pointer*`/`touch*` listener is not done until both pass.
+  Chromium passing a plain tap proves nothing about the iPad.
 
 ## Promote section: Brand Guidelines (5 Nov 2026)
 
