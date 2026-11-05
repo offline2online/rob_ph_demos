@@ -37,7 +37,7 @@ No critical findings. No open high findings.
 
 * **R-1 Per-instance counters.** The help API's buckets live in each Cloud Function instance (`maxInstances: 10`), so a determined client spread across instances can get up to ten times the limit. The 5-minute cache in front of WordPress (WP_TTL 5 min, 4 s timeout, 256 KB cap) bounds what that costs. Moving the counters to Firestore would add a write per request; not worth it at this traffic. Revisit if the abuse alert fires.
 * **R-2 `REMOTE_ADDR` behind a proxy. CLOSED (4 Nov 2026, Rob).** The WordPress limit keys on `REMOTE_ADDR`. Checked on 4 Nov 2026: behind Cloudflare, WordPress sees the real client address in `REMOTE_ADDR`, not a Cloudflare range, so visitors do not share one budget. No filter or `ph_ae_rate_max_tools` change is needed. Re-check only if the CDN or proxy setup changes; a `429` on the tool route in the first minute of normal use would be the sign.
-* **R-3 The publishing account stays admin** (Rob, 3 Nov 2026). Moving the Elementor MCP account to least privilege is out of scope for this release.
+* **R-3 The publishing account stays admin** (Rob, 3 Nov 2026). Moving the `ph-mcp` account on the personalisationhub.com WordPress MCP to least privilege is out of scope for this release.
 
 ## 3. Pen test checklist and results
 
@@ -141,7 +141,7 @@ Live: `e2e-live.mjs` "help API answers 429" always; "WordPress tool route answer
 | Rate limits and alerts (`jB00`) | `help-search.test.js`: 429, Retry-After, window reset, abuse and error alert thresholds, 30-minute cooldown, test alert | Passed offline. **Live `helpApiTestAlert` delivery is a post-deploy step (section 5, item 2):** it needs the deployed function and the board key, neither of which the build sandbox has |
 | RevOps events (`rH5S`) | `tests/run.php` and `webmcp.test.js`: `ph_agent_tool` dataLayer event, `agentToolLog` row shape (no IP, user agent, arguments or result text), `ph_agent_cta` event shape, via allow-list | Passed offline. **Live check is section 5, item 3** |
 
-## 5. Post-deploy steps (PH Website session, with the Elementor MCP)
+## 5. Post-deploy steps (PH Website session, with the personalisationhub.com WordPress MCP as `ph-mcp`; never offline2online.com)
 
 Do these after Deploy to Main and after publishing the changed snippets (`README.md` → How a deploy works). Attach the output to the ticket.
 

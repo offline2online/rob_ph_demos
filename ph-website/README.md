@@ -2,6 +2,8 @@
 
 Every line of code running on personalisationhub.com, versioned here. Seven Angie code snippets, copied byte for byte from WordPress on 4 Nov 2026 (the live files have `__ID__` already replaced by the snippet id). Do not reformat them. PH Blog Layout (10644) was written here first and published the same day, as a hotfix.
 
+**Target site and connection (read first).** PH Website work targets **personalisationhub.com** only. The one connection is the **personalisationhub.com WordPress MCP**, acting as the dedicated `ph-mcp` admin user; it is already included in the build routine. **offline2online.com is an unrelated company's site and must never be used for PH Website work**: not its Elementor MCP (`offline2online-elementor` in `.mcp.json`), not its pages. The Calendly demo link (`rob-offline2online`) is just a booking URL; it is not a reason to connect to offline2online.com. Before calling a ticket unbuildable for lack of site access, check for and use the personalisationhub.com WordPress MCP; flag it blocked only if that MCP is genuinely unavailable, and say exactly that.
+
 ## Snippets
 
 | Snippet | Id | Version | Folder | Owns |
@@ -22,7 +24,7 @@ The earlier agent-endpoint and media drafts (no id) are superseded by 10646 and 
 
 ## How a deploy works
 
-After Deploy to Main, the PH Website session (the one with the Elementor MCP) publishes, through the dedicated `ph-mcp` WordPress user (not a personal account), the changed snippets from `main` through the Elementor MCP (`angie-*` snippet tools):
+After Deploy to Main, the PH Website session publishes, through the personalisationhub.com WordPress MCP as the dedicated `ph-mcp` WordPress user (not a personal account), the changed snippets from `main` (`angie-*` snippet tools). Never offline2online.com:
 
 1. Snapshot the live snippet files before.
 2. Publish the changed files.
