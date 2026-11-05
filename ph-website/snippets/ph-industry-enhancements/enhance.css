@@ -58,3 +58,19 @@
 .ph-ind-calc .ph-ind-gate-m{grid-column:1/-1;margin:0;font:400 14px/1.4 "Kantumruy Pro",system-ui,sans-serif}
 .ph-ind-calc .ph-ind-gate-err{color:#B3261E}
 @media (max-width:767px){.ph-ind-calc .ph-ind-gate-f{grid-template-columns:1fr}}
+
+.ph-ind-lead{max-width:760px;margin:40px auto;padding:20px;border-radius:12px;background:#FFFFFF;border:1px solid #DCE1EB;color:#1C2540}
+.ph-ind-lead .ph-ind-gate-h{margin:0 0 6px;font:700 18px/1.3 "Kantumruy Pro",system-ui,sans-serif;color:#1C2540}
+.ph-ind-lead .ph-ind-gate-p{margin:0 0 14px;font:400 14px/1.5 "Kantumruy Pro",system-ui,sans-serif;color:#5A6479}
+.ph-ind-lead .ph-ind-gate-f{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ph-ind-lead .ph-ind-gate-l{display:flex;flex-direction:column;gap:4px;font:600 13px/1.3 "Kantumruy Pro",system-ui,sans-serif;color:#1C2540}
+.ph-ind-lead .ph-ind-gate-l input{border:1px solid #DCE1EB;border-radius:10px;padding:9px 12px;font:400 15px/1.2 "Kantumruy Pro",system-ui,sans-serif;color:#1C2540;background:#fff;min-height:44px}
+.ph-ind-lead .ph-ind-gate-l input:focus{border-color:#1C2540;box-shadow:0 0 0 3px rgba(28,37,64,.12);outline:none}
+.ph-ind-lead .ph-ind-gate-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.ph-ind-lead .ph-ind-gate-c{grid-column:1/-1;display:flex;gap:8px;align-items:flex-start;font:400 13px/1.4 "Kantumruy Pro",system-ui,sans-serif;color:#5A6479}
+.ph-ind-lead .ph-ind-gate-b{grid-column:1/-1;justify-self:start;min-height:44px;padding:10px 22px;border:0;border-radius:999px;background:#169BC2;color:#fff;font:700 15px/1 "Kantumruy Pro",system-ui,sans-serif;cursor:pointer}
+.ph-ind-lead .ph-ind-gate-b:disabled{opacity:.6;cursor:wait}
+.ph-ind-lead .ph-ind-gate-m{grid-column:1/-1;margin:0;font:400 14px/1.4 "Kantumruy Pro",system-ui,sans-serif}
+.ph-ind-lead .ph-ind-gate-err{color:#B3261E}
+.ph-ind-lead-test{margin:0 0 10px;padding:6px 10px;border-radius:8px;background:#FFF4D6;color:#6B4E00;font:600 13px/1.3 "Kantumruy Pro",system-ui,sans-serif}
+@media (max-width:767px){.ph-ind-lead{margin:24px 16px}.ph-ind-lead .ph-ind-gate-f{grid-template-columns:1fr}}

@@ -493,5 +493,17 @@ ok( null === $bare['marketplace']['trackedTrialUrl'], 'install spec: source data
 ok( ! empty( run_tool( 'get_installation_spec', array( 'x' => 1 ), $src )['isError'] ), 'install spec: takes no arguments' );
 ok( false === stripos( $is['content'][0]['text'], 'seamless' ) && false === stripos( $is['content'][0]['text'], 'leverage' ), 'install spec: no banned words' );
 
+/* industry lead forms -> console Leads payload (no WordPress needed for the pure builder) */
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', __DIR__ );
+}
+require_once dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/leads.php';
+$lb = \AngieSnippets\PhIndustryEnhancements_10063\lead_ingest_body( array( 'company' => 'Acme', 'website' => 'acme.com', 'company_industry' => 'Telco', 'industry' => 'telco', 'countries' => 'UK, France', 'store_count' => '120', 'contact_name' => 'Ann', 'job_title' => 'CTO', 'email' => 'a@acme.com', 'linkedin' => 'linkedin.com/in/a', 'page' => 'https://personalisationhub.com/industries/telco/', 'test' => true ) );
+ok( $lb['company'] === 'Acme' && $lb['contactName'] === 'Ann' && $lb['jobTitle'] === 'CTO' && $lb['storeCount'] === '120', 'industry lead maps to console field names' );
+ok( $lb['pageIndustry'] === 'telco' && $lb['industry'] === 'Telco' && strpos( $lb['page'], '/industries/telco/' ) !== false, 'industry lead carries page and industry' );
+ok( true === $lb['test'], 'test flag forwarded' );
+$lb2 = \AngieSnippets\PhIndustryEnhancements_10063\lead_ingest_body( array( 'name' => 'Bo', 'company' => 'Zed', 'role' => 'Head', 'email' => 'b@z.com', 'industry' => 'telco', 'source' => 'telco-business-model' ) );
+ok( $lb2['contactName'] === 'Bo' && $lb2['jobTitle'] === 'Head' && $lb2['industry'] === 'telco' && ! isset( $lb2['test'] ), 'telco gate lead maps and is a real lead without the flag' );
+
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );

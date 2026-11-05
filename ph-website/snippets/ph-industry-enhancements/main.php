@@ -5,8 +5,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.8.0';
+const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.8.1';
 require_once __DIR__ . '/telco-lead.php';
+require_once __DIR__ . '/leads.php';
 
 const KEYS = [ 'industries', 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' ];
 
