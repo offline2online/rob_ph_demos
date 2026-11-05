@@ -47,6 +47,7 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const { defineSecret } = require("firebase-functions/params");
 const kanban = require("./kanban");
+const leads = require("./leads");
 // Staff Kanban's voice agent fill (functions/kanban.js). "unset" until the
 // ANTHROPIC_API_KEY repo secret is added (the deploy workflow writes the
 // placeholder so the deploy never fails on a missing secret).
@@ -5072,6 +5073,8 @@ const TOOLS = [
 
 // Staff Kanban's tools (KB-MCP-1), defined beside the rest of its server code.
 TOOLS.push(...kanban.kanbanTools({ textResult, toolError, audit, checkInterface, interfaceDoc }));
+// Promote › Leads: read the pipeline, move one company between stages (functions/leads.js).
+TOOLS.push(...leads.leadsTools({ textResult, toolError, audit }));
 const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -5186,6 +5189,7 @@ const SERVER_INSTRUCTIONS = [
   "Concepts: list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_type, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project reverses a promotion.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_create_upload_url, kanban_attach_uploaded, kanban_remove_attachment, kanban_capture_screenshots, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read, kanban_set_staff_pronunciation). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
+  "Leads: list_leads; update_lead_stage moves a company between stages.",
   "Skills: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
   "Release: moving cards by any other route, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings sets the skills that build and deploy runs load; finalise_project / unfreeze_project freeze a project.",
 ].join(" ");

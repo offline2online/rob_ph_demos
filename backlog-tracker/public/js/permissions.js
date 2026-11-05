@@ -1,4 +1,4 @@
-// User Management → Permissions: which console sections each role may view,
+// User Management → Roles: which console sections each role may view,
 // edit or administer, and how that is enforced in the console's own UI.
 //
 // Pure functions only (no DOM, no Firestore) so test/permissions.test.mjs can
@@ -24,6 +24,7 @@ export const SECTIONS = [
   { key: "staff-kanban", label: "Staff Kanban", nav: ["#staff-kanban-btn"], edit: [] },
   { key: "concepts", label: "Concepts", nav: ["#concept-incubator-btn"],
     edit: ["#concept-add-btn", "#concept-incubator-page [data-editor-only]", "#concept-detail-page [data-editor-only]", "#concept-description-save"] },
+  { key: "promote", label: "Promote", nav: ["#promote-brand-btn", "#promote-leads-btn"], edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
   { key: "faq", label: "FAQ management", nav: ["#faq-articles-btn"],
     edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#fa-analytics-tag-save", "#faq-cat-edit-save-btn"] },
   { key: "skills", label: "Skills", nav: ['[data-settings-page="skills"]'], edit: ["#skills-add-btn", "#skills-page [data-editor-only]", "#skill-add-file-btn"] },
@@ -31,7 +32,7 @@ export const SECTIONS = [
   { key: "project-docs", label: "Project docs", nav: [],
     edit: ["#docs-description-save", "#docs-repo-folder-save", "#docs-readme-save", "#docs-requirements-save", "#docs-add-doc-btn", "#docs-routine-prompt-save", "#docs-add-interface-btn"] },
   { key: "settings", label: "Settings", nav: ["#faq-settings-btn"], edit: ["#faq-settings-page .btn-primary"] },
-  { key: "user-management", label: "User Management", nav: ['[data-nav-group="user-management"]'],
+  { key: "user-management", label: "User Management", nav: ['[data-settings-page="user-management"]'],
     edit: ["#team-add-open", "#roles-create", ".role-actions", "#um-bulk", ".um-manage"] },
 ];
 export const SECTION_KEYS = SECTIONS.map((s) => s.key);
@@ -97,27 +98,35 @@ export function sectionForHash(hash) {
   const h = String(hash || "").split("?")[0];
   if (h === "" || h === "#") return "agent-board";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq";
+  if (h === "#promote" || h.startsWith("#promote/")) return "promote";
   if (h === "#skills") return "skills";
   if (h === "#releases") return "releases";
   if (h === "#concept-incubator" || h.startsWith("#concept-")) return "concepts";
   if (h.startsWith("#docs/")) return "project-docs";
   if (h === "#staff-kanban" || h.startsWith("#staff-kanban/")) return "staff-kanban";
-  if (h.startsWith("#user-management")) return "user-management";
+  if (h.startsWith("#user-management") || h.startsWith("#settings/user-management")) return "user-management";
   if (h === "#settings" || h.startsWith("#settings/")) return "settings";
   return null;
 }
 
 // The hash a section opens at, for the redirect.
 export const SECTION_HASH = {
-  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", faq: "#faq-management",
+  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", promote: "#promote/brand-guidelines", faq: "#faq-management",
   skills: "#settings/skills", releases: "#settings/releases", "project-docs": "", settings: "#settings",
-  "user-management": "#user-management/users",
+  "user-management": "#settings/user-management/users",
 };
 
 // A settings sub-page also needs the section it shows (Releases, Skills).
 export function sectionForSettingsPage(page) {
-  return page === "releases" ? "releases" : page === "skills" ? "skills" : "settings";
+  return page === "releases" ? "releases" : page === "skills" ? "skills" : page === "user-management" ? "user-management" : "settings";
 }
+
+// The role page groups sections the way the sidebar does.
+export const PERMISSION_GROUPS = [
+  { label: "Build", keys: ["agent-board", "staff-kanban", "concepts", "promote", "project-docs"] },
+  { label: "Support", keys: ["faq"] },
+  { label: "Settings", keys: ["settings", "skills", "releases", "user-management"] },
+];
 
 // Stylesheet text that hides what the levels remove. Selectors come only from
 // SECTIONS above, never from user input.
@@ -130,14 +139,4 @@ export function permissionCss(levels) {
   }
   if (!canEdit(levels, "user-management")) rules.push(".um-role-select{pointer-events:none;opacity:.6}");
   return rules.join("\n");
-}
-
-// Rows for the matrix grid: one per section, a column per role.
-export function matrixRows(roles) {
-  const sorted = (roles || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-  return SECTIONS.map((s) => {
-    const row = { key: s.key, section: s.label };
-    for (const r of sorted) row[`r:${r.id}`] = storedLevel(r, s.key);
-    return row;
-  });
 }

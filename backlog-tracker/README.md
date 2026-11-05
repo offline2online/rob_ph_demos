@@ -2486,8 +2486,8 @@ documents folded into "Superseded (N)". The logic is the pure module
 every destination already existed.
 
 - **Navigation groups (31 Oct 2026)**: **Build** (Agent Board, Staff Kanban,
-  Concepts, Whiteboard), **Publish** (Help Centre), **User Management** (Users, Roles,
-  Permissions; built by their own tickets) and **Settings**. Releases and Skills are no longer in the nav;
+  Concepts, Whiteboard), **Promote** (Brand Guidelines, 5 Nov 2026; see
+  below), **Support** (Help Centre; labelled Publish before 4 Nov 2026) and **Settings**. Releases and Skills are no longer in the nav;
   they are reached from Settings. Sign out stays in the profile menu.
 - **Settings** (`#settings/<page>`, `public/js/settings-section.js` for routes
   and row builders): a sub-menu of Projects, Releases, Skills & phase
@@ -2498,10 +2498,42 @@ every destination already existed.
   page stays reachable by every role; admin-only blocks keep `[data-admin-only]`.
 - **Breakpoints**: 1024px and up, a persistent sidebar you can collapse (state
   in `localStorage` `bt-nav-collapsed`); 641 to 1023px, the overlay drawer;
-  640px and down, a bottom tab bar (Build, Publish, Settings, Search, Profile) that opens
+  640px and down, a bottom tab bar (Build, Promote, Publish, Settings, Search, Profile) that opens
   one section at a time. The Board's columns stay stacked top to bottom on a
   phone (tap a column header to collapse it); a swipe-one-column-at-a-time
   strip was tried and reverted the same day (see below).
+- **Promote › Brand Guidelines** (`#promote/brand-guidelines`,
+  `public/js/promote-section.js`): the brand kit for every promotion and PR
+  piece, migrated from the PH Brand concept (README and Requirements as of
+  5 Nov 2026). The text is two repo files, `promote/brand-guidelines.md` and
+  `promote/brand-requirements.md`, declared in `board-docs.json` and copied to
+  `projectDocs` (mirror keys `brand-guidelines`, `brand-requirements`) after
+  each merge to main; the page reads them and is read-only, so edit the files.
+  Includes the founder tone of voice; industry content is not held here and
+  links to personalisationhub.com/industries. Logos and templates are linked
+  from its Brand assets and Reusable templates sections. Agents read the same
+  documents with `list_project_documents` / `get_project_document` on this
+  project. Gated by the `promote` permission section. More pages go in
+  `PROMOTE_PAGES` beneath Brand Guidelines.
+- **Promote › Leads** (`#promote/leads`, 5 Nov 2026; `public/js/leads-page.js`,
+  rules in `leads-core.js`, copied to `functions/leads-core.js` by
+  `node test/leads-core-copy.mjs --write`): one card per company on a Kanban,
+  lanes Lead → Hot Lead → Demo → Post-demo → Closed Won / Lost. Firestore
+  `leads/{id}` holds `company {name, website, industry, countries[],
+  storeCount}`, `contacts[] {id, name, jobTitle, buyingRole, email,
+  linkedin, enrichment?}`, `stage`, `source`, `assignee`, `customerAccount
+  {id, name}`, `enrichment`. Cards drag between lanes or use their "Move to"
+  select (the way on a tablet). **Enrich** (`functions/lead-enrich.js`, served
+  at `/leadEnrich/v1/enrich`) reads the company's website and, when a
+  BuiltWith key is stored under Settings → Integrations & MCP, its tech stack,
+  company details and named contacts; it fills blanks only. **Convert and link
+  account** moves the lead to Closed Won and records the customer account.
+  Agents use `list_leads` and `update_lead_stage` (`functions/leads.js`).
+  LinkedIn has no public lookup API: the company's LinkedIn page is taken from
+  its website, and contacts' LinkedIn addresses are stored as typed.
+  **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
+  `LEAD_INGEST_KEY`); a `test` flag stores a test lead that shows only under
+  the page's Test filter and is bulk-deleted there. See REQUIREMENTS.md → Promote section: Leads.
 - **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
   any ticket, concept, project or release. Archived tickets are included once
   the archive has been loaded.
@@ -2703,12 +2735,17 @@ Revisions reads `docRevisions` for the project over REST with a field mask
 agents can read or write changed. UI tests serve AG Grid from the
 `ag-grid-community` dev dependency (`test/ui/harness.mjs`).
 
-## User Management (Users / Roles / Permissions)
+## User Management (Settings → User Management: Users / Roles)
 
-Its own navigation section (admin-only, `[data-admin-only]`), moved out of
-Settings. Sub-menu: **Users**, **Roles**, **Permissions** (`#user-management/<tab>`,
-`user-management-page` in `public/index.html`). **Users** and **Roles** are
-built; Permissions is an empty page for its own ticket.
+The first tab of Settings (admin-only, `[data-admin-only]`; 4 Nov 2026). Settings
+tabs follow PH Core's campaign-editor underline style (`.settings-tab` in
+`styles.css`). Sub-tabs: **Users** and **Roles**
+(`#settings/user-management/<tab>`, `data-settings-pane="user-management"` in
+`public/index.html`); the old `#user-management/*` links redirect. Opening a
+role (edit icon) shows its page, `#settings/user-management/roles/<id>`
+(`role-detail-page`): name, description and the permissions grouped Build /
+Support / Settings, with **Save role**; the Admin role is locked. There is no
+Permissions tab or matrix.
 
 **Users** is an AG Grid Community table (`public/js/user-management.js`; the
 library is loaded on first visit by `docs-grid.js`, the Alpine theme restyled

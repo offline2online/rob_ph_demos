@@ -1,14 +1,22 @@
 // Pure row builders and routes for the Settings section (public/js/settings-section.js).
 import assert from "node:assert";
-import { SETTINGS_PAGES, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "../public/js/settings-section.js";
+import { SETTINGS_PAGES, settingsPageFromHash, settingsHash, userManagementRoute, legacyUserManagementHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "../public/js/settings-section.js";
 
-assert.deepStrictEqual(SETTINGS_PAGES.map((p) => p.key), ["projects", "releases", "skills", "automations", "integrations"]);
-assert.strictEqual(settingsPageFromHash("#settings"), "projects");
+assert.deepStrictEqual(SETTINGS_PAGES.map((p) => p.key), ["user-management", "projects", "releases", "skills", "automations", "integrations"]);
+assert.strictEqual(settingsPageFromHash("#settings"), "user-management");
 assert.strictEqual(settingsPageFromHash("#settings/automations"), "automations");
-assert.strictEqual(settingsPageFromHash("#settings/nope"), "projects");
+assert.strictEqual(settingsPageFromHash("#settings/nope"), "user-management");
+assert.strictEqual(settingsPageFromHash("#settings/user-management/roles/r1"), "user-management");
 assert.strictEqual(settingsPageFromHash("#releases"), null);
 assert.strictEqual(settingsPageFromHash("#user-management"), null);
 assert.strictEqual(settingsHash("skills"), "#settings/skills");
+assert.deepStrictEqual(userManagementRoute("#settings/user-management"), { tab: "users", roleId: "" });
+assert.deepStrictEqual(userManagementRoute("#settings/user-management/roles"), { tab: "roles", roleId: "" });
+assert.deepStrictEqual(userManagementRoute("#settings/user-management/roles/r1"), { tab: "roles", roleId: "r1" });
+assert.strictEqual(userManagementRoute("#settings/projects"), null);
+assert.strictEqual(legacyUserManagementHash("#user-management/users"), "#settings/user-management/users");
+assert.strictEqual(legacyUserManagementHash("#user-management/permissions"), "#settings/user-management/roles");
+assert.strictEqual(legacyUserManagementHash("#settings"), null);
 
 const pr = projectRows([{ id: "b", name: "Beta", repoFolder: "beta", type: "Platform" }, { id: "a", name: "Alpha", repoFolderNotApplicable: true }, { id: "c", name: "Gone", archived: true }], { typeOf: (p) => p.type || "" });
 assert.deepStrictEqual(pr.map((r) => r.name), ["Alpha", "Beta"]);

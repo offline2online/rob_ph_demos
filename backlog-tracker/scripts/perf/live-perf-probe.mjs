@@ -153,7 +153,7 @@ const sections = [
   ["#faq-management", () => !document.getElementById("faq-articles-page")?.hidden && /[1-9]/.test(document.getElementById("faq-admin-count")?.textContent || "")],
   ["#settings/projects", () => !document.getElementById("faq-settings-page")?.hidden],
   ["#settings/releases", () => !document.getElementById("faq-settings-page")?.hidden],
-  ["#user-management/users", () => true],
+  ["#settings/user-management/users", () => true],
 ];
 for (const [hash, check] of sections) {
   await timed(`navigate ${hash}`, () => page.evaluate((h) => { location.hash = h; }, hash), () => page.evaluate(check));

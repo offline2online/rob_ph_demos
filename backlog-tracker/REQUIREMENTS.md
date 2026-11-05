@@ -3801,8 +3801,15 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
 
 ## User Management section
 
-- Users, Roles and Permissions are one navigation section ("User Management"),
-  visible to admins only. Team & agent access no longer lives in Settings.
+- **User Management is the first tab of Settings (4 Nov 2026)**, visible to
+  admins only, with two sub-tabs: **Users** and **Roles** (`#settings/user-management/<users|roles>`;
+  a role's own page is `#settings/user-management/roles/<id>`; the old
+  `#user-management/*` links redirect). There is no User Management, Roles or
+  Permissions item in the left nav and no standalone Permissions section.
+  Settings tabs use PH Core's campaign-editor tab style (46px, underline ink
+  bar, the active tab in brand teal with a 10% tint). The remaining tabs keep
+  their order after it: Projects, Releases, Skills & phase bindings,
+  Automations, Integrations & MCP. A non-admin opens Settings on Projects.
 - The Users page is an AG Grid table with columns name, email, role, status and
   last active; sortable, filterable per column, searchable, paginated; styled to
   the Personalisation Hub table conventions (`ph-designer`).
@@ -3819,10 +3826,13 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   Roles live in the `roles` collection (members read, admins write); a user's
   assignment is `consoleUsers.roleId`, set from the Users grid's "Assigned role"
   column, and drives the Users count.
-- **Permissions (1 Nov 2026).** The Permissions tab is a matrix: one row per
-  console section (Agent board, Staff Kanban, Concepts, FAQ management, Skills,
-  Releases, Project docs, Settings, User Management), one column per role, each
-  cell No access / View / Edit / Admin. Stored as `roles/{id}.permissions`
+- **Permissions (1 Nov 2026; moved onto the role page 4 Nov 2026).** Permissions
+  are edited only inside a role: the edit icon on the Roles grid opens the role
+  page (name, description, then every console section grouped Build / Support /
+  Settings, each No access / View / Edit / Admin, and **Save role**). There is
+  no comparison matrix. The sections are Agent board, Staff Kanban, Concepts,
+  Promote, Project docs (Build); FAQ management (Support); Settings, Skills,
+  Releases, User Management (Settings). Stored as `roles/{id}.permissions`
   (`{sectionKey: level}`); a role with no map gets Edit everywhere except User
   Management (none). The logic is `public/js/permissions.js`. Enforcement, in
   the console UI: a section with No access is hidden from the nav and search and
@@ -3832,16 +3842,16 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
   and its column is locked, and a member whose fixed console role is `admin`
   always keeps User Management whatever their assigned role says, so nobody can
   lock themselves out. The fixed `viewer` console role never exceeds View. Only
-  an admin can change the matrix. Admin level currently differs from Edit only
-  by unlocking this matrix; it is reserved for per-section admin controls.
+  an admin can change a role's permissions. Admin level currently differs from
+  Edit only by unlocking user and role management; it is reserved for
+  per-section admin controls.
   **Limit:** this is UI enforcement. `firestore.rules` still gate data by the
   fixed admin/editor/viewer role, not per section, so it is access control for
   the console's screens, not a data boundary.
 ## Console navigation and Settings (31 Oct 2026)
 
 - The primary nav has four groups: **Build** (Agent Board, Staff Kanban,
-  Concepts, Whiteboard), **Publish** (Help Centre), **User Management** (Users, Roles,
-  Permissions) and **Settings**. Releases and Skills are reachable only
+  Concepts, Whiteboard), **Support** (Help Centre; labelled Publish before 4 Nov 2026) and **Settings**. Releases and Skills are reachable only
   from Settings. Settings is not in the profile menu. On a phone the tab bar is
   Build, Publish, Settings, Search, Profile.
 - Settings has a sub-menu at `#settings/<page>`: Projects (names, descriptions,
@@ -3885,3 +3895,87 @@ slide-over has already closed). Rules:
   Kanban and Concepts, and requires every destination to open exactly once.
   A sidebar or touch-handling change is not done until it passes. Chromium
   passing a plain tap proves nothing about the iPad.
+
+## Promote section: Brand Guidelines (5 Nov 2026)
+
+- A **Promote** group sits in the sidebar between Build and Publish (a
+  Promote tab on a phone). Its first item is **Brand Guidelines**
+  (`#promote/brand-guidelines`, `public/js/promote-section.js`). Its section
+  key for roles is `promote` (Settings → User Management → Roles); a hash under
+  `#promote/` routes to it.
+- The page is **read-only** and shows two `projectDocs` rows found by
+  `mirrorKey` (`brand-guidelines`, `brand-requirements`), which mirror
+  `backlog-tracker/promote/brand-guidelines.md` and `brand-requirements.md`
+  (declared in `board-docs.json`, copied on every merge to main). The
+  sync's "Copy of…" line is hidden. Until the first sync it says the
+  guidelines haven't arrived yet.
+- The content is the PH Brand concept's README and Requirements as of
+  5 Nov 2026, including the **founder tone of voice** section. Industry and
+  vertical content is **not held** in the guidelines: they link to the
+  personalisationhub.com industry pages. Logos, AWS Marketplace logos and
+  the templates page are reachable from the guidelines (Brand assets and
+  Reusable templates sections).
+- **Agents read the guidelines over MCP** with `list_project_documents` and
+  `get_project_document` on the Backlog Tracker & FAQs project; no new tool.
+- **Leads** sits beneath it (next section): an entry in `PROMOTE_PAGES` and a
+  nav button.
+- Tests: `test/promote-section.test.mjs`, `test/permissions.test.mjs`, a
+  scenario in `test/ui/console-click.test.mjs` and a page in
+  `test/ui/mobile-shell.test.mjs`.
+
+## Promote section: Leads (5 Nov 2026)
+
+- **Promote › Leads** (`#promote/leads`, nav item beneath Brand Guidelines,
+  same `promote` permission section: viewers read, editors change). One card
+  per company on a Kanban in the style of the Staff Kanban; lanes **Lead, Hot
+  Lead, Demo, Post-demo, Closed Won, Lost** (`STAGES` in `leads-core.js`).
+- **Data**: `leads/{id}` = `company {name (required), website, industry,
+  countries[], storeCount}`, `contacts[]` (up to 25; `name`, `jobTitle`,
+  `buyingRole` one of decision maker, champion, influencer, technical
+  evaluator, procurement; `email`, `linkedin`), `stage`, `source` (e.g. Website
+  form), `assignee` (a member's email), `customerAccount {id, name}` once
+  converted, `enrichment`, and the usual created/updated stamps. Members read;
+  editors write (`firestore.rules` → `isLead`, with the cases in
+  `test/firestore-rules.test.js`).
+- **Moving a card**: drag it to another lane, or use its "Move to" select
+  (touch). The write is live for every open tab. Over MCP, `update_lead_stage`
+  moves one company (by `leadId` or company name) and `list_leads` reads the
+  pipeline; there is no other lead tool (the website capture that creates
+  leads is a separate ticket, and writes the same `leads` documents).
+- **Enrichment**: the lead's **Enrich** button saves the form, then
+  `leadEnrich` (`functions/lead-enrich.js`) reads the company's website (title,
+  description, its LinkedIn page) and, if a BuiltWith key is stored in the
+  encrypted key store (Settings → Integrations & MCP, provider `builtwith`),
+  the tech stack, company country and industry and any named contacts. It
+  fills blanks only (a typed store count or industry is never overwritten),
+  writes `enrichment` on the card and an `enrichment` note on each matching
+  contact, and reports each source as ok, not configured or error. Only public
+  addresses are fetched (private, loopback and metadata addresses, and
+  redirects to them, are refused). Store count is filled only when a source
+  supplies one; none of the current two does. LinkedIn: there is no public
+  lookup API, so only the company's LinkedIn page found on its own website is
+  recorded, and contacts' LinkedIn addresses are kept as entered.
+- **Converting**: **Convert and link account** needs the customer account's
+  name and/or id, moves the lead to Closed Won and stores `customerAccount`,
+  shown on the card. The RevOps lifecycle's customer account record is not in
+  this console yet, so the link is the id and name as given.
+- **Website leads and test mode** (`functions/lead-ingest.js`, served at
+  `POST /leadIngest/v1/submit`): personalisationhub.com's lead forms (the
+  industry pages, telco and retail first) post server-to-server with the
+  `X-Lead-Key` header, which must equal the `LEAD_INGEST_KEY` secret (set it
+  with `firebase functions:secrets:set LEAD_INGEST_KEY`; the website holds
+  the same value, never a browser). The body uses the Leads form's own names
+  (`company`, `website`, `industry`, `countries`, `storeCount`, `contactName`,
+  `jobTitle`, `email`, `linkedin`) plus `page`, `pageIndustry` and `test`.
+  It creates the lead in the Lead lane with `source: "website"`, `sourcePage`
+  and `sourceIndustry`, or, for a company already there, fills blanks and adds
+  the contact. A submission with `test` true (a hidden form field the test
+  link's URL parameter switches on) stores `test: true`: it is never merged
+  with a real lead, only shows under the Leads page's **Test** filter, is
+  refused by Enrich, is left out of `list_leads`, and **Delete all test
+  leads** removes every one in one click without touching real leads. Leads
+  send no notifications and feed no report today, so a test lead has nothing
+  else to be excluded from.
+- Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js`, `test/lead-ingest.test.js`, the Leads tools in
+  `test/mcp-server.test.js` and `test/mcp-client.test.mjs`, a scenario in
+  `test/ui/console-click.test.mjs`.

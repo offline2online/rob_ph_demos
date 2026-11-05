@@ -3,13 +3,17 @@
 // so test/settings-section.test.mjs can drive them; app.js owns the rendering.
 
 export const SETTINGS_PAGES = [
+  { key: "user-management", label: "User Management", icon: "group" },
   { key: "projects", label: "Projects", icon: "folder" },
   { key: "releases", label: "Releases", icon: "rocket_launch" },
   { key: "skills", label: "Skills & phase bindings", icon: "psychology" },
   { key: "automations", label: "Automations", icon: "bolt" },
   { key: "integrations", label: "Integrations & MCP", icon: "api" },
 ];
-export const DEFAULT_SETTINGS_PAGE = "projects";
+export const DEFAULT_SETTINGS_PAGE = "user-management";
+// Non-admins never see User Management, so they open on the next tab.
+export const FALLBACK_SETTINGS_PAGE = "projects";
+export const UM_TABS = ["users", "roles"];
 
 // "#settings" and "#settings/<page>" -> the page key, or null when the hash
 // is not a Settings route. An unknown sub-page falls back to the first one.
@@ -17,10 +21,25 @@ export function settingsPageFromHash(hash) {
   const h = String(hash || "").split("?")[0];
   if (h === "#settings") return DEFAULT_SETTINGS_PAGE;
   if (!h.startsWith("#settings/")) return null;
-  const key = h.slice("#settings/".length);
+  const key = h.slice("#settings/".length).split("/")[0];
   return SETTINGS_PAGES.some((p) => p.key === key) ? key : DEFAULT_SETTINGS_PAGE;
 }
 export function settingsHash(key) { return `#settings/${key}`; }
+
+// "#settings/user-management/<users|roles>" and ".../roles/<roleId>" -> { tab, roleId }.
+export function userManagementRoute(hash) {
+  const m = String(hash || "").split("?")[0].match(/^#settings\/user-management(?:\/([^/]+))?(?:\/([^/]+))?$/);
+  if (!m) return null;
+  const tab = UM_TABS.includes(m[1]) ? m[1] : "users";
+  return { tab, roleId: tab === "roles" && m[2] ? decodeURIComponent(m[2]) : "" };
+}
+// The old standalone routes (#user-management/users|roles|permissions) -> the new hash.
+export function legacyUserManagementHash(hash) {
+  const h = String(hash || "").split("?")[0];
+  if (h !== "#user-management" && !h.startsWith("#user-management/")) return null;
+  const t = h.split("/")[1];
+  return `#settings/user-management/${t === "roles" || t === "permissions" ? "roles" : "users"}`;
+}
 
 const dateText = (v) => {
   if (!v) return "";

@@ -185,6 +185,18 @@
           "start": "## 3. Reviewed and deliberately not changed here"
         }
       ]
+    },
+    {
+      "key": "brand-guidelines",
+      "path": "backlog-tracker/promote/brand-guidelines.md",
+      "name": "6 — Brand Guidelines (Promote): look, voice, messaging and AWS co-branding",
+      "prefix": "> Copy of `backlog-tracker/promote/brand-guidelines.md` from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n"
+    },
+    {
+      "key": "brand-requirements",
+      "path": "backlog-tracker/promote/brand-requirements.md",
+      "name": "6 — Brand Guidelines requirements (Promote)",
+      "prefix": "> Copy of `backlog-tracker/promote/brand-requirements.md` from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n"
     }
   ],
   "boardDocs": []
