@@ -171,7 +171,7 @@ function ai_meta_desc( $type, $key ) {
 		}
 		$tag = [
 			'convenience'  => 'Fuel stops into baskets.', 'hospitality' => 'Higher revenue per head, every session.', 'telco' => 'More walk-ins and post-pay conversions.',
-			'pharmacy'     => 'No queues, more walk-ins and sales.', 'retail-media' => 'Every screen, sold as targeted, measurable media.',
+			'pharmacy'     => 'Contextual campaigns and a seamless pharmacist handover.', 'retail-media' => 'Every screen, sold as targeted, measurable media.',
 			'grocery'      => 'Bigger baskets from every visit.', 'fashion' => 'More browsers become buyers in store.',
 			'qsr'          => 'Higher order value from every screen.', 'banking' => 'More home loan applications from branches.',
 		][ $key ];

@@ -15,7 +15,7 @@ Try it: 30-day free trial on AWS Marketplace (https://aws.amazon.com/marketplace
 - [Fuel & Convenience](https://personalisationhub.com/industries/convenience/?format=md): Fuel stops into baskets, plus supplier-funded media.
 - [Pubs & Hospitality](https://personalisationhub.com/industries/hospitality/?format=md): Higher revenue per head, every session.
 - [Telco Retail](https://personalisationhub.com/industries/telco/?format=md): More walk-ins and post-pay conversions.
-- [Pharmacy](https://personalisationhub.com/industries/pharmacy/?format=md): No queues, more walk-ins and sales.
+- [Pharmacy](https://personalisationhub.com/industries/pharmacy/?format=md): Contextual campaigns and a seamless pharmacist handover.
 - [Retail Media](https://personalisationhub.com/industries/retail-media/?format=md): Every screen, sold as targeted, measurable media.
 - [Grocery & Supermarkets](https://personalisationhub.com/industries/grocery/?format=md): Bigger baskets and new retail media revenue.
 - [Fashion & Department Stores](https://personalisationhub.com/industries/fashion/?format=md): More browsers become buyers in store.
