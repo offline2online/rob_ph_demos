@@ -3906,7 +3906,10 @@ Rules:
   Events and Touch Events, times taps with `performance.now()` (never
   `Event.timeStamp`), prevents `touchend`'s default once it has acted, and
   swallows the late native click **wherever it lands** within 40 px and 1 s of
-  the tap. A keyboard click, which has no coordinates, is never swallowed.
+  the tap. A keyboard click, which has no coordinates, is never swallowed. The
+  guard is disarmed by the next touch, so it can never eat the next tap's
+  own click: before that existed it did, and Staff Kanban cards (`<article>`,
+  not a tap target) failed to open when tapped just after closing a ticket.
 - **What it covers** (`TAP_TARGETS`): `button`, `a[href]`, `[role=button|tab|
   menuitem|option|link]`, `summary`, checkbox and radio inputs (and a `label`
   for one), and anything marked `[data-touch-tap]`. A new control written as

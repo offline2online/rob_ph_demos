@@ -55,6 +55,14 @@ function installGuard() {
     ev.preventDefault();
     ev.stopImmediatePropagation();
   }, true);
+  // A late click always arrives before the next finger comes down, so a new
+  // touch disarms the guard. Without this, when the browser did NOT send a
+  // late click (touchend's default was prevented, as it should be), the
+  // armed guard ate the NEXT tap's real click on anything that is not a tap
+  // target, e.g. a Staff Kanban card tapped just after closing a ticket.
+  const disarm = () => { swallow = null; };
+  window.addEventListener("touchstart", disarm, { capture: true, passive: true });
+  window.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch" || e.pointerType === "pen") disarm(); }, { capture: true, passive: true });
 }
 
 export function clickOnTouchTap(root, selector, { accept } = {}) {

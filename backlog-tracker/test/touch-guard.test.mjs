@@ -44,6 +44,7 @@ assert.match(tc, /addEventListener\("touchend"[\s\S]*?\{ passive: false \}/, "to
 assert.match(tc, /addEventListener\("touchstart"/, "Touch Events must be tracked (pointercancel / missing pointer events)");
 assert.ok(!/\.timeStamp\b/.test(tc.replace(/\/\/.*$/gm, "")), "taps must be timed with performance.now(), not Event.timeStamp");
 assert.match(tc, /window\.addEventListener\("click"[\s\S]*?stopImmediatePropagation[\s\S]*?\}, true\)/, "the late native click must be swallowed by a window capture listener");
+assert.match(tc, /window\.addEventListener\("touchstart", disarm/, "a new touch must disarm the late-click guard, or it eats the next tap's real click (Staff Kanban cards, 5 Nov 2026)");
 
 // 3. mousedown/mouseup handlers: each one reviewed for the iPad.
 // file → number of addEventListener("mousedown"|"mouseup") calls, and why it is safe.

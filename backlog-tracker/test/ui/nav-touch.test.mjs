@@ -132,6 +132,19 @@ try {
           const stray = await page.evaluate(() => [...document.querySelectorAll(".modal-backdrop, #task-backdrop")].filter((m) => !m.hidden && getComputedStyle(m).display !== "none").map((m) => m.id));
           assert.deepStrictEqual(stray, [], "a late click opened something under the finger");
           if (kind === "sidebar" && w < 1024) assert.strictEqual(await page.evaluate(() => document.getElementById("nav-drawer-backdrop").classList.contains("open")), false, "slide-over left open");
+          // The late-click guard must not eat the NEXT tap's click on an element that is
+          // not a tap target (a Staff Kanban card is an <article>): 5 Nov 2026.
+          if (mode === "plain") {
+            await page.evaluate(({ x, y }) => {
+              const d = document.createElement("div");
+              d.id = "__next-tap"; d.style.cssText = `position:fixed;left:${x - 20}px;top:${y - 20}px;width:40px;height:40px;z-index:2147483647;background:transparent`;
+              d.addEventListener("click", () => { d.dataset.clicked = "1"; });
+              document.body.appendChild(d);
+            }, p);
+            await tap(p.x, p.y);
+            const ok = await page.evaluate(() => { const d = document.getElementById("__next-tap"); const r = d.dataset.clicked === "1"; d.remove(); return r; });
+            assert.ok(ok, "the next tap's own click was swallowed by the late-click guard");
+          }
         } catch (e) {
           failures++;
           const got = await page.evaluate(() => window.__sig());
