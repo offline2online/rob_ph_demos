@@ -18,7 +18,7 @@
        paint, especially on higher-latency mobile connections. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,content_copy,content_cut,contract,crop,dashboard,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,pan_tool,password,payments,pending,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,content_copy,content_cut,contract,crop,dashboard,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/apple.css">
   <link rel="stylesheet" href="css/kanban.css">
@@ -169,15 +169,14 @@
         <button type="button" class="nav-drawer-item" id="concept-incubator-btn"><span class="material-symbols-outlined" aria-hidden="true">lightbulb</span>Concepts</button>
         <button type="button" class="nav-drawer-item" id="whiteboard-btn"><span class="material-symbols-outlined" aria-hidden="true">draw</span>Whiteboard</button>
       </div>
-      <div class="nav-group" data-nav-group="publish" role="group" aria-labelledby="nav-publish-label">
-        <div class="nav-drawer-section" id="nav-publish-label">Publish</div>
-        <button type="button" class="nav-drawer-item" id="faq-articles-btn"><span class="material-symbols-outlined" aria-hidden="true">help_center</span>Help Centre</button>
+      <div class="nav-group" data-nav-group="promote" role="group" aria-labelledby="nav-promote-label">
+        <div class="nav-drawer-section" id="nav-promote-label">Promote</div>
+        <button type="button" class="nav-drawer-item" id="promote-brand-btn"><span class="material-symbols-outlined" aria-hidden="true">palette</span>Brand Guidelines</button>
+        <button type="button" class="nav-drawer-item" id="promote-leads-btn"><span class="material-symbols-outlined" aria-hidden="true">group</span>Leads</button>
       </div>
-      <div class="nav-group" data-nav-group="user-management" data-admin-only role="group" aria-labelledby="nav-um-label">
-        <div class="nav-drawer-section" id="nav-um-label">User Management</div>
-        <button type="button" class="nav-drawer-item" id="um-users-btn"><span class="material-symbols-outlined" aria-hidden="true">group</span>Users</button>
-        <button type="button" class="nav-drawer-item" id="um-roles-btn"><span class="material-symbols-outlined" aria-hidden="true">badge</span>Roles</button>
-        <button type="button" class="nav-drawer-item" id="um-permissions-btn"><span class="material-symbols-outlined" aria-hidden="true">lock</span>Permissions</button>
+      <div class="nav-group" data-nav-group="publish" role="group" aria-labelledby="nav-publish-label">
+        <div class="nav-drawer-section" id="nav-publish-label">Support</div>
+        <button type="button" class="nav-drawer-item" id="faq-articles-btn"><span class="material-symbols-outlined" aria-hidden="true">help_center</span>Help Centre</button>
       </div>
       <div class="nav-group" data-nav-group="settings" role="group" aria-labelledby="nav-settings-label">
         <div class="nav-drawer-section" id="nav-settings-label">Settings</div>
@@ -203,7 +202,8 @@
 
     <nav class="tabbar" id="tabbar" aria-label="Primary">
       <button type="button" class="tab" data-tab="build"><span class="material-symbols-outlined" aria-hidden="true">construction</span><span>Build</span></button>
-      <button type="button" class="tab" data-tab="publish"><span class="material-symbols-outlined" aria-hidden="true">campaign</span><span>Publish</span></button>
+      <button type="button" class="tab" data-tab="promote"><span class="material-symbols-outlined" aria-hidden="true">palette</span><span>Promote</span></button>
+      <button type="button" class="tab" data-tab="publish"><span class="material-symbols-outlined" aria-hidden="true">campaign</span><span>Support</span></button>
       <button type="button" class="tab" data-tab="settings"><span class="material-symbols-outlined" aria-hidden="true">settings</span><span>Settings</span></button>
       <button type="button" class="tab" data-tab="search"><span class="material-symbols-outlined" aria-hidden="true">search</span><span>Search</span></button>
       <button type="button" class="tab" data-tab="profile"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span><span>Profile</span></button>
@@ -1132,16 +1132,149 @@
       </div>
     </section>
 
-    <section class="faq-admin-page" id="user-management-page" hidden>
+    <!-- Promote › Brand Guidelines (#promote/brand-guidelines): the brand kit for
+         every promotion and PR piece. Reads two board documents that mirror
+         backlog-tracker/promote/*.md (board-docs.json); nothing is written here. -->
+    <section class="faq-admin-page" id="promote-page" hidden>
       <div class="page-header">
-        <h2>User Management</h2>
+        <h2 id="promote-title">Brand Guidelines</h2>
       </div>
-      <nav class="um-subnav" aria-label="User Management">
-        <button type="button" class="um-tab" data-um-tab="users" id="um-tab-users">Users</button>
-        <button type="button" class="um-tab" data-um-tab="roles" id="um-tab-roles">Roles</button>
-        <button type="button" class="um-tab" data-um-tab="permissions" id="um-tab-permissions">Permissions</button>
-      </nav>
+      <p class="promote-empty" id="promote-empty" hidden>The brand guidelines are copied here from the repository after each merge to main, and haven't arrived yet. Check back in a few minutes.</p>
+      <article class="docs-md promote-doc" id="promote-guidelines" aria-label="Brand Guidelines"></article>
+      <details class="promote-requirements" id="promote-requirements-wrap" hidden>
+        <summary>Requirements</summary>
+        <article class="docs-md promote-doc" id="promote-requirements" aria-label="Brand Guidelines requirements"></article>
+      </details>
+    </section>
 
+    <!-- Promote › Leads (#promote/leads): one card per company on a Kanban of
+         the sales pipeline. Cards drag between lanes; the "Move to" select does
+         the same without dragging. Rendered by js/leads-page.js. -->
+    <section class="faq-admin-page" id="leads-page" hidden>
+      <div class="page-header">
+        <h2>Leads</h2>
+        <button type="button" class="btn-primary" id="leads-add-btn" data-editor-only>+ New lead</button>
+      </div>
+      <div class="leads-filter" role="group" aria-label="Which leads to show">
+        <button type="button" class="btn-ghost" id="leads-filter-real" aria-pressed="true">Leads</button>
+        <button type="button" class="btn-ghost" id="leads-filter-test" aria-pressed="false">Test <span id="leads-test-count">0</span></button>
+        <button type="button" class="btn-ghost" id="leads-test-delete" data-editor-only hidden>Delete all test leads</button>
+      </div>
+      <p class="promote-empty" id="leads-empty" hidden>No leads yet. Add one with the button above.</p>
+      <div class="leads-board-wrap"><div class="leads-board" id="leads-board"></div></div>
+    </section>
+
+    <div class="modal-backdrop" id="lead-backdrop" hidden>
+      <div class="modal-panel lead-panel" role="dialog" aria-modal="true" aria-labelledby="lead-title">
+        <div class="modal-header">
+          <h2 id="lead-title">New lead</h2>
+          <button type="button" class="modal-close" id="lead-close" aria-label="Close">&times;</button>
+        </div>
+        <form id="lead-form" novalidate>
+          <h3 class="lead-section">Company</h3>
+          <label class="field-label" for="lead-name">Company name</label>
+          <input type="text" id="lead-name" maxlength="120" autocomplete="off">
+          <label class="field-label" for="lead-website">Website</label>
+          <input type="text" id="lead-website" maxlength="300" placeholder="example.com" autocomplete="off">
+          <label class="field-label" for="lead-industry">Industry</label>
+          <input type="text" id="lead-industry" maxlength="120" autocomplete="off">
+          <label class="field-label" for="lead-countries">Countries</label>
+          <input type="text" id="lead-countries" placeholder="UK, France" autocomplete="off">
+          <label class="field-label" for="lead-stores">Store count</label>
+          <input type="text" id="lead-stores" inputmode="numeric" autocomplete="off">
+
+          <h3 class="lead-section">Contacts</h3>
+          <div id="lead-contacts"></div>
+          <button type="button" class="btn-ghost" id="lead-add-contact" data-editor-only>+ Add contact</button>
+
+          <h3 class="lead-section">Pipeline</h3>
+          <label class="field-label" for="lead-stage">Stage</label>
+          <select id="lead-stage"></select>
+          <label class="field-label" for="lead-source">Source</label>
+          <input type="text" id="lead-source" maxlength="80" placeholder="Website form" autocomplete="off">
+          <label class="field-label" for="lead-assignee">Assigned to</label>
+          <select id="lead-assignee"></select>
+
+          <div id="lead-existing" hidden>
+            <h3 class="lead-section">Enrichment</h3>
+            <div id="lead-enrichment" class="lead-enrichment"></div>
+            <p class="field-hint" id="lead-enrich-status" role="status" aria-live="polite"></p>
+            <button type="button" class="btn-outline" id="lead-enrich-btn" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Enrich</button>
+
+            <h3 class="lead-section">Customer account</h3>
+            <p class="field-hint" id="lead-account-line"></p>
+            <div id="lead-convert" data-editor-only>
+              <label class="field-label" for="lead-account-name">Customer account name</label>
+              <input type="text" id="lead-account-name" maxlength="120" autocomplete="off">
+              <label class="field-label" for="lead-account-id">Account id <span class="field-optional">(optional)</span></label>
+              <input type="text" id="lead-account-id" maxlength="100" autocomplete="off">
+              <button type="button" class="btn-outline" id="lead-convert-btn">Convert and link account</button>
+            </div>
+          </div>
+
+          <p class="field-hint lead-error" id="lead-error" role="alert" hidden></p>
+          <div class="form-row" style="justify-content:space-between;">
+            <button type="button" class="btn-ghost lead-delete" id="lead-delete" data-editor-only hidden>Delete lead</button>
+            <div class="form-actions">
+              <button type="button" class="btn-ghost" id="lead-cancel">Cancel</button>
+              <button type="submit" class="btn-primary" id="lead-save" data-editor-only>Save</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <section class="faq-admin-page" id="role-detail-page" hidden>
+      <div class="page-header">
+        <button type="button" class="btn-ghost" id="role-back-btn"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>Roles</button>
+        <h2 id="role-detail-title">Role</h2>
+      </div>
+      <div class="docs-block role-detail">
+        <div class="role-field">
+          <label class="field-label" for="role-name">Role name</label>
+          <input type="text" id="role-name" maxlength="60">
+        </div>
+        <div class="role-field">
+          <label class="field-label" for="role-description">Description</label>
+          <textarea id="role-description" rows="3" maxlength="300" placeholder="What this role is for"></textarea>
+        </div>
+        <p class="um-count" id="role-locked-note" hidden>The Admin role always has full access, so its permissions are locked.</p>
+        <p class="um-count">Choose what this role can open in the console. <b>View</b> opens a section read-only, <b>Edit</b> adds changes, and <b>Admin</b> also lets a person manage users and roles.</p>
+        <div id="role-permissions"></div>
+        <p class="tm-error" id="role-error" role="alert" hidden></p>
+        <div class="role-actions-bar">
+          <button type="button" class="btn-primary" id="role-save">Save role</button>
+          <span class="um-count" id="role-status" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="faq-admin-page" id="access-denied-page" hidden>
+      <div class="page-header"><h2>No access</h2></div>
+      <p id="access-denied-text" class="interface-row-empty"></p>
+      <button type="button" class="btn-primary" id="access-denied-go" hidden>Go to a section you can open</button>
+    </section>
+
+    <section class="faq-admin-page" id="faq-settings-page" hidden>
+      <div class="page-header">
+        <h2>Settings</h2>
+      </div>
+      <div class="settings-layout">
+        <nav class="settings-tabs" id="settings-submenu" role="tablist" aria-label="Settings">
+          <button type="button" class="settings-tab" role="tab" data-settings-page="user-management" data-admin-only>User Management</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="projects">Projects</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="releases">Releases</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="skills">Skills &amp; phase bindings</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="automations">Automations</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="integrations">Integrations &amp; MCP</button>
+        </nav>
+        <div class="settings-content">
+
+          <div class="settings-pane" data-settings-pane="user-management" hidden>
+            <nav class="um-subnav" role="tablist" aria-label="User Management">
+              <button type="button" class="um-tab" role="tab" data-um-tab="users" id="um-tab-users">Users</button>
+              <button type="button" class="um-tab" role="tab" data-um-tab="roles" id="um-tab-roles">Roles</button>
+            </nav>
       <!-- Users. Moved here from Settings → Team &amp; agent access. One list,
            two things at once: who can open this console in a browser, and
            whose AI agent may connect over MCP. Both resolve to the same
@@ -1180,32 +1313,7 @@
         <div class="ag-theme-alpine um-grid" id="roles-grid" aria-label="Roles"></div>
         <p class="tm-error" id="roles-error" role="alert" hidden></p>
       </div>
-      <div class="um-panel-body" data-um-panel="permissions" hidden>
-        <p class="um-count">Choose what each role can open in the console. <b>View</b> opens a section read-only, <b>Edit</b> adds changes, and <b>Admin</b> also lets a person manage this matrix. Admins always keep User Management, so nobody can lock themselves out.</p>
-        <p class="um-count" id="permissions-status" role="status" aria-live="polite"></p>
-        <div id="permissions-matrix"></div>
-      </div>
-    </section>
-
-    <section class="faq-admin-page" id="access-denied-page" hidden>
-      <div class="page-header"><h2>No access</h2></div>
-      <p id="access-denied-text" class="interface-row-empty"></p>
-      <button type="button" class="btn-primary" id="access-denied-go" hidden>Go to a section you can open</button>
-    </section>
-
-    <section class="faq-admin-page" id="faq-settings-page" hidden>
-      <div class="page-header">
-        <h2>Settings</h2>
-      </div>
-      <div class="settings-layout">
-        <nav class="settings-submenu" id="settings-submenu" aria-label="Settings">
-          <button type="button" class="settings-submenu-item" data-settings-page="projects"><span class="material-symbols-outlined" aria-hidden="true">folder</span>Projects</button>
-          <button type="button" class="settings-submenu-item" data-settings-page="releases"><span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>Releases</button>
-          <button type="button" class="settings-submenu-item" data-settings-page="skills"><span class="material-symbols-outlined" aria-hidden="true">psychology</span>Skills &amp; phase bindings</button>
-          <button type="button" class="settings-submenu-item" data-settings-page="automations"><span class="material-symbols-outlined" aria-hidden="true">bolt</span>Automations</button>
-          <button type="button" class="settings-submenu-item" data-settings-page="integrations"><span class="material-symbols-outlined" aria-hidden="true">api</span>Integrations &amp; MCP</button>
-        </nav>
-        <div class="settings-content">
+          </div>
 
           <div class="settings-pane" data-settings-pane="projects" hidden>
             <div class="docs-block">

@@ -166,9 +166,6 @@ const sections = [
   ["concept-incubator-btn", "concept-incubator-page"],
   ["faq-articles-btn", "faq-articles-page"],
   ["faq-settings-btn", "faq-settings-page"],
-  ["um-users-btn", "user-management-page"],
-  ["um-roles-btn", "user-management-page"],
-  ["um-permissions-btn", "user-management-page"],
 ];
 for (const [btn, page] of sections) {
   if (!$("nav-drawer").classList.contains("open")) $("nav-open-btn").click();

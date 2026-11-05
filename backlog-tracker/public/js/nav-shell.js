@@ -1,4 +1,4 @@
-// Console navigation shell: Build / Publish sidebar, Admin in the profile
+// Console navigation shell: Build / Support sidebar, Admin in the profile
 // menu, bottom tab bar on phones, and the Command-K jump palette.
 //
 // Navigation and layout only. Every destination here already existed (the old
@@ -7,6 +7,7 @@
 // release. It keeps no data of its own: app.js passes in getters and openers.
 
 import { clickOnTouchTap } from "./touch-click.js";
+import { promoteNavId } from "./promote-section.js";
 
 const COLLAPSE_KEY = "bt-nav-collapsed";
 const root = document.documentElement;
@@ -25,7 +26,7 @@ function activeNavId(hash) {
   if (h === "#concept-incubator" || h.startsWith("#concept-")) return "concept-incubator-btn";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq-articles-btn";
   if (h === "#settings" || h.startsWith("#settings/")) return "faq-settings-btn";
-  if (h.startsWith("#user-management/")) return `um-${h.split("/")[1]}-btn`;
+  if (promoteNavId(h)) return promoteNavId(h);
   if (h === "#staff-kanban" || h.startsWith("#staff-kanban/")) return "staff-kanban-btn";
   return "nav-ph-console-btn";
 }
@@ -100,7 +101,7 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
   }
   [mqPersistent, mqPhone].forEach((mq) => mq.addEventListener("change", () => { resetOverlay(); syncActive(); }));
 
-  // On a phone the Build / Publish tabs open the same list, filtered.
+  // On a phone the Build / Promote / Support tabs open the same list, filtered.
   function showSection(which) {
     drawer.dataset.show = which || "all";
     drawer.classList.add("open");
@@ -140,7 +141,7 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     profileMenu.querySelectorAll(".profile-menu-item").forEach((b) => {
       if (b.id === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
-    const section = id === "faq-articles-btn" ? "publish" : (id === "faq-settings-btn" || id.startsWith("um-")) ? "settings" : "build";
+    const section = id.startsWith("promote-") ? "promote" : id === "faq-articles-btn" ? "publish" : id === "faq-settings-btn" ? "settings" : "build";
     setTab(drawer.classList.contains("open") ? drawer.dataset.show : section);
   }
   window.addEventListener("hashchange", syncActive);

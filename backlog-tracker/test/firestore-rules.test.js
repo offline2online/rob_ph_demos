@@ -351,6 +351,19 @@ async function main() {
     setDoc(doc(as(MEMBER), "interfaces/ifLegacy"), { name: "P <-> Q", projectIds: ["p1", "p2"], contentMd: "" }));
   await check("A concept may carry demoted documents", "allow", () =>
     setDoc(doc(as(MEMBER), "concepts/cDemoted"), { name: "Demoted", status: "active", demotedFromProjectId: "p1", documents: [{ name: "Spec", contentMd: "x" }], comments: [] }));
+  // ── Promote › Leads ──
+  const LEAD = { company: { name: "Acme Retail", website: "https://acme.example", industry: "Grocery", countries: ["UK"], storeCount: 120 }, contacts: [{ id: "c1", name: "Jo Bloggs", buyingRole: "decision-maker", email: "jo@acme.example" }], stage: "lead", source: "Manual", assignee: "", customerAccount: null };
+  await check("An editor can create a lead", "allow", () => setDoc(doc(as(MEMBER), "leads/l1"), LEAD));
+  await check("An editor can drag a lead to another stage", "allow", () => updateDoc(doc(as(MEMBER), "leads/l1"), { stage: "hot-lead" }));
+  await check("A lead cannot take a stage that is not on the board", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { stage: "won-ish" }));
+  await check("A lead needs a company name", "deny", () => setDoc(doc(as(MEMBER), "leads/l2"), { ...LEAD, company: { ...LEAD.company, name: "" } }));
+  await check("A lead takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "leads/l3"), { ...LEAD, patchFiles: [] }));
+  await check("A member may read a lead", "allow", () => getDoc(doc(as(MEMBER), "leads/l1")));
+  await check("A viewer may read a lead", "allow", () => getDoc(doc(as(VIEWER), "leads/l1")));
+  await check("A viewer cannot create a lead", "deny", () => setDoc(doc(as(VIEWER), "leads/l4"), LEAD));
+  await check("A viewer cannot move a lead", "deny", () => updateDoc(doc(as(VIEWER), "leads/l1"), { stage: "demo" }));
+  await check("A stranger cannot read a lead", "deny", () => getDoc(doc(as(STRANGER), "leads/l1")));
+  await check("An editor can delete a lead", "allow", () => deleteDoc(doc(as(MEMBER), "leads/l1")));
   await check("A member may read a concept", "allow", () => getDoc(doc(as(MEMBER), "concepts/cActive")));
   await check("A stranger cannot read a concept", "deny", () => getDoc(doc(as(STRANGER), "concepts/cActive")));
   await check("An editor can create a concept", "allow", () =>

@@ -21,10 +21,11 @@ const seed = {
   },
 };
 
-// [label, how to reach it]. Build/Publish pages are reached through the nav (tab sheet on a phone, hamburger on a tablet).
+// [label, how to reach it]. Build/Support pages are reached through the nav (tab sheet on a phone, hamburger on a tablet).
 const PAGES = [
   ["board", { nav: "nav-ph-console-btn", group: "build" }],
   ["concepts + system map", { nav: "concept-incubator-btn", group: "build" }],
+  ["brand guidelines", { nav: "promote-brand-btn", group: "promote" }],
   ["help centre", { nav: "faq-articles-btn", group: "publish" }],
   ["settings", { nav: "faq-settings-btn", group: "settings" }],
 ];
@@ -74,7 +75,7 @@ try {
           assert.ok(m.tabbar && Math.abs(m.tabbar.bottom - m.vh) < 2, "tab bar not pinned to the bottom");
           assert.ok(m.tabbarOnTop, "tab bar is covered");
           const tabs = await page.locator(".tab").count();
-          assert.strictEqual(tabs, 5, "five tabs: Build, Publish, Settings, Search, Profile");
+          assert.strictEqual(tabs, 6, "six tabs: Build, Promote, Support, Settings, Search, Profile");
         } else assert.ok(m.hamburger && m.hamburger.top >= 0 && m.hamburger.bottom <= m.vh, "hamburger not reachable");
         assert.ok(m.overflow <= 0, `scrolls sideways by ${m.overflow}px`);
         assert.strictEqual(m.small, 0, "nav controls under 44px");

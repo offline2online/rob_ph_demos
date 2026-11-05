@@ -20,7 +20,7 @@ const seed = { user: { email: "rob@offline2online.com", role: "admin" }, docs: {
   consoleUsers: { "rob@offline2online.com": { email: "rob@offline2online.com", role: "admin", roleId: "r1" } },
 } };
 const h = await startHarness();
-const routes = (process.env.ROUTES || "#,#staff-kanban,#concept-incubator,#faq-management,#settings,#user-management/users").split(",");
+const routes = (process.env.ROUTES || "#,#staff-kanban,#concept-incubator,#faq-management,#settings,#settings/user-management/users").split(",");
 for (const hash of routes) {
   const o = await h.open({ seed, hash: hash === "#" ? "" : hash });
   const t0 = Date.now();

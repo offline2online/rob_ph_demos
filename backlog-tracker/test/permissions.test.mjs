@@ -1,8 +1,8 @@
 // Pure rules of the Permissions matrix (public/js/permissions.js).
 import assert from "node:assert";
-import { SECTION_KEYS, effectiveLevels, storedLevel, roleLevels, setLevel, canView, canEdit, canAdmin, sectionForHash, firstAllowedSection, permissionCss, matrixRows, isAdminRole } from "../public/js/permissions.js";
+import { SECTION_KEYS, effectiveLevels, storedLevel, roleLevels, setLevel, canView, canEdit, canAdmin, sectionForHash, firstAllowedSection, permissionCss, isAdminRole, PERMISSION_GROUPS, sectionForSettingsPage, SECTIONS } from "../public/js/permissions.js";
 
-assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "faq", "skills", "releases", "project-docs", "settings", "user-management"]);
+assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "promote", "faq", "skills", "releases", "project-docs", "settings", "user-management"]);
 
 const engineer = { id: "e", name: "Engineer", permissions: { concepts: "none", faq: "view" } };
 const lv = effectiveLevels("editor", engineer);
@@ -39,9 +39,12 @@ assert.throws(() => setLevel(engineer, "concepts", "owner"));
 assert.strictEqual(sectionForHash(""), "agent-board");
 assert.strictEqual(sectionForHash("#concept-incubator"), "concepts");
 assert.strictEqual(sectionForHash("#concept-abc"), "concepts");
+assert.strictEqual(sectionForHash("#promote/brand-guidelines"), "promote");
 assert.strictEqual(sectionForHash("#faq-article/x"), "faq");
 assert.strictEqual(sectionForHash("#docs/p1?interface=2"), "project-docs");
 assert.strictEqual(sectionForHash("#user-management/permissions"), "user-management");
+assert.strictEqual(sectionForHash("#settings/user-management/roles/r1"), "user-management");
+assert.strictEqual(sectionForSettingsPage("user-management"), "user-management");
 assert.strictEqual(sectionForHash("#settings/releases"), "settings");
 assert.strictEqual(sectionForHash("#whatever"), null);
 assert.strictEqual(firstAllowedSection({ ...Object.fromEntries(SECTION_KEYS.map((k) => [k, "none"])), faq: "view" }), "faq");
@@ -52,9 +55,8 @@ assert.ok(css.includes("#fa-new-article-btn"), "FAQ edit controls are hidden at 
 assert.ok(!css.includes("#skills-add-btn"), "Skills stays editable");
 assert.strictEqual(permissionCss(null), "");
 
-const rows = matrixRows([engineer, adminRole]);
-assert.strictEqual(rows.length, SECTION_KEYS.length);
-assert.strictEqual(rows.find((r) => r.key === "concepts")["r:e"], "none");
-assert.strictEqual(rows.find((r) => r.key === "concepts")["r:a"], "admin");
+// The role page groups every section exactly once: Build, Support, Settings.
+assert.deepStrictEqual(PERMISSION_GROUPS.map((g) => g.label), ["Build", "Support", "Settings"]);
+assert.deepStrictEqual(PERMISSION_GROUPS.flatMap((g) => g.keys).sort(), [...SECTION_KEYS].sort());
 assert.strictEqual(storedLevel(null, "faq"), "edit");
 console.log("permissions: ok");

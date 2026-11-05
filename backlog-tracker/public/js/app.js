@@ -32,9 +32,10 @@ import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROV
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
 import { renderMarkdown } from "./docs-markdown.js";
+import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES } from "./promote-section.js";
 import { createDocsList } from "./docs-grid.js";
 import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
-import { SETTINGS_PAGES, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
+import { SETTINGS_PAGES, FALLBACK_SETTINGS_PAGE, UM_TABS, userManagementRoute, legacyUserManagementHash, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
 import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, getAvatarMember, normEmail, checkAvatarFile, avatarBlobFromFile } from "./avatar.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { ENTITY_TYPES, TYPE_PLATFORM, TYPE_INTERNAL, typeOf, matchesTypeFilter, typeBadgeHTML, typeOptionsHTML } from "./entity-type.js";
@@ -47,7 +48,7 @@ import { createResultReader, useContinuousMode } from "./dictation-results.js";
 import { loadQuill } from "./quill-loader.js";
 import { fetchPublished, contentHashOf, articleStatus, liveUrlFor, lastSyncLabel, wpStatusBadgeHTML, WP_STATUS_LABELS } from "./wp-publish-status.js";
 import { userRows, mountUsersGrid } from "./user-management.js";
-import { LEVELS, LEVEL_LABELS, SECTIONS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, setLevel, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel } from "./permissions.js";
+import { LEVELS, LEVEL_LABELS, SECTIONS, PERMISSION_GROUPS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, roleLevels, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel } from "./permissions.js";
 import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -543,7 +544,8 @@ function closeAllSubPages() {
   closeArchivedProjectsPage();
   closeDocsPage();
   closeFaqSettingsPage();
-  closeUserManagementPage();
+  closeRolePage();
+  closePromotePage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
@@ -3196,7 +3198,7 @@ function showAccessDenied(key) {
   const label = (SECTIONS.find((s) => s.key === key) || {}).label || "this section";
   const next = firstAllowedSection(accessLevels);
   const page = document.getElementById("access-denied-page");
-  document.getElementById("access-denied-text").textContent = `Your role doesn't include access to ${label}. An admin can change that in User Management → Permissions.`;
+  document.getElementById("access-denied-text").textContent = `Your role doesn't include access to ${label}. An admin can change that in Settings → User Management → Roles.`;
   const go = document.getElementById("access-denied-go");
   go.hidden = !next;
   go.dataset.hash = next ? SECTION_HASH[next] : "";
@@ -3227,7 +3229,7 @@ function ensureLazy(...names) {
     lazyStarters[n]();
   }
 }
-lazyStarters.projectDocs = () => primeFromRest("projectDocs", (rows) => { projectDocs = rows; if (docsProjectId) renderDocsPage(); });
+lazyStarters.projectDocs = () => primeFromRest("projectDocs", (rows) => { projectDocs = rows; if (docsProjectId) renderDocsPage(); renderPromotePage(); });
 lazyStarters.skills = () => primeFromRest("skills", (rows) => {
   skills = rows;
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
@@ -3345,6 +3347,7 @@ const startProjectDocsListener = () => onSnapshot(projectDocsRef, (snap) => {
   markLive("projectDocs", snap);
   projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (docsProjectId) renderDocsPage();
+  renderPromotePage();
 }, onListenerError("projectDocs"));
 
 const startSkillsListener = () => onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
@@ -9877,7 +9880,7 @@ const faRemovedReleaseSelect = document.getElementById("fa-removed-release-selec
 // Routes are #settings/<page> (settings-section.js); "#settings" opens the
 // first page. The Releases and Skills managers keep their own pages, reached
 // from the Manage buttons on their Settings page.
-const DEFAULT_SETTINGS_KEY = "projects";
+const DEFAULT_SETTINGS_KEY = "user-management";
 const SETTINGS_GRID_IDS = {
   projects: "settings-projects-grid", releases: "settings-releases-grid", bindings: "settings-bindings-grid",
   skills: "settings-skills-grid", automations: "settings-automations-grid",
@@ -9951,36 +9954,54 @@ async function loadPhaseBindings() {
   }
   renderSettingsGrids();
 }
-function showSettingsPage(key) {
-  if (!canView(accessLevels, sectionForSettingsPage(key))) key = SETTINGS_PAGES.map((p) => p.key).find((k) => canView(accessLevels, sectionForSettingsPage(k))) || DEFAULT_SETTINGS_KEY;
+function settingsPageOpenable(k) { return canView(accessLevels, sectionForSettingsPage(k)) && (k !== "user-management" || isConsoleAdmin()); }
+function showSettingsPage(key, sub) {
+  if (!settingsPageOpenable(key)) key = SETTINGS_PAGES.map((p) => p.key).find(settingsPageOpenable) || FALLBACK_SETTINGS_PAGE;
   settingsPage = SETTINGS_PAGES.some((p) => p.key === key) ? key : DEFAULT_SETTINGS_KEY;
   faqSettingsPage.querySelectorAll("[data-settings-pane]").forEach((el) => { el.hidden = el.dataset.settingsPane !== settingsPage; });
   faqSettingsPage.querySelectorAll("[data-settings-page]").forEach((b) => {
-    if (b.dataset.settingsPage === settingsPage) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    const on = b.dataset.settingsPage === settingsPage;
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
   });
+  if (settingsPage === "user-management") {
+    showUserManagementTab(UM_TABS.includes(sub) ? sub : umTab);
+    setRouteHash(`#settings/user-management/${umTab}`);
+    updateTopbarTitle();
+    return;
+  }
   if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
   if (settingsPage === "integrations") { loadFaqSiteSettings(); loadMyAgentConnections(); if (isConsoleAdmin()) loadMediaKeys(); }
   setRouteHash(settingsHash(settingsPage));
   updateTopbarTitle();
   renderSettingsGrids();
 }
-function openFaqSettingsPage(sub) {
+function openFaqSettingsPage(sub, umSub) {
   if (!pageAllowed("settings")) return;
   closeAllSubPages();
   ensureLazy("faqCategories", "faqArticles", "concepts");
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   faqSettingsPage.hidden = false;
-  showSettingsPage(sub);
+  showSettingsPage(sub, umSub);
 }
 function closeFaqSettingsPage() {
   faqSettingsPage.hidden = true;
+  closeTeamAddModal();
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
 document.getElementById("settings-submenu").addEventListener("click", (e) => {
   const b = e.target.closest("[data-settings-page]");
   if (b) showSettingsPage(b.dataset.settingsPage);
+});
+document.getElementById("settings-submenu").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  const tabs = [...document.querySelectorAll("#settings-submenu [data-settings-page]")].filter((t) => t.offsetParent !== null);
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+  next.focus(); next.click();
 });
 document.getElementById("settings-manage-releases-btn").addEventListener("click", () => openReleasesPage());
 document.getElementById("settings-manage-skills-btn").addEventListener("click", () => openSkillsPage());
@@ -10220,7 +10241,6 @@ function recomputeAccess() {
   accessLevels = effectiveLevels(currentConsoleRole(), role || null);
   applyAccessStyles();
   enforceAccessNow();
-  renderPermissionsMatrix();
 }
 // Re-check whatever is on screen against the levels that just arrived (or
 // changed), so a restriction applies without a reload.
@@ -10231,6 +10251,7 @@ function enforceAccessNow() {
     return;
   }
   if (!faqSettingsPage.hidden) showSettingsPage(settingsPage);
+  if (!rolePage.hidden && !isConsoleAdmin()) showAccessDenied("user-management");
   if (navShell) navShell.syncActive();
 }
 onAuthStateChanged(auth, (user) => {
@@ -10248,52 +10269,7 @@ onAuthStateChanged(auth, (user) => {
   }, (err) => { console.warn("backlog-tracker: couldn't read roles", err); });
 });
 
-let permissionsMsgTimer = 0;
-function showPermissionsMsg(text, isError) {
-  const el = document.getElementById("permissions-status");
-  if (!el) return;
-  el.textContent = text;
-  el.classList.toggle("tm-error", !!isError);
-  clearTimeout(permissionsMsgTimer);
-  if (text && !isError) permissionsMsgTimer = setTimeout(() => { el.textContent = ""; }, 3000);
-}
-function renderPermissionsMatrix() {
-  const host = document.getElementById("permissions-matrix");
-  if (!host) return;
-  const roles = accessRoles.slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-  const editable = isConsoleAdmin() && canAdmin(accessLevels, "user-management");
-  if (!roles.length) {
-    host.innerHTML = '<p class="interface-row-empty">No roles yet. Create them on the Roles tab, then set what each one can open here.</p>';
-    return;
-  }
-  const head = roles.map((r) => `<th scope="col">${escapeHTML(r.name || "")}</th>`).join("");
-  const body = SECTIONS.map((s) => {
-    const cells = roles.map((r) => {
-      const locked = isAdminRole(r) || !editable;
-      const cur = storedLevel(r, s.key);
-      const opts = LEVELS.map((l) => `<option value="${l}"${l === cur ? " selected" : ""}>${LEVEL_LABELS[l]}</option>`).join("");
-      const why = isAdminRole(r) ? "The Admin role always has full access." : !editable ? "Only an admin can change permissions." : "";
-      return `<td><select class="um-role-select perm-select" data-perm-role="${escapeHTML(r.id)}" data-perm-section="${s.key}" aria-label="${escapeHTML(`${r.name} access to ${s.label}`)}"${locked ? " disabled" : ""}${why ? ` title="${escapeHTML(why)}"` : ""}>${opts}</select></td>`;
-    }).join("");
-    return `<tr><th scope="row">${escapeHTML(s.label)}</th>${cells}</tr>`;
-  }).join("");
-  host.innerHTML = `<div class="perm-scroll"><table class="perm-table"><thead><tr><th scope="col">Section</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
-}
-document.getElementById("permissions-matrix")?.addEventListener("change", async (e) => {
-  const sel = e.target.closest("select[data-perm-role]");
-  if (!sel) return;
-  const role = accessRoles.find((r) => r.id === sel.dataset.permRole);
-  if (!role || !isConsoleAdmin()) return;
-  try {
-    const permissions = setLevel(role, sel.dataset.permSection, sel.value);
-    await updateDoc(doc(db, "roles", role.id), { permissions, updatedAt: serverTimestamp(), updatedBy: (auth.currentUser && auth.currentUser.email) || "" });
-    const label = (SECTIONS.find((x) => x.key === sel.dataset.permSection) || {}).label;
-    showPermissionsMsg(`${role.name}: ${label} set to ${LEVEL_LABELS[sel.value]}.`, false);
-  } catch (err) {
-    showPermissionsMsg(`Couldn't save that change: ${err && err.message ? err.message : err}`, true);
-    renderPermissionsMatrix();
-  }
-});
+// (The per-role permissions editor is the role page: see openRolePage below.)
 document.getElementById("access-denied-go")?.addEventListener("click", (e) => {
   const h = e.currentTarget.dataset.hash;
   document.getElementById("access-denied-page").hidden = true;
@@ -10445,11 +10421,17 @@ function renderRolesGrid() {
 }
 async function saveRole(id, fields) {
   const by = (auth.currentUser && auth.currentUser.email) || null;
-  if (id) await updateDoc(doc(db, "roles", id), Object.assign({}, fields, { updatedAt: serverTimestamp(), updatedBy: by }));
-  else await addDoc(collection(db, "roles"), Object.assign({}, fields, { createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: by }));
+  if (id) { await updateDoc(doc(db, "roles", id), Object.assign({}, fields, { updatedAt: serverTimestamp(), updatedBy: by })); return id; }
+  const ref = await addDoc(collection(db, "roles"), Object.assign({}, fields, { createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: by }));
+  return ref.id;
 }
-async function loadRoles() {
-  if (!isConsoleAdmin()) return;
+let loadRolesInFlight = null;
+function loadRoles() {
+  if (!isConsoleAdmin()) return Promise.resolve();
+  if (!loadRolesInFlight) loadRolesInFlight = loadRolesOnce().finally(() => { loadRolesInFlight = null; });
+  return loadRolesInFlight;
+}
+async function loadRolesOnce() {
   showRolesError("");
   try {
     if (!rolesGrid && !rolesGridLoading) {
@@ -10511,14 +10493,7 @@ async function createRole() {
   try { await saveRole(null, v); } catch (err) { showRolesError(`Couldn't create the role: ${err.message || err}`); }
   await loadRoles();
 }
-async function editRole(id) {
-  const r = rolesCache.find((x) => x.id === id);
-  if (!r) return;
-  const v = await roleDialog({ title: "Edit role", okLabel: "Save", name: r.name, description: r.description, exceptId: id });
-  if (!v) return;
-  try { await saveRole(id, v); } catch (err) { showRolesError(`Couldn't save the role: ${err.message || err}`); }
-  await loadRoles();
-}
+function editRole(id) { openRolePage(id); }
 async function cloneRole(id) {
   const r = rolesCache.find((x) => x.id === id);
   if (!r) return;
@@ -10542,41 +10517,151 @@ async function deleteRole(id) {
 document.getElementById("roles-create")?.addEventListener("click", createRole);
 document.getElementById("roles-search")?.addEventListener("input", (e) => { if (rolesGrid) rolesGrid.search(e.target.value); });
 
-// ── User Management page: Users / Roles / Permissions ────────────────────
-const userManagementPage = document.getElementById("user-management-page");
-const UM_TABS = ["users", "roles", "permissions"];
+// ── Settings → User Management: Users / Roles sub-tabs, and the role page ──
+// Permissions are edited only on a role's own page (#settings/user-management/roles/<id>).
+let umTab = "users";
 function showUserManagementTab(tab) {
-  userManagementPage.querySelectorAll("[data-um-panel]").forEach((p) => { p.hidden = p.dataset.umPanel !== tab; });
-  userManagementPage.querySelectorAll("[data-um-tab]").forEach((b) => {
-    const on = b.dataset.umTab === tab;
+  umTab = UM_TABS.includes(tab) ? tab : "users";
+  const pane = faqSettingsPage.querySelector('[data-settings-pane="user-management"]');
+  pane.querySelectorAll("[data-um-panel]").forEach((p) => { p.hidden = p.dataset.umPanel !== umTab; });
+  pane.querySelectorAll("[data-um-tab]").forEach((b) => {
+    const on = b.dataset.umTab === umTab;
     b.classList.toggle("active", on);
-    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    b.setAttribute("aria-selected", String(on));
   });
+  if (umTab === "users") loadRoles().then(loadTeamMembers);
+  else loadRoles();
 }
-function openUserManagementPage(tab = "users") {
-  if (!pageAllowed("user-management")) return;
-  if (!UM_TABS.includes(tab)) tab = "users";
-  closeAllSubPages();
-  document.getElementById("projects-root").hidden = true;
-  document.getElementById("board-page-header").hidden = true;
-  userManagementPage.hidden = false;
-  showUserManagementTab(tab);
-  setRouteHash(`#user-management/${tab}`);
-  updateTopbarTitle();
-  if (tab === "users") { loadRoles().then(loadTeamMembers); }
-  if (tab === "roles") loadRoles();
-  if (tab === "permissions") { renderPermissionsMatrix(); if (isConsoleAdmin() && !accessRoles.length) loadRoles(); }
-}
-function closeUserManagementPage() {
-  if (userManagementPage.hidden) return;
-  userManagementPage.hidden = true;
-  closeTeamAddModal();
+UM_TABS.forEach((t) => {
+  document.getElementById(`um-tab-${t}`).addEventListener("click", () => { showUserManagementTab(t); setRouteHash(`#settings/user-management/${t}`); updateTopbarTitle(); });
+});
+
+const rolePage = document.getElementById("role-detail-page");
+let rolePageId = "";
+function closeRolePage() {
+  if (rolePage.hidden) return;
+  rolePage.hidden = true;
+  rolePageId = "";
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
-UM_TABS.forEach((t) => {
-  document.getElementById(`um-${t}-btn`).addEventListener("click", () => { closeNavDrawer(); openUserManagementPage(t); });
-  document.getElementById(`um-tab-${t}`).addEventListener("click", () => openUserManagementPage(t));
+const findRole = (id) => rolesCache.find((x) => x.id === id) || accessRoles.find((x) => x.id === id);
+function renderRolePage() {
+  const r = findRole(rolePageId);
+  if (!r) { document.getElementById("role-detail-title").textContent = "Role not found"; return; }
+  const locked = isAdminRole(r);
+  document.getElementById("role-detail-title").textContent = r.name || "Role";
+  const nameEl = document.getElementById("role-name");
+  const descEl = document.getElementById("role-description");
+  nameEl.value = r.name || ""; descEl.value = r.description || "";
+  nameEl.disabled = locked; descEl.disabled = locked;
+  document.getElementById("role-locked-note").hidden = !locked;
+  document.getElementById("role-save").disabled = locked;
+  const levels = roleLevels(r);
+  document.getElementById("role-permissions").innerHTML = PERMISSION_GROUPS.map((g) => `<div class="role-group"><h3>${escapeHTML(g.label)}</h3>${g.keys.map((k) => {
+    const s = SECTIONS.find((x) => x.key === k);
+    const opts = LEVELS.map((l) => `<option value="${l}"${l === levels[k] ? " selected" : ""}>${LEVEL_LABELS[l]}</option>`).join("");
+    return `<div class="role-perm-row"><label for="role-perm-${k}">${escapeHTML(s.label)}</label><select class="um-role-select" id="role-perm-${k}" data-perm-section="${k}"${locked ? ' disabled title="The Admin role always has full access."' : ""}>${opts}</select></div>`;
+  }).join("")}</div>`).join("");
+  document.getElementById("role-error").hidden = true;
+  document.getElementById("role-status").textContent = "";
+}
+async function openRolePage(id) {
+  if (!pageAllowed("user-management") || !isConsoleAdmin()) return;
+  closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  rolePage.hidden = false;
+  rolePageId = id;
+  setRouteHash(`#settings/user-management/roles/${encodeURIComponent(id)}`);
+  updateTopbarTitle();
+  const had = !!findRole(id);
+  renderRolePage();
+  await loadRoles();
+  // Re-render only if the role wasn't known yet: a second render would drop what is being typed.
+  if (!had && rolePageId === id) renderRolePage();
+}
+document.getElementById("role-back-btn").addEventListener("click", () => openFaqSettingsPage("user-management", "roles"));
+document.getElementById("role-save").addEventListener("click", async () => {
+  const r = findRole(rolePageId);
+  const err = document.getElementById("role-error");
+  if (!r || isAdminRole(r) || !isConsoleAdmin()) return;
+  const name = trimmedRoleName(document.getElementById("role-name").value);
+  const nameErr = roleNameError(name, rolesCache, r.id);
+  if (nameErr) { err.textContent = nameErr; err.hidden = false; return; }
+  const permissions = {};
+  rolePage.querySelectorAll("select[data-perm-section]").forEach((sel) => { permissions[sel.dataset.permSection] = sel.value; });
+  try {
+    await saveRole(r.id, { name, description: String(document.getElementById("role-description").value || "").trim().slice(0, 300), permissions });
+    err.hidden = true;
+    await loadRoles();
+    renderRolePage();
+    document.getElementById("role-status").textContent = "Role saved.";
+  } catch (e) {
+    err.textContent = `Couldn't save the role: ${e && e.message ? e.message : e}`; err.hidden = false;
+  }
+});
+
+// ── Promote › Brand Guidelines (#promote/brand-guidelines) ───────────────
+// Read-only. The text is two board documents that mirror
+// backlog-tracker/promote/*.md (board-docs.json), found by mirrorKey; the repo
+// file wins, so there is nothing to edit here. Agents read the same documents
+// over MCP (list_project_documents / get_project_document).
+const promotePage = document.getElementById("promote-page");
+const leadsPage = document.getElementById("leads-page");
+let promotePageKey = "";
+// Promote › Leads (leads-page.js): mounted the first time the page opens.
+let leadsUi = null;
+let leadsUiLoading = null;
+function ensureLeadsUi() {
+  if (leadsUi) return Promise.resolve(leadsUi);
+  if (!leadsUiLoading) {
+    leadsUiLoading = import("./leads-page.js").then(({ mountLeadsPage }) => {
+      leadsUi = mountLeadsPage({ db, auth, canEdit: () => canEditSection("promote"), apiHeaders: consoleApiHeaders });
+      return leadsUi;
+    });
+  }
+  return leadsUiLoading;
+}
+function renderPromotePage() {
+  if (promotePage.hidden) return;
+  const page = PROMOTE_PAGES.find((p) => p.key === promotePageKey);
+  if (!page) return;
+  document.getElementById("promote-title").textContent = page.label;
+  const docs = promoteDocsFor(page.key, projectDocs);
+  const g = document.getElementById("promote-guidelines");
+  const r = document.getElementById("promote-requirements");
+  g.innerHTML = docs.guidelines ? renderMarkdown(docs.guidelines.body) : "";
+  r.innerHTML = docs.requirements ? renderMarkdown(docs.requirements.body) : "";
+  document.getElementById("promote-empty").hidden = !!docs.guidelines;
+  document.getElementById("promote-requirements-wrap").hidden = !docs.requirements;
+}
+function openPromotePage(key = PROMOTE_PAGES[0].key) {
+  if (!pageAllowed("promote")) return;
+  closeAllSubPages();
+  ensureLazy("projectDocs");
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  promotePageKey = key;
+  if (key === "leads") {
+    leadsPage.hidden = false;
+    ensureLeadsUi().then((ui) => { ui.start(); ui.render(); });
+  } else {
+    promotePage.hidden = false;
+  }
+  setRouteHash(promoteHash(key));
+  updateTopbarTitle();
+  renderPromotePage();
+}
+function closePromotePage() {
+  if (promotePage.hidden && leadsPage.hidden) return;
+  promotePage.hidden = true;
+  leadsPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+PROMOTE_PAGES.forEach((p) => {
+  document.getElementById(p.navId).addEventListener("click", () => { closeNavDrawer(); openPromotePage(p.key); });
 });
 
 // The notification bell (KB-NAV-2): in the topbar on every page. The module
@@ -11690,9 +11775,10 @@ navShell = initNavShell({ getEntries: navEntries, openEntry: openNavEntry, goHom
 const ROUTE_TITLES = {
   "#faq-management": "FAQ Management",
   "#settings": "Settings",
-  "#user-management/users": "Users",
-  "#user-management/roles": "Roles",
-  "#user-management/permissions": "Permissions",
+  "#settings/user-management/users": "Settings: Users",
+  "#settings/user-management/roles": "Settings: Roles",
+  "#promote/brand-guidelines": "Promote: Brand Guidelines",
+  "#promote/leads": "Promote: Leads",
   "#settings/projects": "Settings: Projects",
   "#settings/releases": "Settings: Releases",
   "#settings/skills": "Settings: Skills & phase bindings",
@@ -11834,8 +11920,16 @@ function openDocsRouteFromHash(hash) {
 function applyRouteFromHash() {
   const hash = window.location.hash;
   if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
-  else if (settingsPageFromHash(hash)) { const k = settingsPageFromHash(hash); if (faqSettingsPage.hidden) openFaqSettingsPage(k); else if (k !== settingsPage) showSettingsPage(k); }
-  else if (hash.startsWith("#user-management")) openUserManagementPage(hash.split("/")[1]);
+  else if (legacyUserManagementHash(hash)) { setRouteHash(legacyUserManagementHash(hash), { replace: true }); applyRouteFromHash(); }
+  else if (userManagementRoute(hash) && userManagementRoute(hash).roleId) { const rid = userManagementRoute(hash).roleId; if (rolePage.hidden || rolePageId !== rid) openRolePage(rid); }
+  else if (settingsPageFromHash(hash)) {
+    const k = settingsPageFromHash(hash);
+    const um = userManagementRoute(hash);
+    if (um && !pageAllowed("user-management")) return;
+    if (faqSettingsPage.hidden) openFaqSettingsPage(k, um && um.tab);
+    else if (k !== settingsPage || (um && um.tab !== umTab)) showSettingsPage(k, um && um.tab);
+  }
+  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : promotePage.hidden)) openPromotePage(k); }
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
@@ -11846,7 +11940,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !userManagementPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

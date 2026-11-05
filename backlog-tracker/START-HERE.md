@@ -28,6 +28,8 @@ The documents on the console, in the order they list:
 - **4 — Documentation standard** — *copy, 2 parts* · `docs/CONTRIBUTING-docs.md`
 - **5 — Console security and performance review** — *copy, 3 parts* ·
   `backlog-tracker/SECURITY-PERFORMANCE.md`
+- **6 — Brand Guidelines (Promote)** — *copy, 2 documents* ·
+  `backlog-tracker/promote/brand-guidelines.md`, `backlog-tracker/promote/brand-requirements.md`
 - The project's **README** and **Requirements** blocks, which sit beside the
   documents: `backlog-tracker/README.md` and `backlog-tracker/REQUIREMENTS.md`.
 
@@ -50,6 +52,8 @@ Every copy, by the exact name the console lists it under:
 - 5 — Console security and performance review (1/3): 2 Nov 2026, the archived-ticket cache · `backlog-tracker/SECURITY-PERFORMANCE.md`
 - 5 — Console security and performance review (2/3): sign-in and what changed · `backlog-tracker/SECURITY-PERFORMANCE.md`
 - 5 — Console security and performance review (3/3): not changed here, the 100-user envelope, how to verify · `backlog-tracker/SECURITY-PERFORMANCE.md`
+- 6 — Brand Guidelines (Promote): look, voice, messaging and AWS co-branding · `backlog-tracker/promote/brand-guidelines.md`
+- 6 — Brand Guidelines requirements (Promote) · `backlog-tracker/promote/brand-requirements.md`
 
 Where to begin, by role:
 

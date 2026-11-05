@@ -187,7 +187,7 @@ const scenarios = [
     },
   },
   {
-    name: "nav: Build, Publish and Admin destinations are all reachable, with no sideways scroll",
+    name: "nav: Build, Support and Admin destinations are all reachable, with no sideways scroll",
     seed: () => seed(),
     async run(c) {
       await c.boardReady();
@@ -210,7 +210,7 @@ const scenarios = [
       c.at("sections");
       if (!phone) {
         const labels = await c.page.evaluate(() => [...document.querySelectorAll("#nav-drawer .nav-drawer-section")].map((e) => e.textContent.trim()));
-        assert.deepStrictEqual(labels, ["Build", "Publish", "User Management", "Settings"]);
+        assert.deepStrictEqual(labels, ["Build", "Promote", "Support", "Settings"]);
       }
       await go("build", "concept-incubator-btn", "concept-incubator-page");
       await go("settings", "faq-settings-btn", "faq-settings-page");
@@ -219,7 +219,9 @@ const scenarios = [
         await c.visible(`[data-settings-pane="${sub}"]`, `${label} pane shows`);
         await overflow(`settings ${sub}`);
       }
-      assert.strictEqual(await c.page.locator(".settings-submenu-item").count(), 5, "five Settings pages");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#settings-submenu .settings-tab")].map((b) => b.dataset.settingsPage)), ["user-management", "projects", "releases", "skills", "automations", "integrations"], "User Management first, the rest in their old order");
+      assert.strictEqual(await c.page.locator('#settings-submenu .settings-tab[aria-selected="true"]').count(), 1, "exactly one Settings tab is selected");
+      assert.strictEqual(await c.page.locator('#nav-drawer [data-nav-group="user-management"], #nav-drawer #um-users-btn, #nav-drawer #um-roles-btn, #nav-drawer #um-permissions-btn').count(), 0, "no User Management, Roles or Permissions items in the nav");
       assert.strictEqual(await c.page.locator("#nav-drawer #releases-btn, #nav-drawer #skills-btn").count(), 0, "Releases and Skills are not in the main navigation");
       await go("publish", "faq-articles-btn", "faq-articles-page");
       assert.strictEqual(await c.page.locator("#profile-menu #faq-settings-btn").count(), 0, "Settings is not in the profile menu");
@@ -237,7 +239,7 @@ const scenarios = [
     },
   },
   {
-    name: "user management: own nav section, Users grid adds, changes roles inline and in bulk, deactivates",
+    name: "user management: first Settings tab, Users grid adds, changes roles inline and in bulk, deactivates",
     seed: () => {
       const s = seed();
       s.user = { email: "admin@personalisationhub.com", role: "admin" };
@@ -253,9 +255,12 @@ const scenarios = [
       const phone = c.width <= 640;
       if (phone) await c.click('#tabbar .tab[data-tab="settings"]', "Settings tab"); else if (c.width < 1024) await c.click("#nav-open-btn", "open the menu");
       assert.strictEqual(await c.page.locator("#faq-settings-page .team-admin-block").count(), 0, "Team & agent access is no longer under Settings");
-      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll('[data-nav-group="user-management"] .nav-drawer-item')].map((b) => b.textContent.trim().replace(/^(group|badge|lock)/, ""))), ["Users", "Roles", "Permissions"]);
-      await c.click("#um-users-btn", "Users");
-      await c.visible("#user-management-page", "User Management shows");
+      assert.strictEqual(await c.page.locator('#nav-drawer [data-nav-group="user-management"]').count(), 0, "User Management is not a nav group");
+      await c.click("#faq-settings-btn", "Settings");
+      await c.visible('[data-settings-pane="user-management"]', "Settings opens on User Management");
+      assert.strictEqual(await c.page.evaluate(() => document.querySelector("#settings-submenu .settings-tab").dataset.settingsPage), "user-management", "first tab");
+      assert.strictEqual(await c.page.getAttribute('#settings-submenu [data-settings-page="user-management"]', "aria-selected"), "true", "its tab is selected");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll(".um-tab")].map((b) => b.textContent.trim())), ["Users", "Roles"]);
       await c.visible("#um-grid .ag-row", "the grid lists members");
       assert.strictEqual(await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count(), 3, "three members in the grid");
       const cols = await c.page.evaluate(() => [...document.querySelectorAll("#um-grid .ag-header-cell-text")].map((e) => e.textContent.trim()).filter(Boolean));
@@ -298,7 +303,7 @@ const scenarios = [
       assert.ok(engineerId, "Engineer role seeded");
       await c.page.selectOption('select[aria-label="Assigned role for kim@personalisationhub.com"]', engineerId);
       await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").roleId)) === engineerId, "assigned role to persist", 5000);
-      await c.page.evaluate(() => { document.getElementById("um-roles-btn").click(); });
+      await c.click("#um-tab-roles", "Roles sub-tab");
       await c.visible('[data-um-panel="roles"]', "Roles page shows");
       await c.visible("#roles-grid .ag-row", "roles listed");
       const rcols = await c.page.evaluate(() => [...document.querySelectorAll("#roles-grid .ag-header-cell-text")].map((e) => e.textContent.trim()).filter(Boolean));
@@ -323,9 +328,22 @@ const scenarios = [
       assert.strictEqual(await rowCount(), 6, "no duplicate added");
       // edit
       await c.page.locator('.role-edit[aria-label="Edit Support"]').click();
-      await c.page.fill("#dialog-field-0", "Support team");
-      await c.click("#dialog-ok", "Save");
+      await c.visible("#role-detail-page", "the role page opens");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-group h3")].map((e) => e.textContent)), ["Build", "Support", "Settings"]);
+      await c.page.fill("#role-name", "Support team");
+      await c.page.selectOption("#role-perm-concepts", "view");
+      await c.click("#role-save", "Save role");
+      await until(async () => (await c.page.evaluate(() => { for (const d of globalThis.__fbStub.col("roles").values()) if (d.name === "Support team") return (d.permissions || {}).concepts; })) === "view", "the renamed role and its permission to persist", 8000);
+      await c.click("#role-back-btn", "back to Roles");
+      await c.visible("#roles-grid .ag-row", "roles listed again");
       await until(async () => (await c.page.locator('.role-edit[aria-label="Edit Support team"]').count()) === 1, "renamed role", 8000);
+      // the Admin role's permissions are locked
+      await c.page.locator('.role-edit[aria-label="Edit Admin"]').click();
+      await c.visible("#role-detail-page", "Admin role page");
+      assert.strictEqual(await c.page.locator("#role-permissions select:not([disabled])").count(), 0, "Admin permissions are locked");
+      assert.strictEqual(await c.page.isDisabled("#role-save"), true, "Admin cannot be saved");
+      await c.click("#role-back-btn", "back to Roles");
+      await c.visible("#roles-grid .ag-row", "roles listed again");
       // clone
       await c.page.locator('.role-clone[aria-label="Clone Support team"]').click();
       assert.strictEqual(await c.page.inputValue("#dialog-field-0"), "Copy of Support team", "clone prefilled");
@@ -948,12 +966,12 @@ const scenarios = [
       await c.visible("#skills-page", "Skills opens at View");
       assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("skills-add-btn")).display), "none", "Add skill is unavailable at View");
       // User Management is not in this role at all
-      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
+      await c.page.evaluate(() => { location.hash = "#settings/user-management/roles"; });
       await c.visible("#access-denied-page", "User Management is blocked for an engineer");
     },
   },
   {
-    name: "permissions: the matrix lists every section by role, saves a change, and the Admin role stays locked",
+    name: "permissions: a role's page lists sections by area, saves a change, and the Admin role stays locked",
     seed: () => {
       const s = seed();
       s.user = { email: "admin@personalisationhub.com", role: "admin" };
@@ -966,20 +984,24 @@ const scenarios = [
     },
     async run(c) {
       await c.boardReady();
-      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
-      await c.visible(".perm-table", "the matrix shows");
-      const rows = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table tbody th")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(rows, ["Agent board", "Staff Kanban", "Concepts", "FAQ management", "Skills", "Releases", "Project docs", "Settings", "User Management"]);
-      const heads = await c.page.evaluate(() => [...document.querySelectorAll(".perm-table thead th")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(heads, ["Section", "Admin", "Engineer"]);
-      assert.strictEqual(await c.page.locator('select[data-perm-role="rAdmin"]:not([disabled])').count(), 0, "the Admin column is locked");
-      await c.page.selectOption('select[data-perm-role="rEng"][data-perm-section="concepts"]', "none");
+      await c.page.evaluate(() => { location.hash = "#settings/user-management/roles/rEng"; });
+      await c.visible("#role-detail-page", "the role page shows");
+      assert.strictEqual(await c.page.locator(".perm-table").count(), 0, "there is no permissions matrix");
+      await c.visible("#role-permissions .role-perm-row", "the permissions render");
+      const rows = await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-perm-row label")].map((e) => e.textContent.trim()));
+      assert.deepStrictEqual(rows, ["Agent board", "Staff Kanban", "Concepts", "Promote", "Project docs", "FAQ management", "Settings", "Skills", "Releases", "User Management"]);
+      await c.page.selectOption("#role-perm-concepts", "none");
+      await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);
       // an admin keeps User Management even when a role they hold says none
-      await c.page.selectOption('select[data-perm-role="rEng"][data-perm-section="user-management"]', "none");
+      await c.page.selectOption("#role-perm-user-management", "none");
+      await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {})["user-management"])) === "none", "the lock-out attempt to persist", 5000);
-      assert.strictEqual(await c.page.evaluate(() => document.getElementById("user-management-page").hidden), false, "User Management is still open");
-      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("um-permissions-btn")).display === "none"), false, "and still in the nav");
+      assert.strictEqual(await c.page.evaluate(() => document.getElementById("role-detail-page").hidden), false, "User Management is still open");
+      // legacy links redirect
+      await c.page.evaluate(() => { location.hash = "#user-management/permissions"; });
+      await until(async () => (await c.page.evaluate(() => location.hash)) === "#settings/user-management/roles", "the legacy link to redirect", 5000);
+      await c.visible('[data-settings-pane="user-management"]', "Settings → User Management shows");
     },
   },
   {
@@ -1004,6 +1026,105 @@ const scenarios = [
       await c.visible('#system-map-type [data-map-type="Platform"].active', "opens the Platform map");
       platform = await names();
       assert.ok(platform.includes("Alpha"), "back on the Platform map");
+    },
+  },
+  {
+    name: "Promote: Brand Guidelines opens from the nav and shows the mirrored guidelines",
+    seed: () => seed({ projectDocs: {
+      bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
+        sourcePrefix: "> Copy of the file.\n\n", contentMd: "> Copy of the file.\n\n# Brand Guidelines\n\n## Founder tone of voice\n\nShort, direct sentences.\n\n## Industry content lives on the website\n\nSee [industries](https://personalisationhub.com/industries/).", createdAt: t(T0), updatedAt: t(T0) },
+      br: { projectId: PID, name: "6 — Brand Guidelines requirements (Promote)", mirrorKey: "brand-requirements", sourcePath: "backlog-tracker/promote/brand-requirements.md",
+        sourcePrefix: "", contentMd: "# Requirements\n\n- R7.1 Founder tone of voice.", createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
+      await c.waitText("#promote-guidelines", "Founder tone of voice", "the guidelines show");
+      assert.ok(!(await c.text("#promote-guidelines")).includes("Copy of the file"), "the sync's copy line is not shown");
+      assert.strictEqual(await c.page.locator('#promote-guidelines a[href="https://personalisationhub.com/industries/"]').count(), 1, "industry content links to the website");
+      await c.visible("#promote-requirements-wrap", "requirements section shows");
+      assert.ok(new URL(c.page.url()).hash === "#promote/brand-guidelines", "the page has its own URL");
+    },
+  },
+  {
+    name: "Promote: Leads board - add a lead with contacts, drag it to Hot Lead, convert it",
+    seed: () => seed({ leads: {
+      lx: { company: { name: "Existing Co", website: "https://existing.example", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [{ id: "k1", name: "Pat", jobTitle: "", buyingRole: "champion", email: "", linkedin: "" }], stage: "demo", source: "Website form", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      assert.ok(new URL(c.page.url()).hash === "#promote/leads", "the page has its own URL");
+      await c.visible('.lead-lane[data-stage="demo"] .lead-card', "the seeded lead is in the Demo lane");
+      const lanes = await c.page.evaluate(() => [...document.querySelectorAll("#leads-board .lead-lane-head h3")].map((e) => e.textContent.trim()));
+      assert.deepStrictEqual(lanes, ["Lead", "Hot Lead", "Demo", "Post-demo", "Closed Won", "Lost"]);
+      // New lead with two contacts and buying roles lands in the Lead lane.
+      await c.page.click("#leads-add-btn");
+      await c.visible("#lead-form", "the lead form opens");
+      await c.page.fill("#lead-name", "Acme Retail");
+      await c.page.fill("#lead-website", "acme.example");
+      await c.page.fill("#lead-countries", "UK, France");
+      await c.page.fill("#lead-stores", "250");
+      await c.page.fill(".lead-contact[data-index=\"0\"] .lc-name", "Jo Bloggs");
+      await c.page.selectOption(".lead-contact[data-index=\"0\"] .lc-role", "decision-maker");
+      await c.page.click("#lead-add-contact");
+      await c.page.fill(".lead-contact[data-index=\"1\"] .lc-name", "Sam Tech");
+      await c.page.selectOption(".lead-contact[data-index=\"1\"] .lc-role", "technical-evaluator");
+      await c.page.click("#lead-save");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the new lead is in the Lead lane");
+      assert.ok((await c.text('.lead-lane[data-stage="lead"]')).includes("Acme Retail"));
+      assert.ok((await c.text('.lead-lane[data-stage="lead"]')).includes("2 contacts"));
+      // Move it to Hot Lead with the Move to select, and it persists.
+      await c.page.selectOption('.lead-lane[data-stage="lead"] .lead-move-select', "hot-lead");
+      await c.visible('.lead-lane[data-stage="hot-lead"] .lead-card', "the card is in Hot Lead");
+      const stored = await c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.company.name === "Acme Retail") return v; return null; });
+      assert.ok(stored, "the lead was written");
+      assert.strictEqual(stored.stage, "hot-lead", "the stage was written");
+      assert.strictEqual(stored.contacts[0].buyingRole, "decision-maker");
+      assert.strictEqual(stored.createdByEmail, "editor@personalisationhub.com");
+      // Drag the other card between lanes.
+      // Pointer drag on a pointer layout; on a phone the lanes stack and the select is the way to move.
+      if (c.page.viewportSize().width > 700) await c.page.dragAndDrop('.lead-lane[data-stage="demo"] .lead-card', '.lead-lane[data-stage="post-demo"] .lead-lane-head');
+      else await c.page.selectOption('.lead-lane[data-stage="demo"] .lead-move-select', "post-demo");
+      await c.visible('.lead-lane[data-stage="post-demo"] .lead-card', "dragging moved the card to Post-demo");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("lx").stage)) === "post-demo", "the dragged stage to persist", 5000);
+      // Convert and link a customer account.
+      await c.page.click('.lead-lane[data-stage="post-demo"] .lead-card .lead-card-name');
+      await c.visible("#lead-account-name", "the customer account fields show for a saved lead");
+      await c.page.click("#lead-convert-btn");
+      assert.ok((await c.text("#lead-error")).includes("Name the customer account"), "an account is required");
+      await c.page.fill("#lead-account-name", "Existing Co Ltd");
+      await c.page.fill("#lead-account-id", "acc_42");
+      await c.page.click("#lead-convert-btn");
+      await c.visible('.lead-lane[data-stage="closed-won"] .lead-card', "the converted lead is in Closed Won");
+      assert.ok((await c.text('.lead-lane[data-stage="closed-won"]')).includes("Existing Co Ltd"), "the card shows the linked account");
+      assert.deepStrictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("lx").customerAccount), { id: "acc_42", name: "Existing Co Ltd" });
+    },
+  },
+  {
+    name: "Promote: Leads test mode - test leads only under Test, bulk delete leaves real leads",
+    seed: () => seed({ leads: {
+      real: { company: { name: "Real Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", sourcePage: "/telco/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+      t1: { company: { name: "Test One", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", sourcePage: "/retail/", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+      t2: { company: { name: "Test Two", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the real lead is in the Lead lane");
+      const lane = () => c.text('.lead-lane[data-stage="lead"]');
+      assert.ok((await lane()).includes("Real Co") && !(await lane()).includes("Test One"), "test leads are not on the normal board");
+      assert.strictEqual((await c.text("#leads-test-count")).trim(), "2");
+      await c.page.click("#leads-filter-test");
+      await until(async () => (await lane()).includes("Test One"), "the Test filter to show test leads", 5000);
+      assert.ok(!(await lane()).includes("Real Co"), "real leads are hidden under Test");
+      assert.ok((await lane()).includes("/retail/"), "the page the lead came from is shown");
+      await c.page.click("#leads-test-delete");
+      assert.ok((await c.text("#leads-test-delete")).includes("Click again"), "the first click asks to confirm");
+      await c.page.click("#leads-test-delete");
+      await until(async () => (await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].map(([k]) => k))).join() === "real", "only the real lead to remain", 5000);
+      await c.page.click("#leads-filter-real");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the real lead is still on the board");
     },
   },
   {
