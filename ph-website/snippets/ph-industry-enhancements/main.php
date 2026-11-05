@@ -8,6 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.8.2';
 require_once __DIR__ . '/telco-lead.php';
 require_once __DIR__ . '/leads.php';
+require_once __DIR__ . '/calculators-wp.php';
 
 const KEYS = [ 'industries', 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' ];
 

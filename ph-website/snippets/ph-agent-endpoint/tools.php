@@ -12,6 +12,57 @@ require_once __DIR__ . '/install-spec.php';
 const INDUSTRY_SLUGS = array( 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' );
 const SC_BASE_PATH   = '/support-centre/';
 
+/**
+ * The business model calculators: the Industries snippet owns the one list (ph-industry-enhancements/calculators.php);
+ * this snippet only reads it, so a new industry there is listed, described and callable here with no change in this file.
+ * Returns [] when that snippet is not loaded, and the tool is then not offered.
+ */
+const CALC_NS = 'AngieSnippets\\PhIndustryEnhancements_10063\\';
+
+function calc_call( $fn, ...$args ) {
+	return function_exists( CALC_NS . $fn ) ? call_user_func_array( CALC_NS . $fn, $args ) : null;
+}
+
+function calc_registry() {
+	$r = calc_call( 'calculators' );
+	return is_array( $r ) ? $r : array();
+}
+
+/** The union of every calculator's input ids, as JSON-schema number properties (the tool validates against the chosen industry). */
+function calc_input_props( array $cals ) {
+	$props = array();
+	foreach ( $cals as $e ) {
+		foreach ( (array) calc_call( 'calc_inputs', $e ) as $i ) {
+			$props[ $i['id'] ] = array( 'type' => 'number', 'description' => $i['label'] . ' (default ' . $i['default'] . ', ' . $i['min'] . ' to ' . $i['max'] . ')' );
+		}
+	}
+	return $props;
+}
+
+function calc_tool_def() {
+	$cals = calc_registry();
+	if ( ! $cals ) {
+		return null;
+	}
+	$names = array();
+	foreach ( $cals as $e ) {
+		$names[] = $e['name'];
+	}
+	return array(
+		'name'        => 'calculate_business_model',
+		'description' => 'Business model / business case calculator. Enter a few figures about a business and get an instant estimate of what Personalisation Hub could add, plus a link to the calculator pre-filled with those figures, where the business model can be downloaded. Supported industries: ' . implode( ', ', $names ) . '. Call with no arguments to list the calculators and the inputs each needs; call with an industry and any inputs you know (the rest use defaults, and the result says which) to get the estimate. The downloadable model is gated: the person must enter their own name, company and work email on the page and agree to be contacted, so give them the link rather than filling that in for them.',
+		'inputSchema' => array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'industry' => array( 'type' => 'string', 'enum' => array_keys( $cals ), 'description' => 'Industry slug (' . implode( ', ', array_keys( $cals ) ) . '). Omit to list every calculator.' ),
+				'inputs'   => array( 'type' => 'object', 'properties' => calc_input_props( $cals ), 'additionalProperties' => false, 'description' => 'Figures for the chosen industry, by input id. Omitted ones use the default.' ),
+			),
+			'additionalProperties' => false,
+		),
+		'annotations' => array( 'readOnlyHint' => true ),
+	);
+}
+
 /** The tracked CTA hop (ticket 5, RevOps): /go/<slug>/ records a click and 302s to the exact link below. The target is never read from the request. */
 function go_targets() {
 	return array( 'free-trial' => FREE_TRIAL_URL, 'demo' => DEMO_URL );
@@ -75,7 +126,7 @@ function feature_slugs() {
 function tool_defs() {
 	$none = array( 'type' => 'object', 'properties' => new \stdClass(), 'additionalProperties' => false );
 	$ro   = array( 'readOnlyHint' => true );
-	return array(
+	$defs = array(
 		array(
 			'name'        => 'describe_platform',
 			'description' => 'What Personalisation Hub is, its product areas with links, how it is deployed and how to start a free trial.',
@@ -154,6 +205,11 @@ function tool_defs() {
 			'annotations' => $ro,
 		),
 	);
+	$calc = calc_tool_def();
+	if ( $calc ) {
+		$defs[] = $calc;
+	}
+	return $defs;
 }
 
 function tool_def( $name ) {
@@ -338,6 +394,37 @@ function run_tool( $name, $args, array $src ) {
 				$spec = installation_spec();
 				$spec['marketplace']['trackedTrialUrl'] = tracked_url( 'free-trial' );
 				return tool_text( installation_spec_md( $spec ), $spec );
+
+			case 'calculate_business_model':
+				$cals = calc_registry();
+				if ( isset( $args['inputs'] ) && ( ! is_array( $args['inputs'] ) || ( $args['inputs'] && array_keys( $args['inputs'] ) === range( 0, count( $args['inputs'] ) - 1 ) ) ) ) {
+					return tool_error( 'inputs must be a JSON object of figures by input id.' );
+				}
+				if ( ! isset( $args['industry'] ) ) {
+					if ( ! empty( $args['inputs'] ) ) {
+						return tool_error( 'Give an industry with the inputs. Call with no arguments to list them.' );
+					}
+					$rows = array();
+					foreach ( $cals as $slug => $e ) {
+						$rows[] = calc_call( 'calc_describe', $slug, $e );
+					}
+					return tool_text( calc_call( 'calc_catalogue_md', $rows ), array( 'calculators' => $rows ) );
+				}
+				$e = $cals[ $args['industry'] ] ?? null;
+				if ( ! $e ) {
+					return tool_error( 'No calculator for that industry yet. Use one of: ' . implode( ', ', array_keys( $cals ) ) . '.' );
+				}
+				$ids = array_column( calc_call( 'calc_inputs', $e ), 'id' );
+				foreach ( (array) ( $args['inputs'] ?? array() ) as $k => $v ) {
+					if ( ! in_array( (string) $k, $ids, true ) ) {
+						return tool_error( 'Unknown input "' . mb_substr( preg_replace( '/[^\w .\/-]/u', '', (string) $k ), 0, 40 ) . '" for ' . $e['name'] . '. Use: ' . implode( ', ', $ids ) . '.' );
+					}
+					if ( ! is_int( $v ) && ! is_float( $v ) ) {
+						return tool_error( 'Input ' . $k . ' must be a number.' );
+					}
+				}
+				$res = calc_call( 'calc_run', $args['industry'], $e, $args['inputs'] ?? array() );
+				return tool_text( calc_call( 'calc_md', $res ), $res );
 
 			case 'book_demo':
 				return tool_text( 'Book a Personalisation Hub demo: ' . tracked_url( 'demo' ) . ' (redirects to ' . DEMO_URL . ')', array( 'url' => DEMO_URL, 'trackedUrl' => tracked_url( 'demo' ), 'text' => 'Book a demo' ) );
