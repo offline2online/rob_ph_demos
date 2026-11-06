@@ -3907,6 +3907,40 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
 - Out of scope: redesigning the Agent Board, Staff Kanban, Concepts or Help
   Centre pages.
 
+### Stale page after a release: the real cause of the dead iPad menu (6 Nov 2026)
+
+The iPad's left-hand menu went dead after releases five times (20 Oct to
+6 Nov 2026). The tap fixes below were real but were not the cause. The
+console's page is requested as `/`, and `firebase.json` had no Cache-Control
+rule for that path (`**/*.@(html|js|css)` does not match a bare `/`), so
+Firebase's default let the browser keep the page for up to an hour, while the
+scripts are always fetched fresh. After any release that changed the page's
+markup (new menu items on 1, 4 and 5 Nov), an iPad ran the old page with the
+new scripts. `app.js` reached for a menu button the old page did not have and
+stopped: the board still showed, but the menu and much of the console never
+wired up. Chromium tests always load fresh files, so none caught it.
+
+Rules:
+
+- **`firebase.json` sends `Cache-Control: no-cache, must-revalidate` for `/`
+  and `**/`** as well as for `.html`, `.js` and `.css`. The page and its
+  scripts are revalidated together on every load. Never let a page that
+  loads module scripts be cached on its own.
+- **A failed start reloads once by itself** (`reloadOnceAfterBootFailure` in
+  `auth-gate.js`): when `app.js` fails to load, the console reloads the page
+  once, stamped in `sessionStorage` so that a real fault (a bad deploy, no
+  network) shows "The console didn't finish loading" after one try instead
+  of reloading in a loop.
+- `test/ui/stale-page.test.mjs` (in `npm run test:ui`) checks the headers,
+  serves a stale page on first load at iPad landscape and portrait, and
+  requires one self-reload and a working menu by touch afterwards; and that
+  a page broken on every load stops after one reload. On the code before
+  this fix it fails exactly the way the iPad did: the board shows, and
+  tapping Staff Kanban in the menu does nothing.
+- When a menu or page "stops working on the iPad" right after a release, ask
+  whether a reload fixes it. If it does, look at caching and start-up
+  errors before tap handling.
+
 ### iPad taps: every control must work on every tap (3 Nov, 5 Nov 2026)
 
 The iPad lost taps in the console four times: 20 Oct and 21 Oct (Staff Kanban

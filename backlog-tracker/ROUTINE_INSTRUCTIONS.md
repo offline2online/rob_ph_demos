@@ -607,6 +607,11 @@ ticket once automatically.
      (`npm run test:ui`), so it needs a Chromium: a cloud session has one
      (`/opt/pw-browsers`). A ticket that changes console UI adds or updates
      a scenario in `backlog-tracker/test/ui/console-click.test.mjs`.
+     **Stale page (6 Nov 2026):** never change or remove the no-cache
+     headers for `/` in `backlog-tracker/firebase.json`, or the one-time
+     reload in `auth-gate.js`; `test/ui/stale-page.test.mjs` checks both.
+     A cached page running new scripts was what killed the iPad menu after
+     releases. See `REQUIREMENTS.md` → "Stale page after a release".
      **iPad taps (5 Nov 2026, after the fourth report):** a console control
      must be a `<button>`, a link, a `role=tab|button|menuitem|option`
      element or carry `data-touch-tap`, and must act on `click`, never on
