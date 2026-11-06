@@ -1189,8 +1189,8 @@ const scenarios = [
   {
     name: "Promote: Prospects (TAM) - sits below Leads, filters, status edit, saved filter, convert to lead without duplicating",
     seed: () => seed({ prospects: {
-      pa: { name: "Alpha Grocer", website: "https://alpha.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom", "Ireland"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
-      pb: { name: "Beta Pharmacy", industry: "Pharmacy", hqCountry: "Germany", markets: ["Germany"], awsRegion: "eu-central-1", storeCount: 40, sizeBand: "small", vendors: [], campaigns: ["Autumn"], status: "targeted", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pa: { name: "Alpha Grocer", country: "United Kingdom", priority: "high", website: "https://alpha.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom", "Ireland"], awsRegion: "eu-west-2", storeCount: 400, storePresence: "400+ stores", sizeBand: "large", ownership: "Listed", insights: "Strong digital signage appetite.", decisionMakers: "Head of Retail Media", linkedinUrl: "https://www.linkedin.com/company/alpha-grocer/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo Bloggs", role: "CMO", lastContact: "May 2026" }], vendors: [], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pb: { name: "Beta Pharmacy", country: "Germany", industry: "Pharmacy", hqCountry: "Germany", markets: ["Germany"], awsRegion: "eu-central-1", storeCount: 40, sizeBand: "small", vendors: [], campaigns: ["Autumn"], status: "targeted", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
       pc: { name: "Gamma Fashion", industry: "Fashion", hqCountry: "France", markets: ["France", "Ireland"], awsRegion: "eu-west-3", storeCount: null, vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
     } }),
     async run(c) {
@@ -1219,32 +1219,56 @@ const scenarios = [
       const overflow = await c.page.evaluate(() => { const v = document.querySelector("#prospects-grid .ag-body-horizontal-scroll-viewport"); return v ? v.scrollWidth - v.clientWidth : 0; });
       assert.ok(c.width < 1280 || overflow <= 1, `default columns fit without horizontal scrolling (overflow ${overflow}px)`);
       assert.strictEqual(await c.page.locator('#prospects-grid .ag-header-cell[col-id="subIndustry"]').count(), 0, "Sub-industry is hidden by default");
-      // Company is a link only when there is a website.
-      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pa"] [col-id="name"] a').count(), 1);
-      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pb"] [col-id="name"] a').count(), 0);
-      // Quick search, then the Markets floating filter (matches HQ or any market).
-      await c.page.fill("#prospects-q", "Beta");
-      await until(async () => (await rowIds()) === "pb", "the search to apply", 5000);
+      // The default columns, in order; the ticket's hidden ones are offered in Columns.
+      const headers = await c.page.evaluate(() => [...document.querySelectorAll("#prospects-grid .ag-header-row-column .ag-header-cell[col-id]")].map((h) => h.getAttribute("col-id")).filter((i) => i !== "select"));
+      assert.deepStrictEqual(headers, ["name", "country", "industry", "priority", "storeCount", "linkedin", "status", "actions"], "default columns");
+      for (const id of ["subIndustry", "hqCountry", "awsRegion", "sizeBand", "storePresence", "ownership", "insights", "decisionMakers", "contacts", "source", "vendors", "campaigns"]) assert.strictEqual(await c.page.locator(`#prospects-grid .ag-header-cell[col-id="${id}"]`).count(), 0, `${id} is hidden by default`);
+      // No search box: all filtering is in the column filters.
+      assert.strictEqual(await c.page.locator("#prospects-q").count(), 0, "no separate search box");
+      // The company is a button that opens the drawer; LinkedIn is an icon link only where there is a page.
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pa"] [col-id="name"] button.prospect-name-btn').count(), 1);
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pa"] [col-id="linkedin"] a[href="https://www.linkedin.com/company/alpha-grocer/"]').count(), 1);
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pb"] [col-id="linkedin"] a').count(), 0);
+      // Company filter, with its × to clear.
+      const clearBtn = (col) => c.page.locator(`#prospects-grid .prospect-clear[data-clear-col="${col}"]`);
+      assert.ok(!(await clearBtn("name").isVisible()), "no × while the filter is empty");
+      await c.page.fill('#prospects-grid input[aria-label="Company Filter Input"]', "Beta");
+      await until(async () => (await rowIds()) === "pb", "the Company filter to apply", 5000);
       assert.strictEqual(await count(), "1 of 3 Prospects");
-      await c.page.fill("#prospects-q", "");
-      await until(async () => (await rowIds()) === "pa,pb,pc", "the search to clear", 5000);
-      await c.page.fill('#prospects-grid input[aria-label="Markets Filter Input"]', "Ireland");
-      await until(async () => (await rowIds()) === "pa,pc", "the Markets filter to apply", 5000);
-      // The AWS region floating filter is a dropdown.
-      await c.page.selectOption('select[aria-label="Filter AWS region"]', "eu-west-3");
-      await until(async () => (await rowIds()) === "pc", "the AWS region filter to apply", 5000);
+      await c.visible('#prospects-grid .prospect-clear[data-clear-col="name"]', "the × appears once the filter has a value");
+      await clearBtn("name").click();
+      await until(async () => (await rowIds()) === "pa,pb,pc", "the × to clear the Company filter", 5000);
+      await until(async () => (await count()) === "3 Prospects", "the count to update after the ×", 5000);
+      assert.ok(!(await clearBtn("name").isVisible()), "the × goes once cleared");
+      // Country (text) and Stores (number) clear the same way.
+      await c.page.fill('#prospects-grid input[aria-label="Country Filter Input"]', "Germany");
+      await until(async () => (await rowIds()) === "pb", "the Country filter to apply", 5000);
+      await clearBtn("country").click();
+      await until(async () => (await rowIds()) === "pa,pb,pc", "the × to clear the Country filter", 5000);
+      await c.page.fill('#prospects-grid input[aria-label="Stores Filter Input"]', "400");
+      await until(async () => (await rowIds()) === "pa", "the Stores filter to apply", 5000);
+      await clearBtn("storeCount").click();
+      await until(async () => (await rowIds()) === "pa,pb,pc", "the × to clear the Stores filter", 5000);
+      // A record without country reads as its first market (Gamma Fashion: France).
+      await c.page.fill('#prospects-grid input[aria-label="Country Filter Input"]', "France");
+      await until(async () => (await rowIds()) === "pc", "the legacy record to filter by its first market", 5000);
+      await clearBtn("country").click();
+      await until(async () => (await rowIds()) === "pa,pb,pc", "the Country filter to clear again", 5000);
+      // The Priority floating filter is a dropdown.
+      await c.page.selectOption('select[aria-label="Filter Priority"]', "high");
+      await until(async () => (await rowIds()) === "pa", "the Priority filter to apply", 5000);
       assert.strictEqual(await count(), "1 of 3 Prospects");
       // Save the filter, clear, reapply from Saved filters.
       await c.page.click("#prospects-saved-btn");
       await c.page.click('[data-pop="savefilter"]');
-      await c.page.fill("#dialog-field-0", "Ireland west-3");
+      await c.page.fill("#dialog-field-0", "High priority");
       await c.click("#dialog-ok", "Save filter");
       await c.page.click("#prospects-saved-btn");
       await c.page.click('[data-pop="reset"]');
       await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to show everything again", 5000);
       await c.page.click("#prospects-saved-btn");
-      await c.page.click('[data-pop="apply"][data-arg="Ireland west-3"]');
-      await until(async () => (await rowIds()) === "pc", "the saved filter to apply", 5000);
+      await c.page.click('[data-pop="apply"][data-arg="High priority"]');
+      await until(async () => (await rowIds()) === "pa", "the saved filter to apply", 5000);
       await c.page.click("#prospects-saved-btn");
       await c.page.click('[data-pop="reset"]');
       await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to show everything again", 5000);
@@ -1252,8 +1276,18 @@ const scenarios = [
       await c.page.click("#prospects-columns-btn");
       await c.page.check('[data-pop="col"][data-arg="campaigns"]');
       await c.visible('#prospects-grid .ag-header-cell[col-id="campaigns"]', "Campaigns shows after choosing it");
+      await c.page.check('[data-pop="col"][data-arg="insights"]');
+      await c.visible('#prospects-grid .ag-header-cell[col-id="insights"]', "Insights shows after choosing it");
+      // Check the truncation styles (not measured overflow, which depends on font metrics and width). The cell renders a beat after the header.
+      const insightsCell = '#prospects-grid .ag-row[row-id="pa"] [col-id="insights"] .prospect-trunc';
+      await until(async () => (await c.page.locator(insightsCell).count()) === 1, "Insights cell to render as truncated text", 5000);
+      const truncStyle = await c.page.locator(insightsCell).evaluate((el) => { const cs = getComputedStyle(el); return [cs.textOverflow, cs.whiteSpace, cs.overflow].join("|"); });
+      assert.strictEqual(truncStyle, "ellipsis|nowrap|hidden", "Insights is truncated text");
       await c.page.keyboard.press("Escape");
       // Bulk: select two rows, set status, export selected.
+      await c.page.click('#prospects-saved-btn');
+      await c.page.click('[data-pop="reset"]');
+      await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to show everything again", 5000);
       await c.page.click('#prospects-grid .ag-row[row-id="pa"] .ag-selection-checkbox input, #prospects-grid .ag-row[row-id="pa"] input[type=checkbox]');
       await c.page.click('#prospects-grid .ag-row[row-id="pb"] .ag-selection-checkbox input, #prospects-grid .ag-row[row-id="pb"] input[type=checkbox]');
       await c.visible("#prospects-bulk", "the bulk bar appears");
@@ -1265,10 +1299,23 @@ const scenarios = [
       await c.page.click("#prospects-export-selected");
       const csv = fs.readFileSync(await (await dl).path());
       assert.ok(csv.includes("Alpha Grocer") && csv.includes("Beta Pharmacy") && !csv.includes("Gamma Fashion"), "Export selected has only the selected rows");
+      // No bulk Convert (it is only in a row's menu), and Converted is not a status you can set.
+      assert.strictEqual(await c.page.locator("#prospects-bulk-convert").count(), 0, "no bulk Convert to lead");
+      assert.strictEqual(await c.page.locator('#prospects-bulk-status option[value="converted"]').count(), 0, "Converted is not offered in the bulk status");
+      // Export for LinkedIn: the selected rows in LinkedIn's Matched Audiences format.
+      const dl2 = c.page.waitForEvent("download");
+      await c.page.click("#prospects-export-linkedin");
+      const li = fs.readFileSync(await (await dl2).path(), "utf8").trim().split("\r\n");
+      assert.strictEqual(li[0], "companyname,companywebsite,companyemaildomain,linkedincompanypageurl,stocksymbol,industry,city,state,companycountry,zipcode");
+      assert.strictEqual(li.length, 3, "one line per selected row");
+      assert.ok(li.some((l) => l.startsWith("Alpha Grocer,https://alpha.example,alpha.example,https://www.linkedin.com/company/alpha-grocer/,,Grocery,,,United Kingdom,")), li.join("|"));
       await c.page.click('#prospects-grid .ag-header-cell[col-id="select"] input[type=checkbox]');
       await c.page.click('#prospects-grid .ag-header-cell[col-id="select"] input[type=checkbox]');
       // Convert to lead from the row menu: one Leads card linked back, status converted, and no second Convert.
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-row button:not(.um-manage):not(.prospect-name-btn):not(.prospect-clear)").count(), 0, "the row has no Convert button");
       await c.page.evaluate(() => document.querySelector('button[data-prospect-menu="pa"]').click());
+      assert.strictEqual(await c.page.locator('[data-pop="status"][data-arg="converted"]').count(), 0, "Converted is not offered under Set status");
+      assert.ok(await c.page.locator('[data-pop="status"]').count() >= 4, "the other statuses are");
       await c.page.click('[data-pop="convert"]');
       await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").leadId)) === "prospect-pa", "the prospect to link to its lead", 5000);
       const lead = await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("prospect-pa"));
@@ -1282,6 +1329,27 @@ const scenarios = [
       await c.page.keyboard.press("Escape");
       assert.strictEqual(await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].length), 1, "exactly one lead");
       // The Leads board shows it, and its drawer links back to the prospect.
+      assert.deepStrictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("prospect-pa").company.countries), ["United Kingdom"], "the lead covers that record's country");
+      // The drawer: every field, contacts table, insights; Priority saves from there.
+      await c.page.evaluate(() => document.querySelector('button[data-prospect-open="pa"]').click());
+      await c.visible("#prospect-drawer", "clicking a company opens the drawer");
+      const dtext = await c.text("#prospect-drawer");
+      for (const want of ["Alpha Grocer", "United Kingdom", "Grocery", "Head of Retail Media", "Listed", "400+ stores", "Strong digital signage appetite.", "1234", "Jo Bloggs", "CMO", "May 2026", "alpha-grocer"]) assert.ok(dtext.includes(want), `the drawer shows ${want}`);
+      assert.strictEqual(await c.page.locator("#prospect-sum-contacts table tbody tr").count(), 1, "contacts table");
+      await c.page.selectOption("#prospect-priority", "low");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").priority)) === "low", "the priority to save", 5000);
+      // Edit form: change Store presence; the count follows; a search URL is refused.
+      await c.click("#prospect-drawer-edit", "Edit in the drawer");
+      await c.page.fill("#pf-storePresence", "~2,800");
+      await c.page.fill("#pf-linkedinUrl", "https://www.linkedin.com/search/results/companies/?keywords=alpha");
+      await c.click("#prospect-drawer-save", "Save");
+      assert.ok((await c.text("#prospect-drawer-status")).includes("LinkedIn"), "a search URL is refused");
+      await c.page.fill("#pf-linkedinUrl", "linkedin.com/company/Alpha-Grocer-UK");
+      await c.click("#prospect-drawer-save", "Save");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").storeCount)) === 2800, "the store count to follow Store presence", 5000);
+      assert.strictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").linkedinUrl), "https://www.linkedin.com/company/alpha-grocer-uk/");
+      await c.page.keyboard.press("Escape");
+      await c.page.waitForSelector("#prospect-drawer", { state: "hidden" });
       await c.page.evaluate(() => { location.hash = "#promote/leads"; });
       await c.visible('.lead-lane[data-stage="lead"] .lead-card[data-lead-id="prospect-pa"]', "the converted prospect is on the Leads board");
       await c.page.click('.lead-card[data-lead-id="prospect-pa"]');

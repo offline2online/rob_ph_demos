@@ -2538,10 +2538,15 @@ every destination already existed.
   rules in `prospects-core.js` copied to `functions/prospects-core.js` by
   `node test/prospects-core-copy.mjs --write`, starter data in
   `prospects-seed.js`): the global target-company database as an AG Grid below
-  Leads, built like User Management › Users (floating filters, checkbox column
-  with a bulk bar, pinned "⋯" row menu, pagination), with quick search, a
-  Columns chooser, saved filters (grid filter model + sort, per browser), CSV
-  export and **Convert to lead** that writes one linked Leads card (`prospect-<id>`).
+  Leads, built like User Management › Users (floating filters with a × to clear
+  each text and number filter and no separate search box, checkbox column with a
+  bulk bar, pinned "⋯" row menu, pagination), with a Columns chooser, saved
+  filters (grid filter model + sort, per browser), CSV export, **Export for
+  LinkedIn** (Campaign Manager Matched Audiences company list), a right-hand
+  detail drawer per company, and **Convert to lead** (row menu only) that writes
+  one linked Leads card (`prospect-<id>`). One record per company per country
+  (ALDI · Australia, ALDI · Netherlands); priority, store presence, ownership,
+  insights, decision makers, LinkedIn page and contacts are fields on it.
   Firestore `prospects/{id}`; own permission section `prospects` in
   User Management › Roles. Agents use `list_prospects` and `upsert_prospects`
   (`functions/prospects.js`). See REQUIREMENTS.md → Promote section: Prospects (TAM).
