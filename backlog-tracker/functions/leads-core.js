@@ -15,6 +15,8 @@
 //   prospectId     the Prospects (TAM) record it was converted from, else absent
 //   enrichment     { at, by, techStack[], summary, sources[{source,status,message}] }
 //   test           true for a lead submitted with the website's test flag
+//   sourceLabel / sourceDetail  which website form ("Interactive product tour – Telco") and demo ("Personalisation"), "" when not sent
+//   websiteActivity[]  { at (ISO), label, detail, page }, every website submission, the 20 newest
 //   sourcePage / sourceIndustry  the page and industry a website lead came from
 //   createdAt / updatedAt / stageChangedAt / createdByEmail / updatedByEmail
 
@@ -38,7 +40,7 @@ const BUYING_ROLES = [
 ];
 const BUYING_ROLE_KEYS = BUYING_ROLES.map((r) => r.key);
 
-const LIMITS = { name: 120, website: 300, industry: 120, source: 80, jobTitle: 120, email: 200, linkedin: 300, countries: 60, contacts: 25, country: 60 };
+const LIMITS = { name: 120, website: 300, industry: 120, source: 80, sourceLabel: 120, sourceDetail: 120, activity: 20, jobTitle: 120, email: 200, linkedin: 300, countries: 60, contacts: 25, country: 60 };
 
 const stageLabel = (key) => (STAGES.find((s) => s.key === key) || { label: String(key || "") }).label;
 const roleLabel = (key) => (BUYING_ROLES.find((r) => r.key === key) || { label: "" }).label;
@@ -170,7 +172,10 @@ function leadFromWebsite(p) {
   const page = str(x.page || x.pageUrl || x.page_url, 300);
   return {
     errors: [], test,
-    fields: { ...r.fields, source: "website", sourcePage: page, sourceIndustry: str(x.pageIndustry || x.page_industry || x.industry, LIMITS.industry), test },
+    fields: {
+      ...r.fields, source: "website", sourcePage: page, sourceIndustry: str(x.pageIndustry || x.page_industry || x.industry, LIMITS.industry), test,
+      sourceLabel: str(x.sourceLabel || x.source_label, LIMITS.sourceLabel), sourceDetail: str(x.sourceDetail || x.source_detail, LIMITS.sourceDetail),
+    },
     contact: r.fields.contacts[0] || null,
   };
 }
@@ -199,6 +204,10 @@ function normaliseLead(id, d) {
     test: x.test === true,
     sourcePage: String(x.sourcePage || ""),
     sourceIndustry: String(x.sourceIndustry || ""),
+    sourceLabel: String(x.sourceLabel || ""),
+    sourceDetail: String(x.sourceDetail || ""),
+    websiteActivity: (Array.isArray(x.websiteActivity) ? x.websiteActivity : []).filter((a) => a && typeof a === "object")
+      .map((a) => ({ at: typeof a.at === "string" ? a.at : "", atMs: ms(a.at), label: String(a.label || ""), detail: String(a.detail || ""), page: String(a.page || "") })),
     prospectId: String(x.prospectId || ""),
     customerAccount: x.customerAccount && typeof x.customerAccount === "object" ? { id: String(x.customerAccount.id || ""), name: String(x.customerAccount.name || "") } : null,
     enrichment: x.enrichment && typeof x.enrichment === "object" ? x.enrichment : null,

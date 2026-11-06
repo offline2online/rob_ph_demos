@@ -4092,7 +4092,12 @@ Rules:
   `jobTitle`, `email`, `linkedin`) plus `page`, `pageIndustry` and `test`.
   It creates the lead in the Lead lane with `source: "website"`, `sourcePage`
   and `sourceIndustry`, or, for a company already there, fills blanks and adds
-  the contact. A submission with `test` true (a hidden form field the test
+  the contact. Optional `sourceLabel` and `sourceDetail` (≤120 chars each, e.g.
+  "Interactive product tour – Telco" and the demo "Personalisation") are stored
+  on a new lead and fill blanks on a repeat; every submission also appends
+  `{at, label, detail, page}` to `websiteActivity` (20 newest). The lead summary's
+  Source shows "label · detail" and a Website activity list (newest first);
+  `list_leads` returns all three. A submission with `test` true (a hidden form field the test
   link's URL parameter switches on) stores `test: true`: it is never merged
   with a real lead, is refused by Enrich, is left out of `list_leads`, and shows in the
   pipeline with a Test badge like any lead (the Leads/Test buttons and bulk
