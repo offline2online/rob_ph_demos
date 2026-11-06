@@ -2570,7 +2570,7 @@ every destination already existed.
   insights, decision makers, LinkedIn page and contacts are fields on it.
   Firestore `prospects/{id}`; own permission section `prospects` in
   User Management › Roles. Agents use `list_prospects` and `upsert_prospects`
-  (`functions/prospects.js`). A company name opens a detail view (profile, org chart with buying roles and lead overlay, AWS account team, document library; `prospect-detail.js` / `prospect-detail-core.js`), and a lead card shows a compact org chart and AWS team. See REQUIREMENTS.md → Promote section: Prospects (TAM).
+  (`functions/prospects.js`). See REQUIREMENTS.md → Promote section: Prospects (TAM).
 - **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
   any ticket, concept, project or release. Archived tickets are included once
   the archive has been loaded.

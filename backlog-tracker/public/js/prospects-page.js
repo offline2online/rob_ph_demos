@@ -23,8 +23,6 @@ import {
   prospectFromInput, prospectKey, prospectIdFor,
 } from "./prospects-core.js";
 import { SEED_PROSPECTS, SEED_SOURCE } from "./prospects-seed.js";
-import { normaliseDetail } from "./prospect-detail-core.js";
-import { mountProspectDetail } from "./prospect-detail.js";
 
 const $ = (id) => document.getElementById(id);
 const SAVED_KEY = "bt-prospect-grid-filters";
@@ -115,7 +113,6 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
   const status = $("prospects-status");
   const pop = $("prospects-pop");
   let rows = [];
-  let details = new Map(); // id -> the company detail (profile, org chart, AWS team, documents)
   let unsub = null;
   let started = false;
   let grid = null;
@@ -281,19 +278,18 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
   // The "⋯" menu on a row.
   function rowMenu(anchor, p) {
     const item = (act, icon, label, arg) => `<button type="button" role="menuitem" class="prospects-pop-item" data-pop="${act}"${arg ? ` data-arg="${esc(arg)}"` : ""}>${icon ? `<span class="material-symbols-outlined" aria-hidden="true">${icon}</span>` : `<span class="prospects-pop-gap" aria-hidden="true"></span>`}${esc(label)}</button>`;
-    let html = item("profile", "business", "Open company profile");
+    let html = "";
     if (p.leadId) html += item("view", "open_in_new", "View lead");
     else if (canEdit()) html += item("convert", "add", "Convert to lead");
     if (canEdit()) {
       html += `<div class="prospects-pop-sep"></div><div class="prospects-pop-label">Set status</div>`;
       html += SETTABLE.map((s) => item("status", s.key === p.status ? "check_circle" : "", s.label, s.key)).join("");
     }
-    html += `<div class="prospects-pop-sep"></div>` + item("open", "right_panel_open", "Open all fields");
+    html += `<div class="prospects-pop-sep"></div>` + item("open", "right_panel_open", "Open details");
     if (safeUrl(p.website)) html += item("site", "link", "Open website");
     openPop(anchor, html, (act, arg) => {
       closePop();
-      if (act === "profile") openDetail(p.id);
-      else if (act === "view") window.location.hash = "#promote/leads";
+      if (act === "view") window.location.hash = "#promote/leads";
       else if (act === "convert") convert(p.id);
       else if (act === "status") setStatus([p.id], arg);
       else if (act === "open") openDrawer(p.id);
@@ -301,17 +297,6 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       anchor.focus();
     });
   }
-
-  // ── Company detail view ──────────────────────────────────────────────────
-  const detailUi = mountProspectDetail({
-    db, root: $("prospect-detail"), canEdit, me, say,
-    getRow: (id) => rows.find((x) => x.id === id) || null,
-    getRaw: (id) => details.get(id) || null,
-    onAllFields: (id) => openDrawer(id, null),
-    onClose: () => { page.classList.remove("is-detail"); closePop(); },
-  });
-  function openDetail(id, tab) { closePop(); page.classList.add("is-detail"); detailUi.open(id, tab); window.scrollTo(0, 0); }
-  window.addEventListener("hashchange", () => { if (detailUi.isOpen() && window.location.hash !== "#promote/prospects") { detailUi.close(); page.classList.remove("is-detail"); } });
 
   // ── Starter set ──────────────────────────────────────────────────────────
   $("prospects-seed-btn").addEventListener("click", async () => {
@@ -525,14 +510,13 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       span.textContent = params.valueFormatted != null ? params.valueFormatted : params.value == null ? "" : String(params.value);
       return span;
     };
-    // The company name opens the company's detail view; its website is one click further in.
     const company = (params) => {
       const span = document.createElement("span");
       span.className = "prospect-trunc";
       const b = document.createElement("button");
       b.type = "button"; b.className = "prospect-name-btn"; b.dataset.prospectOpen = params.data.id; b.textContent = params.value;
       b.setAttribute("aria-label", `Open details for ${params.data.name} in ${params.data.country}`);
-      b.addEventListener("click", (e) => { e.stopPropagation(); openDetail(params.data.id); });
+      b.addEventListener("click", (e) => { e.stopPropagation(); openDrawer(params.data.id, b); });
       span.appendChild(b);
       return span;
     };
@@ -619,10 +603,8 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
     updateCount();
     unsub = onSnapshot(collection(db, "prospects"), (snap) => {
       rows = snap.docs.map((d) => normaliseProspect(d.id, d.data({ serverTimestamps: "estimate" })));
-      details = new Map(snap.docs.map((d) => [d.id, normaliseDetail(d.data())]));
       updateCount();
       if (drawerId) renderDrawer();
-      detailUi.refresh();
       if (grid) {
         grid.api.setGridOption("rowData", rows);
         const key = distinct((p) => p.awsRegion).join("|");
@@ -630,7 +612,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       } else if (rows.length) ensureGrid();
     }, () => { say("Prospects could not be loaded. Reload the page to try again.", true); });
   }
-  function stop() { closePop(); closeDrawer(false); detailUi.close(); page.classList.remove("is-detail"); if (unsub) unsub(); unsub = null; started = false; }
+  function stop() { closePop(); closeDrawer(false); if (unsub) unsub(); unsub = null; started = false; }
   function render() {
     updateCount();
     if (drawerId) renderDrawer();
