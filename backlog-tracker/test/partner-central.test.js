@@ -73,7 +73,7 @@ check("assumes the role with a web identity token (no stored key) and signs the 
   assert.ok(sts.init.body.includes("AssumeRoleWithWebIdentity") && sts.init.body.includes("WebIdentityToken=google-oidc-token"));
   assert.ok(!/Authorization/i.test(JSON.stringify(sts.init.headers)), "STS call is unsigned");
   const aws = calls[1];
-  assert.strictEqual(aws.url, "https://partnercentral-selling.us-east-1.amazonaws.com/");
+  assert.strictEqual(aws.url, "https://partnercentral-selling.us-east-1.api.aws/");
   assert.strictEqual(aws.init.headers["x-amz-target"], "AWSPartnerCentralSelling.ListOpportunities");
   assert.match(aws.init.headers.authorization, /^AWS4-HMAC-SHA256 Credential=ASIATEST\/\d{8}\/us-east-1\/partnercentral-selling\/aws4_request/);
   assert.strictEqual(aws.init.headers["x-amz-security-token"], "tok");
@@ -110,7 +110,7 @@ check("create sends a client token; update names the identifier", async () => {
 check("benefit drafts go to the Benefits API and no submit operation exists anywhere", async () => {
   const { api, calls } = makeApi();
   await call(api, "POST", "/v1/benefits/drafts", { body: { Title: "x" } });
-  assert.strictEqual(calls[1].init.headers["x-amz-target"], "AWSPartnerCentralBenefits.CreateBenefitApplication");
+  assert.strictEqual(calls[1].init.headers["x-amz-target"], "PartnerCentralBenefitsService.CreateBenefitApplication");
   assert.ok(!Object.keys(OPERATIONS).some((o) => /Submit/i.test(o)));
   await assert.rejects(api.callAws("SubmitBenefitApplication", {}), /not allowed/);
   assert.strictEqual(calls.length, 2, "the refused operation never reached the network");
@@ -122,6 +122,40 @@ check("a refused role assumption reads as not linked yet, and is audited", async
   assert.strictEqual(r.statusCode, 502);
   assert.strictEqual((await call(api, "GET", "/v1/status")).body.state, "not-linked");
   assert.strictEqual((await call(api, "GET", "/v1/audit")).body.entries[0].ok, false);
+});
+
+check("a network failure reports the underlying cause (code and hostname), not just 'fetch failed'", async () => {
+  const errors = [];
+  const db = fakeDb();
+  const fetch = async (url) => {
+    if (url.startsWith("https://sts.amazonaws.com")) return { ok: true, status: 200, text: async () => STS_OK };
+    throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("getaddrinfo ENOTFOUND bad.example"), { code: "ENOTFOUND", hostname: "bad.example" }) });
+  };
+  const api = createPartnerCentralApi({
+    db, fetch, logger: { warn() {}, error: (m, d) => errors.push([m, d]), info() {} },
+    verifyIdToken: async (t) => ({ email: t.slice(4) }), resolveConsoleUser: async (e) => USERS[e] || null,
+    getWebIdentityToken: async () => "t",
+  });
+  const r = await call(api, "POST", "/v1/test");
+  assert.strictEqual(r.statusCode, 502);
+  assert.match(r.body.error, /Couldn't reach bad\.example \(ENOTFOUND\)/);
+  assert.doesNotMatch(r.body.error, /^fetch failed$/);
+  const audit = (await call(api, "GET", "/v1/audit")).body.entries[0];
+  assert.match(audit.error, /ENOTFOUND/);
+  assert.strictEqual(errors[0][1].code, "ENOTFOUND");
+  assert.strictEqual(errors[0][1].hostname, "bad.example");
+  assert.match((await call(api, "GET", "/v1/status")).body.lastError, /ENOTFOUND/);
+});
+
+check("an AWS authorisation error reads as Not linked yet with AWS's own message", async () => {
+  const { api } = makeApi({ awsReply: () => ({ status: 403, body: { __type: "com.amazon.coral.service#AccessDeniedException", message: "Account is not linked to Partner Central" } }) });
+  const r = await call(api, "POST", "/v1/test");
+  assert.strictEqual(r.statusCode, 502);
+  assert.match(r.body.error, /AccessDeniedException: Account is not linked/);
+  const s = (await call(api, "GET", "/v1/status")).body;
+  assert.strictEqual(s.state, "not-linked");
+  assert.match(s.note, /AWS said: AccessDeniedException: Account is not linked/);
+  assert.strictEqual((await call(api, "GET", "/v1/audit")).body.entries[0].awsType, "AccessDeniedException");
 });
 
 check("live catalogue needs an explicit LIVE confirmation, and is then used", async () => {
