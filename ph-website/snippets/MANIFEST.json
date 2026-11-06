@@ -37,8 +37,13 @@
       },
       {
         "name": "legacy-copy-v2.php",
-        "bytes": 36056,
-        "sha256": "db44d57e9e34fff2573eae2f2f131ca8df9705159116343e195a5d35908fc55d"
+        "bytes": 36252,
+        "sha256": "c17fb2ef83c2dcb469efb7965997855235b7d905312ec371db76d99856618ce6"
+      },
+      {
+        "name": "legacy-copy-v3.php",
+        "bytes": 9672,
+        "sha256": "44a90361b13d2020c68cc57e587da91b9cb2dffc2b6bea2187666473c7a8aa7a"
       },
       {
         "name": "llms.php",
@@ -47,8 +52,8 @@
       },
       {
         "name": "main.php",
-        "bytes": 6973,
-        "sha256": "fa19856e6e50f8558328b901f502a7dcc3e55b09869f4c1ab31695b80d750e2a"
+        "bytes": 7019,
+        "sha256": "f0999c1e4a5055ab5bc9763cd779953e5549e8a0f75411563d5bfae7f859df52"
       },
       {
         "name": "md.php",

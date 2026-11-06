@@ -245,12 +245,12 @@ function legacy_copy_v2_targets() {
 	);
 }
 
-/** Regex (no delimiters) matching $s with typography variants treated as equal. */
+/** Regex (no delimiters) matching $s with typography variants treated as equal. A dash token in $s (en/em dash or entity) also matches ---, -- and a plain hyphen, because WordPress stores " - " and wptexturize renders it as " – "; a hyphen inside $s stays literal. */
 function legacy_copy_v2_pattern( $s ) {
 	$classes = array(
 		'apos'  => '(?:’|‘|\'|&#8217;|&#8216;|&#0?39;|&#x27;|&apos;|&rsquo;|&lsquo;)',
 		'quote' => '(?:“|”|"|&quot;|&#0?34;|&#8220;|&#8221;|&ldquo;|&rdquo;)',
-		'dash'  => '(?:–|—|&#8211;|&#8212;|&ndash;|&mdash;)',
+		'dash'  => '(?:---|--|–|—|&#8211;|&#8212;|&ndash;|&mdash;|-)',
 		'space' => '(?:\x{00A0}| |&nbsp;|&#160;)',
 		'amp'   => '(?:&amp;|&#0?38;|&)',
 	);
