@@ -2330,6 +2330,88 @@ body { overflow-x: clip; }
 .prospects-pop-label { padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
 .prospects-pop-check { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 14px; cursor: pointer; }
 
+/* Promote › Prospects (TAM) › company detail view (js/prospect-detail.js) */
+.prospect-name-btn { all: unset; box-sizing: border-box; cursor: pointer; color: var(--primary-text); font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 32px; display: inline-flex; align-items: center; }
+.prospect-name-btn:hover { text-decoration: underline; }
+.prospect-name-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+#prospects-page.is-detail > :not(#prospect-detail):not(#prospects-status) { display: none !important; }
+.prospect-detail[hidden] { display: none; }
+.prospect-detail { display: flex; flex-direction: column; gap: 12px; }
+.pd-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; }
+.pd-head { display: flex; align-items: center; gap: 14px; }
+.pd-logo { width: 56px; height: 56px; object-fit: contain; border-radius: 10px; border: 1px solid var(--border); background: #fff; flex: none; }
+.pd-logo-fallback { display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 20px; color: var(--primary-text); background: var(--primary-tint); }
+.pd-name { margin: 0; font-size: 22px; }
+.pd-name:focus { outline: none; }
+.pd-sub { margin: 2px 0 0; color: var(--text-muted); font-size: 14px; }
+.pd-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.pd-tab { font: inherit; font-size: 14px; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 14px; min-height: 44px; cursor: pointer; color: var(--text-muted); white-space: nowrap; }
+.pd-tab[aria-selected="true"] { color: var(--primary-text); border-bottom-color: var(--primary); }
+.pd-card { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.pd-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.pd-card-head h3 { margin: 0; font-size: 16px; }
+.pd-edit { display: inline-flex; align-items: center; gap: 4px; }
+.pd-edit .material-symbols-outlined, .pd-back .material-symbols-outlined { font-size: 18px; }
+.pd-summary { margin: 0 0 12px; max-width: 75ch; }
+.pd-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px 24px; margin: 0; }
+.pd-field dt { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
+.pd-field dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.pd-none { color: var(--text-muted); font-size: 14px; }
+.pd-chips, .pd-badges, .pd-legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.pd-chip, .pd-eng { font-size: 12px; padding: 2px 8px; border-radius: 9999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
+.pd-role { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; color: #fff; }
+.pd-role-decision-maker { background: #b3261e; }
+.pd-role-champion { background: #1b6e3c; }
+.pd-role-influencer { background: #7a4b00; }
+.pd-role-technical-evaluator { background: #0b5f8a; }
+.pd-role-procurement { background: #5b4b9a; }
+.pd-lead-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: #fff3c4; color: #5c4400; border: 1px solid #e0b92a; }
+.pd-lead-badge .material-symbols-outlined { font-size: 14px; }
+.pd-gaps { list-style: none; margin: 8px 0; padding: 8px 12px; background: #fff3f0; border: 1px solid #f0b4a8; border-radius: 8px; color: #7a1f12; }
+.pd-gaps li { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.pd-legend { margin-bottom: 12px; }
+.pd-tree { list-style: none; margin: 0; padding: 0 0 0 22px; border-left: 2px solid var(--border); }
+.pd-tree-root { padding-left: 0; border-left: 0; }
+.pd-node { margin: 8px 0; }
+.pd-person, .pd-aws-row, .pd-doc { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.pd-person.is-lead { border-color: #e0b92a; background: #fffbea; box-shadow: inset 4px 0 0 #e0b92a; }
+.pd-photo { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; flex: none; background: var(--surface-2); }
+.pd-photo-fallback { display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: var(--primary-text); background: var(--primary-tint); }
+.pd-photo-aws { color: #7a4b00; background: #ffe9c2; }
+.pd-person-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.pd-person-name { overflow-wrap: anywhere; }
+.pd-person-title { font-size: 13px; color: var(--text-muted); }
+.pd-person-actions { display: flex; align-items: center; gap: 4px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.pd-mail, .pd-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border-radius: 8px; color: var(--primary-text); background: none; border: 0; cursor: pointer; font: inherit; font-size: 13px; text-decoration: none; }
+.pd-mail:hover, .pd-toggle:hover { background: var(--primary-tint); }
+.pd-aws, .pd-docs, .pd-docs ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pd-engages { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text); }
+.pd-engages .material-symbols-outlined, .pd-shared .material-symbols-outlined { font-size: 16px; }
+.pd-doc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.pd-doc-title { font-weight: 600; overflow-wrap: anywhere; }
+.pd-doc.is-latest { background: #fff; }
+.pd-shared { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.pd-older > summary { cursor: pointer; font-size: 13px; color: var(--primary-text); min-height: 32px; display: flex; align-items: center; }
+.pd-form { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
+.pd-form h3 { margin: 0; }
+.pd-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+.pd-input { font: inherit; font-weight: 400; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; min-height: 40px; background: #fff; }
+.pd-fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.pd-check { display: flex; align-items: center; gap: 8px; font-size: 14px; min-height: 32px; }
+.pd-form-error { margin: 0; color: var(--danger, #c62828); font-size: 14px; }
+.pd-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pd-danger { color: var(--danger, #c62828); display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 640px) { .pd-person, .pd-aws-row, .pd-doc { flex-wrap: wrap; } .pd-person-actions { width: 100%; justify-content: flex-start; } }
+
+/* The compact org chart and AWS team on a lead card (js/leads-page.js) */
+.lead-card-detail { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-size: 12px; }
+.lead-card-detail .pd-badges { gap: 4px; }
+.lead-card-gap { color: #7a1f12; display: flex; align-items: center; gap: 4px; }
+.lead-card-gap .material-symbols-outlined { font-size: 14px; }
+.lead-card-aws { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; color: var(--text); }
+.lead-card-aws a { color: var(--primary-text); display: inline-flex; vertical-align: middle; }
+.lead-card-aws .material-symbols-outlined { font-size: 14px; }
+
 /* Promote › Leads */
 .leads-board-wrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px 8px; }
 .leads-board { display: grid; grid-template-columns: repeat(6, 236px); gap: 12px; align-items: start; }
@@ -2403,3 +2485,4 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
   #prospect-drawer-backdrop { z-index: 40; }
   .prospect-form input[type=text], .prospect-form select, .prospect-form textarea, #prospect-priority { min-height: 44px; font-size: 16px; }
 }
+.pd-toprow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }

@@ -14,6 +14,7 @@ import {
   STAGES, BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
   companyLine, conversionFields, isStage,
 } from "./leads-core.js";
+import { normaliseDetail, compactSummary, mailto } from "./prospect-detail-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -31,6 +32,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
+  const detailCache = new Map(); // prospectId -> the company detail (org chart, AWS team), read once per lead
 
   const me = () => String((auth.currentUser && auth.currentUser.email) || "").toLowerCase();
   const memberName = (email) => {
@@ -44,6 +46,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     unsub = onSnapshot(collection(db, "leads"), (snap) => {
       leads = snap.docs.map((d) => normaliseLead(d.id, d.data({ serverTimestamps: "estimate" })));
       render();
+      loadDetails();
     }, () => { board.innerHTML = '<p class="promote-empty">Leads could not be loaded. Reload the page to try again.</p>'; });
     getDocs(collection(db, "memberDirectory")).then((snap) => {
       members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).filter((m) => !m.disabled);
@@ -52,6 +55,27 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     fillStages();
   }
   function stop() { if (unsub) unsub(); unsub = null; started = false; }
+
+  // The compact org chart and AWS team on a card come from the lead's prospect record.
+  function loadDetails() {
+    for (const l of leads) {
+      if (!l.prospectId || detailCache.has(l.prospectId)) continue;
+      detailCache.set(l.prospectId, null);
+      getDoc(doc(db, "prospects", l.prospectId)).then((s) => { if (s.exists()) { detailCache.set(l.prospectId, normaliseDetail(s.data())); render(); } }).catch(() => {});
+    }
+  }
+  function compactHTML(l) {
+    const d = l.prospectId && detailCache.get(l.prospectId);
+    if (!d) return "";
+    const c = compactSummary(d, l);
+    if (c.empty) return "";
+    const aws = c.aws.map((m) => { const href = mailto(m.email, `${l.company.name} opportunity`); return `<span title="${esc(m.role)}">${esc(m.name)}${href ? ` <a href="${esc(href)}" aria-label="Email ${esc(m.name)}" title="Email ${esc(m.name)}"><span class="material-symbols-outlined" aria-hidden="true">mail</span></a>` : ""}</span>`; }).join("");
+    return `<div class="lead-card-detail">
+      ${c.peopleCount ? `<div class="pd-badges" title="Org chart: ${c.peopleCount} ${c.peopleCount === 1 ? "person" : "people"}">${c.roles.map((r) => `<span class="pd-role pd-role-${esc(r.key)}" title="${esc(r.label)}">${esc(r.label)} ${r.count}</span>`).join("")}</div>` : ""}
+      ${c.gaps.length ? `<span class="lead-card-gap"><span class="material-symbols-outlined" aria-hidden="true">warning</span>${esc(c.gaps[0])}</span>` : ""}
+      ${c.aws.length ? `<div class="lead-card-aws"><span class="visually-hidden">AWS team:</span>${aws}${c.awsMore ? ` <span>+${c.awsMore}</span>` : ""}</div>` : ""}
+    </div>`;
+  }
 
   // ── The board ───────────────────────────────────────────────────────────
   const initials = (nameOrEmail) => {
@@ -69,6 +93,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       <h4 class="lead-card-name">${esc(l.company.name)}</h4>
       <div class="lead-card-chips"><span class="lead-chip" title="${esc(industryChipText(l))}">${esc(industryChipText(l))}</span>${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
       ${line ? `<p class="lead-card-line">${esc(line)}</p>` : ""}
+      ${compactHTML(l)}
       <div class="lead-card-foot">
         <span class="lead-card-who" title="${esc(who || "Unassigned")}">${who ? `<span class="lead-avatar" aria-hidden="true">${esc(initials(who))}</span><span class="visually-hidden">${esc(who)}</span>` : "Unassigned"}</span>
         <span class="lead-card-source" title="${esc(sourceLabel(l))}"><span class="material-symbols-outlined" aria-hidden="true">${isWebsite(l) ? "public" : "edit"}</span>${esc(sourceLabel(l))}</span>
@@ -128,6 +153,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (id) moveTo(id, lane.dataset.stage);
   });
   board.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest(".lead-card-detail a")) return; // an email link on the card just sends the email
     const card = e.target.closest && e.target.closest(".lead-card");
     if (card) openSummary(card.dataset.leadId);
   });

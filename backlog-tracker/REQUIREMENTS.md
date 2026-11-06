@@ -4179,3 +4179,40 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
 - Sandbox catalogue by default; the live AWS catalogue only by an explicit admin `LIVE` confirmation.
 - Settings shows connected / not linked yet / error, the catalogue, the last successful call and an audit log of every call (`partnerCentralAudit`); CloudTrail records the AWS side.
 - Dependency (manual): link the Partner Central account to the AWS account and map the role to a Partner Central user role.
+
+### Prospects (TAM): company detail view (6 Nov 2026)
+
+- A company name in the Prospects grid is a button that opens that company's
+  detail view in place (the grid hides; **All prospects** returns). The row
+  "⋯" menu has **Open company** too. A lead's company is the same record
+  (`leads.prospectId` → `prospects/{id}`), so it has the same profile.
+- Four tabs (`public/js/prospect-detail.js`, rules in
+  `public/js/prospect-detail-core.js`, tests `test/prospect-detail.test.mjs`
+  and the Prospects scenario in `test/ui/console-click.test.mjs`):
+  **Profile** (summary, logo, industry, markets, tech stack, existing vendors
+  = the grid's `vendors`, primary cloud, email formats, likely products, latest
+  news, staff owner, last researched); **Org chart** (collapsible reporting
+  tree, a card per person with photo or initials, name, title and a buying-role
+  badge: decision maker, champion, influencer, technical evaluator,
+  procurement); **AWS account team** (role, role on the deal, one-click
+  `mailto:` icon, which customer contacts each person engages); **Documents**
+  (industry one-pager, prospect pack, deck, business case, funding document:
+  versioned, dated, tagged, with who it was shared with and a "Shared with
+  AWS" flag; earlier versions are folded under the current one).
+- **Lead overlay**: a person whose email matches a contact on the linked lead
+  is highlighted as a **Lead contact**; engagement (demo, calculator download,
+  website form, meeting) is recorded on the person, and "Demo" is added when
+  the lead is at the Demo stage or later. Gaps are flagged ("No decision maker
+  engaged yet").
+- **Data**: four extra keys on `prospects/{id}`: `profile`, `people[]` (up to
+  200), `awsTeam[]` (30), `aceOpportunity` ({id, sellerName, sellerEmail} or
+  null) and `documents[]` (100). `firestore.rules` `isProspect` allows them.
+  Editors edit in the page; agents can write them with the same shape.
+- **ACE**: the opportunity's seller is shown as the AWS account manager
+  ("From the ACE opportunity"); a manual row with the same email wins. Until
+  the ACE opportunities sync writes `aceOpportunity`, an editor sets the seller
+  in Edit profile.
+- **Lead card**: a lead with a prospect record shows a compact block: buying-role
+  counts, the first gap, and up to four AWS contacts with email icons.
+- Not done: MCP tools for the new keys (`upsert_prospects` still writes the grid
+  fields only and leaves these untouched).

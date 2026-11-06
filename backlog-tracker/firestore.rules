@@ -611,7 +611,8 @@ service cloud.firestore {
     function isProspect(d) {
       return d.keys().hasOnly(["name", "country", "website", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand",
           "priority", "storePresence", "ownership", "insights", "decisionMakers", "linkedinUrl", "linkedinOrgId", "linkedinVerified", "contacts",
-          "vendors", "campaigns", "status", "leadId", "source", "notes", "createdAt", "updatedAt", "createdByEmail", "updatedByEmail"])
+          "vendors", "campaigns", "status", "leadId", "source", "notes", "profile", "people", "awsTeam", "aceOpportunity", "documents",
+          "createdAt", "updatedAt", "createdByEmail", "updatedByEmail"])
         && isNonEmptyBoundedString(d.get("name", null), 120)
         && d.get("country", "") is string && d.get("country", "").size() <= 60
         && d.get("priority", "") in ["", "high", "medium", "low"]
@@ -638,7 +639,13 @@ service cloud.firestore {
         && d.get("status", "new") in ["new", "researching", "targeted", "engaged", "converted", "disqualified"]
         && d.get("leadId", "") is string && d.get("leadId", "").size() <= 120
         && d.get("source", "") is string && d.get("source", "").size() <= 80
-        && d.get("notes", "") is string && d.get("notes", "").size() <= 2000;
+        && d.get("notes", "") is string && d.get("notes", "").size() <= 2000
+        // The company detail view (public/js/prospect-detail.js): the org chart, the AWS team and the document library.
+        && d.get("profile", {}) is map
+        && d.get("people", []) is list && d.get("people", []).size() <= 200
+        && d.get("awsTeam", []) is list && d.get("awsTeam", []).size() <= 30
+        && (d.get("aceOpportunity", null) == null || d.get("aceOpportunity", null) is map)
+        && d.get("documents", []) is list && d.get("documents", []).size() <= 100;
     }
     match /prospects/{prospectId} {
       allow read: if isBoardReader();
