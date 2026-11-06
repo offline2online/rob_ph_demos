@@ -715,14 +715,32 @@ the menu — click it to create one, same flow as the Docs page's own
 Verify this kind of change with `cd backlog-tracker/test && npm run test:ui`: it loads the real, unchanged `backlog-tracker/public/` files in Chromium with the Firebase SDK stubbed (this sandbox's egress blocks `gstatic.com`), at 1280 px and 390 px.
 The harness and how to add a scenario are in `backlog-tracker/test/ui/` and `backlog-tracker/test/README.md`; never point it at the real `backlog-tracker-e4ed2` project.
 
-### iPad taps — a standing rule for every console change (four reports so far)
+### iPad menu dead after a release — the real cause was a cached page (6 Nov 2026)
 
-Rob has reported console links dead on the iPad **four times**: 20 Oct,
-21 Oct, 3 Nov (Staff Kanban and Concepts in the sidebar) and 5 Nov 2026 ("many
-of the links": Settings and User Management tabs, pages added on 4 Nov).
-It kept coming back because each fix covered only the controls named in that
-report: the 3 Nov fix covered the sidebar, so everything added afterwards was
-unprotected. **Chromium with touch emulation never reproduces it; a Chromium
+The fifth report (6 Nov) found the actual cause of the dead iPad menu, and it
+was not tap handling. The console's page at `/` had no Cache-Control rule in
+`backlog-tracker/firebase.json`, so the iPad kept it for up to an hour while
+the scripts were always fetched fresh. After a release that changed the
+page's markup, the new `app.js` ran on the old page, reached for a menu
+button that wasn't there, and stopped. The board still showed; the menu was
+dead. A reload fixed it, and Chromium tests (always fresh files) never could.
+
+- `/` and `**/` are now no-cache, and a failed start reloads once by itself
+  (`reloadOnceAfterBootFailure` in `auth-gate.js`). `test/ui/stale-page.test.mjs`
+  reproduces the iPad failure and must stay green.
+- **Never remove those headers, and never let the page be cached apart from
+  its scripts.** Any new Hosting site or page that loads module scripts gets
+  the same no-cache rule for its page path.
+- **If anything "stops working on the iPad" right after a release, first ask
+  whether a reload fixes it.** If it does, it is caching or a start-up error
+  (check the console for "app.js failed to load"), not the control itself.
+
+### iPad taps — a standing rule for every console change (tap handling; see the cached-page section above first)
+
+Rob reported console links dead on the iPad on 20 Oct, 21 Oct, 3 Nov,
+5 Nov and 6 Nov 2026. The menu breakages after releases were the cached page
+above. The tap handling below is still needed for iPad WebKit's own tap
+behaviour, and must stay console-wide. **Chromium with touch emulation never reproduces it; a Chromium
 pass is not evidence it works on the iPad.** The cause is iPad WebKit: it drops
 some taps' clicks, sends `pointercancel` instead of `pointerup`, and delivers
 late clicks re-aimed at whatever is now under the finger.

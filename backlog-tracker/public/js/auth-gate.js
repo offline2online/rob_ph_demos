@@ -475,8 +475,29 @@ async function startApp(user, membership) {
     // error in a bad deploy) used to leave a blank page with no way on.
     started = false;
     console.error("backlog-tracker: app.js failed to load", err);
+    // Most often this is a page cached from an earlier release running
+    // today's scripts: they look for markup the old page lacks and stop, and
+    // the menu and the rest of the console never wire up. That is what left
+    // the iPad's left-hand menu dead after releases (6 Nov 2026; see
+    // REQUIREMENTS.md → "Stale page after a release"). A reload fetches the
+    // page again, so do that once, by itself. The stamp stops a real fault
+    // (a bad deploy, no network) from reloading in a loop.
+    if (reloadOnceAfterBootFailure()) return;
     showRejected("The console didn't finish loading. Check your connection and try again.", { canRetry: true });
   }
+}
+
+// Reload the page once after a failed start; false if that was already
+// tried in the last two minutes (then the error is shown instead).
+const BOOT_RELOAD_KEY = "bt-boot-reload-at";
+export function reloadOnceAfterBootFailure(storage = window.sessionStorage, reload = () => window.location.reload()) {
+  let last = 0;
+  try { last = Number(storage.getItem(BOOT_RELOAD_KEY)) || 0; } catch { return false; }
+  if (Date.now() - last < 120000) return false;
+  try { storage.setItem(BOOT_RELOAD_KEY, String(Date.now())); } catch { return false; }
+  setBootStatus("Updating to the latest version…");
+  reload();
+  return true;
 }
 
 let inFlight = null;

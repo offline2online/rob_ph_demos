@@ -2579,6 +2579,10 @@ every destination already existed.
   the archive has been loaded.
 - Tests: `npm run test:ui` now runs at 1440, 1180, 820 and 390px and includes
   nav reachability, no sideways scroll and Command-K.
+- **Stale page after a release** (6 Nov 2026): the real cause of the dead
+  iPad menu. `/` now has a no-cache header in `firebase.json`, and a failed
+  start reloads once by itself (`auth-gate.js`). `test/ui/stale-page.test.mjs`
+  checks both; see REQUIREMENTS.md → "Stale page after a release".
 - **iPad taps** (3 Nov, widened 5 Nov 2026): every button, link, tab and menu
   item in the console acts on finger-lift through one console-wide handler,
   `installTouchTaps()` in `public/js/touch-click.js`. It survives iPad
