@@ -1172,26 +1172,30 @@
         <h2>Prospects (TAM) <span class="material-symbols-outlined prospects-info" id="prospects-info" tabindex="0" role="img" aria-label="About Prospects (TAM)" title="Every company that could buy Personalisation Hub, worldwide (the total addressable market). Filter to size a market, then use Convert to lead on a row to start working it on the Leads board. Agents add and enrich companies over MCP.">info</span></h2>
         <button type="button" class="btn-primary" id="prospects-seed-btn" data-editor-only hidden>Load starter set</button>
       </div>
-      <div class="prospects-toolbar" role="group" aria-label="Filter prospects">
-        <input type="search" id="prospects-q" class="prospects-q" placeholder="Search prospects" aria-label="Search prospects">
-        <select id="prospects-f-industry" data-all="All industries" aria-label="Industry"></select>
-        <select id="prospects-f-market" data-all="All markets" aria-label="Market or country"></select>
-        <select id="prospects-f-region" data-all="All AWS regions" aria-label="AWS region"></select>
-        <select id="prospects-f-campaign" data-all="All campaigns" aria-label="Campaign"></select>
-        <select id="prospects-f-size" data-all="All sizes" aria-label="Size band"></select>
-        <select id="prospects-f-status" data-all="All statuses" aria-label="Status"></select>
-        <input type="number" min="0" id="prospects-min" class="prospects-num" placeholder="Min stores" aria-label="Minimum store count">
-        <input type="number" min="0" id="prospects-max" class="prospects-num" placeholder="Max stores" aria-label="Maximum store count">
-        <button type="button" class="btn-ghost" id="prospects-clear">Clear</button>
-        <select id="prospects-saved" aria-label="Saved filters"></select>
-        <button type="button" class="btn-ghost" id="prospects-saved-delete" hidden aria-label="Delete this saved filter" title="Delete this saved filter"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
-        <button type="button" class="btn-ghost" id="prospects-save-filter" title="Save the current filters under a name (kept in this browser)">Save filter</button>
-        <button type="button" class="btn-ghost" id="prospects-export" title="Download the rows that match the current filters as a CSV file">Export CSV</button>
-        <span class="prospects-count" id="prospects-count" role="status" aria-live="polite"></span>
+      <div class="um-count" id="prospects-count" role="status" aria-live="polite"></div>
+      <div class="um-toolbar" id="prospects-tools" role="group" aria-label="Prospects tools">
+        <div class="um-search">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="search" id="prospects-q" placeholder="Search prospects" aria-label="Search prospects">
+        </div>
+        <div class="prospects-actions">
+          <button type="button" class="btn-ghost" id="prospects-saved-btn" aria-haspopup="menu" aria-expanded="false" title="Save, apply or delete filters (kept in this browser)">Saved filters</button>
+          <button type="button" class="btn-ghost" id="prospects-columns-btn" aria-haspopup="menu" aria-expanded="false" title="Choose which columns to show">Columns</button>
+          <button type="button" class="btn-ghost" id="prospects-export" title="Download the rows that match the current filters as a CSV file">Export CSV</button>
+        </div>
+      </div>
+      <div class="um-bulk" id="prospects-bulk" data-editor-only hidden>
+        <span id="prospects-bulk-count"></span>
+        <button type="button" class="btn-ghost" id="prospects-bulk-convert">Convert to lead</button>
+        <label class="um-bulk-label" for="prospects-bulk-status">Set status</label>
+        <select id="prospects-bulk-status"></select>
+        <button type="button" class="btn-ghost" id="prospects-bulk-apply">Apply</button>
+        <button type="button" class="btn-ghost" id="prospects-export-selected">Export selected</button>
       </div>
       <p class="field-hint" id="prospects-status" role="status" aria-live="polite"></p>
       <p class="promote-empty" id="prospects-empty" hidden>No prospects yet.</p>
-      <div id="prospects-grid" class="ag-theme-alpine prospects-grid" hidden></div>
+      <div id="prospects-grid" class="ag-theme-alpine um-grid prospects-grid" aria-label="Prospects" hidden></div>
+      <div class="prospects-pop" id="prospects-pop" role="menu" hidden></div>
     </section>
 
     <div class="modal-backdrop lead-drawer-backdrop" id="lead-summary-backdrop" hidden>

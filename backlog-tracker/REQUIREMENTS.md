@@ -4063,8 +4063,8 @@ Rules:
   Personalisation Hub, in one filterable AG Grid, so the team can size the
   market, find targets and turn them into leads. It is its own permission
   section, `prospects` (User Management › Roles): No access hides the nav
-  entry and blocks the route; View hides **Convert to lead** and the status
-  editor; roles saved before it existed keep Edit.
+  entry and blocks the route; View hides the checkboxes, **Convert to lead** and
+  Set status; roles saved before it existed keep Edit.
 - **Data**: `prospects/{id}` = `name` (required), `website`, `industry`,
   `subIndustry`, `hqCountry`, `markets[]` (countries operated in; the HQ
   country is always included), `awsRegion` (defaults from the HQ country),
@@ -4076,12 +4076,27 @@ Rules:
   punctuation). Rules: `prospects-core.js`, copied to
   `functions/prospects-core.js` by `node test/prospects-core-copy.mjs --write`.
   Members read; editors write (`firestore.rules` → `isProspect`).
-- **Grid**: search; filters for industry, market (HQ or operated country),
-  AWS region, campaign, size band, status and a store-count range; sortable
-  columns; **saved filters** (named, kept in the browser); **Export CSV** of
-  the rows the filters match (cells that start like a formula are prefixed so a
-  spreadsheet shows text). Help is an info tooltip beside the title; there is
-  no explanatory copy under the grid. Editors change a row's status in place.
+- **Grid** (6 Nov 2026): the same AG Grid pattern as User Management › Users
+  (`ag-theme-alpine um-grid`; floating filter row; header and floating-filter
+  height 40, row height 48; pagination 25/50/100/250 at the bottom). The count
+  ("129 Prospects", or "N of 129 Prospects" when filtered) sits above the grid
+  with the quick-search box on the left (searches every column) and Saved
+  filters, Columns and Export CSV on the right. Every column filters in the
+  floating row: text columns by "contains", Stores as a number, Markets on the
+  HQ country plus the operated countries, and AWS region, Size band and Status
+  as dropdowns. Sub-industry, Current vendors and Campaigns are hidden by
+  default (Columns chooser). Company is a link only when there is a website;
+  long values truncate with a tooltip. At 1280 px the default columns fit
+  without horizontal scrolling. **Saved filters** (named; the grid's filter
+  model, sort and search text; kept in the browser) are saved, applied and
+  deleted from one menu. **Export CSV** exports the rows the filters match
+  (cells that start like a formula are prefixed so a spreadsheet shows text).
+  Editors also get a checkbox column (header box selects the page) and, with
+  rows selected, a bulk bar: **Convert to lead**, **Set status** and **Export
+  selected**. Each row's pinned-right "⋯" menu has View lead or Convert to
+  lead, Set status and Open website; View-only roles get no checkboxes and no
+  Convert or Set status. Help is an info tooltip beside the title; there is
+  no explanatory copy under the grid.
 - **Convert to lead**: writes one Leads card (stage Lead, source "Prospects
   (TAM)", assigned to the person, `prospectId` on the lead) whose id is derived
   from the prospect (`prospect-<id>`), sets the prospect's `leadId` and status
