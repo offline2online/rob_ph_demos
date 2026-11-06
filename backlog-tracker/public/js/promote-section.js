@@ -58,3 +58,36 @@ export function promoteDocsFor(pageKey, projectDocs) {
   }
   return out;
 }
+
+// Brand Guidelines is a team-facing look-and-feel document. Sections the repo
+// file wraps in agent-only markers are for agents (read over MCP in full) and
+// are dropped from what the page shows. An unclosed start drops the rest.
+export function teamFacingMd(md) {
+  const out = [];
+  let hidden = false;
+  for (const line of String(md || "").split("\n")) {
+    const t = line.trim();
+    if (t === "<!-- agent-only:start -->") { hidden = true; continue; }
+    if (t === "<!-- agent-only:end -->") { hidden = false; continue; }
+    if (!hidden) out.push(line);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// The visual header of the Brand Guidelines page: the four logo bars, the
+// umbrella line, the palette and the type specimen. Static brand facts (the
+// colours are the real brand palette in brand-guidelines.md).
+export const BRAND_PALETTE = [
+  { name: "Teal", hex: "#169BC2" }, { name: "Pink", hex: "#EF60A7" },
+  { name: "Orange", hex: "#FE9226" }, { name: "Green", hex: "#60D838" },
+  { name: "Wordmark grey", hex: "#7B7B7B" },
+];
+export const BRAND_UMBRELLA = "Make every store visit worth more";
+export function brandHeaderHtml() {
+  const bars = BRAND_PALETTE.slice(0, 4).map((c) => `<span class="brand-bar" style="background:${c.hex}"></span>`).join("");
+  const swatches = BRAND_PALETTE.map((c) => `<li class="brand-swatch"><span class="brand-chip" style="background:${c.hex}"></span><span class="brand-swatch-name">${c.name}</span><code>${c.hex}</code></li>`).join("");
+  return `<div class="brand-bars" aria-hidden="true">${bars}</div>`
+    + `<p class="brand-umbrella">${BRAND_UMBRELLA}</p>`
+    + `<ul class="brand-palette" aria-label="Brand palette">${swatches}</ul>`
+    + `<div class="brand-type"><span class="brand-type-name">Kantumruy Pro</span><span class="brand-type-sample">Aa Bb Cc 0123</span></div>`;
+}

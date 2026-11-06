@@ -32,7 +32,7 @@ import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROV
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
 import { renderMarkdown } from "./docs-markdown.js";
-import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES } from "./promote-section.js";
+import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml } from "./promote-section.js";
 import { createDocsList } from "./docs-grid.js";
 import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
 import { SETTINGS_PAGES, FALLBACK_SETTINGS_PAGE, UM_TABS, userManagementRoute, legacyUserManagementHash, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
@@ -10623,10 +10623,15 @@ function renderPromotePage() {
   const docs = promoteDocsFor(page.key, projectDocs);
   const g = document.getElementById("promote-guidelines");
   const r = document.getElementById("promote-requirements");
-  g.innerHTML = docs.guidelines ? renderMarkdown(docs.guidelines.body) : "";
-  r.innerHTML = docs.requirements ? renderMarkdown(docs.requirements.body) : "";
+  // Team view: look and feel only. Agent-only sections stay in the document
+  // for MCP but are stripped here; the Requirements section is not shown.
+  g.innerHTML = docs.guidelines ? renderMarkdown(teamFacingMd(docs.guidelines.body)) : "";
+  r.innerHTML = "";
+  const header = document.getElementById("promote-brand-header");
+  header.innerHTML = brandHeaderHtml();
+  header.hidden = false;
   document.getElementById("promote-empty").hidden = !!docs.guidelines;
-  document.getElementById("promote-requirements-wrap").hidden = !docs.requirements;
+  document.getElementById("promote-requirements-wrap").hidden = true;
 }
 function openPromotePage(key = PROMOTE_PAGES[0].key) {
   if (!pageAllowed(key === "prospects" ? "prospects" : "promote")) return;

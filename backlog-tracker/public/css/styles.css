@@ -2291,6 +2291,17 @@ body { overflow-x: clip; }
 .promote-requirements { max-width: 80ch; margin: 8px 0 24px; }
 .promote-requirements > summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
 .promote-empty { color: #666; }
+.brand-header { max-width: 80ch; margin: 0 0 24px; }
+.brand-bars { display: flex; gap: 6px; height: 10px; margin-bottom: 20px; }
+.brand-bar { flex: 1; border-radius: 5px; }
+.brand-umbrella { font-family: "Kantumruy Pro", Roboto, sans-serif; font-size: 32px; line-height: 1.2; font-weight: 600; margin: 0 0 20px; }
+.brand-palette { list-style: none; display: flex; flex-wrap: wrap; gap: 12px; padding: 0; margin: 0 0 20px; }
+.brand-swatch { display: flex; flex-direction: column; gap: 4px; width: 112px; font-size: 13px; }
+.brand-chip { display: block; height: 56px; border-radius: 8px; }
+.brand-type { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.brand-type-name { font-family: "Kantumruy Pro", Roboto, sans-serif; font-size: 20px; font-weight: 600; }
+.brand-type-sample { font-family: "Kantumruy Pro", Roboto, sans-serif; font-size: 28px; color: #444; }
+@media (max-width: 640px) { .brand-umbrella { font-size: 24px; } }
 
 /* Promote › Prospects (TAM) */
 .prospects-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }

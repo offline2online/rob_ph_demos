@@ -1035,7 +1035,7 @@ const scenarios = [
     name: "Promote: Brand Guidelines opens from the nav and shows the mirrored guidelines",
     seed: () => seed({ projectDocs: {
       bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
-        sourcePrefix: "> Copy of the file.\n\n", contentMd: "> Copy of the file.\n\n# Brand Guidelines\n\n## Founder tone of voice\n\nShort, direct sentences.\n\n## Industry content lives on the website\n\nSee [industries](https://personalisationhub.com/industries/).", createdAt: t(T0), updatedAt: t(T0) },
+        sourcePrefix: "> Copy of the file.\n\n", contentMd: "> Copy of the file.\n\n# Brand Guidelines\n\n## Founder tone of voice\n\nShort, direct sentences.\n\n## Industry content lives on the website\n\nSee [industries](https://personalisationhub.com/industries/).\n\n<!-- agent-only:start -->\n\n## Front doors\n\nAgent rules.\n\n<!-- agent-only:end -->", createdAt: t(T0), updatedAt: t(T0) },
       br: { projectId: PID, name: "6 — Brand Guidelines requirements (Promote)", mirrorKey: "brand-requirements", sourcePath: "backlog-tracker/promote/brand-requirements.md",
         sourcePrefix: "", contentMd: "# Requirements\n\n- R7.1 Founder tone of voice.", createdAt: t(T0), updatedAt: t(T0) },
     } }),
@@ -1045,7 +1045,11 @@ const scenarios = [
       await c.waitText("#promote-guidelines", "Founder tone of voice", "the guidelines show");
       assert.ok(!(await c.text("#promote-guidelines")).includes("Copy of the file"), "the sync's copy line is not shown");
       assert.strictEqual(await c.page.locator('#promote-guidelines a[href="https://personalisationhub.com/industries/"]').count(), 1, "industry content links to the website");
-      await c.visible("#promote-requirements-wrap", "requirements section shows");
+      const gtext = await c.text("#promote-guidelines");
+      assert.ok(!gtext.includes("Front doors") && !gtext.includes("Agent rules") && !gtext.includes("agent-only"), "agent-only sections are not shown");
+      assert.ok((await c.text("#promote-brand-header")).includes("Make every store visit worth more"), "the visual header shows the umbrella line");
+      assert.strictEqual(await c.page.locator("#promote-brand-header .brand-bar").count(), 4, "four brand bars");
+      assert.ok(await c.page.locator("#promote-requirements-wrap").isHidden(), "no Requirements section on the team view");
       assert.ok(new URL(c.page.url()).hash === "#promote/brand-guidelines", "the page has its own URL");
     },
   },
