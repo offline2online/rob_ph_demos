@@ -10,13 +10,14 @@
 
 ## 1. Message library
 - R1.1 One structured library, single source of truth for brand-level external messaging.
-- R1.2 Message house: umbrella line "Turn every store visit into revenue"; value pillars Reduce cost, Maximise revenue, Own your data; launched features grouped under the feature pillars (Know who's in store; Personalise every moment; Campaigns that run themselves; Prove it) on a foundation of self-hosted in the business's own AWS VPC, device-agnostic, 30-day AWS Marketplace trial.
+- R1.2 Message house: umbrella line "Make every store visit worth more"; value pillars Reduce cost, Maximise revenue, Own your data; launched features grouped under the feature pillars (Know who's in store; Personalise every moment; Campaigns that run themselves; Prove it) on a foundation of self-hosted in the business's own AWS VPC, device-agnostic, 30-day AWS Marketplace trial.
 - R1.3 Every message entry keyed by **feature × audience (role) × front door × funnel stage**.
 - R1.4 Audiences covered: champions (marketing directors / senior marketing, retail / store directors, in-store technical ops / retail tech stack owners, digital heads, CX heads); technical (solution architects / IT architecture); gatekeepers (legal / regulatory, procurement, cybersecurity); cloud partner track (AWS SAs, PDMs, account managers, BDMs, and AWS service teams with a launched better-together story).
 - R1.5 **Industry content is out of scope for the brand guidelines.** Industry / vertical USPs, revenue outcomes, use cases and focus live on the personalisationhub.com industry pages as the single source of truth; the guidelines reference those pages and never duplicate them.
 - R1.6 Stages: awareness, consideration, intent — each with its own headline, supporting points, proof and CTA.
 - R1.7 Default intent CTA is the 30-day free trial on AWS Marketplace; book a demo is secondary.
 - R1.8 **Front doors:** for each entry-point need (virtual queuing / appointments, digital signage, insights, check-in / click and collect), a path that starts with the buyer's need and leads to the bigger revenue picture; industry outcome pulled from the relevant website industry page.
+- R1.9 **Team view vs agent view.** Promote › Brand Guidelines shows the team a visual look-and-feel document only (logo usage, colour, infinity loop, typography, imagery and icons, two-surface layout, founder tone of voice, message house). Sections wrapped in `<!-- agent-only:start -->` / `<!-- agent-only:end -->` in `brand-guidelines.md` (messaging rules, content model, front doors, audiences, funnel, distribution, LinkedIn pipeline, templates, asset IDs, AWS co-branding, work in progress) are not displayed; agents still get the whole document over MCP (`get_project_document`). The requirements are not shown on the page either.
 
 ## 2. Templates ↔ library
 - R2.1 Every template tagged with the funnel stage(s) it suits.

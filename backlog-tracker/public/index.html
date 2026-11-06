@@ -18,7 +18,8 @@
        paint, especially on higher-latency mobile connections. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,business,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,contacts,content_copy,content_cut,contract,crop,dashboard,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,insights,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,travel_explore,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,business,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,contacts,content_copy,content_cut,contract,crop,dashboard,deck,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,handshake,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,insights,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,mail,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,people,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,star,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,travel_explore,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/apple.css">
   <link rel="stylesheet" href="css/kanban.css">
@@ -1141,6 +1142,7 @@
         <h2 id="promote-title">Brand Guidelines</h2>
       </div>
       <p class="promote-empty" id="promote-empty" hidden>The brand guidelines are copied here from the repository after each merge to main, and haven't arrived yet. Check back in a few minutes.</p>
+      <div class="brand-header" id="promote-brand-header" hidden></div>
       <article class="docs-md promote-doc" id="promote-guidelines" aria-label="Brand Guidelines"></article>
       <details class="promote-requirements" id="promote-requirements-wrap" hidden>
         <summary>Requirements</summary>
@@ -1158,6 +1160,26 @@
       </div>
       <p class="promote-empty" id="leads-empty" hidden>No leads yet. Add one with the button above.</p>
       <div class="leads-board-wrap"><div class="leads-board" id="leads-board"></div></div>
+
+      <!-- AWS ACE opportunities, laid out like the opportunities list in AWS Partner Central.
+           Rendered by js/leads-page.js from /partnerCentral/v1/ace (the Selling API). -->
+      <section class="ace-section" id="ace-section" aria-labelledby="ace-title">
+        <div class="ace-head">
+          <h3 id="ace-title">AWS ACE opportunities</h3>
+          <button type="button" class="btn-ghost" id="ace-refresh">Refresh</button>
+        </div>
+        <p class="promote-empty" id="ace-status" role="status" aria-live="polite">Loading ACE opportunities…</p>
+        <div class="ace-summary" id="ace-summary" hidden></div>
+        <div class="ace-table-wrap" id="ace-table-wrap" hidden>
+          <table class="ace-table" id="ace-table">
+            <thead><tr>
+              <th scope="col">Opportunity</th><th scope="col">Customer</th><th scope="col">ACE stage</th><th scope="col">Review status</th>
+              <th scope="col" class="ace-num">Score</th><th scope="col" class="ace-num">Expected monthly AWS revenue</th><th scope="col">Target close date</th><th scope="col">AWS account manager</th><th scope="col">Links</th>
+            </tr></thead>
+            <tbody id="ace-body"></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
     <!-- Promote › Prospects (TAM) (#promote/prospects): every possible target company, globally, in one AG Grid
@@ -1187,6 +1209,7 @@
       <p class="promote-empty" id="prospects-empty" hidden>No prospects yet.</p>
       <div id="prospects-grid" class="ag-theme-alpine um-grid prospects-grid" aria-label="Prospects" hidden></div>
       <div class="prospects-pop" id="prospects-pop" role="menu" hidden></div>
+      <div class="prospect-detail" id="prospect-detail" hidden></div>
     </section>
 
     <div class="modal-backdrop lead-drawer-backdrop" id="prospect-drawer-backdrop" hidden>
@@ -1239,6 +1262,8 @@
           <input type="text" id="lead-countries" placeholder="UK, France" autocomplete="off">
           <label class="field-label" for="lead-stores">Store count</label>
           <input type="text" id="lead-stores" inputmode="numeric" autocomplete="off">
+          <label class="field-label" for="lead-aws-account">AWS account ID</label>
+          <input type="text" id="lead-aws-account" maxlength="14" inputmode="numeric" placeholder="12 digits, if known" autocomplete="off">
 
           <h3 class="lead-section">Contacts</h3>
           <div id="lead-contacts"></div>

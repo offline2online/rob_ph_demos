@@ -179,6 +179,25 @@ t("the CSV export carries the new columns", () => {
   for (const col of ["Country", "Priority", "Store presence", "Ownership", "Insights", "Decision makers", "Contacts", "LinkedIn page", "LinkedIn org id", "LinkedIn verified"]) assert.ok(h.split(",").includes(col), col);
   assert.ok(row.includes("Jo / CMO / May") && row.includes("High"));
 });
+t("AWS account ID: exactly 12 digits, tidied, optional, on the record and its contacts", () => {
+  assert.equal(C.normaliseAwsAccountId(" 1234-5678 9012 "), "123456789012");
+  assert.equal(C.normaliseAwsAccountId(""), "");
+  for (const bad of ["12345", "1234567890123", "12345678901a", "abcdefghijkl"]) assert.equal(C.normaliseAwsAccountId(bad), null, bad);
+  const ok = C.prospectFromInput({ name: "ALDI", country: "Australia", awsAccountId: "1234-5678-9012", contacts: [{ name: "Jo", role: "CMO", awsAccountId: "210987654321" }, { name: "Sam" }] });
+  assert.deepEqual(ok.errors, []);
+  assert.equal(ok.fields.awsAccountId, "123456789012");
+  assert.deepEqual(ok.fields.contacts, [{ name: "Jo", role: "CMO", lastContact: "", awsAccountId: "210987654321" }, { name: "Sam", role: "", lastContact: "" }]);
+  assert.match(C.prospectFromInput({ name: "ALDI", country: "Australia", awsAccountId: "42" }).errors.join(" "), /exactly 12 digits/);
+  assert.match(C.prospectFromInput({ name: "ALDI", country: "Australia", contacts: [{ name: "Jo", awsAccountId: "x" }] }).errors.join(" "), /Jo: AWS account ID must be exactly 12 digits/);
+  // An update that does not mention it keeps it; sending "" clears it.
+  const have = C.normaliseProspect("a", ok.fields);
+  assert.equal(C.prospectFromInput({ priority: "high" }, have).fields.awsAccountId, "123456789012");
+  assert.equal(C.prospectFromInput({ awsAccountId: "" }, have).fields.awsAccountId, "");
+  const csv = C.toCsv([have]).trim().split("\r\n");
+  assert.ok(csv[0].split(",").includes("AWS account ID"));
+  assert.ok(csv[1].includes("123456789012") && csv[1].includes("AWS 210987654321"));
+  assert.equal(C.leadFieldsFromProspect(have, "x@y.z").company.awsAccountId, "123456789012", "a converted lead starts with the company's account ID");
+});
 t("converting: one stable lead id per prospect, linked both ways", () => {
   const p = rows[0];
   assert.equal(C.leadIdForProspect("a"), C.leadIdForProspect("a"));

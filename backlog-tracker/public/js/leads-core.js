@@ -3,8 +3,8 @@
 // only: no DOM, no Firestore, so test/leads.test.mjs drives them directly.
 //
 // One document per company in `leads/{id}`:
-//   company        { name, website, industry, countries[], storeCount|null }
-//   contacts[]     { id, name, jobTitle, buyingRole, email, linkedin, enrichment? }
+//   company        { name, website, industry, countries[], storeCount|null, awsAccountId (12 digits or "") }
+//   contacts[]     { id, name, jobTitle, buyingRole, email, linkedin, awsAccountId (12 digits or ""), enrichment? }
 //   stage          one of STAGES
 //   source         where it came from ("Website form", "Manual", ...)
 //   assignee       a member's email, or ""
@@ -75,15 +75,24 @@ export function normaliseUrl(v) {
   return u.href.replace(/\/$/, "");
 }
 
+// An AWS account ID is exactly 12 digits ("1234-5678-9012" and spaces are tidied
+// to "123456789012"). "" when blank; null when it can't be one.
+export function normaliseAwsAccountId(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (!s) return "";
+  const digits = s.replace(/[\s-]/g, "");
+  return /^\d{12}$/.test(digits) ? digits : null;
+}
+
 export function newContactId() { return `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
 
 export function blankContact() {
-  return { id: newContactId(), name: "", jobTitle: "", buyingRole: "", email: "", linkedin: "" };
+  return { id: newContactId(), name: "", jobTitle: "", buyingRole: "", email: "", linkedin: "", awsAccountId: "" };
 }
 
 export function blankLead(email = "") {
   return {
-    company: { name: "", website: "", industry: "", countries: [], storeCount: null },
+    company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" },
     contacts: [blankContact()],
     stage: DEFAULT_STAGE, source: "Manual", assignee: email || "", customerAccount: null,
   };
@@ -100,6 +109,8 @@ export function leadFromForm(form) {
   if (website === null) errors.push("Website isn't a valid address.");
   const storeCount = parseStoreCount(f.storeCount);
   if (Number.isNaN(storeCount)) errors.push("Store count must be a number.");
+  const companyAws = normaliseAwsAccountId(f.awsAccountId);
+  if (companyAws === null) errors.push("Company AWS account ID must be exactly 12 digits.");
   const stage = f.stage == null || f.stage === "" ? DEFAULT_STAGE : f.stage;
   if (!isStage(stage)) errors.push("Pick a stage from the list.");
   const contacts = [];
@@ -108,16 +119,18 @@ export function leadFromForm(form) {
   rows.forEach((c, i) => {
     const row = c || {};
     const cname = str(row.name, LIMITS.name);
-    const blank = !cname && !str(row.email, LIMITS.email) && !str(row.jobTitle, LIMITS.jobTitle) && !str(row.linkedin, LIMITS.linkedin);
+    const blank = !cname && !str(row.email, LIMITS.email) && !str(row.jobTitle, LIMITS.jobTitle) && !str(row.linkedin, LIMITS.linkedin) && !str(row.awsAccountId, 20);
     if (blank) return; // an untouched row is not a contact
     if (!cname) { errors.push(`Contact ${i + 1} needs a name.`); return; }
     const email = str(row.email, LIMITS.email);
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push(`${cname}: that email address isn't valid.`);
     const linkedin = normaliseUrl(row.linkedin);
     if (linkedin === null) errors.push(`${cname}: LinkedIn isn't a valid address.`);
+    const awsAccountId = normaliseAwsAccountId(row.awsAccountId);
+    if (awsAccountId === null) errors.push(`${cname}: AWS account ID must be exactly 12 digits.`);
     const buyingRole = row.buyingRole || "";
     if (buyingRole && !BUYING_ROLE_KEYS.includes(buyingRole)) errors.push(`${cname}: pick a buying role from the list.`);
-    const contact = { id: str(row.id, 40) || newContactId(), name: cname, jobTitle: str(row.jobTitle, LIMITS.jobTitle), buyingRole, email, linkedin: linkedin || "" };
+    const contact = { id: str(row.id, 40) || newContactId(), name: cname, jobTitle: str(row.jobTitle, LIMITS.jobTitle), buyingRole, email, linkedin: linkedin || "", awsAccountId: awsAccountId || "" };
     if (row.enrichment && typeof row.enrichment === "object") contact.enrichment = row.enrichment;
     contacts.push(contact);
   });
@@ -125,7 +138,7 @@ export function leadFromForm(form) {
   return {
     errors: [],
     fields: {
-      company: { name, website: website || "", industry: str(f.industry, LIMITS.industry), countries: parseCountries(f.countries), storeCount },
+      company: { name, website: website || "", industry: str(f.industry, LIMITS.industry), countries: parseCountries(f.countries), storeCount, awsAccountId: companyAws || "" },
       contacts,
       stage,
       source: str(f.source, LIMITS.source) || "Manual",
@@ -169,10 +182,12 @@ export function normaliseLead(id, d) {
       name: String(c.name || ""), website: String(c.website || ""), industry: String(c.industry || ""),
       countries: Array.isArray(c.countries) ? c.countries.map(String) : [],
       storeCount: typeof c.storeCount === "number" ? c.storeCount : null,
+      awsAccountId: String(c.awsAccountId || ""),
     },
     contacts: (Array.isArray(x.contacts) ? x.contacts : []).map((k) => ({
       id: String((k && k.id) || ""), name: String((k && k.name) || ""), jobTitle: String((k && k.jobTitle) || ""),
       buyingRole: String((k && k.buyingRole) || ""), email: String((k && k.email) || ""), linkedin: String((k && k.linkedin) || ""),
+      awsAccountId: String((k && k.awsAccountId) || ""),
       enrichment: k && k.enrichment && typeof k.enrichment === "object" ? k.enrichment : null,
     })),
     stage: isStage(x.stage) ? x.stage : DEFAULT_STAGE,

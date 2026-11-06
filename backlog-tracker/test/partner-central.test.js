@@ -3,7 +3,7 @@
 // Run: node test/partner-central.test.js
 "use strict";
 const assert = require("assert");
-const { createPartnerCentralApi, signRequest, OPERATIONS } = require("../functions/partner-central");
+const { createPartnerCentralApi, signRequest, normaliseOpportunity, OPERATIONS } = require("../functions/partner-central");
 
 function fakeDb() {
   const state = {};
@@ -132,6 +132,38 @@ check("live catalogue needs an explicit LIVE confirmation, and is then used", as
   await call(api, "GET", "/v1/opportunities");
   assert.strictEqual(JSON.parse(calls[1].init.body).Catalog, "AWS");
   assert.strictEqual((await call(api, "GET", "/v1/status")).body.catalog, "AWS");
+});
+
+const SUMMARY = { Id: "O1", LifeCycle: { Stage: "Qualified", ReviewStatus: "Approved", TargetCloseDate: "2026-12-31" }, Customer: { Account: { CompanyName: "Acme Retail" } }, Project: { Title: "Menu boards" } };
+const DETAIL = { ...SUMMARY, Project: { Title: "Menu boards", ExpectedCustomerSpend: [{ Amount: "1200", CurrencyCode: "USD", Frequency: "Monthly" }, { Amount: "12000", CurrencyCode: "USD", Frequency: "Yearly" }] }, AwsTeam: [{ FirstName: "Ann", LastName: "Lee", Email: "ann@amazon.com", BusinessTitle: "Account Manager" }], AwsOpportunityInsights: { Score: 82 } };
+
+check("the ACE rows join the list with each opportunity's detail", () => {
+  const r = normaliseOpportunity(SUMMARY, DETAIL);
+  assert.deepStrictEqual(
+    { id: r.id, name: r.name, customer: r.customer, stage: r.stage, reviewStatus: r.reviewStatus, score: r.score, close: r.targetCloseDate, mo: r.expectedMonthly, seller: r.awsSeller.email },
+    { id: "O1", name: "Menu boards", customer: "Acme Retail", stage: "Qualified", reviewStatus: "Approved", score: 82, close: "2026-12-31", mo: { amount: 2200, currency: "USD" }, seller: "ann@amazon.com" });
+  assert.strictEqual(r.partnerCentralUrl, "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O1");
+  const bare = normaliseOpportunity({ Id: "O2" }, null);
+  assert.strictEqual(bare.awsSeller, null); assert.strictEqual(bare.score, null); assert.strictEqual(bare.expectedMonthly, null);
+});
+
+check("GET /v1/ace is open to editors but not signed-out callers, pages the list and fetches each detail", async () => {
+  const { api, calls } = makeApi({ awsReply: (url, init) => (init.headers["x-amz-target"].endsWith("GetOpportunity") ? { status: 200, body: DETAIL } : { status: 200, body: { OpportunitySummaries: [SUMMARY] } }) });
+  assert.strictEqual((await call(api, "GET", "/v1/ace", { token: "" })).statusCode, 401);
+  const r = await call(api, "GET", "/v1/ace", { token: "ed@x.com" });
+  assert.strictEqual(r.statusCode, 200);
+  assert.strictEqual(r.body.opportunities.length, 1);
+  assert.strictEqual(r.body.opportunities[0].awsSeller.name, "Ann Lee");
+  assert.deepStrictEqual(calls.filter((c) => c.url.includes("selling")).map((c) => c.init.headers["x-amz-target"].split(".")[1]), ["ListOpportunities", "GetOpportunity"]);
+  assert.strictEqual((await call(api, "POST", "/v1/opportunities", { token: "ed@x.com", body: {} })).statusCode, 403, "writes stay admin only");
+});
+
+check("a detail call that fails leaves the row with what the list gave", async () => {
+  const { api } = makeApi({ awsReply: (url, init) => (init.headers["x-amz-target"].endsWith("GetOpportunity") ? { status: 500, body: { message: "boom" } } : { status: 200, body: { OpportunitySummaries: [SUMMARY] } }) });
+  const r = await call(api, "GET", "/v1/ace");
+  assert.strictEqual(r.statusCode, 200);
+  assert.strictEqual(r.body.opportunities[0].customer, "Acme Retail");
+  assert.strictEqual(r.body.opportunities[0].awsSeller, null);
 });
 
 check("SigV4 matches a recomputation and is deterministic", () => {

@@ -575,6 +575,26 @@ service cloud.firestore {
       return (!("documents" in incoming()) || (incoming().documents is list && incoming().documents.size() <= 200))
         && (!("demotedFromProjectId" in incoming()) || incoming().demotedFromProjectId == null || isNonEmptyBoundedString(incoming().demotedFromProjectId, 100));
     }
+    // An AWS account ID is exactly 12 digits, or blank. Rules cannot loop over a list, and every
+    // indexed read of a list counts against the 1000-expression ceiling per request (measured in
+    // the emulator: a list of 20 org-chart people already exhausts it when every entry is checked).
+    // So the first 10 entries of a list are checked here (awsAcctFirstTen) and the rest are held
+    // to the same rule by the writers (the page's forms, the MCP tools, the CSV import), which
+    // tidy the value with normaliseAwsAccountId. A value that is not a string, or an entry that is
+    // not a map, fails the rule.
+    function awsAcctFirstTen(l) {
+      let L = l;
+      return (L.size() <= 0 || L[0].get("awsAccountId", "") == "" || L[0].get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && (L.size() <= 1 || L[1].get("awsAccountId", "") == "" || L[1].get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && (L.size() <= 2 || L[2].get("awsAccountId", "") == "" || L[2].get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && (L.size() <= 3 || L[3].get("awsAccountId", "") == "" || L[3].get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && (L.size() <= 4 || L[4].get("awsAccountId", "") == "" || L[4].get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && (L.size() <= 5 || L[5].get("awsAccountId", "") == "" || L[5].get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && (L.size() <= 6 || L[6].get("awsAccountId", "") == "" || L[6].get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && (L.size() <= 7 || L[7].get("awsAccountId", "") == "" || L[7].get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && (L.size() <= 8 || L[8].get("awsAccountId", "") == "" || L[8].get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && (L.size() <= 9 || L[9].get("awsAccountId", "") == "" || L[9].get("awsAccountId", "").matches("^[0-9]{12}$"));
+    }
     // ── Promote › Leads (public/js/leads-page.js, functions/leads.js) ──────
     // One document per company: contacts live inside it (up to 25). Members
     // read; editors create, edit, drag between stages and delete. The
@@ -589,7 +609,8 @@ service cloud.firestore {
         && d.company.get("industry", "") is string && d.company.get("industry", "").size() <= 120
         && d.company.get("countries", []) is list && d.company.get("countries", []).size() <= 60
         && (d.company.get("storeCount", null) == null || d.company.get("storeCount", null) is number)
-        && d.get("contacts", []) is list && d.get("contacts", []).size() <= 25
+        && d.company.get("awsAccountId", "") is string && (d.company.get("awsAccountId", "") == "" || d.company.get("awsAccountId", "").matches("^[0-9]{12}$"))
+        && d.get("contacts", []) is list && d.get("contacts", []).size() <= 25 && awsAcctFirstTen(d.get("contacts", []))
         && d.stage in ["lead", "hot-lead", "demo", "post-demo", "closed-won", "closed-lost"]
         && d.get("source", "") is string && d.get("source", "").size() <= 80
         && d.get("assignee", "") is string && d.get("assignee", "").size() <= 200
@@ -611,7 +632,8 @@ service cloud.firestore {
     function isProspect(d) {
       return d.keys().hasOnly(["name", "country", "website", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand",
           "priority", "storePresence", "ownership", "insights", "decisionMakers", "linkedinUrl", "linkedinOrgId", "linkedinVerified", "contacts",
-          "vendors", "campaigns", "status", "leadId", "source", "notes", "createdAt", "updatedAt", "createdByEmail", "updatedByEmail"])
+          "vendors", "campaigns", "status", "leadId", "source", "notes", "awsAccountId",
+          "createdAt", "updatedAt", "createdByEmail", "updatedByEmail"])
         && isNonEmptyBoundedString(d.get("name", null), 120)
         && d.get("country", "") is string && d.get("country", "").size() <= 60
         && d.get("priority", "") in ["", "high", "medium", "low"]
@@ -624,6 +646,7 @@ service cloud.firestore {
         && d.get("linkedinOrgId", "") is string
         && (d.get("linkedinOrgId", "") == "" || d.get("linkedinOrgId", "").matches("^[0-9]{1,20}$"))
         && d.get("linkedinVerified", false) is bool
+        && d.get("awsAccountId", "") is string && (d.get("awsAccountId", "") == "" || d.get("awsAccountId", "").matches("^[0-9]{12}$"))
         && d.get("contacts", []) is list && d.get("contacts", []).size() <= 30
         && d.get("website", "") is string && d.get("website", "").size() <= 300
         && d.get("industry", "") is string && d.get("industry", "").size() <= 120
@@ -645,6 +668,25 @@ service cloud.firestore {
       // A new record names its country; older ones without one still update (they read as their first market).
       allow create: if isEditor() && isProspect(incoming()) && isNonEmptyBoundedString(incoming().get("country", null), 60);
       allow update: if isEditor() && isProspect(incoming());
+      allow delete: if isEditor();
+    }
+
+    // The company's own detail, shared by every country record of it (public/js/prospect-detail.js):
+    // the profile, the org chart (people), the AWS account team, the ACE opportunity and the document
+    // library. The id is the company name's letters and digits (companyKey, up to 60), so ALDI ·
+    // Australia and ALDI · Netherlands read and write one document. Members read; editors write.
+    function isProspectCompany(d) {
+      return d.keys().hasOnly(["name", "profile", "people", "awsTeam", "aceOpportunity", "documents", "updatedAt", "updatedByEmail"])
+        && isNonEmptyBoundedString(d.get("name", null), 120)
+        && d.get("profile", {}) is map
+        && d.get("people", []) is list && d.get("people", []).size() <= 100 && awsAcctFirstTen(d.get("people", []))
+        && d.get("awsTeam", []) is list && d.get("awsTeam", []).size() <= 30
+        && (d.get("aceOpportunity", null) == null || d.get("aceOpportunity", null) is map)
+        && d.get("documents", []) is list && d.get("documents", []).size() <= 100;
+    }
+    match /prospectCompanies/{companyId} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor() && companyId.matches("^[a-z0-9]{1,60}$") && isProspectCompany(incoming());
       allow delete: if isEditor();
     }
 

@@ -4,7 +4,7 @@
 // along the top (step 2); the FAQs DB (step 1) under PH.
 //
 // Pure functions, no DOM and no Firestore, so the unit test can drive them:
-//   buildInternalMap({projects, concepts}) -> {nodes, edges, notes, zones, layout, byId}
+//   buildInternalMap({projects, concepts}) -> {nodes, edges, zones, layout, byId}
 //   internalMapHTML(model) -> an <svg> string
 //
 // The layout is fixed (the sketch), not pinned or saved like the Platform
@@ -56,15 +56,17 @@ const SALES_STEPS = [
 const SALES_DOCS = [
   { key: "onepager", name: "Industry one-pager", sub: "Created before the ACE opportunity", docOf: "prospect", x: 740, y: DOC_A },
   { key: "pack", name: "Prospect pack", sub: "Customised, logo-branded; attaches to the ACE opportunity", docOf: "prospect", x: 930, y: DOC_A },
-  { key: "pocdraft", name: "POC funding draft", sub: "Funding application; the account lead submits it", docOf: "hotlead", x: 1120, y: DOC_A },
-  { key: "sandbox", name: "Sandbox credits draft", sub: "Innovation Sandbox application; the lead submits it", docOf: "hotlead", x: 1310, y: DOC_A },
-  { key: "signoff", name: "Customer sign-off", sub: "Proof of execution for the funding claim, after approval", docOf: "pocstep", x: COL_X(3), y: DOC_B },
-].map((d) => ({ ...d, kind: "doc" }));
+  // The AWS funding line: starts at ACE Technical / Business Validation, not earlier.
+  { key: "fundcheck", name: "Funding prompted & eligibility check", sub: "Skill + template; prompted at Technical / Business Validation", docOf: "demos", x: COL_X(1), y: DOC_B, fund: true },
+  { key: "pocdraft", name: "POC funding draft", sub: "Skill + template; auto-created, account owner submits", docOf: "fundcheck", x: COL_X(2), y: DOC_B, fund: true },
+  { key: "sandbox", name: "Sandbox credit draft", sub: "Skill + template; auto-created, account owner submits", docOf: "pocdraft", x: COL_X(3), y: DOC_B, fund: true },
+  { key: "signoff", name: "Claim sign-off document", sub: "Skill + template; proof of execution for the claim", docOf: "sandbox", x: COL_X(4), y: DOC_B, fund: true },
+].map((d) => ({ ...d, kind: "doc", ...(d.fund ? { w: 200, h: 88 } : {}) }));
 const laneNodes = [...SALES_STEPS, ...SALES_DOCS].map((n) => ({ ...n, lane: "process" }));
 const laneEdges = [
   ...SALES_STEPS.map((st, i) => (i && i !== 5 ? { from: SALES_STEPS[i - 1].key, to: st.key } : null)).filter(Boolean),
   { from: "hotlead", to: "meetings", via: [[1440, ROW_A], [1440, WRAP_Y], [COL_X(0), WRAP_Y]] },
-  ...SALES_DOCS.map((d) => ({ from: d.docOf, to: d.key, dotted: true })),
+  ...SALES_DOCS.map((d) => (d.key === "fundcheck" ? { from: d.docOf, to: d.key } : { from: d.docOf, to: d.key, dotted: true })),
 ];
 
 // Fixed zones: the three columns and the Feature Release band.
@@ -73,7 +75,7 @@ export const INTERNAL_ZONES = [
   { key: "cs", name: "Customer Success", x: 24, y: 190, w: 320, h: 660 },
   { key: "ph", name: "Personalisation Hub (PH)", x: 560, y: 190, w: 380, h: 430 },
   { key: "sales", name: "Sales", x: 1060, y: 190, w: 416, h: 660 },
-  { key: "process", name: "Sales process: TAM database to estate rollout, ACE stage above each step, documents under the step that creates them", x: 24, y: LANE_TOP, w: 1452, h: LANE_H, lane: true },
+  { key: "process", name: "Sales process: TAM database to estate rollout. AWS funding documents (from ACE Technical / Business Validation) are auto-created, then provided manually by the account owner", x: 24, y: LANE_TOP, w: 1452, h: LANE_H, lane: true },
 ];
 
 // kind: fixed (an internal part of the sketch) | bridge (a PH platform node,
@@ -124,11 +126,6 @@ export const INTERNAL_EDGES = [
   ...laneEdges,
 ];
 
-// September focus, shown as notes under the sketch.
-export const SEPTEMBER_FOCUS = [
-  { step: 1, text: "Get rid of Freshdesk, replaced by the FAQs DB and support." },
-  { step: 2, text: "Get rid of Atlassian (about $60 a seat), replaced by the Feature Release pipeline and Staff Kanban." },
-];
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -175,10 +172,7 @@ export function buildInternalMap({ projects = [], concepts = [] } = {}) {
     byId[it.id] = it;
   });
   const stripH = 56 + (items.length ? rows * STRIP_GAP_Y : 50);
-  const notesTop = stripTop + stripH + 16;
-  const notes = SEPTEMBER_FOCUS.map((n, i) => ({ ...n, x: 24 + i * 742, y: notesTop + 34, w: 730, lines: wrap(n.text, 100) }));
-  const notesH = 34 + 20 * Math.max(...notes.map((n) => n.lines.length)) + 24;
-  const H = notesTop + notesH + 16;
+  const H = stripTop + stripH + 16;
 
   const edges = INTERNAL_EDGES.map((e) => ({ ...e, from: `int:${e.from}`, to: `int:${e.to}` }));
   edges.forEach((e) => {
@@ -198,7 +192,7 @@ export function buildInternalMap({ projects = [], concepts = [] } = {}) {
   });
 
   return {
-    nodes, edges, notes, byId, items,
+    nodes, edges, byId, items,
     zones: INTERNAL_ZONES,
     strip: { top: stripTop, h: stripH },
     layout: { w: INTERNAL_W, h: H, mode: "internal" },
@@ -241,27 +235,22 @@ export function internalMapHTML(model) {
     const attrs = board || bridge
       ? ` data-node-id="${esc(n.id)}" data-node-kind="${n.kind}" tabindex="0" role="link" aria-label="${esc(n.name)}${bridge ? " — opens the Platform map" : ""}"`
       : "";
-    const sub = n.sub ? wrap(n.sub, proc ? 38 : doc ? 30 : 29).slice(0, 2) : [];
+    const sub = n.sub ? wrap(n.sub, proc ? 38 : n.fund ? 30 : doc ? 30 : 29).slice(0, n.fund ? 3 : 2) : [];
     const max = proc ? 31 : 25;
-    const name = n.name.length > max ? n.name.slice(0, max - 1) + "…" : n.name;
+    const nameLines = n.fund ? wrap(n.name, 24).slice(0, 2) : [n.name.length > max ? n.name.slice(0, max - 1) + "…" : n.name];
+    const subTop = y + 20 + nameLines.length * 14;
     const noteLines = proc && n.note ? wrap(n.note, 42).slice(0, 2) : [];
     const noteTop = y + 34 + sub.length * 11 + 8;
     svg += `<g class="${cls}"${attrs}>
       <rect x="${x}" y="${y}" width="${nw}" height="${nh}" rx="8"/>
-      <text class="sysmap-node-name" x="${n.x}" y="${y + 20}" text-anchor="middle">${esc(name)}</text>
-      ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${y + 34 + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
+      ${nameLines.map((t, k) => `<text class="sysmap-node-name" x="${n.x}" y="${y + 20 + k * 14}" text-anchor="middle">${esc(t)}</text>`).join("")}
+      ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${(n.fund ? subTop : y + 34) + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
       ${noteLines.map((t, k) => `<text class="sysmap-node-sub intmap-proc-note" x="${n.x}" y="${noteTop + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
       ${proc && n.ace ? `<text class="sysmap-node-status intmap-ace" x="${x + 2}" y="${y - 6}">${esc(n.ace)}</text>` : ""}
       ${doc ? `<text class="sysmap-node-status intmap-doc-tag" x="${x + 2}" y="${y - 6}">Document</text>` : ""}
       ${bridge ? `<text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">Platform</text>` : ""}
       ${board ? `<text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">${esc(n.status)}${n.unassigned ? '<tspan class="sysmap-node-unassigned" dx="8">Unassigned</tspan>' : ""}</text>` : ""}
       ${n.step ? stepBadge(x + nw - 4, y - 2, n.step) : ""}</g>`;
-  });
-  svg += `<text class="sysmap-boundary-label" x="24" y="${model.notes[0].y - 14}">September focus</text>`;
-  model.notes.forEach((n) => {
-    svg += `<g class="intmap-note"><rect class="intmap-note-box" x="${n.x}" y="${n.y}" width="${n.w}" height="${20 * n.lines.length + 24}" rx="8"/>
-      ${stepBadge(n.x + 24, n.y + 24, n.step)}
-      ${n.lines.map((t, k) => `<text class="sysmap-edge-label intmap-note-text" x="${n.x + 48}" y="${n.y + 28 + k * 20}">${esc(t)}</text>`).join("")}</g>`;
   });
   return svg + "</svg>";
 }
@@ -271,5 +260,5 @@ function stepBadge(cx, cy, step) {
 }
 
 export function internalLegendHTML() {
-  return `<span class="sysmap-key s-project">Project</span><span class="sysmap-key s-concept">Concept</span><span class="sysmap-key s-bridge">Bridge to the Platform map</span><span class="sysmap-key s-step">1 / 2 September focus</span><span class="sysmap-key s-proc">Process step (ACE stage above it)</span>${[["onepager", "Industry one-pager"], ["pack", "Prospect pack"], ["pocdraft", "POC funding draft"], ["sandbox", "Sandbox credits draft"], ["signoff", "Customer sign-off"]].map(([k, t]) => `<span class="sysmap-key s-doc intmap-doc-key-${k}">Document: ${t}</span>`).join("")}`;
+  return `<span class="sysmap-key s-project">Project</span><span class="sysmap-key s-concept">Concept</span><span class="sysmap-key s-bridge">Bridge to the Platform map</span><span class="sysmap-key s-proc">Process step (ACE stage above it)</span>${[["onepager", "Industry one-pager"], ["pack", "Prospect pack"], ["fundcheck", "Funding prompted & eligibility check"], ["pocdraft", "POC funding draft"], ["sandbox", "Sandbox credit draft"], ["signoff", "Claim sign-off document"]].map(([k, t]) => `<span class="sysmap-key s-doc intmap-doc-key-${k}">Document: ${t}</span>`).join("")}`;
 }

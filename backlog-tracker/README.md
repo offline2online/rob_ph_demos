@@ -1859,6 +1859,9 @@ including Rob's manual Partner Central account link and role mapping, are in
 **AWS Partner Central** shows Connected / Not linked yet / Error, the catalogue,
 the last successful call and the last 20 calls; every call is in
 `partnerCentralAudit` (server-only), CloudTrail has the AWS side. Test:
+`node test/partner-central.test.js`. **ACE table (6 Nov 2026)**: Promote › Leads shows the
+opportunities under the board (`ace-core.js`, `leads-page.js`) from
+`GET /partnerCentral/v1/ace`, the only Partner Central route editors may read.
 `node test/partner-central.test.js`. Service target names could not be
 exercised without AWS access: verify on the first Sandbox call (see
 `deploy/aws/README.md`).
@@ -2570,7 +2573,7 @@ every destination already existed.
   insights, decision makers, LinkedIn page and contacts are fields on it.
   Firestore `prospects/{id}`; own permission section `prospects` in
   User Management › Roles. Agents use `list_prospects` and `upsert_prospects`
-  (`functions/prospects.js`). See REQUIREMENTS.md → Promote section: Prospects (TAM).
+  (`functions/prospects.js`). A company name opens a detail view (profile, org chart with buying roles and lead overlay, AWS account team, document library; `prospect-detail.js` / `prospect-detail-core.js`); that detail is stored once per company in `prospectCompanies/{companyKey}` and shared by every country record, and a lead card shows a compact org chart and AWS team. `awsAccountId` (12 digits, optional) is on the prospect, the lead and each contact or person. See REQUIREMENTS.md → Promote section: Prospects (TAM).
 - **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
   any ticket, concept, project or release. Archived tickets are included once
   the archive has been loaded.

@@ -1129,6 +1129,18 @@ async function rpc(token, method, params, id = 1) {
     const many = Array.from({ length: 51 }, (_, i) => ({ name: `Co${i}`, country: "X" }));
     assert.strictEqual((await prCall("upsert_prospects", { prospects: many })).isError, true, "50 per call");
   });
+  await test("upsert_prospects and list_prospects carry the AWS account ID (12 digits) on the record and its contacts", async () => {
+    const send = async (item) => prCall("upsert_prospects", { prospects: [item] });
+    assert.strictEqual((await send({ name: "Delta Stores", country: "Ireland", awsAccountId: "1234-5678-9012", contacts: [{ name: "Jo", role: "CTO", awsAccountId: "210987654321" }] })).isError, undefined);
+    const got = JSON.parse((await prCall("list_prospects", { q: "Delta Stores" })).content[0].text).prospects[0];
+    assert.strictEqual(got.awsAccountId, "123456789012");
+    assert.strictEqual(got.contacts[0].awsAccountId, "210987654321");
+    assert.strictEqual((await send({ name: "Delta Stores", country: "Ireland", awsAccountId: "12345" })).isError, true, "not 12 digits");
+    assert.strictEqual((await send({ name: "Delta Stores", country: "Ireland", contacts: [{ name: "Jo", awsAccountId: "abc" }] })).isError, true, "a contact's id is checked too");
+    assert.strictEqual(env.store.col("prospects").get("deltastores-ireland").awsAccountId, "123456789012", "a refused call leaves it alone");
+    assert.strictEqual((await send({ name: "Delta Stores", country: "Ireland", awsAccountId: "" })).isError, undefined);
+    assert.strictEqual(env.store.col("prospects").get("deltastores-ireland").awsAccountId, "", "an empty string clears it");
+  });
   await test("upsert_prospects writes nothing when any entry is invalid, and never converts", async () => {
     const before = env.store.col("prospects").get("pr2").storeCount;
     const bad = await prCall("upsert_prospects", { prospects: [{ name: "Beta Pharma", country: "Germany", storeCount: 99 }, { name: "Bad", country: "X", status: "converted" }] });

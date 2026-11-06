@@ -8,38 +8,71 @@ It pairs with the shared **`ph-brand`** skill in the skills library (slug `ph-br
 
 > **Not** `ph-designer`. That skill governs the HQ Admin / Retail Admin **platform UI** (Ant Design). This is the marketing brand — a different palette, voice and purpose, kept deliberately separate.
 
+<!-- agent-only:start -->
 > **Where this lives:** the **Promote** section of the PH Agent Console (Promote › Brand Guidelines). This is the brand kit for every promotion and PR piece, and agents read it over MCP (`get_project_document` on the Backlog Tracker & FAQs project).
+<!-- agent-only:end -->
 
 ## Industry content lives on the website (single source of truth)
 
 Industry and vertical detail — key USPs, revenue outcomes, use cases, focus and messaging per industry — is **no longer held in the brand guidelines**. It lives on the industry pages of [personalisationhub.com](https://personalisationhub.com), which are the single source of truth (start at [personalisationhub.com/industries](https://personalisationhub.com/industries/)). Anyone creating a promotion for a specific industry references the relevant industry page for the industry story and uses these guidelines for look, voice and rules.
 
-## Messaging rules (non-negotiable)
+## North star
 
-- **Launched features only.** No concepts, roadmap items or incubator work in external messaging until they ship.
-- **Never mention AEM** in any external comms.
-- **Device-agnostic.** PH works with any signage device. Amazon Signage Stick is mentioned **only** in the AWS partner track, never as the general hardware message.
-- **No internal project names** — refer to the platform capability.
-- Audiences are **roles**, never "personas".
-- **Benefits-led, ideally outcomes-led** — focused on the audience's core needs, not features.
-- **Founder tone of voice** on everything (see below).
+**Apple.** Restraint, whitespace, confident typography, one idea per view. When in doubt, remove something.
 
-## The model: content and container
+## The two-surface system
 
-- **Containers** = the reusable templates (below), one per touchpoint. They define *how* something looks, with named text slots.
-- **Content** = the message library (below), keyed by **feature × audience (role) × front door × stage**. Industry-specific content is pulled from the relevant industry page on the website.
-- Pick a template, pick an audience, front door and stage → the slots fill from the library. Same message everywhere, any format.
+One brand, two surfaces — picked by **channel**, not by mood:
 
-## Messaging architecture (four layers)
+- **Light** (default) — websites, concept pages, decks, docs. Airy, premium.
+- **Dark** — LinkedIn promos, hero moments, title slides. Stands out in a feed; a deliberate "moment".
 
-1. **Brand foundation** — positioning, founder tone of voice, visual identity, core proof points. Constant for every audience.
-2. **Message house** — launched features grouped under value pillars (see below).
-3. **Audience** — roles, with a front door per need. Industry detail comes from the website industry pages.
-4. **Funnel stage** — every message has a version per stage (awareness → consideration → intent).
+Same palette, type, spacing and accent logic across both — only the surface flips. Every template supports both, with a toggle.
+
+## Logo usage
+
+The logo mark is a square frame of four bars. Use the right file for the surface it sits on, and keep clear space around it.
+
+- **Full colour** on light surfaces (the default).
+- **White** on dark surfaces, with no white chip or box behind it.
+- **Mono** for print, co-branding and watermarks.
+- **Icon** for favicons and avatars only.
+- Never recolour, stretch, redraw or add effects to the logo. The four bar colours appear together only as the logo mark, a thin accent bar or the infinity loop.
+- The logo's home is top-left of a page, slide or sheet.
+
+## Colour
+
+The logo mark is a square frame of four bars (teal left, pink top, orange right, green bottom). Those colours are an **accent system used one at a time** — never all four at once. The four together appear only *as the logo mark, a thin accent bar, or the infinity loop*.
+
+Real brand palette: teal `#169BC2`, pink `#EF60A7`, green `#60D838`, orange `#FE9226`; wordmark grey `#7B7B7B`. On light surfaces, accent-coloured text uses a deeper shade for contrast (teal `#0F7A9A`, pink `#C43D82`, green `#3B8F1C`, orange `#B85F08`).
+
+## The infinity loop
+
+Any loop (the closed loop, the self-optimising loop) is always shown as an **infinity loop** in the four brand colours, in mark order, with small gaps that echo the four bars of the logo. It flows gently on screen and is static in exports.
+
+## Typography
+
+Marketing web font: **Kantumruy Pro**. (Product UI uses Roboto — that's `ph-designer`, not here.) Big, confident headlines; one family does the whole job.
+
+## Imagery and icons
+
+- Screens shown in images (signage, devices) must always show content — never a blank or switched-off screen.
+- Icons: Google Material Symbols, one locked style, tinted to the accent colour, from the curated feature-icon map in Brand assets; used alongside bullet points where it makes sense.
+
+## Founder tone of voice
+
+All external content — promotions, PR, LinkedIn, blogs, decks — is written in **Rob Geerdink's (founder and CEO) tone of voice**, so anything staff or agents create sounds like it came from the founder.
+
+- **Source of truth:** Rob's past blog posts on personalisationhub.com and transcripts of his conversations, distilled into a voice guide in the `ph-brand` skill (the same voice guide used for the weekly Friday industry blog).
+- **Character:** confident, plain and a little visionary; practical and educational rather than salesy; speaks as an experienced operator who has built digital products for 25+ years.
+- **How it reads:** short, direct sentences; benefits and outcomes first; real-world retail examples over jargon; no hype words or empty superlatives.
+- **Spelling:** Australian / British English ("personalisation", "optimise").
+- **Tagline in play:** "Powered by agents. Agnostic by design."
+- Every finalised piece that Rob approves feeds back into the voice guide, so the voice sharpens over time.
 
 ## Message house (launched features only)
 
-**Umbrella line:** "Turn every store visit into revenue".
+**Umbrella line:** "Make every store visit worth more".
 
 **Value pillars:** Reduce cost · Maximise revenue · Own your data.
 
@@ -67,6 +100,31 @@ Industry and vertical detail — key USPs, revenue outcomes, use cases, focus an
 
 **Foundation:** Self-hosted in the business's own AWS VPC — their data stays theirs. Works with any signage device and existing systems. Start with a 30-day free trial on AWS Marketplace. *(This foundation is also the core gatekeeper message for legal, procurement and cybersecurity.)*
 
+<!-- agent-only:start -->
+
+## Messaging rules (non-negotiable)
+
+- **Launched features only.** No concepts, roadmap items or incubator work in external messaging until they ship.
+- **Never mention AEM** in any external comms.
+- **Device-agnostic.** PH works with any signage device. Amazon Signage Stick is mentioned **only** in the AWS partner track, never as the general hardware message.
+- **No internal project names** — refer to the platform capability.
+- Audiences are **roles**, never "personas".
+- **Benefits-led, ideally outcomes-led** — focused on the audience's core needs, not features.
+- **Founder tone of voice** on everything (see below).
+
+## The model: content and container
+
+- **Containers** = the reusable templates (below), one per touchpoint. They define *how* something looks, with named text slots.
+- **Content** = the message library (below), keyed by **feature × audience (role) × front door × stage**. Industry-specific content is pulled from the relevant industry page on the website.
+- Pick a template, pick an audience, front door and stage → the slots fill from the library. Same message everywhere, any format.
+
+## Messaging architecture (four layers)
+
+1. **Brand foundation** — positioning, founder tone of voice, visual identity, core proof points. Constant for every audience.
+2. **Message house** — launched features grouped under value pillars (see below).
+3. **Audience** — roles, with a front door per need. Industry detail comes from the website industry pages.
+4. **Funnel stage** — every message has a version per stage (awareness → consideration → intent).
+
 ## Front doors
 
 Buyers often arrive looking for one thing. Their **need** decides the front door; the message then walks them to the bigger picture that drives more revenue (the industry outcome comes from the relevant website industry page).
@@ -89,17 +147,6 @@ Buyers often arrive looking for one thing. Their **need** decides the front door
 - **Consideration** — proof. Use cases, case studies, reference architectures, better-together sheets.
 - **Intent** — the action. Primary CTA: 30-day free trial on AWS Marketplace; secondary: book a demo. One-pagers, decks, landing pages.
 
-## Founder tone of voice
-
-All external content — promotions, PR, LinkedIn, blogs, decks — is written in **Rob Geerdink's (founder and CEO) tone of voice**, so anything staff or agents create sounds like it came from the founder.
-
-- **Source of truth:** Rob's past blog posts on personalisationhub.com and transcripts of his conversations, distilled into a voice guide in the `ph-brand` skill (the same voice guide used for the weekly Friday industry blog).
-- **Character:** confident, plain and a little visionary; practical and educational rather than salesy; speaks as an experienced operator who has built digital products for 25+ years.
-- **How it reads:** short, direct sentences; benefits and outcomes first; real-world retail examples over jargon; no hype words or empty superlatives.
-- **Spelling:** Australian / British English ("personalisation", "optimise").
-- **Tagline in play:** "Powered by agents. Agnostic by design."
-- Every finalised piece that Rob approves feeds back into the voice guide, so the voice sharpens over time.
-
 ## Distribution
 
 - **Downloadable PDFs** — brand guidelines, use cases, case studies, partner sheets — generated from the templates + library, never hand-edited copies.
@@ -117,38 +164,6 @@ The Personalisation Hub company page posts every one to two days, as a closed lo
 6. **Learn** — engagement flows back and weights which pillars and messages get used next.
 
 Weekly briefs also roll up into a monthly market report PDF.
-
-## North star
-
-**Apple.** Restraint, whitespace, confident typography, one idea per view. When in doubt, remove something.
-
-## The two-surface system
-
-One brand, two surfaces — picked by **channel**, not by mood:
-
-- **Light** (default) — websites, concept pages, decks, docs. Airy, premium.
-- **Dark** — LinkedIn promos, hero moments, title slides. Stands out in a feed; a deliberate "moment".
-
-Same palette, type, spacing and accent logic across both — only the surface flips. Every template supports both, with a toggle.
-
-## Colour
-
-The logo mark is a square frame of four bars (teal left, pink top, orange right, green bottom). Those colours are an **accent system used one at a time** — never all four at once. The four together appear only *as the logo mark, a thin accent bar, or the infinity loop*.
-
-Real brand palette: teal `#169BC2`, pink `#EF60A7`, green `#60D838`, orange `#FE9226`; wordmark grey `#7B7B7B`. On light surfaces, accent-coloured text uses a deeper shade for contrast (teal `#0F7A9A`, pink `#C43D82`, green `#3B8F1C`, orange `#B85F08`).
-
-## The infinity loop
-
-Any loop (the closed loop, the self-optimising loop) is always shown as an **infinity loop** in the four brand colours, in mark order, with small gaps that echo the four bars of the logo. It flows gently on screen and is static in exports.
-
-## Typography
-
-Marketing web font: **Kantumruy Pro**. (Product UI uses Roboto — that's `ph-designer`, not here.) Big, confident headlines; one family does the whole job.
-
-## Imagery and icons
-
-- Screens shown in images (signage, devices) must always show content — never a blank or switched-off screen.
-- Icons: Google Material Symbols, one locked style, tinted to the accent colour, from the curated feature-icon map in Brand assets; used alongside bullet points where it makes sense.
 
 ## Build method
 
@@ -226,3 +241,5 @@ This is meant to **compound**. Every correction — a box moved, copy tightened,
 - Match the infinity loop to the one on personalisationhub.com.
 - Rebuild the Experience Templates and Customer Support hero carousels from the new templates.
 - Decide the light-surface marketing-accent set (the website-facing tints).
+
+<!-- agent-only:end -->

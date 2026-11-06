@@ -29,6 +29,7 @@
 //   GET   /v1/audit                        last 50 calls
 //   POST  /v1/config   {catalog, confirm}  switch catalogue (AWS needs confirm:"LIVE")
 //   GET   /v1/opportunities                list
+//   GET   /v1/ace                          normalised rows for Promote › Leads (editors too, read only)
 //   POST  /v1/opportunities                create
 //   PATCH /v1/opportunities/{id}           update
 //   POST  /v1/benefits/drafts              create a draft benefit application
@@ -79,6 +80,51 @@ function signRequest({ method = "POST", host, path = "/", headers = {}, body = "
   const signature = crypto.createHmac("sha256", k).update(toSign).digest("hex");
   lower.authorization = `AWS4-HMAC-SHA256 Credential=${creds.accessKeyId}/${scope}, SignedHeaders=${names.join(";")}, Signature=${signature}`;
   return lower;
+}
+
+// ── ACE opportunity rows for Promote › Leads ─────────────────────────────
+// One flat row per opportunity, whatever shape the Selling API answered in.
+// Field names follow the published model and are read defensively (first
+// match wins): verify against the first real Sandbox call, like SERVICES.
+const first = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== "");
+const text = (v, max = 200) => String(v == null ? "" : v).trim().slice(0, max);
+const PC_OPPORTUNITY_URL = "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/";
+
+function expectedMonthly(project) {
+  const spend = Array.isArray(project && project.ExpectedCustomerSpend) ? project.ExpectedCustomerSpend : [];
+  let amount = 0; let currency = ""; let any = false;
+  for (const s of spend) {
+    const n = Number(s && s.Amount);
+    if (!Number.isFinite(n)) continue;
+    const f = String((s && s.Frequency) || "Monthly");
+    amount += /month/i.test(f) ? n : /year|annual/i.test(f) ? n / 12 : 0;
+    currency = currency || text(s.CurrencyCode, 3);
+    any = any || /month|year|annual/i.test(f);
+  }
+  return any ? { amount: Math.round(amount * 100) / 100, currency: currency || "USD" } : null;
+}
+
+function normaliseOpportunity(summary, detail) {
+  const o = { ...(summary || {}), ...(detail || {}) };
+  const life = o.LifeCycle || o.Lifecycle || {};
+  const team = Array.isArray(o.AwsTeam) ? o.AwsTeam : Array.isArray(o.AwsSalesTeam) ? o.AwsSalesTeam : [];
+  const rep = team.find((m) => m && m.Email) || team[0] || null;
+  const insights = o.AwsOpportunityInsights || o.Insights || {};
+  const score = Number(first(insights.Score, insights.OpportunityScore, o.OpportunityScore));
+  const id = text(o.Id || o.Identifier, 64);
+  const customer = text(first(o.Customer && o.Customer.Account && o.Customer.Account.CompanyName, o.CustomerName), 160);
+  return {
+    id,
+    name: text(first(o.Project && o.Project.Title, o.OpportunityTitle, o.PartnerOpportunityIdentifier, id), 200),
+    customer,
+    stage: text(life.Stage, 60),
+    reviewStatus: text(life.ReviewStatus, 60),
+    score: Number.isFinite(score) ? score : null,
+    expectedMonthly: expectedMonthly(o.Project),
+    targetCloseDate: text(life.TargetCloseDate, 10) || null,
+    awsSeller: rep ? { name: text([rep.FirstName, rep.LastName].filter(Boolean).join(" ") || rep.Email, 120), email: text(rep.Email, 200), title: text(rep.BusinessTitle, 120) } : null,
+    partnerCentralUrl: id ? `${PC_OPPORTUNITY_URL}${encodeURIComponent(id)}` : null,
+  };
 }
 
 const xmlTag = (xml, tag) => { const m = new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(xml); return m ? m[1] : null; };
@@ -190,20 +236,51 @@ function createPartnerCentralApi({
     };
   }
 
-  async function requireAdmin(req) {
+  // Normalised ACE rows: the list, then each opportunity's detail (which
+  // carries the AWS team and score), a few at a time. A detail that fails
+  // leaves that row with what the list gave. Cached for a minute.
+  let aceCache = null;
+  async function aceOpportunities(ctx) {
+    if (aceCache && now().getTime() - aceCache.at < 60000) return aceCache.out;
+    const summaries = [];
+    let next;
+    for (let page = 0; page < 4; page++) {
+      const out = await listOpportunities({ MaxResults: 50, ...(next ? { NextToken: next } : {}) }, ctx);
+      summaries.push(...(out.OpportunitySummaries || []));
+      next = out.NextToken;
+      if (!next) break;
+    }
+    const picked = summaries.slice(0, 100);
+    const rows = new Array(picked.length);
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(5, picked.length) }, async () => {
+      while (cursor < picked.length) {
+        const i = cursor++;
+        let detail = null;
+        try { detail = await getOpportunity(picked[i].Id, ctx); } catch { detail = null; }
+        rows[i] = normaliseOpportunity(picked[i], detail);
+      }
+    }));
+    const cfg = await loadConfig();
+    const out = { catalog: cfg.catalog, truncated: summaries.length > picked.length || !!next, opportunities: rows.filter((r) => r.id), fetchedAt: now().toISOString() };
+    aceCache = { at: now().getTime(), out };
+    return out;
+  }
+
+  async function requireAdmin(req, min = "admin") {
     const idToken = String(req.get("x-firebase-id-token") || "");
     if (!idToken) return { ok: false, status: 401, error: "sign in first" };
     let decoded;
     try { decoded = await verifyIdToken(idToken); } catch { return { ok: false, status: 401, error: "invalid sign-in" }; }
     const user = await resolveConsoleUser(decoded.email);
     if (!user) return { ok: false, status: 403, error: "not on the console user list" };
-    if ((ROLE_RANK[user.role] || 0) < ROLE_RANK.admin) return { ok: false, status: 403, error: "only an admin can use the Partner Central connection" };
+    if ((ROLE_RANK[user.role] || 0) < ROLE_RANK[min]) return { ok: false, status: 403, error: min === "admin" ? "only an admin can use the Partner Central connection" : "only an editor or admin can see the ACE opportunities" };
     return { ok: true, user };
   }
 
   async function handle(req, res) {
     const path = String((req.path || req.url || "/").split("?")[0]).replace(/^\/partnerCentral(?=\/|$)/, "").replace(/\/+$/, "") || "/";
-    const who = await requireAdmin(req);
+    const who = await requireAdmin(req, path === "/v1/ace" && req.method === "GET" ? "editor" : "admin");
     if (!who.ok) return send(res, who.status, { error: who.error });
     const ctx = { by: who.user.email };
     const body = req.body || {};
@@ -225,6 +302,7 @@ function createPartnerCentralApi({
         await audit({ operation: "config:set-catalog", catalog, by: who.user.email, ok: true });
         return send(res, 200, { ok: true, catalog });
       }
+      if (path === "/v1/ace" && req.method === "GET") return send(res, 200, await aceOpportunities(ctx));
       if (path === "/v1/opportunities" && req.method === "GET") return send(res, 200, await listOpportunities({}, ctx));
       if (path === "/v1/opportunities" && req.method === "POST") return send(res, 200, await createOpportunity(body, ctx));
       const m = /^\/v1\/opportunities\/([A-Za-z0-9._-]{1,64})$/.exec(path);
@@ -237,7 +315,7 @@ function createPartnerCentralApi({
     }
   }
 
-  return { handle, status, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
+  return { handle, status, aceOpportunities, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
 }
 
-module.exports = { createPartnerCentralApi, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };
+module.exports = { createPartnerCentralApi, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };

@@ -2322,10 +2322,9 @@ not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
   (prioritised requests, a release pipeline with a gate, live releases) is
   **step 2**; the **FAQs DB** under PH (connected to PH by API, to live
   releases, Support email and the PH website) is **step 1**; a dotted line
-  runs from PH releases to Ads, Social posts and PR. Notes along the bottom
-  show the September focus: get rid of Freshdesk (replaced by the FAQs DB
-  and support, step 1) and of Atlassian at about $60 a seat (replaced by the
-  Feature Release pipeline and Staff Kanban, step 2). Internal operations
+  runs from PH releases to Ads, Social posts and PR. There are no notes
+  under the sketch (the September focus notes were personal and were
+  removed). Internal operations
   and unassigned concepts and projects sit in a strip under the sketch.
   It is not pinned or saved (no Re-arrange, History or release filter).
 - **Sales process** (ticket 3FXpHzR1vEqhXzyiyEis, 6 Nov 2026; replaces the
@@ -2342,11 +2341,14 @@ not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
   lanes**: each is its own node, in its own colour, hung under the step that
   creates it and drawn only where needed: industry one-pager and the
   customised, logo-branded prospect pack at Prospect / Hot Prospect (made
-  before the ACE opportunity, used to define and attach to it); the draft POC
-  funding application and draft Innovation Sandbox credit application at the
-  ACE opportunity (drafts only, submitted manually by the account lead); the
-  customer sign-off / proof-of-execution document at proof of concept, after
-  POC funding approval. A legend separates process steps from documents. A
+  before the ACE opportunity, used to define and attach to it). The
+  AWS funding line, which starts at ACE Technical / Business
+  Validation (the arrow leaves that step, not the ACE opportunity): one
+  combined "Funding prompted & eligibility check" box, then the POC funding
+  draft, Sandbox credit draft and Claim sign-off document, each noting the
+  skill and template that produce it. The lane title says the documents are
+  auto-created and then provided manually by the account owner. There is no
+  Manual submission or Funding status box. (Ticket X5dIkrYoD3z6Z22k4YWX.) A legend separates process steps from documents. A
   document not tied to a step is not shown. **TAM profile and branded demo**
   (ticket pNbib8Ith2yaS0KxcXnY): the TAM step's note records that each company
   profile keeps the latest logo, the company's email formats (e.g.
@@ -4179,3 +4181,65 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
 - Sandbox catalogue by default; the live AWS catalogue only by an explicit admin `LIVE` confirmation.
 - Settings shows connected / not linked yet / error, the catalogue, the last successful call and an audit log of every call (`partnerCentralAudit`); CloudTrail records the AWS side.
 - Dependency (manual): link the Partner Central account to the AWS account and map the role to a Partner Central user role.
+- **ACE opportunities table (Promote › Leads, 6 Nov 2026)**: under the leads board, `#ace-section` lists PH's AWS ACE opportunities laid out like Partner Central's opportunities list: opportunity, customer, ACE stage, review status, opportunity score, expected monthly AWS revenue, target close date and AWS account manager (with a mailto icon, subject "<opportunity> – <customer>"). A summary block counts rows by ACE stage and by review status. Each row opens the matching lead card (customer name = lead company name) and the opportunity in Partner Central. Rows come from `GET /partnerCentral/v1/ace` (list + per-opportunity detail through the Selling API, normalised in `normaliseOpportunity`, cached 60 s); that one read route is open to editors and admins, every write stays admin only. Rules in `public/js/ace-core.js`; tests `test/ace.test.mjs`, `test/partner-central.test.js`.
+
+### Prospects (TAM): company detail view (6 Nov 2026)
+
+- A company name in the Prospects grid is a button that opens that company's
+  detail view in place (the grid hides; **All prospects** returns). The row
+  "⋯" menu has **Open company profile** too. A lead's company has the same
+  detail (the lead card finds it by the company name's key).
+- Four tabs (`public/js/prospect-detail.js`, rules in
+  `public/js/prospect-detail-core.js`, tests `test/prospect-detail.test.mjs`
+  and the Prospects scenario in `test/ui/console-click.test.mjs`):
+  **Profile** (summary, logo, industry, markets, tech stack, existing vendors
+  = the grid's `vendors`, primary cloud, email formats, likely products, latest
+  news, staff owner, last researched); **Org chart** (collapsible reporting
+  tree, a card per person with photo or initials, name, title and a buying-role
+  badge: decision maker, champion, influencer, technical evaluator,
+  procurement); **AWS account team** (role, role on the deal, one-click
+  `mailto:` icon, which customer contacts each person engages); **Documents**
+  (industry one-pager, prospect pack, deck, business case, funding document:
+  versioned, dated, tagged, with who it was shared with and a "Shared with
+  AWS" flag; earlier versions are folded under the current one).
+- **Lead overlay**: a person whose email matches a contact on the linked lead
+  is highlighted as a **Lead contact**; engagement (demo, calculator download,
+  website form, meeting) is recorded on the person, and "Demo" is added when
+  the lead is at the Demo stage or later. Gaps are flagged ("No decision maker
+  engaged yet").
+- **Data: the company's detail is stored once per company, not per country.**
+  Prospects are one record per company per country (ALDI · Australia, ALDI ·
+  Netherlands), but the org chart, the AWS account team, the ACE opportunity
+  and the document library belong to the company. They live in
+  `prospectCompanies/{companyKey(name)}` (the name's lower-case letters and
+  digits, cut at 60: `aldi`) as `{ name, profile, people[] (up to 100),
+  awsTeam[] (30), aceOpportunity ({id, sellerName, sellerEmail} or null),
+  documents[] (100) }`, and every country record of that company, and its
+  lead's card, reads and writes that one document, so ALDI · Australia and
+  ALDI · Netherlands show the same org chart. The country record keeps its own
+  fields (country, status, priority, stores, contacts, insights, vendors,
+  AWS account ID). `firestore.rules` `isProspectCompany`: members read,
+  editors write, the id must match `^[a-z0-9]{1,60}$`, unknown fields are
+  refused. The profile says when the detail is shared. A name with no letters
+  or digits has no key and cannot hold detail.
+- **AWS account ID** (Rob, 6 Nov 2026): `awsAccountId`, exactly 12 digits,
+  optional ("1234-5678-9012" is tidied to digits), on the prospect record, on
+  each contact of a prospect, on the lead's company, on each lead contact and
+  on each person in the org chart. Editable in the prospect's All fields
+  drawer and Edit profile, the lead form and the Add person form; shown in the
+  profile, the lead summary and the org chart cards; a column in the CSV export;
+  carried onto a lead when a prospect is converted. Validated by
+  `normaliseAwsAccountId` (page, MCP `upsert_prospects` and `list_prospects`)
+  and by `firestore.rules` for the prospect, the lead's company and the first
+  ten entries of a lead's contacts and of an org chart's people (rules cannot
+  loop and 1000 expressions are the ceiling per request, measured: an org chart
+  of 20 people checked in full already exhausts it), with
+  `test/firestore-rules.test.js` covering each.
+- **ACE**: the opportunity's seller is shown as the AWS account manager
+  ("From the ACE opportunity"); a manual row with the same email wins. Until
+  the ACE opportunities sync writes `aceOpportunity`, an editor sets the seller
+  in Edit profile.
+- **Lead card**: a lead whose company has detail shows a compact block: buying-role
+  counts, the first gap, and up to four AWS contacts with email icons.
+- Not done: MCP tools for the company detail (`upsert_prospects` writes the grid
+  fields and the AWS account ID only and leaves `prospectCompanies` untouched).
