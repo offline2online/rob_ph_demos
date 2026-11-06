@@ -2405,3 +2405,26 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
   #prospect-drawer-backdrop { z-index: 40; }
   .prospect-form input[type=text], .prospect-form select, .prospect-form textarea, #prospect-priority { min-height: 44px; font-size: 16px; }
 }
+
+/* Promote › Leads: AWS ACE opportunities table (under the board) */
+.ace-section { margin-top: 28px; }
+.ace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.ace-head h3 { margin: 0; font-size: 18px; font-weight: 500; }
+.ace-summary { display: grid; gap: 8px; margin: 8px 0 12px; }
+.ace-summary-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
+.ace-summary-row > strong { min-width: 110px; font-weight: 500; }
+.ace-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 1px solid var(--border, #d6d9de); border-radius: 999px; background: var(--surface, #fff); }
+.ace-chip-n { font-weight: 700; }
+.ace-table-wrap { overflow-x: auto; border: 1px solid var(--border, #d6d9de); border-radius: 8px; background: var(--surface, #fff); }
+.ace-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ace-table th, .ace-table td { padding: 10px 12px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--border, #e6e8ec); }
+.ace-table thead th { font-weight: 500; white-space: nowrap; background: var(--surface-alt, #f6f7f9); }
+.ace-table tbody th { font-weight: 500; }
+.ace-table .ace-num { text-align: right; white-space: nowrap; }
+.ace-review { display: inline-block; padding: 1px 8px; border-radius: 4px; background: var(--surface-alt, #eef0f3); white-space: nowrap; }
+.ace-review[data-review="Approved"] { background: #e3f4e8; color: #1b5e2f; }
+.ace-review[data-review="Action Required"], .ace-review[data-review="Rejected"] { background: #fdeaea; color: #8a1c1c; }
+.ace-mail { display: inline-flex; vertical-align: middle; min-width: 32px; min-height: 32px; align-items: center; justify-content: center; color: inherit; }
+.ace-mail .material-symbols-outlined, .ace-pc .material-symbols-outlined { font-size: 18px; }
+.ace-links { white-space: nowrap; }
+.ace-none { color: var(--muted, #6b7280); }

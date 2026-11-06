@@ -1114,6 +1114,43 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Leads - ACE opportunities table under the board, summary, mailto, lead card and Partner Central links",
+    seed: () => ({ ...seed({ leads: {
+      lx: { company: { name: "Acme Retail", website: "", industry: "", countries: ["UK"], storeCount: 5 }, contacts: [], stage: "demo", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }), aceOpportunities: [
+      { id: "O1", name: "Menu boards", customer: "Acme Retail", stage: "Qualified", reviewStatus: "Approved", score: 82, expectedMonthly: { amount: 2200, currency: "USD" }, targetCloseDate: "2026-12-31", awsSeller: { name: "Ann Lee", email: "ann@amazon.com" }, partnerCentralUrl: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O1" },
+      { id: "O2", name: "Signage", customer: "Unknown Co", stage: "Prospect", reviewStatus: "Submitted", score: null, expectedMonthly: null, targetCloseDate: null, awsSeller: null, partnerCentralUrl: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O2" },
+    ] }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible("#ace-table tbody tr", "the ACE rows show");
+      const info = await c.page.evaluate(() => {
+        const board = document.getElementById("leads-board").getBoundingClientRect();
+        const sec = document.getElementById("ace-section").getBoundingClientRect();
+        const rows = [...document.querySelectorAll("#ace-body tr")];
+        return {
+          below: sec.top >= board.bottom - 1,
+          heads: [...document.querySelectorAll("#ace-table thead th")].map((e) => e.textContent.trim()),
+          summary: document.getElementById("ace-summary").textContent.replace(/\s+/g, " "),
+          mail: rows[0].querySelector(".ace-mail").getAttribute("href"),
+          noMail: !rows[1].querySelector(".ace-mail"),
+          pc: rows[0].querySelector(".ace-pc").getAttribute("href"),
+          noLead: !rows[1].querySelector(".ace-lead"),
+        };
+      });
+      assert.ok(info.below, "the table sits under the board");
+      assert.deepStrictEqual(info.heads.slice(0, 8), ["Opportunity", "Customer", "ACE stage", "Review status", "Score", "Expected monthly AWS revenue", "Target close date", "AWS account manager"]);
+      assert.match(info.summary, /2 Prospect|1 Prospect/);
+      assert.match(info.summary, /1 Approved/);
+      assert.ok(info.mail.startsWith("mailto:ann@amazon.com?subject="), "the email icon is a mailto");
+      assert.ok(info.noMail && info.noLead, "no manager and no matching lead show no icon or lead link");
+      assert.ok(info.pc.startsWith("https://partnercentral.awspartner.com/"));
+      await c.page.click("#ace-body tr:first-child .ace-lead");
+      await c.visible("#lead-summary-panel", "the lead card opens");
+    },
+  },
+  {
     name: "Promote: Leads tiles - industry colours, nothing overflows, summary opens, stage changes, Esc closes",
     seed: () => seed({ leads: {
       w1: { company: { name: "Telco With A Really Long Company Name That Keeps Going And Going Plc", website: "https://telco.example", industry: "", countries: ["UK"], storeCount: 1200 }, contacts: [{ id: "k1", name: "Ana Lyst", jobTitle: "CTO", buyingRole: "decision-maker", email: "ana@telco.example", linkedin: "https://linkedin.com/in/ana" }], stage: "lead", source: "website", sourcePage: "https://personalisationhub.com/industries/telco/", sourceIndustry: "Telco retail", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },

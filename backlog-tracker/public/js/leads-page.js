@@ -14,6 +14,7 @@ import {
   STAGES, BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
   companyLine, conversionFields, isStage,
 } from "./leads-core.js";
+import { summarise, matchLead, mailtoFor, partnerCentralHref, formatMonthly, formatDate } from "./ace-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -50,6 +51,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       fillAssignees(); render();
     }).catch(() => {});
     fillStages();
+    loadAce();
   }
   function stop() { if (unsub) unsub(); unsub = null; started = false; }
 
@@ -87,6 +89,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       <div class="lead-lane-body">${lanes[s.key].map(cardHTML).join("")}</div>
     </section>`).join("");
     if (summaryId) renderSummary();
+    if (aceRows) renderAce();
   }
 
   async function moveTo(id, stage) {
@@ -453,6 +456,58 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       if (await persist({ stage: c.fields.stage, customerAccount: c.fields.customerAccount })) closeLead();
     } catch (err) { setError(`Couldn't convert: ${err && err.message ? err.message : err}`); }
   });
+
+  // ── AWS ACE opportunities (under the board) ─────────────────────────────
+  let aceRows = null;
+  async function loadAce() {
+    const status = $("ace-status");
+    status.hidden = false; status.textContent = "Loading ACE opportunities…";
+    try {
+      const resp = await fetch("/partnerCentral/v1/ace", { method: "GET", headers: await apiHeaders() });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(resp.status === 403 ? (body.error || "Only editors and admins can see the ACE opportunities.") : (body.error || `HTTP ${resp.status}`));
+      aceRows = Array.isArray(body.opportunities) ? body.opportunities : [];
+      renderAce(body);
+    } catch (err) {
+      aceRows = null;
+      $("ace-summary").hidden = true; $("ace-table-wrap").hidden = true;
+      status.textContent = `Couldn't load the ACE opportunities: ${err && err.message ? err.message : err}`;
+    }
+  }
+  function renderAce(meta = {}) {
+    if (!aceRows) return;
+    const status = $("ace-status");
+    const rows = aceRows;
+    $("ace-summary").hidden = rows.length === 0;
+    $("ace-table-wrap").hidden = rows.length === 0;
+    status.hidden = false;
+    status.textContent = rows.length ? `${rows.length} ${rows.length === 1 ? "opportunity" : "opportunities"} from AWS Partner Central${meta.catalog === "Sandbox" ? " (Sandbox)" : ""}${meta.truncated ? ", first 100 shown" : ""}.` : "No ACE opportunities yet.";
+    const sum = summarise(rows);
+    const chips = (items) => items.map((i) => `<span class="ace-chip"><span class="ace-chip-n">${i.count}</span> ${esc(i.label)}</span>`).join("");
+    $("ace-summary").innerHTML = `<div class="ace-summary-row"><strong>ACE stage</strong>${chips(sum.byStage)}</div><div class="ace-summary-row"><strong>Review status</strong>${chips(sum.byReview)}</div>`;
+    $("ace-body").innerHTML = rows.map((r) => {
+      const lead = matchLead(r, leads);
+      const mail = mailtoFor(r);
+      const pc = partnerCentralHref(r);
+      const seller = r.awsSeller;
+      return `<tr data-ace-id="${esc(r.id)}">
+        <th scope="row">${esc(r.name || r.id)}</th>
+        <td>${esc(r.customer)}</td>
+        <td>${esc(r.stage)}</td>
+        <td>${r.reviewStatus ? `<span class="ace-review" data-review="${esc(r.reviewStatus)}">${esc(r.reviewStatus)}</span>` : ""}</td>
+        <td class="ace-num">${r.score == null ? "" : esc(r.score)}</td>
+        <td class="ace-num">${esc(formatMonthly(r.expectedMonthly))}</td>
+        <td>${esc(formatDate(r.targetCloseDate))}</td>
+        <td>${seller ? `<span class="ace-seller">${esc(seller.name)}</span>${mail ? ` <a class="ace-mail" href="${esc(mail)}" aria-label="Email ${esc(seller.name)} about ${esc(r.name || r.id)}" title="Email ${esc(seller.name)}"><span class="material-symbols-outlined" aria-hidden="true">email</span></a>` : ""}` : '<span class="ace-none">Not assigned</span>'}</td>
+        <td class="ace-links">${lead ? `<button type="button" class="btn-ghost ace-lead" data-lead-id="${esc(lead.id)}">Lead card</button>` : '<span class="ace-none" title="No lead with this company name">No lead</span>'}${pc ? ` <a class="btn-ghost ace-pc" href="${esc(pc)}" target="_blank" rel="noopener noreferrer">Partner Central <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span></a>` : ""}</td>
+      </tr>`;
+    }).join("");
+  }
+  $("ace-body").addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest(".ace-lead");
+    if (b) openSummary(b.dataset.leadId);
+  });
+  $("ace-refresh").addEventListener("click", () => loadAce());
 
   return { start, stop, render, stageLabel, roleLabel, open: openLead, openSummary };
 }

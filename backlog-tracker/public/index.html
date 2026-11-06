@@ -1158,6 +1158,26 @@
       </div>
       <p class="promote-empty" id="leads-empty" hidden>No leads yet. Add one with the button above.</p>
       <div class="leads-board-wrap"><div class="leads-board" id="leads-board"></div></div>
+
+      <!-- AWS ACE opportunities, laid out like the opportunities list in AWS Partner Central.
+           Rendered by js/leads-page.js from /partnerCentral/v1/ace (the Selling API). -->
+      <section class="ace-section" id="ace-section" aria-labelledby="ace-title">
+        <div class="ace-head">
+          <h3 id="ace-title">AWS ACE opportunities</h3>
+          <button type="button" class="btn-ghost" id="ace-refresh">Refresh</button>
+        </div>
+        <p class="promote-empty" id="ace-status" role="status" aria-live="polite">Loading ACE opportunities…</p>
+        <div class="ace-summary" id="ace-summary" hidden></div>
+        <div class="ace-table-wrap" id="ace-table-wrap" hidden>
+          <table class="ace-table" id="ace-table">
+            <thead><tr>
+              <th scope="col">Opportunity</th><th scope="col">Customer</th><th scope="col">ACE stage</th><th scope="col">Review status</th>
+              <th scope="col" class="ace-num">Score</th><th scope="col" class="ace-num">Expected monthly AWS revenue</th><th scope="col">Target close date</th><th scope="col">AWS account manager</th><th scope="col">Links</th>
+            </tr></thead>
+            <tbody id="ace-body"></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
     <!-- Promote › Prospects (TAM) (#promote/prospects): every possible target company, globally, in one AG Grid
