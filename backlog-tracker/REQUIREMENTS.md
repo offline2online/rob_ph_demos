@@ -2322,10 +2322,9 @@ not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
   (prioritised requests, a release pipeline with a gate, live releases) is
   **step 2**; the **FAQs DB** under PH (connected to PH by API, to live
   releases, Support email and the PH website) is **step 1**; a dotted line
-  runs from PH releases to Ads, Social posts and PR. Notes along the bottom
-  show the September focus: get rid of Freshdesk (replaced by the FAQs DB
-  and support, step 1) and of Atlassian at about $60 a seat (replaced by the
-  Feature Release pipeline and Staff Kanban, step 2). Internal operations
+  runs from PH releases to Ads, Social posts and PR. There are no notes
+  under the sketch (the September focus notes were personal and were
+  removed). Internal operations
   and unassigned concepts and projects sit in a strip under the sketch.
   It is not pinned or saved (no Re-arrange, History or release filter).
 - **Sales process** (ticket 3FXpHzR1vEqhXzyiyEis, 6 Nov 2026; replaces the

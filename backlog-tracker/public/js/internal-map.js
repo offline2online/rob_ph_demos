@@ -4,7 +4,7 @@
 // along the top (step 2); the FAQs DB (step 1) under PH.
 //
 // Pure functions, no DOM and no Firestore, so the unit test can drive them:
-//   buildInternalMap({projects, concepts}) -> {nodes, edges, notes, zones, layout, byId}
+//   buildInternalMap({projects, concepts}) -> {nodes, edges, zones, layout, byId}
 //   internalMapHTML(model) -> an <svg> string
 //
 // The layout is fixed (the sketch), not pinned or saved like the Platform
@@ -126,11 +126,6 @@ export const INTERNAL_EDGES = [
   ...laneEdges,
 ];
 
-// September focus, shown as notes under the sketch.
-export const SEPTEMBER_FOCUS = [
-  { step: 1, text: "Get rid of Freshdesk, replaced by the FAQs DB and support." },
-  { step: 2, text: "Get rid of Atlassian (about $60 a seat), replaced by the Feature Release pipeline and Staff Kanban." },
-];
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -177,10 +172,7 @@ export function buildInternalMap({ projects = [], concepts = [] } = {}) {
     byId[it.id] = it;
   });
   const stripH = 56 + (items.length ? rows * STRIP_GAP_Y : 50);
-  const notesTop = stripTop + stripH + 16;
-  const notes = SEPTEMBER_FOCUS.map((n, i) => ({ ...n, x: 24 + i * 742, y: notesTop + 34, w: 730, lines: wrap(n.text, 100) }));
-  const notesH = 34 + 20 * Math.max(...notes.map((n) => n.lines.length)) + 24;
-  const H = notesTop + notesH + 16;
+  const H = stripTop + stripH + 16;
 
   const edges = INTERNAL_EDGES.map((e) => ({ ...e, from: `int:${e.from}`, to: `int:${e.to}` }));
   edges.forEach((e) => {
@@ -200,7 +192,7 @@ export function buildInternalMap({ projects = [], concepts = [] } = {}) {
   });
 
   return {
-    nodes, edges, notes, byId, items,
+    nodes, edges, byId, items,
     zones: INTERNAL_ZONES,
     strip: { top: stripTop, h: stripH },
     layout: { w: INTERNAL_W, h: H, mode: "internal" },
@@ -260,12 +252,6 @@ export function internalMapHTML(model) {
       ${board ? `<text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">${esc(n.status)}${n.unassigned ? '<tspan class="sysmap-node-unassigned" dx="8">Unassigned</tspan>' : ""}</text>` : ""}
       ${n.step ? stepBadge(x + nw - 4, y - 2, n.step) : ""}</g>`;
   });
-  svg += `<text class="sysmap-boundary-label" x="24" y="${model.notes[0].y - 14}">September focus</text>`;
-  model.notes.forEach((n) => {
-    svg += `<g class="intmap-note"><rect class="intmap-note-box" x="${n.x}" y="${n.y}" width="${n.w}" height="${20 * n.lines.length + 24}" rx="8"/>
-      ${stepBadge(n.x + 24, n.y + 24, n.step)}
-      ${n.lines.map((t, k) => `<text class="sysmap-edge-label intmap-note-text" x="${n.x + 48}" y="${n.y + 28 + k * 20}">${esc(t)}</text>`).join("")}</g>`;
-  });
   return svg + "</svg>";
 }
 
@@ -274,5 +260,5 @@ function stepBadge(cx, cy, step) {
 }
 
 export function internalLegendHTML() {
-  return `<span class="sysmap-key s-project">Project</span><span class="sysmap-key s-concept">Concept</span><span class="sysmap-key s-bridge">Bridge to the Platform map</span><span class="sysmap-key s-step">1 / 2 September focus</span><span class="sysmap-key s-proc">Process step (ACE stage above it)</span>${[["onepager", "Industry one-pager"], ["pack", "Prospect pack"], ["fundcheck", "Funding prompted & eligibility check"], ["pocdraft", "POC funding draft"], ["sandbox", "Sandbox credit draft"], ["signoff", "Claim sign-off document"]].map(([k, t]) => `<span class="sysmap-key s-doc intmap-doc-key-${k}">Document: ${t}</span>`).join("")}`;
+  return `<span class="sysmap-key s-project">Project</span><span class="sysmap-key s-concept">Concept</span><span class="sysmap-key s-bridge">Bridge to the Platform map</span><span class="sysmap-key s-proc">Process step (ACE stage above it)</span>${[["onepager", "Industry one-pager"], ["pack", "Prospect pack"], ["fundcheck", "Funding prompted & eligibility check"], ["pocdraft", "POC funding draft"], ["sandbox", "Sandbox credit draft"], ["signoff", "Claim sign-off document"]].map(([k, t]) => `<span class="sysmap-key s-doc intmap-doc-key-${k}">Document: ${t}</span>`).join("")}`;
 }

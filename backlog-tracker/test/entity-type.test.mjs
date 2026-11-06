@@ -71,10 +71,7 @@ for (const [a, b] of [["agents", "mcp"], ["casestudies", "agents"], ["reqqueue",
 assert.ok(INTERNAL_EDGES.find((e) => e.from === "phreleases" && e.to === "ads").dotted, "a dotted line from PH releases to Ads, Social posts and PR");
 
 const html = internalMapHTML(internal);
-assert.match(html, /September focus/);
-assert.match(html, /Freshdesk/);
-assert.match(html, /Atlassian/);
-assert.match(html, /\$60 a seat/);
+assert.doesNotMatch(html, /September focus|Get rid of|Atlassian|\$60 a seat/);
 assert.match(html, /Unassigned/);
 assert.ok(html.includes('data-node-id="int:mcp"') && html.includes('data-node-id="p-int"'));
 assert.ok(!html.includes("Loyalty idea") && !html.includes("Display Types"), "no Platform item is drawn twice on the Internal map");

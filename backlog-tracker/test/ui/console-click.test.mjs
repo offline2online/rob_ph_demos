@@ -1023,8 +1023,8 @@ const scenarios = [
       assert.ok(internal.includes("Gamma") && !internal.includes("Alpha"), `Internal view has Internal items only: ${internal.join(", ")}`);
       for (const n of ["Customer Success agents", "FAQs DB", "Sales agents", "Embedded support", "MCP Access", "PH releases"]) assert.ok(internal.includes(n), `${n} on the Internal map`);
       const text = await c.page.evaluate(() => document.getElementById("system-map-canvas").textContent);
-      assert.ok(/September focus/.test(text) && /Freshdesk/.test(text) && /Atlassian/.test(text), "September focus notes");
-      assert.strictEqual(await c.page.locator("#system-map-canvas .intmap-step").count() >= 4, true, "steps 1 and 2 marked");
+      assert.ok(!/September focus/.test(text) && !/Get rid of/i.test(text), "no personal September focus notes");
+      assert.strictEqual(await c.page.locator("#system-map-canvas .intmap-step").count() >= 2, true, "steps 1 and 2 marked");
       await c.click('#system-map-canvas .intmap-bridge', "click a bridge node");
       await c.visible('#system-map-type [data-map-type="Platform"].active', "opens the Platform map");
       platform = await names();
