@@ -40,6 +40,13 @@
           }
         },
         {
+          "source": "/partnerCentral/**",
+          "function": {
+            "functionId": "partnerCentral",
+            "region": "us-central1"
+          }
+        },
+        {
           "source": "/mediaKeys/**",
           "function": {
             "functionId": "mediaKeys",

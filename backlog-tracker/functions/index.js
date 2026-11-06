@@ -2249,6 +2249,29 @@ exports.mediaKeys = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY], co
   return mediaKeysApi.handle(req, res);
 });
 
+// ── AWS Partner Central (Selling + Benefits APIs), keyless ────────────────
+// Assumes an IAM role by Google OIDC federation (no AWS key stored anywhere).
+// See partner-central.js and deploy/aws/README.md.
+const { createPartnerCentralApi } = require("./partner-central");
+let partnerCentralApi = null;
+exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstances: 3 }, (req, res) => {
+  if (!partnerCentralApi) {
+    const { getAuth } = require("firebase-admin/auth");
+    const { GoogleAuth } = require("google-auth-library");
+    partnerCentralApi = createPartnerCentralApi({
+      db: getFirestore(),
+      verifyIdToken: (t) => getAuth().verifyIdToken(t, true),
+      resolveConsoleUser: mcp.resolveConsoleUser,
+      getWebIdentityToken: async () => {
+        const client = await new GoogleAuth().getIdTokenClient("sts.amazonaws.com");
+        return client.idTokenProvider.fetchIdToken("sts.amazonaws.com");
+      },
+      logger,
+    });
+  }
+  return partnerCentralApi.handle(req, res);
+});
+
 // Promote › Leads: the page's Enrich button (lead-enrich.js). Reads the
 // website, and the technology-lookup key from the same encrypted store as the
 // Media Studio keys, so it is bound to the same MEDIA_KEYS_ENC_KEY secret.

@@ -4160,3 +4160,14 @@ Rules:
   `test/mcp-server.test.js` and `test/mcp-client.test.mjs`,
   `test/permissions.test.mjs`, `test/promote-section.test.mjs`, a scenario in
   `test/ui/console-click.test.mjs`.
+
+## AWS Partner Central connection
+
+The console backend can securely call AWS Partner Central (Selling API for ACE
+opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
+
+- Keyless: Google OIDC -> `AssumeRoleWithWebIdentity` -> short-lived credentials; the IAM role is code in `deploy/aws/partner-central-role.yaml`, least privilege (AWS-managed opportunity policy; benefits create/update only, submit denied).
+- Wrappers: list/get/create/update opportunity; create draft benefit application only, never submit.
+- Sandbox catalogue by default; the live AWS catalogue only by an explicit admin `LIVE` confirmation.
+- Settings shows connected / not linked yet / error, the catalogue, the last successful call and an audit log of every call (`partnerCentralAudit`); CloudTrail records the AWS side.
+- Dependency (manual): link the Partner Central account to the AWS account and map the role to a Partner Central user role.

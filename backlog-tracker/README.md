@@ -1842,6 +1842,27 @@ Once the token is in place, the acceptance check is simply that setting
 ~10, and that the triggering run shows **repository_dispatch** (not
 `schedule`) as its event on the Actions tab.
 
+### AWS Partner Central connection — keyless (6 Nov 2026)
+
+`functions/partner-central.js` (function `partnerCentral`, Hosting rewrite
+`/partnerCentral/**`, admins only) lets the console backend call the Partner
+Central **Selling API** (ACE opportunities: list/get/create/update) and
+**Benefits API** (draft benefit applications only; no submit wrapper, and the
+role denies submit) with no stored AWS key: a Google OIDC token for the
+function's service account is traded at STS (`AssumeRoleWithWebIdentity`) for
+15-minute credentials, and requests are SigV4-signed in-module. The role is
+defined as code in `deploy/aws/partner-central-role.yaml`
+(`arn:aws:iam::817173160653:role/PH-Console-PartnerCentral`); set-up steps,
+including Rob's manual Partner Central account link and role mapping, are in
+`deploy/aws/README.md`. The catalogue is **Sandbox** until an admin switches to
+**AWS** with an explicit `LIVE` confirmation. Settings → Integrations & MCP →
+**AWS Partner Central** shows Connected / Not linked yet / Error, the catalogue,
+the last successful call and the last 20 calls; every call is in
+`partnerCentralAudit` (server-only), CloudTrail has the AWS side. Test:
+`node test/partner-central.test.js`. Service target names could not be
+exercised without AWS access: verify on the first Sandbox call (see
+`deploy/aws/README.md`).
+
 ### Media Studio provider keys — the `MEDIA_KEYS_ENC_KEY` secret (4 Nov 2026)
 
 **Settings → Integrations & MCP → Media Studio API keys** (admins only) is

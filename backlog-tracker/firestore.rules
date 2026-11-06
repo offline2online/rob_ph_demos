@@ -796,6 +796,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── AWS Partner Central (functions/partner-central.js) ─────────────────
+    // Call audit, connection state and catalogue setting are server-only: the
+    // console reads them through the partnerCentral function (admins only).
+    match /partnerCentralAudit/{entry} {
+      allow read, write: if false;
+    }
+    match /partnerCentralState/{doc} {
+      allow read, write: if false;
+    }
+
     // ── Staff pronunciations (functions/kanban.js) ─────────────────────────
     // staffPronunciations/{email} = { pronunciation, updatedBy, updatedAt }:
     // how a member's name is said, for agents only (kanban_get_staff_names).

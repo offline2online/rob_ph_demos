@@ -95,6 +95,11 @@ export async function startHarness() {
         // Media Studio key settings (functions/media-keys.js). seed.mediaKeys is
         // the status answer; every other call is answered OK and returned to the
         // test as mediaKeyWrites.
+        // AWS Partner Central status (functions/partner-central.js): not linked yet, no calls.
+        if (url.pathname.startsWith("/partnerCentral/")) {
+          const body = url.pathname.endsWith("/audit") ? { entries: [] } : { state: "not-linked", catalog: "Sandbox", roleArn: "arn:aws:iam::817173160653:role/PH-Console-PartnerCentral", lastSuccessAt: null, lastError: null, note: "Not linked yet" };
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+        }
         if (url.pathname.startsWith("/mediaKeys/")) {
           const req = route.request();
           if (url.pathname === "/mediaKeys/v1/status") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.mediaKeys || { encryptionReady: true, providers: [] }) });

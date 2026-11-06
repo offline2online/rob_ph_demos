@@ -1461,6 +1461,20 @@
               <div class="media-keys-list" id="media-keys-list"><p class="interface-row-empty">Loading…</p></div>
             </div>
 
+            <!-- AWS Partner Central connection (functions/partner-central.js).
+                 Admin-only, read-only status plus Test connection; keyless, so
+                 there is nothing to paste. -->
+            <div class="docs-block" data-admin-only id="partner-central-block">
+              <div class="docs-block-header">
+                <h3>AWS Partner Central
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About the AWS Partner Central connection" data-tip="How the console talks to AWS Partner Central (ACE opportunities and funding drafts). It assumes an AWS role with short-lived credentials, so no AWS keys are stored. Every call is logged here and in AWS CloudTrail."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-ghost" id="partner-central-test">Test connection</button>
+              </div>
+              <div id="partner-central-status"><p class="interface-row-empty">Loading…</p></div>
+              <div id="partner-central-audit"></div>
+            </div>
+
             <!-- Per-browser only — localStorage, never Firestore (see
                  createDictationController / bt-dictation-lang / bt-dictation-engine
                  in app.js). -->

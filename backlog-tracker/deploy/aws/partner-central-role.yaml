@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  PH Agent Console -> AWS Partner Central (Selling + Benefits APIs).
+  Keyless: the console's Cloud Function presents a Google-issued OIDC token and
+  assumes this role with AssumeRoleWithWebIdentity. No access keys exist.
+Parameters:
+  ConsoleServiceAccountUniqueId:
+    Type: String
+    Description: >
+      Numeric unique id of the Cloud Functions runtime service account in
+      backlog-tracker-e4ed2 (gcloud iam service-accounts describe <email> --format='value(uniqueId)').
+    AllowedPattern: "^[0-9]{10,25}$"
+  RoleName:
+    Type: String
+    Default: PH-Console-PartnerCentral
+Resources:
+  ConsoleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Assumed by the PH Agent Console backend via Google OIDC federation.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: accounts.google.com }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "accounts.google.com:sub": !Ref ConsoleServiceAccountUniqueId
+      ManagedPolicyArns:
+        # AWS-managed Partner Central policies. Opportunity management only;
+        # funding is added below as draft-only (no Submit*).
+        - arn:aws:iam::aws:policy/AWSPartnerCentralOpportunityManagement
+      Policies:
+        - PolicyName: BenefitsDraftOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - partnercentral:CreateBenefitApplication
+                  - partnercentral:UpdateBenefitApplication
+                  - partnercentral:GetBenefitApplication
+                  - partnercentral:ListBenefitApplications
+                  - partnercentral:ListBenefitAllocations
+                  - partnercentral:ListBenefits
+                  - partnercentral:GetBenefit
+                Resource: "*"
+              - Effect: Deny
+                Action:
+                  - partnercentral:SubmitBenefitApplication
+                  - partnercentral:CancelBenefitApplication
+                Resource: "*"
+Outputs:
+  RoleArn:
+    Value: !GetAtt ConsoleRole.Arn
