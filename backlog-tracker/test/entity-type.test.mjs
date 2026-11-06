@@ -98,15 +98,18 @@ assert.match(noteOf("indpage"), /matched to TAM/); assert.match(noteOf("indpage"
 for (const [k, re] of [["hotlead", /Prospect/], ["meetings", /Qualified/], ["demos", /Technical Validation/], ["custok", /Business Validation/], ["pocstep", /Committed/], ["rollout", /Launched/]]) assert.match(aceOf(k), re, `${k} shows its ACE stage`);
 // documents: one distinct node each, attached to the step that creates them, each in a different colour
 const docs = INTERNAL_NODES.filter((n) => n.kind === "doc");
-assert.deepEqual(docs.map((d) => [d.key, d.docOf]), [["onepager", "prospect"], ["pack", "prospect"], ["pocdraft", "hotlead"], ["sandbox", "hotlead"], ["signoff", "pocstep"]]);
+assert.deepEqual(docs.map((d) => [d.key, d.docOf]), [["onepager", "prospect"], ["pack", "prospect"], ["fundcheck", "demos"], ["pocdraft", "fundcheck"], ["sandbox", "pocdraft"], ["signoff", "sandbox"]]);
 for (const d of docs) assert.ok(INTERNAL_EDGES.some((e) => e.from === d.docOf && e.to === d.key), `${d.key} hangs off ${d.docOf}`);
 const css = fs.readFileSync(new URL("../public/css/styles.css", import.meta.url), "utf8");
 const fills = docs.map((d) => (css.match(new RegExp(`\\.intmap-doc-${d.key} rect \\{ fill: (#[0-9a-f]+)`)) || [])[1]);
 assert.ok(fills.every(Boolean) && new Set(fills).size === docs.length, `each document has its own colour: ${fills}`);
-for (const re of [/Industry one-pager/, /Prospect pack/, /POC funding draft/, /Sandbox credits draft/, /Customer sign-off/, /Innovation Sandbox/, /logo-branded/, /last-researched/, /funding status on the lead card/, /ACE: Technical Validation/]) assert.match(html, re);
+for (const re of [/Industry one-pager/, /Prospect pack/, /POC funding draft/, /Sandbox credit draft/, /Claim sign-off document/, /auto-created, then provided manually by the account owner/, /logo-branded/, /last-researched/, /funding status on the lead card/, /ACE: Technical Validation/]) assert.match(html, re);
+assert.equal(INTERNAL_NODES.find((n) => n.key === "fundcheck").name, "Funding prompted & eligibility check");
+assert.ok(INTERNAL_EDGES.some((e) => e.from === "demos" && e.to === "fundcheck" && !e.dotted), "the funding line leaves ACE Technical / Business Validation");
+assert.ok(!INTERNAL_EDGES.some((e) => e.from === "hotlead" && /^(fundcheck|pocdraft|sandbox)$/.test(e.to)), "nothing funds from the ACE opportunity step");
 const legend = internalLegendHTML();
 assert.match(legend, /Process step/);
 for (const d of docs) assert.ok(legend.includes(`intmap-doc-key-${d.key}`), `legend lists ${d.key}`);
-assert.ok(!/Business case|Solution brief|Deployment notes|Account summary/.test(html), "documents not tied to a step are gone");
+assert.ok(!/Manual submission|Funding status<|Eligibility check<|Business case|Solution brief|Deployment notes|Account summary/.test(html), "documents not tied to a step are gone");
 assert.ok(internal.strip.top >= zone("process").y + zone("process").h, "board strip sits under the Sales process");
 console.log("entity-type + internal map: ok");

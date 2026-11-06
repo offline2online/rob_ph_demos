@@ -2342,11 +2342,14 @@ not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
   lanes**: each is its own node, in its own colour, hung under the step that
   creates it and drawn only where needed: industry one-pager and the
   customised, logo-branded prospect pack at Prospect / Hot Prospect (made
-  before the ACE opportunity, used to define and attach to it); the draft POC
-  funding application and draft Innovation Sandbox credit application at the
-  ACE opportunity (drafts only, submitted manually by the account lead); the
-  customer sign-off / proof-of-execution document at proof of concept, after
-  POC funding approval. A legend separates process steps from documents. A
+  before the ACE opportunity, used to define and attach to it). The
+  AWS funding line, which starts at ACE Technical / Business
+  Validation (the arrow leaves that step, not the ACE opportunity): one
+  combined "Funding prompted & eligibility check" box, then the POC funding
+  draft, Sandbox credit draft and Claim sign-off document, each noting the
+  skill and template that produce it. The lane title says the documents are
+  auto-created and then provided manually by the account owner. There is no
+  Manual submission or Funding status box. (Ticket X5dIkrYoD3z6Z22k4YWX.) A legend separates process steps from documents. A
   document not tied to a step is not shown. **TAM profile and branded demo**
   (ticket pNbib8Ith2yaS0KxcXnY): the TAM step's note records that each company
   profile keeps the latest logo, the company's email formats (e.g.
