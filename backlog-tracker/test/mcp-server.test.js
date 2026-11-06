@@ -1091,50 +1091,27 @@ async function rpc(token, method, params, id = 1) {
     assert.deepStrictEqual(await ids({ campaign: "spring" }), ["pr1"]);
     assert.deepStrictEqual(await ids({ sizeBand: "large" }), ["pr1"]);
     assert.deepStrictEqual(await ids({ status: "targeted", minStores: 10 }), ["pr2"]);
-    assert.deepStrictEqual(await ids({ country: "united kingdom" }), ["pr1"], "a document without country reads as its first market");
-    assert.deepStrictEqual(await ids({ country: "Ireland" }), [], "country is the record's country, not any market");
   });
-  await test("upsert_prospects creates new companies and merges into existing ones by name + country", async () => {
+  await test("upsert_prospects creates new companies and merges into existing ones by name", async () => {
     const out = JSON.parse((await prCall("upsert_prospects", { prospects: [
-      { name: "acme grocer", country: "United Kingdom", vendors: ["Signage Co"] },
-      { name: "Gamma Fashion", country: "France", hqCountry: "France", storeCount: 1500, industry: "Fashion" },
+      { name: "acme grocer", vendors: ["Signage Co"] },
+      { name: "Gamma Fashion", hqCountry: "France", storeCount: 1500, industry: "Fashion" },
     ] })).content[0].text);
     assert.strictEqual(out.created, 1); assert.strictEqual(out.updated, 1);
     const acme = env.store.col("prospects").get("pr1");
     assert.deepStrictEqual(acme.vendors, ["Signage Co"]);
     assert.strictEqual(acme.industry, "Grocery", "a field not sent is kept");
     assert.strictEqual(acme.storeCount, 400);
-    assert.ok(env.store.col("prospects").get("pr1").country === "United Kingdom", "an older record gets its country on update");
-    const gamma = env.store.col("prospects").get("gammafashion-france");
+    const gamma = env.store.col("prospects").get("gammafashion");
     assert.strictEqual(gamma.awsRegion, "eu-west-3"); assert.strictEqual(gamma.sizeBand, "xlarge"); assert.strictEqual(gamma.status, "new");
     assert.ok(gamma.createdByEmail);
   });
-  await test("upsert_prospects: the same company in another country is another record; the new fields round-trip", async () => {
-    const send = async (country, extra) => JSON.parse((await prCall("upsert_prospects", { prospects: [{ name: "ALDI", country, ...extra }] })).content[0].text);
-    assert.strictEqual((await send("Australia", { priority: "high", storePresence: "~2,800", linkedinUrl: "linkedin.com/company/Aldi-au", linkedinOrgId: "1234", linkedinVerified: true, ownership: "Private", insights: "Fast growing", decisionMakers: "CMO", contacts: [{ name: "Jo", role: "CMO", lastContact: "May" }] })).created, 1);
-    assert.strictEqual((await send("Netherlands", {})).created, 1);
-    const again = await send("Australia", { priority: "low" });
-    assert.strictEqual(again.created, 0); assert.strictEqual(again.updated, 1);
-    const col = env.store.col("prospects");
-    assert.deepStrictEqual([col.has("aldi-australia"), col.has("aldi-netherlands")], [true, true]);
-    const au = col.get("aldi-australia");
-    assert.strictEqual(au.priority, "low"); assert.strictEqual(au.storeCount, 2800); assert.strictEqual(au.linkedinUrl, "https://www.linkedin.com/company/aldi-au/");
-    assert.strictEqual(au.awsRegion, "ap-southeast-2"); assert.strictEqual(au.insights, "Fast growing"); assert.deepStrictEqual(au.contacts, [{ name: "Jo", role: "CMO", lastContact: "May" }]);
-    const listed = JSON.parse((await prCall("list_prospects", { country: "Australia", priority: "low" })).content[0].text).prospects;
-    assert.deepStrictEqual(listed.map((p) => p.id), ["aldi-australia"]);
-    assert.strictEqual(listed[0].linkedinOrgId, "1234"); assert.strictEqual(listed[0].country, "Australia"); assert.strictEqual(listed[0].contacts.length, 1);
-    assert.strictEqual((await prCall("upsert_prospects", { prospects: [{ name: "ALDI" }] })).isError, true, "a country is required");
-    assert.strictEqual((await prCall("upsert_prospects", { prospects: [{ name: "ALDI", country: "Germany", linkedinUrl: "https://www.linkedin.com/search/results/companies/?keywords=aldi" }] })).isError, true);
-    assert.strictEqual((await prCall("upsert_prospects", { prospects: [{ name: "ALDI", country: "Germany", linkedinOrgId: "abc" }] })).isError, true);
-    const many = Array.from({ length: 51 }, (_, i) => ({ name: `Co${i}`, country: "X" }));
-    assert.strictEqual((await prCall("upsert_prospects", { prospects: many })).isError, true, "50 per call");
-  });
   await test("upsert_prospects writes nothing when any entry is invalid, and never converts", async () => {
     const before = env.store.col("prospects").get("pr2").storeCount;
-    const bad = await prCall("upsert_prospects", { prospects: [{ name: "Beta Pharma", country: "Germany", storeCount: 99 }, { name: "Bad", country: "X", status: "converted" }] });
+    const bad = await prCall("upsert_prospects", { prospects: [{ name: "Beta Pharma", storeCount: 99 }, { name: "Bad", status: "converted" }] });
     assert.strictEqual(bad.isError, true);
     assert.strictEqual(env.store.col("prospects").get("pr2").storeCount, before);
-    assert.strictEqual((await prCall("upsert_prospects", { prospects: [{ name: "X", country: "X", awsRegion: "mars" }] })).isError, true);
+    assert.strictEqual((await prCall("upsert_prospects", { prospects: [{ name: "X", awsRegion: "mars" }] })).isError, true);
     assert.strictEqual((await prCall("upsert_prospects", { prospects: [] })).isError, true);
   });
 

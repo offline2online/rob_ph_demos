@@ -2283,23 +2283,6 @@ body { overflow-x: clip; }
 .prospect-trunc { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prospects-grid .ag-cell { min-width: 0; }
 .prospects-float-select { font-size: 13px; }
-.prospect-name-btn { display: block; max-width: 100%; padding: 0; font: inherit; font-weight: 500; text-align: left; background: none; border: 0; color: var(--primary, #1565c0); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prospect-name-btn:hover { text-decoration: underline; }
-.prospect-li-link { display: inline-flex; align-items: center; color: var(--primary, #1565c0); }
-.prospect-li-link .material-symbols-outlined { font-size: 20px; }
-.prospects-grid .ag-floating-filter-input { position: relative; }
-.prospect-clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; background: none; border: 0; border-radius: 50%; color: var(--text-muted); cursor: pointer; }
-.prospect-clear:hover, .prospect-clear:focus-visible { background: var(--primary-tint); color: var(--text); }
-.prospect-clear .material-symbols-outlined { font-size: 16px; }
-.prospects-grid .ag-floating-filter-input.has-value .prospect-clear { display: inline-flex; }
-.prospects-grid .ag-floating-filter-input.has-value input.ag-input-field-input { padding-right: 28px; }
-.prospect-form { display: grid; gap: 4px; }
-.prospect-form label { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
-.prospect-form input[type=text], .prospect-form input[type=url], .prospect-form select, .prospect-form textarea { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface, #fff); color: var(--text); box-sizing: border-box; }
-.prospect-form .prospect-check { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-.prospect-contacts-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.prospect-contacts-table th, .prospect-contacts-table td { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
-.prospect-insights { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; }
 .prospects-pop { position: fixed; z-index: 60; min-width: 200px; max-width: min(320px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; padding: 6px; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .15); }
 .prospects-pop[hidden] { display: none; }
 .prospects-pop-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; font: inherit; font-size: 14px; text-align: left; background: none; border: 0; border-radius: 6px; cursor: pointer; color: var(--text); }
@@ -2380,10 +2363,4 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
   .leads-board { grid-template-columns: 1fr; }
   .lead-sum-stage, .lead-panel input, .lead-panel select { min-height: 44px; font-size: 16px; }
   .lead-sum-row { grid-template-columns: 96px minmax(0, 1fr); }
-}
-
-/* Prospect detail drawer: above the phone tab bar so its Edit/Save buttons can be tapped. */
-@media (max-width: 640px) {
-  #prospect-drawer-backdrop { z-index: 40; }
-  .prospect-form input[type=text], .prospect-form select, .prospect-form textarea, #prospect-priority { min-height: 44px; font-size: 16px; }
 }

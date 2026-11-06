@@ -9,14 +9,12 @@ const core = require("./prospects-core");
 
 const db = () => require("firebase-admin/firestore").getFirestore();
 const COLLECTION = "prospects";
-const WRITABLE = ["name", "country", "website", "priority", "storePresence", "ownership", "insights", "decisionMakers", "linkedinUrl", "linkedinOrgId", "linkedinVerified", "contacts", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand", "vendors", "campaigns", "status", "source", "notes"];
+const WRITABLE = ["name", "website", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand", "vendors", "campaigns", "status", "source", "notes"];
 
 function view(id, data) {
   const p = core.normaliseProspect(id, data);
   return {
-    id, company: p.name, country: p.country || null, priority: p.priority || null, storePresence: p.storePresence || null, ownership: p.ownership || null,
-    insights: p.insights || null, decisionMakers: p.decisionMakers || null, linkedinUrl: p.linkedinUrl || null, linkedinOrgId: p.linkedinOrgId || null,
-    linkedinVerified: p.linkedinVerified, contacts: p.contacts, website: p.website || null, industry: p.industry || null, subIndustry: p.subIndustry || null,
+    id, company: p.name, website: p.website || null, industry: p.industry || null, subIndustry: p.subIndustry || null,
     hqCountry: p.hqCountry || null, markets: p.markets, awsRegion: p.awsRegion || null, storeCount: p.storeCount,
     sizeBand: p.sizeBand, vendors: p.vendors, campaigns: p.campaigns, status: p.status, statusLabel: core.statusLabel(p.status),
     leadId: p.leadId || null, source: p.source || null, notes: p.notes || null,
@@ -24,18 +22,11 @@ function view(id, data) {
 }
 
 const PROP = {
-  name: { type: "string", description: "The company's name. A prospect is one company in one country: the same name (ignoring case and punctuation) with the same country is the same record." },
-  country: { type: "string", description: "The country this record covers, e.g. Australia. Required to add a company (ALDI is three records: ALDI · Australia, ALDI · Netherlands, ALDI · Germany)." },
-  priority: { type: "string", enum: ["", ...core.PRIORITY_KEYS] }, storePresence: { type: "string", description: "The store count as written, e.g. \"100+ stores\" or \"~2,800\". storeCount is parsed from it when you don't send one." },
-  ownership: { type: "string" }, insights: { type: "string", description: "Up to 2000 characters: priority rationale, notes." },
-  decisionMakers: { type: "string", description: "The target decision-maker roles." },
-  linkedinUrl: { type: "string", description: "The company page, linkedin.com/company/<name> or /showcase/<name>; stored as https://www.linkedin.com/company/<slug>/. Search and profile URLs are rejected." },
-  linkedinOrgId: { type: "string", description: "Digits only." }, linkedinVerified: { type: "boolean" },
-  contacts: { type: "array", maxItems: core.LIMITS.contacts, items: { type: "object", properties: { name: { type: "string" }, role: { type: "string" }, lastContact: { type: "string" } }, additionalProperties: false }, description: "Replaces the stored contacts (text only)." },
+  name: { type: "string", description: "The company's name. The same company (ignoring case and punctuation) is one prospect." },
   website: { type: "string" }, industry: { type: "string", description: "e.g. Grocery, Pharmacy, Fashion, Convenience and fuel, Telco, QSR, Electronics." },
-  subIndustry: { type: "string" }, hqCountry: { type: "string", description: "Head-office country, e.g. United Kingdom (not the record's country)." },
-  markets: { type: "array", items: { type: "string" }, description: "Other countries it operates in." },
-  awsRegion: { type: "string", description: "e.g. eu-west-2. Defaults from country (else hqCountry) when blank." },
+  subIndustry: { type: "string" }, hqCountry: { type: "string", description: "Head-office country, e.g. United Kingdom." },
+  markets: { type: "array", items: { type: "string" }, description: "Countries it operates in." },
+  awsRegion: { type: "string", description: "e.g. eu-west-2. Defaults from hqCountry when blank." },
   storeCount: { type: ["number", "null"] }, sizeBand: { type: "string", enum: core.SIZE_BAND_KEYS, description: "Defaults from storeCount." },
   vendors: { type: "array", items: { type: "string" }, description: "Current vendors where known." },
   campaigns: { type: "array", items: { type: "string" }, description: "Campaigns the company is in." },
@@ -48,14 +39,13 @@ function prospectsTools(h) {
   return [
     {
       name: "list_prospects",
-      description: "The Prospects (TAM) database (Promote › Prospects): every target company, one record per company per country, with country, priority, industry, HQ country, markets, LinkedIn page, contacts, insights, AWS region, store count, size band, vendors, campaigns, status and the lead it became. Every filter is optional and they combine.",
+      description: "The Prospects (TAM) database (Promote › Prospects): every target company worldwide, with industry, HQ country, markets, AWS region, store count, size band, vendors, campaigns, status and the lead it became. Every filter is optional and they combine.",
       scope: "board.read",
       inputSchema: {
         type: "object",
         properties: {
           q: { type: "string", description: "Text to find in the name, website, industry, countries, vendors or campaigns." },
-          industry: { type: "string" }, country: { type: "string", description: "The record's country." }, priority: { type: "string", enum: core.PRIORITY_KEYS },
-          market: { type: "string", description: "A country: matches the record's country, HQ country or any market." },
+          industry: { type: "string" }, market: { type: "string", description: "A country: matches HQ country or any market." },
           awsRegion: { type: "string" }, campaign: { type: "string" },
           sizeBand: { type: "string", enum: core.SIZE_BAND_KEYS }, status: { type: "string", enum: core.STATUS_KEYS },
           minStores: { type: "number" }, maxStores: { type: "number" },
@@ -78,7 +68,7 @@ function prospectsTools(h) {
     },
     {
       name: "upsert_prospects",
-      description: `Add or enrich companies in the Prospects (TAM) database, up to ${core.LIMITS.batch} per call. Records match on name + country (or on id): the same company in a new country is a new record. A record that already exists is updated with only the fields you send, so enrichment never blanks what is already known; a new one is created with status "new". Lists (markets, vendors, campaigns, contacts) replace the stored list, so send the full list. Nothing is deleted, and converting to a lead stays a board action.`,
+      description: `Add or enrich companies in the Prospects (TAM) database, up to ${core.LIMITS.batch} per call. A company that already exists (same name, or the same id) is updated with only the fields you send, so enrichment never blanks what is already known; a new one is created with status "new". Lists (markets, vendors, campaigns) replace the stored list, so send the full list. Nothing is deleted, and converting to a lead stays a board action.`,
       scope: "board.write",
       inputSchema: {
         type: "object",
@@ -91,7 +81,7 @@ function prospectsTools(h) {
         if (list.length > core.LIMITS.batch) return toolError(`Send at most ${core.LIMITS.batch} prospects per call.`);
         const snap = await db().collection(COLLECTION).get();
         const byKey = new Map();
-        snap.forEach((d) => { const q = core.normaliseProspect(d.id, d.data()); byKey.set(core.prospectKey(q.name, q.country), d); });
+        snap.forEach((d) => byKey.set(core.companyKey((d.data() || {}).name), d));
         const byId = new Map(snap.docs.map((d) => [d.id, d]));
         const plan = [];
         const errors = [];
@@ -101,15 +91,12 @@ function prospectsTools(h) {
           const input = {};
           for (const k of WRITABLE) if (Object.prototype.hasOwnProperty.call(x, k)) input[k] = x[k];
           if (input.status === "converted") { errors.push(`#${i + 1}: converting to a lead is done on the board.`); return; }
-          const byIdHit = x.id ? byId.get(String(x.id)) : null;
-          if (x.id && !byIdHit) { errors.push(`#${i + 1} ${x.name || ""}: no prospect has the id ${x.id}.`); return; }
-          const hit = byIdHit || byKey.get(core.prospectKey(input.name, input.country));
+          const hit = (x.id && byId.get(String(x.id))) || byKey.get(core.companyKey(input.name));
           const r = core.prospectFromInput(input, hit ? core.normaliseProspect(hit.id, hit.data()) : null);
           if (r.errors.length) { errors.push(`#${i + 1} ${x.name || ""}: ${r.errors.join(" ")}`); return; }
-          if (!core.slugId(r.fields.name) || !core.slugId(r.fields.country)) { errors.push(`#${i + 1}: the name and country need letters or numbers.`); return; }
-          const id = hit ? hit.id : core.prospectIdFor(r.fields.name, r.fields.country);
-          if (!hit && byId.has(id)) { errors.push(`#${i + 1} ${r.fields.name} · ${r.fields.country}: the id ${id} is already used by another record; send that record's id to update it.`); return; }
-          if (seen.has(id)) { errors.push(`#${i + 1} ${r.fields.name} · ${r.fields.country}: listed twice in this call.`); return; }
+          const id = hit ? hit.id : core.slugId(r.fields.name);
+          if (!id) { errors.push(`#${i + 1}: the name needs letters or numbers.`); return; }
+          if (seen.has(id)) { errors.push(`#${i + 1} ${r.fields.name}: listed twice in this call.`); return; }
           seen.add(id);
           plan.push({ id, hit, fields: r.fields });
         });
@@ -128,7 +115,7 @@ function prospectsTools(h) {
         }
         await batch.commit();
         await audit(session, "upsert_prospects", { created, updated, ids: plan.map((p) => p.id).slice(0, 50) });
-        return textResult({ created, updated, prospects: plan.map((p) => ({ id: p.id, company: p.fields.name, country: p.fields.country, created: !p.hit })) });
+        return textResult({ created, updated, prospects: plan.map((p) => ({ id: p.id, company: p.fields.name, created: !p.hit })) });
       },
     },
   ];

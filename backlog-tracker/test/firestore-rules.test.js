@@ -364,19 +364,9 @@ async function main() {
   await check("A stranger cannot read a lead", "deny", () => getDoc(doc(as(STRANGER), "leads/l1")));
   await check("An editor can delete a lead", "allow", () => deleteDoc(doc(as(MEMBER), "leads/l1")));
   // Promote › Prospects (TAM)
-  const PROSPECT = { name: "Acme Grocer", country: "United Kingdom", priority: "high", storePresence: "400 stores", ownership: "Private", insights: "Good fit", decisionMakers: "CMO", linkedinUrl: "https://www.linkedin.com/company/acme/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo", role: "CMO", lastContact: "May" }], website: "https://acme.example", industry: "Grocery", subIndustry: "Supermarkets", hqCountry: "United Kingdom", markets: ["United Kingdom"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", source: "Manual", notes: "" };
+  const PROSPECT = { name: "Acme Grocer", website: "https://acme.example", industry: "Grocery", subIndustry: "Supermarkets", hqCountry: "United Kingdom", markets: ["United Kingdom"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", source: "Manual", notes: "" };
   await check("An editor can create a prospect", "allow", () => setDoc(doc(as(MEMBER), "prospects/p1"), PROSPECT));
   await check("An editor can link a prospect to its lead", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { leadId: "prospect-p1", status: "converted" }));
-  await check("A prospect with a showcase page is fine", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinUrl: "https://www.linkedin.com/showcase/acme-media/" }));
-  await check("A prospect's LinkedIn page cannot be a search URL", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinUrl: "https://www.linkedin.com/search/results/companies/?keywords=acme" }));
-  await check("A prospect's LinkedIn page cannot be another site", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinUrl: "https://example.com/company/acme/" }));
-  await check("A prospect's LinkedIn org id is digits only", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinOrgId: "12ab" }));
-  await check("A prospect's priority is high, medium or low", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { priority: "urgent" }));
-  await check("A prospect's insights are capped at 2000 characters", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { insights: "x".repeat(2001) }));
-  await check("A prospect holds at most 30 contacts", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { contacts: Array.from({ length: 31 }, () => ({ name: "A", role: "B", lastContact: "" })) }));
-  await check("A prospect's verified flag is a boolean", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinVerified: "yes" }));
-  await check("A new prospect must name its country", "deny", () => { const { country, ...rest } = PROSPECT; return setDoc(doc(as(MEMBER), "prospects/p5"), rest); });
-  await check("A document without a country still updates (older records)", "allow", async () => { const { country, ...rest } = PROSPECT; await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "prospects/old1"), rest)); return updateDoc(doc(as(MEMBER), "prospects/old1"), { status: "researching" }); });
   await check("A prospect cannot take a status that is not on the list", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { status: "won-ish" }));
   await check("A prospect needs a name", "deny", () => setDoc(doc(as(MEMBER), "prospects/p2"), { ...PROSPECT, name: "" }));
   await check("A prospect takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "prospects/p3"), { ...PROSPECT, patchFiles: [] }));
