@@ -156,6 +156,7 @@
           done();
           if (!o.ok || !o.j.download) { msg.className = "ph-ind-gate-m ph-ind-gate-err"; msg.textContent = (o.j && o.j.error) || "Something went wrong. Please try again."; return; }
           push({event: "ph_ind_lead", ph_industry: page, ph_form: "business_model", ph_estimate: Math.round(MODELS.tel3(body.inputs).total)});
+          shareLead({name: body.name, company: body.company, email: body.email, source: "Telco business model download"});
           msg.textContent = "Thanks. Your download is starting. If it does not, use this link: "; var a = el("a", "", "Download the model"); a.href = o.j.download; msg.appendChild(a);
           window.location.href = o.j.download;
         }).catch(function () { done(); msg.className = "ph-ind-gate-m ph-ind-gate-err"; msg.textContent = "Something went wrong. Please try again."; });
@@ -170,6 +171,49 @@
       if (/[?&]ph_test=1(&|$)/.test(location.search)) sessionStorage.setItem("ph_test", "1");
       return sessionStorage.getItem("ph_test") === "1";
     } catch (e) { return /[?&]ph_test=1(&|$)/.test(location.search); }
+  }
+
+  // A visitor who gave their details once should not be asked again: on a successful lead capture the calculator and Talk to us forms
+  // write ph_lead to localStorage and announce it on window, which unlocks the product tour on this page (and on the next visit).
+  function shareLead(l) {
+    var lead = {name: String(l.name || ""), company: String(l.company || ""), email: String(l.email || ""), source: l.source, ts: Date.now()};
+    try { localStorage.setItem("ph_lead", JSON.stringify(lead)); } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent("ph:lead", {detail: lead})); } catch (e) {}
+  }
+
+  // Interactive product tour (telco): the tour page is served same-origin at /industries/telco/tour/ and framed here, so its CSS cannot
+  // clash with the theme or Elementor. The band's heading is server-rendered (Elementor, ".ph-ind-tour"); the iframe is progressive enhancement.
+  var TOUR_SRC = "/industries/telco/tour/?embed=1";
+  function tourSrc() { return TOUR_SRC + (testMode() ? "&ph_test=1" : ""); }
+  function setupTour() {
+    if (page !== "telco") return;
+    var band = document.querySelector(".ph-ind-tour");
+    var mount = band && band.querySelector(".ph-ind-tour-mount");
+    if (!mount) {
+      var calc = document.querySelector(".ph-ind-calc"), after = calc && calc.closest(".ph-ind-sec");
+      if (!after) return;
+      band = el("section", "ph-ind-sec ph-ind-tour");
+      var inner = el("div", "ph-ind-tour-in");
+      inner.appendChild(el("p", "ph-ind-tour-eyebrow", "Interactive product tour"));
+      inner.appendChild(el("h2", "ph-ind-tour-h", "See Personalisation Hub run a telco campaign, end to end"));
+      inner.appendChild(el("p", "ph-ind-tour-p", "Pick a demo and watch a campaign go from brief to every store screen."));
+      mount = el("div", "ph-ind-tour-mount"); inner.appendChild(mount); band.appendChild(inner);
+      after.parentNode.insertBefore(band, after.nextSibling);
+    }
+    window.PH_TOUR = {
+      endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "",
+      arrangeDemo: function () { if (typeof window.PH_SITE_DEMO === "function") window.PH_SITE_DEMO(band); }
+    };
+    var f = el("iframe", "ph-ind-tour-frame");
+    f.title = "Interactive product tour"; f.loading = "lazy"; f.src = tourSrc();
+    f.setAttribute("scrolling", "no"); f.style.cssText = "width:100%;border:0";
+    mount.appendChild(f);
+    window.addEventListener("message", function (e) {
+      var d = e.data;
+      if (e.origin !== location.origin || e.source !== f.contentWindow || !d || d.type !== "ph-tour-height") return;
+      var h = Math.round(Number(d.h));
+      if (h > 0 && h < 20000) f.style.height = h + "px";
+    });
   }
 
   var LEAD_FORM = {telco: "Telco", retail: "Retail"};
@@ -198,6 +242,7 @@
           btn.disabled = false;
           if (!o.ok) { msg.className = "ph-ind-gate-m ph-ind-gate-err"; msg.textContent = (o.j && o.j.error) || "Something went wrong. Please try again."; return; }
           push({event: "ph_ind_lead", ph_industry: page, ph_form: "contact"});
+          shareLead({name: body.contact_name, company: body.company, email: body.email, source: "Talk to us"});
           form.reset(); msg.textContent = "Thanks. We will be in touch.";
         }).catch(function () { btn.disabled = false; msg.className = "ph-ind-gate-m ph-ind-gate-err"; msg.textContent = "Something went wrong. Please try again."; });
     });
@@ -307,6 +352,6 @@
   }
 
   if (typeof module !== "undefined" && module.exports) { module.exports = {CALC: CALC, pharmCalc: pharmCalc, MODELS: MODELS}; return; }
-  function start() { setupLoop(); setupFlow(); setupLines(); setupCalc(); setupLeadForm(); trackCtas(); }
+  function start() { setupLoop(); setupFlow(); setupLines(); setupCalc(); setupLeadForm(); setupTour(); trackCtas(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();

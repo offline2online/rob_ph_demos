@@ -52,6 +52,12 @@ function lead_ingest_body( array $lead ) {
 		'page'         => $page,
 		'pageIndustry' => $s( 'industry' ),
 	);
+	if ( '' !== $s( 'source_label' ) ) {
+		$body['sourceLabel'] = $s( 'source_label' );
+	}
+	if ( '' !== $s( 'source_detail' ) ) {
+		$body['sourceDetail'] = $s( 'source_detail' );
+	}
 	if ( ! empty( $lead['test'] ) ) {
 		$body['test'] = true;
 	}

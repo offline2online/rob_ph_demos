@@ -24,13 +24,17 @@
     }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fixIndustriesMenu); else fixIndustriesMenu();
+  /* Open the Calendly demo popup and record the ph_ind_cta push. sec is the section the click came from (may be null: no push). Also used by the product tour's "Arrange a Demo". */
+  function openDemo(sec) {
+    if (sec) { try { (window.dataLayer = window.dataLayer || []).push({event: "ph_ind_cta", ph_industry: window.PH_IND_PAGE || "", ph_cta: "demo", ph_section: [].indexOf.call(document.querySelectorAll(".ph-ind-sec, .ph-ind-sec-hero"), sec)}); } catch (err) {} }
+    if (window.Calendly && typeof window.Calendly.initPopupWidget === "function") { window.Calendly.initPopupWidget({url: CAL}); }
+    else { window.open(CAL, "_blank", "noopener"); }
+  }
+  window.PH_SITE_DEMO = openDemo;
   window.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a") : null;
     if (!a || !isDemo(a)) return;
     e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-    var sec = a.closest(".ph-ind-sec, .ph-ind-sec-hero");
-    if (sec) { try { (window.dataLayer = window.dataLayer || []).push({event: "ph_ind_cta", ph_industry: window.PH_IND_PAGE || "", ph_cta: "demo", ph_section: [].indexOf.call(document.querySelectorAll(".ph-ind-sec, .ph-ind-sec-hero"), sec)}); } catch (err) {} }
-    if (window.Calendly && typeof window.Calendly.initPopupWidget === "function") { window.Calendly.initPopupWidget({url: CAL}); }
-    else { window.open(CAL, "_blank", "noopener"); }
+    openDemo(a.closest(".ph-ind-sec, .ph-ind-sec-hero"));
   }, true);
 })();
