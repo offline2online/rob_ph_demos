@@ -2275,17 +2275,27 @@ body { overflow-x: clip; }
 .promote-empty { color: #666; }
 
 /* Promote › Prospects (TAM) */
-.prospects-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; }
-.prospects-toolbar select, .prospects-toolbar input { min-height: 36px; max-width: 100%; }
-.prospects-q { flex: 1 1 200px; min-width: 160px; }
-.prospects-num { width: 110px; }
-.prospects-count { margin-left: auto; font-size: 13px; color: var(--text-muted); }
+.prospects-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 .prospects-info { font-size: 18px; vertical-align: middle; color: var(--text-muted); cursor: help; }
 .prospects-grid { width: 100%; }
-.prospect-act { white-space: nowrap; }
 #prospects-status.is-error { color: var(--danger, #c62828); }
 #prospects-status:empty { display: none; }
-@media (max-width: 640px) { .prospects-toolbar select, .prospects-num { flex: 1 1 45%; width: auto; } }
+.prospect-trunc { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prospects-grid .ag-cell { min-width: 0; }
+.prospects-float-select { font-size: 13px; }
+.prospects-pop { position: fixed; z-index: 60; min-width: 200px; max-width: min(320px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; padding: 6px; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .15); }
+.prospects-pop[hidden] { display: none; }
+.prospects-pop-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; font: inherit; font-size: 14px; text-align: left; background: none; border: 0; border-radius: 6px; cursor: pointer; color: var(--text); }
+.prospects-pop-item:hover, .prospects-pop-item:focus-visible { background: var(--primary-tint); }
+.prospects-pop-item .material-symbols-outlined { font-size: 18px; color: var(--text-muted); }
+.prospects-pop-gap { width: 18px; flex: none; }
+.prospects-pop-row { display: flex; align-items: center; }
+.prospects-pop-row .prospects-pop-item { flex: 1; }
+.prospects-pop-del { background: none; border: 0; cursor: pointer; padding: 4px; border-radius: 6px; color: var(--text-muted); display: inline-flex; }
+.prospects-pop-del:hover { background: var(--primary-tint); }
+.prospects-pop-sep { height: 1px; margin: 4px 0; background: var(--border); }
+.prospects-pop-label { padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.prospects-pop-check { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 14px; cursor: pointer; }
 
 /* Promote › Leads */
 .leads-board-wrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px 8px; }
