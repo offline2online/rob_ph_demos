@@ -2328,24 +2328,27 @@ not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
   Feature Release pipeline and Staff Kanban, step 2). Internal operations
   and unassigned concepts and projects sit in a strip under the sketch.
   It is not pinned or saved (no Re-arrange, History or release filter).
-- **Sales detail lanes** (ticket 6nnKlR0vVtRjNBnRUQzc, 5 Nov 2026). Five
-  full-width lanes under the three columns spell out the Sales process:
-  (1) the **TAM database** (per market, AWS-supported first; industry mapping
-  with website gaps flagged; company profile with cloud provider, Marketplace
-  buying, stack, vendors, logo; mentions monitor; staff linking; last-researched
-  dates with a scheduled refresh agent); (2) the **TAM to prospect flow**
-  (Stage 1 awareness campaigns, industry-page conversion by calculator download
-  or demo, Prospect / Hot prospect on the Promote leads Kanban, Stage 2 adapted
-  campaigns); (3) **cloud co-sell**: AWS ACE through the Partner Central Selling
-  API (opportunity at Prospect, Qualified, Technical/Business Validation,
-  Committed, Marketplace private offer, Launched; score tracked per submission,
-  target 60/100+; Azure and Google Cloud later on the same stages);
-  (4) **AWS funding** through the Partner Central Benefits API (eligibility
-  check, POC funding and Sandbox credit drafts, submitted manually, never
-  automatically; post-approval customer sign-off document for the claim; status
-  and expiry alerts); (5) the **customised, logo-branded documentation pack**
-  attached to the ACE opportunity and refreshed on every stage change, plus the
-  combined lead card. This is a diagram only; none of the integrations is built.
+- **Sales process** (ticket 3FXpHzR1vEqhXzyiyEis, 6 Nov 2026; replaces the
+  five Sales lanes of 6nnKlR0vVtRjNBnRUQzc). One lane under the three columns
+  reads as a single process, process first and documents second, in two rows
+  of five steps: TAM database, TAM awareness campaigns, industry-page
+  conversion (calculator download or demo request), Prospect / Hot Prospect,
+  ACE opportunity created, live meetings, live demos, customer internal
+  approval, proof of concept, rollout to the full estate. The matching AWS
+  ACE stage is written above each step (Prospect, Qualified, Technical
+  Validation, Business Validation, Committed, Launched). Supporting detail
+  (TAM enrichment and freshness, score tracking, funding status on the lead
+  card) is a note inside the relevant step, never a lane. **Documents are not
+  lanes**: each is its own node, in its own colour, hung under the step that
+  creates it and drawn only where needed: industry one-pager and the
+  customised, logo-branded prospect pack at Prospect / Hot Prospect (made
+  before the ACE opportunity, used to define and attach to it); the draft POC
+  funding application and draft Innovation Sandbox credit application at the
+  ACE opportunity (drafts only, submitted manually by the account lead); the
+  customer sign-off / proof-of-execution document at proof of concept, after
+  POC funding approval. A legend separates process steps from documents. A
+  document not tied to a step is not shown. This is a diagram only; none of
+  the integrations is built.
 - **Bridge links.** An internal operations item that connects to the
   platform is drawn as a dashed **bridge node** inside the PH box (Embedded
   support, MCP Access, PH releases), not as a second copy of a platform item;

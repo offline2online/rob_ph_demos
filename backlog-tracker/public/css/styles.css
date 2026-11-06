@@ -1797,6 +1797,22 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .sysmap-key.s-step::before { border-radius: 50%; width: 10px; background: var(--primary); border-color: var(--primary); }
 .intmap-bridge rect { fill: #e8f6fa; stroke: var(--primary); stroke-dasharray: 5 4; }
 .intmap-fixed rect { fill: var(--tip-bg); }
+.intmap-proc rect { fill: #fff; stroke: var(--primary); stroke-width: 2; }
+.intmap-proc-note { font-style: italic; fill: #5c6770; }
+.intmap-ace { fill: var(--primary); font-weight: 700; }
+.intmap-doc-tag { font-style: italic; }
+.intmap-doc-onepager rect { fill: #fff3d6; stroke: #e0a100; }
+.intmap-doc-pack rect { fill: #fde3ef; stroke: #d6336c; }
+.intmap-doc-pocdraft rect { fill: #e2f5e6; stroke: #2e7d32; }
+.intmap-doc-sandbox rect { fill: #ece4ff; stroke: #7048e8; }
+.intmap-doc-signoff rect { fill: #ffe4d6; stroke: #e8590c; }
+.sysmap-key.s-proc::before { background: #fff; border-color: var(--primary); }
+.sysmap-key.s-doc::before { border-radius: 3px; }
+.sysmap-key.intmap-doc-key-onepager::before { background: #fff3d6; border-color: #e0a100; }
+.sysmap-key.intmap-doc-key-pack::before { background: #fde3ef; border-color: #d6336c; }
+.sysmap-key.intmap-doc-key-pocdraft::before { background: #e2f5e6; border-color: #2e7d32; }
+.sysmap-key.intmap-doc-key-sandbox::before { background: #ece4ff; border-color: #7048e8; }
+.sysmap-key.intmap-doc-key-signoff::before { background: #ffe4d6; border-color: #e8590c; }
 .intmap-step circle { fill: var(--primary); }
 .intmap-step text { fill: #fff; font-size: 14px; font-weight: 700; }
 .intmap-note-box { fill: #fff9ec; stroke: #e07b00; stroke-width: 1.5; }
