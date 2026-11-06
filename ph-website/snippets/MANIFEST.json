@@ -27,13 +27,18 @@
       },
       {
         "name": "ld.php",
-        "bytes": 37881,
-        "sha256": "834463d2638c5a93d9bdfd1169349b6bc242ec44e53b0f8f9effbe2d2cb3e3c6"
+        "bytes": 43036,
+        "sha256": "c201e689029c2feb57016926fd3e51b00e6dd0014aefb65aea04f6e5125bbbfc"
       },
       {
         "name": "legacy-copy.php",
         "bytes": 7531,
         "sha256": "849aa4681265084aa4ad26d5b3753ea68567985b3fd024c86250144c851d3445"
+      },
+      {
+        "name": "legacy-copy-v2.php",
+        "bytes": 36056,
+        "sha256": "db44d57e9e34fff2573eae2f2f131ca8df9705159116343e195a5d35908fc55d"
       },
       {
         "name": "llms.php",
@@ -42,13 +47,13 @@
       },
       {
         "name": "main.php",
-        "bytes": 6927,
-        "sha256": "65fc13efdf0319c81911fae906d9e4b266292b9586b7695765841f966fd2330c"
+        "bytes": 6973,
+        "sha256": "fa19856e6e50f8558328b901f502a7dcc3e55b09869f4c1ab31695b80d750e2a"
       },
       {
         "name": "md.php",
-        "bytes": 40883,
-        "sha256": "09a86e2c4a2d6b3bf8b15a1cfb1cb4e9f34a36f3d895a859d0c0d86219ad7463"
+        "bytes": 42752,
+        "sha256": "f8cf7971595995bb0b832b7c3a0878b9a492d3e3183b02e3b422518ddcbb6e0e"
       },
       {
         "name": "nav.css",
@@ -164,10 +169,8 @@
       },
       {
         "name": "faq-data.php",
-        "bytes": 32529,
-        "sha256": "980444c3ad79040b08970fd5ec490d5d0bc9802fea5dfd794d6dd13b93fe6260",
-        "liveBytes": 32529,
-        "liveSha256": "980444c3ad79040b08970fd5ec490d5d0bc9802fea5dfd794d6dd13b93fe6260"
+        "bytes": 33509,
+        "sha256": "096b22bd05e752fc07839f50041dafdf7c5891c189428fbf843558a6d94945a0"
       },
       {
         "name": "faq.php",

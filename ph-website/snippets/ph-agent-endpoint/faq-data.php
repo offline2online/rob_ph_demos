@@ -23,7 +23,7 @@ return array(
 			),
 			array(
 				'q'     => 'Which screens and players does it support?',
-				'a'     => 'Displays register themselves from an Amazon Signage Stick, Fire TV, ChromeOS or Android player against your platform domain.',
+				'a'     => 'Any digital signage hardware. The player is a progressive web app (PWA) that is easily extended to the players you already use; Amazon Signage, Fire TV, ChromeOS and Android are examples.',
 				'd'     => 'ChromeOS and Android devices are managed through your own MDM or CDM. Each display then shows its status, active playlist and any playback issues in the Displays & Devices list.',
 				'links' => array(
 					array( 'Enable digital signage', '/support-centre/digital-signage/enable-digital-signage/' ),
@@ -43,7 +43,7 @@ return array(
 			array(
 				'q'     => 'Can different stores or screens show different content?',
 				'a'     => 'Yes. Targeting rules combine store segments, display tags, the languages of staff on shift and visitors\' reasons for visit, so each store or screen plays what suits it.',
-				'd'     => 'A store manager can switch a variable segment such as Hot Day on from the staff tablet, and the campaigns for that condition start or stop in that store.',
+				'd'     => 'Store segments group stores by mostly stable attributes such as demographics or a metro, regional or airport location. Weather and stock are handled dynamically, from each store\'s current temperature and real-time stock levels.',
 				'links' => array(
 					array( 'Localise campaigns with store segments', '/support-centre/launching-campaigns/localise-campaigns-with-store-segments/' ),
 					array( 'Target campaigns at specific displays with display tags', '/support-centre/launching-campaigns/target-campaigns-at-specific-displays-with-display-tags/' ),
@@ -77,7 +77,7 @@ return array(
 			array(
 				'q'     => 'What is in-store personalisation?',
 				'a'     => 'It is personalisation that follows a visitor through one store visit, across their phone, the store\'s screens and the staff tablet. It uses what the platform knows about the visitor and the store at that moment.',
-				'd'     => 'Virtual queueing, appointment bookings, context-aware mobile store sites and QR Control connect the three into one visit.',
+				'd'     => 'It starts with extensible store check-in: virtual queues, appointments, click-and-collect, context-aware store sites, QR and proximity are built in, and you can add your own check-in mechanisms through the Visitor API and customisable, updatable edge models.',
 				'links' => array(
 					array( 'About Personalisation Hub', '/support-centre/getting-started/about-personalisation-hub/' ),
 					array( 'Use cases supported by Personalisation Hub', '/support-centre/getting-started/use-cases-supported-by-personalisation-hub/' ),
@@ -106,7 +106,7 @@ return array(
 			array(
 				'q'     => 'Does it use cameras, and are images stored?',
 				'a'     => 'Computer vision is optional and needs a webcam connected to a display. The vision model runs on the display\'s own device at the edge, and only anonymous audience attributes are used to target campaigns.',
-				'd'     => 'No images of shoppers are stored. You set the targeting rule on the campaign and switch computer vision on for the display.',
+				'd'     => 'No images of shoppers are stored. Computer vision drives real-time targeting and creative optimisation; age and gender is the default model, and models can be customised with you. You set the targeting rule on the campaign and switch computer vision on for the display.',
 				'links' => array(
 					array( 'Does computer vision store images of shoppers?', '/support-centre/personalisation-and-ai/does-computer-vision-store-images-of-shoppers/' ),
 					array( 'Target passers-by using computer vision at the edge', '/support-centre/launching-campaigns/target-passers-by-using-computer-vision-at-the-edge/' ),
@@ -122,8 +122,8 @@ return array(
 			),
 			array(
 				'q'     => 'How do I see what worked?',
-				'a'     => 'Campaign performance is reviewed in Insights / Analytics in HQ Admin.',
-				'd'     => 'Use it to review how each campaign performed and decide what to run next.',
+				'a'     => 'Insights / Analytics in HQ Admin gives you full visibility of what happens in your stores, and feeds your existing analytics for a complete 360° view.',
+				'd'     => 'Because the loop is closed, marketing attribution can include in-store transactions. Use it to review how each campaign performed and decide what to run next.',
 				'links' => array(
 					array( 'Review campaign performance in Insights / Analytics', '/support-centre/launching-campaigns/review-campaign-performance-in-insights-analytics/' ),
 					array( 'Use customer and decisioning data to personalise the store visit', '/support-centre/personalisation-and-ai/use-customer-and-decisioning-data-to-personalise-the-store-visit/' ),
@@ -146,7 +146,7 @@ return array(
 			),
 			array(
 				'q'     => 'Which AI models does it use?',
-				'a'     => 'You choose. Each AI skill is assigned a model integration, and you register your own provider API keys, such as OpenAI, Google Gen AI and LTX.',
+				'a'     => 'Any model you choose. A model-agnostic harness assigns a model to each AI skill; OpenAI, Google Gen AI and LTX are the defaults the creative process is first optimised for, and you can use any model, including your own internal models, as models evolve.',
 				'd'     => 'Different skills can use different models. The platform calls the providers you configure from your own AWS account, through a Squid proxy.',
 				'links' => array(
 					array( 'Connect AI models and providers', '/support-centre/personalisation-and-ai/connect-ai-models-and-providers/' ),
@@ -174,7 +174,7 @@ return array(
 			),
 			array(
 				'q'     => 'How are campaigns optimised?',
-				'a'     => 'With closed-loop campaign optimisation enabled, the platform classifies campaigns based on how they play, and retires campaigns accordingly.',
+				'a'     => 'With closed-loop campaign optimisation enabled, the platform analyses how each campaign performs and optimises the next version of that campaign, so it drives more revenue.',
 				'd'     => 'Optimisation works alongside targeting and prioritisation, and HQ can review campaign performance in Insights / Analytics.',
 				'links' => array(
 					array( 'AI agents and skills reference', '/support-centre/personalisation-and-ai/ai-agents-and-skills-reference/' ),
@@ -220,7 +220,7 @@ return array(
 			array(
 				'q'     => 'What can staff do from the tablet?',
 				'a'     => 'Staff pick up a visitor, place them on hold, add notes and hand them over, all from the Retail Admin staff tablet.',
-				'd'     => 'Staff can also see which languages their colleagues on shift speak, and a manager can remove a visitor from the queue or handle special requests.',
+				'd'     => 'Every store and every staff member has Retail Admin, with admin, manager and staff roles and a personal login for their own store(s). Staff can also see which languages colleagues on shift speak, and a manager can remove a visitor from the queue or handle special requests.',
 				'links' => array(
 					array( 'Pick up a visitor from the queue', '/support-centre/queue-management/pick-up-a-visitor-from-the-queue/' ),
 					array( 'Place a visitor on hold', '/support-centre/queue-management/place-a-visitor-on-hold/' ),
@@ -355,7 +355,7 @@ return array(
 			),
 			array(
 				'q'     => 'What are fixed and variable store segments?',
-				'a'     => 'Fixed segments are permanent groupings such as Airport, Metro or Regional. Variable segments are temporary conditions such as Hot Day or a product being out of stock.',
+				'a'     => 'Fixed segments, such as Airport, Metro or Regional, group stores by stable attributes; variable segments can be updated per store. Weather and stock are handled dynamically, not by segments.',
 				'd'     => 'Only HQ Admin can assign fixed segments. HQ Admin and store managers can assign variable ones.',
 				'links' => array(
 					array( 'Localise campaigns with store segments', '/support-centre/launching-campaigns/localise-campaigns-with-store-segments/' ),
@@ -365,7 +365,7 @@ return array(
 			array(
 				'q'     => 'Can a store manager change what plays locally?',
 				'a'     => 'Yes. A store manager can switch a variable segment on from the Retail Admin staff tablet, and the campaigns for that condition start or stop in that store.',
-				'd'     => 'This lets a store react to a hot day or a stock-out without waiting for HQ.',
+				'd'     => 'This lets a store update its own attributes without waiting for HQ, while weather and stock are picked up automatically from current temperature and real-time stock levels.',
 				'links' => array(
 					array( 'Localise campaigns with store segments', '/support-centre/launching-campaigns/localise-campaigns-with-store-segments/' ),
 					array( 'Let retail staff activate triggered campaigns', '/support-centre/personalisation-and-ai/let-retail-staff-activate-triggered-campaigns/' ),

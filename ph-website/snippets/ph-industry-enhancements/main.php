@@ -10,6 +10,7 @@ require_once __DIR__ . '/telco-lead.php';
 require_once __DIR__ . '/leads.php';
 require_once __DIR__ . '/calculators-wp.php';
 require_once __DIR__ . '/legacy-copy.php';
+require_once __DIR__ . '/legacy-copy-v2.php';
 
 const KEYS = [ 'industries', 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' ];
 
