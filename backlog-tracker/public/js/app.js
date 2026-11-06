@@ -10589,13 +10589,17 @@ const promotePage = document.getElementById("promote-page");
 const leadsPage = document.getElementById("leads-page");
 const prospectsPage = document.getElementById("prospects-page");
 let promotePageKey = "";
+// A failed import is remembered by the browser for the life of the page, so
+// Try again (showPageLoadError) asks for the module under a fresh URL.
+const pageRetries = {};
+const pageRetrySuffix = (key) => (pageRetries[key] ? `?retry=${pageRetries[key]}` : "");
 // Promote › Prospects (TAM) (prospects-page.js): the AG Grid database, mounted on first open.
 let prospectsUi = null;
 let prospectsUiLoading = null;
 function ensureProspectsUi() {
   if (prospectsUi) return Promise.resolve(prospectsUi);
   if (!prospectsUiLoading) {
-    prospectsUiLoading = import("./prospects-page.js").then(({ mountProspectsPage }) => {
+    prospectsUiLoading = import(`./prospects-page.js${pageRetrySuffix("prospects")}`).then(({ mountProspectsPage }) => {
       prospectsUi = mountProspectsPage({ db, auth, canEdit: () => canEditSection("prospects"), askName: (m) => showPromptDialog(m, "", { title: "Save filter", okLabel: "Save" }) });
       return prospectsUi;
     });
@@ -10608,12 +10612,51 @@ let leadsUiLoading = null;
 function ensureLeadsUi() {
   if (leadsUi) return Promise.resolve(leadsUi);
   if (!leadsUiLoading) {
-    leadsUiLoading = import("./leads-page.js").then(({ mountLeadsPage }) => {
+    leadsUiLoading = import(`./leads-page.js${pageRetrySuffix("leads")}`).then(({ mountLeadsPage }) => {
       leadsUi = mountLeadsPage({ db, auth, canEdit: () => canEditSection("promote"), apiHeaders: consoleApiHeaders });
       return leadsUi;
     });
   }
   return leadsUiLoading;
+}
+// A page whose code fails to load or draw used to stay blank with no word
+// why: Leads and Prospects on the iPad, 7 Nov 2026 (the menu item
+// highlighted and nothing appeared). Say so on the page, with the browser's
+// own error text so it can be reported, and a way to try again.
+function clearPageLoadError(page) {
+  const old = page.querySelector(".page-load-error");
+  if (old) old.remove();
+}
+function showPageLoadError(page, label, err, retry) {
+  console.error(`backlog-tracker: ${label} couldn't open`, err);
+  clearPageLoadError(page);
+  const box = document.createElement("div");
+  box.className = "page-load-error";
+  box.setAttribute("role", "alert");
+  const h = document.createElement("p");
+  h.className = "page-load-error-title";
+  h.textContent = `${label} couldn't open on this device.`;
+  const detail = document.createElement("p");
+  detail.className = "page-load-error-detail";
+  detail.textContent = `${(err && err.name) || "Error"}: ${(err && err.message) || String(err)}`;
+  const where = document.createElement("p");
+  where.className = "page-load-error-where";
+  where.textContent = `${navigator.userAgent}`;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn-primary";
+  btn.textContent = "Try again";
+  btn.addEventListener("click", () => { clearPageLoadError(page); retry(); });
+  box.append(h, detail, where, btn);
+  page.prepend(box);
+}
+// Errors after the page has opened (its data arriving and drawing) land here.
+for (const type of ["error", "unhandledrejection"]) {
+  window.addEventListener(type, (e) => {
+    const err = type === "error" ? (e.error || new Error(e.message)) : e.reason;
+    if (!leadsPage.hidden) showPageLoadError(leadsPage, "Leads", err, () => openPromotePage("leads"));
+    else if (!prospectsPage.hidden) showPageLoadError(prospectsPage, "Prospects (TAM)", err, () => openPromotePage("prospects"));
+  });
 }
 function renderPromotePage() {
   if (promotePage.hidden) return;
@@ -10642,10 +10685,14 @@ function openPromotePage(key = PROMOTE_PAGES[0].key) {
   promotePageKey = key;
   if (key === "leads") {
     leadsPage.hidden = false;
-    ensureLeadsUi().then((ui) => { ui.start(); ui.render(); });
+    clearPageLoadError(leadsPage);
+    ensureLeadsUi().then((ui) => { ui.start(); ui.render(); })
+      .catch((err) => { leadsUiLoading = null; pageRetries.leads = (pageRetries.leads || 0) + 1; showPageLoadError(leadsPage, "Leads", err, () => openPromotePage("leads")); });
   } else if (key === "prospects") {
     prospectsPage.hidden = false;
-    ensureProspectsUi().then((ui) => { ui.start(); ui.render(); });
+    clearPageLoadError(prospectsPage);
+    ensureProspectsUi().then((ui) => { ui.start(); ui.render(); })
+      .catch((err) => { prospectsUiLoading = null; pageRetries.prospects = (pageRetries.prospects || 0) + 1; showPageLoadError(prospectsPage, "Prospects (TAM)", err, () => openPromotePage("prospects")); });
   } else {
     promotePage.hidden = false;
   }
