@@ -9,14 +9,14 @@ const core = require("./prospects-core");
 
 const db = () => require("firebase-admin/firestore").getFirestore();
 const COLLECTION = "prospects";
-const WRITABLE = ["name", "country", "website", "priority", "storePresence", "ownership", "insights", "decisionMakers", "linkedinUrl", "linkedinOrgId", "linkedinVerified", "contacts", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand", "vendors", "campaigns", "status", "source", "notes"];
+const WRITABLE = ["name", "country", "website", "priority", "storePresence", "ownership", "insights", "decisionMakers", "linkedinUrl", "linkedinOrgId", "linkedinVerified", "awsAccountId", "contacts", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand", "vendors", "campaigns", "status", "source", "notes"];
 
 function view(id, data) {
   const p = core.normaliseProspect(id, data);
   return {
     id, company: p.name, country: p.country || null, priority: p.priority || null, storePresence: p.storePresence || null, ownership: p.ownership || null,
     insights: p.insights || null, decisionMakers: p.decisionMakers || null, linkedinUrl: p.linkedinUrl || null, linkedinOrgId: p.linkedinOrgId || null,
-    linkedinVerified: p.linkedinVerified, contacts: p.contacts, website: p.website || null, industry: p.industry || null, subIndustry: p.subIndustry || null,
+    linkedinVerified: p.linkedinVerified, awsAccountId: p.awsAccountId || null, contacts: p.contacts, website: p.website || null, industry: p.industry || null, subIndustry: p.subIndustry || null,
     hqCountry: p.hqCountry || null, markets: p.markets, awsRegion: p.awsRegion || null, storeCount: p.storeCount,
     sizeBand: p.sizeBand, vendors: p.vendors, campaigns: p.campaigns, status: p.status, statusLabel: core.statusLabel(p.status),
     leadId: p.leadId || null, source: p.source || null, notes: p.notes || null,
@@ -31,7 +31,8 @@ const PROP = {
   decisionMakers: { type: "string", description: "The target decision-maker roles." },
   linkedinUrl: { type: "string", description: "The company page, linkedin.com/company/<name> or /showcase/<name>; stored as https://www.linkedin.com/company/<slug>/. Search and profile URLs are rejected." },
   linkedinOrgId: { type: "string", description: "Digits only." }, linkedinVerified: { type: "boolean" },
-  contacts: { type: "array", maxItems: core.LIMITS.contacts, items: { type: "object", properties: { name: { type: "string" }, role: { type: "string" }, lastContact: { type: "string" } }, additionalProperties: false }, description: "Replaces the stored contacts (text only)." },
+  awsAccountId: { type: "string", description: "The company's AWS account ID, if known: exactly 12 digits (dashes and spaces are tidied). \"\" clears it. Anything else is rejected." },
+  contacts: { type: "array", maxItems: core.LIMITS.contacts, items: { type: "object", properties: { name: { type: "string" }, role: { type: "string" }, lastContact: { type: "string" }, awsAccountId: { type: "string", description: "The person's AWS account ID if known: exactly 12 digits." } }, additionalProperties: false }, description: "Replaces the stored contacts (text only)." },
   website: { type: "string" }, industry: { type: "string", description: "e.g. Grocery, Pharmacy, Fashion, Convenience and fuel, Telco, QSR, Electronics." },
   subIndustry: { type: "string" }, hqCountry: { type: "string", description: "Head-office country, e.g. United Kingdom (not the record's country)." },
   markets: { type: "array", items: { type: "string" }, description: "Other countries it operates in." },

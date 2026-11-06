@@ -20,9 +20,10 @@ import {
 import { loadAgGrid } from "./docs-grid.js";
 import {
   STATUSES, SIZE_BANDS, PRIORITIES, normaliseProspect, toCsv, toLinkedInCsv, statusLabel, sizeBandLabel, priorityLabel, leadIdForProspect, leadFieldsFromProspect,
-  prospectFromInput, prospectKey, prospectIdFor,
+  prospectFromInput, prospectKey, prospectIdFor, slugId,
 } from "./prospects-core.js";
 import { SEED_PROSPECTS, SEED_SOURCE } from "./prospects-seed.js";
+import { mountProspectDetail } from "./prospect-detail.js";
 
 const $ = (id) => document.getElementById(id);
 const SAVED_KEY = "bt-prospect-grid-filters";
@@ -278,18 +279,19 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
   // The "⋯" menu on a row.
   function rowMenu(anchor, p) {
     const item = (act, icon, label, arg) => `<button type="button" role="menuitem" class="prospects-pop-item" data-pop="${act}"${arg ? ` data-arg="${esc(arg)}"` : ""}>${icon ? `<span class="material-symbols-outlined" aria-hidden="true">${icon}</span>` : `<span class="prospects-pop-gap" aria-hidden="true"></span>`}${esc(label)}</button>`;
-    let html = "";
+    let html = item("profile", "business", "Open company profile");
     if (p.leadId) html += item("view", "open_in_new", "View lead");
     else if (canEdit()) html += item("convert", "add", "Convert to lead");
     if (canEdit()) {
       html += `<div class="prospects-pop-sep"></div><div class="prospects-pop-label">Set status</div>`;
       html += SETTABLE.map((s) => item("status", s.key === p.status ? "check_circle" : "", s.label, s.key)).join("");
     }
-    html += `<div class="prospects-pop-sep"></div>` + item("open", "right_panel_open", "Open details");
+    html += `<div class="prospects-pop-sep"></div>` + item("open", "right_panel_open", "Open all fields");
     if (safeUrl(p.website)) html += item("site", "link", "Open website");
     openPop(anchor, html, (act, arg) => {
       closePop();
-      if (act === "view") window.location.hash = "#promote/leads";
+      if (act === "profile") openDetail(p.id);
+      else if (act === "view") window.location.hash = "#promote/leads";
       else if (act === "convert") convert(p.id);
       else if (act === "status") setStatus([p.id], arg);
       else if (act === "open") openDrawer(p.id);
@@ -297,6 +299,17 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       anchor.focus();
     });
   }
+
+  // ── Company detail view ──────────────────────────────────────────────────
+  const detailUi = mountProspectDetail({
+    db, root: $("prospect-detail"), canEdit, me, say,
+    getRow: (id) => rows.find((x) => x.id === id) || null,
+    getCompanyRows: (key) => rows.filter((x) => slugId(x.name) === key),
+    onAllFields: (id) => openDrawer(id, null),
+    onClose: () => { page.classList.remove("is-detail"); closePop(); },
+  });
+  function openDetail(id, tab) { closePop(); page.classList.add("is-detail"); detailUi.open(id, tab); window.scrollTo(0, 0); }
+  window.addEventListener("hashchange", () => { if (detailUi.isOpen() && window.location.hash !== "#promote/prospects") { detailUi.close(); page.classList.remove("is-detail"); } });
 
   // ── Starter set ──────────────────────────────────────────────────────────
   $("prospects-seed-btn").addEventListener("click", async () => {
@@ -368,15 +381,15 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
   const drow = (label, html) => `<div class="lead-sum-row"><dt>${esc(label)}</dt><dd>${html || dash}</dd></div>`;
   const dtext = (v) => (v ? esc(v) : "");
   const FORM = [
-    ["name", "Company", "text"], ["country", "Country", "text"], ["website", "Website", "text"], ["industry", "Industry", "text"], ["subIndustry", "Sub-industry", "text"],
+    ["name", "Company", "text"], ["country", "Country", "text"], ["website", "Website", "text"], ["awsAccountId", "AWS account ID (12 digits, if known)", "text"], ["industry", "Industry", "text"], ["subIndustry", "Sub-industry", "text"],
     ["hqCountry", "HQ country", "text"], ["markets", "Other markets (comma separated)", "text"], ["awsRegion", "AWS region", "text"],
     ["priority", "Priority", "select"], ["status", "Status", "select"], ["storePresence", "Store presence (as written)", "text"], ["storeCount", "Store count", "text"],
     ["ownership", "Ownership", "text"], ["decisionMakers", "Decision makers", "textarea"], ["linkedinUrl", "LinkedIn company page", "text"],
     ["linkedinOrgId", "LinkedIn organisation id (digits)", "text"], ["linkedinVerified", "LinkedIn page verified", "checkbox"], ["insights", "Insights", "textarea"],
-    ["contacts", "Contacts (one per line: name | role | last contact)", "textarea"], ["vendors", "Current vendors (comma separated)", "text"],
+    ["contacts", "Contacts (one per line: name | role | last contact | AWS account ID)", "textarea"], ["vendors", "Current vendors (comma separated)", "text"],
     ["campaigns", "Campaigns (comma separated)", "text"], ["source", "Source", "text"], ["notes", "Notes", "textarea"],
   ];
-  const contactsText = (p) => p.contacts.map((c) => [c.name, c.role, c.lastContact].join(" | ")).join("\n");
+  const contactsText = (p) => p.contacts.map((c) => [c.name, c.role, c.lastContact, c.awsAccountId || ""].join(" | ").replace(/( \| )+$/, "")).join("\n");
   const formValue = (p, k) => (k === "markets" || k === "vendors" || k === "campaigns" ? p[k].join(", ") : k === "contacts" ? contactsText(p) : k === "storeCount" ? (p.storeCount == null ? "" : String(p.storeCount)) : p[k]);
   function drawerBody(p) {
     const stat = p.status === "converted" ? (p.leadId ? `${esc(statusLabel(p.status))} · <a href="#promote/leads">View lead</a>` : esc(statusLabel(p.status))) : esc(statusLabel(p.status));
@@ -392,6 +405,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
         ${drow("Industry", dtext(p.industry))}${drow("Sub-industry", dtext(p.subIndustry))}
         ${drow("HQ country", dtext(p.hqCountry))}${drow("Other markets", dtext(p.markets.join(", ")))}${drow("AWS region", dtext(p.awsRegion))}
         ${drow("Ownership", dtext(p.ownership))}
+        ${drow("AWS account ID", dtext(p.awsAccountId))}
       </dl></section>
       <section class="lead-sum-section"><h3>Targeting</h3><dl class="lead-sum-dl">
         ${drow("Priority", prio)}${drow("Status", stat)}
@@ -405,7 +419,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       </dl></section>
       <section class="lead-sum-section"><h3>Insights</h3>${p.insights ? `<p class="prospect-insights">${esc(p.insights)}</p>` : `<p class="field-hint">No insights yet.</p>`}</section>
       <section class="lead-sum-section" id="prospect-sum-contacts"><h3>Contacts (${p.contacts.length})</h3>${p.contacts.length
-        ? `<table class="prospect-contacts-table"><thead><tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col">Last contact</th></tr></thead><tbody>${p.contacts.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.lastContact)}</td></tr>`).join("")}</tbody></table>`
+        ? `<table class="prospect-contacts-table"><thead><tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col">Last contact</th><th scope="col">AWS account ID</th></tr></thead><tbody>${p.contacts.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.lastContact)}</td><td>${esc(c.awsAccountId)}</td></tr>`).join("")}</tbody></table>`
         : `<p class="field-hint">No contacts yet.</p>`}</section>
       <section class="lead-sum-section"><h3>Record</h3><dl class="lead-sum-dl">
         ${drow("Source", dtext(p.source))}${drow("Notes", dtext(p.notes))}
@@ -474,7 +488,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
   });
   $("prospect-drawer-cancel").addEventListener("click", () => { editing = false; $("prospect-drawer-status").textContent = ""; renderDrawer(); $("prospect-drawer-edit").focus(); });
   function parseContactLines(text) {
-    return String(text || "").split(/\r?\n/).map((l) => l.split("|").map((x) => x.trim())).filter((c) => c.some(Boolean)).map((c) => ({ name: c[0] || "", role: c[1] || "", lastContact: c[2] || "" }));
+    return String(text || "").split(/\r?\n/).map((l) => l.split("|").map((x) => x.trim())).filter((c) => c.some(Boolean)).map((c) => ({ name: c[0] || "", role: c[1] || "", lastContact: c[2] || "", awsAccountId: c[3] || "" }));
   }
   $("prospect-drawer-save").addEventListener("click", async () => {
     const p = rows.find((x) => x.id === drawerId);
@@ -510,13 +524,14 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       span.textContent = params.valueFormatted != null ? params.valueFormatted : params.value == null ? "" : String(params.value);
       return span;
     };
+    // The company name opens the company's detail view; its website is one click further in.
     const company = (params) => {
       const span = document.createElement("span");
       span.className = "prospect-trunc";
       const b = document.createElement("button");
       b.type = "button"; b.className = "prospect-name-btn"; b.dataset.prospectOpen = params.data.id; b.textContent = params.value;
       b.setAttribute("aria-label", `Open details for ${params.data.name} in ${params.data.country}`);
-      b.addEventListener("click", (e) => { e.stopPropagation(); openDrawer(params.data.id, b); });
+      b.addEventListener("click", (e) => { e.stopPropagation(); openDetail(params.data.id); });
       span.appendChild(b);
       return span;
     };
@@ -605,6 +620,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       rows = snap.docs.map((d) => normaliseProspect(d.id, d.data({ serverTimestamps: "estimate" })));
       updateCount();
       if (drawerId) renderDrawer();
+      detailUi.refresh();
       if (grid) {
         grid.api.setGridOption("rowData", rows);
         const key = distinct((p) => p.awsRegion).join("|");
@@ -612,7 +628,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       } else if (rows.length) ensureGrid();
     }, () => { say("Prospects could not be loaded. Reload the page to try again.", true); });
   }
-  function stop() { closePop(); closeDrawer(false); if (unsub) unsub(); unsub = null; started = false; }
+  function stop() { closePop(); closeDrawer(false); detailUi.close(); page.classList.remove("is-detail"); if (unsub) unsub(); unsub = null; started = false; }
   function render() {
     updateCount();
     if (drawerId) renderDrawer();

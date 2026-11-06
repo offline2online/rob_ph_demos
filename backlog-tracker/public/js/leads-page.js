@@ -15,6 +15,7 @@ import {
   companyLine, conversionFields, isStage,
 } from "./leads-core.js";
 import { summarise, matchLead, mailtoFor, partnerCentralHref, formatMonthly, formatDate } from "./ace-core.js";
+import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION } from "./prospect-detail-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -32,6 +33,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
+  const detailCache = new Map(); // companyDocId -> the company's shared detail (org chart, AWS team), read once
 
   const me = () => String((auth.currentUser && auth.currentUser.email) || "").toLowerCase();
   const memberName = (email) => {
@@ -45,6 +47,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     unsub = onSnapshot(collection(db, "leads"), (snap) => {
       leads = snap.docs.map((d) => normaliseLead(d.id, d.data({ serverTimestamps: "estimate" })));
       render();
+      loadDetails();
     }, () => { board.innerHTML = '<p class="promote-empty">Leads could not be loaded. Reload the page to try again.</p>'; });
     getDocs(collection(db, "memberDirectory")).then((snap) => {
       members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).filter((m) => !m.disabled);
@@ -54,6 +57,28 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     loadAce();
   }
   function stop() { if (unsub) unsub(); unsub = null; started = false; }
+
+  // The compact org chart and AWS team on a card come from the company's shared detail (prospectCompanies).
+  function loadDetails() {
+    for (const l of leads) {
+      const key = companyDocId(l.company.name);
+      if (!key || detailCache.has(key)) continue;
+      detailCache.set(key, null);
+      getDoc(doc(db, COMPANY_COLLECTION, key)).then((s) => { if (s.exists()) { detailCache.set(key, normaliseDetail(s.data())); render(); } }).catch(() => {});
+    }
+  }
+  function compactHTML(l) {
+    const d = detailCache.get(companyDocId(l.company.name));
+    if (!d) return "";
+    const c = compactSummary(d, l);
+    if (c.empty) return "";
+    const aws = c.aws.map((m) => { const href = mailto(m.email, `${l.company.name} opportunity`); return `<span title="${esc(m.role)}">${esc(m.name)}${href ? ` <a href="${esc(href)}" aria-label="Email ${esc(m.name)}" title="Email ${esc(m.name)}"><span class="material-symbols-outlined" aria-hidden="true">mail</span></a>` : ""}</span>`; }).join("");
+    return `<div class="lead-card-detail">
+      ${c.peopleCount ? `<div class="pd-badges" title="Org chart: ${c.peopleCount} ${c.peopleCount === 1 ? "person" : "people"}">${c.roles.map((r) => `<span class="pd-role pd-role-${esc(r.key)}" title="${esc(r.label)}">${esc(r.label)} ${r.count}</span>`).join("")}</div>` : ""}
+      ${c.gaps.length ? `<span class="lead-card-gap"><span class="material-symbols-outlined" aria-hidden="true">warning</span>${esc(c.gaps[0])}</span>` : ""}
+      ${c.aws.length ? `<div class="lead-card-aws"><span class="visually-hidden">AWS team:</span>${aws}${c.awsMore ? ` <span>+${c.awsMore}</span>` : ""}</div>` : ""}
+    </div>`;
+  }
 
   // ── The board ───────────────────────────────────────────────────────────
   const initials = (nameOrEmail) => {
@@ -71,6 +96,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       <h4 class="lead-card-name">${esc(l.company.name)}</h4>
       <div class="lead-card-chips"><span class="lead-chip" title="${esc(industryChipText(l))}">${esc(industryChipText(l))}</span>${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
       ${line ? `<p class="lead-card-line">${esc(line)}</p>` : ""}
+      ${compactHTML(l)}
       <div class="lead-card-foot">
         <span class="lead-card-who" title="${esc(who || "Unassigned")}">${who ? `<span class="lead-avatar" aria-hidden="true">${esc(initials(who))}</span><span class="visually-hidden">${esc(who)}</span>` : "Unassigned"}</span>
         <span class="lead-card-source" title="${esc(sourceLabel(l))}"><span class="material-symbols-outlined" aria-hidden="true">${isWebsite(l) ? "public" : "edit"}</span>${esc(sourceLabel(l))}</span>
@@ -131,6 +157,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (id) moveTo(id, lane.dataset.stage);
   });
   board.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest(".lead-card-detail a")) return; // an email link on the card just sends the email
     const card = e.target.closest && e.target.closest(".lead-card");
     if (card) openSummary(card.dataset.leadId);
   });
@@ -181,6 +208,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
         ${row("Website", l.company.website ? linkOf(l.company.website) : "")}
         ${row("Industry", l.company.industry ? esc(l.company.industry) : "")}
         ${row("Countries", l.company.countries.length ? esc(l.company.countries.join(", ")) : "")}
+        ${row("AWS account ID", esc(l.company.awsAccountId || ""))}
         ${row("Stores", l.company.storeCount != null ? esc(l.company.storeCount.toLocaleString("en-GB")) : "")}
         ${row("Enrichment", e && e.summary ? esc(e.summary) : (e ? "Enriched; no summary." : "Not enriched yet."))}
         ${row("Last enriched", esc(enrichedAt))}
@@ -202,6 +230,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
         ${c.jobTitle ? `<p class="lead-card-line">${esc(c.jobTitle)}</p>` : ""}
         ${c.email ? `<p class="lead-card-line"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></p>` : ""}
         ${c.linkedin ? `<p class="lead-card-line">${linkOf(c.linkedin, "LinkedIn")}</p>` : ""}
+        ${c.awsAccountId ? `<p class="lead-card-line">AWS account ${esc(c.awsAccountId)}</p>` : ""}
       </div>`).join("") : '<p class="field-hint">No contacts yet.</p>'}</section>`;
     $("lead-sum-delete").hidden = !canEdit();
     if (keepStage) $("lead-sum-stage").focus();
@@ -278,6 +307,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       <label class="field-label">Buying role<select class="lc-role" aria-label="Buying role">${roles}</select></label>
       <label class="field-label">Email<input type="text" class="lc-email" maxlength="200" value="${esc(c.email)}" autocomplete="off"></label>
       <label class="field-label">LinkedIn<input type="text" class="lc-linkedin" maxlength="300" value="${esc(c.linkedin)}" placeholder="linkedin.com/in/…" autocomplete="off"></label>
+      <label class="field-label">AWS account ID<input type="text" class="lc-aws" maxlength="14" inputmode="numeric" value="${esc(c.awsAccountId)}" placeholder="12 digits, if known" autocomplete="off"></label>
       ${note}
       <button type="button" class="btn-ghost lc-remove" data-editor-only>Remove contact</button>
     </fieldset>`;
@@ -291,7 +321,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       ...draft.contacts[Number(fs.dataset.index)],
       name: fs.querySelector(".lc-name").value, jobTitle: fs.querySelector(".lc-title").value,
       buyingRole: fs.querySelector(".lc-role").value, email: fs.querySelector(".lc-email").value,
-      linkedin: fs.querySelector(".lc-linkedin").value,
+      linkedin: fs.querySelector(".lc-linkedin").value, awsAccountId: fs.querySelector(".lc-aws").value,
     }));
   }
   $("lead-add-contact").addEventListener("click", () => { readContacts(); draft.contacts.push(blankContact()); renderContacts(); });
@@ -334,6 +364,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-industry").value = l.company.industry;
     $("lead-countries").value = l.company.countries.join(", ");
     $("lead-stores").value = l.company.storeCount == null ? "" : String(l.company.storeCount);
+    $("lead-aws-account").value = l.company.awsAccountId || "";
     $("lead-stage").value = l.stage;
     $("lead-source").value = l.source;
     fillAssignees(l.assignee);
@@ -352,7 +383,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-delete").hidden = !l;
     if (l) { fill(l); renderEnrichment(l); renderAccount(l); }
     else {
-      fill({ company: { name: "", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", assignee: me() });
+      fill({ company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" }, contacts: [], stage: "lead", source: "Manual", assignee: me() });
     }
     backdrop.hidden = false;
     $("lead-name").focus();
@@ -363,7 +394,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     readContacts();
     return leadFromForm({
       name: $("lead-name").value, website: $("lead-website").value, industry: $("lead-industry").value,
-      countries: $("lead-countries").value, storeCount: $("lead-stores").value,
+      countries: $("lead-countries").value, storeCount: $("lead-stores").value, awsAccountId: $("lead-aws-account").value,
       contacts: draft.contacts, stage: $("lead-stage").value, source: $("lead-source").value, assignee: $("lead-assignee").value,
     });
   }

@@ -42,6 +42,16 @@ t("a missing name, a bad stage, role, email or store count are each refused", ()
   assert.ok(r.errors.some((e) => /Company name/.test(e)) && r.errors.some((e) => /Store count/.test(e)) && r.errors.some((e) => /stage/.test(e)));
   assert.equal(L.leadFromForm({ name: "X", contacts: [{ jobTitle: "CFO" }] }).errors[0], "Contact 1 needs a name.");
 });
+t("AWS account ID on the company and each contact: 12 digits, tidied, optional, refused otherwise", () => {
+  const r = L.leadFromForm({ name: "Acme", awsAccountId: "1234-5678-9012", contacts: [{ name: "Jo", awsAccountId: "210987654321" }, { name: "Sam" }] });
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.fields.company.awsAccountId, "123456789012");
+  assert.deepEqual(r.fields.contacts.map((c) => c.awsAccountId), ["210987654321", ""]);
+  assert.equal(L.normaliseLead("l", { company: { name: "Acme", awsAccountId: "123456789012" }, contacts: [{ name: "Jo", awsAccountId: "210987654321" }] }).contacts[0].awsAccountId, "210987654321");
+  assert.equal(L.leadFromForm({ name: "Acme", awsAccountId: "12" }).errors.length, 1);
+  assert.equal(L.leadFromForm({ name: "Acme", contacts: [{ name: "Jo", awsAccountId: "abc" }] }).errors.length, 1);
+  assert.equal(L.leadFromForm({ name: "Acme", contacts: [{ awsAccountId: "123456789012" }] }).errors[0], "Contact 1 needs a name.", "a row with only an account ID is not blank");
+});
 t("a stored contact keeps its enrichment through a form round trip", () => {
   const e = { at: "2026-11-05", source: "tech-stack", added: ["email"] };
   const r = L.leadFromForm({ name: "X", contacts: [{ id: "c9", name: "Jo", enrichment: e }] });

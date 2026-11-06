@@ -1220,9 +1220,19 @@ const scenarios = [
   {
     name: "Promote: Prospects (TAM) - sits below Leads, filters, status edit, saved filter, convert to lead without duplicating",
     seed: () => seed({ prospects: {
-      pa: { name: "Alpha Grocer", country: "United Kingdom", priority: "high", website: "https://alpha.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom", "Ireland"], awsRegion: "eu-west-2", storeCount: 400, storePresence: "400+ stores", sizeBand: "large", ownership: "Listed", insights: "Strong digital signage appetite.", decisionMakers: "Head of Retail Media", linkedinUrl: "https://www.linkedin.com/company/alpha-grocer/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo Bloggs", role: "CMO", lastContact: "May 2026" }], vendors: [], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pa: { name: "Alpha Grocer", country: "United Kingdom", priority: "high", website: "https://alpha.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom", "Ireland"], awsRegion: "eu-west-2", storeCount: 400, storePresence: "400+ stores", sizeBand: "large", ownership: "Listed", insights: "Strong digital signage appetite.", decisionMakers: "Head of Retail Media", linkedinUrl: "https://www.linkedin.com/company/alpha-grocer/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo Bloggs", role: "CMO", lastContact: "May 2026" }], vendors: ["Acme Signage"], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0)  },
       pb: { name: "Beta Pharmacy", country: "Germany", industry: "Pharmacy", hqCountry: "Germany", markets: ["Germany"], awsRegion: "eu-central-1", storeCount: 40, sizeBand: "small", vendors: [], campaigns: ["Autumn"], status: "targeted", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
       pc: { name: "Gamma Fashion", industry: "Fashion", hqCountry: "France", markets: ["France", "Ireland"], awsRegion: "eu-west-3", storeCount: null, vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+    }, prospectCompanies: {
+      alphagrocer: { name: "Alpha Grocer", profile: { summary: "A UK grocery chain.", techStack: ["SAP"], primaryCloud: "AWS", emailFormats: ["first.last@alpha.example"], staffOwner: "rob@offline2online.com", lastResearchedAt: "2026-11-01" },
+        people: [
+          { id: "ceo", name: "Carol Chief", title: "CEO", reportsTo: "", buyingRole: "decision-maker", email: "carol@alpha.example" },
+          { id: "cio", name: "Ian Tech", title: "CIO", reportsTo: "ceo", buyingRole: "champion", email: "ian@alpha.example", engagement: ["demo"] },
+          { id: "dev", name: "Dee Dev", title: "Architect", reportsTo: "cio", buyingRole: "technical-evaluator" },
+        ],
+        awsTeam: [{ id: "am1", name: "Amy AWS", role: "account-manager", email: "amy@aws.example", dealRole: "Owns the account", engages: ["cio"], source: "manual" }],
+        aceOpportunity: { id: "O1", sellerName: "Sam Seller", sellerEmail: "sam@aws.example" },
+        documents: [{ id: "d1", title: "Alpha prospect pack", kind: "prospect-pack", version: 1, date: "2026-10-01", tags: ["grocery"] }, { id: "d2", title: "Alpha prospect pack", kind: "prospect-pack", version: 2, date: "2026-10-20", url: "https://docs.example/alpha-v2", sharedWith: [{ name: "Amy AWS", email: "amy@aws.example", aws: true, at: "2026-10-21" }] }] },
     } }),
     async run(c) {
       await c.boardReady();
@@ -1260,6 +1270,31 @@ const scenarios = [
       assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pa"] [col-id="name"] button.prospect-name-btn').count(), 1);
       assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pa"] [col-id="linkedin"] a[href="https://www.linkedin.com/company/alpha-grocer/"]').count(), 1);
       assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pb"] [col-id="linkedin"] a').count(), 0);
+      // A company name opens its detail view: profile, org chart, AWS team, document library.
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pa"] [col-id="name"] button.prospect-name-btn').count(), 1, "the company name is a button");
+      await c.page.click('#prospects-grid .ag-row[row-id="pa"] [col-id="name"] button.prospect-name-btn');
+      await c.visible("#prospect-detail .pd-name", "the company detail view opens");
+      assert.strictEqual((await c.text("#prospect-detail .pd-name")).trim(), "Alpha Grocer");
+      assert.ok((await c.text("#prospect-detail .pd-summary")).includes("A UK grocery chain."), "the profile summary shows");
+      assert.ok((await c.text("#prospect-detail")).includes("Acme Signage"), "existing vendors show");
+      assert.strictEqual(await c.page.locator("#prospects-grid:visible").count(), 0, "the grid is out of the way");
+      await c.page.click("#pd-tab-org");
+      assert.strictEqual(await c.page.locator("#prospect-detail .pd-person").count(), 3, "all three people in the org chart");
+      assert.ok(await c.page.locator("#prospect-detail .pd-role-decision-maker").count() > 0 && await c.page.locator("#prospect-detail .pd-role-champion").count() > 0, "buying-role badges");
+      assert.ok((await c.text("#prospect-detail")).includes("Demo"), "engagement shows on the person");
+      await c.page.click('[data-act="toggle"][data-id="cio"]');
+      assert.strictEqual(await c.page.locator("#prospect-detail .pd-person").count(), 2, "collapsing the CIO hides the architect");
+      await c.page.click('[data-act="toggle"][data-id="cio"]');
+      await c.page.click("#pd-tab-aws");
+      assert.ok((await c.text("#prospect-detail")).includes("Sam Seller"), "the ACE seller is the account manager");
+      assert.strictEqual(await c.page.locator('#prospect-detail a.pd-mail[href^="mailto:amy@aws.example"]').count(), 1, "a one-click email icon");
+      assert.ok((await c.text("#prospect-detail")).includes("Engaging Ian Tech"), "which customer contact each AWS person engages");
+      await c.page.click("#pd-tab-docs");
+      assert.strictEqual(await c.page.locator("#prospect-detail .pd-doc.is-latest").count(), 1, "one current version per document");
+      assert.ok((await c.text("#prospect-detail")).includes("Shared with AWS") && (await c.text("#prospect-detail")).includes("1 earlier version"), "sharing and version history");
+      await c.page.click('#prospect-detail [data-act="back"]');
+      await c.visible("#prospects-grid", "back to the grid");
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pb"] [col-id="name"] button.prospect-name-btn').count(), 1);
       // Company filter, with its × to clear.
       const clearBtn = (col) => c.page.locator(`#prospects-grid .prospect-clear[data-clear-col="${col}"]`);
       assert.ok(!(await clearBtn("name").isVisible()), "no × while the filter is empty");
@@ -1363,7 +1398,9 @@ const scenarios = [
       assert.deepStrictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("prospect-pa").company.countries), ["United Kingdom"], "the lead covers that record's country");
       // The drawer: every field, contacts table, insights; Priority saves from there.
       await c.page.evaluate(() => document.querySelector('button[data-prospect-open="pa"]').click());
-      await c.visible("#prospect-drawer", "clicking a company opens the drawer");
+      await c.visible("#prospect-detail .pd-name", "clicking a company opens its detail view");
+      await c.page.click('#prospect-detail [data-act="allfields"]');
+      await c.visible("#prospect-drawer", "All fields opens the drawer");
       const dtext = await c.text("#prospect-drawer");
       for (const want of ["Alpha Grocer", "United Kingdom", "Grocery", "Head of Retail Media", "Listed", "400+ stores", "Strong digital signage appetite.", "1234", "Jo Bloggs", "CMO", "May 2026", "alpha-grocer"]) assert.ok(dtext.includes(want), `the drawer shows ${want}`);
       assert.strictEqual(await c.page.locator("#prospect-sum-contacts table tbody tr").count(), 1, "contacts table");
@@ -1526,6 +1563,76 @@ const scenarios = [
         for (const b of m.boxes) { assert.ok(b.h >= 32, `${w}px: ${b.q} is ${b.h}px tall`); assert.ok(b.in, `${w}px: ${b.q} is outside the card`); }
       }
       c.at("layout holds at every width");
+    },
+  },
+  {
+    name: "Promote: Prospects company detail - two country records share one org chart, AWS account ID, lead card compact view",
+    seed: () => seed({
+      prospects: {
+        "aldi-australia": { name: "ALDI", country: "Australia", industry: "Grocery", hqCountry: "Germany", markets: ["Germany", "Australia"], awsRegion: "ap-southeast-2", storeCount: 600, sizeBand: "large", vendors: [], campaigns: [], status: "converted", leadId: "l1", createdAt: t(T0), updatedAt: t(T0) },
+        "aldi-netherlands": { name: "ALDI", country: "Netherlands", industry: "Grocery", hqCountry: "Germany", markets: ["Germany", "Netherlands"], awsRegion: "eu-central-1", storeCount: 500, sizeBand: "large", vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      },
+      prospectCompanies: {
+        aldi: { name: "ALDI", profile: { summary: "Discount grocer." },
+          people: [
+            { id: "ceo", name: "Carol Chief", title: "CEO", buyingRole: "decision-maker", email: "carol@aldi.example", awsAccountId: "123456789012" },
+            { id: "cio", name: "Ian Tech", title: "CIO", reportsTo: "ceo", buyingRole: "champion", email: "ian@aldi.example" },
+          ],
+          awsTeam: [{ id: "am1", name: "Amy AWS", role: "account-manager", email: "amy@aws.example", engages: ["cio"], source: "manual" }], aceOpportunity: null, documents: [] },
+      },
+      leads: { l1: { company: { name: "ALDI", website: "", industry: "Grocery", countries: ["Australia"], storeCount: 600 }, contacts: [{ id: "k1", name: "Ian Tech", jobTitle: "CIO", buyingRole: "champion", email: "ian@aldi.example", linkedin: "" }], stage: "lead", source: "Manual", assignee: "", customerAccount: null, prospectId: "aldi-australia", createdAt: t(T0), updatedAt: t(T0), stageChangedAt: t(T0) } },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      const names = async () => (await c.page.locator("#prospect-detail .pd-person-name").allTextContents()).map((x) => x.trim()).sort();
+      const openCompany = async (rowId) => {
+        await c.visible(`#prospects-grid .ag-row[row-id="${rowId}"] button.prospect-name-btn`, `the ${rowId} row`);
+        await c.page.click(`#prospects-grid .ag-row[row-id="${rowId}"] button.prospect-name-btn`);
+        await c.visible("#prospect-detail .pd-name", "the detail view opens");
+        await c.page.click("#pd-tab-org");
+        await until(async () => (await names()).length > 0, "the org chart to load", 5000);
+      };
+      await openCompany("aldi-australia");
+      assert.deepStrictEqual(await names(), ["Carol Chief", "Ian Tech"]);
+      assert.ok((await c.text("#prospect-detail")).includes("AWS account 123456789012"), "a person's AWS account ID shows");
+      assert.ok((await c.text("#prospect-detail")).includes("Lead contact"), "the lead's contact is highlighted");
+      // Add a person from the Australian record, with a bad account ID first.
+      await c.page.click('#prospect-detail [data-act="edit"][data-kind="person"]');
+      await c.page.fill('#prospect-detail form[data-form="person"] [name="name"]', "Dee Dev");
+      await c.page.fill('#prospect-detail form[data-form="person"] [name="awsAccountId"]', "12345");
+      await c.page.click('#prospect-detail form[data-form="person"] button[type="submit"]');
+      assert.ok((await c.text("#prospect-detail .pd-form-error")).includes("exactly 12 digits"), "a bad account ID is refused");
+      await c.page.fill('#prospect-detail form[data-form="person"] [name="awsAccountId"]', "1234-5678-9013");
+      await c.page.selectOption('#prospect-detail form[data-form="person"] [name="reportsTo"]', "cio");
+      await c.page.click('#prospect-detail form[data-form="person"] button[type="submit"]');
+      await until(async () => (await names()).length === 3, "the new person to appear", 5000);
+      const stored = await c.page.evaluate(() => globalThis.__fbStub.col("prospectCompanies").get("aldi").people.map((p) => [p.name, p.awsAccountId]));
+      assert.deepStrictEqual(stored.find((x) => x[0] === "Dee Dev"), ["Dee Dev", "123456789013"], "stored once, on the company");
+      assert.strictEqual(await c.page.evaluate(() => "people" in globalThis.__fbStub.col("prospects").get("aldi-australia")), false, "not on the country record");
+      // The Netherlands record shows the very same org chart.
+      await c.page.click('#prospect-detail [data-act="back"]');
+      await openCompany("aldi-netherlands");
+      assert.deepStrictEqual(await names(), ["Carol Chief", "Dee Dev", "Ian Tech"], "ALDI · Netherlands has the same org chart as ALDI · Australia");
+      await c.page.click("#pd-tab-profile");
+      assert.ok((await c.text("#prospect-detail .pd-shared-note")).includes("Australia") && (await c.text("#prospect-detail .pd-shared-note")).includes("Netherlands"), "the profile says the detail is shared");
+      // The AWS account ID is a field of this country record.
+      await c.page.click('#prospect-detail [data-act="edit"][data-kind="profile"]');
+      await c.page.fill('#prospect-detail form[data-form="profile"] [name="awsAccountId"]', "999988887777");
+      await c.page.click('#prospect-detail form[data-form="profile"] button[type="submit"]');
+      await until(async () => (await c.text("#prospect-detail")).includes("999988887777"), "the account ID to show on the profile", 5000);
+      assert.strictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("aldi-netherlands").awsAccountId), "999988887777");
+      assert.strictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("aldi-australia").awsAccountId || ""), "");
+      // The lead card shows the compact org chart and AWS team from the same company document.
+      await c.page.click('#prospect-detail [data-act="back"]');
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible(".lead-card .lead-card-detail", "the lead card shows a compact view");
+      const card = await c.text(".lead-card .lead-card-detail");
+      assert.ok(card.includes("Decision maker") && card.includes("Amy AWS"), "buying-role summary and AWS contact on the card");
+      assert.strictEqual(await c.page.locator('.lead-card .lead-card-detail a[href^="mailto:amy@aws.example"]').count(), 1, "an email icon for the AWS contact");
+      // The lead form takes the company's and a contact's AWS account ID.
+      await c.page.click(".lead-card");
+      await c.visible("#lead-sum-body", "the lead summary opens");
     },
   },
 ];

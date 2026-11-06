@@ -13,6 +13,7 @@
 //   storePresence (the store count as written), sizeBand (derived from
 //   storeCount unless set), ownership, priority (high|medium|low|""),
 //   insights, decisionMakers, linkedinUrl, linkedinOrgId, linkedinVerified,
+//   awsAccountId (12 digits or ""),
 //   contacts[{name, role, lastContact}], vendors[], campaigns[],
 //   status (one of STATUSES), leadId ("" until converted), source, notes,
 //   createdAt / updatedAt / createdByEmail / updatedByEmail
@@ -149,14 +150,26 @@ const prospectKey = (name, country) => `${companyKey(name)}|${companyKey(country
 // The id a NEW record gets. Existing records keep theirs.
 const prospectIdFor = (name, country) => `${slugId(name)}-${slugId(country)}`;
 
+// An AWS account ID is exactly 12 digits ("1234-5678-9012" and spaces are tidied
+// to "123456789012"). "" when blank; null when it can't be one.
+function normaliseAwsAccountId(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (!s) return "";
+  const digits = s.replace(/[\s-]/g, "");
+  return /^\d{12}$/.test(digits) ? digits : null;
+}
+const AWS_ACCOUNT_ID_ERROR = "AWS account ID must be exactly 12 digits.";
+
 function contactsFrom(v, errors) {
   const list = Array.isArray(v) ? v : [];
   const out = [];
   for (const c of list) {
     if (!c || typeof c !== "object") continue;
     const name = str(c.name, LIMITS.contactName), role = str(c.role, LIMITS.contactRole), lastContact = str(c.lastContact, LIMITS.contactLast);
-    if (!name && !role && !lastContact) continue;
-    out.push({ name, role, lastContact });
+    const awsAccountId = normaliseAwsAccountId(c.awsAccountId);
+    if (awsAccountId === null) { errors.push(`${name || "A contact"}: ${AWS_ACCOUNT_ID_ERROR}`); continue; }
+    if (!name && !role && !lastContact && !awsAccountId) continue;
+    out.push(awsAccountId ? { name, role, lastContact, awsAccountId } : { name, role, lastContact }); // the key is only stored when there is one
   }
   if (out.length > LIMITS.contacts) { errors.push(`At most ${LIMITS.contacts} contacts per record.`); return out.slice(0, LIMITS.contacts); }
   return out;
@@ -217,6 +230,10 @@ function prospectFromInput(input, existing) {
     if (id && !/^\d{1,20}$/.test(id)) errors.push("linkedinOrgId must be digits only."); else out.linkedinOrgId = id;
   } else out.linkedinOrgId = e ? e.linkedinOrgId : "";
   out.linkedinVerified = has("linkedinVerified") ? (x.linkedinVerified === true || x.linkedinVerified === "true") : (e ? e.linkedinVerified : false);
+  if (has("awsAccountId")) {
+    const a = normaliseAwsAccountId(x.awsAccountId);
+    if (a === null) errors.push(AWS_ACCOUNT_ID_ERROR); else out.awsAccountId = a;
+  } else out.awsAccountId = e ? (e.awsAccountId || "") : "";
   out.contacts = has("contacts") ? contactsFrom(x.contacts, errors) : (e ? e.contacts : []);
   out.vendors = has("vendors") ? parseList(x.vendors, LIMITS.vendor) : (e ? e.vendors : []);
   out.campaigns = has("campaigns") ? parseList(x.campaigns, LIMITS.campaign) : (e ? e.campaigns : []);
@@ -238,7 +255,7 @@ function normaliseProspect(id, d) {
   const hq = String(x.hqCountry || "");
   const country = String(x.country || "").trim() || marketsList[0] || hq;
   const contacts = (Array.isArray(x.contacts) ? x.contacts : []).filter((c) => c && typeof c === "object")
-    .map((c) => ({ name: String(c.name || ""), role: String(c.role || ""), lastContact: String(c.lastContact || "") })).slice(0, LIMITS.contacts);
+    .map((c) => (c.awsAccountId ? { name: String(c.name || ""), role: String(c.role || ""), lastContact: String(c.lastContact || ""), awsAccountId: String(c.awsAccountId) } : { name: String(c.name || ""), role: String(c.role || ""), lastContact: String(c.lastContact || "") })).slice(0, LIMITS.contacts);
   return {
     id,
     name: String(x.name || ""),
@@ -251,6 +268,7 @@ function normaliseProspect(id, d) {
     linkedinUrl: String(x.linkedinUrl || ""),
     linkedinOrgId: String(x.linkedinOrgId || ""),
     linkedinVerified: x.linkedinVerified === true,
+    awsAccountId: String(x.awsAccountId || ""),
     contacts,
     website: String(x.website || ""),
     industry: String(x.industry || ""),
@@ -353,7 +371,8 @@ const CSV_COLUMNS = [
   ["Priority", (p) => priorityLabel(p.priority)], ["HQ country", (p) => p.hqCountry], ["Other markets", (p) => p.markets.join("; ")], ["AWS region", (p) => p.awsRegion],
   ["Store presence", (p) => p.storePresence], ["Store count", (p) => (p.storeCount == null ? "" : p.storeCount)], ["Size band", (p) => sizeBandLabel(p.sizeBand)],
   ["Ownership", (p) => p.ownership], ["Insights", (p) => p.insights], ["Decision makers", (p) => p.decisionMakers],
-  ["Contacts", (p) => p.contacts.map((c) => [c.name, c.role, c.lastContact].filter(Boolean).join(" / ")).join("; ")],
+  ["Contacts", (p) => p.contacts.map((c) => [c.name, c.role, c.lastContact, c.awsAccountId ? `AWS ${c.awsAccountId}` : ""].filter(Boolean).join(" / ")).join("; ")],
+  ["AWS account ID", (p) => p.awsAccountId || ""],
   ["LinkedIn page", (p) => p.linkedinUrl], ["LinkedIn org id", (p) => p.linkedinOrgId], ["LinkedIn verified", (p) => (p.linkedinVerified ? "yes" : "")],
   ["Current vendors", (p) => p.vendors.join("; ")], ["Campaigns", (p) => p.campaigns.join("; ")], ["Status", (p) => statusLabel(p.status)],
   ["Source", (p) => p.source], ["Lead", (p) => p.leadId],
@@ -395,11 +414,11 @@ function leadFieldsFromProspect(p, email) {
     company: {
       name: p.name, website: p.website, industry: p.industry,
       countries: (p.country ? [p.country] : p.markets.length ? p.markets : p.hqCountry ? [p.hqCountry] : []).slice(0, 60),
-      storeCount: p.storeCount,
+      storeCount: p.storeCount, awsAccountId: p.awsAccountId || "",
     },
     contacts: [], stage: "lead", source: LEAD_SOURCE, assignee: String(email || "").toLowerCase(), customerAccount: null,
     prospectId: p.id,
   };
 }
 
-module.exports = { STATUSES, STATUS_KEYS, DEFAULT_STATUS, statusLabel, isStatus, SIZE_BANDS, SIZE_BAND_KEYS, sizeBandLabel, sizeBandFor, LIMITS, PRIORITIES, PRIORITY_KEYS, priorityLabel, AWS_REGIONS, awsRegionForCountry, parseList, parseStorePresence, parseStoreCount, normaliseUrl, normaliseLinkedinUrl, companyKey, slugId, prospectKey, prospectIdFor, prospectFromInput, normaliseProspect, EMPTY_FILTER, FILTER_KEYS, matchesFilter, filterProspects, isFilterEmpty, filterOptions, sanitiseSavedFilters, withSavedFilter, CSV_COLUMNS, csvCell, toCsv, LINKEDIN_COLUMNS, toLinkedInCsv, leadIdForProspect, LEAD_SOURCE, leadFieldsFromProspect };
+module.exports = { STATUSES, STATUS_KEYS, DEFAULT_STATUS, statusLabel, isStatus, SIZE_BANDS, SIZE_BAND_KEYS, sizeBandLabel, sizeBandFor, LIMITS, PRIORITIES, PRIORITY_KEYS, priorityLabel, AWS_REGIONS, awsRegionForCountry, parseList, parseStorePresence, parseStoreCount, normaliseUrl, normaliseLinkedinUrl, companyKey, slugId, prospectKey, prospectIdFor, normaliseAwsAccountId, AWS_ACCOUNT_ID_ERROR, prospectFromInput, normaliseProspect, EMPTY_FILTER, FILTER_KEYS, matchesFilter, filterProspects, isFilterEmpty, filterOptions, sanitiseSavedFilters, withSavedFilter, CSV_COLUMNS, csvCell, toCsv, LINKEDIN_COLUMNS, toLinkedInCsv, leadIdForProspect, LEAD_SOURCE, leadFieldsFromProspect };

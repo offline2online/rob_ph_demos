@@ -384,6 +384,34 @@ async function main() {
   await check("A viewer may read a prospect", "allow", () => getDoc(doc(as(VIEWER), "prospects/p1")));
   await check("A viewer cannot create a prospect", "deny", () => setDoc(doc(as(VIEWER), "prospects/p4"), PROSPECT));
   await check("A stranger cannot read a prospect", "deny", () => getDoc(doc(as(STRANGER), "prospects/p1")));
+  // AWS account ID (12 digits, optional) on the prospect, its contacts, the lead and the lead's contacts
+  await check("A prospect takes a 12-digit AWS account ID", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsAccountId: "123456789012" }));
+  await check("A prospect's AWS account ID can be cleared", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsAccountId: "" }));
+  await check("A prospect's AWS account ID must be 12 digits", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsAccountId: "12345" }));
+  await check("A prospect's AWS account ID is digits only", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsAccountId: "12345678901a" }));
+  await check("A prospect contact may carry a 12-digit AWS account ID", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { contacts: [{ name: "Jo", role: "CMO", lastContact: "", awsAccountId: "210987654321" }] }));
+  await check("A lead company takes a 12-digit AWS account ID", "allow", () => setDoc(doc(as(MEMBER), "leads/l5"), { ...LEAD, company: { ...LEAD.company, awsAccountId: "123456789012" } }));
+  await check("A lead company's AWS account ID must be 12 digits", "deny", () => setDoc(doc(as(MEMBER), "leads/l6"), { ...LEAD, company: { ...LEAD.company, awsAccountId: "12" } }));
+  await check("A lead contact may carry a 12-digit AWS account ID", "allow", () => setDoc(doc(as(MEMBER), "leads/l7"), { ...LEAD, contacts: [{ ...LEAD.contacts[0], awsAccountId: "123456789012" }] }));
+  await check("A lead contact's AWS account ID must be 12 digits", "deny", () => setDoc(doc(as(MEMBER), "leads/l8"), { ...LEAD, contacts: [{ ...LEAD.contacts[0], awsAccountId: "abc" }] }));
+  await check("The 10th lead contact's AWS account ID is checked too", "deny", () => setDoc(doc(as(MEMBER), "leads/l9"), { ...LEAD, contacts: Array.from({ length: 25 }, (_, i) => ({ id: `c${i}`, name: `P${i}`, awsAccountId: i === 9 ? "1" : "" })) }));
+  // The company's shared detail: prospectCompanies/{companyKey}
+  const COMPANY = { name: "ALDI", profile: { summary: "Discount grocer" }, people: [{ id: "p1", name: "Carol", buyingRole: "decision-maker", awsAccountId: "123456789012" }], awsTeam: [], aceOpportunity: null, documents: [] };
+  await check("An editor can create a company's shared detail", "allow", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi"), COMPANY));
+  await check("An editor can update a company's shared detail", "allow", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi"), { ...COMPANY, people: [...COMPANY.people, { id: "p2", name: "Ian", reportsTo: "p1" }] }));
+  await check("A viewer may read a company's shared detail", "allow", () => getDoc(doc(as(VIEWER), "prospectCompanies/aldi")));
+  await check("A stranger cannot read a company's shared detail", "deny", () => getDoc(doc(as(STRANGER), "prospectCompanies/aldi")));
+  await check("A viewer cannot write a company's shared detail", "deny", () => setDoc(doc(as(VIEWER), "prospectCompanies/aldi"), COMPANY));
+  await check("A company's detail id is the company key, not a free-form id", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/ALDI Australia"), COMPANY));
+  await check("A company's detail takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi2"), { ...COMPANY, patchFiles: [] }));
+  await check("A company's detail needs a name", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi3"), { ...COMPANY, name: "" }));
+  await check("An org chart person's AWS account ID must be 12 digits", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi4"), { ...COMPANY, people: [{ id: "p1", name: "Carol", awsAccountId: "12345" }] }));
+  await check("A full org chart of 100 people with AWS account IDs is accepted", "allow", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldifull"), { ...COMPANY, people: Array.from({ length: 100 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, title: "Role", reportsTo: i ? "p0" : "", buyingRole: "influencer", email: `p${i}@aldi.example`, awsAccountId: "123456789012", engagement: ["demo"] })) }));
+  await check("A lead with 25 contacts carrying AWS account IDs is accepted", "allow", () => setDoc(doc(as(MEMBER), "leads/l10"), { ...LEAD, contacts: Array.from({ length: 25 }, (_, i) => ({ id: `c${i}`, name: `P${i}`, jobTitle: "x", buyingRole: "influencer", email: `p${i}@x.example`, linkedin: "https://x.example", awsAccountId: "123456789012" })) }));
+  await check("The 10th org chart person's AWS account ID is checked too", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi5"), { ...COMPANY, people: Array.from({ length: 100 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, awsAccountId: i === 9 ? "x" : "" })) }));
+  await check("An org chart holds at most 100 people", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi6"), { ...COMPANY, people: Array.from({ length: 101 }, (_, i) => ({ id: `p${i}`, name: `P${i}` })) }));
+  await check("A company's AWS team holds at most 30 people", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi7"), { ...COMPANY, awsTeam: Array.from({ length: 31 }, (_, i) => ({ id: `a${i}`, name: `A${i}` })) }));
+  await check("A prospect no longer holds the company's org chart itself", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { people: [] }));
   await check("A lead may carry the prospect it came from", "allow", () => setDoc(doc(as(MEMBER), "leads/prospect-p1"), { ...LEAD, prospectId: "p1" }));
   await check("An editor can delete a prospect", "allow", () => deleteDoc(doc(as(MEMBER), "prospects/p1")));
   await check("A member may read a concept", "allow", () => getDoc(doc(as(MEMBER), "concepts/cActive")));
