@@ -818,3 +818,17 @@ pending revision. `get_faq_article` reports `missingSeoFields`.
 ## Public help search (no sign-in)
 
 Separate from this authenticated server: `https://backlog-tracker-e4ed2.web.app/help-api/mcp` is a public, stateless, read-only remote MCP server (no sign-in) with the eight tools the personalisationhub.com WebMCP defines (describe platform, list industries, get industry, get feature, search help, get help article, start free trial, book demo), read live from the site and cached 5 minutes (`X-Cache`), plus `/help-api/search` and `/help-api/article`. It only serves published, in-range articles, linked to their personalisationhub.com/support-centre/ URL. See REQUIREMENTS.md → "Public help search for AI agents".
+
+**Prospects (TAM) over MCP.** A prospect is one company in one country
+(ALDI · Australia and ALDI · Netherlands are two records). `upsert_prospects`
+(up to 50 per call) matches on `name` + `country`, or on an `id` from
+`list_prospects`; adding a record needs a `country`; only the fields sent
+change; nothing is deleted. It accepts `country`, `priority` (high, medium,
+low), `storePresence` (the count as written; `storeCount` is parsed from it),
+`ownership`, `insights` (2000 characters), `decisionMakers`, `linkedinUrl`
+(a linkedin.com `/company/` or `/showcase/` page, normalised to
+`https://www.linkedin.com/company/<slug>/`; search and profile URLs are
+refused), `linkedinOrgId` (digits), `linkedinVerified` and `contacts` (up to 30
+of `{name, role, lastContact}`), alongside the earlier fields. `list_prospects`
+returns all of them and filters by `country` and `priority` as well as
+industry, market, region, campaign, size, status and store range.

@@ -3,13 +3,18 @@
 // Pure functions only: no DOM, no Firestore, so test/prospects.test.mjs drives
 // them directly.
 //
-// One document per company in `prospects/{id}` (company level, global):
-//   name, website, industry, subIndustry, hqCountry, markets[] (countries
-//   operated in), awsRegion, storeCount|null, sizeBand (derived from
-//   storeCount unless set), vendors[] (current vendors where known),
-//   campaigns[] (campaigns the company is in), status (one of STATUSES),
-//   leadId ("" until converted), source, notes,
+// One document per company PER COUNTRY in `prospects/{id}` (global):
+//   name, country (the country this record covers), website, industry,
+//   subIndustry, hqCountry (head office), markets[] (other countries operated
+//   in), awsRegion (from country, else hqCountry), storeCount|null,
+//   storePresence (the store count as written), sizeBand (derived from
+//   storeCount unless set), ownership, priority (high|medium|low|""),
+//   insights, decisionMakers, linkedinUrl, linkedinOrgId, linkedinVerified,
+//   contacts[{name, role, lastContact}], vendors[], campaigns[],
+//   status (one of STATUSES), leadId ("" until converted), source, notes,
 //   createdAt / updatedAt / createdByEmail / updatedByEmail
+// "The same prospect" is the same company (companyKey of name) in the same
+// country, read from the fields, never from the doc id (prospectKey).
 
 export const STATUSES = [
   { key: "new", label: "New" },
@@ -41,7 +46,15 @@ export function sizeBandFor(storeCount) {
   return key;
 }
 
-export const LIMITS = { name: 120, website: 300, industry: 120, subIndustry: 120, country: 60, region: 40, vendor: 80, campaign: 80, source: 80, notes: 2000, list: 60, batch: 50 };
+export const LIMITS = { name: 120, website: 300, industry: 120, subIndustry: 120, country: 60, region: 40, vendor: 80, campaign: 80, source: 80, notes: 2000, list: 60, batch: 50, storePresence: 80, ownership: 120, insights: 2000, decisionMakers: 500, linkedinUrl: 300, linkedinOrgId: 20, contacts: 30, contactName: 120, contactRole: 120, contactLast: 40 };
+
+export const PRIORITIES = [
+  { key: "high", label: "High" },
+  { key: "medium", label: "Medium" },
+  { key: "low", label: "Low" },
+];
+export const PRIORITY_KEYS = PRIORITIES.map((x) => x.key);
+export const priorityLabel = (key) => (PRIORITIES.find((x) => x.key === key) || { label: "" }).label;
 
 // The AWS region a company in this country would be hosted from, for the
 // "AWS region" filter. Countries with no region of their own map to the
@@ -79,6 +92,17 @@ export function parseList(v, max = LIMITS.country) {
   return out.slice(0, LIMITS.list);
 }
 
+// "100+ stores", "~2,800", "1.2k" -> the first number in it, or null.
+export function parseStorePresence(v) {
+  const m = /(\d[\d,]*(?:\.\d+)?)\s*([km](?![a-z]))?/i.exec(String(v == null ? "" : v));
+  if (!m) return null;
+  let n = Number(m[1].replace(/,/g, ""));
+  if (!Number.isFinite(n)) return null;
+  const unit = (m[2] || "").toLowerCase();
+  if (unit === "k") n *= 1000; else if (unit === "m") n *= 1000000;
+  return Math.round(n);
+}
+
 export function parseStoreCount(v) {
   if (v === "" || v == null) return null;
   const n = typeof v === "number" ? v : Number(String(v).replace(/[,\s]/g, ""));
@@ -97,10 +121,42 @@ export function normaliseUrl(v) {
   return u.href.replace(/\/$/, "");
 }
 
-// The same company is one prospect: a name matched ignoring case and spacing.
+// A company's LinkedIn page -> https://www.linkedin.com/company/<slug>/ ("" when
+// blank; null when it isn't a /company/ or /showcase/ page, e.g. a search URL).
+export function normaliseLinkedinUrl(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (!s) return "";
+  let u;
+  try { u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const host = u.hostname.toLowerCase();
+  if (host !== "linkedin.com" && !host.endsWith(".linkedin.com")) return null;
+  const m = /^\/(company|showcase)\/([A-Za-z0-9_%.-]+)(?:\/.*)?$/.exec(u.pathname);
+  if (!m) return null;
+  return `https://www.linkedin.com/${m[1].toLowerCase()}/${m[2].toLowerCase()}/`;
+}
+
+// The same company is one prospect per country: a name matched ignoring case and spacing.
 export const companyKey = (name) => String(name == null ? "" : name).toLowerCase().replace(/[^a-z0-9]+/g, "");
 export function slugId(name) {
   return companyKey(name).slice(0, 60);
+}
+// Company + country, from the fields. This is what "the same prospect" means.
+export const prospectKey = (name, country) => `${companyKey(name)}|${companyKey(country)}`;
+// The id a NEW record gets. Existing records keep theirs.
+export const prospectIdFor = (name, country) => `${slugId(name)}-${slugId(country)}`;
+
+function contactsFrom(v, errors) {
+  const list = Array.isArray(v) ? v : [];
+  const out = [];
+  for (const c of list) {
+    if (!c || typeof c !== "object") continue;
+    const name = str(c.name, LIMITS.contactName), role = str(c.role, LIMITS.contactRole), lastContact = str(c.lastContact, LIMITS.contactLast);
+    if (!name && !role && !lastContact) continue;
+    out.push({ name, role, lastContact });
+  }
+  if (out.length > LIMITS.contacts) { errors.push(`At most ${LIMITS.contacts} contacts per record.`); return out.slice(0, LIMITS.contacts); }
+  return out;
 }
 
 // What a writer (the MCP tools, the starter set) sends -> the document's
@@ -115,6 +171,9 @@ export function prospectFromInput(input, existing) {
   const name = has("name") ? str(x.name, LIMITS.name) : (e ? e.name : "");
   if (!name) errors.push("Company name is required.");
   out.name = name;
+  const country = has("country") ? str(x.country, LIMITS.country) : (e ? e.country : "");
+  if (!country) errors.push("Country is required: one record per company per country.");
+  out.country = country;
   if (has("website")) {
     const w = normaliseUrl(x.website);
     if (w === null) errors.push("Website isn't a valid address."); else out.website = w;
@@ -127,14 +186,35 @@ export function prospectFromInput(input, existing) {
   if (has("awsRegion")) {
     const r = str(x.awsRegion, LIMITS.region).toLowerCase();
     if (r && !/^[a-z]{2}(-[a-z]+)+-\d$/.test(r)) errors.push(`awsRegion "${x.awsRegion}" isn't an AWS region code like eu-west-2.`); else out.awsRegion = r;
-  } else out.awsRegion = e && e.awsRegion ? e.awsRegion : awsRegionForCountry(out.hqCountry);
+  } else out.awsRegion = e && e.awsRegion ? e.awsRegion : (awsRegionForCountry(out.country) || awsRegionForCountry(out.hqCountry));
+  out.storePresence = has("storePresence") ? str(x.storePresence, LIMITS.storePresence) : (e ? e.storePresence : "");
   if (has("storeCount")) {
     const n = parseStoreCount(x.storeCount);
     if (Number.isNaN(n)) errors.push("Store count must be a number."); else out.storeCount = n;
+  } else if (has("storePresence")) {
+    const n = parseStorePresence(out.storePresence);
+    out.storeCount = n != null ? n : (e ? e.storeCount : null);
   } else out.storeCount = e ? e.storeCount : null;
   if (has("sizeBand") && x.sizeBand !== "" && x.sizeBand != null) {
     if (!SIZE_BAND_KEYS.includes(x.sizeBand)) errors.push(`sizeBand must be one of: ${SIZE_BAND_KEYS.join(", ")}.`); else out.sizeBand = x.sizeBand;
   } else out.sizeBand = sizeBandFor(out.storeCount);
+  out.ownership = has("ownership") ? str(x.ownership, LIMITS.ownership) : (e ? e.ownership : "");
+  if (has("priority")) {
+    const pr = String(x.priority == null ? "" : x.priority).trim().toLowerCase();
+    if (pr && !PRIORITY_KEYS.includes(pr)) errors.push(`priority must be one of: ${PRIORITY_KEYS.join(", ")}.`); else out.priority = pr;
+  } else out.priority = e ? e.priority : "";
+  out.insights = has("insights") ? str(x.insights, LIMITS.insights) : (e ? e.insights : "");
+  out.decisionMakers = has("decisionMakers") ? str(x.decisionMakers, LIMITS.decisionMakers) : (e ? e.decisionMakers : "");
+  if (has("linkedinUrl")) {
+    const l = normaliseLinkedinUrl(x.linkedinUrl);
+    if (l === null) errors.push("linkedinUrl must be a LinkedIn company page (linkedin.com/company/<name> or /showcase/<name>), not a search or profile link."); else out.linkedinUrl = l;
+  } else out.linkedinUrl = e ? e.linkedinUrl : "";
+  if (has("linkedinOrgId")) {
+    const id = String(x.linkedinOrgId == null ? "" : x.linkedinOrgId).trim();
+    if (id && !/^\d{1,20}$/.test(id)) errors.push("linkedinOrgId must be digits only."); else out.linkedinOrgId = id;
+  } else out.linkedinOrgId = e ? e.linkedinOrgId : "";
+  out.linkedinVerified = has("linkedinVerified") ? (x.linkedinVerified === true || x.linkedinVerified === "true") : (e ? e.linkedinVerified : false);
+  out.contacts = has("contacts") ? contactsFrom(x.contacts, errors) : (e ? e.contacts : []);
   out.vendors = has("vendors") ? parseList(x.vendors, LIMITS.vendor) : (e ? e.vendors : []);
   out.campaigns = has("campaigns") ? parseList(x.campaigns, LIMITS.campaign) : (e ? e.campaigns : []);
   if (has("status")) {
@@ -151,15 +231,30 @@ export function normaliseProspect(id, d) {
   const x = d || {};
   const list = (v) => (Array.isArray(v) ? v.map(String).filter(Boolean) : []);
   const storeCount = typeof x.storeCount === "number" && Number.isFinite(x.storeCount) ? x.storeCount : null;
+  const marketsList = list(x.markets);
+  const hq = String(x.hqCountry || "");
+  const country = String(x.country || "").trim() || marketsList[0] || hq;
+  const contacts = (Array.isArray(x.contacts) ? x.contacts : []).filter((c) => c && typeof c === "object")
+    .map((c) => ({ name: String(c.name || ""), role: String(c.role || ""), lastContact: String(c.lastContact || "") })).slice(0, LIMITS.contacts);
   return {
     id,
     name: String(x.name || ""),
+    country,
+    priority: PRIORITY_KEYS.includes(x.priority) ? x.priority : "",
+    storePresence: String(x.storePresence || ""),
+    ownership: String(x.ownership || ""),
+    insights: String(x.insights || ""),
+    decisionMakers: String(x.decisionMakers || ""),
+    linkedinUrl: String(x.linkedinUrl || ""),
+    linkedinOrgId: String(x.linkedinOrgId || ""),
+    linkedinVerified: x.linkedinVerified === true,
+    contacts,
     website: String(x.website || ""),
     industry: String(x.industry || ""),
     subIndustry: String(x.subIndustry || ""),
-    hqCountry: String(x.hqCountry || ""),
-    markets: list(x.markets),
-    awsRegion: String(x.awsRegion || ""),
+    hqCountry: hq,
+    markets: marketsList,
+    awsRegion: String(x.awsRegion || "") || awsRegionForCountry(country) || awsRegionForCountry(hq),
     storeCount,
     sizeBand: SIZE_BAND_KEYS.includes(x.sizeBand) ? x.sizeBand : sizeBandFor(storeCount),
     vendors: list(x.vendors),
@@ -181,18 +276,20 @@ function ms(v) {
 }
 
 // ── Filtering ──────────────────────────────────────────────────────────────
-export const EMPTY_FILTER = { q: "", industry: "", market: "", awsRegion: "", campaign: "", sizeBand: "", status: "", minStores: "", maxStores: "" };
+export const EMPTY_FILTER = { q: "", industry: "", country: "", priority: "", market: "", awsRegion: "", campaign: "", sizeBand: "", status: "", minStores: "", maxStores: "" };
 export const FILTER_KEYS = Object.keys(EMPTY_FILTER);
 
 const eq = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
 const hasItem = (list, v) => list.some((x) => eq(x, v));
 
 // Does one prospect pass every filter that is set? A market matches the HQ
-// country or any country the company operates in.
+// country, the record's country or any country the company operates in.
 export function matchesFilter(p, f) {
   const x = Object.assign({}, EMPTY_FILTER, f || {});
   if (x.industry && !eq(p.industry, x.industry)) return false;
-  if (x.market && !(eq(p.hqCountry, x.market) || hasItem(p.markets, x.market))) return false;
+  if (x.country && !eq(p.country, x.country)) return false;
+  if (x.priority && !eq(p.priority, x.priority)) return false;
+  if (x.market && !(eq(p.country, x.market) || eq(p.hqCountry, x.market) || hasItem(p.markets, x.market))) return false;
   if (x.awsRegion && !eq(p.awsRegion, x.awsRegion)) return false;
   if (x.campaign && !hasItem(p.campaigns, x.campaign)) return false;
   if (x.sizeBand && p.sizeBand !== x.sizeBand) return false;
@@ -203,7 +300,7 @@ export function matchesFilter(p, f) {
   if (max != null && !Number.isNaN(max) && (p.storeCount == null || p.storeCount > max)) return false;
   const q = String(x.q || "").trim().toLowerCase();
   if (q) {
-    const hay = [p.name, p.website, p.industry, p.subIndustry, p.hqCountry, p.awsRegion, ...p.markets, ...p.vendors, ...p.campaigns].join(" ").toLowerCase();
+    const hay = [p.name, p.website, p.industry, p.subIndustry, p.country, p.hqCountry, p.awsRegion, p.ownership, p.storePresence, p.decisionMakers, ...p.markets, ...p.vendors, ...p.campaigns].join(" ").toLowerCase();
     if (!hay.includes(q)) return false;
   }
   return true;
@@ -218,7 +315,7 @@ export function filterOptions(rows) {
   const industry = set(), market = set(), awsRegion = set(), campaign = set();
   for (const p of rows || []) {
     add(industry, p.industry); add(awsRegion, p.awsRegion);
-    add(market, p.hqCountry); p.markets.forEach((m) => add(market, m));
+    add(market, p.country); add(market, p.hqCountry); p.markets.forEach((m) => add(market, m));
     p.campaigns.forEach((c) => add(campaign, c));
   }
   const sorted = (m) => [...m.values()].sort((a, b) => a.localeCompare(b));
@@ -249,11 +346,14 @@ export function withSavedFilter(list, name, filter) {
 
 // ── CSV export ─────────────────────────────────────────────────────────────
 export const CSV_COLUMNS = [
-  ["Company", (p) => p.name], ["Website", (p) => p.website], ["Industry", (p) => p.industry], ["Sub-industry", (p) => p.subIndustry],
-  ["HQ country", (p) => p.hqCountry], ["Markets", (p) => p.markets.join("; ")], ["AWS region", (p) => p.awsRegion],
-  ["Store count", (p) => (p.storeCount == null ? "" : p.storeCount)], ["Size band", (p) => sizeBandLabel(p.sizeBand)],
+  ["Company", (p) => p.name], ["Country", (p) => p.country], ["Website", (p) => p.website], ["Industry", (p) => p.industry], ["Sub-industry", (p) => p.subIndustry],
+  ["Priority", (p) => priorityLabel(p.priority)], ["HQ country", (p) => p.hqCountry], ["Other markets", (p) => p.markets.join("; ")], ["AWS region", (p) => p.awsRegion],
+  ["Store presence", (p) => p.storePresence], ["Store count", (p) => (p.storeCount == null ? "" : p.storeCount)], ["Size band", (p) => sizeBandLabel(p.sizeBand)],
+  ["Ownership", (p) => p.ownership], ["Insights", (p) => p.insights], ["Decision makers", (p) => p.decisionMakers],
+  ["Contacts", (p) => p.contacts.map((c) => [c.name, c.role, c.lastContact].filter(Boolean).join(" / ")).join("; ")],
+  ["LinkedIn page", (p) => p.linkedinUrl], ["LinkedIn org id", (p) => p.linkedinOrgId], ["LinkedIn verified", (p) => (p.linkedinVerified ? "yes" : "")],
   ["Current vendors", (p) => p.vendors.join("; ")], ["Campaigns", (p) => p.campaigns.join("; ")], ["Status", (p) => statusLabel(p.status)],
-  ["Lead", (p) => p.leadId],
+  ["Source", (p) => p.source], ["Lead", (p) => p.leadId],
 ];
 // A cell that starts like a formula is prefixed so a spreadsheet shows it as text.
 export function csvCell(v) {
@@ -267,6 +367,21 @@ export function toCsv(rows) {
   return lines.join("\r\n") + "\r\n";
 }
 
+// ── LinkedIn Campaign Manager: Matched Audiences company list ─────────────
+// The template's headers, in its order. Blank where unknown; companycountry is the
+// record's country; the email domain is the website's host.
+const siteHost = (w) => { try { return new URL(w).hostname.replace(/^www\./i, ""); } catch { return ""; } };
+export const LINKEDIN_COLUMNS = [
+  ["companyname", (p) => p.name], ["companywebsite", (p) => p.website], ["companyemaildomain", (p) => siteHost(p.website)],
+  ["linkedincompanypageurl", (p) => p.linkedinUrl], ["stocksymbol", () => ""], ["industry", (p) => p.industry],
+  ["city", () => ""], ["state", () => ""], ["companycountry", (p) => p.country], ["zipcode", () => ""],
+];
+export function toLinkedInCsv(rows) {
+  const lines = [LINKEDIN_COLUMNS.map(([h]) => h).join(",")];
+  for (const p of rows || []) lines.push(LINKEDIN_COLUMNS.map(([, get]) => csvCell(get(p))).join(","));
+  return lines.join("\r\n") + "\r\n";
+}
+
 // ── Convert to lead ────────────────────────────────────────────────────────
 // A prospect becomes at most one lead: the lead's id comes from the prospect's,
 // so converting twice (two tabs, two people) writes the same document.
@@ -276,7 +391,7 @@ export function leadFieldsFromProspect(p, email) {
   return {
     company: {
       name: p.name, website: p.website, industry: p.industry,
-      countries: (p.markets.length ? p.markets : p.hqCountry ? [p.hqCountry] : []).slice(0, 60),
+      countries: (p.country ? [p.country] : p.markets.length ? p.markets : p.hqCountry ? [p.hqCountry] : []).slice(0, 60),
       storeCount: p.storeCount,
     },
     contacts: [], stage: "lead", source: LEAD_SOURCE, assignee: String(email || "").toLowerCase(), customerAccount: null,
