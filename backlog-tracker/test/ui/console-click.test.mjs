@@ -1123,7 +1123,6 @@ const scenarios = [
     async run(c) {
       await c.boardReady();
       await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
-      await c.page.click("#leads-filter-test");
       await c.visible('.lead-card[data-lead-id="w1"]', "the test tile shows");
       const info = await c.page.evaluate(() => {
         const out = {};
@@ -1160,7 +1159,7 @@ const scenarios = [
     },
   },
   {
-    name: "Promote: Leads test mode - test leads only under Test, bulk delete leaves real leads",
+    name: "Promote: Leads - no Leads/Test buttons, individual leads can be deleted",
     seed: () => seed({ leads: {
       real: { company: { name: "Real Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", sourcePage: "/telco/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
       t1: { company: { name: "Test One", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", sourcePage: "/retail/", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
@@ -1169,21 +1168,16 @@ const scenarios = [
     async run(c) {
       await c.boardReady();
       await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
-      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the real lead is in the Lead lane");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the leads are in the Lead lane");
       const lane = () => c.text('.lead-lane[data-stage="lead"]');
-      assert.ok((await lane()).includes("Real Co") && !(await lane()).includes("Test One"), "test leads are not on the normal board");
-      assert.strictEqual((await c.text("#leads-test-count")).trim(), "2");
-      await c.page.click("#leads-filter-test");
-      await until(async () => (await lane()).includes("Test One"), "the Test filter to show test leads", 5000);
-      assert.ok(!(await lane()).includes("Real Co"), "real leads are hidden under Test");
-      assert.ok(!(await lane()).includes("/retail/"), "the tile does not show the source page");
-      assert.ok((await lane()).includes("Test"), "test tiles carry the Test badge");
-      await c.page.click("#leads-test-delete");
-      assert.ok((await c.text("#leads-test-delete")).includes("Click again"), "the first click asks to confirm");
-      await c.page.click("#leads-test-delete");
-      await until(async () => (await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].map(([k]) => k))).join() === "real", "only the real lead to remain", 5000);
-      await c.page.click("#leads-filter-real");
-      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the real lead is still on the board");
+      assert.ok((await lane()).includes("Real Co") && (await lane()).includes("Test One"), "every lead shows in the pipeline");
+      assert.strictEqual(await c.page.evaluate(() => !document.querySelector("#leads-filter-real, #leads-filter-test, #leads-test-delete")), true, "the Leads/Test buttons are gone");
+      await c.page.click('.lead-card[data-lead-id="t1"]');
+      await c.visible("#lead-summary-panel", "the summary opens");
+      await c.page.click("#lead-sum-delete");
+      assert.ok((await c.text("#lead-sum-delete")).includes("Click again"), "the first click asks to confirm");
+      await c.page.click("#lead-sum-delete");
+      await until(async () => (await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].map(([k]) => k))).join() === "real,t2", "only that lead to be deleted", 5000);
     },
   },
   {

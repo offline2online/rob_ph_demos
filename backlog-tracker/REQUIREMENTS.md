@@ -4047,9 +4047,10 @@ Rules:
   and `sourceIndustry`, or, for a company already there, fills blanks and adds
   the contact. A submission with `test` true (a hidden form field the test
   link's URL parameter switches on) stores `test: true`: it is never merged
-  with a real lead, only shows under the Leads page's **Test** filter, is
-  refused by Enrich, is left out of `list_leads`, and **Delete all test
-  leads** removes every one in one click without touching real leads. Leads
+  with a real lead, is refused by Enrich, is left out of `list_leads`, and shows in the
+  pipeline with a Test badge like any lead (the Leads/Test buttons and bulk
+  delete were removed 6 Nov 2026: lead capture testing is finished; delete a
+  test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
 - Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js`, `test/lead-ingest.test.js`, the Leads tools in

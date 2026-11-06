@@ -31,7 +31,6 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
-  let showTest = false;       // the Test filter: test leads only appear there
 
   const me = () => String((auth.currentUser && auth.currentUser.email) || "").toLowerCase();
   const memberName = (email) => {
@@ -79,14 +78,9 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
 
   function render() {
     if (page.hidden) return;
-    const testCount = leads.filter((l) => l.test).length;
-    const shown = leads.filter((l) => l.test === showTest);
-    $("leads-test-count").textContent = String(testCount);
-    $("leads-filter-real").setAttribute("aria-pressed", String(!showTest));
-    $("leads-filter-test").setAttribute("aria-pressed", String(showTest));
-    $("leads-test-delete").hidden = !showTest || testCount === 0;
+    const shown = leads;
     const lanes = groupByStage(shown);
-    $("leads-empty").textContent = showTest ? "No test leads." : "No leads yet. Add one with the button above.";
+    $("leads-empty").textContent = "No leads yet. Add one with the button above.";
     $("leads-empty").hidden = shown.length > 0;
     board.innerHTML = STAGES.map((s) => `<section class="lead-lane lead-lane-${s.key}" data-stage="${s.key}" aria-label="${esc(s.label)}">
       <header class="lead-lane-head"><h3>${esc(s.label)}</h3><span class="lead-lane-count">${lanes[s.key].length}</span></header>
@@ -106,23 +100,6 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     }
   }
   function showBoardError(msg) { const e = $("leads-empty"); e.textContent = msg; e.hidden = false; }
-
-  $("leads-filter-real").addEventListener("click", () => { showTest = false; render(); });
-  $("leads-filter-test").addEventListener("click", () => { showTest = true; render(); });
-  // One click removes every test lead and nothing else.
-  $("leads-test-delete").addEventListener("click", async () => {
-    const tests = leads.filter((l) => l.test);
-    if (!tests.length || !canEdit()) return;
-    const btn = $("leads-test-delete");
-    if (!btn.dataset.armed) { // a second click confirms, in the page (no native dialog)
-      btn.dataset.armed = "1"; btn.textContent = `Click again to delete ${tests.length} test lead${tests.length === 1 ? "" : "s"}`;
-      setTimeout(() => { delete btn.dataset.armed; btn.textContent = "Delete all test leads"; }, 6000);
-      return;
-    }
-    delete btn.dataset.armed; btn.textContent = "Delete all test leads";
-    try { await Promise.all(tests.map((l) => deleteDoc(doc(db, "leads", l.id)))); }
-    catch (err) { showBoardError(`Couldn't delete test leads: ${err && err.message ? err.message : err}`); }
-  });
 
   board.addEventListener("dragstart", (e) => {
     const card = e.target.closest && e.target.closest(".lead-card");
@@ -223,7 +200,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
         ${c.email ? `<p class="lead-card-line"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></p>` : ""}
         ${c.linkedin ? `<p class="lead-card-line">${linkOf(c.linkedin, "LinkedIn")}</p>` : ""}
       </div>`).join("") : '<p class="field-hint">No contacts yet.</p>'}</section>`;
-    $("lead-sum-delete").hidden = !l.test;
+    $("lead-sum-delete").hidden = !canEdit();
     if (keepStage) $("lead-sum-stage").focus();
   }
   function openSummary(id) {
@@ -256,8 +233,14 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   $("lead-sum-edit").addEventListener("click", () => { const id = summaryId; closeSummary(false); openLead(id); });
   $("lead-sum-delete").addEventListener("click", async () => {
     const l = leads.find((x) => x.id === summaryId);
-    if (!l || !l.test || !canEdit()) return;
-    if (!window.confirm(`Delete the test lead for ${l.company.name}? This cannot be undone.`)) return;
+    if (!l || !canEdit()) return;
+    const btn = $("lead-sum-delete");
+    if (!btn.dataset.armed) { // a second click confirms, in the page (no native dialog)
+      btn.dataset.armed = "1"; btn.textContent = "Click again to delete";
+      setTimeout(() => { delete btn.dataset.armed; btn.textContent = "Delete lead"; }, 6000);
+      return;
+    }
+    delete btn.dataset.armed; btn.textContent = "Delete lead";
     try { await deleteDoc(doc(db, "leads", l.id)); closeSummary(false); } catch (err) { $("lead-sum-status").textContent = `Couldn't delete: ${err && err.message ? err.message : err}`; }
   });
   $("lead-sum-enrich").addEventListener("click", async () => {
@@ -419,7 +402,13 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   $("lead-delete").addEventListener("click", async () => {
     const l = leads.find((x) => x.id === openId);
     if (!l || !canEdit()) return;
-    if (!window.confirm(`Delete the lead for ${l.company.name}? This cannot be undone.`)) return;
+    const btn = $("lead-sum-delete");
+    if (!btn.dataset.armed) { // a second click confirms, in the page (no native dialog)
+      btn.dataset.armed = "1"; btn.textContent = "Click again to delete";
+      setTimeout(() => { delete btn.dataset.armed; btn.textContent = "Delete lead"; }, 6000);
+      return;
+    }
+    delete btn.dataset.armed; btn.textContent = "Delete lead";
     try { await deleteDoc(doc(db, "leads", l.id)); closeLead(); } catch (err) { setError(`Couldn't delete: ${err && err.message ? err.message : err}`); }
   });
 

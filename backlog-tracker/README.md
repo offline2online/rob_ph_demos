@@ -2532,8 +2532,8 @@ every destination already existed.
   LinkedIn has no public lookup API: the company's LinkedIn page is taken from
   its website, and contacts' LinkedIn addresses are stored as typed.
   **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
-  `LEAD_INGEST_KEY`); a `test` flag stores a test lead that shows only under
-  the page's Test filter and is bulk-deleted there. See REQUIREMENTS.md → Promote section: Leads.
+  `LEAD_INGEST_KEY`); a `test` flag stores a test lead (badged, deletable by hand from
+  its summary; the Leads/Test buttons were removed 6 Nov 2026). See REQUIREMENTS.md → Promote section: Leads.
 - **Promote › Prospects (TAM)** (`#promote/prospects`, 5 Nov 2026; `public/js/prospects-page.js`,
   rules in `prospects-core.js` copied to `functions/prospects-core.js` by
   `node test/prospects-core-copy.mjs --write`, starter data in
