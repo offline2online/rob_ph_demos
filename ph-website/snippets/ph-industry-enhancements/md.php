@@ -148,8 +148,8 @@ Inputs: stores, visits per store per day, visits that buy a connection or upgrad
 **Do we need new screens?**
 No. Personalisation Hub works with any digital signage device, alongside the check-in, app and data systems you already run.
 
-**Can we use our existing app and check-in?**
-Yes. Personalisation Hub works with your own app and arrival detection, as well as its own virtual queue, appointments and proximity check-in.
+**Can we add our own check-in?**
+Yes. Alongside the built-in virtual queue, appointments, click-and-collect, QR and proximity check-in, you can add your own through the Visitor API and edge models.
 
 **How do we get started?**
 Start a 30-day free trial on AWS Marketplace and run it in one store. After that it\'s simply added to your AWS bill, and you can cancel any time.
