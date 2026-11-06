@@ -92,6 +92,9 @@ const steps = ["tam", "stage1", "indpage", "prospect", "hotlead", "meetings", "d
 steps.slice(1).forEach((k, i) => assert.ok(has(steps[i], k), `${steps[i]} - ${k}`));
 assert.deepEqual(INTERNAL_NODES.filter((n) => n.kind === "proc").map((n) => n.key), steps, "ten process steps, in order");
 const aceOf = (k) => INTERNAL_NODES.find((n) => n.key === k).ace || "";
+const noteOf = (k) => internal.byId["int:" + k].note || "";
+assert.match(noteOf("tam"), /logo/i); assert.match(noteOf("tam"), /email formats/i); assert.match(noteOf("tam"), /org chart/i);
+assert.match(noteOf("indpage"), /matched to TAM/); assert.match(noteOf("indpage"), /logo/); assert.match(noteOf("indpage"), /industry walkthrough/);
 for (const [k, re] of [["hotlead", /Prospect/], ["meetings", /Qualified/], ["demos", /Technical Validation/], ["custok", /Business Validation/], ["pocstep", /Committed/], ["rollout", /Launched/]]) assert.match(aceOf(k), re, `${k} shows its ACE stage`);
 // documents: one distinct node each, attached to the step that creates them, each in a different colour
 const docs = INTERNAL_NODES.filter((n) => n.kind === "doc");

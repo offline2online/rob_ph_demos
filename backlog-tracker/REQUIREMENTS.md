@@ -2347,8 +2347,16 @@ not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
   ACE opportunity (drafts only, submitted manually by the account lead); the
   customer sign-off / proof-of-execution document at proof of concept, after
   POC funding approval. A legend separates process steps from documents. A
-  document not tied to a step is not shown. This is a diagram only; none of
-  the integrations is built.
+  document not tied to a step is not shown. **TAM profile and branded demo**
+  (ticket pNbib8Ith2yaS0KxcXnY): the TAM step's note records that each company
+  profile keeps the latest logo, the company's email formats (e.g.
+  firstname.lastname@domain; several formats or domains allowed) and an
+  auto-generated org chart (structure, who reports to whom), all refreshed by
+  the monthly research agent; the industry-page conversion step's note records
+  that a visitor who starts the walkthrough demo is identified by matching
+  their email to the TAM email formats, and the demo is then branded with that
+  company's logo and company info and uses the walkthrough for its industry.
+  This is a diagram only; none of the integrations is built.
 - **Bridge links.** An internal operations item that connects to the
   platform is drawn as a dashed **bridge node** inside the PH box (Embedded
   support, MCP Access, PH releases), not as a second copy of a platform item;

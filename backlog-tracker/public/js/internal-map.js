@@ -41,9 +41,9 @@ const ROW_B = 1290;
 const DOC_B = 1410;
 const COL_X = (k) => 150 + k * 260;
 const SALES_STEPS = [
-  { key: "tam", name: "1. TAM database", sub: "Every retailer and signage buyer, per market", note: "Enriched per company; last-researched date, refreshed monthly" },
+  { key: "tam", name: "1. TAM database", sub: "Every retailer and signage buyer, per market", note: "Latest logo, email formats, org chart; last-researched, refreshed monthly" },
   { key: "stage1", name: "2. TAM awareness campaigns", sub: "TAM segments run as DSP or PH campaigns" },
-  { key: "indpage", name: "3. Industry-page conversion", sub: "Calculator download or demo request" },
+  { key: "indpage", name: "3. Industry-page conversion", sub: "Calculator download or demo request", note: "Demo email matched to TAM: their logo, info, industry walkthrough" },
   { key: "prospect", name: "4. Prospect / Hot Prospect", sub: "Promote leads Kanban, with a PH staff owner", ace: "ACE: not created yet" },
   { key: "hotlead", name: "5. ACE opportunity created", sub: "In Partner Central, for AWS companies", note: "Score tracked per submission (target 60/100+); funding status on the lead card", ace: "ACE: Prospect" },
   { key: "meetings", name: "6. Live meetings", sub: "Discovery with the buyer; AWS assigns an account manager", ace: "ACE: Qualified" },
