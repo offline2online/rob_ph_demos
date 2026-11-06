@@ -1,0 +1,17 @@
+body .ph-cc.ph-cc{position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#fff;color:#1C2540;border-top:4px solid #1C2540;box-shadow:0 -2px 12px rgba(28,37,64,.18);font:16px/1.5 "Kantumruy Pro",system-ui,-apple-system,sans-serif;text-transform:none}
+body .ph-cc *{box-sizing:border-box}
+body .ph-cc .ph-cc-in{max-width:1180px;margin:0 auto;padding:16px 24px;display:flex;gap:16px 24px;align-items:center;flex-wrap:wrap}
+body .ph-cc p{margin:0;flex:1 1 360px;font-size:15px}
+body .ph-cc a,body .ph-cc a:hover,body .ph-cc a:focus{color:#0F7A9A;text-decoration:underline;background:none;font:inherit;text-transform:none}
+body .ph-cc .ph-cc-r{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+body .ph-cc .ph-cc-b,body .ph-cc .ph-cc-b:hover,body .ph-cc .ph-cc-b:focus{min-width:120px;padding:10px 20px;border:2px solid #1C2540;border-radius:4px;background:#1C2540;color:#fff;font-family:inherit;font-weight:600;font-size:15px;line-height:1.5;text-transform:none;cursor:pointer}
+body .ph-cc .ph-cc-b:hover,body .ph-cc .ph-cc-b:focus{background:#2c3a62;border-color:#2c3a62}
+body .ph-cc .ph-cc-l,body .ph-cc .ph-cc-l:hover,body .ph-cc .ph-cc-l:focus{background:none;border:0;border-radius:0;padding:8px;color:#0F7A9A;font:inherit;font-size:15px;text-transform:none;text-decoration:underline;cursor:pointer}
+body .ph-cc button:focus-visible,body .ph-cc a:focus-visible,body .ph-cc input:focus-visible,body a.ph-cc-fl:focus-visible{outline:3px solid #0F7A9A}
+body .ph-cc .ph-cc-pn{width:100%}
+body .ph-cc .ph-cc-pn label{display:flex;gap:10px;margin:8px 0;align-items:flex-start;text-transform:none}
+body .ph-cc .ph-cc-pn input{width:20px;height:20px;margin-top:3px;flex:none}
+body .ph-cc .ph-cc-pn strong{display:block}
+body a.ph-cc-fl,body a.ph-cc-fl:hover,body a.ph-cc-fl:focus{color:inherit;font:inherit;text-transform:none;text-decoration:underline;cursor:pointer;background:none}
+body a.ph-cc-fl.ph-cc-fl-end{margin-left:16px}
+@media(max-width:600px){body .ph-cc .ph-cc-b{flex:1}body .ph-cc .ph-cc-in{padding:12px 16px}}
