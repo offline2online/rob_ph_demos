@@ -11,6 +11,7 @@ require_once __DIR__ . '/leads.php';
 require_once __DIR__ . '/calculators-wp.php';
 require_once __DIR__ . '/legacy-copy.php';
 require_once __DIR__ . '/legacy-copy-v2.php';
+require_once __DIR__ . '/legacy-copy-v3.php';
 
 const KEYS = [ 'industries', 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' ];
 

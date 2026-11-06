@@ -37,8 +37,13 @@
       },
       {
         "name": "legacy-copy-v2.php",
-        "bytes": 36056,
-        "sha256": "db44d57e9e34fff2573eae2f2f131ca8df9705159116343e195a5d35908fc55d"
+        "bytes": 36252,
+        "sha256": "c17fb2ef83c2dcb469efb7965997855235b7d905312ec371db76d99856618ce6"
+      },
+      {
+        "name": "legacy-copy-v3.php",
+        "bytes": 9672,
+        "sha256": "44a90361b13d2020c68cc57e587da91b9cb2dffc2b6bea2187666473c7a8aa7a"
       },
       {
         "name": "llms.php",
@@ -47,8 +52,8 @@
       },
       {
         "name": "main.php",
-        "bytes": 6973,
-        "sha256": "fa19856e6e50f8558328b901f502a7dcc3e55b09869f4c1ab31695b80d750e2a"
+        "bytes": 7019,
+        "sha256": "f0999c1e4a5055ab5bc9763cd779953e5549e8a0f75411563d5bfae7f859df52"
       },
       {
         "name": "md.php",
@@ -226,5 +231,43 @@
         "sha256": "dc52e5a2d230ebb639fcafebf78838b48552c8c47531a07652c0df0fa5e9109b"
       }
     ]
+  },
+  {
+    "id": null,
+    "title": "PH Consent",
+    "version": "1.0.0",
+    "folder": "ph-consent",
+    "files": [
+      {
+        "name": "config.php",
+        "bytes": 3445,
+        "sha256": "9599ff43b7f0cf94d9482fa768316a5a7db23435a588ff9a2710ff56a33352c6"
+      },
+      {
+        "name": "consent.css",
+        "bytes": 2034,
+        "sha256": "2b31153eb1cca9217cdd9a397ea31561bcdaada04739845a998f41739fbb4b31"
+      },
+      {
+        "name": "consent.js",
+        "bytes": 8706,
+        "sha256": "32cc93014e229950adf1a49aa65fb8a40746d8acd9e3f83ab6814fb6fbef1a70"
+      },
+      {
+        "name": "helpers.php",
+        "bytes": 2017,
+        "sha256": "7b6ff9a9060bde41d9c34981b66bf53706916dccb1f43c76327d5785053480e3"
+      },
+      {
+        "name": "main.php",
+        "bytes": 9702,
+        "sha256": "e318d2987a8890d2c61a29ce2834335d07089683e74658d73e0b4c86edb03e5c"
+      }
+    ],
+    "placeholder": {
+      "token": "__ID__",
+      "liveValue": "<snippet id assigned at deploy>",
+      "note": "main.php carries __ID__ twice (namespace AngieSnippets\\PhConsent___ID__ and the script handle ph-consent-__ID__); replace it with the new snippet id when creating the snippet, then record the id here and the live bytes/sha256."
+    }
   }
 ]
