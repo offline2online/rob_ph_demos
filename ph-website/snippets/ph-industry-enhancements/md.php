@@ -2,7 +2,7 @@
 return [
 	'industries' => '# Personalisation Hub by industry
 
-Personalisation Hub is a self-hosted personalisation platform for any business with physical locations. It helps fuel and convenience networks, pubs, telco stores, pharmacies, retail media networks, grocers, fashion retailers, quick service restaurants and banks turn store visits into revenue. It combines live store context (time, weather, stock) with the business\'s own customer data from its CDP, CRM, loyalty and decisioning systems, personalises websites, mobile apps, entrance and in-store screens, smart shelves, fuel pumps, menu boards, bar screens and ATMs in real time, and measures every result from screen to sale.
+Personalisation Hub is a self-hosted personalisation platform for any business with physical locations. It helps fuel and convenience networks, pubs, telco stores, pharmacies, retail media networks, grocers, fashion retailers, quick service restaurants and banks make every store visit worth more. It combines live store context (time, weather, stock) with the business\'s own customer data from its CDP, CRM, loyalty and decisioning systems, personalises websites, mobile apps, entrance and in-store screens, smart shelves, fuel pumps, menu boards, bar screens and ATMs in real time, and measures every result from screen to sale.
 
 ## Key facts
 - **Best for:** Any business with physical stores, venues or branches
