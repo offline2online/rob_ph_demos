@@ -297,7 +297,7 @@ folder) or rewrites folder-relative paths under it. The PR #185 refusal now
 applies only to a project with no `repoFolder` at all.
 
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
-Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `Menu Board`,
+Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `PH Website`,
 `Backend / Infrastructure`, `Uncategorised`.
 
 `systemStatus/docsSync` — state of the board docs sweep that syncs every
@@ -2328,24 +2328,35 @@ not "Product". Ticket ufOwuueuj1f5vmeN0xi2.
   Feature Release pipeline and Staff Kanban, step 2). Internal operations
   and unassigned concepts and projects sit in a strip under the sketch.
   It is not pinned or saved (no Re-arrange, History or release filter).
-- **Sales detail lanes** (ticket 6nnKlR0vVtRjNBnRUQzc, 5 Nov 2026). Five
-  full-width lanes under the three columns spell out the Sales process:
-  (1) the **TAM database** (per market, AWS-supported first; industry mapping
-  with website gaps flagged; company profile with cloud provider, Marketplace
-  buying, stack, vendors, logo; mentions monitor; staff linking; last-researched
-  dates with a scheduled refresh agent); (2) the **TAM to prospect flow**
-  (Stage 1 awareness campaigns, industry-page conversion by calculator download
-  or demo, Prospect / Hot prospect on the Promote leads Kanban, Stage 2 adapted
-  campaigns); (3) **cloud co-sell**: AWS ACE through the Partner Central Selling
-  API (opportunity at Prospect, Qualified, Technical/Business Validation,
-  Committed, Marketplace private offer, Launched; score tracked per submission,
-  target 60/100+; Azure and Google Cloud later on the same stages);
-  (4) **AWS funding** through the Partner Central Benefits API (eligibility
-  check, POC funding and Sandbox credit drafts, submitted manually, never
-  automatically; post-approval customer sign-off document for the claim; status
-  and expiry alerts); (5) the **customised, logo-branded documentation pack**
-  attached to the ACE opportunity and refreshed on every stage change, plus the
-  combined lead card. This is a diagram only; none of the integrations is built.
+- **Sales process** (ticket 3FXpHzR1vEqhXzyiyEis, 6 Nov 2026; replaces the
+  five Sales lanes of 6nnKlR0vVtRjNBnRUQzc). One lane under the three columns
+  reads as a single process, process first and documents second, in two rows
+  of five steps: TAM database, TAM awareness campaigns, industry-page
+  conversion (calculator download or demo request), Prospect / Hot Prospect,
+  ACE opportunity created, live meetings, live demos, customer internal
+  approval, proof of concept, rollout to the full estate. The matching AWS
+  ACE stage is written above each step (Prospect, Qualified, Technical
+  Validation, Business Validation, Committed, Launched). Supporting detail
+  (TAM enrichment and freshness, score tracking, funding status on the lead
+  card) is a note inside the relevant step, never a lane. **Documents are not
+  lanes**: each is its own node, in its own colour, hung under the step that
+  creates it and drawn only where needed: industry one-pager and the
+  customised, logo-branded prospect pack at Prospect / Hot Prospect (made
+  before the ACE opportunity, used to define and attach to it); the draft POC
+  funding application and draft Innovation Sandbox credit application at the
+  ACE opportunity (drafts only, submitted manually by the account lead); the
+  customer sign-off / proof-of-execution document at proof of concept, after
+  POC funding approval. A legend separates process steps from documents. A
+  document not tied to a step is not shown. **TAM profile and branded demo**
+  (ticket pNbib8Ith2yaS0KxcXnY): the TAM step's note records that each company
+  profile keeps the latest logo, the company's email formats (e.g.
+  firstname.lastname@domain; several formats or domains allowed) and an
+  auto-generated org chart (structure, who reports to whom), all refreshed by
+  the monthly research agent; the industry-page conversion step's note records
+  that a visitor who starts the walkthrough demo is identified by matching
+  their email to the TAM email formats, and the demo is then branded with that
+  company's logo and company info and uses the walkthrough for its industry.
+  This is a diagram only; none of the integrations is built.
 - **Bridge links.** An internal operations item that connects to the
   platform is drawn as a dashed **bridge node** inside the PH box (Embedded
   support, MCP Access, PH releases), not as a second copy of a platform item;
@@ -4047,9 +4058,10 @@ Rules:
   and `sourceIndustry`, or, for a company already there, fills blanks and adds
   the contact. A submission with `test` true (a hidden form field the test
   link's URL parameter switches on) stores `test: true`: it is never merged
-  with a real lead, only shows under the Leads page's **Test** filter, is
-  refused by Enrich, is left out of `list_leads`, and **Delete all test
-  leads** removes every one in one click without touching real leads. Leads
+  with a real lead, is refused by Enrich, is left out of `list_leads`, and shows in the
+  pipeline with a Test badge like any lead (the Leads/Test buttons and bulk
+  delete were removed 6 Nov 2026: lead capture testing is finished; delete a
+  test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
 - Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js`, `test/lead-ingest.test.js`, the Leads tools in
@@ -4065,42 +4077,80 @@ Rules:
   section, `prospects` (User Management › Roles): No access hides the nav
   entry and blocks the route; View hides the checkboxes, **Convert to lead** and
   Set status; roles saved before it existed keep Edit.
-- **Data**: `prospects/{id}` = `name` (required), `website`, `industry`,
-  `subIndustry`, `hqCountry`, `markets[]` (countries operated in; the HQ
-  country is always included), `awsRegion` (defaults from the HQ country),
-  `storeCount`, `sizeBand` (unknown / small 1-49 / mid 50-249 / large 250-999
-  / enterprise 1,000+, derived from the store count), `vendors[]` (current
-  vendors where known), `campaigns[]`, `status` (new, researching, targeted,
-  engaged, converted, disqualified), `leadId`, `source`, `notes` and the usual
-  stamps. One company is one prospect (name matched ignoring case and
-  punctuation). Rules: `prospects-core.js`, copied to
-  `functions/prospects-core.js` by `node test/prospects-core-copy.mjs --write`.
-  Members read; editors write (`firestore.rules` → `isProspect`).
+- **Data** (one record per company per country, 6 Nov 2026): `prospects/{id}` =
+  `name` and `country` (both required; the country this record covers),
+  `website`, `industry` (category), `subIndustry` (sub-category), `hqCountry`
+  (the head-office country), `markets[]` (other countries operated in; the HQ
+  country is always included), `awsRegion` (derived from `country`, falling
+  back to `hqCountry`), `storeCount`, `storePresence` (the count as written,
+  e.g. "100+ stores" or "~2,800"; `storeCount` is parsed from it when none is
+  sent), `sizeBand` (unknown / small 1-49 / mid 50-249 / large 250-999 /
+  enterprise 1,000+, derived from the store count), `ownership`, `priority`
+  (high, medium or low), `insights` (up to 2000 characters), `decisionMakers`
+  (target roles, text), `linkedinUrl` (normalised to
+  `https://www.linkedin.com/company/<slug>/`; only `/company/` or `/showcase/`
+  URLs are accepted, search and profile URLs are rejected), `linkedinOrgId`
+  (digits only), `linkedinVerified`, `contacts[]` (up to 30 of `{name, role,
+  lastContact}`, text only), `vendors[]`, `campaigns[]`, `status` (new,
+  researching, targeted, engaged, converted, disqualified), `leadId`, `source`,
+  `notes` and the usual stamps. **"The same prospect" is the same company
+  (name matched ignoring case and punctuation) in the same country, read from
+  the fields, never the doc id**: ALDI is three records (ALDI · Australia,
+  ALDI · Netherlands, ALDI · Germany). New docs get the id
+  `slugId(name)-slugId(country)`; existing docs keep theirs, and a doc without
+  `country` reads as its first market (then `hqCountry`). Nothing is deleted
+  or reseeded: the target lists are re-imported by an agent over MCP. Rules:
+  `prospects-core.js`, copied to `functions/prospects-core.js` by
+  `node test/prospects-core-copy.mjs --write`. Members read; editors write
+  (`firestore.rules` → `isProspect`: size limits on every text field, priority
+  in the list, `linkedinUrl` a LinkedIn company or showcase page,
+  `linkedinOrgId` digits, `contacts` at most 30; a new record must name its
+  country, older ones without one still update).
 - **Grid** (6 Nov 2026): the same AG Grid pattern as User Management › Users
   (`ag-theme-alpine um-grid`; floating filter row; header and floating-filter
   height 40, row height 48; pagination 25/50/100/250 at the bottom). The count
   ("129 Prospects", or "N of 129 Prospects" when filtered) sits above the grid
-  with the quick-search box on the left (searches every column) and Saved
-  filters, Columns and Export CSV on the right. Every column filters in the
-  floating row: text columns by "contains", Stores as a number, Markets on the
-  HQ country plus the operated countries, and AWS region, Size band and Status
-  as dropdowns. Sub-industry, Current vendors and Campaigns are hidden by
-  default (Columns chooser). Company is a link only when there is a website;
-  long values truncate with a tooltip. At 1280 px the default columns fit
-  without horizontal scrolling. **Saved filters** (named; the grid's filter
-  model, sort and search text; kept in the browser) are saved, applied and
-  deleted from one menu. **Export CSV** exports the rows the filters match
-  (cells that start like a formula are prefixed so a spreadsheet shows text).
-  Editors also get a checkbox column (header box selects the page) and, with
-  rows selected, a bulk bar: **Convert to lead**, **Set status** and **Export
-  selected**. Each row's pinned-right "⋯" menu has View lead or Convert to
-  lead, Set status and Open website; View-only roles get no checkboxes and no
-  Convert or Set status. Help is an info tooltip beside the title; there is
+  with Saved filters, Columns, Export CSV and **Export for LinkedIn** on the
+  right. **There is no separate search box: all filtering is in the column
+  floating filters** (Company has its own text filter), and every floating text
+  and number filter shows a small clear (×) button once it has a value;
+  clicking it clears that column's filter and the count updates. Shown by
+  default: Company, Country, Industry, Priority, Stores, LinkedIn (an icon link
+  to the company page, or empty), Status, then the ⋯ menu. Hidden by default
+  (Columns chooser): Sub-industry, HQ country, AWS region, Size band, Store
+  presence, Ownership, Insights (truncated, full text in a tooltip), Decision
+  makers, Contacts (count), Source, Current vendors, Campaigns. Priority, Size
+  band, AWS region and Status filter as dropdowns. Long values truncate with a
+  tooltip. At 1280 px the default columns fit without horizontal scrolling.
+  **Clicking a company name opens a right-hand drawer** (like the Leads summary
+  drawer) showing every field, the contacts table and the insights; editors
+  change Priority there directly (saved on change) and use Edit for the rest
+  (contacts one per line as `name | role | last contact`; a search URL in the
+  LinkedIn field or letters in the organisation id are refused; changing the
+  company or country to one that already exists is refused). **Saved filters**
+  (named; the grid's filter model and sort; kept in the browser) are saved,
+  applied and deleted from one menu. **Export CSV** exports the rows the
+  filters match (cells that start like a formula are prefixed so a spreadsheet
+  shows text). **Export for LinkedIn** exports the selected rows, or with none
+  selected the filtered rows, as a CSV in LinkedIn Campaign Manager's Matched
+  Audiences company list format: `companyname, companywebsite,
+  companyemaildomain, linkedincompanypageurl, stocksymbol, industry, city,
+  state, companycountry, zipcode` (blank where unknown; `companycountry` is the
+  record's country; the email domain is the website's host). Editors also get a
+  checkbox column (header box selects the page) and, with rows selected, a bulk
+  bar: **Set status** and **Export selected**. **Convert to lead appears only in
+  a row's pinned-right "⋯" menu** (no button in the row, none in the bulk bar),
+  which also has View lead, Set status, Open details and Open website. The
+  Converted status is set only by Convert to lead, so it is not offered under
+  Set status. View-only roles get no checkboxes, no Convert, no Set status and
+  no editing in the drawer. Help is an info tooltip beside the title; there is
   no explanatory copy under the grid.
 - **Convert to lead**: writes one Leads card (stage Lead, source "Prospects
   (TAM)", assigned to the person, `prospectId` on the lead) whose id is derived
   from the prospect (`prospect-<id>`), sets the prospect's `leadId` and status
-  Converted, and the row then offers **View lead**. Converting twice, or from
+  Converted, and the row then offers **View lead**. One lead per record: a
+  company in three countries converts to up to three leads, each covering its
+  own country. Converting twice, or from
   two tabs, writes the same lead: a prospect can never become two leads. The
   lead's summary drawer shows a Prospect record link back.
 - **Data in**: the empty page offers **Load starter set** (editors): about 60
@@ -4108,10 +4158,24 @@ Rules:
   store counts rounded public figures marked source "Starter set
   (approximate)". It is a start, not a verified dataset; vendors and campaigns
   start blank. Loading twice adds nothing. Agents add and enrich companies over
-  MCP: `list_prospects` (all filters) and `upsert_prospects` (up to 50 per
-  call, merged by name, only the fields sent change, nothing deleted; it cannot
-  set `leadId` or convert).
+  MCP: `list_prospects` (all filters, including `country` and `priority`;
+  returns every field) and `upsert_prospects` (up to 50 per call, accepts all the
+  fields above, matched on name + country or on `id`, a country is required to
+  add a record, only the fields sent change, nothing deleted; it cannot set
+  `leadId` or convert). The starter set loads one record per company in its
+  head-office country.
 - Tests: `test/prospects.test.mjs`, the Prospects tools in
   `test/mcp-server.test.js` and `test/mcp-client.test.mjs`,
   `test/permissions.test.mjs`, `test/promote-section.test.mjs`, a scenario in
   `test/ui/console-click.test.mjs`.
+
+## AWS Partner Central connection
+
+The console backend can securely call AWS Partner Central (Selling API for ACE
+opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
+
+- Keyless: Google OIDC -> `AssumeRoleWithWebIdentity` -> short-lived credentials; the IAM role is code in `deploy/aws/partner-central-role.yaml`, least privilege (AWS-managed opportunity policy; benefits create/update only, submit denied).
+- Wrappers: list/get/create/update opportunity; create draft benefit application only, never submit.
+- Sandbox catalogue by default; the live AWS catalogue only by an explicit admin `LIVE` confirmation.
+- Settings shows connected / not linked yet / error, the catalogue, the last successful call and an audit log of every call (`partnerCentralAudit`); CloudTrail records the AWS side.
+- Dependency (manual): link the Partner Central account to the AWS account and map the role to a Partner Central user role.

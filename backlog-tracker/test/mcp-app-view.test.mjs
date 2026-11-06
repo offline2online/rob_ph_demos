@@ -39,7 +39,7 @@ const readyResult = {
       },
       {
         id: "rft2", projectId: "depproj", project: "Deploy Playground",
-        title: "Sketchy link", type: "feature", category: "Menu Board",
+        title: "Sketchy link", type: "feature", category: "PH Website",
         testSummary: null, desc: "x", previewUrl: null, testVersion: null,
         board: "https://backlog-tracker-e4ed2.web.app/#item-rft2",
       },

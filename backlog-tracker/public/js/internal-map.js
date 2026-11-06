@@ -21,60 +21,51 @@ const NODE_H = 56;
 const STRIP_COLS = 7;
 const STRIP_GAP_X = 210;
 const STRIP_GAP_Y = 96;
-const STRIP_TOP = 1750;
+const STRIP_TOP = 1500;
 
 
-// Sales detail (ticket 6nnKlR0vVtRjNBnRUQzc): five lanes under the three columns
-// spell out the TAM database, the TAM-to-prospect flow, AWS ACE co-sell, AWS
-// funding and the per-opportunity documentation pack. Boxes run left to right.
+// Sales process (ticket 3FXpHzR1vEqhXzyiyEis, reworking 6nnKlR0vVtRjNBnRUQzc): ONE
+// process-first flow from the TAM database to estate rollout, in two rows of
+// five steps. Each step carries its matching AWS ACE stage above the box and
+// its supporting detail as a note inside it. Documents are not lanes: each is
+// a distinct node, in its own colour, hung under the step where it is created
+// and only shown where it is needed.
 const LANE_TOP = 880;
-const LANE_GAP = 170;
-const LANE_H = 150;
-const SALES_LANES = [
-  { key: "tam", name: "Sales: TAM database (per market, AWS-supported markets first)", nodes: [
-    ["tam", "TAM database", "Every retailer and signage buyer, per market"],
-    ["industry", "Industry mapping", "Flags industries missing on the website"],
-    ["profile", "Company profile", "Cloud provider, Marketplace buyer, stack, logo"],
-    ["mentions", "Mentions monitor", "Press and online mentions to chase"],
-    ["owner", "Staff linking", "Each prospect has a PH staff owner"],
-    ["fresh", "Freshness", "Last-researched date; agent refreshes monthly"],
-  ] },
-  { key: "flow", name: "Sales: TAM to prospect flow", nodes: [
-    ["stage1", "Stage 1: awareness", "TAM segments as DSP or PH campaigns"],
-    ["indpage", "Industry pages", "Calculator download or demo booking"],
-    ["prospect", "Prospect / Hot prospect", "Promote leads Kanban, with staff owner"],
-    ["stage2", "Stage 2: engagement", "Higher bids, role and industry messaging"],
-  ] },
-  { key: "ace", name: "Sales: cloud co-sell, AWS ACE via Partner Central Selling API (Azure, Google Cloud later)", nodes: [
-    ["hotlead", "ACE opportunity", "Created at Prospect stage for AWS companies"],
-    ["qualified", "ACE Qualified", "Demo done, AWS assigns account manager"],
-    ["validation", "Tech & Biz validation", "Pilot scoping and business case"],
-    ["committed", "ACE Committed", "Consideration and purchase"],
-    ["offer", "Marketplace private offer", "Self-hosted in their VPC"],
-    ["launched", "Launched", "On rollout"],
-    ["acescore", "ACE score tracking", "Target 60/100+; shows fields that lift it"],
-  ] },
-  { key: "fund", name: "Sales: AWS funding via Partner Central Benefits API (drafts only)", nodes: [
-    ["fundtrig", "Funding prompted", "When a company becomes a lead"],
-    ["eligibility", "Eligibility check", "Against the linked ACE opportunity"],
-    ["poc", "POC funding draft", "Scope, criteria, cost, supporting docs"],
-    ["sandbox", "Sandbox credits draft", "AWS environments and usage costs"],
-    ["manual", "Manual submission", "Account manager submits, never automatic"],
-    ["claim", "Claim sign-off document", "Customer signs; reminder before deadline"],
-    ["fundstatus", "Funding status", "Approved, credits used, expiry alerts"],
-  ] },
-  { key: "docs", name: "Sales: documentation pack attached to the ACE opportunity, refreshed on every stage change", nodes: [
-    ["pack", "Customised pack", "Per company, latest logo"],
-    ["onepager", "Industry one-pager", "Use cases and case studies"],
-    ["bizcase", "Business case", "From their calculator model"],
-    ["brief", "Solution brief", "Products in scope, AWS architecture"],
-    ["deploynotes", "Deployment notes", "VPC and Marketplace private offer"],
-    ["acctsum", "Account summary", "TAM profile, vendors, contacts, next steps"],
-    ["leadcard", "Lead card", "ACE stage, score, funding, credits, claim"],
-  ] },
+const LANE_H = 590;
+const STEP_W = 220;
+const STEP_H = 96;
+const ROW_A = 985;
+const DOC_A = 1105;
+const WRAP_Y = 1180;
+const ROW_B = 1290;
+const DOC_B = 1410;
+const COL_X = (k) => 150 + k * 260;
+const SALES_STEPS = [
+  { key: "tam", name: "1. TAM database", sub: "Every retailer and signage buyer, per market", note: "Latest logo, email formats, org chart; last-researched, refreshed monthly" },
+  { key: "stage1", name: "2. TAM awareness campaigns", sub: "TAM segments run as DSP or PH campaigns" },
+  { key: "indpage", name: "3. Industry-page conversion", sub: "Calculator download or demo request", note: "Demo email matched to TAM: their logo, info, industry walkthrough" },
+  { key: "prospect", name: "4. Prospect / Hot Prospect", sub: "Promote leads Kanban, with a PH staff owner", ace: "ACE: not created yet" },
+  { key: "hotlead", name: "5. ACE opportunity created", sub: "In Partner Central, for AWS companies", note: "Score tracked per submission (target 60/100+); funding status on the lead card", ace: "ACE: Prospect" },
+  { key: "meetings", name: "6. Live meetings", sub: "Discovery with the buyer; AWS assigns an account manager", ace: "ACE: Qualified" },
+  { key: "demos", name: "7. Live demos", sub: "Walkthrough of the platform with their data", ace: "ACE: Technical Validation" },
+  { key: "custok", name: "8. Customer internal approval", sub: "Customer internal meetings, business case, sign-off", ace: "ACE: Business Validation" },
+  { key: "pocstep", name: "9. Proof of concept", sub: "Scoped pilot in their environment", note: "Funding status and credit expiry on the lead card", ace: "ACE: Committed" },
+  { key: "rollout", name: "10. Rollout to the full estate", sub: "Marketplace private offer, self-hosted in their VPC", ace: "ACE: Launched" },
+].map((st, i) => ({ ...st, kind: "proc", w: STEP_W, h: STEP_H, x: COL_X(i % 5), y: i < 5 ? ROW_A : ROW_B }));
+// Documents, each created at one step (docOf) and drawn in its own colour.
+const SALES_DOCS = [
+  { key: "onepager", name: "Industry one-pager", sub: "Created before the ACE opportunity", docOf: "prospect", x: 740, y: DOC_A },
+  { key: "pack", name: "Prospect pack", sub: "Customised, logo-branded; attaches to the ACE opportunity", docOf: "prospect", x: 930, y: DOC_A },
+  { key: "pocdraft", name: "POC funding draft", sub: "Funding application; the account lead submits it", docOf: "hotlead", x: 1120, y: DOC_A },
+  { key: "sandbox", name: "Sandbox credits draft", sub: "Innovation Sandbox application; the lead submits it", docOf: "hotlead", x: 1310, y: DOC_A },
+  { key: "signoff", name: "Customer sign-off", sub: "Proof of execution for the funding claim, after approval", docOf: "pocstep", x: COL_X(3), y: DOC_B },
+].map((d) => ({ ...d, kind: "doc" }));
+const laneNodes = [...SALES_STEPS, ...SALES_DOCS].map((n) => ({ ...n, lane: "process" }));
+const laneEdges = [
+  ...SALES_STEPS.map((st, i) => (i && i !== 5 ? { from: SALES_STEPS[i - 1].key, to: st.key } : null)).filter(Boolean),
+  { from: "hotlead", to: "meetings", via: [[1440, ROW_A], [1440, WRAP_Y], [COL_X(0), WRAP_Y]] },
+  ...SALES_DOCS.map((d) => ({ from: d.docOf, to: d.key, dotted: true })),
 ];
-const laneNodes = SALES_LANES.flatMap((l, i) => l.nodes.map(([key, name, sub], k) => ({ key, kind: "fixed", lane: l.key, name, sub, x: 130 + k * 205, y: LANE_TOP + i * LANE_GAP + 85 })));
-const laneEdges = SALES_LANES.flatMap((l) => l.nodes.slice(1).map((n, k) => ({ from: l.nodes[k][0], to: n[0] })));
 
 // Fixed zones: the three columns and the Feature Release band.
 export const INTERNAL_ZONES = [
@@ -82,7 +73,7 @@ export const INTERNAL_ZONES = [
   { key: "cs", name: "Customer Success", x: 24, y: 190, w: 320, h: 660 },
   { key: "ph", name: "Personalisation Hub (PH)", x: 560, y: 190, w: 380, h: 430 },
   { key: "sales", name: "Sales", x: 1060, y: 190, w: 416, h: 660 },
-  ...SALES_LANES.map((l, i) => ({ key: l.key, name: l.name, x: 24, y: LANE_TOP + i * LANE_GAP, w: 1452, h: LANE_H, lane: true })),
+  { key: "process", name: "Sales process: TAM database to estate rollout, ACE stage above each step, documents under the step that creates them", x: 24, y: LANE_TOP, w: 1452, h: LANE_H, lane: true },
 ];
 
 // kind: fixed (an internal part of the sketch) | bridge (a PH platform node,
@@ -131,11 +122,6 @@ export const INTERNAL_EDGES = [
   { from: "salesagents", to: "prospects", label: "talk to", both: true },
   { from: "salesagents", to: "email", label: "connect", both: true },
   ...laneEdges,
-  { from: "tam", to: "stage1", label: "segments" },
-  { from: "prospect", to: "hotlead", label: "hot lead" },
-  { from: "hotlead", to: "fundtrig", label: "prompts funding" },
-  { from: "poc", to: "claim", label: "once approved", dotted: true, via: [[540, 1420], [1155, 1420]] },
-  { from: "pack", to: "hotlead", dotted: true, via: [[34, 1645], [34, 1305]] },
 ];
 
 // September focus, shown as notes under the sketch.
@@ -161,7 +147,7 @@ function edgePoint(n, toward) {
   const dx = toward.x - n.x;
   const dy = toward.y - n.y;
   if (!dx && !dy) return { x: n.x, y: n.y };
-  const s = Math.min((NODE_W / 2) / Math.abs(dx || 1e-9), (NODE_H / 2) / Math.abs(dy || 1e-9));
+  const s = Math.min(((n.w || NODE_W) / 2) / Math.abs(dx || 1e-9), ((n.h || NODE_H) / 2) / Math.abs(dy || 1e-9));
   return { x: n.x + dx * s, y: n.y + dy * s };
 }
 
@@ -243,23 +229,33 @@ export function internalMapHTML(model) {
     svg += `<text class="sysmap-node-sub" x="24" y="${model.strip.top + 54}">No concepts or projects are typed Internal operations yet.</text>`;
   }
   model.nodes.forEach((n) => {
-    const x = n.x - NODE_W / 2;
-    const y = n.y - NODE_H / 2;
+    const nw = n.w || NODE_W;
+    const nh = n.h || NODE_H;
+    const x = n.x - nw / 2;
+    const y = n.y - nh / 2;
     const board = n.kind === "project" || n.kind === "concept";
     const bridge = n.kind === "bridge";
-    const cls = `sysmap-node intmap-${n.kind}${board ? " clickable s-" + n.status.toLowerCase() : ""}${bridge ? " clickable intmap-bridge" : ""}`;
+    const proc = n.kind === "proc";
+    const doc = n.kind === "doc";
+    const cls = `sysmap-node intmap-${n.kind}${doc ? " intmap-doc-" + n.key : ""}${board ? " clickable s-" + n.status.toLowerCase() : ""}${bridge ? " clickable intmap-bridge" : ""}`;
     const attrs = board || bridge
       ? ` data-node-id="${esc(n.id)}" data-node-kind="${n.kind}" tabindex="0" role="link" aria-label="${esc(n.name)}${bridge ? " — opens the Platform map" : ""}"`
       : "";
-    const sub = n.sub ? wrap(n.sub, 29).slice(0, 2) : [];
-    const name = n.name.length > 25 ? n.name.slice(0, 24) + "…" : n.name;
+    const sub = n.sub ? wrap(n.sub, proc ? 38 : doc ? 30 : 29).slice(0, 2) : [];
+    const max = proc ? 31 : 25;
+    const name = n.name.length > max ? n.name.slice(0, max - 1) + "…" : n.name;
+    const noteLines = proc && n.note ? wrap(n.note, 42).slice(0, 2) : [];
+    const noteTop = y + 34 + sub.length * 11 + 8;
     svg += `<g class="${cls}"${attrs}>
-      <rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="8"/>
+      <rect x="${x}" y="${y}" width="${nw}" height="${nh}" rx="8"/>
       <text class="sysmap-node-name" x="${n.x}" y="${y + 20}" text-anchor="middle">${esc(name)}</text>
       ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${y + 34 + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
+      ${noteLines.map((t, k) => `<text class="sysmap-node-sub intmap-proc-note" x="${n.x}" y="${noteTop + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
+      ${proc && n.ace ? `<text class="sysmap-node-status intmap-ace" x="${x + 2}" y="${y - 6}">${esc(n.ace)}</text>` : ""}
+      ${doc ? `<text class="sysmap-node-status intmap-doc-tag" x="${x + 2}" y="${y - 6}">Document</text>` : ""}
       ${bridge ? `<text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">Platform</text>` : ""}
       ${board ? `<text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">${esc(n.status)}${n.unassigned ? '<tspan class="sysmap-node-unassigned" dx="8">Unassigned</tspan>' : ""}</text>` : ""}
-      ${n.step ? stepBadge(x + NODE_W - 4, y - 2, n.step) : ""}</g>`;
+      ${n.step ? stepBadge(x + nw - 4, y - 2, n.step) : ""}</g>`;
   });
   svg += `<text class="sysmap-boundary-label" x="24" y="${model.notes[0].y - 14}">September focus</text>`;
   model.notes.forEach((n) => {
@@ -275,5 +271,5 @@ function stepBadge(cx, cy, step) {
 }
 
 export function internalLegendHTML() {
-  return `<span class="sysmap-key s-project">Project</span><span class="sysmap-key s-concept">Concept</span><span class="sysmap-key s-bridge">Bridge to the Platform map</span><span class="sysmap-key s-step">1 / 2 September focus</span>`;
+  return `<span class="sysmap-key s-project">Project</span><span class="sysmap-key s-concept">Concept</span><span class="sysmap-key s-bridge">Bridge to the Platform map</span><span class="sysmap-key s-step">1 / 2 September focus</span><span class="sysmap-key s-proc">Process step (ACE stage above it)</span>${[["onepager", "Industry one-pager"], ["pack", "Prospect pack"], ["pocdraft", "POC funding draft"], ["sandbox", "Sandbox credits draft"], ["signoff", "Customer sign-off"]].map(([k, t]) => `<span class="sysmap-key s-doc intmap-doc-key-${k}">Document: ${t}</span>`).join("")}`;
 }

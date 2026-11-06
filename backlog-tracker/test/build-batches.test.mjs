@@ -16,13 +16,13 @@ function test(name, fn) {
 
 test("groups items by category, largest batch first", () => {
   const items = [
-    { id: "1", title: "Fix menu board price", desc: "short", category: "Menu Board" },
-    { id: "2", title: "Fix menu board tile", desc: "short", category: "Menu Board" },
+    { id: "1", title: "Fix menu board price", desc: "short", category: "PH Website" },
+    { id: "2", title: "Fix menu board tile", desc: "short", category: "PH Website" },
     { id: "3", title: "Add FAQ table support", desc: "short", category: "Uncategorised" },
   ];
   const { batches } = clusterBacklogItems(items);
   assert.strictEqual(batches.length, 2);
-  assert.strictEqual(batches[0].category, "Menu Board");
+  assert.strictEqual(batches[0].category, "PH Website");
   assert.strictEqual(batches[0].count, 2);
   assert.strictEqual(batches[1].count, 1);
 });

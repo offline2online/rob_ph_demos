@@ -1,9 +1,10 @@
 // Platform / Internal operations (ticket ufOwuueuj1f5vmeN0xi2): the type
 // helpers, the Platform map's filter and the Internal operations map.
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { ENTITY_TYPES, typeOf, inTypeView, matchesTypeFilter, typeBadgeHTML, typeOptionsHTML } from "../public/js/entity-type.js";
 import { buildSystemMap, systemMapHTML } from "../public/js/system-map.js";
-import { buildInternalMap, internalMapHTML, INTERNAL_ZONES, INTERNAL_NODES, INTERNAL_EDGES } from "../public/js/internal-map.js";
+import { buildInternalMap, internalMapHTML, internalLegendHTML, INTERNAL_ZONES, INTERNAL_NODES, INTERNAL_EDGES } from "../public/js/internal-map.js";
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -83,10 +84,29 @@ for (const a of INTERNAL_NODES) for (const b of INTERNAL_NODES) {
   if (a === b) continue;
   assert.ok(Math.abs(a.x - b.x) >= 180 || Math.abs(a.y - b.y) >= 56, `${a.key} overlaps ${b.key}`);
 }
-// Sales detail lanes (TAM database, flow, ACE, funding, docs pack)
-for (const k of ["tam", "flow", "ace", "fund", "docs"]) assert.ok(zone(k) && zone(k).y >= zone("sales").y + zone("sales").h, `${k} lane sits under the columns`);
-for (const n of INTERNAL_NODES.filter((n) => n.lane)) assert.ok(inZone(n, zone(n.lane)), `${n.key} is inside lane ${n.lane}`);
-for (const [a, b] of [["tam", "stage1"], ["indpage", "prospect"], ["prospect", "hotlead"], ["hotlead", "qualified"], ["qualified", "validation"], ["validation", "committed"], ["committed", "offer"], ["offer", "launched"], ["hotlead", "fundtrig"], ["eligibility", "poc"], ["poc", "claim"], ["pack", "hotlead"]]) assert.ok(has(a, b), `${a} - ${b}`);
-for (const re of [/Selling API/, /Benefits API/, /drafts only/, /Sandbox credits/, /ACE score/, /Calculator download/, /latest logo/]) assert.match(html, re);
-assert.ok(internal.strip.top >= zone("docs").y + zone("docs").h, "board strip sits under the lanes");
+// Sales process: one flow from the TAM database to estate rollout, ACE stage per step, documents per step
+assert.ok(zone("process") && zone("process").y >= zone("sales").y + zone("sales").h, "the Sales process sits under the columns");
+for (const k of ["tam", "flow", "ace", "fund", "docs"]) assert.ok(!zone(k), `no separate ${k} lane any more`);
+for (const n of INTERNAL_NODES.filter((n) => n.lane)) assert.ok(inZone(n, zone(n.lane)), `${n.key} is inside the Sales process lane`);
+const steps = ["tam", "stage1", "indpage", "prospect", "hotlead", "meetings", "demos", "custok", "pocstep", "rollout"];
+steps.slice(1).forEach((k, i) => assert.ok(has(steps[i], k), `${steps[i]} - ${k}`));
+assert.deepEqual(INTERNAL_NODES.filter((n) => n.kind === "proc").map((n) => n.key), steps, "ten process steps, in order");
+const aceOf = (k) => INTERNAL_NODES.find((n) => n.key === k).ace || "";
+const noteOf = (k) => internal.byId["int:" + k].note || "";
+assert.match(noteOf("tam"), /logo/i); assert.match(noteOf("tam"), /email formats/i); assert.match(noteOf("tam"), /org chart/i);
+assert.match(noteOf("indpage"), /matched to TAM/); assert.match(noteOf("indpage"), /logo/); assert.match(noteOf("indpage"), /industry walkthrough/);
+for (const [k, re] of [["hotlead", /Prospect/], ["meetings", /Qualified/], ["demos", /Technical Validation/], ["custok", /Business Validation/], ["pocstep", /Committed/], ["rollout", /Launched/]]) assert.match(aceOf(k), re, `${k} shows its ACE stage`);
+// documents: one distinct node each, attached to the step that creates them, each in a different colour
+const docs = INTERNAL_NODES.filter((n) => n.kind === "doc");
+assert.deepEqual(docs.map((d) => [d.key, d.docOf]), [["onepager", "prospect"], ["pack", "prospect"], ["pocdraft", "hotlead"], ["sandbox", "hotlead"], ["signoff", "pocstep"]]);
+for (const d of docs) assert.ok(INTERNAL_EDGES.some((e) => e.from === d.docOf && e.to === d.key), `${d.key} hangs off ${d.docOf}`);
+const css = fs.readFileSync(new URL("../public/css/styles.css", import.meta.url), "utf8");
+const fills = docs.map((d) => (css.match(new RegExp(`\\.intmap-doc-${d.key} rect \\{ fill: (#[0-9a-f]+)`)) || [])[1]);
+assert.ok(fills.every(Boolean) && new Set(fills).size === docs.length, `each document has its own colour: ${fills}`);
+for (const re of [/Industry one-pager/, /Prospect pack/, /POC funding draft/, /Sandbox credits draft/, /Customer sign-off/, /Innovation Sandbox/, /logo-branded/, /last-researched/, /funding status on the lead card/, /ACE: Technical Validation/]) assert.match(html, re);
+const legend = internalLegendHTML();
+assert.match(legend, /Process step/);
+for (const d of docs) assert.ok(legend.includes(`intmap-doc-key-${d.key}`), `legend lists ${d.key}`);
+assert.ok(!/Business case|Solution brief|Deployment notes|Account summary/.test(html), "documents not tied to a step are gone");
+assert.ok(internal.strip.top >= zone("process").y + zone("process").h, "board strip sits under the Sales process");
 console.log("entity-type + internal map: ok");

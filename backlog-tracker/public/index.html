@@ -18,7 +18,7 @@
        paint, especially on higher-latency mobile connections. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,content_copy,content_cut,contract,crop,dashboard,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,travel_explore,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,business,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,contacts,content_copy,content_cut,contract,crop,dashboard,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,group,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,insights,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,travel_explore,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/apple.css">
   <link rel="stylesheet" href="css/kanban.css">
@@ -1156,11 +1156,6 @@
         <h2>Leads</h2>
         <button type="button" class="btn-primary" id="leads-add-btn" data-editor-only>+ New lead</button>
       </div>
-      <div class="leads-filter" role="group" aria-label="Which leads to show">
-        <button type="button" class="btn-ghost" id="leads-filter-real" aria-pressed="true">Leads</button>
-        <button type="button" class="btn-ghost" id="leads-filter-test" aria-pressed="false">Test <span id="leads-test-count">0</span></button>
-        <button type="button" class="btn-ghost" id="leads-test-delete" data-editor-only hidden>Delete all test leads</button>
-      </div>
       <p class="promote-empty" id="leads-empty" hidden>No leads yet. Add one with the button above.</p>
       <div class="leads-board-wrap"><div class="leads-board" id="leads-board"></div></div>
     </section>
@@ -1169,24 +1164,20 @@
          (rendered by js/prospects-page.js). Help lives in the info tooltips, not under the grid. -->
     <section class="faq-admin-page" id="prospects-page" hidden>
       <div class="page-header">
-        <h2>Prospects (TAM) <span class="material-symbols-outlined prospects-info" id="prospects-info" tabindex="0" role="img" aria-label="About Prospects (TAM)" title="Every company that could buy Personalisation Hub, worldwide (the total addressable market). Filter to size a market, then use Convert to lead on a row to start working it on the Leads board. Agents add and enrich companies over MCP.">info</span></h2>
+        <h2>Prospects (TAM) <span class="material-symbols-outlined prospects-info" id="prospects-info" tabindex="0" role="img" aria-label="About Prospects (TAM)" title="Every company that could buy Personalisation Hub, one record per company per country (the total addressable market). Filter in the column filters under each heading (the × clears one), click a company for every field, and use Convert to lead in a row's ⋯ menu to start working it on the Leads board. Export for LinkedIn downloads a Matched Audiences company list. Agents add and enrich records over MCP.">info</span></h2>
         <button type="button" class="btn-primary" id="prospects-seed-btn" data-editor-only hidden>Load starter set</button>
       </div>
       <div class="um-count" id="prospects-count" role="status" aria-live="polite"></div>
       <div class="um-toolbar" id="prospects-tools" role="group" aria-label="Prospects tools">
-        <div class="um-search">
-          <span class="material-symbols-outlined" aria-hidden="true">search</span>
-          <input type="search" id="prospects-q" placeholder="Search prospects" aria-label="Search prospects">
-        </div>
         <div class="prospects-actions">
           <button type="button" class="btn-ghost" id="prospects-saved-btn" aria-haspopup="menu" aria-expanded="false" title="Save, apply or delete filters (kept in this browser)">Saved filters</button>
           <button type="button" class="btn-ghost" id="prospects-columns-btn" aria-haspopup="menu" aria-expanded="false" title="Choose which columns to show">Columns</button>
           <button type="button" class="btn-ghost" id="prospects-export" title="Download the rows that match the current filters as a CSV file">Export CSV</button>
+          <button type="button" class="btn-ghost" id="prospects-export-linkedin" title="Download the selected rows (or, with none selected, the rows that match the current filters) as a LinkedIn Campaign Manager Matched Audiences company list">Export for LinkedIn</button>
         </div>
       </div>
       <div class="um-bulk" id="prospects-bulk" data-editor-only hidden>
         <span id="prospects-bulk-count"></span>
-        <button type="button" class="btn-ghost" id="prospects-bulk-convert">Convert to lead</button>
         <label class="um-bulk-label" for="prospects-bulk-status">Set status</label>
         <select id="prospects-bulk-status"></select>
         <button type="button" class="btn-ghost" id="prospects-bulk-apply">Apply</button>
@@ -1197,6 +1188,22 @@
       <div id="prospects-grid" class="ag-theme-alpine um-grid prospects-grid" aria-label="Prospects" hidden></div>
       <div class="prospects-pop" id="prospects-pop" role="menu" hidden></div>
     </section>
+
+    <div class="modal-backdrop lead-drawer-backdrop" id="prospect-drawer-backdrop" hidden>
+      <aside class="modal-panel lead-drawer prospect-drawer" id="prospect-drawer" role="dialog" aria-modal="true" aria-labelledby="prospect-drawer-title">
+        <div class="modal-header">
+          <div class="lead-sum-head"><h2 id="prospect-drawer-title">Prospect</h2><div id="prospect-drawer-badges" class="lead-card-chips"></div></div>
+          <button type="button" class="modal-close" id="prospect-drawer-close" aria-label="Close">&times;</button>
+        </div>
+        <div id="prospect-drawer-body" class="lead-sum-body"></div>
+        <p class="field-hint" id="prospect-drawer-status" role="status" aria-live="polite"></p>
+        <div class="lead-sum-actions" id="prospect-drawer-actions">
+          <button type="button" class="btn-primary" id="prospect-drawer-edit" data-editor-only>Edit</button>
+          <button type="button" class="btn-primary" id="prospect-drawer-save" data-editor-only hidden>Save</button>
+          <button type="button" class="btn-ghost" id="prospect-drawer-cancel" hidden>Cancel</button>
+        </div>
+      </aside>
+    </div>
 
     <div class="modal-backdrop lead-drawer-backdrop" id="lead-summary-backdrop" hidden>
       <aside class="modal-panel lead-drawer" id="lead-summary-panel" role="dialog" aria-modal="true" aria-labelledby="lead-sum-title">
@@ -1209,7 +1216,7 @@
         <div class="lead-sum-actions">
           <button type="button" class="btn-primary" id="lead-sum-edit" data-editor-only>Edit</button>
           <button type="button" class="btn-outline" id="lead-sum-enrich" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Enrich</button>
-          <button type="button" class="btn-ghost lead-delete" id="lead-sum-delete" data-editor-only hidden>Delete test lead</button>
+          <button type="button" class="btn-ghost lead-delete" id="lead-sum-delete" data-editor-only hidden>Delete lead</button>
         </div>
       </aside>
     </div>
@@ -1452,6 +1459,20 @@
               </div>
               <p class="field-hint" style="margin-top:4px;">Encrypted before they are saved. Saved keys show only their last four characters; to change one, paste the new key and save.</p>
               <div class="media-keys-list" id="media-keys-list"><p class="interface-row-empty">Loading…</p></div>
+            </div>
+
+            <!-- AWS Partner Central connection (functions/partner-central.js).
+                 Admin-only, read-only status plus Test connection; keyless, so
+                 there is nothing to paste. -->
+            <div class="docs-block" data-admin-only id="partner-central-block">
+              <div class="docs-block-header">
+                <h3>AWS Partner Central
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About the AWS Partner Central connection" data-tip="How the console talks to AWS Partner Central (ACE opportunities and funding drafts). It assumes an AWS role with short-lived credentials, so no AWS keys are stored. Every call is logged here and in AWS CloudTrail."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-ghost" id="partner-central-test">Test connection</button>
+              </div>
+              <div id="partner-central-status"><p class="interface-row-empty">Loading…</p></div>
+              <div id="partner-central-audit"></div>
             </div>
 
             <!-- Per-browser only — localStorage, never Firestore (see

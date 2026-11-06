@@ -56,6 +56,7 @@ assert.match(tc, /for \(const type of \["mousedown", "mouseup"\]\)/, "a handled 
 const REVIEWED = {
   "app.js": [1, "FAQ table toolbar keeps focus in the cell; the buttons act on click, which the touch path sends"],
   "leads-page.js": [2, "lead form and lead summary backdrops close on mousedown; a tapped control's compatibility mousedown is swallowed by touch-click.js, so a tap that opens one cannot close it"],
+  "prospects-page.js": [1, "detail drawer backdrop closes on mousedown, same as the lead summary drawer in leads-page.js; the tap that opens it has its compatibility mousedown swallowed by touch-click.js"],
   "nav-shell.js": [1, "Command-K backdrop closes on mousedown, same as leads-page.js"],
   "kanban/kanban-editor.js": [1, "mention picker acts on mousedown; its box is [data-native-tap]"],
   "kanban/kanban-page.js": [1, "ticket picker acts on mousedown; its box is [data-native-tap]"],

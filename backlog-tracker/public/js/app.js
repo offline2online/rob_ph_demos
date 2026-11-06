@@ -140,7 +140,7 @@ const COL_KEYS = COLUMNS.map((c) => c.key);
 
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
-  "Menu Board", "Backend / Infrastructure", "Uncategorised",
+  "PH Website", "Backend / Infrastructure", "Uncategorised",
 ];
 
 const GENERAL_PROJECT_ID = "general";
@@ -8925,7 +8925,7 @@ function suggestCategory(text) {
   const rules = [
     { cat: "Pricing & Offers", words: ["price", "pricing", "rrp", "offer", "discount", "local override"] },
     { cat: "Product Assets", words: ["magic edit", "crop", "brush", "background removal", "remove background", "enhance", "asset", "video", "image", "photo"] },
-    { cat: "Menu Board", words: ["menu board", "customer-facing", "tile", "hero", "featured highlight"] },
+    { cat: "PH Website", words: ["personalisationhub.com", "ph website", "website page", "website copy", "ph-website"] },
     { cat: "Retail Admin", words: ["retail admin", "store", "stock"] },
     { cat: "HQ Admin", words: ["hq admin", "grid", "table", "column", "settings", "scheduling", "targeting"] },
     { cat: "Backend / Infrastructure", words: ["cloud function", "backend", "firebase", "deploy", "server"] },
@@ -9981,7 +9981,7 @@ function showSettingsPage(key, sub) {
     return;
   }
   if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
-  if (settingsPage === "integrations") { loadMyAgentConnections(); if (isConsoleAdmin()) loadMediaKeys(); }
+  if (settingsPage === "integrations") { loadMyAgentConnections(); if (isConsoleAdmin()) { loadMediaKeys(); loadPartnerCentral(); } }
   setRouteHash(settingsHash(settingsPage));
   updateTopbarTitle();
   renderSettingsGrids();
@@ -10949,6 +10949,38 @@ function renderMediaKeys(status) {
     </div>`;
   }).join("");
 }
+// ── Settings → AWS Partner Central (functions/partner-central.js) ────────
+async function partnerCentralCall(path, opts = {}) {
+  const resp = await fetch(`/partnerCentral/v1/${path}`, { ...opts, headers: await consoleApiHeaders() });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+async function loadPartnerCentral() {
+  const box = document.getElementById("partner-central-status");
+  const auditBox = document.getElementById("partner-central-audit");
+  if (!box) return;
+  try {
+    const [s, a] = await Promise.all([partnerCentralCall("status", { method: "GET" }), partnerCentralCall("audit", { method: "GET" })]);
+    const label = { connected: "Connected", "not-linked": "Not linked yet", error: "Error" }[s.state] || s.state;
+    const icon = s.state === "connected" ? "check_circle" : "error";
+    box.innerHTML = `<div class="media-key-state ${s.state === "connected" ? "media-key-test-ok" : "media-key-test-bad"}"><span class="material-symbols-outlined" aria-hidden="true">${icon}</span> ${escapeHTML(label)}</div>
+      <p class="field-hint">Catalogue in use: <strong>${escapeHTML(s.catalog)}</strong>${s.catalog === "AWS" ? " (live)" : " (sandbox)"} · Role <code>${escapeHTML(s.roleArn)}</code><br>
+      Last successful call: ${s.lastSuccessAt ? `${escapeHTML(s.lastSuccessOperation || "")} · ${escapeHTML(mediaKeyDate(s.lastSuccessAt))}` : "none yet"}${s.lastError ? `<br>Last error: ${escapeHTML(s.lastError)}` : ""}${s.note ? `<br>${escapeHTML(s.note)}` : ""}</p>`;
+    const rows = (a.entries || []).slice(0, 20).map((e) => `<tr><td>${escapeHTML(mediaKeyDate(e.at))}</td><td>${escapeHTML(e.operation || "")}</td><td>${escapeHTML(e.catalog || "")}</td><td>${escapeHTML(e.by || "")}</td><td>${e.ok ? "OK" : escapeHTML(e.error || "failed")}</td></tr>`).join("");
+    if (auditBox) auditBox.innerHTML = rows ? `<table class="data-table"><thead><tr><th>When</th><th>Call</th><th>Catalogue</th><th>By</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="field-hint">No calls yet.</p>';
+  } catch (err) {
+    box.innerHTML = `<p class="interface-row-empty">Couldn't load the Partner Central status: ${escapeHTML(err.message)}</p>`;
+  }
+}
+document.getElementById("partner-central-test")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try { await partnerCentralCall("test", { method: "POST", body: "{}" }); } catch (err) { /* shown in status */ }
+  btn.disabled = false;
+  loadPartnerCentral();
+});
+
 async function loadMediaKeys() {
   const box = document.getElementById("media-keys-list");
   if (!box) return;

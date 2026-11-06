@@ -1842,6 +1842,27 @@ Once the token is in place, the acceptance check is simply that setting
 ~10, and that the triggering run shows **repository_dispatch** (not
 `schedule`) as its event on the Actions tab.
 
+### AWS Partner Central connection — keyless (6 Nov 2026)
+
+`functions/partner-central.js` (function `partnerCentral`, Hosting rewrite
+`/partnerCentral/**`, admins only) lets the console backend call the Partner
+Central **Selling API** (ACE opportunities: list/get/create/update) and
+**Benefits API** (draft benefit applications only; no submit wrapper, and the
+role denies submit) with no stored AWS key: a Google OIDC token for the
+function's service account is traded at STS (`AssumeRoleWithWebIdentity`) for
+15-minute credentials, and requests are SigV4-signed in-module. The role is
+defined as code in `deploy/aws/partner-central-role.yaml`
+(`arn:aws:iam::817173160653:role/PH-Console-PartnerCentral`); set-up steps,
+including Rob's manual Partner Central account link and role mapping, are in
+`deploy/aws/README.md`. The catalogue is **Sandbox** until an admin switches to
+**AWS** with an explicit `LIVE` confirmation. Settings → Integrations & MCP →
+**AWS Partner Central** shows Connected / Not linked yet / Error, the catalogue,
+the last successful call and the last 20 calls; every call is in
+`partnerCentralAudit` (server-only), CloudTrail has the AWS side. Test:
+`node test/partner-central.test.js`. Service target names could not be
+exercised without AWS access: verify on the first Sandbox call (see
+`deploy/aws/README.md`).
+
 ### Media Studio provider keys — the `MEDIA_KEYS_ENC_KEY` secret (4 Nov 2026)
 
 **Settings → Integrations & MCP → Media Studio API keys** (admins only) is
@@ -2355,7 +2376,7 @@ entry, directly under Agent Console.
   back — the rule refuses that write outright, and deleting a promoted
   concept is refused too, since it's the provenance record for where a
   real project's README/requirements came from.
-- **Platform / Internal operations** (`public/js/entity-type.js`, `public/js/internal-map.js`): every concept and project has a required type, shown as a badge and filterable on the concept list and the board header. The system map has a toggle between the Platform map and a separate Internal operations map (Customer Success left, PH centre, Sales right, Feature Release along the top; five Sales lanes underneath cover the TAM database, TAM-to-prospect flow, AWS ACE co-sell, AWS funding and the documentation pack). Existing items stay unset and show **Unassigned** on both. See `REQUIREMENTS.md` → "Platform and Internal operations".
+- **Platform / Internal operations** (`public/js/entity-type.js`, `public/js/internal-map.js`): every concept and project has a required type, shown as a badge and filterable on the concept list and the board header. The system map has a toggle between the Platform map and a separate Internal operations map (Customer Success left, PH centre, Sales right, Feature Release along the top; one Sales process lane underneath runs from the TAM database to estate rollout, with the ACE stage above each step and each document, in its own colour, under the step that creates it). Existing items stay unset and show **Unassigned** on both. See `REQUIREMENTS.md` → "Platform and Internal operations".
 - **System map hero**: the page opens with one live system map of PH core, every project and every concept (`public/js/system-map.js`; lines come from interface contracts, release filter, click-through; fits the page width with zoom/pan, internal items excluded, Advertiser and Federated PH Instance each linked to MCP Release). See `REQUIREMENTS.md` → "Concept Incubator hero".
 - **System map: pinned, incremental layout** — node positions are saved in `systemMap/layout` and only new nodes are placed; every change is a revision with a minimal diff (History, rollback of positions, Re-arrange). See `REQUIREMENTS.md` → "Concept Incubator hero".
 - **Critiques** (`conceptCritiques` collection, `public/js/concept-critiques.js`): a concept's detail page has a Critiques block, empty by default and kept apart from the README. Each critique is one reviewer's verdict (will work / won't work / conditional), strongest arguments for and against, assumptions challenged and recommended changes, attributed to a free-text **role** (CFO, store operations manager... — not a fixed list; roles already used are offered as suggestions, and a critique without one shows as "Unspecified"), with a fingerprint of the README/Requirements text it reviewed. Agents add them over MCP (`add_concept_critique`, `list_concept_critiques`, `synthesise_concept_critiques`); people can add one with **+ Add critique**. **Synthesise** shows the verdict tally, a by-role breakdown, points of agreement and disagreement, and the recommended adjustments; the **Show role** filter narrows both list and synthesis. A person accepts or rejects each recommended change on its critique: accepting appends it under a "Critique adjustments" heading in the concept's Requirements (previous text kept in `docRevisions`, `via: "board"`), rejecting leaves the concept unchanged; the critique becomes Addressed once every change is decided and at least one was accepted. Accept/reject is deliberately not an MCP tool.
@@ -2532,16 +2553,21 @@ every destination already existed.
   LinkedIn has no public lookup API: the company's LinkedIn page is taken from
   its website, and contacts' LinkedIn addresses are stored as typed.
   **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
-  `LEAD_INGEST_KEY`); a `test` flag stores a test lead that shows only under
-  the page's Test filter and is bulk-deleted there. See REQUIREMENTS.md → Promote section: Leads.
+  `LEAD_INGEST_KEY`); a `test` flag stores a test lead (badged, deletable by hand from
+  its summary; the Leads/Test buttons were removed 6 Nov 2026). See REQUIREMENTS.md → Promote section: Leads.
 - **Promote › Prospects (TAM)** (`#promote/prospects`, 5 Nov 2026; `public/js/prospects-page.js`,
   rules in `prospects-core.js` copied to `functions/prospects-core.js` by
   `node test/prospects-core-copy.mjs --write`, starter data in
   `prospects-seed.js`): the global target-company database as an AG Grid below
-  Leads, built like User Management › Users (floating filters, checkbox column
-  with a bulk bar, pinned "⋯" row menu, pagination), with quick search, a
-  Columns chooser, saved filters (grid filter model + sort, per browser), CSV
-  export and **Convert to lead** that writes one linked Leads card (`prospect-<id>`).
+  Leads, built like User Management › Users (floating filters with a × to clear
+  each text and number filter and no separate search box, checkbox column with a
+  bulk bar, pinned "⋯" row menu, pagination), with a Columns chooser, saved
+  filters (grid filter model + sort, per browser), CSV export, **Export for
+  LinkedIn** (Campaign Manager Matched Audiences company list), a right-hand
+  detail drawer per company, and **Convert to lead** (row menu only) that writes
+  one linked Leads card (`prospect-<id>`). One record per company per country
+  (ALDI · Australia, ALDI · Netherlands); priority, store presence, ownership,
+  insights, decision makers, LinkedIn page and contacts are fields on it.
   Firestore `prospects/{id}`; own permission section `prospects` in
   User Management › Roles. Agents use `list_prospects` and `upsert_prospects`
   (`functions/prospects.js`). See REQUIREMENTS.md → Promote section: Prospects (TAM).

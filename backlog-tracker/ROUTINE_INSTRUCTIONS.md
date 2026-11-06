@@ -1457,7 +1457,7 @@ be stale by the time you run):
    to whatever it's actually about, from the same fixed list the default
    Backlog flow uses (`CATEGORIES` in `backlog-tracker/public/js/app.js`):
    `Pricing & Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`,
-   `Menu Board`, `Backend / Infrastructure`, `Uncategorised`.
+   `PH Website`, `Backend / Infrastructure`, `Uncategorised`.
 2. Write two plain string fields on the item — this is the "provides a
    summary and sets what's required" the button exists for:
    - `groomedSummary` — a short (roughly 1-3 sentences), plain-language

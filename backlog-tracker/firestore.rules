@@ -609,9 +609,22 @@ service cloud.firestore {
     // One document per company. Members read; editors create, edit and delete.
     // Agents write through the MCP tools as the service account (rules bypassed).
     function isProspect(d) {
-      return d.keys().hasOnly(["name", "website", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand",
+      return d.keys().hasOnly(["name", "country", "website", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand",
+          "priority", "storePresence", "ownership", "insights", "decisionMakers", "linkedinUrl", "linkedinOrgId", "linkedinVerified", "contacts",
           "vendors", "campaigns", "status", "leadId", "source", "notes", "createdAt", "updatedAt", "createdByEmail", "updatedByEmail"])
         && isNonEmptyBoundedString(d.get("name", null), 120)
+        && d.get("country", "") is string && d.get("country", "").size() <= 60
+        && d.get("priority", "") in ["", "high", "medium", "low"]
+        && d.get("storePresence", "") is string && d.get("storePresence", "").size() <= 80
+        && d.get("ownership", "") is string && d.get("ownership", "").size() <= 120
+        && d.get("insights", "") is string && d.get("insights", "").size() <= 2000
+        && d.get("decisionMakers", "") is string && d.get("decisionMakers", "").size() <= 500
+        && d.get("linkedinUrl", "") is string && d.get("linkedinUrl", "").size() <= 300
+        && (d.get("linkedinUrl", "") == "" || d.get("linkedinUrl", "").matches("^https://www[.]linkedin[.]com/(company|showcase)/[A-Za-z0-9_%.-]+/$"))
+        && d.get("linkedinOrgId", "") is string
+        && (d.get("linkedinOrgId", "") == "" || d.get("linkedinOrgId", "").matches("^[0-9]{1,20}$"))
+        && d.get("linkedinVerified", false) is bool
+        && d.get("contacts", []) is list && d.get("contacts", []).size() <= 30
         && d.get("website", "") is string && d.get("website", "").size() <= 300
         && d.get("industry", "") is string && d.get("industry", "").size() <= 120
         && d.get("subIndustry", "") is string && d.get("subIndustry", "").size() <= 120
@@ -629,7 +642,9 @@ service cloud.firestore {
     }
     match /prospects/{prospectId} {
       allow read: if isBoardReader();
-      allow create, update: if isEditor() && isProspect(incoming());
+      // A new record names its country; older ones without one still update (they read as their first market).
+      allow create: if isEditor() && isProspect(incoming()) && isNonEmptyBoundedString(incoming().get("country", null), 60);
+      allow update: if isEditor() && isProspect(incoming());
       allow delete: if isEditor();
     }
 
@@ -778,6 +793,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /mediaKeyAudit/{entry} {
+      allow read, write: if false;
+    }
+
+    // ── AWS Partner Central (functions/partner-central.js) ─────────────────
+    // Call audit, connection state and catalogue setting are server-only: the
+    // console reads them through the partnerCentral function (admins only).
+    match /partnerCentralAudit/{entry} {
+      allow read, write: if false;
+    }
+    match /partnerCentralState/{doc} {
       allow read, write: if false;
     }
 

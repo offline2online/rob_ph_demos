@@ -28,7 +28,7 @@ export const SECTIONS = [
   { key: "promote", label: "Brand Guidelines", nav: ["#promote-brand-btn"], edit: [] },
   // Leads used to sit under the single "promote" grant, so it inherits it.
   { key: "promote-leads", label: "Leads", nav: ["#promote-leads-btn"], inherits: "promote", edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
-  { key: "prospects", label: "Prospects (TAM)", nav: ["#promote-prospects-btn"], inherits: "promote-leads", edit: ["#prospects-page [data-editor-only]", "#prospects-grid [data-editor-only]"] },
+  { key: "prospects", label: "Prospects (TAM)", nav: ["#promote-prospects-btn"], inherits: "promote-leads", edit: ["#prospects-page [data-editor-only]", "#prospects-grid [data-editor-only]", "#prospect-drawer-backdrop [data-editor-only]"] },
   { key: "faq", label: "Help Centre", nav: ["#faq-articles-btn"],
     edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#faq-cat-edit-save-btn"] },
   { key: "settings", label: "Settings", nav: ["#faq-settings-btn"], edit: ["#faq-settings-page .btn-primary"] },
