@@ -425,9 +425,9 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("updates a ticket's area but has no way to change its status", async () => {
-    const res = await rpc(tokens.access_token, "tools/call", { name: "update_backlog_item", arguments: { itemId: "old1", category: "Menu Board", status: "published-live" } });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "update_backlog_item", arguments: { itemId: "old1", category: "PH Website", status: "published-live" } });
     // status isn't in the schema; the handler ignores it entirely.
-    assert.strictEqual(env.store.col("backlogItems").get("old1").category, "Menu Board");
+    assert.strictEqual(env.store.col("backlogItems").get("old1").category, "PH Website");
     assert.strictEqual(env.store.col("backlogItems").get("old1").status, "ready-for-testing");
     assert.ok(!JSON.stringify(mcp.__test.TOOLS.find((t) => t.name === "update_backlog_item").inputSchema).includes("status"));
     assert.strictEqual(res.statusCode, 200);

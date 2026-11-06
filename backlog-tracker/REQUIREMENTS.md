@@ -297,7 +297,7 @@ folder) or rewrites folder-relative paths under it. The PR #185 refusal now
 applies only to a project with no `repoFolder` at all.
 
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
-Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `Menu Board`,
+Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `PH Website`,
 `Backend / Infrastructure`, `Uncategorised`.
 
 `systemStatus/docsSync` — state of the board docs sweep that syncs every

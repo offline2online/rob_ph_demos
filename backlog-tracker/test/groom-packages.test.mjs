@@ -36,7 +36,7 @@ test("sized by budget, not ticket count", () => {
 });
 
 test("same-area tickets stay together even over budget", () => {
-  const items = [mk("a", "HQ Admin", "large"), mk("b", "HQ Admin", "large"), mk("c", "Menu Board", "small")];
+  const items = [mk("a", "HQ Admin", "large"), mk("b", "HQ Admin", "large"), mk("c", "PH Website", "small")];
   const pk = packageBacklog(items, { budget: 6 });
   const hq = pk.find((p) => p.itemIds.includes("a"));
   assert.ok(hq.itemIds.includes("b"));

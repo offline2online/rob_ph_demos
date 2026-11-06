@@ -800,7 +800,7 @@ for Testing, kept visible through archiving; see
 
 One of a fixed set (`CATEGORIES` in `backlog-tracker/public/js/app.js`):
 `Pricing & Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`,
-`Menu Board`, `Backend / Infrastructure`, `Uncategorised`. This is what the
+`PH Website`, `Backend / Infrastructure`, `Uncategorised`. This is what the
 Archived page's Area column/filter/badge are keyed on.
 
 - A brand-new ticket gets `suggestCategory()`'s best-effort keyword guess —

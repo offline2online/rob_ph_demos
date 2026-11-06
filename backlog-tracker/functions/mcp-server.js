@@ -974,7 +974,7 @@ const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX } = require("./intake
 
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
-  "Menu Board", "Backend / Infrastructure", "Uncategorised",
+  "PH Website", "Backend / Infrastructure", "Uncategorised",
 ];
 const STATUSES = ["backlog", "ready-for-testing", "ready-to-publish", "published-live", "archived"];
 const STATUS_LABELS = {
@@ -1680,7 +1680,7 @@ function suggestCategory(text) {
   const rules = [
     { cat: "Pricing & Offers", words: ["price", "pricing", "rrp", "offer", "discount", "local override"] },
     { cat: "Product Assets", words: ["magic edit", "crop", "brush", "background removal", "remove background", "enhance", "asset", "video", "image", "photo"] },
-    { cat: "Menu Board", words: ["menu board", "customer-facing", "tile", "hero", "featured highlight"] },
+    { cat: "PH Website", words: ["personalisationhub.com", "ph website", "website page", "website copy", "ph-website"] },
     { cat: "Retail Admin", words: ["retail admin", "store", "stock"] },
     { cat: "HQ Admin", words: ["hq admin", "grid", "table", "column", "settings", "scheduling", "targeting"] },
     { cat: "Backend / Infrastructure", words: ["cloud function", "backend", "firebase", "deploy", "server"] },
