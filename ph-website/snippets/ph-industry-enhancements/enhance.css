@@ -84,3 +84,14 @@
 .ph-ind-lead .ph-ind-gate-err{color:#B3261E}
 .ph-ind-lead-test{margin:0 0 10px;padding:6px 10px;border-radius:8px;background:#FFF4D6;color:#6B4E00;font:600 13px/1.3 "Kantumruy Pro",system-ui,sans-serif}
 @media (max-width:767px){.ph-ind-lead{margin:24px 16px}.ph-ind-lead .ph-ind-gate-f{grid-template-columns:1fr}}
+/* Interactive product tour band (telco): the heading is server-rendered, the tour itself is a same-origin iframe. Tokens are ph-ind- scoped; the global kit is not modified. */
+.ph-ind-tour{--ph-ind-tour-ink:#1C2540;--ph-ind-tour-muted:#5A6479;--ph-ind-tour-eyebrow:#0F7A9A;--ph-ind-tour-bg:#F5F7FB}
+.ph-ind-tour-in{max-width:1200px;margin:0 auto;padding:56px 24px 24px;box-sizing:border-box}
+.ph-ind-tour-eyebrow{margin:0 0 8px;color:var(--ph-ind-tour-eyebrow);font:700 13px/1.3 "Kantumruy Pro",system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.ph-ind-tour-h{margin:0 0 12px;color:var(--ph-ind-tour-ink);font:700 32px/1.2 "Kantumruy Pro",system-ui,sans-serif;letter-spacing:-.01em}
+.ph-ind-tour-p{margin:0 0 24px;max-width:720px;color:var(--ph-ind-tour-muted);font:400 17px/1.5 "Kantumruy Pro",system-ui,sans-serif}
+.ph-ind-tour-mount{width:100%;min-width:0}
+.ph-ind-tour-frame{display:block;width:100%;min-height:640px;border:0;background:transparent;color-scheme:normal}
+@media (max-width:767px){.ph-ind-tour-in{padding:40px 16px 16px}.ph-ind-tour-h{font-size:26px}.ph-ind-tour-p{font-size:16px}}
+@media (max-width:699px){.ph-ind-tour-frame{min-height:900px}}
+@media (prefers-color-scheme:dark){.ph-ind-tour{--ph-ind-tour-ink:#F5F7FB;--ph-ind-tour-muted:#A3ACC0;--ph-ind-tour-eyebrow:#5CC8E6;--ph-ind-tour-bg:#0F1424}}

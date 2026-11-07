@@ -79,6 +79,16 @@
         "name": "telco-model.php",
         "bytes": 20512,
         "sha256": "349a480a5d8ef186a59424ade7b18e81fe43dd36eed244756081939b0bca502a"
+      },
+      {
+        "name": "tour-telco.php",
+        "bytes": 195690,
+        "sha256": "b43f59a3ca00b1603bf05363c80ae75e6fe4f922206e6266dbef26db104c9b0b"
+      },
+      {
+        "name": "tour.php",
+        "bytes": 5512,
+        "sha256": "178a407e85faa3c8507b107b73e8837ff60a9973ccde38ac4471389e86532d44"
       }
     ]
   },
