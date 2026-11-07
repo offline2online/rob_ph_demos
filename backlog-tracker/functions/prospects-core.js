@@ -60,55 +60,6 @@ const PRIORITIES = [
 const PRIORITY_KEYS = PRIORITIES.map((x) => x.key);
 const priorityLabel = (key) => (PRIORITIES.find((x) => x.key === key) || { label: "" }).label;
 
-// ── Industry taxonomy: the nine on personalisationhub.com/industries/ (6 Nov 2026) ──
-// The display name is the stored and filtered value, the slug the stable key.
-// Anything that fits none of the nine is "" (Unassigned), never a new industry.
-const INDUSTRIES = [
-  { slug: "convenience", label: "Fuel & Convenience" },
-  { slug: "hospitality", label: "Pubs & Hospitality" },
-  { slug: "telco", label: "Telco Retail" },
-  { slug: "pharmacy", label: "Pharmacy" },
-  { slug: "retail-media", label: "Retail Media" },
-  { slug: "grocery", label: "Grocery & Supermarkets" },
-  { slug: "fashion", label: "Fashion & Department Stores" },
-  { slug: "qsr", label: "Quick Service Restaurants" },
-  { slug: "banking", label: "Banking" },
-];
-const INDUSTRY_LABELS = INDUSTRIES.map((i) => i.label);
-const UNASSIGNED_INDUSTRY = "Unassigned";
-// Order matters: the first rule that matches wins.
-const INDUSTRY_RULES = [
-  ["retail-media", /retail[\s_-]*media|\brmn\b/],
-  ["telco", /telco|telecom|\bmobile\b|wireless/],
-  ["pharmacy", /pharmac|chemist|drug[\s-]*store/],
-  ["qsr", /\bqsr\b|quick[\s_-]*service|fast[\s_-]*food|restaurant|food[\s_-]*service/],
-  ["hospitality", /hospitality|\bpubs?\b|\bbars?\b|\bhotels?\b|venue/],
-  ["convenience", /convenien|\bfuel\b|petrol|service[\s_-]*station|forecourt|c-?store/],
-  ["grocery", /grocer|supermarket|hypermarket|food[\s_-]*retail/],
-  ["fashion", /fashion|apparel|clothing|footwear|department[\s_-]*store/],
-  ["banking", /\bbank|financial|finance|credit[\s_-]*union/],
-];
-// Any stored or typed industry (a display name, a slug or free text) -> one of the nine labels, else "".
-function normaliseIndustry(v) {
-  const s = String(v == null ? "" : v).trim().toLowerCase();
-  if (!s || s === "unassigned") return "";
-  const exact = INDUSTRIES.find((i) => i.label.toLowerCase() === s || i.slug === s);
-  if (exact) return exact.label;
-  const hit = INDUSTRY_RULES.find(([, re]) => re.test(s));
-  return hit ? INDUSTRIES.find((i) => i.slug === hit[0]).label : "";
-}
-
-// Every country, for the Country filter: the list does not depend on what is in the data.
-const COUNTRIES = ("Afghanistan|Albania|Algeria|Andorra|Angola|Antigua and Barbuda|Argentina|Armenia|Australia|Austria|Azerbaijan|Bahamas|Bahrain|Bangladesh|Barbados|Belarus|Belgium|Belize|Benin|Bhutan|Bolivia|Bosnia and Herzegovina|Botswana|Brazil|Brunei|Bulgaria|Burkina Faso|Burundi|Cabo Verde|Cambodia|Cameroon|Canada|Central African Republic|Chad|Chile|China|Colombia|Comoros|Congo|Costa Rica|Croatia|Cuba|Cyprus|Czechia|Democratic Republic of the Congo|Denmark|Djibouti|Dominica|Dominican Republic|Ecuador|Egypt|El Salvador|Equatorial Guinea|Eritrea|Estonia|Eswatini|Ethiopia|Fiji|Finland|France|Gabon|Gambia|Georgia|Germany|Ghana|Greece|Grenada|Guatemala|Guinea|Guinea-Bissau|Guyana|Haiti|Honduras|Hong Kong|Hungary|Iceland|India|Indonesia|Iran|Iraq|Ireland|Israel|Italy|Ivory Coast|Jamaica|Japan|Jordan|Kazakhstan|Kenya|Kiribati|Kosovo|Kuwait|Kyrgyzstan|Laos|Latvia|Lebanon|Lesotho|Liberia|Libya|Liechtenstein|Lithuania|Luxembourg|Macau|Madagascar|Malawi|Malaysia|Maldives|Mali|Malta|Marshall Islands|Mauritania|Mauritius|Mexico|Micronesia|Moldova|Monaco|Mongolia|Montenegro|Morocco|Mozambique|Myanmar|Namibia|Nauru|Nepal|Netherlands|New Zealand|Nicaragua|Niger|Nigeria|North Korea|North Macedonia|Norway|Oman|Pakistan|Palau|Palestine|Panama|Papua New Guinea|Paraguay|Peru|Philippines|Poland|Portugal|Puerto Rico|Qatar|Romania|Russia|Rwanda|Saint Kitts and Nevis|Saint Lucia|Saint Vincent and the Grenadines|Samoa|San Marino|Sao Tome and Principe|Saudi Arabia|Senegal|Serbia|Seychelles|Sierra Leone|Singapore|Slovakia|Slovenia|Solomon Islands|Somalia|South Africa|South Korea|South Sudan|Spain|Sri Lanka|Sudan|Suriname|Sweden|Switzerland|Syria|Taiwan|Tajikistan|Tanzania|Thailand|Timor-Leste|Togo|Tonga|Trinidad and Tobago|Tunisia|Turkey|Turkmenistan|Tuvalu|Uganda|Ukraine|United Arab Emirates|United Kingdom|United States|Uruguay|Uzbekistan|Vanuatu|Vatican City|Venezuela|Vietnam|Yemen|Zambia|Zimbabwe").split("|");
-const COUNTRY_ALIASES = { uk: "United Kingdom", "great britain": "United Kingdom", england: "United Kingdom", usa: "United States", us: "United States", "united states of america": "United States", uae: "United Arab Emirates", "south korea (republic of korea)": "South Korea", korea: "South Korea", "czech republic": "Czechia", "cote d'ivoire": "Ivory Coast", "türkiye": "Turkey", holland: "Netherlands" };
-// A country as typed -> the list's spelling when it is one (UK -> United Kingdom), else as typed.
-function canonicalCountry(v) {
-  const s = String(v == null ? "" : v).trim();
-  if (!s) return "";
-  const k = s.toLowerCase();
-  return COUNTRY_ALIASES[k] || COUNTRIES.find((c) => c.toLowerCase() === k) || s;
-}
-
 // The AWS region a company in this country would be hosted from, for the
 // "AWS region" filter. Countries with no region of their own map to the
 // nearest one; unknown countries get "".
@@ -243,7 +194,7 @@ function prospectFromInput(input, existing) {
     const w = normaliseUrl(x.website);
     if (w === null) errors.push("Website isn't a valid address."); else out.website = w;
   } else out.website = e ? e.website : "";
-  out.industry = has("industry") ? normaliseIndustry(str(x.industry, LIMITS.industry)) : (e ? normaliseIndustry(e.industry) : "");
+  out.industry = has("industry") ? str(x.industry, LIMITS.industry) : (e ? e.industry : "");
   out.subIndustry = has("subIndustry") ? str(x.subIndustry, LIMITS.subIndustry) : (e ? e.subIndustry : "");
   out.hqCountry = has("hqCountry") ? str(x.hqCountry, LIMITS.country) : (e ? e.hqCountry : "");
   out.markets = has("markets") ? parseList(x.markets) : (e ? e.markets : []);
@@ -320,7 +271,7 @@ function normaliseProspect(id, d) {
     awsAccountId: String(x.awsAccountId || ""),
     contacts,
     website: String(x.website || ""),
-    industry: normaliseIndustry(x.industry),
+    industry: String(x.industry || ""),
     subIndustry: String(x.subIndustry || ""),
     hqCountry: hq,
     markets: marketsList,
@@ -356,7 +307,7 @@ const hasItem = (list, v) => list.some((x) => eq(x, v));
 // country, the record's country or any country the company operates in.
 function matchesFilter(p, f) {
   const x = Object.assign({}, EMPTY_FILTER, f || {});
-  if (x.industry && !eq(p.industry, normaliseIndustry(x.industry))) return false;
+  if (x.industry && !eq(p.industry, x.industry)) return false;
   if (x.country && !eq(p.country, x.country)) return false;
   if (x.priority && !eq(p.priority, x.priority)) return false;
   if (x.market && !(eq(p.country, x.market) || eq(p.hqCountry, x.market) || hasItem(p.markets, x.market))) return false;
@@ -470,4 +421,4 @@ function leadFieldsFromProspect(p, email) {
   };
 }
 
-module.exports = { STATUSES, STATUS_KEYS, DEFAULT_STATUS, statusLabel, isStatus, SIZE_BANDS, SIZE_BAND_KEYS, sizeBandLabel, sizeBandFor, LIMITS, PRIORITIES, PRIORITY_KEYS, priorityLabel, INDUSTRIES, INDUSTRY_LABELS, UNASSIGNED_INDUSTRY, normaliseIndustry, COUNTRIES, canonicalCountry, AWS_REGIONS, awsRegionForCountry, parseList, parseStorePresence, parseStoreCount, normaliseUrl, normaliseLinkedinUrl, companyKey, slugId, prospectKey, prospectIdFor, normaliseAwsAccountId, AWS_ACCOUNT_ID_ERROR, prospectFromInput, normaliseProspect, EMPTY_FILTER, FILTER_KEYS, matchesFilter, filterProspects, isFilterEmpty, filterOptions, sanitiseSavedFilters, withSavedFilter, CSV_COLUMNS, csvCell, toCsv, LINKEDIN_COLUMNS, toLinkedInCsv, leadIdForProspect, LEAD_SOURCE, leadFieldsFromProspect };
+module.exports = { STATUSES, STATUS_KEYS, DEFAULT_STATUS, statusLabel, isStatus, SIZE_BANDS, SIZE_BAND_KEYS, sizeBandLabel, sizeBandFor, LIMITS, PRIORITIES, PRIORITY_KEYS, priorityLabel, AWS_REGIONS, awsRegionForCountry, parseList, parseStorePresence, parseStoreCount, normaliseUrl, normaliseLinkedinUrl, companyKey, slugId, prospectKey, prospectIdFor, normaliseAwsAccountId, AWS_ACCOUNT_ID_ERROR, prospectFromInput, normaliseProspect, EMPTY_FILTER, FILTER_KEYS, matchesFilter, filterProspects, isFilterEmpty, filterOptions, sanitiseSavedFilters, withSavedFilter, CSV_COLUMNS, csvCell, toCsv, LINKEDIN_COLUMNS, toLinkedInCsv, leadIdForProspect, LEAD_SOURCE, leadFieldsFromProspect };

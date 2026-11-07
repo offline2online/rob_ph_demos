@@ -2558,7 +2558,6 @@ every destination already existed.
   **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
   `LEAD_INGEST_KEY`); a `test` flag stores a test lead (badged, deletable by hand from
   its summary; the Leads/Test buttons were removed 6 Nov 2026). See REQUIREMENTS.md → Promote section: Leads.
-- **Prospects (TAM) filters (7 Nov 2026):** every primary column filter is a searchable multi-select with the full option list (all countries; the nine website industries + Unassigned, via `normaliseIndustry` in `prospects-core.js`); the grid is sticky under the console header and defaults to 50 rows. See REQUIREMENTS.md → "Prospects (TAM): filters, industry taxonomy and pinned header".
 - **Promote › Prospects (TAM)** (`#promote/prospects`, 5 Nov 2026; `public/js/prospects-page.js`,
   rules in `prospects-core.js` copied to `functions/prospects-core.js` by
   `node test/prospects-core-copy.mjs --write`, starter data in

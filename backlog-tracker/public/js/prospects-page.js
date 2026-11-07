@@ -20,7 +20,7 @@ import {
 import { loadAgGrid } from "./docs-grid.js";
 import {
   STATUSES, SIZE_BANDS, PRIORITIES, normaliseProspect, toCsv, toLinkedInCsv, statusLabel, sizeBandLabel, priorityLabel, leadIdForProspect, leadFieldsFromProspect,
-  prospectFromInput, prospectKey, prospectIdFor, slugId, INDUSTRY_LABELS, UNASSIGNED_INDUSTRY, COUNTRIES, canonicalCountry, normaliseIndustry, AWS_REGIONS,
+  prospectFromInput, prospectKey, prospectIdFor, slugId,
 } from "./prospects-core.js";
 import { SEED_PROSPECTS, SEED_SOURCE } from "./prospects-seed.js";
 import { mountProspectDetail } from "./prospect-detail.js";
@@ -64,132 +64,48 @@ export function readSaved(raw) {
   return out.slice(0, 30);
 }
 
-// A searchable multi-select ("set"-style) filter, used by every primary column
-// (Country, Industry, Priority, Status, AWS region, Size band): the complete list
-// of options (not only values present in the data), a search box that narrows
-// it, tick several. The model is { values: [...] }; the old { value } model of a
-// saved filter, and a Country text filter's { filter }, still load.
-const UNASSIGNED = "__unassigned__";
-class ListFilter {
+// A dropdown ("set"-style) filter for the floating row, for columns with a short fixed list of values.
+class SelectFilter {
   init(params) {
-    this.params = params; this.selected = new Set(); this.panels = new Set();
+    this.params = params; this.value = "";
     this.el = document.createElement("div");
-    this.el.className = "pl-filter-host";
-    this.mount(this.el);
+    this.sel = document.createElement("select");
+    this.sel.className = "um-role-select";
+    this.sel.setAttribute("aria-label", `Filter ${params.colDef.headerName}`);
+    this.fill();
+    this.sel.addEventListener("change", () => this.setValue(this.sel.value));
+    this.el.appendChild(this.sel);
   }
-  // Options: [value, label] pairs, from the column's own list.
-  options() { return this.params.values(); }
-  mount(el) {
-    const panel = buildListPanel(this, el);
-    this.panels.add(panel);
-    return panel;
+  fill() {
+    const opts = this.params.values();
+    this.sel.innerHTML = `<option value="">All</option>` + opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+    this.sel.value = this.value;
   }
-  setValues(list) {
-    this.selected = new Set(list);
-    this.panels.forEach((p) => p.sync());
-    this.params.filterChangedCallback();
-  }
-  toggle(v) { const n = new Set(this.selected); if (n.has(v)) n.delete(v); else n.add(v); this.setValues([...n]); }
+  setValue(v) { this.value = v || ""; this.sel.value = this.value; this.params.filterChangedCallback(); }
   getGui() { return this.el; }
-  isFilterActive() { return this.selected.size > 0; }
-  rowKey(p) {
-    const raw = String((p.data || {})[this.params.colDef.field] == null ? "" : (p.data || {})[this.params.colDef.field]).trim();
-    if (this.params.unassigned) return raw ? raw.toLowerCase() : UNASSIGNED;
-    return (this.params.canon ? this.params.canon(raw) : raw).toLowerCase();
-  }
-  doesFilterPass(p) { const k = this.rowKey(p); return [...this.selected].some((v) => v.toLowerCase() === k); }
-  getModel() { return this.selected.size ? { values: [...this.selected] } : null; }
-  setModel(m) {
-    const v = m && Array.isArray(m.values) ? m.values : m && m.value ? [m.value] : m && typeof m.filter === "string" && m.filter ? [this.params.canon ? this.params.canon(m.filter) : m.filter] : [];
-    this.selected = new Set(v.map(String));
-    this.panels.forEach((p) => p.sync());
-  }
-  afterGuiAttached() { this.panels.forEach((p) => p.render()); }
-  destroy() { this.panels.clear(); }
+  isFilterActive() { return !!this.value; }
+  doesFilterPass(p) { return String((p.data || {})[this.params.colDef.field] || "").toLowerCase() === this.value.toLowerCase(); }
+  getModel() { return this.value ? { value: this.value } : null; }
+  setModel(m) { this.value = m && m.value ? String(m.value) : ""; this.sel.value = this.value; }
+  afterGuiAttached() { this.fill(); }
 }
-// The searchable checkbox list. `f` is the filter; `into` is the element it fills.
-function buildListPanel(f, into) {
-  const label = f.params.colDef.headerName || "";
-  into.innerHTML = `<div class="pl-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="text" class="pl-search-input" aria-label="Search ${esc(label)}" placeholder="Search ${esc(label.toLowerCase())}" autocomplete="off"></div>`
-    + `<div class="pl-list" role="group" aria-label="${esc(label)} options"></div>`
-    + `<div class="pl-foot"><span class="pl-count"></span><button type="button" class="pl-clear">Clear</button></div>`;
-  const input = into.querySelector(".pl-search-input"), list = into.querySelector(".pl-list"), count = into.querySelector(".pl-count"), clear = into.querySelector(".pl-clear");
-  const panel = {
-    el: into, input,
-    render() {
-      const q = input.value.trim().toLowerCase();
-      const opts = f.options().filter(([, l]) => !q || String(l).toLowerCase().includes(q));
-      list.innerHTML = opts.length ? opts.map(([v, l]) => `<label class="pl-opt"><input type="checkbox" data-v="${esc(v)}"${[...f.selected].some((x) => x.toLowerCase() === String(v).toLowerCase()) ? " checked" : ""}><span>${esc(l)}</span></label>`).join("") : `<div class="pl-none">No match</div>`;
-      this.sync(true);
-    },
-    sync(skipList) {
-      if (!skipList) list.querySelectorAll("input[type=checkbox]").forEach((c) => { c.checked = [...f.selected].some((x) => x.toLowerCase() === c.dataset.v.toLowerCase()); });
-      count.textContent = f.selected.size ? `${f.selected.size} selected` : "All";
-      clear.disabled = !f.selected.size;
-      if (panel.onChange) panel.onChange();
-    },
-  };
-  input.addEventListener("input", () => panel.render());
-  list.addEventListener("change", (e) => { const c = e.target.closest("input[type=checkbox]"); if (c) f.toggle(c.dataset.v); });
-  clear.addEventListener("click", () => f.setValues([]));
-  panel.render();
-  return panel;
-}
-// The floating-filter cell: a button that shows the choice and opens the same list in a popover.
-class ListFloatingFilter {
+class SelectFloatingFilter {
   init(params) {
-    this.params = params; this.parent = null; this.open = false;
-    this.btn = document.createElement("button");
-    this.btn.type = "button"; this.btn.className = "pl-trigger";
-    this.btn.setAttribute("aria-haspopup", "dialog"); this.btn.setAttribute("aria-expanded", "false");
-    this.btn.setAttribute("aria-label", `Filter ${params.column.getColDef().headerName}`);
-    this.paint(null);
-    this.btn.addEventListener("click", () => (this.open ? this.close() : this.show()));
-    params.parentFilterInstance((f) => { this.parent = f; });
+    this.params = params;
+    this.sel = document.createElement("select");
+    this.sel.className = "um-role-select prospects-float-select";
+    this.sel.setAttribute("aria-label", `Filter ${params.column.getColDef().headerName}`);
+    this.fill("");
+    this.sel.addEventListener("change", () => params.parentFilterInstance((f) => f.setValue(this.sel.value)));
   }
-  paint(model) {
-    const n = model && model.values ? model.values.length : 0;
-    const opts = this.parent ? this.parent.options() : [];
-    const one = n === 1 ? (opts.find(([v]) => String(v).toLowerCase() === String(model.values[0]).toLowerCase()) || [0, model.values[0]])[1] : "";
-    this.btn.classList.toggle("has-value", n > 0);
-    this.btn.innerHTML = `<span class="pl-trigger-text">${esc(n === 0 ? "All" : n === 1 ? one : `${n} selected`)}</span><span class="material-symbols-outlined" aria-hidden="true">${n ? "filter_alt" : "arrow_drop_down"}</span>`;
+  fill(current) {
+    const opts = this.params.values();
+    this.sel.innerHTML = `<option value="">All</option>` + opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+    this.sel.value = current;
+    if (this.sel.value !== current) this.sel.value = "";
   }
-  show() {
-    this.params.parentFilterInstance((f) => {
-      this.parent = f;
-      const pop = document.createElement("div");
-      pop.className = "pl-pop"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", `${this.params.column.getColDef().headerName} filter`);
-      document.body.appendChild(pop);
-      const panel = f.mount(pop);
-      panel.onChange = () => this.paint(f.getModel());
-      const r = this.btn.getBoundingClientRect();
-      const w = Math.max(r.width, 240);
-      pop.style.minWidth = `${w}px`;
-      pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
-      const h = pop.offsetHeight;
-      pop.style.top = `${r.bottom + h + 8 > window.innerHeight && r.top > h ? r.top - h - 4 : r.bottom + 4}px`;
-      this.pop = pop; this.panel = panel; this.open = true;
-      this.btn.setAttribute("aria-expanded", "true");
-      panel.input.focus({ preventScroll: true });
-      this.onDoc = (e) => { if (!pop.contains(e.target) && !this.btn.contains(e.target)) this.close(); };
-      this.onKey = (e) => { if (e.key === "Escape") { this.close(); this.btn.focus(); } };
-      document.addEventListener("click", this.onDoc, true);
-      document.addEventListener("keydown", this.onKey);
-    });
-  }
-  close() {
-    if (!this.open) return;
-    this.open = false;
-    document.removeEventListener("click", this.onDoc, true);
-    document.removeEventListener("keydown", this.onKey);
-    if (this.parent && this.panel) this.parent.panels.delete(this.panel);
-    if (this.pop) this.pop.remove();
-    this.pop = null; this.panel = null;
-    this.btn.setAttribute("aria-expanded", "false");
-  }
-  getGui() { return this.btn; }
-  onParentModelChanged(model) { this.paint(model); }
-  destroy() { this.close(); }
+  getGui() { return this.sel; }
+  onParentModelChanged(model) { this.fill(model && model.value ? model.value : ""); }
 }
 
 export function mountProspectsPage({ db, auth, canEdit, askName }) {
@@ -639,23 +555,21 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       return b;
     };
     const list = (field) => ({ field, valueGetter: (p) => ((p.data && p.data[field]) || []).join(", ") });
-    const select = (values, extra) => ({ filter: ListFilter, filterParams: { values, ...extra }, floatingFilterComponent: ListFloatingFilter, floatingFilterComponentParams: { suppressFilterButton: true } });
-    const countryOptions = () => { const seen = new Set(COUNTRIES.map((c) => c.toLowerCase())); const extra = [...new Set(rows.map((p) => canonicalCountry(p.country)).filter((c) => c && !seen.has(c.toLowerCase())))].sort((a, b) => a.localeCompare(b)); return [...COUNTRIES, ...extra].map((c) => [c, c]); };
-    const industryOptions = () => [...INDUSTRY_LABELS.map((l) => [l, l]), [UNASSIGNED, UNASSIGNED_INDUSTRY]];
+    const select = (values) => ({ filter: SelectFilter, filterParams: { values }, floatingFilterComponent: SelectFloatingFilter, floatingFilterComponentParams: { values, suppressFilterButton: true } });
     const tip = (p) => (p.valueFormatted != null ? p.valueFormatted : p.value);
     const colStd = { cellRenderer: trunc, tooltipValueGetter: tip };
     return [
       { colId: "select", headerName: "", width: 52, checkboxSelection: true, headerCheckboxSelection: true, headerCheckboxSelectionCurrentPageOnly: true, sortable: false, filter: false, floatingFilter: false, resizable: false, suppressMovable: true, pinned: "left", hide: !canEdit() },
       { field: "name", headerName: "Company", minWidth: 150, flex: 2, cellRenderer: company, tooltipValueGetter: tip },
-      { field: "country", headerName: "Country", minWidth: 130, flex: 1, ...select(countryOptions, { canon: canonicalCountry }), ...colStd },
-      { field: "industry", headerName: "Industry", minWidth: 150, flex: 1, ...select(industryOptions, { unassigned: true, canon: (v) => normaliseIndustry(v) || UNASSIGNED }), ...colStd },
+      { field: "country", headerName: "Country", minWidth: 110, flex: 1, ...colStd },
+      { field: "industry", headerName: "Industry", minWidth: 100, flex: 1, ...colStd },
       { field: "priority", headerName: "Priority", minWidth: 100, flex: 1, valueFormatter: (p) => priorityLabel(p.value), ...select(() => PRIORITIES.map((x) => [x.key, x.label])), cellRenderer: trunc },
       { field: "storeCount", headerName: "Stores", width: 96, type: "numericColumn", filter: "agNumberColumnFilter", valueFormatter: (p) => (p.value == null ? "" : p.value.toLocaleString("en-GB")) },
       { colId: "linkedin", field: "linkedinUrl", headerName: "LinkedIn", width: 90, sortable: false, filter: false, floatingFilter: false, cellRenderer: linkedin },
       { field: "status", headerName: "Status", minWidth: 110, flex: 1, valueFormatter: (p) => statusLabel(p.value), ...select(() => STATUSES.map((s) => [s.key, s.label])), cellRenderer: trunc },
       { field: "subIndustry", headerName: "Sub-industry", minWidth: 130, flex: 1, hide: true, ...colStd },
       { field: "hqCountry", headerName: "HQ country", minWidth: 100, flex: 1, hide: true, ...colStd },
-      { field: "awsRegion", headerName: "AWS region", minWidth: 100, flex: 1, hide: true, ...select(() => [...new Set([...AWS_REGIONS, ...rows.map((p) => p.awsRegion).filter(Boolean)])].map((v) => [v, v])) },
+      { field: "awsRegion", headerName: "AWS region", minWidth: 100, flex: 1, hide: true, ...select(() => distinct((p) => p.awsRegion)) },
       { field: "sizeBand", headerName: "Size band", minWidth: 100, flex: 1, hide: true, valueFormatter: (p) => sizeBandLabel(p.value), ...select(() => SIZE_BANDS.map((b) => [b.key, b.label])), cellRenderer: trunc },
       { field: "storePresence", headerName: "Store presence", minWidth: 120, flex: 1, hide: true, ...colStd },
       { field: "ownership", headerName: "Ownership", minWidth: 120, flex: 1, hide: true, ...colStd },
@@ -681,7 +595,8 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
         rowSelection: "multiple", suppressRowClickSelection: true,
         suppressCellFocus: true, suppressColumnVirtualisation: true, tooltipShowDelay: 400,
         headerHeight: 40, floatingFiltersHeight: 40, rowHeight: 48,
-        pagination: true, paginationPageSize: 50, paginationPageSizeSelector: [25, 50, 100, 250],
+        pagination: true, paginationPageSize: 25, paginationPageSizeSelector: [25, 50, 100, 250],
+        domLayout: "autoHeight",
         overlayNoRowsTemplate: '<span class="um-empty">No prospects match these filters.</span>',
         onSelectionChanged: updateBulk,
         onModelUpdated: () => { updateCount(); updateBulk(); },

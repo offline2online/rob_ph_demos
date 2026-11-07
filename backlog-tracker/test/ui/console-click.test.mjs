@@ -1310,47 +1310,23 @@ const scenarios = [
       await until(async () => (await rowIds()) === "pa,pb,pc", "the × to clear the Company filter", 5000);
       await until(async () => (await count()) === "3 Prospects", "the count to update after the ×", 5000);
       assert.ok(!(await clearBtn("name").isVisible()), "the × goes once cleared");
-      // Country: a searchable list of every country, not only the ones in the data.
-      const openFilter = async (name) => { await c.page.click(`#prospects-grid button.pl-trigger[aria-label="Filter ${name}"]`); await c.visible(".pl-pop .pl-search-input", `the ${name} list opens`); };
-      await openFilter("Country");
-      assert.ok(await c.page.locator(".pl-pop .pl-opt").count() > 190, "every country is listed");
-      await c.page.fill(".pl-pop .pl-search-input", "germ");
-      assert.deepStrictEqual(await c.page.locator(".pl-pop .pl-opt span").allTextContents(), ["Germany"], "typing narrows the list");
-      await c.page.check('.pl-pop input[data-v="Germany"]');
+      // Country (text) and Stores (number) clear the same way.
+      await c.page.fill('#prospects-grid input[aria-label="Country Filter Input"]', "Germany");
       await until(async () => (await rowIds()) === "pb", "the Country filter to apply", 5000);
-      assert.strictEqual((await c.text('#prospects-grid button.pl-trigger[aria-label="Filter Country"] .pl-trigger-text')).trim(), "Germany");
-      await c.page.click(".pl-pop .pl-clear");
-      await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to reset the Country filter", 5000);
-      await c.page.keyboard.press("Escape");
-      assert.strictEqual(await c.page.locator(".pl-pop").count(), 0, "Escape closes the list");
-      // Industry: exactly the nine website industries plus Unassigned.
-      await openFilter("Industry");
-      assert.deepStrictEqual(await c.page.locator(".pl-pop .pl-opt span").allTextContents(), ["Fuel & Convenience", "Pubs & Hospitality", "Telco Retail", "Pharmacy", "Retail Media", "Grocery & Supermarkets", "Fashion & Department Stores", "Quick Service Restaurants", "Banking", "Unassigned"]);
-      await c.page.check('.pl-pop input[data-v="Grocery & Supermarkets"]');
-      await until(async () => (await rowIds()) === "pa", "the Industry filter to apply (legacy Grocery maps)", 5000);
-      await c.page.click(".pl-pop .pl-clear");
-      await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to reset the Industry filter", 5000);
-      await c.page.keyboard.press("Escape");
-      // Stores (number) clears with its x.
+      await clearBtn("country").click();
+      await until(async () => (await rowIds()) === "pa,pb,pc", "the × to clear the Country filter", 5000);
       await c.page.fill('#prospects-grid input[aria-label="Stores Filter Input"]', "400");
       await until(async () => (await rowIds()) === "pa", "the Stores filter to apply", 5000);
       await clearBtn("storeCount").click();
-      await until(async () => (await rowIds()) === "pa,pb,pc", "the x to clear the Stores filter", 5000);
+      await until(async () => (await rowIds()) === "pa,pb,pc", "the × to clear the Stores filter", 5000);
       // A record without country reads as its first market (Gamma Fashion: France).
-      await openFilter("Country");
-      await c.page.check('.pl-pop input[data-v="France"]');
+      await c.page.fill('#prospects-grid input[aria-label="Country Filter Input"]', "France");
       await until(async () => (await rowIds()) === "pc", "the legacy record to filter by its first market", 5000);
-      await c.page.click(".pl-pop .pl-clear");
+      await clearBtn("country").click();
       await until(async () => (await rowIds()) === "pa,pb,pc", "the Country filter to clear again", 5000);
-      await c.page.keyboard.press("Escape");
-      // The grid pins under the console header and shows 50 rows a page.
-      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("prospects-grid")).position), "sticky", "the grid (header + filter row) is pinned");
-      assert.strictEqual((await c.text("#prospects-grid .ag-paging-page-size .ag-picker-field-display, #prospects-grid .ag-paging-page-size")).includes("50"), true, "50 rows per page by default");
-      // The Priority floating filter is the same searchable list.
-      await openFilter("Priority");
-      await c.page.check('.pl-pop input[data-v="high"]');
+      // The Priority floating filter is a dropdown.
+      await c.page.selectOption('select[aria-label="Filter Priority"]', "high");
       await until(async () => (await rowIds()) === "pa", "the Priority filter to apply", 5000);
-      await c.page.keyboard.press("Escape");
       assert.strictEqual(await count(), "1 of 3 Prospects");
       // Save the filter, clear, reapply from Saved filters.
       await c.page.click("#prospects-saved-btn");
@@ -1402,7 +1378,7 @@ const scenarios = [
       const li = fs.readFileSync(await (await dl2).path(), "utf8").trim().split("\r\n");
       assert.strictEqual(li[0], "companyname,companywebsite,companyemaildomain,linkedincompanypageurl,stocksymbol,industry,city,state,companycountry,zipcode");
       assert.strictEqual(li.length, 3, "one line per selected row");
-      assert.ok(li.some((l) => l.startsWith("Alpha Grocer,https://alpha.example,alpha.example,https://www.linkedin.com/company/alpha-grocer/,,Grocery & Supermarkets,,,United Kingdom,")), li.join("|"));
+      assert.ok(li.some((l) => l.startsWith("Alpha Grocer,https://alpha.example,alpha.example,https://www.linkedin.com/company/alpha-grocer/,,Grocery,,,United Kingdom,")), li.join("|"));
       await c.page.click('#prospects-grid .ag-header-cell[col-id="select"] input[type=checkbox]');
       await c.page.click('#prospects-grid .ag-header-cell[col-id="select"] input[type=checkbox]');
       // Convert to lead from the row menu: one Leads card linked back, status converted, and no second Convert.

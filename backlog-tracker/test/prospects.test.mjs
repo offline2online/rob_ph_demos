@@ -47,7 +47,7 @@ t("enriching keeps what is already known", () => {
   const existing = mk("acme", { name: "Acme", industry: "Grocery", hqCountry: "France", storeCount: 300, vendors: ["V1"], status: "targeted" });
   const r = C.prospectFromInput({ name: "Acme", vendors: ["V1", "V2"] }, existing);
   assert.deepEqual(r.errors, []);
-  assert.equal(r.fields.industry, "Grocery & Supermarkets");
+  assert.equal(r.fields.industry, "Grocery");
   assert.equal(r.fields.storeCount, 300);
   assert.equal(r.fields.status, "targeted");
   assert.deepEqual(r.fields.vendors, ["V1", "V2"]);
@@ -142,7 +142,7 @@ t("filters combine, store range excludes unknown counts, search spans fields", (
 });
 t("dropdown options come from the data, sorted, without duplicates", () => {
   const o = C.filterOptions(rows);
-  assert.deepEqual(o.industry, ["Fashion & Department Stores", "Grocery & Supermarkets", "Pharmacy"]);
+  assert.deepEqual(o.industry, ["Fashion", "Grocery", "Pharmacy"]);
   assert.deepEqual(o.market, ["France", "Germany", "Ireland", "United Kingdom"]);
   assert.deepEqual(o.campaign, ["Autumn", "Spring"]);
 });
@@ -156,7 +156,7 @@ t("saved filters validate, replace by name and refuse empty ones", () => {
   assert.deepEqual(C.sanitiseSavedFilters([{ name: "x" }, null, "junk", { name: "ok", filter: { status: "new", evil: "<b>" } }]), [{ name: "ok", filter: { ...C.EMPTY_FILTER, status: "new" } }]);
 });
 t("CSV export: header, quoting, store counts, formula cells neutralised", () => {
-  const evil = mk("e", { name: '=HYPERLINK("x")', subIndustry: 'Food, "fresh"', storeCount: 12 });
+  const evil = mk("e", { name: '=HYPERLINK("x")', industry: 'Food, "fresh"', storeCount: 12 });
   const csv = C.toCsv([rows[0], evil]);
   const lines = csv.trim().split("\r\n");
   assert.equal(lines[0].split(",")[0], "Company");
@@ -169,7 +169,7 @@ t("LinkedIn Matched Audiences export: the template's headers, blanks where unkno
   const none = mk("b", { name: "=Evil, Inc", country: "Germany" });
   const lines = C.toLinkedInCsv([rec, none]).trim().split("\r\n");
   assert.equal(lines[0], "companyname,companywebsite,companyemaildomain,linkedincompanypageurl,stocksymbol,industry,city,state,companycountry,zipcode");
-  assert.equal(lines[1], "ALDI,https://www.aldi.com.au,aldi.com.au,https://www.linkedin.com/company/aldi/,,Grocery & Supermarkets,,,Australia,");
+  assert.equal(lines[1], "ALDI,https://www.aldi.com.au,aldi.com.au,https://www.linkedin.com/company/aldi/,,Grocery,,,Australia,");
   assert.equal(lines[2], `"'=Evil, Inc",,,,,,,,Germany,`);
   assert.equal(lines.length, 3);
 });
@@ -228,22 +228,3 @@ t("functions/prospects-core.js is the generated copy of the page's prospects-cor
   assert.deepEqual(createRequire(import.meta.url)("../functions/prospects-core.js").STATUS_KEYS, C.STATUS_KEYS);
 });
 console.log(`${n} passed`);
-
-t("industries map onto the nine on personalisationhub.com; the rest are Unassigned", () => {
-  assert.deepEqual(C.INDUSTRY_LABELS, ["Fuel & Convenience", "Pubs & Hospitality", "Telco Retail", "Pharmacy", "Retail Media", "Grocery & Supermarkets", "Fashion & Department Stores", "Quick Service Restaurants", "Banking"]);
-  const m = C.normaliseIndustry;
-  const want = { Supermarket: "Grocery & Supermarkets", Grocery: "Grocery & Supermarkets", Fuel: "Fuel & Convenience", Petrol: "Fuel & Convenience", "Convenience and fuel": "Fuel & Convenience", "Service station": "Fuel & Convenience", Pub: "Pubs & Hospitality", Bar: "Pubs & Hospitality", Hotel: "Pubs & Hospitality", Hospitality: "Pubs & Hospitality", Telecommunications: "Telco Retail", Mobile: "Telco Retail", Telco: "Telco Retail", Apparel: "Fashion & Department Stores", "Department store": "Fashion & Department Stores", Fashion: "Fashion & Department Stores", "Fast food": "Quick Service Restaurants", QSR: "Quick Service Restaurants", "Restaurant chain": "Quick Service Restaurants", Bank: "Banking", "Financial services": "Banking", Pharmacy: "Pharmacy", "Retail media": "Retail Media", "retail-media": "Retail Media", grocery: "Grocery & Supermarkets" };
-  for (const [from, to] of Object.entries(want)) assert.equal(m(from), to, from);
-  for (const none of ["Electronics", "Home improvement", "Sports", "Beauty", "", null, "Unassigned"]) assert.equal(m(none), "", String(none));
-  assert.equal(C.prospectFromInput({ name: "A", country: "X", industry: "Supermarket" }).fields.industry, "Grocery & Supermarkets", "writes are mapped");
-  assert.equal(C.prospectFromInput({ name: "A", country: "X", industry: "Electronics" }).fields.industry, "", "no fit is stored blank");
-  assert.equal(mk("o", { name: "O", industry: "Petrol" }).industry, "Fuel & Convenience", "stored legacy values read mapped");
-  assert.equal(C.filterProspects([mk("p", { name: "P", industry: "Beauty" }), mk("q", { name: "Q", industry: "Pharmacy" })], { industry: "Unassigned" }).map((p) => p.id).join(), "p");
-});
-t("the country list is complete and UK/USA spellings fold in", () => {
-  for (const c of ["Australia", "United Kingdom", "United States", "Ireland", "Japan", "Zimbabwe"]) assert.ok(C.COUNTRIES.includes(c), c);
-  assert.ok(C.COUNTRIES.length > 190);
-  assert.equal(C.canonicalCountry("UK"), "United Kingdom");
-  assert.equal(C.canonicalCountry("usa"), "United States");
-  assert.equal(C.canonicalCountry("Atlantis"), "Atlantis");
-});

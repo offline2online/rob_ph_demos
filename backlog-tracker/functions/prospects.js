@@ -33,7 +33,7 @@ const PROP = {
   linkedinOrgId: { type: "string", description: "Digits only." }, linkedinVerified: { type: "boolean" },
   awsAccountId: { type: "string", description: "The company's AWS account ID, if known: exactly 12 digits (dashes and spaces are tidied). \"\" clears it. Anything else is rejected." },
   contacts: { type: "array", maxItems: core.LIMITS.contacts, items: { type: "object", properties: { name: { type: "string" }, role: { type: "string" }, lastContact: { type: "string" }, awsAccountId: { type: "string", description: "The person's AWS account ID if known: exactly 12 digits." } }, additionalProperties: false }, description: "Replaces the stored contacts (text only)." },
-  website: { type: "string" }, industry: { type: "string", description: "One of the nine industries on personalisationhub.com/industries/, by display name. Older wording is mapped (Supermarket -> Grocery & Supermarkets, Fuel -> Fuel & Convenience, Pub -> Pubs & Hospitality, Telecommunications -> Telco Retail, Fast food -> Quick Service Restaurants, Bank -> Banking). Anything that fits none is stored blank (Unassigned); \"\" clears it." },
+  website: { type: "string" }, industry: { type: "string", description: "e.g. Grocery, Pharmacy, Fashion, Convenience and fuel, Telco, QSR, Electronics." },
   subIndustry: { type: "string" }, hqCountry: { type: "string", description: "Head-office country, e.g. United Kingdom (not the record's country)." },
   markets: { type: "array", items: { type: "string" }, description: "Other countries it operates in." },
   awsRegion: { type: "string", description: "e.g. eu-west-2. Defaults from country (else hqCountry) when blank." },
@@ -55,7 +55,7 @@ function prospectsTools(h) {
         type: "object",
         properties: {
           q: { type: "string", description: "Text to find in the name, website, industry, countries, vendors or campaigns." },
-          industry: { type: "string", description: "One of: " + core.INDUSTRY_LABELS.join("; ") + ", or Unassigned for records with none. Older wording is mapped." }, country: { type: "string", description: "The record's country." }, priority: { type: "string", enum: core.PRIORITY_KEYS },
+          industry: { type: "string" }, country: { type: "string", description: "The record's country." }, priority: { type: "string", enum: core.PRIORITY_KEYS },
           market: { type: "string", description: "A country: matches the record's country, HQ country or any market." },
           awsRegion: { type: "string" }, campaign: { type: "string" },
           sizeBand: { type: "string", enum: core.SIZE_BAND_KEYS }, status: { type: "string", enum: core.STATUS_KEYS },
