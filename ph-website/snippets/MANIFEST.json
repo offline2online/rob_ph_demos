@@ -2,7 +2,7 @@
   {
     "id": 10063,
     "title": "PH Industry Enhancements",
-    "version": "1.8.0",
+    "version": "1.9.1",
     "folder": "ph-industry-enhancements",
     "files": [
       {
@@ -17,8 +17,8 @@
       },
       {
         "name": "enhance.js",
-        "bytes": 30933,
-        "sha256": "6c9c2c89cd3e8e37244f7ee20bafdb4c803c497999756ee504e244c171bca803"
+        "bytes": 41365,
+        "sha256": "ae801886b992813eae2ad6b22d21994d69a3dcb762e4e403000309447b3204aa"
       },
       {
         "name": "footer.css",
@@ -52,8 +52,8 @@
       },
       {
         "name": "main.php",
-        "bytes": 7019,
-        "sha256": "f0999c1e4a5055ab5bc9763cd779953e5549e8a0f75411563d5bfae7f859df52"
+        "bytes": 7055,
+        "sha256": "2a5b17b5574d4d14b1b86276fac29fd28f4c2eaac02b099eb30d1aa60b884984"
       },
       {
         "name": "md.php",
@@ -84,13 +84,13 @@
         "name": "tour-telco.php",
         "optional": true,
         "note": "196 KB, too big for the deploy MCP's inline file writes; tour.php serves a sha256-pinned copy when it is absent",
-        "bytes": 195690,
-        "sha256": "b43f59a3ca00b1603bf05363c80ae75e6fe4f922206e6266dbef26db104c9b0b"
+        "bytes": 200452,
+        "sha256": "ea5593ab36cdbf1621e321d4b65b4e8e5e64de27753e8b149de037715bd815e7"
       },
       {
         "name": "tour.php",
-        "bytes": 7956,
-        "sha256": "2754824856c3bfba3054e3420cea83af91dcc2ffdfb4c0c05199ba51cd2b3bb4"
+        "bytes": 8924,
+        "sha256": "5d04f77295279ab8f473901457a1143611e04719dc557773b24505a8aaa04ed5"
       }
     ]
   },
