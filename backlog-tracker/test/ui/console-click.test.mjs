@@ -77,6 +77,8 @@ function makeCtx(o, width) {
   const ctx = { page, width, step: "start", selector: "" };
   const at = (step, selector = "") => { ctx.step = step; ctx.selector = selector; };
   ctx.at = at;
+  // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
+  ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
   ctx.click = async (selector, step) => { at(step || `click ${selector}`, selector); await page.click(selector); };
   ctx.visible = async (selector, step) => { at(step || `${selector} visible`, selector); await page.waitForSelector(selector, { state: "visible" }); };
   ctx.hidden = async (selector, step) => { at(step || `${selector} hidden`, selector); await page.waitForSelector(selector, { state: "hidden" }); };
@@ -1118,40 +1120,196 @@ const scenarios = [
     },
   },
   {
-    name: "Promote: Leads - ACE opportunities table under the board, summary, mailto, lead card and Partner Central links",
+    name: "Promote: Leads - ACE opportunities as the PH list page (count line, KPIs, stage pills, one-line grid rows, dots, ⋯ menu, themes, 375px)",
     seed: () => ({ ...seed({ leads: {
       lx: { company: { name: "Acme Retail", website: "", industry: "", countries: ["UK"], storeCount: 5 }, contacts: [], stage: "demo", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
     } }), aceOpportunities: [
-      { id: "O1", name: "Menu boards", customer: "Acme Retail", stage: "Qualified", reviewStatus: "Approved", score: 82, expectedMonthly: { amount: 2200, currency: "USD" }, targetCloseDate: "2026-12-31", awsSeller: { name: "Ann Lee", email: "ann@amazon.com" }, partnerCentralUrl: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O1" },
-      { id: "O2", name: "Signage", customer: "Unknown Co", stage: "Prospect", reviewStatus: "Submitted", score: null, expectedMonthly: null, targetCloseDate: null, awsSeller: null, partnerCentralUrl: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O2" },
+      { id: "O1", name: "Sandbox opportunity for a very long running title that would otherwise wrap onto many lines in the table Sandbox opportunity for a very long running title that would otherwise wrap onto many lines in the table Sandbox opportunity for a very long running title that would otherwise wrap onto many lines in the table Sandbox opportunity for a very long running title that would otherwise wrap onto many lines in the table", customer: "Acme Retail", stage: "Qualified", reviewStatus: "Approved", score: null, expectedMonthly: { amount: 2200, currency: "USD" }, targetCloseDate: "2099-12-31", awsSeller: { name: "Ann Lee", email: "ann@amazon.com" }, partnerCentralUrl: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O1" },
+      { id: "O2", name: "Signage", customer: "Unknown Co", stage: "Prospect", reviewStatus: "Submitted", score: null, expectedMonthly: { amount: 300, currency: "USD" }, targetCloseDate: "2020-01-15", awsSeller: null, partnerCentralUrl: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O2" },
+      { id: "O3", name: "Kiosk", customer: "Beta", stage: "Prospect", reviewStatus: "Action Required", score: null, expectedMonthly: null, targetCloseDate: null, awsSeller: null, partnerCentralUrl: "" },
+      { id: "O4", name: "Totems", customer: "Gamma", stage: "Prospect", reviewStatus: "Rejected", score: null, expectedMonthly: null, targetCloseDate: null, awsSeller: null, partnerCentralUrl: "" },
+      { id: "O5", name: "Wall", customer: "Delta", stage: "Prospect", reviewStatus: "In review", score: null, expectedMonthly: null, targetCloseDate: null, awsSeller: null, partnerCentralUrl: "" },
     ] }),
     async run(c) {
       await c.boardReady();
       await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
-      await c.visible("#ace-table tbody tr", "the ACE rows show");
+      await c.page.waitForSelector("#ace-grid .ag-center-cols-container .ag-row", { state: "attached" });
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 5, "five ACE rows", 8000);
       const info = await c.page.evaluate(() => {
-        const board = document.getElementById("leads-board").getBoundingClientRect();
         const sec = document.getElementById("ace-section").getBoundingClientRect();
-        const rows = [...document.querySelectorAll("#ace-body tr")];
+        const board = document.getElementById("leads-board").getBoundingClientRect();
+        const rowEls = [...document.querySelectorAll("#ace-grid .ag-center-cols-container .ag-row")];
+        const first = document.querySelector('#ace-grid .ag-row[row-id="O1"] [col-id="name"] .ace-trunc');
+        const dot = (id) => getComputedStyle(document.querySelector(`#ace-grid .ag-center-cols-container .ag-row[row-id="${id}"] .ace-dot`)).backgroundColor;
+        const past = (id) => !!document.querySelector(`#ace-grid .ag-center-cols-container .ag-row[row-id="${id}"] .ace-date.is-past`);
+        const kpi = (k) => document.querySelector(`.ace-kpi[data-kpi="${k}"] .ace-kpi-value`).textContent.trim();
         return {
           below: sec.top >= board.bottom - 1,
-          heads: [...document.querySelectorAll("#ace-table thead th")].map((e) => e.textContent.trim()),
-          summary: document.getElementById("ace-summary").textContent.replace(/\s+/g, " "),
-          mail: rows[0].querySelector(".ace-mail").getAttribute("href"),
-          noMail: !rows[1].querySelector(".ace-mail"),
-          pc: rows[0].querySelector(".ace-pc").getAttribute("href"),
-          noLead: !rows[1].querySelector(".ace-lead"),
+          title: document.getElementById("ace-title").textContent.trim(),
+          divider: !!document.querySelector("#ace-section hr.ace-divider"),
+          count: document.getElementById("ace-count").textContent.replace(/\s+/g, " ").trim(),
+          oldStatus: !!document.getElementById("ace-status"),
+          refreshIcon: document.querySelector("#ace-refresh .material-symbols-outlined").textContent.trim(),
+          kpiCount: document.querySelectorAll(".ace-kpi").length,
+          kpis: { total: kpi("total"), revenue: kpi("revenue"), approved: kpi("approved"), action: kpi("action") },
+          pills: [...document.querySelectorAll("#ace-stages .ace-pill")].map((e) => e.textContent.replace(/\s+/g, " ").trim()),
+          heights: [...new Set(rowEls.map((r) => Math.round(r.getBoundingClientRect().height)))],
+          ellipsis: first.scrollWidth > first.clientWidth, oneLine: first.getBoundingClientRect().height <= 42, firstH: first.getBoundingClientRect().height,
+          link: first.tagName === "A" ? { href: first.getAttribute("href"), target: first.target } : null,
+          heads: [...document.querySelectorAll("#ace-grid .ag-header-row-column .ag-header-cell[col-id]")].map((h) => h.getAttribute("col-id")),
+          floating: document.querySelectorAll("#ace-grid .ag-floating-filter").length,
+          checkbox: document.querySelectorAll("#ace-grid [col-id=select], #ace-grid .ag-selection-checkbox").length,
+          paging: !!document.querySelector("#ace-grid .ag-paging-panel:not(.ag-hidden)"),
+          dots: { O1: dot("O1"), O2: dot("O2"), O3: dot("O3"), O4: dot("O4"), O5: dot("O5") },
+          past: { O1: past("O1"), O2: past("O2") },
+          mail: document.querySelector('#ace-grid .ag-row[row-id="O1"] .ace-mail').getAttribute("href"),
+          noMail: !document.querySelector('#ace-grid .ag-center-cols-container .ag-row[row-id="O2"] .ace-mail'),
+          noAssigned: document.querySelector('#ace-grid .ag-center-cols-container .ag-row[row-id="O2"] .ace-none').textContent,
+          leadBtn: !!document.querySelector('#ace-grid .ag-row[row-id="O1"] button.ace-lead'),
+          noLead: document.querySelector('#ace-grid .ag-center-cols-container .ag-row[row-id="O2"] [col-id="lead"] .ace-none').textContent,
+          pinned: !!document.querySelector('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O1"] button.ace-manage'),
         };
       });
-      assert.ok(info.below, "the table sits under the board");
-      assert.deepStrictEqual(info.heads.slice(0, 8), ["Opportunity", "Customer", "ACE stage", "Review status", "Score", "Expected monthly AWS revenue", "Target close date", "AWS account manager"]);
-      assert.match(info.summary, /2 Prospect|1 Prospect/);
-      assert.match(info.summary, /1 Approved/);
+      assert.ok(info.below, "the grid section sits under the board");
+      assert.strictEqual(info.title, "AWS ACE opportunities");
+      assert.ok(info.divider, "a divider under the title");
+      assert.strictEqual(info.count, "5 Opportunities Sandbox");
+      assert.ok(!info.oldStatus, "the status sentence is gone");
+      assert.strictEqual(info.refreshIcon, "refresh");
+      assert.strictEqual(info.kpiCount, 4);
+      assert.deepStrictEqual(info.kpis, { total: "5", revenue: "US$2,500", approved: "1", action: "2" });
+      assert.deepStrictEqual(info.pills, ["Prospect 4", "Qualified 1"], "stage pills in AWS order");
+      assert.deepStrictEqual(info.heights, [42], "every row is 42px tall");
+      assert.ok(info.ellipsis && info.oneLine, `the long title is one ellipsised line (${JSON.stringify([info.ellipsis, info.oneLine])})`);
+      assert.deepStrictEqual(info.link, { href: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O1", target: "_blank" });
+      assert.ok(!info.heads.includes("aceScore"), `the empty Score column is hidden (${info.heads})`);
+      assert.deepStrictEqual(info.heads, ["name", "customer", "stage", "reviewStatus", "monthly", "close", "seller", "lead", "actions"]);
+      assert.ok(info.floating >= 5, "floating filter row");
+      assert.strictEqual(info.checkbox, 0, "no checkbox column");
+      assert.ok(!info.paging, "no pagination at 5 rows");
+      assert.deepStrictEqual(info.dots, { O1: "rgb(82, 196, 26)", O2: "rgb(250, 173, 20)", O3: "rgb(255, 77, 79)", O4: "rgb(255, 77, 79)", O5: "rgb(250, 173, 20)" });
+      assert.deepStrictEqual(info.past, { O1: false, O2: true }, "only a past target close date is flagged");
       assert.ok(info.mail.startsWith("mailto:ann@amazon.com?subject="), "the email icon is a mailto");
-      assert.ok(info.noMail && info.noLead, "no manager and no matching lead show no icon or lead link");
-      assert.ok(info.pc.startsWith("https://partnercentral.awspartner.com/"));
-      await c.page.click("#ace-body tr:first-child .ace-lead");
-      await c.visible("#lead-summary-panel", "the lead card opens");
+      assert.ok(info.noMail && info.noLead === "No lead" && info.noAssigned === "Not assigned");
+      assert.ok(info.leadBtn && info.pinned, "Lead card link and the pinned-right menu");
+
+      // Tooltips: the full title, the revenue header, the past date.
+      await c.page.hover('#ace-grid .ag-row[row-id="O1"] [col-id="name"]');
+      await until(async () => (await c.page.locator(".ag-tooltip").allInnerTexts().catch(() => [])).some((x) => x.includes("Sandbox opportunity for a very long")), "the full title in a tooltip", 4000);
+      await c.page.hover('#ace-grid .ag-header-cell[col-id="monthly"]');
+      await until(async () => (await c.page.locator(".ag-tooltip").allInnerTexts().catch(() => [])).some((x) => x.includes("Expected monthly AWS revenue")), "the revenue header tooltip", 4000);
+      await c.page.hover('#ace-grid .ag-center-cols-container .ag-row[row-id="O2"] [col-id="close"]');
+      await until(async () => (await c.page.locator(".ag-tooltip").allInnerTexts().catch(() => [])).some((x) => x.includes("Past target close date")), "the past-date tooltip", 4000);
+
+      // The ⋯ menu: all three actions on a row that has them; none on a row with none.
+      await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O1"] button.ace-manage');
+      await c.visible("#ace-pop");
+      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person)/, ""))), ["View in Partner Central", "Email AWS account manager", "Open lead card"]);
+      await c.page.click('#ace-pop [data-pop="lead"]');
+      await c.visible("#lead-summary-panel", "Open lead card opens the lead drawer");
+      await c.click("#lead-sum-close", "close the lead drawer"); await c.hidden("#lead-summary-panel");
+      await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O3"] button.ace-manage').catch(() => {});
+      assert.ok(await c.page.locator("#ace-pop").isHidden(), "a row with no actions opens no menu");
+      await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O2"] button.ace-manage');
+      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person)/, ""))), ["View in Partner Central"], "disabled items are hidden");
+      await c.page.keyboard.press("Escape");
+      // The Lead card link in the row opens the drawer too.
+      await c.page.click('#ace-grid .ag-row[row-id="O1"] button.ace-lead');
+      await c.visible("#lead-summary-panel", "the Lead card link opens the lead drawer");
+      await c.click("#lead-sum-close", "close the lead drawer"); await c.hidden("#lead-summary-panel");
+
+      // Filter Review status to Approved.
+      await c.page.selectOption('#ace-grid select[aria-label="Filter Review status"]', "Approved");
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 1, "one Approved row", 4000);
+      await c.page.selectOption('#ace-grid select[aria-label="Filter Review status"]', "");
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 5, "all rows back", 4000);
+
+      // Refresh reloads /partnerCentral/v1/ace.
+      await c.page.evaluate(() => { window.__aceCalls = 0; const f = window.fetch; window.fetch = function (u, ...r) { if (String(u).includes("/partnerCentral/v1/ace")) window.__aceCalls++; return f.call(this, u, ...r); }; });
+      await c.page.click("#ace-refresh");
+      await until(async () => (await c.page.evaluate(() => window.__aceCalls)) === 1, "Refresh to call the ACE endpoint", 4000);
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 5, "the same five rows after Refresh", 4000);
+
+      // Text contrast (4.5:1) in both themes, and nothing wider than 375px.
+      const contrast = () => c.page.evaluate(() => {
+        const parse = (s) => { const m = s.match(/[\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+        const over = (top, bot) => ({ r: top.r * top.a + bot.r * (1 - top.a), g: top.g * top.a + bot.g * (1 - top.a), b: top.b * top.a + bot.b * (1 - top.a), a: 1 });
+        const bgOf = (el) => { const chain = []; for (let e = el; e; e = e.parentElement) chain.push(parse(getComputedStyle(e).backgroundColor)); let acc = { r: 255, g: 255, b: 255, a: 1 }; const root = getComputedStyle(document.body).backgroundColor; acc = over(parse(root), acc); for (const b of chain.reverse()) acc = over(b, acc); return acc; };
+        const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+        const worst = [];
+        const els = document.querySelectorAll("#ace-section :is(h3, .ace-count, .ace-flag, .ace-kpi-label, .ace-kpi-value, .ace-pill, .ace-link, .ace-trunc, .ace-lead, .ace-none, .ace-date, .ag-header-cell-text, .ace-refresh)");
+        for (const el of els) {
+          if (!el.textContent.trim() || el.closest("[hidden]") || !el.getBoundingClientRect().width) continue;
+          const fg = over(parse(getComputedStyle(el).color), bgOf(el)), bg = bgOf(el);
+          const l1 = lum(fg), l2 = lum(bg); const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+          if (ratio < 4.5) worst.push(`${el.className || el.tagName} "${el.textContent.trim().slice(0, 20)}" ${ratio.toFixed(2)}`);
+        }
+        return worst;
+      });
+      await until(async () => !(await c.text("#ace-count")).includes("Loading"), "the reload to finish", 4000);
+      await c.page.mouse.move(0, 0);
+      assert.deepStrictEqual(await contrast(), [], "light theme text contrast >= 4.5:1");
+      await c.page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+      assert.deepStrictEqual(await contrast(), [], "dark theme text contrast >= 4.5:1");
+      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.querySelector("#ace-grid .ag-center-cols-container .ag-row")).backgroundColor !== "rgb(255, 255, 255)" && getComputedStyle(document.querySelector("#ace-grid .ag-root-wrapper")).backgroundColor !== "rgb(255, 255, 255)"), true, "the grid follows the dark theme");
+      await c.page.setViewportSize({ width: 375, height: 800 });
+      await until(async () => c.page.evaluate(() => !!document.querySelector('#ace-grid .ag-pinned-left-cols-container .ag-row[row-id="O1"] [col-id="name"]')), "the Opportunity column to pin left at phone width", 4000);
+      const over = await c.page.evaluate(() => ({ page: document.documentElement.scrollWidth - document.documentElement.clientWidth, sec: document.getElementById("ace-section").scrollWidth - document.getElementById("ace-section").clientWidth, pinned: !!document.querySelector('#ace-grid .ag-pinned-left-cols-container .ag-row[row-id="O1"] [col-id="name"]') }));
+      assert.ok(over.page <= 0 && over.sec <= 1, `no horizontal page overflow at 375px (${JSON.stringify(over)})`);
+      assert.ok(over.pinned, "the Opportunity column is pinned left on a phone");
+      await c.page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+    },
+  },
+  {
+    name: "Promote: Leads - ACE grid shows Score when a row has one, and paginates above 25 rows",
+    seed: () => ({ ...seed({}), aceOpportunities: Array.from({ length: 30 }, (_, i) => ({ id: `P${i}`, name: `Opp ${i}`, customer: `Cust ${i}`, stage: "Prospect", reviewStatus: "Approved", score: i === 0 ? 77 : null, expectedMonthly: null, targetCloseDate: null, awsSeller: null, partnerCentralUrl: "" })) }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 25, "the first page of 25 rows", 8000);
+      assert.ok(await c.page.locator('#ace-grid .ag-header-cell[col-id="aceScore"]').count(), "Score shows when a row has a score");
+      assert.ok(await c.page.locator("#ace-grid .ag-paging-panel").isVisible(), "pagination above 25 rows");
+      assert.match((await c.text("#ace-count")).replace(/\s+/g, " "), /^30 Opportunities/);
+    },
+  },
+  {
+    name: "Promote: Leads - ACE empty state",
+    seed: () => ({ ...seed({}), aceOpportunities: [] }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible("#ace-empty", "the empty state");
+      assert.strictEqual((await c.text("#ace-empty")).replace(/\s+/g, " ").trim(), "handshake No ACE opportunities yet.");
+      assert.ok(await c.page.locator("#ace-grid").isHidden() && await c.page.locator("#ace-kpis").isHidden(), "no grid or KPIs when empty");
+      assert.match((await c.text("#ace-count")).replace(/\s+/g, " "), /^0 Opportunities/);
+    },
+  },
+  {
+    name: "Promote: Leads - ACE 403 and server errors show an alert with Retry",
+    seed: () => ({ ...seed({}), aceStatus: 403, aceError: "Only editors and admins can see the ACE opportunities." }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible("#ace-alert", "the alert shows");
+      assert.strictEqual(await c.page.getAttribute("#ace-alert", "role"), "alert");
+      assert.match(await c.text("#ace-alert"), /Couldn't load the ACE opportunities: Only editors and admins can see the ACE opportunities\./);
+      assert.ok(await c.page.locator("#ace-retry").isVisible(), "a Retry button");
+      assert.ok(await c.page.locator("#ace-grid").isHidden(), "no grid while in error");
+      await c.page.evaluate(() => { window.__aceCalls = 0; const f = window.fetch; window.fetch = function (u, ...r) { if (String(u).includes("/partnerCentral/v1/ace")) window.__aceCalls++; return f.call(this, u, ...r); }; });
+      await c.page.click("#ace-retry");
+      await until(async () => (await c.page.evaluate(() => window.__aceCalls)) === 1, "Retry to call the endpoint again", 4000);
+      c.expectProblem(/status of 403/);
+    },
+  },
+  {
+    name: "Promote: Leads - ACE server error text",
+    seed: () => ({ ...seed({}), aceStatus: 500, aceError: "Partner Central is down" }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible("#ace-alert", "the alert shows");
+      assert.match(await c.text("#ace-alert"), /Couldn't load the ACE opportunities: Partner Central is down/);
+      c.expectProblem(/status of 500/);
     },
   },
   {

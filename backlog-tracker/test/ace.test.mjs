@@ -1,6 +1,6 @@
 // Promote › Leads ACE table rules: public/js/ace-core.js.   node ace.test.mjs
 import assert from "node:assert/strict";
-import { summarise, matchLead, mailtoFor, partnerCentralHref, formatMonthly, formatDate } from "../public/js/ace-core.js";
+import { summarise, matchLead, mailtoFor, partnerCentralHref, formatMonthly, formatDate, kpis, reviewTone, isPastDate } from "../public/js/ace-core.js";
 
 let n = 0;
 const t = (name, fn) => { fn(); n++; console.log(`  ok  ${name}`); };
@@ -45,5 +45,28 @@ t("money and dates read plainly", () => {
   assert.equal(formatMonthly(null), "");
   assert.equal(formatDate("2026-12-31"), "31 Dec 2026");
   assert.equal(formatDate("nope"), "");
+});
+t("review tones: approved green, in progress amber, needs a person red", () => {
+  assert.equal(reviewTone("Approved"), "ok");
+  for (const s of ["Pending Submission", "Submitted", "In review"]) assert.equal(reviewTone(s), "warn");
+  for (const s of ["Action Required", "Rejected"]) assert.equal(reviewTone(s), "bad");
+  assert.equal(reviewTone(""), "none");
+});
+t("a close date before today is past; today and later are not", () => {
+  const now = new Date("2026-11-07T12:00:00Z");
+  assert.equal(isPastDate("2026-11-06", now), true);
+  assert.equal(isPastDate("2026-11-07", now), false);
+  assert.equal(isPastDate("2026-12-31", now), false);
+  assert.equal(isPastDate(null, now), false);
+});
+t("KPIs: count, revenue per currency, approved, needs action", () => {
+  const k = kpis([
+    { reviewStatus: "Approved", expectedMonthly: { amount: 100, currency: "USD" } },
+    { reviewStatus: "Rejected", expectedMonthly: { amount: 50, currency: "USD" } },
+    { reviewStatus: "Action Required", expectedMonthly: { amount: 10, currency: "GBP" } },
+    { reviewStatus: "Submitted", expectedMonthly: null },
+  ]);
+  assert.deepEqual(k, { total: 4, revenue: [{ currency: "USD", amount: 150 }, { currency: "GBP", amount: 10 }], approved: 1, needsAction: 2 });
+  assert.deepEqual(kpis([]), { total: 0, revenue: [], approved: 0, needsAction: 0 });
 });
 console.log(`ace: ${n} passed`);

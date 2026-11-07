@@ -1164,21 +1164,22 @@
       <!-- AWS ACE opportunities, laid out like the opportunities list in AWS Partner Central.
            Rendered by js/leads-page.js from /partnerCentral/v1/ace (the Selling API). -->
       <section class="ace-section" id="ace-section" aria-labelledby="ace-title">
-        <div class="ace-head">
-          <h3 id="ace-title">AWS ACE opportunities</h3>
-          <button type="button" class="btn-ghost" id="ace-refresh">Refresh</button>
+        <h3 id="ace-title" class="ace-title">AWS ACE opportunities</h3>
+        <hr class="ace-divider">
+        <div class="ace-toprow">
+          <div class="um-count ace-count" id="ace-count" role="status" aria-live="polite">Loading ACE opportunities…</div>
+          <button type="button" class="btn-ghost ace-refresh" id="ace-refresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span>Refresh</button>
         </div>
-        <p class="promote-empty" id="ace-status" role="status" aria-live="polite">Loading ACE opportunities…</p>
-        <div class="ace-summary" id="ace-summary" hidden></div>
-        <div class="ace-table-wrap" id="ace-table-wrap" hidden>
-          <table class="ace-table" id="ace-table">
-            <thead><tr>
-              <th scope="col">Opportunity</th><th scope="col">Customer</th><th scope="col">ACE stage</th><th scope="col">Review status</th>
-              <th scope="col" class="ace-num">Score</th><th scope="col" class="ace-num">Expected monthly AWS revenue</th><th scope="col">Target close date</th><th scope="col">AWS account manager</th><th scope="col">Links</th>
-            </tr></thead>
-            <tbody id="ace-body"></tbody>
-          </table>
+        <div class="ace-alert" id="ace-alert" role="alert" hidden>
+          <span class="material-symbols-outlined" aria-hidden="true">error</span>
+          <span class="ace-alert-text" id="ace-alert-text"></span>
+          <button type="button" class="btn-ghost" id="ace-retry">Retry</button>
         </div>
+        <div class="ace-kpis" id="ace-kpis" hidden></div>
+        <div class="ace-stages" id="ace-stages" aria-label="ACE stage" hidden></div>
+        <div class="ace-empty" id="ace-empty" hidden><span class="material-symbols-outlined" aria-hidden="true">handshake</span><p>No ACE opportunities yet.</p></div>
+        <div id="ace-grid" class="ag-theme-alpine um-grid ace-grid" aria-label="AWS ACE opportunities" hidden></div>
+        <div class="prospects-pop" id="ace-pop" role="menu" hidden></div>
       </section>
     </section>
 

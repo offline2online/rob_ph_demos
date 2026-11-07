@@ -64,3 +64,36 @@ export function formatDate(iso) {
   if (!m) return "";
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
+
+// Review-status tone for the status dot: green approved, amber in progress, red needs a person.
+export function reviewTone(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "approved") return "ok";
+  if (s === "action required" || s === "rejected") return "bad";
+  if (s === "pending submission" || s === "submitted" || s === "in review") return "warn";
+  return "none";
+}
+
+// A target close date strictly before today (UTC date compare), so the current day is not overdue.
+export function isPastDate(iso, now = new Date()) {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(iso || ""));
+  return !!m && m[1] < new Date(now).toISOString().slice(0, 10);
+}
+
+// The four KPI cards: count, expected monthly revenue (one total per currency), approved, needs action.
+export function kpis(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const totals = new Map();
+  for (const r of list) {
+    const m = r && r.expectedMonthly;
+    if (!m || !Number.isFinite(m.amount)) continue;
+    const cur = m.currency || "USD";
+    totals.set(cur, (totals.get(cur) || 0) + m.amount);
+  }
+  return {
+    total: list.length,
+    revenue: [...totals.entries()].map(([currency, amount]) => ({ currency, amount })),
+    approved: list.filter((r) => reviewTone(r.reviewStatus) === "ok").length,
+    needsAction: list.filter((r) => reviewTone(r.reviewStatus) === "bad").length,
+  };
+}
