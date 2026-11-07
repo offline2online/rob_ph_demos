@@ -119,19 +119,27 @@ function tour_handle( array $b ) {
 	$flow = in_array( $flow, TOUR_FLOWS, true ) ? $flow : '';
 	$test = lead_is_test( isset( $b['test'] ) ? $b['test'] : false );
 	$page = '/industries/telco/';
-	$id   = wp_insert_post( array( 'post_type' => 'ph_lead', 'post_status' => 'private', 'post_title' => $lead['company'] . ' / ' . $lead['name'] ) );
+	$id   = lead_find_existing( $lead['email'], $test );
+	if ( $id ) { // already a lead (for instance from the calculator download): record the tour as activity, not a second lead.
+		lead_add_activity( $id, TOUR_SOURCE_LABEL, $flow );
+	} else {
+		$id = wp_insert_post( array( 'post_type' => 'ph_lead', 'post_status' => 'private', 'post_title' => $lead['company'] . ' / ' . $lead['name'] ) );
+		if ( $id && ! is_wp_error( $id ) ) {
+			foreach ( $lead as $k => $v ) {
+				update_post_meta( $id, 'ph_lead_' . $k, $v );
+			}
+			update_post_meta( $id, 'ph_lead_source', TOUR_SOURCE );
+			update_post_meta( $id, 'ph_lead_source_label', TOUR_SOURCE_LABEL );
+			update_post_meta( $id, 'ph_lead_consent', 1 );
+			update_post_meta( $id, 'ph_lead_page', $page );
+			if ( $test ) {
+				update_post_meta( $id, 'ph_lead_test', '1' );
+			}
+			lead_add_activity( $id, TOUR_SOURCE_LABEL, $flow );
+		}
+	}
 	if ( $id && ! is_wp_error( $id ) ) {
-		foreach ( $lead as $k => $v ) {
-			update_post_meta( $id, 'ph_lead_' . $k, $v );
-		}
-		update_post_meta( $id, 'ph_lead_source', TOUR_SOURCE );
-		update_post_meta( $id, 'ph_lead_source_label', TOUR_SOURCE_LABEL );
-		update_post_meta( $id, 'ph_lead_consent', 1 );
 		update_post_meta( $id, 'ph_lead_tour_flow', $flow );
-		update_post_meta( $id, 'ph_lead_page', $page );
-		if ( $test ) {
-			update_post_meta( $id, 'ph_lead_test', '1' );
-		}
 	}
 	do_action( 'ph_lead_captured', array_merge( $lead, array( 'source' => TOUR_SOURCE, 'source_label' => TOUR_SOURCE_LABEL, 'source_detail' => $flow, 'consent' => true, 'industry' => 'telco', 'flow' => $flow, 'test' => $test, 'page' => $page, 'post_id' => (int) $id ) ) );
 	if ( ! $test ) {

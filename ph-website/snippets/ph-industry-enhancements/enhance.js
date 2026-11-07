@@ -136,12 +136,26 @@
     var btn = el("button", "ph-ind-gate-b", "Download the model"); btn.type = "submit"; btn.disabled = true; form.appendChild(btn);
     var msg = el("p", "ph-ind-gate-m"); msg.setAttribute("role", "status"); msg.setAttribute("aria-live", "polite"); form.appendChild(msg);
     var busy = false;
+    // A visitor already captured (the tour gate, or an earlier download) is never asked again: their details fill the form,
+    // the fields and consent box are hidden and the button is ready. Consent was ticked when that lead was captured.
+    var known = el("p", "ph-ind-gate-k"); known.hidden = true; form.insertBefore(known, btn);
+    var applyKnown = function () {
+      var l = readLead(), f = form.elements;
+      if (!l) return;
+      f.name.value = l.name || ""; f.company.value = l.company || ""; f.email.value = l.email;
+      cb.checked = true; form.classList.add("ph-ind-gate-known");
+      known.hidden = false; known.textContent = "Thanks" + (l.name ? ", " + String(l.name).trim().split(/\s+/)[0] : "") + ". We already have your details, so there is nothing more to fill in.";
+      p.textContent = "Download the business model."; sync();
+    };
     var valid = function () {
       var f = form.elements;
       return !!(f.name.value.trim() && f.company.value.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.value.trim()) && cb.checked);
     };
     var sync = function () { btn.disabled = busy || !valid(); };
     form.addEventListener("input", sync); form.addEventListener("change", sync);
+    applyKnown();
+    window.addEventListener("ph:lead", applyKnown);
+    window.addEventListener("storage", function (e) { if (e.key === "ph_lead") applyKnown(); });
     form.addEventListener("submit", function (e) {
       e.preventDefault(); if (busy || !valid()) { sync(); return; }
       msg.className = "ph-ind-gate-m"; msg.textContent = "";
@@ -175,6 +189,7 @@
 
   // A visitor who gave their details once should not be asked again: on a successful lead capture the calculator and Talk to us forms
   // write ph_lead to localStorage and announce it on window, which unlocks the product tour on this page (and on the next visit).
+  function readLead() { try { var l = JSON.parse(localStorage.getItem("ph_lead") || "null"); return l && l.email ? l : null; } catch (e) { return null; } }
   function shareLead(l) {
     var lead = {name: String(l.name || ""), company: String(l.company || ""), email: String(l.email || ""), source: l.source, ts: Date.now()};
     try { localStorage.setItem("ph_lead", JSON.stringify(lead)); } catch (e) {}
@@ -237,7 +252,7 @@
     });
   }
 
-  var LEAD_FORM = {telco: "Telco"};
+  var LEAD_FORM = {}; // no industry page has a standalone "Talk to us" form: leads come only from the calculator download or the tour
   function setupLeadForm() {
     if (!LEAD_FORM[page]) return;
     var host = document.querySelector("[data-elementor-type='wp-page']") || document.querySelector("main") || document.body;

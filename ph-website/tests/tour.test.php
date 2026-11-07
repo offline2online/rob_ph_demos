@@ -100,6 +100,11 @@ function sanitize_email( $v ) { return trim( (string) $v ); } function is_email(
 function get_transient( $k ) { return $GLOBALS['tr'][ $k ] ?? false; } function set_transient( $k, $v ) { $GLOBALS['tr'][ $k ] = $v; }
 function wp_insert_post( $a ) { $GLOBALS['posts'][] = $a; return count( $GLOBALS['posts'] ); } function is_wp_error() { return false; }
 function update_post_meta( $id, $k, $v ) { $GLOBALS['meta'][ $id ][ $k ] = $v; }
+function get_post_meta( $id, $k, $single = false ) { return $GLOBALS['meta'][ $id ][ $k ] ?? ''; }
+/* WP_Query stub: finds a lead by email and test flag only while $GLOBALS['dedupe'] is on (earlier cases repeat one email and expect new posts). */
+$GLOBALS['dedupe'] = false;
+class WP_Query { public $posts = array(); function __construct( $a ) { if ( empty( $GLOBALS['dedupe'] ) ) { return; } $email = $a['meta_query'][0]['value']; $test = isset( $a['meta_query'][1]['value'] );
+	foreach ( $GLOBALS['meta'] as $id => $m ) { if ( ( $m['ph_lead_email'] ?? '' ) === $email && ( '1' === ( $m['ph_lead_test'] ?? '' ) ) === $test ) { $this->posts[] = $id; break; } } } }
 function do_action( $n, $p = null ) { $GLOBALS['fired'][] = array( $n, $p ); }
 function wp_mail( $to, $s, $b ) { $GLOBALS['mails'][] = array( $to, $s, $b ); }
 function get_option( $k, $d = false ) { return $GLOBALS['opts'][ $k ] ?? $d; }
@@ -163,6 +168,19 @@ foreach ( array( 'Campaign creation', 'Localisation & scheduling' ) as $fl ) {
 	$call( array_merge( $good, array( 'flow' => $fl ) ), '4.4.4.4' ); end( $GLOBALS['meta'] );
 	ok( $fl === current( $GLOBALS['meta'] )['ph_lead_tour_flow'], "demo $fl stored" );
 }
+/* one lead per person: a second capture (here the calculator's) adds activity to the existing ph_lead, no second post */
+$GLOBALS['dedupe'] = true; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array();
+$call( $good, '5.5.5.5' );
+ok( 1 === count( $GLOBALS['posts'] ) && 1 === count( $GLOBALS['meta'][1]['ph_lead_activity'] ), 'first capture stores one lead with one activity row' );
+$id2 = \AngieSnippets\PhIndustryEnhancements_10063\lead_find_existing( 'ada@nimbus.example', false );
+ok( 1 === $id2, 'lead_find_existing finds the lead by email' );
+ok( 0 === \AngieSnippets\PhIndustryEnhancements_10063\lead_find_existing( 'ada@nimbus.example', true ), 'a test capture is a separate lead from a real one' );
+\AngieSnippets\PhIndustryEnhancements_10063\lead_add_activity( 1, 'Telco business model download' );
+$labels = array_column( $GLOBALS['meta'][1]['ph_lead_activity'], 'label' );
+ok( array( 'Interactive product tour – Telco', 'Telco business model download' ) === $labels, 'activity lists the tour and the download on the one lead' );
+$call( array_merge( $good, array( 'flow' => 'Campaign creation' ) ), '6.6.6.6' );
+ok( 1 === count( $GLOBALS['posts'] ) && 3 === count( $GLOBALS['meta'][1]['ph_lead_activity'] ) && 'ph_lead_captured' === end( $GLOBALS['fired'] )[0], 'a repeat tour capture adds activity, creates no second post and still reaches the console' );
+$GLOBALS['dedupe'] = false;
 for ( $i = 0; $i < 12; $i++ ) { $r = $call( $good, '9.9.9.9' ); }
 ok( 429 === $r->status, 'throttled after 10 per hour per address' );
 
