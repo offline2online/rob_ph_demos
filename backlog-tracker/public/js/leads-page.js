@@ -218,13 +218,14 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       <section class="lead-sum-section"><h3>Lead</h3><dl class="lead-sum-dl">
         ${row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`)}
         ${row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned"))}
-        ${row("Source", esc(sourceLabel(l)))}
+        ${row("Source", esc(l.sourceLabel ? l.sourceLabel + (l.sourceDetail ? " · " + l.sourceDetail : "") : sourceLabel(l)))}
         ${row("Source page", pageLink(l))}
         ${row("Source industry", esc(l.sourceIndustry))}
         ${row("Created", esc(fmtDate(l.createdAtMs)))}
         ${row("Updated", esc(fmtDate(l.updatedAtMs)))}
         ${row("Customer account", l.customerAccount ? esc(l.customerAccount.name || l.customerAccount.id) + (l.customerAccount.id && l.customerAccount.name ? ` (${esc(l.customerAccount.id)})` : "") : "")}
       </dl></section>
+      ${l.websiteActivity.length ? `<section class="lead-sum-section"><h3>Website activity</h3><ul class="lead-sum-activity">${[...l.websiteActivity].reverse().map((a) => `<li>${esc(a.atMs ? fmtDate(a.atMs) : "")} · ${esc(a.label || "Website form")}${a.detail ? ` · ${esc(a.detail)}` : ""}</li>`).join("")}</ul></section>` : ""}
       <section class="lead-sum-section"><h3>Contacts</h3>${l.contacts.length ? l.contacts.map((c) => `<div class="lead-sum-contact">
         <p class="lead-sum-contact-name">${esc(c.name)}${c.buyingRole ? ` <span class="lead-sum-role">${esc(roleLabel(c.buyingRole))}</span>` : ""}</p>
         ${c.jobTitle ? `<p class="lead-card-line">${esc(c.jobTitle)}</p>` : ""}

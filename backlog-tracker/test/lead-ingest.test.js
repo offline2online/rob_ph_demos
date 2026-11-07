@@ -54,6 +54,29 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     assert.equal(d.company.name, "Acme Telco"); assert.equal(d.company.storeCount, 300);
     assert.equal(d.contacts[0].email, "jo@acme.example");
   });
+  await test("sourceLabel/sourceDetail are stored; every submission adds website activity (20 newest); blanks only fill", async () => {
+    const { db, api } = mkApi();
+    const a = res(); await api.handle(req({ ...FORM, sourceLabel: "Interactive product tour – Telco", sourceDetail: "Personalisation" }), a);
+    let d = db.docs.get(a.body.leadId);
+    assert.equal(d.sourceLabel, "Interactive product tour – Telco"); assert.equal(d.sourceDetail, "Personalisation");
+    assert.equal(d.websiteActivity.length, 1); assert.deepEqual(Object.keys(d.websiteActivity[0]).sort(), ["at", "detail", "label", "page"]);
+    await api.handle(req({ ...FORM, sourceLabel: "Telco business model download" }), res());
+    assert.equal(d.sourceLabel, "Interactive product tour – Telco"); assert.equal(d.sourceDetail, "Personalisation");
+    assert.deepEqual(d.websiteActivity.map((x) => x.label), ["Interactive product tour – Telco", "Telco business model download"]);
+    const n = core.normaliseLead("x", d); assert.equal(n.websiteActivity.length, 2);
+    const v = leadsTools({ textResult: (x) => x, toolError: (x) => x, audit() {} }); assert.ok(v.length);
+    for (let i = 0; i < 25; i++) await api.handle(req({ ...FORM, sourceLabel: "L" + i }), res());
+    assert.equal(d.websiteActivity.length, 20); assert.equal(d.websiteActivity[19].label, "L24");
+    // a lead from before the fields existed gets them filled on the next submission
+    const b = res(); await api.handle(req({ ...FORM, company: "Old Co" }), b);
+    const old = db.docs.get(b.body.leadId); old.sourceLabel = ""; old.sourceDetail = ""; delete old.websiteActivity;
+    await api.handle(req({ ...FORM, company: "Old Co", sourceLabel: "Talk to us", sourceDetail: "Demo" }), res());
+    assert.equal(old.sourceLabel, "Talk to us"); assert.equal(old.websiteActivity.length, 1);
+  });
+  await test("a submission without the new fields behaves as before", async () => {
+    const { db, api } = mkApi(); const r = res(); await api.handle(req(FORM), r);
+    const d = db.docs.get(r.body.leadId); assert.equal(d.sourceLabel, ""); assert.equal(core.normaliseLead("x", { company: { name: "A" } }).sourceLabel, "");
+  });
   await test("a test flag marks the lead as a test lead", async () => {
     const { db, api } = mkApi(); const r = res();
     await api.handle(req({ ...FORM, test: "1" }), r);

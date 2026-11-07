@@ -53,13 +53,27 @@ const OPERATIONS = {
   UpdateOpportunity: { service: "selling" },
   CreateBenefitApplication: { service: "benefits", draftOnly: true },
 };
-// NOTE: target prefixes and signing names follow AWS's published service
-// models for Partner Central. Verify them against the first real Sandbox call
-// (README → "AWS Partner Central connection"); they are data here, not logic.
+// Hosts are the documented dual-stack `*.api.aws` endpoints; the old
+// `*.amazonaws.com` names do not resolve (that was the "fetch failed", 7 Nov
+// 2026). Target prefixes were probed against the live endpoints: Selling is
+// `AWSPartnerCentralSelling`, Benefits is `PartnerCentralBenefitsService`
+// (an unknown prefix answers UnknownOperationException, a known one asks for
+// a signature). They are data here, not logic.
 const SERVICES = {
-  selling: { host: `partnercentral-selling.${REGION}.amazonaws.com`, signingName: "partnercentral-selling", target: "AWSPartnerCentralSelling" },
-  benefits: { host: `partnercentral-benefits.${REGION}.amazonaws.com`, signingName: "partnercentral-benefits", target: "AWSPartnerCentralBenefits" },
+  selling: { host: `partnercentral-selling.${REGION}.api.aws`, signingName: "partnercentral-selling", target: "AWSPartnerCentralSelling" },
+  benefits: { host: `partnercentral-benefits.${REGION}.api.aws`, signingName: "partnercentral-benefits", target: "PartnerCentralBenefitsService" },
 };
+
+// A network failure from fetch() is just "fetch failed"; the real reason is on
+// err.cause (code, hostname, message). Make it readable for the audit row.
+function describeNetworkError(err, host) {
+  const c = (err && err.cause) || {};
+  const code = c.code || err.code || "";
+  const target = c.hostname || host || "";
+  const detail = String(c.message || "").slice(0, 120);
+  if (!code && !c.message && !(err && /fetch failed/i.test(String(err.message)))) return String((err && err.message) || err).slice(0, 300);
+  return `Couldn't reach ${target}${code ? ` (${code})` : ""}${detail && detail !== code ? `: ${detail}` : ""}`.slice(0, 300);
+}
 
 // ── SigV4 ────────────────────────────────────────────────────────────────
 const sha256hex = (s) => crypto.createHash("sha256").update(s).digest("hex");
@@ -183,10 +197,11 @@ function createPartnerCentralApi({
       throw Object.assign(new Error(`operation not allowed: ${operation}`), { status: 400 });
     }
     const body = { Catalog: cfg.catalog, ...payload };
-    let result = null; let error = null; let httpStatus = null;
+    let result = null; let error = null; let httpStatus = null; let awsType = null; let host = null;
     try {
       const creds = await assumeRole(cfg.roleArn);
       const svc = SERVICES[spec.service];
+      host = svc.host;
       const text = JSON.stringify(body);
       const headers = signRequest({
         host: svc.host, service: svc.signingName, creds, body: text, date: now(),
@@ -197,17 +212,24 @@ function createPartnerCentralApi({
       const raw = await r.text();
       let parsed = {};
       try { parsed = raw ? JSON.parse(raw) : {}; } catch { parsed = { raw: raw.slice(0, 200) }; }
-      if (!r.ok) error = `${String(parsed.__type || `HTTP ${r.status}`).split("#").pop()}: ${String(parsed.message || parsed.Message || "").slice(0, 200)}`;
-      else result = parsed;
+      if (!r.ok) {
+        awsType = String(parsed.__type || `HTTP ${r.status}`).split("#").pop();
+        error = `${awsType}: ${String(parsed.message || parsed.Message || "").slice(0, 200)}`;
+        logger.warn("partnerCentral AWS error", { operation, host, httpStatus: r.status, awsType, message: String(parsed.message || parsed.Message || "").slice(0, 200) });
+      } else result = parsed;
     } catch (err) {
-      error = String(err.message || err).slice(0, 300);
+      const c = err && err.cause;
+      if (c || /fetch failed/i.test(String(err && err.message))) {
+        logger.error("partnerCentral network failure", { operation, host, code: c && c.code, hostname: c && c.hostname, cause: c && String(c.message || c), error: String(err.message || err) });
+        error = describeNetworkError(err, host);
+      } else error = String(err.message || err).slice(0, 300);
     }
     const ok = !error;
-    await audit({ operation, catalog: cfg.catalog, roleArn: cfg.roleArn, by: by || null, ok, httpStatus, error, ms: now().getTime() - started.getTime(), target: payload && (payload.Identifier || null) });
+    await audit({ operation, catalog: cfg.catalog, roleArn: cfg.roleArn, by: by || null, ok, httpStatus, awsType, error, ms: now().getTime() - started.getTime(), target: payload && (payload.Identifier || null) });
     await recordState(ok
       ? { lastSuccessAt: now(), lastSuccessOperation: operation, lastSuccessCatalog: cfg.catalog, lastError: null }
       : { lastErrorAt: now(), lastError: error, lastErrorOperation: operation });
-    if (!ok) throw Object.assign(new Error(error), { status: 502, awsStatus: httpStatus });
+    if (!ok) throw Object.assign(new Error(error), { status: 502, awsStatus: httpStatus, awsType });
     return result;
   }
 
@@ -226,13 +248,13 @@ function createPartnerCentralApi({
     const d = s.exists ? s.data() || {} : {};
     let state = "not-linked";
     if (d.lastSuccessAt) state = d.lastError && iso(d.lastErrorAt) > iso(d.lastSuccessAt) ? "error" : "connected";
-    else if (d.lastError) state = /AccessDenied|InvalidIdentityToken|NoSuchEntity|InvalidParameter|NotAuthorized|AccessDeniedException/i.test(d.lastError) ? "not-linked" : "error";
+    else if (d.lastError) state = /AccessDenied|InvalidIdentityToken|NoSuchEntity|InvalidParameter|NotAuthorized|Unauthorized|Forbidden|UnrecognizedClient|not linked|not registered|not a partner/i.test(d.lastError) ? "not-linked" : "error";
     return {
       state, // connected | not-linked | error
       catalog: cfg.catalog, roleArn: cfg.roleArn,
       lastSuccessAt: iso(d.lastSuccessAt), lastSuccessOperation: d.lastSuccessOperation || null,
       lastError: d.lastError || null, lastErrorAt: iso(d.lastErrorAt),
-      note: state === "connected" ? null : "Not linked yet: link the Partner Central account to the AWS account and map the IAM role to a Partner Central user role (see backlog-tracker/deploy/aws/README.md), then press Test connection.",
+      note: state === "connected" ? null : (state === "not-linked" && d.lastError ? `Not linked yet. AWS said: ${String(d.lastError).slice(0, 240)}. ` : "Not linked yet: ") + (d.lastError && state === "not-linked" ? "Link" : "link") + " the Partner Central account to the AWS account and map the IAM role to a Partner Central user role (see backlog-tracker/deploy/aws/README.md), then press Test connection.",
     };
   }
 
@@ -318,4 +340,4 @@ function createPartnerCentralApi({
   return { handle, status, aceOpportunities, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
 }
 
-module.exports = { createPartnerCentralApi, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };
+module.exports = { createPartnerCentralApi, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };
