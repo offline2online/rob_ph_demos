@@ -1417,6 +1417,31 @@ const scenarios = [
       assert.ok(await c.page.locator("#prospects-grid .ag-floating-filter").count() > 3, "floating filter row");
       assert.ok(await c.page.locator('#prospects-grid .ag-pinned-left-cols-container .ag-selection-checkbox, #prospects-grid .ag-pinned-left-cols-container input[type=checkbox]').count() >= 3, "checkbox column");
       assert.ok(await c.page.locator("#prospects-grid .ag-paging-panel").count(), "pagination footer");
+      // The grid's column header and filter row stay fully visible under the console header at every page scroll position.
+      {
+        const pinned = () => c.page.evaluate(() => {
+          const bar = document.querySelector(".topbar").getBoundingClientRect().bottom;
+          const h = document.querySelector("#prospects-grid .ag-header").getBoundingClientRect();
+          const f = document.querySelector("#prospects-grid .ag-header-row-column-filter").getBoundingClientRect();
+          const pg = document.querySelector("#prospects-grid .ag-paging-panel").getBoundingClientRect();
+          return { bar, headTop: h.top, filterBottom: f.bottom, vh: innerHeight, pagBottom: pg.bottom, y: scrollY, max: document.documentElement.scrollHeight - innerHeight };
+        });
+        const first = await pinned();
+        for (let i = 0; i <= 4; i++) {
+          await c.page.evaluate((f) => window.scrollTo(0, Math.round(f * (document.documentElement.scrollHeight - innerHeight))), i / 4);
+          const m = await pinned();
+          assert.ok(m.headTop >= m.bar - 1, `grid header stays under the console header at scroll ${m.y}/${m.max} (top ${m.headTop}, bar ${m.bar})`);
+          assert.ok(m.filterBottom <= m.vh, `filter row inside the viewport at scroll ${m.y}`);
+        }
+        await c.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        const end = await pinned();
+        assert.ok(end.pagBottom <= end.vh + 1, "pagination reachable at the end of the page");
+        await c.page.evaluate(() => { const v = document.querySelector("#prospects-grid .ag-body-viewport"); if (v) v.scrollTop = 500; });
+        const after = await pinned();
+        assert.ok(Math.abs(after.headTop - end.headTop) < 1, "scrolling the rows does not move the header");
+        assert.ok(first.headTop >= first.bar - 1, "header under the console header at the top");
+        assert.ok(await c.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal page overflow");
+      }
       assert.strictEqual(await c.page.locator("#prospects-grid .prospect-act, #prospects-grid .btn-ghost").count(), 0, "no per-row text buttons");
       assert.strictEqual(await c.page.locator("#prospects-grid button.um-manage").count(), 3, "a row menu button per row");
       const overflow = await c.page.evaluate(() => { const v = document.querySelector("#prospects-grid .ag-body-horizontal-scroll-viewport"); return v ? v.scrollWidth - v.clientWidth : 0; });
@@ -1502,7 +1527,7 @@ const scenarios = [
       await until(async () => (await rowIds()) === "pa,pb,pc", "the Country filter to clear again", 5000);
       await c.page.keyboard.press("Escape");
       // The grid pins under the console header and shows 50 rows a page.
-      assert.strictEqual(await c.page.evaluate(() => getComputedStyle(document.getElementById("prospects-grid")).position), "sticky", "the grid (header + filter row) is pinned");
+      assert.ok(await c.page.evaluate(() => { const g = document.getElementById("prospects-grid").getBoundingClientRect(); return g.top >= document.querySelector(".topbar").getBoundingClientRect().bottom - 1 && g.bottom <= innerHeight + 1; }), "the grid (header + filter row) fits in the viewport under the console header");
       assert.strictEqual((await c.text("#prospects-grid .ag-paging-page-size .ag-picker-field-display, #prospects-grid .ag-paging-page-size")).includes("50"), true, "50 rows per page by default");
       // The Priority floating filter is the same searchable list.
       await openFilter("Priority");
