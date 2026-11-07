@@ -4220,7 +4220,7 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
 - Sandbox catalogue by default; the live AWS catalogue only by an explicit admin `LIVE` confirmation.
 - Settings shows connected / not linked yet / error, the catalogue, the last successful call and an audit log of every call (`partnerCentralAudit`); CloudTrail records the AWS side.
 - Dependency (manual): link the Partner Central account to the AWS account and map the role to a Partner Central user role.
-- **ACE opportunities table (Promote › Leads, 6 Nov 2026)**: under the leads board, `#ace-section` lists PH's AWS ACE opportunities laid out like Partner Central's opportunities list: opportunity, customer, ACE stage, review status, opportunity score, expected monthly AWS revenue, target close date and AWS account manager (with a mailto icon, subject "<opportunity> – <customer>"). A summary block counts rows by ACE stage and by review status. Each row opens the matching lead card (customer name = lead company name) and the opportunity in Partner Central. Rows come from `GET /partnerCentral/v1/ace` (list + per-opportunity detail through the Selling API, normalised in `normaliseOpportunity`, cached 60 s); that one read route is open to editors and admins, every write stays admin only. Rules in `public/js/ace-core.js`; tests `test/ace.test.mjs`, `test/partner-central.test.js`.
+- **ACE opportunities table (Promote › Leads, 6 Nov 2026)**: under the leads board, `#ace-section` lists PH's AWS ACE opportunities laid out like Partner Central's opportunities list: opportunity, customer, ACE stage, review status, opportunity score, expected monthly AWS revenue, target close date and AWS account manager (with a mailto icon, subject "<opportunity> – <customer>"). A summary block counts rows by ACE stage and by review status. Each row opens the matching lead card (customer name = lead company name) and the opportunity in Partner Central. Rows come from `GET /partnerCentral/v1/ace` (list + per-opportunity detail through the Selling API, normalised in `normaliseOpportunity`, cached 60 s); that one read route is open to editors and admins, every write stays admin only. Rules in `public/js/ace-core.js`; tests `test/ace.test.mjs`, `test/partner-central.test.js`. **Restyled as the PH list page (7 Nov 2026)**: title "AWS ACE opportunities", a divider, then a count line (`5 Opportunities`, a muted `Sandbox` pill on the Sandbox catalogue, `first 100 shown` when truncated) with a Refresh text button (`refresh` icon) on its right; four KPI cards in one row (2×2 on phones): Opportunities, Expected monthly AWS revenue (one figure per currency), Approved, Needs action (Action Required + Rejected); ACE stage counts as outlined pills. The table is an AG Grid (`ag-theme-alpine um-grid`, `public/js/ace-grid.js`, lazy loader from `docs-grid.js`; 40px header and floating filter row, 42px rows, no checkbox column, pagination of 25 only above 25 rows). Columns: Opportunity (one line, ellipsis, full title in a tooltip, teal link to Partner Central in a new tab, pinned left on phones), Customer, ACE stage (pill, select filter), Review status (dot: green Approved; amber Pending Submission/Submitted/In review; red Action Required/Rejected; select filter), Score (hidden when no row has one), Monthly AWS revenue, Target close date (past dates in the error colour with the tooltip "Past target close date"), AWS account manager (name + email icon; "Not assigned" muted), Lead ("Lead card" link or muted "No lead"), and a pinned-right ⋯ menu (View in Partner Central, Email AWS account manager, Open lead card; unavailable items are hidden). The row menu button is `.ace-manage`, not `.um-manage`, which `permissions.js` hides for people without User Management edit rights. States: grid loading overlay; empty state (`handshake` icon, "No ACE opportunities yet."); error or 403 as an alert with Retry. Works in light and dark (text contrast ≥ 4.5:1) with no horizontal page overflow at 375px. Pure rules (`kpis`, `reviewTone`, `isPastDate`) are in `ace-core.js`.
 
 ### Prospects (TAM): company detail view (6 Nov 2026)
 
@@ -4282,3 +4282,29 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
   counts, the first gap, and up to four AWS contacts with email icons.
 - Not done: MCP tools for the company detail (`upsert_prospects` writes the grid
   fields and the AWS account ID only and leaves `prospectCompanies` untouched).
+
+### Prospects (TAM): filters, industry taxonomy and pinned header (7 Nov 2026)
+
+- **Pinned header.** The grid fills the viewport below the console header and
+  is `position: sticky` under it, so the column header and the filter row stay
+  pinned while the page scrolls; the rows scroll inside the grid. Default page
+  size is **50** (selector 25/50/100/250).
+- **One filter pattern for every primary column** (Country, Industry, Priority,
+  Status, AWS region, Size band): a searchable multi-select (`ListFilter` in
+  `prospects-page.js`) with the complete option list, a search box that narrows
+  it, ticks, a Clear button and Escape to close. Styled with the console's
+  tokens (6px radius, 13px, `--primary`). Country lists every country
+  (`COUNTRIES`, plus any odd value already in the data; UK/USA/UAE fold into
+  the list's spelling). A saved filter in the old shapes (`{value}` or a text
+  filter) still loads.
+- **Industry taxonomy** is the nine industries on
+  personalisationhub.com/industries/ (6 Nov 2026), in site order, display name
+  stored, slug the stable key: Fuel & Convenience, Pubs & Hospitality, Telco
+  Retail, Pharmacy, Retail Media, Grocery & Supermarkets, Fashion & Department
+  Stores, Quick Service Restaurants, Banking, plus **Unassigned** (blank) in the
+  filter. `normaliseIndustry` (`prospects-core.js`, copied to
+  `functions/prospects-core.js`) maps older wording to one of the nine and
+  anything that fits none (Electronics, Home improvement, Sports, Beauty…) to
+  blank, never a new industry. It runs on read (`normaliseProspect`), on every
+  write (`prospectFromInput`, so `upsert_prospects`) and on the industry filter
+  of `list_prospects`. Stored legacy values are rewritten when a record is next saved.

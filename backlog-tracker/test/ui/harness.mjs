@@ -97,6 +97,7 @@ export async function startHarness() {
         // test as mediaKeyWrites.
         // AWS Partner Central status (functions/partner-central.js): not linked yet, no calls.
         if (url.pathname === "/partnerCentral/v1/ace") {
+          if (seed.aceStatus && seed.aceStatus !== 200) return route.fulfill({ status: seed.aceStatus, contentType: "application/json", body: JSON.stringify({ error: seed.aceError || "Server error" }) });
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ catalog: "Sandbox", truncated: false, opportunities: seed.aceOpportunities || [] }) });
         }
         if (url.pathname.startsWith("/partnerCentral/")) {

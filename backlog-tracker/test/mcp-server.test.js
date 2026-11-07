@@ -1102,7 +1102,7 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(out.created, 1); assert.strictEqual(out.updated, 1);
     const acme = env.store.col("prospects").get("pr1");
     assert.deepStrictEqual(acme.vendors, ["Signage Co"]);
-    assert.strictEqual(acme.industry, "Grocery", "a field not sent is kept");
+    assert.strictEqual(acme.industry, "Grocery & Supermarkets", "a field not sent is kept");
     assert.strictEqual(acme.storeCount, 400);
     assert.ok(env.store.col("prospects").get("pr1").country === "United Kingdom", "an older record gets its country on update");
     const gamma = env.store.col("prospects").get("gammafashion-france");
