@@ -70,6 +70,22 @@ try {
   await child.evaluate(() => { parent.postMessage({ type: "ph-tour-height", h: 1e9 }, location.origin); });
   await p.waitForTimeout(100);
   assert.strictEqual(await fr.evaluate((f) => f.style.height), "1234px", "an absurd height is ignored");
+  // Full screen: the frame may go full screen; the fallback message pins it over the viewport and restores everything.
+  assert.ok((await fr.getAttribute("allow")).includes("fullscreen") && (await fr.getAttribute("allowfullscreen")) !== null, "iframe allows fullscreen");
+  await p.evaluate(() => { document.querySelector(".ph-ind-tour-frame").style.height = "700px"; window.scrollTo(0, 0); });
+  await child.evaluate(() => { parent.postMessage({ type: "ph-tour-fullscreen", on: true }, location.origin); });
+  await p.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position === "fixed");
+  const pin = await p.evaluate(() => { const f = document.querySelector(".ph-ind-tour-frame"), r = f.getBoundingClientRect(), z = +getComputedStyle(f).zIndex; return { r: [r.left, r.top, r.width, r.height], z, ho: document.documentElement.style.overflow, bo: document.body.style.overflow, hdr: z > 100000 }; });
+  assert.deepStrictEqual(pin.r, [0, 0, 1200, 900], "pinned to the whole viewport");
+  assert.ok(pin.hdr && pin.ho === "hidden" && pin.bo === "hidden", "above the site header and the page does not scroll: " + JSON.stringify(pin));
+  await child.evaluate(() => { parent.postMessage({ type: "ph-tour-height", h: 321 }, location.origin); });
+  await p.waitForTimeout(100);
+  assert.ok(await fr.evaluate((f) => f.style.position === "fixed" && f.style.height !== "321px"), "height messages are ignored while pinned");
+  await p.evaluate(() => window.postMessage({ type: "ph-tour-fullscreen", on: false }, "*"));
+  assert.strictEqual(await fr.evaluate((f) => f.style.position), "fixed", "a fullscreen message that is not from the iframe is ignored");
+  await child.evaluate(() => { parent.postMessage({ type: "ph-tour-fullscreen", on: false }, location.origin); });
+  await p.waitForFunction(() => document.querySelector(".ph-ind-tour-frame").style.position !== "fixed");
+  assert.ok(await p.evaluate(() => { const f = document.querySelector(".ph-ind-tour-frame"); return f.style.height === "700px" && f.style.zIndex === "" && document.documentElement.style.overflow === "" && document.body.style.overflow === ""; }), "exit restores the frame and the page scroll");
   await p.close();
 
   // No Elementor band yet: built in JS right after the calculator's section.
@@ -124,5 +140,56 @@ try {
   await f2.locator("button[type=submit]").click();
   await p.waitForFunction(() => window.__ev.length === 1);
   assert.ok(/Thanks/.test(await p.locator(".ph-ind-lead .ph-ind-gate-m").textContent()), "the form still succeeds with storage blocked");
+  // The tour page itself: full screen, native and fallback.
+  const tourHtml = fs.readFileSync(path.join(dir, "tour", "telco.html"), "utf8");
+  const tourPage = async (fallback, vp) => {
+    const t = await browser.newPage({ viewport: vp });
+    await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: tourHtml }) : r.abort());
+    await t.addInitScript((fb) => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })); if (fb) { Document.prototype.__defineGetter__("fullscreenEnabled", () => false); } }, fallback);
+    await t.goto("http://x.test/industries/telco/tour/?embed=1");
+    await t.waitForSelector("#fs", { state: "visible" });
+    return t;
+  };
+  const evs = (t) => t.evaluate(() => window.dataLayer.filter((e) => e.event === "ph_tour" && /^fullscreen/.test(e.action)).map((e) => e.action + ":" + e.industry + ":" + typeof e.flow + ":" + typeof e.step));
+  for (const vp of [{ width: 1280, height: 800 }, { width: 360, height: 640 }, { width: 640, height: 360 }]) {
+    const t = await tourPage(false, vp);
+    assert.strictEqual(await t.getAttribute("#fs", "aria-label"), "Full screen");
+    assert.strictEqual(await t.getAttribute("#fs", "aria-pressed"), "false");
+    await t.click("#fs");
+    await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const st = await t.evaluate(() => { const b = box.getBoundingClientRect(), r = document.querySelector(".bar").getBoundingClientRect(); return { native: !!document.fullscreenElement, label: fs.getAttribute("aria-label"), pressed: fs.getAttribute("aria-pressed"), icon: fs.textContent, focus: document.activeElement.id, ratio: b.width / b.height, barIn: r.bottom <= innerHeight + 1 && r.top >= 0, boxIn: b.right <= innerWidth + 1 && b.bottom <= innerHeight, noHScroll: document.documentElement.scrollWidth <= innerWidth, bg: getComputedStyle(document.documentElement).backgroundColor }; });
+    assert.ok(st.native && st.label === "Exit full screen" && st.pressed === "true" && st.icon === "fullscreen_exit" && st.focus === "fs", "entered: " + JSON.stringify(st));
+    assert.ok(Math.abs(st.ratio - 1280 / 760) < 0.02 && st.barIn && st.boxIn && st.noHScroll && st.bg === "rgb(15, 20, 36)", "stage letterboxed, controls reachable, dark backdrop at " + vp.width + "x" + vp.height + ": " + JSON.stringify(st));
+    await t.click("#play"); // controls keep working
+    await t.keyboard.press("Escape");
+    await t.waitForFunction(() => !document.documentElement.classList.contains("fs"));
+    assert.ok(await t.evaluate(() => fs.getAttribute("aria-label") === "Full screen" && fs.getAttribute("aria-pressed") === "false" && document.activeElement.id === "fs"), "Esc exits and focus returns to the button");
+    assert.deepStrictEqual(await evs(t), ["fullscreen_enter:telco:string:number", "fullscreen_exit:telco:string:number"], "ph_tour events");
+    await t.close();
+  }
+  // Start card link: enters full screen and starts the tour. The end card carries an Exit full screen action in full-screen mode.
+  const t = await tourPage(false, { width: 1280, height: 800 });
+  await t.click("#fsstart");
+  await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+  await t.waitForFunction(() => window.dataLayer.some((e) => e.action === "step"));
+  assert.ok(await t.evaluate(() => getComputedStyle(document.getElementById("fs")).display !== "none"), "button stays in full screen");
+  await t.close();
+  assert.ok(/id="fsexit"/.test(tourHtml) && /html\.fs #card \.fsonly\{display:inline-flex\}/.test(tourHtml), "end card has Exit full screen, shown only in full screen");
+  // Framed fallback: parent receives ph-tour-fullscreen on/off and the frame is pinned.
+  const fp = await browser.newPage({ viewport: { width: 390, height: 700 } });
+  await fp.route("**/*", (r) => { const u = r.request().url(); if (/\/industries\/telco\/tour\//.test(u)) return r.fulfill({ contentType: "text/html", body: tourHtml }); if (u.startsWith("http://x.test/")) return r.fulfill({ contentType: "text/html", body: html(true) }); return r.abort(); });
+  await fp.addInitScript(() => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })); Document.prototype.__defineGetter__("fullscreenEnabled", () => false); });
+  await fp.goto("http://x.test/industries/telco/");
+  const cf = fp.frames().find((x) => x !== fp.mainFrame());
+  await cf.waitForSelector("#fs", { state: "visible" });
+  await cf.click("#fs");
+  await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position === "fixed");
+  assert.ok(await cf.evaluate(() => document.documentElement.classList.contains("fs") && !document.fullscreenElement && fs.getAttribute("aria-label") === "Exit full screen"), "fallback: tour is in full-screen mode without the API");
+  await fp.keyboard.press("Escape");
+  await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position !== "fixed");
+  assert.ok(await cf.evaluate(() => !document.documentElement.classList.contains("fs") && document.activeElement.id === "fs"), "fallback: Esc exits, frame restored, focus back on the button");
+  await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position === "fixed");
+  await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position !== "fixed");
+  await fp.close();
   console.log("tour js: all passed");
 } finally { await browser.close(); }

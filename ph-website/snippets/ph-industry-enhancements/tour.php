@@ -20,39 +20,54 @@ const TOUR_SOURCE_LABEL = 'Interactive product tour – Telco';
 const TOUR_FLOWS        = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation' );
 
 /**
- * Pinned copy of the tour page, used when tour-telco.php is not deployed (it is 196 KB, too big for the deploy MCP's inline file
- * writes). To update the tour, change the commit in TOUR_TELCO_URL and TOUR_TELCO_SHA256 together; a changed sha refetches.
+ * Pinned copy of the tour page, used when tour-telco.php is not deployed (it is 200 KB, too big for the deploy MCP's inline file
+ * writes). The URL follows main; the sha256 is the pin, so the content is guaranteed whatever the URL serves. To update the tour,
+ * merge it, then change TOUR_TELCO_SHA256 to the new telco.html's sha256; a changed sha refetches by itself. GitHub's raw CDN can serve the
+ * previous main for a few minutes after a merge: until the fetched copy matches, the last good cached copy is served.
  */
-const TOUR_TELCO_OPTION = 'ph_tour_telco_html';
-const TOUR_TELCO_SHA256 = '6a09836e840938df9e66f9e2ec245b99dabb7f0acf3bfc404416393135c4ff02';
-const TOUR_TELCO_URL    = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/4a2392f09c9b563b19c8fd0fecf832c154d18021/ph-website/snippets/ph-industry-enhancements/tour/telco.html';
+const TOUR_TELCO_OPTION  = 'ph_tour_telco_html';
+const TOUR_TELCO_BACKOFF = 'ph_tour_telco_backoff';
+const TOUR_TELCO_SHA256  = '22a888c3c8640ba69e8762474d4cadf744cda846af53a5f18657b188115d056c';
+const TOUR_TELCO_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/telco.html';
 
 /**
- * The tour page HTML. Returns array( html|null, reason ). Order: tour-telco.php next to this file, then the cached option when its
- * sha matches TOUR_TELCO_SHA256, then the pinned URL (accepted only on a 200 whose sha256 matches; only then stored).
+ * The tour page HTML. Returns array( html|null, reason ). Order: tour-telco.php next to this file; the cached option when its sha
+ * matches TOUR_TELCO_SHA256; then the pinned URL (accepted only on a 200 whose sha256 matches; only then stored). When the fetch
+ * fails or does not match, a 5-minute back-off transient stops further fetches, and an older cached copy (intact against its own sha)
+ * is served with 200 and the reason returned for logging. With nothing cached the html is null and the route answers 503.
  */
 function tour_page() {
 	if ( file_exists( __DIR__ . '/tour-telco.php' ) ) {
 		return array( data( 'tour-telco.php' ), '' );
 	}
 	$cached = get_option( TOUR_TELCO_OPTION );
-	if ( is_array( $cached ) && isset( $cached['sha'], $cached['html'] ) && is_string( $cached['html'] ) && TOUR_TELCO_SHA256 === $cached['sha'] && hash( 'sha256', $cached['html'] ) === TOUR_TELCO_SHA256 ) {
+	$intact = is_array( $cached ) && isset( $cached['sha'], $cached['html'] ) && is_string( $cached['html'] ) && '' !== $cached['html'] && hash( 'sha256', $cached['html'] ) === $cached['sha'];
+	if ( $intact && TOUR_TELCO_SHA256 === $cached['sha'] ) {
 		return array( $cached['html'], '' );
 	}
-	$res = wp_remote_get( TOUR_TELCO_URL, array( 'timeout' => 10 ) );
-	if ( is_wp_error( $res ) ) {
-		return array( null, 'fetch failed: ' . $res->get_error_message() );
+	$why = '';
+	if ( false !== get_transient( TOUR_TELCO_BACKOFF ) ) {
+		$why = 'fetch skipped, backing off after an earlier failure';
+	} else {
+		$res = wp_remote_get( TOUR_TELCO_URL, array( 'timeout' => 10 ) );
+		if ( is_wp_error( $res ) ) {
+			$why = 'fetch failed: ' . $res->get_error_message();
+		} elseif ( 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+			$why = 'fetch answered ' . (int) wp_remote_retrieve_response_code( $res );
+		} else {
+			$body = (string) wp_remote_retrieve_body( $res );
+			if ( hash( 'sha256', $body ) === TOUR_TELCO_SHA256 ) {
+				update_option( TOUR_TELCO_OPTION, array( 'sha' => TOUR_TELCO_SHA256, 'html' => $body ), false );
+				return array( $body, '' );
+			}
+			$why = 'fetched copy does not match TOUR_TELCO_SHA256';
+		}
+		set_transient( TOUR_TELCO_BACKOFF, 1, 5 * MINUTE_IN_SECONDS );
 	}
-	$code = (int) wp_remote_retrieve_response_code( $res );
-	if ( 200 !== $code ) {
-		return array( null, "fetch answered $code" );
+	if ( $intact ) {
+		return array( $cached['html'], $why . '; serving the cached copy' );
 	}
-	$body = (string) wp_remote_retrieve_body( $res );
-	if ( hash( 'sha256', $body ) !== TOUR_TELCO_SHA256 ) {
-		return array( null, 'fetched copy does not match TOUR_TELCO_SHA256' );
-	}
-	update_option( TOUR_TELCO_OPTION, array( 'sha' => TOUR_TELCO_SHA256, 'html' => $body ), false );
-	return array( $body, '' );
+	return array( null, $why );
 }
 
 /** Same list as FREE_MAIL in tour/telco.html. */
@@ -132,8 +147,10 @@ add_action( 'template_redirect', function () {
 		return;
 	}
 	list( $html, $why ) = tour_page();
-	if ( null === $html ) {
+	if ( '' !== $why ) {
 		error_log( 'ph tour: ' . $why );
+	}
+	if ( null === $html ) {
 		status_header( 503 );
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex' );
