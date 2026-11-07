@@ -31,6 +31,35 @@ foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embe
 	ok( false !== strpos( $h, 'Cache-Control: public, max-age=3600' ), "$u cache" );
 	ok( hash( 'sha256', $html ) === hash_file( 'sha256', $dir . '/tour/telco.html' ), "$u serves telco.html byte for byte" );
 }
+/* tour-telco.php present: served from the file, no HTTP call (the child's wp_remote_get does not even exist there) */
+/* tour-telco.php absent: pinned, hash-checked copy */
+$sha = hash_file( 'sha256', $dir . '/tour/telco.html' );
+$serve = function ( $mode ) {
+	$out = shell_exec( 'TOUR_MODE=' . $mode . ' php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' /industries/telco/tour/?embed=1 GET 2>/dev/null' );
+	$p1  = strrpos( (string) $out, "\n##" );
+	$p2  = strrpos( (string) $out, "\n@@" );
+	$aux = json_decode( substr( $out, $p1 + 3, $p2 - $p1 - 3 ), true );
+	$j   = json_decode( substr( $out, $p2 + 3 ), true );
+	return array( substr( $out, 0, $p1 ), $j, $aux );
+};
+$src_php = (string) file_get_contents( $dir . '/tour.php' );
+ok( false !== strpos( $src_php, "'" . $sha . "'" ), 'TOUR_TELCO_SHA256 equals the sha256 of tour/telco.html' );
+ok( 1 === preg_match( '#raw\.githubusercontent\.com/offline2online/rob_ph_demos/[0-9a-f]{40}/ph-website/snippets/ph-industry-enhancements/tour/telco\.html#', $src_php ), 'fetch URL is pinned to a commit' );
+list( $html, $j, $aux ) = $serve( 'ok' );
+ok( 200 === $j['status'] && hash( 'sha256', $html ) === $sha, 'absent file, correct fetch: served byte for byte' );
+ok( 1 === $aux['http'] && $sha === $aux['stored'] && false === $aux['autoload'] && 10 === $aux['timeout'], 'fetched once, stored with autoload off, 10s timeout' );
+ok( false !== strpos( implode( "\n", $j['hdr'] ), 'Cache-Control: public, max-age=3600' ) && false !== strpos( implode( "\n", $j['hdr'] ), 'X-Frame-Options: SAMEORIGIN' ), 'fetched page keeps the success headers' );
+list( $html, $j, $aux ) = $serve( 'cached' );
+ok( 200 === $j['status'] && hash( 'sha256', $html ) === $sha && 0 === $aux['http'], 'cached option with the right sha: served with no HTTP call' );
+list( $html, $j, $aux ) = $serve( 'stale' );
+ok( 200 === $j['status'] && 1 === $aux['http'] && $sha === $aux['stored'], 'stale sha in the option: refetched and replaced' );
+foreach ( array( 'bad' => 'wrong bytes', '404' => '404' ) as $m => $label ) {
+	list( $html, $j, $aux ) = $serve( $m );
+	$h = implode( "\n", $j['hdr'] );
+	ok( 503 === $j['status'] && false !== strpos( $h, 'Cache-Control: no-store' ) && false !== strpos( $h, 'Retry-After: 60' ) && false !== strpos( $h, 'X-Robots-Tag: noindex' ), "$label: 503 with no-store, Retry-After, noindex" );
+	ok( null === $aux['stored'] && 1 === count( $aux['logs'] ) && false !== strpos( $html, 'The product tour is unavailable right now. Please try again shortly.' ), "$label: nothing stored, reason logged, tiny page" );
+}
+
 foreach ( array( array( '/industries/telco/', 'GET' ), array( '/industries/telco/tour/x', 'GET' ), array( '/industries/telco/tour/', 'POST' ) ) as $c ) {
 	$out = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' ' . escapeshellarg( $c[0] ) . ' ' . $c[1] );
 	ok( false !== strpos( (string) $out, '"fellThrough":true' ), $c[1] . ' ' . $c[0] . ' is left to WordPress' );

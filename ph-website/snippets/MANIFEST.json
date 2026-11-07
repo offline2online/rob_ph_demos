@@ -82,13 +82,15 @@
       },
       {
         "name": "tour-telco.php",
+        "optional": true,
+        "note": "196 KB, too big for the deploy MCP's inline file writes; tour.php serves a sha256-pinned copy when it is absent",
         "bytes": 195690,
         "sha256": "b43f59a3ca00b1603bf05363c80ae75e6fe4f922206e6266dbef26db104c9b0b"
       },
       {
         "name": "tour.php",
-        "bytes": 5512,
-        "sha256": "178a407e85faa3c8507b107b73e8837ff60a9973ccde38ac4471389e86532d44"
+        "bytes": 7956,
+        "sha256": "2754824856c3bfba3054e3420cea83af91dcc2ffdfb4c0c05199ba51cd2b3bb4"
       }
     ]
   },
