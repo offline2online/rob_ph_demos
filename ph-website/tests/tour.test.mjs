@@ -160,7 +160,7 @@ try {
     await t.click("#fs");
     await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
     const st = await t.evaluate(() => { const b = box.getBoundingClientRect(), r = document.querySelector(".bar").getBoundingClientRect(); return { native: !!document.fullscreenElement, label: fs.getAttribute("aria-label"), pressed: fs.getAttribute("aria-pressed"), icon: fs.textContent, focus: document.activeElement.id, ratio: b.width / b.height, barIn: r.bottom <= innerHeight + 1 && r.top >= 0, boxIn: b.right <= innerWidth + 1 && b.bottom <= innerHeight, noHScroll: document.documentElement.scrollWidth <= innerWidth, bg: getComputedStyle(document.documentElement).backgroundColor }; });
-    assert.ok(st.native && st.label === "Exit full screen" && st.pressed === "true" && st.icon === "fullscreen_exit" && st.focus === "fs", "entered: " + JSON.stringify(st));
+    assert.ok(st.native && st.label === "Exit full screen" && st.pressed === "true" && st.icon === "fullscreen_exit" && st.focus === "fsclose", "entered, focus on the close button: " + JSON.stringify(st));
     assert.ok(Math.abs(st.ratio - 1280 / 760) < 0.02 && st.barIn && st.boxIn && st.noHScroll && st.bg === "rgb(15, 20, 36)", "stage letterboxed, controls reachable, dark backdrop at " + vp.width + "x" + vp.height + ": " + JSON.stringify(st));
     await t.click("#play"); // controls keep working
     await t.keyboard.press("Escape");
@@ -180,6 +180,42 @@ try {
     assert.ok(m.flH <= 36 && m.sub !== "block", "flow chips row at most 36px, sub-labels hidden: " + JSON.stringify(m));
     await t.click("#next"); await t.click("#play");
     await t.close();
+  }
+  // Close button (top right, full screen only): hidden inline, in the corner, clear of the chips, brand field and heading, and it exits.
+  for (const vp of [{ width: 1280, height: 800 }, { width: 740, height: 360 }, { width: 360, height: 740 }]) {
+    const t = await tourPage(false, vp);
+    assert.ok(await t.evaluate(() => getComputedStyle(document.getElementById("fsclose")).display === "none"), "close button hidden outside full screen");
+    await t.click("#fs");
+    await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const c = await t.evaluate(() => {
+      const b = document.getElementById("fsclose"), r = b.getBoundingClientRect(), hit = (e) => { let q = e.getBoundingClientRect(); const fl = e.closest(".flows"); if (fl) { const f = fl.getBoundingClientRect(); q = { left: Math.max(q.left, f.left), right: Math.min(q.right, f.right), top: q.top, bottom: q.bottom }; } return !(q.right <= r.left || q.left >= r.right || q.bottom <= r.top || q.top >= r.bottom); };
+      const others = [...document.querySelectorAll(".chip, .prefs .field, .top h2, #prev, #next, #play, .bar .ctl, #fs")].filter((e) => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden");
+      return { top: r.top, right: innerWidth - r.right, w: r.width, h: r.height, label: b.getAttribute("aria-label"), icon: b.textContent, focus: document.activeElement.id, overlaps: others.filter(hit).map((e) => e.id || e.className), onTop: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b || b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)) };
+    });
+    assert.ok(c.top >= 0 && c.top <= 16 && c.right >= 0 && c.right <= 16 && c.w === 40 && c.h === 40 && c.label === "Exit full screen" && c.icon === "close" && c.focus === "fsclose" && c.onTop, `close button top right at ${vp.width}x${vp.height}: ${JSON.stringify(c)}`);
+    assert.deepStrictEqual(c.overlaps, [], `close button overlaps nothing at ${vp.width}x${vp.height}`);
+    await t.keyboard.press("Tab"); await t.keyboard.press("Shift+Tab");
+    assert.strictEqual(await t.evaluate(() => document.getElementById("wrap").contains(document.activeElement)), true, "tabbing stays inside the tour");
+    await t.click("#fsclose");
+    await t.waitForFunction(() => !document.documentElement.classList.contains("fs"));
+    assert.ok(await t.evaluate(() => !document.fullscreenElement && document.activeElement.id === "fs"), "the close button exits; focus returns to the bar button");
+    assert.deepStrictEqual(await evs(t), ["fullscreen_enter:telco:string:number", "fullscreen_exit:telco:string:number"], "same events as the bar button");
+    await t.close();
+  }
+  // Apple touch devices (iPhone, iPad, iPadOS as Macintosh): the in-page fallback, never the native API (its system X sits top left).
+  for (const [ua, touch] of [["Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", 5], ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", 5], ["Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", 5]]) {
+    const ctx = await browser.newContext({ userAgent: ua, viewport: { width: 1024, height: 768 } });
+    const t = await ctx.newPage();
+    await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: tourHtml }) : r.abort());
+    await t.addInitScript((n) => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })); Object.defineProperty(Navigator.prototype, "maxTouchPoints", { get: () => n }); }, touch);
+    await t.goto("http://x.test/industries/telco/tour/?embed=1");
+    await t.waitForSelector("#fs", { state: "visible" });
+    await t.click("#fs");
+    await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    assert.ok(await t.evaluate(() => !document.fullscreenElement && document.activeElement.id === "fsclose"), "Apple touch UA uses the fallback, not native full screen: " + ua.slice(0, 40));
+    await t.click("#fsclose");
+    await t.waitForFunction(() => !document.documentElement.classList.contains("fs"));
+    await ctx.close();
   }
   // Start card link: enters full screen and starts the tour. The end card carries an Exit full screen action in full-screen mode.
   const t = await tourPage(false, { width: 1280, height: 800 });

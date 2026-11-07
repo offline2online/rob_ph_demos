@@ -590,7 +590,10 @@ body{font-family:var(--display);padding-block:56px 72px}
 #card .ms{font-family:"Material Symbols Rounded"}
 .embed body{padding:0;background:transparent}.embed .top>div:first-child,.embed .proto{display:none}
 /* ---------- full screen (native Fullscreen API, or a full-viewport fallback pinned by the parent page) ---------- */
-.fsbtn{margin-left:auto}.fsbtn .ms,.fsstart .ms,.fsexit .ms{font-family:"Material Symbols Rounded"}
+.fsbtn{margin-left:auto}.fsbtn .ms,.fsstart .ms,.fsexit .ms,.fsclose .ms{font-family:"Material Symbols Rounded"}
+.fsclose{display:none}
+html.fs .fsclose{display:inline-flex;align-items:center;justify-content:center;position:fixed;z-index:1000;top:max(12px,env(safe-area-inset-top,0px));right:max(12px,env(safe-area-inset-right,0px));width:40px;height:40px;padding:0;border:0;border-radius:50%;background:rgba(15,20,36,.72);color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent}
+html.fs .fsclose .ms{font-size:24px;line-height:1}.fsclose:hover{background:rgba(44,53,80,.92)}.fsclose:focus-visible{outline:2px solid #7fd3ea;outline-offset:2px}
 #card .fsonly{display:none}
 html.fs #card .fsonly{display:inline-flex}
 #card .acts.end{align-items:center;gap:8px 18px}
@@ -605,11 +608,12 @@ html.fs #card .fsonly{display:inline-flex}
 #card .fslink{height:auto;padding:6px 4px;border:0;background:none;color:#0F7A9A;font-size:14px;text-decoration:underline;text-underline-offset:3px}
 html.fs #card .fslink{display:none}
 :root.fs{--bg:#0F1424;--panel:#192033;--fg:#e7edf2;--muted:#a3acc0;--line:#2c3550;--chip:#16303a;color-scheme:dark}
+html.fs{scrollbar-gutter:auto}
 html.fs,html.fs body{background:#0F1424;overflow:hidden;height:100%}
 html.fs body{padding:0}
 html.fs .wrap{position:fixed;inset:0;z-index:100;max-width:none;margin:0;box-sizing:border-box;height:100vh;height:100dvh;gap:10px;padding:12px max(16px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));background:#0F1424;color:var(--fg);overflow:hidden}
 html.fs .top p,html.fs .mark,html.fs .fine,html.fs .proto{display:none}
-html.fs .top{align-items:center;flex:0 0 auto}
+html.fs .top{align-items:center;flex:0 0 auto;padding-right:calc(40px + 12px)}
 html.fs .top h2{font-size:clamp(16px,2.2vw,22px)}
 html.fs .flows{flex:0 0 auto}
 html.fs .bar{flex:0 0 auto}
@@ -622,7 +626,7 @@ html.fs .stagebox{width:min(100cqw,calc(100cqh * 1280 / 760));box-shadow:none}
 html.fs .wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr) auto;gap:6px 10px;padding-top:6px;padding-bottom:max(6px,env(safe-area-inset-bottom,0px))}
 html.fs .top{display:contents}
 html.fs .top>div:first-child{display:none}
-html.fs .prefs{grid-column:2;grid-row:1;flex-wrap:nowrap;gap:6px;align-self:center}
+html.fs .prefs{grid-column:2;grid-row:1;flex-wrap:nowrap;gap:6px;align-self:center;margin-right:calc(40px + 8px)}
 html.fs .prefs .field{padding:0 4px 0 8px;gap:6px;height:34px;box-sizing:border-box}
 html.fs .prefs .field label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 html.fs .prefs .field input[type=text]{width:96px;font-size:13px}
@@ -644,6 +648,7 @@ html.fs .fsbtn{margin-left:0;flex:0 0 auto}
 </head>
 <body>
 <div class="wrap" id="wrap">
+  <button class="fsclose" id="fsclose" type="button" aria-label="Exit full screen"><span class="ms" aria-hidden="true">close</span></button>
   <div class="top">
     <div>
       <div class="mark">Interactive product tour</div>
@@ -1609,7 +1614,9 @@ let LOCKED = false, TSEL = FOCUS ? FOCUSMAP[location.hash] : 0, GMODE = "pick";
 S.welcome = "";
 function tourEvent(action, extra) { try { DL().push(Object.assign({ event: "ph_tour", action, industry: "telco", flow: (FLOWS[S.flow] || [])[0], step: S.step + 1 }, extra || {})); } catch (e) {} }
 /* ---- full screen. Native Fullscreen API on this document; where it is missing (iPhone Safari) a full-viewport fallback: the page pins this iframe on {type:"ph-tour-fullscreen", on}. ---- */
-const fsBtn = document.getElementById("fs"), ROOT = document.documentElement;
+const fsBtn = document.getElementById("fs"), fsClose = document.getElementById("fsclose"), ROOT = document.documentElement;
+/* iPhone, iPad and iPadOS (reports as Macintosh with touch): native full screen shows the system's own X top left, so use the in-page fallback and our top-right close. */
+const APPLE_TOUCH = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 let FSON = false, FSMODE = "";
 function fsPost(on) { if (IN_FRAME) { try { window.parent.postMessage({ type: "ph-tour-fullscreen", on }, location.origin); } catch (e) {} } }
 function fsApply(on, mode) {
@@ -1620,12 +1627,12 @@ function fsApply(on, mode) {
   tourEvent(on ? "fullscreen_enter" : "fullscreen_exit");
   if (on && mode === "fallback") fsPost(true);
   if (!on && mode === "fallback") fsPost(false);
-  try { fsBtn.focus({ preventScroll: true }); } catch (e) {}
+  try { (on ? fsClose : fsBtn).focus({ preventScroll: true }); } catch (e) {}
   if (!on) { try { window.scrollTo(0, 0); } catch (e) {} }
 }
 function fsEnter() {
   if (FSON || LOCKED) return;
-  const de = ROOT, api = document.fullscreenEnabled && de.requestFullscreen;
+  const de = ROOT, api = !APPLE_TOUCH && document.fullscreenEnabled && de.requestFullscreen;
   if (!api) { fsApply(true, "fallback"); return; }
   let p; try { p = de.requestFullscreen(); } catch (e) { p = Promise.reject(e); }
   if (p && p.then) p.then(() => fsApply(true, "api"), () => fsApply(true, "fallback")); else fsApply(true, "api");
@@ -1636,6 +1643,7 @@ function fsExit() {
   fsApply(false, FSMODE || "fallback");
 }
 fsBtn.onclick = () => (FSON ? fsExit() : fsEnter());
+fsClose.onclick = () => fsExit();
 document.addEventListener("fullscreenchange", () => { if (document.fullscreenElement) fsApply(true, "api"); else if (FSON && FSMODE === "api") fsApply(false, "api"); });
 document.addEventListener("keydown", e => {
   if (!FSON) return;
