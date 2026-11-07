@@ -178,6 +178,8 @@ try {
     assert.ok(m.ratio >= 0.6 && Math.abs(m.aspect - 1280 / 760) < 0.02 && m.centred, "stage >= 60% of the height, aspect kept, centred at " + vp.width + "x" + vp.height + ": " + JSON.stringify(m));
     assert.ok(m.barH <= 52 && m.oneRow && m.inView && m.capDone === "ellipsis", "control bar is one row of at most 52px with every control in view: " + JSON.stringify(m));
     assert.ok(m.flH <= 36 && m.sub !== "block", "flow chips row at most 36px, sub-labels hidden: " + JSON.stringify(m));
+    const lc = await t.evaluate(() => { const R = (s) => document.querySelector(s).getBoundingClientRect(), c = R(".cap"), bar = R(".bar"); return { capW: c.width, align: getComputedStyle(document.querySelector(".cap")).textAlign, capR: Math.abs(c.right - bar.right), oneRow: bar.height <= 52, ratio: R("#box").height / innerHeight }; });
+    assert.ok(lc.capW >= 240 && lc.align === "right" && lc.capR <= 2 && lc.oneRow && lc.ratio >= 0.6, "landscape caption box >= 240px, right-aligned, bar one row, stage >= 60% at " + vp.width + "x" + vp.height + ": " + JSON.stringify(lc));
     await t.click("#next"); await t.click("#play");
     await t.close();
   }
@@ -328,7 +330,7 @@ try {
   { const t = await tourPage(false, { width: 740, height: 360 });
     await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
     const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
-    ms.forEach((m, k) => assert.ok(m.oneRow && !m.clipV && !m.over && m.stageH >= m.vh * 0.6 && m.align === "right" && m.capR <= 2, `740x360 caption ${k}: ${JSON.stringify(m)}`));
+    ms.forEach((m, k) => assert.ok(m.oneRow && !m.clipV && !m.over && m.stageH >= m.vh * 0.6 && m.align === "right" && m.capR <= m.barR + 2, `740x360 caption ${k}: ${JSON.stringify(m)}`));
     await t.keyboard.press("Escape"); await t.waitForFunction(() => !document.documentElement.classList.contains("fs")); await t.close(); }
   console.log("tour js: all passed");
 } finally { await browser.close(); }

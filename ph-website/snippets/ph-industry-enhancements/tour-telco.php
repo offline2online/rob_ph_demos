@@ -655,7 +655,7 @@ html.fs .cap{order:-1;flex:1 1 100%;min-width:0;text-align:right}
 html.fs .cap b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
 @media (max-width:599px){html.fs .cap b{white-space:normal}html.fs .dots{order:4;flex:1 1 100%;margin-right:0;gap:4px}html.fs .dot{flex:1 1 0;width:auto;max-width:26px}html.fs .fsbtn{order:3}}
-@media (max-height:520px) and (min-width:600px){html.fs .bar{flex-wrap:nowrap;padding-block:0;gap:8px 10px}html.fs .cap{order:5;flex:1 1 0}html.fs .cap span{display:none}html.fs .cap b{font-size:13px}}
+@media (max-height:520px) and (min-width:600px){html.fs .bar{width:auto;max-width:none;margin-inline:0;flex-wrap:nowrap;padding-block:0;gap:8px 10px}html.fs .cap{order:5;flex:1 1 0;text-align:right}html.fs .cap span{display:none}html.fs .cap b{font-size:13px}}
 </style>
 </head>
 <body>
