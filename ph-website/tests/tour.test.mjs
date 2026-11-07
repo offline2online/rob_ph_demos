@@ -174,7 +174,7 @@ try {
     const t = await tourPage(false, vp);
     await t.click("#fs");
     await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
-    const m = await t.evaluate(() => { const R = (s) => document.querySelector(s).getBoundingClientRect(), b = R("#box"), bar = R(".bar"), fl = R(".flows"), kids = [...document.querySelector(".bar").children].map((e) => e.getBoundingClientRect()); return { ratio: b.height / innerHeight, aspect: b.width / b.height, centred: Math.abs((b.left + b.right) / 2 - (R("#wrap").left + R("#wrap").right) / 2) < 2, barH: bar.height, flH: fl.height, oneRow: kids.every((k) => Math.abs(k.top + k.height / 2 - (bar.top + bar.height / 2)) < 20), inView: kids.every((k) => k.left >= 0 && k.right <= innerWidth + 1), capDone: getComputedStyle(document.querySelector(".cap b")).textOverflow, sub: getComputedStyle(document.querySelector(".chip small") || document.body).display, brand: R(".top").height }; });
+    const m = await t.evaluate(() => { const R = (s) => document.querySelector(s).getBoundingClientRect(), b = R("#box"), bar = R(".bar"), fl = R(".flows"), kids = [...document.querySelector(".bar").children].filter((e) => e.getClientRects().length).map((e) => e.getBoundingClientRect()); return { ratio: b.height / innerHeight, aspect: b.width / b.height, centred: Math.abs((b.left + b.right) / 2 - (R("#wrap").left + R("#wrap").right) / 2) < 2, barH: bar.height, flH: fl.height, oneRow: kids.every((k) => Math.abs(k.top + k.height / 2 - (bar.top + bar.height / 2)) < 20), inView: kids.every((k) => k.left >= 0 && k.right <= innerWidth + 1), capDone: getComputedStyle(document.querySelector(".cap b")).textOverflow, sub: getComputedStyle(document.querySelector(".chip small") || document.body).display, brand: R(".top").height }; });
     assert.ok(m.ratio >= 0.6 && Math.abs(m.aspect - 1280 / 760) < 0.02 && m.centred, "stage >= 60% of the height, aspect kept, centred at " + vp.width + "x" + vp.height + ": " + JSON.stringify(m));
     assert.ok(m.barH <= 52 && m.oneRow && m.inView && m.capDone === "ellipsis", "control bar is one row of at most 52px with every control in view: " + JSON.stringify(m));
     assert.ok(m.flH <= 36 && m.sub !== "block", "flow chips row at most 36px, sub-labels hidden: " + JSON.stringify(m));
@@ -224,7 +224,7 @@ try {
   await t.click("#fsstart");
   await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
   await t.waitForFunction(() => window.dataLayer.some((e) => e.action === "step"));
-  assert.ok(await t.evaluate(() => getComputedStyle(document.getElementById("fs")).display !== "none"), "button stays in full screen");
+  assert.ok(await t.evaluate(() => getComputedStyle(document.getElementById("fs")).display === "none"), "the bar toggle is hidden in full screen (the top-right x and Esc exit)");
   await t.close();
   assert.ok(/id="fsexit"/.test(tourHtml) && /html\.fs #card \.fsonly\{display:inline-flex\}/.test(tourHtml), "end card has Exit full screen, shown only in full screen");
   // End card: Next is the primary action and focused; no AWS or demo buttons; the last flow wraps; Replay and Exit full screen are secondary.
@@ -293,12 +293,12 @@ try {
   await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position !== "fixed");
   assert.ok(await cf.evaluate(() => !document.documentElement.classList.contains("fs") && document.activeElement.id === "fs"), "fallback: Esc exits, frame restored, focus back on the button");
   await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position === "fixed");
-  await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position !== "fixed");
+  await cf.click("#fsclose"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position !== "fixed");
   await fp.close();
-  // Full-screen caption (step caption right-aligned to the stage edge, two lines at most): every step of all three flows.
-  const capMetrics = () => { const r = (e) => e.getBoundingClientRect(), b = document.querySelector(".bar"), c = document.querySelector(".cap"), t = document.getElementById("capT"), d = document.getElementById("capS"), st = r(document.getElementById("box")), br = r(b), cr = r(c), ctl = r(document.getElementById("prev")), dots = r(document.getElementById("dots"));
+  // Step caption on the controls row (controls left, caption right-aligned to the stage's right edge), full screen and inline, every step of all three flows.
+  const capMetrics = () => { const r = (e) => e.getBoundingClientRect(), b = document.querySelector(".bar"), c = document.querySelector(".cap"), t = document.getElementById("capT"), d = document.getElementById("capS"), st = r(document.getElementById("box")), br = r(b), cr = r(c), ctl = r(document.getElementById("prev")), play = r(document.getElementById("play")), dots = r(document.getElementById("dots")), fsb = document.getElementById("fs"), fr = r(fsb);
     const lh = parseFloat(getComputedStyle(d).lineHeight), dh = d.getBoundingClientRect().height, vis = getComputedStyle(d).display !== "none";
-    return { lines: vis ? Math.round(dh / lh) : 0, clipV: [b, c, t, d].some((e) => e.scrollHeight > e.clientHeight + 1), clip: [b, c, t, d].some((e) => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1), align: getComputedStyle(c).textAlign, capR: Math.abs(cr.right - st.right), barL: Math.abs(br.left - st.left), barR: Math.abs(br.right - st.right), ctlL: Math.abs(ctl.left - st.left), capAboveCtl: cr.bottom <= ctl.top + 1, oneRow: br.height < 80, stageH: st.height, vh: innerHeight, dotsGap: cr.left - dots.right, hdrOneLine: t.getBoundingClientRect().height < parseFloat(getComputedStyle(t).fontSize) * 1.8, over: document.documentElement.scrollWidth > innerWidth + 1 || b.getBoundingClientRect().bottom > innerHeight + 1 }; };
+    return { lines: vis ? Math.round(dh / lh) : 0, clipV: [b, c, t, d].some((e) => e.scrollHeight > e.clientHeight + 1), clip: [b, c, t, d].some((e) => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1), align: getComputedStyle(c).textAlign, capR: Math.abs(cr.right - st.right), barL: Math.abs(br.left - st.left), barR: Math.abs(br.right - st.right), ctlL: Math.abs(ctl.left - st.left), capAboveCtl: cr.bottom <= ctl.top + 1, sameRow: cr.top < play.bottom && cr.bottom > play.top, centred: Math.abs((play.top + play.bottom) / 2 - (cr.top + cr.bottom) / 2) <= 2, oneRow: br.height < 120, stageH: st.height, vh: innerHeight, dotsGap: cr.left - dots.right, dotW: r(document.querySelector("#dots .dot")).width, dotGap: parseFloat(getComputedStyle(document.getElementById("dots")).columnGap), fsHidden: getComputedStyle(fsb).display === "none", fsBeforeCap: fr.right <= cr.left + 1 && fr.left >= dots.right - 1, hdrOneLine: t.getBoundingClientRect().height < parseFloat(getComputedStyle(t).fontSize) * 1.8, over: document.documentElement.scrollWidth > innerWidth + 1 || (document.documentElement.classList.contains("fs") && b.getBoundingClientRect().bottom > innerHeight + 1) }; };
   const eachCaption = async (t, fn) => { const out = [];
     for (let f = 0; f < 3; f++) {
       await t.click(`.chip[data-k="${f}"]`); await t.waitForTimeout(150);
@@ -307,20 +307,26 @@ try {
       for (let i = 0; i < n; i++) { await t.locator("#dots .dot").nth(i).evaluate((e) => e.click()); await t.waitForFunction((i) => document.getElementById("capT").textContent.startsWith(`${i + 1}.`), i); out.push(await fn(f, i)); }
     }
     return out; };
-  for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
-    const t = await tourPage(false, vp);
-    await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
-    const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
-    assert.strictEqual(ms.length, 23, "23 captions across the three flows");
-    ms.forEach((m, k) => {
-      const w = `${vp.width}x${vp.height} caption ${k}: ${JSON.stringify(m)}`;
-      assert.ok(m.lines <= 2 && !m.clip, "two lines at most, nothing clipped: " + w);
-      assert.ok(m.align === "right" && m.capR <= 2, "caption right edge on the stage's right edge: " + w);
-      assert.ok(m.barL <= 2 && m.barR <= 2 && m.ctlL <= 2, "bar edges on the stage's edges: " + w);
-      assert.ok(m.hdrOneLine && !m.over, "heading on one line, nothing overflowing: " + w);
-      assert.ok(m.capAboveCtl || m.dotsGap >= 32, "at least 32px between the dots and the caption: " + w);
-    });
-    await t.close();
+  for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
+    for (const full of [true, false]) {
+      const t = await tourPage(false, vp);
+      if (full) { await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs")); }
+      const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
+      assert.strictEqual(ms.length, 23, "23 captions across the three flows");
+      const maxLines = full && vp.width >= 1440 ? 2 : 3;
+      ms.forEach((m, k) => {
+        const w = `${vp.width}x${vp.height} ${full ? "full screen" : "inline"} caption ${k}: ${JSON.stringify(m)}`;
+        assert.ok(m.sameRow && m.centred && !m.capAboveCtl && m.oneRow, "caption on the controls row, controls centred on it: " + w);
+        assert.ok(m.lines <= maxLines && !m.clip, `${maxLines} lines at most, nothing clipped: ` + w);
+        assert.ok(m.align === "right" && m.capR <= 2, "caption right edge on the stage's right edge: " + w);
+        assert.ok(m.ctlL <= 2, "controls start at the stage's left edge: " + w);
+        assert.ok(m.hdrOneLine && !m.over, "heading on one line, nothing overflowing: " + w);
+        assert.ok(m.dotsGap >= 24, "at least 24px between the dots and the caption: " + w);
+        if (full) assert.ok(m.fsHidden && m.dotW === 10 && m.dotGap === 4 && m.barL <= 2 && m.barR <= 2, "full screen: bar toggle hidden, compact dots, bar on the stage edges: " + w);
+        else assert.ok(!m.fsHidden && m.fsBeforeCap && m.dotW === 26, "inline: full-screen button after the dots and before the caption, dots unchanged: " + w);
+      });
+      await t.close();
+    }
   }
   { const t = await tourPage(false, { width: 360, height: 740 });
     await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
