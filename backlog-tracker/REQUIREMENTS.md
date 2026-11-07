@@ -4282,3 +4282,29 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
   counts, the first gap, and up to four AWS contacts with email icons.
 - Not done: MCP tools for the company detail (`upsert_prospects` writes the grid
   fields and the AWS account ID only and leaves `prospectCompanies` untouched).
+
+### Prospects (TAM): filters, industry taxonomy and pinned header (7 Nov 2026)
+
+- **Pinned header.** The grid fills the viewport below the console header and
+  is `position: sticky` under it, so the column header and the filter row stay
+  pinned while the page scrolls; the rows scroll inside the grid. Default page
+  size is **50** (selector 25/50/100/250).
+- **One filter pattern for every primary column** (Country, Industry, Priority,
+  Status, AWS region, Size band): a searchable multi-select (`ListFilter` in
+  `prospects-page.js`) with the complete option list, a search box that narrows
+  it, ticks, a Clear button and Escape to close. Styled with the console's
+  tokens (6px radius, 13px, `--primary`). Country lists every country
+  (`COUNTRIES`, plus any odd value already in the data; UK/USA/UAE fold into
+  the list's spelling). A saved filter in the old shapes (`{value}` or a text
+  filter) still loads.
+- **Industry taxonomy** is the nine industries on
+  personalisationhub.com/industries/ (6 Nov 2026), in site order, display name
+  stored, slug the stable key: Fuel & Convenience, Pubs & Hospitality, Telco
+  Retail, Pharmacy, Retail Media, Grocery & Supermarkets, Fashion & Department
+  Stores, Quick Service Restaurants, Banking, plus **Unassigned** (blank) in the
+  filter. `normaliseIndustry` (`prospects-core.js`, copied to
+  `functions/prospects-core.js`) maps older wording to one of the nine and
+  anything that fits none (Electronics, Home improvement, Sports, Beauty…) to
+  blank, never a new industry. It runs on read (`normaliseProspect`), on every
+  write (`prospectFromInput`, so `upsert_prospects`) and on the industry filter
+  of `list_prospects`. Stored legacy values are rewritten when a record is next saved.
