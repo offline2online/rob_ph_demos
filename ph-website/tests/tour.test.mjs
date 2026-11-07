@@ -167,6 +167,18 @@ try {
     assert.deepStrictEqual(await evs(t), ["fullscreen_enter:telco:string:number", "fullscreen_exit:telco:string:number"], "ph_tour events");
     await t.close();
   }
+  // Landscape phones (height <= 520): the stage takes at least 60% of the height, one-row bar of at most 52px, chips row of at most 36px, nothing wraps.
+  for (const vp of [{ width: 740, height: 360 }, { width: 844, height: 390 }, { width: 667, height: 375 }]) {
+    const t = await tourPage(false, vp);
+    await t.click("#fs");
+    await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const m = await t.evaluate(() => { const R = (s) => document.querySelector(s).getBoundingClientRect(), b = R("#box"), bar = R(".bar"), fl = R(".flows"), kids = [...document.querySelector(".bar").children].map((e) => e.getBoundingClientRect()); return { ratio: b.height / innerHeight, aspect: b.width / b.height, centred: Math.abs((b.left + b.right) / 2 - (R("#wrap").left + R("#wrap").right) / 2) < 2, barH: bar.height, flH: fl.height, oneRow: kids.every((k) => Math.abs(k.top + k.height / 2 - (bar.top + bar.height / 2)) < 20), inView: kids.every((k) => k.left >= 0 && k.right <= innerWidth + 1), capDone: getComputedStyle(document.querySelector(".cap b")).textOverflow, sub: getComputedStyle(document.querySelector(".chip small") || document.body).display, brand: R(".top").height }; });
+    assert.ok(m.ratio >= 0.6 && Math.abs(m.aspect - 1280 / 760) < 0.02 && m.centred, "stage >= 60% of the height, aspect kept, centred at " + vp.width + "x" + vp.height + ": " + JSON.stringify(m));
+    assert.ok(m.barH <= 52 && m.oneRow && m.inView && m.capDone === "ellipsis", "control bar is one row of at most 52px with every control in view: " + JSON.stringify(m));
+    assert.ok(m.flH <= 36 && m.sub !== "block", "flow chips row at most 36px, sub-labels hidden: " + JSON.stringify(m));
+    await t.click("#next"); await t.click("#play");
+    await t.close();
+  }
   // Start card link: enters full screen and starts the tour. The end card carries an Exit full screen action in full-screen mode.
   const t = await tourPage(false, { width: 1280, height: 800 });
   await t.click("#fsstart");

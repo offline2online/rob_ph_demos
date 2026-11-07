@@ -606,6 +606,30 @@ html.fs .bar{flex:0 0 auto}
 html.fs .tourbox{flex:1 1 0;min-height:0;container-type:size;display:grid;place-items:center}
 html.fs .stagebox{width:min(100cqw,calc(100cqh * 1280 / 760));box-shadow:none}
 @media (max-height:520px){html.fs .top h2{display:none}html.fs .wrap{gap:6px;padding-top:8px}html.fs .cap span{display:none}}
+/* landscape phones: the stage dominates. One compact row of flow chips with the company field at its end (the brand row is folded in),
+   the stage, then a one-row control bar (prev, play, next, dots, caption filling the rest, full-screen button). */
+@media (max-height:520px){
+html.fs .wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr) auto;gap:6px 10px;padding-top:6px;padding-bottom:max(6px,env(safe-area-inset-bottom,0px))}
+html.fs .top{display:contents}
+html.fs .top>div:first-child{display:none}
+html.fs .prefs{grid-column:2;grid-row:1;flex-wrap:nowrap;gap:6px;align-self:center}
+html.fs .prefs .field{padding:0 4px 0 8px;gap:6px;height:34px;box-sizing:border-box}
+html.fs .prefs .field label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+html.fs .prefs .field input[type=text]{width:96px;font-size:13px}
+html.fs .prefs .field input[type=color]{width:24px;height:24px}
+html.fs .flows{grid-column:1;grid-row:1;min-width:0;max-height:36px;align-items:center;gap:6px;padding:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+html.fs .flows::-webkit-scrollbar{display:none}
+html.fs .chip{padding:4px 12px;font-size:13px;line-height:20px;gap:6px;white-space:nowrap}
+html.fs .chip small{display:none}
+html.fs .tourbox{grid-column:1/-1;grid-row:2}
+html.fs .bar{grid-column:1/-1;grid-row:3;flex-wrap:nowrap;gap:8px 10px;max-height:52px;min-height:0;align-items:center}
+html.fs .bar .ctl{flex:0 0 auto;width:36px;height:36px}
+html.fs .dots{flex:0 0 auto;gap:4px}
+html.fs .dot{width:16px}
+html.fs .cap{flex:1 1 0;min-width:0}
+html.fs .cap b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html.fs .fsbtn{margin-left:0;flex:0 0 auto}
+}
 </style>
 </head>
 <body>
