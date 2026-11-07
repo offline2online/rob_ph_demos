@@ -57,7 +57,10 @@ body{font-family:var(--ui);padding-left:max(16px,env(safe-area-inset-left,0px));
 .dot{all:unset;cursor:pointer;width:26px;height:6px;border-radius:99px;background:var(--line)}
 .dot[aria-current="true"]{background:var(--teal)}
 .dot.done{background:color-mix(in srgb,var(--teal) 45%,var(--line))}
-.cap{flex:1 1 280px;min-width:0}
+.cap{flex:1 1 0;min-width:0;text-align:right}
+@media (min-width:600px){.cap b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+@media (min-width:600px) and (max-width:899px){.dot{width:12px}}
+@media (max-width:599px){.cap{order:5;flex:1 1 280px;text-align:left}.fsbtn{order:6;margin-left:auto}}
 .cap b{display:block;font-family:var(--display);font-size:16px}
 .cap span{color:var(--muted);font-size:14px}
 .fine{font-size:12px;color:var(--muted)}
@@ -590,7 +593,7 @@ body{font-family:var(--display);padding-block:56px 72px}
 #card .ms{font-family:"Material Symbols Rounded"}
 .embed body{padding:0;background:transparent}.embed .top>div:first-child,.embed .proto{display:none}
 /* ---------- full screen (native Fullscreen API, or a full-viewport fallback pinned by the parent page) ---------- */
-.fsbtn{margin-left:auto}.fsbtn .ms,.fsstart .ms,.fsexit .ms,.fsclose .ms{font-family:"Material Symbols Rounded"}
+.fsbtn{margin-left:0}.fsbtn .ms,.fsstart .ms,.fsexit .ms,.fsclose .ms{font-family:"Material Symbols Rounded"}
 .fsclose{display:none}
 html.fs .fsclose{display:inline-flex;align-items:center;justify-content:center;position:fixed;z-index:1000;top:max(12px,env(safe-area-inset-top,0px));right:max(12px,env(safe-area-inset-right,0px));width:40px;height:40px;padding:0;border:0;border-radius:50%;background:rgba(15,20,36,.72);color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent}
 html.fs .fsclose .ms{font-size:24px;line-height:1}.fsclose:hover{background:rgba(44,53,80,.92)}.fsclose:focus-visible{outline:2px solid #7fd3ea;outline-offset:2px}
@@ -647,15 +650,16 @@ html.fs .cap{flex:1 1 0;min-width:0}
 html.fs .cap b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html.fs .fsbtn{margin-left:0;flex:0 0 auto}
 }
-/* full screen: the bar is exactly as wide as the stage (--stage-w, set from #box), controls at its left edge, caption flush right */
-html.fs .bar{width:var(--stage-w,100%);max-width:100%;margin-inline:auto;box-sizing:border-box;padding-block:8px;flex-wrap:wrap;gap:8px 16px;max-height:none}
-html.fs .dots{order:3;flex:0 0 auto;margin-right:16px}
-html.fs .fsbtn{order:4;margin-left:0;flex:0 0 auto}
-html.fs .cap{order:-1;flex:1 1 100%;min-width:0;text-align:right}
+/* full screen: the bar is exactly as wide as the stage (--stage-w, set from #box). One row: controls at its left edge, compact dots, caption filling the rest, right-aligned and flush with the stage's right edge. The bar's own full-screen toggle is hidden (the top-right x and Esc exit). */
+html.fs .bar{width:var(--stage-w,100%);max-width:100%;margin-inline:auto;box-sizing:border-box;padding-block:8px;flex-wrap:nowrap;gap:8px 24px;max-height:none;align-items:center}
+html.fs .dots{flex:0 0 auto;gap:4px}
+html.fs .dot{width:10px}
+html.fs .fsbtn{display:none}
+html.fs .cap{flex:1 1 0;min-width:0;text-align:right}
 html.fs .cap b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
-@media (max-width:599px){html.fs .cap b{white-space:normal}html.fs .dots{order:4;flex:1 1 100%;margin-right:0;gap:4px}html.fs .dot{flex:1 1 0;width:auto;max-width:26px}html.fs .fsbtn{order:3}}
-@media (max-height:520px) and (min-width:600px){html.fs .bar{width:auto;max-width:none;margin-inline:0;flex-wrap:nowrap;padding-block:0;gap:8px 10px}html.fs .cap{order:5;flex:1 1 0;text-align:right}html.fs .cap span{display:none}html.fs .cap b{font-size:13px}}
+@media (max-width:599px){html.fs .bar{flex-wrap:wrap;gap:8px 16px}html.fs .cap{order:-1;flex:1 1 100%}html.fs .cap b{white-space:normal}html.fs .dots{order:4;flex:1 1 100%;margin-right:0;gap:4px}html.fs .dot{flex:1 1 0;width:auto;max-width:26px}html.fs .fsbtn{display:inline-flex;order:3;margin-left:0;flex:0 0 auto}}
+@media (max-height:520px) and (min-width:600px){html.fs .bar{width:auto;max-width:none;margin-inline:0;flex-wrap:nowrap;padding-block:0;gap:8px 10px}html.fs .dot{width:16px}html.fs .cap{order:5;flex:1 1 0;text-align:right}html.fs .cap span{display:none}html.fs .cap b{font-size:13px}}
 </style>
 </head>
 <body>
@@ -684,8 +688,8 @@ html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
     <button class="ctl main" id="play" type="button" aria-label="Pause"><span class="ms">pause</span></button>
     <button class="ctl" id="next" type="button" aria-label="Next step"><span class="ms">skip_next</span></button>
     <div class="dots" id="dots" role="tablist" aria-label="Steps"></div>
-    <div class="cap" aria-live="polite"><b id="capT">Ready when you are</b><span id="capS">Press Start the tour, or pick a step.</span></div>
     <button class="ctl fsbtn" id="fs" type="button" aria-label="Full screen" aria-pressed="false"><span class="ms">fullscreen</span></button>
+    <div class="cap" aria-live="polite"><b id="capT">Ready when you are</b><span id="capS">Press Start the tour, or pick a step.</span></div>
   </div>
   <div class="fine">Example company, stores and figures are illustrative. Screens recreate Personalisation Hub HQ Admin.</div>
 </div>
