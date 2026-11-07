@@ -588,6 +588,24 @@ body{font-family:var(--display);padding-block:56px 72px}
 #card .ghost{border:1px solid var(--ph-line);color:var(--ph-navy);background:#fff}
 #card .ms{font-family:"Material Symbols Rounded"}
 .embed body{padding:0;background:transparent}.embed .top>div:first-child,.embed .proto{display:none}
+/* ---------- full screen (native Fullscreen API, or a full-viewport fallback pinned by the parent page) ---------- */
+.fsbtn{margin-left:auto}.fsbtn .ms,.fsstart .ms,.fsexit .ms{font-family:"Material Symbols Rounded"}
+#card .fsonly{display:none}
+html.fs #card .fsonly{display:inline-flex}
+#card .fslink{height:auto;padding:6px 4px;border:0;background:none;color:#0F7A9A;font-size:14px;text-decoration:underline;text-underline-offset:3px}
+html.fs #card .fslink{display:none}
+:root.fs{--bg:#0F1424;--panel:#192033;--fg:#e7edf2;--muted:#a3acc0;--line:#2c3550;--chip:#16303a;color-scheme:dark}
+html.fs,html.fs body{background:#0F1424;overflow:hidden;height:100%}
+html.fs body{padding:0}
+html.fs .wrap{position:fixed;inset:0;z-index:100;max-width:none;margin:0;box-sizing:border-box;height:100vh;height:100dvh;gap:10px;padding:12px max(16px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));background:#0F1424;color:var(--fg);overflow:hidden}
+html.fs .top p,html.fs .mark,html.fs .fine,html.fs .proto{display:none}
+html.fs .top{align-items:center;flex:0 0 auto}
+html.fs .top h2{font-size:clamp(16px,2.2vw,22px)}
+html.fs .flows{flex:0 0 auto}
+html.fs .bar{flex:0 0 auto}
+html.fs .tourbox{flex:1 1 0;min-height:0;container-type:size;display:grid;place-items:center}
+html.fs .stagebox{width:min(100cqw,calc(100cqh * 1280 / 760));box-shadow:none}
+@media (max-height:520px){html.fs .top h2{display:none}html.fs .wrap{gap:6px;padding-top:8px}html.fs .cap span{display:none}}
 </style>
 </head>
 <body>
@@ -616,6 +634,7 @@ body{font-family:var(--display);padding-block:56px 72px}
     <button class="ctl" id="next" type="button" aria-label="Next step"><span class="ms">skip_next</span></button>
     <div class="dots" id="dots" role="tablist" aria-label="Steps"></div>
     <div class="cap" aria-live="polite"><b id="capT">Ready when you are</b><span id="capS">Press Start the tour, or pick a step.</span></div>
+    <button class="ctl fsbtn" id="fs" type="button" aria-label="Full screen" aria-pressed="false"><span class="ms">fullscreen</span></button>
   </div>
   <div class="fine">Example company, stores and figures are illustrative. Screens recreate Personalisation Hub HQ Admin.</div>
 </div>
@@ -1501,18 +1520,20 @@ function showEnd() {
   const [eb, h, p, stats, next] = FD().end(), nf = FLOWS[next];
   card.innerHTML = `<div class="in2"><div class="eyebrow">${eb}</div><h2>${h}</h2><p>${esc(p)}</p>
     <div class="stats">${stats.map(x=>`<div><b>${x[0]}</b>${x[1]}</div>`).join("")}</div>
-    <div class="acts"><a class="go" href="${AWS_URL}" target="_blank" rel="noopener" id="aws">Try Free with AWS</a><button type="button" class="ghost" id="demo">Arrange a Demo</button><button type="button" class="ghost" id="again"><span class="ms">replay</span>Replay</button>${FOCUS ? "" : `<button type="button" class="ghost" id="nextflow">Next: ${nf[0]}</button>`}</div></div>`;
+    <div class="acts"><a class="go" href="${AWS_URL}" target="_blank" rel="noopener" id="aws">Try Free with AWS</a><button type="button" class="ghost" id="demo">Arrange a Demo</button><button type="button" class="ghost" id="again"><span class="ms">replay</span>Replay</button><button type="button" class="ghost fsonly" id="fsexit"><span class="ms">fullscreen_exit</span>Exit full screen</button>${FOCUS ? "" : `<button type="button" class="ghost" id="nextflow">Next: ${nf[0]}</button>`}</div></div>`;
   card.hidden = false; marks(); tourEvent("complete");
   card.querySelector("#aws").onclick = () => tourEvent("cta", { cta: "Try Free with AWS" });
   card.querySelector("#demo").onclick = e => { tourEvent("cta", { cta: "Arrange a Demo" }); const cf = PCFG(); if (cf.arrangeDemo) cf.arrangeDemo(); else e.currentTarget.textContent = "Opens demo booking on the website"; };
   card.querySelector("#again").onclick = () => go(0);
+  card.querySelector("#fsexit").onclick = () => fsExit();
   const nb = card.querySelector("#nextflow"); if (nb) nb.onclick = () => { if (nf[1]) { setFlow(next); S.paused = false; go(0); } else nb.textContent = "Coming in the next build"; };
 }
 function startCard() {
   const [h, p] = FD().start();
   card.innerHTML = `<div class="in2"><div class="eyebrow">${S.welcome ? `Welcome, ${esc(S.welcome)} · ` : ""}Flow ${S.flow+1} · ${ST().length} steps · about 2 minutes</div><h2>${h}</h2><p>${esc(p)}</p>
-    <div class="acts"><button type="button" class="go" id="start"><span class="ms">play_arrow</span>Start the tour</button></div></div>`;
+    <div class="acts"><button type="button" class="go" id="start"><span class="ms">play_arrow</span>Start the tour</button><button type="button" class="fslink" id="fsstart"><span class="ms">fullscreen</span>Watch full screen</button></div></div>`;
   card.hidden = false; card.querySelector("#start").onclick = () => { S.paused = false; go(0); };
+  card.querySelector("#fsstart").onclick = () => { fsEnter(); S.paused = false; go(0); };
 }
 function setFlow(k) {
   S.flow = k; RUN++; S.step = -1; resetScroll = true; hideTip(); S.bright = k >= 1;
@@ -1549,10 +1570,49 @@ const IN_FRAME = window.parent !== window;
 const PCFG = () => { try { return window.PH_TOUR || (IN_FRAME && window.parent.PH_TOUR) || {}; } catch (e) { return window.PH_TOUR || {}; } };
 const DL = () => { try { if (IN_FRAME && window.parent.dataLayer) return window.parent.dataLayer; } catch (e) {} return (window.dataLayer = window.dataLayer || []); };
 if (/[?&]embed=1/.test(location.search)) document.documentElement.classList.add("embed");
-if (IN_FRAME) { try { const w = document.getElementById("wrap"); new ResizeObserver(() => { try { window.parent.postMessage({ type: "ph-tour-height", h: Math.ceil(w.getBoundingClientRect().bottom + window.scrollY + 8) }, location.origin); } catch (e) {} }).observe(w); } catch (e) {} }
+if (IN_FRAME) { try { const w = document.getElementById("wrap"); new ResizeObserver(() => { if (FSON) return; try { window.parent.postMessage({ type: "ph-tour-height", h: Math.ceil(w.getBoundingClientRect().bottom + window.scrollY + 8) }, location.origin); } catch (e) {} }).observe(w); } catch (e) {} }
 let LOCKED = false, TSEL = FOCUS ? FOCUSMAP[location.hash] : 0, GMODE = "pick";
 S.welcome = "";
 function tourEvent(action, extra) { try { DL().push(Object.assign({ event: "ph_tour", action, industry: "telco", flow: (FLOWS[S.flow] || [])[0], step: S.step + 1 }, extra || {})); } catch (e) {} }
+/* ---- full screen. Native Fullscreen API on this document; where it is missing (iPhone Safari) a full-viewport fallback: the page pins this iframe on {type:"ph-tour-fullscreen", on}. ---- */
+const fsBtn = document.getElementById("fs"), ROOT = document.documentElement;
+let FSON = false, FSMODE = "";
+function fsPost(on) { if (IN_FRAME) { try { window.parent.postMessage({ type: "ph-tour-fullscreen", on }, location.origin); } catch (e) {} } }
+function fsApply(on, mode) {
+  if (on === FSON) return;
+  FSON = on; FSMODE = on ? mode : ""; ROOT.classList.toggle("fs", on);
+  fsBtn.setAttribute("aria-pressed", on ? "true" : "false"); fsBtn.setAttribute("aria-label", on ? "Exit full screen" : "Full screen");
+  fsBtn.querySelector(".ms").textContent = on ? "fullscreen_exit" : "fullscreen";
+  tourEvent(on ? "fullscreen_enter" : "fullscreen_exit");
+  if (on && mode === "fallback") fsPost(true);
+  if (!on && mode === "fallback") fsPost(false);
+  try { fsBtn.focus({ preventScroll: true }); } catch (e) {}
+  if (!on) { try { window.scrollTo(0, 0); } catch (e) {} }
+}
+function fsEnter() {
+  if (FSON || LOCKED) return;
+  const de = ROOT, api = document.fullscreenEnabled && de.requestFullscreen;
+  if (!api) { fsApply(true, "fallback"); return; }
+  let p; try { p = de.requestFullscreen(); } catch (e) { p = Promise.reject(e); }
+  if (p && p.then) p.then(() => fsApply(true, "api"), () => fsApply(true, "fallback")); else fsApply(true, "api");
+}
+function fsExit() {
+  if (!FSON) return;
+  if (FSMODE === "api" && document.fullscreenElement) { try { const p = document.exitFullscreen(); if (p && p.catch) p.catch(() => fsApply(false, "api")); } catch (e) { fsApply(false, "api"); } return; }
+  fsApply(false, FSMODE || "fallback");
+}
+fsBtn.onclick = () => (FSON ? fsExit() : fsEnter());
+document.addEventListener("fullscreenchange", () => { if (document.fullscreenElement) fsApply(true, "api"); else if (FSON && FSMODE === "api") fsApply(false, "api"); });
+document.addEventListener("keydown", e => {
+  if (!FSON) return;
+  if (e.key === "Escape") { e.preventDefault(); fsExit(); return; }
+  if (e.key !== "Tab") return;
+  const f = [...document.getElementById("wrap").querySelectorAll("button,a[href],input,select,textarea,[tabindex]")].filter(x => !x.disabled && x.tabIndex >= 0 && x.getClientRects().length && !x.closest("[hidden]"));
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1], a = document.activeElement;
+  if (e.shiftKey && (a === first || !document.getElementById("wrap").contains(a))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (a === last || !document.getElementById("wrap").contains(a))) { e.preventDefault(); first.focus(); }
+});
 function readLead() { try { const l = JSON.parse(localStorage.getItem(LEAD_KEY) || "null"); return l && l.email ? l : null; } catch (e) { return null; } }
 function saveLead(l) { try { localStorage.setItem(LEAD_KEY, JSON.stringify(l)); } catch (e) {} }
 function sendLead(l) {
@@ -1594,7 +1654,7 @@ function renderGate() {
     saveLead(lead); sendLead(lead); unlock(lead, true); };
 }
 function lock() {
-  LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = D().brand;
+  fsExit(); LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = D().brand;
   document.getElementById("h1").textContent = "See Personalisation Hub run a telco campaign, end to end";
   document.getElementById("sub").textContent = "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
   renderGate(); teaseLoop();

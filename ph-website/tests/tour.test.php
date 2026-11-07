@@ -44,7 +44,7 @@ $serve = function ( $mode ) {
 };
 $src_php = (string) file_get_contents( $dir . '/tour.php' );
 ok( false !== strpos( $src_php, "'" . $sha . "'" ), 'TOUR_TELCO_SHA256 equals the sha256 of tour/telco.html' );
-ok( 1 === preg_match( '#raw\.githubusercontent\.com/offline2online/rob_ph_demos/[0-9a-f]{40}/ph-website/snippets/ph-industry-enhancements/tour/telco\.html#', $src_php ), 'fetch URL is pinned to a commit' );
+ok( 1 === preg_match( '#raw\.githubusercontent\.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/telco\.html#', $src_php ), 'fetch URL follows main (the sha256 is the pin)' );
 list( $html, $j, $aux ) = $serve( 'ok' );
 ok( 200 === $j['status'] && hash( 'sha256', $html ) === $sha, 'absent file, correct fetch: served byte for byte' );
 ok( 1 === $aux['http'] && $sha === $aux['stored'] && false === $aux['autoload'] && 10 === $aux['timeout'], 'fetched once, stored with autoload off, 10s timeout' );
@@ -58,7 +58,21 @@ foreach ( array( 'bad' => 'wrong bytes', '404' => '404' ) as $m => $label ) {
 	$h = implode( "\n", $j['hdr'] );
 	ok( 503 === $j['status'] && false !== strpos( $h, 'Cache-Control: no-store' ) && false !== strpos( $h, 'Retry-After: 60' ) && false !== strpos( $h, 'X-Robots-Tag: noindex' ), "$label: 503 with no-store, Retry-After, noindex" );
 	ok( null === $aux['stored'] && 1 === count( $aux['logs'] ) && false !== strpos( $html, 'The product tour is unavailable right now. Please try again shortly.' ), "$label: nothing stored, reason logged, tiny page" );
+	ok( 1 === $aux['backoff'] && 300 === $aux['ttl'], "$label: a 5-minute back-off is set" );
 }
+/* failed or mismatched fetch with an older intact copy cached: serve it with 200, log it, back off */
+$older = '<!doctype html><title>older tour</title>';
+foreach ( array( 'old404' => '404', 'oldbad' => 'mismatch' ) as $m => $label ) {
+	list( $html, $j, $aux ) = $serve( $m );
+	$h = implode( "\n", $j['hdr'] );
+	ok( 200 === $j['status'] && $older === $html && false !== strpos( $h, 'Cache-Control: public, max-age=3600' ), "$label with an older copy cached: the cached copy is served with 200" );
+	ok( 1 === $aux['http'] && 1 === count( $aux['logs'] ) && false !== strpos( $aux['logs'][0], 'serving the cached copy' ) && 1 === $aux['backoff'] && 300 === $aux['ttl'] && hash( 'sha256', $older ) === $aux['stored'], "$label: logged, backed off for 5 minutes, the cached copy is kept" );
+}
+/* inside the back-off window: no fetch at all */
+list( $html, $j, $aux ) = $serve( 'oldbackoff' );
+ok( 200 === $j['status'] && $older === $html && 0 === $aux['http'] && 1 === count( $aux['logs'] ), 'back-off with an older copy cached: served, no HTTP call, logged' );
+list( $html, $j, $aux ) = $serve( 'backoff' );
+ok( 503 === $j['status'] && 0 === $aux['http'] && null === $aux['stored'], 'back-off with nothing cached: 503, no HTTP call' );
 
 foreach ( array( array( '/industries/telco/', 'GET' ), array( '/industries/telco/tour/x', 'GET' ), array( '/industries/telco/tour/', 'POST' ) ) as $c ) {
 	$out = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' ' . escapeshellarg( $c[0] ) . ' ' . $c[1] );
