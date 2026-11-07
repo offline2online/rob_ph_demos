@@ -155,10 +155,12 @@ try {
     const t = await tourPage(false, vp);
     assert.strictEqual(await t.getAttribute("#fs", "aria-label"), "Full screen");
     assert.strictEqual(await t.getAttribute("#fs", "aria-pressed"), "false");
+    const capInline = await t.evaluate(() => { const g = (q) => parseFloat(getComputedStyle(document.querySelector(q)).fontSize), R = (q) => document.querySelector(q).getBoundingClientRect(), bar = getComputedStyle(document.querySelector(".bar")); return { b: g(".cap b"), s: g(".cap span"), col: bar.columnGap, row: bar.rowGap, sg: R("#capS").top - R("#capT").bottom }; });
+    assert.ok(capInline.b === 14.5 && capInline.s === 12 && capInline.col === "24px" && capInline.row === "12px" && capInline.sg >= 2 && capInline.sg <= 5, "caption 14.5px/12px with 24px spacing at " + vp.width + "x" + vp.height + ": " + JSON.stringify(capInline));
     await t.click("#fs");
     await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
     const st = await t.evaluate(() => { const b = box.getBoundingClientRect(), r = document.querySelector(".bar").getBoundingClientRect(); return { native: !!document.fullscreenElement, label: fs.getAttribute("aria-label"), pressed: fs.getAttribute("aria-pressed"), icon: fs.textContent, focus: document.activeElement.id, ratio: b.width / b.height, barIn: r.bottom <= innerHeight + 1 && r.top >= 0, boxIn: b.right <= innerWidth + 1 && b.bottom <= innerHeight, noHScroll: document.documentElement.scrollWidth <= innerWidth, bg: getComputedStyle(document.documentElement).backgroundColor }; });
-    assert.ok(st.native && st.label === "Exit full screen" && st.pressed === "true" && st.icon === "fullscreen_exit" && st.focus === "fs", "entered: " + JSON.stringify(st));
+    assert.ok(st.native && st.label === "Exit full screen" && st.pressed === "true" && st.icon === "fullscreen_exit" && st.focus === "fsclose", "entered, focus on the close button: " + JSON.stringify(st));
     assert.ok(Math.abs(st.ratio - 1280 / 760) < 0.02 && st.barIn && st.boxIn && st.noHScroll && st.bg === "rgb(15, 20, 36)", "stage letterboxed, controls reachable, dark backdrop at " + vp.width + "x" + vp.height + ": " + JSON.stringify(st));
     await t.click("#play"); // controls keep working
     await t.keyboard.press("Escape");
@@ -178,6 +180,42 @@ try {
     assert.ok(m.flH <= 36 && m.sub !== "block", "flow chips row at most 36px, sub-labels hidden: " + JSON.stringify(m));
     await t.click("#next"); await t.click("#play");
     await t.close();
+  }
+  // Close button (top right, full screen only): hidden inline, in the corner, clear of the chips, brand field and heading, and it exits.
+  for (const vp of [{ width: 1280, height: 800 }, { width: 740, height: 360 }, { width: 360, height: 740 }]) {
+    const t = await tourPage(false, vp);
+    assert.ok(await t.evaluate(() => getComputedStyle(document.getElementById("fsclose")).display === "none"), "close button hidden outside full screen");
+    await t.click("#fs");
+    await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const c = await t.evaluate(() => {
+      const b = document.getElementById("fsclose"), r = b.getBoundingClientRect(), hit = (e) => { let q = e.getBoundingClientRect(); const fl = e.closest(".flows"); if (fl) { const f = fl.getBoundingClientRect(); q = { left: Math.max(q.left, f.left), right: Math.min(q.right, f.right), top: q.top, bottom: q.bottom }; } return !(q.right <= r.left || q.left >= r.right || q.bottom <= r.top || q.top >= r.bottom); };
+      const others = [...document.querySelectorAll(".chip, .prefs .field, .top h2, #prev, #next, #play, .bar .ctl, #fs")].filter((e) => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden");
+      return { top: r.top, right: innerWidth - r.right, w: r.width, h: r.height, label: b.getAttribute("aria-label"), icon: b.textContent, focus: document.activeElement.id, overlaps: others.filter(hit).map((e) => e.id || e.className), onTop: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b || b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)) };
+    });
+    assert.ok(c.top >= 0 && c.top <= 16 && c.right >= 0 && c.right <= 16 && c.w === 40 && c.h === 40 && c.label === "Exit full screen" && c.icon === "close" && c.focus === "fsclose" && c.onTop, `close button top right at ${vp.width}x${vp.height}: ${JSON.stringify(c)}`);
+    assert.deepStrictEqual(c.overlaps, [], `close button overlaps nothing at ${vp.width}x${vp.height}`);
+    await t.keyboard.press("Tab"); await t.keyboard.press("Shift+Tab");
+    assert.strictEqual(await t.evaluate(() => document.getElementById("wrap").contains(document.activeElement)), true, "tabbing stays inside the tour");
+    await t.click("#fsclose");
+    await t.waitForFunction(() => !document.documentElement.classList.contains("fs"));
+    assert.ok(await t.evaluate(() => !document.fullscreenElement && document.activeElement.id === "fs"), "the close button exits; focus returns to the bar button");
+    assert.deepStrictEqual(await evs(t), ["fullscreen_enter:telco:string:number", "fullscreen_exit:telco:string:number"], "same events as the bar button");
+    await t.close();
+  }
+  // Apple touch devices (iPhone, iPad, iPadOS as Macintosh): the in-page fallback, never the native API (its system X sits top left).
+  for (const [ua, touch] of [["Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", 5], ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", 5], ["Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", 5]]) {
+    const ctx = await browser.newContext({ userAgent: ua, viewport: { width: 1024, height: 768 } });
+    const t = await ctx.newPage();
+    await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: tourHtml }) : r.abort());
+    await t.addInitScript((n) => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })); Object.defineProperty(Navigator.prototype, "maxTouchPoints", { get: () => n }); }, touch);
+    await t.goto("http://x.test/industries/telco/tour/?embed=1");
+    await t.waitForSelector("#fs", { state: "visible" });
+    await t.click("#fs");
+    await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    assert.ok(await t.evaluate(() => !document.fullscreenElement && document.activeElement.id === "fsclose"), "Apple touch UA uses the fallback, not native full screen: " + ua.slice(0, 40));
+    await t.click("#fsclose");
+    await t.waitForFunction(() => !document.documentElement.classList.contains("fs"));
+    await ctx.close();
   }
   // Start card link: enters full screen and starts the tour. The end card carries an Exit full screen action in full-screen mode.
   const t = await tourPage(false, { width: 1280, height: 800 });
@@ -210,6 +248,25 @@ try {
     if (fsMode) { await et.evaluate(() => { __t.setFlow(1); __t.showEnd(); }); await et.click("#fsexit"); await et.waitForFunction(() => !document.documentElement.classList.contains("fs")); }
     await et.close();
   }
+  // End card layout: Next spans the card, Replay bottom left, Exit full screen bottom right, spaced, nothing overflowing.
+  for (const vp of [{ width: 1280, height: 800 }, { width: 740, height: 360 }, { width: 360, height: 740 }]) for (const fsMode of [false, true]) {
+    const lt = await tourPage(false, vp, hooked);
+    if (fsMode) { await lt.click("#fs"); await lt.waitForFunction(() => document.documentElement.classList.contains("fs")); }
+    await lt.evaluate(() => { __t.setFlow(0); __t.showEnd(); });
+    await lt.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => 0))));
+    await lt.waitForTimeout(100);
+    const g = await lt.evaluate(() => { const $ = (i) => document.getElementById(i), r = (e) => e.getBoundingClientRect(), c = r(document.querySelector("#card .in2")), cs = getComputedStyle(document.querySelector("#card .in2")), k = c.width / document.querySelector("#card .in2").offsetWidth, L = c.left + k * parseFloat(cs.paddingLeft), R = c.right - k * parseFloat(cs.paddingRight), n = r($("nextflow")), a = r($("again")), x = $("fsexit"), xr = r(x), vis = getComputedStyle(x).display !== "none", sec = r(document.querySelector("#card .sec")), st = r(document.querySelector("#card .stage, .stagebox") || document.body);
+      return { nW: n.width / (R - L), aL: a.left - L, xR: vis ? R - xr.right : 0, vis, gap: (sec.top - n.bottom) / k, aBelow: a.top >= n.bottom, inCard: c.left >= 0 && c.right <= innerWidth + 0.5 && c.top >= -0.5 && c.bottom <= innerHeight + 0.5, ov: document.querySelector("#card .in2").scrollWidth <= document.querySelector("#card .in2").offsetWidth, fits: c.top >= r(document.getElementById("card")).top - 0.5 && c.bottom <= r(document.getElementById("card")).bottom + 0.5 && c.left >= r(document.getElementById("card")).left - 0.5 && c.right <= r(document.getElementById("card")).right + 0.5, cardTop: c.top, cardBottom: c.bottom, vh: innerHeight }; });
+    const w = `${vp.width}x${vp.height}${fsMode ? " fs" : ""}: ${JSON.stringify(g)}`;
+    assert.ok(g.nW >= 0.95, "Next spans the card " + w);
+    assert.ok(Math.abs(g.aL) <= 2, "Replay flush left " + w);
+    if (g.vis) assert.ok(Math.abs(g.xR) <= 2, "Exit full screen flush right " + w);
+    assert.ok(g.vis === fsMode, "Exit shown only in full screen " + w);
+    assert.ok(g.gap >= 20 && g.aBelow, "gap Next to secondary row >= 20px " + w);
+    assert.ok(g.fits, "card fits its stage " + w);
+    assert.ok(g.ov, "nothing overflows the card " + w);
+    await lt.close();
+  }
   { // single-flow focus mode: no Next, Replay is the only action and has focus
     const ft = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await ft.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort());
@@ -236,5 +293,42 @@ try {
   await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position === "fixed");
   await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position !== "fixed");
   await fp.close();
+  // Full-screen caption (step caption right-aligned to the stage edge, two lines at most): every step of all three flows.
+  const capMetrics = () => { const r = (e) => e.getBoundingClientRect(), b = document.querySelector(".bar"), c = document.querySelector(".cap"), t = document.getElementById("capT"), d = document.getElementById("capS"), st = r(document.getElementById("box")), br = r(b), cr = r(c), ctl = r(document.getElementById("prev")), dots = r(document.getElementById("dots"));
+    const lh = parseFloat(getComputedStyle(d).lineHeight), dh = d.getBoundingClientRect().height, vis = getComputedStyle(d).display !== "none";
+    return { lines: vis ? Math.round(dh / lh) : 0, clipV: [b, c, t, d].some((e) => e.scrollHeight > e.clientHeight + 1), clip: [b, c, t, d].some((e) => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1), align: getComputedStyle(c).textAlign, capR: Math.abs(cr.right - st.right), barL: Math.abs(br.left - st.left), barR: Math.abs(br.right - st.right), ctlL: Math.abs(ctl.left - st.left), capAboveCtl: cr.bottom <= ctl.top + 1, oneRow: br.height < 80, stageH: st.height, vh: innerHeight, dotsGap: cr.left - dots.right, hdrOneLine: t.getBoundingClientRect().height < parseFloat(getComputedStyle(t).fontSize) * 1.8, over: document.documentElement.scrollWidth > innerWidth + 1 || b.getBoundingClientRect().bottom > innerHeight + 1 }; };
+  const eachCaption = async (t, fn) => { const out = [];
+    for (let f = 0; f < 3; f++) {
+      await t.click(`.chip[data-k="${f}"]`); await t.waitForTimeout(150);
+      if ((await t.getAttribute("#play", "aria-label")) === "Pause") await t.click("#play");
+      const n = await t.locator("#dots .dot").count();
+      for (let i = 0; i < n; i++) { await t.locator("#dots .dot").nth(i).evaluate((e) => e.click()); await t.waitForFunction((i) => document.getElementById("capT").textContent.startsWith(`${i + 1}.`), i); out.push(await fn(f, i)); }
+    }
+    return out; };
+  for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    const t = await tourPage(false, vp);
+    await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
+    assert.strictEqual(ms.length, 23, "23 captions across the three flows");
+    ms.forEach((m, k) => {
+      const w = `${vp.width}x${vp.height} caption ${k}: ${JSON.stringify(m)}`;
+      assert.ok(m.lines <= 2 && !m.clip, "two lines at most, nothing clipped: " + w);
+      assert.ok(m.align === "right" && m.capR <= 2, "caption right edge on the stage's right edge: " + w);
+      assert.ok(m.barL <= 2 && m.barR <= 2 && m.ctlL <= 2, "bar edges on the stage's edges: " + w);
+      assert.ok(m.hdrOneLine && !m.over, "heading on one line, nothing overflowing: " + w);
+      assert.ok(m.capAboveCtl || m.dotsGap >= 32, "at least 32px between the dots and the caption: " + w);
+    });
+    await t.close();
+  }
+  { const t = await tourPage(false, { width: 360, height: 740 });
+    await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
+    ms.forEach((m, k) => assert.ok(m.capAboveCtl && !m.clip && !m.over && m.align === "right", `360x740 caption ${k}: ${JSON.stringify(m)}`));
+    await t.click("#fsclose"); await t.waitForFunction(() => !document.documentElement.classList.contains("fs")); await t.close(); }
+  { const t = await tourPage(false, { width: 740, height: 360 });
+    await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
+    ms.forEach((m, k) => assert.ok(m.oneRow && !m.clipV && !m.over && m.stageH >= m.vh * 0.6 && m.align === "right" && m.capR <= 2, `740x360 caption ${k}: ${JSON.stringify(m)}`));
+    await t.keyboard.press("Escape"); await t.waitForFunction(() => !document.documentElement.classList.contains("fs")); await t.close(); }
   console.log("tour js: all passed");
 } finally { await browser.close(); }
