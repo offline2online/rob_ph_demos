@@ -3,7 +3,7 @@
  * Telco interactive product tour.
  *
  * - GET /industries/telco/tour/ (with or without the trailing slash): the tour page, served same-origin so the industry page can frame it
- *   (`?embed=1`). The HTML is tour-telco.php, generated from tour/telco.html by tools/build-tour.mjs. Answered at template_redirect
+ *   (`?embed=1`). The HTML is tour-telco.php (generated from tour/telco.html by tools/build-tour.mjs) when deployed; otherwise a sha256-pinned copy, see tour_page(). Answered at template_redirect
  *   priority 0 so redirect_canonical never sees it.
  * - POST ph-site/v1/tour-lead: the tour's gate form. Shaped like telco-model: honeypot, throttle, private ph_lead post, `ph_lead_captured`.
  *   No nonce: the page is edge-cached, so a stale wp_rest nonce would 403 anonymous callers (PH_TOUR.nonce is "").
@@ -18,6 +18,42 @@ const TOUR_PATH         = '/industries/telco/tour';
 const TOUR_SOURCE       = 'interactive-product-tour';
 const TOUR_SOURCE_LABEL = 'Interactive product tour – Telco';
 const TOUR_FLOWS        = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation' );
+
+/**
+ * Pinned copy of the tour page, used when tour-telco.php is not deployed (it is 196 KB, too big for the deploy MCP's inline file
+ * writes). To update the tour, change the commit in TOUR_TELCO_URL and TOUR_TELCO_SHA256 together; a changed sha refetches.
+ */
+const TOUR_TELCO_OPTION = 'ph_tour_telco_html';
+const TOUR_TELCO_SHA256 = '6a09836e840938df9e66f9e2ec245b99dabb7f0acf3bfc404416393135c4ff02';
+const TOUR_TELCO_URL    = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/4a2392f09c9b563b19c8fd0fecf832c154d18021/ph-website/snippets/ph-industry-enhancements/tour/telco.html';
+
+/**
+ * The tour page HTML. Returns array( html|null, reason ). Order: tour-telco.php next to this file, then the cached option when its
+ * sha matches TOUR_TELCO_SHA256, then the pinned URL (accepted only on a 200 whose sha256 matches; only then stored).
+ */
+function tour_page() {
+	if ( file_exists( __DIR__ . '/tour-telco.php' ) ) {
+		return array( data( 'tour-telco.php' ), '' );
+	}
+	$cached = get_option( TOUR_TELCO_OPTION );
+	if ( is_array( $cached ) && isset( $cached['sha'], $cached['html'] ) && is_string( $cached['html'] ) && TOUR_TELCO_SHA256 === $cached['sha'] && hash( 'sha256', $cached['html'] ) === TOUR_TELCO_SHA256 ) {
+		return array( $cached['html'], '' );
+	}
+	$res = wp_remote_get( TOUR_TELCO_URL, array( 'timeout' => 10 ) );
+	if ( is_wp_error( $res ) ) {
+		return array( null, 'fetch failed: ' . $res->get_error_message() );
+	}
+	$code = (int) wp_remote_retrieve_response_code( $res );
+	if ( 200 !== $code ) {
+		return array( null, "fetch answered $code" );
+	}
+	$body = (string) wp_remote_retrieve_body( $res );
+	if ( hash( 'sha256', $body ) !== TOUR_TELCO_SHA256 ) {
+		return array( null, 'fetched copy does not match TOUR_TELCO_SHA256' );
+	}
+	update_option( TOUR_TELCO_OPTION, array( 'sha' => TOUR_TELCO_SHA256, 'html' => $body ), false );
+	return array( $body, '' );
+}
 
 /** Same list as FREE_MAIL in tour/telco.html. */
 function tour_free_mail( $email ) {
@@ -95,13 +131,24 @@ add_action( 'template_redirect', function () {
 	if ( 'GET' !== $method || ! tour_is_request( wp_parse_url( $uri, PHP_URL_PATH ) ) ) {
 		return;
 	}
+	list( $html, $why ) = tour_page();
+	if ( null === $html ) {
+		error_log( 'ph tour: ' . $why );
+		status_header( 503 );
+		header( 'Content-Type: text/html; charset=utf-8' );
+		header( 'X-Robots-Tag: noindex' );
+		header( 'Cache-Control: no-store' );
+		header( 'Retry-After: 60' );
+		echo '<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><title>Product tour unavailable</title><p>The product tour is unavailable right now. Please try again shortly.</p>';
+		exit;
+	}
 	status_header( 200 );
 	header( 'Content-Type: text/html; charset=utf-8' );
 	header( 'X-Robots-Tag: noindex' );
 	header( 'X-Frame-Options: SAMEORIGIN' );
 	header( "Content-Security-Policy: frame-ancestors 'self'" );
 	header( 'Cache-Control: public, max-age=3600' );
-	echo data( 'tour-telco.php' ); // phpcs:ignore WordPress.Security.EscapeOutput -- a fixed, generated page.
+	echo $html; // phpcs:ignore WordPress.Security.EscapeOutput -- a fixed page, sha256-pinned when fetched.
 	exit;
 }, 0 );
 
