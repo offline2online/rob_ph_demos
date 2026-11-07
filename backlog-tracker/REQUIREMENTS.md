@@ -4285,9 +4285,12 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
 
 ### Prospects (TAM): filters, industry taxonomy and pinned header (7 Nov 2026)
 
-- **Pinned header.** The grid fills the viewport below the console header and
-  is `position: sticky` under it, so the column header and the filter row stay
-  pinned while the page scrolls; the rows scroll inside the grid. Default page
+- **Pinned header.** The page is one viewport tall below the console header
+  (a flex column: title, tools, grid) and the grid takes the space left, so the
+  document never scrolls the column header and filter row under the console
+  header at any scroll position (`position: sticky` could not hold a grid that
+  was the page's last block); the rows scroll inside the grid and pagination
+  stays in view. Checked at five widths in `test/ui/console-click.test.mjs`. Default page
   size is **50** (selector 25/50/100/250).
 - **One filter pattern for every primary column** (Country, Industry, Priority,
   Status, AWS region, Size band): a searchable multi-select (`ListFilter` in
