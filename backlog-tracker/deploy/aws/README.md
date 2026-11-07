@@ -28,8 +28,12 @@ Cloud Function --Google OIDC ID token--> STS AssumeRoleWithWebIdentity --15 min 
 
 ## To verify on the first real Sandbox call
 
-The AWS service target prefixes / signing names (`AWSPartnerCentralSelling`,
-`AWSPartnerCentralBenefits`, `partnercentral-benefits`) and the managed policy name are written
-from AWS's published service models but could not be exercised from the build sandbox (no AWS
-access). They are constants in `SERVICES` / this template; correct them if the first call says
-otherwise.
+Endpoints are the documented `partnercentral-selling.us-east-1.api.aws` and
+`partnercentral-benefits.us-east-1.api.aws` (the `*.amazonaws.com` names do not resolve, which was
+the "fetch failed" of 7 Nov 2026). Target prefixes (`AWSPartnerCentralSelling`,
+`PartnerCentralBenefitsService`) were probed against the live endpoints without credentials: a known
+target answers `MissingAuthenticationToken`, an unknown one `UnknownOperation`. A signed Sandbox
+`ListOpportunities` still needs the role and Partner Central link; press Test connection. An AWS
+authorisation error shows as "Not linked yet" with AWS's message; a network failure shows the cause
+(for example `Couldn't reach host (ENOTFOUND)`) in the audit row and Last error, and the details in
+Cloud Logging. Constants are in `SERVICES`.

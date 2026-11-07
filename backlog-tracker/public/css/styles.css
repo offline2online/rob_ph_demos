@@ -2475,6 +2475,7 @@ body { overflow-x: clip; }
 html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .lead-sum-stage { min-height: 36px; font: inherit; max-width: 100%; }
 .lead-sum-contact { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+.lead-sum-activity { margin: 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
 .lead-sum-contact-name { margin: 0 0 2px; font-weight: 600; overflow-wrap: anywhere; }
 .lead-sum-role { font-weight: 500; font-size: 12px; color: var(--text-muted); margin-left: 6px; }
 .lead-sum-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-bottom: 8px; }

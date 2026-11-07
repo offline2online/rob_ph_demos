@@ -30,13 +30,14 @@ function createLeadIngest({ db, key, logger }) {
     const r = core.leadFromWebsite(req.body && typeof req.body === "object" ? req.body : {});
     if (r.errors.length) return send(res, 400, { error: r.errors.join(" ") });
 
+    const entry = { at: new Date().toISOString(), label: r.fields.sourceLabel, detail: r.fields.sourceDetail, page: r.fields.sourcePage };
     const col = db.collection("leads");
     const existing = (await col.get()).docs
       .find((d) => (d.data().test === true) === r.test && nameKey((d.data().company || {}).name) === nameKey(r.fields.company.name));
     try {
       if (!existing) {
         const ref = await col.add({
-          ...r.fields, customerAccount: null,
+          ...r.fields, websiteActivity: [entry], customerAccount: null,
           createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), stageChangedAt: FieldValue.serverTimestamp(),
           createdByEmail: "website", updatedByEmail: "website",
         });
@@ -54,6 +55,9 @@ function createLeadIngest({ db, key, logger }) {
       await existing.ref.update({
         company, contacts: contacts.slice(0, core.LIMITS.contacts),
         ...(cur.sourcePage ? {} : { sourcePage: r.fields.sourcePage, sourceIndustry: r.fields.sourceIndustry }),
+        ...(cur.sourceLabel ? {} : { sourceLabel: r.fields.sourceLabel }),
+        ...(cur.sourceDetail ? {} : { sourceDetail: r.fields.sourceDetail }),
+        websiteActivity: [...cur.websiteActivity.map(({ atMs, ...a }) => a), entry].slice(-core.LIMITS.activity),
         updatedAt: FieldValue.serverTimestamp(), updatedByEmail: "website",
       });
       return send(res, 200, { ok: true, leadId: existing.id, created: false, test: r.test });

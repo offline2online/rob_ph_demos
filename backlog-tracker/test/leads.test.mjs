@@ -87,6 +87,9 @@ t("a website submission maps onto the lead form: source website, page and indust
   assert.equal(r.fields.source, "website"); assert.equal(r.fields.stage, "lead");
   assert.equal(r.fields.sourcePage, "/retail/"); assert.equal(r.fields.sourceIndustry, "Retail");
   assert.equal(L.leadFromWebsite({ company: "Acme", email: "jo@acme.example" }).test, false);
+  const s = L.leadFromWebsite({ company: "Acme", email: "jo@acme.example", sourceLabel: "x".repeat(200), sourceDetail: " Personalisation " });
+  assert.equal(s.fields.sourceLabel.length, 120); assert.equal(s.fields.sourceDetail, "Personalisation");
+  assert.deepEqual([L.normaliseLead("a", {}).sourceLabel, L.normaliseLead("a", {}).websiteActivity], ["", []]);
   assert.equal(L.normaliseLead("a", { company: { name: "A" }, test: true }).test, true);
   assert.ok(L.leadFromWebsite({ email: "jo@acme.example" }).errors.length);
 });
