@@ -2306,7 +2306,30 @@ body { overflow-x: clip; }
 /* Promote › Prospects (TAM) */
 .prospects-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 .prospects-info { font-size: 18px; vertical-align: middle; color: var(--text-muted); cursor: help; }
-.prospects-grid { width: 100%; }
+/* The grid fills the viewport below the console header and sticks there, so its column header and
+   filter row stay pinned while the page scrolls; the rows scroll inside it. */
+.prospects-grid { width: 100%; position: sticky; top: calc(var(--sticky-topbar-h, 56px) + 8px); height: max(420px, calc(100vh - var(--sticky-topbar-h, 56px) - 24px)); }
+.prospects-grid[hidden] { display: none; }
+.pl-trigger { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; height: 30px; padding: 0 6px 0 8px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.pl-trigger:hover { border-color: var(--primary); }
+.pl-trigger:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.pl-trigger.has-value { border-color: var(--primary); background: var(--primary-tint); }
+.pl-trigger-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-trigger .material-symbols-outlined { font-size: 18px; color: var(--text-muted); flex: none; }
+.pl-pop { position: fixed; z-index: 70; display: flex; flex-direction: column; width: 280px; max-width: calc(100vw - 16px); background: var(--surface, #fff); color: var(--text); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .15); }
+.pl-filter-host { display: flex; flex-direction: column; width: 260px; }
+.pl-search { position: relative; padding: 8px; }
+.pl-search .material-symbols-outlined { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; color: var(--text-muted); }
+.pl-search-input { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 6px 8px 6px 30px; color: var(--text); background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 6px; }
+.pl-search-input:focus { outline: none; border-color: var(--primary); }
+.pl-list { max-height: 260px; overflow-y: auto; padding: 0 4px; }
+.pl-opt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; border-radius: 6px; cursor: pointer; }
+.pl-opt:hover { background: var(--primary-tint); }
+.pl-opt input { accent-color: var(--primary, #169bc2); margin: 0; }
+.pl-none { padding: 10px 8px; font-size: 13px; color: var(--text-muted); }
+.pl-foot { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px 8px; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 4px; }
+.pl-clear { font: inherit; font-size: 12px; background: none; border: 0; color: var(--primary-text, var(--primary)); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.pl-clear:disabled { color: var(--text-muted); cursor: default; }
 #prospects-status.is-error { color: var(--danger, #c62828); }
 #prospects-status:empty { display: none; }
 .prospect-trunc { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
