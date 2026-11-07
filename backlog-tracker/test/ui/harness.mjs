@@ -72,6 +72,8 @@ export async function startHarness() {
     const problems = [];
     const refused = [];
     const mediaKeyWrites = [];
+    const aceWrites = [];
+    const aceStore = (seed.aceOpportunities || []).map((o) => ({ ...o }));
     const addProblem = (p) => problems.push(p);
     await context.addInitScript((s) => { window.__FB_SEED = s; }, seed);
     if (init) await context.addInitScript(init.fn, init.arg);
@@ -96,9 +98,28 @@ export async function startHarness() {
         // the status answer; every other call is answered OK and returned to the
         // test as mediaKeyWrites.
         // AWS Partner Central status (functions/partner-central.js): not linked yet, no calls.
+        // One opportunity (the detail dialog): GET/PATCH /v1/ace/{id}, POST /v1/ace to create. Changes are kept in
+        // `aceStore` and a save bumps the score, as AWS would; the test reads aceWrites.
+        if (url.pathname === "/partnerCentral/v1/ace" && route.request().method() === "POST") {
+          const input = JSON.parse(route.request().postData() || "{}"); aceWrites.push({ method: "POST", path: url.pathname, body: input });
+          const opp = { id: `N${aceStore.length + 1}`, name: input.name, customer: input.customer, stage: "Prospect", reviewStatus: "Pending Submission", score: 10, expectedMonthly: null, targetCloseDate: input.targetCloseDate || null, nextSteps: input.nextSteps || "", description: input.description || "", createdDate: "2026-11-07T10:00:00Z", lastModifiedDate: "2026-11-07T10:00:00Z", awsSeller: null, partnerCentralUrl: "" };
+          aceStore.unshift(opp);
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: opp.id, opportunity: opp }) });
+        }
+        const aceOne = /^\/partnerCentral\/v1\/ace\/([^/]+)$/.exec(url.pathname);
+        if (aceOne) {
+          const opp = aceStore.find((o) => o.id === decodeURIComponent(aceOne[1]));
+          if (!opp) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) });
+          if (route.request().method() === "PATCH") {
+            const input = JSON.parse(route.request().postData() || "{}"); aceWrites.push({ method: "PATCH", path: url.pathname, body: input });
+            for (const [k, v] of Object.entries(input)) { if (k === "monthlyAmount") opp.expectedMonthly = { amount: Number(v), currency: input.currency || "USD" }; else if (k !== "currency") opp[k] = v; }
+            opp.score = (opp.score || 50) + 10; opp.lastModifiedDate = "2026-11-07T12:00:00Z";
+          }
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ opportunity: opp }) });
+        }
         if (url.pathname === "/partnerCentral/v1/ace") {
           if (seed.aceStatus && seed.aceStatus !== 200) return route.fulfill({ status: seed.aceStatus, contentType: "application/json", body: JSON.stringify({ error: seed.aceError || "Server error" }) });
-          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ catalog: "Sandbox", truncated: false, opportunities: seed.aceOpportunities || [] }) });
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ catalog: "Sandbox", truncated: false, opportunities: aceStore }) });
         }
         if (url.pathname.startsWith("/partnerCentral/")) {
           const body = url.pathname.endsWith("/audit") ? { entries: [] } : { state: "not-linked", catalog: "Sandbox", roleArn: "arn:aws:iam::817173160653:role/PH-Console-PartnerCentral", lastSuccessAt: null, lastError: null, note: "Not linked yet" };
@@ -151,7 +172,7 @@ export async function startHarness() {
     });
     page.on("dialog", (d) => { addProblem(`native ${d.type()} dialog: ${d.message()}`); d.dismiss().catch(() => {}); });
     await page.goto(`${origin}/${hash}`, { waitUntil: "domcontentloaded" });
-    return { page, context, problems, refused, mediaKeyWrites, origin, close: () => context.close() };
+    return { page, context, problems, refused, mediaKeyWrites, aceWrites, origin, close: () => context.close() };
   }
 
   return {

@@ -1866,6 +1866,8 @@ opportunities under the board (`ace-core.js`, `leads-page.js`, `ace-grid.js`) fr
 exercised without AWS access: verify on the first Sandbox call (see
 `deploy/aws/README.md`).
 
+**ACE opportunities in the console (7 Nov 2026).** Promote › Leads lists Customer, Opportunity, stage, review status, Score, revenue, Expected delivery date, Created and Last updated. Clicking an opportunity opens `public/js/ace-detail.js`: edit and **Save to ACE** (`PATCH /partnerCentral/v1/ace/{id}`, read-merge-write `UpdateOpportunity`, score re-read), **New opportunity** (`POST /partnerCentral/v1/ace`), and documents in Storage `ace/{id}/` (`public/js/ace-docs.js`, `storage.rules`; not sent to AWS). Live sync needs the role link in `deploy/aws/README.md`. See REQUIREMENTS.md → "ACE opportunities managed in the console".
+
 ### Media Studio provider keys — the `MEDIA_KEYS_ENC_KEY` secret (4 Nov 2026)
 
 **Settings → Integrations & MCP → Media Studio API keys** (admins only) is

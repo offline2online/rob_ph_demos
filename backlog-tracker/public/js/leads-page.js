@@ -16,6 +16,7 @@ import {
 } from "./leads-core.js";
 import { kpis, formatMonthly } from "./ace-core.js";
 import { mountAceGrid } from "./ace-grid.js";
+import { mountAceDetail } from "./ace-detail.js";
 import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION } from "./prospect-detail-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
 
@@ -495,7 +496,19 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let aceRows = null;
   let aceMeta = {};
   let aceGrid = null;
-  const grid = () => aceGrid || (aceGrid = mountAceGrid({ host: $("ace-grid"), pop: $("ace-pop"), onOpenLead: (id) => openSummary(id) }));
+  const grid = () => aceGrid || (aceGrid = mountAceGrid({ host: $("ace-grid"), pop: $("ace-pop"), onOpenLead: (id) => openSummary(id), onOpen: (id, from) => { const r = (aceRows || []).find((x) => x.id === id); if (r) aceDetail().open(r, from); } }));
+  // The detail dialog: a saved or created opportunity replaces/joins its table row straight away.
+  let aceDlg = null;
+  const aceDetail = () => aceDlg || (aceDlg = mountAceDetail({
+    backdrop: $("ace-backdrop"), apiHeaders, canEdit,
+    onSaved: (opp) => {
+      if (!opp || !opp.id) return;
+      const i = (aceRows || []).findIndex((x) => x.id === opp.id);
+      aceRows = aceRows || [];
+      if (i >= 0) aceRows[i] = { ...aceRows[i], ...opp }; else aceRows.unshift(opp);
+      renderAce();
+    },
+  }));
   const aceAlert = (msg) => {
     $("ace-alert-text").textContent = msg; $("ace-alert").hidden = !msg;
   };
@@ -535,6 +548,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     grid().setRows(rows, leads);
   }
   $("ace-refresh").addEventListener("click", () => loadAce());
+  $("ace-new").addEventListener("click", (e) => aceDetail().openNew(e.currentTarget));
   $("ace-retry").addEventListener("click", () => loadAce());
 
   return { start, stop, render, stageLabel, roleLabel, open: openLead, openSummary };

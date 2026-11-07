@@ -1,6 +1,6 @@
 // Promote › Leads ACE table rules: public/js/ace-core.js.   node ace.test.mjs
 import assert from "node:assert/strict";
-import { summarise, matchLead, mailtoFor, partnerCentralHref, formatMonthly, formatDate, kpis, reviewTone, isPastDate } from "../public/js/ace-core.js";
+import { summarise, matchLead, mailtoFor, partnerCentralHref, formatMonthly, formatDate, kpis, reviewTone, isPastDate, formValues, changedValues, validateForm, savedMessage, checkDocument, docDisplayName, formatDateTime } from "../public/js/ace-core.js";
 
 let n = 0;
 const t = (name, fn) => { fn(); n++; console.log(`  ok  ${name}`); };
@@ -69,4 +69,24 @@ t("KPIs: count, revenue per currency, approved, needs action", () => {
   assert.deepEqual(k, { total: 4, revenue: [{ currency: "USD", amount: 150 }, { currency: "GBP", amount: 10 }], approved: 1, needsAction: 2 });
   assert.deepEqual(kpis([]), { total: 0, revenue: [], approved: 0, needsAction: 0 });
 });
+t("the dialog edits only what changed, and an empty create asks for title and customer", () => {
+  const o = formValues({ name: "A", customer: "B", nextSteps: "x", expectedMonthly: { amount: 5, currency: "GBP" } });
+  assert.deepEqual(o.monthlyAmount, "5"); assert.equal(o.currency, "GBP");
+  assert.deepEqual(changedValues(o, { ...o, nextSteps: " y " }), { nextSteps: "y" });
+  assert.deepEqual(changedValues(o, o), {});
+  assert.deepEqual(validateForm(formValues({}), { creating: true }), ["Enter a title and customer."]);
+  assert.deepEqual(validateForm({ name: "A", customer: "B", targetCloseDate: "x", monthlyAmount: "-1" }).length, 2);
+  assert.equal(savedMessage({ score: 72 }), "Saved to AWS ACE. Score 72.");
+  assert.match(savedMessage({ score: null }, "Created in AWS ACE"), /^Created in AWS ACE\. Score not available/);
+});
+t("documents: PDF, Office, image and zip up to 50 MB only", () => {
+  assert.equal(checkDocument({ name: "a.PDF", size: 10 }).contentType, "application/pdf");
+  assert.equal(checkDocument({ name: "a.zip", size: 10 }).ok, true);
+  assert.equal(checkDocument({ name: "a.exe", size: 10 }).ok, false);
+  assert.equal(checkDocument({ name: "a.pdf", size: 51 * 1024 * 1024 }).error, "That file is over 50 MB.");
+  assert.equal(checkDocument({ name: "a.pdf", size: 0 }).ok, false);
+  assert.equal(docDisplayName("1762500000000-plan.pdf"), "plan.pdf");
+  assert.equal(formatDateTime("2026-10-01T09:00:00Z"), "1 Oct 2026");
+});
+
 console.log(`ace: ${n} passed`);

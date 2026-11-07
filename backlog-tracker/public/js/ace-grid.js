@@ -1,8 +1,8 @@
 // Promote › Leads › AWS ACE opportunities: the AG Grid (ag-theme-alpine um-grid, the same
 // look as Prospects (TAM)). Pure view: leads-page.js owns loading and the lead drawer.
-//   const g = mountAceGrid({ host, pop, onOpenLead });  g.setRows(rows, leads);  g.setLoading(true);
+//   const g = mountAceGrid({ host, pop, onOpenLead, onOpen });  g.setRows(rows, leads);  g.setLoading(true);
 import { loadAgGrid } from "./docs-grid.js";
-import { matchLead, mailtoFor, partnerCentralHref, formatMonthly, formatDate, reviewTone, isPastDate, ACE_STAGES, ACE_REVIEW_STATUSES } from "./ace-core.js";
+import { matchLead, mailtoFor, partnerCentralHref, formatMonthly, formatDate, formatDateTime, reviewTone, isPastDate, ACE_STAGES, ACE_REVIEW_STATUSES } from "./ace-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const PAGE = 50;
@@ -35,7 +35,7 @@ class SelectFloatingFilter {
   onParentModelChanged(model) { this.fill(model && model.value ? model.value : ""); }
 }
 
-export function mountAceGrid({ host, pop, onOpenLead }) {
+export function mountAceGrid({ host, pop, onOpenLead, onOpen = () => {} }) {
   let api = null, loading = null, rows = [], leads = [], busy = false, popAnchor = null;
   const phone = window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
 
@@ -65,11 +65,12 @@ export function mountAceGrid({ host, pop, onOpenLead }) {
   function rowMenu(anchor, r) {
     const item = (act, icon, label) => `<button type="button" role="menuitem" class="prospects-pop-item" data-pop="${act}"><span class="material-symbols-outlined" aria-hidden="true">${icon}</span>${esc(label)}</button>`;
     const pc = partnerCentralHref(r), mail = mailtoFor(r), lead = matchLead(r, leads);
-    const html = (pc ? item("pc", "open_in_new", "View in Partner Central") : "") + (mail ? item("mail", "email", "Email AWS account manager") : "") + (lead ? item("lead", "person", "Open lead card") : "");
+    const html = item("open", "edit", "Open details") + (pc ? item("pc", "open_in_new", "View in Partner Central") : "") + (mail ? item("mail", "email", "Email AWS account manager") : "") + (lead ? item("lead", "person", "Open lead card") : "");
     if (!html) return;
     openPop(anchor, html, (act) => {
       closePop();
-      if (act === "pc") window.open(pc, "_blank", "noopener,noreferrer");
+      if (act === "open") onOpen(r.id, anchor);
+      else if (act === "pc") window.open(pc, "_blank", "noopener,noreferrer");
       else if (act === "mail") window.location.href = mail;
       else if (act === "lead") onOpenLead(lead.id);
       anchor.focus();
@@ -77,13 +78,13 @@ export function mountAceGrid({ host, pop, onOpenLead }) {
   }
 
   function columns() {
+    // The opportunity opens the in-console detail dialog (not a link out to AWS).
     const link = (p) => {
-      const href = partnerCentralHref(p.data);
       const text = p.data.name || p.data.id;
-      if (!href) return el("span", "ace-trunc", text);
-      const a = el("a", "ace-trunc ace-link", text);
-      a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
-      return a;
+      const b = el("button", "ace-trunc ace-link ace-open", text); b.type = "button"; b.dataset.aceOpen = p.data.id;
+      b.setAttribute("aria-haspopup", "dialog");
+      b.addEventListener("click", (e) => { e.stopPropagation(); onOpen(p.data.id, b); });
+      return b;
     };
     const trunc = (p) => el("span", "ace-trunc", p.value == null ? "" : String(p.value));
     const stage = (p) => (p.value ? el("span", "ace-pill", p.value) : el("span"));
@@ -93,6 +94,7 @@ export function mountAceGrid({ host, pop, onOpenLead }) {
       w.appendChild(el("span", "ace-dot")); w.appendChild(el("span", "ace-trunc", p.value));
       return w;
     };
+    const stamp = (p) => el("span", "ace-date", formatDateTime(p.value));
     const date = (p) => {
       const past = isPastDate(p.data.targetCloseDate);
       const s = el("span", past ? "ace-date is-past" : "ace-date", formatDate(p.data.targetCloseDate));
@@ -130,14 +132,16 @@ export function mountAceGrid({ host, pop, onOpenLead }) {
     const tip = (p) => (p.value == null ? "" : String(p.value));
     const noFilter = { filter: false, floatingFilter: false };
     return [
+      { field: "customer", headerName: "Customer", minWidth: 150, flex: 1.3, cellRenderer: trunc, tooltipValueGetter: tip },
       { colId: "name", field: "name", headerName: "Opportunity", minWidth: 220, flex: 2.4, cellRenderer: link, tooltipValueGetter: (p) => p.data && (p.data.name || p.data.id), pinned: phone && phone.matches ? "left" : null },
-      { field: "customer", headerName: "Customer", minWidth: 140, flex: 1.2, cellRenderer: trunc, tooltipValueGetter: tip },
       { field: "stage", headerName: "ACE stage", minWidth: 160, flex: 1.2, cellRenderer: stage, ...select("stage", ACE_STAGES) },
       { field: "reviewStatus", headerName: "Review status", minWidth: 170, flex: 1.2, cellRenderer: review, ...select("reviewStatus", ACE_REVIEW_STATUSES) },
-      { colId: "aceScore", headerName: "Score", width: 90, type: "numericColumn", filter: "agNumberColumnFilter", valueGetter: (p) => (p.data && p.data.score != null && p.data.score !== "" ? Number(p.data.score) : null), hide: !rows.some((r) => r.score != null && r.score !== ""), valueFormatter: (p) => (p.value == null ? "" : String(p.value)) },
+      { colId: "aceScore", headerName: "Score", width: 90, type: "numericColumn", filter: "agNumberColumnFilter", valueGetter: (p) => (p.data && p.data.score != null && p.data.score !== "" ? Number(p.data.score) : null), valueFormatter: (p) => (p.value == null ? "" : String(p.value)) },
       { colId: "monthly", headerName: "Monthly AWS revenue", headerTooltip: "Expected monthly AWS revenue", minWidth: 150, flex: 1, type: "numericColumn", cellClass: "ace-num", filter: "agNumberColumnFilter",
         valueGetter: (p) => (p.data && p.data.expectedMonthly && Number.isFinite(p.data.expectedMonthly.amount) ? p.data.expectedMonthly.amount : null), valueFormatter: (p) => (p.data ? formatMonthly(p.data.expectedMonthly) : "") },
-      { colId: "close", field: "targetCloseDate", headerName: "Target close date", minWidth: 150, flex: 1, filter: false, floatingFilter: false, cellRenderer: date, tooltipValueGetter: (p) => (p.data && isPastDate(p.data.targetCloseDate) ? "Past target close date" : "") },
+      { colId: "close", field: "targetCloseDate", headerName: "Expected delivery date", headerTooltip: "ACE target close date", minWidth: 170, flex: 1, filter: false, floatingFilter: false, cellRenderer: date, tooltipValueGetter: (p) => (p.data && isPastDate(p.data.targetCloseDate) ? "Past expected delivery date" : "") },
+      { colId: "created", field: "createdDate", headerName: "Created", minWidth: 120, flex: 0.9, filter: false, floatingFilter: false, cellRenderer: stamp },
+      { colId: "updated", field: "lastModifiedDate", headerName: "Last updated", minWidth: 130, flex: 0.9, filter: false, floatingFilter: false, cellRenderer: stamp },
       { colId: "seller", headerName: "AWS account manager", minWidth: 180, flex: 1.3, valueGetter: (p) => (p.data && p.data.awsSeller && p.data.awsSeller.name) || "", cellRenderer: seller },
       { colId: "lead", headerName: "Lead", width: 120, sortable: false, ...noFilter, cellRenderer: leadCell },
       { colId: "actions", headerName: "", width: 64, pinned: "right", sortable: false, ...noFilter, resizable: false, suppressMovable: true, cellRenderer: manage },
@@ -172,7 +176,6 @@ export function mountAceGrid({ host, pop, onOpenLead }) {
         if (!a) return;
         a.setGridOption("rowData", rows);
         a.setGridOption("pagination", rows.length > PAGE);
-        a.setColumnsVisible(["aceScore"], rows.some((r) => r.score != null && r.score !== ""));
         a.refreshCells({ force: true });
       });
     },

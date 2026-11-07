@@ -77,6 +77,7 @@ function makeCtx(o, width) {
   const ctx = { page, width, step: "start", selector: "" };
   const at = (step, selector = "") => { ctx.step = step; ctx.selector = selector; };
   ctx.at = at;
+  ctx.aceWrites = o.aceWrites;
   // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
   ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
   ctx.click = async (selector, step) => { at(step || `click ${selector}`, selector); await page.click(selector); };
@@ -1155,7 +1156,7 @@ const scenarios = [
           pills: [...document.querySelectorAll("#ace-stages .ace-pill")].map((e) => e.textContent.replace(/\s+/g, " ").trim()),
           heights: [...new Set(rowEls.map((r) => Math.round(r.getBoundingClientRect().height)))],
           ellipsis: first.scrollWidth > first.clientWidth, oneLine: first.getBoundingClientRect().height <= 42, firstH: first.getBoundingClientRect().height,
-          link: first.tagName === "A" ? { href: first.getAttribute("href"), target: first.target } : null,
+          link: first.tagName === "BUTTON" ? { opens: first.dataset.aceOpen } : null,
           heads: [...document.querySelectorAll("#ace-grid .ag-header-row-column .ag-header-cell[col-id]")].map((h) => h.getAttribute("col-id")),
           floating: document.querySelectorAll("#ace-grid .ag-floating-filter").length,
           checkbox: document.querySelectorAll("#ace-grid [col-id=select], #ace-grid .ag-selection-checkbox").length,
@@ -1181,9 +1182,9 @@ const scenarios = [
       assert.deepStrictEqual(info.pills, [], "no stage pills repeating what the Stage filter lists");
       assert.deepStrictEqual(info.heights, [42], "every row is 42px tall");
       assert.ok(info.ellipsis && info.oneLine, `the long title is one ellipsised line (${JSON.stringify([info.ellipsis, info.oneLine])})`);
-      assert.deepStrictEqual(info.link, { href: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O1", target: "_blank" });
-      assert.ok(!info.heads.includes("aceScore"), `the empty Score column is hidden (${info.heads})`);
-      assert.deepStrictEqual(info.heads, ["name", "customer", "stage", "reviewStatus", "monthly", "close", "seller", "lead", "actions"]);
+      const wantHeads = ["customer", "name", "stage", "reviewStatus", "aceScore", "monthly", "close", "created", "updated", "seller", "lead", "actions"];
+      // On a phone the Opportunity column is pinned left, so it is drawn first; the order is Customer then Opportunity everywhere else.
+      assert.deepStrictEqual(c.width < 640 ? [...info.heads].sort() : info.heads, c.width < 640 ? [...wantHeads].sort() : wantHeads, "Customer first, then Opportunity, Score always shown, the date columns");
       assert.ok(info.floating >= 5, "floating filter row");
       assert.strictEqual(info.checkbox, 0, "no checkbox column");
       assert.ok(!info.paging, "no pagination at 5 rows (page size is 50)");
@@ -1205,19 +1206,20 @@ const scenarios = [
       await c.page.hover('#ace-grid .ag-header-cell[col-id="monthly"]');
       await until(async () => (await c.page.locator(".ag-tooltip").allInnerTexts().catch(() => [])).some((x) => x.includes("Expected monthly AWS revenue")), "the revenue header tooltip", 4000);
       await c.page.hover('#ace-grid .ag-center-cols-container .ag-row[row-id="O2"] [col-id="close"]');
-      await until(async () => (await c.page.locator(".ag-tooltip").allInnerTexts().catch(() => [])).some((x) => x.includes("Past target close date")), "the past-date tooltip", 4000);
+      await until(async () => (await c.page.locator(".ag-tooltip").allInnerTexts().catch(() => [])).some((x) => x.includes("Past expected delivery date")), "the past-date tooltip", 4000);
 
       // The ⋯ menu: all three actions on a row that has them; none on a row with none.
       await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O1"] button.ace-manage');
       await c.visible("#ace-pop");
-      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person)/, ""))), ["View in Partner Central", "Email AWS account manager", "Open lead card"]);
+      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person|edit)/, ""))), ["Open details", "View in Partner Central", "Email AWS account manager", "Open lead card"]);
       await c.page.click('#ace-pop [data-pop="lead"]');
       await c.visible("#lead-summary-panel", "Open lead card opens the lead drawer");
       await c.click("#lead-sum-close", "close the lead drawer"); await c.hidden("#lead-summary-panel");
-      await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O3"] button.ace-manage').catch(() => {});
-      assert.ok(await c.page.locator("#ace-pop").isHidden(), "a row with no actions opens no menu");
+      await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O3"] button.ace-manage');
+      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person|edit)/, ""))), ["Open details"], "a row with no other action still opens its details");
+      await c.page.keyboard.press("Escape");
       await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O2"] button.ace-manage');
-      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person)/, ""))), ["View in Partner Central"], "disabled items are hidden");
+      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person|edit)/, ""))), ["Open details", "View in Partner Central"], "disabled items are hidden");
       await c.page.keyboard.press("Escape");
       // The Lead card link in the row opens the drawer too.
       await c.page.click('#ace-grid .ag-row[row-id="O1"] button.ace-lead');
@@ -1276,6 +1278,62 @@ const scenarios = [
       assert.ok(await c.page.locator('#ace-grid .ag-header-cell[col-id="aceScore"]').count(), "Score shows when a row has a score");
       assert.ok(await c.page.locator("#ace-grid .ag-paging-panel").isVisible(), "pagination above 50 rows");
       assert.match((await c.text("#ace-count")).replace(/\s+/g, " ").trim(), /^60\b/);
+    },
+  },
+  {
+    name: "Promote: Leads - ACE opportunity dialog: edit and save, create, validation, documents",
+    seed: () => ({ ...seed({}), aceOpportunities: [
+      { id: "O1", name: "Menu boards", customer: "Acme Retail", stage: "Qualified", reviewStatus: "Approved", score: 60, expectedMonthly: { amount: 1200, currency: "USD" }, targetCloseDate: "2099-12-31", nextSteps: "Send quote", description: "Stale menus", createdDate: "2026-10-01T09:00:00Z", lastModifiedDate: "2026-11-05T10:00:00Z", awsSeller: null, partnerCentralUrl: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O1" },
+    ] }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 1, "the ACE row", 8000);
+      const cell = (id, col) => c.page.textContent(`#ace-grid .ag-row[row-id="${id}"] [col-id="${col}"]`).then((t) => t.trim());
+      assert.strictEqual(await cell("O1", "aceScore"), "60");
+      assert.strictEqual(await cell("O1", "created"), "1 Oct 2026");
+      assert.strictEqual(await cell("O1", "updated"), "5 Nov 2026");
+
+      // Click the opportunity: an in-console dialog with the data editable; no navigation away.
+      await c.page.click('#ace-grid .ag-row[row-id="O1"] button.ace-open');
+      await c.visible("#ace-backdrop .ace-dialog", "the detail dialog");
+      await until(async () => (await c.page.inputValue('#ace-backdrop [data-f="nextSteps"]')) === "Send quote", "the dialog to load the full details", 4000);
+      assert.strictEqual(await c.page.inputValue('#ace-backdrop [data-f="customer"]'), "Acme Retail");
+      assert.strictEqual(await c.page.inputValue('#ace-backdrop [data-f="monthlyAmount"]'), "1200");
+      assert.strictEqual(await c.page.inputValue('#ace-backdrop [data-f="targetCloseDate"]'), "2099-12-31");
+      await c.page.fill('#ace-backdrop [data-f="nextSteps"]', "Book the pilot");
+      await c.page.click("#ace-dlg-save");
+      await until(async () => (await c.text("#ace-dlg-status")).startsWith("Saved to AWS ACE"), "Saved to AWS ACE", 4000);
+      assert.match(await c.text("#ace-dlg-status"), /Score 70/);
+      assert.deepStrictEqual(c.aceWrites[c.aceWrites.length - 1], { method: "PATCH", path: "/partnerCentral/v1/ace/O1", body: { nextSteps: "Book the pilot" } }, "only the changed field is sent");
+      assert.strictEqual(await cell("O1", "aceScore"), "70", "the table row shows the refreshed score");
+
+      // Documents: attach, list with a download link, remove.
+      await c.page.setInputFiles("#ace-dlg-file", { name: "proposal.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 test") });
+      await until(async () => (await c.page.locator("#ace-dlg-doclist .ace-dlg-doc-name").count()) === 1, "the attached document to be listed", 4000);
+      assert.strictEqual((await c.text("#ace-dlg-doclist .ace-dlg-doc-name")).trim(), "proposal.pdf");
+      assert.match(await c.page.getAttribute("#ace-dlg-doclist .ace-dlg-doc-name", "href"), /^https:\/\/firebasestorage\.googleapis\.com\//);
+      await c.page.setInputFiles("#ace-dlg-file", { name: "run.exe", mimeType: "application/octet-stream", buffer: Buffer.from("x") });
+      await until(async () => (await c.text("#ace-dlg-status")).includes("Attach a PDF"), "a refused file type", 4000);
+      await c.page.click("#ace-dlg-doclist .ace-dlg-doc-remove"); await c.page.click("#ace-dlg-doclist .ace-dlg-doc-remove");
+      await until(async () => (await c.page.locator("#ace-dlg-doclist .ace-dlg-doc-name").count()) === 0, "the document to be removed", 4000);
+      await c.page.keyboard.press("Escape"); await c.hidden("#ace-backdrop");
+
+      // New opportunity: empty save asks for title and customer; then it is created at Prospect.
+      await c.click("#ace-new", "New opportunity");
+      await c.visible("#ace-backdrop .ace-dialog");
+      assert.match(await c.text("#ace-dlg-save"), /Create in ACE/);
+      await c.page.click("#ace-dlg-save");
+      assert.strictEqual((await c.text("#ace-dlg-status")).trim(), "Enter a title and customer.");
+      assert.ok(!c.aceWrites.some((w) => w.method === "POST"), "nothing is sent while title and customer are empty");
+      await c.page.fill('#ace-backdrop [data-f="customer"]', "Gamma Ltd");
+      await c.page.fill('#ace-backdrop [data-f="name"]', "Totems");
+      await c.page.click("#ace-dlg-save");
+      await until(async () => (await c.text("#ace-dlg-status")).startsWith("Created in AWS ACE"), "Created in AWS ACE", 4000);
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 2, "the new row in the table", 4000);
+      assert.strictEqual(await cell("N2", "stage"), "Prospect");
+      assert.deepStrictEqual(c.aceWrites[c.aceWrites.length - 1].body, { customer: "Gamma Ltd", name: "Totems" });
+      await c.page.keyboard.press("Escape");
     },
   },
   {

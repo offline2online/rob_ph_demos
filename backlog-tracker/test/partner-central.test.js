@@ -3,7 +3,7 @@
 // Run: node test/partner-central.test.js
 "use strict";
 const assert = require("assert");
-const { createPartnerCentralApi, signRequest, normaliseOpportunity, OPERATIONS } = require("../functions/partner-central");
+const { createPartnerCentralApi, signRequest, normaliseOpportunity, sanitiseAceInput, OPERATIONS } = require("../functions/partner-central");
 
 function fakeDb() {
   const state = {};
@@ -198,6 +198,64 @@ check("a detail call that fails leaves the row with what the list gave", async (
   assert.strictEqual(r.statusCode, 200);
   assert.strictEqual(r.body.opportunities[0].customer, "Acme Retail");
   assert.strictEqual(r.body.opportunities[0].awsSeller, null);
+});
+
+// ── Editing from the console (detail dialog) ──
+check("normalise carries the dates, next steps and description the dialog edits", () => {
+  const r = normaliseOpportunity(SUMMARY, { ...DETAIL, CreatedDate: "2026-10-01T09:00:00Z", LastModifiedDate: "2026-11-05T10:00:00Z", LifeCycle: { ...SUMMARY.LifeCycle, NextSteps: "Send quote" }, Project: { ...DETAIL.Project, CustomerBusinessProblem: "Stale menus" } });
+  assert.deepStrictEqual({ c: r.createdDate, u: r.lastModifiedDate, n: r.nextSteps, d: r.description }, { c: "2026-10-01T09:00:00Z", u: "2026-11-05T10:00:00Z", n: "Send quote", d: "Stale menus" });
+});
+
+check("sanitiseAceInput validates and requires title and customer only when creating", () => {
+  assert.deepStrictEqual(sanitiseAceInput({}, { creating: true }).errors, ["title is required", "customer is required"]);
+  assert.deepStrictEqual(sanitiseAceInput({ name: " A ", customer: "B", targetCloseDate: "2026-13-45x", stage: "Nope", monthlyAmount: "abc" }, { creating: true }).errors.length, 3);
+  const ok = sanitiseAceInput({ nextSteps: "x", stage: "qualified", targetCloseDate: "2026-12-01", monthlyAmount: "300", currency: "gbp", website: "acme.com" });
+  assert.deepStrictEqual(ok.errors, []);
+  assert.deepStrictEqual(ok.values, { nextSteps: "x", stage: "Qualified", targetCloseDate: "2026-12-01", monthlyAmount: 300, currency: "GBP", website: "https://acme.com" });
+  assert.deepStrictEqual(sanitiseAceInput({ name: "" }).errors, ["title cannot be empty"]);
+});
+
+check("PATCH /v1/ace/{id} reads, merges, writes UpdateOpportunity, drops the cache and returns the refreshed row", async () => {
+  let score = 60; let nextSteps = "Old";
+  const { api, calls } = makeApi({ awsReply: (url, init) => {
+    const op = init.headers["x-amz-target"].split(".")[1];
+    if (op === "GetOpportunity") return { status: 200, body: { ...DETAIL, LastModifiedDate: "2026-11-05T10:00:00Z", PartnerOpportunityIdentifier: "P1", OpportunityType: "Net New Business", LifeCycle: { ...SUMMARY.LifeCycle, NextSteps: nextSteps, ReviewComments: "read only" }, AwsOpportunityInsights: { Score: score } } };
+    if (op === "UpdateOpportunity") { score = 75; nextSteps = JSON.parse(init.body).LifeCycle.NextSteps; return { status: 200, body: { Id: "O1" } }; }
+    return { status: 200, body: { OpportunitySummaries: [SUMMARY] } };
+  } });
+  assert.strictEqual((await call(api, "GET", "/v1/ace", { token: "ed@x.com" })).body.opportunities[0].score, 60);
+  assert.strictEqual((await call(api, "PATCH", "/v1/ace/O1", { token: "ed@x.com", body: { name: "" } })).statusCode, 400);
+  const r = await call(api, "PATCH", "/v1/ace/O1", { token: "ed@x.com", body: { nextSteps: "Send quote", monthlyAmount: 500 } });
+  assert.strictEqual(r.statusCode, 200);
+  assert.strictEqual(r.body.opportunity.score, 75, "the score is re-read after the write");
+  const upd = JSON.parse(calls.find((c) => c.init.headers && c.init.headers["x-amz-target"] === "AWSPartnerCentralSelling.UpdateOpportunity").init.body);
+  assert.strictEqual(upd.Identifier, "O1"); assert.strictEqual(upd.LastModifiedDate, "2026-11-05T10:00:00Z");
+  assert.strictEqual(upd.LifeCycle.NextSteps, "Send quote"); assert.strictEqual(upd.LifeCycle.Stage, "Qualified", "untouched fields are kept");
+  assert.ok(!("ReviewComments" in upd.LifeCycle), "read-only parts are not sent back");
+  assert.strictEqual(upd.Project.Title, "Menu boards"); assert.strictEqual(upd.Project.ExpectedCustomerSpend[0].Amount, "500");
+  assert.strictEqual(upd.PartnerOpportunityIdentifier, "P1");
+  assert.strictEqual((await call(api, "GET", "/v1/ace", { token: "ed@x.com" })).body.opportunities[0].score, 75, "the table read after a save is not the cached one");
+  assert.strictEqual((await call(api, "PATCH", "/v1/ace/O1", { token: "", body: { nextSteps: "x" } })).statusCode, 401);
+});
+
+check("POST /v1/ace needs title and customer, creates a Prospect and returns the row", async () => {
+  const { api, calls } = makeApi({ awsReply: (url, init) => {
+    const op = init.headers["x-amz-target"].split(".")[1];
+    if (op === "CreateOpportunity") return { status: 200, body: { Id: "O9" } };
+    return { status: 200, body: { ...DETAIL, Id: "O9", LifeCycle: { Stage: "Prospect", ReviewStatus: "Pending Submission" }, Project: { Title: "Totems" }, Customer: { Account: { CompanyName: "Gamma" } } } };
+  } });
+  const bad = await call(api, "POST", "/v1/ace", { token: "ed@x.com", body: {} });
+  assert.strictEqual(bad.statusCode, 400); assert.match(bad.body.error, /title is required; customer is required/);
+  const r = await call(api, "POST", "/v1/ace", { token: "ed@x.com", body: { name: "Totems", customer: "Gamma", description: "Needs signage" } });
+  assert.strictEqual(r.statusCode, 200); assert.strictEqual(r.body.id, "O9"); assert.strictEqual(r.body.opportunity.stage, "Prospect");
+  const sent = JSON.parse(calls.find((c) => c.init.headers && c.init.headers["x-amz-target"] === "AWSPartnerCentralSelling.CreateOpportunity").init.body);
+  assert.strictEqual(sent.Project.Title, "Totems"); assert.strictEqual(sent.Customer.Account.CompanyName, "Gamma"); assert.strictEqual(sent.LifeCycle.Stage, "Prospect"); assert.ok(sent.ClientToken);
+});
+
+check("GET /v1/ace/{id} is open to editors", async () => {
+  const { api } = makeApi({ awsReply: () => ({ status: 200, body: DETAIL }) });
+  const r = await call(api, "GET", "/v1/ace/O1", { token: "ed@x.com" });
+  assert.strictEqual(r.statusCode, 200); assert.strictEqual(r.body.opportunity.customer, "Acme Retail");
 });
 
 check("SigV4 matches a recomputation and is deterministic", () => {
