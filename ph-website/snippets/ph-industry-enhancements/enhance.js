@@ -237,7 +237,7 @@
     });
   }
 
-  var LEAD_FORM = {telco: "Telco", retail: "Retail"};
+  var LEAD_FORM = {telco: "Telco"};
   function setupLeadForm() {
     if (!LEAD_FORM[page]) return;
     var host = document.querySelector("[data-elementor-type='wp-page']") || document.querySelector("main") || document.body;
