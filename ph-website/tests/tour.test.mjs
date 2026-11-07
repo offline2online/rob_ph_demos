@@ -142,9 +142,9 @@ try {
   assert.ok(/Thanks/.test(await p.locator(".ph-ind-lead .ph-ind-gate-m").textContent()), "the form still succeeds with storage blocked");
   // The tour page itself: full screen, native and fallback.
   const tourHtml = fs.readFileSync(path.join(dir, "tour", "telco.html"), "utf8");
-  const tourPage = async (fallback, vp) => {
+  const tourPage = async (fallback, vp, body = tourHtml) => {
     const t = await browser.newPage({ viewport: vp });
-    await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: tourHtml }) : r.abort());
+    await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body }) : r.abort());
     await t.addInitScript((fb) => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })); if (fb) { Document.prototype.__defineGetter__("fullscreenEnabled", () => false); } }, fallback);
     await t.goto("http://x.test/industries/telco/tour/?embed=1");
     await t.waitForSelector("#fs", { state: "visible" });
@@ -187,6 +187,39 @@ try {
   assert.ok(await t.evaluate(() => getComputedStyle(document.getElementById("fs")).display !== "none"), "button stays in full screen");
   await t.close();
   assert.ok(/id="fsexit"/.test(tourHtml) && /html\.fs #card \.fsonly\{display:inline-flex\}/.test(tourHtml), "end card has Exit full screen, shown only in full screen");
+  // End card: Next is the primary action and focused; no AWS or demo buttons; the last flow wraps; Replay and Exit full screen are secondary.
+  const hooked = tourHtml.replace('document.getElementById("prev").onclick', "window.__t = { setFlow, showEnd, S };\n$&"); // test hook into the page's closure
+  assert.ok(hooked !== tourHtml, "test hook applied");
+  assert.ok(!/id="aws"|id="demo"|Try Free with AWS<\/a>|Arrange a Demo<\/button>/.test(tourHtml), "end card source has no AWS or demo buttons");
+  for (const [vp, fsMode] of [[{ width: 1280, height: 800 }, false], [{ width: 360, height: 640 }, false], [{ width: 1280, height: 800 }, true]]) {
+    const et = await tourPage(false, vp, hooked);
+    if (fsMode) { await et.click("#fs"); await et.waitForFunction(() => document.documentElement.classList.contains("fs")); }
+    for (const [flow, label] of [[0, "Next: Seamless localisation & scheduling"], [1, "Next: Seamless personalisation"], [2, "Next: Automated campaign creative"]]) {
+      await et.evaluate((k) => { __t.setFlow(k); __t.showEnd(); }, flow);
+      const r = await et.evaluate(() => { const g = (i) => document.getElementById(i), n = g("nextflow"), a = g("again"), c = document.getElementById("card"); return { text: n.textContent.trim(), focus: document.activeElement.id, nBg: getComputedStyle(n).backgroundColor, aBg: getComputedStyle(a).backgroundColor, nH: n.getBoundingClientRect().height, aH: a.getBoundingClientRect().height, aws: !!c.querySelector("#aws,#demo"), btns: [...c.querySelectorAll("button,a")].map((x) => x.id), noH: document.documentElement.scrollWidth <= innerWidth, exitVis: getComputedStyle(g("fsexit")).display !== "none" }; });
+      assert.ok(r.text === label && r.focus === "nextflow" && !r.aws && r.nBg !== r.aBg && r.aBg === "rgba(0, 0, 0, 0)" && r.aH < r.nH && r.noH && r.exitVis === fsMode, `end card flow ${flow + 1} at ${vp.width}${fsMode ? " fs" : ""}: ${JSON.stringify(r)}`);
+    }
+    await et.evaluate(() => { __t.setFlow(2); __t.showEnd(); });
+    await et.click("#nextflow");
+    assert.ok(await et.evaluate(() => __t.S.flow === 0 && __t.S.step >= 0), "last flow's Next starts flow 1");
+    const ne = await et.evaluate(() => window.dataLayer.filter((e) => e.event === "ph_tour" && (e.action === "next" || e.action === "cta")).map((e) => e.action + ":" + e.flow + ":" + e.next_flow + ":" + e.step));
+    assert.deepStrictEqual(ne, ["next:Seamless personalisation:Automated campaign creative:" + ne[0].split(":").pop()], "next event carries flow and next flow: " + JSON.stringify(ne));
+    await et.evaluate(() => { __t.setFlow(1); __t.showEnd(); });
+    await et.click("#again");
+    assert.ok(await et.evaluate(() => window.dataLayer.some((e) => e.action === "replay")), "replay event");
+    if (fsMode) { await et.evaluate(() => { __t.setFlow(1); __t.showEnd(); }); await et.click("#fsexit"); await et.waitForFunction(() => !document.documentElement.classList.contains("fs")); }
+    await et.close();
+  }
+  { // single-flow focus mode: no Next, Replay is the only action and has focus
+    const ft = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await ft.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort());
+    await ft.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })));
+    await ft.goto("http://x.test/industries/telco/tour/?embed=1#localisation");
+    await ft.waitForSelector("#fs", { state: "visible" });
+    await ft.evaluate(() => { __t.setFlow(1); __t.showEnd(); });
+    assert.ok(await ft.evaluate(() => !document.getElementById("nextflow") && document.activeElement.id === "again"), "focus mode: no Next, Replay focused");
+    await ft.close();
+  }
   // Framed fallback: parent receives ph-tour-fullscreen on/off and the frame is pinned.
   const fp = await browser.newPage({ viewport: { width: 390, height: 700 } });
   await fp.route("**/*", (r) => { const u = r.request().url(); if (/\/industries\/telco\/tour\//.test(u)) return r.fulfill({ contentType: "text/html", body: tourHtml }); if (u.startsWith("http://x.test/")) return r.fulfill({ contentType: "text/html", body: html(true) }); return r.abort(); });
