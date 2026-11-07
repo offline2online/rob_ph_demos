@@ -1861,7 +1861,7 @@ the last successful call and the last 20 calls; every call is in
 `partnerCentralAudit` (server-only), CloudTrail has the AWS side. Test:
 `node test/partner-central.test.js`. **ACE table (6 Nov 2026)**: Promote › Leads shows the
 opportunities under the board (`ace-core.js`, `leads-page.js`, `ace-grid.js`) from
-`GET /partnerCentral/v1/ace` (7 Nov 2026: restyled as the PH list page — count line, four KPI cards, stage pills and an AG Grid like Prospects (TAM); the grid and its ⋯ menu are `ace-grid.js`), the only Partner Central route editors may read.
+`GET /partnerCentral/v1/ace` (7 Nov 2026: restyled as the PH list page — title row with one count, three KPI cards and an AG Grid of 50 per page (8 Nov 2026: no duplicated counts; stage/review selects list every value) like Prospects (TAM); the grid and its ⋯ menu are `ace-grid.js`), the only Partner Central route editors may read.
 `node test/partner-central.test.js`. Service target names could not be
 exercised without AWS access: verify on the first Sandbox call (see
 `deploy/aws/README.md`).

@@ -5,7 +5,7 @@ import { loadAgGrid } from "./docs-grid.js";
 import { matchLead, mailtoFor, partnerCentralHref, formatMonthly, formatDate, reviewTone, isPastDate, ACE_STAGES, ACE_REVIEW_STATUSES } from "./ace-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const PAGE = 25;
+const PAGE = 50;
 
 // A dropdown filter for the floating row (same idea as Prospects' SelectFilter).
 class SelectFilter {
@@ -42,8 +42,8 @@ export function mountAceGrid({ host, pop, onOpenLead }) {
   const ordered = (field, known) => {
     const seen = new Set(rows.map((r) => String(r[field] || "").trim()).filter(Boolean));
     const lower = new Map([...seen].map((v) => [v.toLowerCase(), v]));
-    const out = known.filter((k) => lower.has(k.toLowerCase()));
-    return [...out, ...[...seen].filter((v) => !known.some((k) => k.toLowerCase() === v.toLowerCase())).sort()];
+    // Every known value is listed, whether or not a row has it yet, so the filter shows all its options.
+    return [...known, ...[...seen].filter((v) => !known.some((k) => k.toLowerCase() === v.toLowerCase())).sort()];
   };
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 

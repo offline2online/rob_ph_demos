@@ -680,7 +680,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
         getRowId: (p) => p.data.id,
         rowSelection: "multiple", suppressRowClickSelection: true,
         suppressCellFocus: true, suppressColumnVirtualisation: true, tooltipShowDelay: 400,
-        headerHeight: 40, floatingFiltersHeight: 40, rowHeight: 48,
+        headerHeight: 40, floatingFiltersHeight: 40, rowHeight: 48, domLayout: "autoHeight",
         pagination: true, paginationPageSize: 50, paginationPageSizeSelector: [25, 50, 100, 250],
         overlayNoRowsTemplate: '<span class="um-empty">No prospects match these filters.</span>',
         onSelectionChanged: updateBulk,
