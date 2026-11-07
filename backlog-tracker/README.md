@@ -2342,6 +2342,19 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   client-side so the full due-ness logic lives in exactly one place) and a
   **Mark reviewed** button.
 
+### AWS ACE funding skills (7 Nov 2026)
+
+`skill-sources/aws-ace-poc-funding-request.md`, `aws-ace-sandbox-credit-request.md`,
+`aws-ace-poc-claim.md` and the shared `aws-pricing-calculator.md` are the repo
+copies of four skills in the shared library. The two request skills call the
+calculator skill instead of costing themselves. They are bound to their steps
+in the Internal operations map: each AWS funding document node in
+`public/js/internal-map.js` carries `skills` and shows "Skill: <slug>". Load
+them with `scripts/seed-aws-ace-skills.js` (insert-only; needs a human with
+service-account credentials, like `seed-skills-data.js`). Misses are tracked with
+`report_skill_miss`. Attach the real CP Group and Avolta Hudson documents as
+`references/` files on the two request skills.
+
 ### Docs stay in step with code (20 Oct 2026)
 
 `skill-sources/` holds the repo copies of the skill text for this rule:

@@ -1800,6 +1800,7 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .intmap-proc rect { fill: #fff; stroke: var(--primary); stroke-width: 2; }
 .intmap-proc-note { font-style: italic; fill: #5c6770; }
 .intmap-ace { fill: var(--primary); font-weight: 700; }
+.intmap-skill { fill: var(--primary); font-weight: 600; font-size: 9px; }
 .intmap-doc-tag { font-style: italic; }
 .intmap-doc-onepager rect { fill: #fff3d6; stroke: #e0a100; }
 .intmap-doc-pack rect { fill: #fde3ef; stroke: #d6336c; }
