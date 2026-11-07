@@ -593,6 +593,15 @@ body{font-family:var(--display);padding-block:56px 72px}
 .fsbtn{margin-left:auto}.fsbtn .ms,.fsstart .ms,.fsexit .ms{font-family:"Material Symbols Rounded"}
 #card .fsonly{display:none}
 html.fs #card .fsonly{display:inline-flex}
+#card .acts.end{align-items:center;gap:8px 18px}
+#card .sec{display:inline-flex;flex-wrap:wrap;align-items:center;gap:2px 14px}
+#card .quiet{height:auto;min-height:32px;padding:4px 6px;border:0;border-radius:6px;background:none;color:var(--ph-muted);font-size:14px;font-weight:500;gap:6px}
+#card .quiet:hover{color:var(--ph-navy);text-decoration:underline;text-underline-offset:3px}
+#card .quiet .ms{font-size:18px}
+#card .quiet:focus-visible,#card .go:focus-visible{outline:2px solid var(--ph-teal-d);outline-offset:2px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #card .quiet:hover{color:#fff}}
+:root[data-theme="dark"] #card .quiet:hover{color:#fff}
+@media (max-width:480px){#card .acts.end{flex-direction:column;align-items:stretch}#card .acts.end .go{justify-content:center;height:auto;min-height:46px;padding:10px 18px;text-align:center}#card .sec{justify-content:center}}
 #card .fslink{height:auto;padding:6px 4px;border:0;background:none;color:#0F7A9A;font-size:14px;text-decoration:underline;text-underline-offset:3px}
 html.fs #card .fslink{display:none}
 :root.fs{--bg:#0F1424;--panel:#192033;--fg:#e7edf2;--muted:#a3acc0;--line:#2c3550;--chip:#16303a;color-scheme:dark}
@@ -607,6 +616,30 @@ html.fs .bar{flex:0 0 auto}
 html.fs .tourbox{flex:1 1 0;min-height:0;container-type:size;display:grid;place-items:center}
 html.fs .stagebox{width:min(100cqw,calc(100cqh * 1280 / 760));box-shadow:none}
 @media (max-height:520px){html.fs .top h2{display:none}html.fs .wrap{gap:6px;padding-top:8px}html.fs .cap span{display:none}}
+/* landscape phones: the stage dominates. One compact row of flow chips with the company field at its end (the brand row is folded in),
+   the stage, then a one-row control bar (prev, play, next, dots, caption filling the rest, full-screen button). */
+@media (max-height:520px){
+html.fs .wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr) auto;gap:6px 10px;padding-top:6px;padding-bottom:max(6px,env(safe-area-inset-bottom,0px))}
+html.fs .top{display:contents}
+html.fs .top>div:first-child{display:none}
+html.fs .prefs{grid-column:2;grid-row:1;flex-wrap:nowrap;gap:6px;align-self:center}
+html.fs .prefs .field{padding:0 4px 0 8px;gap:6px;height:34px;box-sizing:border-box}
+html.fs .prefs .field label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+html.fs .prefs .field input[type=text]{width:96px;font-size:13px}
+html.fs .prefs .field input[type=color]{width:24px;height:24px}
+html.fs .flows{grid-column:1;grid-row:1;min-width:0;max-height:36px;align-items:center;gap:6px;padding:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+html.fs .flows::-webkit-scrollbar{display:none}
+html.fs .chip{padding:4px 12px;font-size:13px;line-height:20px;gap:6px;white-space:nowrap}
+html.fs .chip small{display:none}
+html.fs .tourbox{grid-column:1/-1;grid-row:2}
+html.fs .bar{grid-column:1/-1;grid-row:3;flex-wrap:nowrap;gap:8px 10px;max-height:52px;min-height:0;align-items:center}
+html.fs .bar .ctl{flex:0 0 auto;width:36px;height:36px}
+html.fs .dots{flex:0 0 auto;gap:4px}
+html.fs .dot{width:16px}
+html.fs .cap{flex:1 1 0;min-width:0}
+html.fs .cap b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html.fs .fsbtn{margin-left:0;flex:0 0 auto}
+}
 </style>
 </head>
 <body>
@@ -1521,13 +1554,13 @@ function showEnd() {
   const [eb, h, p, stats, next] = FD().end(), nf = FLOWS[next];
   card.innerHTML = `<div class="in2"><div class="eyebrow">${eb}</div><h2>${h}</h2><p>${esc(p)}</p>
     <div class="stats">${stats.map(x=>`<div><b>${x[0]}</b>${x[1]}</div>`).join("")}</div>
-    <div class="acts"><a class="go" href="${AWS_URL}" target="_blank" rel="noopener" id="aws">Try Free with AWS</a><button type="button" class="ghost" id="demo">Arrange a Demo</button><button type="button" class="ghost" id="again"><span class="ms">replay</span>Replay</button><button type="button" class="ghost fsonly" id="fsexit"><span class="ms">fullscreen_exit</span>Exit full screen</button>${FOCUS ? "" : `<button type="button" class="ghost" id="nextflow">Next: ${nf[0]}</button>`}</div></div>`;
+    <div class="acts end">${FOCUS ? "" : `<button type="button" class="go" id="nextflow">Next: ${nf[0]}</button>`}<span class="sec"><button type="button" class="quiet" id="again"><span class="ms">replay</span>Replay</button><button type="button" class="quiet fsonly" id="fsexit"><span class="ms">fullscreen_exit</span>Exit full screen</button></span></div></div>`;
   card.hidden = false; marks(); tourEvent("complete");
-  card.querySelector("#aws").onclick = () => tourEvent("cta", { cta: "Try Free with AWS" });
-  card.querySelector("#demo").onclick = e => { tourEvent("cta", { cta: "Arrange a Demo" }); const cf = PCFG(); if (cf.arrangeDemo) cf.arrangeDemo(); else e.currentTarget.textContent = "Opens demo booking on the website"; };
-  card.querySelector("#again").onclick = () => go(0);
+  card.querySelector("#again").onclick = () => { tourEvent("replay"); go(0); };
   card.querySelector("#fsexit").onclick = () => fsExit();
-  const nb = card.querySelector("#nextflow"); if (nb) nb.onclick = () => { if (nf[1]) { setFlow(next); S.paused = false; go(0); } else nb.textContent = "Coming in the next build"; };
+  const nb = card.querySelector("#nextflow");
+  if (nb) { nb.onclick = () => { if (nf[1]) { tourEvent("next", { next_flow: nf[0], next_step: 1 }); setFlow(next); S.paused = false; go(0); } else nb.textContent = "Coming in the next build"; }; nb.focus({ preventScroll: true }); }
+  else card.querySelector("#again").focus({ preventScroll: true });
 }
 function startCard() {
   const [h, p] = FD().start();
