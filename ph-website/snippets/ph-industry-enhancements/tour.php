@@ -27,7 +27,7 @@ const TOUR_FLOWS        = array( 'Campaign creation', 'Localisation & scheduling
  */
 const TOUR_TELCO_OPTION  = 'ph_tour_telco_html';
 const TOUR_TELCO_BACKOFF = 'ph_tour_telco_backoff';
-const TOUR_TELCO_SHA256  = 'f6d40f2b147aec0920750c958cdbf3728035ba970ed193e61137228de669e50e';
+const TOUR_TELCO_SHA256  = 'fe60b6e97d19a82f346c3a01dabb44824044e8b0474dddc3f5998074d52bf25b';
 const TOUR_TELCO_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/telco.html';
 
 /**

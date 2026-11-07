@@ -49,7 +49,7 @@ body{font-family:var(--ui);padding-left:max(16px,env(safe-area-inset-left,0px));
 .chip[aria-disabled="true"]{cursor:default;opacity:.55}
 .chip small{font-size:11px;color:var(--muted)}
 .stagebox{position:relative;width:100%;box-sizing:content-box;aspect-ratio:1280/760;contain:strict;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#fff;box-shadow:0 10px 30px rgba(10,30,45,.12)}
-.bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px}
 .ctl{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
 .ctl.main{background:var(--teal);border-color:var(--teal);color:#fff}
 .dots{display:flex;gap:6px;align-items:center}
@@ -554,7 +554,7 @@ body{font-family:var(--display);padding-block:56px 72px}
 .chip[aria-current="true"]{border-color:var(--ph-teal);background:var(--chip);color:var(--fg)}
 .stagebox{border-radius:22px;box-shadow:none;border:.6px solid var(--line)}
 .ctl{width:44px;height:44px}.ctl.main{background:var(--ph-teal);border-color:var(--ph-teal);color:var(--ph-ink)}
-.dot{height:7px}.cap b{font-size:18px;font-weight:700}.cap span{font-size:15px;line-height:1.5}.fine{font-size:13px}
+.dot{height:7px}.cap b{font-size:14.5px;font-weight:700}.cap span{display:block;margin-top:3px;font-size:12px;line-height:1.5}.fine{font-size:13px}
 .proto{border-radius:12px;font-family:var(--display)}.proto-ctl button{font-family:var(--display);border-radius:999px;padding:8px 14px}
 /* gate in the calculator's dark-panel style */
 .gate{border-radius:22px}
@@ -636,7 +636,7 @@ html.fs .bar .ctl{flex:0 0 auto;width:36px;height:36px}
 html.fs .dots{flex:0 0 auto;gap:4px}
 html.fs .dot{width:16px}
 html.fs .cap{flex:1 1 0;min-width:0}
-html.fs .cap b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html.fs .cap b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html.fs .fsbtn{margin-left:0;flex:0 0 auto}
 }
 </style>

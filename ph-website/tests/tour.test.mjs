@@ -155,6 +155,8 @@ try {
     const t = await tourPage(false, vp);
     assert.strictEqual(await t.getAttribute("#fs", "aria-label"), "Full screen");
     assert.strictEqual(await t.getAttribute("#fs", "aria-pressed"), "false");
+    const capInline = await t.evaluate(() => { const g = (q) => parseFloat(getComputedStyle(document.querySelector(q)).fontSize), R = (q) => document.querySelector(q).getBoundingClientRect(), bar = getComputedStyle(document.querySelector(".bar")); return { b: g(".cap b"), s: g(".cap span"), col: bar.columnGap, row: bar.rowGap, sg: R("#capS").top - R("#capT").bottom }; });
+    assert.ok(capInline.b === 14.5 && capInline.s === 12 && capInline.col === "24px" && capInline.row === "12px" && capInline.sg >= 2 && capInline.sg <= 5, "caption 14.5px/12px with 24px spacing at " + vp.width + "x" + vp.height + ": " + JSON.stringify(capInline));
     await t.click("#fs");
     await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
     const st = await t.evaluate(() => { const b = box.getBoundingClientRect(), r = document.querySelector(".bar").getBoundingClientRect(); return { native: !!document.fullscreenElement, label: fs.getAttribute("aria-label"), pressed: fs.getAttribute("aria-pressed"), icon: fs.textContent, focus: document.activeElement.id, ratio: b.width / b.height, barIn: r.bottom <= innerHeight + 1 && r.top >= 0, boxIn: b.right <= innerWidth + 1 && b.bottom <= innerHeight, noHScroll: document.documentElement.scrollWidth <= innerWidth, bg: getComputedStyle(document.documentElement).backgroundColor }; });
