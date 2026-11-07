@@ -646,6 +646,15 @@ html.fs .cap{flex:1 1 0;min-width:0}
 html.fs .cap b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html.fs .fsbtn{margin-left:0;flex:0 0 auto}
 }
+/* full screen: the bar is exactly as wide as the stage (--stage-w, set from #box), controls at its left edge, caption flush right */
+html.fs .bar{width:var(--stage-w,100%);max-width:100%;margin-inline:auto;box-sizing:border-box;padding-block:8px;flex-wrap:wrap;gap:8px 16px;max-height:none}
+html.fs .dots{order:3;flex:0 0 auto;margin-right:16px}
+html.fs .fsbtn{order:4;margin-left:0;flex:0 0 auto}
+html.fs .cap{order:-1;flex:1 1 100%;min-width:0;text-align:right}
+html.fs .cap b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
+@media (max-width:599px){html.fs .cap b{white-space:normal}html.fs .dots{order:4;flex:1 1 100%;margin-right:0;gap:4px}html.fs .dot{flex:1 1 0;width:auto;max-width:26px}html.fs .fsbtn{order:3}}
+@media (max-height:520px) and (min-width:600px){html.fs .bar{flex-wrap:nowrap;padding-block:0;gap:8px 10px}html.fs .cap{order:5;flex:1 1 0}html.fs .cap span{display:none}html.fs .cap b{font-size:13px}}
 </style>
 </head>
 <body>
@@ -905,7 +914,8 @@ stage.innerHTML = `<div id="screen"></div><div id="ring"></div><div id="tip"></d
 const screen = stage.querySelector("#screen"), ring = stage.querySelector("#ring"), tipEl = stage.querySelector("#tip"), cur = stage.querySelector("#cursor"), card = stage.querySelector("#card");
 let lastW = 0;
 function fit() { const w = box.clientWidth; if (!w || Math.abs(w - lastW) < 2) return; lastW = w; S.scale = w / 1280; stage.style.transform = `scale(${S.scale})`; }
-new ResizeObserver(fit).observe(box); fit();
+function stageW() { const w = box.getBoundingClientRect().width; if (w) document.documentElement.style.setProperty("--stage-w", Math.round(w * 100) / 100 + "px"); }
+new ResizeObserver(() => { fit(); stageW(); }).observe(box); fit(); stageW();
 const q = s => stage.querySelector(s);
 let curPos = { x: 900, y: 600 };
 function setCur(x, y, ms) { cur.style.transitionDuration = (ms||0) + "ms"; cur.style.transform = `translate(${x-4}px,${y-2}px)`; curPos = {x,y}; }

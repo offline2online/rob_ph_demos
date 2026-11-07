@@ -293,5 +293,42 @@ try {
   await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position === "fixed");
   await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position !== "fixed");
   await fp.close();
+  // Full-screen caption (step caption right-aligned to the stage edge, two lines at most): every step of all three flows.
+  const capMetrics = () => { const r = (e) => e.getBoundingClientRect(), b = document.querySelector(".bar"), c = document.querySelector(".cap"), t = document.getElementById("capT"), d = document.getElementById("capS"), st = r(document.getElementById("box")), br = r(b), cr = r(c), ctl = r(document.getElementById("prev")), dots = r(document.getElementById("dots"));
+    const lh = parseFloat(getComputedStyle(d).lineHeight), dh = d.getBoundingClientRect().height, vis = getComputedStyle(d).display !== "none";
+    return { lines: vis ? Math.round(dh / lh) : 0, clipV: [b, c, t, d].some((e) => e.scrollHeight > e.clientHeight + 1), clip: [b, c, t, d].some((e) => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1), align: getComputedStyle(c).textAlign, capR: Math.abs(cr.right - st.right), barL: Math.abs(br.left - st.left), barR: Math.abs(br.right - st.right), ctlL: Math.abs(ctl.left - st.left), capAboveCtl: cr.bottom <= ctl.top + 1, oneRow: br.height < 80, stageH: st.height, vh: innerHeight, dotsGap: cr.left - dots.right, hdrOneLine: t.getBoundingClientRect().height < parseFloat(getComputedStyle(t).fontSize) * 1.8, over: document.documentElement.scrollWidth > innerWidth + 1 || b.getBoundingClientRect().bottom > innerHeight + 1 }; };
+  const eachCaption = async (t, fn) => { const out = [];
+    for (let f = 0; f < 3; f++) {
+      await t.click(`.chip[data-k="${f}"]`); await t.waitForTimeout(150);
+      if ((await t.getAttribute("#play", "aria-label")) === "Pause") await t.click("#play");
+      const n = await t.locator("#dots .dot").count();
+      for (let i = 0; i < n; i++) { await t.locator("#dots .dot").nth(i).evaluate((e) => e.click()); await t.waitForFunction((i) => document.getElementById("capT").textContent.startsWith(`${i + 1}.`), i); out.push(await fn(f, i)); }
+    }
+    return out; };
+  for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    const t = await tourPage(false, vp);
+    await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
+    assert.strictEqual(ms.length, 23, "23 captions across the three flows");
+    ms.forEach((m, k) => {
+      const w = `${vp.width}x${vp.height} caption ${k}: ${JSON.stringify(m)}`;
+      assert.ok(m.lines <= 2 && !m.clip, "two lines at most, nothing clipped: " + w);
+      assert.ok(m.align === "right" && m.capR <= 2, "caption right edge on the stage's right edge: " + w);
+      assert.ok(m.barL <= 2 && m.barR <= 2 && m.ctlL <= 2, "bar edges on the stage's edges: " + w);
+      assert.ok(m.hdrOneLine && !m.over, "heading on one line, nothing overflowing: " + w);
+      assert.ok(m.capAboveCtl || m.dotsGap >= 32, "at least 32px between the dots and the caption: " + w);
+    });
+    await t.close();
+  }
+  { const t = await tourPage(false, { width: 360, height: 740 });
+    await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
+    ms.forEach((m, k) => assert.ok(m.capAboveCtl && !m.clip && !m.over && m.align === "right", `360x740 caption ${k}: ${JSON.stringify(m)}`));
+    await t.click("#fsclose"); await t.waitForFunction(() => !document.documentElement.classList.contains("fs")); await t.close(); }
+  { const t = await tourPage(false, { width: 740, height: 360 });
+    await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
+    const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
+    ms.forEach((m, k) => assert.ok(m.oneRow && !m.clipV && !m.over && m.stageH >= m.vh * 0.6 && m.align === "right" && m.capR <= 2, `740x360 caption ${k}: ${JSON.stringify(m)}`));
+    await t.keyboard.press("Escape"); await t.waitForFunction(() => !document.documentElement.classList.contains("fs")); await t.close(); }
   console.log("tour js: all passed");
 } finally { await browser.close(); }
