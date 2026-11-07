@@ -595,15 +595,18 @@ html.fs .fsclose{display:inline-flex;align-items:center;justify-content:center;p
 html.fs .fsclose .ms{font-size:24px;line-height:1}.fsclose:hover{background:rgba(44,53,80,.92)}.fsclose:focus-visible{outline:2px solid #7fd3ea;outline-offset:2px}
 #card .fsonly{display:none}
 html.fs #card .fsonly{display:inline-flex}
-#card .acts.end{align-items:center;gap:8px 18px}
-#card .sec{display:inline-flex;flex-wrap:wrap;align-items:center;gap:2px 14px}
+#card .acts.end{flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:20px}
+#card .acts.end .go{width:100%;box-sizing:border-box;justify-content:center;height:auto;min-height:52px;padding:12px 22px;font-size:17px;text-align:center}
+#card .sec{display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:8px;width:100%;margin:0 0 8px;padding:0;font-size:inherit;letter-spacing:0;text-transform:none}
+#card .sec .quiet{padding:4px 0;white-space:nowrap}
+#card .sec .quiet:only-child{margin-right:auto}
 #card .quiet{height:auto;min-height:32px;padding:4px 6px;border:0;border-radius:6px;background:none;color:var(--ph-muted);font-size:14px;font-weight:500;gap:6px}
 #card .quiet:hover{color:var(--ph-navy);text-decoration:underline;text-underline-offset:3px}
 #card .quiet .ms{font-size:18px}
 #card .quiet:focus-visible,#card .go:focus-visible{outline:2px solid var(--ph-teal-d);outline-offset:2px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #card .quiet:hover{color:#fff}}
 :root[data-theme="dark"] #card .quiet:hover{color:#fff}
-@media (max-width:480px){#card .acts.end{flex-direction:column;align-items:stretch}#card .acts.end .go{justify-content:center;height:auto;min-height:46px;padding:10px 18px;text-align:center}#card .sec{justify-content:center}}
+@media (max-height:520px){#card .acts.end .go{min-height:44px;padding:8px 18px;font-size:16px}#card .sec{margin-bottom:0}}
 #card .fslink{height:auto;padding:6px 4px;border:0;background:none;color:#0F7A9A;font-size:14px;text-decoration:underline;text-underline-offset:3px}
 html.fs #card .fslink{display:none}
 :root.fs{--bg:#0F1424;--panel:#192033;--fg:#e7edf2;--muted:#a3acc0;--line:#2c3550;--chip:#16303a;color-scheme:dark}

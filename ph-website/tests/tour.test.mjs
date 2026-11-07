@@ -248,6 +248,25 @@ try {
     if (fsMode) { await et.evaluate(() => { __t.setFlow(1); __t.showEnd(); }); await et.click("#fsexit"); await et.waitForFunction(() => !document.documentElement.classList.contains("fs")); }
     await et.close();
   }
+  // End card layout: Next spans the card, Replay bottom left, Exit full screen bottom right, spaced, nothing overflowing.
+  for (const vp of [{ width: 1280, height: 800 }, { width: 740, height: 360 }, { width: 360, height: 740 }]) for (const fsMode of [false, true]) {
+    const lt = await tourPage(false, vp, hooked);
+    if (fsMode) { await lt.click("#fs"); await lt.waitForFunction(() => document.documentElement.classList.contains("fs")); }
+    await lt.evaluate(() => { __t.setFlow(0); __t.showEnd(); });
+    await lt.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => 0))));
+    await lt.waitForTimeout(100);
+    const g = await lt.evaluate(() => { const $ = (i) => document.getElementById(i), r = (e) => e.getBoundingClientRect(), c = r(document.querySelector("#card .in2")), cs = getComputedStyle(document.querySelector("#card .in2")), k = c.width / document.querySelector("#card .in2").offsetWidth, L = c.left + k * parseFloat(cs.paddingLeft), R = c.right - k * parseFloat(cs.paddingRight), n = r($("nextflow")), a = r($("again")), x = $("fsexit"), xr = r(x), vis = getComputedStyle(x).display !== "none", sec = r(document.querySelector("#card .sec")), st = r(document.querySelector("#card .stage, .stagebox") || document.body);
+      return { nW: n.width / (R - L), aL: a.left - L, xR: vis ? R - xr.right : 0, vis, gap: (sec.top - n.bottom) / k, aBelow: a.top >= n.bottom, inCard: c.left >= 0 && c.right <= innerWidth + 0.5 && c.top >= -0.5 && c.bottom <= innerHeight + 0.5, ov: document.querySelector("#card .in2").scrollWidth <= document.querySelector("#card .in2").offsetWidth, fits: c.top >= r(document.getElementById("card")).top - 0.5 && c.bottom <= r(document.getElementById("card")).bottom + 0.5 && c.left >= r(document.getElementById("card")).left - 0.5 && c.right <= r(document.getElementById("card")).right + 0.5, cardTop: c.top, cardBottom: c.bottom, vh: innerHeight }; });
+    const w = `${vp.width}x${vp.height}${fsMode ? " fs" : ""}: ${JSON.stringify(g)}`;
+    assert.ok(g.nW >= 0.95, "Next spans the card " + w);
+    assert.ok(Math.abs(g.aL) <= 2, "Replay flush left " + w);
+    if (g.vis) assert.ok(Math.abs(g.xR) <= 2, "Exit full screen flush right " + w);
+    assert.ok(g.vis === fsMode, "Exit shown only in full screen " + w);
+    assert.ok(g.gap >= 20 && g.aBelow, "gap Next to secondary row >= 20px " + w);
+    assert.ok(g.fits, "card fits its stage " + w);
+    assert.ok(g.ov, "nothing overflows the card " + w);
+    await lt.close();
+  }
   { // single-flow focus mode: no Next, Replay is the only action and has focus
     const ft = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await ft.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort());
