@@ -979,6 +979,8 @@ async function typeInto(el, text, id, cps=55, onProgress) {
   tx.textContent = text; caret.classList.remove("typing"); onProgress && onProgress(1);
 }
 let resetScroll = true;
+/* Rule steps after the first: repaint (at the top, instantly) then jump straight to the rules so the newest existing rule sits where focusRow left it at the end of the previous step (20% down), with the add button below it and Campaign Insights scrolled clear above. Same task, so no frame at the top is ever painted. */
+const paintRules = html => { paint(html); const sc = q("#sc"), gs = document.querySelectorAll("#rules .rgroup"), l = gs[gs.length-1]; if (!sc || !l) return; const o = sc.getBoundingClientRect().top, iw = q("#insw"); setTop(Math.max(TOP + (l.getBoundingClientRect().top - o)/S.scale - sc.clientHeight*0.2, iw ? TOP + (iw.getBoundingClientRect().bottom - o)/S.scale + 8 : 0), 0); };
 const paint = html => { const top = resetScroll ? 0 : TOP; resetScroll = false; screen.innerHTML = html; setTop(top, 0); hideTip(); };
 async function dictate(el, text, id, onProgress) {
   el.innerHTML = `<span class="tx"></span><span class="interim"></span>`;
@@ -1301,7 +1303,7 @@ const STEPS2 = [
      await pickMany(q("#s0d"), L().segs.fixed, r[3], "#s0d", id);
      tip(q("#rg0"),"Fixed Store Segments",`The campaign plays only in ${r[3].join(" and ")} stores.`,4); await wait(2800,id); hideTip(); } },
  { t:"Suppress when stock runs out", s:"Add a Variable Store Segments rule. Store staff switch these segments on and off, so when a store runs out of stock the campaign stops playing in that store.",
-   enter(){ paint(targetScreen([L().rule1])); },
+   enter(){ paintRules(targetScreen([L().rule1])); },
    async play(id){ const tb=q("#addand"); await moveTo(tb,id); tip(tb,this.t,this.s,5); await wait(3000,id); hideTip(); await click(tb,id);
      q("#rules").innerHTML = rulesHTML([L().rule1, [,,,[]]]); await focusRow(q("#rg1"),id); const r=L().rule3;
      await pick(q("#s1a"), SRC, r[0], id); setSel("#s1a", r[0]);
@@ -1310,7 +1312,7 @@ const STEPS2 = [
      await pickMany(q("#s1d"), L().segs.variable, r[3], "#s1d", id);
      tip(q("#rg1"),"Variable Store Segments",`If staff in a store switch on ${r[3].join(" or ")}, the campaign is suppressed in that store until they switch it off.`,5); await wait(3200,id); hideTip(); } },
  { t:"Respond to who's in store", s:"Add a rule from Queueing / Aggregate Visitor Data. It describes everyone in the store or queue right now, not one person, so the campaign plays when the mix suits it.",
-   enter(){ paint(targetScreen([L().rule1, L().rule3])); },
+   enter(){ paintRules(targetScreen([L().rule1, L().rule3])); },
    async play(id){ const tb=q("#addand"); await moveTo(tb,id); tip(tb,this.t,this.s,6); await wait(3200,id); hideTip(); await click(tb,id);
      const l=L(), r=l.rule2, blank=Object.assign([], {pct:true, sub:l.subMode});
      q("#rules").innerHTML = rulesHTML([l.rule1, l.rule3, blank]); await focusRow(q("#rg2"),id);
@@ -1495,7 +1497,7 @@ const STEPS3 = [
      await pick(q("#s0d"), p.reasons, r[3][0], id); addTag("#s0d", r[3][0]);
      tip(q("#rg0"),"Linked to the check-in",`The values are the reasons on your queue form, so the campaign targets visitors who check in for ${r[3][0]}.`,1); await wait(3200,id); hideTip(); } },
  { t:"Add first-party and loyalty data", s:`Add more Visitor / Customer Data rules, ${S.ind === "pharmacy" ? "such as the Loyalty Gold segment from your own data or a front-of-house purchase category from your POS" : "such as the device type captured at check-in, age, or the Loyalty Gold segment from your own data"}, so the campaign plays only for the right customer.`,
-   enter(){ paint(targetScreen([P3().r1])); },
+   enter(){ paintRules(targetScreen([P3().r1])); },
    async play(id){ const p=P3();
      for (const [g, r, mode] of [[1, p.r2, p.r2mode], [2, p.r3, "text"]]) {
        const tb=q("#addand"); await moveTo(tb,id); if (g===1) { tip(tb,this.t,this.s,2); await wait(3000,id); hideTip(); } await click(tb,id);

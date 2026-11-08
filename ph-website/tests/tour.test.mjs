@@ -349,6 +349,51 @@ try {
   await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position === "fixed");
   await cf.click("#fsclose"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position !== "fixed");
   await fp.close();
+  // Adding a 2nd/3rd rule must not jump back to the top (Campaign Insights) and back; steps open already on the rules. Desktop and full screen.
+  for (const full of [false, true]) {
+    const t = await tourPage(false, { width: 1280, height: 800 });
+    if (full) { await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs")); }
+    const topOf = () => t.evaluate(() => { const m = /translate3d\(0px,\s*(-?[\d.]+)px/.exec(document.getElementById("sci").style.transform || ""); return m ? -parseFloat(m[1]) : 0; });
+    const inView = (sel) => t.evaluate((sel) => { const e = document.querySelector(sel), sc = document.getElementById("sc"); if (!e) return false; const r = e.getBoundingClientRect(), s = sc.getBoundingClientRect(); return r.height > 0 && r.bottom > s.top + 1 && r.top < s.bottom - 1; }, sel);
+    for (const [k, first, steps] of [[1, "Target by store segment", ["Suppress when stock runs out", "Respond to who's in store"]], [2, "Target the reason for visit", ["Add first-party and loyalty data"]]]) {
+      const where = `${ind} ${full ? "full screen" : "inline"} flow ${k + 1}`;
+      await t.click(`.chip[data-k="${k}"]`); await t.waitForTimeout(150);
+      if ((await t.getAttribute("#play", "aria-label")) === "Pause") await t.click("#play");
+      const titles = await t.evaluate(() => [...document.querySelectorAll("#dots .dot")].map((d) => d.getAttribute("aria-label") || d.title || ""));
+      const idx = async (name) => { for (let i = 0; i < 12; i++) { await t.locator("#dots .dot").nth(i).evaluate((e) => e.click()); await t.waitForFunction((i) => document.getElementById("capT").textContent.startsWith(`${i + 1}.`), i); if ((await t.textContent("#capT")).includes(name)) return i; } throw new Error("step not found: " + name); };
+      // Opened directly: the first painted frame already shows the rules and the add button.
+      for (const name of steps) {
+        const at = await idx(name);
+        await t.locator("#dots .dot").nth(0).evaluate((e) => e.click()); await t.waitForFunction(() => document.getElementById("capT").textContent.startsWith("1."));
+        await t.evaluate(() => { window.__frames = []; const f = () => { const sc = document.getElementById("sc"); if (sc && document.getElementById("addand")) { const e = (id) => { const r = document.getElementById(id)?.getBoundingClientRect(), s = sc.getBoundingClientRect(); return !!r && r.bottom > s.top && r.top < s.bottom; }; window.__frames.push({ rg0: (() => { const g = document.querySelectorAll("#rules .rgroup"); return g.length ? e(g[g.length - 1].id) : false; })(), add: e("addand"), ins: e("insw") }); } window.__raf = requestAnimationFrame(f); }; f(); });
+        await t.locator("#dots .dot").nth(at).evaluate((e) => { window.__frames.length = 0; e.click(); });
+        await t.waitForTimeout(80);
+        const fr = await t.evaluate(() => { cancelAnimationFrame(window.__raf); return window.__frames; });
+        assert.ok(fr.length && fr.every((x) => x.rg0 && x.add && !x.ins), `${where} "${name}": the rules and #addand in view and no insights block, on every painted frame: ${JSON.stringify(fr.slice(0, 3))}`);
+      }
+      // Played through: sample the scroll every 50 ms from the first rule step; it never returns to 0 and Campaign Insights never shows.
+      await idx(first);
+      if ((await t.getAttribute("#play", "aria-label")) !== "Pause") await t.click("#play");
+      await t.waitForFunction(() => document.getElementById("addand") && document.querySelectorAll("#rules .rgroup").length >= 1, null, { timeout: 60000 }).catch(() => {});
+      const last = steps[steps.length - 1], seen = [];
+      const t0 = Date.now(); let started = false;
+      while (Date.now() - t0 < 120000) {
+        const cap = await t.textContent("#capT");
+        if (steps.some((n) => cap.includes(n))) started = true;
+        if (started) {
+          const sm = { cap, top: await topOf(), ins: await inView("#insw .insin, #insw > *") };
+          seen.push(sm);
+          if (cap.includes(last) && (await t.locator("#save").count()) && (await t.getAttribute("#save", "class") || "").includes("dis")) break;
+        }
+        await t.waitForTimeout(50);
+      }
+      assert.ok(seen.length > 20, `${where}: sampled the rule steps (${seen.length})`);
+      const bad = seen.filter((x) => x.top === 0 || x.ins);
+      assert.deepStrictEqual(bad.slice(0, 3), [], `${where}: scroll never returns to 0 and the insights block never shows during the rule steps`);
+      if ((await t.getAttribute("#play", "aria-label")) === "Pause") await t.click("#play");
+    }
+    await t.close();
+  }
   // Step caption on the controls row (controls left, caption right-aligned to the stage's right edge), full screen and inline, every step of all three flows.
   const capMetrics = () => { const r = (e) => e.getBoundingClientRect(), b = document.querySelector(".bar"), c = document.querySelector(".cap"), t = document.getElementById("capT"), d = document.getElementById("capS"), st = r(document.getElementById("box")), br = r(b), cr = r(c), ctl = r(document.getElementById("prev")), play = r(document.getElementById("play")), dots = r(document.getElementById("dots")), fsb = document.getElementById("fs"), fr = r(fsb);
     const lh = parseFloat(getComputedStyle(d).lineHeight), dh = d.getBoundingClientRect().height, vis = getComputedStyle(d).display !== "none";
