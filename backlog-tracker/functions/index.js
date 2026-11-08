@@ -11,6 +11,7 @@
 
 const { onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
@@ -2254,7 +2255,7 @@ exports.mediaKeys = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY], co
 // See partner-central.js and deploy/aws/README.md.
 const { createPartnerCentralApi } = require("./partner-central");
 let partnerCentralApi = null;
-exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstances: 3 }, (req, res) => {
+function getPartnerCentralApi() {
   if (!partnerCentralApi) {
     const { getAuth } = require("firebase-admin/auth");
     const { GoogleAuth } = require("google-auth-library");
@@ -2269,7 +2270,18 @@ exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstanc
       logger,
     });
   }
-  return partnerCentralApi.handle(req, res);
+  return partnerCentralApi;
+}
+exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstances: 3 }, (req, res) => getPartnerCentralApi().handle(req, res));
+
+// ACE opportunity stages → GA4 Measurement Protocol, keyed on the GA4
+// client_id the website captured with each lead (ace-ga4.js). Hourly.
+// Sends for real only while Partner Central's catalogue is "AWS".
+const GA4_MP_API_SECRET = defineSecret("GA4_MP_API_SECRET");
+const { createAceGa4Job } = require("./ace-ga4");
+exports.aceToGa4 = onSchedule({ schedule: "every 60 minutes", timeZone: "Etc/UTC", secrets: [GA4_MP_API_SECRET], timeoutSeconds: 300, maxInstances: 1 }, async () => {
+  const job = createAceGa4Job({ db: getFirestore(), partnerCentral: getPartnerCentralApi(), apiSecret: () => GA4_MP_API_SECRET.value(), logger });
+  await job.run();
 });
 
 // Promote › Leads: the page's Enrich button (lead-enrich.js). Reads the

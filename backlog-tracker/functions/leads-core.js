@@ -157,6 +157,23 @@ function leadFromForm(form) {
 // keys (name/company, website, industry, countries, storeCount, contactName,
 // jobTitle, email, linkedin) plus page, industry and test. `test` is true for
 // true/"1"/"true"/"yes"/"on". Returns { errors } or { errors: [], fields, contact, test }.
+// GA4 ids the website captured from the visitor's _ga cookies (ph-website PH GA4 snippet), so offline ACE stage changes
+// can be sent to GA4 by Measurement Protocol (functions/ace-ga4.js). Validated, never invented: no consent, no id.
+const GA_CLIENT_ID = /^\d{1,20}\.\d{9,11}$/;
+const GA_SESSION_ID = /^\d{9,11}$/;
+function gaEntryFromWebsite(p, at) {
+  const x = p || {};
+  const clientId = String(x.gaClientId || x.ga_client_id || "").trim();
+  if (!GA_CLIENT_ID.test(clientId)) return null;
+  const sessionId = String(x.gaSessionId || x.ga_session_id || "").trim();
+  return { clientId, sessionId: GA_SESSION_ID.test(sessionId) ? sessionId : "", leadSource: str(x.leadSource || x.lead_source, LIMITS.source), at: at || new Date().toISOString() };
+}
+// Newest last, one row per clientId (a repeat refreshes it), the 10 newest kept.
+function mergeGaClientIds(list, entry) {
+  const rows = (Array.isArray(list) ? list : []).filter((r) => r && GA_CLIENT_ID.test(String(r.clientId || "")));
+  if (!entry) return rows.slice(-10);
+  return [...rows.filter((r) => r.clientId !== entry.clientId), entry].slice(-10);
+}
 const truthy = (v) => v === true || ["1", "true", "yes", "on"].includes(String(v == null ? "" : v).trim().toLowerCase());
 function leadFromWebsite(p) {
   const x = p || {};
@@ -206,6 +223,7 @@ function normaliseLead(id, d) {
     sourceIndustry: String(x.sourceIndustry || ""),
     sourceLabel: String(x.sourceLabel || ""),
     sourceDetail: String(x.sourceDetail || ""),
+    gaClientIds: mergeGaClientIds(x.gaClientIds, null),
     websiteActivity: (Array.isArray(x.websiteActivity) ? x.websiteActivity : []).filter((a) => a && typeof a === "object")
       .map((a) => ({ at: typeof a.at === "string" ? a.at : "", atMs: ms(a.at), label: String(a.label || ""), detail: String(a.detail || ""), page: String(a.page || "") })),
     prospectId: String(x.prospectId || ""),
@@ -266,4 +284,4 @@ function companyLine(l) {
   return parts.join(" · ");
 }
 
-module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, BUYING_ROLES, BUYING_ROLE_KEYS, LIMITS, stageLabel, roleLabel, isStage, isClosed, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, truthy, leadFromWebsite, normaliseLead, groupByStage, conversionFields, mergeCompanyEnrichment, companyLine };
+module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, BUYING_ROLES, BUYING_ROLE_KEYS, LIMITS, stageLabel, roleLabel, isStage, isClosed, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, gaEntryFromWebsite, mergeGaClientIds, truthy, leadFromWebsite, normaliseLead, groupByStage, conversionFields, mergeCompanyEnrichment, companyLine };

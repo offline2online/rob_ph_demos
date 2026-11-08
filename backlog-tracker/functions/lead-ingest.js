@@ -31,13 +31,14 @@ function createLeadIngest({ db, key, logger }) {
     if (r.errors.length) return send(res, 400, { error: r.errors.join(" ") });
 
     const entry = { at: new Date().toISOString(), label: r.fields.sourceLabel, detail: r.fields.sourceDetail, page: r.fields.sourcePage };
+    const ga = r.test ? null : core.gaEntryFromWebsite(req.body, entry.at); // test leads never reach GA4
     const col = db.collection("leads");
     const existing = (await col.get()).docs
       .find((d) => (d.data().test === true) === r.test && nameKey((d.data().company || {}).name) === nameKey(r.fields.company.name));
     try {
       if (!existing) {
         const ref = await col.add({
-          ...r.fields, websiteActivity: [entry], customerAccount: null,
+          ...r.fields, websiteActivity: [entry], customerAccount: null, gaClientIds: core.mergeGaClientIds([], ga),
           createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), stageChangedAt: FieldValue.serverTimestamp(),
           createdByEmail: "website", updatedByEmail: "website",
         });
@@ -58,6 +59,7 @@ function createLeadIngest({ db, key, logger }) {
         ...(cur.sourceLabel ? {} : { sourceLabel: r.fields.sourceLabel }),
         ...(cur.sourceDetail ? {} : { sourceDetail: r.fields.sourceDetail }),
         websiteActivity: [...cur.websiteActivity.map(({ atMs, ...a }) => a), entry].slice(-core.LIMITS.activity),
+        ...(ga ? { gaClientIds: core.mergeGaClientIds(cur.gaClientIds, ga) } : {}),
         updatedAt: FieldValue.serverTimestamp(), updatedByEmail: "website",
       });
       return send(res, 200, { ok: true, leadId: existing.id, created: false, test: r.test });
