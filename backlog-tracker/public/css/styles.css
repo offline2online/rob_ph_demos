@@ -981,6 +981,10 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
      Trimmed again, 46 -> 40px (hXR16fmKAq0f2pJAtwiq), as part of lowering
      the sticky bar's overall height on a phone screen. */
   .topbar-logo-img { height: 48px; }
+  /* The Whiteboard icon beside the bell must not push the bar onto a second row. */
+  .topbar { flex-wrap: nowrap; gap: 6px; }
+  .topbar-actions { gap: 2px; }
+  .whiteboard-top-btn { padding: 4px; }
   .btn-primary, .btn-ghost { min-height: 40px; }
 
   .board { grid-template-columns: 1fr; overflow-x: visible; }
@@ -2637,3 +2641,6 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 :root[data-theme="dark"] .ace-dlg-status[data-tone="bad"] { color: #ff7875; }
 :root[data-theme="dark"] .ace-dlg-status[data-tone="ok"] { color: #95de64; }
 @media (max-width: 640px) { .ace-dlg-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.whiteboard-top-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; min-height: 40px; }
+.whiteboard-top-btn .material-symbols-outlined { font-size: 26px; }
