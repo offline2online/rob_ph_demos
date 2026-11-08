@@ -53,6 +53,9 @@
 .ph-ind-gate .ph-ind-gate-l input{box-sizing:border-box;width:100%;border:1px solid #DCE1EB;border-radius:10px;padding:9px 12px;font:400 14px/1.2 "Kantumruy Pro",system-ui,sans-serif;color:#1C2540;background:#fff;min-height:44px}
 .ph-ind-gate .ph-ind-gate-l input:focus{border-color:#1C2540;box-shadow:0 0 0 3px rgba(28,37,64,.12);outline:none}
 .ph-ind-gate .ph-ind-gate-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.ph-ind-gate .ph-ind-gate-known .ph-ind-gate-l,.ph-ind-gate .ph-ind-gate-known .ph-ind-gate-c{display:none}
+.ph-ind-gate .ph-ind-gate-k{grid-column:1/-1;margin:0;font:400 14px/1.4 "Kantumruy Pro",system-ui,sans-serif;color:#1C2540}
+.ph-ind-gate .ph-ind-gate-k[hidden]{display:none}
 .ph-ind-gate .ph-ind-gate-c{grid-column:1/-1;display:flex;flex-wrap:nowrap;gap:8px;align-items:center;margin:0;font:400 14px/1.4 "Kantumruy Pro",system-ui,sans-serif;color:#5A6479;cursor:pointer}
 .ph-ind-gate .ph-ind-gate-c input{flex:0 0 auto;width:18px;height:18px;margin:0;accent-color:var(--ph-ind-a,#169BC2)}
 .ph-ind-gate .ph-ind-gate-c span,.ph-ind-gate .ph-ind-gate-c a{font:400 14px/1.4 "Kantumruy Pro",system-ui,sans-serif;white-space:nowrap}

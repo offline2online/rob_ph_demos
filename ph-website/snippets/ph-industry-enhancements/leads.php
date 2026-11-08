@@ -33,6 +33,35 @@ function lead_throttled() {
 	return false;
 }
 
+/**
+ * One ph_lead per person: finds the existing private ph_lead with this email and test flag (or 0). A repeat capture (calculator
+ * download after the tour, or the reverse) then adds an activity row to it instead of a second lead; the console dedupes the same way.
+ */
+function lead_find_existing( $email, $test ) {
+	$q = new \WP_Query( array(
+		'post_type'      => 'ph_lead',
+		'post_status'    => 'private',
+		'posts_per_page' => 1,
+		'fields'         => 'ids',
+		'no_found_rows'  => true,
+		'orderby'        => 'ID',
+		'order'          => 'ASC',
+		'meta_query'     => array_filter( array(
+			array( 'key' => 'ph_lead_email', 'value' => (string) $email ),
+			$test ? array( 'key' => 'ph_lead_test', 'value' => '1' ) : array( 'key' => 'ph_lead_test', 'compare' => 'NOT EXISTS' ),
+		) ),
+	) );
+	return empty( $q->posts ) ? 0 : (int) $q->posts[0];
+}
+
+/** Appends one activity row (source label, detail, time) to a ph_lead. */
+function lead_add_activity( $id, $label, $detail = '' ) {
+	$rows   = get_post_meta( (int) $id, 'ph_lead_activity', true );
+	$rows   = is_array( $rows ) ? $rows : array();
+	$rows[] = array( 'label' => (string) $label, 'detail' => (string) $detail, 'at' => gmdate( 'c' ) );
+	update_post_meta( (int) $id, 'ph_lead_activity', array_slice( $rows, -50 ) );
+}
+
 /** The console body for a captured lead. Pure, so it is unit-tested. */
 function lead_ingest_body( array $lead ) {
 	$s    = function ( $k ) use ( $lead ) {

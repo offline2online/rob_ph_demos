@@ -513,6 +513,7 @@ ok( $lb2['contactName'] === 'Bo' && $lb2['jobTitle'] === 'Head' && $lb2['industr
 /* regression guard: the lead form, test mode and page field must not be dropped by a later edit of enhance.js / telco-lead.php */
 $dir = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/';
 $ejs = file_get_contents( $dir . 'enhance.js' );
+ok( false === strpos( $ejs, 'retail: "Retail"' ), 'enhance.js: no Talk to us lead form on the retail page' );
 ok( false !== strpos( $ejs, 'LEAD_FORM' ) && false !== strpos( $ejs, 'function setupLeadForm' ) && false !== strpos( $ejs, 'setupLeadForm();' ), 'enhance.js: LEAD_FORM and setupLeadForm are wired' );
 ok( false !== strpos( $ejs, 'function testMode' ) && false !== strpos( $ejs, 'ph_test=1' ), 'enhance.js: testMode reads ?ph_test=1' );
 ok( 1 === preg_match( '/var body = \{inputs: current\(\), consent: cb\.checked, page: location\.origin \+ location\.pathname\};\s*if \(testMode\(\)\) body\.test = true;/', $ejs ), 'enhance.js: telco gate body carries page and test' );

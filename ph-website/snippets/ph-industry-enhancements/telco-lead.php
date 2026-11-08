@@ -61,17 +61,25 @@ add_action( 'rest_api_init', function () {
 			$test = ! empty( $b['test'] ) && in_array( strtolower( (string) $b['test'] ), array( '1', 'true', 'yes', 'on' ), true );
 			$vals = telco_clean( isset( $b['inputs'] ) ? $b['inputs'] : array() );
 			$calc = telco_calc( $vals );
-			$id   = wp_insert_post( array( 'post_type' => 'ph_lead', 'post_status' => 'private', 'post_title' => $lead['company'] . ' / ' . $lead['name'] ) );
+			$id   = lead_find_existing( $lead['email'], $test );
+			if ( $id ) { // already a lead (for instance from the product tour): record this download as activity, not a second lead.
+				lead_add_activity( $id, 'Telco business model download' );
+			} else {
+				$id = wp_insert_post( array( 'post_type' => 'ph_lead', 'post_status' => 'private', 'post_title' => $lead['company'] . ' / ' . $lead['name'] ) );
+			}
 			if ( $id && ! is_wp_error( $id ) ) {
-				foreach ( $lead as $k => $v ) {
-					update_post_meta( $id, 'ph_lead_' . $k, $v );
+				if ( ! get_post_meta( $id, 'ph_lead_source', true ) ) {
+					foreach ( $lead as $k => $v ) {
+						update_post_meta( $id, 'ph_lead_' . $k, $v );
+					}
+					update_post_meta( $id, 'ph_lead_source', 'telco-business-model' );
+					if ( $test ) {
+						update_post_meta( $id, 'ph_lead_test', '1' );
+					}
+					update_post_meta( $id, 'ph_lead_source_label', 'Telco business model download' );
+					update_post_meta( $id, 'ph_lead_consent', 1 );
+					lead_add_activity( $id, 'Telco business model download' );
 				}
-				update_post_meta( $id, 'ph_lead_source', 'telco-business-model' );
-				if ( $test ) {
-					update_post_meta( $id, 'ph_lead_test', '1' );
-				}
-				update_post_meta( $id, 'ph_lead_source_label', 'Telco business model download' );
-				update_post_meta( $id, 'ph_lead_consent', 1 );
 				update_post_meta( $id, 'ph_lead_inputs', wp_json_encode( $vals ) );
 				update_post_meta( $id, 'ph_lead_estimate', round( $calc['total'] ) );
 			}
