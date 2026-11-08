@@ -1,6 +1,6 @@
 // node ph-website/tests/tour.test.mjs : the telco product tour on the industry page (enhance.js + site.js), in Chromium.
 // Checks: the band is mounted (Elementor mount, or built after the calculator's section), the iframe src (+ph_test forwarding), the height
-// message, window.PH_TOUR, "Arrange a Demo" -> PH_SITE_DEMO, and that a successful calculator download / Talk to us submit writes
+// message, window.PH_TOUR, "Arrange a Demo" -> PH_SITE_DEMO, and that a successful calculator download writes
 // localStorage ph_lead and dispatches window "ph:lead". Skips (exit 0) when Playwright or Chromium is not available.
 import { createRequire } from "module";
 import fs from "fs";
@@ -17,7 +17,8 @@ const site = fs.readFileSync(path.join(dir, "site.js"), "utf8");
 const { CALC } = require(path.join(dir, "enhance.js"));
 const n = CALC.telco.inputs.length + CALC.telco.assumptions.length;
 const row = '<div class="ph-ind-cf"><span class="ph-ind-cf-l">L</span><span class="ph-ind-cf-v">V</span></div>';
-const html = (withBand) => `<!doctype html><html><body><main>
+const css = fs.readFileSync(path.join(dir, "enhance.css"), "utf8");
+const html = (withBand) => `<!doctype html><html><head><style>${css}</style></head><body><main>
 <section class="ph-ind-sec" id="calcsec"><div class="ph-ind-calc"><div class="ph-ind-cin"><p class="ph-ind-label-gap">a</p><p class="ph-ind-label-gap">b</p>${row.repeat(n)}</div>
 <div class="ph-ind-cout"><p class="ph-ind-ctot-l">Total</p><p class="ph-ind-ctot-v">0</p><div class="ph-ind-crow">r</div></div></div></section>
 ${withBand ? '<section class="ph-ind-sec ph-ind-tour" id="band"><h2>Server heading</h2><div class="ph-ind-tour-mount"></div></section>' : ""}
@@ -101,19 +102,38 @@ try {
   assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/telco/tour/?embed=1&ph_test=1", "ph_test forwarded");
   await p.close();
 
-  // Talk to us success writes ph_lead and announces it.
+  // The telco page has no standalone "Talk to us" form any more: leads come only from the calculator download or the tour.
   p = await open(true);
-  await p.evaluate(() => { window.__ev = []; window.addEventListener("ph:lead", (e) => window.__ev.push(e.detail)); });
-  const f = p.locator(".ph-ind-lead form");
-  await f.locator("[name=company]").fill("Nimbus Mobile");
-  await f.locator("[name=contact_name]").fill("Ada Lovelace");
-  await f.locator("[name=email]").fill("ada@nimbus.example");
-  await f.locator("[name=consent]").check();
-  await f.locator("button[type=submit]").click();
-  await p.waitForFunction(() => window.__ev.length === 1);
-  let lead = await p.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")));
-  assert.ok(lead.name === "Ada Lovelace" && lead.company === "Nimbus Mobile" && lead.email === "ada@nimbus.example" && lead.source === "Talk to us" && typeof lead.ts === "number", "ph_lead from Talk to us: " + JSON.stringify(lead));
-  assert.deepStrictEqual(await p.evaluate(() => window.__ev[0]), lead, "ph:lead detail equals the stored lead");
+  assert.strictEqual(await p.locator(".ph-ind-lead").count(), 0, "no Talk to us form on the telco page");
+  assert.strictEqual(await p.locator("form.ph-ind-gate-f").count(), 1, "only the calculator download form remains");
+  await p.close();
+
+  // Tour first, then calculator: the tour (same origin iframe) stores ph_lead; the download form needs no re-entry.
+  p = await open(true);
+  const gf = p.locator("form.ph-ind-gate-f").first();
+  assert.ok(await gf.locator("[name=name]").isVisible(), "a fresh visitor sees the download details form");
+  await p.frameLocator("iframe.ph-ind-tour-frame").locator("p").waitFor();
+  const tourFrame = p.frames().find((x) => x !== p.mainFrame());
+  await tourFrame.evaluate(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Ada Lovelace", company: "Nimbus Mobile", email: "ada@nimbus.example", source: "Interactive product tour", ts: Date.now() })));
+  await p.waitForFunction(() => document.querySelector("form.ph-ind-gate-f").classList.contains("ph-ind-gate-known"));
+  assert.ok(!(await gf.locator("[name=name]").isVisible()) && !(await gf.locator("[name=consent]").isVisible()), "details and consent are not asked again");
+  assert.ok(await gf.locator("button[type=submit]").isEnabled(), "download button is ready");
+  let posted = null;
+  await p.route("**/wp-json/ph-site/v1/telco-model", (r) => { posted = JSON.parse(r.request().postData()); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, download: "http://x.test/blocked.xlsx" }) }); });
+  await gf.locator("button[type=submit]").click();
+  await p.waitForFunction(() => /Thanks/.test(document.querySelector(".ph-ind-gate-m").textContent));
+  assert.ok(posted && posted.name === "Ada Lovelace" && posted.company === "Nimbus Mobile" && posted.email === "ada@nimbus.example" && posted.consent === true, "stored details sent: " + JSON.stringify(posted));
+  await p.close();
+
+  // A returning visitor (ph_lead already stored) sees the known state straight away; a test-mode page flags the lead as a test.
+  p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await p.addInitScript(() => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Ada Lovelace", company: "Nimbus Mobile", email: "ada@nimbus.example", ts: 1 })); });
+  await p.route("**/*", (r) => /wp-json\/ph-site\/v1\/telco-model$/.test(r.request().url()) ? (posted = JSON.parse(r.request().postData()), r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, download: "http://x.test/blocked.xlsx" }) })) : /blocked\.xlsx/.test(r.request().url()) ? r.fulfill({ status: 204, body: "" }) : /tour\//.test(r.request().url()) ? r.fulfill({ contentType: "text/html", body: "<p>tour</p>" }) : r.fulfill({ contentType: "text/html", body: html(true) }));
+  await p.goto("http://x.test/industries/telco/?ph_test=1");
+  assert.ok(await p.locator("form.ph-ind-gate-known").count() === 1 && await p.locator("button.ph-ind-gate-b").isEnabled(), "returning visitor skips the form");
+  await p.locator("button.ph-ind-gate-b").click();
+  await p.waitForFunction(() => /Thanks/.test(document.querySelector(".ph-ind-gate-m").textContent));
+  assert.strictEqual(posted.test, true, "test mode flagged");
   await p.close();
 
   // Calculator download success does the same.
@@ -126,20 +146,19 @@ try {
   await g.locator("[name=consent]").check();
   await g.locator("button[type=submit]").click();
   await p.waitForFunction(() => window.__ev.length === 1);
-  lead = await p.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")));
+  const lead = await p.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")));
   assert.ok(lead.name === "Grace Hopper" && lead.company === "Orbit Telecom" && lead.email === "grace@orbit.example" && lead.source === "Telco business model download", "ph_lead from the calculator download: " + JSON.stringify(lead));
   // A blocked localStorage must not break the form.
   await p.close();
   p = await browser.newPage();
   await p.addInitScript(() => { Object.defineProperty(window, "localStorage", { get() { throw new Error("blocked"); } }); });
-  await p.route("**/*", (r) => r.request().url().includes("industry-lead") ? r.fulfill({ contentType: "application/json", body: '{"ok":true}' }) : r.fulfill({ contentType: "text/html", body: html(true) }));
+  await p.route("**/*", (r) => r.request().url().includes("telco-model") ? r.fulfill({ contentType: "application/json", body: '{"ok":true,"download":"http://x.test/blocked.xlsx"}' }) : /blocked\.xlsx/.test(r.request().url()) ? r.fulfill({ status: 204, body: "" }) : r.fulfill({ contentType: "text/html", body: html(true) }));
   await p.goto("http://x.test/industries/telco/");
-  await p.evaluate(() => { window.__ev = []; window.addEventListener("ph:lead", (e) => window.__ev.push(e.detail)); });
-  const f2 = p.locator(".ph-ind-lead form");
-  await f2.locator("[name=company]").fill("C"); await f2.locator("[name=contact_name]").fill("N"); await f2.locator("[name=email]").fill("n@c.example"); await f2.locator("[name=consent]").check();
+  const f2 = p.locator("form.ph-ind-gate-f").first();
+  await f2.locator("[name=name]").fill("N"); await f2.locator("[name=company]").fill("C"); await f2.locator("[name=email]").fill("n@c.example"); await f2.locator("[name=consent]").check();
   await f2.locator("button[type=submit]").click();
-  await p.waitForFunction(() => window.__ev.length === 1);
-  assert.ok(/Thanks/.test(await p.locator(".ph-ind-lead .ph-ind-gate-m").textContent()), "the form still succeeds with storage blocked");
+  await p.waitForFunction(() => /Thanks/.test(document.querySelector(".ph-ind-gate-m").textContent));
+  assert.ok(true, "the form still succeeds with storage blocked");
   // The tour page itself: full screen, native and fallback.
   const tourHtml = fs.readFileSync(path.join(dir, "tour", "telco.html"), "utf8");
   const tourPage = async (fallback, vp, body = tourHtml) => {
