@@ -1,5 +1,5 @@
 // Live whiteboard in Chromium against the REAL public/ files with the Firebase SDK stubbed:
-// the Build menu's Whiteboard item (last, desktop sidebar and phone tab sheet) starts a board at
+// the top-bar Whiteboard icon (left of the notifications bell) starts a board at
 // whiteboard.html?b=<20-character id>; the board opens full screen with the Share panel showing and
 // a working Copy link; drawing saves a stroke, the eraser and undo remove it, clear asks first; and
 // a link that isn't a board id shows a message, not a blank canvas. Two windows syncing is the
@@ -22,15 +22,15 @@ const h = await startHarness();
 let failed = 0;
 const fail = (what, err) => { failed++; console.error(`FAIL ${what}: ${err && err.message ? err.message : err}`); };
 try {
-  // 1. The Build menu, then the new board's address.
+  // 1. The top-bar icon, then the new board's address.
   for (const width of [1280, 390]) {
     const o = await h.open({ seed: consoleSeed, width, height: 800 });
     const { page } = o;
     try {
       await page.waitForSelector("#total-summary", { state: "attached" });
-      if (width <= 640) await page.click('#tabbar .tab[data-tab="build"]');
-      const last = await page.evaluate(() => [...document.querySelectorAll('[data-nav-group="build"] .nav-drawer-item')].pop().id);
-      assert.strictEqual(last, "whiteboard-btn", "Whiteboard is the last Build item");
+      // The button is a top-bar icon beside the notification bell, not a menu item.
+      assert.strictEqual(await page.locator('#nav-drawer #whiteboard-btn').count(), 0, "Whiteboard is not in the left menu");
+      assert.strictEqual(await page.evaluate(() => document.getElementById("whiteboard-btn").nextElementSibling.id), "notification-bell", "the icon sits left of the notifications bell");
       const [board] = await Promise.all([page.context().waitForEvent("page"), page.click("#whiteboard-btn")]);
       await board.waitForURL(/whiteboard\.html\?b=[A-Za-z0-9]{20}&new=1$/);
       assert.ok(!/whiteboard\.html/.test(page.url()), "the console stays where it was; the board opens in a new tab");

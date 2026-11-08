@@ -65,7 +65,6 @@ try {
       try {
         await page.waitForSelector("#total-summary", { state: "attached" });
         await page.waitForTimeout(500);
-        if (await page.locator("#nav-open-btn").isVisible()) { await page.tap("#nav-open-btn"); await page.waitForTimeout(450); }
         const [board] = await Promise.all([page.context().waitForEvent("page"), page.tap("#whiteboard-btn")]);
         await board.waitForURL(BOARD_URL, { timeout: 8000 });
         assert.deepStrictEqual(o.problems, []);

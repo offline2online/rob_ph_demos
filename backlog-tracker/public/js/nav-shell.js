@@ -165,7 +165,7 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     syncActive();
   }
   profileBtn.addEventListener("click", () => (profileMenu.hidden ? openProfile() : closeProfile()));
-  profileMenu.addEventListener("click", (e) => { if (e.target.closest("button")) closeProfile(); });
+  profileMenu.addEventListener("click", (e) => { if (e.target.closest("button:not([data-keep-open])")) closeProfile(); });
   document.addEventListener("click", (e) => {
     if (!profileMenu.hidden && !e.target.closest("#profile-menu, #profile-btn, #tabbar")) closeProfile();
   });

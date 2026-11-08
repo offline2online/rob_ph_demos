@@ -2353,7 +2353,11 @@ calculator skill instead of costing themselves. They are bound to their steps
 in the Internal operations map: each AWS funding document node in
 `public/js/internal-map.js` carries `skills` and shows "Skill: <slug>". Load
 them with `scripts/seed-aws-ace-skills.js` (insert-only; needs a human with
-service-account credentials, like `seed-skills-data.js`). Misses are tracked with
+service-account credentials, like `seed-skills-data.js`). All four were inserted
+into the live `skills` collection on 8 Nov 2026 (through the board API, same
+document shape as the script), so they now appear under Settings → Skills &
+phase bindings and can be bound and called by any member with access to shared
+skills. Misses are tracked with
 `report_skill_miss`. Attach the real CP Group and Avolta Hudson documents as
 `references/` files on the two request skills.
 
@@ -2372,7 +2376,7 @@ skill does not resolve.
 
 ## Live whiteboard
 
-`public/whiteboard.html` (with `js/whiteboard.js`, `js/whiteboard-core.js`, `css/whiteboard.css`) is a full-screen shared whiteboard, the last item in the **Build** menu. The menu item creates `whiteboards/{20-character id}` and opens `whiteboard.html?b={id}` in a new tab (the console stays put; a blocked popup falls back to the same tab) with a Share panel (Copy link, native share); anyone with the link can open and draw with no sign-in, and strokes sync live through `whiteboards/{id}/strokes`. Access is by knowing the id only (`firestore.rules` → "Whiteboard"; the rules ship with the normal deploy). The view auto-fits by default (every window frames and centres what has been drawn; bottom-right fit, zoom out and zoom in buttons, and manual pan/zoom turns auto-fit off until Reset view or the fit button). The PH Agent Console logo top left (`#wb-home`) links back to the console. The toolbar fits every screen width without scrolling, and touch taps act when the finger lifts (`js/touch-click.js`, shared with the console's sidebar) because iPad WebKit drops or delays some taps' clicks. Tablet tests: `test/ui/whiteboard-tablet.test.mjs`. Spec: `REQUIREMENTS.md` → "Live whiteboard".
+`public/whiteboard.html` (with `js/whiteboard.js`, `js/whiteboard-core.js`, `css/whiteboard.css`) is a full-screen shared whiteboard. A **whiteboard icon in the top bar, just left of the notifications bell** (`#whiteboard-btn`; no longer a Build menu item, 8 Nov 2026) creates `whiteboards/{20-character id}` and opens `whiteboard.html?b={id}` in a new tab (the console stays put; a blocked popup falls back to the same tab) with a Share panel (Copy link, native share); anyone with the link can open and draw with no sign-in, and strokes sync live through `whiteboards/{id}/strokes`. Access is by knowing the id only (`firestore.rules` → "Whiteboard"; the rules ship with the normal deploy). The view auto-fits by default (every window frames and centres what has been drawn; bottom-right fit, zoom out and zoom in buttons, and manual pan/zoom turns auto-fit off until Reset view or the fit button). The PH Agent Console logo top left (`#wb-home`) links back to the console. The toolbar fits every screen width without scrolling, and touch taps act when the finger lifts (`js/touch-click.js`, shared with the console's sidebar) because iPad WebKit drops or delays some taps' clicks. Tablet tests: `test/ui/whiteboard-tablet.test.mjs`. Spec: `REQUIREMENTS.md` → "Live whiteboard".
 
 ## Concept Incubator
 
@@ -2578,8 +2582,8 @@ every destination already existed.
   rules in `prospects-core.js` copied to `functions/prospects-core.js` by
   `node test/prospects-core-copy.mjs --write`, starter data in
   `prospects-seed.js`): the global target-company database as an AG Grid below
-  Leads, built like User Management › Users (floating filters with a × to clear
-  each text and number filter and no separate search box, checkbox column with a
+  Leads, built like User Management › Users (one header row whose headings are the
+  filters, with a × to clear each text and number filter and no separate search box, checkbox column with a
   bulk bar, pinned "⋯" row menu, pagination), with a Columns chooser, saved
   filters (grid filter model + sort, per browser), CSV export, **Export for
   LinkedIn** (Campaign Manager Matched Audiences company list), a right-hand
@@ -2696,6 +2700,10 @@ Tests: `notify-fanout.test.js` (a second click skips the in-flight ticket),
 `ready-for-testing-trigger.test.js` (the hold), `train-revert-by-hand.test.js`
 (a real git repo), `parallel-builds.test.js` (`parsesAs`, `mergeBrokeSyntax`)
 and the console-click scenario "Ready for Dev — N new".
+
+## Own name
+
+The profile menu has First name / Last name inputs (`#profile-name-form`, handled in `app.js` by `renderProfileName()` and the form's submit handler, which reuses `saveMemberPhotoFields()`). It writes `firstName`, `lastName` and `displayName` on the member's own `consoleUsers` row (self-update rule in `firestore.rules`), and the Settings → Users Name column shows it. See REQUIREMENTS.md → "Own name (first and last)".
 
 ## Profile photos
 
