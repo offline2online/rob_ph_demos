@@ -1068,7 +1068,7 @@ const STEPS = [
 /* ================= flow 2: localisation, store management, digital twin ================= */
 const LOC = {
   telco: {
-    query: "Nimbus Mobile", prefix: "NM", total: 24, category: "Cell phone store",
+    prefix: "NM", total: 24, category: "Cell phone store",
     existing: [["NM-001","City Centre","Central",3,"High street"],["NM-002","Central Station","Central",2,"Transport hub"]],
     results: [["Northgate Mall","Shop 112, Northgate Mall, 1 Northgate Drive","Open · Closes 9 pm","4.6","North","Shopping centre"],["Airport Terminal 2","Departures level, Terminal 2","Open 24 hours","4.2","Airport","Transport hub"],["Riverside","18 River Road","Open · Closes 6 pm","4.4","West","High street"],["Harbour Point","Unit 4, Harbour Point Shopping Centre","Open · Closes 9 pm","4.5","East","Shopping centre"],["Eastgate Plaza","Eastgate Plaza, 200 East Street","Open · Closes 7 pm","4.3","East","Shopping centre"],["University Quarter","3 College Lane","Open · Closes 6 pm","4.1","South","High street"]],
     focus: { name: "Northgate Mall", code: "NM-011", addr: "Shop 112, Northgate Mall, 1 Northgate Drive", suburb: "Northgate", post: "4101", local: "Find us opposite the food court, Level 1", phone: "(07) 3265 4400", web: "nimbusmobile.com/stores/northgate-mall", fixed: ["Metro"], variable: [] },
@@ -1084,7 +1084,7 @@ const LOC = {
     previews: [["Northgate Mall","Find us opposite the food court, Level 1","play"],["Central Station","Right by the main concourse exit","play"],["Airport Terminal 2","Departures level, next to Gate 12","busy"]]
   },
   pharmacy: {
-    query: "Harbourside Pharmacy", prefix: "HP", total: 38, category: "Pharmacy",
+    prefix: "HP", total: 38, category: "Pharmacy",
     existing: [["HP-001","Harbour Street","Central",2,"High street"],["HP-002","Hillcrest Medical Centre","North",2,"Medical centre"]],
     results: [["Bayview","48 Bay Road","Open · Closes 9 pm","4.7","East","Medical centre"],["Seaside Village","2 Esplanade","Open · Closes 6 pm","4.5","East","High street"],["Parkside Plaza","Shop 9, Parkside Plaza","Open · Closes 9 pm","4.4","West","Shopping centre"],["Old Town","71 Main Street","Open · Closes 7 pm","4.6","Central","High street"],["Lakeside","Lakeside Medical Hub, 5 Lake Drive","Open · Closes 8 pm","4.3","South","Medical centre"],["Station Square","Station Square, Platform Level","Open · Closes 10 pm","4.2","Central","Transport hub"]],
     focus: { name: "Bayview", code: "HP-011", addr: "48 Bay Road", suburb: "Bayview", post: "4102", local: "Sun care bay by the entrance · Open until 9pm tonight", phone: "(07) 3396 2200", web: "harboursidepharmacy.com/bayview", fixed: ["Coastal"], variable: [] },
@@ -1101,6 +1101,10 @@ const LOC = {
   }
 };
 const L = () => LOC[S.ind];
+/* the visitor's brand drives every brand-derived string; the demo brand's own values apply only when none is set */
+const storePrefix = () => S.brand ? (initials(S.brand).replace(/[^A-Z0-9]/g,"") || L().prefix) : L().prefix;
+const storeCode = c => c.replace(/^[A-Z0-9]+-/, storePrefix() + "-");
+const brandWeb = web => { const slug = B().toLowerCase().replace(/[^a-z0-9]/g,""); return S.brand && slug ? slug + ".com" + web.slice(web.indexOf("/")) : web; };
 const SRC = ["Store / Location Data","Queueing / Aggregate Visitor Data","Visitor / Customer Data","Interaction / Campaign Data","Computer Vision / Webcam Data"];
 const ATTR = { "Store / Location Data": ["Store Code(s)","Store Name(s)","Store Segment (Consolidated)","Fixed Store Segments","Variable Store Segments","Display Tag(s)","Languages Spoken by Staff","Display ID","Display Type(s)","Display Name(s)","Store Suburb","Store State","Store Country"], "Queueing / Aggregate Visitor Data": ["Estimated Wait Time","Number of Visitors in Queue","Visitor Type (Aggregate)","Reason for Visit (Aggregate)","Visitor Device Type (Aggregate)"] };
 const OPS = { seg: ["includes selected","matches exactly","excludes selected [OR]","excludes selected [AND]"], num: ["equal","not equal","greater than","less than","greater than or equal","less than or equal"] };
@@ -1113,8 +1117,8 @@ function qrSVG(x, y, s, fill) {
   return `<g transform="translate(${x} ${y}) scale(${s})"><rect x="-2" y="-2" width="25" height="25" rx="2" fill="#fff"/>${fin(0,0)}${fin(14,0)}${fin(0,14)}${out}</g>`;
 }
 function storesScreen(imported, fresh) {
-  const l = L(), rows = l.existing.map(r => ({ code: r[0], name: r[1], region: r[2], disp: r[3], seg: r[4] }));
-  const all = rows.concat(imported ? l.results.map((r,i) => ({ code: `${l.prefix}-${String(11+i).padStart(3,"0")}`, name: r[0], region: r[4], disp: 2 + (i % 2), seg: r[5], isNew: fresh })) : []);
+  const l = L(), rows = l.existing.map(r => ({ code: storeCode(r[0]), name: r[1], region: r[2], disp: r[3], seg: r[4] }));
+  const all = rows.concat(imported ? l.results.map((r,i) => ({ code: `${storePrefix()}-${String(11+i).padStart(3,"0")}`, name: r[0], region: r[4], disp: 2 + (i % 2), seg: r[5], isNew: fresh })) : []);
   const count = imported ? l.total + l.existing.length : l.existing.length, disp = imported ? Math.round(count * 2.3) : rows.reduce((a,r)=>a+r.disp,0);
   const body = all.map((r,i) => `<div class="sgr ${r.isNew?"new":""}" style="${r.isNew?`animation-delay:${i*90}ms`:""}"><div><span class="cb"></span></div><div class="code">${r.code}<span class="ms">content_copy</span></div><div>${esc(B())}</div><div class="b" data-store="${esc(r.name)}">${esc(r.name)}</div><div>${r.region}</div><div>${r.disp}</div><div class="muted">⋯</div></div>`).join("");
   return shell(`<div class="row"><div class="title">Stores / Branches</div><div>Total connected displays <b>${disp}</b> <span class="ms" style="font-size:18px">desktop_windows</span></div></div><div class="hr"></div>
@@ -1149,8 +1153,8 @@ function storeDetailScreen(o) {
   return shell(`<div class="row"><div class="title">${esc(B())} ${esc(f.name)}</div><span class="row" style="gap:6px"><span class="ms" style="font-size:18px">open_in_new</span>Visit Retail Manager's Website</span></div>
     <div class="stabs" id="stabs">${tabs}</div><div class="slogo"><div>${logoSVG(70)}</div></div><div class="form" id="sfmain" style="margin-top:6px">
     ${F("Store Name", `${esc(B())} ${esc(f.name)}`, true)}${F("Brand Name", esc(B()))}${F("Business Categories", `<span class="tag">${l.category} ×</span>`, true, "tags")}
-    ${F("Store Code", f.code)}${F("Maximum People in Store", P("Maximum People in Store"))}${F("Localised Copy", P("Localised Copy"))}
-    ${F("Address", esc(f.addr))}${F("Phone Number", esc(f.phone))}${F("Website", esc(f.web))}
+    ${F("Store Code", esc(storeCode(f.code)))}${F("Maximum People in Store", P("Maximum People in Store"))}${F("Localised Copy", P("Localised Copy"))}
+    ${F("Address", esc(f.addr))}${F("Phone Number", esc(f.phone))}${F("Website", esc(brandWeb(f.web)))}
     <div class="f"><label>Languages Spoken by Store Staff</label><div class="in" style="background:#f5f5f5">&nbsp;</div></div>
     <div id="segs"><div class="f"><label>Store Segments</label>${dd("vs","Segments",o.variable||[])}</div><div class="f" style="margin-top:16px"><label>Fixed Store Segments</label>${dd("fs","Fixed Segments",o.fixed||[])}</div></div>
     <div class="row" style="justify-content:flex-start;gap:8px"><span class="btn ${o.dirty?"pri":"dis"}" id="ssave">Save Changes</span><span class="btn">Cancel</span></div><div style="height:320px"></div></div>`, crumbS(), "Stores / Branches");
@@ -1256,11 +1260,11 @@ const STEPS2 = [
    async play(id){ await wait(500,id); const b=q("#addstores"); await moveTo(b,id); tip(b,this.t,this.s,1); await wait(2600,id); hideTip(); await click(b,id); q("#layer").innerHTML = addStoresHTML({}); } },
  { t:"Import from Google Maps", s:"Search for your brand and every matching store appears with its address, opening hours and rating. Select them all and add them in one go. Stores can also come from your own internal systems or be added manually.",
    enter(){ paint(storesScreen(false)); q("#layer").innerHTML = addStoresHTML({}); },
-   async play(id){ const sr=q("#srch"); await click(sr,id); await typeInto(sr, L().query, id, reduce?999:16);
-     await wait(300,id); refreshAdd({ q:L().query, results:true }); await wait(900,id);
+   async play(id){ const sr=q("#srch"); await click(sr,id); await typeInto(sr, B(), id, reduce?999:16);
+     await wait(300,id); refreshAdd({ q:B(), results:true }); await wait(900,id);
      tip(q("#res"),this.t,"Every matching store with its address, opening hours and rating, plotted on the map.",2); await wait(2800,id); hideTip();
      tip(q("#addman"),"Not just Google","Google Maps is one source. Stores can also be imported from your own internal systems, or added manually.",2); await wait(3200,id); hideTip();
-     await click(q("#selall"),id); refreshAdd({ q:L().query, results:true, all:true }); await wait(800,id);
+     await click(q("#selall"),id); refreshAdd({ q:B(), results:true, all:true }); await wait(800,id);
      const ad=q("#addst"); await moveTo(ad,id); tip(ad,"Add them all",`${L().total} stores selected and ready to add.`,2); await wait(2000,id); hideTip(); await click(ad,id);
      paint(storesScreen(true,true)); await wait(1200,id); tip(q("#sgrid"),"Your store network",`${L().total} stores imported in seconds, each with its own store code.`,2); await wait(2800,id); hideTip(); } },
  { t:"Every store becomes a digital twin", s:"Each store you add becomes a digital twin of that store. Localisation happens at store level: every campaign is matched to each store's twin, so what plays is decided store by store.",
@@ -1624,8 +1628,8 @@ const TEASE = [
   { cap: "A spoken brief becomes creative for every screen", async run(id) { S.flow = 0; S.bright = false; paint(listScreen(false)); q("#layer").innerHTML = modalHTML(null, [], false);
       q("#ta").classList.add("focus"); q("#vrow").style.visibility = "visible"; q("#mic").classList.add("rec"); dictate(q("#tabody"), D().brief, id).catch(() => {});
       await wait(3300, id); S.bright = true; paint(creativeScreen(4, false)); await wait(3300, id); } },
-  { cap: "Import every store, then localise store by store", async run(id) { S.flow = 1; S.bright = true; paint(storesScreen(false)); q("#layer").innerHTML = addStoresHTML({ q: L().query });
-      await wait(700, id); refreshAdd({ q: L().query, results: true }); await wait(1700, id); refreshAdd({ q: L().query, results: true, all: true }); await wait(900, id);
+  { cap: "Import every store, then localise store by store", async run(id) { S.flow = 1; S.bright = true; paint(storesScreen(false)); q("#layer").innerHTML = addStoresHTML({ q: B() });
+      await wait(700, id); refreshAdd({ q: B(), results: true }); await wait(1700, id); refreshAdd({ q: B(), results: true, all: true }); await wait(900, id);
       q("#layer").innerHTML = ""; paint(storesScreen(true, true)); await wait(3300, id); } },
   { cap: "The right offer, the moment a customer checks in", async run(id) { S.flow = 2; S.bright = true; screen.innerHTML = sceneHTML("home1", "promo");
       await wait(1300, id); setPhone("home2"); await wait(1100, id); const tv = q("#pdisp"); tv.classList.add("on"); if (P3().shelf) tv.innerHTML = shelfSVG(true); else tv.querySelector(".tv-in").innerHTML = art("land","first",S.bright); await wait(4200, id); } }

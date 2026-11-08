@@ -400,11 +400,11 @@ try {
     assert.ok(!fs.existsSync(path.join(dir, "tour", "telco.html")), "one tour source: tour/tour.html only");
     const hookedInd = sourceTour.replace('document.getElementById("prev").onclick', "window.__t = { setFlow, showEnd, S, D, L, P3 };\n$&");
     const lead = () => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "", email: "s@k.example", source: "Telco business model download" }));
-    const walk = async (ind, body) => {
+    const walk = async (ind, body, company = "") => {
       const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
       const errs = []; t.on("pageerror", (e) => errs.push(e.message));
       await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body }) : r.abort());
-      await t.addInitScript(lead); // a lead from the telco calculator download unlocks the pharmacy tour (same ph_lead key)
+      await t.addInitScript((c) => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: c, email: "s@k.example", source: "Telco business model download" })), company); // a lead from the telco calculator download unlocks the pharmacy tour (same ph_lead key)
       await t.goto(`http://x.test/industries/${ind}/tour/?embed=1`);
       await t.waitForSelector("#fs", { state: "visible" });
       assert.strictEqual(await t.locator("#gate").isHidden(), true, `${ind}: a ph_lead from telco unlocks the tour (no gate)`);
@@ -457,6 +457,26 @@ try {
     for (const need of ["Nimbus Mobile", "iPhone Trade-in | Up to $800 off", "Gold Members | Extra $200 iPhone trade-in"]) assert.ok(tl.text.includes(need), "telco tour shows: " + need);
     assert.ok(!/Harbourside|sun care|SPF/i.test(tl.text), "no pharmacy content in the telco tour");
     await tl.t.close();
+    // Flow 2 follows the visitor's company: search text, results, store codes and Website (no demo brand anywhere).
+    for (const [ind, co, slug, ini, demo] of [["pharmacy", "Bayside Test Pharmacy", "baysidetestpharmacy.com", "BT", /Harbourside/i], ["telco", "Acme Test Mobile", "acmetestmobile.com", "AT", /Nimbus/i]]) {
+      const w = await walk(ind, fast, co);
+      assert.deepStrictEqual(w.errs, [], `${ind}: no page errors`);
+      assert.ok(!demo.test(w.text), `${ind}: no demo brand once a company is set`);
+      assert.ok(w.text.includes(slug), `${ind}: Website uses ${slug}`);
+      assert.ok(new RegExp(`${ini}-011`).test(w.text) && !/\b(HP|NM)-\d{3}/.test(w.text), `${ind}: store codes use ${ini}`);
+      await w.t.close();
+      const f2 = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+      await f2.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast.replace('document.getElementById("prev").onclick', "window.__t = { L, B, S, addStoresHTML, refreshAdd };\n$&") }) : r.abort());
+      await f2.addInitScript((c) => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: c, email: "s@k.example" })), co);
+      await f2.goto(`http://x.test/industries/${ind}/tour/?embed=1`);
+      await f2.waitForSelector("#fs", { state: "visible" });
+      const r = await f2.evaluate(() => { const d = document.createElement("div"); d.innerHTML = window.__t.addStoresHTML({ q: window.__t.B(), results: true }); return { s: d.querySelector("#srch").textContent, rows: [...d.querySelectorAll(".rr b")].map((x) => x.textContent) }; });
+      assert.strictEqual(r.s, co, `${ind}: search box is the company`);
+      assert.ok(r.rows.length && r.rows.every((x) => x.startsWith(co)), `${ind}: every result starts with the company`);
+      await f2.close();
+    }
+    // Prototype mode (no company): the default brand, prefix and Website stay consistent.
+    { const w = await walk("pharmacy", fast); assert.ok(w.text.includes("HP-011") && w.text.includes("harboursidepharmacy.com/bayview"), "pharmacy default codes and website"); await w.t.close(); }
     // The lead body carries the industry from the path.
     for (const [ind, want] of [["telco", "telco"], ["pharmacy", "pharmacy"]]) {
       const g = await browser.newPage({ viewport: { width: 1280, height: 800 } });
