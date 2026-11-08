@@ -247,7 +247,7 @@ try {
   await t.close();
   assert.ok(/id="fsexit"/.test(tourHtml) && /html\.fs #card \.fsonly\{display:inline-flex\}/.test(tourHtml), "end card has Exit full screen, shown only in full screen");
   // End card: Next is the primary action and focused; no AWS or demo buttons; the last flow wraps; Replay and Exit full screen are secondary.
-  const hooked = tourHtml.replace('document.getElementById("prev").onclick', "window.__t = { setFlow, showEnd, S };\n$&"); // test hook into the page's closure
+  const hooked = tourHtml.replace('document.getElementById("prev").onclick', "window.__t = { setFlow, showEnd, startCard, S };\n$&"); // test hook into the page's closure
   assert.ok(hooked !== tourHtml, "test hook applied");
   assert.ok(!/id="aws"|id="demo"|Try Free with AWS<\/a>|Arrange a Demo<\/button>/.test(tourHtml), "end card source has no AWS or demo buttons");
   for (const [vp, fsMode] of [[{ width: 1280, height: 800 }, false], [{ width: 360, height: 640 }, false], [{ width: 1280, height: 800 }, true]]) {
@@ -297,6 +297,20 @@ try {
     await ft.evaluate(() => { __t.setFlow(1); __t.showEnd(); });
     assert.ok(await ft.evaluate(() => !document.getElementById("nextflow") && document.activeElement.id === "again"), "focus mode: no Next, Replay focused");
     await ft.close();
+  }
+  // CTAs: larger teal buttons with a white label and icon (Start the tour, Next), inline and in full screen, at three viewports.
+  for (const vp of [{ width: 1280, height: 800 }, { width: 740, height: 360 }, { width: 360, height: 740 }]) {
+    for (const fsMode of [false, true]) {
+      const ct = await tourPage(false, vp, hooked);
+      if (fsMode) { await ct.click("#fs"); await ct.waitForFunction(() => document.documentElement.classList.contains("fs")); }
+      for (const [id, show] of [["start", () => __t.startCard()], ["nextflow", () => { __t.setFlow(0); __t.showEnd(); }]]) {
+        await ct.evaluate(show);
+        const m = await ct.evaluate((i) => { const b = document.getElementById(i), cs = getComputedStyle(b), ic = b.querySelector(".ms"), r = b.getBoundingClientRect(), c = document.querySelector("#card .in2").getBoundingClientRect(), st = document.querySelector("#card").getBoundingClientRect(); return { color: cs.color, icon: ic ? getComputedStyle(ic).color : "rgb(255, 255, 255)", iconSize: ic ? getComputedStyle(ic).fontSize : "24px", bg: cs.backgroundColor, fs: parseFloat(cs.fontSize), fw: +cs.fontWeight, h: b.offsetHeight, over: b.scrollWidth > b.clientWidth + 1, fit: c.top >= st.top - 1 && c.bottom <= st.bottom + 1 && c.left >= st.left - 1 && c.right <= st.right + 1, noH: document.documentElement.scrollWidth <= innerWidth }; }, id);
+        const min = vp.height <= 520 ? 48 : 56;
+        assert.ok(m.color === "rgb(255, 255, 255)" && m.icon === "rgb(255, 255, 255)" && m.iconSize === "24px" && m.bg === "rgb(22, 155, 194)" && m.fs >= 18.66 && m.fw >= 700 && m.h >= min && !m.over && m.fit && m.noH, `#${id} CTA at ${vp.width}x${vp.height}${fsMode ? " fs" : ""}: ${JSON.stringify(m)}`);
+      }
+      await ct.close();
+    }
   }
   // Framed fallback: parent receives ph-tour-fullscreen on/off and the frame is pinned.
   const fp = await browser.newPage({ viewport: { width: 390, height: 700 } });

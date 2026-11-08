@@ -587,7 +587,9 @@ body{font-family:var(--display);padding-block:56px 72px}
 #card .eyebrow{color:var(--ph-teal-d);letter-spacing:1.82px;font-weight:600;font-size:13px}
 #card p{color:var(--ph-muted)}
 #card button,#card .acts a{height:46px;padding:0 22px;border-radius:999px;font-family:var(--display);font-size:16px;font-weight:600}
-#card .go,#card .acts a.go{background:var(--ph-teal);color:var(--ph-ink)}
+#card .go,#card .acts a.go{background:var(--ph-teal);color:#fff;min-height:56px;padding:0 30px;gap:10px;font-size:19px;font-weight:700}
+#card .go .ms{color:#fff;font-size:24px;line-height:1}
+#card .go:hover,#card .acts a.go:hover{background:#1288AB;color:#fff}
 #card .ghost{border:1px solid var(--ph-line);color:var(--ph-navy);background:#fff}
 #card .ms{font-family:"Material Symbols Rounded"}
 .embed body{padding:0;background:transparent}.embed .top>div:first-child,.embed .proto{display:none}
@@ -599,17 +601,18 @@ html.fs .fsclose .ms{font-size:24px;line-height:1}.fsclose:hover{background:rgba
 #card .fsonly{display:none}
 html.fs #card .fsonly{display:inline-flex}
 #card .acts.end{flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:20px}
-#card .acts.end .go{width:100%;box-sizing:border-box;justify-content:center;height:auto;min-height:52px;padding:12px 22px;font-size:17px;text-align:center}
+#card .acts.end .go{width:100%;box-sizing:border-box;justify-content:center;height:auto;min-height:56px;padding:12px 30px;font-size:19px;font-weight:700;text-align:center}
 #card .sec{display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:8px;width:100%;margin:0 0 8px;padding:0;font-size:inherit;letter-spacing:0;text-transform:none}
 #card .sec .quiet{padding:4px 0;white-space:nowrap}
 #card .sec .quiet:only-child{margin-right:auto}
 #card .quiet{height:auto;min-height:32px;padding:4px 6px;border:0;border-radius:6px;background:none;color:var(--ph-muted);font-size:14px;font-weight:500;gap:6px}
 #card .quiet:hover{color:var(--ph-navy);text-decoration:underline;text-underline-offset:3px}
 #card .quiet .ms{font-size:18px}
-#card .quiet:focus-visible,#card .go:focus-visible{outline:2px solid var(--ph-teal-d);outline-offset:2px}
+#card .quiet:focus-visible{outline:2px solid var(--ph-teal-d);outline-offset:2px}
+#card .go:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:0 0 0 4px var(--ph-ink)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #card .quiet:hover{color:#fff}}
 :root[data-theme="dark"] #card .quiet:hover{color:#fff}
-@media (max-height:520px){#card .acts.end .go{min-height:44px;padding:8px 18px;font-size:16px}#card .sec{margin-bottom:0}}
+@media (max-height:520px){#card .go,#card .acts.end .go{min-height:48px;height:auto;padding:8px 24px;font-size:19px;font-weight:700}#card .sec{margin-bottom:0}}
 #card .fslink{height:auto;padding:6px 4px;border:0;background:none;color:#0F7A9A;font-size:14px;text-decoration:underline;text-underline-offset:3px}
 html.fs #card .fslink{display:none}
 :root.fs{--bg:#0F1424;--panel:#192033;--fg:#e7edf2;--muted:#a3acc0;--line:#2c3550;--chip:#16303a;color-scheme:dark}
