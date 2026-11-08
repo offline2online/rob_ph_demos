@@ -134,9 +134,9 @@ export function mountAceGrid({ host, pop, onOpenLead, onOpen = () => {} }) {
     return [
       { field: "customer", headerName: "Customer", minWidth: 150, flex: 1.3, cellRenderer: trunc, tooltipValueGetter: tip },
       { colId: "name", field: "name", headerName: "Opportunity", minWidth: 220, flex: 2.4, cellRenderer: link, tooltipValueGetter: (p) => p.data && (p.data.name || p.data.id), pinned: phone && phone.matches ? "left" : null },
+      { colId: "aceScore", headerName: "Score", width: 90, type: "numericColumn", filter: "agNumberColumnFilter", valueGetter: (p) => (p.data && p.data.score != null && p.data.score !== "" ? Number(p.data.score) : null), valueFormatter: (p) => (p.value == null ? "" : String(p.value)) },
       { field: "stage", headerName: "ACE stage", minWidth: 160, flex: 1.2, cellRenderer: stage, ...select("stage", ACE_STAGES) },
       { field: "reviewStatus", headerName: "Review status", minWidth: 170, flex: 1.2, cellRenderer: review, ...select("reviewStatus", ACE_REVIEW_STATUSES) },
-      { colId: "aceScore", headerName: "Score", width: 90, type: "numericColumn", filter: "agNumberColumnFilter", valueGetter: (p) => (p.data && p.data.score != null && p.data.score !== "" ? Number(p.data.score) : null), valueFormatter: (p) => (p.value == null ? "" : String(p.value)) },
       { colId: "monthly", headerName: "Monthly AWS revenue", headerTooltip: "Expected monthly AWS revenue", minWidth: 150, flex: 1, type: "numericColumn", cellClass: "ace-num", filter: "agNumberColumnFilter",
         valueGetter: (p) => (p.data && p.data.expectedMonthly && Number.isFinite(p.data.expectedMonthly.amount) ? p.data.expectedMonthly.amount : null), valueFormatter: (p) => (p.data ? formatMonthly(p.data.expectedMonthly) : "") },
       { colId: "close", field: "targetCloseDate", headerName: "Expected delivery date", headerTooltip: "ACE target close date", minWidth: 170, flex: 1, filter: false, floatingFilter: false, cellRenderer: date, tooltipValueGetter: (p) => (p.data && isPastDate(p.data.targetCloseDate) ? "Past expected delivery date" : "") },

@@ -2559,7 +2559,7 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .ace-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 0; color: var(--ace-muted); }
 .ace-empty .material-symbols-outlined { font-size: 40px; color: #d9d9d9; }
 .ace-empty p { margin: 0; }
-.ace-grid { width: 100%; max-width: 100%; }
+.ace-grid { width: 100%; max-width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .ace-grid .ag-paging-panel { justify-content: flex-end; }
 .ace-trunc { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ace-link { color: var(--primary-text); text-decoration: none; font-weight: 500; }

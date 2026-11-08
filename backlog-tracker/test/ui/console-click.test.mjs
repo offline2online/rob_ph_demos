@@ -1182,9 +1182,9 @@ const scenarios = [
       assert.deepStrictEqual(info.pills, [], "no stage pills repeating what the Stage filter lists");
       assert.deepStrictEqual(info.heights, [42], "every row is 42px tall");
       assert.ok(info.ellipsis && info.oneLine, `the long title is one ellipsised line (${JSON.stringify([info.ellipsis, info.oneLine])})`);
-      const wantHeads = ["customer", "name", "stage", "reviewStatus", "aceScore", "monthly", "close", "created", "updated", "seller", "lead", "actions"];
+      const wantHeads = ["customer", "name", "aceScore", "stage", "reviewStatus", "monthly", "close", "created", "updated", "seller", "lead", "actions"];
       // On a phone the Opportunity column is pinned left, so it is drawn first; the order is Customer then Opportunity everywhere else.
-      assert.deepStrictEqual(c.width < 640 ? [...info.heads].sort() : info.heads, c.width < 640 ? [...wantHeads].sort() : wantHeads, "Customer first, then Opportunity, Score always shown, the date columns");
+      assert.deepStrictEqual(c.width < 640 ? [...info.heads].sort() : info.heads, c.width < 640 ? [...wantHeads].sort() : wantHeads, "Customer first, then Opportunity, Score beside it, the date columns");
       assert.ok(info.floating >= 5, "floating filter row");
       assert.strictEqual(info.checkbox, 0, "no checkbox column");
       assert.ok(!info.paging, "no pagination at 5 rows (page size is 50)");
