@@ -3789,6 +3789,10 @@ the board in one step.
   label, at 390, 820, 1180, 1440 and 1920 px, for a sparse, typical and
   full board.
 
+## Own name (first and last)
+
+Any member can set their own **First name** and **Last name** in the profile menu (**Save name**). The console stores `firstName`, `lastName` and `displayName` (first + last) on `consoleUsers/{email}`; the Name column of **Settings → Users** shows `displayName` (falling back to first + last), and initials/avatars use it too. `firestore.rules` lets a member update only those three fields on their own row, each a bounded string (60/60/120 characters). Test: `test/avatar-rules.test.mjs`.
+
 ## Profile photos (avatars)
 
 Any member can upload, replace or remove their own profile photo from the profile menu (**Profile photo → Upload photo / Remove**); an admin can set or clear anyone's from **User Management → Users**. The browser crops to a centred square and scales to 256×256 JPEG (~0.85) before upload; images over 10 MB and non-images are refused inline and nothing is uploaded.

@@ -2094,6 +2094,12 @@ body { overflow-x: clip; }
 .profile-photo-row { display: flex; align-items: center; gap: 4px; padding: 0 4px; }
 .profile-photo-row .profile-menu-item { flex: 1 1 auto; width: auto; }
 .profile-photo-info { font-size: 18px; color: var(--text-muted); cursor: help; }
+.profile-name-form { display: flex; flex-direction: column; gap: 4px; padding: 4px 12px 8px; }
+.profile-name-label { font-size: 12px; color: var(--text-muted); }
+.profile-name-input { font: inherit; padding: 6px 8px; border: 1px solid var(--border, #c9ccd1); border-radius: 6px; min-height: 36px; }
+.profile-name-form .btn-ghost { align-self: flex-start; margin-top: 4px; }
+.profile-name-status { margin: 2px 0 0; font-size: 12.5px; color: var(--text-muted); }
+.profile-name-status.is-error { color: #b3261e; }
 .profile-photo-error { margin: 4px 12px; font-size: 12.5px; color: #b3261e; }
 .ei-note-meta .ph-avatar { margin-right: 6px; }
 .team-row > .ph-avatar { margin-right: 8px; }

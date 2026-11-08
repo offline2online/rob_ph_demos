@@ -10151,7 +10151,42 @@ function pickAvatarFile(onFile) {
   input.click();
 }
 
+// ── Own name (first + last) ───────────────────────────────────────────────
+// Saved on consoleUsers/{me} as firstName, lastName and displayName, which is
+// what the Settings → Users table's Name column shows.
+function renderProfileName() {
+  const m = getAvatarMember(normEmail(auth.currentUser && auth.currentUser.email));
+  const f = document.getElementById("profile-first-name");
+  const l = document.getElementById("profile-last-name");
+  if (!f || !l || f === document.activeElement || l === document.activeElement) return;
+  f.value = (m && m.firstName) || "";
+  l.value = (m && m.lastName) || "";
+}
+function showProfileNameStatus(msg, isError) {
+  const el = document.getElementById("profile-name-status");
+  if (!el) return;
+  el.textContent = msg; el.hidden = !msg; el.classList.toggle("is-error", !!isError);
+}
+document.getElementById("profile-name-form")?.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const me = normEmail(auth.currentUser && auth.currentUser.email);
+  if (!me) return;
+  const firstName = document.getElementById("profile-first-name").value.trim();
+  const lastName = document.getElementById("profile-last-name").value.trim();
+  showProfileNameStatus("Saving…", false);
+  try {
+    await saveMemberPhotoFields(me, { firstName, lastName, displayName: [firstName, lastName].filter(Boolean).join(" ") });
+    showProfileNameStatus("Name saved.", false);
+  } catch (err) {
+    const code = err && err.code;
+    showProfileNameStatus(code === "no-member-row"
+      ? "Couldn't save your name: you aren't on the console's team list. Ask an admin to add you under User Management → Users."
+      : `Couldn't save your name: ${(err && err.message) || err}${code ? ` (${code})` : ""}`, true);
+  }
+});
+
 function renderProfileMenuPhoto() {
+  renderProfileName();
   const me = normEmail(auth.currentUser && auth.currentUser.email);
   const btn = document.getElementById("profile-btn-avatar");
   if (btn && me) btn.innerHTML = avatarHTML(me, 32);

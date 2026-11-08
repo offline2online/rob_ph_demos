@@ -784,6 +784,13 @@ service cloud.firestore {
             || incoming().lastLoginAt == request.time)
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["photoUrl", "photoUpdatedAt"])
             || (incoming().photoUpdatedAt == request.time && validPhotoUrl(incoming().get("photoUrl", ""))));
+      // A member may also set their OWN name (firstName, lastName and the
+      // displayName the Users table shows), each a bounded string.
+      allow update: if signedIn() && userEmail == callerEmail()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["firstName", "lastName", "displayName"])
+        && (!("firstName" in incoming()) || (incoming().firstName is string && incoming().firstName.size() <= 60))
+        && (!("lastName" in incoming()) || (incoming().lastName is string && incoming().lastName.size() <= 60))
+        && (!("displayName" in incoming()) || (incoming().displayName is string && incoming().displayName.size() <= 120));
       allow create, update: if isAdmin()
         && incoming().email is string
         && userEmail == incoming().email.lower()

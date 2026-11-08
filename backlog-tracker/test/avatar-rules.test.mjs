@@ -42,4 +42,9 @@ assert.match(avatarHTML("sam@x.com", 28), /--av:28px/);
 setAvatarMember("sam@x.com", { photoUrl: "https://firebasestorage.googleapis.com/v0/b/b/o/avatars%2Fsam.jpg?alt=media", photoUpdatedAt: 1234 });
 assert.match(avatarHTML("sam@x.com", 28), /<img[^>]*&amp;v=1234/);
 assert.equal(avatarHTML("", 24), "");
+// A member may set their OWN name (first, last, displayName) and nothing more.
+const nameRule = block(fsr, "A member may also set their OWN name");
+assert.match(nameRule, /hasOnly\(\["firstName", "lastName", "displayName"\]\)/);
+assert.match(nameRule, /userEmail == callerEmail\(\)/);
+console.log("PASS  own-name rule");
 console.log("PASS  avatar rules + helper");

@@ -18,7 +18,7 @@ export function userRows(members, selfEmail) {
     const email = String(m.email || m.id || "").toLowerCase();
     return {
       email,
-      name: m.displayName || "",
+      name: m.displayName || [m.firstName, m.lastName].filter(Boolean).join(" "),
       roleId: m.roleId || "",
       role: ["admin", "editor", "viewer"].includes(m.role) ? m.role : "editor",
       status: m.disabled === true ? "Deactivated" : "Active",

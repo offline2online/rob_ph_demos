@@ -199,6 +199,14 @@
         <span class="material-symbols-outlined profile-photo-info" tabindex="0" aria-label="About profile photos" title="Your photo is cropped to a square and shown everywhere your name appears. Any image up to 10 MB. Remove it to fall back to your Google photo, then your initial.">info</span>
       </div>
       <p class="profile-photo-error" id="profile-photo-error" role="alert" hidden></p>
+      <form class="profile-name-form" id="profile-name-form" autocomplete="off">
+        <label class="profile-name-label" for="profile-first-name">First name</label>
+        <input class="profile-name-input" id="profile-first-name" type="text" maxlength="60" autocomplete="given-name">
+        <label class="profile-name-label" for="profile-last-name">Last name</label>
+        <input class="profile-name-input" id="profile-last-name" type="text" maxlength="60" autocomplete="family-name">
+        <button type="submit" class="btn-ghost" id="profile-name-save" data-keep-open>Save name</button>
+        <p class="profile-name-status" id="profile-name-status" role="status" hidden></p>
+      </form>
       <button type="button" class="profile-menu-item" id="topbar-signout" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">logout</span>Sign out</button>
     </div>
 
