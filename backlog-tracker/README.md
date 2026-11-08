@@ -2353,7 +2353,11 @@ calculator skill instead of costing themselves. They are bound to their steps
 in the Internal operations map: each AWS funding document node in
 `public/js/internal-map.js` carries `skills` and shows "Skill: <slug>". Load
 them with `scripts/seed-aws-ace-skills.js` (insert-only; needs a human with
-service-account credentials, like `seed-skills-data.js`). Misses are tracked with
+service-account credentials, like `seed-skills-data.js`). All four were inserted
+into the live `skills` collection on 8 Nov 2026 (through the board API, same
+document shape as the script), so they now appear under Settings → Skills &
+phase bindings and can be bound and called by any member with access to shared
+skills. Misses are tracked with
 `report_skill_miss`. Attach the real CP Group and Avolta Hudson documents as
 `references/` files on the two request skills.
 
