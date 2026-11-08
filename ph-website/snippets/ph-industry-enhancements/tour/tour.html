@@ -1,4 +1,3 @@
-<?php return <<<'PHTOUR'
 <!doctype html>
 <html lang="en">
 <head>
@@ -726,22 +725,26 @@ const IND = {
     brand: "Harbourside Pharmacy", color: "#1D3F8F", accent: "#F2665E", stores: 38,
     rows: [
       ["LOCALISED", "Winter Wellness | 2 for $30 vitamins", "Health-conscious shoppers", ["tv","language"]],
-      ["TARGETED", "Skin Clinic | Free skin check week", "Skincare regulars", ["tv","storefront"]],
-      ["TRIGGERED", "Scripts Ready | Collect while you shop", "Prescription customers", ["tv"]],
-      ["SCHEDULED", "Travel Health | Book a pre-trip check", "Travellers", ["tv","language"]],
+      ["TARGETED", "Skin Check Week | Book a free skin check", "Skincare regulars", ["tv","storefront"]],
+      ["TRIGGERED", "Hold Your Place | Scan to join the queue", "Store visitors", ["tv"]],
+      ["SCHEDULED", "Travel Essentials | Pack before you fly", "Travellers", ["tv","language"]],
     ],
-    brief: "Flu season campaign: walk-in flu vaccinations, no appointment needed, from April to June in every store. Show it on in-store screens, the website and store sites, aimed at over-65s and parents of young children.",
-    name: "Flu Season | Walk-in vaccinations",
-    details: "Seasonal campaign promoting walk-in flu vaccinations with no appointment needed. Creative leads with the urgency of flu season, reassures on convenience and hands customers over to the pharmacist at the counter.",
-    products: ["Flu vaccination", "Immunity range"], audience: ["Over-65s", "Young families"], objective: "Drive Store Visits",
-    headline: "FLU SEASON IS HERE", sub: "Walk-in vaccinations. No appointment needed.", legal: "Eligibility criteria and fees may apply. Ask our pharmacist.",
-    big: "WALK IN", bigSub: "TODAY · NO BOOKING", change: "Make the background brighter for daytime stores",
-    thumbs: ["leaf", "skin", "script", "plane"],
-    p3: { name: "Gold Members | Free flu vaccination", headline: "Your flu shot is on us", sub: "Free for Gold members, no booking.", big: "FREE", bigSub: "FLU SHOT FOR GOLD MEMBERS",
-      legal: "Loyalty Gold members only. Eligibility criteria apply. Ask our pharmacist.", audience: ["Loyalty Gold"] }
+    brief: "Summer sun care campaign: 2 for $30 on SPF 50+ sunscreen and after-sun, from December to February in every store. Show it on in-store screens, the website and store sites, aimed at families and beach-goers.",
+    name: "Sun Care | 2 for $30 SPF 50+",
+    details: "Seasonal campaign promoting 2 for $30 on SPF 50+ sunscreen and after-sun. Creative leads with the summer saving, reminds families and beach-goers to stay sun-smart and points them to the sun care bay.",
+    products: ["SPF 50+ sunscreen", "After-sun"], audience: ["Families", "Beach-goers"], objective: "Drive Store Visits",
+    headline: "SUN-SMART SUMMER", sub: "2 for $30 on SPF 50+ sunscreen*", legal: "*Selected sun care range. While stocks last. Always read the label and use only as directed.",
+    big: "2 FOR $30", bigSub: "SPF 50+ SUN CARE*", change: "Make the background brighter for daytime stores",
+    thumbs: ["leaf", "skin", "queue", "plane"],
+    p3: { name: "Gold Members | Extra 20% off sun care", headline: "Gold members save more", sub: "Extra 20% off sun care for Gold members*", big: "+20%", bigSub: "GOLD SUN CARE BONUS*",
+      legal: "*Loyalty Gold members only, on the selected sun care range. While stocks last. Always read the label and use only as directed.", audience: ["Loyalty Gold"] }
   }
 };
-const S = { flow: 0, ind: "telco", brand: null, color: null, custom: false, step: -1, paused: false, scale: 1, bright: false };
+/* One tour source for every industry page: the page path picks the industry (/industries/pharmacy/tour/ is pharmacy, anything else telco). */
+const IND_FROM_PATH = /^\/industries\/pharmacy\/tour(\/|$)/.test(location.pathname) ? "pharmacy" : "telco";
+const S = { flow: 0, ind: IND_FROM_PATH, brand: null, color: null, custom: false, step: -1, paused: false, scale: 1, bright: false };
+try { document.title = "Interactive product tour · " + (S.ind === "pharmacy" ? "Pharmacy" : "Telco Retail") + " | Personalisation Hub"; } catch (e) {}
+const INDLABEL = S.ind === "pharmacy" ? "pharmacy" : "telco";
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const D = () => S.flow === 2 ? { ...IND[S.ind], ...IND[S.ind].p3 } : IND[S.ind];
 const B = () => S.brand || D().brand;
@@ -766,12 +769,13 @@ function illo(x, y, s, a, dark) {
     <rect x="115" y="16" width="30" height="7" rx="3.5" fill="#0d1114"/>
     <circle cx="190" cy="40" r="26" fill="${a}"/><text x="190" y="47" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="20" fill="#0d1114">5G</text>
     <path d="M40 232 q60 30 120 0" stroke="${a}" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M150 224 l12 8 -12 9" stroke="${a}" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`;
-  return `<g transform="translate(${x} ${y}) scale(${s})">
-    <circle cx="150" cy="40" r="34" fill="${a}" opacity=".25"/><circle cx="30" cy="190" r="22" fill="${a}" opacity=".3"/>
-    <path d="M100 10 L180 38 V110 C180 170 140 205 100 222 C60 205 20 170 20 110 V38 Z" fill="${a}"/>
-    <path d="M100 10 L180 38 V110 C180 170 140 205 100 222 Z" fill="#000" opacity=".08"/>
-    <rect x="86" y="62" width="28" height="92" rx="5" fill="#fff"/><rect x="54" y="94" width="92" height="28" rx="5" fill="#fff"/>
-    <path d="M185 150 c25 -6 40 -26 40 -50 c-24 2 -40 20 -40 50z" fill="#ffffff" opacity=".85"/></g>`;
+  return `<g transform="translate(${x} ${y + 16 * s}) scale(${s})">
+    <circle cx="150" cy="60" r="46" fill="${a}" opacity=".3"/><circle cx="150" cy="60" r="30" fill="${a}"/>
+    <g stroke="${a}" stroke-width="6" stroke-linecap="round"><path d="M150 -2 v-12"/><path d="M150 122 v12"/><path d="M88 60 h-12"/><path d="M212 60 h12"/><path d="M106 16 l-9 -9"/><path d="M194 16 l9 -9"/><path d="M106 104 l-9 9"/><path d="M194 104 l9 9"/></g>
+    <rect x="62" y="96" width="76" height="132" rx="16" fill="#ffffff"/><rect x="62" y="96" width="76" height="132" rx="16" fill="${dark}" opacity=".08"/>
+    <rect x="80" y="70" width="40" height="30" rx="7" fill="${a}"/><rect x="88" y="58" width="24" height="16" rx="4" fill="${dark}"/>
+    <rect x="62" y="132" width="76" height="52" fill="${a}"/><text x="100" y="166" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="20" fill="#fff">SPF</text><text x="100" y="212" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="18" fill="${dark}">50+</text>
+    <path d="M24 236 q76 24 152 0" stroke="${a}" stroke-width="5" fill="none" stroke-linecap="round"/></g>`;
 }
 /* kinds: land 640x360 | port 360x640 | web 800x250 | store 360x640 ; variant: first | last */
 function art(kind, variant, bright = S.bright, opts = {}) {
@@ -796,7 +800,7 @@ function art(kind, variant, bright = S.bright, opts = {}) {
   }
   if (kind === "land") {
     if (variant === "first") body = logo(32,28,.9) + T(32,150,50,h1,ink) + T(32,204,50,h2,ink) + T(32,244,20,d.sub,ink2,500) + `<rect x="32" y="266" width="180" height="34" rx="17" fill="${a}"/>` + T(122,288,13,"FIND OUT IN STORE",S.ind==="telco"?"#0d1114":"#fff",700,"middle") + illo(380,60,1.05,a,dark) + lineBand(32,306,560,10) + T(32,348,9,d.legal,ink2,400);
-    else body = `<circle cx="520" cy="60" r="140" fill="${a}" opacity=".18"/><circle cx="560" cy="330" r="90" fill="${a}" opacity=".22"/>` + logo(32,28,.9) + T(32,170,96,d.big,ink) + T(36,206,22,d.bigSub,bright?c:a,800) + T(36,244,18,d.sub,ink2,500) + illo(410,100,.82,a,dark) + T(32,342,9,d.legal,ink2,400);
+    else body = `<circle cx="520" cy="60" r="140" fill="${a}" opacity=".18"/><circle cx="560" cy="330" r="90" fill="${a}" opacity=".22"/>` + logo(32,28,.9) + T(32,170,d.big.length > 6 ? 64 : 96,d.big,ink) + T(36,206,22,d.bigSub,bright?c:a,800) + T(36,244,18,d.sub,ink2,500) + illo(410,100,.82,a,dark) + T(32,342,9,d.legal,ink2,400);
   } else if (kind === "port") {
     body = logo(26,30,.85) + illo(60,90,1.05,a,dark) + T(26,410,40,h1,ink) + T(26,452,40,h2,ink) + T(26,488,16,d.sub,ink2,500) + `<rect x="26" y="514" width="170" height="34" rx="17" fill="${a}"/>` + T(111,536,12,"FIND OUT IN STORE",S.ind==="telco"?"#0d1114":"#fff",700,"middle") + lineBand(26,566,310,9) + T(26,615,7.5,d.legal,ink2,400);
   } else if (kind === "web") {
@@ -811,7 +815,7 @@ function art(kind, variant, bright = S.bright, opts = {}) {
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" role="img" aria-label="${esc(d.headline)}">${defs}<rect width="${W}" height="${H}" fill="url(#g${gid})"/>${body}</svg>`;
 }
 function thumbSVG(kind) {
-  const c = C(), a = D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",script:"prescriptions",plane:"flight"}[kind];
+  const c = C(), a = D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",queue:"hourglass_top",plane:"flight"}[kind];
   return `<div style="width:100%;height:100%;background:linear-gradient(135deg,${mix(c,"#fff",.15)},${mix(c,"#000",.3)});display:flex;align-items:center;justify-content:space-between;padding:0 8px;color:#fff"><span style="font:900 9px Roboto;letter-spacing:.3px;line-height:1.1">${esc(initials(B()))}</span><span class="ms" style="font-size:22px;color:${a}">${ic}</span></div>`;
 }
 
@@ -1082,17 +1086,17 @@ const LOC = {
     query: "Harbourside Pharmacy", prefix: "HP", total: 38, category: "Pharmacy",
     existing: [["HP-001","Harbour Street","Central",2,"High street"],["HP-002","Hillcrest Medical Centre","North",2,"Medical centre"]],
     results: [["Bayview","48 Bay Road","Open · Closes 9 pm","4.7","East","Medical centre"],["Seaside Village","2 Esplanade","Open · Closes 6 pm","4.5","East","High street"],["Parkside Plaza","Shop 9, Parkside Plaza","Open · Closes 9 pm","4.4","West","Shopping centre"],["Old Town","71 Main Street","Open · Closes 7 pm","4.6","Central","High street"],["Lakeside","Lakeside Medical Hub, 5 Lake Drive","Open · Closes 8 pm","4.3","South","Medical centre"],["Station Square","Station Square, Platform Level","Open · Closes 10 pm","4.2","Central","Transport hub"]],
-    focus: { name: "Bayview", code: "HP-011", addr: "48 Bay Road", suburb: "Bayview", post: "4102", local: "Open until 9pm tonight · Pharmacist on duty", phone: "(07) 3396 2200", web: "harboursidepharmacy.com/bayview", fixed: ["Metro"], variable: [] },
-    segs: { fixed: ["Metro","Regional","Airport"], variable: ["Flu vaccine out of stock","Immunity range out of stock"] },
-    rule1: ["Store / Location Data","Fixed Store Segments","includes selected",["Metro","Regional"]],
-    rule3: ["Store / Location Data","Variable Store Segments","excludes selected [OR]",["Flu vaccine out of stock","Immunity range out of stock"]],
-    rule2: ["Queueing / Aggregate Visitor Data","Reason for Visit (Aggregate)","greater than","30","Prescription collection"], subMode: "select", subOpts: ["Prescription collection","Flu vaccination","Health advice","Other"], subLabel: "waiting for Prescription collection",
-    sched: { name: "Flu season", start: "01 Apr 2027", end: "30 Jun 2027", range: "1 April to 30 June" },
+    focus: { name: "Bayview", code: "HP-011", addr: "48 Bay Road", suburb: "Bayview", post: "4102", local: "Sun care bay by the entrance · Open until 9pm tonight", phone: "(07) 3396 2200", web: "harboursidepharmacy.com/bayview", fixed: ["Coastal"], variable: [] },
+    segs: { fixed: ["Coastal","Metro","Regional"], variable: ["Sunscreen out of stock","After-sun out of stock"] },
+    rule1: ["Store / Location Data","Fixed Store Segments","includes selected",["Coastal","Metro"]],
+    rule3: ["Store / Location Data","Variable Store Segments","excludes selected [OR]",["Sunscreen out of stock","After-sun out of stock"]],
+    rule2: ["Queueing / Aggregate Visitor Data","Reason for Visit (Aggregate)","greater than","30","Skin & sun advice"], subMode: "select", subOpts: ["Prescription collection","Skin & sun advice","Travel health advice","Other"], subLabel: "waiting for Skin & sun advice",
+    sched: { name: "Summer sun care", start: "01 Dec 2026", end: "28 Feb 2027", range: "1 December to 28 February" },
     q: { head: "HOLD YOUR PLACE", sub: "Scan to join the queue and shop while you wait", name: "Hold Your Place | Scan to join the queue" },
-    twin: { weather: "9°C · Rain", wIcon: "rainy", inStore: 14, wait: [1,6], max: 5, close: "9:00 pm", active: ["Medical centre","Cold Day","Raining"],
-      zones: [["Vitamins & wellness",20,20,250,130],["Consultation room",290,20,250,130],["Entrance",20,170,250,124],["Dispensary",290,170,250,124]], qd: [312,272],
-      displays: [["Window display","land",27,74],["Dispensary display","port",89,60]] },
-    previews: [["Bayview","Open until 9pm tonight · Pharmacist on duty","play"],["Hillcrest Medical Centre","Next to the GP clinic, ground floor","play"],["Station Square","Open until 10pm · Platform level","busy"]]
+    twin: { weather: "29°C · Sunny", wIcon: "sunny", inStore: 18, wait: [1,6], max: 5, close: "9:00 pm", active: ["Coastal","Hot Day"],
+      zones: [["Sun care bay",20,20,250,130],["Consultation room",290,20,250,130],["Entrance",20,170,250,124],["Dispensary",290,170,250,124]], qd: [312,272],
+      displays: [["Window display","land",27,74],["Sun care bay display","port",89,60]] },
+    previews: [["Bayview","Sun care bay by the entrance · Open until 9pm","play"],["Hillcrest Medical Centre","Sunscreen at the front counter","play"],["Station Square","Travel sun care essentials · Open until 10pm","busy"]]
   }
 };
 const L = () => LOC[S.ind];
@@ -1336,17 +1340,17 @@ const PERS = {
     r1: ["Visitor / Customer Data","Reason for Visit (Individual)","includes selected",["Trade-in"]],
     r2: ["Visitor / Customer Data","Device Type (Individual)","includes selected",["iPhone"]], r2mode: "tags",
     r3: ["Visitor / Customer Data","Audience / Segments","includes selected","Loyalty Gold"], match: "Trade-in, iPhone and Loyalty Gold" },
-  pharmacy: { person: "Margaret", store: "Bayview", time: "10:31", display: "Dispensary display", reasons: ["Prescription collection","Flu vaccination","Health advice","Click & Collect"], reason: "Prescription collection",
-    first: "home0", conn: true, top: ["#7B4FA0","purple"], staffP: ["she","her"], findAt: "near the dispensary", email: "margaret@example.com", mid: ["Kate Tran","KT"], ins: [["prescriptions","Prescription Ready to Collect"],["language","My Account - Flu Vaccine Reminder"],["shopping_bag","Immunity Range"],["workspace_premium","Loyalty Gold"],["person","Age 68"]], look: ["#c68c6b","#1f1a17","f"], others: [["H0148","John","Health advice",3],["H0149","Lena","Flu vaccination",1]], mobile: "0423 456 789", line: 1, waitMin: 3, pos: 2, staff: "Priya", ticket: "H0146",
+  pharmacy: { person: "Emma", store: "Bayview", time: "10:31", display: "Sun care bay display", reasons: ["Skin & sun advice","Travel health advice","Click & Collect","Other"], reason: "Skin & sun advice",
+    first: "home0", conn: true, top: ["#7B4FA0","purple"], staffP: ["she","her"], findAt: "near the sun care bay", email: "emma@example.com", mid: ["Kate Tran","KT"], ins: [["edit_note","Skin & sun advice"],["workspace_premium","Loyalty Gold"],["shopping_bag","Sun care range"],["sell","Offer shown: Extra 20% off sun care"]], look: ["#c68c6b","#1f1a17","f"], others: [["H0148","John","Travel health advice",3],["H0149","Lena","Skin & sun advice",1]], mobile: "0423 456 789", line: 1, waitMin: 3, pos: 2, staff: "Priya", ticket: "H0146",
     methods: [["qr_code_scanner","Scans the QR code on a screen",true],["groups","Joins the queue",true],["near_me","Detected by proximity in your app",false],["event_available","Arrives for a Click & Collect appointment",false]],
-    attrs: [["Reason for Visit (Individual)","Prescription collection","Queue check-in",1],["Device Type (Individual)","Android","Queue check-in",0],["Age","68","Your loyalty profile",1],["Audience / Segments","Loyalty Gold","Your loyalty program",1],["Purchase History","Immunity range","Your POS",0]],
-    r1: ["Visitor / Customer Data","Reason for Visit (Individual)","includes selected",["Prescription collection"]],
-    r2: ["Visitor / Customer Data","Age","greater than or equal","65"], r2mode: "num",
-    r3: ["Visitor / Customer Data","Audience / Segments","includes selected","Loyalty Gold"], match: "Prescription collection, aged 65 or over and Loyalty Gold" }
+    attrs: [["Reason for Visit (Individual)","Skin & sun advice","Queue check-in",1],["Device Type (Individual)","Android","Queue check-in",0],["Audience / Segments","Loyalty Gold","Your loyalty program",1],["Purchase History","Sun care range","Your POS",1]],
+    r1: ["Visitor / Customer Data","Reason for Visit (Individual)","includes selected",["Skin & sun advice"]],
+    r2: ["Visitor / Customer Data","Audience / Segments","includes selected","Loyalty Gold"], r2mode: "text",
+    r3: ["Visitor / Customer Data","Purchase History","includes selected","Sun care range"], match: "Skin & sun advice, Loyalty Gold and a sun care purchase history" }
 };
 const P3 = () => PERS[S.ind];
 const baseRules = ors => { const l = L(); return [l.rule1, l.rule3, Object.assign([...l.rule2], { pct: true, sub: l.subMode, ors: ors || [] })]; };
-ATTR["Visitor / Customer Data"] = ["First Name","Company Name","Purchase Intent","Visitor Type (Individual)","Reason for Visit (Individual)","Device Type (Individual)","Age","Gender","Audience / Segments","Product Type(s)","Plan Type(s)","Plan Value(s)","Page Views","Events","Product Holdings","Purchase History","SKU(s)"];
+ATTR["Visitor / Customer Data"] = ["First Name","Company Name","Purchase Intent","Visitor Type (Individual)","Reason for Visit (Individual)","Device Type (Individual)","Age","Gender","Audience / Segments","Product Type(s)","Plan Type(s)","Plan Value(s)","Page Views","Events","Product Holdings","Purchase History","SKU(s)"].filter(x => S.ind !== "pharmacy" || !/^(Plan |Age$)/.test(x));
 const BARS = [38,48,45,40,40,36,45,58,66,58,53,72,33,16];
 function promoHTML(which) {
   const d = D(), c = C(), a = d.accent, ini = esc(initials(B())), on = S.ind === "telco" ? "#0d1114" : "#fff";
@@ -1354,7 +1358,7 @@ function promoHTML(which) {
   if (which === "camp") { gid++;
     return `<div class="ss-card" id="pcard" style="background:linear-gradient(160deg,${c},${mix(c,"#000000",.4)})">${logo}
       <svg class="pc-illo" viewBox="0 0 240 250" aria-hidden="true"><defs><linearGradient id="scr${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${mix(c,"#ffffff",.35)}"/><stop offset="1" stop-color="${a}"/></linearGradient></defs>${illo(0,0,1,a,mix(c,"#000000",.55))}</svg>
-      <div class="pc-big">${esc(d.big)}</div><div class="pc-bs" style="color:${a}">${esc(d.bigSub)}</div><div class="pc-h">${esc(d.headline)}</div><div class="pc-tag">Picked for you</div></div>`; }
+      <div class="pc-big"${d.big.length > 6 ? ' style="font-size:30px"' : ""}>${esc(d.big)}</div><div class="pc-bs" style="color:${a}">${esc(d.bigSub)}</div><div class="pc-h">${esc(d.headline)}</div><div class="pc-tag">Picked for you</div></div>`; }
   const [t1, t2] = d.rows[0][1].split(" | "), ic = { home:"router", leaf:"eco" }[d.thumbs[0]] || "sell";
   return `<div class="ss-card" id="pcard" style="background:linear-gradient(160deg,${mix(c,"#000000",.15)},${mix(c,"#000000",.5)})">${logo}<span class="ms pc-ic" style="color:${a}">${ic}</span>
     <div class="pc-h2">${esc(t1)}</div><div class="pc-bs" style="color:${a}">${esc(t2)}</div><div class="pc-cta" style="background:${a};color:${on}">Find out more</div></div>`;
@@ -1485,7 +1489,7 @@ const STEPS3 = [
      await pick(q("#s0c"), OPS.seg, r[2], id); setSel("#s0c", r[2]);
      await pick(q("#s0d"), p.reasons, r[3][0], id); addTag("#s0d", r[3][0]);
      tip(q("#rg0"),"Linked to the check-in",`The values are the reasons on your queue form, so the campaign targets visitors who check in for ${r[3][0]}.`,1); await wait(3200,id); hideTip(); } },
- { t:"Add first-party and loyalty data", s:"Add more Visitor / Customer Data rules, such as the device type captured at check-in, age, or the Loyalty Gold segment from your own data, so the campaign plays only for the right customer.",
+ { t:"Add first-party and loyalty data", s:`Add more Visitor / Customer Data rules, ${S.ind === "pharmacy" ? "such as the Loyalty Gold segment from your own data or a front-of-house purchase category from your POS" : "such as the device type captured at check-in, age, or the Loyalty Gold segment from your own data"}, so the campaign plays only for the right customer.`,
    enter(){ paint(targetScreen([P3().r1])); },
    async play(id){ const p=P3();
      for (const [g, r, mode] of [[1, p.r2, p.r2mode], [2, p.r3, "text"]]) {
@@ -1623,7 +1627,7 @@ const TEASE = [
       await wait(700, id); refreshAdd({ q: L().query, results: true }); await wait(1700, id); refreshAdd({ q: L().query, results: true, all: true }); await wait(900, id);
       q("#layer").innerHTML = ""; paint(storesScreen(true, true)); await wait(3300, id); } },
   { cap: "The right offer, the moment a customer checks in", async run(id) { S.flow = 2; S.bright = true; screen.innerHTML = sceneHTML("home1", "promo");
-      await wait(1300, id); setPhone("home2"); await wait(1100, id); const tv = q("#pdisp"); tv.classList.add("on"); tv.innerHTML = shelfSVG(true); await wait(4200, id); } }
+      await wait(1300, id); setPhone("home2"); await wait(1100, id); const tv = q("#pdisp"); tv.classList.add("on"); if (P3().shelf) tv.innerHTML = shelfSVG(true); else tv.querySelector(".tv-in").innerHTML = art("land","first",S.bright); await wait(4200, id); } }
 ];
 const IN_FRAME = window.parent !== window;
 const PCFG = () => { try { return window.PH_TOUR || (IN_FRAME && window.parent.PH_TOUR) || {}; } catch (e) { return window.PH_TOUR || {}; } };
@@ -1632,7 +1636,7 @@ if (/[?&]embed=1/.test(location.search)) document.documentElement.classList.add(
 if (IN_FRAME) { try { const w = document.getElementById("wrap"); new ResizeObserver(() => { if (FSON) return; try { window.parent.postMessage({ type: "ph-tour-height", h: Math.ceil(w.getBoundingClientRect().bottom + window.scrollY + 8) }, location.origin); } catch (e) {} }).observe(w); } catch (e) {} }
 let LOCKED = false, TSEL = FOCUS ? FOCUSMAP[location.hash] : 0, GMODE = "pick";
 S.welcome = "";
-function tourEvent(action, extra) { try { DL().push(Object.assign({ event: "ph_tour", action, industry: "telco", flow: (FLOWS[S.flow] || [])[0], step: S.step + 1 }, extra || {})); } catch (e) {} }
+function tourEvent(action, extra) { try { DL().push(Object.assign({ event: "ph_tour", action, industry: S.ind, flow: (FLOWS[S.flow] || [])[0], step: S.step + 1 }, extra || {})); } catch (e) {} }
 /* ---- full screen. Native Fullscreen API on this document; where it is missing (iPhone Safari) a full-viewport fallback: the page pins this iframe on {type:"ph-tour-fullscreen", on}. ---- */
 const fsBtn = document.getElementById("fs"), fsClose = document.getElementById("fsclose"), ROOT = document.documentElement;
 /* iPhone, iPad and iPadOS (reports as Macintosh with touch): native full screen shows the system's own X top left, so use the in-page fallback and our top-right close. */
@@ -1678,8 +1682,8 @@ document.addEventListener("keydown", e => {
 function readLead() { try { const l = JSON.parse(localStorage.getItem(LEAD_KEY) || "null"); return l && l.email ? l : null; } catch (e) { return null; } }
 function saveLead(l) { try { localStorage.setItem(LEAD_KEY, JSON.stringify(l)); } catch (e) {} }
 function sendLead(l) {
-  const body = { name: l.name, company: l.company, email: l.email, consent: true, industry: "telco", source: "Interactive product tour", flow: GFLOWS[l.flow][1], page: location.pathname, test: /[?&]ph_test=1/.test(location.search) };
-  try { DL().push({ event: "ph_lead_captured", source: body.source, industry: "telco" }); } catch (e) {}
+  const body = { name: l.name, company: l.company, email: l.email, consent: true, industry: S.ind, source: "Interactive product tour", flow: GFLOWS[l.flow][1], page: location.pathname, test: /[?&]ph_test=1/.test(location.search) };
+  try { DL().push({ event: "ph_lead_captured", source: body.source, industry: S.ind }); } catch (e) {}
   const cfg = PCFG();
   if (!cfg.endpoint) return Promise.resolve({ ok: true, prototype: true });
   return fetch(cfg.endpoint, { method: "POST", credentials: "same-origin", headers: Object.assign({ "Content-Type": "application/json" }, cfg.nonce ? { "X-WP-Nonce": cfg.nonce } : {}), body: JSON.stringify(body) }).then(r => ({ ok: r.ok })).catch(() => ({ ok: false }));
@@ -1688,7 +1692,7 @@ const FREE_MAIL = /@(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|iclou
 function gateHTML() {
   const head = `<div class="g-eb"><span class="ms">play_circle</span>Interactive product tour</div>`;
   if (GMODE === "pick") return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
-      <h3>Watch a telco campaign go from a spoken brief to the right customer</h3><p>Three short guided demos on real Personalisation Hub screens, run in your brand. Pick one to start.</p>
+      <h3>Watch a ${INDLABEL} campaign go from a spoken brief to the right customer</h3><p>Three short guided demos on real Personalisation Hub screens, run in your brand. Pick one to start.</p>
       <div class="g-flows">${GFLOWS.map((f, i) => `<button type="button" class="g-flow" data-f="${i}"><span class="ms">${f[0]}</span><span><b>${f[1]}</b><small>${f[2]}</small></span><span class="g-go">Watch<span class="ms">chevron_right</span></span><i></i></button>`).join("")}</div></div>`;
   const f = GFLOWS[TSEL];
   return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
@@ -1717,7 +1721,7 @@ function renderGate() {
 }
 function lock() {
   fsExit(); LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = D().brand;
-  document.getElementById("h1").textContent = "See Personalisation Hub run a telco campaign, end to end";
+  document.getElementById("h1").textContent = `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
   document.getElementById("sub").textContent = "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
   renderGate(); teaseLoop();
 }
@@ -1738,5 +1742,3 @@ S.flow = 0; const stored = readLead(); if (stored) unlock(stored, false); else l
 </script>
 </body>
 </html>
-
-PHTOUR;

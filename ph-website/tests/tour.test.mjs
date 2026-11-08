@@ -1,4 +1,4 @@
-// node ph-website/tests/tour.test.mjs : the telco product tour on the industry page (enhance.js + site.js), in Chromium.
+// node ph-website/tests/tour.test.mjs : the telco and pharmacy product tour on the industry pages (enhance.js + site.js), in Chromium.
 // Checks: the band is mounted (Elementor mount, or built after the calculator's section), the iframe src (+ph_test forwarding), the height
 // message, window.PH_TOUR, "Arrange a Demo" -> PH_SITE_DEMO, and that a successful calculator download writes
 // localStorage ph_lead and dispatches window "ph:lead". Skips (exit 0) when Playwright or Chromium is not available.
@@ -15,29 +15,29 @@ const dir = path.join(here, "..", "snippets", "ph-industry-enhancements");
 const enhance = fs.readFileSync(path.join(dir, "enhance.js"), "utf8");
 const site = fs.readFileSync(path.join(dir, "site.js"), "utf8");
 const { CALC } = require(path.join(dir, "enhance.js"));
-const n = CALC.telco.inputs.length + CALC.telco.assumptions.length;
+const nOf = (ind) => CALC[ind].inputs.length + CALC[ind].assumptions.length;
 const row = '<div class="ph-ind-cf"><span class="ph-ind-cf-l">L</span><span class="ph-ind-cf-v">V</span></div>';
 const css = fs.readFileSync(path.join(dir, "enhance.css"), "utf8");
-const html = (withBand) => `<!doctype html><html><head><style>${css}</style></head><body><main>
-<section class="ph-ind-sec" id="calcsec"><div class="ph-ind-calc"><div class="ph-ind-cin"><p class="ph-ind-label-gap">a</p><p class="ph-ind-label-gap">b</p>${row.repeat(n)}</div>
+const html = (withBand, ind = "telco") => `<!doctype html><html><head><style>${css}</style></head><body><main>
+<section class="ph-ind-sec" id="calcsec"><div class="ph-ind-calc"><div class="ph-ind-cin"><p class="ph-ind-label-gap">a</p><p class="ph-ind-label-gap">b</p>${row.repeat(nOf(ind))}</div>
 <div class="ph-ind-cout"><p class="ph-ind-ctot-l">Total</p><p class="ph-ind-ctot-v">0</p><div class="ph-ind-crow">r</div></div></div></section>
 ${withBand ? '<section class="ph-ind-sec ph-ind-tour" id="band"><h2>Server heading</h2><div class="ph-ind-tour-mount"></div></section>' : ""}
 <section class="ph-ind-sec" id="after">next</section></main>
-<script>window.PH_IND_PAGE="telco"; window.__demo=[]; window.__cal=[]; window.Calendly={initPopupWidget:function(o){window.__cal.push(o.url);}};</script>
+<script>window.PH_IND_PAGE="${ind}"; window.__demo=[]; window.__cal=[]; window.Calendly={initPopupWidget:function(o){window.__cal.push(o.url);}};</script>
 <script>${site}</script><script>${enhance}</script></body></html>`;
 
 const browser = await chromium.launch();
 try {
-  const open = async (withBand, search = "") => {
+  const open = async (withBand, search = "", ind = "telco") => {
     const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
     await p.route("**/*", (r) => {
       const u = r.request().url();
-      if (/\/industries\/telco\/tour\//.test(u)) return r.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><p>tour</p>" });
+      if (/\/industries\/(telco|pharmacy)\/tour\//.test(u)) return r.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><p>tour</p>" });
       if (/wp-json\/ph-site\/v1\/(industry-lead|telco-model)$/.test(u)) return r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, download: "http://x.test/blocked.xlsx" }) });
       if (/blocked\.xlsx/.test(u)) return r.fulfill({ status: 204, body: "" });
-      return r.fulfill({ contentType: "text/html", body: html(withBand) });
+      return r.fulfill({ contentType: "text/html", body: html(withBand, ind) });
     });
-    await p.goto("http://x.test/industries/telco/" + search);
+    await p.goto("http://x.test/industries/" + ind + "/" + search);
     return p;
   };
   // Elementor band present: the iframe goes into its mount, after the calculator section.
@@ -95,6 +95,26 @@ try {
   assert.strictEqual(await p.locator(".ph-ind-tour .ph-ind-tour-eyebrow").textContent(), "Interactive product tour");
   assert.ok(/end to end/.test(await p.locator(".ph-ind-tour h2").textContent()), "H2");
   assert.strictEqual(await p.locator(".ph-ind-tour + #after").count(), 1, "the band sits between the calculator and the next section");
+  await p.close();
+
+  // Pharmacy page: same mount, its own iframe src and fallback copy, after the pharmacy calculator section.
+  p = await open(true, "", "pharmacy");
+  assert.strictEqual(await p.locator("#band .ph-ind-tour-mount iframe").count(), 1, "pharmacy: iframe mounted in the Elementor band");
+  assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/pharmacy/tour/?embed=1", "pharmacy: iframe src");
+  assert.strictEqual(await p.evaluate(() => window.PH_TOUR.endpoint), "/wp-json/ph-site/v1/tour-lead", "pharmacy: same lead endpoint");
+  await p.close();
+  p = await open(false, "", "pharmacy");
+  assert.strictEqual(await p.locator("#calcsec + .ph-ind-tour .ph-ind-tour-mount iframe").count(), 1, "pharmacy: band built after the calculator section");
+  assert.strictEqual(await p.locator(".ph-ind-tour h2").textContent(), "See Personalisation Hub run a pharmacy campaign, end to end", "pharmacy: fallback heading");
+  assert.strictEqual(await p.locator(".ph-ind-tour .ph-ind-tour-p").textContent(), "Pick a demo and watch a campaign go from brief to every pharmacy screen, and on to the pharmacist.", "pharmacy: fallback paragraph");
+  assert.strictEqual(await p.locator(".ph-ind-tour .ph-ind-tour-eyebrow").textContent(), "Interactive product tour");
+  assert.strictEqual(await p.locator(".ph-ind-tour + #after").count(), 1, "pharmacy: the band sits between the calculator and the next section");
+  await p.close();
+  p = await open(true, "?ph_test=1", "pharmacy");
+  assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/pharmacy/tour/?embed=1&ph_test=1", "pharmacy: ph_test forwarded");
+  await p.close();
+  p = await open(false, "", "telco");
+  assert.strictEqual(await p.locator(".ph-ind-tour h2").textContent(), "See Personalisation Hub run a telco campaign, end to end", "telco fallback heading unchanged");
   await p.close();
 
   // Test mode is forwarded to the tour.
@@ -159,13 +179,14 @@ try {
   await f2.locator("button[type=submit]").click();
   await p.waitForFunction(() => /Thanks/.test(document.querySelector(".ph-ind-gate-m").textContent));
   assert.ok(true, "the form still succeeds with storage blocked");
+  for (const ind of ["telco", "pharmacy"]) { // the same assertions on both industries
   // The tour page itself: full screen, native and fallback.
-  const tourHtml = fs.readFileSync(path.join(dir, "tour", "telco.html"), "utf8");
+  const tourHtml = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
   const tourPage = async (fallback, vp, body = tourHtml) => {
     const t = await browser.newPage({ viewport: vp });
     await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body }) : r.abort());
     await t.addInitScript((fb) => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })); if (fb) { Document.prototype.__defineGetter__("fullscreenEnabled", () => false); } }, fallback);
-    await t.goto("http://x.test/industries/telco/tour/?embed=1");
+    await t.goto(`http://x.test/industries/${ind}/tour/?embed=1`);
     await t.waitForSelector("#fs", { state: "visible" });
     return t;
   };
@@ -185,7 +206,7 @@ try {
     await t.keyboard.press("Escape");
     await t.waitForFunction(() => !document.documentElement.classList.contains("fs"));
     assert.ok(await t.evaluate(() => fs.getAttribute("aria-label") === "Full screen" && fs.getAttribute("aria-pressed") === "false" && document.activeElement.id === "fs"), "Esc exits and focus returns to the button");
-    assert.deepStrictEqual(await evs(t), ["fullscreen_enter:telco:string:number", "fullscreen_exit:telco:string:number"], "ph_tour events");
+    assert.deepStrictEqual(await evs(t), [`fullscreen_enter:${ind}:string:number`, `fullscreen_exit:${ind}:string:number`], "ph_tour events");
     await t.close();
   }
   // Landscape phones (height <= 520): the stage takes at least 60% of the height, one-row bar of at most 52px, chips row of at most 36px, nothing wraps.
@@ -220,7 +241,7 @@ try {
     await t.click("#fsclose");
     await t.waitForFunction(() => !document.documentElement.classList.contains("fs"));
     assert.ok(await t.evaluate(() => !document.fullscreenElement && document.activeElement.id === "fs"), "the close button exits; focus returns to the bar button");
-    assert.deepStrictEqual(await evs(t), ["fullscreen_enter:telco:string:number", "fullscreen_exit:telco:string:number"], "same events as the bar button");
+    assert.deepStrictEqual(await evs(t), [`fullscreen_enter:${ind}:string:number`, `fullscreen_exit:${ind}:string:number`], "same events as the bar button");
     await t.close();
   }
   // Apple touch devices (iPhone, iPad, iPadOS as Macintosh): the in-page fallback, never the native API (its system X sits top left).
@@ -229,7 +250,7 @@ try {
     const t = await ctx.newPage();
     await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: tourHtml }) : r.abort());
     await t.addInitScript((n) => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })); Object.defineProperty(Navigator.prototype, "maxTouchPoints", { get: () => n }); }, touch);
-    await t.goto("http://x.test/industries/telco/tour/?embed=1");
+    await t.goto(`http://x.test/industries/${ind}/tour/?embed=1`);
     await t.waitForSelector("#fs", { state: "visible" });
     await t.click("#fs");
     await t.waitForFunction(() => document.documentElement.classList.contains("fs"));
@@ -292,7 +313,7 @@ try {
     const ft = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await ft.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort());
     await ft.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })));
-    await ft.goto("http://x.test/industries/telco/tour/?embed=1#localisation");
+    await ft.goto(`http://x.test/industries/${ind}/tour/?embed=1#localisation`);
     await ft.waitForSelector("#fs", { state: "visible" });
     await ft.evaluate(() => { __t.setFlow(1); __t.showEnd(); });
     assert.ok(await ft.evaluate(() => !document.getElementById("nextflow") && document.activeElement.id === "again"), "focus mode: no Next, Replay focused");
@@ -314,9 +335,9 @@ try {
   }
   // Framed fallback: parent receives ph-tour-fullscreen on/off and the frame is pinned.
   const fp = await browser.newPage({ viewport: { width: 390, height: 700 } });
-  await fp.route("**/*", (r) => { const u = r.request().url(); if (/\/industries\/telco\/tour\//.test(u)) return r.fulfill({ contentType: "text/html", body: tourHtml }); if (u.startsWith("http://x.test/")) return r.fulfill({ contentType: "text/html", body: html(true) }); return r.abort(); });
+  await fp.route("**/*", (r) => { const u = r.request().url(); if (new RegExp("/industries/" + ind + "/tour/").test(u)) return r.fulfill({ contentType: "text/html", body: tourHtml }); if (u.startsWith("http://x.test/")) return r.fulfill({ contentType: "text/html", body: html(true, ind) }); return r.abort(); });
   await fp.addInitScript(() => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })); Document.prototype.__defineGetter__("fullscreenEnabled", () => false); });
-  await fp.goto("http://x.test/industries/telco/");
+  await fp.goto(`http://x.test/industries/${ind}/`);
   const cf = fp.frames().find((x) => x !== fp.mainFrame());
   await cf.waitForSelector("#fs", { state: "visible" });
   await cf.click("#fs");
@@ -371,5 +392,89 @@ try {
     const ms = await eachCaption(t, async () => { await t.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); return t.evaluate(capMetrics); });
     ms.forEach((m, k) => assert.ok(m.oneRow && !m.clipV && !m.over && m.stageH >= m.vh * 0.6 && m.align === "right" && m.capR <= m.barR + 2, `740x360 caption ${k}: ${JSON.stringify(m)}`));
     await t.keyboard.press("Escape"); await t.waitForFunction(() => !document.documentElement.classList.contains("fs")); await t.close(); }
+  }
+  // One shared source: S.ind follows the path; the pharmacy tour is Harbourside Pharmacy with the sun care campaign and none of telco's words.
+  { const sourceTour = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
+    const fast = sourceTour.replace("const k = reduce ? .35 : 1;", "const k = .02;"); // test-only: play every step quickly
+    assert.ok(fast !== sourceTour, "speed hook applied");
+    assert.ok(!fs.existsSync(path.join(dir, "tour", "telco.html")), "one tour source: tour/tour.html only");
+    const hookedInd = sourceTour.replace('document.getElementById("prev").onclick', "window.__t = { setFlow, showEnd, S, D, L, P3 };\n$&");
+    const lead = () => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "", email: "s@k.example", source: "Telco business model download" }));
+    const walk = async (ind, body) => {
+      const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+      const errs = []; t.on("pageerror", (e) => errs.push(e.message));
+      await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body }) : r.abort());
+      await t.addInitScript(lead); // a lead from the telco calculator download unlocks the pharmacy tour (same ph_lead key)
+      await t.goto(`http://x.test/industries/${ind}/tour/?embed=1`);
+      await t.waitForSelector("#fs", { state: "visible" });
+      assert.strictEqual(await t.locator("#gate").isHidden(), true, `${ind}: a ph_lead from telco unlocks the tour (no gate)`);
+      const seen = new Set();
+      for (let f = 0; f < 3; f++) {
+        await t.click(`.chip[data-k="${f}"]`);
+        await t.click("#play");
+        const t0 = Date.now();
+        for (;;) {
+          const s = await t.evaluate(() => [document.getElementById("stage").innerText, document.getElementById("capT").textContent, document.getElementById("capS").textContent, document.getElementById("card").innerText, [...document.querySelectorAll("#stage svg text")].map((x) => x.textContent).join(" ")].join("\n"));
+          seen.add(s);
+          if (await t.evaluate(() => !document.getElementById("card").hidden && /complete/i.test(document.getElementById("card").innerText))) break;
+          assert.ok(Date.now() - t0 < 150000, `${ind}: flow ${f + 1} finished`);
+          await t.waitForTimeout(120);
+        }
+      }
+      return { t, text: [...seen].join("\n"), errs };
+    };
+    // Path decides the industry.
+    for (const [ind, want] of [["telco", "telco"], ["pharmacy", "pharmacy"]]) {
+      const u = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      await u.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hookedInd }) : r.abort());
+      await u.addInitScript(lead);
+      await u.goto(`http://x.test/industries/${ind}/tour?embed=1`);
+      await u.waitForSelector("#fs", { state: "visible" });
+      assert.strictEqual(await u.evaluate(() => window.__t.S.ind), want, `S.ind is ${want} on /industries/${ind}/tour`);
+      assert.strictEqual(await u.evaluate(() => document.getElementById("co").value), want === "telco" ? "Nimbus Mobile" : "Harbourside Pharmacy", `${ind}: brand`);
+      if (want === "pharmacy") assert.ok(/Pharmacy/.test(await u.title()), "pharmacy document title: " + await u.title());
+      await u.close();
+    }
+    const other = await browser.newPage();
+    await other.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hookedInd }) : r.abort());
+    await other.addInitScript(lead);
+    await other.goto("http://x.test/anything/else/?embed=1");
+    await other.waitForSelector("#fs", { state: "visible" });
+    assert.strictEqual(await other.evaluate(() => window.__t.S.ind), "telco", "any other path is telco");
+    await other.close();
+    // The pharmacy walk-through: content and words.
+    const ph = await walk("pharmacy", fast);
+    assert.deepStrictEqual(ph.errs, [], "no page errors");
+    for (const need of ["Harbourside Pharmacy", "Sun Care | 2 for $30 SPF 50+", "SUN-SMART SUMMER", "2 FOR $30", "Gold Members | Extra 20% off sun care", "Coastal", "Sunscreen out of stock", "After-sun out of stock", "Skin & sun advice", "Summer sun care", "Sun care bay display", "Visitor Details", "Loyalty Gold"]) assert.ok(ph.text.includes(need), "pharmacy tour shows: " + need);
+    const banned = ph.text.match(/iphone|trade-?in|handset|\bplans?\b|phone wall|nimbus|prescription collection|prescriptions?\b|vaccin|\bflu\b|\bage\b|\b68\b|scripts ready/gi);
+    assert.ok(!banned || banned.every((w) => /prescription collection/i.test(w)), "no telco or medical words in the pharmacy tour: " + JSON.stringify(banned));
+    const vd = ph.text.slice(ph.text.indexOf("Visitor Details"));
+    assert.ok(!/prescription|vaccin|\bage\b|medical|diagnos/i.test(vd), "Visitor Details shows visit context only");
+    await ph.t.close();
+    // Telco unchanged.
+    const tl = await walk("telco", fast);
+    assert.deepStrictEqual(tl.errs, [], "telco: no page errors");
+    for (const need of ["Nimbus Mobile", "iPhone Trade-in | Up to $800 off", "Gold Members | Extra $200 iPhone trade-in"]) assert.ok(tl.text.includes(need), "telco tour shows: " + need);
+    assert.ok(!/Harbourside|sun care|SPF/i.test(tl.text), "no pharmacy content in the telco tour");
+    await tl.t.close();
+    // The lead body carries the industry from the path.
+    for (const [ind, want] of [["telco", "telco"], ["pharmacy", "pharmacy"]]) {
+      const g = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      let body = null;
+      await g.route("**/*", (r) => { const u = r.request().url(); if (/tour-lead$/.test(u)) { body = JSON.parse(r.request().postData()); return r.fulfill({ contentType: "application/json", body: '{"ok":true}' }); } return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: sourceTour }) : r.abort(); });
+      await g.addInitScript(() => { window.PH_TOUR = { endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "" }; });
+      await g.goto(`http://x.test/industries/${ind}/tour/?embed=1&ph_test=1`);
+      await g.waitForSelector(".g-flow");
+      await g.locator(".g-flow").first().click();
+      await g.fill("input[name=name]", "Ada Lovelace"); await g.fill("input[name=company]", "Orbit Co"); await g.fill("input[name=email]", "ada@orbit.example"); await g.check("input[name=consent]");
+      await g.click("#gsub");
+      await g.waitForFunction(() => document.getElementById("gate").hidden);
+      assert.ok(body && body.industry === want && body.page === `/industries/${ind}/tour/` && body.test === true, `${ind} lead body: ` + JSON.stringify(body));
+      const ev = await g.evaluate(() => window.dataLayer.filter((e) => e.event === "ph_lead_captured" || (e.event === "ph_tour" && e.action === "unlock")).map((e) => e.event + ":" + e.industry));
+      assert.deepStrictEqual(ev, [`ph_lead_captured:${want}`, `ph_tour:${want}`], `${ind} dataLayer industry: ` + JSON.stringify(ev));
+      assert.ok(await g.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")).email === "ada@orbit.example"), "ph_lead stored for both tours");
+      await g.close();
+    }
+  }
   console.log("tour js: all passed");
 } finally { await browser.close(); }

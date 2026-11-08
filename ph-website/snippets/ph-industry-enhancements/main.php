@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.9.2';
+const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.9.3';
 require_once __DIR__ . '/telco-lead.php';
 require_once __DIR__ . '/leads.php';
 require_once __DIR__ . '/tour.php';
