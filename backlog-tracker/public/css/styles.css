@@ -1800,6 +1800,7 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .intmap-proc rect { fill: #fff; stroke: var(--primary); stroke-width: 2; }
 .intmap-proc-note { font-style: italic; fill: #5c6770; }
 .intmap-ace { fill: var(--primary); font-weight: 700; }
+.intmap-skill { fill: var(--primary); font-weight: 600; font-size: 9px; }
 .intmap-doc-tag { font-style: italic; }
 .intmap-doc-onepager rect { fill: #fff3d6; stroke: #e0a100; }
 .intmap-doc-pack rect { fill: #fde3ef; stroke: #d6336c; }
@@ -2306,12 +2307,12 @@ body { overflow-x: clip; }
 /* Promote › Prospects (TAM) */
 .prospects-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 .prospects-info { font-size: 18px; vertical-align: middle; color: var(--text-muted); cursor: help; }
-/* The page is exactly one viewport tall below the console header (a column: title, tools, grid), and the grid
-   takes the space left, so the document never scrolls the grid's column header and filter row under the console
-   header; the rows scroll inside the grid. (position:sticky could not do this: the grid is the page's last block,
-   so its parent ended where it did and there was no room to stick.) 64px = .app's 24px top + 40px bottom padding. */
-#prospects-page:not([hidden]):not(.is-detail) { display: flex; flex-direction: column; height: calc(100dvh - var(--sticky-topbar-h, 56px) - 64px); min-height: 360px; }
-#prospects-page:not(.is-detail) > .prospects-grid { flex: 1 1 auto; min-height: 240px; width: 100%; }
+/* The whole page scrolls (no inner scroll area): the grid is auto-height and shows every row of the page. Its column
+   header and filter row (.ag-header) stick under the console header at page level; that needs every grid ancestor up to
+   the page to have overflow:visible, since overflow:hidden makes a box the sticky container. */
+#prospects-page > .prospects-grid { width: 100%; }
+.prospects-grid .ag-root-wrapper, .prospects-grid .ag-root-wrapper-body, .prospects-grid .ag-root, .prospects-grid .ag-body, .prospects-grid .ag-body-viewport { overflow: visible !important; }
+.prospects-grid .ag-header { position: sticky; top: var(--sticky-topbar-h, 56px); z-index: 6; }
 .prospects-grid[hidden] { display: none; }
 .pl-trigger { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; height: 30px; padding: 0 6px 0 8px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
 .pl-trigger:hover { border-color: var(--primary); }
@@ -2531,10 +2532,11 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 /* Promote › Leads: AWS ACE opportunities table (under the board) */
 .ace-section { margin-top: 28px; min-width: 0; max-width: 100%; --ace-muted: #5f6368; }
 :root[data-theme="dark"] .ace-section { --ace-muted: rgba(235, 235, 245, .72); }
-.ace-title { margin: 0 0 8px; font-size: 18px; font-weight: 500; }
-.ace-divider { border: 0; border-top: 1px solid var(--border); margin: 0 0 12px; }
-.ace-toprow { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.ace-count { margin: 0; color: var(--ace-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ace-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.ace-title { margin: 0; font-size: 18px; font-weight: 700; }
+.ace-head .ace-new { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.ace-head .ace-new .material-symbols-outlined { font-size: 18px; }
+.ace-head .ace-count { display: inline-flex; align-items: center; gap: 8px; color: var(--text); }
 .ace-flag { display: inline-block; padding: 0 8px; line-height: 20px; font-size: 12px; border-radius: 10px; background: var(--surface-2, #f0f0f0); color: var(--ace-muted); }
 .ace-refresh { display: inline-flex; align-items: center; gap: 4px; }
 .ace-refresh .material-symbols-outlined { font-size: 18px; }
@@ -2542,8 +2544,8 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .ace-alert[hidden] { display: none; }
 .ace-alert > .material-symbols-outlined { color: #ff4d4f; font-size: 20px; }
 .ace-alert-text { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
-.ace-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
-.ace-kpis[hidden], .ace-stages[hidden], .ace-empty[hidden], .ace-grid[hidden] { display: none; }
+.ace-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.ace-kpis[hidden], .ace-empty[hidden], .ace-grid[hidden] { display: none; }
 .ace-kpi { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, #fff); }
 .ace-kpi-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 8px; background: var(--primary-tint); color: var(--primary-text); }
 .ace-kpi[data-kpi="approved"] .ace-kpi-icon { background: rgba(82, 196, 26, .15); }
@@ -2551,7 +2553,6 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .ace-kpi-text { min-width: 0; }
 .ace-kpi-label { font-size: 10px; line-height: 14px; letter-spacing: .04em; text-transform: uppercase; color: var(--ace-muted); overflow-wrap: anywhere; }
 .ace-kpi-value { font-size: 18px; line-height: 24px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
-.ace-stages { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .ace-pill { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; border: 1px solid var(--border); border-radius: 12px; font-size: 12px; color: var(--text); white-space: nowrap; }
 .ace-pill b { font-weight: 600; }
 .ace-grid .ace-pill { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -2586,3 +2587,29 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 :root[data-theme="dark"] .ace-alert { background: rgba(255, 77, 79, .16); }
 @media (max-width: 640px) { .ace-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ace-kpi { padding: 10px; gap: 8px; } }
 .pd-toprow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+/* ACE opportunity detail dialog (ace-detail.js) */
+.ace-open { padding: 0; margin: 0; min-height: 0; height: auto; box-shadow: none; width: 100%; font: inherit; line-height: inherit; background: none; border: 0; text-align: left; cursor: pointer; }
+.ace-dlg-facts { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 12px; }
+.ace-dlg-facts:empty { display: none; }
+.ace-dlg-fact { display: flex; flex-direction: column; min-width: 0; }
+.ace-dlg-fact-k { font-size: 10px; line-height: 14px; letter-spacing: .04em; text-transform: uppercase; color: var(--ace-muted, #5f6368); }
+.ace-dlg-fact-v { font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.ace-dlg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.ace-dlg-grid .field-label { min-width: 0; }
+.ace-dlg-wide { grid-column: 1 / -1; }
+.ace-dlg-money { display: flex; gap: 8px; }
+.ace-dlg-money input { flex: 1 1 auto; min-width: 0; }
+.ace-dlg-docs { margin-top: 16px; }
+.ace-dlg-docs h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.ace-dlg-doclist { list-style: none; margin: 8px 0; padding: 0; }
+.ace-dlg-doc { display: flex; align-items: center; gap: 8px; padding: 4px 0; min-width: 0; }
+.ace-dlg-doc-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--primary-text); }
+.ace-dlg-doc-size, .ace-dlg-doc-empty { color: var(--ace-muted, #5f6368); font-size: 13px; }
+.ace-dlg-attach { display: inline-flex; align-items: center; gap: 4px; }
+.ace-dlg-status { min-height: 20px; margin: 12px 0 0; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.ace-dlg-status[data-tone="bad"] { color: #b71c1c; }
+.ace-dlg-status[data-tone="ok"] { color: #237804; }
+:root[data-theme="dark"] .ace-dlg-status[data-tone="bad"] { color: #ff7875; }
+:root[data-theme="dark"] .ace-dlg-status[data-tone="ok"] { color: #95de64; }
+@media (max-width: 640px) { .ace-dlg-grid { grid-template-columns: minmax(0, 1fr); } }

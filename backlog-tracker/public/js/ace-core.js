@@ -97,3 +97,71 @@ export function kpis(rows) {
     needsAction: list.filter((r) => reviewTone(r.reviewStatus) === "bad").length,
   };
 }
+
+// ── Editing an opportunity in the console (ace-detail.js) ─────────────────
+// The fields the dialog edits, in the order shown. The server validates again
+// (functions/partner-central.js → sanitiseAceInput).
+export const ACE_EDIT_FIELDS = ["name", "customer", "stage", "targetCloseDate", "nextSteps", "description", "website", "monthlyAmount", "currency"];
+
+export function formValues(row) {
+  const r = row || {};
+  const m = r.expectedMonthly;
+  return {
+    name: r.name || "", customer: r.customer || "", stage: r.stage || "", targetCloseDate: r.targetCloseDate || "",
+    nextSteps: r.nextSteps || "", description: r.description || "", website: r.website || "",
+    monthlyAmount: m && Number.isFinite(m.amount) ? String(m.amount) : "", currency: (m && m.currency) || "USD",
+  };
+}
+
+// Only the fields the person changed, so a save never rewrites what they did not touch.
+export function changedValues(original, current) {
+  const out = {};
+  for (const k of ACE_EDIT_FIELDS) if (String(original[k] == null ? "" : original[k]).trim() !== String(current[k] == null ? "" : current[k]).trim()) out[k] = String(current[k] == null ? "" : current[k]).trim();
+  return out;
+}
+
+// Messages for the dialog's status line; empty when the values can be sent.
+export function validateForm(values, { creating = false } = {}) {
+  const v = values || {};
+  const errors = [];
+  if (!String(v.name || "").trim() || !String(v.customer || "").trim()) errors.push(creating ? "Enter a title and customer." : "An opportunity needs a title and a customer.");
+  if (v.targetCloseDate && !/^\d{4}-\d{2}-\d{2}$/.test(v.targetCloseDate)) errors.push("Expected delivery date must be a date.");
+  if (v.monthlyAmount !== "" && v.monthlyAmount != null && !(Number(v.monthlyAmount) >= 0)) errors.push("Monthly AWS revenue must be a number.");
+  return errors;
+}
+
+// "Saved to AWS ACE", with the score AWS now holds.
+export function savedMessage(row, verb = "Saved to AWS ACE") {
+  const s = row && row.score;
+  return `${verb}. ${s != null && s !== "" ? `Score ${s}.` : "Score not available yet."}`;
+}
+
+// Documents stay in the console (the Selling API cannot attach files).
+export const ACE_DOC_MAX = 50 * 1024 * 1024;
+const DOC_TYPES = {
+  pdf: "application/pdf", zip: "application/zip", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
+  doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+export const ACE_DOC_ACCEPT = Object.keys(DOC_TYPES).map((e) => `.${e}`).join(",");
+
+// { ok, contentType } or { ok:false, error } for a chosen file.
+export function checkDocument(file) {
+  if (!file) return { ok: false, error: "Choose a file." };
+  const ext = (String(file.name || "").split(".").pop() || "").toLowerCase();
+  const contentType = DOC_TYPES[ext];
+  if (!contentType) return { ok: false, error: "Attach a PDF, Office file, image or zip." };
+  if (file.size > ACE_DOC_MAX) return { ok: false, error: "That file is over 50 MB." };
+  if (!(file.size > 0)) return { ok: false, error: "That file is empty." };
+  return { ok: true, contentType };
+}
+
+export const docFileName = (name) => String(name || "document").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^\.+/, "").slice(-120) || "document";
+// Storage keeps "<timestamp>-<name>"; show the name.
+export const docDisplayName = (stored) => String(stored || "").replace(/^\d{10,}-/, "");
+
+export function formatDateTime(iso) {
+  const t = Date.parse(String(iso || ""));
+  return Number.isFinite(t) ? formatDate(new Date(t).toISOString()) : "";
+}

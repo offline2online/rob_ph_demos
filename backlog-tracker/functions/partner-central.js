@@ -29,7 +29,9 @@
 //   GET   /v1/audit                        last 50 calls
 //   POST  /v1/config   {catalog, confirm}  switch catalogue (AWS needs confirm:"LIVE")
 //   GET   /v1/opportunities                list
-//   GET   /v1/ace                          normalised rows for Promote › Leads (editors too, read only)
+//   GET   /v1/ace                          normalised rows for Promote › Leads (editors too)
+//   GET   /v1/ace/{id}  POST /v1/ace  PATCH /v1/ace/{id}   one opportunity, create, update (editors; the
+//                                          console's detail dialog; update is read-merge-write)
 //   POST  /v1/opportunities                create
 //   PATCH /v1/opportunities/{id}           update
 //   POST  /v1/benefits/drafts              create a draft benefit application
@@ -136,9 +138,109 @@ function normaliseOpportunity(summary, detail) {
     score: Number.isFinite(score) ? score : null,
     expectedMonthly: expectedMonthly(o.Project),
     targetCloseDate: text(life.TargetCloseDate, 10) || null,
+    nextSteps: text(life.NextSteps, 2000),
+    description: text(o.Project && o.Project.CustomerBusinessProblem, 2000),
+    website: text(o.Customer && o.Customer.Account && o.Customer.Account.WebsiteUrl, 300),
+    industry: text(o.Customer && o.Customer.Account && o.Customer.Account.Industry, 80),
+    createdDate: text(o.CreatedDate, 30) || null,
+    lastModifiedDate: text(o.LastModifiedDate, 30) || null,
     awsSeller: rep ? { name: text([rep.FirstName, rep.LastName].filter(Boolean).join(" ") || rep.Email, 120), email: text(rep.Email, 200), title: text(rep.BusinessTitle, 120) } : null,
     partnerCentralUrl: id ? `${PC_OPPORTUNITY_URL}${encodeURIComponent(id)}` : null,
   };
+}
+
+// ── Editing ACE opportunities from the console ───────────────────────────
+// The console edits a small set of fields. UpdateOpportunity replaces whole
+// sections, so an update is read-merge-write: GetOpportunity, overlay the
+// changed fields on what AWS holds, send the writable parts back. Field names
+// follow the published Selling API model and are UNTESTED against the live
+// Sandbox until the Partner Central link works (like SERVICES above).
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const STAGES = ["Prospect", "Qualified", "Technical Validation", "Business Validation", "Committed", "Launched", "Closed Lost"];
+const EDITABLE = ["name", "customer", "stage", "targetCloseDate", "nextSteps", "description", "website", "industry", "monthlyAmount", "currency"];
+
+// Returns { values, errors } for the fields present in `input`. `creating`
+// requires a title and customer.
+function sanitiseAceInput(input, { creating = false } = {}) {
+  const src = input && typeof input === "object" ? input : {};
+  const values = {}; const errors = [];
+  const str = (k, max) => { if (src[k] !== undefined && src[k] !== null) values[k] = text(src[k], max); };
+  str("name", 200); str("customer", 160); str("nextSteps", 2000); str("description", 2000); str("website", 300); str("industry", 80);
+  if (src.stage !== undefined && src.stage !== "") {
+    const hit = STAGES.find((x) => x.toLowerCase() === String(src.stage).toLowerCase());
+    if (hit) values.stage = hit; else errors.push(`stage must be one of ${STAGES.join(", ")}`);
+  }
+  if (src.targetCloseDate !== undefined) {
+    const d = text(src.targetCloseDate, 10);
+    if (d === "" ) values.targetCloseDate = ""; else if (ISO_DAY.test(d) && !Number.isNaN(Date.parse(d))) values.targetCloseDate = d; else errors.push("expected delivery date must be a date (YYYY-MM-DD)");
+  }
+  if (src.monthlyAmount !== undefined && src.monthlyAmount !== null && src.monthlyAmount !== "") {
+    const n = Number(src.monthlyAmount);
+    if (Number.isFinite(n) && n >= 0 && n < 1e12) values.monthlyAmount = n; else errors.push("monthly AWS revenue must be a number");
+  }
+  if (src.currency !== undefined) {
+    const c = text(src.currency, 3).toUpperCase();
+    if (/^[A-Z]{3}$/.test(c)) values.currency = c; else if (c) errors.push("currency must be a 3-letter code");
+  }
+  if (src.website && values.website && !/^https?:\/\//i.test(values.website)) values.website = `https://${values.website}`;
+  if (creating) {
+    if (!values.name) errors.push("title is required");
+    if (!values.customer) errors.push("customer is required");
+  } else {
+    if (values.name === "") errors.push("title cannot be empty");
+    if (values.customer === "") errors.push("customer cannot be empty");
+  }
+  return { values, errors };
+}
+
+const pick = (obj, keys) => Object.fromEntries(keys.filter((k) => obj && obj[k] !== undefined && obj[k] !== null).map((k) => [k, obj[k]]));
+const ACCOUNT_KEYS = ["Address", "AwsAccountId", "CompanyName", "Duns", "Industry", "OtherIndustry", "WebsiteUrl"];
+const LIFE_KEYS = ["Stage", "ClosedLostReason", "NextSteps", "TargetCloseDate"];
+const PROJECT_KEYS = ["AdditionalComments", "ApnPrograms", "CompetitorName", "CustomerBusinessProblem", "CustomerUseCase", "DeliveryModels", "ExpectedCustomerSpend", "OtherCompetitorNames", "OtherSolutionDescription", "RelatedOpportunityIdentifier", "SalesActivities", "Title"];
+
+function applyValues(cur, v) {
+  const customer = { ...(cur.Customer || {}) };
+  const account = pick(customer.Account, ACCOUNT_KEYS);
+  if (v.customer !== undefined) account.CompanyName = v.customer;
+  if (v.website !== undefined) { if (v.website) account.WebsiteUrl = v.website; else delete account.WebsiteUrl; }
+  if (v.industry) account.Industry = v.industry;
+  const life = pick(cur.LifeCycle || cur.Lifecycle, LIFE_KEYS);
+  if (v.stage !== undefined) life.Stage = v.stage;
+  if (v.nextSteps !== undefined) life.NextSteps = v.nextSteps;
+  if (v.targetCloseDate !== undefined) { if (v.targetCloseDate) life.TargetCloseDate = v.targetCloseDate; else delete life.TargetCloseDate; }
+  const project = pick(cur.Project, PROJECT_KEYS);
+  if (v.name !== undefined) project.Title = v.name;
+  if (v.description !== undefined) project.CustomerBusinessProblem = v.description;
+  if (v.monthlyAmount !== undefined || v.currency !== undefined) {
+    const spend = Array.isArray(project.ExpectedCustomerSpend) ? project.ExpectedCustomerSpend : [];
+    const base = spend.find((s) => /month/i.test(String(s && s.Frequency))) || spend[0] || {};
+    const next = { ...base, Frequency: "Monthly" };
+    if (v.monthlyAmount !== undefined) next.Amount = String(v.monthlyAmount);
+    if (v.currency) next.CurrencyCode = v.currency; else if (!next.CurrencyCode) next.CurrencyCode = "USD";
+    if (!next.TargetCompany && account.CompanyName) next.TargetCompany = account.CompanyName;
+    project.ExpectedCustomerSpend = [next, ...spend.filter((s) => s !== base)];
+  }
+  return { Customer: { ...pick(customer, ["Contacts"]), Account: account }, LifeCycle: life, Project: project };
+}
+
+// The UpdateOpportunity body: what AWS holds, with the changes overlaid.
+function buildUpdate(identifier, cur, v) {
+  return {
+    Identifier: identifier,
+    LastModifiedDate: cur.LastModifiedDate,
+    ...pick(cur, ["PartnerOpportunityIdentifier", "OpportunityType", "Marketing", "NationalSecurity", "PrimaryNeedsFromAws", "SoftwareRevenue"]),
+    ...applyValues(cur, v),
+  };
+}
+
+// The CreateOpportunity body for a new Prospect.
+function buildCreate(v) {
+  const body = applyValues({
+    Customer: { Account: { Address: { CountryCode: "GB" }, Industry: "Retail" } },
+    LifeCycle: { Stage: "Prospect" },
+    Project: { DeliveryModels: ["SaaS or PaaS"] },
+  }, v);
+  return { Origin: "Partner Referral", OpportunityType: "Net New Business", PrimaryNeedsFromAws: [], Marketing: {}, ...body };
 }
 
 const xmlTag = (xml, tag) => { const m = new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(xml); return m ? m[1] : null; };
@@ -289,6 +391,30 @@ function createPartnerCentralApi({
     return out;
   }
 
+  // One opportunity, normalised, straight from AWS (never the cache).
+  async function aceOne(id, ctx) {
+    const detail = await getOpportunity(id, ctx);
+    return normaliseOpportunity(null, { Id: id, ...detail });
+  }
+  async function aceCreate(input, ctx) {
+    const { values, errors } = sanitiseAceInput(input, { creating: true });
+    if (errors.length) throw Object.assign(new Error(errors.join("; ")), { status: 400 });
+    const out = await createOpportunity(buildCreate(values), ctx);
+    aceCache = null;
+    const id = text(out && (out.Id || out.Identifier), 64);
+    if (!id) throw Object.assign(new Error("AWS created the opportunity but did not return its id"), { status: 502 });
+    return { id, opportunity: await aceOne(id, ctx).catch(() => normaliseOpportunity(null, { Id: id, Project: { Title: values.name }, Customer: { Account: { CompanyName: values.customer } }, LifeCycle: { Stage: "Prospect" } })) };
+  }
+  async function aceUpdate(id, input, ctx) {
+    const { values, errors } = sanitiseAceInput(input);
+    if (errors.length) throw Object.assign(new Error(errors.join("; ")), { status: 400 });
+    if (!Object.keys(values).length) throw Object.assign(new Error("nothing to change"), { status: 400 });
+    const cur = await getOpportunity(id, ctx);
+    await updateOpportunity(id, buildUpdate(id, cur, values), ctx);
+    aceCache = null; // so the score and dates on the next table read are AWS's own
+    return { opportunity: await aceOne(id, ctx) };
+  }
+
   async function requireAdmin(req, min = "admin") {
     const idToken = String(req.get("x-firebase-id-token") || "");
     if (!idToken) return { ok: false, status: 401, error: "sign in first" };
@@ -302,7 +428,7 @@ function createPartnerCentralApi({
 
   async function handle(req, res) {
     const path = String((req.path || req.url || "/").split("?")[0]).replace(/^\/partnerCentral(?=\/|$)/, "").replace(/\/+$/, "") || "/";
-    const who = await requireAdmin(req, path === "/v1/ace" && req.method === "GET" ? "editor" : "admin");
+    const who = await requireAdmin(req, /^\/v1\/ace(\/|$)/.test(path) ? "editor" : "admin");
     if (!who.ok) return send(res, who.status, { error: who.error });
     const ctx = { by: who.user.email };
     const body = req.body || {};
@@ -325,6 +451,10 @@ function createPartnerCentralApi({
         return send(res, 200, { ok: true, catalog });
       }
       if (path === "/v1/ace" && req.method === "GET") return send(res, 200, await aceOpportunities(ctx));
+      if (path === "/v1/ace" && req.method === "POST") return send(res, 200, await aceCreate(body, ctx));
+      const a = /^\/v1\/ace\/([A-Za-z0-9._-]{1,64})$/.exec(path);
+      if (a && req.method === "GET") return send(res, 200, { opportunity: await aceOne(a[1], ctx) });
+      if (a && req.method === "PATCH") return send(res, 200, await aceUpdate(a[1], body, ctx));
       if (path === "/v1/opportunities" && req.method === "GET") return send(res, 200, await listOpportunities({}, ctx));
       if (path === "/v1/opportunities" && req.method === "POST") return send(res, 200, await createOpportunity(body, ctx));
       const m = /^\/v1\/opportunities\/([A-Za-z0-9._-]{1,64})$/.exec(path);
@@ -337,7 +467,7 @@ function createPartnerCentralApi({
     }
   }
 
-  return { handle, status, aceOpportunities, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
+  return { handle, status, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
 }
 
-module.exports = { createPartnerCentralApi, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };
+module.exports = { createPartnerCentralApi, sanitiseAceInput, buildUpdate, buildCreate, EDITABLE, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };

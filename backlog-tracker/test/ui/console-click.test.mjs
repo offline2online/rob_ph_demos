@@ -77,6 +77,7 @@ function makeCtx(o, width) {
   const ctx = { page, width, step: "start", selector: "" };
   const at = (step, selector = "") => { ctx.step = step; ctx.selector = selector; };
   ctx.at = at;
+  ctx.aceWrites = o.aceWrites;
   // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
   ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
   ctx.click = async (selector, step) => { at(step || `click ${selector}`, selector); await page.click(selector); };
@@ -1151,11 +1152,11 @@ const scenarios = [
           oldStatus: !!document.getElementById("ace-status"),
           refreshIcon: document.querySelector("#ace-refresh .material-symbols-outlined").textContent.trim(),
           kpiCount: document.querySelectorAll(".ace-kpi").length,
-          kpis: { total: kpi("total"), revenue: kpi("revenue"), approved: kpi("approved"), action: kpi("action") },
+          kpis: { revenue: kpi("revenue"), approved: kpi("approved"), action: kpi("action") },
           pills: [...document.querySelectorAll("#ace-stages .ace-pill")].map((e) => e.textContent.replace(/\s+/g, " ").trim()),
           heights: [...new Set(rowEls.map((r) => Math.round(r.getBoundingClientRect().height)))],
           ellipsis: first.scrollWidth > first.clientWidth, oneLine: first.getBoundingClientRect().height <= 42, firstH: first.getBoundingClientRect().height,
-          link: first.tagName === "A" ? { href: first.getAttribute("href"), target: first.target } : null,
+          link: first.tagName === "BUTTON" ? { opens: first.dataset.aceOpen } : null,
           heads: [...document.querySelectorAll("#ace-grid .ag-header-row-column .ag-header-cell[col-id]")].map((h) => h.getAttribute("col-id")),
           floating: document.querySelectorAll("#ace-grid .ag-floating-filter").length,
           checkbox: document.querySelectorAll("#ace-grid [col-id=select], #ace-grid .ag-selection-checkbox").length,
@@ -1172,21 +1173,27 @@ const scenarios = [
       });
       assert.ok(info.below, "the grid section sits under the board");
       assert.strictEqual(info.title, "AWS ACE opportunities");
-      assert.ok(info.divider, "a divider under the title");
-      assert.strictEqual(info.count, "5 Opportunities Sandbox");
+      assert.ok(!info.divider, "no divider: the title row is the table header");
+      assert.strictEqual(info.count, "5 Sandbox", "exactly one count, no repeated Opportunities/Prospects labels");
       assert.ok(!info.oldStatus, "the status sentence is gone");
       assert.strictEqual(info.refreshIcon, "refresh");
-      assert.strictEqual(info.kpiCount, 4);
-      assert.deepStrictEqual(info.kpis, { total: "5", revenue: "US$2,500", approved: "1", action: "2" });
-      assert.deepStrictEqual(info.pills, ["Prospect 4", "Qualified 1"], "stage pills in AWS order");
+      assert.strictEqual(info.kpiCount, 3, "no KPI repeats the opportunity count");
+      assert.deepStrictEqual(info.kpis, { revenue: "US$2,500", approved: "1", action: "2" });
+      assert.deepStrictEqual(info.pills, [], "no stage pills repeating what the Stage filter lists");
       assert.deepStrictEqual(info.heights, [42], "every row is 42px tall");
       assert.ok(info.ellipsis && info.oneLine, `the long title is one ellipsised line (${JSON.stringify([info.ellipsis, info.oneLine])})`);
-      assert.deepStrictEqual(info.link, { href: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O1", target: "_blank" });
-      assert.ok(!info.heads.includes("aceScore"), `the empty Score column is hidden (${info.heads})`);
-      assert.deepStrictEqual(info.heads, ["name", "customer", "stage", "reviewStatus", "monthly", "close", "seller", "lead", "actions"]);
+      const wantHeads = ["customer", "name", "stage", "reviewStatus", "aceScore", "monthly", "close", "created", "updated", "seller", "lead", "actions"];
+      // On a phone the Opportunity column is pinned left, so it is drawn first; the order is Customer then Opportunity everywhere else.
+      assert.deepStrictEqual(c.width < 640 ? [...info.heads].sort() : info.heads, c.width < 640 ? [...wantHeads].sort() : wantHeads, "Customer first, then Opportunity, Score always shown, the date columns");
       assert.ok(info.floating >= 5, "floating filter row");
       assert.strictEqual(info.checkbox, 0, "no checkbox column");
-      assert.ok(!info.paging, "no pagination at 5 rows");
+      assert.ok(!info.paging, "no pagination at 5 rows (page size is 50)");
+      {
+        const listOf = (label) => c.page.$$eval(`#ace-grid select[aria-label="${label}"] option`, (o) => o.map((x) => x.textContent));
+        const lists = { stage: await listOf("Filter ACE stage"), reviewStatus: await listOf("Filter Review status") };
+        assert.ok(lists.stage.includes("Launched") && lists.stage.includes("Prospect") && lists.stage.length === 8, `ACE stage filter lists every stage (${lists.stage})`);
+        assert.ok(lists.reviewStatus.includes("Approved") && lists.reviewStatus.length === 7, `Review status filter lists every status (${lists.reviewStatus})`);
+      }
       assert.deepStrictEqual(info.dots, { O1: "rgb(82, 196, 26)", O2: "rgb(250, 173, 20)", O3: "rgb(255, 77, 79)", O4: "rgb(255, 77, 79)", O5: "rgb(250, 173, 20)" });
       assert.deepStrictEqual(info.past, { O1: false, O2: true }, "only a past target close date is flagged");
       assert.ok(info.mail.startsWith("mailto:ann@amazon.com?subject="), "the email icon is a mailto");
@@ -1199,19 +1206,20 @@ const scenarios = [
       await c.page.hover('#ace-grid .ag-header-cell[col-id="monthly"]');
       await until(async () => (await c.page.locator(".ag-tooltip").allInnerTexts().catch(() => [])).some((x) => x.includes("Expected monthly AWS revenue")), "the revenue header tooltip", 4000);
       await c.page.hover('#ace-grid .ag-center-cols-container .ag-row[row-id="O2"] [col-id="close"]');
-      await until(async () => (await c.page.locator(".ag-tooltip").allInnerTexts().catch(() => [])).some((x) => x.includes("Past target close date")), "the past-date tooltip", 4000);
+      await until(async () => (await c.page.locator(".ag-tooltip").allInnerTexts().catch(() => [])).some((x) => x.includes("Past expected delivery date")), "the past-date tooltip", 4000);
 
       // The ⋯ menu: all three actions on a row that has them; none on a row with none.
       await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O1"] button.ace-manage');
       await c.visible("#ace-pop");
-      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person)/, ""))), ["View in Partner Central", "Email AWS account manager", "Open lead card"]);
+      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person|edit)/, ""))), ["Open details", "View in Partner Central", "Email AWS account manager", "Open lead card"]);
       await c.page.click('#ace-pop [data-pop="lead"]');
       await c.visible("#lead-summary-panel", "Open lead card opens the lead drawer");
       await c.click("#lead-sum-close", "close the lead drawer"); await c.hidden("#lead-summary-panel");
-      await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O3"] button.ace-manage').catch(() => {});
-      assert.ok(await c.page.locator("#ace-pop").isHidden(), "a row with no actions opens no menu");
+      await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O3"] button.ace-manage');
+      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person|edit)/, ""))), ["Open details"], "a row with no other action still opens its details");
+      await c.page.keyboard.press("Escape");
       await c.page.click('#ace-grid .ag-pinned-right-cols-container .ag-row[row-id="O2"] button.ace-manage');
-      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person)/, ""))), ["View in Partner Central"], "disabled items are hidden");
+      assert.deepStrictEqual(await c.page.$$eval("#ace-pop [data-pop]", (b) => b.map((x) => x.textContent.trim().replace(/^(open_in_new|email|person|edit)/, ""))), ["Open details", "View in Partner Central"], "disabled items are hidden");
       await c.page.keyboard.press("Escape");
       // The Lead card link in the row opens the drawer too.
       await c.page.click('#ace-grid .ag-row[row-id="O1"] button.ace-lead');
@@ -1261,15 +1269,71 @@ const scenarios = [
     },
   },
   {
-    name: "Promote: Leads - ACE grid shows Score when a row has one, and paginates above 25 rows",
-    seed: () => ({ ...seed({}), aceOpportunities: Array.from({ length: 30 }, (_, i) => ({ id: `P${i}`, name: `Opp ${i}`, customer: `Cust ${i}`, stage: "Prospect", reviewStatus: "Approved", score: i === 0 ? 77 : null, expectedMonthly: null, targetCloseDate: null, awsSeller: null, partnerCentralUrl: "" })) }),
+    name: "Promote: Leads - ACE grid shows Score when a row has one, and paginates above 50 rows",
+    seed: () => ({ ...seed({}), aceOpportunities: Array.from({ length: 60 }, (_, i) => ({ id: `P${i}`, name: `Opp ${i}`, customer: `Cust ${i}`, stage: "Prospect", reviewStatus: "Approved", score: i === 0 ? 77 : null, expectedMonthly: null, targetCloseDate: null, awsSeller: null, partnerCentralUrl: "" })) }),
     async run(c) {
       await c.boardReady();
       await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
-      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 25, "the first page of 25 rows", 8000);
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 50, "the first page of 50 rows", 8000);
       assert.ok(await c.page.locator('#ace-grid .ag-header-cell[col-id="aceScore"]').count(), "Score shows when a row has a score");
-      assert.ok(await c.page.locator("#ace-grid .ag-paging-panel").isVisible(), "pagination above 25 rows");
-      assert.match((await c.text("#ace-count")).replace(/\s+/g, " "), /^30 Opportunities/);
+      assert.ok(await c.page.locator("#ace-grid .ag-paging-panel").isVisible(), "pagination above 50 rows");
+      assert.match((await c.text("#ace-count")).replace(/\s+/g, " ").trim(), /^60\b/);
+    },
+  },
+  {
+    name: "Promote: Leads - ACE opportunity dialog: edit and save, create, validation, documents",
+    seed: () => ({ ...seed({}), aceOpportunities: [
+      { id: "O1", name: "Menu boards", customer: "Acme Retail", stage: "Qualified", reviewStatus: "Approved", score: 60, expectedMonthly: { amount: 1200, currency: "USD" }, targetCloseDate: "2099-12-31", nextSteps: "Send quote", description: "Stale menus", createdDate: "2026-10-01T09:00:00Z", lastModifiedDate: "2026-11-05T10:00:00Z", awsSeller: null, partnerCentralUrl: "https://partnercentral.awspartner.com/partnercentral2/s/opportunities/O1" },
+    ] }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 1, "the ACE row", 8000);
+      const cell = (id, col) => c.page.textContent(`#ace-grid .ag-row[row-id="${id}"] [col-id="${col}"]`).then((t) => t.trim());
+      assert.strictEqual(await cell("O1", "aceScore"), "60");
+      assert.strictEqual(await cell("O1", "created"), "1 Oct 2026");
+      assert.strictEqual(await cell("O1", "updated"), "5 Nov 2026");
+
+      // Click the opportunity: an in-console dialog with the data editable; no navigation away.
+      await c.page.click('#ace-grid .ag-row[row-id="O1"] button.ace-open');
+      await c.visible("#ace-backdrop .ace-dialog", "the detail dialog");
+      await until(async () => (await c.page.inputValue('#ace-backdrop [data-f="nextSteps"]')) === "Send quote", "the dialog to load the full details", 4000);
+      assert.strictEqual(await c.page.inputValue('#ace-backdrop [data-f="customer"]'), "Acme Retail");
+      assert.strictEqual(await c.page.inputValue('#ace-backdrop [data-f="monthlyAmount"]'), "1200");
+      assert.strictEqual(await c.page.inputValue('#ace-backdrop [data-f="targetCloseDate"]'), "2099-12-31");
+      await c.page.fill('#ace-backdrop [data-f="nextSteps"]', "Book the pilot");
+      await c.page.click("#ace-dlg-save");
+      await until(async () => (await c.text("#ace-dlg-status")).startsWith("Saved to AWS ACE"), "Saved to AWS ACE", 4000);
+      assert.match(await c.text("#ace-dlg-status"), /Score 70/);
+      assert.deepStrictEqual(c.aceWrites[c.aceWrites.length - 1], { method: "PATCH", path: "/partnerCentral/v1/ace/O1", body: { nextSteps: "Book the pilot" } }, "only the changed field is sent");
+      assert.strictEqual(await cell("O1", "aceScore"), "70", "the table row shows the refreshed score");
+
+      // Documents: attach, list with a download link, remove.
+      await c.page.setInputFiles("#ace-dlg-file", { name: "proposal.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 test") });
+      await until(async () => (await c.page.locator("#ace-dlg-doclist .ace-dlg-doc-name").count()) === 1, "the attached document to be listed", 4000);
+      assert.strictEqual((await c.text("#ace-dlg-doclist .ace-dlg-doc-name")).trim(), "proposal.pdf");
+      assert.match(await c.page.getAttribute("#ace-dlg-doclist .ace-dlg-doc-name", "href"), /^https:\/\/firebasestorage\.googleapis\.com\//);
+      await c.page.setInputFiles("#ace-dlg-file", { name: "run.exe", mimeType: "application/octet-stream", buffer: Buffer.from("x") });
+      await until(async () => (await c.text("#ace-dlg-status")).includes("Attach a PDF"), "a refused file type", 4000);
+      await c.page.click("#ace-dlg-doclist .ace-dlg-doc-remove"); await c.page.click("#ace-dlg-doclist .ace-dlg-doc-remove");
+      await until(async () => (await c.page.locator("#ace-dlg-doclist .ace-dlg-doc-name").count()) === 0, "the document to be removed", 4000);
+      await c.page.keyboard.press("Escape"); await c.hidden("#ace-backdrop");
+
+      // New opportunity: empty save asks for title and customer; then it is created at Prospect.
+      await c.click("#ace-new", "New opportunity");
+      await c.visible("#ace-backdrop .ace-dialog");
+      assert.match(await c.text("#ace-dlg-save"), /Create in ACE/);
+      await c.page.click("#ace-dlg-save");
+      assert.strictEqual((await c.text("#ace-dlg-status")).trim(), "Enter a title and customer.");
+      assert.ok(!c.aceWrites.some((w) => w.method === "POST"), "nothing is sent while title and customer are empty");
+      await c.page.fill('#ace-backdrop [data-f="customer"]', "Gamma Ltd");
+      await c.page.fill('#ace-backdrop [data-f="name"]', "Totems");
+      await c.page.click("#ace-dlg-save");
+      await until(async () => (await c.text("#ace-dlg-status")).startsWith("Created in AWS ACE"), "Created in AWS ACE", 4000);
+      await until(async () => (await c.page.locator("#ace-grid .ag-center-cols-container .ag-row").count()) === 2, "the new row in the table", 4000);
+      assert.strictEqual(await cell("N2", "stage"), "Prospect");
+      assert.deepStrictEqual(c.aceWrites[c.aceWrites.length - 1].body, { customer: "Gamma Ltd", name: "Totems" });
+      await c.page.keyboard.press("Escape");
     },
   },
   {
@@ -1281,7 +1345,7 @@ const scenarios = [
       await c.visible("#ace-empty", "the empty state");
       assert.strictEqual((await c.text("#ace-empty")).replace(/\s+/g, " ").trim(), "handshake No ACE opportunities yet.");
       assert.ok(await c.page.locator("#ace-grid").isHidden() && await c.page.locator("#ace-kpis").isHidden(), "no grid or KPIs when empty");
-      assert.match((await c.text("#ace-count")).replace(/\s+/g, " "), /^0 Opportunities/);
+      assert.match((await c.text("#ace-count")).replace(/\s+/g, " "), /^0\b/);
     },
   },
   {
@@ -1417,30 +1481,24 @@ const scenarios = [
       assert.ok(await c.page.locator("#prospects-grid .ag-floating-filter").count() > 3, "floating filter row");
       assert.ok(await c.page.locator('#prospects-grid .ag-pinned-left-cols-container .ag-selection-checkbox, #prospects-grid .ag-pinned-left-cols-container input[type=checkbox]').count() >= 3, "checkbox column");
       assert.ok(await c.page.locator("#prospects-grid .ag-paging-panel").count(), "pagination footer");
-      // The grid's column header and filter row stay fully visible under the console header at every page scroll position.
+      // The whole page scrolls (no inner scroll area) and the grid's column header + filter row stick under the console header.
       {
-        const pinned = () => c.page.evaluate(() => {
+        const m = () => c.page.evaluate(() => {
           const bar = document.querySelector(".topbar").getBoundingClientRect().bottom;
           const h = document.querySelector("#prospects-grid .ag-header").getBoundingClientRect();
-          const f = document.querySelector("#prospects-grid .ag-header-row-column-filter").getBoundingClientRect();
-          const pg = document.querySelector("#prospects-grid .ag-paging-panel").getBoundingClientRect();
-          return { bar, headTop: h.top, filterBottom: f.bottom, vh: innerHeight, pagBottom: pg.bottom, y: scrollY, max: document.documentElement.scrollHeight - innerHeight };
+          const v = document.querySelector("#prospects-grid .ag-body-viewport");
+          const chain = []; for (let e = document.querySelector("#prospects-grid .ag-header"); e && e !== document.documentElement; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.overflowX !== "visible" || cs.overflowY !== "visible" || cs.contain !== "none") chain.push(`${e.tagName}.${String(e.className).split(" ")[0]}#${e.id}:${cs.overflowX}/${cs.overflowY}/${cs.contain}`); }
+          return { chain, bar, headTop: h.top, y: scrollY, innerScroll: v ? v.scrollHeight - v.clientHeight : 0, wide: document.documentElement.scrollWidth - innerWidth };
         });
-        const first = await pinned();
-        for (let i = 0; i <= 4; i++) {
-          await c.page.evaluate((f) => window.scrollTo(0, Math.round(f * (document.documentElement.scrollHeight - innerHeight))), i / 4);
-          const m = await pinned();
-          assert.ok(m.headTop >= m.bar - 1, `grid header stays under the console header at scroll ${m.y}/${m.max} (top ${m.headTop}, bar ${m.bar})`);
-          assert.ok(m.filterBottom <= m.vh, `filter row inside the viewport at scroll ${m.y}`);
+        { const r0 = await m(); assert.ok(r0.innerScroll <= 10, `the grid has no inner vertical scroll area: every row is on the page (${JSON.stringify(r0)})`); }
+        assert.ok((await m()).wide <= 0, "no horizontal page overflow");
+        await c.page.evaluate(() => { document.querySelector("#prospects-grid .ag-root").style.minHeight = "3000px"; });
+        for (const y of [900, 2000]) {
+          await c.page.evaluate((yy) => window.scrollTo(0, yy), y);
+          const r = await m();
+          assert.ok(Math.abs(r.headTop - r.bar) <= 2, `header + filter row stuck under the console header at scroll ${r.y} (top ${r.headTop}, bar ${r.bar}) ${JSON.stringify(r.chain)}`);
         }
-        await c.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-        const end = await pinned();
-        assert.ok(end.pagBottom <= end.vh + 1, "pagination reachable at the end of the page");
-        await c.page.evaluate(() => { const v = document.querySelector("#prospects-grid .ag-body-viewport"); if (v) v.scrollTop = 500; });
-        const after = await pinned();
-        assert.ok(Math.abs(after.headTop - end.headTop) < 1, "scrolling the rows does not move the header");
-        assert.ok(first.headTop >= first.bar - 1, "header under the console header at the top");
-        assert.ok(await c.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal page overflow");
+        await c.page.evaluate(() => { window.scrollTo(0, 0); document.querySelector("#prospects-grid .ag-root").style.minHeight = ""; });
       }
       assert.strictEqual(await c.page.locator("#prospects-grid .prospect-act, #prospects-grid .btn-ghost").count(), 0, "no per-row text buttons");
       assert.strictEqual(await c.page.locator("#prospects-grid button.um-manage").count(), 3, "a row menu button per row");
@@ -1526,8 +1584,7 @@ const scenarios = [
       await c.page.click(".pl-pop .pl-clear");
       await until(async () => (await rowIds()) === "pa,pb,pc", "the Country filter to clear again", 5000);
       await c.page.keyboard.press("Escape");
-      // The grid pins under the console header and shows 50 rows a page.
-      assert.ok(await c.page.evaluate(() => { const g = document.getElementById("prospects-grid").getBoundingClientRect(); return g.top >= document.querySelector(".topbar").getBoundingClientRect().bottom - 1 && g.bottom <= innerHeight + 1; }), "the grid (header + filter row) fits in the viewport under the console header");
+      // 50 rows a page by default.
       assert.strictEqual((await c.text("#prospects-grid .ag-paging-page-size .ag-picker-field-display, #prospects-grid .ag-paging-page-size")).includes("50"), true, "50 rows per page by default");
       // The Priority floating filter is the same searchable list.
       await openFilter("Priority");

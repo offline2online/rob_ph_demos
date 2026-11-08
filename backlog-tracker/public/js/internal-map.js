@@ -57,10 +57,10 @@ const SALES_DOCS = [
   { key: "onepager", name: "Industry one-pager", sub: "Created before the ACE opportunity", docOf: "prospect", x: 740, y: DOC_A },
   { key: "pack", name: "Prospect pack", sub: "Customised, logo-branded; attaches to the ACE opportunity", docOf: "prospect", x: 930, y: DOC_A },
   // The AWS funding line: starts at ACE Technical / Business Validation, not earlier.
-  { key: "fundcheck", name: "Funding prompted & eligibility check", sub: "Skill + template; prompted at Technical / Business Validation", docOf: "demos", x: COL_X(1), y: DOC_B, fund: true },
-  { key: "pocdraft", name: "POC funding draft", sub: "Skill + template; auto-created, account owner submits", docOf: "fundcheck", x: COL_X(2), y: DOC_B, fund: true },
-  { key: "sandbox", name: "Sandbox credit draft", sub: "Skill + template; auto-created, account owner submits", docOf: "pocdraft", x: COL_X(3), y: DOC_B, fund: true },
-  { key: "signoff", name: "Claim sign-off document", sub: "Skill + template; proof of execution for the claim", docOf: "sandbox", x: COL_X(4), y: DOC_B, fund: true },
+  { key: "fundcheck", name: "Funding prompted & eligibility check", sub: "Skill + template; prompted at Technical / Business Validation", skills: ["aws-pricing-calculator"], docOf: "demos", x: COL_X(1), y: DOC_B, fund: true },
+  { key: "pocdraft", name: "POC funding draft", sub: "Skill + template; auto-created, account owner submits", skills: ["aws-ace-poc-funding-request", "aws-pricing-calculator"], docOf: "fundcheck", x: COL_X(2), y: DOC_B, fund: true },
+  { key: "sandbox", name: "Sandbox credit draft", sub: "Skill + template; auto-created, account owner submits", skills: ["aws-ace-sandbox-credit-request", "aws-pricing-calculator"], docOf: "pocdraft", x: COL_X(3), y: DOC_B, fund: true },
+  { key: "signoff", name: "Claim sign-off document", sub: "Skill + template; proof of execution for the claim", skills: ["aws-ace-poc-claim"], docOf: "sandbox", x: COL_X(4), y: DOC_B, fund: true },
 ].map((d) => ({ ...d, kind: "doc", ...(d.fund ? { w: 200, h: 88 } : {}) }));
 const laneNodes = [...SALES_STEPS, ...SALES_DOCS].map((n) => ({ ...n, lane: "process" }));
 const laneEdges = [
@@ -242,11 +242,12 @@ export function internalMapHTML(model) {
     const noteLines = proc && n.note ? wrap(n.note, 42).slice(0, 2) : [];
     const noteTop = y + 34 + sub.length * 11 + 8;
     svg += `<g class="${cls}"${attrs}>
-      <rect x="${x}" y="${y}" width="${nw}" height="${nh}" rx="8"/>
+      ${n.skills && n.skills.length ? `<title>Skills: ${esc(n.skills.join(", "))}</title>` : ""}<rect x="${x}" y="${y}" width="${nw}" height="${nh}" rx="8"/>
       ${nameLines.map((t, k) => `<text class="sysmap-node-name" x="${n.x}" y="${y + 20 + k * 14}" text-anchor="middle">${esc(t)}</text>`).join("")}
       ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${(n.fund ? subTop : y + 34) + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
       ${noteLines.map((t, k) => `<text class="sysmap-node-sub intmap-proc-note" x="${n.x}" y="${noteTop + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
       ${proc && n.ace ? `<text class="sysmap-node-status intmap-ace" x="${x + 2}" y="${y - 6}">${esc(n.ace)}</text>` : ""}
+      ${n.skills && n.skills.length ? `<text class="sysmap-node-sub intmap-skill" x="${n.x}" y="${y + nh - 6}" text-anchor="middle">Skill: ${esc(n.skills[0])}</text>` : ""}
       ${doc ? `<text class="sysmap-node-status intmap-doc-tag" x="${x + 2}" y="${y - 6}">Document</text>` : ""}
       ${bridge ? `<text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">Platform</text>` : ""}
       ${board ? `<text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">${esc(n.status)}${n.unassigned ? '<tspan class="sysmap-node-unassigned" dx="8">Unassigned</tspan>' : ""}</text>` : ""}

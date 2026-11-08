@@ -100,5 +100,20 @@ service firebase.storage {
          request.resource.contentType.matches('video/.*'));
       allow delete: if isEditor();
     }
+
+    // AWS ACE opportunity documents (Promote > Leads, public/js/ace-docs.js):
+    // ace/{opportunityId}/{timestamp}-{name}. Editors read and write, up to 50 MB.
+    // They stay here: the Partner Central Selling API cannot attach files.
+    match /ace/{oppId}/{fileName} {
+      allow read: if isEditor();
+      allow write: if isEditor()
+        && request.resource.size < 50 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType in ['application/pdf', 'application/zip', 'application/x-zip-compressed',
+                 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']);
+      allow delete: if isEditor();
+    }
   }
 }

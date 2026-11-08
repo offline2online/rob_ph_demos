@@ -1861,10 +1861,12 @@ the last successful call and the last 20 calls; every call is in
 `partnerCentralAudit` (server-only), CloudTrail has the AWS side. Test:
 `node test/partner-central.test.js`. **ACE table (6 Nov 2026)**: Promote › Leads shows the
 opportunities under the board (`ace-core.js`, `leads-page.js`, `ace-grid.js`) from
-`GET /partnerCentral/v1/ace` (7 Nov 2026: restyled as the PH list page — count line, four KPI cards, stage pills and an AG Grid like Prospects (TAM); the grid and its ⋯ menu are `ace-grid.js`), the only Partner Central route editors may read.
+`GET /partnerCentral/v1/ace` (7 Nov 2026: restyled as the PH list page — title row with one count, three KPI cards and an AG Grid of 50 per page (8 Nov 2026: no duplicated counts; stage/review selects list every value) like Prospects (TAM); the grid and its ⋯ menu are `ace-grid.js`), the only Partner Central route editors may read.
 `node test/partner-central.test.js`. Service target names could not be
 exercised without AWS access: verify on the first Sandbox call (see
 `deploy/aws/README.md`).
+
+**ACE opportunities in the console (7 Nov 2026).** Promote › Leads lists Customer, Opportunity, stage, review status, Score, revenue, Expected delivery date, Created and Last updated. Clicking an opportunity opens `public/js/ace-detail.js`: edit and **Save to ACE** (`PATCH /partnerCentral/v1/ace/{id}`, read-merge-write `UpdateOpportunity`, score re-read), **New opportunity** (`POST /partnerCentral/v1/ace`), and documents in Storage `ace/{id}/` (`public/js/ace-docs.js`, `storage.rules`; not sent to AWS). Live sync needs the role link in `deploy/aws/README.md`. See REQUIREMENTS.md → "ACE opportunities managed in the console".
 
 ### Media Studio provider keys — the `MEDIA_KEYS_ENC_KEY` secret (4 Nov 2026)
 
@@ -2341,6 +2343,19 @@ in over MCP — **not** scoped to any one project, unlike `backlogItems` or
   The Skills page shows a **Review due** badge (day-cadence only, computed
   client-side so the full due-ness logic lives in exactly one place) and a
   **Mark reviewed** button.
+
+### AWS ACE funding skills (7 Nov 2026)
+
+`skill-sources/aws-ace-poc-funding-request.md`, `aws-ace-sandbox-credit-request.md`,
+`aws-ace-poc-claim.md` and the shared `aws-pricing-calculator.md` are the repo
+copies of four skills in the shared library. The two request skills call the
+calculator skill instead of costing themselves. They are bound to their steps
+in the Internal operations map: each AWS funding document node in
+`public/js/internal-map.js` carries `skills` and shows "Skill: <slug>". Load
+them with `scripts/seed-aws-ace-skills.js` (insert-only; needs a human with
+service-account credentials, like `seed-skills-data.js`). Misses are tracked with
+`report_skill_miss`. Attach the real CP Group and Avolta Hudson documents as
+`references/` files on the two request skills.
 
 ### Docs stay in step with code (20 Oct 2026)
 

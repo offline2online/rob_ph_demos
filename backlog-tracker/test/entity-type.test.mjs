@@ -104,6 +104,17 @@ for (const re of [/Industry one-pager/, /Prospect pack/, /POC funding draft/, /S
 assert.equal(INTERNAL_NODES.find((n) => n.key === "fundcheck").name, "Funding prompted & eligibility check");
 assert.ok(INTERNAL_EDGES.some((e) => e.from === "demos" && e.to === "fundcheck" && !e.dotted), "the funding line leaves ACE Technical / Business Validation");
 assert.ok(!INTERNAL_EDGES.some((e) => e.from === "hotlead" && /^(fundcheck|pocdraft|sandbox)$/.test(e.to)), "nothing funds from the ACE opportunity step");
+// AWS ACE skills are bound to their phases; skills 1 and 2 call the shared calculator skill
+const skillsOf = (k) => INTERNAL_NODES.find((n) => n.key === k).skills || [];
+assert.equal(skillsOf("pocdraft")[0], "aws-ace-poc-funding-request");
+assert.equal(skillsOf("sandbox")[0], "aws-ace-sandbox-credit-request");
+assert.deepEqual(skillsOf("signoff"), ["aws-ace-poc-claim"]);
+for (const k of ["pocdraft", "sandbox"]) assert.ok(skillsOf(k).includes("aws-pricing-calculator"), `${k} also uses the shared calculator`);
+for (const slug of ["aws-ace-poc-funding-request", "aws-ace-sandbox-credit-request", "aws-ace-poc-claim", "aws-pricing-calculator"]) {
+  assert.ok(fs.existsSync(new URL(`../skill-sources/${slug}.md`, import.meta.url)), `${slug} source exists`);
+  assert.match(html, new RegExp("Skill: " + slug), `${slug} shown on the map`);
+}
+for (const slug of ["aws-ace-poc-funding-request", "aws-ace-sandbox-credit-request"]) assert.match(fs.readFileSync(new URL(`../skill-sources/${slug}.md`, import.meta.url), "utf8"), /aws-pricing-calculator/, `${slug} calls the shared skill`);
 const legend = internalLegendHTML();
 assert.match(legend, /Process step/);
 for (const d of docs) assert.ok(legend.includes(`intmap-doc-key-${d.key}`), `legend lists ${d.key}`);

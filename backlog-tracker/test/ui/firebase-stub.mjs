@@ -306,6 +306,13 @@ export async function getDownloadURL(r) {
   return u.url;
 }
 export async function deleteObject(r) { const b = backend(); (b.uploads ||= {}); delete b.uploads[r.path]; (b.deleted ||= []).push(r.path); }
+// Listing a folder: the uploads under that path, as items with a name and metadata.
+export async function listAll(r) {
+  const prefix = `${r.path}/`;
+  const items = Object.keys(backend().uploads || {}).filter((p) => p.startsWith(prefix)).map((p) => ({ type: "storageRef", path: p, fullPath: p, name: p.slice(prefix.length) }));
+  return { items, prefixes: [] };
+}
+export async function getMetadata(r) { const u = (backend().uploads || {})[r.path]; return { size: u ? u.size : 0, timeCreated: new Date().toISOString() }; }
 export const signInWithPopup = unimplemented("signInWithPopup");
 export const signInWithRedirect = unimplemented("signInWithRedirect");
 export const signInWithEmailAndPassword = unimplemented("signInWithEmailAndPassword");

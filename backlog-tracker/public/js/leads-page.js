@@ -14,8 +14,9 @@ import {
   STAGES, BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
   companyLine, conversionFields, isStage,
 } from "./leads-core.js";
-import { summarise, kpis, formatMonthly } from "./ace-core.js";
+import { kpis, formatMonthly } from "./ace-core.js";
 import { mountAceGrid } from "./ace-grid.js";
+import { mountAceDetail } from "./ace-detail.js";
 import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION } from "./prospect-detail-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
 
@@ -495,13 +496,25 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let aceRows = null;
   let aceMeta = {};
   let aceGrid = null;
-  const grid = () => aceGrid || (aceGrid = mountAceGrid({ host: $("ace-grid"), pop: $("ace-pop"), onOpenLead: (id) => openSummary(id) }));
+  const grid = () => aceGrid || (aceGrid = mountAceGrid({ host: $("ace-grid"), pop: $("ace-pop"), onOpenLead: (id) => openSummary(id), onOpen: (id, from) => { const r = (aceRows || []).find((x) => x.id === id); if (r) aceDetail().open(r, from); } }));
+  // The detail dialog: a saved or created opportunity replaces/joins its table row straight away.
+  let aceDlg = null;
+  const aceDetail = () => aceDlg || (aceDlg = mountAceDetail({
+    backdrop: $("ace-backdrop"), apiHeaders, canEdit,
+    onSaved: (opp) => {
+      if (!opp || !opp.id) return;
+      const i = (aceRows || []).findIndex((x) => x.id === opp.id);
+      aceRows = aceRows || [];
+      if (i >= 0) aceRows[i] = { ...aceRows[i], ...opp }; else aceRows.unshift(opp);
+      renderAce();
+    },
+  }));
   const aceAlert = (msg) => {
     $("ace-alert-text").textContent = msg; $("ace-alert").hidden = !msg;
   };
   async function loadAce() {
     aceAlert("");
-    $("ace-count").textContent = "Loading ACE opportunities…";
+    $("ace-count").textContent = "Loading…";
     if (aceRows) grid().setLoading(true);
     try {
       const resp = await fetch("/partnerCentral/v1/ace", { method: "GET", headers: await apiHeaders() });
@@ -512,7 +525,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       renderAce(body);
     } catch (err) {
       aceRows = null;
-      for (const id of ["ace-kpis", "ace-stages", "ace-grid", "ace-empty"]) $(id).hidden = true;
+      for (const id of ["ace-kpis", "ace-grid", "ace-empty"]) $(id).hidden = true;
       $("ace-count").textContent = "";
       aceAlert(`Couldn't load the ACE opportunities: ${err && err.message ? err.message : err}`);
     } finally { if (aceGrid) aceGrid.setLoading(false); }
@@ -524,18 +537,18 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (!aceRows) return;
     const rows = aceRows;
     const n = rows.length;
-    $("ace-count").innerHTML = `<b>${n}</b> ${n === 1 ? "Opportunity" : "Opportunities"}${meta.catalog === "Sandbox" ? ' <span class="ace-flag">Sandbox</span>' : ""}${meta.truncated ? ' <span class="ace-flag">first 100 shown</span>' : ""}`;
+    $("ace-count").innerHTML = `${n}${meta.catalog === "Sandbox" ? ' <span class="ace-flag">Sandbox</span>' : ""}${meta.truncated ? ' <span class="ace-flag">first 100 shown</span>' : ""}`;
     $("ace-empty").hidden = n > 0;
-    for (const id of ["ace-kpis", "ace-stages", "ace-grid"]) $(id).hidden = n === 0;
+    for (const id of ["ace-kpis", "ace-grid"]) $(id).hidden = n === 0;
     if (n) {
-      const k = kpis(rows), sum = summarise(rows);
+      const k = kpis(rows);
       const rev = k.revenue.length ? k.revenue.map((r) => esc(formatMonthly(r))).join(" · ") : "–";
-      $("ace-kpis").innerHTML = kpiCard("handshake", "Opportunities", k.total, "total") + kpiCard("payments", "Expected monthly AWS revenue", rev, "revenue") + kpiCard("check_circle", "Approved", k.approved, "approved") + kpiCard("report", "Needs action", k.needsAction, "action");
-      $("ace-stages").innerHTML = sum.byStage.map((s) => `<span class="ace-pill"><span class="ace-pill-label">${esc(s.label)}</span> <b>${s.count}</b></span>`).join("");
+      $("ace-kpis").innerHTML = kpiCard("payments", "Expected monthly AWS revenue", rev, "revenue") + kpiCard("check_circle", "Approved", k.approved, "approved") + kpiCard("report", "Needs action", k.needsAction, "action");
     }
     grid().setRows(rows, leads);
   }
   $("ace-refresh").addEventListener("click", () => loadAce());
+  $("ace-new").addEventListener("click", (e) => aceDetail().openNew(e.currentTarget));
   $("ace-retry").addEventListener("click", () => loadAce());
 
   return { start, stop, render, stageLabel, roleLabel, open: openLead, openSummary };
