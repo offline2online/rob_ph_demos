@@ -6,6 +6,7 @@
 // visit to any other page does not download it.
 
 import { loadAgGrid } from "./docs-grid.js";
+import { avatarHTML } from "./avatar.js";
 
 const tsMs = (v) => (v && typeof v.toMillis === "function" ? v.toMillis() : 0);
 
@@ -70,10 +71,15 @@ export async function mountUsersGrid(host, { roleLabels, relativeAgo, onRoleChan
     return b;
   };
   const nameCell = (params) => {
-    const d = document.createElement("span");
-    d.textContent = params.value || "—";
-    if (params.data.isSelf) d.textContent += " (you)";
-    return d;
+    // The name opens the same panel as "⋯" so a person can view and edit
+    // first/last name, photo and access from it.
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "um-name-btn";
+    b.setAttribute("aria-label", `View and edit ${params.data.email}`);
+    const label = (params.value || "—") + (params.data.isSelf ? " (you)" : "");
+    b.innerHTML = `${avatarHTML(params.data.email, 28)}<span class="um-name-text">${esc(label)}</span>`;
+    b.addEventListener("click", (e) => { e.stopPropagation(); onManage(params.data.email); });
+    return b;
   };
   const api = ag.createGrid(host, {
     columnDefs: [

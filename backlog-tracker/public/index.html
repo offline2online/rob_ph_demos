@@ -346,8 +346,11 @@
           <label class="field-label" for="team-add-email">Email</label>
           <input type="email" id="team-add-email" maxlength="200" placeholder="teammate@personalisationhub.com" aria-describedby="tm-error">
 
-          <label class="field-label" for="team-add-name">Name (optional)</label>
-          <input type="text" id="team-add-name" maxlength="120" placeholder="Sam Patel">
+          <label class="field-label" for="team-add-first">First name (optional)</label>
+          <input type="text" id="team-add-first" maxlength="60" placeholder="Sam">
+
+          <label class="field-label" for="team-add-last">Last name (optional)</label>
+          <input type="text" id="team-add-last" maxlength="60" placeholder="Patel">
 
           <label class="field-label" for="team-add-role">Role
             <span class="info-tip" tabindex="0" role="note" aria-label="About sign-in" data-tip="Google accounts work as soon as they're added. For someone without one, use Manage → Send sign-in setup on their row. It creates their login and emails them a link to choose a password."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
@@ -368,6 +371,11 @@
         </div>
         <div id="um-manage" hidden data-email="">
           <p class="um-manage-who" id="um-manage-who"></p>
+          <div class="um-name-edit">
+            <div><label for="um-manage-first">First name</label><input type="text" id="um-manage-first" maxlength="60" autocomplete="off"></div>
+            <div><label for="um-manage-last">Last name</label><input type="text" id="um-manage-last" maxlength="60" autocomplete="off"></div>
+            <button type="button" class="btn-primary um-name-save" id="um-manage-name-save" data-team-name-save>Save name</button>
+          </div>
           <div class="um-manage-actions">
             <button type="button" class="btn-ghost" data-team-photo>Set photo</button>
             <button type="button" class="btn-ghost" data-team-photo-clear>Clear photo</button>

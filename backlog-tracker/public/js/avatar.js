@@ -23,10 +23,23 @@ export function memberLabel(email) {
   return (m && m.displayName) || email || "";
 }
 
+// Split a free-text name into first / last (everything after the first word).
+export function splitName(full) {
+  const parts = String(full || "").trim().split(/\s+/).filter(Boolean);
+  return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") };
+}
+
+// Initials shown in the circle: first-name + last-name initials when the
+// member has them (firstName/lastName, else the words of displayName), so
+// "Duy" and "Duong" no longer both show "D". One letter when only one name.
 export function initialOf(email) {
   const m = members.get(normEmail(email));
-  const src = ((m && m.displayName) || String(email || "").split("@")[0] || "?").trim();
-  const ch = src.charAt(0);
+  let first = m && m.firstName, last = m && m.lastName;
+  if (!first && !last && m && m.displayName) ({ firstName: first, lastName: last } = splitName(m.displayName));
+  const a = String(first || "").trim().charAt(0);
+  const b = String(last || "").trim().charAt(0);
+  if (a || b) return (a + b).toUpperCase();
+  const ch = String(email || "").split("@")[0].trim().charAt(0);
   return ch ? ch.toUpperCase() : "?";
 }
 

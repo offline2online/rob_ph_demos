@@ -277,13 +277,24 @@ const scenarios = [
       await c.click("#team-add-open", "Add User");
       await c.visible("#team-add-email", "side panel opens");
       await c.page.fill("#team-add-email", "new@personalisationhub.com");
-      await c.page.fill("#team-add-name", "Nina New");
+      await c.page.fill("#team-add-first", "Nina");
+      await c.page.fill("#team-add-last", "New");
       await c.page.selectOption("#team-add-role", "viewer");
       await c.click("#team-add-btn", "Add");
       await c.click("#dialog-ok", "dismiss the added confirmation");
       await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 4, "the new user to show in the grid", 8000);
       const stored = await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com"));
       assert.ok(stored && stored.role === "viewer", "the new user was saved with the chosen role");
+      assert.strictEqual(stored.displayName, "Nina New", "display name is first + last");
+      assert.strictEqual(stored.firstName, "Nina"); assert.strictEqual(stored.lastName, "New");
+      assert.strictEqual((await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .ph-avatar-initial').first().textContent()).trim(), "NN", "initials show first + last");
+      // clicking the name opens the panel; edit the name there
+      await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .um-name-btn').first().click();
+      await c.visible("#um-manage-first", "name click opens the manage panel");
+      await c.page.fill("#um-manage-last", "Newman");
+      await c.click("#um-manage-name-save", "Save name");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com").displayName)) === "Nina Newman", "name edit to persist", 5000);
+      await c.click("#tm-close", "close panel");
       // inline role change
       await c.page.selectOption('select[aria-label="Role for kim@personalisationhub.com"]', "editor");
       await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").role)) === "editor", "inline role change to persist", 5000);

@@ -36,7 +36,7 @@ import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFa
 import { createDocsList } from "./docs-grid.js";
 import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
 import { SETTINGS_PAGES, FALLBACK_SETTINGS_PAGE, UM_TABS, userManagementRoute, legacyUserManagementHash, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
-import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, getAvatarMember, normEmail, checkAvatarFile, avatarBlobFromFile } from "./avatar.js";
+import { avatarHTML, setAvatarMember, setAvatarSelf, setUnknownMemberHandler, getAvatarMember, normEmail, checkAvatarFile, avatarBlobFromFile, splitName } from "./avatar.js";
 import { VERDICT_LABEL, LIMITS as CRITIQUE_LIMITS, roleOf as critiqueRoleOf, roleKey as critiqueRoleKey, roleSuggestions, textFingerprint, synthesise as synthesiseCritiques, critiqueStatus, applyAdjustment, cleanList as cleanCritiqueList } from "./concept-critiques.js";
 import { ENTITY_TYPES, TYPE_PLATFORM, TYPE_INTERNAL, typeOf, matchesTypeFilter, typeBadgeHTML, typeOptionsHTML } from "./entity-type.js";
 import { buildInternalMap, internalMapHTML, internalLegendHTML } from "./internal-map.js";
@@ -10696,6 +10696,14 @@ onAuthStateChanged(auth, (user) => {
     .catch(() => { /* not a listed member, or rules said no */ });
 });
 
+// firstName + lastName are the source; displayName stays the joined text every
+// other place (tickets, MCP, the Team page) already reads.
+function nameFields(first, last) {
+  const firstName = String(first || "").trim().slice(0, 60);
+  const lastName = String(last || "").trim().slice(0, 60);
+  return { firstName, lastName, displayName: [firstName, lastName].filter(Boolean).join(" ") };
+}
+
 async function saveTeamMember(email, fields) {
   await setDoc(doc(db, "consoleUsers", email), Object.assign({ email }, fields, {
     updatedAt: serverTimestamp(),
@@ -10719,6 +10727,9 @@ function openTeamManagePanel(email) {
   const box = document.getElementById("um-manage");
   box.dataset.email = email;
   document.getElementById("um-manage-who").textContent = `${row.displayName ? row.displayName + " · " : ""}${email}`;
+  const nm = (row.firstName || row.lastName) ? { firstName: row.firstName || "", lastName: row.lastName || "" } : splitName(row.displayName);
+  document.getElementById("um-manage-first").value = nm.firstName;
+  document.getElementById("um-manage-last").value = nm.lastName;
   const agentBtn = document.getElementById("um-manage-agent");
   agentBtn.dataset.teamToggleAgent = agentOn ? "off" : "on";
   agentBtn.textContent = agentOn ? "Turn agent off" : "Turn agent on";
@@ -10735,7 +10746,8 @@ function openTeamManagePanel(email) {
 function openTeamAddModal() {
   setTeamPanelMode("add");
   document.getElementById("team-add-email").value = "";
-  document.getElementById("team-add-name").value = "";
+  document.getElementById("team-add-first").value = "";
+  document.getElementById("team-add-last").value = "";
   document.getElementById("team-add-role").value = "editor";
   showTeamAddError("");
   tmBackdrop.hidden = false;
@@ -10750,7 +10762,8 @@ tmBackdrop?.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTe
 
 document.getElementById("team-add-btn")?.addEventListener("click", async () => {
   const emailEl = document.getElementById("team-add-email");
-  const nameEl = document.getElementById("team-add-name");
+  const firstEl = document.getElementById("team-add-first");
+  const lastEl = document.getElementById("team-add-last");
   const roleEl = document.getElementById("team-add-role");
   const addBtn = document.getElementById("team-add-btn");
   const email = (emailEl.value || "").trim().toLowerCase();
@@ -10759,7 +10772,7 @@ document.getElementById("team-add-btn")?.addEventListener("click", async () => {
   addBtn.disabled = true;
   try {
     await saveTeamMember(email, {
-      displayName: (nameEl.value || "").trim(),
+      ...nameFields(firstEl.value, lastEl.value),
       role: roleEl.value,
       mcpEnabled: true,
       createdAt: serverTimestamp(),
@@ -10799,6 +10812,18 @@ document.getElementById("um-manage")?.addEventListener("click", async (e) => {
     if (!turningOn) await revokeAgentConnections(email, null, { quiet: true });
     await loadTeamMembers();
     openTeamManagePanel(email);
+    return;
+  }
+
+  if (e.target.closest("[data-team-name-save]")) {
+    const btn = e.target.closest("[data-team-name-save]");
+    btn.disabled = true;
+    try {
+      await saveTeamMember(email, nameFields(document.getElementById("um-manage-first").value, document.getElementById("um-manage-last").value));
+      await loadTeamMembers();
+      openTeamManagePanel(email);
+    } catch (err) { await showAlert(err && err.message ? err.message : String(err)); }
+    finally { btn.disabled = false; }
     return;
   }
 

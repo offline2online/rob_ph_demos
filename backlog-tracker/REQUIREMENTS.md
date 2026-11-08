@@ -3832,6 +3832,15 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Last item o
 
 ## User Management section
 
+- **Names and initials (8 Nov 2026).** A member has a `firstName` and `lastName`
+  (each up to 60 characters, set by an admin); `displayName` is kept as the two
+  joined, so tickets, MCP and the Team page read it unchanged. In User Management
+  → Users the name is a button that opens the Manage panel (the same as "⋯") where
+  an admin edits first/last name, photo and access. Every avatar without a photo
+  shows first + last initials (`initialOf` in `avatar.js`; for a member with only
+  a `displayName`, the first and last words), so "Duy" and "Duong" no longer both
+  show "D".
+
 - **User Management is the first tab of Settings (4 Nov 2026)**, visible to
   admins only, with two sub-tabs: **Users** and **Roles** (`#settings/user-management/<users|roles>`;
   a role's own page is `#settings/user-management/roles/<id>`; the old

@@ -790,6 +790,8 @@ service cloud.firestore {
         && isNonEmptyBoundedString(incoming().email, 200)
         && incoming().role in ["admin", "editor", "viewer"]
         && (!("displayName" in incoming()) || (incoming().displayName is string && incoming().displayName.size() <= 120))
+        && (!("firstName" in incoming()) || (incoming().firstName is string && incoming().firstName.size() <= 60))
+        && (!("lastName" in incoming()) || (incoming().lastName is string && incoming().lastName.size() <= 60))
         && (!("disabled" in incoming()) || incoming().disabled is bool)
         && (!("mcpEnabled" in incoming()) || incoming().mcpEnabled is bool)
         && (!("roleId" in incoming()) || (incoming().roleId is string && incoming().roleId.size() <= 40))

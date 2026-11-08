@@ -2081,7 +2081,13 @@ body { overflow-x: clip; }
 /* Profile photos / avatars (avatar.js). Always a circle; --av is the size. */
 .ph-avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; width: var(--av, 24px); height: var(--av, 24px); border-radius: 50%; overflow: hidden; color: #fff; font-size: calc(var(--av, 24px) * .45); font-weight: 600; line-height: 1; vertical-align: middle; }
 .ph-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ph-avatar-initial { user-select: none; }
+.ph-avatar-initial { user-select: none; letter-spacing: -.02em; }
+.um-name-btn { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 0; font: inherit; color: var(--link, #1b6ac9); cursor: pointer; text-align: left; }
+.um-name-btn:hover { text-decoration: underline; }
+.um-name-edit { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 12px; }
+.um-name-edit label { font-size: 12px; display: block; margin-bottom: 2px; }
+.um-name-edit input { width: 100%; box-sizing: border-box; }
+.um-name-edit .um-name-save { grid-column: 1 / -1; justify-self: start; }
 .profile-btn-avatar { display: inline-flex; }
 .profile-btn .profile-btn-avatar .material-symbols-outlined { font-size: 28px; }
 .profile-photo-face { display: inline-flex; }
