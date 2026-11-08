@@ -2350,6 +2350,18 @@ body { overflow-x: clip; }
 .prospect-li-link { display: inline-flex; align-items: center; color: var(--primary, #1565c0); }
 .prospect-li-link .material-symbols-outlined { font-size: 20px; }
 .prospects-grid .ag-floating-filter-input { position: relative; }
+.prospects-grid .ag-header-cell:has(.pf-head) { padding: 0 6px; }
+.pf-head { display: flex; align-items: center; gap: 2px; width: 100%; min-width: 0; }
+.pf-head .pf-input { flex: 1; min-width: 0; }
+.pf-head .pf-input input { width: 100%; box-sizing: border-box; height: 30px; font: inherit; font-size: 13px; font-weight: 400; padding: 0 8px; color: var(--text); background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 6px; }
+.pf-head .pf-input input::placeholder { color: var(--text); font-weight: 700; opacity: 1; }
+.pf-head .pf-input input:focus { outline: none; border-color: var(--primary); }
+.pf-head .pl-trigger { width: auto; flex: 1; min-width: 0; font-weight: 700; }
+.pf-head .pl-trigger.has-value { font-weight: 400; }
+.pf-sort { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; background: none; border: 0; border-radius: 4px; color: var(--text-muted); cursor: pointer; }
+.pf-sort:hover, .pf-sort:focus-visible, .pf-sort.is-on { color: var(--primary); background: var(--primary-tint); }
+.pf-sort { overflow: hidden; }
+.pf-sort .material-symbols-outlined { font-size: 18px; width: 18px; overflow: hidden; }
 .prospect-clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; background: none; border: 0; border-radius: 50%; color: var(--text-muted); cursor: pointer; }
 .prospect-clear:hover, .prospect-clear:focus-visible { background: var(--primary-tint); color: var(--text); }
 .prospect-clear .material-symbols-outlined { font-size: 16px; }

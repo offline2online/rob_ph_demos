@@ -2582,8 +2582,8 @@ every destination already existed.
   rules in `prospects-core.js` copied to `functions/prospects-core.js` by
   `node test/prospects-core-copy.mjs --write`, starter data in
   `prospects-seed.js`): the global target-company database as an AG Grid below
-  Leads, built like User Management › Users (floating filters with a × to clear
-  each text and number filter and no separate search box, checkbox column with a
+  Leads, built like User Management › Users (one header row whose headings are the
+  filters, with a × to clear each text and number filter and no separate search box, checkbox column with a
   bulk bar, pinned "⋯" row menu, pagination), with a Columns chooser, saved
   filters (grid filter model + sort, per browser), CSV export, **Export for
   LinkedIn** (Campaign Manager Matched Audiences company list), a right-hand

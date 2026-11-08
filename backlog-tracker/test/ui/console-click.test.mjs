@@ -1489,7 +1489,10 @@ const scenarios = [
       assert.ok((await c.page.getAttribute("#prospects-info", "title")).length > 20, "help is an info tooltip");
       // Same grid as User Management: theme, floating filter row, checkbox column, pagination, one pinned "..." menu per row.
       assert.ok(await c.page.locator("#prospects-grid.ag-theme-alpine.um-grid").count(), "uses the standard console grid");
-      assert.ok(await c.page.locator("#prospects-grid .ag-floating-filter").count() > 3, "floating filter row");
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-floating-filter").count(), 0, "no second (floating filter) row");
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-header-menu-icon, #prospects-grid .ag-header-cell-menu-button").count(), 0, "no header menu, so no duplicate filters");
+      assert.ok(await c.page.locator("#prospects-grid .pf-head input[aria-label='Company Filter Input'][placeholder='Company']").count() === 1, "the Company heading is the search box");
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-header-cell[col-id='name'] .ag-header-cell-text").count(), 0, "no separate Company label");
       assert.ok(await c.page.locator('#prospects-grid .ag-pinned-left-cols-container .ag-selection-checkbox, #prospects-grid .ag-pinned-left-cols-container input[type=checkbox]').count() >= 3, "checkbox column");
       assert.ok(await c.page.locator("#prospects-grid .ag-paging-panel").count(), "pagination footer");
       // The whole page scrolls (no inner scroll area) and the grid's column header + filter row stick under the console header.

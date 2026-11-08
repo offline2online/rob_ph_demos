@@ -4157,13 +4157,17 @@ Rules:
   `linkedinOrgId` digits, `contacts` at most 30; a new record must name its
   country, older ones without one still update).
 - **Grid** (6 Nov 2026): the same AG Grid pattern as User Management › Users
-  (`ag-theme-alpine um-grid`; floating filter row; header and floating-filter
-  height 40, row height 48; pagination 25/50/100/250 at the bottom). The count
+  (`ag-theme-alpine um-grid`; **one header row** (8 Nov 2026): each filterable
+  column's heading is its filter, with the column name as the placeholder (no
+  separate "Company" label, no floating-filter row, no header menu, so no
+  duplicate filters), plus a sort button; header height 44, row height 48; pagination 25/50/100/250 at the bottom). The count
   ("129 Prospects", or "N of 129 Prospects" when filtered) sits above the grid
   with Saved filters, Columns, Export CSV and **Export for LinkedIn** on the
   right. **There is no separate search box: all filtering is in the column
-  floating filters** (Company has its own text filter), and every floating text
-  and number filter shows a small clear (×) button once it has a value;
+  headings** (Company's heading is its search box), the pick-lists (Country,
+  Industry, Priority, Status, AWS region, Size band) are tick-box lists with a
+  Clear button once something is ticked (never toggles), and every text and
+  number filter shows a small clear (×) button once it has a value;
   clicking it clears that column's filter and the count updates. Shown by
   default: Company, Country, Industry, Priority, Stores, LinkedIn (an icon link
   to the company page, or empty), Status, then the ⋯ menu. Hidden by default
