@@ -1,9 +1,9 @@
 <?php
 /**
- * Telco interactive product tour.
+ * Interactive product tour (telco and pharmacy: one shared page, the path picks the industry).
  *
- * - GET /industries/telco/tour/ (with or without the trailing slash): the tour page, served same-origin so the industry page can frame it
- *   (`?embed=1`). The HTML is tour-telco.php (generated from tour/telco.html by tools/build-tour.mjs) when deployed; otherwise a sha256-pinned copy, see tour_page(). Answered at template_redirect
+ * - GET /industries/telco/tour/ and /industries/pharmacy/tour/ (with or without the trailing slash): the same tour page, served same-origin so the industry
+ *   page can frame it (`?embed=1`). The HTML is tour-page.php (generated from tour/tour.html by tools/build-tour.mjs) when deployed; otherwise a sha256-pinned copy, see tour_page(). Answered at template_redirect
  *   priority 0 so redirect_canonical never sees it.
  * - POST ph-site/v1/tour-lead: the tour's gate form. Shaped like telco-model: honeypot, throttle, private ph_lead post, `ph_lead_captured`.
  *   No nonce: the page is edge-cached, so a stale wp_rest nonce would 403 anonymous callers (PH_TOUR.nonce is "").
@@ -14,55 +14,58 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const TOUR_PATH         = '/industries/telco/tour';
-const TOUR_SOURCE       = 'interactive-product-tour';
-const TOUR_SOURCE_LABEL = 'Interactive product tour – Telco';
-const TOUR_FLOWS        = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation' );
+const TOUR_SOURCE = 'interactive-product-tour';
+const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation' );
+/** Industries the tour serves: key = the `industry` the tour sends; path = where the page is served; page = the industry page the lead came from. */
+const TOUR_INDUSTRIES = array(
+	'telco'    => array( 'name' => 'Telco', 'path' => '/industries/telco/tour', 'page' => '/industries/telco/', 'label' => 'Interactive product tour – Telco' ),
+	'pharmacy' => array( 'name' => 'Pharmacy', 'path' => '/industries/pharmacy/tour', 'page' => '/industries/pharmacy/', 'label' => 'Interactive product tour – Pharmacy' ),
+);
 
 /**
- * Pinned copy of the tour page, used when tour-telco.php is not deployed (it is 200 KB, too big for the deploy MCP's inline file
+ * Pinned copy of the tour page, used when tour-page.php is not deployed (it is 200 KB, too big for the deploy MCP's inline file
  * writes). The URL follows main; the sha256 is the pin, so the content is guaranteed whatever the URL serves. To update the tour,
- * merge it, then change TOUR_TELCO_SHA256 to the new telco.html's sha256; a changed sha refetches by itself. GitHub's raw CDN can serve the
+ * merge it, then change TOUR_PAGE_SHA256 to the new tour.html's sha256; a changed sha refetches by itself. GitHub's raw CDN can serve the
  * previous main for a few minutes after a merge: until the fetched copy matches, the last good cached copy is served.
  */
-const TOUR_TELCO_OPTION  = 'ph_tour_telco_html';
-const TOUR_TELCO_BACKOFF = 'ph_tour_telco_backoff';
-const TOUR_TELCO_SHA256  = '6323566a7a10d78115d67bcc4cf1d361cb7c9271b35a5b83c6160c264ae38f35';
-const TOUR_TELCO_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/telco.html';
+const TOUR_PAGE_OPTION  = 'ph_tour_page_html';
+const TOUR_PAGE_BACKOFF = 'ph_tour_page_backoff';
+const TOUR_PAGE_SHA256  = '4374ae1f17c6ab0e57ad6a8830d2577ac7df1815a00917e1827cc9269fe13e04';
+const TOUR_PAGE_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/tour.html';
 
 /**
- * The tour page HTML. Returns array( html|null, reason ). Order: tour-telco.php next to this file; the cached option when its sha
- * matches TOUR_TELCO_SHA256; then the pinned URL (accepted only on a 200 whose sha256 matches; only then stored). When the fetch
+ * The tour page HTML. Returns array( html|null, reason ). Order: tour-page.php next to this file; the cached option when its sha
+ * matches TOUR_PAGE_SHA256; then the pinned URL (accepted only on a 200 whose sha256 matches; only then stored). When the fetch
  * fails or does not match, a 5-minute back-off transient stops further fetches, and an older cached copy (intact against its own sha)
  * is served with 200 and the reason returned for logging. With nothing cached the html is null and the route answers 503.
  */
 function tour_page() {
-	if ( file_exists( __DIR__ . '/tour-telco.php' ) ) {
-		return array( data( 'tour-telco.php' ), '' );
+	if ( file_exists( __DIR__ . '/tour-page.php' ) ) {
+		return array( data( 'tour-page.php' ), '' );
 	}
-	$cached = get_option( TOUR_TELCO_OPTION );
+	$cached = get_option( TOUR_PAGE_OPTION );
 	$intact = is_array( $cached ) && isset( $cached['sha'], $cached['html'] ) && is_string( $cached['html'] ) && '' !== $cached['html'] && hash( 'sha256', $cached['html'] ) === $cached['sha'];
-	if ( $intact && TOUR_TELCO_SHA256 === $cached['sha'] ) {
+	if ( $intact && TOUR_PAGE_SHA256 === $cached['sha'] ) {
 		return array( $cached['html'], '' );
 	}
 	$why = '';
-	if ( false !== get_transient( TOUR_TELCO_BACKOFF ) ) {
+	if ( false !== get_transient( TOUR_PAGE_BACKOFF ) ) {
 		$why = 'fetch skipped, backing off after an earlier failure';
 	} else {
-		$res = wp_remote_get( TOUR_TELCO_URL, array( 'timeout' => 10 ) );
+		$res = wp_remote_get( TOUR_PAGE_URL, array( 'timeout' => 10 ) );
 		if ( is_wp_error( $res ) ) {
 			$why = 'fetch failed: ' . $res->get_error_message();
 		} elseif ( 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
 			$why = 'fetch answered ' . (int) wp_remote_retrieve_response_code( $res );
 		} else {
 			$body = (string) wp_remote_retrieve_body( $res );
-			if ( hash( 'sha256', $body ) === TOUR_TELCO_SHA256 ) {
-				update_option( TOUR_TELCO_OPTION, array( 'sha' => TOUR_TELCO_SHA256, 'html' => $body ), false );
+			if ( hash( 'sha256', $body ) === TOUR_PAGE_SHA256 ) {
+				update_option( TOUR_PAGE_OPTION, array( 'sha' => TOUR_PAGE_SHA256, 'html' => $body ), false );
 				return array( $body, '' );
 			}
-			$why = 'fetched copy does not match TOUR_TELCO_SHA256';
+			$why = 'fetched copy does not match TOUR_PAGE_SHA256';
 		}
-		set_transient( TOUR_TELCO_BACKOFF, 1, 5 * MINUTE_IN_SECONDS );
+		set_transient( TOUR_PAGE_BACKOFF, 1, 5 * MINUTE_IN_SECONDS );
 	}
 	if ( $intact ) {
 		return array( $cached['html'], $why . '; serving the cached copy' );
@@ -70,13 +73,19 @@ function tour_page() {
 	return array( null, $why );
 }
 
-/** Same list as FREE_MAIL in tour/telco.html. */
+/** Same list as FREE_MAIL in tour/tour.html. */
 function tour_free_mail( $email ) {
 	return (bool) preg_match( '/@(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|icloud|me|mac|aol|proton|protonmail|gmx|mail|zoho|yandex)\./i', (string) $email );
 }
 
 function tour_is_request( $path ) {
-	return TOUR_PATH === rtrim( (string) $path, '/' );
+	$p = rtrim( (string) $path, '/' );
+	foreach ( TOUR_INDUSTRIES as $i ) {
+		if ( $i['path'] === $p ) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function tour_throttled() {
@@ -98,6 +107,12 @@ function tour_handle( array $b ) {
 	if ( tour_throttled() ) {
 		return array( 429, array( 'error' => 'Too many requests. Try again later.' ) );
 	}
+	$key = isset( $b['industry'] ) && is_string( $b['industry'] ) ? $b['industry'] : '';
+	if ( ! isset( TOUR_INDUSTRIES[ $key ] ) ) {
+		return array( 400, array( 'error' => 'Unknown industry.', 'field' => 'industry' ) );
+	}
+	$ind   = TOUR_INDUSTRIES[ $key ];
+	$label = $ind['label'];
 	$lead = array();
 	foreach ( array( 'name', 'company' ) as $k ) {
 		$lead[ $k ] = isset( $b[ $k ] ) && is_string( $b[ $k ] ) ? trim( sanitize_text_field( $b[ $k ] ) ) : '';
@@ -118,10 +133,10 @@ function tour_handle( array $b ) {
 	$flow = isset( $b['flow'] ) && is_string( $b['flow'] ) ? trim( sanitize_text_field( $b['flow'] ) ) : '';
 	$flow = in_array( $flow, TOUR_FLOWS, true ) ? $flow : '';
 	$test = lead_is_test( isset( $b['test'] ) ? $b['test'] : false );
-	$page = '/industries/telco/';
+	$page = $ind['page'];
 	$id   = lead_find_existing( $lead['email'], $test );
 	if ( $id ) { // already a lead (for instance from the calculator download): record the tour as activity, not a second lead.
-		lead_add_activity( $id, TOUR_SOURCE_LABEL, $flow );
+		lead_add_activity( $id, $label, $flow );
 	} else {
 		$id = wp_insert_post( array( 'post_type' => 'ph_lead', 'post_status' => 'private', 'post_title' => $lead['company'] . ' / ' . $lead['name'] ) );
 		if ( $id && ! is_wp_error( $id ) ) {
@@ -129,21 +144,21 @@ function tour_handle( array $b ) {
 				update_post_meta( $id, 'ph_lead_' . $k, $v );
 			}
 			update_post_meta( $id, 'ph_lead_source', TOUR_SOURCE );
-			update_post_meta( $id, 'ph_lead_source_label', TOUR_SOURCE_LABEL );
+			update_post_meta( $id, 'ph_lead_source_label', $label );
 			update_post_meta( $id, 'ph_lead_consent', 1 );
 			update_post_meta( $id, 'ph_lead_page', $page );
 			if ( $test ) {
 				update_post_meta( $id, 'ph_lead_test', '1' );
 			}
-			lead_add_activity( $id, TOUR_SOURCE_LABEL, $flow );
+			lead_add_activity( $id, $label, $flow );
 		}
 	}
 	if ( $id && ! is_wp_error( $id ) ) {
 		update_post_meta( $id, 'ph_lead_tour_flow', $flow );
 	}
-	do_action( 'ph_lead_captured', array_merge( $lead, array( 'source' => TOUR_SOURCE, 'source_label' => TOUR_SOURCE_LABEL, 'source_detail' => $flow, 'consent' => true, 'industry' => 'telco', 'flow' => $flow, 'test' => $test, 'page' => $page, 'post_id' => (int) $id ) ) );
+	do_action( 'ph_lead_captured', array_merge( $lead, array( 'source' => TOUR_SOURCE, 'source_label' => $label, 'source_detail' => $flow, 'consent' => true, 'industry' => $key, 'flow' => $flow, 'test' => $test, 'page' => $page, 'post_id' => (int) $id ) ) );
 	if ( ! $test ) {
-		wp_mail( get_option( 'admin_email' ), 'New Telco product tour lead: ' . $lead['company'], "Name: {$lead['name']}\nCompany: {$lead['company']}\nEmail: {$lead['email']}\nDemo: $flow\nPage: $page" );
+		wp_mail( get_option( 'admin_email' ), 'New ' . $ind['name'] . ' product tour lead: ' . $lead['company'], "Name: {$lead['name']}\nCompany: {$lead['company']}\nEmail: {$lead['email']}\nDemo: $flow\nPage: $page" );
 	}
 	return array( 200, array( 'ok' => true ) );
 }

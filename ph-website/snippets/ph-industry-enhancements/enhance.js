@@ -196,12 +196,15 @@
     try { window.dispatchEvent(new CustomEvent("ph:lead", {detail: lead})); } catch (e) {}
   }
 
-  // Interactive product tour (telco): the tour page is served same-origin at /industries/telco/tour/ and framed here, so its CSS cannot
+  // Interactive product tour (telco and pharmacy): the tour page is served same-origin at /industries/<page>/tour/ and framed here, so its CSS cannot
   // clash with the theme or Elementor. The band's heading is server-rendered (Elementor, ".ph-ind-tour"); the iframe is progressive enhancement.
-  var TOUR_SRC = "/industries/telco/tour/?embed=1";
-  function tourSrc() { return TOUR_SRC + (testMode() ? "&ph_test=1" : ""); }
+  var TOUR_COPY = {
+    telco: ["See Personalisation Hub run a telco campaign, end to end", "Pick a demo and watch a campaign go from brief to every store screen."],
+    pharmacy: ["See Personalisation Hub run a pharmacy campaign, end to end", "Pick a demo and watch a campaign go from brief to every pharmacy screen, and on to the pharmacist."]
+  };
+  function tourSrc() { return "/industries/" + page + "/tour/?embed=1" + (testMode() ? "&ph_test=1" : ""); }
   function setupTour() {
-    if (page !== "telco") return;
+    if (!TOUR_COPY[page]) return;
     var band = document.querySelector(".ph-ind-tour");
     var mount = band && band.querySelector(".ph-ind-tour-mount");
     if (!mount) {
@@ -210,8 +213,8 @@
       band = el("section", "ph-ind-sec ph-ind-tour");
       var inner = el("div", "ph-ind-tour-in");
       inner.appendChild(el("p", "ph-ind-tour-eyebrow", "Interactive product tour"));
-      inner.appendChild(el("h2", "ph-ind-tour-h", "See Personalisation Hub run a telco campaign, end to end"));
-      inner.appendChild(el("p", "ph-ind-tour-p", "Pick a demo and watch a campaign go from brief to every store screen."));
+      inner.appendChild(el("h2", "ph-ind-tour-h", TOUR_COPY[page][0]));
+      inner.appendChild(el("p", "ph-ind-tour-p", TOUR_COPY[page][1]));
       mount = el("div", "ph-ind-tour-mount"); inner.appendChild(mount); band.appendChild(inner);
       after.parentNode.insertBefore(band, after.nextSibling);
     }

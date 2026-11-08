@@ -1,8 +1,8 @@
 <?php
 /**
- * php ph-website/tests/tour.test.php : the telco product tour.
+ * php ph-website/tests/tour.test.php : the telco and pharmacy product tour (one shared page).
  * Route and headers (a child process, because the handler exits), POST ph-site/v1/tour-lead validation, free domains, test flag,
- * private ph_lead meta, the ph_lead_captured payload, the console ingest body, and the generated tour-telco.php.
+ * private ph_lead meta, the ph_lead_captured payload, the console ingest body, and the generated tour-page.php.
  */
 namespace AngieSnippets\PhIndustryEnhancements_10063 {
 	function header( $h ) { $GLOBALS['hdr'][] = $h; }
@@ -17,7 +17,7 @@ $fails = 0;
 function ok( $c, $m ) { global $fails; if ( ! $c ) { $fails++; fwrite( STDERR, "FAIL: $m\n" ); } }
 $dir = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements';
 
-foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embed=1', '/industries/telco/tour/' ) as $u ) {
+foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embed=1', '/industries/telco/tour/', '/industries/pharmacy/tour/?embed=1', '/industries/pharmacy/tour?embed=1', '/industries/pharmacy/tour/' ) as $u ) {
 	$out = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' ' . escapeshellarg( $u ) . ' GET' );
 	$cut  = strrpos( (string) $out, "\n@@" );
 	$j    = false === $cut ? null : json_decode( substr( $out, $cut + 3 ), true );
@@ -29,11 +29,11 @@ foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embe
 	ok( false !== strpos( $h, 'X-Frame-Options: SAMEORIGIN' ), "$u X-Frame-Options" );
 	ok( false !== strpos( $h, "frame-ancestors 'self'" ), "$u CSP frame-ancestors" );
 	ok( false !== strpos( $h, 'Cache-Control: public, max-age=3600' ), "$u cache" );
-	ok( hash( 'sha256', $html ) === hash_file( 'sha256', $dir . '/tour/telco.html' ), "$u serves telco.html byte for byte" );
+	ok( hash( 'sha256', $html ) === hash_file( 'sha256', $dir . '/tour/tour.html' ), "$u serves tour.html byte for byte" );
 }
-/* tour-telco.php present: served from the file, no HTTP call (the child's wp_remote_get does not even exist there) */
-/* tour-telco.php absent: pinned, hash-checked copy */
-$sha = hash_file( 'sha256', $dir . '/tour/telco.html' );
+/* tour-page.php present: served from the file, no HTTP call (the child's wp_remote_get does not even exist there) */
+/* tour-page.php absent: pinned, hash-checked copy */
+$sha = hash_file( 'sha256', $dir . '/tour/tour.html' );
 $serve = function ( $mode ) {
 	$out = shell_exec( 'TOUR_MODE=' . $mode . ' php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' /industries/telco/tour/?embed=1 GET 2>/dev/null' );
 	$p1  = strrpos( (string) $out, "\n##" );
@@ -43,9 +43,16 @@ $serve = function ( $mode ) {
 	return array( substr( $out, 0, $p1 ), $j, $aux );
 };
 $src_php = (string) file_get_contents( $dir . '/tour.php' );
-ok( false !== strpos( $src_php, "'" . $sha . "'" ), 'TOUR_TELCO_SHA256 equals the sha256 of tour/telco.html' );
-ok( 1 === preg_match( '#raw\.githubusercontent\.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/telco\.html#', $src_php ), 'fetch URL follows main (the sha256 is the pin)' );
+ok( false !== strpos( $src_php, "'" . $sha . "'" ), 'TOUR_PAGE_SHA256 equals the sha256 of tour/tour.html' );
+ok( 1 === preg_match( '#raw\.githubusercontent\.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/tour\.html#', $src_php ), 'fetch URL follows main (the sha256 is the pin)' );
+$h_telco = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' /industries/telco/tour/ GET' );
+$h_pharm = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' /industries/pharmacy/tour GET' );
+ok( substr( (string) $h_telco, 0, strrpos( (string) $h_telco, "\n@@" ) ) === substr( (string) $h_pharm, 0, strrpos( (string) $h_pharm, "\n@@" ) ), 'telco and pharmacy paths serve the same HTML' );
+$pj = json_decode( substr( $h_pharm, strrpos( $h_pharm, "\n@@" ) + 3 ), true );
+ok( 200 === $pj['status'] && false !== strpos( implode( "\n", $pj['hdr'] ), 'Cache-Control: public, max-age=3600' ) && false !== strpos( implode( "\n", $pj['hdr'] ), "frame-ancestors 'self'" ), 'pharmacy path has the same headers' );
 list( $html, $j, $aux ) = $serve( 'ok' );
+$out_p = shell_exec( 'TOUR_MODE=ok php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' /industries/pharmacy/tour GET 2>/dev/null' );
+ok( false !== strpos( (string) $out_p, '"http":1' ) && hash( 'sha256', substr( $out_p, 0, strrpos( $out_p, "\n##" ) ) ) === $sha, 'pharmacy path through the pinned fetch: same pinned HTML' );
 ok( 200 === $j['status'] && hash( 'sha256', $html ) === $sha, 'absent file, correct fetch: served byte for byte' );
 ok( 1 === $aux['http'] && $sha === $aux['stored'] && false === $aux['autoload'] && 10 === $aux['timeout'], 'fetched once, stored with autoload off, 10s timeout' );
 ok( false !== strpos( implode( "\n", $j['hdr'] ), 'Cache-Control: public, max-age=3600' ) && false !== strpos( implode( "\n", $j['hdr'] ), 'X-Frame-Options: SAMEORIGIN' ), 'fetched page keeps the success headers' );
@@ -74,7 +81,7 @@ ok( 200 === $j['status'] && $older === $html && 0 === $aux['http'] && 1 === coun
 list( $html, $j, $aux ) = $serve( 'backoff' );
 ok( 503 === $j['status'] && 0 === $aux['http'] && null === $aux['stored'], 'back-off with nothing cached: 503, no HTTP call' );
 
-foreach ( array( array( '/industries/telco/', 'GET' ), array( '/industries/telco/tour/x', 'GET' ), array( '/industries/telco/tour/', 'POST' ) ) as $c ) {
+foreach ( array( array( '/industries/telco/', 'GET' ), array( '/industries/telco/tour/x', 'GET' ), array( '/industries/telco/tour/', 'POST' ), array( '/industries/pharmacy/', 'GET' ), array( '/industries/pharmacy/tour/x', 'GET' ), array( '/industries/pharmacy/tour/', 'POST' ), array( '/industries/grocery/tour/', 'GET' ) ) as $c ) {
 	$out = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' ' . escapeshellarg( $c[0] ) . ' ' . $c[1] );
 	ok( false !== strpos( (string) $out, '"fellThrough":true' ), $c[1] . ' ' . $c[0] . ' is left to WordPress' );
 }
@@ -84,11 +91,11 @@ preg_match( '/@@\{"fellThrough":true,"prio":(\d+)\}/', (string) shell_exec( 'php
 ok( isset( $pm[1] ) && '0' === $pm[1], 'registered at template_redirect priority 0' );
 
 /* generated PHP equals the repo source */
-$src = file_get_contents( $dir . '/tour/telco.html' );
-$php = file_get_contents( $dir . '/tour-telco.php' );
-ok( hash( 'sha256', require $dir . '/tour-telco.php' ) === hash( 'sha256', $src ), 'tour-telco.php returns telco.html byte for byte (sha256)' );
-ok( 0 === preg_match( '/^PHTOUR/m', $src ), 'no line of telco.html starts with PHTOUR' );
-ok( 1 === preg_match_all( '/^PHTOUR/m', $php ), 'tour-telco.php has exactly one PHTOUR terminator line' );
+$src = file_get_contents( $dir . '/tour/tour.html' );
+$php = file_get_contents( $dir . '/tour-page.php' );
+ok( hash( 'sha256', require $dir . '/tour-page.php' ) === hash( 'sha256', $src ), 'tour-page.php returns tour.html byte for byte (sha256)' );
+ok( 0 === preg_match( '/^PHTOUR/m', $src ), 'no line of tour.html starts with PHTOUR' );
+ok( 1 === preg_match_all( '/^PHTOUR/m', $php ), 'tour-page.php has exactly one PHTOUR terminator line' );
 ok( 0 === strpos( $php, "<?php return <<<'PHTOUR'\n" ), 'nowdoc, nothing interpolated' );
 
 /* REST handler */
@@ -183,6 +190,34 @@ ok( 1 === count( $GLOBALS['posts'] ) && 3 === count( $GLOBALS['meta'][1]['ph_lea
 $GLOBALS['dedupe'] = false;
 for ( $i = 0; $i < 12; $i++ ) { $r = $call( $good, '9.9.9.9' ); }
 ok( 429 === $r->status, 'throttled after 10 per hour per address' );
+
+/* pharmacy: industry comes from the body and is validated against the config map */
+$GLOBALS['dedupe'] = false; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array(); $GLOBALS['tr'] = array();
+$gp = array_merge( $good, array( 'industry' => 'pharmacy', 'company' => 'Harbour Pharmacy Group', 'page' => '/industries/pharmacy/tour/' ) );
+$r = $call( $gp, '11.1.1.1' );
+$m = $GLOBALS['meta'][1] ?? array();
+ok( 200 === $r->status && 'Interactive product tour – Pharmacy' === ( $m['ph_lead_source_label'] ?? '' ) && '/industries/pharmacy/' === ( $m['ph_lead_page'] ?? '' ) && 'interactive-product-tour' === ( $m['ph_lead_source'] ?? '' ), 'pharmacy lead: source label and page are pharmacy' );
+ok( 1 === count( $GLOBALS['mails'] ) && 'New Pharmacy product tour lead: Harbour Pharmacy Group' === $GLOBALS['mails'][0][1], 'pharmacy lead: admin email subject names Pharmacy' );
+$pp = $GLOBALS['fired'][0][1] ?? array();
+ok( 'pharmacy' === $pp['industry'] && 'Interactive product tour – Pharmacy' === $pp['source_label'] && '/industries/pharmacy/' === $pp['page'], 'pharmacy lead: ph_lead_captured carries industry pharmacy' );
+$pb = \AngieSnippets\PhIndustryEnhancements_10063\lead_ingest_body( $pp );
+ok( 'Interactive product tour – Pharmacy' === $pb['sourceLabel'] && '/industries/pharmacy/' === $pb['page'] && 'pharmacy' === $pb['pageIndustry'], 'pharmacy lead: ingest body sourceLabel, page and industry' );
+$GLOBALS['posts'] = array(); $GLOBALS['fired'] = array();
+foreach ( array( 'grocery', 'TELCO', '', null, array( 'pharmacy' ), 'telco ' ) as $bad ) {
+	$r = $call( array_merge( $good, array( 'industry' => $bad ) ) );
+	ok( 400 === $r->status && 'industry' === ( $r->data['field'] ?? '' ), 'unknown industry refused with 400: ' . json_encode( $bad ) );
+}
+$nb = $good; unset( $nb['industry'] );
+$r = $call( $nb ); ok( 400 === $r->status, 'a missing industry is refused with 400' );
+ok( ! $GLOBALS['posts'] && ! $GLOBALS['fired'], 'a refused industry stores and fires nothing' );
+/* one lead per person across both tours: a telco lead, then the same person on the pharmacy tour */
+$GLOBALS['dedupe'] = true; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array();
+$call( $good, '12.1.1.1' );
+$call( array_merge( $good, array( 'industry' => 'pharmacy', 'flow' => 'Personalisation' ) ), '12.1.1.2' );
+$labels = array_column( $GLOBALS['meta'][1]['ph_lead_activity'] ?? array(), 'label' );
+ok( 1 === count( $GLOBALS['posts'] ) && array( 'Interactive product tour – Telco', 'Interactive product tour – Pharmacy' ) === $labels, 'a telco lead is not asked again on pharmacy: one lead, activity for both tours' );
+ok( 'ph_lead_captured' === end( $GLOBALS['fired'] )[0] && 'pharmacy' === end( $GLOBALS['fired'] )[1]['industry'], 'the pharmacy capture still reaches the console with industry pharmacy' );
+$GLOBALS['dedupe'] = false;
 
 /* the free-mail list is the tour's own */
 preg_match( '/const FREE_MAIL = (\/.*?\/i);/', $src, $mm );

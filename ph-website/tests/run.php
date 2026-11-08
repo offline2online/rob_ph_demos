@@ -525,5 +525,18 @@ $mp = file_get_contents( $dir . 'main.php' );
 ok( 1 === preg_match( "/ASSETS_VERSION_10063 = '(\d+)\.(\d+)\.(\d+)'/", $mp, $vm ) && ( (int) $vm[2] > 8 || ( (int) $vm[2] === 8 && (int) $vm[3] >= 2 ) ), 'main.php: assets version bumped past 1.8.1' );
 ok( false !== strpos( file_get_contents( $dir . 'leads.php' ), "'ph_lead_ingest_key'" ) && false !== strpos( file_get_contents( $dir . 'leads.php' ), 'PH lead ingest key' ), 'leads.php: ingest key settings field' );
 
+/* interactive product tour: one shared source, telco and pharmacy (9 Nov 2026) */
+$tsrc = file_get_contents( $dir . 'tour/tour.html' );
+ok( ! file_exists( $dir . 'tour/telco.html' ), 'tour: single source tour/tour.html (telco.html is gone)' );
+ok( false !== strpos( $tsrc, 'IND_FROM_PATH' ) && false !== strpos( $tsrc, 'ind: IND_FROM_PATH' ) && false !== strpos( $tsrc, '/industries\\/pharmacy\\/tour' ), 'tour: S.ind comes from the page path' );
+ok( false !== strpos( $tsrc, 'industry: S.ind' ) && false === strpos( $tsrc, 'industry: "telco"' ), 'tour: events and lead body use S.ind, not a hard-coded telco' );
+ok( false !== strpos( $tsrc, 'Sun Care | 2 for $30 SPF 50+' ) && false !== strpos( $tsrc, 'Gold Members | Extra 20% off sun care' ) && false !== strpos( $tsrc, 'Sunscreen out of stock' ), 'tour: pharmacy is the sun care campaign' );
+ok( 0 === preg_match( '/Scripts Ready|Flu Vaccine|Flu Season|Prescription Ready|Age 68/', $tsrc ), 'tour: no prescription, vaccine or age content left in the pharmacy tour' );
+$tp = file_get_contents( $dir . 'tour.php' );
+ok( false !== strpos( $tp, "'pharmacy' => array(" ) && false !== strpos( $tp, 'Interactive product tour – Pharmacy' ) && false !== strpos( $tp, "'/industries/pharmacy/tour'" ) && false !== strpos( $tp, 'Unknown industry.' ), 'tour.php: pharmacy route, label and industry validation' );
+ok( false !== strpos( $tp, hash( 'sha256', $tsrc ) ), 'tour.php: TOUR_PAGE_SHA256 is the sha256 of tour/tour.html' );
+ok( false !== strpos( $ejs, 'See Personalisation Hub run a pharmacy campaign, end to end' ) && false !== strpos( $ejs, 'and on to the pharmacist.' ) && false !== strpos( $ejs, '"/industries/" + page + "/tour/?embed=1"' ), 'enhance.js: the tour mounts on the pharmacy page with pharmacy copy' );
+ok( 1 === preg_match( "/ASSETS_VERSION_10063 = '(\d+)\.(\d+)\.(\d+)'/", $mp, $vm2 ) && ( (int) $vm2[2] > 9 || ( (int) $vm2[2] === 9 && (int) $vm2[3] >= 3 ) ), 'main.php: assets version bumped to 1.9.3 for the pharmacy tour' );
+
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );
