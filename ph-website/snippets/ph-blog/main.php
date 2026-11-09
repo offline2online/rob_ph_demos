@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER       = '1.0.9';
+const VER       = '1.1.0';
 const BLOG_ID   = 10147;
 const AVATAR_ID = 10097;
 const WPM       = 200;
@@ -21,6 +21,8 @@ const DESKS     = [
 	'store'   => [ 'label' => 'Stores & Experience', 'cat' => 'stores-experience' ],
 	'measure' => [ 'label' => 'Measurement', 'cat' => 'measurement' ],
 ];
+
+require_once __DIR__ . '/abilities.php';
 
 /* ---------- post meta for series ---------- */
 add_action( 'init', function () {
