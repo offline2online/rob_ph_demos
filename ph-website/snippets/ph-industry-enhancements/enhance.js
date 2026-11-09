@@ -197,12 +197,11 @@
     try { window.dispatchEvent(new CustomEvent("ph:lead", {detail: lead})); } catch (e) {}
   }
 
-  // Interactive product tour (telco, pharmacy, retail media and fuel & convenience): the tour page is served same-origin at /industries/<page>/tour/ and framed here, so its CSS cannot
+  // Interactive product tour (telco, pharmacy and fuel & convenience): the tour page is served same-origin at /industries/<page>/tour/ and framed here, so its CSS cannot
   // clash with the theme or Elementor. The band's heading is server-rendered (Elementor, ".ph-ind-tour"); the iframe is progressive enhancement.
   var TOUR_COPY = {
     telco: ["See Personalisation Hub run a telco campaign, end to end", "Pick a demo and watch a campaign go from brief to every store screen."],
     pharmacy: ["See Personalisation Hub run a pharmacy campaign, end to end", "Pick a demo and watch a campaign go from brief to every pharmacy screen, and on to the pharmacist."],
-    "retail-media": ["See a convenience retailer run its own retail media network, end to end", "Pick a demo and watch a retailer sell its screens, an advertiser create a campaign by talking, and one shopper followed from forecourt to checkout."],
     convenience: ["See Personalisation Hub run a fuel and convenience campaign, end to end", "Watch one retailer campaign follow a loyalty member from the pump to the shop front, the coolers and the till."]
   };
   function tourSrc() { return "/industries/" + page + "/tour/?embed=1" + (testMode() ? "&ph_test=1" : ""); }
@@ -212,7 +211,6 @@
     var mount = band && band.querySelector(".ph-ind-tour-mount");
     if (!mount) {
       var calc = document.querySelector(".ph-ind-calc"), after = calc && calc.closest(".ph-ind-sec");
-      if (!after && page === "retail-media") { var secs = document.querySelectorAll(".ph-ind-sec"); after = secs.length ? secs[secs.length - 1] : null; }
       if (!after) return;
       band = el("section", "ph-ind-sec ph-ind-tour");
       var inner = el("div", "ph-ind-tour-in");
@@ -222,7 +220,7 @@
       mount = el("div", "ph-ind-tour-mount"); inner.appendChild(mount); band.appendChild(inner);
       after.parentNode.insertBefore(band, after.nextSibling);
     }
-    if (band && !band.id) band.id = "ph-tour"; // anchor for links from other tours (e.g. /industries/convenience/ -> /industries/retail-media/#ph-tour)
+    if (band && !band.id) band.id = "ph-tour"; // anchor for links from other tours
     if (location.hash === "#ph-tour" && band && band.scrollIntoView) setTimeout(function () { band.scrollIntoView(); }, 0);
     window.PH_TOUR = {
       endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "",

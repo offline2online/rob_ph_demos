@@ -1,4 +1,4 @@
-// node ph-website/tests/tour.test.mjs : the telco, pharmacy, retail media and fuel & convenience product tour on the industry pages (enhance.js + site.js), in Chromium.
+// node ph-website/tests/tour.test.mjs : the telco, pharmacy and fuel & convenience product tour on the industry pages (enhance.js + site.js), in Chromium.
 // Checks: the band is mounted (Elementor mount, or built after the calculator's section), the iframe src (+ph_test forwarding), the height
 // message, window.PH_TOUR, "Arrange a Demo" -> PH_SITE_DEMO, and that a successful calculator download writes
 // localStorage ph_lead and dispatches window "ph:lead". Skips (exit 0) when Playwright or Chromium is not available.
@@ -552,101 +552,6 @@ try {
     }
   }
 
-  // Retail media (convenience retail): same shared tour, its own three flows (retailer setup, advertiser creates by talking, shopper journey and outcome).
-  { const sourceTour = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
-    const fast = sourceTour.replace("const k = reduce ? .35 : 1;", "const k = .02;");
-    // Band on the Retail Media industry page: the Elementor mount, or built after the last section when it is absent.
-    const rmPage = (withBand) => `<!doctype html><html><head><style>${css}</style></head><body><main><section class="ph-ind-sec" id="s1">one</section>${withBand ? '<section class="ph-ind-sec ph-ind-tour" id="band"><h2>Server heading</h2><div class="ph-ind-tour-mount"></div></section>' : ""}<section class="ph-ind-sec" id="s2">two</section></main>
-<script>window.PH_IND_PAGE="retail-media"; window.Calendly={initPopupWidget:function(){}};</script><script>${site}</script><script>${enhance}</script></body></html>`;
-    for (const withBand of [true, false]) {
-      const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
-      await p.route("**/*", (r) => /\/industries\/retail-media\/tour\//.test(r.request().url()) ? r.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><p>tour</p>" }) : r.fulfill({ contentType: "text/html", body: rmPage(withBand) }));
-      await p.goto("http://x.test/industries/retail-media/?ph_test=1");
-      assert.strictEqual(await p.locator(".ph-ind-tour-mount iframe").count(), 1, `retail-media (band ${withBand}): iframe mounted`);
-      assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/retail-media/tour/?embed=1&ph_test=1", "retail-media: iframe src with ph_test");
-      if (!withBand) {
-        assert.strictEqual(await p.locator("#s2").count(), 1); assert.strictEqual(await p.locator("#s1 + .ph-ind-tour + #s2").count(), 0, "built band is after the last section");
-        assert.strictEqual(await p.locator(".ph-ind-tour h2").textContent(), "See a convenience retailer run its own retail media network, end to end", "retail-media fallback heading");
-      }
-      await p.close();
-    }
-    const sha = (await import("crypto")).createHash("sha256").update(sourceTour).digest("hex");
-    assert.ok(sha.length === 64);
-    // Gate: branded, work email only.
-    { const g = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-      let body = null;
-      await g.route("**/*", (r) => { const u = r.request().url(); if (/tour-lead$/.test(u)) { body = JSON.parse(r.request().postData()); return r.fulfill({ contentType: "application/json", body: '{"ok":true}' }); } return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: sourceTour }) : r.abort(); });
-      await g.addInitScript(() => { window.PH_TOUR = { endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "" }; });
-      await g.goto("http://x.test/industries/retail-media/tour/?embed=1&ph_test=1");
-      await g.waitForSelector(".g-flow");
-      assert.deepStrictEqual(await g.locator(".g-flow b").allTextContents(), ["Retailer setup", "Advertiser creates by talking", "Shopper journey & outcome"], "retail media gate demos");
-      assert.ok(/convenience retailer sell its screens/i.test(await g.locator(".g-panel h3").textContent()), "gate headline");
-      await g.locator(".g-flow").nth(1).click();
-      await g.fill("input[name=name]", "Ada Lovelace"); await g.fill("input[name=company]", "Orbit Co"); await g.fill("input[name=email]", "ada@gmail.com"); await g.check("input[name=consent]");
-      await g.locator("input[name=email]").blur();
-      assert.strictEqual(await g.textContent("#gerr"), "Please use your work email.", "free mail refused");
-      assert.strictEqual(await g.locator("#gsub.ok").count(), 0, "free mail keeps the button off");
-      await g.fill("input[name=email]", "ada@orbit.example"); await g.click("#gsub");
-      await g.waitForFunction(() => document.getElementById("gate").hidden);
-      assert.ok(body && body.industry === "retail-media" && body.flow === "Advertiser creates by talking" && body.page === "/industries/retail-media/tour/" && body.test === true, "retail-media lead body: " + JSON.stringify(body));
-      await g.close(); }
-    // Walk every step of the three flows with the visitor's company as the retailer.
-    const hooked = fast.replace('document.getElementById("prev").onclick', "window.__t = { S, D };\n$&");
-    const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
-    const errs = []; t.on("pageerror", (e) => errs.push(e.message));
-    await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort());
-    await t.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example", source: "Telco business model download" })));
-    await t.goto("http://x.test/industries/retail-media/tour/?embed=1");
-    await t.waitForSelector("#fs", { state: "visible" });
-    assert.strictEqual(await t.evaluate(() => window.__t.S.ind), "retail-media", "S.ind follows the path");
-    assert.ok(/Retail Media/.test(await t.title()), "document title: " + await t.title());
-    assert.deepStrictEqual(await t.locator(".chip").evaluateAll((c) => c.map((x) => x.childNodes[1].textContent)), ["Retailer setup", "Advertiser creates by talking", "Shopper journey & outcome"], "three flows");
-    const seen = new Set(), blanks = [], stepsSeen = [[], [], []];
-    for (let f = 0; f < 3; f++) {
-      await t.click(`.chip[data-k="${f}"]`); await t.click("#play"); const t0 = Date.now();
-      for (;;) {
-        const s = await t.evaluate(() => [document.getElementById("stage").innerText, document.getElementById("capT").textContent, document.getElementById("capS").textContent, document.getElementById("card").innerText, [...document.querySelectorAll("#stage svg text")].map((x) => x.textContent).join(" "), [...document.querySelectorAll("#stage [data-tip],#stage [aria-label]")].map((x) => x.getAttribute("data-tip") || x.getAttribute("aria-label")).join(" ")].join("\n"));
-        seen.add(s); const cap = await t.textContent("#capT"); if (!stepsSeen[f].includes(cap)) stepsSeen[f].push(cap);
-        // screens always show content: every tile in the journey and the displays has an svg with text
-        const bl = await t.evaluate(() => [...document.querySelectorAll("#stage .rm-tile")].filter((x) => !x.querySelector("svg text, svg rect")).length);
-        if (bl) blanks.push(bl);
-        if (await t.evaluate(() => !document.getElementById("card").hidden && /complete/i.test(document.getElementById("card").innerText))) break;
-        assert.ok(Date.now() - t0 < 120000, `retail media flow ${f + 1} finished`);
-        await t.waitForTimeout(100);
-      }
-    }
-    assert.deepStrictEqual(errs, [], "no page errors");
-    assert.strictEqual(blanks.length, 0, "no screen is ever blank");
-    assert.ok(stepsSeen[0].length === 5 && stepsSeen[1].length === 7 && stepsSeen[2].length === 6, "all steps played: " + JSON.stringify(stepsSeen.map((x) => x.length)));
-    const text = [...seen].join("\n");
-    for (const need of ["Before: one campaign after another", "Frostline Cold Drinks", "Bayside Test Stores", "Forecourt", "Shop front", "Coolers", "POS", "Direct deal", "Loyalty Gold", "Cold drinks", "Talk to me about your campaign", "Stay ice cold this summer", "Welcome back, Emma", "Direct advertiser deals", "Private auctions", "Open auction", "Unsold slots only", "No targeting", "Coming soon", "Highest CPM", "Premium CPM", "Market CPM"]) assert.ok(text.includes(need), "retail media tour shows: " + need);
-    // Rules of the brief: no real brands, no pricing, no US spelling, no project names, no explanatory copy under the chart (the explanation is the info tooltip), SSP/DSP only as coming soon.
-    const banned = text.match(/Google|Trade Desk|Amazon|Shell|BP\b|Coca|Pepsi|Red Bull|Monster|Walmart|Tesco|7-Eleven|Circle K|Nimbus|Harbourside|\$\s?\d|\bpricing\b|\bprice\b|personalization|Elementor|Angie|rob_ph|ph-mcp/gi);
-    assert.ok(!banned, "no real brands, pricing, US spelling or internal names: " + JSON.stringify(banned));
-    assert.ok(await t.evaluate(() => !!document.querySelector("#stage .rm-info, #stage .rm-fall") || true));
-    assert.ok(/Slots are offered upfront at the highest value first/.test(text) && /Only slots not sold that way fall through/.test(text), "the waterfall explanation is in the info tooltip");
-    await t.close();
-    // The yield screen has no sentence under the chart: the explanation lives only in the tooltip.
-    { const y = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-      await y.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort());
-      await y.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example" })));
-      await y.goto("http://x.test/industries/retail-media/tour/?embed=1"); await y.waitForSelector("#fs", { state: "visible" });
-      await y.click('.chip[data-k="2"]'); await y.click("#play"); await y.waitForFunction(() => /Sold upfront first/.test(document.getElementById("capT").textContent), null, { timeout: 60000 });
-      await y.click("#play");
-      assert.ok(!/fall through to open auction/i.test(await y.evaluate(() => document.querySelector(".rm-wf").parentElement.innerText)), "no explanatory sentence on the chart");
-      assert.ok(/Bayside Test Stores/.test(await y.evaluate(() => document.querySelector(".side .wm").textContent)), "the yield screen is the retailer's");
-      await y.close(); }
-    // 390px wide: the stage scales, the page does not scroll sideways, and the journey keeps its two-by-two screen layout.
-    { const m = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
-      await m.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast }) : r.abort());
-      await m.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example" })));
-      await m.goto("http://x.test/industries/retail-media/tour/?embed=1"); await m.waitForSelector("#fs", { state: "visible" });
-      await m.click('.chip[data-k="2"]'); await m.click("#play"); await m.waitForSelector(".rm-jg");
-      const g = await m.evaluate(() => { const c = [...document.querySelectorAll(".rm-jc")].map((x) => { const r = x.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]; }); return { c, sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }; });
-      assert.ok(g.c.length === 4 && g.c[0][1] === g.c[1][1] && g.c[2][1] === g.c[3][1] && g.c[2][1] > g.c[0][1] && g.c[0][0] === g.c[2][0] && g.c[1][0] > g.c[0][0], "two-by-two screens: " + JSON.stringify(g.c));
-      assert.ok(g.sw <= g.cw, `no sideways scroll at 390px: ${g.sw} > ${g.cw}`);
-      await m.close(); }
-  }
   // Fuel & convenience: the three standard flows on recreated HQ Admin screens (as pharmacy), convenience content, a four-location shopper scene, end card CTA to retail media.
   { const src = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
     const fast = src.replace("const k = reduce ? .35 : 1;", "const k = .03;"); assert.ok(fast !== src, "speed hook applied (convenience)");
@@ -688,10 +593,9 @@ try {
       for (const need of ["Campaigns", "Stores / Branches", "Targeting", "Retail Admin", "Coffee + Pastry", "Coffee and pastry deal", "Forecourt screens", "Shop front", "Cooler door screens", "POS screens", "Motorway sites", "City convenience", "Regional highway", "Truck stops", "Pastry out of stock", "Weekday mornings", "Every weekday", "Audience / Segments", "Loyalty Gold", "Purchase History", "Coffee", "Pump 4", "Driveway screens", "Coolers", "Welcome back, Sam", "Visitor Details", "illustrative"]) assert.ok(all.includes(need), "convenience walkthrough shows: " + need);
       const bad = all.match(/telco|pharmac|prescription|iPhone|Harbourside|Nimbus|Shell|BP |Caltex|7-Eleven|Coca|Red Bull|personalization|sun care|Frostline/i);
       assert.ok(!bad, "no other industry content, real brands or US spelling: " + (bad || [])[0]);
-      assert.strictEqual(await t.locator("#cta").getAttribute("href"), "/industries/retail-media/#ph-tour", "closing CTA links to the retail media walkthrough");
-      assert.strictEqual(await t.locator("#cta").getAttribute("target"), "_top", "CTA leaves the frame");
-      assert.ok(/See the retail media walkthrough/.test(await t.locator("#cta").innerText()), "CTA label");
-      assert.strictEqual(await t.locator("#nextflow").count(), 0, "no Next flow button on the last flow");
+      assert.strictEqual(await t.locator("#cta").count(), 0, "no retail media link on the end card");
+      assert.ok(!/retail media walkthrough|retail-media/i.test(await t.content().then((c) => c.replace(/<script[\s\S]*?<\/script>/g, ""))), "no retail media link or wording on the page");
+      assert.strictEqual(await t.locator("#nextflow").count(), 1, "end card loops with Next like pharmacy");
       assert.ok(await t.evaluate(() => window.dataLayer.some((e) => e.event === "ph_tour" && e.action === "complete" && e.industry === "convenience")), "complete event carries industry convenience");
       assert.deepStrictEqual(errs, [], "no page errors: " + JSON.stringify(errs));
       await t.close(); }
