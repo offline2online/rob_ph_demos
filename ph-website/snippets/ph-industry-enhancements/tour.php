@@ -1,8 +1,8 @@
 <?php
 /**
- * Interactive product tour (telco, pharmacy, retail media and fuel & convenience: one shared page, the path picks the industry).
+ * Interactive product tour (telco, pharmacy and fuel & convenience: one shared page, the path picks the industry).
  *
- * - GET /industries/telco/tour/, /industries/pharmacy/tour/, /industries/retail-media/tour/ and /industries/convenience/tour/ (with or without the trailing slash): the same tour page, served same-origin so the industry
+ * - GET /industries/telco/tour/, /industries/pharmacy/tour/ and /industries/convenience/tour/ (with or without the trailing slash): the same tour page, served same-origin so the industry
  *   page can frame it (`?embed=1`). The HTML is tour-page.php (generated from tour/tour.html by tools/build-tour.mjs) when deployed; otherwise a sha256-pinned copy, see tour_page(). Answered at template_redirect
  *   priority 0 so redirect_canonical never sees it.
  * - POST ph-site/v1/tour-lead: the tour's gate form. Shaped like telco-model: honeypot, throttle, private ph_lead post, `ph_lead_captured`.
@@ -15,23 +15,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 const TOUR_SOURCE = 'interactive-product-tour';
-const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation', 'Retailer setup', 'Advertiser creates by talking', 'Shopper journey & outcome', 'Fuel & convenience walkthrough' );
+const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation', 'Fuel & convenience walkthrough' );
 /** The three demos, as the tour's own gate lists them (GFLOWS in tour/tour.html): name and what it shows. Agent-facing text (twins, llms.txt) is generated from these. */
 const TOUR_DEMOS_STD = array(
 	array( 'Campaign creation', 'Talk a campaign into existence, in your brand.' ),
 	array( 'Localisation & scheduling', 'Every store gets its own version.' ),
 	array( 'Personalisation', 'The right offer the moment they check in.' ),
 );
-const TOUR_DEMOS_RM = array(
-	array( 'Retailer setup', 'Sell every screen, with loyalty targeting.' ),
-	array( 'Advertiser creates by talking', 'A whole campaign from a spoken brief.' ),
-	array( 'Shopper journey & outcome', 'One shopper, four screens, a higher CPM.' ),
-);
 /** Industries the tour serves: key = the `industry` the tour sends; path = where the page is served; page = the industry page the lead came from; demos = the three demos. */
 const TOUR_INDUSTRIES = array(
 	'telco'    => array( 'name' => 'Telco', 'path' => '/industries/telco/tour', 'page' => '/industries/telco/', 'label' => 'Interactive product tour – Telco', 'demos' => TOUR_DEMOS_STD ),
 	'pharmacy' => array( 'name' => 'Pharmacy', 'path' => '/industries/pharmacy/tour', 'page' => '/industries/pharmacy/', 'label' => 'Interactive product tour – Pharmacy', 'demos' => TOUR_DEMOS_STD ),
-	'retail-media' => array( 'name' => 'Retail Media', 'path' => '/industries/retail-media/tour', 'page' => '/industries/retail-media/', 'label' => 'Interactive product tour – Retail Media', 'demos' => TOUR_DEMOS_RM ),
 	'convenience' => array( 'name' => 'Fuel & Convenience', 'path' => '/industries/convenience/tour', 'page' => '/industries/convenience/', 'label' => 'Interactive product tour – Fuel & Convenience', 'demos' => TOUR_DEMOS_STD ),
 );
 
@@ -43,7 +37,7 @@ const TOUR_INDUSTRIES = array(
  */
 const TOUR_PAGE_OPTION  = 'ph_tour_page_html';
 const TOUR_PAGE_BACKOFF = 'ph_tour_page_backoff';
-const TOUR_PAGE_SHA256  = '410ff3535d9da67fcb44736a1423da2e5d3eba7ddece0327757a606ed6b9d942';
+const TOUR_PAGE_SHA256  = 'ac0296f4c5641703e29e9abd49196bb8345bc771ab69a53c25b55eb7f71f2d96';
 const TOUR_PAGE_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/tour.html';
 
 /**

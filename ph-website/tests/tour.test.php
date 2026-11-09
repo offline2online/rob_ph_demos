@@ -17,7 +17,7 @@ $fails = 0;
 function ok( $c, $m ) { global $fails; if ( ! $c ) { $fails++; fwrite( STDERR, "FAIL: $m\n" ); } }
 $dir = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements';
 
-foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embed=1', '/industries/telco/tour/', '/industries/pharmacy/tour/?embed=1', '/industries/pharmacy/tour?embed=1', '/industries/pharmacy/tour/', '/industries/retail-media/tour/?embed=1', '/industries/retail-media/tour' ) as $u ) {
+foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embed=1', '/industries/telco/tour/', '/industries/pharmacy/tour/?embed=1', '/industries/pharmacy/tour?embed=1', '/industries/pharmacy/tour/' ) as $u ) {
 	$out = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' ' . escapeshellarg( $u ) . ' GET' );
 	$cut  = strrpos( (string) $out, "\n@@" );
 	$j    = false === $cut ? null : json_decode( substr( $out, $cut + 3 ), true );
@@ -203,22 +203,13 @@ ok( 'pharmacy' === $pp['industry'] && 'Interactive product tour – Pharmacy' ==
 $pb = \AngieSnippets\PhIndustryEnhancements_10063\lead_ingest_body( $pp );
 ok( 'Interactive product tour – Pharmacy' === $pb['sourceLabel'] && '/industries/pharmacy/' === $pb['page'] && 'pharmacy' === $pb['pageIndustry'], 'pharmacy lead: ingest body sourceLabel, page and industry' );
 $GLOBALS['posts'] = array(); $GLOBALS['fired'] = array();
-foreach ( array( 'grocery', 'TELCO', '', null, array( 'pharmacy' ), 'telco ' ) as $bad ) {
+foreach ( array( 'retail-media', 'grocery', 'TELCO', '', null, array( 'pharmacy' ), 'telco ' ) as $bad ) {
 	$r = $call( array_merge( $good, array( 'industry' => $bad ) ) );
 	ok( 400 === $r->status && 'industry' === ( $r->data['field'] ?? '' ), 'unknown industry refused with 400: ' . json_encode( $bad ) );
 }
 $nb = $good; unset( $nb['industry'] );
 $r = $call( $nb ); ok( 400 === $r->status, 'a missing industry is refused with 400' );
 ok( ! $GLOBALS['posts'] && ! $GLOBALS['fired'], 'a refused industry stores and fires nothing' );
-/* retail media: its own path, label, page and flow names */
-$GLOBALS['dedupe'] = false; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array(); $GLOBALS['tr'] = array();
-$gr = array_merge( $good, array( 'industry' => 'retail-media', 'company' => 'Corner Stores Group', 'flow' => 'Shopper journey & outcome', 'page' => '/industries/retail-media/tour/' ) );
-$r = $call( $gr, '11.1.1.9' );
-$m = $GLOBALS['meta'][1] ?? array();
-ok( 200 === $r->status && 'Interactive product tour – Retail Media' === ( $m['ph_lead_source_label'] ?? '' ) && '/industries/retail-media/' === ( $m['ph_lead_page'] ?? '' ), 'retail media lead: source label and page' );
-ok( 'Shopper journey & outcome' === ( $m['ph_lead_tour_flow'] ?? '' ), 'retail media lead: the demo name is stored as the flow' );
-ok( 'retail-media' === ( $GLOBALS['fired'][0][1]['industry'] ?? '' ), 'retail media lead: ph_lead_captured carries industry retail-media' );
-$GLOBALS['posts'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['mails'] = array();
 /* fuel & convenience: its own industry, page, label and flow name */
 $GLOBALS['dedupe'] = false; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array();
 $gc = array_merge( $good, array( 'industry' => 'convenience', 'company' => 'Roadside Fuel Group', 'page' => '/industries/convenience/tour/', 'flow' => 'Fuel & convenience walkthrough' ) );
