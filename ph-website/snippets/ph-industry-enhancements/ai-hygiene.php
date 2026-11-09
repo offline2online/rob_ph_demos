@@ -27,7 +27,6 @@ function ai_feature_pages() {
 		'retail-queue-management'        => [ 'Queue Management', 'Virtual queues that keep customers moving' ],
 		'retail-appointment-bookings'    => [ 'Appointment Booking', 'Appointments booked from the screens and sites you already run' ],
 		'white-label-retail-media-platform' => [ 'White Label Retail Media Platform', 'Your own retail media network, branded as yours' ],
-		'retail-media-platform'          => [ 'Retail Media Platform', 'Your own screens, with measurable results from screen to sale' ],
 		'store-sites'                    => [ 'Store Sites', 'A mobile site for every store, personalised for each visitor' ],
 		'personalisation'                => [ 'Personalisation', 'Live store context combined with your own customer data' ],
 		'localisation-geo-targeting'     => [ 'Localisation and Geo-Targeting', 'The right message for the right store and location' ],
