@@ -1006,7 +1006,7 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".perm-table").count(), 0, "there is no permissions matrix");
       await c.visible("#role-permissions .role-perm-row", "the permissions render");
       const rows = await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-perm-row label")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(rows, ["Agent Board", "Staff Kanban", "Concepts", "Whiteboard", "Brand Guidelines", "Leads", "Prospects (TAM)", "Help Centre", "Settings", "Settings > User Management", "Releases", "Skills & phase bindings", "Project docs"]);
+      assert.deepStrictEqual(rows, ["Agent Board", "Staff Kanban", "Concepts", "Whiteboard", "Brand Guidelines", "Leads", "Prospects (TAM)", "Conversion Funnel", "Help Centre", "Settings", "Settings > User Management", "Releases", "Skills & phase bindings", "Project docs"]);
       await c.page.selectOption("#role-perm-concepts", "none");
       await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);
@@ -1898,6 +1898,44 @@ const scenarios = [
         for (const b of m.boxes) { assert.ok(b.h >= 32, `${w}px: ${b.q} is ${b.h}px tall`); assert.ok(b.in, `${w}px: ${b.q} is outside the card`); }
       }
       c.at("layout holds at every width");
+    },
+  },
+  {
+    name: "Promote: Conversion Funnel - sits below Prospects, nine stages, filters recalculate, empty state, compare",
+    seed: () => ({ ...seed({
+      prospects: { pa: { name: "Alpha Grocer", country: "United Kingdom", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom"], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) } },
+      funnelDaily: {
+        a: { date: "2026-11-02", channel: "Google Ads", campaign: "Spring", industry: "Grocery", country: "United Kingdom", impressions: 1000, clicks: 100, visits: 80, demoRequests: 10, downloads: 5 },
+        b: { date: "2026-11-03", channel: "Organic", campaign: "", industry: "QSR", country: "United Kingdom", impressions: 500, clicks: 20, visits: 20, demoRequests: 2, downloads: 1 },
+        c: { date: "2026-10-10", channel: "Google Ads", campaign: "Spring", industry: "Grocery", country: "United Kingdom", impressions: 400, clicks: 40, visits: 30, demoRequests: 4, downloads: 2 },
+      },
+    }), aceOpportunities: [
+      { id: "F1", name: "Menus", customer: "Alpha Grocer", stage: "Qualified", reviewStatus: "Approved", createdDate: "2026-11-02T12:00:00", partnerCentralUrl: "" },
+      { id: "F2", name: "Totems", customer: "Alpha Grocer", stage: "Launched", reviewStatus: "Approved", createdDate: "2026-11-03T12:00:00", partnerCentralUrl: "" },
+    ] }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-funnel-btn", "funnel-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/conversion-funnel", "the page has its own URL");
+      const order = await c.page.evaluate(() => { const a = document.getElementById("promote-prospects-btn"), b = document.getElementById("promote-funnel-btn"); return a.nextElementSibling === b; });
+      assert.ok(order, "Conversion Funnel sits directly below Prospects (TAM)");
+      const setRange = async (from, to) => { await c.page.fill("#funnel-from", from); await c.page.fill("#funnel-to", to); await c.page.dispatchEvent("#funnel-to", "change"); await c.page.dispatchEvent("#funnel-from", "change"); };
+      await setRange("2026-11-01", "2026-11-30");
+      const counts = () => c.page.evaluate(() => [...document.querySelectorAll("#funnel-stages .funnel-stage")].map((li) => li.dataset.stage + "=" + li.querySelector(".funnel-bar b").textContent.replace(/,/g, "")).join());
+      await until(async () => (await counts()) === "impressions=1500,clicks=120,visits=100,demos=12,downloads=6,aceCreated=2,aceOpen=1,aceClosed=1,deployed=1", "all nine stages with their counts", 8000);
+      assert.ok((await c.text("#funnel-stages")).includes("8% of previous"), "clicks are 8% of impressions");
+      assert.strictEqual(await c.page.locator("#funnel-page > p:not(.field-hint):not(.promote-empty):not([hidden])").count(), 0, "no explanatory copy under the chart");
+      assert.ok((await c.page.getAttribute("#funnel-info", "title")).length > 20, "help is an info tooltip");
+      await c.page.selectOption("#funnel-industry", "Grocery");
+      await until(async () => (await counts()).startsWith("impressions=1000,"), "the industry filter to narrow the funnel", 5000);
+      await c.page.selectOption("#funnel-channel", "Organic");
+      await c.visible("#funnel-empty", "the empty state for a combination with no data");
+      assert.ok((await c.text("#funnel-empty")).includes("Nothing matches"), "empty state says nothing matches");
+      await c.page.click("#funnel-reset");
+      await setRange("2026-11-01", "2026-11-30");
+      await c.page.check("#funnel-compare");
+      await until(async () => (await c.page.locator(".funnel-delta").count()) === 9, "a change per stage when comparing", 5000);
+      assert.ok((await c.text('[data-stage="impressions"] .funnel-delta')).includes("+1,100"), "change against the previous period");
     },
   },
   {

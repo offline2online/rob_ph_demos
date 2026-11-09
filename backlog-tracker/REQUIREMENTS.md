@@ -4396,3 +4396,35 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
   blank, never a new industry. It runs on read (`normaliseProspect`), on every
   write (`prospectFromInput`, so `upsert_prospects`) and on the industry filter
   of `list_prospects`. Stored legacy values are rewritten when a record is next saved.
+
+## Promote section: Conversion Funnel (9 Nov 2026)
+
+- **Promote › Conversion Funnel** (`#promote/conversion-funnel`, nav item directly
+  below Prospects (TAM); `public/js/funnel-page.js`, rules in `funnel-core.js`,
+  tests `test/funnel.test.mjs` and the "Conversion Funnel" click-through
+  scenario). Its own permission section (`conversion-funnel`, inherits
+  Prospects (TAM)), read-only.
+- **Nine stages, top to bottom:** ad impressions, click-throughs (Google Ads);
+  site visits, demo requests, calculator / model downloads (GA4); ACE
+  opportunities created, open, closed (won or lost); deployed (Launched). Each
+  row shows the count, the % of the previous stage, the % of the top, and a
+  funnel bar. "Closed" is measured against "created" (an opportunity leaves
+  "open" when it closes), and its tooltip says so. Counts recalculate live as
+  any filter changes; no explanatory copy on the page, only info tooltips.
+- **Filters (all combinable):** date range (local calendar days, quick ranges)
+  with **Compare to previous period** (same number of days straight before; per
+  stage the previous count, the change and the change in percentage points),
+  industry, channel / source (Google Ads, Organic, Direct, Referral, AWS
+  Marketplace), campaign, ad group / creative, company, region / country,
+  content touched. An ad group / creative filter only exists in the ad data, so
+  it empties the ACE stages. No match shows an empty state, not an error.
+- **Data:** stages 1-5 are daily rows in the **`funnelDaily`** collection
+  (`{date "YYYY-MM-DD", channel, campaign, adGroup, creative, industry, country,
+  content, company, impressions, clicks, visits, demoRequests, downloads}`),
+  readable by members, **writable only by the server** (rules deny clients).
+  **The ingest that fills it from the Google Ads API and the GA4 BigQuery export
+  (ph-analytics) is not built yet** and needs those credentials; until it runs
+  stages 1-5 show 0. Stages 6-9 use the console's ACE opportunities
+  (`/partnerCentral/v1/ace`) joined by company name to Leads (channel, content)
+  and Prospects (TAM) (industry, country, campaigns).
+- **Times:** days and dates are the viewer's local time, never UTC.

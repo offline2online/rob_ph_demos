@@ -10625,6 +10625,7 @@ document.getElementById("role-save").addEventListener("click", async () => {
 const promotePage = document.getElementById("promote-page");
 const leadsPage = document.getElementById("leads-page");
 const prospectsPage = document.getElementById("prospects-page");
+const funnelPage = document.getElementById("funnel-page");
 let promotePageKey = "";
 // Promote › Prospects (TAM) (prospects-page.js): the AG Grid database, mounted on first open.
 let prospectsUi = null;
@@ -10638,6 +10639,19 @@ function ensureProspectsUi() {
     });
   }
   return prospectsUiLoading;
+}
+// Promote › Conversion Funnel (funnel-page.js): mounted the first time the page opens.
+let funnelUi = null;
+let funnelUiLoading = null;
+function ensureFunnelUi() {
+  if (funnelUi) return Promise.resolve(funnelUi);
+  if (!funnelUiLoading) {
+    funnelUiLoading = import("./funnel-page.js").then(({ mountFunnelPage }) => {
+      funnelUi = mountFunnelPage({ db, apiHeaders: consoleApiHeaders });
+      return funnelUi;
+    });
+  }
+  return funnelUiLoading;
 }
 // Promote › Leads (leads-page.js): mounted the first time the page opens.
 let leadsUi = null;
@@ -10671,7 +10685,7 @@ function renderPromotePage() {
   document.getElementById("promote-requirements-wrap").hidden = true;
 }
 function openPromotePage(key = PROMOTE_PAGES[0].key) {
-  if (!pageAllowed(key === "prospects" ? "prospects" : "promote")) return;
+  if (!pageAllowed(key === "prospects" || key === "conversion-funnel" ? key : "promote")) return;
   closeAllSubPages();
   ensureLazy("projectDocs");
   document.getElementById("projects-root").hidden = true;
@@ -10683,6 +10697,9 @@ function openPromotePage(key = PROMOTE_PAGES[0].key) {
   } else if (key === "prospects") {
     prospectsPage.hidden = false;
     ensureProspectsUi().then((ui) => { ui.start(); ui.render(); });
+  } else if (key === "conversion-funnel") {
+    funnelPage.hidden = false;
+    ensureFunnelUi().then((ui) => { ui.start(); ui.render(); });
   } else {
     promotePage.hidden = false;
   }
@@ -10691,7 +10708,8 @@ function openPromotePage(key = PROMOTE_PAGES[0].key) {
   renderPromotePage();
 }
 function closePromotePage() {
-  if (promotePage.hidden && leadsPage.hidden && prospectsPage.hidden) return;
+  if (promotePage.hidden && leadsPage.hidden && prospectsPage.hidden && funnelPage.hidden) return;
+  funnelPage.hidden = true;
   promotePage.hidden = true;
   leadsPage.hidden = true;
   prospectsPage.hidden = true;
@@ -11875,6 +11893,7 @@ const ROUTE_TITLES = {
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
   "#promote/leads": "Promote: Leads",
   "#promote/prospects": "Promote: Prospects (TAM)",
+  "#promote/conversion-funnel": "Promote: Conversion Funnel",
   "#settings/projects": "Settings: Projects",
   "#settings/releases": "Settings: Releases",
   "#settings/skills": "Settings: Skills & phase bindings",
@@ -12025,7 +12044,7 @@ function applyRouteFromHash() {
     if (faqSettingsPage.hidden) openFaqSettingsPage(k, um && um.tab);
     else if (k !== settingsPage || (um && um.tab !== umTab)) showSettingsPage(k, um && um.tab);
   }
-  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : promotePage.hidden)) openPromotePage(k); }
+  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : promotePage.hidden)) openPromotePage(k); }
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
@@ -12036,7 +12055,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
