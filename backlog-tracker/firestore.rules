@@ -603,6 +603,7 @@ service cloud.firestore {
     // save keeps them, since request.resource is the whole document.
     function isLead(d) {
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
+          "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
         && d.company is map && isNonEmptyBoundedString(d.company.get("name", null), 120)
         && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300
@@ -618,7 +619,10 @@ service cloud.firestore {
         && d.get("prospectId", "") is string && d.get("prospectId", "").size() <= 100
         && d.get("test", false) is bool
         && d.get("sourcePage", "") is string && d.get("sourcePage", "").size() <= 300
-        && d.get("sourceIndustry", "") is string && d.get("sourceIndustry", "").size() <= 120;
+        && d.get("sourceIndustry", "") is string && d.get("sourceIndustry", "").size() <= 120
+        && d.get("sourceLabel", "") is string && d.get("sourceDetail", "") is string
+        && d.get("websiteActivity", []) is list && d.get("history", []) is list && d.get("history", []).size() <= 100
+        && d.get("archivedByEmail", "") is string;
     }
     match /leads/{leadId} {
       allow read: if isBoardReader();

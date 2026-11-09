@@ -15,6 +15,8 @@
 //   sourceLabel / sourceDetail  which website form ("Interactive product tour – Telco") and demo ("Personalisation"), "" when not sent
 //   websiteActivity[]  { at (ISO), label, detail, page }, every website submission, the 20 newest
 //   sourcePage / sourceIndustry  the page and industry a website lead came from
+//   history[]      { at (ISO), by (email), kind, text }, the newest 100: notes and every change an agent or the board made
+//   archivedAt / archivedByEmail  set when archived (recoverable); the board hides an archived lead
 //   createdAt / updatedAt / stageChangedAt / createdByEmail / updatedByEmail
 
 export const STAGES = [
@@ -37,6 +39,8 @@ export const BUYING_ROLES = [
 ];
 export const BUYING_ROLE_KEYS = BUYING_ROLES.map((r) => r.key);
 
+export const HISTORY_LIMIT = 100;
+export const NOTE_MAX = 2000;
 export const LIMITS = { name: 120, website: 300, industry: 120, source: 80, sourceLabel: 120, sourceDetail: 120, activity: 20, jobTitle: 120, email: 200, linkedin: 300, countries: 60, contacts: 25, country: 60 };
 
 export const stageLabel = (key) => (STAGES.find((s) => s.key === key) || { label: String(key || "") }).label;
@@ -206,6 +210,9 @@ export function normaliseLead(id, d) {
     websiteActivity: (Array.isArray(x.websiteActivity) ? x.websiteActivity : []).filter((a) => a && typeof a === "object")
       .map((a) => ({ at: typeof a.at === "string" ? a.at : "", atMs: ms(a.at), label: String(a.label || ""), detail: String(a.detail || ""), page: String(a.page || "") })),
     prospectId: String(x.prospectId || ""),
+    archived: !!x.archivedAt,
+    history: (Array.isArray(x.history) ? x.history : []).filter((h) => h && typeof h === "object")
+      .map((h) => ({ at: typeof h.at === "string" ? h.at : "", atMs: ms(h.at), by: String(h.by || ""), kind: String(h.kind || ""), text: String(h.text || "") })),
     customerAccount: x.customerAccount && typeof x.customerAccount === "object" ? { id: String(x.customerAccount.id || ""), name: String(x.customerAccount.name || "") } : null,
     enrichment: x.enrichment && typeof x.enrichment === "object" ? x.enrichment : null,
     tam: x.tam && typeof x.tam === "object" && !Array.isArray(x.tam) ? x.tam : null, // read-only: no TAM data model yet
@@ -227,6 +234,15 @@ export function groupByStage(leads) {
   for (const l of leads || []) (lanes[l.stage] || lanes[DEFAULT_STAGE]).push(l);
   for (const k of STAGE_KEYS) lanes[k].sort((a, b) => (b.updatedAtMs - a.updatedAtMs) || a.company.name.localeCompare(b.company.name));
   return lanes;
+}
+
+// One line of a lead's history, and the list after adding it (newest last, capped).
+export function historyEntry(by, kind, text, at) {
+  return { at: at || new Date().toISOString(), by: str(by, LIMITS.email), kind: str(kind, 30), text: str(text, NOTE_MAX) };
+}
+export function appendHistory(history, entry) {
+  const list = Array.isArray(history) ? history.filter((h) => h && typeof h === "object") : [];
+  return [...list, entry].slice(-HISTORY_LIMIT);
 }
 
 // A lead may only be marked converted by naming the customer account it became.

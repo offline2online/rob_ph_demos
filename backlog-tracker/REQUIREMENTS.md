@@ -4099,10 +4099,24 @@ Rules:
   editors write (`firestore.rules` → `isLead`, with the cases in
   `test/firestore-rules.test.js`).
 - **Moving a card**: drag it to another lane, or use its "Move to" select
-  (touch). The write is live for every open tab. Over MCP, `update_lead_stage`
-  moves one company (by `leadId` or company name) and `list_leads` reads the
-  pipeline; there is no other lead tool (the website capture that creates
-  leads is a separate ticket, and writes the same `leads` documents).
+  (touch). The write is live for every open tab. Over MCP an agent manages
+  the whole pipeline with the board's permissions (editor writes, viewer reads),
+  each write attributed to the member's email: `list_leads` (filters stage,
+  company, assignee, source, industry, free text `q`; `limit`/`offset`; archived
+  leads only with `includeArchived`), `get_lead`, `create_lead` / `create_leads`
+  (stage defaults to `lead`; a company name that already exists, case-insensitive,
+  archived included, is refused and the existing lead returned), `update_lead`,
+  `update_lead_stage`, `add_lead_contact` / `update_lead_contact` /
+  `remove_lead_contact` (buying roles), `add_lead_note`,
+  `link_lead_customer_account` (records the account and moves the lead to Closed
+  Won unless `moveToClosedWon` is false) / `unlink_lead_customer_account`,
+  `link_lead_prospect` / `unlink_lead_prospect` (sets `prospectId` on the lead and
+  `leadId` on the prospect; one lead per prospect), `archive_lead` /
+  `restore_lead` (`archivedAt`; the board hides archived leads) and `delete_lead`
+  (admin only, permanent, needs `confirm: true`). Every MCP change appends
+  `{at, by, kind, text}` to the lead's `history` (newest 100), shown on the
+  lead drawer as "Notes and history"; the board's own edits are not logged
+  there. The website capture that creates leads writes the same `leads` documents.
 - **Enrichment**: the lead's **Enrich** button saves the form, then
   `leadEnrich` (`functions/lead-enrich.js`) reads the company's website (title,
   description, its LinkedIn page) and, if a BuiltWith key is stored in the

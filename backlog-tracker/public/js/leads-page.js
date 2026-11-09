@@ -47,7 +47,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (started) return;
     started = true;
     unsub = onSnapshot(collection(db, "leads"), (snap) => {
-      leads = snap.docs.map((d) => normaliseLead(d.id, d.data({ serverTimestamps: "estimate" })));
+      leads = snap.docs.map((d) => normaliseLead(d.id, d.data({ serverTimestamps: "estimate" }))).filter((l) => !l.archived);
       render();
       loadDetails();
     }, () => { board.innerHTML = '<p class="promote-empty">Leads could not be loaded. Reload the page to try again.</p>'; });
@@ -190,6 +190,10 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (!l.prospectId) return "";
     return `<section class="lead-sum-section" id="lead-sum-prospect"><h3>Prospect record</h3><dl class="lead-sum-dl">${row("From", '<a href="#promote/prospects">Prospects (TAM)</a>')}</dl></section>`;
   }
+  function historyHTML(l) {
+    if (!l.history.length) return "";
+    return `<section class="lead-sum-section" id="lead-sum-history"><h3>Notes and history</h3><ul class="lead-sum-activity">${[...l.history].reverse().map((h) => `<li>${esc(h.atMs ? fmtDate(h.atMs) : "")}${h.by ? ` · ${esc(memberName(h.by))}` : ""} · ${esc(h.text)}</li>`).join("")}</ul></section>`;
+  }
   function renderSummary() {
     const l = leads.find((x) => x.id === summaryId);
     if (!l) { closeSummary(); return; }
@@ -228,6 +232,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
         ${row("Customer account", l.customerAccount ? esc(l.customerAccount.name || l.customerAccount.id) + (l.customerAccount.id && l.customerAccount.name ? ` (${esc(l.customerAccount.id)})` : "") : "")}
       </dl></section>
       ${l.websiteActivity.length ? `<section class="lead-sum-section"><h3>Website activity</h3><ul class="lead-sum-activity">${[...l.websiteActivity].reverse().map((a) => `<li>${esc(a.atMs ? fmtDate(a.atMs) : "")} · ${esc(a.label || "Website form")}${a.detail ? ` · ${esc(a.detail)}` : ""}</li>`).join("")}</ul></section>` : ""}
+      ${historyHTML(l)}
       <section class="lead-sum-section"><h3>Contacts</h3>${l.contacts.length ? l.contacts.map((c) => `<div class="lead-sum-contact">
         <p class="lead-sum-contact-name">${esc(c.name)}${c.buyingRole ? ` <span class="lead-sum-role">${esc(roleLabel(c.buyingRole))}</span>` : ""}</p>
         ${c.jobTitle ? `<p class="lead-card-line">${esc(c.jobTitle)}</p>` : ""}
