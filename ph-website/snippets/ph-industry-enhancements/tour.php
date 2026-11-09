@@ -1,8 +1,8 @@
 <?php
 /**
- * Interactive product tour (telco and pharmacy: one shared page, the path picks the industry).
+ * Interactive product tour (telco, pharmacy and retail media: one shared page, the path picks the industry).
  *
- * - GET /industries/telco/tour/ and /industries/pharmacy/tour/ (with or without the trailing slash): the same tour page, served same-origin so the industry
+ * - GET /industries/telco/tour/, /industries/pharmacy/tour/ and /industries/retail-media/tour/ (with or without the trailing slash): the same tour page, served same-origin so the industry
  *   page can frame it (`?embed=1`). The HTML is tour-page.php (generated from tour/tour.html by tools/build-tour.mjs) when deployed; otherwise a sha256-pinned copy, see tour_page(). Answered at template_redirect
  *   priority 0 so redirect_canonical never sees it.
  * - POST ph-site/v1/tour-lead: the tour's gate form. Shaped like telco-model: honeypot, throttle, private ph_lead post, `ph_lead_captured`.
@@ -15,11 +15,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 const TOUR_SOURCE = 'interactive-product-tour';
-const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation' );
+const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation', 'Retailer setup', 'Advertiser creates by talking', 'Shopper journey & outcome' );
 /** Industries the tour serves: key = the `industry` the tour sends; path = where the page is served; page = the industry page the lead came from. */
 const TOUR_INDUSTRIES = array(
 	'telco'    => array( 'name' => 'Telco', 'path' => '/industries/telco/tour', 'page' => '/industries/telco/', 'label' => 'Interactive product tour – Telco' ),
 	'pharmacy' => array( 'name' => 'Pharmacy', 'path' => '/industries/pharmacy/tour', 'page' => '/industries/pharmacy/', 'label' => 'Interactive product tour – Pharmacy' ),
+	'retail-media' => array( 'name' => 'Retail Media', 'path' => '/industries/retail-media/tour', 'page' => '/industries/retail-media/', 'label' => 'Interactive product tour – Retail Media' ),
 );
 
 /**
@@ -30,7 +31,7 @@ const TOUR_INDUSTRIES = array(
  */
 const TOUR_PAGE_OPTION  = 'ph_tour_page_html';
 const TOUR_PAGE_BACKOFF = 'ph_tour_page_backoff';
-const TOUR_PAGE_SHA256  = 'f597c6da1f009f743d2f29b1c45ae7a077d3affa1a5ddfa088001e03b4da0cdc';
+const TOUR_PAGE_SHA256  = 'a4bd4fb67cf51d2755fba8ba3134c9f966560f53d793f1a1b50d586a72336e37';
 const TOUR_PAGE_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/tour.html';
 
 /**

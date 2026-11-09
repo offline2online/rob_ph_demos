@@ -663,6 +663,49 @@ html.fs .cap b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden
 html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
 @media (max-width:599px){html.fs .bar{flex-wrap:wrap;gap:8px 16px}html.fs .cap{order:-1;flex:1 1 100%}html.fs .cap b{white-space:normal}html.fs .dots{order:4;flex:1 1 100%;margin-right:0;gap:4px}html.fs .dot{flex:1 1 0;width:auto;max-width:26px}html.fs .fsbtn{display:inline-flex;order:3;margin-left:0;flex:0 0 auto}}
 @media (max-height:520px) and (min-width:600px){html.fs .bar{width:auto;max-width:none;margin-inline:0;flex-wrap:nowrap;padding-block:0;gap:8px 10px}html.fs .dot{width:16px}html.fs .cap{order:5;flex:1 1 0;text-align:right}html.fs .cap span{display:none}html.fs .cap b{font-size:13px}}
+
+/* ---- retail media (convenience retail) ---- */
+.rm-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.rm-card{background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:10px}
+.rm-ch{display:flex;align-items:center;gap:6px;font-size:14px}.rm-ch .ms{font-size:20px;color:#169bc2}.rm-ch small{margin-left:auto;color:#7a8794;font-size:12px}
+.rm-view{height:170px;margin:8px 0;background:#0f1424;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.rm-tile{display:block;overflow:hidden;border-radius:4px;background:#0f1424}.rm-tile svg{display:block;width:100%;height:100%}
+.rm-plh{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:#7a8794;margin-bottom:2px}
+.rm-slot{display:flex;gap:6px;align-items:center;padding:5px 6px;border:1px solid #edf0f3;border-radius:6px;margin-top:4px;font-size:12px;transition:background .3s}
+.rm-slot .n{width:16px;height:16px;border-radius:8px;background:#eef1f4;text-align:center;font-size:10px;line-height:16px;color:#5a6479}.rm-slot .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rm-slot .b{font-size:10px;color:#7a8794}
+.rm-slot.ad{background:#eaf6ff;border-color:#9ccbf0;font-weight:600}.rm-slot.ad .b{color:#0a5c99}
+.rm-tbl{border:1px solid #e3e8ee;border-radius:8px;background:#fff;overflow:hidden}
+.rm-th,.rm-tr{display:grid;grid-template-columns:2fr 1fr 1.3fr 1fr 1fr;gap:10px;padding:12px 14px;align-items:center;font-size:14px}
+.rm-th{background:#f4f6f8;font-weight:600;color:#44505c}.rm-tr{border-top:1px solid #eef1f3}.rm-tr.new{background:#eaf6ff;animation:reveal .6s ease both}
+.rm-tr .sd,.rm-th .sd{display:inline-block;width:8px;height:8px;border-radius:4px;margin-right:6px}
+.rm-rules{display:flex;flex-direction:column;gap:8px}.rm-rule{display:flex;align-items:center;gap:8px;animation:reveal .5s ease both}
+.rm-rule .rf{border:1px solid #d6dce2;border-radius:6px;padding:8px 12px;background:#fff;font-size:14px;min-width:150px}.rm-rule .rf.op{min-width:90px;color:#5a6479}.rm-rule .rf.v{background:#eaf6ff;border-color:#9ccbf0;font-weight:600}.rm-rule .and{font-size:11px;font-weight:700;color:#169bc2;width:34px}
+.rm-login{position:absolute;inset:0;background:linear-gradient(160deg,#eef3f6,#e3ebf0);display:flex;align-items:center;justify-content:center}
+.rm-lc{width:420px;background:#fff;border-radius:14px;padding:30px 32px;box-shadow:0 18px 40px rgba(10,30,45,.18);display:flex;flex-direction:column;gap:6px}
+.rm-lm{display:flex;align-items:center;gap:8px;font-size:18px;margin-bottom:10px}.rm-lc h3{margin:6px 0 0;font-size:20px}.rm-ls{color:#7a8794;font-size:14px;margin-bottom:8px}.rm-lc label{font-size:13px;color:#5a6479;margin-top:6px}.rm-lc .aibtn{margin-top:14px;align-self:flex-start}
+.rm-j{position:absolute;inset:0;background:linear-gradient(160deg,#141c33,#0b1020);color:#e9edf6;display:flex;flex-direction:column;padding:22px 28px;gap:16px}
+.rm-jh{display:flex;align-items:center;gap:12px;font-size:16px}.rm-jh span:last-child{color:#a3adc2;font-size:14px}
+.rm-jm{display:flex;gap:20px;flex:1;min-height:0}.rm-jg{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:14px}
+.rm-jc{background:#161d31;border:2px solid #2a3350;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;transition:border-color .4s,box-shadow .4s;min-height:0}
+.rm-jc.on{border-color:#60d838;box-shadow:0 0 0 4px rgba(96,216,56,.18)}
+.rm-jl{display:flex;align-items:center;gap:8px;font-size:14px}.rm-jl .ms{font-size:18px;color:#4fc3e3}.rm-jl i{margin-left:auto;font-style:normal;font-size:11px;background:#60d838;color:#0f1424;border-radius:10px;padding:2px 9px;font-weight:700}
+.rm-jv{flex:1;display:flex;align-items:center;justify-content:center;background:#0b1020;border-radius:8px;min-height:0;overflow:hidden}
+.rm-sh{width:270px;background:#161d31;border:1px solid #2a3350;border-radius:12px;padding:18px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.rm-av{width:54px;height:54px;border-radius:27px;background:#169bc2;display:flex;align-items:center;justify-content:center}.rm-av .ms{font-size:32px;color:#fff}.rm-sh b{font-size:20px}.rm-sh small{color:#a3adc2;font-size:13px}
+.rm-sg{display:flex;gap:8px;align-items:flex-start;background:#0b1020;border-radius:8px;padding:10px;font-size:13px;margin-top:6px}.rm-sg .ms{font-size:18px;color:#60d838}
+.rm-at{width:100%;margin-top:8px;display:flex;flex-direction:column;gap:8px}.rm-at div{display:flex;justify-content:space-between;border-top:1px solid #2a3350;padding-top:8px;font-size:13px}.rm-at span{color:#a3adc2}
+.rm-path{display:flex;align-items:center;gap:10px;justify-content:center}.rm-st{display:flex;align-items:center;gap:6px;font-size:13px;color:#a3adc2;padding:6px 12px;border-radius:16px;background:#161d31}.rm-st.done{background:#60d838;color:#0f1424;font-weight:700}.rm-st .ms{font-size:18px}.rm-sl{width:48px;height:2px;background:#2a3350}
+.rm-wf{display:flex;flex-direction:column;gap:6px}
+.rm-yr{display:grid;grid-template-columns:34px 230px 1fr 190px 150px;gap:14px;align-items:center;background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:14px 16px;opacity:.55;transition:opacity .4s}.rm-yr.on{opacity:1}
+.rm-yn{width:28px;height:28px;border-radius:14px;background:#169bc2;color:#fff;text-align:center;line-height:28px;font-weight:700}.rm-yt{display:flex;flex-direction:column}.rm-yt small{color:#7a8794;font-size:12px}
+.rm-trk{height:14px;background:#eef1f4;border-radius:7px;overflow:hidden}.rm-trk i{display:block;height:100%;background:linear-gradient(90deg,#169bc2,#60d838);border-radius:7px;transition:width .9s cubic-bezier(.3,0,.2,1)}
+.rm-chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;border:1px solid #d6dce2;border-radius:16px;padding:4px 12px;color:#5a6479;background:#fff}.rm-chip.ok{border-color:#60d838;color:#1c7a10;background:#f0fbec}.rm-chip .ms{font-size:16px}.rm-chip em{font-style:normal;font-size:11px;background:#fff3d6;color:#8a5a00;border-radius:8px;padding:1px 7px;margin-left:4px}
+.rm-cpm{display:flex;align-items:flex-end;gap:3px}.rm-cpm i{width:8px;border-radius:2px;background:#dce1eb}.rm-cpm i.on{background:#169bc2}.rm-cpm em{font-style:normal;font-size:12px;margin-left:8px;align-self:center;color:#44505c}
+.rm-fall{display:flex;align-items:center;gap:6px;justify-content:center;font-size:12px;color:#9aa4ae;height:22px;transition:color .4s}.rm-fall.on{color:#169bc2;font-weight:600}.rm-fall .ms{font-size:16px}
+.rm-soon{display:flex;align-items:center;gap:10px;margin-top:16px}.rm-soon>.ms{color:#7a8794}
+.rm-info{display:inline-flex;vertical-align:middle;position:relative;cursor:help;color:#169bc2}.rm-info .ms{font-size:20px}
+.rm-info:hover::after,.rm-info:focus::after{content:attr(data-tip);position:absolute;left:26px;top:-6px;width:340px;background:#1c2540;color:#fff;font:400 13px/1.4 Roboto,Arial,sans-serif;padding:10px 12px;border-radius:8px;z-index:5}
+@media (max-width:600px){.rm-info:hover::after,.rm-info:focus::after{width:260px}}
 </style>
 </head>
 <body>
@@ -700,7 +743,10 @@ html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
 <script>
 (() => {
 /* ================= data ================= */
-const FLOWS = [
+const IS_RM = /^\/industries\/retail-media\/tour(\/|$)/.test(location.pathname);
+const FLOWS = IS_RM ? [
+  ["Retailer setup", true, "Slots · direct deal"], ["Advertiser creates by talking", true, "Voice brief · creative"], ["Shopper journey & outcome", true, "Forecourt to POS · yield"]
+] : [
   ["Automated campaign creative", true], ["Seamless localisation & scheduling", true, "Stores · digital twin"], ["Seamless personalisation", true, "Check-in · first-party data"]
 ];
 const IND = {
@@ -739,17 +785,39 @@ const IND = {
     thumbs: ["leaf", "skin", "queue", "plane"],
     p3: { name: "Gold Members | Extra 20% off sun care", headline: "Gold members save more", sub: "Extra 20% off sun care for Gold members*", big: "+20%", bigSub: "GOLD SUN CARE BONUS*",
       legal: "*Loyalty Gold members only, on the selected sun care range. While stocks last. Always read the label and use only as directed.", audience: ["Loyalty Gold"] }
+  },
+  /* Fictional convenience retailer (the visitor's company replaces the name) and a fictional cold drinks advertiser (adv); p3 is the loyalty message shoppers see. */
+  "retail-media": {
+    brand: "Larkspur Convenience", color: "#14507A", accent: "#F2A900", stores: 120, rows: [], thumbs: ["snow", "bolt", "snow", "bolt"],
+    adv: {
+      brand: "Frostline Cold Drinks", color: "#0A5C99", accent: "#E0393E",
+      rows: [
+        ["TARGETED", "Frostline Zero | Summer launch", "Soft drink buyers", ["tv"]],
+        ["SCHEDULED", "Frostline Iced Tea | Back to school", "Lunchtime shoppers", ["tv"]],
+        ["LOCALISED", "Frostline Sparkling | Weekend refresh", "Weekend shoppers", ["tv"]],
+        ["TRIGGERED", "Frostline Energy | Road trip", "Drivers", ["tv"]]
+      ],
+      brief: "Summer launch for Frostline Cold Drinks: a free upsize on every ice-cold Frostline for loyalty members. Run it on the forecourt screens, the shop front, the cooler doors and the checkout screens in every store from December to February, aimed at drivers and lunchtime shoppers.",
+      name: "Frostline Summer | Ice-cold refresh",
+      details: "Summer campaign for Frostline Cold Drinks across the retailer's forecourt, shop front, cooler door and checkout screens, offering loyalty members a free upsize on every ice-cold Frostline. Creative leads with the refresh and points shoppers to the coolers.",
+      products: ["Frostline Cola", "Frostline Iced Tea"], audience: ["Drivers", "Lunchtime shoppers"], objective: "Drive Sales",
+      headline: "Stay ice cold this summer", sub: "Grab a Frostline on your way through*", legal: "*While stocks last. Participating stores only.",
+      big: "ICE COLD", bigSub: "FROSTLINE SUMMER*", change: "Make the background brighter for daytime forecourts"
+    },
+    p3: { name: "Gold Members | Free Frostline upsize", headline: "Gold members drink more", sub: "A free upsize on every Frostline*", big: "FREE UPSIZE", bigSub: "GOLD MEMBER BONUS*",
+      legal: "*Loyalty Gold members only. While stocks last. Participating stores only.", audience: ["Loyalty Gold"] }
   }
 };
 /* One tour source for every industry page: the page path picks the industry (/industries/pharmacy/tour/ is pharmacy, anything else telco). */
-const IND_FROM_PATH = /^\/industries\/pharmacy\/tour(\/|$)/.test(location.pathname) ? "pharmacy" : "telco";
+const IND_FROM_PATH = IS_RM ? "retail-media" : /^\/industries\/pharmacy\/tour(\/|$)/.test(location.pathname) ? "pharmacy" : "telco";
 const S = { flow: 0, ind: IND_FROM_PATH, brand: null, color: null, custom: false, step: -1, paused: false, scale: 1, bright: false };
-try { document.title = "Interactive product tour · " + (S.ind === "pharmacy" ? "Pharmacy" : "Telco Retail") + " | Personalisation Hub"; } catch (e) {}
-const INDLABEL = S.ind === "pharmacy" ? "pharmacy" : "telco";
+try { document.title = "Interactive product tour · " + (S.ind === "pharmacy" ? "Pharmacy" : IS_RM ? "Retail Media" : "Telco Retail") + " | Personalisation Hub"; } catch (e) {}
+const INDLABEL = S.ind === "pharmacy" ? "pharmacy" : IS_RM ? "retail media" : "telco";
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const D = () => S.flow === 2 ? { ...IND[S.ind], ...IND[S.ind].p3 } : IND[S.ind];
-const B = () => S.brand || D().brand;
-const C = () => S.color || D().color;
+const D = () => IS_RM ? (S.flow === 0 ? IND[S.ind] : S.flow === 1 ? { ...IND[S.ind], ...IND[S.ind].adv } : { ...IND[S.ind], ...IND[S.ind].adv, ...IND[S.ind].p3 }) : S.flow === 2 ? { ...IND[S.ind], ...IND[S.ind].p3 } : IND[S.ind];
+/* Retail media: the retailer's name and colour on its own screens (flow 1), the advertiser's on the advertiser's campaign (flows 2 and 3). */
+const B = () => IS_RM && S.flow > 0 ? D().brand : S.brand || D().brand;
+const C = () => IS_RM && S.flow > 0 ? D().color : S.color || D().color;
 
 /* ================= colour + svg helpers ================= */
 const hx = h => { h = h.replace("#",""); if (h.length===3) h=[...h].map(c=>c+c).join(""); return [0,2,4].map(i=>parseInt(h.substr(i,2),16)); };
@@ -764,6 +832,12 @@ function logoSVG(size, onDark) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="${c}"/><circle cx="31" cy="9" r="5" fill="${D().accent}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="${ini.length>1?15:18}" fill="#fff">${ini}</text></svg>`;
 }
 function illo(x, y, s, a, dark) {
+  if (S.ind === "retail-media") return `<g transform="translate(${x} ${y + 10 * s}) scale(${s})">
+    <circle cx="150" cy="70" r="70" fill="${a}" opacity=".22"/>
+    <g transform="rotate(-8 100 120)"><rect x="62" y="20" width="76" height="190" rx="16" fill="#ffffff"/><rect x="62" y="20" width="76" height="190" rx="16" fill="${dark}" opacity=".08"/><rect x="62" y="64" width="76" height="86" fill="${a}"/>
+    <rect x="70" y="8" width="60" height="16" rx="6" fill="${dark}"/><text x="100" y="116" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="17" fill="#fff">FROST</text>
+    <path d="M100 160 v30 M88 168 l24 14 M112 168 l-24 14" stroke="${dark}" stroke-width="3" stroke-linecap="round" opacity=".7"/></g>
+    <g fill="#ffffff" opacity=".9"><circle cx="30" cy="40" r="4"/><circle cx="196" cy="150" r="5"/><circle cx="20" cy="150" r="3"/><circle cx="190" cy="20" r="3"/></g></g>`;
   if (S.ind === "telco") return `<g transform="translate(${x} ${y}) scale(${s})">
     <g transform="rotate(-12 40 120)" opacity=".55"><rect x="0" y="20" width="90" height="180" rx="16" fill="${dark}"/><rect x="6" y="28" width="78" height="164" rx="11" fill="#ffffff22"/></g>
     <rect x="70" y="0" width="120" height="240" rx="22" fill="#0d1114"/><rect x="77" y="8" width="106" height="224" rx="16" fill="url(#scr${gid})"/>
@@ -816,7 +890,7 @@ function art(kind, variant, bright = S.bright, opts = {}) {
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" role="img" aria-label="${esc(d.headline)}">${defs}<rect width="${W}" height="${H}" fill="url(#g${gid})"/>${body}</svg>`;
 }
 function thumbSVG(kind) {
-  const c = C(), a = D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",queue:"hourglass_top",plane:"flight"}[kind];
+  const c = C(), a = D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",queue:"hourglass_top",plane:"flight",snow:"ac_unit",bolt:"bolt"}[kind];
   return `<div style="width:100%;height:100%;background:linear-gradient(135deg,${mix(c,"#fff",.15)},${mix(c,"#000",.3)});display:flex;align-items:center;justify-content:space-between;padding:0 8px;color:#fff"><span style="font:900 9px Roboto;letter-spacing:.3px;line-height:1.1">${esc(initials(B()))}</span><span class="ms" style="font-size:22px;color:${a}">${ic}</span></div>`;
 }
 
@@ -886,7 +960,7 @@ const crumbD = () => `Home &gt; Campaigns &gt; <b>${esc(D().name)}</b>`;
 function briefScreen(filled, on, cta = "story") {
   const d = D(), F = (k, html, cls="") => `<div class="f ${filled>k?"":"pend"}" id="f${k}">${html}</div>`;
   const v = (k, html) => filled > k ? html : "";
-  const tps = [["language","Website",true],["storefront","Store Sites",true],["tv","Digital Signage",true],["qr_code_2","QR-Control",false],["tablet","Staff Tablet",false],["smart_toy","AI Agents",false]];
+  const tps = IS_RM ? [["directions_car","Forecourt screens",true],["storefront","Shop front screens",true],["kitchen","Cooler door screens",true],["point_of_sale","POS screens",true]] : [["language","Website",true],["storefront","Store Sites",true],["tv","Digital Signage",true],["qr_code_2","QR-Control",false],["tablet","Staff Tablet",false],["smart_toy","AI Agents",false]];
   return shell(detailTop("Campaign Brief", on, cta) + `<div class="form" id="form">
     ${F(0,`<label><i>*</i>Campaign Name</label><div class="in ${filled===1?"fill":""}">${v(0,esc(d.name))}&nbsp;</div>`)}
     ${F(1,`<label>Campaign Details</label><div class="in ${filled===2?"fill":""}" style="min-height:80px">${v(1,esc(d.details))}</div>`)}
@@ -1036,7 +1110,7 @@ const STEPS = [
      for (let k=0;k<5;k++){ fillBrief(k); await wait(420,id); }
      const tmp=document.createElement("div"); tmp.innerHTML=briefScreen(6,false); q("#tps").innerHTML = tmp.querySelector("#tps").innerHTML; await wait(300,id);
      tip(q("#f1"),"Campaign brief","Written from what was said and from how past campaigns performed: name, details, products, audience and objective.",3); await wait(3000,id); hideTip();
-     const t=q("#tps"); await reveal(t,id); tip(t,"Touchpoints","Digital signage, website and store sites switched on from the brief.",3); await wait(2800,id); hideTip(); } },
+     const t=q("#tps"); await reveal(t,id); tip(t,"Touchpoints",IS_RM ? "Forecourt, shop front, cooler door and POS screens switched on from the brief." : "Digital signage, website and store sites switched on from the brief.",3); await wait(2800,id); hideTip(); } },
  { t:"Generate storyboard and copy", s:"Happy with the brief? Generate Storyboard & Copy writes the headline, sub-headline and legal copy from the brief and your brand guidelines.",
    enter(){ paint(briefScreen(6,false)); },
    async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,this.s,4); await wait(2800,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,1300);
@@ -1553,7 +1627,7 @@ const STEPS3 = [
 ];
 
 /* ================= ui wiring ================= */
-const FLOWDEF = [
+const FLOWDEF_STD = [
   { h1: "Launch a campaign just by talking", sub: "Talk the AI campaign agent through a campaign and watch it become a brief, copy, creative and screen-ready assets for every touchpoint, in your brand.",
     steps: STEPS, intro: () => paint(listScreen(false)),
     start: () => [`See ${esc(B())} launch a campaign just by talking`, "Talk through the campaign, then follow the AI campaign agent from brief to storyboard, creative and live screens."],
@@ -1568,6 +1642,168 @@ const FLOWDEF = [
     start: () => [`See ${esc(B())} personalise screens when a customer checks in`, "Set up visitor-level targeting on a campaign for Loyalty Gold members, using the reason for visit and your first-party and loyalty data, then follow a customer from check-in to the targeted promotion on her phone and the screen in store."],
     end: () => { const p = P3(); return ["Flow 3 complete", `${esc(B())} personalises the moment ${p.person} checks in`, "A campaign for Loyalty Gold members targets the reason for visit plus your own first-party and loyalty data. The moment she joins the queue, it appears in her store site carousel and plays on the screen in store, and staff see the offer and her profile when they pick her up.", [["3","visitor rules"],["1","check-in"],["3","touchpoints"]], 0]; } }
 ];
+/* ================= retail media (convenience retail): the retailer sells its screens; the advertiser talks a campaign; one shopper is followed ================= */
+const RET = () => S.brand || IND["retail-media"].brand;
+const RML = [
+  { k:"forecourt", name:"Forecourt", icon:"local_gas_station", n:6, w:320, h:180, kind:"land", line:"Welcome back, Emma", sig:"Loyalty app recognises Emma at pump 3" },
+  { k:"front", name:"Shop front", icon:"storefront", n:4, w:180, h:320, kind:"port", line:"Emma, your Gold upsize is waiting", sig:"Emma walks up to the shop door" },
+  { k:"cooler", name:"Coolers", icon:"kitchen", n:12, w:150, h:320, kind:"port", line:"Gold upsize on every Frostline", sig:"Emma stops at the cold drinks cooler" },
+  { k:"pos", name:"POS", icon:"point_of_sale", n:8, w:320, h:100, kind:"web", line:"Scan your Gold card for a free upsize", sig:"Emma reaches the checkout" }
+];
+const RMPLAIN = [["Fuel rewards","Earn on every fill","#14507A"],["Fresh coffee","Hot and ready","#7A3E14"],["Meal deal","Lunch sorted","#2E6B3A"],["Car wash","Drive in clean","#5B3A8C"]];
+const rmFit = (l, bw, bh) => { const s = Math.min(bw / l.w, bh / l.h); return `width:${Math.round(l.w * s)}px;height:${Math.round(l.h * s)}px`; };
+function rmPlainTile(l, i) {
+  const p = RMPLAIN[i % 4], w = p[0].split(" "), narrow = l.w <= 180, wide = l.h < 120, fs = wide ? 24 : narrow ? 20 : 30;
+  const T = (x, y, s, t, o = 1, wt = 900) => `<text x="${x}" y="${y}" font-family="Roboto,Arial" font-weight="${wt}" font-size="${s}" fill="#fff" opacity="${o}">${esc(t)}</text>`;
+  const body = wide ? T(16, 44, fs, p[0]) + T(16, 72, 14, p[1], .85, 500)
+    : T(16, l.h * .42, fs, w[0]) + T(16, l.h * .42 + fs * 1.1, fs, w[1]) + T(16, l.h * .42 + fs * 2.3, narrow ? 12 : 15, p[1], .85, 500);
+  return `<svg viewBox="0 0 ${l.w} ${l.h}" preserveAspectRatio="xMidYMid slice" role="img" aria-label="${esc(p[0])}"><defs><linearGradient id="pt${i}${l.k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${p[2]}"/><stop offset="1" stop-color="${mix(p[2], "#000000", .45)}"/></linearGradient></defs><rect width="${l.w}" height="${l.h}" fill="url(#pt${i}${l.k})"/><circle cx="${l.w - 26}" cy="26" r="9" fill="#ffffff" opacity=".25"/>${body}</svg>`;
+}
+/* The advertiser's creative is always drawn in the advertiser's brand, whichever flow is on screen. */
+function rmAd(l, personal) {
+  const f = S.flow; S.flow = 1;
+  try { return art(l.kind, "first", true, personal ? { line: l.line } : {}); } finally { S.flow = f; }
+}
+function rmSlots(l, ad) {
+  return [0, 1, 2, 3].map(i => { const a = ad && i === 1;
+    return `<div class="rm-slot ${a ? "ad" : ""}" id="sl-${l.k}-${i}"><span class="n">${i + 1}</span><span class="t">${a ? "Frostline Cold Drinks" : RMPLAIN[i][0]}</span><span class="b">${a ? "Direct deal" : "Rotation"}</span></div>`; }).join("");
+}
+function rmDisplays(mode) {
+  const cards = RML.map(l => `<div class="rm-card" id="lc-${l.k}"><div class="rm-ch"><span class="ms">${l.icon}</span><b>${l.name}</b><small>${l.n} screens</small></div>
+    <div class="rm-view"><div class="rm-tile" id="tile-${l.k}" style="${rmFit(l, 206, 150)}">${mode === "done" ? rmAd(l, false) : rmPlainTile(l, 0)}</div></div>
+    <div class="rm-pl"><div class="rm-plh">Playlist · ${mode === "done" ? "Slots" : "Rotation"}</div>${rmSlots(l, mode === "done")}</div></div>`).join("");
+  return shell(`<div class="title">Displays &amp; Devices</div><div class="hr"></div><div class="row" style="margin-bottom:12px"><div><b>4</b> display types · <b>30</b> screens</div><div class="row"><span class="txtbtn">Playback Strategy</span></div></div><div class="rm-cards">${cards}</div>`, `Home &gt; <b>Displays &amp; Devices</b>`, "Displays & Devices");
+}
+async function rmCycle(id, rounds, ms = 1100) {
+  for (let r = 1; r <= rounds; r++) { await wait(ms, id); RML.forEach(l => { const t = q("#tile-" + l.k); if (t) t.innerHTML = rmPlainTile(l, r); }); }
+}
+const RMADV = [["Pinecrest Coffee Roasters", "Direct", "Required", "Active"], ["Brightwater Car Care", "Direct", "Required", "Active"], ["Tallgrass Snacks", "Direct", "Required", "Active"]];
+function rmAdvertisers(withNew) {
+  const rows = (withNew ? [["Frostline Cold Drinks", "Direct", "Required", "Active", true]] : []).concat(RMADV);
+  const body = rows.map(r => `<div class="rm-tr ${r[4] ? "new" : ""}"><span><b>${esc(r[0])}</b></span><span>${r[1]}</span><span>${r[2]}</span><span><i class="sd" style="background:#52c41a"></i>${r[3]}</span><span class="muted">${r[4] ? "0" : "1"} direct ${r[4] ? "deals" : "deal"}</span></div>`).join("");
+  return shell(`<div class="row"><div class="title">Advertisers</div><span class="aibtn" id="newadv"><span class="ms">add</span><span>New advertiser</span></span></div><div class="hr"></div>
+    <div class="rm-tbl"><div class="rm-th"><span>Advertiser</span><span>Via</span><span>Campaign approval</span><span>Status</span><span>Deals</span></div>${body}</div>`, `Home &gt; <b>Advertisers</b>`, "Insights / Analytics");
+}
+const rmAdvModal = (name) => `<div class="mask"><div class="modal"><h3>New advertiser<span class="ms muted">close</span></h3>
+  <div class="lbl"><i>*</i>Advertiser name</div><div class="in focus" id="advname">${name ? esc(name) : `<span class="ph">Advertiser name</span>`}</div>
+  <div class="lbl" style="margin-top:10px">Sold via</div><div class="in">Direct (sold by the retailer)</div>
+  <div class="lbl" style="margin-top:10px">Campaign approval</div><div class="in">Required before a campaign plays</div>
+  <div class="foot"><span class="btn">Cancel</span><span class="aibtn" id="advsave"><span class="ms">check</span><span>Create advertiser</span></span></div></div></div>`;
+function rmDeal(rules, slots, saved) {
+  const chip = (l, i) => `<span class="tag" id="dch${i}" style="${slots > i ? "" : "opacity:.25"}"><span class="ms" style="font-size:14px;vertical-align:-3px">${l.icon}</span> ${l.name} · slot 2</span>`;
+  const rule = (a, op, v, i) => `<div class="rm-rule" id="rr${i}" style="${rules > i ? "" : "display:none"}">${i ? `<span class="and">AND</span>` : ""}<span class="rf">${a}</span><span class="rf op">${op}</span><span class="rf v">${v}</span></div>`;
+  return shell(`<div class="row"><div class="title">Direct deal · Frostline Cold Drinks</div><span class="btn ${saved ? "dis" : ""}" id="savedeal" style="${saved ? "" : "background:#169BC2;color:#fff;border-color:#169BC2"}">${saved ? "Saved" : "Save direct deal"}</span></div><div class="hr"></div>
+    <div class="form"><div class="f"><label>Advertiser</label><div class="in">Frostline Cold Drinks</div></div>
+      <div class="f"><label>Sold as</label><div class="in">Direct deal · sold upfront by the retailer</div></div>
+      <div class="f"><label>Window</label><div class="in">1 Dec – 28 Feb</div></div>
+      <div class="f" id="dslots"><label>Slots</label><div class="in tags">${RML.map(chip).join("")}</div></div>
+      <div class="sec">Targeting</div>
+      <div class="f" id="drules"><label>Show only to</label><div class="rm-rules">${rule("Audience / Segments", "is", "Loyalty Gold", 0)}${rule("Purchase History", "includes", "Cold drinks", 1)}</div></div></div>`, `Home &gt; Advertisers &gt; <b>Frostline Cold Drinks</b>`, "Insights / Analytics");
+}
+function rmLogin(typed) {
+  return `<div class="rm-login"><div class="rm-lc"><div class="rm-lm"><svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg><span>Personalisation<b>Hub</b></span></div>
+    <h3>${esc(RET())} Retail Media</h3><div class="rm-ls">Advertiser self-service</div>
+    <label>Work email</label><div class="in" id="lem">${typed ? "alex@frostline-drinks.example" : "&nbsp;"}</div><label>Password</label><div class="in" id="lpw">${typed ? "••••••••••" : "&nbsp;"}</div>
+    <span class="aibtn" id="lsign"><span class="ms">login</span><span>Sign in</span></span></div></div>`;
+}
+function rmCreative(n) {
+  const P = (k, title, l, ratio, line) => `<div class="ap" id="ap${k}"><div class="ch">${title}<span class="ms" style="font-size:16px">expand_more</span></div><div class="cbd"><div class="asset" style="aspect-ratio:${ratio}">${n > k ? `<div class="art">${rmAd(l, false)}</div>${PLAY}` : `<div class="shim"><span class="ms">auto_awesome</span>Rendering…</div>`}</div></div><div class="af"><span class="muted">Priority 1</span><span class="btn pri">Upload new Campaign Asset</span></div></div>`;
+  return shell(detailTop("Creative", false, null) + `<div class="ctabs"><span class="on">Campaign Assets</span><span>Call to Action</span></div>
+    <div class="muted" style="margin-top:12px">Campaign assets for each screen type</div>
+    <div class="assets"><div style="display:flex;flex-direction:column;gap:16px">${P(0, "Forecourt screens", RML[0], "16/9")}${P(3, "POS screens", RML[3], "800/250")}</div>${P(1, "Shop front screens", RML[1], "9/16")}${P(2, "Cooler door screens", RML[2], "9/16")}</div>`, crumbD());
+}
+/* The shopper journey: one campaign on four locations, personalised as the shopper moves; every screen always shows content. */
+function rmJourney(active) {
+  const cells = RML.map((l, i) => `<div class="rm-jc ${i === active ? "on" : ""}" id="jc${i}"><div class="rm-jl"><span class="ms">${l.icon}</span>${l.name}${i === active ? `<i>Personalised</i>` : ""}</div>
+    <div class="rm-jv"><div class="rm-tile" id="jt${i}" style="${rmFit(l, 250, 150)}">${rmAd(l, i === active || i < active)}</div></div></div>`).join("");
+  const stops = RML.map((l, i) => `<div class="rm-st ${i <= active ? "done" : ""}"><span class="ms">${l.icon}</span>${l.name}</div>`).join(`<span class="rm-sl"></span>`);
+  const sig = RML[Math.max(0, active)];
+  return `<div class="rm-j"><div class="rm-jh"><span class="ph"><svg width="26" height="26" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg></span><b>${esc(RET())}</b><span>One Frostline campaign, four screen locations</span></div>
+    <div class="rm-jm"><div class="rm-jg">${cells}</div>
+      <div class="rm-sh" id="shopper"><div class="rm-av"><span class="ms">person</span></div><b>Emma</b><small>Loyalty Gold</small>
+        <div class="rm-sg" id="rmsig"><span class="ms">sensors</span>${esc(sig.sig)}</div>
+        <div class="rm-at"><div><span>Loyalty tier</span><b>Gold</b></div><div><span>Purchase history</span><b>Cold drinks</b></div><div><span>Seen so far</span><b>${active + 1} of 4 screens</b></div></div></div></div>
+    <div class="rm-path" id="rmpath">${stops}</div></div>`;
+}
+const RMT = [
+  { k:"direct", n:"Direct advertiser deals", how:"Sold upfront by the retailer", tg:true, cpm:"Highest CPM", w:55, lvl:3 },
+  { k:"private", n:"Private auctions", how:"Invited advertisers and DSPs", tg:true, cpm:"Premium CPM", w:25, lvl:2 },
+  { k:"open", n:"Open auction", how:"Unsold slots only", tg:false, cpm:"Market CPM", w:20, lvl:1 }
+];
+const RM_INFO = "Slots are offered upfront at the highest value first: direct deals, then private auctions, both with first-party targeting in real time. Only slots not sold that way fall through to the open auction, which has no targeting.";
+function rmYield(n) { const f = S.flow; S.flow = 0; try { return rmYieldHTML(n); } finally { S.flow = f; } } /* the waterfall is the retailer's screen, in the retailer's brand */
+function rmYieldHTML(n) {
+  const rows = RMT.map((t, i) => `<div class="rm-yr ${n > i ? "on" : ""}" id="yr${i}"><span class="rm-yn">${i + 1}</span><div class="rm-yt"><b>${t.n}</b><small>${t.how}</small></div>
+    <div class="rm-trk"><i style="width:${n > i ? t.w : 0}%"></i></div><span class="rm-chip ${t.tg ? "ok" : ""}"><span class="ms">${t.tg ? "check_circle" : "block"}</span>${t.tg ? "Targeting" : "No targeting"}</span>
+    <span class="rm-cpm" aria-label="${t.cpm}">${[1, 2, 3].map(k => `<i class="${k <= t.lvl ? "on" : ""}" style="height:${6 + k * 6}px"></i>`).join("")}<em>${t.cpm}</em></span></div>${i < 2 ? `<div class="rm-fall ${n > i + 1 ? "on" : ""}"><span class="ms">south</span>Unsold slots only</div>` : ""}`).join("");
+  return shell(`<div class="row"><div class="title">Yield waterfall <span class="rm-info" id="rminfo" data-tip="${esc(RM_INFO)}" tabindex="0" aria-label="${esc(RM_INFO)}"><span class="ms">info</span></span></div></div><div class="hr"></div>
+    <div class="rm-wf">${rows}</div>
+    <div class="rm-soon" id="rmsoon"><span class="ms">hub</span><b>Connect demand</b><span class="rm-chip">SSP integrations<em>Coming soon</em></span><span class="rm-chip">DSP integrations<em>Coming soon</em></span></div>`, `Home &gt; Insights / Analytics &gt; <b>Yield waterfall</b>`, "Insights / Analytics");
+}
+const RMS1 = [
+ { t:"Before: one campaign after another", s:"Forecourt, shop front, coolers and POS screens all play a plain rotation: one campaign after another, with no targeting.",
+   enter(){ paint(rmDisplays("before")); },
+   async play(id){ await wait(500,id); const c=q("#lc-forecourt"); tip(c,this.t,this.s,1); const cy=rmCycle(id,3); await cy; hideTip(); await wait(300,id); } },
+ { t:"Add the advertiser", s:"A retailer sells its own screens. Add the advertiser once in Advertisers, sold directly, with campaigns approved before they play.",
+   enter(){ paint(rmAdvertisers(false)); },
+   async play(id){ const b=q("#newadv"); await moveTo(b,id); tip(b,this.t,this.s,2); await wait(2200,id); hideTip(); await click(b,id);
+     q("#layer").innerHTML = rmAdvModal(""); await wait(400,id); await typeInto(q("#advname"), "Frostline Cold Drinks", id, reduce?999:30);
+     const sv=q("#advsave"); await click(sv,id); q("#layer").innerHTML=""; paint(rmAdvertisers(true)); await wait(500,id); const r=q(".rm-tr.new"); tip(r,"Frostline Cold Drinks added","A fictional cold drinks brand, ready for a direct deal.",2); await wait(2400,id); hideTip(); } },
+ { t:"Assign a slot in all four locations", s:"In Displays & Devices, give the advertiser slot 2 on the forecourt, shop front, cooler and POS screens. Each location now plays the campaign in its own slot.",
+   enter(){ paint(rmDisplays("before")); },
+   async play(id){ await wait(400,id);
+     for (const [i,l] of RML.entries()) { const row=q(`#sl-${l.k}-1`); await click(row,id); row.classList.add("ad"); row.querySelector(".t").textContent="Frostline Cold Drinks"; row.querySelector(".b").textContent="Direct deal";
+       q("#tile-"+l.k).innerHTML = rmAd(l,false); if (i===0) { tip(q("#lc-forecourt"),this.t,this.s,3); await wait(1800,id); hideTip(); } else await wait(350,id); }
+     tip(q("#lc-cooler"),"Every location now has the campaign","Slot 2 is reserved for the advertiser everywhere, and no screen is ever left blank.",3); await wait(2600,id); hideTip(); } },
+ { t:"Create a direct deal", s:"A direct deal sells those four slots upfront to one advertiser for the campaign window, before anything reaches an auction.",
+   enter(){ paint(rmDeal(0,0,false)); },
+   async play(id){ await wait(500,id); tip(q("#dslots"),this.t,this.s,4); await wait(1800,id); for (let k=1;k<=4;k++){ q("#dch"+(k-1)).style.opacity=1; await wait(450,id); } await wait(1600,id); hideTip(); } },
+ { t:"Target loyalty members", s:"Add targeting rules from your own first-party data: only Loyalty Gold members who buy cold drinks see the deal's campaign. Real-time targeting is what lifts the CPM.",
+   enter(){ paint(rmDeal(0,4,false)); },
+   async play(id){ await wait(400,id); const rg=q("#drules"); tip(rg,this.t,this.s,5); await wait(1800,id); for (let k=0;k<2;k++){ q("#rr"+k).style.display=""; await wait(900,id); } await wait(1600,id); hideTip();
+     const sv=q("#savedeal"); await click(sv,id); paint(rmDeal(2,4,true)); q("#layer").innerHTML=`<div class="toast"><span class="ms">check_circle</span>Direct deal saved · 4 slots reserved</div>`; await wait(1800,id); q("#layer").innerHTML=""; showEnd(); } }
+];
+const RMS2 = [
+ { t:"The advertiser logs in", s:"The advertiser signs in to the retailer's self-service portal to create their own campaign.",
+   enter(){ paint(rmLogin(false)); },
+   async play(id){ await wait(500,id); const e=q("#lem"); await click(e,id); tip(e,this.t,this.s,1); await typeInto(e,"alex@frostline-drinks.example",id,reduce?999:40); hideTip();
+     const p=q("#lpw"); await click(p,id); await typeInto(p,"••••••••••",id,reduce?999:30); await click(q("#lsign"),id); await wait(500,id); } },
+  STEPS[0], STEPS[1], STEPS[2], STEPS[3], STEPS[4],
+ { t:"Creative for every screen type", s:"Generate Creative Assets builds the final scene for the forecourt, shop front, cooler door and POS screens.",
+   enter(){ S.bright=true; paint(storyScreen({copy:3,f1:"first",f2:"last",b1:true,cta:"assets"})); setTop(maxTop(),0); },
+   async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,this.s,7); await wait(2600,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,1300);
+     paint(rmCreative(0)); await wait(600,id); for (const k of [0,1,2,3]) { const l=[RML[0],RML[1],RML[2],RML[3]][k]; q("#ap"+k+" .asset").innerHTML=`<div class="art">${rmAd(l,false)}</div>${PLAY}`; await wait(560,id); }
+     tip(q("#ap0"),"Creative for every screen type","Landscape forecourt, portrait shop front and cooler doors, and the wide POS strip, all generated from one spoken brief.",7); await wait(3400,id); hideTip(); showEnd(); } }
+];
+const RMS3 = [0,1,2,3].map(i => ({ t:["A shopper pulls onto the forecourt","She walks to the shop front","She stops at the cooler","She reaches the checkout"][i],
+   s:["Emma's loyalty app recognises her at the pump. The forecourt screen switches to a message for her, in real time.","The same campaign follows her to the shop front, now speaking to a Gold member.","At the cooler door the offer is about the cold drink she is looking at.","At the POS the last screen closes the loop: scan the Gold card and the upsize is hers."][i],
+   enter(){ paint(rmJourney(i)); },
+   async play(id){ await wait(i?500:800,id); tip(q("#jc"+i),this.t,this.s,i+1); await wait(3600,id); hideTip(); } })).concat([
+ { t:"Sold upfront first, with targeting", s:"Direct deals and private auctions are sold before anything else, with first-party targeting in real time. That is what lifts the CPM.",
+   enter(){ paint(rmYield(0)); },
+   async play(id){ await wait(500,id); tip(q("#rminfo"),"How the waterfall works",RM_INFO,5); await wait(3600,id); hideTip();
+     for (const k of [0,1]) { const r=q("#yr"+k); r.classList.add("on"); r.querySelector(".rm-trk i").style.width=RMT[k].w+"%"; await wait(900,id); }
+     tip(q("#yr0"),this.t,this.s,5); await wait(3000,id); hideTip(); } },
+ { t:"Only unsold slots reach open auction", s:"Slots not sold through direct or private deals fall through to open auction, which has no targeting. SSP and DSP integrations are coming soon.",
+   enter(){ paint(rmYield(2)); },
+   async play(id){ await wait(500,id); const f=q(".rm-fall"); f.classList.add("on"); const r=q("#yr2"); r.classList.add("on"); r.querySelector(".rm-trk i").style.width=RMT[2].w+"%"; await wait(900,id);
+     tip(r,this.t,"Open auction is the fall-through for slots that did not sell upfront.",6); await wait(2800,id); hideTip(); tip(q("#rmsoon"),"SSP and DSP integrations","Coming soon.",6); await wait(2200,id); hideTip(); showEnd(); } }
+]);
+const RMFLOWDEF = [
+  { h1: "Sell every screen, with loyalty targeting", sub: "A convenience retailer sets up its own retail media network: slots across the forecourt, shop front, coolers and POS, and a direct deal targeted at loyalty members.",
+    steps: RMS1, intro: () => paint(rmDisplays("before")),
+    start: () => [`See ${esc(RET())} sell its own screens`, "Start with a plain rotation, add an advertiser, assign slots in all four locations and create a direct deal with loyalty targeting."],
+    end: () => ["Flow 1 complete", `${esc(RET())} has sold four locations upfront`, "One advertiser now holds slot 2 on the forecourt, shop front, cooler and POS screens through a direct deal, targeted at Loyalty Gold members who buy cold drinks.", [["4","locations"],["1","direct deal"],["2","targeting rules"]], 1] },
+  { h1: "The advertiser creates a campaign by talking", sub: "The advertiser logs in, briefs the AI campaign agent by voice and gets a storyboard and creative for every screen type.",
+    steps: RMS2, intro: () => paint(rmLogin(false)),
+    start: () => ["See an advertiser create a campaign just by talking", "Log in, talk the AI campaign agent through the campaign, then follow it from brief to storyboard and creative for every screen."],
+    end: () => ["Flow 2 complete", "A whole campaign from a spoken brief", "Name, brief, copy, storyboard and creative for the forecourt, shop front, cooler and POS screens, made by the advertiser without a designer.", [["1","spoken brief"],["4","screen types"],["0","designers"]], 2] },
+  { h1: "One shopper, four screens, a higher CPM", sub: "Follow Emma from the forecourt to the checkout while the campaign personalises in real time, then see how slots are sold: upfront first, open auction last.",
+    steps: RMS3, intro: () => paint(rmJourney(0)),
+    start: () => ["Follow one shopper from forecourt to POS", "The same campaign speaks to Emma at every screen, then the yield waterfall shows why the CPM is higher."],
+    end: () => ["Flow 3 complete", `${esc(RET())} lifts its CPM with real-time targeting`, "Slots are sold upfront through direct deals and private auctions with first-party targeting. Only unsold slots fall through to open auction, with no targeting.", [["4","screens, one shopper"],["2","targeted tiers"],["1","open auction for unsold"]], 0] }
+];
+const FLOWDEF = IS_RM ? RMFLOWDEF : FLOWDEF_STD;
 const FD = () => FLOWDEF[S.flow], ST = () => FD().steps;
 const dots = document.getElementById("dots"), flows = document.getElementById("flows");
 flows.innerHTML = FLOWS.map((f,i)=>`<button type="button" class="chip" data-k="${i}" ${f[1]?"":'aria-disabled="true"'}><span class="n">${i+1}</span>${f[0]}${f[2]?`<small>${f[2]}</small>`:""}${f[1]?"":"<small>coming next</small>"}</button>`).join("");
@@ -1625,8 +1861,17 @@ if (FOCUS) flows.hidden = true;
 /* ================= website gate: teaser, lead capture, unlock ================= */
 const AWS_URL = "https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76?trk=59c672e4-15c4-4782-aee9-4352db108809&sc_channel=el&source=personalisationhub";
 const wrap = document.getElementById("wrap"), gate = document.getElementById("gate"), LEAD_KEY = "ph_lead";
-const GFLOWS = [["auto_awesome","Campaign creation","Talk a campaign into existence, in your brand"],["storefront","Localisation & scheduling","Every store gets its own version"],["person_pin_circle","Personalisation","The right offer the moment they check in"]];
-const TEASE = [
+const GFLOWS = IS_RM ? [["storefront","Retailer setup","Sell every screen, with loyalty targeting"],["record_voice_over","Advertiser creates by talking","A whole campaign from a spoken brief"],["person_pin_circle","Shopper journey & outcome","One shopper, four screens, a higher CPM"]] : [["auto_awesome","Campaign creation","Talk a campaign into existence, in your brand"],["storefront","Localisation & scheduling","Every store gets its own version"],["person_pin_circle","Personalisation","The right offer the moment they check in"]];
+const TEASE_RM = [
+  { cap: "Four screen locations, sold slot by slot", async run(id) { S.flow = 0; S.bright = false; paint(rmDisplays("before")); await rmCycle(id, 2, 900);
+      for (const l of RML) { const row = q(`#sl-${l.k}-1`); row.classList.add("ad"); row.querySelector(".t").textContent = "Frostline Cold Drinks"; row.querySelector(".b").textContent = "Direct deal"; q("#tile-" + l.k).innerHTML = rmAd(l, false); await wait(500, id); }
+      await wait(2400, id); } },
+  { cap: "A spoken brief becomes creative for every screen", async run(id) { S.flow = 1; S.bright = false; paint(listScreen(false)); q("#layer").innerHTML = modalHTML(null, [], false);
+      q("#ta").classList.add("focus"); q("#vrow").style.visibility = "visible"; q("#mic").classList.add("rec"); dictate(q("#tabody"), D().brief, id).catch(() => {});
+      await wait(3300, id); S.bright = true; paint(rmCreative(4)); await wait(3300, id); } },
+  { cap: "One shopper, four screens, personalised in real time", async run(id) { S.flow = 2; S.bright = true; for (let i = 0; i < 4; i++) { paint(rmJourney(i)); await wait(1700, id); } await wait(600, id); } }
+];
+const TEASE_STD = [
   { cap: "A spoken brief becomes creative for every screen", async run(id) { S.flow = 0; S.bright = false; paint(listScreen(false)); q("#layer").innerHTML = modalHTML(null, [], false);
       q("#ta").classList.add("focus"); q("#vrow").style.visibility = "visible"; q("#mic").classList.add("rec"); dictate(q("#tabody"), D().brief, id).catch(() => {});
       await wait(3300, id); S.bright = true; paint(creativeScreen(4, false)); await wait(3300, id); } },
@@ -1636,6 +1881,7 @@ const TEASE = [
   { cap: "The right offer, the moment a customer checks in", async run(id) { S.flow = 2; S.bright = true; screen.innerHTML = sceneHTML("home1", "promo");
       await wait(1300, id); setPhone("home2"); await wait(1100, id); const tv = q("#pdisp"); tv.classList.add("on"); if (P3().shelf) tv.innerHTML = shelfSVG(true); else tv.querySelector(".tv-in").innerHTML = art("land","first",S.bright); await wait(4200, id); } }
 ];
+const TEASE = IS_RM ? TEASE_RM : TEASE_STD;
 const IN_FRAME = window.parent !== window;
 const PCFG = () => { try { return window.PH_TOUR || (IN_FRAME && window.parent.PH_TOUR) || {}; } catch (e) { return window.PH_TOUR || {}; } };
 const DL = () => { try { if (IN_FRAME && window.parent.dataLayer) return window.parent.dataLayer; } catch (e) {} return (window.dataLayer = window.dataLayer || []); };
@@ -1699,7 +1945,7 @@ const FREE_MAIL = /@(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|iclou
 function gateHTML() {
   const head = `<div class="g-eb"><span class="ms">play_circle</span>Interactive product tour</div>`;
   if (GMODE === "pick") return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
-      <h3>Watch a ${INDLABEL} campaign go from a spoken brief to the right customer</h3><p>Three short guided demos on real Personalisation Hub screens, run in your brand. Pick one to start.</p>
+      <h3>${IS_RM ? "Watch a convenience retailer sell its screens and lift its CPM" : `Watch a ${INDLABEL} campaign go from a spoken brief to the right customer`}</h3><p>Three short guided demos on real Personalisation Hub screens${IS_RM ? "" : ", run in your brand"}. Pick one to start.</p>
       <div class="g-flows">${GFLOWS.map((f, i) => `<button type="button" class="g-flow" data-f="${i}"><span class="ms">${f[0]}</span><span><b>${f[1]}</b><small>${f[2]}</small></span><span class="g-go">Watch<span class="ms">chevron_right</span></span><i></i></button>`).join("")}</div></div>`;
   const f = GFLOWS[TSEL];
   return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
@@ -1727,9 +1973,9 @@ function renderGate() {
     saveLead(lead); sendLead(lead); unlock(lead, true); };
 }
 function lock() {
-  fsExit(); LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = D().brand;
-  document.getElementById("h1").textContent = `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
-  document.getElementById("sub").textContent = "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
+  fsExit(); LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = IND[S.ind].brand;
+  document.getElementById("h1").textContent = IS_RM ? "See a convenience retailer run its own retail media network, end to end" : `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
+  document.getElementById("sub").textContent = IS_RM ? "Short guided demos built on real Personalisation Hub screens: selling slots, creating a campaign by talking, and following one shopper from forecourt to checkout." : "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
   renderGate(); teaseLoop();
 }
 function unlock(lead, autostart) {
