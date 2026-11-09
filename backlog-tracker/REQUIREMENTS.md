@@ -2858,6 +2858,13 @@ published help articles without crawling pages. `functions/help-search.js`
   (`functions/html-to-md.js`: headings, lists, tables, links, code). The JSON
   `bodyMd` is the stored body unchanged.
 - `POST /help-api/mcp` — a stateless, public, read-only remote MCP server
+  (9 Nov 2026: it presents itself as `personalisation-hub` / "Personalisation Hub"
+  (`websiteUrl` https://personalisationhub.com, version 2.1.0). `initialize`
+  `instructions` say what the platform is, which tool answers what, and the
+  rules: cite returned URLs, never invent prices, use only what the tools
+  return. `resources/list` and `resources/read` serve the site's `/llms.txt`
+  and, once the site serves it, `/llms-full.txt` as `text/plain`, proxied and
+  cached 5 minutes like the tools; `prompts/list` answers `[]`.)
   (streamable HTTP, no sign-in) serving exactly the ten tools the WebMCP
   tools on the site pages define: `describe_platform`, `list_industries`,
   `get_industry`, `get_feature`, `search_help`, `get_help_article`,
@@ -3953,6 +3960,24 @@ Rules:
 - When a menu or page "stops working on the iPad" right after a release, ask
   whether a reload fixes it. If it does, look at caching and start-up
   errors before tap handling.
+
+### Modals and drawers: one set of rules (9 Nov 2026)
+
+Every dialog and side drawer (`.modal-panel` in a `.modal-backdrop`) is handled
+console-wide by `public/js/modal-polish.js` and the "Modals and drawers" block of
+`public/css/apple.css`, so a new modal follows them without extra code:
+
+- **Save only when something changed.** A Save / Create / Add / Submit button
+  starts disabled and turns on when a field differs from how the dialog opened
+  (a new form starts empty, so it is off until a value is typed; putting the
+  value back turns it off again). Opt out with `data-no-dirty`.
+- **The action row is sticky** at the bottom of the dialog, so Save is always in view.
+- **The x is the last control in the header, top right**, a round grey button
+  (44px on touch), and always closes its dialog (a fallback closes the backdrop
+  if the page's own handler did not).
+- Apple-style presentation: 18px radius, blurred sticky header and footer, soft-filled fields.
+
+Tests: `test/ui/console-click.test.mjs` -> "Modals: Save is off until something changes...".
 
 ### iPad taps: every control must work on every tap (3 Nov, 5 Nov 2026)
 

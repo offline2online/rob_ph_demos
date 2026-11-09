@@ -1046,10 +1046,11 @@ export function defineNewCases(E) {
     }
     assert.deepEqual(failures, [], `${combos.length} combinations; mismatches:\n${failures.join("\n")}`);
     // the Release filter shows that release's tickets, closed ones included
-    await p.selectOption("#kb-release", E.rel("4.11")); await sleep(300);
-    const r411 = all.filter((t) => t.release === E.rel("4.11")).map((t) => t.key).sort();
-    assert.ok(r411.length > 0);
-    assert.deepEqual(await visibleKeys(p), r411, "release 4.11 (released) shows its tickets");
+    // (the filter lists only releases with open tickets, so 4.12)
+    await p.selectOption("#kb-release", E.rel("4.12")); await sleep(300);
+    const r412 = all.filter((t) => t.release === E.rel("4.12")).map((t) => t.key).sort();
+    assert.ok(r412.length > 0);
+    assert.deepEqual(await visibleKeys(p), r412, "release 4.12 shows its tickets, closed ones included");
     await p.done();
   });
 

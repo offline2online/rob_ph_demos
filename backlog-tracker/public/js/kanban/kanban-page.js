@@ -125,7 +125,20 @@ export function mountStaffKanban(ctx) {
     const dates = store.state.settings.releaseDates || {};
     return (ctx.releases() || []).slice().sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0)).map((r) => ({
       id: r.id, name: r.name || r.version || r.id, version: r.version || "", released: r.status === "live", date: dates[r.id] || "",
+      label: releaseLabel(r),
     }));
+  }
+  // The release number comes first, the name in brackets: "4.13 (Spring release)".
+  function releaseLabel(r) {
+    const name = r.name || "", version = r.version || "";
+    if (!version) return name || r.id;
+    return !name || name === version ? version : `${version} (${name})`;
+  }
+  // Only releases that still have an open ticket (plus the one currently picked,
+  // so a selection never vanishes from its own list).
+  function activeReleases(keep) {
+    const live = new Set(state.tasks.filter((t) => t.release && t.status !== "done").map((t) => t.release));
+    return releases().filter((r) => live.has(r.id) || r.id === keep);
   }
   // Console projects (not archived, unless a ticket still names one), by name.
   function projects(keep) {
@@ -134,7 +147,7 @@ export function mountStaffKanban(ctx) {
   }
   const projectName = (id) => (id ? ((ctx.projects() || []).find((p) => p.id === id) || {}).name || "" : "");
   const release = (id) => releases().find((r) => r.id === id);
-  const releaseName = (id) => (release(id) || {}).name || "No release";
+  const releaseName = (id) => (release(id) || {}).label || "No release";
   function sprints() {
     return store.state.sprints.map((s) => ({ ...s, range: [s.start && fmtDate(s.start), s.end && fmtDate(s.end)].filter(Boolean).join(" – ") }));
   }
@@ -374,7 +387,7 @@ export function mountStaffKanban(ctx) {
     // A project that no longer exists would filter the board to nothing.
     if (board.project && (ctx.projects() || []).length && !projectName(board.project)) board.project = "";
     if (!pageEl.hidden) syncBoardUrl();
-    const relOpts = opt("", "All releases", board.release) + releases().map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), board.release)).join("");
+    const relOpts = opt("", "All releases", board.release) + activeReleases(board.release).map((r) => opt(r.id, r.label + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), board.release)).join("");
     store.watchRelease(board.release);
     headSig = ""; // (the view is drawn afresh below)
     // Primary filters: staff, My tasks, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
@@ -1150,7 +1163,7 @@ export function mountStaffKanban(ctx) {
       case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, d.status)).join("")}${RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, d.status === "done" ? "done:" + res(d) : "")).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
       case "assignee": return `<div class="kb-field" data-field="assignee">${label("assignee")}<select id="f-assignee" class="kb-input">${opt("", "Unassigned", d.assignee)}${peopleWith(d.assignee).map((u) => opt(u.id, u.first, d.assignee)).join("")}</select></div>`;
       case "reporter": return `<div class="kb-field" data-field="reporter">${label("reporter")}<select id="f-reporter" class="kb-input">${opt("", "—", d.reporter)}${peopleWith(d.reporter).map((u) => opt(u.id, u.first, d.reporter)).join("")}</select></div>`;
-      case "release": return `<div class="kb-field" data-field="release">${label("release")}<select id="f-release" class="kb-input">${opt("", "No release", d.release)}${releases().map((r) => opt(r.id, r.name + (r.released ? " (released)" : ""), d.release)).join("")}</select></div>`;
+      case "release": return `<div class="kb-field" data-field="release">${label("release")}<select id="f-release" class="kb-input">${opt("", "No release", d.release)}${releases().map((r) => opt(r.id, r.label + (r.released ? " (released)" : ""), d.release)).join("")}</select></div>`;
       case "estimate": return `<div class="kb-field" data-field="estimate">${label("estimate")}<input type="text" id="f-estimate" class="kb-input" value="${esc(d.estimate === "" || d.estimate == null ? "" : fmtH(d.estimate))}" placeholder="e.g. 1d 4h" inputmode="text"></div>`;
       case "type": return `<div class="kb-field" data-field="type">${label("type", "f-type-task")}<div class="type-toggle kb-type-toggle" role="radiogroup">${TYPES.map((t) => `<button type="button" class="type-opt${d.type === t.key ? " active" : ""}" id="f-type-${t.key}" data-type="${t.key}" role="radio" aria-checked="${d.type === t.key}"><span class="material-symbols-outlined kb-type-${t.key}" aria-hidden="true">${t.icon}</span>${t.label}</button>`).join("")}</div></div>`;
       case "priority": return `<div class="kb-field" data-field="priority">${label("priority")}<select id="f-priority" class="kb-input">${opt("", "—", d.priority)}${PRIORITIES.map((p) => opt(p.key, p.label, d.priority)).join("")}</select></div>`;
@@ -2122,7 +2135,7 @@ export function mountStaffKanban(ctx) {
     const statusCols = REPORT_COLS.filter((s) => !s.key.startsWith("done:") || f.status === "all" || f.status === s.key);
 
     const sel = (k, all, items) => `<label class="kb-rfilter"><span>${esc(all[0])}</span><select data-rf="${k}">${items}</select></label>`;
-    const relItems = releases().map((r) => opt(r.id, r.name + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), f.release)).join("") + opt("all", "All releases", f.release);
+    const relItems = activeReleases(f.release).map((r) => opt(r.id, r.label + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), f.release)).join("") + opt("all", "All releases", f.release);
     const anyExtra = f.assignee || f.type || f.priority || f.sprint || f.label || f.status !== "outstanding" || f.release !== state.settings.currentRelease;
 
     const capState = (p) => {
