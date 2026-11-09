@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Retail media walkthrough · Convenience Retail | Personalisation Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;600;700&family=Roboto:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=block">
+<style>
+/* Retail media walkthrough: a standalone, animated page. The stage is a fixed-size design (wide or narrow) scaled to fit. All imagery is inline SVG and CSS. */
+:root{--bg:#f4f7f9;--panel:#fff;--fg:#1d2730;--muted:#5b6873;--line:#dde4ea;--pink:#ef60a7;--teal:#169bc2;--navy:#1c2540;--ok:#1f9d55;
+  --display:"Kantumruy Pro","Roboto",system-ui,sans-serif;--ui:"Roboto","Helvetica Neue",Arial,sans-serif}
+@media (prefers-color-scheme:dark){:root{--bg:#11161b;--panel:#192027;--fg:#e7edf2;--muted:#9aa8b4;--line:#2a343d;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--ui)}
+body{padding:16px max(16px,env(safe-area-inset-left)) 24px}
+.ms{font-family:"Material Symbols Outlined";font-weight:400;font-style:normal;font-size:20px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;direction:ltr;font-feature-settings:"liga";vertical-align:middle}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.top h1{margin:0;font:700 20px/1.2 var(--display)}
+.top .tag{margin-left:auto;font-size:13px;color:var(--muted)}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:999px;padding:7px 14px;font:500 13px var(--ui);cursor:pointer;display:flex;align-items:center;gap:6px}
+.chip[aria-current=true]{background:var(--navy);color:#fff;border-color:var(--navy)}
+.vp{position:relative;width:100%;overflow:hidden;border-radius:14px;border:1px solid var(--line);background:var(--panel)}
+.stage{position:absolute;left:0;top:0;transform-origin:0 0;width:1200px;height:600px;padding:20px;display:flex;flex-direction:column;gap:16px;font-family:var(--ui)}
+.stage.narrow{width:640px;height:900px}
+.screens{display:grid;grid-template-columns:1.5fr 1.3fr .9fr .8fr;gap:14px;height:200px}
+.narrow .screens{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;height:330px}
+.sc{position:relative;border-radius:10px;background:#0b1020;border:3px solid #222a44;overflow:hidden;display:flex;flex-direction:column}
+.sc .lbl{position:absolute;left:8px;top:6px;z-index:3;background:rgba(0,0,0,.55);color:#fff;font:500 11px var(--ui);padding:2px 8px;border-radius:99px}
+.sc .body{flex:1;position:relative;display:flex;align-items:center;justify-content:center;text-align:center;padding:26px 12px 12px;color:#fff;transition:background .5s}
+.sc .body .big{font:700 22px/1.1 var(--display)}
+.sc .body .sm{font:400 13px/1.3 var(--ui);opacity:.9;margin-top:6px}
+.sc.on{border-color:var(--pink);box-shadow:0 0 0 3px rgba(239,96,167,.35)}
+.sc .badge{position:absolute;right:8px;top:6px;z-index:3;font:700 10px var(--ui);background:var(--pink);color:#fff;padding:2px 8px;border-radius:99px;opacity:0;transition:opacity .4s}
+.sc.camp .badge,.sc.pers .badge{opacity:1}
+.sc .art{position:absolute;inset:0;opacity:.28}
+.sc .art svg{width:100%;height:100%}
+.panel{flex:1;border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:16px;position:relative;overflow:hidden;color:var(--fg)}
+.panel h3{margin:0 0 10px;font:700 16px var(--display)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.slots{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.narrow .slots{grid-template-columns:1fr 1fr}
+.slot{border:1px dashed var(--line);border-radius:8px;padding:10px;font:500 13px var(--ui);background:var(--panel);transition:all .4s}
+.slot.fill{border:1px solid var(--pink);background:rgba(239,96,167,.12)}
+.deal{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;opacity:.25;transition:opacity .5s;font-size:14px}
+.deal.in{opacity:1}
+.pill{display:inline-flex;align-items:center;gap:4px;border-radius:99px;padding:3px 10px;font:500 12px var(--ui);background:var(--chipbg,#eaf5f9);color:#0f7a9a}
+.pill.pk{background:rgba(239,96,167,.16);color:#b3256f}
+@media (prefers-color-scheme:dark){.pill{background:#16303a;color:#5cc8e6}.pill.pk{color:#f39ac8}}
+.mic{width:54px;height:54px;border-radius:50%;background:var(--pink);color:#fff;display:flex;align-items:center;justify-content:center}
+.mic.rec{animation:pulse 1s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(239,96,167,.6)}100%{box-shadow:0 0 0 18px rgba(239,96,167,0)}}
+.wave{display:flex;gap:3px;align-items:center;height:30px}
+.wave i{width:4px;background:var(--pink);border-radius:2px;height:8px;animation:wv .8s infinite ease-in-out}
+.wave i:nth-child(odd){animation-delay:.2s}.wave i:nth-child(3n){animation-delay:.4s}
+@keyframes wv{50%{height:28px}}
+.say{font:400 16px/1.4 var(--ui);min-height:46px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0;flex:1}
+.gen{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.narrow .gen{grid-template-columns:1fr 1fr}
+.gen div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;font:500 12px var(--ui);opacity:.3;transition:opacity .4s;display:flex;align-items:center;gap:6px}
+.gen div.in{opacity:1}.gen div.in .ms{color:var(--ok)}
+.path{position:relative;display:flex;justify-content:space-between;align-items:center;padding:30px 30px 10px}
+.path:before{content:"";position:absolute;left:50px;right:50px;top:50px;height:3px;background:var(--line)}
+.stop{position:relative;z-index:1;text-align:center;font:500 12px var(--ui);width:90px}
+.stop b{display:block;width:40px;height:40px;border-radius:50%;margin:0 auto 6px;background:var(--panel);border:3px solid var(--line);line-height:34px;font-weight:700}
+.stop.on b{border-color:var(--pink);background:var(--pink);color:#fff}
+.shopper{position:absolute;top:18px;left:0;transition:left 1s ease;width:34px;height:34px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;z-index:2;margin-left:-17px}
+.msg{margin:14px auto 0;max-width:620px;text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font:500 15px var(--ui);min-height:44px}
+.tiers{display:flex;flex-direction:column;gap:10px}
+.tier{display:grid;grid-template-columns:200px 1fr 140px;gap:12px;align-items:center;opacity:.25;transition:opacity .5s}
+.narrow .tier{grid-template-columns:1fr;gap:4px}
+.tier.in{opacity:1}
+.tier .bar{height:26px;border-radius:6px;background:var(--pink);width:0;transition:width 1s;display:flex;align-items:center;padding-left:10px;color:#fff;font:700 12px var(--ui)}
+.tier .lab{font:700 14px var(--display)}
+.tier .lab small{display:block;font:400 12px var(--ui);color:var(--muted)}
+.info{position:relative;display:inline-flex;vertical-align:middle;margin-left:6px}
+.info button{border:0;background:none;color:var(--muted);padding:0;cursor:help;display:inline-flex}
+.info .tip{position:absolute;left:50%;bottom:130%;transform:translateX(-50%);width:240px;background:#1c2540;color:#fff;font:400 12px/1.4 var(--ui);padding:8px 10px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .15s;z-index:9;text-align:left}
+.info:hover .tip,.info:focus-within .tip{opacity:1}
+.soon{font:500 11px var(--ui);background:var(--line);color:var(--muted);border-radius:99px;padding:2px 8px;margin-left:6px}
+.ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ctl button{border:1px solid var(--line);background:var(--panel);color:var(--fg);width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.dots{display:flex;gap:6px}.dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}.dots i.on{background:var(--pink)}
+.cap{flex:1;min-width:200px}.cap b{display:block;font:700 15px var(--display)}.cap span{font-size:13px;color:var(--muted)}
+.gate{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:18px;display:grid;gap:10px}
+.gate[hidden]{display:none}
+.gate h2{margin:0;font:700 20px var(--display)}.gate p{margin:0;color:var(--muted);font-size:14px}
+.gate form{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media (max-width:760px){.gate form{grid-template-columns:1fr}}
+.gate label{font:500 13px var(--ui);display:grid;gap:4px}
+.gate input[type=text],.gate input[type=email]{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:400 15px var(--ui)}
+.gate .cons{grid-column:1/-1;display:flex;gap:8px;align-items:flex-start;font-weight:400}
+.gate .err{grid-column:1/-1;color:#c0392b;font-size:13px;min-height:16px}
+.gate .sub{grid-column:1/-1;justify-self:start;border:0;border-radius:99px;padding:12px 22px;font:700 15px var(--ui);background:var(--line);color:var(--muted);cursor:not-allowed}
+.gate .sub.ok{background:var(--pink);color:#fff;cursor:pointer}
+.hp{position:absolute;left:-9999px}
+.locked .ctl{opacity:.4;pointer-events:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main class="wrap" id="wrap">
+  <div class="top"><h1>See a convenience retailer run its own retail media network</h1><span class="tag">Fictional retailer and advertiser</span></div>
+  <div class="chips" id="chips" role="tablist" aria-label="Scenes"></div>
+  <div class="vp" id="vp"><div class="stage" id="stage" aria-live="off">
+    <div class="screens" id="screens"></div>
+    <div class="panel" id="panel"></div>
+  </div></div>
+  <div class="ctl" id="ctl">
+    <button type="button" id="prev" aria-label="Previous scene"><span class="ms">skip_previous</span></button>
+    <button type="button" id="play" aria-label="Pause"><span class="ms">pause</span></button>
+    <button type="button" id="next" aria-label="Next scene"><span class="ms">skip_next</span></button>
+    <div class="dots" id="dots"></div>
+    <div class="cap"><b id="capt"></b><span id="capd"></span></div>
+  </div>
+  <section class="gate" id="gate" hidden aria-label="Unlock the walkthrough">
+    <h2>Watch it end to end</h2>
+    <p>Enter your work details to unlock the full five-scene walkthrough.</p>
+    <form id="gform" novalidate>
+      <label>Full name<input type="text" name="name" autocomplete="name" required></label>
+      <label>Company<input type="text" name="company" autocomplete="organization" required></label>
+      <label>Work email<input type="email" name="email" autocomplete="email" required></label>
+      <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <label class="cons"><input type="checkbox" name="consent"><span>I agree to Personalisation Hub contacting me about this walkthrough. <a href="/privacy-policy/" target="_blank" rel="noopener">Privacy Policy</a></span></label>
+      <span class="err" id="gerr" role="alert"></span>
+      <button type="submit" class="sub" id="gsub">Start the walkthrough</button>
+    </form>
+  </section>
+</main>
+<script>
+(() => {
+"use strict";
+const IND = "retail-media", LEAD_KEY = "ph_lead";
+const SCENES = [
+  ["Before", "Plain rotation", "Forecourt, shop front, cooler and POS screens play one campaign after another."],
+  ["Retailer sets up", "Slots and a direct deal", "Slots on all four screen locations go to one advertiser, with loyalty targeting."],
+  ["Advertiser creates by talking", "One spoken brief", "The advertiser describes the campaign and creative is generated for every screen type."],
+  ["Shopper journey", "Forecourt to POS", "The campaign follows one shopper through the store, personalised in real time."],
+  ["Outcome", "Higher CPM", "Slots sell upfront first. Only unsold slots fall through to open auction."]
+];
+const LOCS = [["Forecourt", "local_gas_station"], ["Shop front", "storefront"], ["Cooler", "kitchen"], ["POS", "point_of_sale"]];
+const PLAIN = [["Fresh coffee", "Hot, ready now"], ["Meal deal", "Lunch sorted"], ["Car wash", "Drive through"], ["Snack aisle", "New this week"]];
+const BRAND = "Rowan Corner Stores", ADV = "Frostline Cold Drinks";
+const AD = [["Frostline", "Ice cold, ready to go"], ["Frostline", "Grab one for the road"], ["Frostline", "Chilled in the cooler"], ["Frostline", "Add one at the till"]];
+const PERS = ["Hi Sam, a Frostline waits inside", "Your loyalty reward: a free ice", "Sam, your usual is in the cooler", "Reward applied: free ice with your drink"];
+const $ = s => document.querySelector(s), wait = (ms, id) => new Promise((res, rej) => setTimeout(() => (id !== RUN ? rej(new Cancel()) : res()), ms));
+class Cancel {}
+let RUN = 0, cur = 0, paused = false, LOCKED = true, plainTimer = 0, plainI = 0;
+const IN_FRAME = window.parent !== window;
+const PCFG = () => { try { return window.PH_TOUR || (IN_FRAME && window.parent.PH_TOUR) || {}; } catch (e) { return window.PH_TOUR || {}; } };
+const DL = () => { try { if (IN_FRAME && window.parent.dataLayer) return window.parent.dataLayer; } catch (e) {} return (window.dataLayer = window.dataLayer || []); };
+if (/[?&]embed=1/.test(location.search)) document.documentElement.classList.add("embed");
+const ev = (action, extra) => { try { DL().push(Object.assign({ event: "ph_tour", action, industry: IND, flow: "Retail media walkthrough", step: cur + 1 }, extra || {})); } catch (e) {} };
+/* ---- chrome ---- */
+$("#chips").innerHTML = SCENES.map((s, i) => `<button type="button" class="chip" role="tab" data-i="${i}"><span class="ms">${["slideshow","tune","mic","directions_walk","trending_up"][i]}</span>${i + 1}. ${s[0]}</button>`).join("");
+$("#dots").innerHTML = SCENES.map(() => "<i></i>").join("");
+const art = i => `<div class="art"><svg viewBox="0 0 100 60" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${[
+  '<circle cx="78" cy="18" r="12" fill="#ffd166"/><rect y="40" width="100" height="20" fill="#355070"/><rect x="10" y="26" width="30" height="14" rx="3" fill="#6d597a"/>',
+  '<rect x="10" y="14" width="80" height="34" fill="#b56576"/><rect x="18" y="22" width="22" height="26" fill="#e56b6f"/><rect x="48" y="22" width="34" height="14" fill="#eaac8b"/>',
+  '<rect x="14" y="6" width="72" height="50" rx="3" fill="#4d908e"/><path d="M14 22h72M14 38h72" stroke="#fff" stroke-width="1"/>',
+  '<rect x="20" y="16" width="60" height="30" rx="3" fill="#577590"/><circle cx="50" cy="31" r="8" fill="#f9c74f"/>'][i]}</svg></div>`;
+$("#screens").innerHTML = LOCS.map((l, i) => `<div class="sc" data-s="${i}"><span class="lbl">${l[0]}</span><span class="badge"></span>${art(i)}<div class="body"><div><div class="big"></div><div class="sm"></div></div></div></div>`).join("");
+const scrs = [...document.querySelectorAll(".sc")];
+function setScr(i, mode, big, sm) { const s = scrs[i]; s.classList.remove("camp", "pers"); if (mode) s.classList.add(mode); s.querySelector(".badge").textContent = mode === "pers" ? "Personalised" : mode === "camp" ? "Frostline" : ""; s.querySelector(".big").textContent = big; s.querySelector(".sm").textContent = sm; s.querySelector(".body").style.background = mode === "camp" ? "linear-gradient(135deg,#169bc2cc,#0b3b7acc)" : mode === "pers" ? "linear-gradient(135deg,#ef60a7cc,#7a2b9acc)" : "rgba(11,16,32,.55)"; }
+function plain(on) { clearInterval(plainTimer); if (!on) return; const tick = () => { LOCS.forEach((l, i) => { const p = PLAIN[(plainI + i) % PLAIN.length]; setScr(i, "", p[0], p[1]); }); plainI++; }; tick(); plainTimer = setInterval(tick, 1800); }
+function allCamp() { clearInterval(plainTimer); AD.forEach((a, i) => setScr(i, "camp", a[0], a[1])); }
+function mark(i) { scrs.forEach((s, k) => s.classList.toggle("on", k === i)); }
+const info = t => `<span class="info"><button type="button" aria-label="More information"><span class="ms" style="font-size:18px">info</span></button><span class="tip" role="tooltip">${t}</span></span>`;
+/* ---- scenes ---- */
+async function s0(id) {
+  mark(-1); plain(true);
+  $("#panel").innerHTML = `<h3>Today: one campaign after another</h3><div class="slots">${LOCS.map(l => `<div class="slot"><span class="ms">${l[1]}</span> ${l[0]}<br><span style="color:var(--muted);font-weight:400">Plain rotation, little targeting</span></div>`).join("")}</div>`;
+  await wait(5200, id);
+}
+async function s1(id) {
+  plain(true); mark(-1);
+  $("#panel").innerHTML = `<h3>${BRAND}: assign slots to ${ADV}</h3><div class="slots" id="sl">${LOCS.map(l => `<div class="slot"><span class="ms">${l[1]}</span> ${l[0]}<br><span class="st" style="font-weight:400;color:var(--muted)">Open slot</span></div>`).join("")}</div>
+   <div class="deal" id="deal"><div class="row"><b>Direct deal</b><span class="pill">${ADV}</span><span class="pill">All four locations</span></div><div class="row" style="margin-top:8px"><span class="pill pk"><span class="ms" style="font-size:14px">loyalty</span>Loyalty targeting</span><span class="pill">First-party, real time</span><span class="pill">Sold upfront</span></div></div>`;
+  const sl = [...document.querySelectorAll("#sl .slot")];
+  for (let i = 0; i < 4; i++) { await wait(900, id); sl[i].classList.add("fill"); sl[i].querySelector(".st").textContent = ADV; mark(i); }
+  await wait(700, id); mark(-1); $("#deal").classList.add("in"); await wait(2600, id);
+}
+async function s2(id) {
+  plain(true); mark(-1);
+  const brief = `Create a cold drinks campaign for all four locations, aimed at loyalty customers, starting this weekend.`;
+  $("#panel").innerHTML = `<h3>${ADV} logs in and creates by talking</h3><div class="row"><div class="mic rec" id="mic"><span class="ms">mic</span></div><div class="wave" id="wv">${"<i></i>".repeat(14)}</div></div><div class="say" id="say"></div>
+   <div class="gen" id="gen">${["Forecourt: wide landscape","Shop front: landscape","Cooler: tall portrait","POS: compact"].map(t => `<div><span class="ms">check_circle</span>${t}</div>`).join("")}</div>`;
+  const say = $("#say"); for (let i = 1; i <= brief.length; i += 2) { say.textContent = brief.slice(0, i); await wait(34, id); }
+  say.textContent = brief; $("#mic").classList.remove("rec"); $("#wv").style.visibility = "hidden";
+  const g = [...document.querySelectorAll("#gen div")];
+  for (let i = 0; i < 4; i++) { await wait(800, id); g[i].classList.add("in"); setScr(i, "camp", AD[i][0], AD[i][1]); clearInterval(plainTimer); }
+  await wait(2200, id);
+}
+async function s3(id) {
+  allCamp();
+  const stops = LOCS.map((l, i) => `<div class="stop" data-i="${i}"><b>${i + 1}</b>${l[0]}</div>`).join("");
+  $("#panel").innerHTML = `<h3>One shopper, one campaign, four screens</h3><div class="path" id="path"><div class="shopper" id="sh"><span class="ms" style="font-size:20px">person</span></div>${stops}</div><div class="msg" id="msg">Sam, a loyalty member, pulls onto the forecourt.</div>`;
+  const st = [...document.querySelectorAll(".stop")], sh = $("#sh"), path = $("#path");
+  for (let i = 0; i < 4; i++) {
+    const r = st[i].getBoundingClientRect(), p = path.getBoundingClientRect(), k = path.getBoundingClientRect().width / path.offsetWidth || 1;
+    sh.style.left = ((r.left - p.left) / k + r.width / k / 2) + "px";
+    st.forEach((s, j) => s.classList.toggle("on", j === i)); mark(i); setScr(i, "pers", PERS[i], "Personalised in real time");
+    $("#msg").textContent = ["Forecourt: the screen recognises a loyalty member and greets them.", "Shop front: the same campaign carries on, now with a reward.", "Cooler: the drink Sam usually buys is highlighted.", "POS: the reward is applied at the till."][i];
+    await wait(2100, id);
+  }
+}
+async function s4(id) {
+  allCamp(); mark(-1);
+  const T = [["Direct advertiser deals", "Sold upfront by the retailer", "Highest CPM", 100, "Targeting: yes, first-party, real time"], ["Private auctions", "Invited advertisers", "Premium CPM", 78, "Targeting: yes, first-party, real time"], ["Open auction", "Unsold slots only", "Market CPM", 48, "No targeting"]];
+  $("#panel").innerHTML = `<h3>Sold upfront first, open auction last${info("Slots are offered upfront at higher value first. Only slots not sold through direct or private deals fall through to open auction. Open auction carries no targeting. SSP and DSP connections are coming soon.")}<span class="soon">SSP / DSP integrations: coming soon</span></h3><div class="tiers">${T.map(t => `<div class="tier"><div class="lab">${t[0]}<small>${t[1]}</small></div><div class="bar" data-w="${t[3]}">${t[2]}</div><div style="font-size:12px;color:var(--muted)">${t[4]}</div></div>`).join("")}</div>`;
+  const tr = [...document.querySelectorAll(".tier")];
+  for (let i = 0; i < 3; i++) { await wait(900, id); tr[i].classList.add("in"); tr[i].querySelector(".bar").style.width = T[i][3] + "%"; }
+  await wait(3000, id);
+}
+const RUNNERS = [s0, s1, s2, s3, s4];
+function show(i) { cur = i; document.querySelectorAll(".chip").forEach((c, k) => c.setAttribute("aria-current", k === i ? "true" : "false")); document.querySelectorAll(".dots i").forEach((d, k) => d.classList.toggle("on", k === i)); $("#capt").textContent = (i + 1) + ". " + SCENES[i][0]; $("#capd").textContent = SCENES[i][2]; }
+async function play(from) {
+  const id = ++RUN; let i = from;
+  try { for (;;) { show(i); await RUNNERS[i](id); if (paused && !LOCKED) { await new Promise(() => {}); } ev("step", { step: i + 1 }); if (!LOCKED && i === SCENES.length - 1) { ev("complete"); } i = (i + 1) % SCENES.length; if (LOCKED && i > 2) i = 0; } }
+  catch (e) { if (!(e instanceof Cancel)) console.error(e); }
+}
+const jump = i => { paused = false; setPlayIcon(); play(((i % 5) + 5) % 5); };
+function setPlayIcon() { $("#play").innerHTML = `<span class="ms">${paused ? "play_arrow" : "pause"}</span>`; $("#play").setAttribute("aria-label", paused ? "Play" : "Pause"); }
+$("#prev").onclick = () => jump(cur - 1); $("#next").onclick = () => jump(cur + 1);
+$("#play").onclick = () => { paused = !paused; setPlayIcon(); if (!paused) jump(cur); else RUN++; };
+document.querySelectorAll(".chip").forEach(c => c.onclick = () => { if (!LOCKED) jump(+c.dataset.i); });
+/* ---- stage scaling ---- */
+const vp = $("#vp"), stage = $("#stage");
+function fit() { const w = vp.clientWidth, narrow = w < 700; stage.classList.toggle("narrow", narrow); const dw = narrow ? 640 : 1200, dh = narrow ? 900 : 600, k = w / dw; stage.style.transform = `scale(${k})`; vp.style.height = Math.round(dh * k) + "px"; }
+fit(); new ResizeObserver(fit).observe(vp);
+if (IN_FRAME) { try { new ResizeObserver(() => { try { window.parent.postMessage({ type: "ph-tour-height", h: Math.ceil($("#wrap").getBoundingClientRect().bottom + window.scrollY + 8) }, location.origin); } catch (e) {} }).observe($("#wrap")); } catch (e) {} }
+/* ---- gate: same pattern as the telco tour (teaser, work-email form, localStorage ph_lead, ph:lead) ---- */
+const FREE_MAIL = /@(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|icloud|me|mac|aol|proton|protonmail|gmx|mail|zoho|yandex)\./i;
+const gate = $("#gate"), form = $("#gform"), btn = $("#gsub"), err = $("#gerr");
+function readLead() { try { const l = JSON.parse(localStorage.getItem(LEAD_KEY) || "null"); return l && l.email ? l : null; } catch (e) { return null; } }
+function sendLead(l) {
+  const body = { name: l.name, company: l.company, email: l.email, consent: true, industry: IND, source: "Interactive product tour", flow: "Retail media walkthrough", website: form.website.value, page: location.pathname, test: /[?&]ph_test=1/.test(location.search) };
+  try { DL().push({ event: "ph_lead_captured", source: body.source, industry: IND }); } catch (e) {}
+  const cfg = PCFG(); if (!cfg.endpoint) return Promise.resolve({ ok: true, prototype: true });
+  return fetch(cfg.endpoint, { method: "POST", credentials: "same-origin", headers: Object.assign({ "Content-Type": "application/json" }, cfg.nonce ? { "X-WP-Nonce": cfg.nonce } : {}), body: JSON.stringify(body) }).then(r => ({ ok: r.ok })).catch(() => ({ ok: false }));
+}
+function check(show) { const n = form.name.value.trim(), c = form.company.value.trim(), e = form.email.value.trim(), okMail = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(e), free = okMail && FREE_MAIL.test(e);
+  err.textContent = free ? "Please use your work email." : (show && e && !okMail ? "Please enter a valid email." : ""); const ok = n.length > 1 && c.length > 1 && okMail && !free && form.consent.checked; btn.classList.toggle("ok", ok); return ok; }
+form.addEventListener("input", () => check(false)); form.email.addEventListener("blur", () => check(true));
+form.onsubmit = e => { e.preventDefault(); if (!check(true)) return; const lead = { name: form.name.value.trim(), company: form.company.value.trim(), email: form.email.value.trim(), source: "Interactive product tour", ts: Date.now() };
+  try { localStorage.setItem(LEAD_KEY, JSON.stringify(lead)); } catch (x) {} sendLead(lead); ev("gate_pick"); unlock(true); };
+function lock() { LOCKED = true; $("#wrap").classList.add("locked"); gate.hidden = false; play(0); }
+function unlock(auto) { LOCKED = false; $("#wrap").classList.remove("locked"); gate.hidden = true; ev("unlock", { via: auto ? "walkthrough form" : "existing details" }); play(auto ? 0 : cur); }
+const onLead = e => { const l = (e && e.detail && e.detail.email) ? e.detail : readLead(); if (LOCKED && l) unlock(false); };
+window.addEventListener("ph:lead", onLead); try { if (IN_FRAME) window.parent.addEventListener("ph:lead", onLead); } catch (e) {}
+show(0); setPlayIcon();
+if (readLead()) { LOCKED = false; $("#wrap").classList.remove("locked"); play(0); } else lock();
+})();
+</script>
+</body>
+</html>

@@ -201,7 +201,8 @@
   // clash with the theme or Elementor. The band's heading is server-rendered (Elementor, ".ph-ind-tour"); the iframe is progressive enhancement.
   var TOUR_COPY = {
     telco: ["See Personalisation Hub run a telco campaign, end to end", "Pick a demo and watch a campaign go from brief to every store screen."],
-    pharmacy: ["See Personalisation Hub run a pharmacy campaign, end to end", "Pick a demo and watch a campaign go from brief to every pharmacy screen, and on to the pharmacist."]
+    pharmacy: ["See Personalisation Hub run a pharmacy campaign, end to end", "Pick a demo and watch a campaign go from brief to every pharmacy screen, and on to the pharmacist."],
+    "retail-media": ["See a convenience retailer run its own retail media network", "Follow one campaign from forecourt to POS and see how real-time first-party targeting lifts CPM."]
   };
   function tourSrc() { return "/industries/" + page + "/tour/?embed=1" + (testMode() ? "&ph_test=1" : ""); }
   function setupTour() {
@@ -224,7 +225,7 @@
       arrangeDemo: function () { if (typeof window.PH_SITE_DEMO === "function") window.PH_SITE_DEMO(band); }
     };
     var f = el("iframe", "ph-ind-tour-frame");
-    f.title = "Interactive product tour"; f.loading = "lazy"; f.src = tourSrc();
+    f.title = page === "retail-media" ? "Retail media walkthrough" : "Interactive product tour"; f.loading = "lazy"; f.src = tourSrc();
     f.setAttribute("scrolling", "no"); f.style.cssText = "width:100%;border:0";
     f.setAttribute("allow", "fullscreen"); f.setAttribute("allowfullscreen", ""); f.allowFullscreen = true;
     mount.appendChild(f);
