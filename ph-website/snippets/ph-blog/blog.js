@@ -99,6 +99,15 @@
     }
   }
 
+  /* in-post demo links open the site's Arrange a Demo pop-up (site.js, snippet 10063); without it the link is followed */
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest ? e.target.closest(".ph-blog-body a[href]") : null;
+    if (!a || a.getAttribute("href").indexOf("https://calendly.com/rob-offline2online") !== 0) return;
+    if (typeof window.PH_SITE_DEMO !== "function") return;
+    e.preventDefault();
+    window.PH_SITE_DEMO(null);
+  });
+
   /* copy-prompt buttons */
   document.addEventListener("click", function (e) {
     var b = e.target.closest ? e.target.closest(".ph-blog-copy") : null;

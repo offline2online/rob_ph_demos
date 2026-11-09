@@ -560,6 +560,9 @@ ok( false !== strpos( $ejs, 'See Personalisation Hub run a pharmacy campaign, en
 ok( 1 === preg_match( "/ASSETS_VERSION_10063 = '(\d+)\.(\d+)\.(\d+)'/", $mp, $vm2 ) && ( (int) $vm2[2] > 9 || ( (int) $vm2[2] === 9 && (int) $vm2[3] >= 3 ) ), 'main.php: assets version bumped to 1.9.3 for the pharmacy tour' );
 
 require __DIR__ . '/ai-surface.test.php';
+/* PH Blog abilities: own process (it stubs the hook functions itself) */
+exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __DIR__ . '/ph-blog-abilities.test.php' ) . ' 2>&1', $abl_out, $abl_rc );
+ok( 0 === $abl_rc, 'ph-blog-abilities.test.php: ' . implode( ' ', $abl_out ) );
 
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );

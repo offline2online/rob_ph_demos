@@ -16,6 +16,7 @@ The go-live gate for the site-wide agent endpoint release (seven tickets, one re
 | `POST /help-api/mcp` (remote MCP server) | same file |
 | `/go/free-trial/`, `/go/demo/` (tracked CTA hop) | `ph-agent-endpoint/main.php`, `tools.php` |
 | PH Blog snippet output (the blog's open security review) | `snippets/ph-blog/` |
+| `ph-blog/upload-image`, `ph-blog/create-post`, `ph-blog/update-post` (WordPress Abilities API via the MCP Adapter): authenticated, admin-only write abilities, no public route; permissions `upload_files`, `publish_posts`, `edit_post`; schema-validated inputs with unknown keys refused; SSRF guarded by `wp_safe_remote_get` (via `download_url`), https only, 15 MB, image types only | `snippets/ph-blog/abilities.php` |
 
 ## 2. Findings and fixes
 
