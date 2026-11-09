@@ -219,19 +219,6 @@ ok( 1 === count( $GLOBALS['posts'] ) && array( 'Interactive product tour – Tel
 ok( 'ph_lead_captured' === end( $GLOBALS['fired'] )[0] && 'pharmacy' === end( $GLOBALS['fired'] )[1]['industry'], 'the pharmacy capture still reaches the console with industry pharmacy' );
 $GLOBALS['dedupe'] = false;
 
-
-/* retail media walkthrough: its own pinned page, same route handler, same lead endpoint */
-$rm_sha = hash_file( 'sha256', $dir . '/tour/retail-media.html' );
-ok( false !== strpos( $src_php, "WALK_PAGE_SHA256  = '" . $rm_sha . "'" ), 'WALK_PAGE_SHA256 equals the sha256 of tour/retail-media.html' );
-ok( 1 === preg_match( '#main/ph-website/snippets/ph-industry-enhancements/tour/retail-media\.html#', $src_php ), 'walkthrough fetch URL follows main' );
-ok( \AngieSnippets\PhIndustryEnhancements_10063\tour_is_request( '/industries/retail-media/tour/' ) && \AngieSnippets\PhIndustryEnhancements_10063\tour_is_request( '/industries/retail-media/tour' ), 'retail-media tour path is a tour request' );
-$GLOBALS['dedupe'] = false; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array(); $GLOBALS['tr'] = array();
-$r = $call( array_merge( $good, array( 'industry' => 'retail-media', 'flow' => 'Retail media walkthrough', 'company' => 'Rowan Corner Group' ) ), '13.1.1.1' );
-$m = $GLOBALS['meta'][1] ?? array();
-ok( 200 === $r->status && 'Retail media walkthrough' === ( $m['ph_lead_source_label'] ?? '' ) && '/industries/retail-media/' === ( $m['ph_lead_page'] ?? '' ) && 'Retail media walkthrough' === ( $m['ph_lead_tour_flow'] ?? '' ), 'retail media lead: label, page and flow stored' );
-ok( 'retail-media' === ( $GLOBALS['fired'][0][1]['industry'] ?? '' ), 'retail media lead: ph_lead_captured carries industry retail-media' );
-$GLOBALS['posts'] = array(); $GLOBALS['fired'] = array();
-
 /* the free-mail list is the tour's own */
 preg_match( '/const FREE_MAIL = (\/.*?\/i);/', $src, $mm );
 ok( ! empty( $mm[1] ) && \AngieSnippets\PhIndustryEnhancements_10063\tour_free_mail( 'x@gmail.com' ) === (bool) preg_match( $mm[1], 'x@gmail.com' ), 'FREE_MAIL found in the tour' );

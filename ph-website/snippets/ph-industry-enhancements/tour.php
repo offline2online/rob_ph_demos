@@ -15,19 +15,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 const TOUR_SOURCE = 'interactive-product-tour';
-const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation', 'Retail media walkthrough' );
+const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation' );
 /** Industries the tour serves: key = the `industry` the tour sends; path = where the page is served; page = the industry page the lead came from. */
 const TOUR_INDUSTRIES = array(
 	'telco'    => array( 'name' => 'Telco', 'path' => '/industries/telco/tour', 'page' => '/industries/telco/', 'label' => 'Interactive product tour – Telco' ),
 	'pharmacy' => array( 'name' => 'Pharmacy', 'path' => '/industries/pharmacy/tour', 'page' => '/industries/pharmacy/', 'label' => 'Interactive product tour – Pharmacy' ),
-	'retail-media' => array( 'name' => 'Retail media', 'path' => '/industries/retail-media/tour', 'page' => '/industries/retail-media/', 'label' => 'Retail media walkthrough' ),
 );
-
-/** Pinned retail media walkthrough page (a separate, much smaller page than the tour; same pinning rules as TOUR_PAGE_SHA256). */
-const WALK_PAGE_OPTION  = 'ph_walkthrough_page_html';
-const WALK_PAGE_BACKOFF = 'ph_walkthrough_page_backoff';
-const WALK_PAGE_SHA256  = '5b025b8c4c696f747d2f84e83cbc34dfe826029fb41689b4edfbff8320d1dc8e';
-const WALK_PAGE_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/retail-media.html';
 
 /**
  * Pinned copy of the tour page, used when tour-page.php is not deployed (it is 200 KB, too big for the deploy MCP's inline file
@@ -46,37 +39,33 @@ const TOUR_PAGE_URL     = 'https://raw.githubusercontent.com/offline2online/rob_
  * fails or does not match, a 5-minute back-off transient stops further fetches, and an older cached copy (intact against its own sha)
  * is served with 200 and the reason returned for logging. With nothing cached the html is null and the route answers 503.
  */
-function tour_page( $retail = false ) {
-	$opt = $retail ? WALK_PAGE_OPTION : TOUR_PAGE_OPTION;
-	$bo  = $retail ? WALK_PAGE_BACKOFF : TOUR_PAGE_BACKOFF;
-	$pin = $retail ? WALK_PAGE_SHA256 : TOUR_PAGE_SHA256;
-	$url = $retail ? WALK_PAGE_URL : TOUR_PAGE_URL;
-	if ( ! $retail && file_exists( __DIR__ . '/tour-page.php' ) ) {
+function tour_page() {
+	if ( file_exists( __DIR__ . '/tour-page.php' ) ) {
 		return array( data( 'tour-page.php' ), '' );
 	}
-	$cached = get_option( $opt );
+	$cached = get_option( TOUR_PAGE_OPTION );
 	$intact = is_array( $cached ) && isset( $cached['sha'], $cached['html'] ) && is_string( $cached['html'] ) && '' !== $cached['html'] && hash( 'sha256', $cached['html'] ) === $cached['sha'];
-	if ( $intact && $pin === $cached['sha'] ) {
+	if ( $intact && TOUR_PAGE_SHA256 === $cached['sha'] ) {
 		return array( $cached['html'], '' );
 	}
 	$why = '';
-	if ( false !== get_transient( $bo ) ) {
+	if ( false !== get_transient( TOUR_PAGE_BACKOFF ) ) {
 		$why = 'fetch skipped, backing off after an earlier failure';
 	} else {
-		$res = wp_remote_get( $url, array( 'timeout' => 10 ) );
+		$res = wp_remote_get( TOUR_PAGE_URL, array( 'timeout' => 10 ) );
 		if ( is_wp_error( $res ) ) {
 			$why = 'fetch failed: ' . $res->get_error_message();
 		} elseif ( 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
 			$why = 'fetch answered ' . (int) wp_remote_retrieve_response_code( $res );
 		} else {
 			$body = (string) wp_remote_retrieve_body( $res );
-			if ( hash( 'sha256', $body ) === $pin ) {
-				update_option( $opt, array( 'sha' => $pin, 'html' => $body ), false );
+			if ( hash( 'sha256', $body ) === TOUR_PAGE_SHA256 ) {
+				update_option( TOUR_PAGE_OPTION, array( 'sha' => TOUR_PAGE_SHA256, 'html' => $body ), false );
 				return array( $body, '' );
 			}
-			$why = 'fetched copy does not match the pinned sha256';
+			$why = 'fetched copy does not match TOUR_PAGE_SHA256';
 		}
-		set_transient( $bo, 1, 5 * MINUTE_IN_SECONDS );
+		set_transient( TOUR_PAGE_BACKOFF, 1, 5 * MINUTE_IN_SECONDS );
 	}
 	if ( $intact ) {
 		return array( $cached['html'], $why . '; serving the cached copy' );
@@ -180,7 +169,7 @@ add_action( 'template_redirect', function () {
 	if ( 'GET' !== $method || ! tour_is_request( wp_parse_url( $uri, PHP_URL_PATH ) ) ) {
 		return;
 	}
-	list( $html, $why ) = tour_page( 0 === strpos( rtrim( (string) wp_parse_url( $uri, PHP_URL_PATH ), '/' ), '/industries/retail-media' ) );
+	list( $html, $why ) = tour_page();
 	if ( '' !== $why ) {
 		error_log( 'ph tour: ' . $why );
 	}
