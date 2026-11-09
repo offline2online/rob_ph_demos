@@ -1,6 +1,6 @@
 <?php
 /**
- * PH Agent Endpoint (Angie snippet). Version 1.6.0
+ * PH Agent Endpoint (Angie snippet). Version 1.7.0
  *
  * Markdown twins (?format=md), one shared JSON-LD graph and llms.txt sections
  * for the allow-listed pages in lib.php. Industries, Blog and Support Centre
@@ -214,6 +214,24 @@ function live_industries() {
 	return $out;
 }
 
+/** The markdown of an industry page (hub or one of the nine): the Industries snippet's twin, with the calculator and tour text generated from their lists. */
+function industry_md_for( $slug ) {
+	if ( function_exists( IND_NS . 'industry_twin' ) ) {
+		return call_user_func( IND_NS . 'industry_twin', $slug );
+	}
+	if ( function_exists( IND_NS . 'data' ) ) {
+		$md = call_user_func( IND_NS . 'data', 'md.php' );
+		return $md[ $slug ] ?? null;
+	}
+	return null;
+}
+
+/** The industries hub page, when it is published, public and not noindex. */
+function industry_hub_live() {
+	$post = get_page_by_path( 'industries' );
+	return $post && 'publish' === $post->post_status && empty( $post->post_password ) && 'yes' !== get_post_meta( $post->ID, '_seopress_robots_index', true );
+}
+
 function tool_source() {
 	return array(
 		'pages'       => __NAMESPACE__ . '\live_pages',
@@ -225,8 +243,7 @@ function tool_source() {
 		'industry_md' => function ( $slug ) {
 			foreach ( live_industries() as $r ) {
 				if ( $r[0] === $slug ) {
-					$md = call_user_func( IND_NS . 'data', 'md.php' );
-					return $md[ $slug ];
+					return industry_md_for( $slug );
 				}
 			}
 			return null;
@@ -413,4 +430,56 @@ add_action( 'template_redirect', function () {
 	header( 'Referrer-Policy: no-referrer' );
 	wp_redirect( $hit[1], 302, 'PH Agent Endpoint' ); // phpcs:ignore WordPress.Security.SafeRedirect -- fixed constants, never request input.
 	exit;
+}, 0 );
+
+/* ------------------------------------------------------------------ /llms-full.txt and /.well-known/mcp.json */
+/* llms.txt plus the full markdown twin of every allow-listed page and every industry page, each under its URL; and the MCP server card.
+   Both are cached like the twins: a transient for 5 minutes (new generation when content changes) plus max-age=300. */
+
+function llms_full_body() {
+	$key  = 'ph_ae_full_' . md5( (string) tools_generation() );
+	$body = get_transient( $key );
+	if ( is_string( $body ) && '' !== $body ) {
+		return $body;
+	}
+	$base = function_exists( IND_NS . 'data' ) ? (string) call_user_func( IND_NS . 'data', 'llms.php' ) : "# Personalisation Hub\n";
+	$llms = (string) apply_filters( 'ph_llms_txt', $base );
+	$docs = array();
+	foreach ( array_keys( allow_list() ) as $id ) {
+		$post = exposable_post( $id );
+		if ( $post ) {
+			$docs[] = array( page_url( $id ), twin_for( $post ) );
+		}
+	}
+	if ( industry_hub_live() ) {
+		$docs[] = array( home_url( '/industries/' ), industry_md_for( 'industries' ) );
+	}
+	foreach ( live_industries() as $r ) {
+		$docs[] = array( $r[2], industry_md_for( $r[0] ) );
+	}
+	$body = llms_full_text( $llms, $docs );
+	set_transient( $key, $body, 300 );
+	return $body;
+}
+
+add_action( 'template_redirect', function () {
+	$uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security
+	$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
+	if ( '/llms-full.txt' === $path ) {
+		status_header( 200 );
+		header( 'Content-Type: text/plain; charset=utf-8' );
+		header( 'Cache-Control: public, max-age=300' );
+		header( 'X-Content-Type-Options: nosniff' );
+		echo llms_full_body(); // phpcs:ignore WordPress.Security.EscapeOutput -- plain text.
+		exit;
+	}
+	if ( '/.well-known/mcp.json' === $path ) {
+		status_header( 200 );
+		header( 'Content-Type: application/json; charset=utf-8' );
+		header( 'Cache-Control: public, max-age=300' );
+		header( 'Access-Control-Allow-Origin: *' );
+		header( 'X-Content-Type-Options: nosniff' );
+		echo wp_json_encode( server_card(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ); // phpcs:ignore WordPress.Security.EscapeOutput -- JSON.
+		exit;
+	}
 }, 0 );

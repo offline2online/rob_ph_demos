@@ -383,7 +383,8 @@ ok( $o['legalName'] === 'Personalisation Hub Pty Ltd' && $o['foundingDate'] === 
 ok( strpos( $o['logo'], 'https://personalisationhub.com/' ) === 0, 'Organization has a logo' );
 ok( count( $o['sameAs'] ) === 5 && in_array( 'https://www.linkedin.com/company/personalisation-hub/', $o['sameAs'], true ) && in_array( 'https://signage.amazon.com/cms-partners/personalisation-hub', $o['sameAs'], true ), 'Organization sameAs: LinkedIn, AWS Marketplace, Amazon Signage CMS, X, seller profile' );
 $oj = json_encode( $o ) . json_encode( software_node() );
-ok( ! preg_match( '/Sydney|Australia|crunchbase|g2\.com|address|areaServed|2016/i', $oj ), 'no location, Crunchbase, G2 or 2016 in the entity schema' );
+ok( ! preg_match( '/Sydney|Australia|crunchbase|g2\.com|address|2016/i', $oj ), 'no location, Crunchbase, G2 or 2016 in the entity schema' );
+ok( $o['areaServed'] === 'Worldwide', 'Organization serves Worldwide (a scope, not a location)' );
 ok( strpos( file_get_contents( $snips . '/ph-support-centre/main.php' ), "const SITE_NAME    = 'Personalisation Hub Support Centre'" ) !== false, 'Support Centre WebSite is named Support Centre' );
 
 /* Support Centre 1.4.0: live feed first, refresh endpoint, no Google Fonts request */
@@ -438,6 +439,26 @@ require_once dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/ai-hygiene
 $ihd = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/';
 $ihns = 'AngieSnippets\\PhIndustryEnhancements_10063\\';
 eval( 'namespace AngieSnippets\\PhIndustryEnhancements_10063; function data( $f ) { return require \'' . $ihd . '\' . $f; } function page_url( $k ) { return \'industries\' === $k ? home_url( \'/industries/\' ) : home_url( \'/industries/\' . $k . \'/\' ); }' );
+require_once $ihd . 'redirects.php';
+foreach ( array( 'is_admin', 'wp_doing_ajax', 'wp_doing_cron' ) as $rf ) { if ( ! function_exists( $rf ) ) { eval( "function $rf() { return false; }" ); } }
+$rt = $ihns . 'redirect_target';
+$nw = '/white-label-retail-media-platform/';
+ok( $rt( '/retail-media-platform/' ) === $nw && $rt( '/retail-media-platform' ) === $nw, 'redirect: old path with and without slash' );
+ok( $rt( '/Retail-Media-Platform/' ) === $nw, 'redirect: case-insensitive' );
+ok( $rt( '/retail-media-platform/?format=md' ) === $nw . '?format=md' && $rt( '/retail-media-platform?a=1&b=2' ) === $nw . '?a=1&b=2', 'redirect: query string kept' );
+ok( $rt( '/retail-media-platform/', 'HEAD' ) === $nw && $rt( '/retail-media-platform/', 'POST' ) === '', 'redirect: GET and HEAD only' );
+foreach ( array( '/white-label-retail-media-platform/', '/industries/retail-media/', '/retail-media-platform/x/', '/foo/retail-media-platform/', '/retail-media-platforms/', '/', '' ) as $np ) { ok( $rt( $np ) === '', "redirect: $np is not redirected" ); }
+$sd = $ihns . 'slug_move_decision';
+$mk = function ( $name, $status = 'publish', $type = 'page' ) { return (object) array( 'post_name' => $name, 'post_status' => $status, 'post_type' => $type ); };
+$sm = ( $ihns . 'slug_moves' )();
+ok( isset( $sm[3266] ) && $sm[3266] === array( 'retail-media-platform', 'white-label-retail-media-platform' ), 'slug move: page 3266 listed' );
+ok( $sd( $mk( 'retail-media-platform' ), array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === 'white-label-retail-media-platform', 'slug move: old slug moves' );
+ok( $sd( $mk( 'white-label-retail-media-platform' ), array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: new slug does nothing' );
+ok( $sd( $mk( 'something-else' ), array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: other slug does nothing' );
+ok( $sd( $mk( 'retail-media-platform', 'draft' ), array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: draft does nothing' );
+ok( $sd( null, array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: missing post does nothing' );
+ok( $sd( $mk( 'retail-media-platform' ), array( 3266 ), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: already done does nothing' );
+ok( ! isset( ( $ihns . 'ai_feature_pages' )()['retail-media-platform'] ), 'ai_feature_pages no longer lists the moved page' );
 $ihdescs = array();
 $ihpages = array();
 foreach ( array_keys( ( $ihns . 'ai_industry_names' )() ) as $k ) { $ihpages[] = array( 'industry', $k ); }
@@ -537,6 +558,8 @@ ok( false !== strpos( $tp, "'pharmacy' => array(" ) && false !== strpos( $tp, 'I
 ok( false !== strpos( $tp, hash( 'sha256', $tsrc ) ), 'tour.php: TOUR_PAGE_SHA256 is the sha256 of tour/tour.html' );
 ok( false !== strpos( $ejs, 'See Personalisation Hub run a pharmacy campaign, end to end' ) && false !== strpos( $ejs, 'and on to the pharmacist.' ) && false !== strpos( $ejs, '"/industries/" + page + "/tour/?embed=1"' ), 'enhance.js: the tour mounts on the pharmacy page with pharmacy copy' );
 ok( 1 === preg_match( "/ASSETS_VERSION_10063 = '(\d+)\.(\d+)\.(\d+)'/", $mp, $vm2 ) && ( (int) $vm2[2] > 9 || ( (int) $vm2[2] === 9 && (int) $vm2[3] >= 3 ) ), 'main.php: assets version bumped to 1.9.3 for the pharmacy tour' );
+
+require __DIR__ . '/ai-surface.test.php';
 
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );

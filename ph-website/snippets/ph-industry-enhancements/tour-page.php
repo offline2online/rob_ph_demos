@@ -663,6 +663,123 @@ html.fs .cap b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden
 html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
 @media (max-width:599px){html.fs .bar{flex-wrap:wrap;gap:8px 16px}html.fs .cap{order:-1;flex:1 1 100%}html.fs .cap b{white-space:normal}html.fs .dots{order:4;flex:1 1 100%;margin-right:0;gap:4px}html.fs .dot{flex:1 1 0;width:auto;max-width:26px}html.fs .fsbtn{display:inline-flex;order:3;margin-left:0;flex:0 0 auto}}
 @media (max-height:520px) and (min-width:600px){html.fs .bar{width:auto;max-width:none;margin-inline:0;flex-wrap:nowrap;padding-block:0;gap:8px 10px}html.fs .dot{width:16px}html.fs .cap{order:5;flex:1 1 0;text-align:right}html.fs .cap span{display:none}html.fs .cap b{font-size:13px}}
+/* ---- Fuel & convenience walkthrough (retailer's own campaign): four venue screens, five scenes ---- */
+.cv{position:absolute;left:0;top:0;width:1280px;height:760px;background:linear-gradient(180deg,#0e1a2c 0%,#16283f 100%);color:#fff;font-family:Roboto,Arial,sans-serif;overflow:hidden}
+.cv *{box-sizing:border-box}
+.cv-top{position:absolute;left:32px;right:32px;top:22px;display:flex;align-items:center;gap:14px}
+.cv-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px}
+.cv-logo i{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-style:normal;font-weight:900;font-size:16px;color:#fff}
+.cv-sc{margin-left:auto;font-size:13px;letter-spacing:.8px;text-transform:uppercase;color:#9fb4cc;font-weight:500}
+.cv-row{position:absolute;left:0;right:0;bottom:44px;display:flex;justify-content:center;align-items:flex-end;gap:52px}
+.cv-loc{display:flex;flex-direction:column;align-items:center;gap:12px;transition:transform .5s,opacity .5s}
+.cv-loc.dim{opacity:.55}
+.cv-loc.on{transform:translateY(-8px)}
+.cv-tile{position:relative;background:#05080d;border-radius:16px;padding:9px;box-shadow:0 18px 40px rgba(0,0,0,.45);border:2px solid #263a55;transition:border-color .4s,box-shadow .4s}
+.cv-loc.on .cv-tile{border-color:var(--cva,#7fe05a);box-shadow:0 0 0 4px rgba(127,224,90,.18),0 18px 40px rgba(0,0,0,.45)}
+.cv-scr{position:relative;width:100%;height:100%;border-radius:9px;overflow:hidden}
+.cv-tile.fore{width:300px;height:198px}.cv-tile.shop{width:198px;height:352px}.cv-tile.cool{width:160px;height:352px}.cv-tile.pos{width:250px;height:156px}
+.cv-lab{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:500;color:#dbe6f3}.cv-lab .ms{font-size:20px;color:var(--cva,#7fe05a)}
+.cv-lab small{display:block;font-size:11.5px;color:#8ea3bc;font-weight:400}
+.cv-ad{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:12px 14px;animation:fade .45s ease both;font-size:var(--fs,13px)}
+.cv-ad .ic{font-size:2.6em;opacity:.9;margin-bottom:.35em}
+.cv-ad b{display:block;font-size:1.55em;line-height:1.12;font-weight:900;letter-spacing:-.01em;text-wrap:balance}
+.cv-ad small{display:block;margin-top:.45em;font-size:1em;opacity:.9;line-height:1.3;font-weight:500}
+.cv-ad .tg{display:inline-flex;align-self:flex-start;align-items:center;gap:.4em;font-size:.78em;letter-spacing:.5px;text-transform:uppercase;font-weight:700;background:rgba(255,255,255,.2);padding:.3em .7em;border-radius:99px;margin-bottom:.6em}
+.cv-ad .tg .ms{font-size:1.3em}
+.cv-ad .cup{position:absolute;right:6px;bottom:4px;width:34%;opacity:.95}
+.cv-ad.cre,.cv-ad.per{background:linear-gradient(150deg,#5a2d12,#a4501c)}
+.cv-ad.per{background:linear-gradient(150deg,#0b4a3a,#14805f)}
+.cv-ad.per .tg{background:#b6f432;color:#0b2a21}
+.cv-tile.fore{--fs:13.5px}.cv-tile.shop{--fs:11.5px}.cv-tile.cool{--fs:10.5px}.cv-tile.pos{--fs:11.5px}
+.cv-tile.shop .cup,.cv-tile.cool .cup{width:60%;right:10px}
+.cv-panel{position:absolute;background:#fff;color:#1d2730;border-radius:16px;box-shadow:0 14px 36px rgba(0,0,0,.35);overflow:hidden}
+.cv-ph{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #e3e9ef;font-weight:700;font-size:16px}.cv-ph .ms{color:#169bc2;font-size:24px}
+.cv-ph em{margin-left:auto;font-style:normal;font-size:12px;font-weight:500;color:#5b6873;background:#eef3f7;padding:3px 10px;border-radius:99px}
+.cv-pb{padding:18px}
+.cv-brief{min-height:118px;border:1px solid #d5dde5;border-radius:12px;padding:14px;font-size:16px;line-height:1.5;color:#1d2730;background:#f8fafc}
+.cv-brief .caret{display:inline-block;width:2px;height:1.1em;background:#169bc2;vertical-align:text-bottom;margin-left:1px}.cv-brief .caret.typing{animation:blink 1s step-end infinite}
+.cv-mic{display:inline-flex;align-items:center;gap:10px;height:44px;padding:0 18px;border-radius:99px;background:#eef3f7;color:#1d2730;font-weight:500;font-size:15px;margin-top:14px}
+.cv-mic .ms{font-size:22px}.cv-mic.rec{background:#fdecec;color:#c23030;animation:pulse 1.4s infinite}
+.cv-prog{margin-top:16px;display:flex;flex-direction:column;gap:9px}
+.cv-pi{display:flex;align-items:center;gap:10px;font-size:15px;color:#8a97a3;transition:color .3s}.cv-pi .ms{font-size:22px;color:#c3ccd5}
+.cv-pi.run{color:#1d2730}.cv-pi.run .ms{color:#169bc2;animation:spin 1.1s linear infinite}
+.cv-pi.done{color:#1d2730}.cv-pi.done .ms{color:#2e9d5b}
+.cv-cre{position:absolute;display:flex;flex-direction:column;gap:10px;align-items:center;transition:opacity .4s}
+.cv-cre .cv-tile{border-color:#2d4361}.cv-cre.wait{opacity:.35}
+.cv-chip{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 15px;border-radius:99px;border:1.5px solid #cfd9e2;font-size:15px;font-weight:500;color:#33414d;background:#fff;transition:all .25s}
+.cv-chip .ms{font-size:20px;display:none}.cv-chip.sel{background:#e4f5fb;border-color:#169bc2;color:#0d6f8f}.cv-chip.sel .ms{display:inline-block}
+.cv-chip small{color:#7a8794;font-weight:400;font-size:12.5px}
+.cv-chips{display:flex;flex-wrap:wrap;gap:10px}
+.cv-lab2{font-size:12.5px;letter-spacing:.7px;text-transform:uppercase;color:#6a7783;font-weight:700;margin:16px 0 8px}.cv-lab2:first-child{margin-top:0}
+.cv-sw{display:inline-flex;align-items:center;width:52px;height:30px;border-radius:99px;background:#c8d2db;padding:3px;transition:background .3s;flex:none}.cv-sw i{width:24px;height:24px;border-radius:50%;background:#fff;transition:transform .3s;box-shadow:0 1px 3px rgba(0,0,0,.3)}.cv-sw.on{background:#2e9d5b}.cv-sw.on i{transform:translateX(22px)}
+.cv-rule{display:grid;grid-template-columns:1.25fr 1fr .8fr 1fr;gap:8px;margin-top:10px;animation:rowin .4s ease both}.cv-rule div{border:1px solid #d5dde5;border-radius:8px;padding:8px 11px;font-size:13.5px;background:#fff}.cv-rule small{display:block;font-size:10.5px;color:#7a8794;letter-spacing:.4px;text-transform:uppercase}
+.cv-stat{display:flex;align-items:center;gap:10px;font-size:14px;color:#33414d}.cv-stat b{font-size:20px}
+.cv-track{position:absolute;left:150px;right:150px;top:92px;height:90px}
+.cv-line{position:absolute;left:60px;right:60px;top:42px;height:4px;border-radius:3px;background:#2a4263}
+.cv-lf{position:absolute;left:60px;top:42px;height:4px;border-radius:3px;background:var(--cva,#7fe05a);width:0;transition:width 1.1s cubic-bezier(.45,0,.25,1)}
+.cv-stop{position:absolute;top:30px;width:28px;height:28px;margin-left:-14px;border-radius:50%;background:#16283f;border:3px solid #2f4b70;display:grid;place-items:center;font-size:12px;font-weight:700;color:#8ea3bc;transition:all .4s}
+.cv-stop.on{border-color:var(--cva,#7fe05a);color:#0b2a21;background:var(--cva,#7fe05a)}
+.cv-me{position:absolute;top:8px;width:52px;margin-left:-26px;text-align:center;transition:left 1.1s cubic-bezier(.45,0,.25,1)}
+.cv-me i{display:grid;place-items:center;width:44px;height:44px;margin:0 auto;border-radius:50%;background:#fff;color:#0e1a2c;font-style:normal;font-weight:900;font-size:18px;box-shadow:0 0 0 4px rgba(255,255,255,.2)}
+.cv-rec{position:absolute;left:50%;top:10px;transform:translateX(-50%);display:inline-flex;align-items:center;gap:8px;background:#b6f432;color:#0b2a21;border-radius:99px;height:34px;padding:0 16px;font-weight:700;font-size:14px;animation:pop .4s ease both}.cv-rec .ms{font-size:20px}
+.cv-kpis{position:absolute;left:32px;top:64px;width:360px;display:flex;flex-direction:column;gap:14px}
+.cv-kpi{background:#fff;color:#1d2730;border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px;box-shadow:0 10px 26px rgba(0,0,0,.3)}
+.cv-kpi .ic{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;background:#e4f5fb;color:#169bc2}.cv-kpi .ic .ms{font-size:26px}
+.cv-kpi small{display:flex;align-items:center;gap:5px;color:#5b6873;font-size:13.5px}.cv-kpi b{display:block;font-size:30px;line-height:1.1;font-variant-numeric:tabular-nums}
+.cv-i{font-size:17px!important;color:#169bc2;cursor:default}
+.cv-chart{left:424px;top:64px;width:824px;height:628px}
+.cv-leg{display:flex;gap:18px;margin-left:auto;font-size:13px;font-weight:500;color:#33414d}.cv-leg span{display:inline-flex;align-items:center;gap:6px}.cv-leg i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.cv-bar{transform-origin:50% 100%;transform-box:fill-box;animation:cvgrow .9s cubic-bezier(.3,.9,.3,1) both}@keyframes cvgrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.cv-title{position:absolute;left:32px;top:66px;max-width:1000px}.cv-title b{display:block;font-size:32px;font-weight:900;letter-spacing:-.02em}.cv-title span{display:block;margin-top:6px;font-size:16px;color:#aebfd3}
+.cv-pill{position:absolute;left:50%;top:196px;transform:translateX(-50%);display:inline-flex;align-items:center;gap:10px;height:40px;padding:0 20px;border-radius:99px;background:rgba(255,255,255,.1);border:1px solid #2f4b70;font-size:15px;color:#dbe6f3;white-space:nowrap}.cv-pill .ms{animation:spin 3s linear infinite}
+.cv-ad.cre b,.cv-ad.per b,.cv-ad.cre small,.cv-ad.per small{max-width:66%}
+.cv-tile.shop .cv-ad,.cv-tile.cool .cv-ad{justify-content:flex-start;padding-top:18px}
+.cv-tile.shop .cv-ad b,.cv-tile.cool .cv-ad b,.cv-tile.shop .cv-ad small,.cv-tile.cool .cv-ad small{max-width:100%}
+.cv-tile.pos .cv-ad.per b,.cv-tile.pos .cv-ad.cre b{font-size:1.35em}
+.cv-title+.cv-track{top:150px}
+
+/* ---- retail media (convenience retail) ---- */
+.rm-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.rm-card{background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:10px}
+.rm-ch{display:flex;align-items:center;gap:6px;font-size:14px}.rm-ch .ms{font-size:20px;color:#169bc2}.rm-ch small{margin-left:auto;color:#7a8794;font-size:12px}
+.rm-view{height:170px;margin:8px 0;background:#0f1424;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.rm-tile{display:block;overflow:hidden;border-radius:4px;background:#0f1424}.rm-tile svg{display:block;width:100%;height:100%}
+.rm-plh{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:#7a8794;margin-bottom:2px}
+.rm-slot{display:flex;gap:6px;align-items:center;padding:5px 6px;border:1px solid #edf0f3;border-radius:6px;margin-top:4px;font-size:12px;transition:background .3s}
+.rm-slot .n{width:16px;height:16px;border-radius:8px;background:#eef1f4;text-align:center;font-size:10px;line-height:16px;color:#5a6479}.rm-slot .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rm-slot .b{font-size:10px;color:#7a8794}
+.rm-slot.ad{background:#eaf6ff;border-color:#9ccbf0;font-weight:600}.rm-slot.ad .b{color:#0a5c99}
+.rm-tbl{border:1px solid #e3e8ee;border-radius:8px;background:#fff;overflow:hidden}
+.rm-th,.rm-tr{display:grid;grid-template-columns:2fr 1fr 1.3fr 1fr 1fr;gap:10px;padding:12px 14px;align-items:center;font-size:14px}
+.rm-th{background:#f4f6f8;font-weight:600;color:#44505c}.rm-tr{border-top:1px solid #eef1f3}.rm-tr.new{background:#eaf6ff;animation:reveal .6s ease both}
+.rm-tr .sd,.rm-th .sd{display:inline-block;width:8px;height:8px;border-radius:4px;margin-right:6px}
+.rm-rules{display:flex;flex-direction:column;gap:8px}.rm-rule{display:flex;align-items:center;gap:8px;animation:reveal .5s ease both}
+.rm-rule .rf{border:1px solid #d6dce2;border-radius:6px;padding:8px 12px;background:#fff;font-size:14px;min-width:150px}.rm-rule .rf.op{min-width:90px;color:#5a6479}.rm-rule .rf.v{background:#eaf6ff;border-color:#9ccbf0;font-weight:600}.rm-rule .and{font-size:11px;font-weight:700;color:#169bc2;width:34px}
+.rm-login{position:absolute;inset:0;background:linear-gradient(160deg,#eef3f6,#e3ebf0);display:flex;align-items:center;justify-content:center}
+.rm-lc{width:420px;background:#fff;border-radius:14px;padding:30px 32px;box-shadow:0 18px 40px rgba(10,30,45,.18);display:flex;flex-direction:column;gap:6px}
+.rm-lm{display:flex;align-items:center;gap:8px;font-size:18px;margin-bottom:10px}.rm-lc h3{margin:6px 0 0;font-size:20px}.rm-ls{color:#7a8794;font-size:14px;margin-bottom:8px}.rm-lc label{font-size:13px;color:#5a6479;margin-top:6px}.rm-lc .aibtn{margin-top:14px;align-self:flex-start}
+.rm-j{position:absolute;inset:0;background:linear-gradient(160deg,#141c33,#0b1020);color:#e9edf6;display:flex;flex-direction:column;padding:22px 28px;gap:16px}
+.rm-jh{display:flex;align-items:center;gap:12px;font-size:16px}.rm-jh span:last-child{color:#a3adc2;font-size:14px}
+.rm-jm{display:flex;gap:20px;flex:1;min-height:0}.rm-jg{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:14px}
+.rm-jc{background:#161d31;border:2px solid #2a3350;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;transition:border-color .4s,box-shadow .4s;min-height:0}
+.rm-jc.on{border-color:#60d838;box-shadow:0 0 0 4px rgba(96,216,56,.18)}
+.rm-jl{display:flex;align-items:center;gap:8px;font-size:14px}.rm-jl .ms{font-size:18px;color:#4fc3e3}.rm-jl i{margin-left:auto;font-style:normal;font-size:11px;background:#60d838;color:#0f1424;border-radius:10px;padding:2px 9px;font-weight:700}
+.rm-jv{flex:1;display:flex;align-items:center;justify-content:center;background:#0b1020;border-radius:8px;min-height:0;overflow:hidden}
+.rm-sh{width:270px;background:#161d31;border:1px solid #2a3350;border-radius:12px;padding:18px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.rm-av{width:54px;height:54px;border-radius:27px;background:#169bc2;display:flex;align-items:center;justify-content:center}.rm-av .ms{font-size:32px;color:#fff}.rm-sh b{font-size:20px}.rm-sh small{color:#a3adc2;font-size:13px}
+.rm-sg{display:flex;gap:8px;align-items:flex-start;background:#0b1020;border-radius:8px;padding:10px;font-size:13px;margin-top:6px}.rm-sg .ms{font-size:18px;color:#60d838}
+.rm-at{width:100%;margin-top:8px;display:flex;flex-direction:column;gap:8px}.rm-at div{display:flex;justify-content:space-between;border-top:1px solid #2a3350;padding-top:8px;font-size:13px}.rm-at span{color:#a3adc2}
+.rm-path{display:flex;align-items:center;gap:10px;justify-content:center}.rm-st{display:flex;align-items:center;gap:6px;font-size:13px;color:#a3adc2;padding:6px 12px;border-radius:16px;background:#161d31}.rm-st.done{background:#60d838;color:#0f1424;font-weight:700}.rm-st .ms{font-size:18px}.rm-sl{width:48px;height:2px;background:#2a3350}
+.rm-wf{display:flex;flex-direction:column;gap:6px}
+.rm-yr{display:grid;grid-template-columns:34px 230px 1fr 190px 150px;gap:14px;align-items:center;background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:14px 16px;opacity:.55;transition:opacity .4s}.rm-yr.on{opacity:1}
+.rm-yn{width:28px;height:28px;border-radius:14px;background:#169bc2;color:#fff;text-align:center;line-height:28px;font-weight:700}.rm-yt{display:flex;flex-direction:column}.rm-yt small{color:#7a8794;font-size:12px}
+.rm-trk{height:14px;background:#eef1f4;border-radius:7px;overflow:hidden}.rm-trk i{display:block;height:100%;background:linear-gradient(90deg,#169bc2,#60d838);border-radius:7px;transition:width .9s cubic-bezier(.3,0,.2,1)}
+.rm-chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;border:1px solid #d6dce2;border-radius:16px;padding:4px 12px;color:#5a6479;background:#fff}.rm-chip.ok{border-color:#60d838;color:#1c7a10;background:#f0fbec}.rm-chip .ms{font-size:16px}.rm-chip em{font-style:normal;font-size:11px;background:#fff3d6;color:#8a5a00;border-radius:8px;padding:1px 7px;margin-left:4px}
+.rm-cpm{display:flex;align-items:flex-end;gap:3px}.rm-cpm i{width:8px;border-radius:2px;background:#dce1eb}.rm-cpm i.on{background:#169bc2}.rm-cpm em{font-style:normal;font-size:12px;margin-left:8px;align-self:center;color:#44505c}
+.rm-fall{display:flex;align-items:center;gap:6px;justify-content:center;font-size:12px;color:#9aa4ae;height:22px;transition:color .4s}.rm-fall.on{color:#169bc2;font-weight:600}.rm-fall .ms{font-size:16px}
+.rm-soon{display:flex;align-items:center;gap:10px;margin-top:16px}.rm-soon>.ms{color:#7a8794}
+.rm-info{display:inline-flex;vertical-align:middle;position:relative;cursor:help;color:#169bc2}.rm-info .ms{font-size:20px}
+.rm-info:hover::after,.rm-info:focus::after{content:attr(data-tip);position:absolute;left:26px;top:-6px;width:340px;background:#1c2540;color:#fff;font:400 13px/1.4 Roboto,Arial,sans-serif;padding:10px 12px;border-radius:8px;z-index:5}
+@media (max-width:600px){.rm-info:hover::after,.rm-info:focus::after{width:260px}}
 </style>
 </head>
 <body>
@@ -700,7 +817,11 @@ html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
 <script>
 (() => {
 /* ================= data ================= */
-const FLOWS = [
+const IS_CONV = /^\/industries\/convenience\/tour(\/|$)/.test(location.pathname);
+const IS_RM = /^\/industries\/retail-media\/tour(\/|$)/.test(location.pathname);
+const FLOWS = IS_RM ? [
+  ["Retailer setup", true, "Slots · direct deal"], ["Advertiser creates by talking", true, "Voice brief · creative"], ["Shopper journey & outcome", true, "Forecourt to POS · yield"]
+] : [
   ["Automated campaign creative", true], ["Seamless localisation & scheduling", true, "Stores · digital twin"], ["Seamless personalisation", true, "Check-in · first-party data"]
 ];
 const IND = {
@@ -739,17 +860,57 @@ const IND = {
     thumbs: ["leaf", "skin", "queue", "plane"],
     p3: { name: "Gold Members | Extra 20% off sun care", headline: "Gold members save more", sub: "Extra 20% off sun care for Gold members*", big: "+20%", bigSub: "GOLD SUN CARE BONUS*",
       legal: "*Loyalty Gold members only, on the selected sun care range. While stocks last. Always read the label and use only as directed.", audience: ["Loyalty Gold"] }
+  },
+  convenience: {
+    brand: "Larkspur Convenience", color: "#D9541E", accent: "#8EE05A", stores: 53,
+    rows: [
+      ["LOCALISED", "Fresh Bakery | Warm pastries all morning", "Commuters", ["tv"]],
+      ["TARGETED", "Car Wash | $8 with any fill", "Fuel customers", ["tv"]],
+      ["TRIGGERED", "Loyalty App | Earn double points", "App users", ["tv"]],
+      ["SCHEDULED", "Cold Drinks | 2 for $5 energy", "Afternoon shoppers", ["tv"]],
+    ],
+    brief: "Coffee and pastry deal, $6, weekday mornings. Show it on the driveway and forecourt screens, the shop front, the coolers and the POS screens in every store, aimed at commuters and fuel customers.",
+    name: "Coffee + Pastry | $6 weekday mornings",
+    details: "Weekday morning campaign offering a flat white and any pastry for $6. Creative leads with the price, catches fuel customers on the forecourt and points them to the coffee bar, then reminds them at the coolers and the POS.",
+    products: ["Flat white", "Pastry"], audience: ["Commuters", "Fuel customers"], objective: "Drive Store Visits",
+    headline: "COFFEE + PASTRY", sub: "A flat white and any pastry for $6*", legal: "*Weekday mornings only. One pastry per coffee. While stocks last. Participating stores only.",
+    big: "$6", bigSub: "COFFEE + PASTRY*", change: "Make the background brighter for daytime forecourts",
+    thumbs: ["coffee", "car", "snow", "bolt"],
+    p3: { name: "Gold Members | Your usual coffee + pastry", headline: "WELCOME BACK", sub: "Your usual flat white and pastry, $6*", big: "YOUR USUAL", bigSub: "GOLD MEMBER OFFER*",
+      legal: "*Loyalty Gold members only, weekday mornings. One pastry per coffee. While stocks last. Participating stores only.", audience: ["Loyalty Gold"] }
+  },
+  /* Fictional convenience retailer (the visitor's company replaces the name) and a fictional cold drinks advertiser (adv); p3 is the loyalty message shoppers see. */
+  "retail-media": {
+    brand: "Larkspur Convenience", color: "#14507A", accent: "#F2A900", stores: 120, rows: [], thumbs: ["snow", "bolt", "snow", "bolt"],
+    adv: {
+      brand: "Frostline Cold Drinks", color: "#0A5C99", accent: "#E0393E",
+      rows: [
+        ["TARGETED", "Frostline Zero | Summer launch", "Soft drink buyers", ["tv"]],
+        ["SCHEDULED", "Frostline Iced Tea | Back to school", "Lunchtime shoppers", ["tv"]],
+        ["LOCALISED", "Frostline Sparkling | Weekend refresh", "Weekend shoppers", ["tv"]],
+        ["TRIGGERED", "Frostline Energy | Road trip", "Drivers", ["tv"]]
+      ],
+      brief: "Summer launch for Frostline Cold Drinks: a free upsize on every ice-cold Frostline for loyalty members. Run it on the forecourt screens, the shop front, the cooler doors and the checkout screens in every store from December to February, aimed at drivers and lunchtime shoppers.",
+      name: "Frostline Summer | Ice-cold refresh",
+      details: "Summer campaign for Frostline Cold Drinks across the retailer's forecourt, shop front, cooler door and checkout screens, offering loyalty members a free upsize on every ice-cold Frostline. Creative leads with the refresh and points shoppers to the coolers.",
+      products: ["Frostline Cola", "Frostline Iced Tea"], audience: ["Drivers", "Lunchtime shoppers"], objective: "Drive Sales",
+      headline: "Stay ice cold this summer", sub: "Grab a Frostline on your way through*", legal: "*While stocks last. Participating stores only.",
+      big: "ICE COLD", bigSub: "FROSTLINE SUMMER*", change: "Make the background brighter for daytime forecourts"
+    },
+    p3: { name: "Gold Members | Free Frostline upsize", headline: "Gold members drink more", sub: "A free upsize on every Frostline*", big: "FREE UPSIZE", bigSub: "GOLD MEMBER BONUS*",
+      legal: "*Loyalty Gold members only. While stocks last. Participating stores only.", audience: ["Loyalty Gold"] }
   }
 };
 /* One tour source for every industry page: the page path picks the industry (/industries/pharmacy/tour/ is pharmacy, anything else telco). */
-const IND_FROM_PATH = /^\/industries\/pharmacy\/tour(\/|$)/.test(location.pathname) ? "pharmacy" : "telco";
+const IND_FROM_PATH = IS_CONV ? "convenience" : IS_RM ? "retail-media" : /^\/industries\/pharmacy\/tour(\/|$)/.test(location.pathname) ? "pharmacy" : "telco";
 const S = { flow: 0, ind: IND_FROM_PATH, brand: null, color: null, custom: false, step: -1, paused: false, scale: 1, bright: false };
-try { document.title = "Interactive product tour · " + (S.ind === "pharmacy" ? "Pharmacy" : "Telco Retail") + " | Personalisation Hub"; } catch (e) {}
-const INDLABEL = S.ind === "pharmacy" ? "pharmacy" : "telco";
+try { document.title = "Interactive product tour · " + (S.ind === "pharmacy" ? "Pharmacy" : IS_RM ? "Retail Media" : S.ind === "convenience" ? "Fuel & Convenience" : "Telco Retail") + " | Personalisation Hub"; } catch (e) {}
+const INDLABEL = S.ind === "pharmacy" ? "pharmacy" : IS_RM ? "retail media" : S.ind === "convenience" ? "fuel and convenience" : "telco";
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const D = () => S.flow === 2 ? { ...IND[S.ind], ...IND[S.ind].p3 } : IND[S.ind];
-const B = () => S.brand || D().brand;
-const C = () => S.color || D().color;
+const D = () => IS_RM ? (S.flow === 0 ? IND[S.ind] : S.flow === 1 ? { ...IND[S.ind], ...IND[S.ind].adv } : { ...IND[S.ind], ...IND[S.ind].adv, ...IND[S.ind].p3 }) : S.flow === 2 ? { ...IND[S.ind], ...IND[S.ind].p3 } : IND[S.ind];
+/* Retail media: the retailer's name and colour on its own screens (flow 1), the advertiser's on the advertiser's campaign (flows 2 and 3). */
+const B = () => IS_RM && S.flow > 0 ? D().brand : S.brand || D().brand;
+const C = () => IS_RM && S.flow > 0 ? D().color : S.color || D().color;
 
 /* ================= colour + svg helpers ================= */
 const hx = h => { h = h.replace("#",""); if (h.length===3) h=[...h].map(c=>c+c).join(""); return [0,2,4].map(i=>parseInt(h.substr(i,2),16)); };
@@ -764,6 +925,19 @@ function logoSVG(size, onDark) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="${c}"/><circle cx="31" cy="9" r="5" fill="${D().accent}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="${ini.length>1?15:18}" fill="#fff">${ini}</text></svg>`;
 }
 function illo(x, y, s, a, dark) {
+  if (S.ind === "retail-media") return `<g transform="translate(${x} ${y + 10 * s}) scale(${s})">
+    <circle cx="150" cy="70" r="70" fill="${a}" opacity=".22"/>
+    <g transform="rotate(-8 100 120)"><rect x="62" y="20" width="76" height="190" rx="16" fill="#ffffff"/><rect x="62" y="20" width="76" height="190" rx="16" fill="${dark}" opacity=".08"/><rect x="62" y="64" width="76" height="86" fill="${a}"/>
+    <rect x="70" y="8" width="60" height="16" rx="6" fill="${dark}"/><text x="100" y="116" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="17" fill="#fff">FROST</text>
+    <path d="M100 160 v30 M88 168 l24 14 M112 168 l-24 14" stroke="${dark}" stroke-width="3" stroke-linecap="round" opacity=".7"/></g>
+    <g fill="#ffffff" opacity=".9"><circle cx="30" cy="40" r="4"/><circle cx="196" cy="150" r="5"/><circle cx="20" cy="150" r="3"/><circle cx="190" cy="20" r="3"/></g></g>`;
+  if (S.ind === "convenience") return `<g transform="translate(${x} ${y + 10 * s}) scale(${s})">
+    <circle cx="150" cy="70" r="72" fill="${a}" opacity=".24"/><ellipse cx="116" cy="224" rx="92" ry="9" fill="#000" opacity=".18"/>
+    <path d="M62 78h110v58c0 40-26 70-55 70s-55-30-55-70z" fill="#ffffff"/><path d="M62 78h110v58c0 40-26 70-55 70s-55-30-55-70z" fill="${dark}" opacity=".08"/>
+    <path d="M172 96h14c26 0 26 52 0 52h-17" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+    <rect x="62" y="104" width="110" height="46" fill="${a}"/><text x="117" y="137" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="24" fill="${dark}">$6</text>
+    <path d="M86 62c-4-14 14-14 10-30M118 62c-4-14 14-14 10-30M150 62c-4-14 14-14 10-30" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" opacity=".85"/>
+    <path d="M150 214c14-34 58-34 74 0-18 18-58 18-74 0z" fill="#f2b45a"/><path d="M170 202l9 20M188 198l5 24M206 202l-2 22" stroke="#c9822a" stroke-width="5" stroke-linecap="round"/></g>`;
   if (S.ind === "telco") return `<g transform="translate(${x} ${y}) scale(${s})">
     <g transform="rotate(-12 40 120)" opacity=".55"><rect x="0" y="20" width="90" height="180" rx="16" fill="${dark}"/><rect x="6" y="28" width="78" height="164" rx="11" fill="#ffffff22"/></g>
     <rect x="70" y="0" width="120" height="240" rx="22" fill="#0d1114"/><rect x="77" y="8" width="106" height="224" rx="16" fill="url(#scr${gid})"/>
@@ -785,7 +959,7 @@ function art(kind, variant, bright = S.bright, opts = {}) {
   const bg1 = bright ? mix(c, "#ffffff", .86) : c, bg2 = bright ? mix(c, "#ffffff", .7) : mix(c, "#000000", .35);
   const ink = bright ? mix(c, "#000000", .25) : "#ffffff", ink2 = bright ? mix(c,"#000000",.1) : mix("#ffffff", c, .12);
   const dark = mix(c, "#000000", .55);
-  const W = {land:640, port:360, web:800, store:360}[kind], H = {land:360, port:640, web:250, store:640}[kind];
+  const W = {land:640, port:360, web:800, store:360, pos:480}[kind], H = {land:360, port:640, web:250, store:640, pos:360}[kind];
   const defs = `<defs><linearGradient id="g${gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bg1}"/><stop offset="1" stop-color="${bg2}"/></linearGradient>
     <linearGradient id="scr${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${mix(c,"#ffffff",.35)}"/><stop offset="1" stop-color="${a}"/></linearGradient></defs>`;
   const logo = (x,y,s) => `<g transform="translate(${x} ${y}) scale(${s})"><rect width="40" height="40" rx="10" fill="${bright?c:"#ffffff"}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="15" fill="${bright?"#fff":c}">${esc(initials(B()))}</text><text x="50" y="26" font-family="Roboto,Arial" font-weight="700" font-size="16" fill="${ink}">${esc(B())}</text></g>`;
@@ -804,6 +978,8 @@ function art(kind, variant, bright = S.bright, opts = {}) {
     else body = `<circle cx="520" cy="60" r="140" fill="${a}" opacity=".18"/><circle cx="560" cy="330" r="90" fill="${a}" opacity=".22"/>` + logo(32,28,.9) + T(32,170,d.big.length > 6 ? 64 : 96,d.big,ink) + T(36,206,22,d.bigSub,bright?c:a,800) + T(36,244,18,d.sub,ink2,500) + illo(410,100,.82,a,dark) + T(32,342,9,d.legal,ink2,400);
   } else if (kind === "port") {
     body = logo(26,30,.85) + illo(60,90,1.05,a,dark) + T(26,410,40,h1,ink) + T(26,452,40,h2,ink) + T(26,488,16,d.sub,ink2,500) + `<rect x="26" y="514" width="170" height="34" rx="17" fill="${a}"/>` + T(111,536,12,"FIND OUT IN STORE",S.ind==="telco"?"#0d1114":"#fff",700,"middle") + lineBand(26,566,310,9) + T(26,615,7.5,d.legal,ink2,400);
+  } else if (kind === "pos") {
+    body = `<circle cx="400" cy="70" r="120" fill="${a}" opacity=".2"/>` + logo(24,22,.8) + T(24,112,d.big.length > 6 ? 40 : 62,d.big,ink) + T(26,142,15,d.bigSub,bright?c:a,800) + T(26,176,15,d.sub,ink2,500) + `<rect x="24" y="200" width="170" height="32" rx="16" fill="${a}"/>` + T(109,221,12,"ASK AT THE COUNTER","#fff",700,"middle") + illo(290,70,.7,a,dark) + T(24,340,8,d.legal,ink2,400);
   } else if (kind === "web") {
     body = logo(28,22,.8) + T(28,118,38,d.headline,ink) + T(28,152,17,d.sub,ink2,500) + `<rect x="28" y="172" width="150" height="32" rx="16" fill="${a}"/>` + T(103,193,12,"LEARN MORE",S.ind==="telco"?"#0d1114":"#fff",700,"middle") + illo(560,14,.82,a,dark) + T(28,236,8,d.legal,ink2,400);
   } else {
@@ -816,7 +992,7 @@ function art(kind, variant, bright = S.bright, opts = {}) {
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" role="img" aria-label="${esc(d.headline)}">${defs}<rect width="${W}" height="${H}" fill="url(#g${gid})"/>${body}</svg>`;
 }
 function thumbSVG(kind) {
-  const c = C(), a = D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",queue:"hourglass_top",plane:"flight"}[kind];
+  const c = C(), a = D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",queue:"hourglass_top",plane:"flight",snow:"ac_unit",bolt:"bolt",coffee:"local_cafe",car:"local_gas_station"}[kind];
   return `<div style="width:100%;height:100%;background:linear-gradient(135deg,${mix(c,"#fff",.15)},${mix(c,"#000",.3)});display:flex;align-items:center;justify-content:space-between;padding:0 8px;color:#fff"><span style="font:900 9px Roboto;letter-spacing:.3px;line-height:1.1">${esc(initials(B()))}</span><span class="ms" style="font-size:22px;color:${a}">${ic}</span></div>`;
 }
 
@@ -886,7 +1062,7 @@ const crumbD = () => `Home &gt; Campaigns &gt; <b>${esc(D().name)}</b>`;
 function briefScreen(filled, on, cta = "story") {
   const d = D(), F = (k, html, cls="") => `<div class="f ${filled>k?"":"pend"}" id="f${k}">${html}</div>`;
   const v = (k, html) => filled > k ? html : "";
-  const tps = [["language","Website",true],["storefront","Store Sites",true],["tv","Digital Signage",true],["qr_code_2","QR-Control",false],["tablet","Staff Tablet",false],["smart_toy","AI Agents",false]];
+  const tps = (IS_RM || IS_CONV) ? [["directions_car","Forecourt screens",true],["storefront","Shop front screens",true],["kitchen","Cooler door screens",true],["point_of_sale","POS screens",true]] : [["language","Website",true],["storefront","Store Sites",true],["tv","Digital Signage",true],["qr_code_2","QR-Control",false],["tablet","Staff Tablet",false],["smart_toy","AI Agents",false]];
   return shell(detailTop("Campaign Brief", on, cta) + `<div class="form" id="form">
     ${F(0,`<label><i>*</i>Campaign Name</label><div class="in ${filled===1?"fill":""}">${v(0,esc(d.name))}&nbsp;</div>`)}
     ${F(1,`<label>Campaign Details</label><div class="in ${filled===2?"fill":""}" style="min-height:80px">${v(1,esc(d.details))}</div>`)}
@@ -917,8 +1093,9 @@ function creativeScreen(n, on, cta = null, tab2) {
   if (tab2 === "local") return shell(detailTop("Creative", on, cta) + `<div class="ctabs"><span>Campaign Assets</span><span>Call to Action</span><span class="on" id="lptab">Localised Preview</span></div>${localPreviewHTML()}`, crumbD());
   return shell(detailTop("Creative", on, cta) + `<div class="ctabs"><span class="on">Campaign Assets</span><span>Call to Action</span>${tab2 ? `<span id="lptab">Localised Preview</span>` : ""}</div>
     <div class="muted" style="margin-top:12px">Campaign assets for each enabled touch-point</div>
-    <div class="assets"><div style="display:flex;flex-direction:column;gap:16px">${P(0,"Digital signage (landscape)","land","16/9")}${P(2,"Website","web","800/250")}</div>
-    ${P(1,"Signage (portrait)","port","9/16")}${P(3,"Store sites","store","9/16")}</div>`, crumbD());
+    <div class="assets">${IS_CONV ? `<div style="display:flex;flex-direction:column;gap:16px">${P(0,"Forecourt screens (landscape)","land","16/9")}${P(2,"Cooler door screens (wide)","web","800/250")}</div>
+    <div style="display:flex;flex-direction:column;gap:16px">${P(1,"Shop front screens (portrait)","port","9/16")}${P(3,"POS screens","pos","4/3")}</div>` : `<div style="display:flex;flex-direction:column;gap:16px">${P(0,"Digital signage (landscape)","land","16/9")}${P(2,"Website","web","800/250")}</div>
+    ${P(1,"Signage (portrait)","port","9/16")}${P(3,"Store sites","store","9/16")}`}</div>`, crumbD());
 }
 
 /* ================= stage + fx ================= */
@@ -1036,7 +1213,7 @@ const STEPS = [
      for (let k=0;k<5;k++){ fillBrief(k); await wait(420,id); }
      const tmp=document.createElement("div"); tmp.innerHTML=briefScreen(6,false); q("#tps").innerHTML = tmp.querySelector("#tps").innerHTML; await wait(300,id);
      tip(q("#f1"),"Campaign brief","Written from what was said and from how past campaigns performed: name, details, products, audience and objective.",3); await wait(3000,id); hideTip();
-     const t=q("#tps"); await reveal(t,id); tip(t,"Touchpoints","Digital signage, website and store sites switched on from the brief.",3); await wait(2800,id); hideTip(); } },
+     const t=q("#tps"); await reveal(t,id); tip(t,"Touchpoints",(IS_RM || IS_CONV) ? "Forecourt, shop front, cooler door and POS screens switched on from the brief." : "Digital signage, website and store sites switched on from the brief.",3); await wait(2800,id); hideTip(); } },
  { t:"Generate storyboard and copy", s:"Happy with the brief? Generate Storyboard & Copy writes the headline, sub-headline and legal copy from the brief and your brand guidelines.",
    enter(){ paint(briefScreen(6,false)); },
    async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,this.s,4); await wait(2800,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,1300);
@@ -1055,8 +1232,8 @@ const STEPS = [
  { t:"Generate creative assets", s:"Storyboard refined? Generate Creative Assets builds the final scene for every touchpoint.",
    enter(){ S.bright=true; paint(storyScreen({copy:3,f1:"first",f2:"last",b1:true,cta:"assets"})); setTop(maxTop(),0); },
    async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,this.s,6); await wait(2800,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,1300);
-     paint(creativeScreen(0,false)); await wait(600,id); for (const [k,kind] of [[0,"land"],[1,"port"],[2,"web"],[3,"store"]]) { setAsset(k,kind); await wait(560,id); }
-     tip(q("#ap0"),"Assets for every touchpoint","Landscape and portrait screens, the website and store sites. The generate button is gone once the assets exist.",6); await wait(3200,id); hideTip(); } },
+     paint(creativeScreen(0,false)); await wait(600,id); for (const [k,kind] of [[0,"land"],[1,"port"],[2,"web"],[3,IS_CONV ? "pos" : "store"]]) { setAsset(k,kind); await wait(560,id); }
+     tip(q("#ap0"),"Assets for every touchpoint",IS_CONV ? "Creative for each screen type: forecourt, shop front, cooler doors and POS. The generate button is gone once the assets exist." : "Landscape and portrait screens, the website and store sites. The generate button is gone once the assets exist.",6); await wait(3200,id); hideTip(); } },
  { t:"Activate the campaign", s:"Switch on the toggle at the top right and the campaign starts playing in every store.",
    enter(){ S.bright=true; paint(creativeScreen(4,false)); },
    async play(id){ const sw=q("#sw"); await moveTo(sw,id); tip(sw,this.t,this.s,7); await wait(2600,id); hideTip(); await click(sw,id);
@@ -1100,6 +1277,22 @@ const LOC = {
       zones: [["Sun care bay",20,20,250,130],["Consultation room",290,20,250,130],["Entrance",20,170,250,124],["Dispensary",290,170,250,124]], qd: [312,272],
       displays: [["Window display","land",27,74],["Sun care bay display","port",89,60]] },
     previews: [["Bayview","Sun care bay by the entrance · Open until 9pm","play"],["Hillcrest Medical Centre","Sunscreen at the front counter","play"],["Station Square","Travel sun care essentials · Open until 10pm","busy"]]
+  },
+  convenience: {
+    prefix: "LC", total: 51, category: "Convenience store",
+    existing: [["LC-001","Central Station","Central",3,"City convenience"],["LC-002","Ridge Road Services","North",4,"Motorway site"]],
+    results: [["Highway 9 Services","Highway 9, Exit 14 northbound","Open 24 hours","4.5","North","Motorway site"],["Market Street","22 Market Street","Open · Closes 11 pm","4.4","Central","City convenience"],["Eastbrook","Eastbrook Road","Open · Closes 10 pm","4.3","East","Regional highway"],["Gateway Truck Stop","Gateway Freight Park","Open 24 hours","4.2","West","Truck stop"],["Riverside","18 River Road","Open · Closes 11 pm","4.6","South","City convenience"],["Northern Link","Northern Link Highway, km 62","Open 24 hours","4.1","North","Regional highway"]],
+    focus: { name: "Highway 9 Services", code: "LC-011", addr: "Highway 9, Exit 14 northbound", suburb: "Kingsford", post: "4207", local: "Fresh coffee and pastries, open 24 hours", phone: "(07) 3355 6100", web: "larkspurconvenience.com/highway-9-services", fixed: ["Motorway sites"], variable: [] },
+    segs: { fixed: ["Motorway sites","City convenience","Regional highway","Truck stops"], variable: ["Pastry out of stock"] },
+    rule1: ["Store / Location Data","Fixed Store Segments","includes selected",["Motorway sites","City convenience"]],
+    rule3: ["Store / Location Data","Variable Store Segments","excludes selected [OR]",["Pastry out of stock"]],
+    rule2: ["Queueing / Aggregate Visitor Data","Reason for Visit (Aggregate)","greater than","30","Fuel and coffee"], subMode: "select", subOpts: ["Fuel only","Fuel and coffee","Car wash","Other"], subLabel: "stopping for fuel and coffee",
+    sched: { name: "Weekday mornings", start: "01 Dec 2026", end: "28 Feb 2027", range: "1 December to 28 February, weekday mornings", times: ["05:30","10:30"], mode: "Weekday mornings", repeat: "Every weekday" },
+    q: { head: "HOT COFFEE", sub: "Fresh inside, steps from the pump", name: "Hot Coffee | Fresh inside" },
+    twin: { weather: "18°C · Clear", wIcon: "sunny", inStore: 9, wait: [1,3], max: 5, close: "open 24 hours", active: ["Motorway sites","Weekday morning"],
+      zones: [["Forecourt",20,20,250,130],["Coffee bar",290,20,250,130],["Coolers",20,170,250,124],["Checkout",290,170,250,124]], qd: [312,272],
+      displays: [["Forecourt display","land",27,74],["Shop front display","port",89,60]] },
+    previews: [["Highway 9 Services","Fresh coffee and pastries, open 24 hours","play"],["Market Street","Coffee bar by the door","play"],["Eastbrook","Pastries warm from 5:30am","play"]]
   }
 };
 const L = () => LOC[S.ind];
@@ -1239,7 +1432,7 @@ function localPreviewHTML() {
 
 function scheduleScreen(rows) {
   const sc = L().sched;
-  const body = rows ? `<div class="str"><div>${esc(sc.name)}</div><div>Master Schedule (All Touchpoints)</div><div>—</div><div>When Store OPEN</div><div>${sc.start}</div><div>Does not repeat</div><div><span class="ms" style="font-size:18px">edit</span> <span class="ms" style="font-size:18px">delete</span></div></div>`
+  const body = rows ? `<div class="str"><div>${esc(sc.name)}</div><div>Master Schedule (All Touchpoints)</div><div>—</div><div>${sc.mode || "When Store OPEN"}</div><div>${sc.start}</div><div>${sc.repeat || "Does not repeat"}</div><div><span class="ms" style="font-size:18px">edit</span> <span class="ms" style="font-size:18px">delete</span></div></div>`
     : `<div class="sempty"><span class="ms" style="font-size:40px;color:#d9d9d9">inbox</span>No Schedule(s) Assigned. When Activated, this campaign will run continuously.</div>`;
   return shell(detailTop("Scheduling", true, null) + `<div class="sec" style="margin-top:20px">Campaign scheduling</div>
     <div class="row" style="margin-top:12px"><div>${rows?1:0} Schedule(s) Assigned</div><span class="txtbtn" id="addsch">Add New Schedule</span></div>
@@ -1330,12 +1523,15 @@ const STEPS2 = [
    async play(id){ const sc=L().sched, ab=q("#addsch"); await moveTo(ab,id); tip(ab,this.t,"Without a schedule the campaign runs continuously once activated. Add New Schedule sets when it plays.",7); await wait(2800,id); hideTip(); await click(ab,id);
      q("#layer").innerHTML = schedModalHTML(); await wait(500,id);
      const nm=q("#sname"); await click(nm,id); await typeInto(nm, sc.name, id, 18); nm.querySelector(".caret")?.remove();
-     const mo=q("#mopen"); await click(mo,id); [...q("#modes").children].forEach(x=>x.classList.toggle("on", x===mo)); q("#layer").querySelectorAll(".tm").forEach(x=>x.remove()); await wait(400,id);
-     tip(q("#modes"),"When Store OPEN","Plays only while each store is open, using that store's opening hours and local time zone.",7); await wait(3000,id); hideTip();
+     if (sc.times) { const tms=q("#layer").querySelectorAll(".tm span:first-child"); tms[0].textContent = sc.times[0]; tms[1].textContent = sc.times[1];
+       tip(q("#modes"),"Weekday mornings","Plays from "+sc.times[0]+" to "+sc.times[1]+" in each store's local time zone, the commuter coffee rush.",7); await wait(3000,id); hideTip(); }
+     else { const mo=q("#mopen"); await click(mo,id); [...q("#modes").children].forEach(x=>x.classList.toggle("on", x===mo)); q("#layer").querySelectorAll(".tm").forEach(x=>x.remove()); await wait(400,id);
+     tip(q("#modes"),"When Store OPEN","Plays only while each store is open, using that store's opening hours and local time zone.",7); await wait(3000,id); hideTip(); }
      for (const [sel,val] of [["#sd",sc.start],["#ed",sc.end]]) { const el=q(sel); await click(el,id); el.classList.add("focus"); const vv=el.querySelector(".v"); await typeInto(vv, val, id, 16); vv.querySelector(".caret")?.remove(); el.classList.remove("focus"); await wait(250,id); }
+     if (sc.repeat) { const rp=q('#layer .sel[style*="220px"]'); const rv=rp.querySelector(".v"); await click(rp,id); rv.textContent = sc.repeat; await wait(300,id); }
      tip(q(".dts"),"From and to",`Runs from ${sc.range}, in every store the targeting rules allow.`,7); await wait(2800,id); hideTip();
      await click(q("#schok"),id); paint(scheduleScreen(true)); await wait(600,id);
-     tip(q("#stbl"),"Scheduled",`${sc.range}, while each store is open. Combined with the targeting rules, every store's digital twin decides what plays and when.`,7); await wait(3400,id); hideTip(); showEnd(); } }
+     tip(q("#stbl"),"Scheduled",`${sc.range}${sc.times ? "" : ", while each store is open"}. Combined with the targeting rules, every store's digital twin decides what plays and when.`,7); await wait(3400,id); hideTip(); showEnd(); } }
 ];
 
 /* ================= flow 3: personalisation ================= */
@@ -1353,11 +1549,18 @@ const PERS = {
     attrs: [["Reason for Visit (Individual)","Skin & sun advice","Queue check-in",1],["Device Type (Individual)","Android","Queue check-in",0],["Audience / Segments","Loyalty Gold","Your loyalty program",1],["Purchase History","Sun care range","Your POS",1]],
     r1: ["Visitor / Customer Data","Reason for Visit (Individual)","includes selected",["Skin & sun advice"]],
     r2: ["Visitor / Customer Data","Audience / Segments","includes selected","Loyalty Gold"], r2mode: "text",
-    r3: ["Visitor / Customer Data","Purchase History","includes selected","Sun care range"], match: "Skin & sun advice, Loyalty Gold and a sun care purchase history" }
+    r3: ["Visitor / Customer Data","Purchase History","includes selected","Sun care range"], match: "Skin & sun advice, Loyalty Gold and a sun care purchase history" },
+  convenience: { person: "Sam", store: "Highway 9 Services", time: "7:42", display: "Forecourt display", reasons: ["Loyalty Gold","Loyalty Silver","Fleet card","Occasional visitor"], reason: "Fuel and coffee", conv: true, ci: "Pump check-in",
+    first: "notif", conn: false, top: ["#2E6FD8","blue"], staffP: ["she","her"], findAt: "at the coffee bar", email: "sam@example.com", mid: ["Jordan Reyes","JR"], ins: [["local_gas_station","Fuelling at pump 4"],["workspace_premium","Loyalty Gold"],["local_cafe","Usual: flat white and pastry"],["sell","Offer shown: your usual coffee + pastry, $6"]], look: ["#c68c6b","#1f1a17","f"], others: [], mobile: "0434 567 890", line: 0, waitMin: 0, pos: 0, staff: "Jordan", ticket: "Pump 4",
+    methods: [["near_me","Loyalty app at the pump",true],["credit_card","Loyalty card at the pump",false],["qr_code_scanner","Scans the QR code on a screen",false],["badge","Fleet card",false]],
+    attrs: [["Location","Pump 4, Highway 9 Services","Pump check-in",0],["Check-in method","Loyalty app","Pump check-in",0],["Audience / Segments","Loyalty Gold","Your loyalty program",1],["Purchase History","Coffee","Your POS",1]],
+    r1: ["Visitor / Customer Data","Audience / Segments","includes selected",["Loyalty Gold"]],
+    r2: ["Visitor / Customer Data","Purchase History","includes selected","Coffee"], r2mode: "text",
+    r3: null, match: "Loyalty Gold and a coffee purchase history" }
 };
 const P3 = () => PERS[S.ind];
 const baseRules = ors => { const l = L(); return [l.rule1, l.rule3, Object.assign([...l.rule2], { pct: true, sub: l.subMode, ors: ors || [] })]; };
-ATTR["Visitor / Customer Data"] = ["First Name","Company Name","Purchase Intent","Visitor Type (Individual)","Reason for Visit (Individual)","Device Type (Individual)","Age","Gender","Audience / Segments","Product Type(s)","Plan Type(s)","Plan Value(s)","Page Views","Events","Product Holdings","Purchase History","SKU(s)"].filter(x => S.ind !== "pharmacy" || !/^(Plan |Age$)/.test(x));
+ATTR["Visitor / Customer Data"] = ["First Name","Company Name","Purchase Intent","Visitor Type (Individual)","Reason for Visit (Individual)","Device Type (Individual)","Age","Gender","Audience / Segments","Product Type(s)","Plan Type(s)","Plan Value(s)","Page Views","Events","Product Holdings","Purchase History","SKU(s)"].filter(x => (S.ind !== "pharmacy" && S.ind !== "convenience") || !/^(Plan |Age$)/.test(x));
 const BARS = [38,48,45,40,40,36,45,58,66,58,53,72,33,16];
 function promoHTML(which) {
   const d = D(), c = C(), a = d.accent, ini = esc(initials(B())), on = S.ind === "telco" ? "#0d1114" : "#fff";
@@ -1403,7 +1606,13 @@ function screenHTML(st) {
   const p = P3(), c = C(), ini = esc(initials(B()));
   if (st === "notif") return `<div class="ph-lock"><div class="ph-time">${p.time.replace(/\d$/, d => String(Math.max(0, +d - 1)))}</div><div class="ph-date">Friday 6 November</div>
       <div class="ph-note" id="pnote"><div class="pn-top"><span class="ph-logo sm" style="background:${c}">${ini}</span>${esc(B())}<small>now</small></div>
-      <b>Welcome to ${esc(p.store)}, ${p.person}</b><span>Tap to join the queue.</span></div></div>`;
+      ${p.conv ? `<b>Welcome to pump 4, ${p.person}</b><span>Tap to check in and earn rewards.</span>` : `<b>Welcome to ${esc(p.store)}, ${p.person}</b><span>Tap to join the queue.</span>`}</div></div>`;
+  if (st === "pump") { const camp = promoHTML("camp");
+    return `<div class="ss" style="--bc:${c};--bg2:${mix(c,"#ffffff",.86)}"><div class="ss-top home"><span class="ss-brand">${logoSVG(28)}<span>${esc(B())}</span></span></div><div class="ss-store">Pump 4 · ${esc(p.store)}</div><div class="ss-body">
+      <div class="ss-lab" id="pcheck">CHECKED IN WITH YOUR LOYALTY APP</div>
+      <div class="ss-car">${camp}</div><div class="ss-dots"><i class="on"></i><i></i><i></i><i></i></div>
+      <div class="ss-li"><span class="ms" style="color:${c}">workspace_premium</span><b>Gold member</b><span class="ss-chip">1,240 points</span></div>
+      <div class="ss-foot">© 2026 ${esc(B())}</div></div></div>`; }
   const right = p.conn && st !== "served" ? `<span class="ss-pill"><span class="ms">tv</span><i class="ok"></i><span class="x" style="background:${c}">✕</span></span>` : `<span class="ss-qr" style="background:${c}"><span class="ms">qr_code_2</span></span>`;
   const sub = `<div class="ss-top"><span class="ss-back" style="color:${c}"><span class="ms">chevron_left</span>Back</span><b class="t">Join the Queue</b>${right}</div>`;
   let body;
@@ -1437,16 +1646,16 @@ function visitorHTML() {
   const p = P3(), d = D(), av = `<span class="av">${avatarSVG()}</span>`;
   return `<div class="vd"><aside class="vd-rail"><span class="on"><span class="ms">groups</span></span><span><span class="ms">desktop_windows</span></span><span><span class="ms">store</span></span><span><span class="ms">person</span></span><span class="bt"><span class="ms">crop_square</span></span></aside>
     <div class="vd-main"><div class="vd-hd"><span class="ms">menu</span><span class="vd-me">${av}<i></i></span></div>
-      <div class="vd-top"><div class="vd-crumb">Retail Admin / Queueing &amp; Appointments / Visitor Details</div>
+      <div class="vd-top"><div class="vd-crumb">Retail Admin / ${p.conv ? "Visitors" : "Queueing &amp; Appointments"} / Visitor Details</div>
         <div class="vd-tr"><h2>Visitor Details</h2><span class="vd-st">${av}<span class="vd-pill">In Progress <b>00:00:15</b></span></span></div></div>
-      <div class="vd-body"><div class="vd-left"><div><small>Name</small><span class="nm">${esc(p.person)}</span></div><div><small>Phone Number</small>${esc(p.mobile)}</div><div><small>Email</small><u>${esc(p.email)}</u></div><div><small>Queue Ticket</small>${p.ticket}</div><div><small>Joined Queue</small>Fri, 06 Nov 2026<br>${p.time} AM</div></div>
+      <div class="vd-body"><div class="vd-left"><div><small>Name</small><span class="nm">${esc(p.person)}</span></div><div><small>Phone Number</small>${esc(p.mobile)}</div><div><small>Email</small><u>${esc(p.email)}</u></div><div><small>${p.conv ? "Checked in at" : "Queue Ticket"}</small>${p.ticket}</div><div><small>${p.conv ? "Check-in time" : "Joined Queue"}</small>Fri, 06 Nov 2026<br>${p.time} AM</div></div>
         <div class="vd-r"><div class="vd-lab">Today's Visit</div>
-          <div class="vd-visit" id="vdvisit"><div><span class="ms">edit_note</span><span><small>Reason for Visit</small><b>${esc(p.reason)}</b></span></div><div><span class="ms">checkroom</span><span><small>Colour of Top</small><b><span class="vd-sw" style="background:${p.top[0]}"></span>${p.top[1][0].toUpperCase() + p.top[1].slice(1)}</b></span></div></div>
+          <div class="vd-visit" id="vdvisit"><div><span class="ms">edit_note</span><span><small>Reason for Visit</small><b>${esc(p.reason)}</b></span></div><div>${p.conv ? `<span class="ms">local_gas_station</span><span><small>Fuel</small><b>Unleaded, pump 4</b></span>` : `<span class="ms">checkroom</span><span><small>Colour of Top</small><b><span class="vd-sw" style="background:${p.top[0]}"></span>${p.top[1][0].toUpperCase() + p.top[1].slice(1)}</b></span>`}</div></div>
           <div class="vd-cols"><div><div class="vd-lab">Visitor Insights</div><div class="vd-ins" id="vdins">${p.ins.map(x => `<div><span class="ms">${x[0]}</span>${esc(x[1])}</div>`).join("")}</div></div>
             <div><div class="vd-lab">Mid Sale Check-In</div><div class="vd-sub">Mid Sale Check-In with</div><div class="vd-sel"><span class="ini">${p.mid[1]}</span>${esc(p.mid[0])}<span class="ms">expand_more</span></div>
               <div class="vd-lab" style="margin-top:16px">Recommendations</div><div class="vd-rec" id="vdrec">${art("land","first",S.bright)}</div><div class="vd-dots"><i class="on"></i><i></i><i></i><i></i><i></i></div>
               <div style="display:flex;justify-content:flex-end;margin-right:22px"><span class="aibtn" id="vdplay" style="height:36px;padding:0 16px"><span class="ms">auto_awesome</span><span>Play Promo on Video Wall</span></span></div></div></div></div></div>
-      <div class="vd-bar"><span>Place "On Hold"</span><span>Add Additional Info</span><span>Back to Queue</span><span class="pri">Finish</span></div></div></div>`;
+      <div class="vd-bar">${p.conv ? `<span>Add Additional Info</span>` : `<span>Place "On Hold"</span><span>Add Additional Info</span><span>Back to Queue</span>`}<span class="pri">Finish</span></div></div></div>`;
 }
 const phoneHTML = st => `<div class="phone"><div class="ph-notch"></div><div class="ph-screen" id="pscreen">${screenHTML(st)}</div></div>`;
 const setPhone = st => { q("#pscreen").innerHTML = screenHTML(st); };
@@ -1455,7 +1664,7 @@ function sceneHTML(st, panel) {
   const right = panel === "attrs"
     ? `<div class="tp-eyebrow">Arrives with the check-in</div><h3>What the screens now know about ${p.person}</h3>
        <div class="tp-tbl" id="ptbl"><div class="tp-h"><span>Targeting attribute</span><span>Value</span><span>From</span><span>Campaign rule</span></div>${(() => { const row = (a,i) => `<div class="tp-r ${a[3]?"hit":""}" style="animation-delay:${i*260}ms"><span><b>${esc(a[0])}</b></span><span>${esc(a[1])}</span><span class="mut">${esc(a[2])}</span><span>${a[3]?`<span class="tp-ok"><span class="ms">check_circle</span>Matches</span>`:`<span class="mut">—</span>`}</span></div>`;
-         const k = p.attrs.filter(a => a[2] === "Queue check-in").length; return `<div id="pchk">${p.attrs.slice(0,k).map(row).join("")}</div>` + p.attrs.slice(k).map((a,i) => row(a,i+k)).join(""); })()}</div>
+         const k = p.attrs.filter(a => a[2] === (p.ci || "Queue check-in")).length; return `<div id="pchk">${p.attrs.slice(0,k).map(row).join("")}</div>` + p.attrs.slice(k).map((a,i) => row(a,i+k)).join(""); })()}</div>
        <p class="tp-note">Personalisation Hub doesn't hold the customer record. It runs inside your own virtual private cloud, such as your AWS VPC, and activates the data and attributes you already hold at the moment of check-in. Customer data never leaves your environment.</p>`
     : panel === "promo"
     ? `<div class="tp-eyebrow">Personalised in the moment</div><h3>The targeted campaign reaches ${p.person}</h3>
@@ -1466,7 +1675,7 @@ function sceneHTML(st, panel) {
        <p class="tp-note" style="margin-top:0">The store site shows ${p.person}'s ticket number and who is serving her. Staff find her by the colour of her top, which she added when she joined the queue.</p>`
     : `<div class="tp-eyebrow">Check-in</div><h3>${p.person} arrives at ${esc(p.store)}</h3>
        <div class="tp-methods" id="pmeth">${p.methods.map(m => `<div class="tp-m ${m[2]?"on":""}"><span class="ms">${m[0]}</span>${esc(m[1])}</div>`).join("")}</div>
-       <p class="tp-note">Every check-in identifies the customer in store, so screens can respond to them.</p>`;
+       <p class="tp-note">Every check-in identifies the customer ${p.conv ? "at the pump" : "in store"}, so screens can respond to them.</p>`;
   return `<div class="scene3"><div class="sc-left">${phoneHTML(st)}</div><div class="sc-right" id="sright">${right}</div></div>`;
 }
 function playbackScreen(withNew) {
@@ -1552,22 +1761,313 @@ const STEPS3 = [
      const pv=q("#vdplay"); await moveTo(pv,id); tip(pv,"Play Promo on Video Wall",`One tap plays the offer on the video wall while ${p.staff} talks ${p.person} through it.`,6); await wait(3400,id); hideTip(); showEnd(); } }
 ];
 
+/* ================= fuel & convenience walkthrough: the retailer's own campaign, five scenes across four screen locations =================
+   Only used on /industries/convenience/tour/. Every asset below is drawn in code (inline SVG and CSS); no raster or video asset is generated. */
+const CV = (() => {
+  const LOCS = [
+    { k: "fore", icon: "local_gas_station", name: "Driveway screens", sub: "Forecourt" },
+    { k: "shop", icon: "storefront", name: "Shop front", sub: "Entrance" },
+    { k: "cool", icon: "kitchen", name: "Coolers", sub: "Cold drinks" },
+    { k: "pos", icon: "point_of_sale", name: "POS", sub: "Checkout" }
+  ];
+  const CENTERS = [258, 559, 790, 1047]; // x centre of each screen in the scene 4 row
+  const GEN = {
+    fore: [["local_car_wash", "Car wash $8", "Drive in, drive out clean", "#27508f"], ["lunch_dining", "Fresh sandwiches", "Made this morning", "#7a3b8f"]],
+    shop: [["propane_tank", "Gas bottle swap", "Swap and go in two minutes", "#1f6b5d"], ["smartphone", "Phone top-ups", "Any network, any amount", "#8a3a3a"]],
+    cool: [["local_drink", "2 for $5", "Energy drinks", "#0d5c7a"], ["water_drop", "3 for $6", "Still water 1.5L", "#2c4f9e"]],
+    pos: [["loyalty", "Join rewards", "Ask about our loyalty app", "#6a3d8f"], ["local_fire_department", "Hot food", "Ready now at the counter", "#9a4a14"]]
+  };
+  const OFFER = {
+    fore: { icon: "local_cafe", tag: "Morning deal", head: "Coffee + pastry $6", sub: "Fresh inside, steps from the pump" },
+    shop: { icon: "local_cafe", tag: "Morning deal", head: "Coffee + pastry $6", sub: "Fresh from the oven, at the coffee bar" },
+    cool: { icon: "local_cafe", tag: "Morning deal", head: "Coffee + pastry $6", sub: "Add a cold drink to go" },
+    pos: { icon: "local_cafe", tag: "Morning deal", head: "Coffee + pastry $6", sub: "Ask for the morning deal" }
+  };
+  const PERS = {
+    fore: { icon: "workspace_premium", tag: "Gold member · Pump 4", head: "Welcome back, Sam", sub: "Your usual flat white and pastry, $6 today" },
+    shop: { icon: "workspace_premium", tag: "Just for you", head: "Sam, your coffee + pastry is ready to order", sub: "Fresh from the oven, to your left" },
+    cool: { icon: "workspace_premium", tag: "Goes with your deal", head: "Sam, add a cold drink", sub: "$1 off with your coffee + pastry" },
+    pos: { icon: "workspace_premium", tag: "Deal applied", head: "Coffee + pastry $6.00", sub: "Sam, you saved $2.50 and earned 60 points" }
+  };
+  const cup = `<svg class="cup" viewBox="0 0 120 90" aria-hidden="true"><ellipse cx="50" cy="80" rx="42" ry="6" fill="rgba(0,0,0,.25)"/><path d="M14 30h64v22c0 14-10 24-32 24S14 66 14 52z" fill="#fff"/><path d="M78 36h8c10 0 10 20 0 20h-9" fill="none" stroke="#fff" stroke-width="6"/><path d="M26 28c0-8 10-8 10-16M44 28c0-8 10-8 10-16" fill="none" stroke="#ffd9a8" stroke-width="4" stroke-linecap="round"/><path d="M84 68c8-16 30-16 36 0-9 9-28 9-36 0z" fill="#f2b45a"/><path d="M93 63l5 11M102 61l3 13M111 63l-1 11" stroke="#c9822a" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+  const ad = (k, mode, i = 0) => {
+    if (mode === "gen") { const g = GEN[k][i % 2]; return `<div class="cv-ad" style="background:${g[3]}"><span class="ms ic">${g[0]}</span><b>${g[1]}</b><small>${g[2]}</small></div>`; }
+    const o = (mode === "cre" ? OFFER : PERS)[k];
+    return `<div class="cv-ad ${mode}"><span class="tg"><span class="ms">${o.icon}</span>${esc(o.tag)}</span><b>${esc(o.head)}</b><small>${esc(o.sub)}</small>${cup}</div>`;
+  };
+  const tile = (l, mode, i) => `<div class="cv-tile ${l.k}"><div class="cv-scr" id="cvs-${l.k}">${ad(l.k, mode, i)}</div></div>`;
+  const label = l => `<div class="cv-lab"><span class="ms">${l.icon}</span><span>${l.name}<small>${l.sub}</small></span></div>`;
+  const row = (mode, i) => `<div class="cv-row" id="cvrow">${LOCS.map(l => `<div class="cv-loc" id="cvl-${l.k}">${tile(l, mode, i)}${label(l)}</div>`).join("")}</div>`;
+  const head = sc => `<div class="cv-top"><div class="cv-logo"><i style="background:${C()}">${esc(initials(B()))}</i>${esc(B())}</div><div class="cv-sc">${sc}</div></div>`;
+  const root = inner => `<div class="cv" style="--cva:${D().accent}">${inner}</div>`;
+  const title = (h, s) => `<div class="cv-title"><b>${esc(h)}</b>${s ? `<span>${esc(s)}</span>` : ""}</div>`;
+  const setTile = (k, mode, i) => { const e = q("#cvs-" + k); if (e) e.innerHTML = ad(k, mode, i); };
+  const rotate = (i) => LOCS.forEach(l => setTile(l.k, "gen", i));
+
+  /* scene 4: one member, four screens */
+  const stops = () => `<div class="cv-track" id="cvtrack"><div class="cv-line" style="left:${CENTERS[0]}px;width:${CENTERS[3] - CENTERS[0]}px"></div><div class="cv-lf" id="cvlf" style="left:${CENTERS[0]}px"></div>
+    ${CENTERS.map((x, i) => `<div class="cv-stop" id="cvst${i}" style="left:${x}px">${i + 1}</div>`).join("")}<div class="cv-me" id="cvme" style="left:${CENTERS[0]}px"><i>S</i></div></div>`;
+  const scene4 = (mode) => root(head("The shopper journey") + title("Sam's offer follows her through the shop") + stops() + row(mode || "cre", 0));
+  async function visit(i, id, fast) {
+    const k = LOCS[i].k;
+    if (i > 0) { setTile(LOCS[i - 1].k, "cre"); q("#cvl-" + LOCS[i - 1].k).classList.remove("on"); }
+    q("#cvme").style.left = CENTERS[i] + "px"; q("#cvlf").style.width = (CENTERS[i] - CENTERS[0]) + "px";
+    await wait(fast ? 700 : 1200, id);
+    for (let n = 0; n <= i; n++) q("#cvst" + n).classList.add("on");
+    q("#cvl-" + k).classList.add("on"); setTile(k, "per");
+  }
+
+  const STEP = {
+    t: "The offer follows her through the shop", s: "Every screen starts on the generic promotions loop. Once Sam is recognised at pump 4, her offer follows her from the forecourt to the shop front, the coolers and the POS, personalised in real time.",
+    enter() { screen.innerHTML = scene4("gen"); hideTip(); },
+    async play(id) { await wait(900, id);
+      for (let i = 1; i <= 2; i++) { rotate(i); await wait(1500, id); }
+      tip(q("#cvrow"), "Before: one loop on every screen", "Forecourt, shop front, coolers and POS play the same generic promotions, whoever is standing in front of them.", 5); await wait(3800, id); hideTip();
+      LOCS.forEach(l => setTile(l.k, "cre")); await wait(700, id);
+      q("#cvtrack").insertAdjacentHTML("beforeend", `<div class="cv-rec" id="cvrec" style="left:${CENTERS[0]}px"><span class="ms">workspace_premium</span>Sam · Gold member recognised at pump 4</div>`);
+      await visit(0, id, true);
+      tip(q("#cvl-fore"), "Recognised at the pump", "Sam fuels up and her loyalty app checks her in. The driveway screen greets her by name with her usual order.", 5); await wait(4200, id); hideTip();
+      q("#cvrec").remove(); await visit(1, id);
+      tip(q("#cvl-shop"), "Waiting at the shop front", "As she walks to the door, the shop front screen takes over with the same deal and where to find it.", 5); await wait(3800, id); hideTip();
+      await visit(2, id);
+      tip(q("#cvl-cool"), "At the coolers", "Passing the coolers, the screen adds a cold drink to the deal she is already planning to buy.", 5); await wait(3800, id); hideTip();
+      await visit(3, id);
+      tip(q("#cvl-pos"), "At the POS", "The deal is applied at the till and her points are added, without her asking.", 5); await wait(4200, id); hideTip(); } };
+
+  const TEASE = [{ cap: "The offer follows a loyalty member from the pump to the till", async run(id) {
+    S.flow = 0; screen.innerHTML = scene4(); await wait(600, id);
+    for (let i = 0; i < 4; i++) { await visit(i, id, true); await wait(900, id); }
+    await wait(900, id); } }];
+
+  return { STEP, TEASE };
+})();
+
+/* Flow 3 for fuel & convenience: loyalty check-in at the pump instead of a queue. Same screens as the other industries, with the four-location shopper scene in the middle. */
+const STEPS3C = [
+ { t:"Target your loyalty members", s:"Open the Gold members campaign's Targeting tab. Add a Visitor / Customer Data rule on Audience / Segments, using the loyalty tiers from your own program.",
+   enter(){ paint(targetScreen([])); },
+   async play(id){ const p=P3(), r=p.r1; await wait(500,id);
+     tip(q("#ctitle"),"A campaign for loyalty members",`${D().name} is a separate campaign, only for Loyalty Gold members. It gets its own visitor-level targeting rules.`,1); await wait(3600,id); hideTip();
+     const tb=q("#addand"); await moveTo(tb,id); tip(tb,this.t,this.s,1); await wait(3000,id); hideTip(); await click(tb,id);
+     q("#rules").innerHTML = rulesHTML([[,,,[]]]); await focusRow(q("#rg0"),id);
+     await pick(q("#s0a"), SRC, r[0], id); setSel("#s0a", r[0]);
+     await pick(q("#s0b"), ATTR[r[0]], r[1], id); setSel("#s0b", r[1]);
+     await pick(q("#s0c"), OPS.seg, r[2], id); setSel("#s0c", r[2]);
+     await pick(q("#s0d"), p.reasons, r[3][0], id); addTag("#s0d", r[3][0]);
+     tip(q("#rg0"),"Linked to your loyalty program",`The values are the tiers your loyalty program already holds, so the campaign targets ${r[3][0]} members.`,1); await wait(3200,id); hideTip(); } },
+ { t:"Add purchase history", s:"Add a second rule from your POS data: Purchase History includes coffee. The campaign plays only for loyalty members who buy coffee.",
+   enter(){ paintRules(targetScreen([P3().r1])); },
+   async play(id){ const p=P3(), r=p.r2;
+     const tb=q("#addand"); await moveTo(tb,id); tip(tb,this.t,this.s,2); await wait(3000,id); hideTip(); await click(tb,id);
+     q("#rules").innerHTML = rulesHTML([p.r1, [,,,[]]]); await focusRow(q("#rg1"),id);
+     await pick(q("#s1a"), SRC, r[0], id); setSel("#s1a", r[0]);
+     await pick(q("#s1b"), ATTR[r[0]], r[1], id); setSel("#s1b", r[1]);
+     await pick(q("#s1c"), OPS.seg, r[2], id); setSel("#s1c", r[2]);
+     q("#s1d .ph").textContent = "Enter value"; await wait(400,id);
+     const v=q("#s1d"); await click(v,id); v.innerHTML=""; await typeInto(v, r[3], id, 16); v.querySelector(".caret")?.remove(); await wait(300,id);
+     tip(q("#rules"),"Visitor-level targeting",`Groups are joined with AND, so a visitor matches when both are true: ${p.match}. Next, follow ${p.person} to the pump.`,2); await wait(3800,id); hideTip();
+     const sv=q("#save"); await click(sv,id); sv.className="btn dis"; sv.nextElementSibling.className="btn dis"; await wait(1000,id); } },
+ { t:"The shopper checks in at the pump", s:"Loyalty members check in at the pump with the app, their card or a QR code. Each check-in identifies them, so the screens can respond to them.",
+   enter(){ screen.innerHTML = sceneHTML(P3().first); hideTip(); },
+   async play(id){ const p=P3(); await wait(700,id);
+     const n=q("#pnote"); n.classList.add("in"); await wait(900,id);
+     tip(q("#pmeth"),this.t,`${p.person}'s phone is detected by proximity at pump 4, and your loyalty app invites her to check in.`,3); await wait(3400,id); hideTip();
+     await click(n,id); setPhone("pump"); await wait(900,id);
+     tip(q("#pcheck"),"Checked in",`${p.person} is checked in at pump 4 of ${p.store} at ${p.time} AM as a Gold member.`,3); await wait(2800,id); hideTip();
+     tip(q("#pcard"),"Her offer, straight away",`The moment she checks in, ${D().name} is first in her app.`,3); await wait(3200,id); hideTip(); } },
+ { t:"Her profile meets the rules", s:"The pump check-in links to what your loyalty program and POS already hold. It is checked against every campaign's targeting rules the moment she checks in.",
+   enter(){ screen.innerHTML = sceneHTML("pump","attrs"); hideTip(); },
+   async play(id){ const p=P3(); await wait(1700,id); tip(q("#ptbl"),this.t,"Each row is a Visitor / Customer Data attribute. The moment she checks in, they are checked against the campaign's visitor rules.",4); await wait(4200,id); hideTip();
+     tip(q("#ptbl"),"A match on both rules",`She matches both rules of the Gold members campaign: ${p.match}.`,4); await wait(3600,id); hideTip(); } },
+ CV.STEP,
+ { t:"Staff see the visit in Retail Admin", s:"In Retail Admin, the Visitor Details view shows today's visit, her insights from your loyalty program and the offer she was shown, so staff can greet her with it at the coffee bar.",
+   enter(){ screen.innerHTML = visitorHTML(); hideTip(); },
+   async play(id){ const p=P3();
+     await wait(1000,id);
+     tip(q("#vdvisit"),"Today's visit",`Her reason for visit and the fuel she bought, so ${p.staff} can greet ${p.person} ${p.findAt}.`,6); await wait(3600,id); hideTip();
+     tip(q("#vdins"),"Visitor insights","What your loyalty program and POS hold about her, sent through the Visitor API.",6); await wait(3600,id); hideTip();
+     tip(q("#vdrec"),"Her offer, surfaced to staff",`The Gold members offer she was shown is the top recommendation, so ${p.staff} can open with it.`,6); await wait(3800,id); hideTip(); showEnd(); } }
+];
+
 /* ================= ui wiring ================= */
-const FLOWDEF = [
+const FLOWDEF_STD = [
   { h1: "Launch a campaign just by talking", sub: "Talk the AI campaign agent through a campaign and watch it become a brief, copy, creative and screen-ready assets for every touchpoint, in your brand.",
     steps: STEPS, intro: () => paint(listScreen(false)),
     start: () => [`See ${esc(B())} launch a campaign just by talking`, "Talk through the campaign, then follow the AI campaign agent from brief to storyboard, creative and live screens."],
-    end: () => { const d = D(); return ["Flow 1 complete", `${esc(B())} has a live campaign on 3 touchpoints`, `From a spoken brief to campaign brief, copy, creative and assets in ${d.stores} stores, with every play and view feeding closed-loop optimisation of the next campaign.`, [["1","spoken brief"],["4","asset formats"],[d.stores,"stores live"]], 1]; } },
+    end: () => { const d = D(); return ["Flow 1 complete", `${esc(B())} has a live campaign on ${IS_CONV ? "4 screen types" : "3 touchpoints"}`, `From a spoken brief to campaign brief, copy, creative and assets in ${d.stores} stores, with every play and view feeding closed-loop optimisation of the next campaign.`, [["1","spoken brief"],["4","asset formats"],[d.stores,"stores live"]], 1]; } },
   { h1: "Localise and schedule every campaign, store by store", sub: "Import your stores from Google Maps. Each one becomes a digital twin. Add store segments and assign them to stores, then localise and schedule campaigns store by store with those segments, opening hours and live data on who's in store.",
     steps: STEPS2, intro: () => paint(storesScreen(false)),
     start: () => [`See ${esc(B())} localise and schedule one campaign across every store`, "Import stores from Google Maps, see each one become a digital twin, create store segments and assign them to stores, localise the campaign with those segments and live data on who's in store, then schedule it around each store's opening hours."],
     end: () => { const l = L(); return ["Flow 2 complete", `${esc(B())} localises and schedules one campaign across ${l.total + l.existing.length} stores`, "Every store imported from Google Maps becomes a digital twin with its own store segments. Fixed segments decide which stores run the campaign, store managers suppress it when stock runs out, who's in store right now decides when it plays, and the schedule follows each store's opening hours.", [[l.total,"stores imported"],[l.segs.fixed.length + l.segs.variable.length,"store segments"],["3","targeting rules"]], 2]; } }
 ,
   { h1: "Personalise every screen to the customer in front of it", sub: "Target campaigns with your own first-party and loyalty data. When a customer checks in by queue, QR code, appointment or proximity, the targeted campaign reaches them on their phone and on the screen in store.",
-    steps: STEPS3, intro: () => paint(targetScreen([])),
-    start: () => [`See ${esc(B())} personalise screens when a customer checks in`, "Set up visitor-level targeting on a campaign for Loyalty Gold members, using the reason for visit and your first-party and loyalty data, then follow a customer from check-in to the targeted promotion on her phone and the screen in store."],
-    end: () => { const p = P3(); return ["Flow 3 complete", `${esc(B())} personalises the moment ${p.person} checks in`, "A campaign for Loyalty Gold members targets the reason for visit plus your own first-party and loyalty data. The moment she joins the queue, it appears in her store site carousel and plays on the screen in store, and staff see the offer and her profile when they pick her up.", [["3","visitor rules"],["1","check-in"],["3","touchpoints"]], 0]; } }
+    steps: IS_CONV ? STEPS3C : STEPS3, intro: () => paint(targetScreen([])),
+    cta: IS_CONV ? { href: "/industries/retail-media/#ph-tour", label: "See the retail media walkthrough" } : undefined,
+    start: () => IS_CONV ? [`See ${esc(B())} personalise every screen for a loyalty member`, "Set up targeting for Loyalty Gold members who buy coffee, then follow Sam from the pump to the shop front, the coolers and the POS, with her offer on every screen."] : [`See ${esc(B())} personalise screens when a customer checks in`, "Set up visitor-level targeting on a campaign for Loyalty Gold members, using the reason for visit and your first-party and loyalty data, then follow a customer from check-in to the targeted promotion on her phone and the screen in store."],
+    end: () => { const p = P3(); if (IS_CONV) return ["Walkthrough complete", `${esc(B())} personalises every screen for the member in front of it`, "A campaign for Loyalty Gold members who buy coffee. The moment Sam checks in at the pump, her offer follows her to the shop front, the coolers and the POS. Results are illustrative. The same screens can also be sold to advertisers as a retail media network.", [["3.2×","offer redemption (illustrative)"],["+$2.10","basket with the deal (illustrative)"],["4","screen locations"]], 0]; return ["Flow 3 complete", `${esc(B())} personalises the moment ${p.person} checks in`, "A campaign for Loyalty Gold members targets the reason for visit plus your own first-party and loyalty data. The moment she joins the queue, it appears in her store site carousel and plays on the screen in store, and staff see the offer and her profile when they pick her up.", [["3","visitor rules"],["1","check-in"],["3","touchpoints"]], 0]; } }
 ];
+/* ================= retail media (convenience retail): the retailer sells its screens; the advertiser talks a campaign; one shopper is followed ================= */
+const RET = () => S.brand || IND["retail-media"].brand;
+const RML = [
+  { k:"forecourt", name:"Forecourt", icon:"local_gas_station", n:6, w:320, h:180, kind:"land", line:"Welcome back, Emma", sig:"Loyalty app recognises Emma at pump 3" },
+  { k:"front", name:"Shop front", icon:"storefront", n:4, w:180, h:320, kind:"port", line:"Emma, your Gold upsize is waiting", sig:"Emma walks up to the shop door" },
+  { k:"cooler", name:"Coolers", icon:"kitchen", n:12, w:150, h:320, kind:"port", line:"Gold upsize on every Frostline", sig:"Emma stops at the cold drinks cooler" },
+  { k:"pos", name:"POS", icon:"point_of_sale", n:8, w:320, h:100, kind:"web", line:"Scan your Gold card for a free upsize", sig:"Emma reaches the checkout" }
+];
+const RMPLAIN = [["Fuel rewards","Earn on every fill","#14507A"],["Fresh coffee","Hot and ready","#7A3E14"],["Meal deal","Lunch sorted","#2E6B3A"],["Car wash","Drive in clean","#5B3A8C"]];
+const rmFit = (l, bw, bh) => { const s = Math.min(bw / l.w, bh / l.h); return `width:${Math.round(l.w * s)}px;height:${Math.round(l.h * s)}px`; };
+function rmPlainTile(l, i) {
+  const p = RMPLAIN[i % 4], w = p[0].split(" "), narrow = l.w <= 180, wide = l.h < 120, fs = wide ? 24 : narrow ? 20 : 30;
+  const T = (x, y, s, t, o = 1, wt = 900) => `<text x="${x}" y="${y}" font-family="Roboto,Arial" font-weight="${wt}" font-size="${s}" fill="#fff" opacity="${o}">${esc(t)}</text>`;
+  const body = wide ? T(16, 44, fs, p[0]) + T(16, 72, 14, p[1], .85, 500)
+    : T(16, l.h * .42, fs, w[0]) + T(16, l.h * .42 + fs * 1.1, fs, w[1]) + T(16, l.h * .42 + fs * 2.3, narrow ? 12 : 15, p[1], .85, 500);
+  return `<svg viewBox="0 0 ${l.w} ${l.h}" preserveAspectRatio="xMidYMid slice" role="img" aria-label="${esc(p[0])}"><defs><linearGradient id="pt${i}${l.k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${p[2]}"/><stop offset="1" stop-color="${mix(p[2], "#000000", .45)}"/></linearGradient></defs><rect width="${l.w}" height="${l.h}" fill="url(#pt${i}${l.k})"/><circle cx="${l.w - 26}" cy="26" r="9" fill="#ffffff" opacity=".25"/>${body}</svg>`;
+}
+/* The advertiser's creative is always drawn in the advertiser's brand, whichever flow is on screen. */
+function rmAd(l, personal) {
+  const f = S.flow; S.flow = 1;
+  try { return art(l.kind, "first", true, personal ? { line: l.line } : {}); } finally { S.flow = f; }
+}
+function rmSlots(l, ad) {
+  return [0, 1, 2, 3].map(i => { const a = ad && i === 1;
+    return `<div class="rm-slot ${a ? "ad" : ""}" id="sl-${l.k}-${i}"><span class="n">${i + 1}</span><span class="t">${a ? "Frostline Cold Drinks" : RMPLAIN[i][0]}</span><span class="b">${a ? "Direct deal" : "Rotation"}</span></div>`; }).join("");
+}
+function rmDisplays(mode) {
+  const cards = RML.map(l => `<div class="rm-card" id="lc-${l.k}"><div class="rm-ch"><span class="ms">${l.icon}</span><b>${l.name}</b><small>${l.n} screens</small></div>
+    <div class="rm-view"><div class="rm-tile" id="tile-${l.k}" style="${rmFit(l, 206, 150)}">${mode === "done" ? rmAd(l, false) : rmPlainTile(l, 0)}</div></div>
+    <div class="rm-pl"><div class="rm-plh">Playlist · ${mode === "done" ? "Slots" : "Rotation"}</div>${rmSlots(l, mode === "done")}</div></div>`).join("");
+  return shell(`<div class="title">Displays &amp; Devices</div><div class="hr"></div><div class="row" style="margin-bottom:12px"><div><b>4</b> display types · <b>30</b> screens</div><div class="row"><span class="txtbtn">Playback Strategy</span></div></div><div class="rm-cards">${cards}</div>`, `Home &gt; <b>Displays &amp; Devices</b>`, "Displays & Devices");
+}
+async function rmCycle(id, rounds, ms = 1100) {
+  for (let r = 1; r <= rounds; r++) { await wait(ms, id); RML.forEach(l => { const t = q("#tile-" + l.k); if (t) t.innerHTML = rmPlainTile(l, r); }); }
+}
+const RMADV = [["Pinecrest Coffee Roasters", "Direct", "Required", "Active"], ["Brightwater Car Care", "Direct", "Required", "Active"], ["Tallgrass Snacks", "Direct", "Required", "Active"]];
+function rmAdvertisers(withNew) {
+  const rows = (withNew ? [["Frostline Cold Drinks", "Direct", "Required", "Active", true]] : []).concat(RMADV);
+  const body = rows.map(r => `<div class="rm-tr ${r[4] ? "new" : ""}"><span><b>${esc(r[0])}</b></span><span>${r[1]}</span><span>${r[2]}</span><span><i class="sd" style="background:#52c41a"></i>${r[3]}</span><span class="muted">${r[4] ? "0" : "1"} direct ${r[4] ? "deals" : "deal"}</span></div>`).join("");
+  return shell(`<div class="row"><div class="title">Advertisers</div><span class="aibtn" id="newadv"><span class="ms">add</span><span>New advertiser</span></span></div><div class="hr"></div>
+    <div class="rm-tbl"><div class="rm-th"><span>Advertiser</span><span>Via</span><span>Campaign approval</span><span>Status</span><span>Deals</span></div>${body}</div>`, `Home &gt; <b>Advertisers</b>`, "Insights / Analytics");
+}
+const rmAdvModal = (name) => `<div class="mask"><div class="modal"><h3>New advertiser<span class="ms muted">close</span></h3>
+  <div class="lbl"><i>*</i>Advertiser name</div><div class="in focus" id="advname">${name ? esc(name) : `<span class="ph">Advertiser name</span>`}</div>
+  <div class="lbl" style="margin-top:10px">Sold via</div><div class="in">Direct (sold by the retailer)</div>
+  <div class="lbl" style="margin-top:10px">Campaign approval</div><div class="in">Required before a campaign plays</div>
+  <div class="foot"><span class="btn">Cancel</span><span class="aibtn" id="advsave"><span class="ms">check</span><span>Create advertiser</span></span></div></div></div>`;
+function rmDeal(rules, slots, saved) {
+  const chip = (l, i) => `<span class="tag" id="dch${i}" style="${slots > i ? "" : "opacity:.25"}"><span class="ms" style="font-size:14px;vertical-align:-3px">${l.icon}</span> ${l.name} · slot 2</span>`;
+  const rule = (a, op, v, i) => `<div class="rm-rule" id="rr${i}" style="${rules > i ? "" : "display:none"}">${i ? `<span class="and">AND</span>` : ""}<span class="rf">${a}</span><span class="rf op">${op}</span><span class="rf v">${v}</span></div>`;
+  return shell(`<div class="row"><div class="title">Direct deal · Frostline Cold Drinks</div><span class="btn ${saved ? "dis" : ""}" id="savedeal" style="${saved ? "" : "background:#169BC2;color:#fff;border-color:#169BC2"}">${saved ? "Saved" : "Save direct deal"}</span></div><div class="hr"></div>
+    <div class="form"><div class="f"><label>Advertiser</label><div class="in">Frostline Cold Drinks</div></div>
+      <div class="f"><label>Sold as</label><div class="in">Direct deal · sold upfront by the retailer</div></div>
+      <div class="f"><label>Window</label><div class="in">1 Dec – 28 Feb</div></div>
+      <div class="f" id="dslots"><label>Slots</label><div class="in tags">${RML.map(chip).join("")}</div></div>
+      <div class="sec">Targeting</div>
+      <div class="f" id="drules"><label>Show only to</label><div class="rm-rules">${rule("Audience / Segments", "is", "Loyalty Gold", 0)}${rule("Purchase History", "includes", "Cold drinks", 1)}</div></div></div>`, `Home &gt; Advertisers &gt; <b>Frostline Cold Drinks</b>`, "Insights / Analytics");
+}
+function rmLogin(typed) {
+  return `<div class="rm-login"><div class="rm-lc"><div class="rm-lm"><svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg><span>Personalisation<b>Hub</b></span></div>
+    <h3>${esc(RET())} Retail Media</h3><div class="rm-ls">Advertiser self-service</div>
+    <label>Work email</label><div class="in" id="lem">${typed ? "alex@frostline-drinks.example" : "&nbsp;"}</div><label>Password</label><div class="in" id="lpw">${typed ? "••••••••••" : "&nbsp;"}</div>
+    <span class="aibtn" id="lsign"><span class="ms">login</span><span>Sign in</span></span></div></div>`;
+}
+function rmCreative(n) {
+  const P = (k, title, l, ratio, line) => `<div class="ap" id="ap${k}"><div class="ch">${title}<span class="ms" style="font-size:16px">expand_more</span></div><div class="cbd"><div class="asset" style="aspect-ratio:${ratio}">${n > k ? `<div class="art">${rmAd(l, false)}</div>${PLAY}` : `<div class="shim"><span class="ms">auto_awesome</span>Rendering…</div>`}</div></div><div class="af"><span class="muted">Priority 1</span><span class="btn pri">Upload new Campaign Asset</span></div></div>`;
+  return shell(detailTop("Creative", false, null) + `<div class="ctabs"><span class="on">Campaign Assets</span><span>Call to Action</span></div>
+    <div class="muted" style="margin-top:12px">Campaign assets for each screen type</div>
+    <div class="assets"><div style="display:flex;flex-direction:column;gap:16px">${P(0, "Forecourt screens", RML[0], "16/9")}${P(3, "POS screens", RML[3], "800/250")}</div>${P(1, "Shop front screens", RML[1], "9/16")}${P(2, "Cooler door screens", RML[2], "9/16")}</div>`, crumbD());
+}
+/* The shopper journey: one campaign on four locations, personalised as the shopper moves; every screen always shows content. */
+function rmJourney(active) {
+  const cells = RML.map((l, i) => `<div class="rm-jc ${i === active ? "on" : ""}" id="jc${i}"><div class="rm-jl"><span class="ms">${l.icon}</span>${l.name}${i === active ? `<i>Personalised</i>` : ""}</div>
+    <div class="rm-jv"><div class="rm-tile" id="jt${i}" style="${rmFit(l, 250, 150)}">${rmAd(l, i === active || i < active)}</div></div></div>`).join("");
+  const stops = RML.map((l, i) => `<div class="rm-st ${i <= active ? "done" : ""}"><span class="ms">${l.icon}</span>${l.name}</div>`).join(`<span class="rm-sl"></span>`);
+  const sig = RML[Math.max(0, active)];
+  return `<div class="rm-j"><div class="rm-jh"><span class="ph"><svg width="26" height="26" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg></span><b>${esc(RET())}</b><span>One Frostline campaign, four screen locations</span></div>
+    <div class="rm-jm"><div class="rm-jg">${cells}</div>
+      <div class="rm-sh" id="shopper"><div class="rm-av"><span class="ms">person</span></div><b>Emma</b><small>Loyalty Gold</small>
+        <div class="rm-sg" id="rmsig"><span class="ms">sensors</span>${esc(sig.sig)}</div>
+        <div class="rm-at"><div><span>Loyalty tier</span><b>Gold</b></div><div><span>Purchase history</span><b>Cold drinks</b></div><div><span>Seen so far</span><b>${active + 1} of 4 screens</b></div></div></div></div>
+    <div class="rm-path" id="rmpath">${stops}</div></div>`;
+}
+const RMT = [
+  { k:"direct", n:"Direct advertiser deals", how:"Sold upfront by the retailer", tg:true, cpm:"Highest CPM", w:55, lvl:3 },
+  { k:"private", n:"Private auctions", how:"Invited advertisers and DSPs", tg:true, cpm:"Premium CPM", w:25, lvl:2 },
+  { k:"open", n:"Open auction", how:"Unsold slots only", tg:false, cpm:"Market CPM", w:20, lvl:1 }
+];
+const RM_INFO = "Slots are offered upfront at the highest value first: direct deals, then private auctions, both with first-party targeting in real time. Only slots not sold that way fall through to the open auction, which has no targeting.";
+function rmYield(n) { const f = S.flow; S.flow = 0; try { return rmYieldHTML(n); } finally { S.flow = f; } } /* the waterfall is the retailer's screen, in the retailer's brand */
+function rmYieldHTML(n) {
+  const rows = RMT.map((t, i) => `<div class="rm-yr ${n > i ? "on" : ""}" id="yr${i}"><span class="rm-yn">${i + 1}</span><div class="rm-yt"><b>${t.n}</b><small>${t.how}</small></div>
+    <div class="rm-trk"><i style="width:${n > i ? t.w : 0}%"></i></div><span class="rm-chip ${t.tg ? "ok" : ""}"><span class="ms">${t.tg ? "check_circle" : "block"}</span>${t.tg ? "Targeting" : "No targeting"}</span>
+    <span class="rm-cpm" aria-label="${t.cpm}">${[1, 2, 3].map(k => `<i class="${k <= t.lvl ? "on" : ""}" style="height:${6 + k * 6}px"></i>`).join("")}<em>${t.cpm}</em></span></div>${i < 2 ? `<div class="rm-fall ${n > i + 1 ? "on" : ""}"><span class="ms">south</span>Unsold slots only</div>` : ""}`).join("");
+  return shell(`<div class="row"><div class="title">Yield waterfall <span class="rm-info" id="rminfo" data-tip="${esc(RM_INFO)}" tabindex="0" aria-label="${esc(RM_INFO)}"><span class="ms">info</span></span></div></div><div class="hr"></div>
+    <div class="rm-wf">${rows}</div>
+    <div class="rm-soon" id="rmsoon"><span class="ms">hub</span><b>Connect demand</b><span class="rm-chip">SSP integrations<em>Coming soon</em></span><span class="rm-chip">DSP integrations<em>Coming soon</em></span></div>`, `Home &gt; Insights / Analytics &gt; <b>Yield waterfall</b>`, "Insights / Analytics");
+}
+const RMS1 = [
+ { t:"Before: one campaign after another", s:"Forecourt, shop front, coolers and POS screens all play a plain rotation: one campaign after another, with no targeting.",
+   enter(){ paint(rmDisplays("before")); },
+   async play(id){ await wait(500,id); const c=q("#lc-forecourt"); tip(c,this.t,this.s,1); const cy=rmCycle(id,3); await cy; hideTip(); await wait(300,id); } },
+ { t:"Add the advertiser", s:"A retailer sells its own screens. Add the advertiser once in Advertisers, sold directly, with campaigns approved before they play.",
+   enter(){ paint(rmAdvertisers(false)); },
+   async play(id){ const b=q("#newadv"); await moveTo(b,id); tip(b,this.t,this.s,2); await wait(2200,id); hideTip(); await click(b,id);
+     q("#layer").innerHTML = rmAdvModal(""); await wait(400,id); await typeInto(q("#advname"), "Frostline Cold Drinks", id, reduce?999:30);
+     const sv=q("#advsave"); await click(sv,id); q("#layer").innerHTML=""; paint(rmAdvertisers(true)); await wait(500,id); const r=q(".rm-tr.new"); tip(r,"Frostline Cold Drinks added","A fictional cold drinks brand, ready for a direct deal.",2); await wait(2400,id); hideTip(); } },
+ { t:"Assign a slot in all four locations", s:"In Displays & Devices, give the advertiser slot 2 on the forecourt, shop front, cooler and POS screens. Each location now plays the campaign in its own slot.",
+   enter(){ paint(rmDisplays("before")); },
+   async play(id){ await wait(400,id);
+     for (const [i,l] of RML.entries()) { const row=q(`#sl-${l.k}-1`); await click(row,id); row.classList.add("ad"); row.querySelector(".t").textContent="Frostline Cold Drinks"; row.querySelector(".b").textContent="Direct deal";
+       q("#tile-"+l.k).innerHTML = rmAd(l,false); if (i===0) { tip(q("#lc-forecourt"),this.t,this.s,3); await wait(1800,id); hideTip(); } else await wait(350,id); }
+     tip(q("#lc-cooler"),"Every location now has the campaign","Slot 2 is reserved for the advertiser everywhere, and no screen is ever left blank.",3); await wait(2600,id); hideTip(); } },
+ { t:"Create a direct deal", s:"A direct deal sells those four slots upfront to one advertiser for the campaign window, before anything reaches an auction.",
+   enter(){ paint(rmDeal(0,0,false)); },
+   async play(id){ await wait(500,id); tip(q("#dslots"),this.t,this.s,4); await wait(1800,id); for (let k=1;k<=4;k++){ q("#dch"+(k-1)).style.opacity=1; await wait(450,id); } await wait(1600,id); hideTip(); } },
+ { t:"Target loyalty members", s:"Add targeting rules from your own first-party data: only Loyalty Gold members who buy cold drinks see the deal's campaign. Real-time targeting is what lifts the CPM.",
+   enter(){ paint(rmDeal(0,4,false)); },
+   async play(id){ await wait(400,id); const rg=q("#drules"); tip(rg,this.t,this.s,5); await wait(1800,id); for (let k=0;k<2;k++){ q("#rr"+k).style.display=""; await wait(900,id); } await wait(1600,id); hideTip();
+     const sv=q("#savedeal"); await click(sv,id); paint(rmDeal(2,4,true)); q("#layer").innerHTML=`<div class="toast"><span class="ms">check_circle</span>Direct deal saved · 4 slots reserved</div>`; await wait(1800,id); q("#layer").innerHTML=""; showEnd(); } }
+];
+const RMS2 = [
+ { t:"The advertiser logs in", s:"The advertiser signs in to the retailer's self-service portal to create their own campaign.",
+   enter(){ paint(rmLogin(false)); },
+   async play(id){ await wait(500,id); const e=q("#lem"); await click(e,id); tip(e,this.t,this.s,1); await typeInto(e,"alex@frostline-drinks.example",id,reduce?999:40); hideTip();
+     const p=q("#lpw"); await click(p,id); await typeInto(p,"••••••••••",id,reduce?999:30); await click(q("#lsign"),id); await wait(500,id); } },
+  STEPS[0], STEPS[1], STEPS[2], STEPS[3], STEPS[4],
+ { t:"Creative for every screen type", s:"Generate Creative Assets builds the final scene for the forecourt, shop front, cooler door and POS screens.",
+   enter(){ S.bright=true; paint(storyScreen({copy:3,f1:"first",f2:"last",b1:true,cta:"assets"})); setTop(maxTop(),0); },
+   async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,this.s,7); await wait(2600,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,1300);
+     paint(rmCreative(0)); await wait(600,id); for (const k of [0,1,2,3]) { const l=[RML[0],RML[1],RML[2],RML[3]][k]; q("#ap"+k+" .asset").innerHTML=`<div class="art">${rmAd(l,false)}</div>${PLAY}`; await wait(560,id); }
+     tip(q("#ap0"),"Creative for every screen type","Landscape forecourt, portrait shop front and cooler doors, and the wide POS strip, all generated from one spoken brief.",7); await wait(3400,id); hideTip(); showEnd(); } }
+];
+const RMS3 = [0,1,2,3].map(i => ({ t:["A shopper pulls onto the forecourt","She walks to the shop front","She stops at the cooler","She reaches the checkout"][i],
+   s:["Emma's loyalty app recognises her at the pump. The forecourt screen switches to a message for her, in real time.","The same campaign follows her to the shop front, now speaking to a Gold member.","At the cooler door the offer is about the cold drink she is looking at.","At the POS the last screen closes the loop: scan the Gold card and the upsize is hers."][i],
+   enter(){ paint(rmJourney(i)); },
+   async play(id){ await wait(i?500:800,id); tip(q("#jc"+i),this.t,this.s,i+1); await wait(3600,id); hideTip(); } })).concat([
+ { t:"Sold upfront first, with targeting", s:"Direct deals and private auctions are sold before anything else, with first-party targeting in real time. That is what lifts the CPM.",
+   enter(){ paint(rmYield(0)); },
+   async play(id){ await wait(500,id); tip(q("#rminfo"),"How the waterfall works",RM_INFO,5); await wait(3600,id); hideTip();
+     for (const k of [0,1]) { const r=q("#yr"+k); r.classList.add("on"); r.querySelector(".rm-trk i").style.width=RMT[k].w+"%"; await wait(900,id); }
+     tip(q("#yr0"),this.t,this.s,5); await wait(3000,id); hideTip(); } },
+ { t:"Only unsold slots reach open auction", s:"Slots not sold through direct or private deals fall through to open auction, which has no targeting. SSP and DSP integrations are coming soon.",
+   enter(){ paint(rmYield(2)); },
+   async play(id){ await wait(500,id); const f=q(".rm-fall"); f.classList.add("on"); const r=q("#yr2"); r.classList.add("on"); r.querySelector(".rm-trk i").style.width=RMT[2].w+"%"; await wait(900,id);
+     tip(r,this.t,"Open auction is the fall-through for slots that did not sell upfront.",6); await wait(2800,id); hideTip(); tip(q("#rmsoon"),"SSP and DSP integrations","Coming soon.",6); await wait(2200,id); hideTip(); showEnd(); } }
+]);
+const RMFLOWDEF = [
+  { h1: "Sell every screen, with loyalty targeting", sub: "A convenience retailer sets up its own retail media network: slots across the forecourt, shop front, coolers and POS, and a direct deal targeted at loyalty members.",
+    steps: RMS1, intro: () => paint(rmDisplays("before")),
+    start: () => [`See ${esc(RET())} sell its own screens`, "Start with a plain rotation, add an advertiser, assign slots in all four locations and create a direct deal with loyalty targeting."],
+    end: () => ["Flow 1 complete", `${esc(RET())} has sold four locations upfront`, "One advertiser now holds slot 2 on the forecourt, shop front, cooler and POS screens through a direct deal, targeted at Loyalty Gold members who buy cold drinks.", [["4","locations"],["1","direct deal"],["2","targeting rules"]], 1] },
+  { h1: "The advertiser creates a campaign by talking", sub: "The advertiser logs in, briefs the AI campaign agent by voice and gets a storyboard and creative for every screen type.",
+    steps: RMS2, intro: () => paint(rmLogin(false)),
+    start: () => ["See an advertiser create a campaign just by talking", "Log in, talk the AI campaign agent through the campaign, then follow it from brief to storyboard and creative for every screen."],
+    end: () => ["Flow 2 complete", "A whole campaign from a spoken brief", "Name, brief, copy, storyboard and creative for the forecourt, shop front, cooler and POS screens, made by the advertiser without a designer.", [["1","spoken brief"],["4","screen types"],["0","designers"]], 2] },
+  { h1: "One shopper, four screens, a higher CPM", sub: "Follow Emma from the forecourt to the checkout while the campaign personalises in real time, then see how slots are sold: upfront first, open auction last.",
+    steps: RMS3, intro: () => paint(rmJourney(0)),
+    start: () => ["Follow one shopper from forecourt to POS", "The same campaign speaks to Emma at every screen, then the yield waterfall shows why the CPM is higher."],
+    end: () => ["Flow 3 complete", `${esc(RET())} lifts its CPM with real-time targeting`, "Slots are sold upfront through direct deals and private auctions with first-party targeting. Only unsold slots fall through to open auction, with no targeting.", [["4","screens, one shopper"],["2","targeted tiers"],["1","open auction for unsold"]], 0] }
+];
+const FLOWDEF = IS_RM ? RMFLOWDEF : FLOWDEF_STD;
 const FD = () => FLOWDEF[S.flow], ST = () => FD().steps;
 const dots = document.getElementById("dots"), flows = document.getElementById("flows");
 flows.innerHTML = FLOWS.map((f,i)=>`<button type="button" class="chip" data-k="${i}" ${f[1]?"":'aria-disabled="true"'}><span class="n">${i+1}</span>${f[0]}${f[2]?`<small>${f[2]}</small>`:""}${f[1]?"":"<small>coming next</small>"}</button>`).join("");
@@ -1590,10 +2090,12 @@ function showEnd() {
   const [eb, h, p, stats, next] = FD().end(), nf = FLOWS[next];
   card.innerHTML = `<div class="in2"><div class="eyebrow">${eb}</div><h2>${h}</h2><p>${esc(p)}</p>
     <div class="stats">${stats.map(x=>`<div><b>${x[0]}</b>${x[1]}</div>`).join("")}</div>
-    <div class="acts end">${FOCUS ? "" : `<button type="button" class="go" id="nextflow">Next: ${nf[0]}</button>`}<span class="sec"><button type="button" class="quiet" id="again"><span class="ms">replay</span>Replay</button><button type="button" class="quiet fsonly" id="fsexit"><span class="ms">fullscreen_exit</span>Exit full screen</button></span></div></div>`;
+    <div class="acts end">${FD().cta ? `<a class="go" id="cta" href="${FD().cta.href}" target="_top">${FD().cta.label}</a>` : FOCUS ? "" : `<button type="button" class="go" id="nextflow">Next: ${nf[0]}</button>`}<span class="sec"><button type="button" class="quiet" id="again"><span class="ms">replay</span>Replay</button><button type="button" class="quiet fsonly" id="fsexit"><span class="ms">fullscreen_exit</span>Exit full screen</button></span></div></div>`;
   card.hidden = false; marks(); tourEvent("complete");
   card.querySelector("#again").onclick = () => { tourEvent("replay"); go(0); };
   card.querySelector("#fsexit").onclick = () => fsExit();
+  const cta = card.querySelector("#cta");
+  if (cta) { cta.onclick = () => { tourEvent("cta", { href: FD().cta.href }); }; cta.focus({ preventScroll: true }); return; }
   const nb = card.querySelector("#nextflow");
   if (nb) { nb.onclick = () => { if (nf[1]) { tourEvent("next", { next_flow: nf[0], next_step: 1 }); setFlow(next); S.paused = false; go(0); } else nb.textContent = "Coming in the next build"; }; nb.focus({ preventScroll: true }); }
   else card.querySelector("#again").focus({ preventScroll: true });
@@ -1625,8 +2127,17 @@ if (FOCUS) flows.hidden = true;
 /* ================= website gate: teaser, lead capture, unlock ================= */
 const AWS_URL = "https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76?trk=59c672e4-15c4-4782-aee9-4352db108809&sc_channel=el&source=personalisationhub";
 const wrap = document.getElementById("wrap"), gate = document.getElementById("gate"), LEAD_KEY = "ph_lead";
-const GFLOWS = [["auto_awesome","Campaign creation","Talk a campaign into existence, in your brand"],["storefront","Localisation & scheduling","Every store gets its own version"],["person_pin_circle","Personalisation","The right offer the moment they check in"]];
-const TEASE = [
+const GFLOWS = IS_RM ? [["storefront","Retailer setup","Sell every screen, with loyalty targeting"],["record_voice_over","Advertiser creates by talking","A whole campaign from a spoken brief"],["person_pin_circle","Shopper journey & outcome","One shopper, four screens, a higher CPM"]] : [["auto_awesome","Campaign creation","Talk a campaign into existence, in your brand"],["storefront","Localisation & scheduling","Every store gets its own version"],["person_pin_circle","Personalisation","The right offer the moment they check in"]];
+const TEASE_RM = [
+  { cap: "Four screen locations, sold slot by slot", async run(id) { S.flow = 0; S.bright = false; paint(rmDisplays("before")); await rmCycle(id, 2, 900);
+      for (const l of RML) { const row = q(`#sl-${l.k}-1`); row.classList.add("ad"); row.querySelector(".t").textContent = "Frostline Cold Drinks"; row.querySelector(".b").textContent = "Direct deal"; q("#tile-" + l.k).innerHTML = rmAd(l, false); await wait(500, id); }
+      await wait(2400, id); } },
+  { cap: "A spoken brief becomes creative for every screen", async run(id) { S.flow = 1; S.bright = false; paint(listScreen(false)); q("#layer").innerHTML = modalHTML(null, [], false);
+      q("#ta").classList.add("focus"); q("#vrow").style.visibility = "visible"; q("#mic").classList.add("rec"); dictate(q("#tabody"), D().brief, id).catch(() => {});
+      await wait(3300, id); S.bright = true; paint(rmCreative(4)); await wait(3300, id); } },
+  { cap: "One shopper, four screens, personalised in real time", async run(id) { S.flow = 2; S.bright = true; for (let i = 0; i < 4; i++) { paint(rmJourney(i)); await wait(1700, id); } await wait(600, id); } }
+];
+const TEASE_STD = [
   { cap: "A spoken brief becomes creative for every screen", async run(id) { S.flow = 0; S.bright = false; paint(listScreen(false)); q("#layer").innerHTML = modalHTML(null, [], false);
       q("#ta").classList.add("focus"); q("#vrow").style.visibility = "visible"; q("#mic").classList.add("rec"); dictate(q("#tabody"), D().brief, id).catch(() => {});
       await wait(3300, id); S.bright = true; paint(creativeScreen(4, false)); await wait(3300, id); } },
@@ -1636,6 +2147,7 @@ const TEASE = [
   { cap: "The right offer, the moment a customer checks in", async run(id) { S.flow = 2; S.bright = true; screen.innerHTML = sceneHTML("home1", "promo");
       await wait(1300, id); setPhone("home2"); await wait(1100, id); const tv = q("#pdisp"); tv.classList.add("on"); if (P3().shelf) tv.innerHTML = shelfSVG(true); else tv.querySelector(".tv-in").innerHTML = art("land","first",S.bright); await wait(4200, id); } }
 ];
+const TEASE = IS_CONV ? CV.TEASE : IS_RM ? TEASE_RM : TEASE_STD;
 const IN_FRAME = window.parent !== window;
 const PCFG = () => { try { return window.PH_TOUR || (IN_FRAME && window.parent.PH_TOUR) || {}; } catch (e) { return window.PH_TOUR || {}; } };
 const DL = () => { try { if (IN_FRAME && window.parent.dataLayer) return window.parent.dataLayer; } catch (e) {} return (window.dataLayer = window.dataLayer || []); };
@@ -1699,7 +2211,7 @@ const FREE_MAIL = /@(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|iclou
 function gateHTML() {
   const head = `<div class="g-eb"><span class="ms">play_circle</span>Interactive product tour</div>`;
   if (GMODE === "pick") return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
-      <h3>Watch a ${INDLABEL} campaign go from a spoken brief to the right customer</h3><p>Three short guided demos on real Personalisation Hub screens, run in your brand. Pick one to start.</p>
+      <h3>${IS_RM ? "Watch a convenience retailer sell its screens and lift its CPM" : `Watch a ${INDLABEL} campaign go from a spoken brief to the right customer`}</h3><p>${`Three short guided demos on real Personalisation Hub screens${IS_RM ? "" : ", run in your brand"}. Pick one to start.`}</p>
       <div class="g-flows">${GFLOWS.map((f, i) => `<button type="button" class="g-flow" data-f="${i}"><span class="ms">${f[0]}</span><span><b>${f[1]}</b><small>${f[2]}</small></span><span class="g-go">Watch<span class="ms">chevron_right</span></span><i></i></button>`).join("")}</div></div>`;
   const f = GFLOWS[TSEL];
   return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
@@ -1727,9 +2239,9 @@ function renderGate() {
     saveLead(lead); sendLead(lead); unlock(lead, true); };
 }
 function lock() {
-  fsExit(); LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = D().brand;
-  document.getElementById("h1").textContent = `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
-  document.getElementById("sub").textContent = "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
+  fsExit(); LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = IND[S.ind].brand;
+  document.getElementById("h1").textContent = IS_RM ? "See a convenience retailer run its own retail media network, end to end" : `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
+  document.getElementById("sub").textContent = IS_RM ? "Short guided demos built on real Personalisation Hub screens: selling slots, creating a campaign by talking, and following one shopper from forecourt to checkout." : "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
   renderGate(); teaseLoop();
 }
 function unlock(lead, autostart) {

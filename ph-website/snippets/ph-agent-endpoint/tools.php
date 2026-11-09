@@ -50,7 +50,8 @@ function calc_tool_def() {
 	}
 	return array(
 		'name'        => 'calculate_business_model',
-		'description' => 'Business model / business case calculator. Enter a few figures about a business and get an instant estimate of what Personalisation Hub could add, plus a link to the calculator pre-filled with those figures, where the business model can be downloaded. Supported industries: ' . implode( ', ', $names ) . '. Call with no arguments to list the calculators and the inputs each needs; call with an industry and any inputs you know (the rest use defaults, and the result says which) to get the estimate. The downloadable model is gated: the person must enter their own name, company and work email on the page and agree to be contacted, so give them the link rather than filling that in for them.',
+		'title'       => 'Calculate a business case',
+		'description' => 'Estimates what Personalisation Hub could add for a business: a business model and business case calculator. Enter a few figures about a business and get an instant estimate of what Personalisation Hub could add, plus a link to the calculator pre-filled with those figures, where the business model can be downloaded. Supported industries: ' . implode( ', ', $names ) . '. Call with no arguments to list the calculators and the inputs each needs; call with an industry and any inputs you know (the rest use defaults, and the result says which) to get the estimate. The downloadable model is gated: the person must enter their own name, company and work email on the page and agree to be contacted, so give them the link rather than filling that in for them.',
 		'inputSchema' => array(
 			'type'                 => 'object',
 			'properties'           => array(
@@ -59,7 +60,7 @@ function calc_tool_def() {
 			),
 			'additionalProperties' => false,
 		),
-		'annotations' => array( 'readOnlyHint' => true ),
+		'annotations' => tool_annotations(),
 	);
 }
 
@@ -123,25 +124,38 @@ function feature_slugs() {
 	return $out;
 }
 
+/** Every tool only reads (the CTA tools only return links), is safe to repeat and touches nothing outside this site's own content. */
+function tool_annotations() {
+	return array( 'readOnlyHint' => true, 'idempotentHint' => true, 'openWorldHint' => false );
+}
+
+/** Accepted spellings of a feature slug that no longer match the page: old slug => current slug. Keeps clients that cached the old enum working. */
+function feature_slug_aliases() {
+	return array( 'retail-media-platform' => 'white-label-retail-media-platform' );
+}
+
 function tool_defs() {
 	$none = array( 'type' => 'object', 'properties' => new \stdClass(), 'additionalProperties' => false );
-	$ro   = array( 'readOnlyHint' => true );
+	$ro   = tool_annotations();
 	$defs = array(
 		array(
 			'name'        => 'describe_platform',
-			'description' => 'What Personalisation Hub is, its product areas with links, how it is deployed and how to start a free trial.',
+			'title'       => 'Describe Personalisation Hub',
+			'description' => 'What Personalisation Hub is: AI-native digital signage, a white-label retail media platform, queue management and appointment booking, mobile store sites and in-store personalisation, self-hosted in the customer\'s own AWS account. Returns the product areas with links, how it is deployed and how to start a free trial. Start here for any general question about the platform.',
 			'inputSchema' => $none,
 			'annotations' => $ro,
 		),
 		array(
 			'name'        => 'list_industries',
-			'description' => 'List the industries Personalisation Hub has pages for, with a one-line summary and URL each.',
+			'title'       => 'List industries',
+			'description' => 'Lists the industries Personalisation Hub has pages for, such as fuel and convenience, telco, pharmacy, retail media, grocery and banking, with a one-line summary and URL each. Use it to find the slug that get_industry needs.',
 			'inputSchema' => $none,
 			'annotations' => $ro,
 		),
 		array(
 			'name'        => 'get_industry',
-			'description' => 'Read one industry page as markdown.',
+			'title'       => 'Read an industry page',
+			'description' => 'Returns one industry page as markdown: the outcomes it delivers, the touchpoints it covers, worked examples, the business model calculator and the interactive product tour where that industry has them, and its FAQ. Use list_industries for the slugs.',
 			'inputSchema' => array(
 				'type'                 => 'object',
 				'properties'           => array( 'slug' => array( 'type' => 'string', 'enum' => INDUSTRY_SLUGS, 'description' => 'Industry slug from list_industries' ) ),
@@ -152,10 +166,11 @@ function tool_defs() {
 		),
 		array(
 			'name'        => 'get_feature',
-			'description' => 'Read one product feature page as markdown.',
+			'title'       => 'Read a product feature page',
+			'description' => 'Returns one product page as markdown with its questions and answers: digital signage, queue management, appointment booking, the white label retail media platform, store sites, personalisation, localisation and geo-targeting, or AI agents. The old slug retail-media-platform still works as an alias for white-label-retail-media-platform.',
 			'inputSchema' => array(
 				'type'                 => 'object',
-				'properties'           => array( 'slug' => array( 'type' => 'string', 'enum' => array_values( feature_slugs() ), 'description' => 'Feature page slug' ) ),
+				'properties'           => array( 'slug' => array( 'type' => 'string', 'enum' => array_merge( array_values( feature_slugs() ), array_keys( feature_slug_aliases() ) ), 'description' => 'Feature page slug (retail-media-platform is an alias for white-label-retail-media-platform)' ) ),
 				'required'             => array( 'slug' ),
 				'additionalProperties' => false,
 			),
@@ -163,7 +178,8 @@ function tool_defs() {
 		),
 		array(
 			'name'        => 'search_help',
-			'description' => 'Search the Personalisation Hub Support Centre (set-up guides, how-tos and reference). Plain questions work. Returns matching articles with their URLs.',
+			'title'       => 'Search the Support Centre',
+			'description' => 'Searches the Personalisation Hub Support Centre (set-up guides, how-tos and reference). Plain questions work. Returns matching articles with their URLs, categories and summaries; read one with get_help_article.',
 			'inputSchema' => array(
 				'type'                 => 'object',
 				'properties'           => array(
@@ -177,7 +193,8 @@ function tool_defs() {
 		),
 		array(
 			'name'        => 'get_help_article',
-			'description' => 'Read one Personalisation Hub Support Centre article as markdown. Pass the article URL from search_help.',
+			'title'       => 'Read a Support Centre article',
+			'description' => 'Returns one Personalisation Hub Support Centre article as markdown. Pass the article URL from search_help. Use it after a search to answer a how-to or set-up question step by step.',
 			'inputSchema' => array(
 				'type'                 => 'object',
 				'properties'           => array( 'url' => array( 'type' => 'string', 'maxLength' => 300, 'description' => "The article's Support Centre URL" ) ),
@@ -188,19 +205,22 @@ function tool_defs() {
 		),
 		array(
 			'name'        => 'start_free_trial',
-			'description' => 'The link to start a free trial of Personalisation Hub on AWS Marketplace.',
+			'title'       => 'Start a free trial',
+			'description' => 'Returns the link to start the 30-day free trial of Personalisation Hub on AWS Marketplace. Use it when someone wants to try the platform or asks how to get started.',
 			'inputSchema' => $none,
 			'annotations' => $ro,
 		),
 		array(
 			'name'        => 'book_demo',
-			'description' => 'The link to book a Personalisation Hub demo.',
+			'title'       => 'Book a demo',
+			'description' => 'Returns the link to book a Personalisation Hub demo with the team. Use it when someone wants to see the platform first or talk to a person before trying it.',
 			'inputSchema' => $none,
 			'annotations' => $ro,
 		),
 		array(
 			'name'        => 'get_installation_spec',
-			'description' => 'Everything an agent needs to provision Personalisation Hub in a retailer\'s own AWS account and start the free trial: AWS Marketplace listing, product ID and subscribe link, pricing, prerequisites, CloudFormation launch steps and parameters, deployment expectations, verification, recovery and teardown. Items not yet public are marked unconfirmed, never guessed. Subscribing, the EULA and the IAM acknowledgement need a human.',
+			'title'       => 'Get the installation spec',
+			'description' => 'Returns everything needed to provision Personalisation Hub in a retailer\'s own AWS account and start the free trial: the AWS Marketplace listing, product ID and subscribe link, pricing, prerequisites, CloudFormation launch steps and parameters, deployment expectations, verification, recovery and teardown. Items not yet public are marked unconfirmed, never guessed. Subscribing, the EULA and the IAM acknowledgement need a human.',
 			'inputSchema' => $none,
 			'annotations' => $ro,
 		),
@@ -332,7 +352,7 @@ function run_tool( $name, $args, array $src ) {
 				$pages = $src['pages']();
 				$home  = $pages[2389] ?? array( 'Personalisation Hub', '' );
 				$md    = "# Personalisation Hub\n\n" . ( '' !== trim( $home[1] ) ? trim( $home[1] ) . "\n\n" : '' )
-					. 'Personalisation Hub is a self-hosted personalisation platform for businesses with physical locations. It runs in the customer\'s own AWS account, so customer data stays under their control.' . "\n\n## Product areas\n\n";
+					. 'Personalisation Hub is AI-native digital signage and in-store personalisation software for businesses with physical locations, with a white-label retail media platform, queue management, appointment booking and mobile store sites. It is self-hosted in the customer\'s own AWS account, so customer data stays under their control.' . "\n\n## Product areas\n\n";
 				$areas = array();
 				foreach ( ids_of_kind( 'feature' ) as $id ) {
 					if ( isset( $pages[ $id ] ) ) {
@@ -357,7 +377,8 @@ function run_tool( $name, $args, array $src ) {
 				return null === $md ? tool_error( 'That industry page is not available.' ) : tool_text( $md );
 
 			case 'get_feature':
-				$id = array_search( $args['slug'], feature_slugs(), true );
+				$slug = feature_slug_aliases()[ $args['slug'] ] ?? $args['slug'];
+				$id   = array_search( $slug, feature_slugs(), true );
 				$md = false === $id ? null : $src['page_md']( $id );
 				return null === $md ? tool_error( 'That feature page is not available.' ) : tool_text( $md );
 
@@ -433,4 +454,52 @@ function run_tool( $name, $args, array $src ) {
 		return tool_error( 'That did not work. Try again later.' );
 	}
 	return tool_error( 'Unknown tool.' );
+}
+
+/* ------------------------------------------------------------------ what agents are told about the tools */
+
+/** First sentence of a tool description, for one-line lists. */
+function tool_first_sentence( $desc ) {
+	$desc = trim( preg_replace( '/\s+/', ' ', (string) $desc ) );
+	$s    = preg_match( '/^(.+?[.!?])(\s|$)/', $desc, $m ) ? $m[1] : $desc;
+	return mb_strlen( $s ) > 200 ? rtrim( mb_substr( $s, 0, 197 ) ) . '...' : $s;
+}
+
+/** The "## For AI agents" section of llms.txt, generated from the tool contract so it lists every tool and cannot drift. */
+function agents_llms_md() {
+	$defs = tool_defs();
+	$md   = "\n## For AI agents\n\n"
+		. '- [Remote MCP server](' . MCP_URL . '): streamable HTTP, no sign-in, ' . count( $defs ) . " read-only tools:\n";
+	foreach ( $defs as $d ) {
+		$md .= '  - `' . $d['name'] . '`: ' . tool_first_sentence( $d['description'] ) . "\n";
+	}
+	$md .= '- WebMCP: the same ' . count( $defs ) . ' tools are offered to browser agents through navigator.modelContext on the site\'s pages when the browser supports it, and each business model calculator page adds `run_business_model_calculator`, which fills in the figures on that page' . "\n"
+		. '- REST tools: `GET ' . PH_AE_SITE . '/wp-json/ph-agent/v1/tools` lists the tools with their input schemas; `GET ' . PH_AE_SITE . '/wp-json/ph-agent/v1/tools/<name>?args={json}` runs one' . "\n"
+		. '- [Help API](' . HELP_API_URL . "): search and fetch Support Centre articles over HTTP\n"
+		. '- Markdown twins: every page listed here has a markdown version at the same address with ?format=md' . "\n"
+		. '- [Full text](' . PH_AE_SITE . "/llms-full.txt): this file followed by the markdown of every page, in one request\n"
+		. '- [Server card](' . PH_AE_SITE . "/.well-known/mcp.json): the MCP server, its endpoint and its tools as JSON\n";
+	return $md;
+}
+
+/** /.well-known/mcp.json: the remote MCP server's card. The tools are the contract above, unchanged. */
+function server_card() {
+	return array(
+		'name'           => 'Personalisation Hub',
+		'title'          => 'Personalisation Hub',
+		'description'    => 'Read-only tools for AI agents and AI search about Personalisation Hub, AI-native digital signage and in-store personalisation software with a white-label retail media platform, queue management, appointment booking and store sites, self-hosted in the customer\'s own AWS account: the platform and its industries, product pages, Support Centre articles, a business model calculator, the installation spec, and links to start a free trial or book a demo.',
+		'endpoint'       => MCP_URL,
+		'transport'      => array( 'type' => 'streamable-http', 'url' => MCP_URL ),
+		'remotes'        => array( array( 'type' => 'streamable-http', 'url' => MCP_URL ) ),
+		'authentication' => array( 'required' => false ),
+		'tools'          => tool_defs(),
+		'links'          => array(
+			'llms'          => PH_AE_SITE . '/llms.txt',
+			'llmsFull'      => PH_AE_SITE . '/llms-full.txt',
+			'documentation' => PH_AE_SITE . '/support-centre/',
+			'aiAgents'      => PH_AE_SITE . '/ai-agents/',
+			'toolsRest'     => PH_AE_SITE . '/wp-json/ph-agent/v1/tools',
+			'helpApi'       => HELP_API_URL,
+		),
+	);
 }

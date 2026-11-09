@@ -388,6 +388,17 @@ function org() {
 			'https://twitter.com/Digital_retail',
 			'https://aws.amazon.com/marketplace/seller-profile?id=seller-ipgfe4tzltv24'
 		],
+		'knowsAbout'  => [
+			'AI-native digital signage',
+			'In-store personalisation',
+			'White-label retail media platform',
+			'Queue management',
+			'Appointment booking',
+			'Mobile store sites',
+			'Omnichannel personalisation',
+			'Self-hosted retail software on AWS',
+		],
+		'areaServed'  => 'Worldwide',
 	];
 }
 
@@ -401,6 +412,20 @@ function software() {
 		'description'         => "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud.",
 		'applicationCategory' => 'BusinessApplication',
 		'operatingSystem'     => 'Web',
+		'applicationSubCategory' => 'Digital signage and in-store personalisation software',
+		'featureList'         => [
+			'AI-native digital signage',
+			'In-store personalisation',
+			'White-label retail media platform',
+			'Queue management',
+			'Appointment booking',
+			'Mobile store sites',
+			'Localisation and geo-targeting',
+			'AI agents that create campaigns',
+			'Self-hosted in your own AWS account',
+		],
+		'softwareHelp'        => [ '@type' => 'CreativeWork', 'name' => 'Personalisation Hub Support Centre', 'url' => home_url( '/support-centre/' ) ],
+		'audience'            => [ '@type' => 'BusinessAudience', 'audienceType' => 'Businesses with physical stores' ],
 		'publisher'           => [ '@id' => home_url( '/#organization' ) ],
 		'offers'              => [
 			'@type'         => 'Offer',

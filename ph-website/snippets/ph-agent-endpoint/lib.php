@@ -26,7 +26,7 @@ function allow_list() {
 		7020 => array( '/digital-signage/', 'feature' ),
 		2711 => array( '/retail-queue-management/', 'feature' ),
 		3035 => array( '/retail-appointment-bookings/', 'feature' ),
-		3266 => array( '/retail-media-platform/', 'feature' ),
+		3266 => array( '/white-label-retail-media-platform/', 'feature' ),
 		3477 => array( '/store-sites/', 'feature' ),
 		3566 => array( '/personalisation/', 'feature' ),
 		3973 => array( '/localisation-geo-targeting/', 'feature' ),
@@ -94,6 +94,17 @@ function organization_node() {
 			'https://twitter.com/Digital_retail',
 			'https://aws.amazon.com/marketplace/seller-profile?id=seller-ipgfe4tzltv24'
 		),
+		'knowsAbout'  => array(
+			'AI-native digital signage',
+			'In-store personalisation',
+			'White-label retail media platform',
+			'Queue management',
+			'Appointment booking',
+			'Mobile store sites',
+			'Omnichannel personalisation',
+			'Self-hosted retail software on AWS',
+		),
+		'areaServed'  => 'Worldwide',
 	);
 }
 
@@ -107,6 +118,20 @@ function software_node() {
 		'description'         => ENTITY_DESCRIPTION,
 		'applicationCategory' => 'BusinessApplication',
 		'operatingSystem'     => 'Web',
+		'applicationSubCategory' => 'Digital signage and in-store personalisation software',
+		'featureList'         => array(
+			'AI-native digital signage',
+			'In-store personalisation',
+			'White-label retail media platform',
+			'Queue management',
+			'Appointment booking',
+			'Mobile store sites',
+			'Localisation and geo-targeting',
+			'AI agents that create campaigns',
+			'Self-hosted in your own AWS account',
+		),
+		'softwareHelp'        => array( '@type' => 'CreativeWork', 'name' => 'Personalisation Hub Support Centre', 'url' => PH_AE_SITE . '/support-centre/' ),
+		'audience'            => array( '@type' => 'BusinessAudience', 'audienceType' => 'Businesses with physical stores' ),
 		'publisher'           => array( '@id' => PH_AE_SITE . '/#organization' ),
 		'offers'              => array(
 			'@type'         => 'Offer',
@@ -350,11 +375,23 @@ function llms_sections( $text, array $pages ) {
 		}
 	}
 	if ( ! has_section( $text, 'For AI agents' ) ) {
-		$add .= "\n## For AI agents\n\n"
-			. '- [Remote MCP server](' . MCP_URL . "): search the Support Centre from any MCP client, no sign-in\n"
-			. "- WebMCP: pages expose the same tools to browser agents through navigator.modelContext when the browser supports it\n"
-			. '- [Help API](' . HELP_API_URL . "): search and fetch Support Centre articles over HTTP\n"
-			. '- Every page listed here has a markdown version at the same address with ?format=md' . "\n";
+		require_once __DIR__ . '/tools.php';
+		$add .= agents_llms_md();
 	}
 	return rtrim( $text ) . "\n" . $add;
+}
+
+/**
+ * /llms-full.txt: llms.txt followed by the full markdown twin of each page, each under its URL.
+ * $docs: list of [url, markdown]; entries with no markdown are skipped.
+ */
+function llms_full_text( $llms, array $docs ) {
+	$out = rtrim( (string) $llms ) . "\n";
+	foreach ( $docs as $d ) {
+		if ( ! is_array( $d ) || ! isset( $d[1] ) || trim( (string) $d[1] ) === '' ) {
+			continue;
+		}
+		$out .= "\n---\n\nURL: " . $d[0] . "\n\n" . trim( (string) $d[1] ) . "\n";
+	}
+	return $out;
 }

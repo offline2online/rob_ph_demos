@@ -16,7 +16,7 @@ $all     = faq_pages();
 ok( count( $all ) >= 5, 'faq: at least the five named features have a block' );
 foreach ( $all as $id => $f ) {
 	ok( isset( $allowed[ $id ] ) && in_array( $allowed[ $id ][1], array( 'feature', 'home' ), true ), "faq: $id is an allow-listed feature (or home) page" );
-	ok( ! in_array( $allowed[ $id ][0], array( '/retail-media-platform/' ), true ), "faq: $id is not the retail media page (not live yet)" );
+	ok( ! in_array( $allowed[ $id ][0], array( '/retail-media-platform/' ), true ), "faq: $id is not the old retail media slug" );
 	$qn = count( $f['questions'] );
 	ok( $qn >= 4 && $qn <= 6, "faq: $id has 4 to 6 questions ($qn)" );
 	foreach ( $f['questions'] as $q ) {
@@ -30,10 +30,10 @@ foreach ( $all as $id => $f ) {
 		}
 	}
 }
-foreach ( array( 7020, 3566, 6254, 2711, 3035, 3477, 3973, 2389 ) as $id ) {
+foreach ( array( 7020, 3566, 6254, 2711, 3035, 3477, 3973, 2389, 3266 ) as $id ) {
 	ok( faq_for( $id ) !== null, "faq: page $id has a block" );
 }
-ok( faq_for( 3266 ) === null, 'faq: no block on the retail media page' );
+ok( faq_for( 3266 ) !== null && $allowed[3266][0] === '/white-label-retail-media-platform/', 'faq: the white label retail media platform page has a block' );
 ok( faq_for( 7062 ) === null && faq_graph( 7062 ) === null && faq_html( 7062 ) === '', 'faq: legal pages have none' );
 
 $g = faq_graph( 7020 );
