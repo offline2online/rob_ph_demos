@@ -212,13 +212,13 @@ Start a 30-day free trial on AWS Marketplace and run it in one pharmacy. After t
 
 Try it: [Try Free with AWS](https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76?trk=59c672e4-15c4-4782-aee9-4352db108809&sc_channel=el&source=personalisationhub)
 ',
-	'retail-media' => '# Personalisation Hub for Retail Media
+	'retail-media' => '# Launch Your Own In-Store Retail Media Network
 
-Personalisation Hub is a self-hosted personalisation platform that turns a retailer\'s stores, app and website into one measurable retail media network. It combines live store context (time, weather, stock) with your own customer data from your CDP, CRM, loyalty and decisioning systems, and uses it to personalise website, mobile app, entrance screen and smart shelf in real time. Results are measured from screen to sale, and everything runs in your own AWS account.
+Personalisation Hub is a self-hosted personalisation platform that lets a retailer launch its own in-store retail media network and earn new revenue from the screens, app and website it already owns. Advertisers book and manage campaigns themselves, audiences are built from your own first-party data inside your own AWS account, and every sale is proven back to the advertiser that paid for it. For how the platform works, see our [white label retail media platform](https://personalisationhub.com/white-label-retail-media-platform/).
 
 ## Key facts
-- **Best for:** Retailers running or launching a retail media network
-- **Outcomes:** Media revenue, New-to-brand buyers, Incremental sales, Repeat bookings
+- **Best for:** Retailers launching or growing their own in-store retail media network
+- **Outcomes:** New media revenue, Less manual ad operations, Advertiser rebooking, Incremental sales
 - **Touchpoints:** Website, Mobile app, Entrance screen, Smart shelf
 - **Data used:** Time, weather and stock, plus your own CDP, CRM, loyalty and decisioning data
 - **Deployment:** Self-hosted in your own AWS account (VPC) and on your own domain
@@ -226,14 +226,29 @@ Personalisation Hub is a self-hosted personalisation platform that turns a retai
 - **Try it:** 30-day free trial on AWS Marketplace, then billed through your AWS account
 
 ## Outcome
-New media revenue from the screens you already own, with every sale proven to the brands that paid for it.
+New media revenue from the screens you already own, with every sale proven to the advertisers that paid for it.
+
+## What each kind of retailer gains
+- **Pharmacy:** Shoppers wait, and that wait is attention you can sell. Front-of-house brands (wellness, vitamins, skincare, beauty) reach shoppers in the aisle and while they wait, with campaigns that follow the season and the weather. Promotions stay front of house only, and targeting uses aggregate or de-identified data, never patient data.
+- **Grocery and supermarkets:** High footfall and a loyalty base make aisle, end-cap and entrance screens valuable to suppliers. Suppliers fund the offer and you earn the media fee, while basket size grows on the same visit.
+- **Convenience and fuel:** Short visits and a fast decision at the till suit simple, time-of-day offers. Sell forecourt, counter and in-store screens by daypart and by site.
+- **Other retail (fashion, department stores, telco, quick service and more):** Any network with physical locations, an app or a website can sell media. Start in one store, prove it, then roll out.
+
+## What advertiser self-service means for you
+Advertisers choose stores, screens and dates, upload creative and book it themselves. For you that means new revenue without adding people: far less manual ad operations, no email chains to schedule a campaign, and a team that can sell more without a bigger back office.
+
+## What secure first-party data targeting means for you
+Audiences are built from your own CDP, CRM and loyalty data inside your own cloud. Targeted media sells at a premium, advertisers see reach and sales results rather than raw data, and your shopper data never leaves your control, which protects the trust that makes the network worth buying.
+
+## More reach, coming
+Reach beyond your own stores through the major DSPs (Google, The Trade Desk and Amazon DSP) is coming. When it arrives it is an extra revenue stream on the inventory you already sell, not a replacement for selling to advertisers directly.
 
 ## How a visit is personalised
-1. **Brand brief** (Your retail media team): A brand wants new-to-brand buyers in its category, in chosen stores and dayparts. Result: A clear, sellable audience.
+1. **Advertiser brief** (Advertiser self-service): An advertiser wants new-to-brand buyers in its category, in chosen stores and dayparts. Result: A clear, sellable audience.
 2. **Audience** (Your CDP and loyalty data): The audience is built from your own first-party data, inside your cloud. Result: Precise targeting, no data shared.
-3. **In store** (Entrance, shelf and aisle screens): Brand creative plays when and where the audience shops, adapted to stock and weather. Result: Reach at the moment of choice.
+3. **In store** (Entrance, shelf and aisle screens): Advertiser creative plays when and where the audience shops, adapted to stock and weather. Result: Reach at the moment of choice.
 4. **Across channels** (App and website): The same campaign reaches the audience in your app and on your website. Result: One campaign, every touchpoint.
-5. **Proof** (Closed-loop attribution): Every exposure is matched to sales, so the brand sees the incremental result. Result: Brands book again.
+5. **Proof** (Closed-loop attribution): Every exposure is matched to sales, so the advertiser sees the incremental result. Result: Advertisers book again.
 
 ## Examples
 - **New to brand · hot day · drinks brand:** localisation (Sat 1:20pm · weekend shop; Hot · 30°C; Sparkling water · high stock · aisle 6); customer data (New to brand · buys a competing water; Health-conscious shopper · loyalty member; Brand-funded · 20% off first pack); campaign "Sparkling and ice-cold." shown on website, mobile app, entrance screen and smart shelf.
@@ -244,11 +259,14 @@ New media revenue from the screens you already own, with every sale proven to th
 Inputs: stores, screens per store, media revenue per screen per month, shoppers per store per day, in-store conversion percentage today, average offer spend. Assumptions: screen time sold (default 50%), premium for loyalty-targeted campaigns (default 30%), uplift in conversion from personalised offers (default 15%). Media: stores × screens × media revenue per screen × 12 × screen time sold × (1 + targeting premium). Offers: shoppers per day × 365 × today\'s offer conversion × the uplift percentage × average offer spend.
 
 ## FAQ
+**How do we launch our own in-store retail media network?**
+Start with the screens, app and website you already have, connect your own first-party data, and let advertisers book campaigns themselves. Run it in one store on a 30-day free trial, then roll out.
+
 **Do we need new screens?**
 No. Personalisation Hub works with any digital signage device, alongside the check-in, app and data systems you already run.
 
-**Do brands get access to our shopper data?**
-No. Audiences are built and activated inside your own cloud. Brands see reach and sales results, never the underlying data.
+**Do advertisers get access to our shopper data?**
+No. Audiences are built and activated inside your own cloud. Advertisers see reach and sales results, never the underlying data.
 
 **How do we get started?**
 Start a 30-day free trial on AWS Marketplace and run it in one store. After that it\'s simply added to your AWS bill, and you can cancel any time.
