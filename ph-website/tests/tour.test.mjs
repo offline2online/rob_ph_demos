@@ -1,4 +1,4 @@
-// node ph-website/tests/tour.test.mjs : the telco, pharmacy and retail media product tour on the industry pages (enhance.js + site.js), in Chromium.
+// node ph-website/tests/tour.test.mjs : the telco, pharmacy, retail media and fuel & convenience product tour on the industry pages (enhance.js + site.js), in Chromium.
 // Checks: the band is mounted (Elementor mount, or built after the calculator's section), the iframe src (+ph_test forwarding), the height
 // message, window.PH_TOUR, "Arrange a Demo" -> PH_SITE_DEMO, and that a successful calculator download writes
 // localStorage ph_lead and dispatches window "ph:lead". Skips (exit 0) when Playwright or Chromium is not available.
@@ -32,7 +32,7 @@ try {
     const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
     await p.route("**/*", (r) => {
       const u = r.request().url();
-      if (/\/industries\/(telco|pharmacy)\/tour\//.test(u)) return r.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><p>tour</p>" });
+      if (/\/industries\/(telco|pharmacy|convenience)\/tour\//.test(u)) return r.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><p>tour</p>" });
       if (/wp-json\/ph-site\/v1\/(industry-lead|telco-model)$/.test(u)) return r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, download: "http://x.test/blocked.xlsx" }) });
       if (/blocked\.xlsx/.test(u)) return r.fulfill({ status: 204, body: "" });
       return r.fulfill({ contentType: "text/html", body: html(withBand, ind) });
@@ -112,6 +112,16 @@ try {
   await p.close();
   p = await open(true, "?ph_test=1", "pharmacy");
   assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/pharmacy/tour/?embed=1&ph_test=1", "pharmacy: ph_test forwarded");
+  await p.close();
+  // Fuel & convenience: same mount, its own iframe src and copy; the band gets the #ph-tour anchor other tours link to.
+  p = await open(true, "?ph_test=1", "convenience");
+  assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/convenience/tour/?embed=1&ph_test=1", "convenience: iframe src and ph_test");
+  assert.strictEqual(await p.locator("#band").getAttribute("id"), "band");
+  await p.close();
+  p = await open(false, "", "convenience");
+  assert.strictEqual(await p.locator("#calcsec + .ph-ind-tour .ph-ind-tour-mount iframe").count(), 1, "convenience: band built after the calculator section");
+  assert.strictEqual(await p.locator(".ph-ind-tour").getAttribute("id"), "ph-tour", "convenience: the band has the ph-tour anchor");
+  assert.strictEqual(await p.locator(".ph-ind-tour h2").textContent(), "See Personalisation Hub run a fuel and convenience campaign, end to end", "convenience: fallback heading");
   await p.close();
   p = await open(false, "", "telco");
   assert.strictEqual(await p.locator(".ph-ind-tour h2").textContent(), "See Personalisation Hub run a telco campaign, end to end", "telco fallback heading unchanged");
@@ -636,6 +646,55 @@ try {
       assert.ok(g.c.length === 4 && g.c[0][1] === g.c[1][1] && g.c[2][1] === g.c[3][1] && g.c[2][1] > g.c[0][1] && g.c[0][0] === g.c[2][0] && g.c[1][0] > g.c[0][0], "two-by-two screens: " + JSON.stringify(g.c));
       assert.ok(g.sw <= g.cw, `no sideways scroll at 390px: ${g.sw} > ${g.cw}`);
       await m.close(); }
+  }
+  // Fuel & convenience walkthrough: five scenes in order across four screen locations, never a blank screen, no real brands, CTA to retail media.
+  { const src = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
+    const fast = src.replace("const k = reduce ? .35 : 1;", "const k = .03;"); assert.ok(fast !== src, "speed hook applied (convenience)");
+    const open2 = async (html, lead) => {
+      const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+      const errs = []; t.on("pageerror", (e) => errs.push(e.message));
+      await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: html }) : r.abort());
+      if (lead) await t.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "", email: "s@k.example", source: "Telco business model download" })));
+      await t.goto("http://x.test/industries/convenience/tour/?embed=1");
+      return { t, errs };
+    };
+    { const { t, errs } = await open2(fast, true);
+      await t.waitForSelector("#fs", { state: "visible" });
+      assert.ok(/convenience/i.test(await t.title()) || /Fuel & Convenience/.test(await t.title()), "document title names Fuel & Convenience: " + await t.title());
+      assert.strictEqual(await t.locator("#flows").isHidden(), true, "one walkthrough: no flow chips");
+      assert.strictEqual(await t.locator("#dots .dot").count(), 5, "five scenes");
+      assert.ok(/Scene 1 of 5/i.test(await t.locator("#stage").innerText()), "scene 1 is painted behind the start card");
+      await t.click("#play");
+      const titles = [], texts = new Set(); let blank = 0; const t0 = Date.now();
+      for (;;) {
+        const s = await t.evaluate(() => ({ cap: document.getElementById("capT").textContent, txt: document.getElementById("stage").innerText, tiles: [...document.querySelectorAll("#stage .cv-tile .cv-scr")].map((x) => x.innerText.trim().length), done: !document.getElementById("card").hidden && /complete/i.test(document.getElementById("card").innerText), locs: [...document.querySelectorAll("#stage .cv-loc")].length }));
+        if (!titles.includes(s.cap)) titles.push(s.cap);
+        texts.add(s.txt);
+        if (/Scene 1 of 5|Scene 4 of 5/i.test(s.txt)) { assert.strictEqual(s.locs, 4, "four screen locations"); if (s.tiles.some((n) => !n)) blank++; }
+        if (s.done) break;
+        assert.ok(Date.now() - t0 < 60000, "walkthrough finished");
+        await t.waitForTimeout(60);
+      }
+      const all = [...texts].join("\n");
+      assert.deepStrictEqual(titles.map((x) => x.slice(0, 2)), ["1.", "2.", "3.", "4.", "5."], "scenes play in order: " + JSON.stringify(titles));
+      assert.strictEqual(blank, 0, "screens always show content");
+      for (const need of ["Driveway screens", "Shop front", "Coolers", "POS", "Coffee + pastry", "Gold member recognised at pump 4", "Welcome back, Sam", "Loyalty member", "Weekdays", "Offer redemption"]) assert.ok(all.includes(need), "walkthrough shows: " + need);
+      assert.ok(/scene 5 of 5/i.test(all), "scene 5 shown");
+      assert.ok(!/telco|pharmac|prescription|iPhone|Harbourside|Nimbus|Shell|BP |Caltex|7-Eleven|Coca|Red Bull|personalization/i.test(all), "no other industry content, real brands or US spelling: " + (all.match(/telco|pharmac|prescription|iPhone|Harbourside|Nimbus|Shell|BP |Caltex|7-Eleven|Coca|Red Bull|personalization/i) || [])[0]);
+      assert.strictEqual(await t.locator("#cta").getAttribute("href"), "/industries/retail-media/#ph-tour", "closing CTA links to the retail media walkthrough");
+      assert.strictEqual(await t.locator("#cta").getAttribute("target"), "_top", "CTA leaves the frame");
+      assert.strictEqual(await t.locator("#nextflow").count(), 0, "no Next flow button");
+      assert.ok(await t.evaluate(() => window.dataLayer.some((e) => e.event === "ph_tour" && e.action === "complete" && e.industry === "convenience")), "complete event carries industry convenience");
+      assert.deepStrictEqual(errs, [], "no page errors: " + JSON.stringify(errs));
+      await t.close(); }
+    // Locked: the teaser plays the shopper journey and the gate offers the one walkthrough; the lead carries the convenience flow name.
+    { const { t, errs } = await open2(src, false);
+      await t.waitForSelector(".g-flow");
+      assert.strictEqual(await t.locator(".g-flow").count(), 1, "gate offers one walkthrough");
+      assert.ok(/Fuel & convenience walkthrough/.test(await t.locator(".g-flow").innerText()));
+      assert.ok(!/Three short guided demos/.test(await t.locator("#gate").innerText()), "gate copy is not the three-demo copy");
+      assert.ok(/Scene 4 of 5/i.test(await t.locator("#stage").innerText()), "teaser shows the shopper journey");
+      assert.deepStrictEqual(errs, [], "no page errors in the teaser"); await t.close(); }
   }
   console.log("tour js: all passed");
 } finally { await browser.close(); }
