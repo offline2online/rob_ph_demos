@@ -163,16 +163,3 @@ The same pass removed every Kafka/MSK mention and rewrote the Retail Admin, segm
 ## Retail Media features page rework (9 Nov 2026)
 
 `pages/retail-media-features.md` holds the copy, SEO fields (slug `/white-label-retail-media-platform/`, title, H1, meta), cross-links with `/industries/retail-media/`, and the deploy recipe for the page that targets "white label retail media platform". The page is WordPress content, so the PH Website deploy session applies it through the personalisationhub.com WordPress MCP.
-
-## Retail Media industry page: retailer outcomes (9 Nov 2026)
-
-The Retail Media industry page (/industries/retail-media/) is reworked around outcomes for a retailer launching its own in-store retail media network. It targets "launch your own in-store retail media network" and does **not** use "white label retail media platform", which the features page (/retail-media-platform/) owns. Repo changes in snippet 10063: the `retail-media` markdown twin in `md.php` (retailer-outcome copy, per-segment benefits for pharmacy, grocery, convenience and other retail, advertiser self-service, first-party data targeting, upcoming DSP reach) and the `retail-media` JSON-LD in `ld.php` (WebPage name and description, Service description, a launch FAQ). The page copy itself lives in Elementor and is edited on the site with the personalisationhub.com WordPress MCP (`ph-mcp`) only.
-
-**For the deploy session:**
-1. Publish snippet 10063 (changed `md.php`, `ld.php`; replace every `__ID__`).
-2. In Elementor on /industries/retail-media/ (find the page id with the MCP): SEOPress title "Launch Your Own In-Store Retail Media Network | Personalisation Hub"; meta description "Launch your own in-store retail media network. Earn new revenue from screens you own, let advertisers self-serve and target with first-party data that stays in your cloud."; H1 "Launch your own in-store retail media network". Neither may contain "white label retail media platform".
-3. Replace the body sections with the text of the twin: "What each kind of retailer gains" (one card per segment: pharmacy, grocery, convenience, other retail), "What advertiser self-service means for you", "What secure first-party data targeting means for you", and a short "More reach, coming" note on Google, The Trade Desk and Amazon DSP as a future revenue upside. Link the phrase "white label retail media platform" (exact anchor text) to https://personalisationhub.com/retail-media-platform/ in the opening paragraph.
-4. Keep the benefits calculator and the product tour band beneath it (`ph-ind-sec ph-ind-tour`, the retail media walkthrough mounts there); do not remove them.
-5. Rules: "personalisation" with an s; no internal project names; no copy under charts or tables (info tooltips only); no client or brand names; any screen in an image must show content.
-6. Images: none were generated in the build session (no Canva, Nano Banana Pro or LTX keys). Use Media Library images or the site's SVG style; the tool comparison is done separately.
-7. Refresh the edge cache for /industries/retail-media/ and `?format=md`; check the page has per-segment sections, the exact-anchor link, and a title and H1 without the features-page keyword.
