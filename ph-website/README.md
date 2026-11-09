@@ -184,3 +184,8 @@ The Retail Media industry page (/industries/retail-media/) is reworked around ou
 5. Rules: "personalisation" with an s; no internal project names; no copy under charts or tables (info tooltips only); no client or brand names; any screen in an image must show content.
 6. Images: none were generated in the build session (no Canva, Nano Banana Pro or LTX keys). Use Media Library images or the site's SVG style; the tool comparison is done separately.
 7. Refresh the edge cache for /industries/retail-media/ and `?format=md`; check the page has per-segment sections, the exact-anchor link, and a title and H1 without the features-page keyword.
+
+
+## Retail Media features page rework (9 Nov 2026)
+
+`pages/retail-media-features.md` holds the copy, SEO fields (slug `/white-label-retail-media-platform/`, title, H1, meta), cross-links with `/industries/retail-media/`, and the deploy recipe for the page that targets "white label retail media platform". The page is WordPress content, so the PH Website deploy session applies it through the personalisationhub.com WordPress MCP.
