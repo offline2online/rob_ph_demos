@@ -89,7 +89,27 @@ const WP_TIMEOUT_MS = 4000;
 const WP_MAX_BYTES = 256 * 1024;
 const WP_ARGS_MAX = 2000;
 const WP_CACHE_MAX = 300;
-const SERVER_INFO = { name: "personalisation-hub-help", version: "2.0.0" };
+const SERVER_INFO = { name: "personalisation-hub", title: "Personalisation Hub", version: "2.1.0", websiteUrl: "https://personalisationhub.com" };
+// Agent-facing orientation, returned by initialize. Every tool name must appear (test).
+const SERVER_INSTRUCTIONS = [
+  "Personalisation Hub is a self-hosted personalisation platform for businesses with physical locations. It covers AI-native digital signage, in-store personalisation, a white-label retail media platform, queue management and appointment booking, and store sites. It runs in the customer's own AWS account, with a 30-day free trial on AWS Marketplace.",
+  "",
+  "Which tool answers what:",
+  "- Overview of the platform: describe_platform.",
+  "- An industry: list_industries, then get_industry.",
+  "- A capability: get_feature.",
+  "- How-to and setup questions: search_help, then get_help_article.",
+  "- ROI or a business case: calculate_business_model.",
+  "- Deploying it: get_installation_spec.",
+  "- Trying or buying: start_free_trial or book_demo.",
+  "",
+  "Rules: cite the URLs the tools return. Never invent prices; pricing is on the AWS Marketplace listing. Use only what the tools return.",
+].join("\n");
+// Read-only text resources proxied from the site (llms-full.txt is listed only once it is live).
+const WP_RESOURCES = [
+  { uri: "https://personalisationhub.com/llms.txt", name: "llms.txt", title: "Personalisation Hub: llms.txt", description: "Short, agent-readable index of Personalisation Hub.", mimeType: "text/plain", always: true },
+  { uri: "https://personalisationhub.com/llms-full.txt", name: "llms-full.txt", title: "Personalisation Hub: llms-full.txt", description: "Full agent-readable description of Personalisation Hub.", mimeType: "text/plain", always: false },
+];
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
 function inRange(a, releasesById, targetOrder) {
@@ -473,32 +493,33 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
   const wp = new Map(); // key -> { at, good: {at, value} | null, failAt }
   const stable = (v) => (v && typeof v === "object" ? (Array.isArray(v) ? `[${v.map(stable).join(",")}]` : `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`) : JSON.stringify(v));
 
-  async function wpFetchJson(url) {
+  async function wpFetchJson(url) { return JSON.parse(await wpFetchText(url, "application/json")); }
+  async function wpFetchText(url, accept) {
     if (!fetchImpl) throw new Error("no fetch");
     const ctl = typeof AbortController === "function" ? new AbortController() : null;
     let timer;
     const timeout = new Promise((_, rej) => { timer = setTimeout(() => { if (ctl) ctl.abort(); rej(new Error("timeout")); }, wpTimeoutMs); });
     try {
       return await Promise.race([(async () => {
-        const r = await fetchImpl(url, { headers: { Accept: "application/json" }, ...(ctl ? { signal: ctl.signal } : {}) });
+        const r = await fetchImpl(url, { headers: { Accept: accept }, ...(ctl ? { signal: ctl.signal } : {}) });
         if (!r.ok) throw new Error(`status ${r.status}`);
         const len = Number(r.headers && r.headers.get && r.headers.get("content-length"));
         if (len > WP_MAX_BYTES) throw new Error("too large");
         const text = await r.text();
         if (text.length > WP_MAX_BYTES) throw new Error("too large");
-        return JSON.parse(text);
+        return text;
       })(), timeout]);
     } finally { clearTimeout(timer); }
   }
 
   // Returns { value, cached } or { error } (never throws).
-  async function wpCached(key, url, valid) {
+  async function wpCached(key, url, valid, fetcher = wpFetchJson) {
     const t = now();
     let e = wp.get(key);
     if (e && e.good && t - e.good.at < WP_TTL_MS) return { value: e.good.value, cached: true };
     if (e && e.failAt && t - e.failAt < WP_FAIL_TTL_MS) return e.good ? { value: e.good.value, cached: true, stale: true } : { error: "unavailable" };
     try {
-      const value = await wpFetchJson(url);
+      const value = await fetcher(url);
       if (!valid(value)) throw new Error("unexpected shape");
       e = { at: t, good: { at: t, value }, failAt: 0 };
       wp.set(key, e);
@@ -516,6 +537,18 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
   const isResult = (v) => v && typeof v === "object" && Array.isArray(v.content);
   const errResult = (msg) => ({ content: [{ type: "text", text: msg }], isError: true });
   const UNAVAILABLE = "The Personalisation Hub site could not be reached just now. Try again in a minute.";
+
+  const isText = (v) => typeof v === "string" && v.trim().length > 0;
+  const textOf = (uri) => wpCached(`res|${uri}`, uri, isText, (u) => wpFetchText(u, "text/plain, text/markdown;q=0.9"));
+  async function listResources(ctx) {
+    const out = [];
+    for (const { always, ...res } of WP_RESOURCES) {
+      const r = await textOf(res.uri);
+      if (ctx && ctx.cache) ctx.cache.push(!!r.cached);
+      if (always || !r.error) out.push(res);
+    }
+    return out;
+  }
 
   async function listTools() {
     const r = await wpCached("tools", WP_TOOLS_BASE, isTools);
@@ -569,9 +602,9 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         const asked = msg.params && msg.params.protocolVersion;
         return reply({
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
-          capabilities: { tools: { listChanged: false } },
+          capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, prompts: { listChanged: false } },
           serverInfo: SERVER_INFO,
-          instructions: "Read-only access to Personalisation Hub's public site content: describe_platform, list_industries, get_industry, get_feature, search_help, get_help_article, start_free_trial, book_demo, get_installation_spec, calculate_business_model. Always cite the url you are given.",
+          instructions: SERVER_INSTRUCTIONS,
         });
       }
       case "ping": return reply({});
@@ -580,6 +613,18 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
         if (ctx && ctx.cache) ctx.cache.push(!!r.cached);
         return r.error ? fail(-32603, UNAVAILABLE) : reply({ tools: r.value });
       }
+      case "resources/list": return reply({ resources: await listResources(ctx) });
+      case "resources/templates/list": return reply({ resourceTemplates: [] });
+      case "resources/read": {
+        const uri = msg.params && msg.params.uri;
+        const res = WP_RESOURCES.find((x) => x.uri === uri);
+        if (!res) return fail(-32002, `Resource not found: ${String(uri).slice(0, 120)}`);
+        const r = await textOf(res.uri);
+        if (ctx && ctx.cache) ctx.cache.push(!!r.cached);
+        if (r.error) return fail(-32603, UNAVAILABLE);
+        return reply({ contents: [{ uri: res.uri, mimeType: res.mimeType, text: r.value }] });
+      }
+      case "prompts/list": return reply({ prompts: [] });
       case "tools/call": {
         const p = msg.params || {};
         const out = await callTool(p.name, p.arguments);
@@ -678,4 +723,4 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
   return { handle, search, article, mcpMessage, testAlert, TOOL_NAMES: WP_TOOL_NAMES, _reset() { wp.clear(); data = null; feedCache = null; urlMap = null; mdTwins.clear(); results.clear(); articles.clear(); buckets.clear(); lastAlert.clear(); mon = { startedAt: 0, requests: 0, rateLimited: 0, errors: 0, clients: new Map() }; } };
 }
 
-module.exports = { createHelpApi, STOP_WORDS, scoreArticle, safeSupportUrl, inRange, termsOf, normaliseQuery, SERVER_INFO };
+module.exports = { createHelpApi, STOP_WORDS, scoreArticle, safeSupportUrl, inRange, termsOf, normaliseQuery, SERVER_INFO, SERVER_INSTRUCTIONS, WP_TOOL_NAMES };
