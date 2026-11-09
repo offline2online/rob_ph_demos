@@ -439,6 +439,26 @@ require_once dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/ai-hygiene
 $ihd = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/';
 $ihns = 'AngieSnippets\\PhIndustryEnhancements_10063\\';
 eval( 'namespace AngieSnippets\\PhIndustryEnhancements_10063; function data( $f ) { return require \'' . $ihd . '\' . $f; } function page_url( $k ) { return \'industries\' === $k ? home_url( \'/industries/\' ) : home_url( \'/industries/\' . $k . \'/\' ); }' );
+require_once $ihd . 'redirects.php';
+foreach ( array( 'is_admin', 'wp_doing_ajax', 'wp_doing_cron' ) as $rf ) { if ( ! function_exists( $rf ) ) { eval( "function $rf() { return false; }" ); } }
+$rt = $ihns . 'redirect_target';
+$nw = '/white-label-retail-media-platform/';
+ok( $rt( '/retail-media-platform/' ) === $nw && $rt( '/retail-media-platform' ) === $nw, 'redirect: old path with and without slash' );
+ok( $rt( '/Retail-Media-Platform/' ) === $nw, 'redirect: case-insensitive' );
+ok( $rt( '/retail-media-platform/?format=md' ) === $nw . '?format=md' && $rt( '/retail-media-platform?a=1&b=2' ) === $nw . '?a=1&b=2', 'redirect: query string kept' );
+ok( $rt( '/retail-media-platform/', 'HEAD' ) === $nw && $rt( '/retail-media-platform/', 'POST' ) === '', 'redirect: GET and HEAD only' );
+foreach ( array( '/white-label-retail-media-platform/', '/industries/retail-media/', '/retail-media-platform/x/', '/foo/retail-media-platform/', '/retail-media-platforms/', '/', '' ) as $np ) { ok( $rt( $np ) === '', "redirect: $np is not redirected" ); }
+$sd = $ihns . 'slug_move_decision';
+$mk = function ( $name, $status = 'publish', $type = 'page' ) { return (object) array( 'post_name' => $name, 'post_status' => $status, 'post_type' => $type ); };
+$sm = ( $ihns . 'slug_moves' )();
+ok( isset( $sm[3266] ) && $sm[3266] === array( 'retail-media-platform', 'white-label-retail-media-platform' ), 'slug move: page 3266 listed' );
+ok( $sd( $mk( 'retail-media-platform' ), array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === 'white-label-retail-media-platform', 'slug move: old slug moves' );
+ok( $sd( $mk( 'white-label-retail-media-platform' ), array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: new slug does nothing' );
+ok( $sd( $mk( 'something-else' ), array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: other slug does nothing' );
+ok( $sd( $mk( 'retail-media-platform', 'draft' ), array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: draft does nothing' );
+ok( $sd( null, array(), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: missing post does nothing' );
+ok( $sd( $mk( 'retail-media-platform' ), array( 3266 ), 3266, 'retail-media-platform', 'white-label-retail-media-platform' ) === '', 'slug move: already done does nothing' );
+ok( ! isset( ( $ihns . 'ai_feature_pages' )()['retail-media-platform'] ), 'ai_feature_pages no longer lists the moved page' );
 $ihdescs = array();
 $ihpages = array();
 foreach ( array_keys( ( $ihns . 'ai_industry_names' )() ) as $k ) { $ihpages[] = array( 'industry', $k ); }
