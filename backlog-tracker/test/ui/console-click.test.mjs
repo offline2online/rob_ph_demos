@@ -1132,6 +1132,50 @@ const scenarios = [
     },
   },
   {
+    name: "Modals: Save is off until something changes, the action row is sticky, the x is top right and closes",
+    seed: () => seed({ leads: {
+      lx: { company: { name: "Existing Co", website: "https://existing.example", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [{ id: "k1", name: "Pat", jobTitle: "", buyingRole: "champion", email: "", linkedin: "" }], stage: "demo", source: "Website form", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      // New lead: opens empty, so Save is off until a value is typed.
+      await c.page.click("#leads-add-btn");
+      await c.visible("#lead-form", "the lead form opens");
+      assert.ok(await c.page.locator("#lead-save").isDisabled(), "Save is off on an untouched new lead");
+      await c.page.fill("#lead-name", "Acme Retail");
+      assert.ok(await c.page.locator("#lead-save").isEnabled(), "typing turns Save on");
+      await c.page.fill("#lead-name", "");
+      assert.ok(await c.page.locator("#lead-save").isDisabled(), "putting it back turns Save off again");
+      // Sticky action row and a round x at the top right of the header.
+      const geo = await c.page.evaluate(() => {
+        const panel = document.querySelector(".lead-panel"), r = panel.getBoundingClientRect();
+        const x = document.querySelector("#lead-close").getBoundingClientRect();
+        panel.scrollTop = panel.scrollHeight;
+        const save2 = document.querySelector("#lead-save").getBoundingClientRect();
+        panel.scrollTop = 0;
+        const save3 = document.querySelector("#lead-save").getBoundingClientRect();
+        return { panelBottom: r.bottom, panelTop: r.top, panelRight: r.right, save2Bottom: save2.bottom, save3Bottom: save3.bottom, xRight: x.right, xTop: x.top };
+      });
+      assert.ok(geo.save3Bottom <= geo.panelBottom + 1 && geo.save3Bottom > geo.panelBottom - 90, "Save stays pinned to the bottom of the dialog even scrolled to the top");
+      assert.ok(geo.save2Bottom <= geo.panelBottom + 1, "and when scrolled to the end");
+      assert.ok(geo.xRight <= geo.panelRight && geo.panelRight - geo.xRight < 60 && geo.xTop - geo.panelTop < 60, "the x is in the top right corner");
+      await c.page.click("#lead-close");
+      await until(async () => await c.page.locator("#lead-backdrop").isHidden(), "the x to close the lead dialog", 5000);
+      // Edit an existing lead: Save is off until a field changes.
+      await c.page.click('.lead-lane[data-stage="demo"] .lead-card .lead-card-name');
+      await c.visible("#lead-sum-edit", "the summary opens");
+      await c.page.click("#lead-sum-edit");
+      await c.visible("#lead-form", "the editor opens");
+      await c.page.waitForTimeout(400);
+      assert.ok(await c.page.locator("#lead-save").isDisabled(), "Save is off on an unchanged saved lead");
+      await c.page.fill("#lead-source", "Referral");
+      assert.ok(await c.page.locator("#lead-save").isEnabled(), "editing a field turns Save on");
+      await c.page.click("#lead-close");
+      await until(async () => await c.page.locator("#lead-backdrop").isHidden(), "the x to close the editor", 5000);
+    },
+  },
+  {
     name: "Promote: Leads - ACE opportunities as the PH list page (count line, KPIs, stage pills, one-line grid rows, dots, ⋯ menu, themes, 375px)",
     seed: () => ({ ...seed({ leads: {
       lx: { company: { name: "Acme Retail", website: "", industry: "", countries: ["UK"], storeCount: 5 }, contacts: [], stage: "demo", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
@@ -1334,10 +1378,11 @@ const scenarios = [
       await c.click("#ace-new", "New opportunity");
       await c.visible("#ace-backdrop .ace-dialog");
       assert.match(await c.text("#ace-dlg-save"), /Create in ACE/);
+      assert.ok(await c.page.locator("#ace-dlg-save").isDisabled(), "Save is off until something is entered");
+      await c.page.fill('#ace-backdrop [data-f="customer"]', "Gamma Ltd");
       await c.page.click("#ace-dlg-save");
       assert.strictEqual((await c.text("#ace-dlg-status")).trim(), "Enter a title and customer.");
-      assert.ok(!c.aceWrites.some((w) => w.method === "POST"), "nothing is sent while title and customer are empty");
-      await c.page.fill('#ace-backdrop [data-f="customer"]', "Gamma Ltd");
+      assert.ok(!c.aceWrites.some((w) => w.method === "POST"), "nothing is sent while the title is empty");
       await c.page.fill('#ace-backdrop [data-f="name"]', "Totems");
       await c.page.click("#ace-dlg-save");
       await until(async () => (await c.text("#ace-dlg-status")).startsWith("Created in AWS ACE"), "Created in AWS ACE", 4000);
