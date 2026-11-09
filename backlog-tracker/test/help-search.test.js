@@ -43,6 +43,7 @@ const WPT = "https://personalisationhub.com/wp-json/ph-agent/v1/tools";
 const NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo", "get_installation_spec", "calculate_business_model"];
 let wpCalls = [], wpMode = "ok", wpText = "v1";
 let wpResultOverride = null;
+let llmsFetches = [], fullLive = false;
 const wpResult = (name, q) => wpResultOverride && name === "book_demo" ? wpResultOverride(name) : ({ content: [{ type: "text", text: `${name} ${q} ${wpText}` }], structuredContent: { name } });
 const wpFetch = async (url, opts) => {
   wpCalls.push(url);
@@ -56,6 +57,11 @@ const wpFetch = async (url, opts) => {
 };
 const fetchImpl = async (url, opts) => {
   if (url.startsWith(WPT)) return wpFetch(url, opts);
+  if (/\/llms(-full)?\.txt$/.test(url)) {
+    llmsFetches.push(url);
+    if (url.endsWith("llms-full.txt") && !fullLive) return { ok: false, status: 404, headers: { get: () => null }, text: async () => "" };
+    return { ok: true, status: 200, headers: { get: () => "text/plain" }, text: async () => "# Personalisation Hub\n" + url };
+  }
   if (url.endsWith("?format=md")) {
     twinFetches.push(url);
     if (!twinOk) return { ok: false, status: 503, text: async () => "" };
@@ -182,7 +188,33 @@ const call = async (method, path, query = {}, body, ip = "1.1.1.1", hdr = {}) =>
   // 6. MCP: a live proxy of the site's eight tools. initialize, list, call; notifications get 202; unknown tool errors
   api._reset(); wpCalls = []; wpMode = "ok";
   r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
-  assert.strictEqual(r.body.result.serverInfo.name, "personalisation-hub-help");
+  assert.strictEqual(r.body.result.serverInfo.name, "personalisation-hub");
+  assert.strictEqual(r.body.result.serverInfo.title, "Personalisation Hub");
+  assert.strictEqual(r.body.result.serverInfo.websiteUrl, "https://personalisationhub.com");
+  assert.strictEqual(r.body.result.serverInfo.version, "2.1.0", "version bumped from 2.0.0");
+  for (const n of NAMES) assert.ok(r.body.result.instructions.includes(n), "instructions mention " + n);
+  assert.match(r.body.result.instructions, /self-hosted personalisation platform/);
+  assert.match(r.body.result.instructions, /30-day free trial on AWS Marketplace/);
+  assert.match(r.body.result.instructions, /Never invent prices/);
+  assert.deepStrictEqual(r.body.result.capabilities.resources, { subscribe: false, listChanged: false });
+  // prompts: an empty list, not an error
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 90, method: "prompts/list" });
+  assert.deepStrictEqual(r.body.result, { prompts: [] });
+  // resources: llms.txt always; llms-full.txt only once the site serves it
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 91, method: "resources/list" });
+  assert.deepStrictEqual(r.body.result.resources.map((x) => x.uri), ["https://personalisationhub.com/llms.txt"]);
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 92, method: "resources/read", params: { uri: "https://personalisationhub.com/llms.txt" } });
+  assert.strictEqual(r.body.result.contents[0].mimeType, "text/plain");
+  assert.match(r.body.result.contents[0].text, /^# Personalisation Hub/);
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 93, method: "resources/read", params: { uri: "https://evil.example/x" } });
+  assert.strictEqual(r.body.error.code, -32002);
+  fullLive = true; api._reset();
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 94, method: "resources/list" });
+  assert.deepStrictEqual(r.body.result.resources.map((x) => x.name), ["llms.txt", "llms-full.txt"]);
+  r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 95, method: "resources/read", params: { uri: "https://personalisationhub.com/llms-full.txt" } });
+  assert.match(r.body.result.contents[0].text, /llms-full\.txt$/);
+  assert.strictEqual(r.headers["X-Cache"], "HIT");
+  fullLive = false; api._reset(); wpCalls = [];
   assert.strictEqual((await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", method: "notifications/initialized" })).code, 202);
   r = await call("POST", "/help-api/mcp", {}, { jsonrpc: "2.0", id: 2, method: "tools/list" });
   assert.deepStrictEqual(r.body.result.tools.map((x) => x.name), NAMES); // the site's list, allow-listed: secret_write_tool is dropped

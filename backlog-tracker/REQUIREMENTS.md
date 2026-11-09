@@ -2858,6 +2858,13 @@ published help articles without crawling pages. `functions/help-search.js`
   (`functions/html-to-md.js`: headings, lists, tables, links, code). The JSON
   `bodyMd` is the stored body unchanged.
 - `POST /help-api/mcp` — a stateless, public, read-only remote MCP server
+  (9 Nov 2026: it presents itself as `personalisation-hub` / "Personalisation Hub"
+  (`websiteUrl` https://personalisationhub.com, version 2.1.0). `initialize`
+  `instructions` say what the platform is, which tool answers what, and the
+  rules: cite returned URLs, never invent prices, use only what the tools
+  return. `resources/list` and `resources/read` serve the site's `/llms.txt`
+  and, once the site serves it, `/llms-full.txt` as `text/plain`, proxied and
+  cached 5 minutes like the tools; `prompts/list` answers `[]`.)
   (streamable HTTP, no sign-in) serving exactly the ten tools the WebMCP
   tools on the site pages define: `describe_platform`, `list_industries`,
   `get_industry`, `get_feature`, `search_help`, `get_help_article`,
