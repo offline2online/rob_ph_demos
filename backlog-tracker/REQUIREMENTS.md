@@ -4057,6 +4057,25 @@ Rules:
   global `click`/`pointer*`/`touch*` listener is not done until both pass.
   Chromium passing a plain tap proves nothing about the iPad.
 
+### Post-deploy check: the live console must serve the deploy (9 Nov 2026)
+
+A green `firebase deploy` is not proof the console shows the change. On 9 Nov 2026
+a report said shipped ACE/Leads changes (PR #553 and later) were not visible; the
+live files did match `main` (same `APP_VERSION`, the new `.ace-grid` rule present),
+so the deploy path (hosting target `console`, site `backlog-tracker-e4ed2`, public
+dir `console-dist`) is correct and the gap was that nothing proved it.
+
+- `scripts/build-console.js` writes `build-info.json` (`commit`, `tree`, `version`) into the
+  uploaded copy; `firebase.json` serves it `no-store`.
+- `deploy-backlog-tracker.yml` runs `scripts/verify-live-deploy.js` after `firebase deploy`: it
+  fetches the live `/build-info.json` and `/js/version.js` (cache-busted, retried for ~3 minutes)
+  and fails the run unless tree and version match what was just deployed.
+- A failed live check is recorded as a failed deploy, so `deployedAppVersion` and `deployedTree`
+  are not written and the next push redeploys instead of skipping as "already live".
+- Test: `test/verify-live-deploy.test.js`.
+- Not yet done: holding a train's tickets at "Merged to Main" until this check passes
+  (`finishTrain` in `run-backlog-automation.js` sets `published-live` at merge).
+
 ## Promote section: Brand Guidelines (5 Nov 2026)
 
 - A **Promote** group sits in the sidebar between Build and Publish (a

@@ -306,6 +306,8 @@ jobs:
         id: deploy
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          # Read by the hosting predeploy hook (scripts/build-console.js) to stamp build-info.json.
+          DEPLOY_TREE: ${{ steps.dedupe.outputs.tree }}
         # Retried on Google's transient errors only. A failed function update
         # can leave sibling updates still running on Google's side, and an
         # immediate retry just collides with them ("409, unable to queue the
@@ -347,6 +349,19 @@ jobs:
             echo "Deploy hit a transient Google error (attempt $attempt/3); waiting for in-flight operations before retrying."
             drain
           done
+
+      # Post-deploy check: the LIVE console must serve what was just deployed. A green
+      # `firebase deploy` is not proof (ticket Cq6isfkFAIBSxXpUucNp: shipped ACE/Leads changes
+      # were reported live but not seen). Fails the run, and so keeps deployedAppVersion /
+      # deployedTree unwritten, unless the live build-info.json and js/version.js match.
+      - name: Verify the live console serves this deploy
+        id: verify
+        if: steps.dedupe.outputs.skip != 'true' && steps.deploy.outcome == 'success'
+        env:
+          EXPECT_TREE: ${{ steps.dedupe.outputs.tree }}
+        run: |
+          EXPECT_VERSION=$(node -e "console.log(require('fs').readFileSync('public/js/version.js','utf8').match(/APP_VERSION\s*=\s*\"([^\"]+)\"/)[1])") \
+            node scripts/verify-live-deploy.js
 
       # Storage rules go in their own, non-fatal step. `storage:rules` (PR
       # #136) is not a valid --only target — the CLI read "rules" as a
@@ -426,6 +441,8 @@ jobs:
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           CONCLUSION="${{ steps.deploy.outcome }}"
+          # Deployed is not live: a deploy whose live check failed is recorded as a failure.
+          [ "${{ steps.verify.outcome }}" = "failure" ] && CONCLUSION=failure
           TREE="${{ steps.dedupe.outputs.tree }}"
           # A skipped run (content already live) reports as a successful
           # deploy of the same version — which it is.
