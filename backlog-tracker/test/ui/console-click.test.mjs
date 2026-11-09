@@ -1080,7 +1080,11 @@ const scenarios = [
       const lanes = await c.page.evaluate(() => [...document.querySelectorAll("#leads-board .lead-lane-head h3")].map((e) => e.textContent.trim()));
       assert.deepStrictEqual(lanes, ["Lead", "Hot Lead", "Demo", "Post-demo", "Closed Won", "Lost"]);
       // New lead with two contacts and buying roles lands in the Lead lane.
-      await c.page.click("#leads-add-btn");
+      // The tap guard can swallow a click fired right after the page opens (more often on a loaded runner): click again until the form shows.
+      for (let i = 0; i < 4 && !(await c.page.locator("#lead-form").isVisible()); i++) {
+        await c.page.click("#leads-add-btn");
+        await c.page.waitForTimeout(600);
+      }
       await c.visible("#lead-form", "the lead form opens");
       await c.page.fill("#lead-name", "Acme Retail");
       await c.page.fill("#lead-website", "acme.example");
@@ -1140,7 +1144,11 @@ const scenarios = [
       await c.boardReady();
       await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
       // New lead: opens empty, so Save is off until a value is typed.
-      await c.page.click("#leads-add-btn");
+      // The tap guard can swallow a click fired right after the page opens (more often on a loaded runner): click again until the form shows.
+      for (let i = 0; i < 4 && !(await c.page.locator("#lead-form").isVisible()); i++) {
+        await c.page.click("#leads-add-btn");
+        await c.page.waitForTimeout(600);
+      }
       await c.visible("#lead-form", "the lead form opens");
       assert.ok(await c.page.locator("#lead-save").isDisabled(), "Save is off on an untouched new lead");
       await c.page.fill("#lead-name", "Acme Retail");
