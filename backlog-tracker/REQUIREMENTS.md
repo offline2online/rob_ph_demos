@@ -2129,6 +2129,14 @@ combined content" convention (`ROUTINE_INSTRUCTIONS.md` → "Group
 multi-item fixes into one deployment") is a separate, code-level mechanism
 in `run-backlog-automation.js` that never depended on this page either.
 
+### Backlog cards show the title only; the description is on hover
+
+A card in the Backlog column shows its title and badges but not the
+description text. The description appears in a popover when the pointer is
+over (or keyboard focus is on) the title (`.card-title-hover` /
+`.card-desc-pop` in `public/css/styles.css`), and as a native tooltip.
+Cards in other columns are unchanged.
+
 ### A Backlog card locks while a fix is in flight
 
 `cardHTML`'s `isInDevelopment` (`isBacklog && item.patchReady`) covers the

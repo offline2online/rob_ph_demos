@@ -331,6 +331,10 @@ body {
    reading as just another muted utility icon. */
 .revert-btn:hover { background: var(--danger-tint); color: var(--danger); }
 .card-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+/* Backlog cards show the title only; the description appears on hover/focus. */
+.card-title-hover { position: relative; cursor: help; }
+.card-title-hover .card-desc-pop { display: none; position: absolute; left: 0; top: 100%; z-index: 20; width: min(360px, 90vw); max-height: 260px; overflow: auto; padding: 8px 10px; background: var(--surface, #fff); color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.15); font-size: 12.5px; font-weight: 400; white-space: pre-wrap; }
+.card-title-hover:hover .card-desc-pop, .card-title-hover:focus .card-desc-pop { display: block; }
 .card-desc { margin: 0; font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }
 .card-desc-wrap .card-desc-original { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
 .card-desc-toggle-btn {

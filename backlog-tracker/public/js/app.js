@@ -1084,8 +1084,10 @@ function cardHTML(item) {
         </div>
         <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
-      <h3 class="card-title">${escapeHTML(item.title)}</h3>
-      ${descHTML}
+      ${isBacklog && (item.desc || "").trim()
+        ? `<h3 class="card-title card-title-hover" tabindex="0" title="${escapeHTML(item.desc)}">${escapeHTML(item.title)}<span class="card-desc-pop" role="tooltip">${escapeHTML(item.desc)}</span></h3>`
+        : `<h3 class="card-title">${escapeHTML(item.title)}</h3>
+      ${descHTML}`}
       ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
