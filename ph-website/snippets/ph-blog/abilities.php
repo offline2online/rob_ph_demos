@@ -251,6 +251,46 @@ function prepare_post_fields( $in, $self = 0 ) {
 	return $out;
 }
 
+/**
+ * Read next for a standalone post: the next older post in the Articles list ($posts is newest first, each
+ * ['id'=>int,'series'=>string,'part'=>int]). A series post resolves to that series' part 1; the oldest wraps
+ * to the newest; never the post itself. Returns an id, or null when there is no other post.
+ */
+function readnext_pick( $post_id, $posts ) {
+	$n   = count( $posts );
+	$idx = null;
+	foreach ( array_values( $posts ) as $i => $p ) {
+		if ( (int) $p['id'] === (int) $post_id ) {
+			$idx = $i;
+			break;
+		}
+	}
+	if ( null === $idx || $n < 2 ) {
+		return null;
+	}
+	$posts = array_values( $posts );
+	$pick  = $posts[ ( $idx + 1 ) % $n ];
+	if ( '' !== (string) ( $pick['series'] ?? '' ) ) {
+		$first = null;
+		foreach ( $posts as $p ) {
+			if ( ( $p['series'] ?? '' ) === $pick['series'] && ( null === $first || (int) $p['part'] < (int) $first['part'] ) ) {
+				$first = $p;
+			}
+		}
+		$pick = $first;
+	}
+	return (int) $pick['id'] === (int) $post_id ? null : (int) $pick['id'];
+}
+
+/* purge the host's cached /blog/ copy: fires save_post on the listing page */
+function refresh_blog( $status ) {
+	if ( 'publish' !== $status ) {
+		return false;
+	}
+	$r = wp_update_post( [ 'ID' => BLOG_ID ], true );
+	return ! is_wp_error( $r ) && (int) $r > 0;
+}
+
 function post_result( $id ) {
 	$p    = get_post( $id );
 	$cats = wp_get_post_categories( $id, [ 'fields' => 'slugs' ] );
@@ -261,6 +301,7 @@ function post_result( $id ) {
 		'status'            => $p->post_status,
 		'category'          => $cats ? $cats[0] : '',
 		'featured_media_id' => (int) get_post_thumbnail_id( $id ),
+		'blog_refreshed'    => refresh_blog( $p->post_status ),
 	];
 }
 

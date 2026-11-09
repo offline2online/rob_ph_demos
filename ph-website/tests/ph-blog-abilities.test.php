@@ -31,7 +31,7 @@ if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( $tag, $fn ) { $GLOBALS['pba_hooks'][ $tag ][] = $fn; }
 }
 require_once dirname( __DIR__ ) . '/snippets/ph-blog/abilities.php';
-use function AngieSnippets\PhBlog_10116\{schema_for,validate_input,check_url,check_slug,check_mime,check_category};
+use function AngieSnippets\PhBlog_10116\{schema_for,validate_input,check_url,check_slug,check_mime,check_category,readnext_pick};
 
 $U = schema_for( 'upload' );
 $C = schema_for( 'create' );
@@ -130,9 +130,24 @@ ok( 3 === count( $GLOBALS['pba_reg'] ?? array() ), 'exactly three abilities' );
 $js = file_get_contents( dirname( __DIR__ ) . '/snippets/ph-blog/blog.js' );
 ok( false !== strpos( $js, 'https://calendly.com/rob-offline2online' ) && false !== strpos( $js, 'window.PH_SITE_DEMO(null)' ) && false !== strpos( $js, 'typeof window.PH_SITE_DEMO !== "function"' ), 'blog.js: in-post Calendly links open the demo pop-up, fall back to the link' );
 $mp = file_get_contents( dirname( __DIR__ ) . '/snippets/ph-blog/main.php' );
-ok( false !== strpos( $mp, "const VER       = '1.1.0'" ) && false !== strpos( $mp, "require_once __DIR__ . '/abilities.php'" ), 'main.php: 1.1.0 requires abilities.php' );
+ok( false !== strpos( $mp, "const VER       = '1.1.1'" ) && false !== strpos( $mp, "require_once __DIR__ . '/abilities.php'" ), 'main.php: 1.1.1 requires abilities.php' );
+
+/* Read next: next older post in the Articles list, series resolve to part 1 */
+$rn = function ( $id, $ser = '', $part = 0 ) { return array( 'id' => $id, 'series' => $ser, 'part' => $part ); };
+$list = array( $rn( 10 ), $rn( 9, 'a', 2 ), $rn( 8, 'a', 1 ), $rn( 7 ), $rn( 6, 'b', 3 ), $rn( 5, 'b', 1 ), $rn( 4, 'b', 2 ) );
+ok( readnext_pick( 10, $list ) === 8, 'newest standalone -> next older is series a part 2 -> part 1 (8)' );
+$l2 = array( $rn( 3 ), $rn( 2, 'x', 1 ), $rn( 1 ) );
+ok( readnext_pick( 3, $l2 ) === 2, 'next older is series part 1 -> that post' );
+$l3 = array( $rn( 7 ), $rn( 6, 'b', 3 ), $rn( 5, 'b', 1 ) );
+ok( readnext_pick( 7, $l3 ) === 5, 'next older is series part 3 -> part 1' );
+ok( readnext_pick( 1, $l2 ) === 3, 'oldest wraps to newest' );
+$l4 = array( $rn( 9, 'a', 2 ), $rn( 8, 'a', 1 ), $rn( 7 ) );
+ok( readnext_pick( 7, $l4 ) === 8, 'oldest wraps to newest series post -> part 1' );
+ok( readnext_pick( 1, array( $rn( 1 ) ) ) === null, 'single post -> none' );
+ok( readnext_pick( 99, $l2 ) === null, 'unknown post -> none' );
 
 if ( ! empty( $standalone ) ) {
 	fwrite( STDOUT, $fails ? "ph-blog-abilities: $fails of $n FAILED\n" : "ph-blog-abilities: all $n checks passed\n" );
 	exit( $fails ? 1 : 0 );
 }
+
