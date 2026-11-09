@@ -23,6 +23,7 @@ if ( ! defined( 'ABSPATH' ) && ! defined( 'PH_TELCO_MODEL_TEST' ) ) {
 }
 
 require_once __DIR__ . '/telco-model.php';
+require_once __DIR__ . '/pharmacy-model.php';
 
 const PH_CALC_SITE = 'https://personalisationhub.com';
 
@@ -41,6 +42,25 @@ function calculators() {
 			},
 			'clean'    => __NAMESPACE__ . '\telco_clean',
 			'calc'     => __NAMESPACE__ . '\telco_calc',
+			'download' => array(
+				'format'  => 'xlsx',
+				'gated'   => true,
+				'summary' => 'The .xlsx business model (36 months, live formulas, pre-filled with the figures above) downloads from the calculator page once the person enters their full name, company and work email and agrees to be contacted. Those details and that agreement must come from the person themselves: an agent must not invent them or tick the box for them.',
+			),
+		),
+		'pharmacy' => array(
+			'name'     => 'Pharmacy',
+			'path'     => '/industries/pharmacy/',
+			'title'    => 'Pharmacy business model calculator',
+			'summary'  => 'Enter six figures about a pharmacy estate (pharmacies, screens, daily visits, average front-of-house basket, media CPM and basket uplift) and get an estimated 3-year incremental revenue from front-of-house campaigns, with a 36-month business model workbook (.xlsx) pre-filled with those figures. Front-of-house products only; all figures in USD.',
+			'label'    => 'Estimated 3-year incremental revenue (USD)',
+			'outcome'  => 'Estimated 3-year incremental revenue (USD), from three streams: retail media revenue from front-of-house brands, front-of-house basket uplift, and extra foot traffic. Nothing is earned from products that need pharmacist approval.',
+			'audience' => 'Pharmacy retailers and pharmacy groups',
+			'fields'   => function () {
+				return pharm_spec()['fields'];
+			},
+			'clean'    => __NAMESPACE__ . '\pharm_clean',
+			'calc'     => __NAMESPACE__ . '\pharm_calc',
 			'download' => array(
 				'format'  => 'xlsx',
 				'gated'   => true,
