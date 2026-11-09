@@ -277,13 +277,24 @@ const scenarios = [
       await c.click("#team-add-open", "Add User");
       await c.visible("#team-add-email", "side panel opens");
       await c.page.fill("#team-add-email", "new@personalisationhub.com");
-      await c.page.fill("#team-add-name", "Nina New");
+      await c.page.fill("#team-add-first", "Nina");
+      await c.page.fill("#team-add-last", "New");
       await c.page.selectOption("#team-add-role", "viewer");
       await c.click("#team-add-btn", "Add");
       await c.click("#dialog-ok", "dismiss the added confirmation");
       await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 4, "the new user to show in the grid", 8000);
       const stored = await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com"));
       assert.ok(stored && stored.role === "viewer", "the new user was saved with the chosen role");
+      assert.strictEqual(stored.displayName, "Nina New", "display name is first + last");
+      assert.strictEqual(stored.firstName, "Nina"); assert.strictEqual(stored.lastName, "New");
+      assert.strictEqual((await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .ph-avatar-initial').first().textContent()).trim(), "NN", "initials show first + last");
+      // clicking the name opens the panel; edit the name there
+      await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .um-name-btn').first().click();
+      await c.visible("#um-manage-first", "name click opens the manage panel");
+      await c.page.fill("#um-manage-last", "Newman");
+      await c.click("#um-manage-name-save", "Save name");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com").displayName)) === "Nina Newman", "name edit to persist", 5000);
+      await c.click("#tm-close", "close panel");
       // inline role change
       await c.page.selectOption('select[aria-label="Role for kim@personalisationhub.com"]', "editor");
       await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").role)) === "editor", "inline role change to persist", 5000);
@@ -1182,9 +1193,9 @@ const scenarios = [
       assert.deepStrictEqual(info.pills, [], "no stage pills repeating what the Stage filter lists");
       assert.deepStrictEqual(info.heights, [42], "every row is 42px tall");
       assert.ok(info.ellipsis && info.oneLine, `the long title is one ellipsised line (${JSON.stringify([info.ellipsis, info.oneLine])})`);
-      const wantHeads = ["customer", "name", "stage", "reviewStatus", "aceScore", "monthly", "close", "created", "updated", "seller", "lead", "actions"];
+      const wantHeads = ["customer", "name", "aceScore", "stage", "reviewStatus", "monthly", "close", "created", "updated", "seller", "lead", "actions"];
       // On a phone the Opportunity column is pinned left, so it is drawn first; the order is Customer then Opportunity everywhere else.
-      assert.deepStrictEqual(c.width < 640 ? [...info.heads].sort() : info.heads, c.width < 640 ? [...wantHeads].sort() : wantHeads, "Customer first, then Opportunity, Score always shown, the date columns");
+      assert.deepStrictEqual(c.width < 640 ? [...info.heads].sort() : info.heads, c.width < 640 ? [...wantHeads].sort() : wantHeads, "Customer first, then Opportunity, Score beside it, the date columns");
       assert.ok(info.floating >= 5, "floating filter row");
       assert.strictEqual(info.checkbox, 0, "no checkbox column");
       assert.ok(!info.paging, "no pagination at 5 rows (page size is 50)");
@@ -1478,7 +1489,10 @@ const scenarios = [
       assert.ok((await c.page.getAttribute("#prospects-info", "title")).length > 20, "help is an info tooltip");
       // Same grid as User Management: theme, floating filter row, checkbox column, pagination, one pinned "..." menu per row.
       assert.ok(await c.page.locator("#prospects-grid.ag-theme-alpine.um-grid").count(), "uses the standard console grid");
-      assert.ok(await c.page.locator("#prospects-grid .ag-floating-filter").count() > 3, "floating filter row");
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-floating-filter").count(), 0, "no second (floating filter) row");
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-header-menu-icon, #prospects-grid .ag-header-cell-menu-button").count(), 0, "no header menu, so no duplicate filters");
+      assert.ok(await c.page.locator("#prospects-grid .pf-head input[aria-label='Company Filter Input'][placeholder='Company']").count() === 1, "the Company heading is the search box");
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-header-cell[col-id='name'] .ag-header-cell-text").count(), 0, "no separate Company label");
       assert.ok(await c.page.locator('#prospects-grid .ag-pinned-left-cols-container .ag-selection-checkbox, #prospects-grid .ag-pinned-left-cols-container input[type=checkbox]').count() >= 3, "checkbox column");
       assert.ok(await c.page.locator("#prospects-grid .ag-paging-panel").count(), "pagination footer");
       // The whole page scrolls (no inner scroll area) and the grid's column header + filter row stick under the console header.

@@ -104,7 +104,7 @@ for (const it of menu) {
   assert.strictEqual(PERMISSION_GROUPS.find((g) => g.keys.includes(sec.key)).label, it.group, `${it.label} sits in the ${it.group} group`);
 }
 for (const g of ["Build", "Promote", "Support"]) {
-  assert.deepStrictEqual(PERMISSION_GROUPS.find((x) => x.label === g).keys.map((k) => SECTIONS.find((s) => s.key === k).nav[0]), menu.filter((m) => m.group === g).map((m) => "#" + m.id), `${g} is in menu order`);
+  assert.deepStrictEqual(PERMISSION_GROUPS.find((x) => x.label === g).keys.map((k) => SECTIONS.find((s) => s.key === k).nav[0]).filter((n) => n !== "#whiteboard-btn" /* top-bar icon, not a menu item */), menu.filter((m) => m.group === g).map((m) => "#" + m.id), `${g} is in menu order`);
 }
 assert.deepStrictEqual(SECTIONS.filter((s) => s.nav[0] && s.nav[0].startsWith("[data-settings-page")).map((s) => s.label), ["Settings > User Management", "Releases", "Skills & phase bindings"]);
 
