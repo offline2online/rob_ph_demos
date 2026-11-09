@@ -138,5 +138,32 @@ const quiet = { info() {}, warn() {}, error() {} };
     assert.deepEqual(docs.get("l2").gaClientIds, []);
   });
 
+  await test("endpoint: POST with the board key runs the job and answers its summary; anything else is refused and runs nothing", async () => {
+    const mkRes = () => { const r = { headers: {}, status(c) { r.code = c; return r; }, set(k, v) { r.headers[k] = v; return r; }, json(b) { r.body = b; return r; } }; return r; };
+    const mkReq = (method, key) => ({ method, get: (h) => (h.toLowerCase() === "x-board-key" ? key : "") });
+    let runs = 0;
+    const pc = { aceOpportunities: async () => { runs++; return { catalog: "Sandbox", opportunities: [] }; } };
+    const job = ace.createAceGa4Job({ db: fakeDb([LEAD]), partnerCentral: pc, apiSecret: () => "s", boardKey: () => "bk", fetch: fakeFetch(() => ({ status: 200, text: async () => "{}" })), logger: quiet });
+    let r = mkRes(); await job.handle(mkReq("GET", "bk"), r); assert.equal(r.code, 405);
+    r = mkRes(); await job.handle(mkReq("POST", "wrong"), r); assert.equal(r.code, 401);
+    const unset = ace.createAceGa4Job({ db: fakeDb([LEAD]), partnerCentral: pc, apiSecret: () => "s", boardKey: () => "unset", logger: quiet });
+    r = mkRes(); await unset.handle(mkReq("POST", "unset"), r); assert.equal(r.code, 401, "the deploy's \"unset\" placeholder is never a key");
+    assert.equal(runs, 0);
+    r = mkRes(); await job.handle(mkReq("POST", "bk"), r);
+    assert.equal(r.code, 200); assert.equal(r.body.ok, true); assert.equal(r.body.catalog, "Sandbox"); assert.equal(runs, 1);
+    assert.equal(r.headers["Cache-Control"], "no-store");
+  });
+
+  await test("trigger: aceToGa4 is an HTTP function called hourly by ace-ga4.yml, never a Cloud Scheduler job", () => {
+    const fs = require("fs"); const path = require("path");
+    const idx = fs.readFileSync(path.join(__dirname, "../functions/index.js"), "utf8");
+    assert.match(idx, /exports\.aceToGa4 = onRequest\(/);
+    assert.match(idx, /secrets: \[GA4_MP_API_SECRET, BOARD_API_KEY\]/);
+    const wf = fs.readFileSync(path.join(__dirname, "../../.github/workflows/ace-ga4.yml"), "utf8");
+    assert.match(wf, /cron: '\d+ \* \* \* \*'/, "hourly");
+    assert.match(wf, /cloudfunctions\.net\/aceToGa4/);
+    assert.match(wf, /X-Board-Key: \$BOARD_API_KEY/);
+  });
+
   console.log(`ace-ga4: ${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

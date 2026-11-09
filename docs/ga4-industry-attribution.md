@@ -14,7 +14,7 @@ the Google tag `GT-WPDXCSKF`, which routes to `G-LBEF15GKVQ`. Property changes w
 | Page tagging and key events | WordPress snippet **PH GA4** (10733), `ph-website/snippets/ph-ga4/` | Sets `industry` and `content_type` on every event (page_view too), sets the `industry_interest` user property on industry pages, and fires the six website key events |
 | client_id on every lead | same snippet, server side | The three lead routes read the GA4 client_id and session_id from the `_ga` cookies, store them on the `ph_lead` post and send them to the console's `leadIngest` |
 | Lead store | console `functions/lead-ingest.js` | Keeps them on `leads/{id}.gaClientIds` (newest last, 10 max, never for test leads) |
-| Offline ACE events | console `functions/ace-ga4.js`, scheduled `aceToGa4` (hourly) | Matches each lead to its ACE opportunity and sends `ace_opportunity_*` to GA4 by Measurement Protocol, once each, keyed on the newest client_id |
+| Offline ACE events | console `functions/ace-ga4.js`, HTTP function `aceToGa4`, called hourly by `.github/workflows/ace-ga4.yml` with the board key (no Cloud Scheduler: the console project has none on purpose) | Matches each lead to its ACE opportunity and sends `ace_opportunity_*` to GA4 by Measurement Protocol, once each, keyed on the newest client_id |
 
 ## Custom dimensions
 

@@ -1,6 +1,8 @@
 "use strict";
 // ── ACE opportunity stages → GA4 (Measurement Protocol) ───────────────────
-// Scheduled (index.js `aceToGa4`, hourly). For every website lead that carries
+// Run hourly: .github/workflows/ace-ga4.yml POSTs to the `aceToGa4` function
+// with the board key (X-Board-Key). This project has no Cloud Scheduler jobs on
+// purpose (see index.js). For every website lead that carries
 // a GA4 client_id (leads/{id}.gaClientIds, captured from the visitor's _ga
 // cookie by the website's PH GA4 snippet and stored by lead-ingest.js), find
 // its ACE opportunity and send each stage milestone to GA4 once:
@@ -85,7 +87,9 @@ function mpBody({ lead, opp, milestone, nowMs }) {
   return body;
 }
 
-function createAceGa4Job({ db, partnerCentral, apiSecret, fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date() }) {
+const { keyMatches } = require("./lead-ingest");
+
+function createAceGa4Job({ db, partnerCentral, apiSecret, boardKey = () => "", fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date() }) {
   async function run() {
     const secret = String(apiSecret() || "");
     if (!secret || secret === "unset") { logger.warn("aceToGa4: GA4_MP_API_SECRET is not set, nothing sent"); return { skipped: "no secret" }; }
@@ -125,7 +129,17 @@ function createAceGa4Job({ db, partnerCentral, apiSecret, fetch: fetchImpl = glo
     logger.info("aceToGa4 run", summary);
     return summary;
   }
-  return { run };
+  // POST /  header X-Board-Key: <BOARD_API_KEY>  →  200 with the run summary.
+  async function handle(req, res) {
+    const send = (status, body) => res.status(status).set("Cache-Control", "no-store").json(body);
+    if (req.method !== "POST") { res.set("Allow", "POST"); return send(405, { error: "POST only" }); }
+    if (!keyMatches(req.get("x-board-key"), boardKey())) return send(401, { error: "invalid key" });
+    try { return send(200, { ok: true, ...(await run()) }); } catch (err) {
+      logger.error("aceToGa4 failed", { error: String((err && err.message) || err) });
+      return send(500, { error: String((err && err.message) || err).slice(0, 300) });
+    }
+  }
+  return { run, handle };
 }
 
 module.exports = { createAceGa4Job, milestones, matchOpportunity, mpBody, domainOf, nameKey, MEASUREMENT_ID, EVENTS, STATE };

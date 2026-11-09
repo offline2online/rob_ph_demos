@@ -11,7 +11,6 @@
 
 const { onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
-const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
@@ -2275,13 +2274,17 @@ function getPartnerCentralApi() {
 exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstances: 3 }, (req, res) => getPartnerCentralApi().handle(req, res));
 
 // ACE opportunity stages → GA4 Measurement Protocol, keyed on the GA4
-// client_id the website captured with each lead (ace-ga4.js). Hourly.
+// client_id the website captured with each lead (ace-ga4.js). Run hourly by
+// .github/workflows/ace-ga4.yml (POST with X-Board-Key), not by Cloud
+// Scheduler: this project has no scheduler jobs (the deploy account can't
+// create them, see kanban-mcp.test.js "no scheduled function").
 // Sends for real only while Partner Central's catalogue is "AWS".
 const GA4_MP_API_SECRET = defineSecret("GA4_MP_API_SECRET");
 const { createAceGa4Job } = require("./ace-ga4");
-exports.aceToGa4 = onSchedule({ schedule: "every 60 minutes", timeZone: "Etc/UTC", secrets: [GA4_MP_API_SECRET], timeoutSeconds: 300, maxInstances: 1 }, async () => {
-  const job = createAceGa4Job({ db: getFirestore(), partnerCentral: getPartnerCentralApi(), apiSecret: () => GA4_MP_API_SECRET.value(), logger });
-  await job.run();
+let aceGa4Job = null;
+exports.aceToGa4 = onRequest({ cors: false, secrets: [GA4_MP_API_SECRET, BOARD_API_KEY], timeoutSeconds: 300, maxInstances: 1, concurrency: 1 }, (req, res) => {
+  if (!aceGa4Job) aceGa4Job = createAceGa4Job({ db: getFirestore(), partnerCentral: getPartnerCentralApi(), apiSecret: () => GA4_MP_API_SECRET.value(), boardKey: () => BOARD_API_KEY.value(), logger });
+  return aceGa4Job.handle(req, res);
 });
 
 // Promote › Leads: the page's Enrich button (lead-enrich.js). Reads the
