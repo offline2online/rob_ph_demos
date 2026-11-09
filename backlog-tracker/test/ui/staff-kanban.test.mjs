@@ -573,7 +573,7 @@ T("TC-19", "settings: hide or require an optional field", async (prof) => {
 
 T("TC-20", "release report: defaults to current release, filters in the URL, per-person breakdown", async (prof) => {
   const p = await open(prof, "#staff-kanban/report");
-  assert.equal(await p.textContent("#kb-view .page-header-count"), "4.12 (PH 4.12)");
+  assert.equal(await p.textContent("#kb-view .page-header-count"), "PH 4.12");
   assert.ok((await p.$$eval(".kb-bar-row", (e) => e.length)) >= 5);
   assert.match(await p.textContent(".kb-kpis"), /28 Oct/);
   await p.evaluate(() => { location.hash = "#staff-kanban/report?release=4-12&status=all"; });
@@ -772,23 +772,9 @@ T("KB-C3", "Claude's draft is used when the console has a key", async (prof) => 
   await p.done();
 });
 
-T("KB-REL-1", "release filters list the number first and only releases with open tickets", async (prof) => {
-  const p = await open(prof);
-  const labels = await p.$$eval("#kb-release option", (e) => e.map((x) => x.textContent.trim()));
-  assert.equal(labels[0], "All releases");
-  const rest = labels.slice(1);
-  assert.ok(rest.length && rest.every((l) => /^\d+\.\d+ \(PH \d+\.\d+\)/.test(l)), `number first: ${rest}`);
-  assert.ok(!rest.some((l) => l.startsWith("4.11")), "a release with no open ticket is left out");
-  await p.evaluate(() => { location.hash = "#staff-kanban/report?release=4-12"; });
-  await p.waitForTimeout(250);
-  const rl = await p.$$eval("select[data-rf=release] option", (e) => e.map((x) => x.textContent.trim()));
-  assert.ok(rl.filter((l) => l !== "All releases").every((l) => /^\d+\.\d+ \(PH/.test(l)) && !rl.some((l) => l.startsWith("4.11")), `report: ${rl}`);
-  await p.done();
-});
-
 T("KB-C4", "deep links: a report URL opens the report, and the hash follows the page", async (prof) => {
   const p = await open(prof, "#staff-kanban/report?release=4-13");
-  assert.equal(await p.textContent("#kb-view .page-header-count"), "4.13 (PH 4.13)");
+  assert.equal(await p.textContent("#kb-view .page-header-count"), "PH 4.13");
   assert.match(await p.title(), /Release report/);
   await press(p, '#kb-view [data-route="kanban"]'); await p.waitForSelector(".kb-card");
   assert.equal(await p.evaluate(() => location.hash), "#staff-kanban");

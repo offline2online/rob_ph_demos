@@ -437,10 +437,7 @@ stored by lowercased email; release ids are the console's `releases` ids.
 
 Loading: the **cards** of every open ticket, of the 300 most recently closed,
 and of every ticket in the release picked in the Release filter; an epic's
-children come from cards too.
-The Release filters (board and report) show the release number first with the name
-in brackets (`4.13 (Spring release)`) and list only releases that still have an
-open ticket, plus the one currently picked. The board's own queries are single-field. The server's
+children come from cards too. The board's own queries are single-field. The server's
 are equality and `array-contains` filters (merged from single-field indexes) plus
 `orderBy(rank desc).limit(1)` per column (composite `status`+`rank`, declared in
 `backlog-tracker/firestore.indexes.json` with the notification prune's `to`+`read`+`at`);
