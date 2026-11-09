@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.9.6';
+const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.9.7';
 require_once __DIR__ . '/telco-lead.php';
 require_once __DIR__ . '/pharmacy-lead.php';
 require_once __DIR__ . '/leads.php';
@@ -51,6 +51,7 @@ function page_url( $key ) {
 }
 
 require_once __DIR__ . '/ai-hygiene.php';
+require_once __DIR__ . '/ai-surface.php';
 
 add_action( 'wp_enqueue_scripts', function () {
 	wp_enqueue_style( 'ph-ind-footer-10063', angie_cs_get_snippet_asset_url( __FILE__, 'footer.css' ), [], PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 );
@@ -89,12 +90,12 @@ add_action( 'template_redirect', function () {
 	}
 	if ( isset( $_GET['format'] ) && 'md' === sanitize_key( wp_unslash( $_GET['format'] ) ) ) {
 		$key = page_key();
-		$md  = data( 'md.php' );
-		if ( '' !== $key && isset( $md[ $key ] ) ) {
+		$md  = '' !== $key ? industry_twin( $key ) : null;
+		if ( null !== $md ) {
 			status_header( 200 );
 			header( 'Content-Type: text/markdown; charset=utf-8' );
 			header( 'X-Robots-Tag: noindex' );
-			echo $md[ $key ]; // phpcs:ignore WordPress.Security.EscapeOutput -- plain-text markdown.
+			echo $md; // phpcs:ignore WordPress.Security.EscapeOutput -- plain-text markdown.
 			exit;
 		}
 	}

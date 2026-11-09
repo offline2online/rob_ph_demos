@@ -10,6 +10,7 @@ The go-live gate for the site-wide agent endpoint release (seven tickets, one re
 | --- | --- |
 | `GET /wp-json/ph-agent/v1/tools`, `/tools/{name}?args=` | `snippets/ph-agent-endpoint/main.php`, `tools.php` |
 | Markdown twins `?format=md` (allow-listed pages, industries, blog, Support Centre) | `ph-agent-endpoint`, `ph-industry-enhancements/md.php`, `ph-blog`, `ph-support-centre` |
+| `/llms-full.txt`, `/.well-known/mcp.json` and the `robots_txt` filter (9 Nov 2026: public, read-only, cached, no input) | `ph-agent-endpoint/main.php`, `tools.php`, `ph-industry-enhancements/ai-surface.php` |
 | `/llms.txt` and the `ph_llms_txt` filter | `ph-industry-enhancements/llms.php` plus each snippet's section |
 | `GET /help-api/search`, `GET /help-api/article` | `backlog-tracker/functions/help-search.js` |
 | `POST /help-api/mcp` (remote MCP server) | same file |

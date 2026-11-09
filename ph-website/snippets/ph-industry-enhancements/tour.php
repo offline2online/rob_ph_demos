@@ -16,12 +16,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 const TOUR_SOURCE = 'interactive-product-tour';
 const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation', 'Retailer setup', 'Advertiser creates by talking', 'Shopper journey & outcome', 'Fuel & convenience walkthrough' );
-/** Industries the tour serves: key = the `industry` the tour sends; path = where the page is served; page = the industry page the lead came from. */
+/** The three demos, as the tour's own gate lists them (GFLOWS in tour/tour.html): name and what it shows. Agent-facing text (twins, llms.txt) is generated from these. */
+const TOUR_DEMOS_STD = array(
+	array( 'Campaign creation', 'Talk a campaign into existence, in your brand.' ),
+	array( 'Localisation & scheduling', 'Every store gets its own version.' ),
+	array( 'Personalisation', 'The right offer the moment they check in.' ),
+);
+const TOUR_DEMOS_RM = array(
+	array( 'Retailer setup', 'Sell every screen, with loyalty targeting.' ),
+	array( 'Advertiser creates by talking', 'A whole campaign from a spoken brief.' ),
+	array( 'Shopper journey & outcome', 'One shopper, four screens, a higher CPM.' ),
+);
+/** Industries the tour serves: key = the `industry` the tour sends; path = where the page is served; page = the industry page the lead came from; demos = the three demos. */
 const TOUR_INDUSTRIES = array(
-	'telco'    => array( 'name' => 'Telco', 'path' => '/industries/telco/tour', 'page' => '/industries/telco/', 'label' => 'Interactive product tour – Telco' ),
-	'pharmacy' => array( 'name' => 'Pharmacy', 'path' => '/industries/pharmacy/tour', 'page' => '/industries/pharmacy/', 'label' => 'Interactive product tour – Pharmacy' ),
-	'retail-media' => array( 'name' => 'Retail Media', 'path' => '/industries/retail-media/tour', 'page' => '/industries/retail-media/', 'label' => 'Interactive product tour – Retail Media' ),
-	'convenience' => array( 'name' => 'Fuel & Convenience', 'path' => '/industries/convenience/tour', 'page' => '/industries/convenience/', 'label' => 'Interactive product tour – Fuel & Convenience' ),
+	'telco'    => array( 'name' => 'Telco', 'path' => '/industries/telco/tour', 'page' => '/industries/telco/', 'label' => 'Interactive product tour – Telco', 'demos' => TOUR_DEMOS_STD ),
+	'pharmacy' => array( 'name' => 'Pharmacy', 'path' => '/industries/pharmacy/tour', 'page' => '/industries/pharmacy/', 'label' => 'Interactive product tour – Pharmacy', 'demos' => TOUR_DEMOS_STD ),
+	'retail-media' => array( 'name' => 'Retail Media', 'path' => '/industries/retail-media/tour', 'page' => '/industries/retail-media/', 'label' => 'Interactive product tour – Retail Media', 'demos' => TOUR_DEMOS_RM ),
+	'convenience' => array( 'name' => 'Fuel & Convenience', 'path' => '/industries/convenience/tour', 'page' => '/industries/convenience/', 'label' => 'Interactive product tour – Fuel & Convenience', 'demos' => TOUR_DEMOS_STD ),
 );
 
 /**

@@ -201,7 +201,9 @@ function calc_llms_md( ?array $cals = null ) {
 	}
 	$md = "## Business model calculator\n\n";
 	foreach ( $cals as $slug => $e ) {
-		$md .= '- [' . $e['title'] . '](' . calc_link( $e ) . '): ' . $e['summary'] . "\n";
+		$d   = isset( $e['download'] ) && is_array( $e['download'] ) ? $e['download'] : null;
+		$md .= '- [' . $e['title'] . '](' . calc_link( $e ) . '): ' . $e['summary'] . ' Outcome: ' . $e['outcome']
+			. ( $d ? ' The ' . strtoupper( $d['format'] ) . ' workbook is a download' . ( ! empty( $d['gated'] ) ? ' gated on the person\'s own name, company and work email' : '' ) . '.' : '' ) . "\n";
 	}
 	$names = array_map( function ( $e ) {
 		return $e['name'];

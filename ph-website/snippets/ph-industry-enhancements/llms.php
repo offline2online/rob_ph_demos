@@ -1,9 +1,18 @@
 <?php
 return '# Personalisation Hub
 
-> Personalisation Hub is a self-hosted personalisation platform for businesses with physical locations. It combines live store context (time, weather, stock) with the business\'s own customer data from its CDP, CRM, loyalty and decisioning systems, personalises websites, apps and in-store screens in real time, and measures every result from screen to sale. It runs in the customer\'s own AWS account.
+> Personalisation Hub is AI-native digital signage and in-store personalisation software for businesses with physical locations. It also includes a white-label retail media platform, queue management, appointment booking and mobile store sites, and it is self-hosted in your own AWS account. Start with a 30-day free trial on AWS Marketplace.
 
 Try it: 30-day free trial on AWS Marketplace (https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76?trk=59c672e4-15c4-4782-aee9-4352db108809&sc_channel=el&source=personalisationhub).
+
+## Key facts
+
+- Category: AI-native digital signage, in-store personalisation, white-label retail media platform, queue management, appointment booking and store sites in one platform.
+- Deployment: self-hosted in the customer\'s own AWS account (VPC), on their own domain, so customer data stays under their control. Installs from AWS Marketplace in about 1 hour 15 minutes.
+- Trial and billing: 30-day free trial on AWS Marketplace, then billed through the customer\'s AWS account. Pricing is listed on the Marketplace page.
+- Industries served: Fuel & Convenience, Pubs & Hospitality, Telco Retail, Pharmacy, Retail Media, Grocery & Supermarkets, Fashion & Department Stores, Quick Service Restaurants and Banking.
+- Integrations: the customer\'s own CDP, CRM, loyalty and decisioning systems through the Visitor API, and any digital signage device alongside existing apps and systems.
+- Founded: 2018.
 
 ## Overview
 
@@ -28,14 +37,14 @@ Try it: 30-day free trial on AWS Marketplace (https://aws.amazon.com/marketplace
 
 ## Platform
 
-- [Digital Signage](https://personalisationhub.com/digital-signage/)
-- [Queue Management](https://personalisationhub.com/retail-queue-management/)
-- [Appointment Booking](https://personalisationhub.com/retail-appointment-bookings/)
-- [Retail Media Platform](https://personalisationhub.com/retail-media-platform/)
-- [Store Sites](https://personalisationhub.com/store-sites/)
-- [Personalisation](https://personalisationhub.com/personalisation/)
-- [Localisation and Geo-Targeting](https://personalisationhub.com/localisation-geo-targeting/)
-- [AI Agents](https://personalisationhub.com/ai-agents/)
-- [Support Centre](https://personalisationhub.com/support-centre/)
-- [Blog](https://personalisationhub.com/blog/)
+- [Digital Signage](https://personalisationhub.com/digital-signage/): AI-native digital signage for any screen, with playlists, scheduling and AI-assisted campaign creation.
+- [Queue Management](https://personalisationhub.com/retail-queue-management/): virtual store queue with QR check-in, SMS updates and a staff tablet.
+- [Appointment Booking](https://personalisationhub.com/retail-appointment-bookings/): customers book a store visit or order collection, with reminders and QR check-in.
+- [White Label Retail Media Platform](https://personalisationhub.com/white-label-retail-media-platform/): run your own retail media network under your own brand, self-hosted in your AWS VPC, with advertiser self-service and closed loop measurement.
+- [Store Sites](https://personalisationhub.com/store-sites/): a mobile web page for every store that changes with the visitor\'s context, no app to install.
+- [Personalisation](https://personalisationhub.com/personalisation/): in-store personalisation across phone, screens and staff tablet, using your first-party data.
+- [Localisation and Geo-Targeting](https://personalisationhub.com/localisation-geo-targeting/): target campaigns by store segment, location, weather and stock.
+- [AI Agents](https://personalisationhub.com/ai-agents/): AI agents that write the brief, storyboard and creative for a campaign, using any model you choose.
+- [Support Centre](https://personalisationhub.com/support-centre/): set-up guides, how-tos and reference articles.
+- [Blog](https://personalisationhub.com/blog/): articles on in-store personalisation, retail media and digital signage.
 ';

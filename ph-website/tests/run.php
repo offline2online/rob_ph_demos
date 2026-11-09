@@ -383,7 +383,8 @@ ok( $o['legalName'] === 'Personalisation Hub Pty Ltd' && $o['foundingDate'] === 
 ok( strpos( $o['logo'], 'https://personalisationhub.com/' ) === 0, 'Organization has a logo' );
 ok( count( $o['sameAs'] ) === 5 && in_array( 'https://www.linkedin.com/company/personalisation-hub/', $o['sameAs'], true ) && in_array( 'https://signage.amazon.com/cms-partners/personalisation-hub', $o['sameAs'], true ), 'Organization sameAs: LinkedIn, AWS Marketplace, Amazon Signage CMS, X, seller profile' );
 $oj = json_encode( $o ) . json_encode( software_node() );
-ok( ! preg_match( '/Sydney|Australia|crunchbase|g2\.com|address|areaServed|2016/i', $oj ), 'no location, Crunchbase, G2 or 2016 in the entity schema' );
+ok( ! preg_match( '/Sydney|Australia|crunchbase|g2\.com|address|2016/i', $oj ), 'no location, Crunchbase, G2 or 2016 in the entity schema' );
+ok( $o['areaServed'] === 'Worldwide', 'Organization serves Worldwide (a scope, not a location)' );
 ok( strpos( file_get_contents( $snips . '/ph-support-centre/main.php' ), "const SITE_NAME    = 'Personalisation Hub Support Centre'" ) !== false, 'Support Centre WebSite is named Support Centre' );
 
 /* Support Centre 1.4.0: live feed first, refresh endpoint, no Google Fonts request */
@@ -537,6 +538,8 @@ ok( false !== strpos( $tp, "'pharmacy' => array(" ) && false !== strpos( $tp, 'I
 ok( false !== strpos( $tp, hash( 'sha256', $tsrc ) ), 'tour.php: TOUR_PAGE_SHA256 is the sha256 of tour/tour.html' );
 ok( false !== strpos( $ejs, 'See Personalisation Hub run a pharmacy campaign, end to end' ) && false !== strpos( $ejs, 'and on to the pharmacist.' ) && false !== strpos( $ejs, '"/industries/" + page + "/tour/?embed=1"' ), 'enhance.js: the tour mounts on the pharmacy page with pharmacy copy' );
 ok( 1 === preg_match( "/ASSETS_VERSION_10063 = '(\d+)\.(\d+)\.(\d+)'/", $mp, $vm2 ) && ( (int) $vm2[2] > 9 || ( (int) $vm2[2] === 9 && (int) $vm2[3] >= 3 ) ), 'main.php: assets version bumped to 1.9.3 for the pharmacy tour' );
+
+require __DIR__ . '/ai-surface.test.php';
 
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );
