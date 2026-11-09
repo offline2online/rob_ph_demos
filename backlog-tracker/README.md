@@ -2571,7 +2571,11 @@ every destination already existed.
   BuiltWith key is stored under Settings → Integrations & MCP, its tech stack,
   company details and named contacts; it fills blanks only. **Convert and link
   account** moves the lead to Closed Won and records the customer account.
-  Agents use `list_leads` and `update_lead_stage` (`functions/leads.js`).
+  Agents manage the whole pipeline over MCP (`functions/leads.js`): `list_leads`,
+  `get_lead`, `create_lead(s)`, `update_lead`, `update_lead_stage`, contact and
+  note tools, customer-account and prospect links, `archive_lead` / `restore_lead`,
+  and admin-only `delete_lead`. Each change adds a line to the lead's `history`
+  (shown in the lead drawer under "Notes and history") with the member's email.
   LinkedIn has no public lookup API: the company's LinkedIn page is taken from
   its website, and contacts' LinkedIn addresses are stored as typed.
   **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key

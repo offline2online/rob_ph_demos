@@ -179,20 +179,20 @@ await test("tools/list returns the whole surface", async () => {
   // on 25 Sep 2026 and were caught on 28 Sep; set_blocked/clear_blocked and
   // set_phase_skill_bindings (PR #270, 30 Sep) likewise, caught the same day.
   assert.deepStrictEqual(names, [
-    "add_concept_comment", "add_concept_critique", "add_item_comment", "approve_deploy_to_main", "approve_for_deployment", "archive_backlog_items", "clear_blocked", "comment_on_faq_revision", "create_backlog_item", "create_concept",
-    "create_faq_article", "create_interface", "create_project_document", "delete_backlog_items", "delete_interface",
+    "add_concept_comment", "add_concept_critique", "add_item_comment", "add_lead_contact", "add_lead_note", "approve_deploy_to_main", "approve_for_deployment", "archive_backlog_items", "archive_lead", "clear_blocked", "comment_on_faq_revision", "create_backlog_item", "create_concept",
+    "create_faq_article", "create_interface", "create_lead", "create_leads", "create_project_document", "delete_backlog_items", "delete_interface", "delete_lead",
     "delete_project_document", "delete_skill", "demote_project", "fail_testing", "finalise_project", "get_approved_for_deployment_board", "get_artifact_version", "get_backlog_item",
-    "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_project_docs", "get_project_document",
+    "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_lead", "get_project_docs", "get_project_document",
     "get_ready_for_testing_board", "get_routine_setup_instructions", "get_skill",
     // Staff Kanban (functions/kanban.js, 21 Oct 2026).
     "kanban_assign_task", "kanban_attach_file", "kanban_attach_uploaded", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_create_upload_url", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_staff_names", "kanban_get_task", "kanban_list_notifications", "kanban_list_people",
     "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_remove_attachment", "kanban_search_tickets", "kanban_set_staff_pronunciation", "kanban_update_task",
-    "list_artifact_versions", "list_backlog_items",
+    "link_lead_customer_account", "link_lead_prospect", "list_artifact_versions", "list_backlog_items",
     "list_concept_critiques", "list_concepts", "list_doc_revisions", "list_leads", "list_pending_faq_revisions", "list_project_documents", "list_projects", "list_prospects", "list_skill_misses",
-    "list_skills", "mark_skill_reviewed", "report_skill_miss", "search_faq", "send_to_build", "set_blocked", "set_concept_artifact", "set_concept_description", "set_concept_readme",
+    "list_skills", "mark_skill_reviewed", "remove_lead_contact", "report_skill_miss", "restore_lead", "search_faq", "send_to_build", "set_blocked", "set_concept_artifact", "set_concept_description", "set_concept_readme",
     "set_concept_requirements", "set_concept_type", "set_my_routine_binding", "set_phase_skill_bindings",
-    "set_project_artifact", "set_project_description", "set_project_readme", "set_project_requirements", "set_project_type", "snapshot_project_artifact", "synthesise_concept_critiques", "unfreeze_project", "update_backlog_item",
-    "update_faq_article", "update_interface", "update_lead_stage", "update_project_document", "update_skill",
+    "set_project_artifact", "set_project_description", "set_project_readme", "set_project_requirements", "set_project_type", "snapshot_project_artifact", "synthesise_concept_critiques", "unfreeze_project", "unlink_lead_customer_account", "unlink_lead_prospect", "update_backlog_item",
+    "update_faq_article", "update_interface", "update_lead", "update_lead_contact", "update_lead_stage", "update_project_document", "update_skill",
     "upload_skill", "upsert_prospects", "whoami",
   ]);
 });
@@ -291,7 +291,7 @@ await test("a replaced document is recoverable through the client", async () => 
 await test("the client is told which tools are destructive", async () => {
   const { tools } = await client.listTools();
   const destructive = tools.filter((t) => t.annotations && t.annotations.destructiveHint).map((t) => t.name).sort();
-  assert.deepStrictEqual(destructive, ["delete_backlog_items", "delete_interface", "delete_project_document", "delete_skill"]);
+  assert.deepStrictEqual(destructive, ["delete_backlog_items", "delete_interface", "delete_lead", "delete_project_document", "delete_skill"]);
   const docWrite = tools.find((t) => t.name === "set_project_requirements");
   assert.strictEqual(docWrite.annotations.readOnlyHint, false);
   assert.strictEqual(docWrite.annotations.destructiveHint, false);
