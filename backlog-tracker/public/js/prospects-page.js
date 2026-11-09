@@ -1,11 +1,11 @@
 // Promote › Prospects (TAM) (#promote/prospects): the global prospects database
 // as an AG Grid, built the same way as Settings › User Management › Users
-// (user-management.js): `ag-theme-alpine um-grid`, floating filter row, a
+// (user-management.js): `ag-theme-alpine um-grid`, one header row whose headings are the filters, a
 // checkbox column with a bulk bar, a pinned-right "⋯" menu, pagination.
 // AG Grid is loaded lazily by docs-grid.js.
 //
 // One row per company PER COUNTRY in `prospects/{id}` (prospects-core.js).
-// Filtering is the grid's own, in the floating filter row (each text and number
+// Filtering is the grid's own, in the header row (each text and number
 // filter has a × to clear it), so the count, the CSV and LinkedIn exports and the
 // bulk actions all see the same rows. Clicking a company opens a right-hand
 // drawer with every field (editors can edit there). A write is live for
@@ -152,7 +152,7 @@ class ListFloatingFilter {
     const opts = this.parent ? this.parent.options() : [];
     const one = n === 1 ? (opts.find(([v]) => String(v).toLowerCase() === String(model.values[0]).toLowerCase()) || [0, model.values[0]])[1] : "";
     this.btn.classList.toggle("has-value", n > 0);
-    this.btn.innerHTML = `<span class="pl-trigger-text">${esc(n === 0 ? "All" : n === 1 ? one : `${n} selected`)}</span><span class="material-symbols-outlined" aria-hidden="true">${n ? "filter_alt" : "arrow_drop_down"}</span>`;
+    this.btn.innerHTML = `<span class="pl-trigger-text">${esc(n === 0 ? (this.params.allLabel || "All") : n === 1 ? one : `${n} selected`)}</span><span class="material-symbols-outlined" aria-hidden="true">${n ? "filter_alt" : "arrow_drop_down"}</span>`;
   }
   show() {
     this.params.parentFilterInstance((f) => {
@@ -190,6 +190,79 @@ class ListFloatingFilter {
   getGui() { return this.btn; }
   onParentModelChanged(model) { this.paint(model); }
   destroy() { this.close(); }
+}
+
+// The one header row. Each filterable column's heading IS its filter (no separate floating-filter row, no header
+// menu, so no second copy of the filter): a search box for text columns (placeholder = the column name, × to
+// clear), a number box for Stores / Contacts, and the tick-box list for the pick-lists, plus a sort button.
+// Columns with no filter (select, LinkedIn, row menu) keep AG Grid's own header.
+class FilterHeader {
+  init(params) {
+    this.params = params;
+    const col = params.column, def = col.getColDef(), name = params.displayName || def.headerName || "";
+    this.name = name; this.colId = col.getColId();
+    this.el = document.createElement("div");
+    this.el.className = "pf-head";
+    this.kind = def.filter === ListFilter ? "list" : def.filter === "agNumberColumnFilter" ? "number" : "text";
+    if (this.kind === "list") {
+      this.list = new ListFloatingFilter();
+      this.list.init({
+        column: col, allLabel: name,
+        parentFilterInstance: (cb) => { params.api.getColumnFilterInstance(this.colId).then((f) => { if (f) cb(f); }); },
+      });
+      this.el.appendChild(this.list.getGui());
+    } else {
+      const wrap = document.createElement("div");
+      wrap.className = "ag-floating-filter-input pf-input";
+      const input = document.createElement("input");
+      input.type = this.kind === "number" ? "number" : "text"; input.className = "ag-input-field-input";
+      input.placeholder = this.kind === "number" ? `${name} ≥` : name;
+      input.setAttribute("aria-label", `${name} Filter Input`); input.autocomplete = "off";
+      input.addEventListener("input", () => this.apply(input.value));
+      wrap.appendChild(input); this.wrap = wrap; this.input = input;
+      this.el.appendChild(wrap);
+    }
+    if (def.sortable !== false) {
+      this.sortBtn = document.createElement("button");
+      this.sortBtn.type = "button"; this.sortBtn.className = "pf-sort";
+      this.sortBtn.addEventListener("click", (e) => params.progressSort(e.shiftKey));
+      this.el.appendChild(this.sortBtn);
+      this.onSort = () => this.paintSort();
+      col.addEventListener("sortChanged", this.onSort);
+      this.paintSort();
+    }
+    this.onFilter = () => this.paintFilter();
+    params.api.addEventListener("filterChanged", this.onFilter);
+    this.paintFilter();
+  }
+  apply(v) {
+    const api = this.params.api, model = Object.assign({}, api.getFilterModel() || {});
+    const t = String(v == null ? "" : v).trim();
+    if (!t) delete model[this.colId];
+    else model[this.colId] = this.kind === "number" ? { filterType: "number", type: "greaterThanOrEqual", filter: Number(t) } : textModel(t);
+    api.setFilterModel(Object.keys(model).length ? model : null);
+  }
+  paintSort() {
+    const s = this.params.column.getSort();
+    this.sortBtn.setAttribute("aria-label", `Sort by ${this.name}${s ? (s === "asc" ? ", ascending" : ", descending") : ""}`);
+    this.sortBtn.classList.toggle("is-on", !!s);
+    this.sortBtn.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">${s === "asc" ? "arrow_upward" : s === "desc" ? "arrow_downward" : "unfold_more"}</span>`;
+  }
+  paintFilter() {
+    const model = (this.params.api.getFilterModel() || {})[this.colId] || null;
+    if (this.list) { this.list.paint(model); return; }
+    const c = model && (model.filter != null ? model : model.conditions && model.conditions[0]);
+    const v = c && c.filter != null ? String(c.filter) : "";
+    if (this.input.value !== v && (!model || document.activeElement !== this.input)) this.input.value = v;
+    this.wrap.classList.toggle("has-value", !!model);
+  }
+  getGui() { return this.el; }
+  refresh() { return true; }
+  destroy() {
+    if (this.onSort) this.params.column.removeEventListener("sortChanged", this.onSort);
+    if (this.onFilter) this.params.api.removeEventListener("filterChanged", this.onFilter);
+    if (this.list) this.list.destroy();
+  }
 }
 
 export function mountProspectsPage({ db, auth, canEdit, askName }) {
@@ -639,12 +712,12 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       return b;
     };
     const list = (field) => ({ field, valueGetter: (p) => ((p.data && p.data[field]) || []).join(", ") });
-    const select = (values, extra) => ({ filter: ListFilter, filterParams: { values, ...extra }, floatingFilterComponent: ListFloatingFilter, floatingFilterComponentParams: { suppressFilterButton: true } });
+    const select = (values, extra) => ({ filter: ListFilter, filterParams: { values, ...extra } });
     const countryOptions = () => { const seen = new Set(COUNTRIES.map((c) => c.toLowerCase())); const extra = [...new Set(rows.map((p) => canonicalCountry(p.country)).filter((c) => c && !seen.has(c.toLowerCase())))].sort((a, b) => a.localeCompare(b)); return [...COUNTRIES, ...extra].map((c) => [c, c]); };
     const industryOptions = () => [...INDUSTRY_LABELS.map((l) => [l, l]), [UNASSIGNED, UNASSIGNED_INDUSTRY]];
     const tip = (p) => (p.valueFormatted != null ? p.valueFormatted : p.value);
     const colStd = { cellRenderer: trunc, tooltipValueGetter: tip };
-    return [
+    return withFilterHeaders([
       { colId: "select", headerName: "", width: 52, checkboxSelection: true, headerCheckboxSelection: true, headerCheckboxSelectionCurrentPageOnly: true, sortable: false, filter: false, floatingFilter: false, resizable: false, suppressMovable: true, pinned: "left", hide: !canEdit() },
       { field: "name", headerName: "Company", minWidth: 150, flex: 2, cellRenderer: company, tooltipValueGetter: tip },
       { field: "country", headerName: "Country", minWidth: 130, flex: 1, ...select(countryOptions, { canon: canonicalCountry }), ...colStd },
@@ -666,7 +739,10 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       { ...list("vendors"), headerName: "Current vendors", minWidth: 160, flex: 1, hide: true, ...colStd },
       { ...list("campaigns"), headerName: "Campaigns", minWidth: 160, flex: 1, hide: true, ...colStd },
       { colId: "actions", headerName: "", width: 64, pinned: "right", sortable: false, filter: false, floatingFilter: false, resizable: false, suppressMovable: true, cellRenderer: manage },
-    ];
+    ]);
+  }
+  function withFilterHeaders(defs) {
+    return defs.map((d) => (d.filter === false ? d : { ...d, headerComponent: FilterHeader }));
   }
   function ensureGrid() {
     if (grid) return Promise.resolve(grid);
@@ -675,12 +751,12 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       if (!ag) { host.innerHTML = '<p class="promote-empty">The grid could not load. Check your connection and reload.</p>'; return null; }
       const api = ag.createGrid(host, {
         columnDefs: buildColumns(),
-        defaultColDef: { sortable: true, filter: "agTextColumnFilter", floatingFilter: true, resizable: true, suppressHeaderMenuButton: false },
+        defaultColDef: { sortable: true, filter: "agTextColumnFilter", floatingFilter: false, resizable: true, suppressHeaderMenuButton: true },
         rowData: rows,
         getRowId: (p) => p.data.id,
         rowSelection: "multiple", suppressRowClickSelection: true,
         suppressCellFocus: true, suppressColumnVirtualisation: true, tooltipShowDelay: 400,
-        headerHeight: 40, floatingFiltersHeight: 40, rowHeight: 48, domLayout: "autoHeight",
+        headerHeight: 44, rowHeight: 48, domLayout: "autoHeight",
         pagination: true, paginationPageSize: 50, paginationPageSizeSelector: [25, 50, 100, 250],
         overlayNoRowsTemplate: '<span class="um-empty">No prospects match these filters.</span>',
         onSelectionChanged: updateBulk,

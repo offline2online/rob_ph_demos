@@ -27,7 +27,7 @@ const TOOLS = `${SITE}/wp-json/ph-agent/v1/tools`;
 const TRIAL = "https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76";
 const DEMO = "https://calendly.com/rob-offline2online";
 
-const FEATURES = ["digital-signage", "retail-queue-management", "retail-appointment-bookings", "retail-media-platform", "store-sites", "personalisation", "localisation-geo-targeting", "ai-agents"];
+const FEATURES = ["digital-signage", "retail-queue-management", "retail-appointment-bookings", "white-label-retail-media-platform", "store-sites", "personalisation", "localisation-geo-targeting", "ai-agents"];
 const LEGAL = ["privacy-policy", "legal", "support"];
 const INDUSTRIES = ["convenience", "hospitality", "telco", "pharmacy", "retail-media", "grocery", "fashion", "qsr", "banking"];
 const TOOL_NAMES = ["describe_platform", "list_industries", "get_industry", "get_feature", "search_help", "get_help_article", "start_free_trial", "book_demo", "get_installation_spec", "calculate_business_model"];
@@ -126,6 +126,25 @@ add("tools", "calculate_business_model lists Telco Retail and returns an estimat
   ok(!r.isError && r.structuredContent.estimate.total > 0 && /\/industries\/telco\/\?.*stores=100/.test(r.structuredContent.link), "no estimate or pre-filled link");
 });
 add("llms", "llms.txt lists the business model calculator", async () => { const t = (await get(`${SITE}/llms.txt`)).text; ok(/## Business model calculator/.test(t) && /Telco Retail/.test(t), "no calculator section"); });
+add("ai-search", "robots.txt names the sitemap and the AI crawlers", async () => {
+  const t = (await get(`${SITE}/robots.txt`)).text;
+  ok(/^Sitemap:\s*https:\/\/personalisationhub\.com\/sitemaps\.xml/mi.test(t), "robots.txt has no Sitemap line");
+  for (const a of ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-SearchBot", "Claude-User", "PerplexityBot", "Perplexity-User", "Google-Extended", "Applebot-Extended", "CCBot", "Bingbot"]) ok(new RegExp(`^User-agent:\\s*${a}\\s*$`, "mi").test(t), `robots.txt does not name ${a}`);
+});
+add("ai-search", "llms-full.txt is plain text with llms.txt first and the twins after it", async () => {
+  const r = await get(`${SITE}/llms-full.txt`); ok(r.status === 200, `answered ${r.status}`);
+  ok(/text\/plain/i.test(r.headers.get("content-type") || ""), "not text/plain");
+  ok(r.text.startsWith("# Personalisation Hub") && /## Key facts/.test(r.text) && /\nURL: https:\/\/personalisationhub\.com\/industries\/telco\//.test(r.text), "llms.txt or the telco twin is missing");
+});
+add("ai-search", "/.well-known/mcp.json is a server card whose tools match the REST tool list", async () => {
+  const r = await get(`${SITE}/.well-known/mcp.json`); ok(r.status === 200, `answered ${r.status}`);
+  const card = JSON.parse(r.text); const live = JSON.parse((await get(TOOLS)).text).tools;
+  ok(card.endpoint === `${HELP}/mcp`, "card endpoint is not the remote MCP server");
+  ok(JSON.stringify(card.tools) === JSON.stringify(live), "card tools differ from /wp-json/ph-agent/v1/tools");
+  ok(live.every((t) => t.title && t.description.length >= 80 && t.annotations.readOnlyHint === true && t.annotations.idempotentHint === true && t.annotations.openWorldHint === false), "a tool lacks a title, a description or an annotation");
+});
+add("ai-search", "the home title tag carries the brand", async () => { const t = (await get(`${SITE}/`)).text; const m = t.match(/<title>([^<]*)<\/title>/i); ok(m && /Personalisation Hub/.test(m[1]), `home title is "${m && m[1]}"`); });
+add("tools", "get_feature still accepts the old retail-media-platform slug", async () => { const r = await callTool("get_feature", { slug: "retail-media-platform" }); ok(!r.isError && /^#/m.test(textOf(r)), "alias no longer works"); });
 add("tools", "get_feature digital-signage", async () => { const r = await callTool("get_feature", { slug: "digital-signage" }); ok(!r.isError && /^#/m.test(textOf(r)), "no markdown"); });
 add("tools", "search_help returns articles on the Support Centre", async () => {
   const r = await callTool("search_help", { query: "how do I add a store", limit: 3 });

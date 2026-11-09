@@ -277,13 +277,24 @@ const scenarios = [
       await c.click("#team-add-open", "Add User");
       await c.visible("#team-add-email", "side panel opens");
       await c.page.fill("#team-add-email", "new@personalisationhub.com");
-      await c.page.fill("#team-add-name", "Nina New");
+      await c.page.fill("#team-add-first", "Nina");
+      await c.page.fill("#team-add-last", "New");
       await c.page.selectOption("#team-add-role", "viewer");
       await c.click("#team-add-btn", "Add");
       await c.click("#dialog-ok", "dismiss the added confirmation");
       await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 4, "the new user to show in the grid", 8000);
       const stored = await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com"));
       assert.ok(stored && stored.role === "viewer", "the new user was saved with the chosen role");
+      assert.strictEqual(stored.displayName, "Nina New", "display name is first + last");
+      assert.strictEqual(stored.firstName, "Nina"); assert.strictEqual(stored.lastName, "New");
+      assert.strictEqual((await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .ph-avatar-initial').first().textContent()).trim(), "NN", "initials show first + last");
+      // clicking the name opens the panel; edit the name there
+      await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .um-name-btn').first().click();
+      await c.visible("#um-manage-first", "name click opens the manage panel");
+      await c.page.fill("#um-manage-last", "Newman");
+      await c.click("#um-manage-name-save", "Save name");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com").displayName)) === "Nina Newman", "name edit to persist", 5000);
+      await c.click("#tm-close", "close panel");
       // inline role change
       await c.page.selectOption('select[aria-label="Role for kim@personalisationhub.com"]', "editor");
       await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").role)) === "editor", "inline role change to persist", 5000);
@@ -1069,7 +1080,11 @@ const scenarios = [
       const lanes = await c.page.evaluate(() => [...document.querySelectorAll("#leads-board .lead-lane-head h3")].map((e) => e.textContent.trim()));
       assert.deepStrictEqual(lanes, ["Lead", "Hot Lead", "Demo", "Post-demo", "Closed Won", "Lost"]);
       // New lead with two contacts and buying roles lands in the Lead lane.
-      await c.page.click("#leads-add-btn");
+      // The tap guard can swallow a click fired right after the page opens (more often on a loaded runner): click again until the form shows.
+      for (let i = 0; i < 4 && !(await c.page.locator("#lead-form").isVisible()); i++) {
+        await c.page.click("#leads-add-btn");
+        await c.page.waitForTimeout(600);
+      }
       await c.visible("#lead-form", "the lead form opens");
       await c.page.fill("#lead-name", "Acme Retail");
       await c.page.fill("#lead-website", "acme.example");
@@ -1118,6 +1133,54 @@ const scenarios = [
       assert.ok((await c.text("#lead-summary-panel")).includes("Existing Co Ltd"), "the summary shows the linked account");
       await c.page.keyboard.press("Escape");
       assert.deepStrictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("lx").customerAccount), { id: "acc_42", name: "Existing Co Ltd" });
+    },
+  },
+  {
+    name: "Modals: Save is off until something changes, the action row is sticky, the x is top right and closes",
+    seed: () => seed({ leads: {
+      lx: { company: { name: "Existing Co", website: "https://existing.example", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [{ id: "k1", name: "Pat", jobTitle: "", buyingRole: "champion", email: "", linkedin: "" }], stage: "demo", source: "Website form", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      // New lead: opens empty, so Save is off until a value is typed.
+      // The tap guard can swallow a click fired right after the page opens (more often on a loaded runner): click again until the form shows.
+      for (let i = 0; i < 4 && !(await c.page.locator("#lead-form").isVisible()); i++) {
+        await c.page.click("#leads-add-btn");
+        await c.page.waitForTimeout(600);
+      }
+      await c.visible("#lead-form", "the lead form opens");
+      assert.ok(await c.page.locator("#lead-save").isDisabled(), "Save is off on an untouched new lead");
+      await c.page.fill("#lead-name", "Acme Retail");
+      assert.ok(await c.page.locator("#lead-save").isEnabled(), "typing turns Save on");
+      await c.page.fill("#lead-name", "");
+      assert.ok(await c.page.locator("#lead-save").isDisabled(), "putting it back turns Save off again");
+      // Sticky action row and a round x at the top right of the header.
+      const geo = await c.page.evaluate(() => {
+        const panel = document.querySelector(".lead-panel"), r = panel.getBoundingClientRect();
+        const x = document.querySelector("#lead-close").getBoundingClientRect();
+        panel.scrollTop = panel.scrollHeight;
+        const save2 = document.querySelector("#lead-save").getBoundingClientRect();
+        panel.scrollTop = 0;
+        const save3 = document.querySelector("#lead-save").getBoundingClientRect();
+        return { panelBottom: r.bottom, panelTop: r.top, panelRight: r.right, save2Bottom: save2.bottom, save3Bottom: save3.bottom, xRight: x.right, xTop: x.top };
+      });
+      assert.ok(geo.save3Bottom <= geo.panelBottom + 1 && geo.save3Bottom > geo.panelBottom - 90, "Save stays pinned to the bottom of the dialog even scrolled to the top");
+      assert.ok(geo.save2Bottom <= geo.panelBottom + 1, "and when scrolled to the end");
+      assert.ok(geo.xRight <= geo.panelRight && geo.panelRight - geo.xRight < 60 && geo.xTop - geo.panelTop < 60, "the x is in the top right corner");
+      await c.page.click("#lead-close");
+      await until(async () => await c.page.locator("#lead-backdrop").isHidden(), "the x to close the lead dialog", 5000);
+      // Edit an existing lead: Save is off until a field changes.
+      await c.page.click('.lead-lane[data-stage="demo"] .lead-card .lead-card-name');
+      await c.visible("#lead-sum-edit", "the summary opens");
+      await c.page.click("#lead-sum-edit");
+      await c.visible("#lead-form", "the editor opens");
+      await c.page.waitForTimeout(400);
+      assert.ok(await c.page.locator("#lead-save").isDisabled(), "Save is off on an unchanged saved lead");
+      await c.page.fill("#lead-source", "Referral");
+      assert.ok(await c.page.locator("#lead-save").isEnabled(), "editing a field turns Save on");
+      await c.page.click("#lead-close");
+      await until(async () => await c.page.locator("#lead-backdrop").isHidden(), "the x to close the editor", 5000);
     },
   },
   {
@@ -1182,9 +1245,9 @@ const scenarios = [
       assert.deepStrictEqual(info.pills, [], "no stage pills repeating what the Stage filter lists");
       assert.deepStrictEqual(info.heights, [42], "every row is 42px tall");
       assert.ok(info.ellipsis && info.oneLine, `the long title is one ellipsised line (${JSON.stringify([info.ellipsis, info.oneLine])})`);
-      const wantHeads = ["customer", "name", "stage", "reviewStatus", "aceScore", "monthly", "close", "created", "updated", "seller", "lead", "actions"];
+      const wantHeads = ["customer", "name", "aceScore", "stage", "reviewStatus", "monthly", "close", "created", "updated", "seller", "lead", "actions"];
       // On a phone the Opportunity column is pinned left, so it is drawn first; the order is Customer then Opportunity everywhere else.
-      assert.deepStrictEqual(c.width < 640 ? [...info.heads].sort() : info.heads, c.width < 640 ? [...wantHeads].sort() : wantHeads, "Customer first, then Opportunity, Score always shown, the date columns");
+      assert.deepStrictEqual(c.width < 640 ? [...info.heads].sort() : info.heads, c.width < 640 ? [...wantHeads].sort() : wantHeads, "Customer first, then Opportunity, Score beside it, the date columns");
       assert.ok(info.floating >= 5, "floating filter row");
       assert.strictEqual(info.checkbox, 0, "no checkbox column");
       assert.ok(!info.paging, "no pagination at 5 rows (page size is 50)");
@@ -1323,10 +1386,11 @@ const scenarios = [
       await c.click("#ace-new", "New opportunity");
       await c.visible("#ace-backdrop .ace-dialog");
       assert.match(await c.text("#ace-dlg-save"), /Create in ACE/);
+      assert.ok(await c.page.locator("#ace-dlg-save").isDisabled(), "Save is off until something is entered");
+      await c.page.fill('#ace-backdrop [data-f="customer"]', "Gamma Ltd");
       await c.page.click("#ace-dlg-save");
       assert.strictEqual((await c.text("#ace-dlg-status")).trim(), "Enter a title and customer.");
-      assert.ok(!c.aceWrites.some((w) => w.method === "POST"), "nothing is sent while title and customer are empty");
-      await c.page.fill('#ace-backdrop [data-f="customer"]', "Gamma Ltd");
+      assert.ok(!c.aceWrites.some((w) => w.method === "POST"), "nothing is sent while the title is empty");
       await c.page.fill('#ace-backdrop [data-f="name"]', "Totems");
       await c.page.click("#ace-dlg-save");
       await until(async () => (await c.text("#ace-dlg-status")).startsWith("Created in AWS ACE"), "Created in AWS ACE", 4000);
@@ -1478,7 +1542,10 @@ const scenarios = [
       assert.ok((await c.page.getAttribute("#prospects-info", "title")).length > 20, "help is an info tooltip");
       // Same grid as User Management: theme, floating filter row, checkbox column, pagination, one pinned "..." menu per row.
       assert.ok(await c.page.locator("#prospects-grid.ag-theme-alpine.um-grid").count(), "uses the standard console grid");
-      assert.ok(await c.page.locator("#prospects-grid .ag-floating-filter").count() > 3, "floating filter row");
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-floating-filter").count(), 0, "no second (floating filter) row");
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-header-menu-icon, #prospects-grid .ag-header-cell-menu-button").count(), 0, "no header menu, so no duplicate filters");
+      assert.ok(await c.page.locator("#prospects-grid .pf-head input[aria-label='Company Filter Input'][placeholder='Company']").count() === 1, "the Company heading is the search box");
+      assert.strictEqual(await c.page.locator("#prospects-grid .ag-header-cell[col-id='name'] .ag-header-cell-text").count(), 0, "no separate Company label");
       assert.ok(await c.page.locator('#prospects-grid .ag-pinned-left-cols-container .ag-selection-checkbox, #prospects-grid .ag-pinned-left-cols-container input[type=checkbox]').count() >= 3, "checkbox column");
       assert.ok(await c.page.locator("#prospects-grid .ag-paging-panel").count(), "pagination footer");
       // The whole page scrolls (no inner scroll area) and the grid's column header + filter row stick under the console header.

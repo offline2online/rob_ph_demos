@@ -353,7 +353,7 @@ as text until Anthropic switches on its MCP Apps host.
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
 | | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | `mark_skill_reviewed` (clears the review nudge and restarts the clock) | | |
 | | `create_concept` (requires `type`) / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` / `set_concept_description` / `set_concept_type` (Concept Incubator; the last five refused once a concept is promoted, except comments) / `set_project_type` | | | | |
-| | `update_lead_stage`, `upsert_prospects` | `list_leads`, `list_prospects` | | | |
+| | `upsert_prospects`, leads | `list_prospects`, `list_leads`, `get_lead` | | | |
 | | `add_concept_critique` (a structured review of a concept: verdict, arguments for/against, assumptions, recommended changes, optional free-text `role`) | `list_concept_critiques` (also returns every role already used, to reuse) / `synthesise_concept_critiques` (agreement, disagreement, recommended adjustments; optional `role` filter) | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
@@ -832,3 +832,15 @@ refused), `linkedinOrgId` (digits), `linkedinVerified` and `contacts` (up to 30
 of `{name, role, lastContact}`), alongside the earlier fields. `list_prospects`
 returns all of them and filters by `country` and `priority` as well as
 industry, market, region, campaign, size, status and store range.
+
+## Leads over MCP
+
+The Promote › Leads pipeline can be managed end to end, with the board's own permissions (an editor or admin writes, a viewer reads) and each write attributed to the member's email:
+
+- Read: `list_leads` (filters `stage`, `company`, `assignee` (an email or `unassigned`), `source`, `industry`, free text `q`; `limit`/`offset` paging; archived leads only with `includeArchived`) and `get_lead` (contacts and buying roles, website activity, tech stack, customer account, linked prospect, history).
+- Create: `create_lead`, `create_leads` (up to 50). The stage is any of `lead`, `hot-lead`, `demo`, `post-demo`, `closed-won`, `closed-lost` (default `lead`). A company name that already exists (case-insensitive, archived included) is refused and the existing lead returned.
+- Edit: `update_lead` (any company field, source, source detail, assignee, stage), `update_lead_stage`, `add_lead_contact` / `update_lead_contact` / `remove_lead_contact` (with buying role), `add_lead_note`.
+- Links: `link_lead_customer_account` records the customer account and moves the lead to Closed Won (the board's convert; `moveToClosedWon: false` skips the move), `unlink_lead_customer_account`, `link_lead_prospect` / `unlink_lead_prospect` (both sides; one lead per prospect).
+- Remove: `archive_lead` / `restore_lead` (recoverable; the board hides archived leads) and `delete_lead` (admin only, permanent, needs `confirm: true`).
+
+Every change adds a line to the lead's history, shown in the lead drawer under "Notes and history" with who made it.

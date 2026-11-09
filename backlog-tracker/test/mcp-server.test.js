@@ -1037,9 +1037,14 @@ async function rpc(token, method, params, id = 1) {
   });
 
   // ── Promote › Leads ──────────────────────────────────────────────────────
-  await test("exposes list_leads (read) and update_lead_stage (write), and nothing else for leads", async () => {
-    const tools = mcp.__test.TOOLS.filter((t) => /lead/.test(t.name));
-    assert.deepStrictEqual(tools.map((t) => [t.name, t.scope]).sort(), [["list_leads", "board.read"], ["update_lead_stage", "board.write"]]);
+  await test("exposes the lead tools: reads are board.read, every write is board.write, delete is admin only", async () => {
+    const tools = mcp.__test.TOOLS.filter((t) => /lead/.test(t.name) && !/prospects$/.test(t.name) || t.name === "link_lead_prospect" || t.name === "unlink_lead_prospect");
+    const reads = ["get_lead", "list_leads"];
+    const writes = ["add_lead_contact", "add_lead_note", "archive_lead", "create_lead", "create_leads", "delete_lead", "link_lead_customer_account", "link_lead_prospect", "remove_lead_contact", "restore_lead", "unlink_lead_customer_account", "unlink_lead_prospect", "update_lead", "update_lead_contact", "update_lead_stage"];
+    assert.deepStrictEqual(tools.map((t) => t.name).sort(), [...reads, ...writes].sort());
+    for (const t of tools) assert.strictEqual(t.scope, reads.includes(t.name) ? "board.read" : "board.write", t.name);
+    assert.strictEqual(tools.find((t) => t.name === "delete_lead").role, "admin");
+    for (const t of tools) if (t.name !== "delete_lead") assert.ok(!t.role, `${t.name} follows the board's editor permission`);
   });
   env.store.col("leads").set("ld1", { company: { name: "Acme Retail", countries: ["UK"], storeCount: 120 }, contacts: [{ id: "c1", name: "Jo", buyingRole: "decision-maker" }], stage: "lead", source: "Website form" });
   env.store.col("leads").set("ld2", { company: { name: "Acme Foods" }, contacts: [], stage: "demo" });
@@ -1073,9 +1078,104 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("leads").get("ld2").stage, "demo");
   });
 
+  // Full lead management (create, edit, contacts, notes, links, archive, delete).
+  const J = (r) => JSON.parse(r.content[0].text);
+  await test("create_leads adds companies in a stage, attributed, and refuses a duplicate with the existing lead", async () => {
+    env.store.col("leads").set("gk", { company: { name: "Greene King" }, contacts: [], stage: "post-demo" });
+    const out = J(await leadCall("create_leads", { leads: ["CP Group", "One New Zealand", "7-Eleven US", "Wanderlust", "Volta Hudson"].map((company) => ({ company, stage: "post-demo" })).concat([{ company: "greene king", stage: "demo" }]) }));
+    assert.strictEqual(out.created, 5); assert.strictEqual(out.refused, 1);
+    const dup = out.results[5]; assert.strictEqual(dup.duplicate, true); assert.strictEqual(dup.existing.id, "gk");
+    const made = J(await leadCall("list_leads", { stage: "post-demo" }));
+    assert.deepStrictEqual(made.leads.map((l) => l.company), ["CP Group", "Greene King", "One New Zealand", "7-Eleven US", "Volta Hudson", "Wanderlust"].sort((a, b) => a.localeCompare(b)));
+    const doc = [...env.store.col("leads").entries()].map(([, v]) => v).find((v) => v.company.name === "CP Group");
+    assert.ok(doc.createdByEmail); assert.strictEqual(doc.stage, "post-demo"); assert.strictEqual(doc.history[0].kind, "created");
+    const again = await leadCall("create_lead", { company: " GREENE KING " });
+    assert.strictEqual(again.isError, true); assert.match(again.content[0].text, /already exists/);
+    assert.strictEqual((await leadCall("create_lead", { company: "Bad Co", stage: "nope" })).isError, true);
+    assert.strictEqual((await leadCall("create_lead", { company: "Bad Co", awsAccountId: "12" })).isError, true);
+  });
+  await test("a lead moves through every stage and each move is in its history", async () => {
+    const c = J(await leadCall("create_lead", { company: "Stage Walker" })); const id = c.lead.id;
+    for (const stage of ["hot-lead", "demo", "post-demo", "closed-won", "closed-lost"]) {
+      assert.strictEqual(J(await leadCall("update_lead", { leadId: id, stage })).updated, true);
+      assert.strictEqual(env.store.col("leads").get(id).stage, stage);
+    }
+    const g = J(await leadCall("get_lead", { leadId: id }));
+    assert.strictEqual(g.history.filter((h) => h.kind === "stage").length, 5);
+    assert.ok(g.history.every((h) => h.by));
+  });
+  await test("update_lead edits fields, leaves the rest, and refuses a clashing rename", async () => {
+    const out = J(await leadCall("update_lead", { company: "Stage Walker", industry: "Grocery", storeCount: 250, assignee: "Sam@Example.com", countries: ["UK", "France"] }));
+    assert.deepStrictEqual(out.changed.sort(), ["assignee", "countries", "industry", "storeCount"]);
+    const doc = [...env.store.col("leads").entries()].map(([, v]) => v).find((v) => v.company.name === "Stage Walker");
+    assert.strictEqual(doc.company.storeCount, 250); assert.strictEqual(doc.assignee, "sam@example.com"); assert.strictEqual(doc.stage, "closed-lost");
+    assert.strictEqual(J(await leadCall("update_lead", { company: "Stage Walker", industry: "Grocery" })).updated, false);
+    assert.strictEqual((await leadCall("update_lead", { company: "Stage Walker", newCompany: "Greene King" })).isError, true);
+    assert.strictEqual((await leadCall("update_lead", { company: "Stage Walker", storeCount: -3 })).isError, true);
+  });
+  await test("contacts and notes: add, update, remove, note; all in history", async () => {
+    const add = J(await leadCall("add_lead_contact", { company: "Stage Walker", name: "Pat Lee", email: "pat@walker.example", buyingRole: "champion" }));
+    assert.strictEqual(add.contact.buyingRole, "champion");
+    assert.strictEqual((await leadCall("add_lead_contact", { company: "Stage Walker", name: "Bad", buyingRole: "boss" })).isError, true);
+    const up = J(await leadCall("update_lead_contact", { company: "Stage Walker", contactName: "pat lee", buyingRole: "decision-maker", jobTitle: "CMO" }));
+    assert.strictEqual(up.contact.buyingRole, "decision-maker"); assert.strictEqual(up.contact.email, "pat@walker.example");
+    assert.strictEqual(J(await leadCall("add_lead_note", { company: "Stage Walker", text: "Asked for a proposal." })).added, true);
+    assert.strictEqual((await leadCall("add_lead_note", { company: "Stage Walker", text: "  " })).isError, true);
+    let g = J(await leadCall("get_lead", { company: "Stage Walker" }));
+    assert.strictEqual(g.contacts.length, 1); assert.ok(g.history.some((h) => h.kind === "note" && h.text === "Asked for a proposal."));
+    assert.strictEqual(J(await leadCall("remove_lead_contact", { company: "Stage Walker", contactId: add.contact.id })).removed, true);
+    g = J(await leadCall("get_lead", { company: "Stage Walker" })); assert.strictEqual(g.contacts.length, 0);
+  });
+  await test("links a prospect (both sides) and a customer account, then unlinks them", async () => {
+    env.store.col("prospects").set("lpr1", { name: "Walker Group", country: "UK", leadId: "" });
+    env.store.col("prospects").set("lpr2", { name: "Taken", country: "UK", leadId: "ld2" });
+    const lp = J(await leadCall("link_lead_prospect", { company: "Stage Walker", prospectId: "lpr1" }));
+    assert.strictEqual(lp.linked, true); assert.strictEqual(env.store.col("prospects").get("lpr1").leadId, lp.leadId);
+    assert.strictEqual(J(await leadCall("get_lead", { leadId: lp.leadId })).prospectId, "lpr1");
+    assert.strictEqual((await leadCall("link_lead_prospect", { company: "Stage Walker", prospectId: "lpr2" })).isError, true);
+    assert.strictEqual((await leadCall("link_lead_prospect", { company: "Stage Walker", prospectId: "nope" })).isError, true);
+    assert.strictEqual(J(await leadCall("unlink_lead_prospect", { leadId: lp.leadId })).unlinked, true);
+    assert.strictEqual(env.store.col("prospects").get("lpr1").leadId, "");
+    assert.strictEqual(J(await leadCall("unlink_lead_prospect", { leadId: lp.leadId })).unlinked, false);
+    assert.strictEqual((await leadCall("link_lead_customer_account", { leadId: lp.leadId })).isError, true, "needs an id or a name");
+    const ca = J(await leadCall("link_lead_customer_account", { leadId: lp.leadId, accountId: "acc_9", accountName: "Walker Ltd" }));
+    assert.deepStrictEqual(ca.customerAccount, { id: "acc_9", name: "Walker Ltd" }); assert.strictEqual(env.store.col("leads").get(lp.leadId).stage, "closed-won");
+    assert.strictEqual(J(await leadCall("unlink_lead_customer_account", { leadId: lp.leadId })).unlinked, true);
+    assert.strictEqual(env.store.col("leads").get(lp.leadId).customerAccount, null);
+  });
+  await test("archive hides a lead from list_leads and the board, restore brings it back; list_leads filters and pages", async () => {
+    const id = J(await leadCall("get_lead", { company: "Stage Walker" })).id;
+    assert.strictEqual(J(await leadCall("archive_lead", { leadId: id })).archived, true);
+    assert.ok(!J(await leadCall("list_leads", {})).leads.some((l) => l.id === id));
+    assert.ok(J(await leadCall("list_leads", { includeArchived: true })).leads.some((l) => l.id === id && l.archived));
+    assert.strictEqual(J(await leadCall("restore_lead", { leadId: id })).restored, true);
+    assert.ok(J(await leadCall("list_leads", { q: "grocery" })).leads.some((l) => l.id === id));
+    assert.deepStrictEqual(J(await leadCall("list_leads", { assignee: "sam@example.com" })).leads.map((l) => l.id), [id]);
+    assert.ok(J(await leadCall("list_leads", { assignee: "unassigned" })).leads.every((l) => !l.assignee));
+    const p1 = J(await leadCall("list_leads", { limit: 2 }));
+    assert.strictEqual(p1.count, 2); assert.strictEqual(p1.nextOffset, 2); assert.ok(p1.total > 2);
+    const p2 = J(await leadCall("list_leads", { limit: 2, offset: 2 }));
+    assert.ok(p2.leads.every((l) => !p1.leads.some((x) => x.id === l.id)));
+  });
+  await test("delete_lead is admin-only, needs confirm, and unlinks a prospect", async () => {
+    const id = J(await leadCall("get_lead", { company: "Stage Walker" })).id;
+    const refused = await leadCall("delete_lead", { leadId: id, confirm: true });
+    assert.strictEqual(refused.isError, true); assert.match(refused.content[0].text, /admin role/);
+    assert.ok(env.store.col("leads").get(id), "an editor can't delete");
+    const del = mcp.__test.TOOLS.find((t) => t.name === "delete_lead");
+    assert.strictEqual((await del.run({ leadId: id }, { email: TEAMMATE })).isError, true, "no confirm, no delete");
+    assert.ok(env.store.col("leads").get(id));
+    env.store.col("prospects").set("lpr3", { name: "X", leadId: id });
+    env.store.col("leads").set(id, Object.assign({}, env.store.col("leads").get(id), { prospectId: "lpr3" }));
+    const out = J(await del.run({ leadId: id, confirm: true }, { email: TEAMMATE }));
+    assert.strictEqual(out.deleted, true); assert.strictEqual(env.store.col("leads").get(id), undefined);
+    assert.strictEqual(env.store.col("prospects").get("lpr3").leadId, "");
+    for (const k of ["lpr1", "lpr2", "lpr3"]) env.store.col("prospects").delete(k); // later tests count prospects
+  });
+
   // ── Promote › Prospects (TAM) ────────────────────────────────────────────
   await test("exposes list_prospects (read) and upsert_prospects (write), and nothing else for prospects", async () => {
-    const tools = mcp.__test.TOOLS.filter((t) => /prospect/.test(t.name));
+    const tools = mcp.__test.TOOLS.filter((t) => /prospect/.test(t.name) && !/lead_prospect/.test(t.name));
     assert.deepStrictEqual(tools.map((t) => [t.name, t.scope]).sort(), [["list_prospects", "board.read"], ["upsert_prospects", "board.write"]]);
     for (const t of tools) assert.ok(!JSON.stringify(t.inputSchema).includes("leadId"), "an agent can't set a prospect's lead link");
   });
@@ -2000,7 +2100,7 @@ async function rpc(token, method, params, id = 1) {
 
   await test("only the delete tools are flagged destructive", async () => {
     const destructive = mcp.__test.TOOLS.filter((t) => t.destructive).map((t) => t.name).sort();
-    assert.deepStrictEqual(destructive, ["delete_backlog_items", "delete_interface", "delete_project_document", "delete_skill"]);
+    assert.deepStrictEqual(destructive, ["delete_backlog_items", "delete_interface", "delete_lead", "delete_project_document", "delete_skill"]);
   });
 
   // ── Composable UI: Ready for Testing / Approved for Deployment boards ────

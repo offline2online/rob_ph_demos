@@ -603,6 +603,7 @@ service cloud.firestore {
     // save keeps them, since request.resource is the whole document.
     function isLead(d) {
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
+          "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
         && d.company is map && isNonEmptyBoundedString(d.company.get("name", null), 120)
         && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300
@@ -618,7 +619,10 @@ service cloud.firestore {
         && d.get("prospectId", "") is string && d.get("prospectId", "").size() <= 100
         && d.get("test", false) is bool
         && d.get("sourcePage", "") is string && d.get("sourcePage", "").size() <= 300
-        && d.get("sourceIndustry", "") is string && d.get("sourceIndustry", "").size() <= 120;
+        && d.get("sourceIndustry", "") is string && d.get("sourceIndustry", "").size() <= 120
+        && d.get("sourceLabel", "") is string && d.get("sourceDetail", "") is string
+        && d.get("websiteActivity", []) is list && d.get("history", []) is list && d.get("history", []).size() <= 100
+        && d.get("archivedByEmail", "") is string;
     }
     match /leads/{leadId} {
       allow read: if isBoardReader();
@@ -784,12 +788,21 @@ service cloud.firestore {
             || incoming().lastLoginAt == request.time)
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["photoUrl", "photoUpdatedAt"])
             || (incoming().photoUpdatedAt == request.time && validPhotoUrl(incoming().get("photoUrl", ""))));
+      // A member may also set their OWN name (firstName, lastName and the
+      // displayName the Users table shows), each a bounded string.
+      allow update: if signedIn() && userEmail == callerEmail()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["firstName", "lastName", "displayName"])
+        && (!("firstName" in incoming()) || (incoming().firstName is string && incoming().firstName.size() <= 60))
+        && (!("lastName" in incoming()) || (incoming().lastName is string && incoming().lastName.size() <= 60))
+        && (!("displayName" in incoming()) || (incoming().displayName is string && incoming().displayName.size() <= 120));
       allow create, update: if isAdmin()
         && incoming().email is string
         && userEmail == incoming().email.lower()
         && isNonEmptyBoundedString(incoming().email, 200)
         && incoming().role in ["admin", "editor", "viewer"]
         && (!("displayName" in incoming()) || (incoming().displayName is string && incoming().displayName.size() <= 120))
+        && (!("firstName" in incoming()) || (incoming().firstName is string && incoming().firstName.size() <= 60))
+        && (!("lastName" in incoming()) || (incoming().lastName is string && incoming().lastName.size() <= 60))
         && (!("disabled" in incoming()) || incoming().disabled is bool)
         && (!("mcpEnabled" in incoming()) || incoming().mcpEnabled is bool)
         && (!("roleId" in incoming()) || (incoming().roleId is string && incoming().roleId.size() <= 40))

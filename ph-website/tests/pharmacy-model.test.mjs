@@ -27,4 +27,13 @@ ok(!/\bDSP\b|programmatic/i.test(ph), "pharmacy twin never mentions DSP or progr
 ok(!/\bDSP\b|programmatic/i.test(JSON.stringify(p)), "pharmacy calculator never mentions DSP or programmatic");
 for (const s of ["## Contextual campaigns on digital signage", "## Seamless handover to the pharmacist and store staff", "## Responsible by design", "front-of-house products only", "aggregate or de-identified data", "local advertising rules for medicines", "never for advertising"]) ok(ph.includes(s), "twin has: " + s);
 ok(!/personaliz|\bpersonalize/i.test(ph), "personalisation is spelled with an s");
+// gate: the pharmacy calculator offers the same gated business model download as telco
+ok(p.gate === true && CALC.telco.gate === true, "pharmacy and telco calculators are gated");
+ok(/MODELS\[c\.model\]/.test(js) && !/MODELS\.tel3\(body\.inputs\)/.test(js), "buildGate takes the estimate from the page's model, not hard-coded telco");
+ok(/pharmacy-model/.test(js) && /Pharmacy business model download/.test(js), "enhance.js posts pharmacy downloads to the pharmacy endpoint");
+// PHP and JS parity on fixtures (pharm_calc in pharmacy-model.php, pharmCalc here)
+import { execFileSync } from "child_process";
+const fx = [base, { stores: 1, screens: 1, visits: 1, basket: 1, cpm: 0, uplift: 0 }, { stores: 5000, screens: 50, visits: 5000, basket: 500, cpm: 200, uplift: 50 }, { stores: 37, screens: 5, visits: 410, basket: 31.5, cpm: 18, uplift: 7.5 }];
+const php = JSON.parse(execFileSync("php", ["-r", `define("PH_TELCO_MODEL_TEST",1);require ${JSON.stringify(dir.pathname + "pharmacy-model.php")};echo json_encode(array_map(function($v){$c=AngieSnippets\\PhIndustryEnhancements_10063\\pharm_calc(AngieSnippets\\PhIndustryEnhancements_10063\\pharm_clean($v));return [$c["media"],$c["basket"],$c["traffic"],$c["total"]];}, json_decode(${JSON.stringify(JSON.stringify(fx))},true)));`]).toString());
+fx.forEach((v, i) => { const j = pharmCalc(v), a = [j.media, j.basket, j.traffic, j.total]; ok(a.every((x, k) => Math.abs(x - php[i][k]) <= 1e-6 * Math.max(1, Math.abs(x))), "PHP and JS agree on fixture " + i); });
 console.log(bad ? bad + " failed" : "pharmacy-model: all passed"); process.exit(bad ? 1 : 0);

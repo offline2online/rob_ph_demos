@@ -1,4 +1,4 @@
-// node ph-website/tests/tour.test.mjs : the telco and pharmacy product tour on the industry pages (enhance.js + site.js), in Chromium.
+// node ph-website/tests/tour.test.mjs : the telco, pharmacy and fuel & convenience product tour on the industry pages (enhance.js + site.js), in Chromium.
 // Checks: the band is mounted (Elementor mount, or built after the calculator's section), the iframe src (+ph_test forwarding), the height
 // message, window.PH_TOUR, "Arrange a Demo" -> PH_SITE_DEMO, and that a successful calculator download writes
 // localStorage ph_lead and dispatches window "ph:lead". Skips (exit 0) when Playwright or Chromium is not available.
@@ -32,7 +32,7 @@ try {
     const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
     await p.route("**/*", (r) => {
       const u = r.request().url();
-      if (/\/industries\/(telco|pharmacy)\/tour\//.test(u)) return r.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><p>tour</p>" });
+      if (/\/industries\/(telco|pharmacy|convenience)\/tour\//.test(u)) return r.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><p>tour</p>" });
       if (/wp-json\/ph-site\/v1\/(industry-lead|telco-model)$/.test(u)) return r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, download: "http://x.test/blocked.xlsx" }) });
       if (/blocked\.xlsx/.test(u)) return r.fulfill({ status: 204, body: "" });
       return r.fulfill({ contentType: "text/html", body: html(withBand, ind) });
@@ -112,6 +112,16 @@ try {
   await p.close();
   p = await open(true, "?ph_test=1", "pharmacy");
   assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/pharmacy/tour/?embed=1&ph_test=1", "pharmacy: ph_test forwarded");
+  await p.close();
+  // Fuel & convenience: same mount, its own iframe src and copy; the band gets the #ph-tour anchor other tours link to.
+  p = await open(true, "?ph_test=1", "convenience");
+  assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/convenience/tour/?embed=1&ph_test=1", "convenience: iframe src and ph_test");
+  assert.strictEqual(await p.locator("#band").getAttribute("id"), "band");
+  await p.close();
+  p = await open(false, "", "convenience");
+  assert.strictEqual(await p.locator("#calcsec + .ph-ind-tour .ph-ind-tour-mount iframe").count(), 1, "convenience: band built after the calculator section");
+  assert.strictEqual(await p.locator(".ph-ind-tour").getAttribute("id"), "ph-tour", "convenience: the band has the ph-tour anchor");
+  assert.strictEqual(await p.locator(".ph-ind-tour h2").textContent(), "See Personalisation Hub run a fuel and convenience campaign, end to end", "convenience: fallback heading");
   await p.close();
   p = await open(false, "", "telco");
   assert.strictEqual(await p.locator(".ph-ind-tour h2").textContent(), "See Personalisation Hub run a telco campaign, end to end", "telco fallback heading unchanged");
@@ -349,6 +359,51 @@ try {
   await cf.click("#fs"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position === "fixed");
   await cf.click("#fsclose"); await fp.waitForFunction(() => getComputedStyle(document.querySelector(".ph-ind-tour-frame")).position !== "fixed");
   await fp.close();
+  // Adding a 2nd/3rd rule must not jump back to the top (Campaign Insights) and back; steps open already on the rules. Desktop and full screen.
+  for (const full of [false, true]) {
+    const t = await tourPage(false, { width: 1280, height: 800 });
+    if (full) { await t.click("#fs"); await t.waitForFunction(() => document.documentElement.classList.contains("fs")); }
+    const topOf = () => t.evaluate(() => { const m = /translate3d\(0px,\s*(-?[\d.]+)px/.exec(document.getElementById("sci").style.transform || ""); return m ? -parseFloat(m[1]) : 0; });
+    const inView = (sel) => t.evaluate((sel) => { const e = document.querySelector(sel), sc = document.getElementById("sc"); if (!e) return false; const r = e.getBoundingClientRect(), s = sc.getBoundingClientRect(); return r.height > 0 && r.bottom > s.top + 1 && r.top < s.bottom - 1; }, sel);
+    for (const [k, first, steps] of [[1, "Target by store segment", ["Suppress when stock runs out", "Respond to who's in store"]], [2, "Target the reason for visit", ["Add first-party and loyalty data"]]]) {
+      const where = `${ind} ${full ? "full screen" : "inline"} flow ${k + 1}`;
+      await t.click(`.chip[data-k="${k}"]`); await t.waitForTimeout(150);
+      if ((await t.getAttribute("#play", "aria-label")) === "Pause") await t.click("#play");
+      const titles = await t.evaluate(() => [...document.querySelectorAll("#dots .dot")].map((d) => d.getAttribute("aria-label") || d.title || ""));
+      const idx = async (name) => { for (let i = 0; i < 12; i++) { await t.locator("#dots .dot").nth(i).evaluate((e) => e.click()); await t.waitForFunction((i) => document.getElementById("capT").textContent.startsWith(`${i + 1}.`), i); if ((await t.textContent("#capT")).includes(name)) return i; } throw new Error("step not found: " + name); };
+      // Opened directly: the first painted frame already shows the rules and the add button.
+      for (const name of steps) {
+        const at = await idx(name);
+        await t.locator("#dots .dot").nth(0).evaluate((e) => e.click()); await t.waitForFunction(() => document.getElementById("capT").textContent.startsWith("1."));
+        await t.evaluate(() => { window.__frames = []; const f = () => { const sc = document.getElementById("sc"); if (sc && document.getElementById("addand")) { const e = (id) => { const r = document.getElementById(id)?.getBoundingClientRect(), s = sc.getBoundingClientRect(); return !!r && r.bottom > s.top && r.top < s.bottom; }; window.__frames.push({ rg0: (() => { const g = document.querySelectorAll("#rules .rgroup"); return g.length ? e(g[g.length - 1].id) : false; })(), add: e("addand"), ins: e("insw") }); } window.__raf = requestAnimationFrame(f); }; f(); });
+        await t.locator("#dots .dot").nth(at).evaluate((e) => { window.__frames.length = 0; e.click(); });
+        await t.waitForTimeout(80);
+        const fr = await t.evaluate(() => { cancelAnimationFrame(window.__raf); return window.__frames; });
+        assert.ok(fr.length && fr.every((x) => x.rg0 && x.add && !x.ins), `${where} "${name}": the rules and #addand in view and no insights block, on every painted frame: ${JSON.stringify(fr.slice(0, 3))}`);
+      }
+      // Played through: sample the scroll every 50 ms from the first rule step; it never returns to 0 and Campaign Insights never shows.
+      await idx(first);
+      if ((await t.getAttribute("#play", "aria-label")) !== "Pause") await t.click("#play");
+      await t.waitForFunction(() => document.getElementById("addand") && document.querySelectorAll("#rules .rgroup").length >= 1, null, { timeout: 60000 }).catch(() => {});
+      const last = steps[steps.length - 1], seen = [];
+      const t0 = Date.now(); let started = false;
+      while (Date.now() - t0 < 120000) {
+        const cap = await t.textContent("#capT");
+        if (steps.some((n) => cap.includes(n))) started = true;
+        if (started) {
+          const sm = { cap, top: await topOf(), ins: await inView("#insw .insin, #insw > *") };
+          seen.push(sm);
+          if (cap.includes(last) && (await t.locator("#save").count()) && (await t.getAttribute("#save", "class") || "").includes("dis")) break;
+        }
+        await t.waitForTimeout(50);
+      }
+      assert.ok(seen.length > 20, `${where}: sampled the rule steps (${seen.length})`);
+      const bad = seen.filter((x) => x.top === 0 || x.ins);
+      assert.deepStrictEqual(bad.slice(0, 3), [], `${where}: scroll never returns to 0 and the insights block never shows during the rule steps`);
+      if ((await t.getAttribute("#play", "aria-label")) === "Pause") await t.click("#play");
+    }
+    await t.close();
+  }
   // Step caption on the controls row (controls left, caption right-aligned to the stage's right edge), full screen and inline, every step of all three flows.
   const capMetrics = () => { const r = (e) => e.getBoundingClientRect(), b = document.querySelector(".bar"), c = document.querySelector(".cap"), t = document.getElementById("capT"), d = document.getElementById("capS"), st = r(document.getElementById("box")), br = r(b), cr = r(c), ctl = r(document.getElementById("prev")), play = r(document.getElementById("play")), dots = r(document.getElementById("dots")), fsb = document.getElementById("fs"), fr = r(fsb);
     const lh = parseFloat(getComputedStyle(d).lineHeight), dh = d.getBoundingClientRect().height, vis = getComputedStyle(d).display !== "none";
@@ -400,11 +455,11 @@ try {
     assert.ok(!fs.existsSync(path.join(dir, "tour", "telco.html")), "one tour source: tour/tour.html only");
     const hookedInd = sourceTour.replace('document.getElementById("prev").onclick', "window.__t = { setFlow, showEnd, S, D, L, P3 };\n$&");
     const lead = () => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "", email: "s@k.example", source: "Telco business model download" }));
-    const walk = async (ind, body) => {
+    const walk = async (ind, body, company = "") => {
       const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
       const errs = []; t.on("pageerror", (e) => errs.push(e.message));
       await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body }) : r.abort());
-      await t.addInitScript(lead); // a lead from the telco calculator download unlocks the pharmacy tour (same ph_lead key)
+      await t.addInitScript((c) => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: c, email: "s@k.example", source: "Telco business model download" })), company); // a lead from the telco calculator download unlocks the pharmacy tour (same ph_lead key)
       await t.goto(`http://x.test/industries/${ind}/tour/?embed=1`);
       await t.waitForSelector("#fs", { state: "visible" });
       assert.strictEqual(await t.locator("#gate").isHidden(), true, `${ind}: a ph_lead from telco unlocks the tour (no gate)`);
@@ -457,6 +512,26 @@ try {
     for (const need of ["Nimbus Mobile", "iPhone Trade-in | Up to $800 off", "Gold Members | Extra $200 iPhone trade-in"]) assert.ok(tl.text.includes(need), "telco tour shows: " + need);
     assert.ok(!/Harbourside|sun care|SPF/i.test(tl.text), "no pharmacy content in the telco tour");
     await tl.t.close();
+    // Flow 2 follows the visitor's company: search text, results, store codes and Website (no demo brand anywhere).
+    for (const [ind, co, slug, ini, demo] of [["pharmacy", "Bayside Test Pharmacy", "baysidetestpharmacy.com", "BT", /Harbourside/i], ["telco", "Acme Test Mobile", "acmetestmobile.com", "AT", /Nimbus/i]]) {
+      const w = await walk(ind, fast, co);
+      assert.deepStrictEqual(w.errs, [], `${ind}: no page errors`);
+      assert.ok(!demo.test(w.text), `${ind}: no demo brand once a company is set`);
+      assert.ok(w.text.includes(slug), `${ind}: Website uses ${slug}`);
+      assert.ok(new RegExp(`${ini}-011`).test(w.text) && !/\b(HP|NM)-\d{3}/.test(w.text), `${ind}: store codes use ${ini}`);
+      await w.t.close();
+      const f2 = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+      await f2.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast.replace('document.getElementById("prev").onclick', "window.__t = { L, B, S, addStoresHTML, refreshAdd };\n$&") }) : r.abort());
+      await f2.addInitScript((c) => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: c, email: "s@k.example" })), co);
+      await f2.goto(`http://x.test/industries/${ind}/tour/?embed=1`);
+      await f2.waitForSelector("#fs", { state: "visible" });
+      const r = await f2.evaluate(() => { const d = document.createElement("div"); d.innerHTML = window.__t.addStoresHTML({ q: window.__t.B(), results: true }); return { s: d.querySelector("#srch").textContent, rows: [...d.querySelectorAll(".rr b")].map((x) => x.textContent) }; });
+      assert.strictEqual(r.s, co, `${ind}: search box is the company`);
+      assert.ok(r.rows.length && r.rows.every((x) => x.startsWith(co)), `${ind}: every result starts with the company`);
+      await f2.close();
+    }
+    // Prototype mode (no company): the default brand, prefix and Website stay consistent.
+    { const w = await walk("pharmacy", fast); assert.ok(w.text.includes("HP-011") && w.text.includes("harboursidepharmacy.com/bayview"), "pharmacy default codes and website"); await w.t.close(); }
     // The lead body carries the industry from the path.
     for (const [ind, want] of [["telco", "telco"], ["pharmacy", "pharmacy"]]) {
       const g = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -475,6 +550,61 @@ try {
       assert.ok(await g.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")).email === "ada@orbit.example"), "ph_lead stored for both tours");
       await g.close();
     }
+  }
+
+  // Fuel & convenience: the three standard flows on recreated HQ Admin screens (as pharmacy), convenience content, a four-location shopper scene, end card CTA to retail media.
+  { const src = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
+    const fast = src.replace("const k = reduce ? .35 : 1;", "const k = .03;"); assert.ok(fast !== src, "speed hook applied (convenience)");
+    const open2 = async (html, lead) => {
+      const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+      const errs = []; t.on("pageerror", (e) => errs.push(e.message));
+      await t.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: html }) : r.abort());
+      if (lead) await t.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "", email: "s@k.example", source: "Telco business model download" })));
+      await t.goto("http://x.test/industries/convenience/tour/?embed=1");
+      return { t, errs };
+    };
+    { const { t, errs } = await open2(fast, true);
+      await t.waitForSelector("#fs", { state: "visible" });
+      assert.ok(/Fuel & Convenience/.test(await t.title()), "document title names Fuel & Convenience: " + await t.title());
+      assert.strictEqual(await t.locator("#flows .chip").count(), 3, "the three standard flows");
+      assert.strictEqual(await t.locator("#co").inputValue(), "Larkspur Convenience", "fictional brand");
+      const texts = new Set(); const counts = []; const caps = [];
+      let blankTiles = 0, locsSeen = 0;
+      for (let f = 0; f < 3; f++) {
+        await t.click(`.chip[data-k="${f}"]`);
+        counts.push(await t.locator("#dots .dot").count());
+        await t.click("#play");
+        const t0 = Date.now();
+        for (;;) {
+          const s = await t.evaluate(() => ({ cap: document.getElementById("capT").textContent, txt: [document.getElementById("stage").innerText, document.getElementById("capS").textContent, document.getElementById("card").innerText, [...document.querySelectorAll("#stage svg text")].map((x) => x.textContent).join(" ")].join("\n"),
+            tiles: [...document.querySelectorAll("#stage .cv-tile .cv-scr")].map((x) => x.innerText.trim().length), locs: document.querySelectorAll("#stage .cv-loc").length, shell: !!document.querySelector("#stage .side"),
+            done: !document.getElementById("card").hidden && /complete/i.test(document.getElementById("card").innerText) }));
+          caps.push(s.cap); texts.add(s.txt);
+          if (s.locs) { locsSeen = Math.max(locsSeen, s.locs); if (s.tiles.some((n) => !n)) blankTiles++; }
+          if (s.done) break;
+          assert.ok(Date.now() - t0 < 150000, `convenience flow ${f + 1} finished`);
+          await t.waitForTimeout(60);
+        }
+      }
+      const all = [...texts].join("\n");
+      assert.deepStrictEqual(counts, [8, 9, 6], "step counts per flow");
+      assert.strictEqual(locsSeen, 4, "the shopper scene shows four screen locations");
+      assert.strictEqual(blankTiles, 0, "screens always show content");
+      for (const need of ["Campaigns", "Stores / Branches", "Targeting", "Retail Admin", "Coffee + Pastry", "Coffee and pastry deal", "Forecourt screens", "Shop front", "Cooler door screens", "POS screens", "Motorway sites", "City convenience", "Regional highway", "Truck stops", "Pastry out of stock", "Weekday mornings", "Every weekday", "Audience / Segments", "Loyalty Gold", "Purchase History", "Coffee", "Pump 4", "Driveway screens", "Coolers", "Welcome back, Sam", "Visitor Details", "illustrative"]) assert.ok(all.includes(need), "convenience walkthrough shows: " + need);
+      const bad = all.match(/telco|pharmac|prescription|iPhone|Harbourside|Nimbus|Shell|BP |Caltex|7-Eleven|Coca|Red Bull|personalization|sun care|Frostline/i);
+      assert.ok(!bad, "no other industry content, real brands or US spelling: " + (bad || [])[0]);
+      assert.strictEqual(await t.locator("#cta").count(), 0, "no retail media link on the end card");
+      assert.ok(!/retail media walkthrough|retail-media/i.test(await t.content().then((c) => c.replace(/<script[\s\S]*?<\/script>/g, ""))), "no retail media link or wording on the page");
+      assert.strictEqual(await t.locator("#nextflow").count(), 1, "end card loops with Next like pharmacy");
+      assert.ok(await t.evaluate(() => window.dataLayer.some((e) => e.event === "ph_tour" && e.action === "complete" && e.industry === "convenience")), "complete event carries industry convenience");
+      assert.deepStrictEqual(errs, [], "no page errors: " + JSON.stringify(errs));
+      await t.close(); }
+    // Locked: the teaser plays the shopper journey and the gate offers the three flows; the lead carries the convenience flow name.
+    { const { t, errs } = await open2(src, false);
+      await t.waitForSelector(".g-flow");
+      assert.strictEqual(await t.locator(".g-flow").count(), 3, "gate offers the three flows");
+      assert.ok(/Scene|Sam/.test(await t.locator("#stage").innerText()), "teaser shows the shopper journey");
+      assert.deepStrictEqual(errs, [], "no page errors in the teaser"); await t.close(); }
   }
   console.log("tour js: all passed");
 } finally { await browser.close(); }

@@ -50,7 +50,7 @@ try {
       const mine = page.locator(`#ei-notes-list .ph-avatar[data-avatar-email="${ME}"]`);
       assert.ok(await mine.locator("img").count(), "my comment shows my photo");
       const sam = page.locator('#ei-notes-list .ph-avatar[data-avatar-email="sam@personalisationhub.com"]');
-      assert.equal((await sam.innerText()).trim(), "S", "no photo -> first-name initial");
+      assert.equal((await sam.innerText()).trim(), "SS", "no photo -> first + last initials");
       assert.notEqual(await sam.evaluate((el) => getComputedStyle(el).backgroundColor), "rgba(0, 0, 0, 0)", "coloured circle");
       assert.equal(Math.round((await mine.first().boundingBox()).width), 24);
       // A photo arriving later repaints in place, no reload.

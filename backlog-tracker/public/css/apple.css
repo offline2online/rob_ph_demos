@@ -157,3 +157,36 @@ input[type="checkbox"]:not(.no-switch):checked::after { transform: translateX(20
 .mic-btn { width: 40px; height: 40px; min-width: 40px; min-height: 40px; padding: 0; flex: none; aspect-ratio: 1 / 1; border-radius: 50%; box-sizing: border-box; font-size: 18px; }
 @media (pointer: coarse), (max-width: 1023px) { .mic-btn { width: 44px; height: 44px; min-width: 44px; min-height: 44px; } }
 .btn-attach.recording::before { flex: none; }
+
+/* ── Modals and drawers, one set of rules (ticket Ilf6OOZPUwFyjZCgZ6VX).
+   js/modal-polish.js adds .ap-sheet to every .modal-panel and
+   .ap-sticky-footer to its action row. ── */
+.modal-panel { --mp-pad: 20px; }
+.np-panel, .qc-panel { --mp-pad: 26px; }
+.modal-backdrop { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.modal-panel.ap-sheet { border-radius: 18px; background: var(--ap-card); box-shadow: 0 20px 60px rgba(0, 0, 0, .28), 0 0 0 .5px var(--ap-divider); }
+.modal-panel.ap-sheet input:not([type="checkbox"]):not([type="radio"]), .modal-panel.ap-sheet select, .modal-panel.ap-sheet textarea {
+  background: rgba(120, 120, 128, .1); border: .5px solid transparent; border-radius: var(--ap-radius-sm); padding: 10px 12px; font-family: inherit; box-sizing: border-box;
+}
+.modal-panel.ap-sheet input:focus-visible, .modal-panel.ap-sheet select:focus-visible, .modal-panel.ap-sheet textarea:focus-visible { background: var(--ap-card); border-color: var(--primary); outline: 2px solid var(--primary-tint); outline-offset: 0; }
+.modal-panel.ap-sheet .field-label { font-size: 12px; font-weight: 600; color: var(--text-muted); margin: 14px 0 6px; }
+.modal-panel.ap-sheet > .modal-header, .modal-panel.ap-sheet > form > .modal-header {
+  position: sticky; top: calc(-1 * var(--mp-pad)); z-index: 3; margin: calc(-1 * var(--mp-pad)) calc(-1 * var(--mp-pad)) 14px; padding: 16px var(--mp-pad) 12px;
+  background: var(--sheet-bg, var(--ap-card)); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-bottom: .5px solid var(--ap-divider);
+}
+/* × : last control in the header, top right, a round grey button as on iOS sheets */
+.modal-panel.ap-sheet .modal-header .modal-close {
+  order: 99; margin-left: auto; flex: none; width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 20px; line-height: 1; background: rgba(120, 120, 128, .16); color: var(--text-muted);
+}
+.modal-panel.ap-sheet .modal-header .modal-close:hover { background: rgba(120, 120, 128, .28); color: var(--text); }
+@media (pointer: coarse) { .modal-panel.ap-sheet .modal-header .modal-close { width: 44px; height: 44px; min-width: 44px; min-height: 44px; } }
+/* sticky action row: Save stays in view however long the form is */
+.modal-panel.ap-sheet .ap-sticky-footer {
+  position: sticky; bottom: calc(-1 * var(--mp-pad)); z-index: 3; margin: 16px calc(-1 * var(--mp-pad)) calc(-1 * var(--mp-pad)); padding: 12px var(--mp-pad) calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--sheet-bg, var(--ap-card)); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-top: .5px solid var(--ap-divider);
+}
+.modal-panel.ap-sheet .form-row.ap-sticky-footer .form-actions { margin-left: auto; }
+/* Save that has nothing to save */
+.modal-panel.ap-sheet button.btn-primary:disabled, .modal-panel.ap-sheet button[type="submit"]:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+@media (prefers-reduced-motion: reduce) { .modal-panel.ap-sheet * { transition: none !important; } }

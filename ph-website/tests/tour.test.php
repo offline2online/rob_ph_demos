@@ -81,7 +81,7 @@ ok( 200 === $j['status'] && $older === $html && 0 === $aux['http'] && 1 === coun
 list( $html, $j, $aux ) = $serve( 'backoff' );
 ok( 503 === $j['status'] && 0 === $aux['http'] && null === $aux['stored'], 'back-off with nothing cached: 503, no HTTP call' );
 
-foreach ( array( array( '/industries/telco/', 'GET' ), array( '/industries/telco/tour/x', 'GET' ), array( '/industries/telco/tour/', 'POST' ), array( '/industries/pharmacy/', 'GET' ), array( '/industries/pharmacy/tour/x', 'GET' ), array( '/industries/pharmacy/tour/', 'POST' ), array( '/industries/grocery/tour/', 'GET' ) ) as $c ) {
+foreach ( array( array( '/industries/telco/', 'GET' ), array( '/industries/telco/tour/x', 'GET' ), array( '/industries/telco/tour/', 'POST' ), array( '/industries/pharmacy/', 'GET' ), array( '/industries/pharmacy/tour/x', 'GET' ), array( '/industries/pharmacy/tour/', 'POST' ), array( '/industries/convenience/', 'GET' ), array( '/industries/convenience/tour/x', 'GET' ), array( '/industries/convenience/tour/', 'POST' ), array( '/industries/grocery/tour/', 'GET' ) ) as $c ) {
 	$out = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' ' . escapeshellarg( $c[0] ) . ' ' . $c[1] );
 	ok( false !== strpos( (string) $out, '"fellThrough":true' ), $c[1] . ' ' . $c[0] . ' is left to WordPress' );
 }
@@ -203,13 +203,21 @@ ok( 'pharmacy' === $pp['industry'] && 'Interactive product tour – Pharmacy' ==
 $pb = \AngieSnippets\PhIndustryEnhancements_10063\lead_ingest_body( $pp );
 ok( 'Interactive product tour – Pharmacy' === $pb['sourceLabel'] && '/industries/pharmacy/' === $pb['page'] && 'pharmacy' === $pb['pageIndustry'], 'pharmacy lead: ingest body sourceLabel, page and industry' );
 $GLOBALS['posts'] = array(); $GLOBALS['fired'] = array();
-foreach ( array( 'grocery', 'TELCO', '', null, array( 'pharmacy' ), 'telco ' ) as $bad ) {
+foreach ( array( 'retail-media', 'grocery', 'TELCO', '', null, array( 'pharmacy' ), 'telco ' ) as $bad ) {
 	$r = $call( array_merge( $good, array( 'industry' => $bad ) ) );
 	ok( 400 === $r->status && 'industry' === ( $r->data['field'] ?? '' ), 'unknown industry refused with 400: ' . json_encode( $bad ) );
 }
 $nb = $good; unset( $nb['industry'] );
 $r = $call( $nb ); ok( 400 === $r->status, 'a missing industry is refused with 400' );
 ok( ! $GLOBALS['posts'] && ! $GLOBALS['fired'], 'a refused industry stores and fires nothing' );
+/* fuel & convenience: its own industry, page, label and flow name */
+$GLOBALS['dedupe'] = false; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array();
+$gc = array_merge( $good, array( 'industry' => 'convenience', 'company' => 'Roadside Fuel Group', 'page' => '/industries/convenience/tour/', 'flow' => 'Fuel & convenience walkthrough' ) );
+$r = $call( $gc, '13.1.1.1' );
+$m = $GLOBALS['meta'][1] ?? array();
+ok( 200 === $r->status && 'Interactive product tour – Fuel & Convenience' === ( $m['ph_lead_source_label'] ?? '' ) && '/industries/convenience/' === ( $m['ph_lead_page'] ?? '' ) && 'Fuel & convenience walkthrough' === ( $m['ph_lead_tour_flow'] ?? '' ), 'convenience lead: source label, page and flow' );
+ok( 1 === count( $GLOBALS['mails'] ) && 'New Fuel & Convenience product tour lead: Roadside Fuel Group' === $GLOBALS['mails'][0][1], 'convenience lead: admin email subject names Fuel & Convenience' );
+ok( 'convenience' === end( $GLOBALS['fired'] )[1]['industry'] && 'Fuel & convenience walkthrough' === end( $GLOBALS['fired'] )[1]['flow'], 'convenience capture reaches the console with industry convenience' );
 /* one lead per person across both tours: a telco lead, then the same person on the pharmacy tour */
 $GLOBALS['dedupe'] = true; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array();
 $call( $good, '12.1.1.1' );

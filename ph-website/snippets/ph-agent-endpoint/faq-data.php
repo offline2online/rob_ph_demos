@@ -391,6 +391,55 @@ return array(
 			),
 		),
 	),
+	3266 => array(
+		'heading'   => 'White label retail media platform questions',
+		'questions' => array(
+			array(
+				'q'     => 'What is a white label retail media platform?',
+				'a'     => 'It is software that lets a retailer run its own retail media network under its own brand, selling advertising space on its screens, app and website. Personalisation Hub provides the platform, hosted inside your own AWS VPC, so you do not have to build the technology.',
+				'd'     => 'Advertisers and shoppers see your retail media network, with your name, logo and domain, not ours.',
+				'links' => array(
+					array( 'Use cases supported by Personalisation Hub', '/support-centre/getting-started/use-cases-supported-by-personalisation-hub/' ),
+					array( 'Benefits by industry', '/support-centre/getting-started/benefits-by-industry/' ),
+				),
+			),
+			array(
+				'q'     => 'Where does it run, and who owns the data?',
+				'a'     => 'It is self-hosted in your own AWS account and VPC, so shopper and sales data never leave your environment. There is no shared multi-tenant service.',
+				'd'     => 'Audiences are built from your own first-party customer data and kept secure inside your environment.',
+				'links' => array(
+					array( 'Where is my data stored and how is the platform secured?', '/support-centre/getting-started/where-is-my-data-stored-and-how-is-the-platform-secured/' ),
+				),
+			),
+			array(
+				'q'     => 'How quickly can we launch our own retail media network?',
+				'a'     => 'Install it from AWS Marketplace and go live in about an hour and a quarter, then add advertisers at your own pace. A 30-day free trial lets you run it in one store first.',
+				'd'     => 'After the trial it is billed through your AWS account, and you can cancel any time.',
+				'links' => array(
+					array( 'Install Personalisation Hub from AWS Marketplace', '/support-centre/platform-installation/install-personalisation-hub-from-aws-marketplace/' ),
+					array( 'Is there a free trial?', '/support-centre/getting-started/is-there-a-free-trial/' ),
+				),
+			),
+			array(
+				'q'     => 'How do advertisers create campaigns?',
+				'a'     => 'Advertisers create their own ads and campaigns, and the platform keeps optimising them as results come in. You stay in control of which audiences and screens they can reach.',
+				'd'     => 'Advertiser campaigns are targeted with the same rules as any other campaign, using the audiences and objectives you define.',
+				'links' => array(
+					array( 'Target a campaign', '/support-centre/launching-campaigns/target-a-campaign/' ),
+					array( 'Define target audiences and campaign objectives', '/support-centre/company-set-up-and-users/define-target-audiences-and-campaign-objectives/' ),
+				),
+			),
+			array(
+				'q'     => 'How do advertisers see the results of their campaigns?',
+				'a'     => 'With closed loop measurement, the platform connects ad exposure to in-store and online sales, so advertisers see the sales their campaigns drove. Advertisers see reach and sales results, never the underlying shopper data.',
+				'd'     => 'Selling your inventory to outside buyers through built-in SSP features is coming soon.',
+				'links' => array(
+					array( 'Where is my data stored and how is the platform secured?', '/support-centre/getting-started/where-is-my-data-stored-and-how-is-the-platform-secured/' ),
+					array( 'Benefits by industry', '/support-centre/getting-started/benefits-by-industry/' ),
+				),
+			),
+		),
+	),
 	2389 => array(
 		'heading'   => 'Self-hosted AWS deployment questions',
 		'questions' => array(
