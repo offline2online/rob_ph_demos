@@ -1,0 +1,587 @@
+{
+ "f1-01": [
+  {
+   "file": "f1-01-1-4e6a1cf7d9.mp3",
+   "hash": "4e6a1cf7d9",
+   "text": "The retailer has four screen types: forecourt, shop front, cooler doors and point of sale.",
+   "duration": 5.53,
+   "cue": null
+  }
+ ],
+ "f1-02": [
+  {
+   "file": "f1-02-1-019cfa9967.mp3",
+   "hash": "019cfa9967",
+   "text": "Each one has its own playlist.",
+   "duration": 1.71,
+   "cue": null
+  },
+  {
+   "file": "f1-02-2-e1a1e04b87.mp3",
+   "hash": "e1a1e04b87",
+   "text": "First, the forecourt playlist is set to rotate three campaigns, one after another.",
+   "duration": 4.8,
+   "cue": "Three campaigns in rotation"
+  },
+  {
+   "file": "f1-02-3-88a9ceab86.mp3",
+   "hash": "88a9ceab86",
+   "text": "New slots belong to Headquarters, for the retailer's own promotions.",
+   "duration": 4.01,
+   "cue": "Three slots, all Headquarters"
+  },
+  {
+   "file": "f1-02-4-41211815ee.mp3",
+   "hash": "41211815ee",
+   "text": "Slot one is the one the retailer will sell to brands.",
+   "duration": 3.03,
+   "cue": "Slot 1 goes to advertisers"
+  },
+  {
+   "file": "f1-02-5-9f9d0e125b.mp3",
+   "hash": "9f9d0e125b",
+   "text": "Its owner changes from Headquarters to Advertiser.",
+   "duration": 3.01,
+   "cue": "From Headquarters to Advertiser"
+  },
+  {
+   "file": "f1-02-6-94ca378e3f.mp3",
+   "hash": "94ca378e3f",
+   "text": "One slot in three now earns media revenue, and two keep promoting the retailer's own offers.",
+   "duration": 5.65,
+   "cue": "One advertiser slot in three"
+  }
+ ],
+ "f1-03": [
+  {
+   "file": "f1-03-1-d4761b039d.mp3",
+   "hash": "d4761b039d",
+   "text": "Shop front, cooler doors and point of sale get the same setup, in a few clicks.",
+   "duration": 4.63,
+   "cue": null
+  },
+  {
+   "file": "f1-03-2-e70fb76ac7.mp3",
+   "hash": "e70fb76ac7",
+   "text": "The retailer decides exactly how much screen time it sells.",
+   "duration": 3.26,
+   "cue": null
+  },
+  {
+   "file": "f1-03-3-b1b956b775.mp3",
+   "hash": "b1b956b775",
+   "text": "Four brand partner slots, one on every screen type, are now ready to sell.",
+   "duration": 4.48,
+   "cue": "Four advertiser slots, ready to sell"
+  }
+ ],
+ "f1-04": [
+  {
+   "file": "f1-04-1-5d3ff27ede.mp3",
+   "hash": "5d3ff27ede",
+   "text": "Frostline Cold Drinks is already set up as a direct advertiser, next to the advertisers synced from DSPs.",
+   "duration": 7.02,
+   "cue": null
+  }
+ ],
+ "f1-05": [
+  {
+   "file": "f1-05-1-815ef1fcf7.mp3",
+   "hash": "815ef1fcf7",
+   "text": "Slots are always sold through deals. A brand is never assigned to a slot directly.",
+   "duration": 4.93,
+   "cue": null
+  },
+  {
+   "file": "f1-05-2-a895affdb3.mp3",
+   "hash": "a895affdb3",
+   "text": "This direct deal gives Frostline all of December at a fixed CPM, and it's never sent to a DSP.",
+   "duration": 6.04,
+   "cue": "Create a direct deal"
+  }
+ ],
+ "f1-06": [
+  {
+   "file": "f1-06-1-bb4dc242cd.mp3",
+   "hash": "bb4dc242cd",
+   "text": "The four new brand partner slots start unassigned, so nothing plays in them yet.",
+   "duration": 4.46,
+   "cue": null
+  },
+  {
+   "file": "f1-06-2-b979dd0bac.mp3",
+   "hash": "b979dd0bac",
+   "text": "Frostline's deal is saved as a draft, ready to place on the slots.",
+   "duration": 3.97,
+   "cue": "The new deal, not on a slot yet"
+  },
+  {
+   "file": "f1-06-3-920ae8dfd8.mp3",
+   "hash": "920ae8dfd8",
+   "text": "Each slot's list offers DSPs for open auction, and deals.",
+   "duration": 3.99,
+   "cue": "Choose the deal"
+  },
+  {
+   "file": "f1-06-4-70953acd20.mp3",
+   "hash": "70953acd20",
+   "text": "The retailer picks the Frostline deal for all four.",
+   "duration": 2.75,
+   "cue": null
+  },
+  {
+   "file": "f1-06-5-9d85756903.mp3",
+   "hash": "9d85756903",
+   "text": "Direct deals and programmatic demand are managed side by side, in one place.",
+   "duration": 5.08,
+   "cue": null
+  },
+  {
+   "file": "f1-06-6-0a6c6b9bc2.mp3",
+   "hash": "0a6c6b9bc2",
+   "text": "All four slots now carry the deal, and the deal shows four slots. Then, save the changes.",
+   "duration": 5.61,
+   "cue": "All four brand partner slots"
+  }
+ ],
+ "f1-07": [
+  {
+   "file": "f1-07-1-1007aa5f04.mp3",
+   "hash": "1007aa5f04",
+   "text": "The forecast plays are for reference only: this is a direct buy at a fixed CPM.",
+   "duration": 5.08,
+   "cue": null
+  },
+  {
+   "file": "f1-07-2-810f46105a.mp3",
+   "hash": "810f46105a",
+   "text": "Finalising puts the deal live, and its revenue is reported just like DSP revenue.",
+   "duration": 5.55,
+   "cue": "Finalise and go live"
+  },
+  {
+   "file": "f1-07-3-5dc08dbfb1.mp3",
+   "hash": "5dc08dbfb1",
+   "text": "Every December window on all four screen types is now Frostline's.",
+   "duration": 4.03,
+   "cue": "Live · direct, not sent to a DSP"
+  }
+ ],
+ "f1-08": [
+  {
+   "file": "f1-08-1-59e0868c89.mp3",
+   "hash": "59e0868c89",
+   "text": "Finally, the retailer gives Frostline its own login, so the brand can manage its own campaigns.",
+   "duration": 5.67,
+   "cue": null
+  },
+  {
+   "file": "f1-08-2-37fde762a7.mp3",
+   "hash": "37fde762a7",
+   "text": "Alex gets the Advertiser role, so Alex only ever sees Frostline's campaigns.",
+   "duration": 4.84,
+   "cue": "An Advertiser login for Frostline"
+  },
+  {
+   "file": "f1-08-3-6623a4af25.mp3",
+   "hash": "6623a4af25",
+   "text": "The invitation goes out, and the retailer's first brand partner deal is done.",
+   "duration": 4.33,
+   "cue": "Send the invitation"
+  }
+ ],
+ "f2-01": [
+  {
+   "file": "f2-01-1-15e22e5b99.mp3",
+   "hash": "15e22e5b99",
+   "text": "Alex from Frostline signs in with the login the retailer provided. Frostline can run its own campaigns, or leave them to the retailer.",
+   "duration": 8.64,
+   "cue": null
+  },
+  {
+   "file": "f2-01-2-b34e26f837.mp3",
+   "hash": "b34e26f837",
+   "text": "Everything Alex sees is scoped to Frostline's own campaigns.",
+   "duration": 3.67,
+   "cue": "Only Frostline's campaigns"
+  }
+ ],
+ "f2-02": [
+  {
+   "file": "f2-02-1-311f6763bd.mp3",
+   "hash": "311f6763bd",
+   "text": "To start a new campaign, Alex selects Launch a New Campaign, at the top of the list.",
+   "duration": 4.76,
+   "cue": null
+  }
+ ],
+ "f2-03": [
+  {
+   "file": "f2-03-1-9af0217766.mp3",
+   "hash": "9af0217766",
+   "text": "There's no form to fill in. Alex just talks, and the AI campaign agent listens.",
+   "duration": 5.12,
+   "cue": null
+  },
+  {
+   "file": "f2-03-2-045001ee62.mp3",
+   "hash": "045001ee62",
+   "text": "As Alex speaks, it captures the campaign name, products, objective, screens and audience.",
+   "duration": 5.4,
+   "cue": null
+  },
+  {
+   "file": "f2-03-3-31c7a5a55a.mp3",
+   "hash": "31c7a5a55a",
+   "text": "A whole campaign brief, in the time it takes to describe it.",
+   "duration": 3.24,
+   "cue": null
+  }
+ ],
+ "f2-04": [
+  {
+   "file": "f2-04-1-f01e28545d.mp3",
+   "hash": "f01e28545d",
+   "text": "The agent writes the brief from what Alex said, and from how past campaigns performed.",
+   "duration": 4.74,
+   "cue": null
+  },
+  {
+   "file": "f2-04-2-635ecc078c.mp3",
+   "hash": "635ecc078c",
+   "text": "It's ready in seconds, with nothing typed by hand.",
+   "duration": 2.86,
+   "cue": null
+  },
+  {
+   "file": "f2-04-3-0335984f58.mp3",
+   "hash": "0335984f58",
+   "text": "Frostline's deal ID is pre-selected, so the campaign can only use the slots on that deal.",
+   "duration": 5.65,
+   "cue": "Deal ID, pre-selected"
+  },
+  {
+   "file": "f2-04-4-7ded1c15ea.mp3",
+   "hash": "7ded1c15ea",
+   "text": "Name, details, products, audience and objective are all filled in.",
+   "duration": 4.22,
+   "cue": "Campaign brief"
+  },
+  {
+   "file": "f2-04-5-15b9d9f7aa.mp3",
+   "hash": "15b9d9f7aa",
+   "text": "Only the deal's four screen types are switched on.",
+   "duration": 2.47,
+   "cue": "Touchpoints"
+  }
+ ],
+ "f2-05": [
+  {
+   "file": "f2-05-1-72ad9f5f21.mp3",
+   "hash": "72ad9f5f21",
+   "text": "Next, the agent writes the headline and copy from the agreed brand guidelines: Frostline's, the retailer's, or an agreed mix of both.",
+   "duration": 8.36,
+   "cue": null
+  },
+  {
+   "file": "f2-05-2-67ab4ee24b.mp3",
+   "hash": "67ab4ee24b",
+   "text": "Every word can be edited before any creative is made.",
+   "duration": 3.01,
+   "cue": "Storyboard and copy"
+  }
+ ],
+ "f2-06": [
+  {
+   "file": "f2-06-1-247e067fe8.mp3",
+   "hash": "247e067fe8",
+   "text": "With the copy agreed, the agent generates a creative preview of the first and last frames.",
+   "duration": 5.29,
+   "cue": null
+  },
+  {
+   "file": "f2-06-2-a80f61db0a.mp3",
+   "hash": "a80f61db0a",
+   "text": "The frames follow the agreed brand guidelines, and draw on what worked best in past campaigns.",
+   "duration": 5.59,
+   "cue": "Generating the preview"
+  },
+  {
+   "file": "f2-06-3-66c9dde6be.mp3",
+   "hash": "66c9dde6be",
+   "text": "Not quite right? Alex asks for a change in plain English, like a brighter background for daytime forecourts.",
+   "duration": 6.36,
+   "cue": "Refine in plain English"
+  },
+  {
+   "file": "f2-06-4-a4c96f7f72.mp3",
+   "hash": "a4c96f7f72",
+   "text": "And the frame is regenerated with the change.",
+   "duration": 2.5,
+   "cue": "Updated"
+  }
+ ],
+ "f2-07": [
+  {
+   "file": "f2-07-1-b40b0f835d.mp3",
+   "hash": "b40b0f835d",
+   "text": "Generate Creative Assets builds the final creative for every screen type: forecourt, shop front, cooler doors and point of sale.",
+   "duration": 8.11,
+   "cue": null
+  },
+  {
+   "file": "f2-07-2-0cb584fce6.mp3",
+   "hash": "0cb584fce6",
+   "text": "Once the approved campaign runs, its results feed Frostline's future campaigns, closing the loop.",
+   "duration": 5.82,
+   "cue": "Assets for every touchpoint"
+  }
+ ],
+ "f2-08": [
+  {
+   "file": "f2-08-1-c4db39ce74.mp3",
+   "hash": "c4db39ce74",
+   "text": "Frostline also wants a second campaign, just for Gold members.",
+   "duration": 3.82,
+   "cue": null
+  },
+  {
+   "file": "f2-08-2-dff38479d0.mp3",
+   "hash": "dff38479d0",
+   "text": "Targeting is set on the campaign's Targeting tab, exactly as the retailer would.",
+   "duration": 4.8,
+   "cue": "Open the Targeting tab"
+  },
+  {
+   "file": "f2-08-3-1cdbf597cd.mp3",
+   "hash": "1cdbf597cd",
+   "text": "Alex adds a rule: Audience Segments includes Loyalty Gold.",
+   "duration": 3.73,
+   "cue": "Target Loyalty Gold members"
+  },
+  {
+   "file": "f2-08-4-290178c496.mp3",
+   "hash": "290178c496",
+   "text": "Every option is a drop-down, so there's nothing to type and nothing to get wrong.",
+   "duration": 4.61,
+   "cue": null
+  },
+  {
+   "file": "f2-08-5-860c310ff2.mp3",
+   "hash": "860c310ff2",
+   "text": "Only the data sources, attributes and values the retailer has approved for brands appear here.",
+   "duration": 5.55,
+   "cue": null
+  },
+  {
+   "file": "f2-08-6-5524f565de.mp3",
+   "hash": "5524f565de",
+   "text": "The retailer controls 100% of the targeting it shares.",
+   "duration": 3.71,
+   "cue": "Controlled by the retailer"
+  },
+  {
+   "file": "f2-08-7-f3e248ff41.mp3",
+   "hash": "f3e248ff41",
+   "text": "The data stays in the retailer's own cloud. Frostline only ever picks a segment.",
+   "duration": 4.78,
+   "cue": "The retailer's loyalty tiers"
+  }
+ ],
+ "f2-09": [
+  {
+   "file": "f2-09-1-971fb8ad70.mp3",
+   "hash": "971fb8ad70",
+   "text": "A second rule adds purchase history from the retailer's point-of-sale data.",
+   "duration": 4.44,
+   "cue": null
+  },
+  {
+   "file": "f2-09-2-466469aa88.mp3",
+   "hash": "466469aa88",
+   "text": "Purchase History includes cold drinks, again picked from a list.",
+   "duration": 3.54,
+   "cue": null
+  },
+  {
+   "file": "f2-09-3-236dd2d126.mp3",
+   "hash": "236dd2d126",
+   "text": "Targeting on real loyalty and sales data is what makes in-store media so valuable, to brands and to the retailer.",
+   "duration": 7.42,
+   "cue": null
+  },
+  {
+   "file": "f2-09-4-a1ce565bd2.mp3",
+   "hash": "a1ce565bd2",
+   "text": "Gold members who buy cold drinks match both rules, and Alex saves the targeting with Save Changes.",
+   "duration": 6.08,
+   "cue": "Both rules in place"
+  },
+  {
+   "file": "f2-09-5-21b66dfcda.mp3",
+   "hash": "21b66dfcda",
+   "text": "Saving doesn't submit anything. Send for approval, at the top right, sends the campaign to the retailer.",
+   "duration": 5.97,
+   "cue": "Send for approval"
+  },
+  {
+   "file": "f2-09-6-25ad0a8b40.mp3",
+   "hash": "25ad0a8b40",
+   "text": "It's now awaiting approval, with no activation toggle until the retailer approves it.",
+   "duration": 5.16,
+   "cue": "Awaiting approval"
+  }
+ ],
+ "f2-10": [
+  {
+   "file": "f2-10-1-f1dabdfa14.mp3",
+   "hash": "f1dabdfa14",
+   "text": "Every brand campaign needs the retailer's approval before it can play. Frostline's is waiting in Campaign Approval.",
+   "duration": 7.0,
+   "cue": null
+  },
+  {
+   "file": "f2-10-2-81cd7ddf45.mp3",
+   "hash": "81cd7ddf45",
+   "text": "One click on Approve Selected, and Frostline's Gold campaign is approved, with its own creative ID.",
+   "duration": 6.31,
+   "cue": "Approve Selected"
+  },
+  {
+   "file": "f2-10-3-2dbaa4ce3a.mp3",
+   "hash": "2dbaa4ce3a",
+   "text": "Once it's approved, the activation toggle appears in place of Send for approval.",
+   "duration": 4.65,
+   "cue": "Ready to activate"
+  }
+ ],
+ "f3-01": [
+  {
+   "file": "f3-01-1-efdcdb2629.mp3",
+   "hash": "efdcdb2629",
+   "text": "Emma, a Gold loyalty member, pulls in to Highway 9 Services.",
+   "duration": 3.88,
+   "cue": null
+  },
+  {
+   "file": "f3-01-2-ca603efc83.mp3",
+   "hash": "ca603efc83",
+   "text": "The retailer's loyalty app welcomes her by name and invites her to check in.",
+   "duration": 4.46,
+   "cue": "Welcome to Highway 9 Services"
+  },
+  {
+   "file": "f3-01-3-e90e3201e3.mp3",
+   "hash": "e90e3201e3",
+   "text": "One tap, and she's checked in.",
+   "duration": 1.64,
+   "cue": "Checked in"
+  },
+  {
+   "file": "f3-01-4-069ece1be1.mp3",
+   "hash": "069ece1be1",
+   "text": "Frostline's Gold offer is first in her app.",
+   "duration": 2.67,
+   "cue": "Frostline's offer, in the retailer's app"
+  }
+ ],
+ "f3-02": [
+  {
+   "file": "f3-02-1-4830a706b9.mp3",
+   "hash": "4830a706b9",
+   "text": "Her check-in links to what the retailer already knows: her loyalty tier and what she buys.",
+   "duration": 5.03,
+   "cue": null
+  },
+  {
+   "file": "f3-02-2-ad4c89c794.mp3",
+   "hash": "ad4c89c794",
+   "text": "She matches both of Frostline's rules, in real time.",
+   "duration": 3.18,
+   "cue": "A match on both rules"
+  }
+ ],
+ "f3-03": [
+  {
+   "file": "f3-03-1-97fe869e29.mp3",
+   "hash": "97fe869e29",
+   "text": "Every screen rotates three campaigns: two for the retailer, and the brand partner slot.",
+   "duration": 5.18,
+   "cue": null
+  },
+  {
+   "file": "f3-03-2-c148af44ba.mp3",
+   "hash": "c148af44ba",
+   "text": "Most shoppers see Frostline's standard creative in that slot.",
+   "duration": 3.14,
+   "cue": "Three campaigns in every rotation"
+  },
+  {
+   "file": "f3-03-3-ece7bb359f.mp3",
+   "hash": "ece7bb359f",
+   "text": "But not Emma.",
+   "duration": 0.94,
+   "cue": null
+  },
+  {
+   "file": "f3-03-4-70568d93b3.mp3",
+   "hash": "70568d93b3",
+   "text": "Recognised at the pump, she sees Frostline's Gold version, personalised for her.",
+   "duration": 4.71,
+   "cue": "Recognised at the pump"
+  },
+  {
+   "file": "f3-03-5-1592073a36.mp3",
+   "hash": "1592073a36",
+   "text": "At the shop front, the same campaign points her to the cooler doors, right next to her.",
+   "duration": 4.67,
+   "cue": "At the shop front"
+  },
+  {
+   "file": "f3-03-6-21b34710c5.mp3",
+   "hash": "21b34710c5",
+   "text": "At the cooler doors, right where the drinks are: a free upsize on every Frostline.",
+   "duration": 4.61,
+   "cue": "At the cooler doors"
+  },
+  {
+   "file": "f3-03-7-3874b1ce8d.mp3",
+   "hash": "3874b1ce8d",
+   "text": "And at the till, her upsize is applied. One shopper, four screens, one joined-up offer.",
+   "duration": 5.27,
+   "cue": "At the POS"
+  }
+ ],
+ "f3-04": [
+  {
+   "file": "f3-04-1-80ffd5f1b7.mp3",
+   "hash": "80ffd5f1b7",
+   "text": "Behind the scenes, Frostline holds slot one on all four screen types, every day of December.",
+   "duration": 5.74,
+   "cue": null
+  },
+  {
+   "file": "f3-04-2-7d6c8730ed.mp3",
+   "hash": "7d6c8730ed",
+   "text": "Each booking carries the default creative and the personalised Gold version, both approved.",
+   "duration": 5.33,
+   "cue": "Default plus personalised"
+  }
+ ],
+ "f3-05": [
+  {
+   "file": "f3-05-1-b9f1e531a3.mp3",
+   "hash": "b9f1e531a3",
+   "text": "Booking revenue shows what the slots earn: every window sold, at Frostline's fixed CPM.",
+   "duration": 5.61,
+   "cue": null
+  },
+  {
+   "file": "f3-05-2-59b67e01b8.mp3",
+   "hash": "59b67e01b8",
+   "text": "That's over 67 thousand dollars in two weeks, from one slot in three.",
+   "duration": 4.42,
+   "cue": "USD 67,494 in two weeks"
+  }
+ ]
+}
