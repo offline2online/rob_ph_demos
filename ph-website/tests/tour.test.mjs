@@ -706,6 +706,18 @@ try {
         assert.ok(g.sw <= g.cw, `flow ${f + 1}: no sideways scroll at 390px: ${g.sw} > ${g.cw}`);
       }
       await m.close(); }
+    // Steady caption bar (10 Nov 2026): whichever of the 77 voiceover lines is showing, the controls (#dots) and the fine print never move, at any frame width.
+    { const lines = Object.values(vscript).flat(); assert.strictEqual(lines.length, 77, "77 voiceover lines");
+      const c = await browser.newPage({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
+      await c.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast }) : r.abort(); });
+      await c.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example" })));
+      await c.goto("http://x.test/industries/retail-media/tour/?embed=1"); await c.waitForSelector("#fs", { state: "visible" });
+      for (const w of [420, 768, 900, 1040, 1160, 1400]) {
+        await c.setViewportSize({ width: w, height: 900 }); await c.waitForTimeout(400); // let the stage rescale before measuring
+        const tops = await c.evaluate((lines) => { const cap = document.getElementById("capS"), seen = { dots: new Set(), fine: new Set(), play: new Set() }; for (const l of lines) { cap.textContent = l; seen.dots.add(Math.round(document.getElementById("dots").getBoundingClientRect().top * 10)); seen.fine.add(Math.round(document.querySelector(".fine").getBoundingClientRect().top * 10)); seen.play.add(Math.round(document.getElementById("play").getBoundingClientRect().top * 10)); } return { dots: seen.dots.size, fine: seen.fine.size, play: seen.play.size }; }, lines);
+        assert.deepStrictEqual(tops, { dots: 1, fine: 1, play: 1 }, `caption lines never move the controls or the fine print at ${w}px: ` + JSON.stringify(tops));
+      }
+      await c.close(); }
     // The voiceover timing tests (tools/retail-media-tour/votest.js) need the audio: they run when TOUR_ASSETS_DIR is set.
     if (assetsDir && fs.existsSync(path.join(assetsDir, "vo", "manifest.json"))) {
       const { spawnSync } = await import("child_process");
