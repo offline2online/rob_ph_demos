@@ -5,8 +5,10 @@
 // opens the lead summary drawer, whose stage select moves it without a pointer
 // drag, which is how it moves on a tablet. Tiles are coloured by industry
 // (industry-palette.js). A write is live for everyone at once through onSnapshot. The
-// Enrich button calls /leadEnrich/v1/enrich (functions/lead-enrich.js), which
-// writes the company's findings back onto the lead and its contacts.
+// Enrich / Refresh info button queues a run at /leadEnrich/v1/enrich
+// (functions/lead-enrich.js): an agent researches the company on the web and the
+// findings (logo, facts, news, financials) arrive through the same snapshot.
+// A new lead is enriched by itself when it is created.
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
@@ -19,6 +21,7 @@ import { mountAceGrid } from "./ace-grid.js";
 import { mountAceDetail } from "./ace-detail.js";
 import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION } from "./prospect-detail-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
+import { enrichmentHTML, enrichmentRunning, enrichButtonLabel, enrichmentStatus, logoHTML, wireLogoFallback } from "./enrichment-view.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 // Addresses come from Firestore, which an agent can write: http(s) only.
@@ -117,6 +120,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       <div class="lead-lane-body">${lanes[s.key].map(cardHTML).join("")}</div>
     </section>`).join("");
     if (summaryId) renderSummary();
+    if (openId && !backdrop.hidden) { const open = leads.find((x) => x.id === openId); if (open) renderEnrichment(open); }
     if (aceRows) renderAce();
   }
 
@@ -199,8 +203,6 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (!l) { closeSummary(); return; }
     const entry = leadIndustryEntry(l);
     const e = l.enrichment;
-    const at = e && e.at && typeof e.at.toDate === "function" ? e.at.toDate() : (e && e.at ? new Date(e.at) : null);
-    const enrichedAt = at && !Number.isNaN(at.getTime()) ? at.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "";
     const stageOptions = STAGES.map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
     $("lead-sum-title").textContent = l.company.name;
     const panel = $("lead-summary-panel");
@@ -209,16 +211,15 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-sum-badges").innerHTML = `<span class="lead-chip">${esc(industryChipText(l))}</span>${l.test ? '<span class="lead-test-badge">Test</span>' : ""}`;
     const keepStage = document.activeElement && document.activeElement.id === "lead-sum-stage";
     $("lead-sum-body").innerHTML = `
-      <section class="lead-sum-section"><h3>Company</h3><dl class="lead-sum-dl">
+      <section class="lead-sum-section"><div class="enrich-head">${logoHTML(e, l.company.name)}<h3>Company</h3></div><dl class="lead-sum-dl">
         ${row("Name", esc(l.company.name))}
         ${row("Website", l.company.website ? linkOf(l.company.website) : "")}
         ${row("Industry", l.company.industry ? esc(l.company.industry) : "")}
         ${row("Countries", l.company.countries.length ? esc(l.company.countries.join(", ")) : "")}
         ${row("AWS account ID", esc(l.company.awsAccountId || ""))}
         ${row("Stores", l.company.storeCount != null ? esc(l.company.storeCount.toLocaleString("en-GB")) : "")}
-        ${row("Enrichment", e && e.summary ? esc(e.summary) : (e ? "Enriched; no summary." : "Not enriched yet."))}
-        ${row("Last enriched", esc(enrichedAt))}
       </dl></section>
+      <section class="lead-sum-section" id="lead-sum-research"><h3>Company research</h3>${enrichmentHTML(e) || '<p class="field-hint">Not enriched yet.</p>'}</section>
       ${tamHTML(l)}
       ${prospectHTML(l)}
       <section class="lead-sum-section"><h3>Lead</h3><dl class="lead-sum-dl">
@@ -241,6 +242,10 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
         ${c.awsAccountId ? `<p class="lead-card-line">AWS account ${esc(c.awsAccountId)}</p>` : ""}
       </div>`).join("") : '<p class="field-hint">No contacts yet.</p>'}</section>`;
     $("lead-sum-delete").hidden = !canEdit();
+    setEnrichButton($("lead-sum-enrich"), e);
+    const sumStatus = enrichmentStatus(e);
+    if (sumStatus || enrichStatusShown.summary) { $("lead-sum-status").textContent = sumStatus; enrichStatusShown.summary = !!sumStatus; }
+    wireLogoFallback($("lead-sum-body"));
     if (keepStage) $("lead-sum-stage").focus();
   }
   function openSummary(id) {
@@ -286,9 +291,9 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   $("lead-sum-enrich").addEventListener("click", async () => {
     if (!canEdit() || !summaryId) return;
     const btn = $("lead-sum-enrich"); const status = $("lead-sum-status");
-    btn.disabled = true; status.textContent = "Looking the company up…";
-    try { status.textContent = (await runEnrich(summaryId)).message; } catch (err) { status.textContent = `Enrichment failed: ${err && err.message ? err.message : err}`; }
-    finally { btn.disabled = false; }
+    btn.disabled = true; status.textContent = "Starting the research…";
+    try { const r = await runEnrich(summaryId); status.textContent = r.message; enrichStatusShown.summary = true; if (!r.ok) btn.disabled = false; }
+    catch (err) { status.textContent = `Enrichment failed: ${err && err.message ? err.message : err}`; btn.disabled = false; }
   });
 
   // ── The form ────────────────────────────────────────────────────────────
@@ -343,20 +348,20 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
 
   function setError(msg) { const e = $("lead-error"); e.textContent = msg || ""; e.hidden = !msg; }
 
+  // The Enrich / Refresh info button: its label follows the record, and it waits while a run is underway.
+  const enrichStatusShown = { summary: false, form: false };
+  function setEnrichButton(btn, e) {
+    btn.lastChild.textContent = ` ${enrichButtonLabel(e)}`;
+    btn.disabled = enrichmentRunning(e);
+  }
   function renderEnrichment(l) {
     const e = l && l.enrichment;
     const box = $("lead-enrichment");
-    if (!e) { box.innerHTML = '<p class="field-hint">Not enriched yet.</p>'; return; }
-    const at = e.at && typeof e.at.toDate === "function" ? e.at.toDate() : (e.at ? new Date(e.at) : null);
-    const stack = Array.isArray(e.techStack) ? e.techStack : [];
-    const sources = Array.isArray(e.sources) ? e.sources : [];
-    const li = safeUrl(e.linkedinCompany);
-    box.innerHTML = `
-      ${at && !Number.isNaN(at.getTime()) ? `<p class="field-hint">Last enriched ${esc(at.toLocaleString("en-GB"))}</p>` : ""}
-      ${e.summary ? `<p class="lead-enrich-summary">${esc(e.summary)}</p>` : ""}
-      ${li ? `<p><a href="${esc(li)}" target="_blank" rel="noopener noreferrer">Company LinkedIn page</a></p>` : ""}
-      ${stack.length ? `<p class="lead-stack-label">Tech stack</p><ul class="lead-stack">${stack.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
-      ${sources.length ? `<ul class="lead-sources">${sources.map((s) => `<li data-status="${esc(s.status)}">${esc(s.message)}</li>`).join("")}</ul>` : ""}`;
+    box.innerHTML = e && e.at ? `<div class="enrich-head">${logoHTML(e, l.company.name)}</div>${enrichmentHTML(e)}` : '<p class="field-hint">Not enriched yet.</p>';
+    wireLogoFallback(box);
+    setEnrichButton($("lead-enrich-btn"), e);
+    const st = enrichmentStatus(e);
+    if (st || enrichStatusShown.form) { $("lead-enrich-status").textContent = st; enrichStatusShown.form = !!st; }
   }
   function renderAccount(l) {
     const a = l && l.customerAccount;
@@ -454,21 +459,13 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     try { await deleteDoc(doc(db, "leads", l.id)); closeLead(); } catch (err) { setError(`Couldn't delete: ${err && err.message ? err.message : err}`); }
   });
 
-  // Calls the enrich function for a saved lead and re-reads what it wrote.
+  // Queues an enrichment run for a saved lead. The agent's findings arrive
+  // through the leads snapshot, which re-renders the drawer and the form.
   async function runEnrich(id) {
     const resp = await fetch("/leadEnrich/v1/enrich", { method: "POST", headers: await apiHeaders(), body: JSON.stringify({ leadId: id }) });
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok) return { ok: false, message: body.error || `Enrichment failed (HTTP ${resp.status}).` };
-    const snap = await getDoc(doc(db, "leads", id));
-    let lead = null;
-    if (snap.exists()) {
-      lead = normaliseLead(snap.id, snap.data());
-      const i = leads.findIndex((x) => x.id === lead.id);
-      if (i >= 0) leads[i] = lead;
-      if (summaryId === id) renderSummary();
-    }
-    const added = (body.companyFieldsAdded || []).length + (body.contactsEnriched || 0);
-    return { ok: true, lead, message: added || body.techStack ? `Done: ${body.techStack || 0} technologies, ${added} details added.` : "Done: nothing new was found." };
+    return { ok: true, message: "Researching the company on the web… the findings appear here when it finishes (usually under two minutes)." };
   }
 
   $("lead-enrich-btn").addEventListener("click", async () => {
@@ -476,15 +473,16 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const status = $("lead-enrich-status");
     const btn = $("lead-enrich-btn");
     btn.disabled = true;
-    status.textContent = "Saving, then looking the company up…";
+    status.textContent = "Saving, then starting the research…";
     try {
-      if (!(await persist())) { status.textContent = ""; return; }
+      if (!(await persist())) { status.textContent = ""; btn.disabled = false; return; }
       const r = await runEnrich(openId);
-      if (r.lead) { fill(r.lead); renderEnrichment(r.lead); }
-      status.textContent = r.message;
+      status.textContent = r.message; enrichStatusShown.form = true;
+      if (!r.ok) btn.disabled = false;
     } catch (err) {
       status.textContent = `Enrichment failed: ${err && err.message ? err.message : err}`;
-    } finally { btn.disabled = false; }
+      btn.disabled = false;
+    }
   });
 
   $("lead-convert-btn").addEventListener("click", async () => {

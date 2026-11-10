@@ -78,6 +78,7 @@ function makeCtx(o, width) {
   const at = (step, selector = "") => { ctx.step = step; ctx.selector = selector; };
   ctx.at = at;
   ctx.aceWrites = o.aceWrites;
+  ctx.enrichCalls = o.enrichCalls;
   // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
   ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
   ctx.click = async (selector, step) => { at(step || `click ${selector}`, selector); await page.click(selector); };
@@ -2056,6 +2057,61 @@ const scenarios = [
       // The lead form takes the company's and a contact's AWS account ID.
       await c.page.click(".lead-card");
       await c.visible("#lead-sum-body", "the lead summary opens");
+    },
+  },
+  {
+    name: "Promote: company research - logo, news and financials on a lead and a TAM record, with Enrich / Refresh info",
+    seed: () => seed({
+      leads: { gk: { company: { name: "Greene King", website: "", industry: "Pubs & Hospitality", countries: ["United Kingdom"], storeCount: 2600 }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, prospectId: "gk-uk", createdAt: t(T0), updatedAt: t(T0),
+        enrichment: { at: t(T0 + 10), by: "auto", summary: "A UK pub retailer and brewer.", hq: "Bury St Edmunds, United Kingdom", employees: "38,000", techStack: ["Zonal"], vendors: ["Fourth"],
+          news: [{ title: "Greene King opens new pubs", url: "https://news.example/a", date: "2026-10-01", source: "The Caterer" }],
+          financials: { summary: "Revenue rose 5% to £2.4bn.", period: "FY2024", sources: [{ title: "Annual report", url: "https://gk.example/ar.pdf", date: "2025-06-30" }] },
+          sources: [{ source: "agent", status: "ok", message: "Web research found 9 details." }], request: { id: "r0", status: "done" } } } },
+      prospects: { "gk-uk": { name: "Greene King", country: "United Kingdom", priority: "high", leadId: "gk", createdAt: t(T0), updatedAt: t(T0) } },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.page.click('.lead-card[data-lead-id="gk"]');
+      await c.visible("#lead-sum-research", "the lead shows its company research");
+      const sum = await c.text("#lead-sum-research");
+      for (const want of ["A UK pub retailer and brewer.", "Bury St Edmunds", "Recent news", "Greene King opens new pubs", "The Caterer", "1 Oct 2026", "Recent financials", "FY2024", "Revenue rose 5% to £2.4bn.", "Zonal"]) assert.ok(sum.includes(want), `the research shows ${want}`);
+      assert.strictEqual(await c.page.locator('#lead-sum-research a[href="https://news.example/a"][target="_blank"]').count(), 1, "a news item links to its source");
+      assert.strictEqual(await c.page.locator('#lead-sum-research a[href="https://gk.example/ar.pdf"]').count(), 1, "the financials link to their source");
+      assert.strictEqual((await c.text("#lead-sum-enrich")).trim().replace(/^\S+\s/, ""), "Refresh info", "an enriched lead offers a refresh");
+      // The logo arrives with a run's findings.
+      await c.page.evaluate(() => globalThis.__fbStub.commit([{ op: "update", ref: { type: "doc", id: "gk", path: "leads/gk", parentPath: "leads" }, data: { enrichment: { ...globalThis.__fbStub.col("leads").get("gk").enrichment, logoUrl: `${location.origin}/img/ph-mark-64.png` } } }]));
+      await c.visible('#lead-summary-panel img.enrich-logo[alt="Greene King logo"]', "the company's logo shows on the lead");
+      // One click refreshes: the run is queued, the button waits, the new findings replace the old.
+      await c.click("#lead-sum-enrich", "Refresh info");
+      await until(async () => c.enrichCalls.some((x) => x.leadId === "gk"), "the refresh to be requested", 5000);
+      await c.page.evaluate(() => { const e = globalThis.__fbStub.col("leads").get("gk").enrichment; globalThis.__fbStub.commit([{ op: "update", ref: { type: "doc", id: "gk", path: "leads/gk", parentPath: "leads" }, data: { enrichment: { ...e, request: { id: "r1", status: "running", startedAt: new Date().toISOString() } } } }]); });
+      await until(async () => c.page.locator("#lead-sum-enrich").isDisabled(), "the button to wait while the run is underway", 5000);
+      assert.ok((await c.text("#lead-sum-status")).includes("Researching"), "the drawer says it is researching");
+      await c.page.evaluate(() => { const e = globalThis.__fbStub.col("leads").get("gk").enrichment; globalThis.__fbStub.commit([{ op: "update", ref: { type: "doc", id: "gk", path: "leads/gk", parentPath: "leads" }, data: { enrichment: { ...e, news: [{ title: "Greene King reports trading update", url: "https://news.example/b", date: "2026-11-09", source: "Reuters" }, ...e.news], request: { id: "r1", status: "done" } } } }]); });
+      await until(async () => (await c.text("#lead-sum-research")).includes("Greene King reports trading update"), "the latest news to show", 5000);
+      assert.ok(!(await c.page.locator("#lead-sum-enrich").isDisabled()), "the button is ready again");
+      assert.ok((await c.text("#lead-sum-research")).includes("Revenue rose 5%"), "nothing known was blanked");
+      await c.click("#lead-sum-close", "close the lead drawer"); await c.hidden("#lead-summary-panel");
+      // The TAM record: not enriched yet, so it offers Enrich; its findings show on the profile.
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      await c.visible('#prospects-grid .ag-row[row-id="gk-uk"] [col-id="name"] button.prospect-name-btn', "the TAM record is listed");
+      await c.page.click('#prospects-grid .ag-row[row-id="gk-uk"] [col-id="name"] button.prospect-name-btn');
+      await c.visible("#prospect-detail #pd-research", "the profile has a Company research card");
+      assert.ok((await c.text("#pd-research")).includes("Not enriched yet"), "an unenriched record says so");
+      assert.strictEqual((await c.text('#prospect-detail [data-act="enrich"]')).trim().replace(/^\S+/, "").trim(), "Enrich", "it offers Enrich");
+      await c.click('#prospect-detail [data-act="enrich"]', "Enrich the TAM record");
+      await until(async () => c.enrichCalls.some((x) => x.prospectId === "gk-uk"), "the TAM record's run to be requested", 5000);
+      await c.page.evaluate(() => globalThis.__fbStub.commit([{ op: "update", ref: { type: "doc", id: "gk-uk", path: "prospects/gk-uk", parentPath: "prospects" }, data: { enrichment: {
+        at: new Date().toISOString(), summary: "A UK pub retailer and brewer.", logoUrl: `${location.origin}/img/ph-mark-64.png`,
+        news: [{ title: "Greene King opens new pubs", url: "https://news.example/a", date: "2026-10-01", source: "The Caterer" }],
+        financials: { summary: "Revenue rose 5% to £2.4bn.", period: "FY2024", sources: [] }, request: { id: "r2", status: "done" } } } }]));
+      await until(async () => (await c.text("#pd-research")).includes("Greene King opens new pubs"), "the TAM record's news to show", 5000);
+      assert.ok((await c.text("#pd-research")).includes("Revenue rose 5%"), "and its financials");
+      await c.visible('#prospect-detail img.pd-logo[alt="Greene King logo"]', "the logo shows on the TAM record");
+      assert.strictEqual((await c.text('#prospect-detail [data-act="enrich"]')).trim().replace(/^\S+/, "").trim(), "Refresh info", "then it offers a refresh");
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
     },
   },
 ];

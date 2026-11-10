@@ -266,6 +266,12 @@ class FilterHeader {
 }
 
 export function mountProspectsPage({ db, auth, canEdit, askName }) {
+  // The console's API headers (the same as app.js's consoleApiHeaders), for the detail view's Enrich button.
+  const apiHeaders = async () => {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Not signed in.");
+    return { "X-Firebase-ID-Token": await user.getIdToken(), "Content-Type": "application/json" };
+  };
   const page = $("prospects-page");
   const host = $("prospects-grid");
   const status = $("prospects-status");
@@ -459,7 +465,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
 
   // ── Company detail view ──────────────────────────────────────────────────
   const detailUi = mountProspectDetail({
-    db, root: $("prospect-detail"), canEdit, me, say,
+    db, root: $("prospect-detail"), canEdit, me, say, apiHeaders,
     getRow: (id) => rows.find((x) => x.id === id) || null,
     getCompanyRows: (key) => rows.filter((x) => slugId(x.name) === key),
     onAllFields: (id) => openDrawer(id, null),

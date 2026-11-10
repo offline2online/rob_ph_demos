@@ -333,6 +333,7 @@ function normaliseProspect(id, d) {
     leadId: String(x.leadId || ""),
     source: String(x.source || ""),
     notes: String(x.notes || ""),
+    enrichment: x.enrichment && typeof x.enrichment === "object" && !Array.isArray(x.enrichment) ? x.enrichment : null, // written by functions/lead-enrich.js
     updatedAtMs: ms(x.updatedAt), createdAtMs: ms(x.createdAt),
   };
 }

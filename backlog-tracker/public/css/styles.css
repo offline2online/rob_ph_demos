@@ -2550,6 +2550,24 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .lead-stack-label { margin: 8px 0 0; font-size: 12.5px; font-weight: 600; }
 .lead-sources { margin: 4px 0 8px; padding-left: 18px; font-size: 12.5px; color: var(--text-muted); }
 .lead-sources li[data-status="error"] { color: #b3261e; }
+/* Company research (enrichment-view.js): the logo, facts, news and financials on a lead and a TAM record. */
+.enrich-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.enrich-head h3 { margin: 0; }
+.enrich-logo { width: 40px; height: 40px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); background: #fff; flex: none; }
+.enrich-logo-fallback { display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; color: var(--primary-text); background: var(--primary-tint); }
+.enrich-view { font-size: 13.5px; }
+.enrich-summary { margin: 4px 0 8px; line-height: 1.5; }
+.enrich-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 16px; margin: 0 0 8px; }
+.enrich-facts dt { font-size: 12px; color: var(--text-muted); }
+.enrich-facts dd { margin: 0; overflow-wrap: anywhere; }
+.enrich-label { margin: 10px 0 2px; font-size: 12.5px; font-weight: 600; }
+.enrich-line { margin: 4px 0; }
+.enrich-news { margin: 2px 0 8px; padding-left: 18px; }
+.enrich-news li { margin: 3px 0; overflow-wrap: anywhere; }
+.enrich-meta { display: block; font-size: 12px; color: var(--text-muted); }
+.enrich-fin { margin: 2px 0 4px; line-height: 1.5; }
+.enrich-updated { margin: 8px 0 2px; }
+.pd-enrich-status { margin: 4px 0 8px; }
 @media (max-width: 640px) {
   .leads-board { grid-template-columns: 1fr; }
   .lead-sum-stage, .lead-panel input, .lead-panel select { min-height: 44px; font-size: 16px; }

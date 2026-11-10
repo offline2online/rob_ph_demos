@@ -2566,10 +2566,20 @@ every destination already existed.
   storeCount}`, `contacts[] {id, name, jobTitle, buyingRole, email,
   linkedin, enrichment?}`, `stage`, `source`, `assignee`, `customerAccount
   {id, name}`, `enrichment`. Cards drag between lanes or use their "Move to"
-  select (the way on a tablet). **Enrich** (`functions/lead-enrich.js`, served
-  at `/leadEnrich/v1/enrich`) reads the company's website and, when a
-  BuiltWith key is stored under Settings → Integrations & MCP, its tech stack,
-  company details and named contacts; it fills blanks only. **Convert and link
+  select (the way on a tablet). **Enrichment** (`functions/lead-enrich.js`, 10 Nov
+  2026) is agent-led and uses no paid data provider: Claude with web search and web
+  fetch (the `ANTHROPIC_API_KEY` secret Staff Kanban already uses) researches the
+  company by name (website optional, no email needed) for industry, countries, HQ,
+  store count, size, tech stack and vendors, LinkedIn page, summary, logo, recent
+  news and recent financials (with links and dates), and the company's home page is
+  read for its icon. It runs by itself when a lead or a Prospects (TAM) record is
+  created (`enrichLeadOnWrite` / `enrichProspectOnWrite`), and on the
+  **Enrich / Refresh info** button on the lead and on the TAM record, which queues a
+  run at `/leadEnrich/v1/enrich` (`enrichment.request`); the findings arrive
+  through the page's snapshot. Results go to the record and the record it is
+  linked to (and the TAM company profile); it only adds or updates, never blanks,
+  and never overwrites a field a person typed. The page side is
+  `public/js/enrichment-view.js`. **Convert and link
   account** moves the lead to Closed Won and records the customer account.
   Agents manage the whole pipeline over MCP (`functions/leads.js`): `list_leads`,
   `get_lead`, `create_lead(s)`, `update_lead`, `update_lead_stage`, contact and

@@ -4156,19 +4156,58 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   `{at, by, kind, text}` to the lead's `history` (newest 100), shown on the
   lead drawer as "Notes and history"; the board's own edits are not logged
   there. The website capture that creates leads writes the same `leads` documents.
-- **Enrichment**: the lead's **Enrich** button saves the form, then
-  `leadEnrich` (`functions/lead-enrich.js`) reads the company's website (title,
-  description, its LinkedIn page) and, if a BuiltWith key is stored in the
-  encrypted key store (Settings → Integrations & MCP, provider `builtwith`),
-  the tech stack, company country and industry and any named contacts. It
-  fills blanks only (a typed store count or industry is never overwritten),
-  writes `enrichment` on the card and an `enrichment` note on each matching
-  contact, and reports each source as ok, not configured or error. Only public
-  addresses are fetched (private, loopback and metadata addresses, and
-  redirects to them, are refused). Store count is filled only when a source
-  supplies one; none of the current two does. LinkedIn: there is no public
-  lookup API, so only the company's LinkedIn page found on its own website is
-  recorded, and contacts' LinkedIn addresses are kept as entered.
+- **Enrichment (agent-led, 10 Nov 2026)**: `functions/lead-enrich.js`. It
+  replaced the website + BuiltWith lookup, which saved an enriched date but no
+  data when no BuiltWith key was stored. No paid data provider is used and no
+  email address is needed:
+  - **Research**: an agent (Claude, `claude-opus-5-5`, with the server-side web
+    search and web fetch tools, under the `ANTHROPIC_API_KEY` secret Staff
+    Kanban's agent fill already uses) researches the company by name and, when
+    known, website, and answers with industry, countries/markets, HQ city and
+    country, store count, employees, revenue, tech stack, vendors, the LinkedIn
+    company page, a short summary, a logo link, up to five recent news items
+    (title, link, date, source) and the most recent financials (summary,
+    period, source links and dates), plus any other facts (owner, founded…).
+    The company's home page (the agent's website when none is known) is read
+    directly for its description, LinkedIn link and declared icon. Without
+    the key the agent reports "not set up" and only the website is read.
+  - **Logo**: the site's apple-touch-icon, else its icon, else the agent's logo
+    link, else `/favicon.ico` when it is an image. Stored as
+    `enrichment.logoUrl`; shown on the lead drawer and form, and on the TAM
+    record's header (the profile's own logo wins when set).
+  - **When it runs**: by itself when a lead or a Prospects (TAM) record is
+    created (Firestore triggers `enrichLeadOnWrite` / `enrichProspectOnWrite`,
+    test leads skipped), and when an editor presses **Enrich** (before the
+    first run) or **Refresh info** (after it) on the lead drawer, the lead form
+    or the TAM record. The button calls `POST /leadEnrich/v1/enrich`
+    `{leadId}` or `{prospectId}`, which only queues the run
+    (`enrichment.request {id, status: "queued", by}`, 202); the trigger runs
+    it (`running` → `done` / `error`), and the page shows "Researching…" and
+    then the findings through its own snapshot. A second click while a run is
+    underway queues nothing; a run stuck over 10 minutes no longer blocks one.
+  - **Where it writes**: the record and the record it is linked to (a lead's
+    `prospectId`, a prospect's `leadId`). On a lead: `company.industry`,
+    `storeCount`, `countries` (added to), `website` (when blank) and the
+    `enrichment` map `{at, by, summary, logoUrl, hq, employees, revenue,
+    techStack[], vendors[], linkedinCompany, news[], financials, facts[],
+    sources[], filled, companyFieldsAdded, request}`. On a prospect:
+    `industry` (one of the nine), `hqCountry`, `storeCount`, `linkedinUrl`,
+    `website` (when blank), `markets` and `vendors` (added to), the same
+    `enrichment` map, and on the company's shared profile
+    (`prospectCompanies/{companyDocId}`) `summary`, `logoUrl`, `latestNews`,
+    `techStack` (added to) and `lastResearchedAt`.
+  - **Never blanks, never overwrites a person**: a field changes only when it
+    is blank or still holds the value enrichment itself wrote last time
+    (`enrichment.filled`, `filledProfile`); lists only grow; an empty answer
+    keeps the earlier summary, news, financials and logo. Contacts are not
+    changed.
+  - Only public addresses are fetched (private, loopback and metadata
+    addresses, and redirects to them, are refused); every link the agent gives
+    is kept only if it is http(s). The BuiltWith key slot under Settings →
+    Integrations & MCP is no longer used by enrichment.
+  - Each run costs one agent call with up to 8 searches and 6 fetches; the
+    triggers run at most 3 at a time, so loading the starter set enriches its
+    records gradually.
 - **Converting**: **Convert and link account** needs the customer account's
   name and/or id, moves the lead to Closed Won and stores `customerAccount`,
   shown on the card. The RevOps lifecycle's customer account record is not in
@@ -4196,7 +4235,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
-- Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js`, `test/lead-ingest.test.js`, the Leads tools in
+- Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js` (the agent stubbed), the "company research" scenario in `test/ui/console-click.test.mjs`, `test/lead-ingest.test.js`, the Leads tools in
   `test/mcp-server.test.js` and `test/mcp-client.test.mjs`, a scenario in
   `test/ui/console-click.test.mjs`.
 
@@ -4289,6 +4328,14 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   own country. Converting twice, or from
   two tabs, writes the same lead: a prospect can never become two leads. The
   lead's summary drawer shows a Prospect record link back.
+- **Company research (10 Nov 2026)**: every record is researched by an agent
+  when it is created, and the company detail view has **Enrich** (before the
+  first run) / **Refresh info** (after it) for editors. The Profile tab's
+  **Company research** card shows the findings (summary, HQ, size, tech stack
+  and vendors, recent news and recent financials with links and dates, when it
+  was updated), and the header shows the logo. The record keeps them in an
+  `enrichment` map (allowed by `isProspect` in `firestore.rules`). See
+  "Promote section: Leads" → "Enrichment (agent-led)" for what is written where.
 - **Data in**: the empty page offers **Load starter set** (editors): about 60
   well-known retail and related operators worldwide (`prospects-seed.js`),
   store counts rounded public figures marked source "Starter set
