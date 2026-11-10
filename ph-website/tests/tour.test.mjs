@@ -605,6 +605,36 @@ try {
     const reqs = []; t.on("request", (q) => reqs.push(q.url()));
     await t.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort(); });
     await t.addInitScript(() => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example", source: "Telco business model download" })); window.__plays = 0; window.__steps = [[], [], []]; setInterval(() => { const i = [...document.querySelectorAll("#dots .dot")].findIndex((d) => d.getAttribute("aria-current") === "true"), f = window.__t && window.__t.S.flow; if (i >= 0 && window.__steps[f] && !window.__steps[f].includes(i)) window.__steps[f].push(i); }, 5); const op = HTMLMediaElement.prototype.play; HTMLMediaElement.prototype.play = function () { window.__plays++; return op.call(this); }; });
+    // No white or jittery screens (10 Nov 2026): sampled on every animation frame through all three flows. On a screen change #screen is never empty,
+    // a .rm-shot img is never incomplete, and an img is never below full opacity unless a .rm-hold above it is at full opacity; and nothing held loses opacity.
+    await t.addInitScript(() => {
+      window.__frameFails = []; window.__frames = 0; window.__heldSeen = 0;
+      const last = new WeakMap(); let had = false;
+      const op = (e) => parseFloat(getComputedStyle(e).opacity);
+      const tick = () => {
+        const sc = document.getElementById("screen");
+        if (sc) {
+          window.__frames++;
+          const hold = document.querySelector(".rm-hold"), holdOp = hold ? op(hold) : 0;
+          if (hold) window.__heldSeen++;
+          const kids = sc.children.length, imgs = [...sc.querySelectorAll(".rm-shot img")];
+          if (!kids && had && !hold) window.__frameFails.push("empty #screen");
+          if (!kids && !hold) had = false;
+          if (kids) {
+            for (const im of imgs) {
+              if (!im.parentNode.classList.contains("swap")) continue; // the first screen of a flow fades in on purpose
+              if (!im.complete || !im.naturalWidth) window.__frameFails.push("incomplete img");
+              else if (had && op(im) < 1 && holdOp < 1) window.__frameFails.push("img at opacity " + op(im) + " with no opaque hold");
+            }
+            if (imgs.length) had = true;
+          }
+          if (hold) for (const e of hold.querySelectorAll("*")) { const b = last.get(e); if (b !== undefined && op(e) < b - 0.001) window.__frameFails.push("held element lost opacity " + b + " -> " + op(e)); }
+          for (const e of sc.querySelectorAll("*")) last.set(e, op(e));
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
     await t.goto("http://x.test/industries/retail-media/tour/?embed=1");
     await t.waitForSelector("#fs", { state: "visible" });
     assert.strictEqual(await t.evaluate(() => window.__t.S.ind), "retail-media", "S.ind follows the path");
@@ -633,6 +663,10 @@ try {
         await t.waitForTimeout(100);
       }
     }
+    { const ff = await t.evaluate(() => ({ fails: [...new Set(window.__frameFails)], frames: window.__frames, held: window.__heldSeen }));
+      assert.ok(ff.frames > 50, "the frame sampler ran: " + ff.frames);
+      assert.ok(ff.held > 0, "screen changes were held and crossfaded (frames with a .rm-hold: " + ff.held + ")");
+      assert.deepStrictEqual(ff.fails, [], "no white, empty or half-faded frame on any screen change: " + JSON.stringify(ff.fails.slice(0, 5))); }
     assert.deepStrictEqual(errs, [], "no page errors");
     assert.deepStrictEqual(blanks, [], "no screen is ever blank");
     assert.deepStrictEqual(broken, [], "no broken image");
