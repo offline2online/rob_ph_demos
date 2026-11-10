@@ -45,7 +45,7 @@ const TOUR_INDUSTRIES = array(
  */
 const TOUR_PAGE_OPTION  = 'ph_tour_page_html';
 const TOUR_PAGE_BACKOFF = 'ph_tour_page_backoff';
-const TOUR_PAGE_SHA256  = '0f37ad6f36bb91f88370d328ab4020f2afe26e42d5b4e0c92767b5af58c46e38';
+const TOUR_PAGE_SHA256  = 'f495df535458f4d44f33a9bfec3536f77a5addece1ef12d7b1ed65c3c293134b';
 const TOUR_PAGE_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/tour.html';
 
 /**

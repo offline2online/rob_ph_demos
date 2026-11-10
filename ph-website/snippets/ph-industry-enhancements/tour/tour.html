@@ -739,7 +739,7 @@ html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
 
 
 /* retail media: real prototype screenshots fill the stage; hotspots are invisible targets for the cursor and tips */
-.rm-shot{position:absolute;inset:0;background:#fff}.rm-shot img{display:block;width:1280px;height:760px;animation:fade .35s ease both}
+.rm-shot{position:absolute;inset:0;background:#fff}.rm-shot img{display:block;width:1280px;height:760px;animation:fade .35s ease both}.rm-shot.swap img{animation:none}.rm-hold{position:absolute;inset:0;overflow:hidden;pointer-events:none;transition:opacity .18s ease}.rm-hold *{animation-delay:-60s!important;transition:none!important}.rm-hold.out{opacity:0}
 .rm-hs{position:absolute;pointer-events:none}
 .rm-ov{position:absolute;left:0;top:0;width:1600px;height:950px;transform:scale(.8);transform-origin:0 0;pointer-events:none}
 .rm-ovb{position:absolute;left:16px;top:20px;width:238px;height:56px;background:#333;display:flex;align-items:center;gap:10px;padding-left:8px;box-sizing:border-box;font-family:Roboto,Arial,sans-serif}
@@ -2028,7 +2028,10 @@ const VO = IS_RM ? (() => {
 const RM = IS_RM ? (() => {
   const SC = 0.8, HOT = {"P1-display-types":[256,344,249,46],"P1-display-types#list":[524,212,260,342],"P2-playlists":[537,255,24,24],"P3-three-slots":[552,701,1002,32],"P4-owner":[1185,577,353,32],"P5-forecourt":[537,680,24,24],"P5-forecourt#slots":[616,513,926,108],"P6-shopfront":[537,680,24,24],"P6-shopfront#slots":[616,513,926,108],"P7-coolers":[537,680,24,24],"P7-coolers#slots":[616,513,926,108],"P8-pos":[1464,704,118,32],"P8-pos#slots":[616,513,926,108],"P9-saved":[256,390,249,46],"P9-saved#badges":[1189,250,211,202],"01-advertiser":[559,826,101,18],"01-advertiser#row":[525,814,1095,42],"03-users":[1277,184,204,32],"04-add-user":[1056,602,88,32],"05-deals":[1375,171,208,32],"06-new-deal":[924,918,113,32],"06-new-deal#terms":[662,461,532,405],"07-assign-slot":[873,659,362,49],"07b-assigned-all":[1464,908,118,32],"07b-assigned-all#cells":[855,415,400,207],"08-deal-finalise":[1045,874,149,32],"08-deal-finalise#plays":[662,766,532,96],"09-deal-live":[540,305,100,18],"09-deal-live#row":[525,296,1058,52],"14-approval-table":[290,421,16,16],"14-approval-table#row":[275,402,414,56],"15-approve":[1018,233,125,24],"16-booking-schedule":[874,579,126,13],"16b-booking-flight":[450,584,190,18],"16b-booking-flight#rows":[275,376,1307,368],"07a-blank":[870,421,370,24],"07a-blank#cells":[855,415,400,207],"07a-blank#deal":[525,186,1058,52],"07-assign-slot#menu":[869,449,370,264],"07c1":[870,473,370,24],"07d2":[873,711,362,49],"07c2":[870,525,370,24],"07d3":[873,763,362,49],"07c3":[870,577,370,24],"07d4":[873,815,362,49],"22-booking-revenue":[1436,680,146,40],"22-booking-revenue#table":[274,648,1309,284],"22-booking-revenue#rev":[275,680,1307,252],"16-booking-schedule#pop":[802,89,250,544],"22-booking-revenue#total":[275,890,1307,40],"04-add-user#form":[712,338,432,215],"P2b-expanded":[548,534,1010,32],"P4a-slots":[1181,513,361,24],"P4a-slots#table":[616,513,926,108],"16-booking-schedule#top":[802,89,250,140]};
   const img = n => RM_IMG + n + ".jpg";
-  Object.keys(HOT).filter(k => !k.includes("#")).forEach(n => { const i = new Image(); i.src = img(n); });
+  /* Every screenshot (and the login background) is fetched and decoded up front and kept, so a swap never waits on the network or a decode. */
+  const SHOTS = {};
+  const pre = n => { if (!SHOTS[n]) { const i = new Image(); i.src = img(n); SHOTS[n] = i; if (i.decode) i.decode().catch(() => {}); } return SHOTS[n]; };
+  ["login-bg", ...Object.keys(HOT).filter(k => !k.includes("#"))].forEach(pre);
   /* The screenshots were taken with the demo retailer's logo (sidebar and header badge, same place on every screen).
      When the visitor's company or colour differs, both are redrawn over the screenshot in its own pixel space. */
   const brandOv = () => {
@@ -2036,7 +2039,23 @@ const RM = IS_RM ? (() => {
     const w = b.trim().split(/\s+/), ini = esc(initials(b)), l2 = w.slice(1).join(" ");
     return `<div class="rm-ov" aria-hidden="true"><div class="rm-ovb"><span class="rm-ovm" style="background:${c}">${ini}</span><span class="rm-ovn"><b>${esc(w[0])}</b>${l2 ? `<small>${esc(l2)}</small>` : ""}</span></div><div class="rm-ova"><span class="rm-ovm sm" style="background:${c}">${ini}</span></div></div>`;
   };
-  const show = n => { screen.innerHTML = `<div class="rm-shot"><img src="${img(n)}" alt="" draggable="false">${brandOv()}</div>`; hideTip(); };
+  /* A new screenshot never fades in over white: the screen on show stays on top until the new one is decoded,
+     then fades out over it (a short crossfade). Only the first screen of a flow fades in. */
+  let hold = null, holdFor = null;
+  const dropHold = fade => { const h = hold; hold = holdFor = null; if (!h) return; if (!fade) return h.remove(); h.classList.add("out"); setTimeout(() => h.remove(), 200); };
+  new MutationObserver(() => { if (hold && !screen.contains(holdFor)) dropHold(false); }).observe(screen, { childList: true });
+  const show = n => {
+    dropHold(false); pre(n);
+    const prev = !!screen.firstElementChild;
+    if (prev) { hold = document.createElement("div"); hold.className = "rm-hold"; hold.setAttribute("aria-hidden", "true"); while (screen.firstChild) hold.appendChild(screen.firstChild); hold.querySelectorAll(".rm-hs").forEach(e => e.remove()); screen.after(hold); }
+    screen.innerHTML = `<div class="rm-shot${prev ? " swap" : ""}"><img src="${img(n)}" alt="" draggable="false">${brandOv()}</div>`; hideTip();
+    if (prev) {
+      const h = hold, im = screen.querySelector(".rm-shot img"); holdFor = im.parentNode;
+      const out = () => { if (hold === h) dropHold(true); };
+      (im.decode ? im.decode() : new Promise((ok, no) => { if (im.complete) ok(); else { im.onload = ok; im.onerror = no; } })).then(out, out);
+      setTimeout(out, 1500);
+    }
+  };
   const hs = (key, pad = 0) => { const b = HOT[key], x = Math.max(0, b[0] - pad), y = Math.max(0, b[1] - pad), w = Math.min(1600 - x, b[2] + 2 * pad), h = Math.min(950 - y, b[3] + 2 * pad), id = "hs" + (++gid);
     screen.insertAdjacentHTML("beforeend", `<div class="rm-hs" id="${id}" style="left:${x * SC}px;top:${y * SC}px;width:${w * SC}px;height:${h * SC}px"></div>`); return q("#" + id); };
   const RET = () => esc(B());
