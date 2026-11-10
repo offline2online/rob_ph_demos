@@ -603,6 +603,7 @@ try {
       assert.strictEqual(await g.locator("#gsub.ok").count(), 0, "free mail keeps the button off");
       await g.fill("input[name=email]", "ada@orbit.example"); await g.click("#gsub");
       await g.waitForFunction(() => document.getElementById("gate").hidden);
+      assert.ok(await g.evaluate(() => !!document.getElementById("vohint") && document.getElementById("vo").classList.contains("pulse")), "the gate's autostart shows the \"Enable sound\" hint");
       assert.ok(body && body.industry === "retail-media" && body.flow === "Advertiser creates by talking" && body.page === "/industries/retail-media/tour/" && body.test === true, "retail-media lead body: " + JSON.stringify(body));
       assert.strictEqual(await g.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")).company), "Orbit Co", "the lead is stored for the next visit");
       await g.close(); }
@@ -726,6 +727,107 @@ try {
         assert.deepStrictEqual(tops, { dots: 1, fine: 1, play: 1 }, `caption lines never move the controls or the fine print at ${w}px: ` + JSON.stringify(tops));
       }
       await c.close(); }
+    // "Enable sound" hint (11 Nov 2026): a flow started with the voiceover off shows a bubble above the speaker for 3 s while the button pulses,
+    // then starts; clicking the bubble or the speaker turns sound on and starts at once; Prev/Next or a flow switch cancels it; never a double start.
+    { const hk = fast.replace("async function go(i) {", "async function go(i) { (window.__go = window.__go || []).push(i);").replace('document.getElementById("prev").onclick', "window.__t = { S, setFlow, showEnd, startCard };\n$&");
+      assert.ok(hk.includes("window.__go") && hk.includes("window.__t = { S, setFlow"), "hint test hooks applied");
+      const open = async (sound) => {
+        const h = await browser.newPage({ viewport: { width: 1160, height: 900 }, reducedMotion: "reduce" });
+        h.__errs = []; h.on("pageerror", (e) => h.__errs.push(e.message));
+        await h.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hk }) : r.abort(); });
+        await h.addInitScript((on) => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example" })); if (on) localStorage.setItem("ph_tour_voiceover", "on"); }, sound);
+        await h.goto("http://x.test/industries/retail-media/tour/?embed=1"); await h.waitForSelector("#start", { state: "visible" });
+        return h;
+      };
+      const st = (h) => h.evaluate(() => { const t = document.getElementById("vohint"), v = document.getElementById("vo"); return { hint: !!t, text: t ? t.textContent.trim() : "", pulse: v.classList.contains("pulse"), step: window.__t.S.step, flow: window.__t.S.flow, go: (window.__go || []).slice(), pressed: v.getAttribute("aria-pressed"), saved: localStorage.getItem("ph_tour_voiceover"), fs: document.documentElement.classList.contains("fs") }; });
+      const zeros = (x) => x.go.filter((i) => i === 0).length;
+      // Start the tour: the hint shows with the pulse, above the speaker and inside the frame, and the flow waits; step 1 starts at 3 s.
+      { const h = await open(false); const t0 = Date.now();
+        await h.click("#start");
+        let s = await st(h);
+        assert.ok(s.hint && s.text === "volume_upEnable sound" && s.pulse && s.step === -1 && !s.go.length, "Start the tour with sound off shows the hint and waits: " + JSON.stringify(s));
+        const g = await h.evaluate(() => { const r = (e) => e.getBoundingClientRect(), t = r(document.getElementById("vohint")), v = r(document.getElementById("vo")), cs = getComputedStyle(document.getElementById("vohint")); return { t: { l: t.left, r: t.right, top: t.top, b: t.bottom }, v: { l: v.left, r: v.right, top: v.top }, w: innerWidth, h: innerHeight, bg: cs.backgroundColor, color: cs.color, role: document.getElementById("vohint").getAttribute("role"), anim: getComputedStyle(document.getElementById("vo")).animationName }; });
+        assert.ok(g.t.b <= g.v.top && g.t.l >= 0 && g.t.top >= 0 && g.t.r <= g.w && g.t.r >= (g.v.l + g.v.r) / 2 && g.bg === "rgb(20, 32, 43)" && g.color === "rgb(255, 255, 255)" && g.role === "status" && g.anim === "vopulse", "the hint sits above the speaker, inside the frame, dark with white text, and the button pulses: " + JSON.stringify(g));
+        await h.waitForTimeout(1500); s = await st(h);
+        assert.ok(s.hint && s.step === -1 && !s.go.length, "still waiting at 1.5 s: " + JSON.stringify(s));
+        await h.waitForFunction(() => (window.__go || []).length > 0, null, { timeout: 6000 });
+        const ms = Date.now() - t0; s = await st(h);
+        assert.ok(ms >= 2700 && !s.hint && !s.pulse && s.go[0] === 0 && s.pressed === "false" && s.saved === null, `step 1 starts at 3 s with sound still off (${ms} ms): ` + JSON.stringify(s));
+        await h.waitForTimeout(1500); s = await st(h);
+        assert.strictEqual(zeros(s), 1, "the flow starts once: " + JSON.stringify(s.go));
+        assert.deepStrictEqual(h.__errs, [], "no page errors (hint, timeout)");
+        await h.close(); }
+      // Clicking the hint, or the speaker, turns sound on, saves it and starts at once, with no second start.
+      for (const target of ["#vohint", "#vo"]) {
+        const h = await open(false);
+        await h.click("#start"); await h.waitForSelector("#vohint");
+        await h.click(target);
+        let s = await st(h);
+        assert.ok(!s.hint && !s.pulse && s.go[0] === 0 && s.pressed === "true" && s.saved === "on", `clicking ${target} turns sound on, saves it and starts at once: ` + JSON.stringify(s));
+        await h.waitForTimeout(3500); s = await st(h);
+        assert.strictEqual(zeros(s), 1, `clicking ${target}: no second start: ` + JSON.stringify(s.go));
+        assert.deepStrictEqual(h.__errs, [], `no page errors (${target})`);
+        await h.close();
+      }
+      // Sound already on: no hint, the flow starts at once.
+      { const h = await open(true);
+        await h.click("#start"); const s = await st(h);
+        assert.ok(!s.hint && !s.pulse && s.go[0] === 0 && s.pressed === "true", "sound on: no hint, starts at once: " + JSON.stringify(s));
+        await h.close(); }
+      // Next during the hint cancels it, with no double start; so does switching flow.
+      { const h = await open(false);
+        await h.click("#start"); await h.waitForSelector("#vohint");
+        await h.click("#next");
+        let s = await st(h);
+        assert.ok(!s.hint && !s.pulse && s.go.length === 1, "Next during the hint cancels it and moves on: " + JSON.stringify(s));
+        await h.waitForTimeout(3500); s = await st(h);
+        assert.strictEqual(zeros(s), 1, "Next during the hint: no second start when the 3 s run out: " + JSON.stringify(s.go));
+        await h.close(); }
+      { const h = await open(false);
+        await h.click("#start"); await h.waitForSelector("#vohint");
+        await h.click('.chip[data-k="1"]');
+        let s = await st(h);
+        assert.ok(!s.hint && !s.pulse && s.flow === 1 && s.step === -1, "a flow switch during the hint cancels it: " + JSON.stringify(s));
+        await h.waitForTimeout(3500); s = await st(h);
+        assert.ok(!s.go.length && s.step === -1 && await h.locator("#start").isVisible(), "after a flow switch the old hint never starts anything: " + JSON.stringify(s));
+        await h.close(); }
+      // Watch full screen shows the hint (in full screen); Play before any step shows it, and Play again during it starts at once.
+      { const h = await open(false);
+        await h.click("#fsstart"); await h.waitForSelector("#vohint"); await h.waitForFunction(() => document.documentElement.classList.contains("fs"));
+        let s = await st(h);
+        assert.ok(s.hint && s.pulse && s.fs && !s.go.length, "Watch full screen shows the hint in full screen: " + JSON.stringify(s));
+        const g = await h.evaluate(() => { const t = document.getElementById("vohint").getBoundingClientRect(); return t.top >= 0 && t.left >= 0 && t.right <= innerWidth && getComputedStyle(document.getElementById("vohint")).visibility !== "hidden"; });
+        assert.ok(g, "the hint is inside the screen in full screen");
+        await h.waitForFunction(() => (window.__go || []).length > 0, null, { timeout: 6000 });
+        await h.close(); }
+      { const h = await open(false);
+        await h.click('.chip[data-k="2"]'); await h.click("#play");
+        let s = await st(h);
+        assert.ok(s.hint && s.flow === 2 && !s.go.length, "Play before any step shows the hint: " + JSON.stringify(s));
+        await h.click("#play"); s = await st(h);
+        assert.ok(!s.hint && s.go.length === 1 && s.go[0] === 0 && s.pressed === "false", "Play again during the hint starts at once, sound still off: " + JSON.stringify(s));
+        await h.waitForTimeout(3500); s = await st(h);
+        assert.strictEqual(zeros(s), 1, "Play during the hint: no second start: " + JSON.stringify(s.go));
+        await h.close(); }
+      // The end card's Next flow shows the hint before the next flow starts.
+      { const h = await open(false);
+        await h.evaluate(() => { window.__t.setFlow(0); window.__t.showEnd(); });
+        await h.click("#nextflow");
+        const s = await st(h);
+        assert.ok(s.hint && s.pulse && s.flow === 1 && !s.go.length, "the end card's Next flow shows the hint: " + JSON.stringify(s));
+        await h.close(); }
+      // Telco, pharmacy and convenience have no voiceover: no hint, Start starts at once.
+      for (const ind of ["telco", "pharmacy", "convenience"]) {
+        const h = await browser.newPage({ viewport: { width: 1160, height: 900 }, reducedMotion: "reduce" });
+        await h.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hk }) : r.abort());
+        await h.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })));
+        await h.goto(`http://x.test/industries/${ind}/tour/?embed=1`); await h.waitForSelector("#start", { state: "visible" });
+        await h.click("#start");
+        const s = await h.evaluate(() => ({ hint: document.querySelectorAll("#vohint,.vohint").length, go: (window.__go || []).slice(), vo: !document.getElementById("vogrp").hidden }));
+        assert.ok(!s.hint && s.go[0] === 0 && !s.vo, `${ind}: no hint and no speaker; Start starts at once: ` + JSON.stringify(s));
+        await h.close();
+      }
+    }
     // The voiceover timing tests (tools/retail-media-tour/votest.js) need the audio: they run when TOUR_ASSETS_DIR is set.
     if (assetsDir && fs.existsSync(path.join(assetsDir, "vo", "manifest.json"))) {
       const { spawnSync } = await import("child_process");
