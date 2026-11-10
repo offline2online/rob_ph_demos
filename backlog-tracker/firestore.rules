@@ -667,6 +667,12 @@ service cloud.firestore {
         && d.get("source", "") is string && d.get("source", "").size() <= 80
         && d.get("notes", "") is string && d.get("notes", "").size() <= 2000;
     }
+    // Conversion Funnel's Google Ads + GA4 daily rows (public/js/funnel-core.js). Written only by the
+    // server-side ingest (admin SDK bypasses rules); members read them.
+    match /funnelDaily/{rowId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
     match /prospects/{prospectId} {
       allow read: if isBoardReader();
       // A new record names its country; older ones without one still update (they read as their first market).

@@ -380,6 +380,9 @@ async function main() {
   await check("A prospect cannot take a status that is not on the list", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { status: "won-ish" }));
   await check("A prospect needs a name", "deny", () => setDoc(doc(as(MEMBER), "prospects/p2"), { ...PROSPECT, name: "" }));
   await check("A prospect takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "prospects/p3"), { ...PROSPECT, patchFiles: [] }));
+  await check("A member may read a funnel row", "allow", () => getDoc(doc(as(MEMBER), "funnelDaily/2026-11-01_x")));
+  await check("A stranger cannot read a funnel row", "deny", () => getDoc(doc(as(STRANGER), "funnelDaily/2026-11-01_x")));
+  await check("An editor cannot write a funnel row (ingest only)", "deny", () => setDoc(doc(as(MEMBER), "funnelDaily/2026-11-01_x"), { date: "2026-11-01", impressions: 1 }));
   await check("A member may read a prospect", "allow", () => getDoc(doc(as(MEMBER), "prospects/p1")));
   await check("A viewer may read a prospect", "allow", () => getDoc(doc(as(VIEWER), "prospects/p1")));
   await check("A viewer cannot create a prospect", "deny", () => setDoc(doc(as(VIEWER), "prospects/p4"), PROSPECT));

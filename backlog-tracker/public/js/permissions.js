@@ -29,6 +29,7 @@ export const SECTIONS = [
   // Leads used to sit under the single "promote" grant, so it inherits it.
   { key: "promote-leads", label: "Leads", nav: ["#promote-leads-btn"], inherits: "promote", edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
   { key: "prospects", label: "Prospects (TAM)", nav: ["#promote-prospects-btn"], inherits: "promote-leads", edit: ["#prospects-page [data-editor-only]", "#prospects-grid [data-editor-only]", "#prospect-drawer-backdrop [data-editor-only]"] },
+  { key: "conversion-funnel", label: "Conversion Funnel", nav: ["#promote-funnel-btn"], inherits: "prospects", edit: [] },
   { key: "faq", label: "Help Centre", nav: ["#faq-articles-btn"],
     edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#faq-cat-edit-save-btn"] },
   { key: "settings", label: "Settings", nav: ["#faq-settings-btn"], edit: ["#faq-settings-page .btn-primary"] },
@@ -105,6 +106,7 @@ export function sectionForHash(hash) {
   if (h === "" || h === "#") return "agent-board";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq";
   if (h === "#promote/prospects") return "prospects";
+  if (h === "#promote/conversion-funnel") return "conversion-funnel";
   if (h === "#promote" || h.startsWith("#promote/")) {
     const k = "promote-" + h.slice(9).split("/")[0];
     return SECTION_KEYS.includes(k) ? k : "promote";
@@ -122,7 +124,7 @@ export function sectionForHash(hash) {
 
 // The hash a section opens at, for the redirect.
 export const SECTION_HASH = {
-  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", whiteboard: "#whiteboard", promote: "#promote/brand-guidelines", "promote-leads": "#promote/leads", prospects: "#promote/prospects", faq: "#faq-management",
+  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", whiteboard: "#whiteboard", promote: "#promote/brand-guidelines", "promote-leads": "#promote/leads", prospects: "#promote/prospects", "conversion-funnel": "#promote/conversion-funnel", faq: "#faq-management",
   skills: "#settings/skills", releases: "#settings/releases", "project-docs": "", settings: "#settings",
   "user-management": "#settings/user-management/users",
 };
@@ -136,7 +138,7 @@ export function sectionForSettingsPage(page) {
 // order. `sectionsByGroup()` builds it from SECTIONS plus the "Other" group.
 export const PERMISSION_GROUPS = [
   { label: "Build", keys: ["agent-board", "staff-kanban", "concepts", "whiteboard"] },
-  { label: "Promote", keys: ["promote", "promote-leads", "prospects"] },
+  { label: "Promote", keys: ["promote", "promote-leads", "prospects", "conversion-funnel"] },
   { label: "Support", keys: ["faq"] },
   { label: "Settings", keys: ["settings", "user-management", "releases", "skills"] },
   { label: "Other", keys: ["project-docs"] },
