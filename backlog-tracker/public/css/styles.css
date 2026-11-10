@@ -2510,6 +2510,22 @@ body { overflow-x: clip; }
 .lead-card-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; margin-bottom: 4px; }
 .lead-chip { display: inline-block; max-width: 100%; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; line-height: 18px; background: var(--ind-bg, #eceeef); color: var(--ind-fg, #4a4f54); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lead-test-badge { padding: 1px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border: 1px solid var(--border); color: var(--text-muted); }
+.lead-inbound { padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; line-height: 18px; background: var(--primary-tint); color: var(--primary-text); white-space: nowrap; }
+/* The AWS tile above the lanes: people from AWS, never customer leads (leads-page.js renderAws). */
+.leads-aws { margin: 0 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, var(--bg)); max-width: 100%; }
+.leads-aws-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.leads-aws-head .material-symbols-outlined { font-size: 20px; color: var(--text-muted); }
+.leads-aws-title { font-size: 14px; font-weight: 600; }
+.leads-aws-chevron { margin-left: auto; }
+.leads-aws-status { margin: 0 12px; }
+.leads-aws-status:empty { display: none; }
+.leads-aws-list { list-style: none; margin: 0; padding: 4px 12px 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.leads-aws-person { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--bg, #fff); display: flex; flex-direction: column; gap: 6px; }
+.leads-aws-who { min-width: 0; }
+.leads-aws-attach { align-self: flex-start; min-height: 32px; }
+.leads-aws-form { display: grid; gap: 6px; }
+.leads-aws-form select { width: 100%; min-height: 32px; }
+.leads-aws-actions { display: flex; gap: 8px; }
 .lead-card-line { margin: 0 0 2px; font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }
 .lead-card > .lead-card-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
 .lead-card-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; min-width: 0; }

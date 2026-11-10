@@ -1137,6 +1137,56 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Leads - a second person from a TAM company joins its lead; an AWS person is attached to an account's AWS team",
+    seed: () => seed({
+      prospects: {
+        "acme-uk": { name: "Acme Telco", country: "United Kingdom", website: "https://acme.example", status: "converted", leadId: "prospect-acme-uk", createdAt: t(T0), updatedAt: t(T0) },
+        aws: { name: "AWS", country: "", website: "https://aws.amazon.com", status: "engaged", source: "AWS", contacts: [{ name: "Pat Lee", role: "Account Manager", lastContact: "2026-11-10", email: "pat@amazon.com" }], createdAt: t(T0), updatedAt: t(T0) },
+      },
+      leads: {
+        "prospect-acme-uk": { company: { name: "Acme Telco", website: "https://acme.example", industry: "", countries: ["United Kingdom"], storeCount: null }, contacts: [{ id: "k1", name: "Jo", jobTitle: "", buyingRole: "", email: "jo@acme.example", linkedin: "" }], stage: "lead", source: "website", assignee: "", customerAccount: null, prospectId: "acme-uk", inboundCount: 1, createdAt: t(T0), updatedAt: t(T0) },
+      },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card .lead-inbound', "the card shows its inbound count");
+      assert.strictEqual((await c.text('.lead-lane[data-stage="lead"] .lead-inbound')).trim(), "1 inbound");
+      for (let i = 0; i < 4 && !(await c.page.locator("#lead-form").isVisible()); i++) {
+        await c.page.click("#leads-add-btn");
+        await c.page.waitForTimeout(600);
+      }
+      await c.visible("#lead-form", "the lead form opens");
+      await c.page.fill("#lead-name", "Acme Telco");
+      await c.page.fill("#lead-countries", "UK");
+      await c.page.fill('.lead-contact[data-index="0"] .lc-name', "Sam");
+      await c.page.fill('.lead-contact[data-index="0"] .lc-email', "sam@acme.example");
+      await c.page.click("#lead-save");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("prospect-acme-uk").inboundCount)) === 2, "the second person to be counted on the company's lead", 5000);
+      const leads = await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].map(([id, v]) => ({ id, emails: v.contacts.map((k) => k.email) })));
+      assert.deepStrictEqual(leads, [{ id: "prospect-acme-uk", emails: ["jo@acme.example", "sam@acme.example"] }], "no second lead; Sam is a contact on the first");
+      await c.visible("#lead-summary-panel", "the company's lead opens");
+      assert.ok((await c.text("#lead-sum-status")).includes("Added to the existing lead for Acme Telco"), "the drawer says where Sam went");
+      await c.page.keyboard.press("Escape");
+      // The AWS tile: Pat is there, not in a lane, and is attached to Acme Telco as its account manager.
+      await c.visible("#leads-aws-toggle", "the AWS tile shows");
+      assert.ok(!(await c.text("#leads-board")).includes("Pat Lee"), "the AWS person is not a lead");
+      await c.page.click("#leads-aws-toggle");
+      await c.visible(".leads-aws-attach", "the AWS people list opens");
+      assert.ok((await c.text("#leads-aws-list")).includes("Pat Lee"));
+      await c.page.click(".leads-aws-attach");
+      await until(async () => (await c.page.locator('.leads-aws-company option[value="acmetelco"]').count()) === 1, "the customer accounts to load", 5000);
+      assert.strictEqual(await c.page.locator('.leads-aws-company option[value="aws"]').count(), 0, "AWS is not offered as a customer account");
+      await c.page.selectOption(".leads-aws-company", "acmetelco");
+      await c.page.selectOption(".leads-aws-role", "account-manager");
+      await c.page.click(".leads-aws-save");
+      await until(async () => (await c.page.evaluate(() => { const d = globalThis.__fbStub.col("prospectCompanies").get("acmetelco"); return d && d.awsTeam && d.awsTeam.length; })) === 1, "Pat to join Acme Telco's AWS team", 5000);
+      const team = await c.page.evaluate(() => globalThis.__fbStub.col("prospectCompanies").get("acmetelco").awsTeam[0]);
+      assert.strictEqual(team.email, "pat@amazon.com"); assert.strictEqual(team.role, "account-manager"); assert.strictEqual(team.source, "manual");
+      assert.ok((await c.text("#leads-aws-status")).includes("attached to Acme Telco"), "the tile says it was attached");
+    },
+  },
+  {
     name: "Modals: Save is off until something changes, the action row is sticky, the x is top right and closes",
     seed: () => seed({ leads: {
       lx: { company: { name: "Existing Co", website: "https://existing.example", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [{ id: "k1", name: "Pat", jobTitle: "", buyingRole: "champion", email: "", linkedin: "" }], stage: "demo", source: "Website form", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },

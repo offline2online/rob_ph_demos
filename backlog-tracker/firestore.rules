@@ -603,7 +603,7 @@ service cloud.firestore {
     // bypassed); an editor's save keeps it, since request.resource is the whole document.
     function isLead(d) {
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
-          "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail",
+          "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
         && d.company is map && isNonEmptyBoundedString(d.company.get("name", null), 120)
         && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300
@@ -622,6 +622,7 @@ service cloud.firestore {
         && d.get("sourceIndustry", "") is string && d.get("sourceIndustry", "").size() <= 120
         && d.get("sourceLabel", "") is string && d.get("sourceDetail", "") is string
         && d.get("websiteActivity", []) is list && d.get("history", []) is list && d.get("history", []).size() <= 100
+        && d.get("inboundCount", 0) is int && d.get("inboundCount", 0) >= 0
         && d.get("archivedByEmail", "") is string;
     }
     match /leads/{leadId} {
@@ -678,7 +679,10 @@ service cloud.firestore {
     match /prospects/{prospectId} {
       allow read: if isBoardReader();
       // A new record names its country; older ones without one still update (they read as their first market).
-      allow create: if isEditor() && isProspect(incoming()) && isNonEmptyBoundedString(incoming().get("country", null), 60);
+      // The exceptions are a record made for an inbound lead that gave no country, and the AWS record
+      // (prospects-core.js planInbound).
+      allow create: if isEditor() && isProspect(incoming())
+        && (isNonEmptyBoundedString(incoming().get("country", null), 60) || incoming().get("source", "") in ["Inbound lead", "AWS"]);
       allow update: if isEditor() && isProspect(incoming());
       allow delete: if isEditor();
     }

@@ -4222,7 +4222,8 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   `jobTitle`, `email`, `linkedin`) plus `page`, `pageIndustry` and `test`.
   It creates the lead in the Lead lane with `source: "website"`, `sourcePage`
   and `sourceIndustry`, or, for a company already there, fills blanks and adds
-  the contact. Optional `sourceLabel` and `sourceDetail` (≤120 chars each, e.g.
+  the contact (since 10 Nov 2026 "already there" means the same Prospects (TAM)
+  record: see "Leads: inbound leads matched to Prospects (TAM)" below). Optional `sourceLabel` and `sourceDetail` (≤120 chars each, e.g.
   "Interactive product tour – Telco" and the demo "Personalisation") are stored
   on a new lead and fill blanks on a repeat; every submission also appends
   `{at, label, detail, page}` to `websiteActivity` (20 newest). The lead summary's
@@ -4455,6 +4456,60 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
   blank, never a new industry. It runs on read (`normaliseProspect`), on every
   write (`prospectFromInput`, so `upsert_prospects`) and on the industry filter
   of `list_prospects`. Stored legacy values are rewritten when a record is next saved.
+
+### Leads: inbound leads matched to Prospects (TAM), one lead per company per country, AWS as its own record (10 Nov 2026)
+
+- **Matching.** A lead that comes in (the website form, `functions/lead-ingest.js`,
+  or **+ New lead** on the Leads page) is matched to a Prospects (TAM) record using
+  both the company name (`companyKey`, ignoring case and punctuation) and the
+  contact's **business** email domain (personal mailboxes such as gmail.com are
+  ignored), against the record's name and website host (a subdomain counts:
+  `uk.acme.com` matches `acme.com`). A name and domain match beats a domain-only
+  match, which beats a name-only match. The lead's country (its first country) picks
+  that country's record; with no country, the best match in any country is used
+  (a record that already has a lead first, then the head-office country's record).
+  Rules: `planInbound` / `matchProspect` in `public/js/prospects-core.js` (copied to
+  `functions/prospects-core.js`).
+- **No match**: a new TAM record is created for that company in that country (no
+  country when none was given), source "Inbound lead", copying the website,
+  industry, HQ country and markets from the company's record in another country when
+  there is one. Creating it starts enrichment (`enrichProspectOnWrite`, which runs
+  for every new TAM record; see "Promote section: Leads" → Enrichment). It is linked to the lead.
+- **One lead per company per country.** The lead belongs to its TAM record
+  (`prospectId`; the record's `leadId`, status Converted, as Convert to lead does). A
+  new lead gets the id `prospect-<recordId>`, the same as Convert to lead, so the two
+  can never make two leads. A lead from before this change for the same company and
+  country (no `prospectId`) is adopted rather than duplicated.
+- **The next person from the same company and country is added as a contact** on
+  that lead (not twice: same email, else same name), blank company fields are
+  filled, and the lead's **`inboundCount`** goes up by one. The card and the lead
+  summary show it ("2 inbound"). A lead saved before the count existed shows its
+  number of website submissions. From the New lead form, the person is added to the
+  existing lead and its summary opens saying so.
+- **AWS.** AWS is a TAM record of its own (`prospects/aws`, name "AWS", source
+  "AWS", no country). Anyone with an AWS or Amazon address (aws.com, amazon.com,
+  amazon.co.uk, amazon.de…), or a company named AWS / Amazon Web Services, lands as a
+  contact on that record (`{name, role, lastContact, email}`; the same email again
+  refreshes it; the newest 30 kept), never as a customer lead. The **AWS tile** above
+  the Leads lanes lists them; an editor uses **Attach to account** to pick a customer
+  company (any TAM record or lead) and an AWS role, which adds the person to that
+  company's AWS account team (`prospectCompanies/{companyKey}.awsTeam`, source
+  manual; `withAwsPerson` in `prospect-detail-core.js`), shown on the company detail's
+  AWS account team tab and the lead card. Attaching the same person again changes
+  only their role. The website form is the same for everyone.
+- **Prospect contacts carry an email** (optional; the Edit drawer's contacts line is
+  `name | role | last contact | AWS account ID | email`), so an AWS person keeps an
+  address to be attached with.
+- Test leads (`test: true`) are never matched to a TAM record or a real lead.
+- Rules: `isLead` allows `inboundCount` (a whole number ≥ 0); a new record may be created without a
+  country only when its source is "Inbound lead" or "AWS". Cases in
+  `test/firestore-rules.test.js`.
+- Not done: the MCP tools (`create_lead`, `upsert_prospects`) do not match or group;
+  they behave as before.
+- Tests: `test/lead-ingest.test.js` (the five test steps against the website
+  endpoint), `test/prospects.test.mjs` (matching and planning), `test/leads.test.mjs`
+  (`mergeInbound`), `test/prospect-detail.test.mjs` (`withAwsPerson`), a scenario in
+  `test/ui/console-click.test.mjs`.
 
 ## Promote section: Conversion Funnel (9 Nov 2026)
 

@@ -549,10 +549,10 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
     ["priority", "Priority", "select"], ["status", "Status", "select"], ["storePresence", "Store presence (as written)", "text"], ["storeCount", "Store count", "text"],
     ["ownership", "Ownership", "text"], ["decisionMakers", "Decision makers", "textarea"], ["linkedinUrl", "LinkedIn company page", "text"],
     ["linkedinOrgId", "LinkedIn organisation id (digits)", "text"], ["linkedinVerified", "LinkedIn page verified", "checkbox"], ["insights", "Insights", "textarea"],
-    ["contacts", "Contacts (one per line: name | role | last contact | AWS account ID)", "textarea"], ["vendors", "Current vendors (comma separated)", "text"],
+    ["contacts", "Contacts (one per line: name | role | last contact | AWS account ID | email)", "textarea"], ["vendors", "Current vendors (comma separated)", "text"],
     ["campaigns", "Campaigns (comma separated)", "text"], ["source", "Source", "text"], ["notes", "Notes", "textarea"],
   ];
-  const contactsText = (p) => p.contacts.map((c) => [c.name, c.role, c.lastContact, c.awsAccountId || ""].join(" | ").replace(/( \| )+$/, "")).join("\n");
+  const contactsText = (p) => p.contacts.map((c) => [c.name, c.role, c.lastContact, c.awsAccountId || "", c.email || ""].join(" | ").replace(/( \| )+$/, "")).join("\n");
   const formValue = (p, k) => (k === "markets" || k === "vendors" || k === "campaigns" ? p[k].join(", ") : k === "contacts" ? contactsText(p) : k === "storeCount" ? (p.storeCount == null ? "" : String(p.storeCount)) : p[k]);
   function drawerBody(p) {
     const stat = p.status === "converted" ? (p.leadId ? `${esc(statusLabel(p.status))} · <a href="#promote/leads">View lead</a>` : esc(statusLabel(p.status))) : esc(statusLabel(p.status));
@@ -582,7 +582,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       </dl></section>
       <section class="lead-sum-section"><h3>Insights</h3>${p.insights ? `<p class="prospect-insights">${esc(p.insights)}</p>` : `<p class="field-hint">No insights yet.</p>`}</section>
       <section class="lead-sum-section" id="prospect-sum-contacts"><h3>Contacts (${p.contacts.length})</h3>${p.contacts.length
-        ? `<table class="prospect-contacts-table"><thead><tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col">Last contact</th><th scope="col">AWS account ID</th></tr></thead><tbody>${p.contacts.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.lastContact)}</td><td>${esc(c.awsAccountId)}</td></tr>`).join("")}</tbody></table>`
+        ? `<table class="prospect-contacts-table"><thead><tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col">Last contact</th><th scope="col">AWS account ID</th><th scope="col">Email</th></tr></thead><tbody>${p.contacts.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.lastContact)}</td><td>${esc(c.awsAccountId)}</td><td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ""}</td></tr>`).join("")}</tbody></table>`
         : `<p class="field-hint">No contacts yet.</p>`}</section>
       <section class="lead-sum-section"><h3>Record</h3><dl class="lead-sum-dl">
         ${drow("Source", dtext(p.source))}${drow("Notes", dtext(p.notes))}
@@ -651,7 +651,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
   });
   $("prospect-drawer-cancel").addEventListener("click", () => { editing = false; $("prospect-drawer-status").textContent = ""; renderDrawer(); $("prospect-drawer-edit").focus(); });
   function parseContactLines(text) {
-    return String(text || "").split(/\r?\n/).map((l) => l.split("|").map((x) => x.trim())).filter((c) => c.some(Boolean)).map((c) => ({ name: c[0] || "", role: c[1] || "", lastContact: c[2] || "", awsAccountId: c[3] || "" }));
+    return String(text || "").split(/\r?\n/).map((l) => l.split("|").map((x) => x.trim())).filter((c) => c.some(Boolean)).map((c) => ({ name: c[0] || "", role: c[1] || "", lastContact: c[2] || "", awsAccountId: c[3] || "", email: c[4] || "" }));
   }
   $("prospect-drawer-save").addEventListener("click", async () => {
     const p = rows.find((x) => x.id === drawerId);

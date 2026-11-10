@@ -119,3 +119,13 @@ t("functions/leads-core.js is the generated copy of the page's leads-core.js", (
   assert.deepEqual(cjs.STAGE_KEYS, L.STAGE_KEYS);
 });
 console.log(`${n} passed`);
+t("mergeInbound adds new contacts once, fills blanks and counts every arrival", () => {
+  const cur = L.normaliseLead("l1", { company: { name: "Acme", website: "", countries: ["UK"] }, contacts: [{ id: "a", name: "Jo", email: "jo@acme.example" }], websiteActivity: [{ at: "x" }] });
+  assert.equal(cur.inboundCount, 1, "an older lead counts its website submissions");
+  const m = L.mergeInbound(cur, { company: { website: "https://acme.example", countries: ["France"], storeCount: 10 } }, [{ id: "b", name: "Sam", email: "sam@acme.example" }, { id: "c", name: "Jo again", email: "JO@acme.example" }]);
+  assert.deepEqual(m.contacts.map((c) => c.name), ["Jo", "Sam"]); assert.equal(m.added, 1);
+  assert.equal(m.inboundCount, 2); assert.equal(m.company.website, "https://acme.example"); assert.deepEqual(m.company.countries, ["UK", "France"]); assert.equal(m.company.storeCount, 10);
+  assert.equal(L.inboundLabel({ inboundCount: 2 }), "2 inbound"); assert.equal(L.inboundLabel({ inboundCount: 0 }), "");
+  assert.equal(L.normaliseLead("x", { inboundCount: 5 }).inboundCount, 5);
+});
+console.log(`${n} passed (with inbound merge)`);

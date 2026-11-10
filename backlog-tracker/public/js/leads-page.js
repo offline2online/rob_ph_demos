@@ -9,17 +9,22 @@
 // (functions/lead-enrich.js): an agent researches the company on the web and the
 // findings (logo, facts, news, financials) arrive through the same snapshot.
 // A new lead is enriched by itself when it is created.
+// New lead is matched to Prospects (TAM) like a website lead (prospects-core.js
+// planInbound): a second person from the same company and country joins that
+// company's lead, and anyone from AWS goes to the AWS tile, from which an editor
+// attaches them to a customer account's AWS team (prospectCompanies awsTeam).
 import {
-  collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp,
+  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   STAGES, BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
-  companyLine, conversionFields, isStage,
+  companyLine, conversionFields, isStage, mergeInbound, inboundLabel,
 } from "./leads-core.js";
+import { normaliseProspect, planInbound, awsContactFrom, mergeContact, isAwsProspect, companyKey, AWS_PROSPECT_ID } from "./prospects-core.js";
 import { kpis, formatMonthly } from "./ace-core.js";
 import { mountAceGrid } from "./ace-grid.js";
 import { mountAceDetail } from "./ace-detail.js";
-import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION } from "./prospect-detail-core.js";
+import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION, AWS_ROLES, withAwsPerson, detailForSave } from "./prospect-detail-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
 import { enrichmentHTML, enrichmentRunning, enrichButtonLabel, enrichmentStatus, logoHTML, wireLogoFallback } from "./enrichment-view.js";
 
@@ -33,8 +38,10 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   const board = $("leads-board");
   const backdrop = $("lead-backdrop");
   let leads = [];
+  let allLeads = []; // archived included: a company's archived lead is still its lead
   let members = [];
   let unsub = null;
+  let unsubAws = null;
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
@@ -50,7 +57,8 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (started) return;
     started = true;
     unsub = onSnapshot(collection(db, "leads"), (snap) => {
-      leads = snap.docs.map((d) => normaliseLead(d.id, d.data({ serverTimestamps: "estimate" }))).filter((l) => !l.archived);
+      allLeads = snap.docs.map((d) => normaliseLead(d.id, d.data({ serverTimestamps: "estimate" })));
+      leads = allLeads.filter((l) => !l.archived);
       render();
       loadDetails();
     }, () => { board.innerHTML = '<p class="promote-empty">Leads could not be loaded. Reload the page to try again.</p>'; });
@@ -58,10 +66,14 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).filter((m) => !m.disabled);
       fillAssignees(); render();
     }).catch(() => {});
+    unsubAws = onSnapshot(doc(db, "prospects", AWS_PROSPECT_ID), (s) => {
+      awsRecord = s.exists() ? normaliseProspect(s.id, s.data()) : null;
+      renderAws();
+    }, () => {});
     fillStages();
     loadAce();
   }
-  function stop() { if (unsub) unsub(); unsub = null; started = false; }
+  function stop() { if (unsub) unsub(); if (unsubAws) unsubAws(); unsub = null; unsubAws = null; started = false; }
 
   // The compact org chart and AWS team on a card come from the company's shared detail (prospectCompanies).
   function loadDetails() {
@@ -85,6 +97,94 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     </div>`;
   }
 
+  // ── The AWS tile: people from AWS (contacts on the AWS TAM record) ──────
+  // They never become customer leads. An editor attaches one to a customer
+  // company (a TAM record or a lead: both share the company's detail) as part
+  // of that account's AWS team.
+  let awsRecord = null;
+  let awsOpen = false;
+  let attachAt = -1;        // the contact whose Attach form is open
+  let awsCompanies = null;  // [{ key, name }] customer companies, read when a form opens
+  async function loadAwsCompanies() {
+    const byKey = new Map();
+    const add = (name) => { const k = companyDocId(name); if (k && !AWS_KEYS.has(companyKey(name)) && !byKey.has(k)) byKey.set(k, { key: k, name }); };
+    try { (await getDocs(collection(db, "prospects"))).docs.forEach((d) => { const p = normaliseProspect(d.id, d.data()); if (!isAwsProspect(p)) add(p.name); }); } catch { /* leads alone */ }
+    for (const l of leads) if (!l.test) add(l.company.name);
+    awsCompanies = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+  const AWS_KEYS = new Set(["aws", "amazonwebservices"]);
+  function renderAws() {
+    const box = $("leads-aws");
+    if (!box) return;
+    const people = awsRecord ? awsRecord.contacts : [];
+    box.hidden = !people.length;
+    if (!people.length) { box.innerHTML = ""; return; }
+    const keepStatus = ($("leads-aws-status") || {}).textContent || "";
+    const form = (i) => `<div class="leads-aws-form" data-index="${i}">
+        <label class="field-label">Customer account<select class="leads-aws-company" aria-label="Customer account">${awsCompanies
+          ? `<option value="">Choose a company</option>${awsCompanies.map((c) => `<option value="${esc(c.key)}">${esc(c.name)}</option>`).join("")}`
+          : '<option value="">Loading…</option>'}</select></label>
+        <label class="field-label">AWS role<select class="leads-aws-role" aria-label="AWS role">${AWS_ROLES.map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`).join("")}</select></label>
+        <div class="leads-aws-actions"><button type="button" class="btn-primary leads-aws-save">Attach</button><button type="button" class="btn-ghost leads-aws-cancel">Cancel</button></div>
+      </div>`;
+    box.innerHTML = `<button type="button" class="leads-aws-head" id="leads-aws-toggle" aria-expanded="${awsOpen}" aria-controls="leads-aws-list">
+        <span class="material-symbols-outlined" aria-hidden="true">cloud</span><span class="leads-aws-title">AWS</span>
+        <span class="lead-lane-count" title="People from AWS">${people.length}</span>
+        <span class="material-symbols-outlined leads-aws-chevron" aria-hidden="true">${awsOpen ? "expand_less" : "expand_more"}</span>
+      </button>
+      <p class="field-hint leads-aws-status" id="leads-aws-status" role="status" aria-live="polite">${esc(keepStatus)}</p>
+      <ul class="leads-aws-list" id="leads-aws-list"${awsOpen ? "" : " hidden"}>${people.map((c, i) => `<li class="leads-aws-person">
+        <div class="leads-aws-who">
+          <p class="lead-sum-contact-name">${esc(c.name)}</p>
+          ${c.role ? `<p class="lead-card-line">${esc(c.role)}</p>` : ""}
+          ${c.email ? `<p class="lead-card-line"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></p>` : ""}
+          ${c.lastContact ? `<p class="lead-card-line">Came in ${esc(c.lastContact)}</p>` : ""}
+        </div>
+        ${attachAt === i ? form(i) : `<button type="button" class="btn-ghost leads-aws-attach" data-index="${i}" data-editor-only>Attach to account</button>`}
+      </li>`).join("")}</ul>`;
+    box.querySelectorAll("[data-editor-only]").forEach((el) => { el.hidden = !canEdit(); });
+  }
+  async function attachAws(i, key, role) {
+    const person = awsRecord && awsRecord.contacts[i];
+    const company = (awsCompanies || []).find((c) => c.key === key);
+    if (!person || !company || !canEdit()) return;
+    const say = (t) => { const st = $("leads-aws-status"); if (st) st.textContent = t; };
+    try {
+      const ref = doc(db, COMPANY_COLLECTION, key);
+      const snap = await getDoc(ref);
+      const d = normaliseDetail(snap.exists() ? snap.data() : {});
+      const r = withAwsPerson(d.awsTeam, person, role);
+      if (r.error) { say(r.error); return; }
+      await setDoc(ref, { name: snap.exists() && snap.data().name ? snap.data().name : company.name, ...detailForSave({ ...d, awsTeam: r.team }), updatedAt: serverTimestamp(), updatedByEmail: me() });
+      detailCache.delete(key); attachAt = -1;
+      renderAws();
+      say(`${person.name} ${r.added ? "attached to" : "updated on"} ${company.name}'s AWS team.`);
+      loadDetails();
+    } catch (err) { say(`Couldn't attach: ${err && err.message ? err.message : err}`); }
+  }
+  $("leads-aws").addEventListener("click", async (e) => {
+    const t = e.target.closest ? e.target : null;
+    if (!t) return;
+    if (t.closest("#leads-aws-toggle")) { awsOpen = !awsOpen; if (!awsOpen) attachAt = -1; renderAws(); return; }
+    const open = t.closest(".leads-aws-attach");
+    if (open && canEdit()) {
+      attachAt = Number(open.dataset.index); renderAws();
+      if (!awsCompanies) { await loadAwsCompanies(); renderAws(); }
+      const sel = $("leads-aws").querySelector(".leads-aws-company"); if (sel) sel.focus();
+      return;
+    }
+    if (t.closest(".leads-aws-cancel")) { attachAt = -1; renderAws(); return; }
+    const save = t.closest(".leads-aws-save");
+    if (save) {
+      const f = save.closest(".leads-aws-form");
+      const key = f.querySelector(".leads-aws-company").value;
+      if (!key) { const st = $("leads-aws-status"); if (st) st.textContent = "Choose the customer account first."; return; }
+      save.disabled = true;
+      await attachAws(Number(f.dataset.index), key, f.querySelector(".leads-aws-role").value);
+      save.disabled = false;
+    }
+  });
+
   // ── The board ───────────────────────────────────────────────────────────
   const initials = (nameOrEmail) => {
     const base = String(nameOrEmail || "").split("@")[0];
@@ -99,7 +199,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const who = l.assignee ? memberName(l.assignee) : "";
     return `<article class="lead-card" draggable="${canEdit() ? "true" : "false"}" data-lead-id="${esc(l.id)}" data-industry="${esc(entry.key)}" style="${industryStyle(entry)}" tabindex="0" role="button" aria-label="${esc(l.company.name)}, open lead summary">
       <h4 class="lead-card-name">${esc(l.company.name)}</h4>
-      <div class="lead-card-chips"><span class="lead-chip" title="${esc(industryChipText(l))}">${esc(industryChipText(l))}</span>${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
+      <div class="lead-card-chips"><span class="lead-chip" title="${esc(industryChipText(l))}">${esc(industryChipText(l))}</span>${l.test ? '<span class="lead-test-badge">Test</span>' : ""}${l.inboundCount ? `<span class="lead-inbound" title="Inbound contacts and submissions from this company">${esc(inboundLabel(l))}</span>` : ""}</div>
       ${line ? `<p class="lead-card-line">${esc(line)}</p>` : ""}
       ${compactHTML(l)}
       <div class="lead-card-foot">
@@ -225,6 +325,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       <section class="lead-sum-section"><h3>Lead</h3><dl class="lead-sum-dl">
         ${row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`)}
         ${row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned"))}
+        ${row("Inbound", esc(inboundLabel(l)))}
         ${row("Source", esc(l.sourceLabel ? l.sourceLabel + (l.sourceDetail ? " · " + l.sourceDetail : "") : sourceLabel(l)))}
         ${row("Source page", pageLink(l))}
         ${row("Source industry", esc(l.sourceIndustry))}
@@ -418,6 +519,10 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (r.errors.length) { setError(r.errors.join(" ")); return null; }
     setError("");
     const f = r.fields;
+    if (!openId && !extra) {
+      const placed = await placeNew(f);
+      if (placed) { if (placed.id) openId = placed.id; return placed; }
+    }
     if (!openId) {
       const ref = await addDoc(collection(db, "leads"), {
         ...f, customerAccount: null, ...(extra || {}),
@@ -433,11 +538,53 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     return openId;
   }
 
+  // A new lead, matched to Prospects (TAM) the way a website lead is. Returns
+  // { id, message } (id null for AWS), or null to save it as a plain lead
+  // (Prospects can't be read, or the name can't hold a TAM record).
+  async function placeNew(f) {
+    let prospects;
+    try { prospects = (await getDocs(collection(db, "prospects"))).docs.map((d) => normaliseProspect(d.id, d.data())); } catch { return null; }
+    const contact = f.contacts.find((c) => c.email) || f.contacts[0] || null;
+    const plan = planInbound({ prospects, leads: allLeads, company: f.company, contact });
+    if (plan.kind === "none") return null;
+    const stamp = { updatedAt: serverTimestamp(), updatedByEmail: me() };
+    const pRef = doc(db, "prospects", plan.prospectId);
+    if (plan.kind === "aws") {
+      const day = new Date().toISOString().slice(0, 10);
+      let contacts = plan.prospect ? plan.prospect.contacts : [];
+      for (const c of f.contacts) contacts = mergeContact(contacts, awsContactFrom(c, day));
+      if (plan.createProspect) await setDoc(pRef, { ...plan.createProspect, contacts, createdAt: serverTimestamp(), createdByEmail: me(), ...stamp });
+      else await updateDoc(pRef, { contacts, ...stamp });
+      awsOpen = true; renderAws();
+      return { id: null, message: "From AWS: added to the AWS tile, not as a lead." };
+    }
+    const link = { leadId: plan.leadId, status: "converted" };
+    if (plan.createProspect) await setDoc(pRef, { ...plan.createProspect, ...link, createdAt: serverTimestamp(), createdByEmail: me(), ...stamp });
+    else if (plan.linkProspect) await updateDoc(pRef, { ...link, ...stamp });
+    if (plan.lead) {
+      const m = mergeInbound(plan.lead, f, f.contacts);
+      await updateDoc(doc(db, "leads", plan.lead.id), { company: m.company, contacts: m.contacts, inboundCount: m.inboundCount, ...(plan.lead.prospectId ? {} : { prospectId: plan.prospectId }), ...stamp });
+      return { id: plan.lead.id, message: `Added to the existing lead for ${plan.lead.company.name} (${inboundLabel({ inboundCount: m.inboundCount })}).` };
+    }
+    await setDoc(doc(db, "leads", plan.leadId), {
+      ...f, customerAccount: null, prospectId: plan.prospectId, inboundCount: 1,
+      createdAt: serverTimestamp(), stageChangedAt: serverTimestamp(), createdByEmail: me(), ...stamp,
+    });
+    return { id: plan.leadId, message: "" };
+  }
+
   $("lead-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!canEdit()) return;
     $("lead-save").disabled = true;
-    try { if (await persist()) closeLead(); } catch (err) { setError(`Couldn't save: ${err && err.message ? err.message : err}`); }
+    try {
+      const saved = await persist();
+      if (saved) {
+        closeLead();
+        if (saved.message && saved.id && leads.some((x) => x.id === saved.id)) { openSummary(saved.id); $("lead-sum-status").textContent = saved.message; }
+        else if (saved.message) { const st = $("leads-aws-status"); if (st) st.textContent = saved.message; }
+      }
+    } catch (err) { setError(`Couldn't save: ${err && err.message ? err.message : err}`); }
     finally { $("lead-save").disabled = false; }
   });
   $("lead-close").addEventListener("click", closeLead);
