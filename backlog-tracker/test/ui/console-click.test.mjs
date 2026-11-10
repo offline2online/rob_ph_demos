@@ -1903,10 +1903,11 @@ const scenarios = [
   {
     // Release 1.5.381 drew the popover inside the column's scroll box (.col-list, overflow: auto),
     // which cut off everything past the column's edge. It is position: fixed now (placeCardDescPop).
-    name: "Backlog cards: title only, the whole description pops up on hover/focus, unclipped; other columns unchanged",
+    name: "Board cards: title only in every column, the whole description pops up on hover/focus, unclipped",
     seed: () => {
       const s = seed();
       s.docs.backlogItems.b1.desc = "## Outcome\n" + "A long ticket description that runs on. ".repeat(25) + "\nLAST LINE";
+      s.docs.backlogItems.r1.testSummary = "Settings page fixed. Test: open Settings and save.";
       return s;
     },
     async run(c) {
@@ -1915,8 +1916,15 @@ const scenarios = [
       c.at("the Backlog card shows no description", title);
       assert.ok(!(await c.page.locator('.card[data-id="b1"]').innerText()).includes("A long ticket description"), "no description text on the card");
       assert.ok(await c.page.locator(pop).isHidden(), "the popover is hidden until hover");
-      assert.ok(await c.page.locator('.card[data-id="r1"] .card-desc').first().isVisible(), "Ready for Testing still shows its description");
-      assert.strictEqual(await c.page.locator('.card[data-id="r1"] .card-desc-pop').count(), 0);
+      // Every column, not just Backlog (release 1.5.381 left the other three showing descriptions).
+      for (const [id, words] of [["r1", ["Settings page fixed", "Fix the thing on the settings page"]], ["d1", ["Already approved"]], ["l1", ["Already live"]]]) {
+        const cardText = await c.page.locator(`.card[data-id="${id}"]`).innerText();
+        for (const w of words) assert.ok(!cardText.includes(w), `${id} shows "${w}" on the card; only the title should show`);
+        assert.strictEqual(await c.page.locator(`.card[data-id="${id}"] .card-desc, .card[data-id="${id}"] .card-desc-toggle-btn`).count(), 0, `${id} has no description block`);
+        const popText = await c.page.locator(`.card[data-id="${id}"] .card-desc-pop`).textContent();
+        for (const w of words) assert.ok(popText.includes(w), `${id}'s popover holds "${w}" (got "${popText}")`);
+      }
+      assert.ok((await c.page.locator('.card[data-id="r1"] .card-desc-pop').textContent()).includes("Original request:"), "the test summary comes first, then the original request");
       const unclipped = () => c.page.evaluate((sel) => {
         const p = document.querySelector(sel), r = p.getBoundingClientRect();
         const hit = (x, y) => { const e = document.elementFromPoint(x, y); return !!e && (e === p || p.contains(e)); };

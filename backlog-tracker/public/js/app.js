@@ -1034,14 +1034,15 @@ function cardHTML(item) {
   // opened a PR for it, e.g. the Notify Claude Routine) is a clear,
   // standalone description of what changed plus concrete steps to test it.
   // The original request is still one click away, not deleted.
+  //
+  // Every card on the board shows its title only (10 Nov 2026: release 1.5.381
+  // did this for the Backlog column alone, and the request was for the whole
+  // board). What the card used to show is in the hover/focus popover instead:
+  // testSummary first when there is one, then the original request.
   const hasTestSummary = isTesting && (item.testSummary || "").trim();
-  const descHTML = hasTestSummary
-    ? `<div class="card-desc-wrap">
-        <p class="card-desc">${escapeHTML(item.testSummary)}</p>
-        <button type="button" class="card-desc-toggle-btn" data-id="${item.id}">Show original request</button>
-        <p class="card-desc card-desc-original" hidden>${escapeHTML(item.desc)}</p>
-      </div>`
-    : `<p class="card-desc">${escapeHTML(item.desc)}</p>`;
+  const popText = hasTestSummary
+    ? `${item.testSummary.trim()}${(item.desc || "").trim() ? `\n\nOriginal request:\n${item.desc.trim()}` : ""}`
+    : (item.desc || "").trim();
 
   // A screenshot or screen recording attached via uploadItemAttachment.
   // Always rendered now, even at zero — it used to only appear once a card
@@ -1084,10 +1085,9 @@ function cardHTML(item) {
         </div>
         <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
-      ${isBacklog && (item.desc || "").trim()
-        ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(item.desc)}</span></h3>`
-        : `<h3 class="card-title">${escapeHTML(item.title)}</h3>
-      ${descHTML}`}
+      ${popText
+        ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
+        : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
       ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
@@ -4602,15 +4602,6 @@ projectsRoot.addEventListener("click", async (e) => {
   if (quickCommentBtn) { openQuickCommentModal(quickCommentBtn.dataset.id, quickCommentBtn.dataset.readonly === "1"); return; }
   const attachmentBtn = e.target.closest(".attachment-btn");
   if (attachmentBtn) { openQuickCommentModal(attachmentBtn.dataset.id, attachmentBtn.dataset.readonly === "1"); return; }
-  const descToggleBtn = e.target.closest(".card-desc-toggle-btn");
-  if (descToggleBtn) {
-    const wrap = descToggleBtn.closest(".card-desc-wrap");
-    const original = wrap.querySelector(".card-desc-original");
-    const wasHidden = original.hidden;
-    original.hidden = !wasHidden;
-    descToggleBtn.textContent = wasHidden ? "Hide original request" : "Show original request";
-    return;
-  }
   const testLinkBtn = e.target.closest(".test-link-set-btn, .test-link-edit-btn");
   if (testLinkBtn) {
     const id = testLinkBtn.dataset.id;

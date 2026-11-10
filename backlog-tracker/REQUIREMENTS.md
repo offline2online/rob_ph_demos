@@ -1140,9 +1140,9 @@ thing to read once the ticket is actually implemented. Whoever opens the
 PR for a ticket (in practice, the Notify Claude Routine) is expected to
 also set `testSummary`: a clear, standalone description of what changed,
 plus concrete steps to test it. Once a card reaches Ready for Testing, the
-board shows `testSummary` (when set) as its primary text, with a "Show
-original request" toggle that expands `desc` underneath rather than
-discarding it. A card with no `testSummary` set (an older ticket, or one
+card's hover popover shows `testSummary` (when set) first, then the
+original `desc` under "Original request:" rather than discarding it (cards
+show their title only — see "Board cards show the title only"). A card with no `testSummary` set (an older ticket, or one
 worked outside this flow) just keeps showing `desc` as before — this is a
 progressive enhancement, not a required field.
 
@@ -2129,13 +2129,25 @@ combined content" convention (`ROUTINE_INSTRUCTIONS.md` → "Group
 multi-item fixes into one deployment") is a separate, code-level mechanism
 in `run-backlog-automation.js` that never depended on this page either.
 
-### Backlog cards show the title only; the description is on hover
+### Board cards show the title only; the description is on hover
 
-A card in the Backlog column shows its title and badges but not the
-description text. The description appears in a popover when the pointer is
-over (or keyboard focus is on) the title (`.card-title-hover` /
-`.card-desc-pop` in `public/css/styles.css`), and as a native tooltip.
-Cards in other columns are unchanged.
+Every card on the Agent Board, in every column, shows its title and badges
+but not the description text. The text appears in a popover when the
+pointer is over (or keyboard focus is on) the title (`.card-title-hover` /
+`.card-desc-pop` in `public/css/styles.css`). On a touch screen a tap on
+the title opens the ticket detail, which shows the full description.
+
+- What the popover holds: the description; for a Ready for Testing or
+  Approved card with a `testSummary`, the summary first and then
+  "Original request:" with the description.
+- The popover is `position: fixed`, placed by `placeCardDescPop()` in
+  `app.js` and kept inside the viewport, because the column's scrolling
+  list (`.col-list`, `overflow: auto`) clips anything positioned inside it.
+- Release 1.5.381 did this for the Backlog column only and drew the popover
+  inside the column. Both were fixed on 10 Nov 2026 (1.5.383 and the
+  release after it): the request was for every ticket on the board.
+  `test/ui/console-click.test.mjs` → "Board cards: title only in every
+  column" checks every column and that the popover is unclipped.
 
 ### A Backlog card locks while a fix is in flight
 
