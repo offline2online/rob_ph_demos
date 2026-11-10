@@ -1,0 +1,420 @@
+{
+ "about": "Voiceover for the retail media walkthrough. Each step has one or more lines, each one or two sentences and under 10 seconds. A line without a cue plays as the step starts (the first line) or straight after the line before it. A line with a cue plays when the on-screen tip with that title appears; if the line before is still playing, the screen waits for it, so words and screens stay in step. The retailer's name changes to the visitor's company, so lines say 'the retailer'. Run build_voiceover.py after editing; only changed lines are regenerated.",
+ "voice": "af_heart",
+ "lang": "en-us",
+ "speed": 1.0,
+ "steps": [
+  {
+   "id": "f1-01",
+   "title": "The retailer's four screen types",
+   "lines": [
+    {
+     "text": "The retailer has four screen types: forecourt, shop front, cooler doors and point of sale."
+    }
+   ]
+  },
+  {
+   "id": "f1-02",
+   "title": "Three slots, slot 1 for advertisers",
+   "lines": [
+    {
+     "text": "Each one has its own playlist."
+    },
+    {
+     "cue": "Three campaigns in rotation",
+     "text": "First, the forecourt playlist is set to rotate three campaigns, one after another."
+    },
+    {
+     "cue": "Three slots, all Headquarters",
+     "text": "New slots belong to Headquarters, for the retailer's own promotions."
+    },
+    {
+     "cue": "Slot 1 goes to advertisers",
+     "text": "Slot one is the one the retailer will sell to brands."
+    },
+    {
+     "cue": "From Headquarters to Advertiser",
+     "text": "Its owner changes from Headquarters to Advertiser."
+    },
+    {
+     "cue": "One advertiser slot in three",
+     "text": "One slot in three now earns media revenue, and two keep promoting the retailer's own offers."
+    }
+   ]
+  },
+  {
+   "id": "f1-03",
+   "title": "The same on every screen type",
+   "lines": [
+    {
+     "text": "Shop front, cooler doors and point of sale get the same setup, in a few clicks."
+    },
+    {
+     "text": "The retailer decides exactly how much screen time it sells."
+    },
+    {
+     "cue": "Four advertiser slots, ready to sell",
+     "text": "Four brand partner slots, one on every screen type, are now ready to sell."
+    }
+   ]
+  },
+  {
+   "id": "f1-04",
+   "title": "The advertiser is already set up",
+   "lines": [
+    {
+     "text": "Frostline Cold Drinks is already set up as a direct advertiser, next to the advertisers synced from DSPs."
+    }
+   ]
+  },
+  {
+   "id": "f1-05",
+   "title": "Create a direct deal",
+   "lines": [
+    {
+     "text": "Slots are always sold through deals. A brand is never assigned to a slot directly."
+    },
+    {
+     "cue": "Create a direct deal",
+     "text": "This direct deal gives Frostline all of December at a fixed CPM, and it's never sent to a DSP."
+    }
+   ]
+  },
+  {
+   "id": "f1-06",
+   "title": "Put the deal on all four slots",
+   "lines": [
+    {
+     "text": "The four new brand partner slots start unassigned, so nothing plays in them yet."
+    },
+    {
+     "cue": "The new deal, not on a slot yet",
+     "text": "Frostline's deal is saved as a draft, ready to place on the slots."
+    },
+    {
+     "cue": "Choose the deal",
+     "text": "Each slot's list offers DSPs for open auction, and deals."
+    },
+    {
+     "text": "The retailer picks the Frostline deal for all four."
+    },
+    {
+     "text": "Direct deals and programmatic demand are managed side by side, in one place."
+    },
+    {
+     "cue": "All four brand partner slots",
+     "text": "All four slots now carry the deal, and the deal shows four slots. Then, save the changes."
+    }
+   ]
+  },
+  {
+   "id": "f1-07",
+   "title": "Finalise and go live",
+   "lines": [
+    {
+     "text": "The forecast plays are for reference only: this is a direct buy at a fixed CPM."
+    },
+    {
+     "cue": "Finalise and go live",
+     "text": "Finalising puts the deal live, and its revenue is reported just like DSP revenue."
+    },
+    {
+     "cue": "Live · direct, not sent to a DSP",
+     "text": "Every December window on all four screen types is now Frostline's."
+    }
+   ]
+  },
+  {
+   "id": "f1-08",
+   "title": "Give Frostline its own login",
+   "lines": [
+    {
+     "text": "Finally, the retailer gives Frostline its own login, so the brand can manage its own campaigns."
+    },
+    {
+     "cue": "An Advertiser login for Frostline",
+     "text": "Alex gets the Advertiser role, so Alex only ever sees Frostline's campaigns."
+    },
+    {
+     "cue": "Send the invitation",
+     "text": "The invitation goes out, and the retailer's first brand partner deal is done."
+    }
+   ]
+  },
+  {
+   "id": "f2-01",
+   "title": "Frostline signs in with its own login",
+   "lines": [
+    {
+     "text": "Alex from Frostline signs in with the login the retailer provided. Frostline can run its own campaigns, or leave them to the retailer."
+    },
+    {
+     "cue": "Only Frostline's campaigns",
+     "text": "Everything Alex sees is scoped to Frostline's own campaigns."
+    }
+   ]
+  },
+  {
+   "id": "f2-02",
+   "title": "Start a new campaign",
+   "lines": [
+    {
+     "text": "To start a new campaign, Alex selects Launch a New Campaign, at the top of the list."
+    }
+   ]
+  },
+  {
+   "id": "f2-03",
+   "title": "Just talk",
+   "lines": [
+    {
+     "text": "There's no form to fill in. Alex just talks, and the AI campaign agent listens."
+    },
+    {
+     "text": "As Alex speaks, it captures the campaign name, products, objective, screens and audience."
+    },
+    {
+     "text": "A whole campaign brief, in the time it takes to describe it."
+    }
+   ]
+  },
+  {
+   "id": "f2-04",
+   "title": "The agent writes the brief",
+   "lines": [
+    {
+     "text": "The agent writes the brief from what Alex said, and from how past campaigns performed."
+    },
+    {
+     "text": "It's ready in seconds, with nothing typed by hand."
+    },
+    {
+     "cue": "Deal ID, pre-selected",
+     "text": "Frostline's deal ID is pre-selected, so the campaign can only use the slots on that deal."
+    },
+    {
+     "cue": "Campaign brief",
+     "text": "Name, details, products, audience and objective are all filled in."
+    },
+    {
+     "cue": "Touchpoints",
+     "text": "Only the deal's four screen types are switched on."
+    }
+   ]
+  },
+  {
+   "id": "f2-05",
+   "title": "Generate storyboard and copy",
+   "lines": [
+    {
+     "text": "Next, the agent writes the headline and copy from the agreed brand guidelines: Frostline's, the retailer's, or an agreed mix of both."
+    },
+    {
+     "cue": "Storyboard and copy",
+     "text": "Every word can be edited before any creative is made."
+    }
+   ]
+  },
+  {
+   "id": "f2-06",
+   "title": "Generate creative preview",
+   "lines": [
+    {
+     "text": "With the copy agreed, the agent generates a creative preview of the first and last frames."
+    },
+    {
+     "cue": "Generating the preview",
+     "text": "The frames follow the agreed brand guidelines, and draw on what worked best in past campaigns."
+    },
+    {
+     "cue": "Refine in plain English",
+     "text": "Not quite right? Alex asks for a change in plain English, like a brighter background for daytime forecourts."
+    },
+    {
+     "cue": "Updated",
+     "text": "And the frame is regenerated with the change."
+    }
+   ]
+  },
+  {
+   "id": "f2-07",
+   "title": "Generate creative assets",
+   "lines": [
+    {
+     "text": "Generate Creative Assets builds the final creative for every screen type: forecourt, shop front, cooler doors and point of sale."
+    },
+    {
+     "cue": "Assets for every touchpoint",
+     "text": "Once the approved campaign runs, its results feed Frostline's future campaigns, closing the loop."
+    }
+   ]
+  },
+  {
+   "id": "f2-08",
+   "title": "Target Loyalty Gold members",
+   "lines": [
+    {
+     "text": "Frostline also wants a second campaign, just for Gold members."
+    },
+    {
+     "cue": "Open the Targeting tab",
+     "text": "Targeting is set on the campaign's Targeting tab, exactly as the retailer would."
+    },
+    {
+     "cue": "Target Loyalty Gold members",
+     "text": "Alex adds a rule: Audience Segments includes Loyalty Gold."
+    },
+    {
+     "text": "Every option is a drop-down, so there's nothing to type and nothing to get wrong."
+    },
+    {
+     "text": "Only the data sources, attributes and values the retailer has approved for brands appear here."
+    },
+    {
+     "cue": "Controlled by the retailer",
+     "text": "The retailer controls 100% of the targeting it shares."
+    },
+    {
+     "cue": "The retailer's loyalty tiers",
+     "text": "The data stays in the retailer's own cloud. Frostline only ever picks a segment."
+    }
+   ]
+  },
+  {
+   "id": "f2-09",
+   "title": "Add purchase history",
+   "lines": [
+    {
+     "text": "A second rule adds purchase history from the retailer's point-of-sale data."
+    },
+    {
+     "text": "Purchase History includes cold drinks, again picked from a list."
+    },
+    {
+     "text": "Targeting on real loyalty and sales data is what makes in-store media so valuable, to brands and to the retailer."
+    },
+    {
+     "cue": "Both rules in place",
+     "text": "Gold members who buy cold drinks match both rules, and Alex saves the targeting with Save Changes."
+    },
+    {
+     "cue": "Send for approval",
+     "text": "Saving doesn't submit anything. Send for approval, at the top right, sends the campaign to the retailer."
+    },
+    {
+     "cue": "Awaiting approval",
+     "text": "It's now awaiting approval, with no activation toggle until the retailer approves it."
+    }
+   ]
+  },
+  {
+   "id": "f2-10",
+   "title": "The retailer approves",
+   "lines": [
+    {
+     "text": "Every brand campaign needs the retailer's approval before it can play. Frostline's is waiting in Campaign Approval."
+    },
+    {
+     "cue": "Approve Selected",
+     "text": "One click on Approve Selected, and Frostline's Gold campaign is approved, with its own creative ID."
+    },
+    {
+     "cue": "Ready to activate",
+     "text": "Once it's approved, the activation toggle appears in place of Send for approval."
+    }
+   ]
+  },
+  {
+   "id": "f3-01",
+   "title": "Emma checks in at the pump",
+   "lines": [
+    {
+     "text": "Emma, a Gold loyalty member, pulls in to Highway 9 Services."
+    },
+    {
+     "cue": "Welcome to Highway 9 Services",
+     "text": "The retailer's loyalty app welcomes her by name and invites her to check in."
+    },
+    {
+     "cue": "Checked in",
+     "text": "One tap, and she's checked in."
+    },
+    {
+     "cue": "Frostline's offer, in the retailer's app",
+     "text": "Frostline's Gold offer is first in her app."
+    }
+   ]
+  },
+  {
+   "id": "f3-02",
+   "title": "Her profile meets Frostline's rules",
+   "lines": [
+    {
+     "text": "Her check-in links to what the retailer already knows: her loyalty tier and what she buys."
+    },
+    {
+     "cue": "A match on both rules",
+     "text": "She matches both of Frostline's rules, in real time."
+    }
+   ]
+  },
+  {
+   "id": "f3-03",
+   "title": "Frostline's offer follows Emma",
+   "lines": [
+    {
+     "text": "Every screen rotates three campaigns: two for the retailer, and the brand partner slot."
+    },
+    {
+     "cue": "Three campaigns in every rotation",
+     "text": "Most shoppers see Frostline's standard creative in that slot."
+    },
+    {
+     "text": "But not Emma."
+    },
+    {
+     "cue": "Recognised at the pump",
+     "text": "Recognised at the pump, she sees Frostline's Gold version, personalised for her."
+    },
+    {
+     "cue": "At the shop front",
+     "text": "At the shop front, the same campaign points her to the cooler doors, right next to her."
+    },
+    {
+     "cue": "At the cooler doors",
+     "text": "At the cooler doors, right where the drinks are: a free upsize on every Frostline."
+    },
+    {
+     "cue": "At the POS",
+     "text": "And at the till, her upsize is applied. One shopper, four screens, one joined-up offer."
+    }
+   ]
+  },
+  {
+   "id": "f3-04",
+   "title": "Booked on all four screen types",
+   "lines": [
+    {
+     "text": "Behind the scenes, Frostline holds slot one on all four screen types, every day of December."
+    },
+    {
+     "cue": "Default plus personalised",
+     "text": "Each booking carries the default creative and the personalised Gold version, both approved."
+    }
+   ]
+  },
+  {
+   "id": "f3-05",
+   "title": "What the brand partner slots earn",
+   "lines": [
+    {
+     "text": "Booking revenue shows what the slots earn: every window sold, at Frostline's fixed CPM."
+    },
+    {
+     "cue": "USD 67,494 in two weeks",
+     "text": "That's over 67 thousand dollars in two weeks, from one slot in three."
+    }
+   ]
+  }
+ ]
+}

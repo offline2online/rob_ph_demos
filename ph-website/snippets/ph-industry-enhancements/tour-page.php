@@ -738,6 +738,41 @@ html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
 .cv-tile.pos .cv-ad.per b,.cv-tile.pos .cv-ad.cre b{font-size:1.35em}
 .cv-title+.cv-track{top:150px}
 
+
+/* retail media: real prototype screenshots fill the stage; hotspots are invisible targets for the cursor and tips */
+.rm-shot{position:absolute;inset:0;background:#fff}.rm-shot img{display:block;width:1280px;height:760px;animation:fade .35s ease both}
+.rm-hs{position:absolute;pointer-events:none}
+.rm-ov{position:absolute;left:0;top:0;width:1600px;height:950px;transform:scale(.8);transform-origin:0 0;pointer-events:none}
+.rm-ovb{position:absolute;left:16px;top:20px;width:238px;height:56px;background:#333;display:flex;align-items:center;gap:10px;padding-left:8px;box-sizing:border-box;font-family:Roboto,Arial,sans-serif}
+.rm-ovm{width:40px;height:40px;border:2.5px solid #F2A900;border-radius:9px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:700 15px Roboto,Arial,sans-serif;flex:0 0 auto}
+.rm-ovm.sm{width:34px;height:34px;font-size:13px;border-radius:8px}
+.rm-ovn{display:flex;flex-direction:column;min-width:0;color:#fff;line-height:1.2}
+.rm-ovn b{font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:168px}
+.rm-ovn small{font-size:11.5px;letter-spacing:2px;text-transform:uppercase;color:#cfcfcf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:168px}
+.rm-ova{position:absolute;left:1542px;top:12px;width:42px;height:42px;background:#000;display:flex;align-items:center;justify-content:center}
+.rm-toast{position:absolute;left:50%;top:24px;transform:translateX(-50%)}
+.rm-login{position:absolute;inset:0;overflow:hidden;background:#141c28;font-family:Roboto,Arial,sans-serif}.rl-bg{position:absolute;inset:0;background:center/cover no-repeat}
+.rl-brand{position:absolute;left:77px;top:18px;display:flex;align-items:center;gap:9px;color:#fff;font-size:21px;letter-spacing:.3px}.rl-brand b{font-weight:700}
+.rl-card{position:absolute;left:50%;top:125px;width:456px;height:488px;margin-left:-228px;background:#fff;border-radius:6px;padding:62px 108px 0;box-sizing:border-box;color:#262626}
+.rl-logo{display:flex;align-items:center;justify-content:center;gap:10px;height:40px;font-weight:700;font-size:16px;color:#1f2a37}
+.rl-card h3{margin:20px -40px 22px;text-align:center;font-size:24px;font-weight:500;letter-spacing:-.2px;white-space:nowrap}
+.rl-lab{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#8c8c8c;margin:0 0 5px}.rl-lab i{color:#ff4d4f;font-style:normal;margin-right:3px}.rl-lab .ms{font-size:13px}
+.rl-card .in{border:1px solid #d9d9d9;border-radius:4px;height:26px;padding:0 9px;font-size:12px;display:flex;align-items:center;margin-bottom:16px;box-sizing:border-box}
+.rl-row{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#8c8c8c;margin:6px 0 24px}.rl-row>span{display:flex;align-items:center;gap:7px}.rl-row b{font-weight:400;color:#262626;margin-right:10px}
+.rl-cb{width:12px;height:12px;border:1px solid #d9d9d9;border-radius:2px;display:inline-block}
+.rl-btn{display:flex;align-items:center;justify-content:center;height:26px;border-radius:4px;background:#169BC2;color:#fff;font-weight:600;font-size:12px}
+.rl-pow{position:absolute;left:0;right:0;bottom:24px;display:flex;align-items:center;justify-content:center;gap:5px;font-size:9.5px;color:#8c8c8c}.rl-pow span{font-size:13px;color:#9a9a9a;letter-spacing:.2px}.rl-pow b{font-weight:700}
+.f .in.dsel{display:flex;align-items:center;justify-content:space-between}.f .in.dsel .ms{color:#999;font-size:18px}
+.sel.w4{position:relative}.sel.w4:has(.dchev){padding-right:26px}.sel.w4 .dchev{position:absolute;right:6px;top:50%;transform:translateY(-50%);color:#999;font-size:18px}
+.rm-lc{width:400px;background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(10,30,45,.18);padding:28px 30px;display:flex;flex-direction:column;gap:6px}
+.rm-lm{display:flex;align-items:center;gap:10px;font-size:20px;margin-bottom:8px}.rm-lm b{font-weight:700}
+.rm-lc h3{margin:6px 0 0;font-size:20px}.rm-ls{color:#667;margin-bottom:10px}.rm-lc label{font-size:13px;color:#555;margin-top:6px}
+.rm-lc .in{border:1px solid #d9d9d9;border-radius:6px;min-height:36px;padding:8px 10px;font-size:14px}.rm-lc .aibtn{justify-content:center;margin-top:14px}
+.cv-ad .sl{position:absolute;left:12px;bottom:7px;font-size:.66em;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.82}
+.cv.rm .cv-ad.cre,.cv.rm .cv-ad.per{background:linear-gradient(150deg,#06345a,#0A5C99)}
+.vogrp{display:inline-flex;align-items:center;gap:4px}.vogrp[hidden]{display:none}
+.ctl#vo.on{border-color:var(--ph-teal,#169BC2);color:var(--ph-teal,#169BC2)}
+.sfa{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;margin-left:12px;border-radius:6px;background:#169BC2;color:#fff;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap}.sfa .ms{font-size:17px}.sfa.sent{background:#f2f2f2;color:#8c8c8c;cursor:default}
 </style>
 </head>
 <body>
@@ -766,7 +801,7 @@ html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
     <button class="ctl main" id="play" type="button" aria-label="Pause"><span class="ms">pause</span></button>
     <button class="ctl" id="next" type="button" aria-label="Next step"><span class="ms">skip_next</span></button>
     <div class="dots" id="dots" role="tablist" aria-label="Steps"></div>
-    <button class="ctl fsbtn" id="fs" type="button" aria-label="Full screen" aria-pressed="false"><span class="ms">fullscreen</span></button>
+    <span class="vogrp" id="vogrp" hidden><button class="ctl" id="vo" type="button" aria-pressed="false" aria-label="Turn voiceover on"><span class="ms">volume_off</span></button></span><button class="ctl fsbtn" id="fs" type="button" aria-label="Full screen" aria-pressed="false"><span class="ms">fullscreen</span></button>
     <div class="cap" aria-live="polite"><b id="capT">Ready when you are</b><span id="capS">Press Start the tour, or pick a step.</span></div>
   </div>
   <div class="fine">Example company, stores and figures are illustrative. Screens recreate Personalisation Hub HQ Admin.</div>
@@ -776,10 +811,37 @@ html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
 (() => {
 /* ================= data ================= */
 const IS_CONV = /^\/industries\/convenience\/tour(\/|$)/.test(location.pathname);
-const FLOWS = [
+const IS_RM = /^\/industries\/retail-media\/tour(\/|$)/.test(location.pathname) || window.PH_TOUR_IND === "retail-media" || /[?&]ind=retail-media(&|$)/.test(location.search);
+/* Screenshots and voiceover: on the live site tour.php serves them same-origin (sha-pinned); anywhere else (the train preview) they load from the pinned assets tag on GitHub. */
+const RM_ASSETS = window.PH_TOUR_ASSETS || (/^\/industries\/retail-media\/tour(\/|$)/.test(location.pathname) ? "/industries/retail-media/tour/assets/v1/" : "https://raw.githubusercontent.com/offline2online/rob_ph_demos/tour-assets-retail-media-v1/ph-website/tour-assets/retail-media/");
+const RM_IMG = window.PH_TOUR_IMG || RM_ASSETS + "img/";
+const FLOWS = IS_RM ? [
+  ["Retailer setup", true, "Playlists · direct deal"], ["Advertiser creates by talking", true, "Voice brief · targeting"], ["Shopper journey & outcome", true, "Forecourt to POS · bookings"]
+] : [
   ["Automated campaign creative", true], ["Seamless localisation & scheduling", true, "Stores · digital twin"], ["Seamless personalisation", true, "Check-in · first-party data"]
 ];
 const IND = {
+  /* Retail media: a fictional convenience retailer (the visitor's company replaces the name) sells its screens to a fictional
+     cold drinks brand. adv is the advertiser's campaign, p3 its Gold members version. Deal and dates match the prototype screens. */
+  "retail-media": {
+    brand: "Larkspur Convenience", color: "#14507A", accent: "#F2A900", stores: 9, rows: [], thumbs: ["snow", "bolt", "snow", "bolt"],
+    deal: "PH-Y86K9QMUH4",
+    adv: {
+      brand: "Frostline Cold Drinks", color: "#0A5C99", accent: "#E0393E",
+      rows: [
+        ["SCHEDULED", "Frostline Iced Tea | Back to school", "Lunchtime shoppers", ["tv"]],
+        ["TARGETED", "Frostline Zero | Summer launch", "Soft drink buyers", ["tv"]]
+      ],
+      get brief() { return `Summer campaign for Frostline Cold Drinks on our direct deal with ${B()}: ice-cold Frostline Cola and Iced Tea on the forecourt, shop front, cooler door and POS screens, from 1 to 31 December, aimed at drivers and lunchtime shoppers.`; },
+      name: "Frostline Summer | Ice-cold refresh",
+      details: "Summer campaign for Frostline Cold Drinks on the retailer's forecourt, shop front, cooler door and POS screens. Creative leads with the refresh and points shoppers to the coolers.",
+      products: ["Frostline Cola", "Frostline Iced Tea"], audience: ["Drivers", "Lunchtime shoppers"], objective: "Drive Sales",
+      headline: "Stay ice cold this summer", sub: "Grab a Frostline on your way through*", legal: "*While stocks last. Participating stores only.",
+      big: "ICE COLD", bigSub: "FROSTLINE SUMMER*", change: "Make the background brighter for daytime forecourts"
+    },
+    p3: { name: "Gold Members | Free Frostline upsize", details: "A free upsize on every Frostline for Loyalty Gold members who buy cold drinks, shown only to them, in real time.", headline: "Gold members get more", sub: "A free upsize on every Frostline*", big: "FREE UPSIZE", bigSub: "GOLD MEMBER BONUS*",
+      legal: "*Loyalty Gold members only. While stocks last. Participating stores only.", audience: ["Loyalty Gold"] }
+  },
   telco: {
     brand: "Nimbus Mobile", color: "#0B7A5E", accent: "#C6F432", stores: 24,
     rows: [
@@ -836,14 +898,18 @@ const IND = {
   }
 };
 /* One tour source for every industry page: the page path picks the industry (/industries/pharmacy/tour/ is pharmacy, anything else telco). */
-const IND_FROM_PATH = IS_CONV ? "convenience" : /^\/industries\/pharmacy\/tour(\/|$)/.test(location.pathname) ? "pharmacy" : "telco";
+const IND_FROM_PATH = IS_RM ? "retail-media" : IS_CONV ? "convenience" : /^\/industries\/pharmacy\/tour(\/|$)/.test(location.pathname) ? "pharmacy" : "telco";
 const S = { flow: 0, ind: IND_FROM_PATH, brand: null, color: null, custom: false, step: -1, paused: false, scale: 1, bright: false };
-try { document.title = "Interactive product tour · " + (S.ind === "pharmacy" ? "Pharmacy" : S.ind === "convenience" ? "Fuel & Convenience" : "Telco Retail") + " | Personalisation Hub"; } catch (e) {}
-const INDLABEL = S.ind === "pharmacy" ? "pharmacy" : S.ind === "convenience" ? "fuel and convenience" : "telco";
+try { document.title = "Interactive product tour · " + (IS_RM ? "Retail Media" : S.ind === "pharmacy" ? "Pharmacy" : S.ind === "convenience" ? "Fuel & Convenience" : "Telco Retail") + " | Personalisation Hub"; } catch (e) {}
+const INDLABEL = IS_RM ? "retail media" : S.ind === "pharmacy" ? "pharmacy" : S.ind === "convenience" ? "fuel and convenience" : "telco";
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const D = () => S.flow === 2 ? { ...IND[S.ind], ...IND[S.ind].p3 } : IND[S.ind];
-const B = () => S.brand || D().brand;
-const C = () => S.color || D().color;
+const RMI = () => IND["retail-media"];
+const D = () => IS_RM ? (S.flow === 0 ? RMI() : (S.flow === 2 || S.p3) ? { ...RMI(), ...RMI().adv, ...RMI().p3 } : { ...RMI(), ...RMI().adv }) : S.flow === 2 ? { ...IND[S.ind], ...IND[S.ind].p3 } : IND[S.ind];
+/* In retail media B and C are always the retailer (HQ Admin, loyalty app); ADV is the advertiser whose creative is drawn. */
+const B = () => S.brand || (IS_RM ? RMI().brand : D().brand);
+const C = () => S.color || (IS_RM ? RMI().color : D().color);
+const ADV = () => RMI().adv;
+const AB = () => IS_RM ? ADV().brand : B();
 
 /* ================= colour + svg helpers ================= */
 const hx = h => { h = h.replace("#",""); if (h.length===3) h=[...h].map(c=>c+c).join(""); return [0,2,4].map(i=>parseInt(h.substr(i,2),16)); };
@@ -855,9 +921,16 @@ let gid = 0;
 
 function logoSVG(size, onDark) {
   const c = C(), ini = esc(initials(B()));
-  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="${c}"/><circle cx="31" cy="9" r="5" fill="${D().accent}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="${ini.length>1?15:18}" fill="#fff">${ini}</text></svg>`;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="${c}"/><circle cx="31" cy="9" r="5" fill="${IS_RM ? RMI().accent : D().accent}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="${ini.length>1?15:18}" fill="#fff">${ini}</text></svg>`;
 }
 function illo(x, y, s, a, dark) {
+  if (S.ind === "retail-media") return `<g transform="translate(${x} ${y + 6 * s}) scale(${s})">
+    <circle cx="150" cy="80" r="76" fill="${a}" opacity=".22"/><ellipse cx="120" cy="230" rx="88" ry="9" fill="#000" opacity=".18"/>
+    <path d="M96 14h40v26c0 10 22 22 22 46v128c0 10-8 16-16 16h-52c-8 0-16-6-16-16V86c0-24 22-36 22-46z" fill="#ffffff"/>
+    <rect x="96" y="6" width="40" height="14" rx="4" fill="${a}"/><rect x="74" y="112" width="84" height="62" fill="${a}"/>
+    <text x="116" y="150" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="17" fill="#fff">ICE</text>
+    <path d="M190 120l10 18M200 112l-4 22M214 128l-18 6" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity=".85"/>
+    <path d="M40 150l10 18M50 142l-4 22M64 158l-18 6" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity=".6"/></g>`;
   if (S.ind === "convenience") return `<g transform="translate(${x} ${y + 10 * s}) scale(${s})">
     <circle cx="150" cy="70" r="72" fill="${a}" opacity=".24"/><ellipse cx="116" cy="224" rx="92" ry="9" fill="#000" opacity=".18"/>
     <path d="M62 78h110v58c0 40-26 70-55 70s-55-30-55-70z" fill="#ffffff"/><path d="M62 78h110v58c0 40-26 70-55 70s-55-30-55-70z" fill="${dark}" opacity=".08"/>
@@ -882,14 +955,14 @@ function illo(x, y, s, a, dark) {
 /* kinds: land 640x360 | port 360x640 | web 800x250 | store 360x640 ; variant: first | last */
 function art(kind, variant, bright = S.bright, opts = {}) {
   gid++;
-  const d = D(), c = C(), a = d.accent;
+  const d = D(), c = IS_RM ? ADV().color : C(), a = IS_RM ? ADV().accent : d.accent;
   const bg1 = bright ? mix(c, "#ffffff", .86) : c, bg2 = bright ? mix(c, "#ffffff", .7) : mix(c, "#000000", .35);
   const ink = bright ? mix(c, "#000000", .25) : "#ffffff", ink2 = bright ? mix(c,"#000000",.1) : mix("#ffffff", c, .12);
   const dark = mix(c, "#000000", .55);
   const W = {land:640, port:360, web:800, store:360, pos:480}[kind], H = {land:360, port:640, web:250, store:640, pos:360}[kind];
   const defs = `<defs><linearGradient id="g${gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bg1}"/><stop offset="1" stop-color="${bg2}"/></linearGradient>
     <linearGradient id="scr${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${mix(c,"#ffffff",.35)}"/><stop offset="1" stop-color="${a}"/></linearGradient></defs>`;
-  const logo = (x,y,s) => `<g transform="translate(${x} ${y}) scale(${s})"><rect width="40" height="40" rx="10" fill="${bright?c:"#ffffff"}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="15" fill="${bright?"#fff":c}">${esc(initials(B()))}</text><text x="50" y="26" font-family="Roboto,Arial" font-weight="700" font-size="16" fill="${ink}">${esc(B())}</text></g>`;
+  const logo = (x,y,s) => `<g transform="translate(${x} ${y}) scale(${s})"><rect width="40" height="40" rx="10" fill="${bright?c:"#ffffff"}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="15" fill="${bright?"#fff":c}">${esc(initials(AB()))}</text><text x="50" y="26" font-family="Roboto,Arial" font-weight="700" font-size="16" fill="${ink}">${esc(AB())}</text></g>`;
   const T = (x,y,size,txt,fill,w=900,anchor="start") => `<text x="${x}" y="${y}" font-family="Roboto,Arial" font-weight="${w}" font-size="${size}" fill="${fill}" text-anchor="${anchor}">${esc(txt)}</text>`;
   const hl = d.headline.split(" "), mid = Math.ceil(hl.length/2), h1 = hl.slice(0,mid).join(" "), h2 = hl.slice(mid).join(" ");
   let body = "";
@@ -910,7 +983,7 @@ function art(kind, variant, bright = S.bright, opts = {}) {
   } else if (kind === "web") {
     body = logo(28,22,.8) + T(28,118,38,d.headline,ink) + T(28,152,17,d.sub,ink2,500) + `<rect x="28" y="172" width="150" height="32" rx="16" fill="${a}"/>` + T(103,193,12,"LEARN MORE",S.ind==="telco"?"#0d1114":"#fff",700,"middle") + illo(560,14,.82,a,dark) + T(28,236,8,d.legal,ink2,400);
   } else {
-    body = `<rect width="360" height="56" fill="#fff"/>` + `<g transform="translate(16 10) scale(.9)"><rect width="40" height="40" rx="10" fill="${c}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="15" fill="#fff">${esc(initials(B()))}</text><text x="50" y="26" font-family="Roboto,Arial" font-weight="700" font-size="16" fill="#222">${esc(B())}</text></g>`
+    body = `<rect width="360" height="56" fill="#fff"/>` + `<g transform="translate(16 10) scale(.9)"><rect width="40" height="40" rx="10" fill="${c}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="15" fill="#fff">${esc(initials(AB()))}</text><text x="50" y="26" font-family="Roboto,Arial" font-weight="700" font-size="16" fill="#222">${esc(AB())}</text></g>`
       + `<rect y="56" width="360" height="330" fill="url(#g${gid})"/>` + illo(70,80,.95,a,dark) + T(22,420,26,d.headline,"#222") + T(22,448,14,d.sub,"#555",500)
       + `<rect x="22" y="470" width="316" height="44" rx="10" fill="${c}"/>` + T(180,498,14,"Talk to us in store",  "#fff",700,"middle")
       + `<rect x="22" y="528" width="316" height="44" rx="10" fill="#fff" stroke="#ddd"/>` + T(180,556,14,"Find my nearest store","#222",500,"middle") + T(22,610,8,d.legal,"#888",400);
@@ -919,8 +992,8 @@ function art(kind, variant, bright = S.bright, opts = {}) {
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" role="img" aria-label="${esc(d.headline)}">${defs}<rect width="${W}" height="${H}" fill="url(#g${gid})"/>${body}</svg>`;
 }
 function thumbSVG(kind) {
-  const c = C(), a = D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",queue:"hourglass_top",plane:"flight",snow:"ac_unit",bolt:"bolt",coffee:"local_cafe",car:"local_gas_station"}[kind];
-  return `<div style="width:100%;height:100%;background:linear-gradient(135deg,${mix(c,"#fff",.15)},${mix(c,"#000",.3)});display:flex;align-items:center;justify-content:space-between;padding:0 8px;color:#fff"><span style="font:900 9px Roboto;letter-spacing:.3px;line-height:1.1">${esc(initials(B()))}</span><span class="ms" style="font-size:22px;color:${a}">${ic}</span></div>`;
+  const c = IS_RM ? ADV().color : C(), a = IS_RM ? ADV().accent : D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",queue:"hourglass_top",plane:"flight",snow:"ac_unit",bolt:"bolt",coffee:"local_cafe",car:"local_gas_station"}[kind];
+  return `<div style="width:100%;height:100%;background:linear-gradient(135deg,${mix(c,"#fff",.15)},${mix(c,"#000",.3)});display:flex;align-items:center;justify-content:space-between;padding:0 8px;color:#fff"><span style="font:900 9px Roboto;letter-spacing:.3px;line-height:1.1">${esc(initials(AB()))}</span><span class="ms" style="font-size:22px;color:${a}">${ic}</span></div>`;
 }
 
 /* ================= screens ================= */
@@ -930,19 +1003,19 @@ const NAV2 = [["settings","Company Settings"],["assignment","Platform Admin"]];
 function shell(inner, crumbs, navOn = "Campaigns") {
   const nav = (arr, on) => arr.map(([i,l]) => `<div class="${l===on?"on":""}"><span class="ms">${i}</span>${l}</div>`).join("");
   return `<div class="app"><aside class="side"><div class="logo">${logoSVG(44)}<span class="wm">${esc(B())}</span></div>
-    <div class="nav">${nav(NAV1,navOn)}</div><div class="nav bottom">${nav(NAV2,navOn)}</div></aside>
+    <div class="nav">${nav(IS_RM && S.flow === 1 ? NAV1.filter(n => n[1] === "Campaigns" || n[1] === "Insights / Analytics") : NAV1,navOn)}</div><div class="nav bottom">${nav(IS_RM && S.flow === 1 ? [] : NAV2,navOn)}</div></aside>
     <div class="mainc"><div class="hdr"><span class="ms" style="color:#666">menu</span><span class="ph"><svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg><span>Personalisation<b>Hub</b></span></span>
-      <span class="env"><span class="ms" style="font-size:15px">rocket_launch</span>Production<span class="ms" style="font-size:14px">edit</span></span>${logoSVG(34)}</div>
+      ${IS_RM && S.flow === 1 ? `<span class="env"><span class="ms" style="font-size:15px">badge</span>Advertiser · ${esc(ADV().brand)}</span>` : `<span class="env"><span class="ms" style="font-size:15px">rocket_launch</span>Production<span class="ms" style="font-size:14px">edit</span></span>`}${logoSVG(34)}</div>
       <div class="content"><div class="scroller" id="sc"><div class="sci" id="sci"><div class="crumb">${crumbs}</div>${inner}</div></div></div></div><div id="layer"></div></div>`;
 }
 function listScreen(withNew) {
   const d = D();
-  const rows = (withNew ? [["LOCALISED", d.name, d.audience.join(", "), ["tv","language","storefront"], true]] : []).concat(d.rows);
+  const rows = (withNew ? [["LOCALISED", d.name, d.audience.join(", "), (IS_RM ? ["tv"] : ["tv","language","storefront"]), true]] : []).concat(d.rows);
   const body = rows.map((r,i) => `<div class="gr ${r[4]?"new":""}"><div><span class="cb"></span></div><div><span class="sd"></span></div><div><span class="pill">${r[0]}</span></div>
     <div class="nm"><div class="thumb">${r[4] ? art("land","first") : thumbSVG(d.thumbs[(i-(withNew?1:0))%4])}</div><span>${esc(r[1])}</span></div>
     <div class="tps">${r[3].map(t=>`<span class="ms">${t}</span>`).join("")}</div><div class="muted" style="font-size:13px">${esc(r[2])}</div><div class="muted">⋯</div></div>`).join("");
   return shell(`<div class="title">Campaigns</div><div class="hr"></div>
-    <div class="row" style="margin-bottom:12px"><div><b>${rows.length + 22}</b> Campaigns</div><div class="row"><span class="txtbtn">Campaign Prioritisation</span><span class="aibtn" id="launch"><span class="ms">auto_awesome</span><span>Launch a New Campaign</span></span></div></div>
+    <div class="row" style="margin-bottom:12px"><div><b>${IS_RM ? rows.length : rows.length + 22}</b> Campaigns</div><div class="row"><span class="txtbtn">Campaign Prioritisation</span><span class="aibtn" id="launch"><span class="ms">auto_awesome</span><span>Launch a New Campaign</span></span></div></div>
     <div class="grid"><div class="gh"><div><span class="cb"></span></div><div>Status</div><div>Playback Strategy</div><div>Name</div><div>Touch-points</div><div>Target Audience</div><div></div></div>${body}</div>
     <div class="pager"><span>‹</span><span class="pg">1</span><span>›</span><span class="muted">50 / page</span></div>`,
     `Home &gt; <b>Campaigns</b>`);
@@ -976,12 +1049,13 @@ async function countUp(id) {
   for (let f = 1; f <= n; f++) { const t = 1 - Math.pow(1 - f/n, 3); KP.forEach((k,i) => { q("#kv"+i).textContent = k[5](k[4]*t); }); q("#engv").textContent = Math.round(26*t) + "%"; await wait(40, id); }
 }
 function setCta(k) { const c = q("#cta"); if (c) c.outerHTML = ctaHTML(k); }
+function rmStatusHTML() { return `<span class="muted">Status</span><span class="sd" style="background:${S.rmSent ? "#faad14" : "#bfbfbf"}"></span><b id="stt">${S.rmSent ? "Awaiting approval" : "Draft"}</b><span class="sfa ${S.rmSent ? "sent" : ""}" id="sfa"><span class="ms">${S.rmSent ? "hourglass_top" : "send"}</span>${S.rmSent ? "Sent for approval" : "Send for approval"}</span>`; }
 function detailTop(tab, on, cta) {
   const d = D();
   const tabs = ["Campaign Brief","Targeting","Scheduling","Storyboard & Copy","Creative"].map(t=>`<div class="t ${t===tab?"on":""}" data-tab="${t}">${t}</div>`).join("");
   const kp = [["play_arrow","#f3f0ff","#7c5cff","Total plays",on?"1,204":"0"],["schedule","#ecfdf5","#22a06b","Total playback time",on?"2h 41m":"0h 0m"],["visibility","#fef2f2","#e5484d","Total views",on?"318":"0"],["timer","#fff8e1","#d59b00","Avg view duration",on?"3.2s":"0.0s"]];
   return `<div class="row"><div class="title" id="ctitle" style="max-width:640px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.name)}</div>
-    <div class="status"><span class="muted">Status</span><span class="sd" style="background:${on?"#52c41a":"#ff4d4f"}"></span><b id="stt">${on?"Activated - Running":"Not Activated"}</b><span class="sw ${on?"on":""}" id="sw"></span></div></div>
+    <div class="status">${IS_RM && S.flow === 1 && !S.rmApproved ? rmStatusHTML() : `<span class="muted">Status</span><span class="sd" style="background:${on?"#52c41a":"#ff4d4f"}"></span><b id="stt">${on?"Activated - Running":"Not Activated"}</b><span class="sw ${on?"on":""}" id="sw"></span>`}</div></div>
     <div id="insw">${on ? insightsHTML(true) : ""}</div>
     <div class="tabs">${tabs}${cta ? ctaHTML(cta) : ""}</div>`;
 }
@@ -989,9 +1063,9 @@ const crumbD = () => `Home &gt; Campaigns &gt; <b>${esc(D().name)}</b>`;
 function briefScreen(filled, on, cta = "story") {
   const d = D(), F = (k, html, cls="") => `<div class="f ${filled>k?"":"pend"}" id="f${k}">${html}</div>`;
   const v = (k, html) => filled > k ? html : "";
-  const tps = IS_CONV ? [["directions_car","Forecourt screens",true],["storefront","Shop front screens",true],["kitchen","Cooler door screens",true],["point_of_sale","POS screens",true]] : [["language","Website",true],["storefront","Store Sites",true],["tv","Digital Signage",true],["qr_code_2","QR-Control",false],["tablet","Staff Tablet",false],["smart_toy","AI Agents",false]];
+  const tps = (IS_CONV || IS_RM) ? [["directions_car","Forecourt screens",true],["storefront","Shop front screens",true],["kitchen","Cooler door screens",true],["point_of_sale","POS screens",true]] : [["language","Website",true],["storefront","Store Sites",true],["tv","Digital Signage",true],["qr_code_2","QR-Control",false],["tablet","Staff Tablet",false],["smart_toy","AI Agents",false]];
   return shell(detailTop("Campaign Brief", on, cta) + `<div class="form" id="form">
-    ${F(0,`<label><i>*</i>Campaign Name</label><div class="in ${filled===1?"fill":""}">${v(0,esc(d.name))}&nbsp;</div>`)}
+    ${IS_RM ? `<div class="f" id="f5"><label><i>*</i>Deal ID</label><div class="in dsel"><span>${esc(RMI().deal)}</span><span class="ms">expand_more</span></div></div>` : ""}${F(0,`<label><i>*</i>Campaign Name</label><div class="in ${filled===1?"fill":""}">${v(0,esc(d.name))}&nbsp;</div>`)}
     ${F(1,`<label>Campaign Details</label><div class="in ${filled===2?"fill":""}" style="min-height:80px">${v(1,esc(d.details))}</div>`)}
     ${F(2,`<label>Promoted Product(s)</label><div class="in tags ${filled===3?"fill":""}">${v(2,d.products.map(p=>`<span class="tag">${esc(p)} ×</span>`).join(""))}&nbsp;</div>`)}
     ${F(3,`<label>Target Audience(s)</label><div class="in tags ${filled===4?"fill":""}">${v(3,d.audience.map(p=>`<span class="tag">${esc(p)} ×</span>`).join(""))}&nbsp;</div>`)}
@@ -1020,7 +1094,7 @@ function creativeScreen(n, on, cta = null, tab2) {
   if (tab2 === "local") return shell(detailTop("Creative", on, cta) + `<div class="ctabs"><span>Campaign Assets</span><span>Call to Action</span><span class="on" id="lptab">Localised Preview</span></div>${localPreviewHTML()}`, crumbD());
   return shell(detailTop("Creative", on, cta) + `<div class="ctabs"><span class="on">Campaign Assets</span><span>Call to Action</span>${tab2 ? `<span id="lptab">Localised Preview</span>` : ""}</div>
     <div class="muted" style="margin-top:12px">Campaign assets for each enabled touch-point</div>
-    <div class="assets">${IS_CONV ? `<div style="display:flex;flex-direction:column;gap:16px">${P(0,"Forecourt screens (landscape)","land","16/9")}${P(2,"Cooler door screens (wide)","web","800/250")}</div>
+    <div class="assets">${(IS_CONV || IS_RM) ? `<div style="display:flex;flex-direction:column;gap:16px">${P(0,"Forecourt screens (landscape)","land","16/9")}${P(2,"Cooler door screens (wide)","web","800/250")}</div>
     <div style="display:flex;flex-direction:column;gap:16px">${P(1,"Shop front screens (portrait)","port","9/16")}${P(3,"POS screens","pos","4/3")}</div>` : `<div style="display:flex;flex-direction:column;gap:16px">${P(0,"Digital signage (landscape)","land","16/9")}${P(2,"Website","web","800/250")}</div>
     ${P(1,"Signage (portrait)","port","9/16")}${P(3,"Store sites","store","9/16")}`}</div>`, crumbD());
 }
@@ -1043,7 +1117,7 @@ function rel(el) { const r = el.getBoundingClientRect(), s = stage.getBoundingCl
 class Cancel extends Error {}
 let RUN = 0;
 const chk = id => { if (id !== RUN) throw new Cancel(); };
-async function wait(ms, id) { const k = reduce ? .35 : 1; let t = 0; while (t < ms * k) { await new Promise(r => setTimeout(r, 40)); chk(id); if (!S.paused) t += 40; } }
+async function wait(ms, id) { const k = reduce ? .35 : 1; let t = 0; while (t < ms * k) { await new Promise(r => setTimeout(r, 40)); chk(id); if (!S.paused && !S.voHold) t += 40; } }
 async function moveTo(el, id, dx=.5, dy=.5) {
   await reveal(el, id);
   const r = rel(el), x = r.x + r.w*dx, y = r.y + r.h*dy, dist = Math.hypot(x-curPos.x, y-curPos.y), ms = reduce ? 0 : Math.min(950, 320 + dist*.7);
@@ -1066,7 +1140,7 @@ async function reveal(el, id) {
 async function scrollTo(target, id) {
   hideTip(); const dur = reduce ? 0 : 650; const from = TOP; setTop(target, dur); if (TOP !== from) await wait(dur + 40, id);
 }
-function tip(el, title, text, n) {
+function tip(el, title, text, n) { if (S.voCue) S.voCue(title);
   const r = rel(el); ring.style.left = (r.x-6)+"px"; ring.style.top = (r.y-6)+"px"; ring.style.width = (r.w+12)+"px"; ring.style.height = (r.h+12)+"px"; ring.classList.add("on");
   tipEl.innerHTML = `<small>Step ${S.step+1} of ${ST().length}</small><b>${esc(title)}</b>${esc(text)}`;
   const tw = 300, th = tipEl.offsetHeight || 110; let x = Math.min(Math.max(16, r.x + r.w/2 - 40), 1280 - tw - 16), below = r.y + r.h + th + 24 < 750;
@@ -1139,9 +1213,9 @@ const STEPS = [
      paint(briefScreen(0,false)); await wait(500,id);
      for (let k=0;k<5;k++){ fillBrief(k); await wait(420,id); }
      const tmp=document.createElement("div"); tmp.innerHTML=briefScreen(6,false); q("#tps").innerHTML = tmp.querySelector("#tps").innerHTML; await wait(300,id);
-     tip(q("#f1"),"Campaign brief","Written from what was said and from how past campaigns performed: name, details, products, audience and objective.",3); await wait(3000,id); hideTip();
-     const t=q("#tps"); await reveal(t,id); tip(t,"Touchpoints",IS_CONV ? "Forecourt, shop front, cooler door and POS screens switched on from the brief." : "Digital signage, website and store sites switched on from the brief.",3); await wait(2800,id); hideTip(); } },
- { t:"Generate storyboard and copy", s:"Happy with the brief? Generate Storyboard & Copy writes the headline, sub-headline and legal copy from the brief and your brand guidelines.",
+     if (IS_RM) { tip(q("#f5"),"Deal ID, pre-selected","Frostline's deal with the retailer is pre-selected, and the drop-down lists only Frostline's own deals. Every campaign created on it is automatically associated with the slots assigned to that deal: slot 1 on Forecourt, Shop Front, Cooler Doors and POS.",3); await wait(5200,id); hideTip(); } tip(q("#f1"),"Campaign brief","Written from what was said and from how past campaigns performed: name, details, products, audience and objective.",3); await wait(3000,id); hideTip();
+     const t=q("#tps"); await reveal(t,id); tip(t,"Touchpoints",IS_RM ? "Only the deal's screen types, from the slots assigned to the deal: forecourt, shop front, cooler door and POS screens." : IS_CONV ? "Forecourt, shop front, cooler door and POS screens switched on from the brief." : "Digital signage, website and store sites switched on from the brief.",3); await wait(2800,id); hideTip(); } },
+ { t:"Generate storyboard and copy", s: IS_RM ? "Happy with the brief? The AI agent writes the headline, sub-headline and legal copy from the brief and the agreed brand guidelines: Frostline's, the retailer's, or an agreed variation of the two." : "Happy with the brief? Generate Storyboard & Copy writes the headline, sub-headline and legal copy from the brief and your brand guidelines.",
    enter(){ paint(briefScreen(6,false)); },
    async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,this.s,4); await wait(2800,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,1300);
      const tb=q('[data-tab="Storyboard & Copy"]'); paint(storyScreen({copy:0,f1:"none",f2:"none"})); await wait(400,id);
@@ -1150,7 +1224,7 @@ const STEPS = [
  { t:"Generate creative preview", s:"Copy agreed? Generate Creative Preview creates the first and last frames of the scene. Not quite right? Ask for a change in plain English.",
    enter(){ S.bright=false; paint(storyScreen({copy:3,f1:"none",f2:"none",cta:"preview"})); },
    async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,"Copy agreed? Generate Creative Preview creates the first and last frames of the scene.",5); await wait(2800,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,700);
-     await reveal(q(".scene"),id); setFrame("fr1","gen"); setFrame("fr2","gen"); tip(q("#fr1"),"Generating the preview","First and last frames are built from the storyboard, optimised on what has performed best in past campaigns.",5); await wait(1800,id);
+     await reveal(q(".scene"),id); setFrame("fr1","gen"); setFrame("fr2","gen"); tip(q("#fr1"),"Generating the preview",IS_RM ? "The AI agent builds the frames from the agreed brand guidelines, whether the advertiser's, the retailer's or an agreed variation of the two, optimised on what has performed best in past campaigns." : "First and last frames are built from the storyboard, optimised on what has performed best in past campaigns.",5); await wait(1800,id);
      setFrame("fr1","first"); await wait(900,id); setFrame("fr2","last"); await wait(1400,id);
      const rb=q("#reqbtn"); await moveTo(rb,id); tip(rb,"Refine in plain English","Not quite right? Ask for a change and the frame is regenerated.",5); await wait(2400,id); hideTip(); await click(rb,id);
      q("#fa1").insertAdjacentHTML("afterend", popHTML()); await typeInto(q("#popin"), D().change, id, reduce?999:48);
@@ -1159,8 +1233,8 @@ const STEPS = [
  { t:"Generate creative assets", s:"Storyboard refined? Generate Creative Assets builds the final scene for every touchpoint.",
    enter(){ S.bright=true; paint(storyScreen({copy:3,f1:"first",f2:"last",b1:true,cta:"assets"})); setTop(maxTop(),0); },
    async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,this.s,6); await wait(2800,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,1300);
-     paint(creativeScreen(0,false)); await wait(600,id); for (const [k,kind] of [[0,"land"],[1,"port"],[2,"web"],[3,IS_CONV ? "pos" : "store"]]) { setAsset(k,kind); await wait(560,id); }
-     tip(q("#ap0"),"Assets for every touchpoint",IS_CONV ? "Creative for each screen type: forecourt, shop front, cooler doors and POS. The generate button is gone once the assets exist." : "Landscape and portrait screens, the website and store sites. The generate button is gone once the assets exist.",6); await wait(3200,id); hideTip(); } },
+     paint(creativeScreen(0,false)); await wait(600,id); for (const [k,kind] of [[0,"land"],[1,"port"],[2,"web"],[3,(IS_CONV || IS_RM) ? "pos" : "store"]]) { setAsset(k,kind); await wait(560,id); }
+     tip(q("#ap0"),"Assets for every touchpoint",IS_RM ? "Creative for each screen type: forecourt, shop front, cooler doors and POS. Results from the approved, running campaign feed the agent's future campaigns in a closed loop." : IS_CONV ? "Creative for each screen type: forecourt, shop front, cooler doors and POS. The generate button is gone once the assets exist." : "Landscape and portrait screens, the website and store sites. The generate button is gone once the assets exist.",6); await wait(3200,id); hideTip(); } },
  { t:"Activate the campaign", s:"Switch on the toggle at the top right and the campaign starts playing in every store.",
    enter(){ S.bright=true; paint(creativeScreen(4,false)); },
    async play(id){ const sw=q("#sw"); await moveTo(sw,id); tip(sw,this.t,this.s,7); await wait(2600,id); hideTip(); await click(sw,id);
@@ -1337,7 +1411,7 @@ async function pickMany(el, opts, choices, sel, id) {
 function rowHTML(id, r) {
   const v = (k, ph) => r[k] ? `<span class="v">${esc(r[k])}</span>` : `<span class="v ph">${ph}</span>`;
   const last = Array.isArray(r[3]) ? (r[3].length ? r[3].map(t => `<span class="tag">${esc(t)} ×</span>`).join("") : `<span class="ph">Select values</span>`) : (r[3] ? esc(r[3]) : `<span class="ph">Enter value</span>`);
-  return `<div class="rrow" id="rr${id}"><span class="sel w1" id="s${id}a">${v(0,"Data source")}<span class="ms">expand_more</span></span><span class="sel w2" id="s${id}b">${v(1,"Category")}<span class="ms">expand_more</span></span><span class="sel w3" id="s${id}c">${v(2,"Operator")}<span class="ms">expand_more</span></span><span class="sel w4" id="s${id}d">${last}</span><span class="ms trash">delete</span></div>`;
+  return `<div class="rrow" id="rr${id}"><span class="sel w1" id="s${id}a">${v(0,"Data source")}<span class="ms">expand_more</span></span><span class="sel w2" id="s${id}b">${v(1,"Category")}<span class="ms">expand_more</span></span><span class="sel w3" id="s${id}c">${v(2,"Operator")}<span class="ms">expand_more</span></span><span class="sel w4" id="s${id}d">${last}${IS_RM ? `<span class="ms dchev">expand_more</span>` : ""}</span><span class="ms trash">delete</span></div>`;
 }
 function ruleRow(g, r) {
   const v = (k, ph) => r[k] ? `<span class="v">${esc(r[k])}</span>` : `<span class="v ph">${ph}</span>`;
@@ -1347,7 +1421,7 @@ function ruleRow(g, r) {
 }
 const rulesHTML = rules => rules.map((r,g) => (g ? `<div class="and">AND</div>` : "") + ruleRow(g, r)).join("");
 function targetScreen(rules) {
-  return shell(detailTop("Targeting", true, null) + `<div class="tgt"><div class="row" style="margin-top:20px"><span class="sec" style="margin:0">Defined campaign targeting rules</span><span class="row" style="gap:8px">Override current campaign <span class="ms muted" style="font-size:16px">help</span><span class="sw"></span></span></div>
+  return shell(detailTop("Targeting", !IS_RM, null) + `<div class="tgt"><div class="row" style="margin-top:20px"><span class="sec" style="margin:0">Defined campaign targeting rules</span><span class="row" style="gap:8px">Override current campaign <span class="ms muted" style="font-size:16px">help</span><span class="sw"></span></span></div>
     <div class="muted" style="margin:12px 0">Select 'Add New AND/OR Condition' to Add Targeting Rules</div><div id="rules">${rulesHTML(rules)}</div>
     <span class="andbtn" id="addand">+ Add New "AND" Condition</span><div class="hr"></div>
     <div class="row" style="justify-content:flex-start;gap:8px"><span class="btn pri" id="save">Save Changes</span><span class="btn">Cancel</span></div><div style="height:380px"></div></div>`, crumbD());
@@ -1485,13 +1559,18 @@ const PERS = {
     r2: ["Visitor / Customer Data","Purchase History","includes selected","Coffee"], r2mode: "text",
     r3: null, match: "Loyalty Gold and a coffee purchase history" }
 };
+PERS["retail-media"] = { ...PERS.convenience, person: "Emma", reason: "Fuel and a cold drink", findAt: "at the coolers", email: "emma@example.com", look: ["#e0b49a","#6b3b1f","f"],
+  ins: [["local_gas_station","Fuelling at pump 4"],["workspace_premium","Loyalty Gold"],["local_drink","Usually buys: cold drinks"],["sell","Offer shown: a free Frostline upsize"]],
+  attrs: [["Location","Pump 4, Highway 9 Services","Pump check-in",0],["Check-in method","Loyalty app","Pump check-in",0],["Audience / Segments","Loyalty Gold","Retailer's loyalty program",1],["Purchase History","Cold drinks","Retailer's POS",1]],
+  r2: ["Visitor / Customer Data","Purchase History","includes selected",["Cold drinks"]], r2mode: "tags", match: "Loyalty Gold and a cold drinks purchase history" };
+LOC["retail-media"] = LOC.convenience;
 const P3 = () => PERS[S.ind];
 const baseRules = ors => { const l = L(); return [l.rule1, l.rule3, Object.assign([...l.rule2], { pct: true, sub: l.subMode, ors: ors || [] })]; };
-ATTR["Visitor / Customer Data"] = ["First Name","Company Name","Purchase Intent","Visitor Type (Individual)","Reason for Visit (Individual)","Device Type (Individual)","Age","Gender","Audience / Segments","Product Type(s)","Plan Type(s)","Plan Value(s)","Page Views","Events","Product Holdings","Purchase History","SKU(s)"].filter(x => (S.ind !== "pharmacy" && S.ind !== "convenience") || !/^(Plan |Age$)/.test(x));
+ATTR["Visitor / Customer Data"] = ["First Name","Company Name","Purchase Intent","Visitor Type (Individual)","Reason for Visit (Individual)","Device Type (Individual)","Age","Gender","Audience / Segments","Product Type(s)","Plan Type(s)","Plan Value(s)","Page Views","Events","Product Holdings","Purchase History","SKU(s)"].filter(x => (S.ind !== "pharmacy" && S.ind !== "convenience" && S.ind !== "retail-media") || !/^(Plan |Age$)/.test(x));
 const BARS = [38,48,45,40,40,36,45,58,66,58,53,72,33,16];
 function promoHTML(which) {
-  const d = D(), c = C(), a = d.accent, ini = esc(initials(B())), on = S.ind === "telco" ? "#0d1114" : "#fff";
-  const logo = `<div class="pc-logo"><span style="color:${c}">${ini}</span>${esc(B())}</div>`;
+  const d = D(), c = IS_RM ? ADV().color : C(), a = IS_RM ? ADV().accent : d.accent, ini = esc(initials(AB())), on = S.ind === "telco" ? "#0d1114" : "#fff";
+  const logo = `<div class="pc-logo"><span style="color:${c}">${ini}</span>${esc(AB())}</div>`;
   if (which === "camp") { gid++;
     return `<div class="ss-card" id="pcard" style="background:linear-gradient(160deg,${c},${mix(c,"#000000",.4)})">${logo}
       <svg class="pc-illo" viewBox="0 0 240 250" aria-hidden="true"><defs><linearGradient id="scr${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${mix(c,"#ffffff",.35)}"/><stop offset="1" stop-color="${a}"/></linearGradient></defs>${illo(0,0,1,a,mix(c,"#000000",.55))}</svg>
@@ -1531,9 +1610,9 @@ function avatarSVG() {
 }
 function screenHTML(st) {
   const p = P3(), c = C(), ini = esc(initials(B()));
-  if (st === "notif") return `<div class="ph-lock"><div class="ph-time">${p.time.replace(/\d$/, d => String(Math.max(0, +d - 1)))}</div><div class="ph-date">Friday 6 November</div>
+  if (st === "notif") return `<div class="ph-lock"><div class="ph-time">${p.time.replace(/\d$/, d => String(Math.max(0, +d - 1)))}</div><div class="ph-date">${IS_RM ? "Tuesday 8 December" : "Friday 6 November"}</div>
       <div class="ph-note" id="pnote"><div class="pn-top"><span class="ph-logo sm" style="background:${c}">${ini}</span>${esc(B())}<small>now</small></div>
-      ${p.conv ? `<b>Welcome to pump 4, ${p.person}</b><span>Tap to check in and earn rewards.</span>` : `<b>Welcome to ${esc(p.store)}, ${p.person}</b><span>Tap to join the queue.</span>`}</div></div>`;
+      ${p.conv ? `<b>Welcome to ${IS_RM ? esc(p.store) : "pump 4"}, ${p.person}</b><span>Tap to check in and earn rewards.</span>` : `<b>Welcome to ${esc(p.store)}, ${p.person}</b><span>Tap to join the queue.</span>`}</div></div>`;
   if (st === "pump") { const camp = promoHTML("camp");
     return `<div class="ss" style="--bc:${c};--bg2:${mix(c,"#ffffff",.86)}"><div class="ss-top home"><span class="ss-brand">${logoSVG(28)}<span>${esc(B())}</span></span></div><div class="ss-store">Pump 4 · ${esc(p.store)}</div><div class="ss-body">
       <div class="ss-lab" id="pcheck">CHECKED IN WITH YOUR LOYALTY APP</div>
@@ -1717,24 +1796,42 @@ const CV = (() => {
     pos: { icon: "workspace_premium", tag: "Deal applied", head: "Coffee + pastry $6.00", sub: "Sam, you saved $2.50 and earned 60 points" }
   };
   const cup = `<svg class="cup" viewBox="0 0 120 90" aria-hidden="true"><ellipse cx="50" cy="80" rx="42" ry="6" fill="rgba(0,0,0,.25)"/><path d="M14 30h64v22c0 14-10 24-32 24S14 66 14 52z" fill="#fff"/><path d="M78 36h8c10 0 10 20 0 20h-9" fill="none" stroke="#fff" stroke-width="6"/><path d="M26 28c0-8 10-8 10-16M44 28c0-8 10-8 10-16" fill="none" stroke="#ffd9a8" stroke-width="4" stroke-linecap="round"/><path d="M84 68c8-16 30-16 36 0-9 9-28 9-36 0z" fill="#f2b45a"/><path d="M93 63l5 11M102 61l3 13M111 63l-1 11" stroke="#c9822a" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+  if (IS_RM) {
+    LOCS.splice(0, 4, { k: "fore", icon: "local_gas_station", name: "Forecourt", sub: "Fuel pumps" }, { k: "shop", icon: "storefront", name: "Shop Front", sub: "Entrance" },
+      { k: "cool", icon: "kitchen", name: "Cooler Doors", sub: "Cold drinks" }, { k: "pos", icon: "point_of_sale", name: "POS", sub: "Checkout" });
+    Object.assign(GEN, { fore: [["local_car_wash", "Car wash $8", "Fuel and car wash", "#27508f"], ["local_cafe", "Coffee + pastry $6", "Coffee and food", "#7a3b8f"]],
+      shop: [["sell", "2 for $5 snacks", "Today's deals", "#1f6b5d"], ["propane_tank", "Gas bottle swap", "Store services", "#8a3a3a"]],
+      cool: [["water_drop", "2 for $5 water", "Cold drink deals", "#2c4f9e"], ["lunch_dining", "Sandwich + drink $8", "Meal deals", "#5b3a8c"]],
+      pos: [["add_shopping_cart", "Add a chocolate bar, $1", "Add-on offers", "#6a3d8f"], ["loyalty", "Earn double points", "Loyalty app", "#9a4a14"]] });
+    Object.assign(OFFER, { fore: { icon: "ac_unit", tag: "Frostline", head: "Stay ice cold this summer", sub: "Frostline Cola, cold inside" },
+      shop: { icon: "ac_unit", tag: "Frostline", head: "Stay ice cold this summer", sub: "Grab a Frostline on your way through" },
+      cool: { icon: "ac_unit", tag: "Frostline", head: "Ice-cold Frostline", sub: "Cola and Iced Tea, right here" },
+      pos: { icon: "ac_unit", tag: "Frostline", head: "Add an ice-cold Frostline", sub: "Cola and Iced Tea at the counter" } });
+    Object.assign(PERS, { fore: { icon: "workspace_premium", tag: "Gold member · Pump 4", head: "Welcome back, Emma", sub: "A free Frostline upsize is waiting inside" },
+      shop: { icon: "workspace_premium", tag: "Just for you", head: "Emma, your Gold upsize is waiting", sub: "Frostline is in the coolers, to your right" },
+      cool: { icon: "workspace_premium", tag: "Gold member offer", head: "Free upsize on every Frostline", sub: "1.25L for the price of 600ml" },
+      pos: { icon: "workspace_premium", tag: "Upsize applied", head: "Frostline Cola 1.25L", sub: "Emma, your Gold upsize saved you $2.00" } });
+  }
+  const bottle = `<svg class="cup" viewBox="0 0 120 90" aria-hidden="true"><ellipse cx="60" cy="84" rx="40" ry="5" fill="rgba(0,0,0,.25)"/><path d="M70 4h14v10c0 4 8 8 8 16v48c0 4-3 6-6 6H68c-3 0-6-2-6-6V30c0-8 8-12 8-16z" fill="#fff"/><rect x="62" y="40" width="30" height="22" fill="#E0393E"/><path d="M28 34l6 10M34 30l-2 14M42 38l-10 4" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".8"/></svg>`;
   const ad = (k, mode, i = 0) => {
-    if (mode === "gen") { const g = GEN[k][i % 2]; return `<div class="cv-ad" style="background:${g[3]}"><span class="ms ic">${g[0]}</span><b>${g[1]}</b><small>${g[2]}</small></div>`; }
+    const sl = IS_RM ? `<span class="sl">${mode === "gen" ? `Slot ${(i % 2) + 2} · ${esc(B())}` : "Slot 1 · Brand partner"}</span>` : "";
+    if (mode === "gen") { const g = GEN[k][i % 2]; return `<div class="cv-ad" style="background:${g[3]}"><span class="ms ic">${g[0]}</span><b>${g[1]}</b><small>${g[2]}</small>${sl}</div>`; }
     const o = (mode === "cre" ? OFFER : PERS)[k];
-    return `<div class="cv-ad ${mode}"><span class="tg"><span class="ms">${o.icon}</span>${esc(o.tag)}</span><b>${esc(o.head)}</b><small>${esc(o.sub)}</small>${cup}</div>`;
+    return `<div class="cv-ad ${mode}"><span class="tg"><span class="ms">${o.icon}</span>${esc(o.tag)}</span><b>${esc(o.head)}</b><small>${esc(o.sub)}</small>${IS_RM ? bottle : cup}${sl}</div>`;
   };
   const tile = (l, mode, i) => `<div class="cv-tile ${l.k}"><div class="cv-scr" id="cvs-${l.k}">${ad(l.k, mode, i)}</div></div>`;
   const label = l => `<div class="cv-lab"><span class="ms">${l.icon}</span><span>${l.name}<small>${l.sub}</small></span></div>`;
   const row = (mode, i) => `<div class="cv-row" id="cvrow">${LOCS.map(l => `<div class="cv-loc" id="cvl-${l.k}">${tile(l, mode, i)}${label(l)}</div>`).join("")}</div>`;
   const head = sc => `<div class="cv-top"><div class="cv-logo"><i style="background:${C()}">${esc(initials(B()))}</i>${esc(B())}</div><div class="cv-sc">${sc}</div></div>`;
-  const root = inner => `<div class="cv" style="--cva:${D().accent}">${inner}</div>`;
+  const root = inner => `<div class="cv${IS_RM ? " rm" : ""}" style="--cva:${D().accent}">${inner}</div>`;
   const title = (h, s) => `<div class="cv-title"><b>${esc(h)}</b>${s ? `<span>${esc(s)}</span>` : ""}</div>`;
   const setTile = (k, mode, i) => { const e = q("#cvs-" + k); if (e) e.innerHTML = ad(k, mode, i); };
-  const rotate = (i) => LOCS.forEach(l => setTile(l.k, "gen", i));
+  const rotate = (i) => LOCS.forEach(l => IS_RM && i % 3 === 0 ? setTile(l.k, "cre") : setTile(l.k, "gen", IS_RM ? (i % 3) - 1 : i));
 
   /* scene 4: one member, four screens */
   const stops = () => `<div class="cv-track" id="cvtrack"><div class="cv-line" style="left:${CENTERS[0]}px;width:${CENTERS[3] - CENTERS[0]}px"></div><div class="cv-lf" id="cvlf" style="left:${CENTERS[0]}px"></div>
-    ${CENTERS.map((x, i) => `<div class="cv-stop" id="cvst${i}" style="left:${x}px">${i + 1}</div>`).join("")}<div class="cv-me" id="cvme" style="left:${CENTERS[0]}px"><i>S</i></div></div>`;
-  const scene4 = (mode) => root(head("The shopper journey") + title("Sam's offer follows her through the shop") + stops() + row(mode || "cre", 0));
+    ${CENTERS.map((x, i) => `<div class="cv-stop" id="cvst${i}" style="left:${x}px">${i + 1}</div>`).join("")}<div class="cv-me" id="cvme" style="left:${CENTERS[0]}px"><i>${esc(P3().person[0])}</i></div></div>`;
+  const scene4 = (mode) => root(head("The shopper journey") + title(IS_RM ? "Emma's Frostline offer follows her through the shop" : "Sam's offer follows her through the shop") + stops() + row(mode || "cre", 0));
   async function visit(i, id, fast) {
     const k = LOCS[i].k;
     if (i > 0) { setTile(LOCS[i - 1].k, "cre"); q("#cvl-" + LOCS[i - 1].k).classList.remove("on"); }
@@ -1761,12 +1858,28 @@ const CV = (() => {
       await visit(3, id);
       tip(q("#cvl-pos"), "At the POS", "The deal is applied at the till and her points are added, without her asking.", 5); await wait(4200, id); hideTip(); } };
 
-  const TEASE = [{ cap: "The offer follows a loyalty member from the pump to the till", async run(id) {
+  const RMSTEP = {
+    t: "Frostline's offer follows Emma", s: "Every screen rotates three campaigns: two for the retailer and the brand partner slot. Once Emma is recognised at pump 4, the brand partner slot plays Frostline's Gold version for her on every screen she passes.",
+    enter() { screen.innerHTML = scene4("gen"); hideTip(); },
+    async play(id) { await wait(900, id);
+      for (let i = 1; i <= 3; i++) { rotate(i); await wait(1400, id); }
+      tip(q("#cvrow"), "Three campaigns in every rotation", "Slots 2 and 3 play the retailer's own campaigns. Slot 1, the brand partner slot, plays Frostline's campaign.", 3); await wait(4000, id); hideTip();
+      LOCS.forEach(l => setTile(l.k, "cre")); await wait(700, id);
+      q("#cvtrack").insertAdjacentHTML("beforeend", `<div class="cv-rec" id="cvrec" style="left:${CENTERS[0]}px"><span class="ms">workspace_premium</span>Emma · Gold member recognised at pump 4</div>`);
+      await visit(0, id, true);
+      tip(q("#cvl-fore"), "Recognised at the pump", "Emma's loyalty app checks her in. When the brand partner slot comes round, the forecourt screen plays Frostline's Gold version for her.", 3); await wait(4200, id); hideTip();
+      q("#cvrec").remove(); await visit(1, id);
+      tip(q("#cvl-shop"), "At the shop front", "The same campaign, still speaking to a Gold member, points her to the coolers.", 3); await wait(3600, id); hideTip();
+      await visit(2, id);
+      tip(q("#cvl-cool"), "At the cooler doors", "Right where the drinks are: a free upsize on every Frostline.", 3); await wait(3600, id); hideTip();
+      await visit(3, id);
+      tip(q("#cvl-pos"), "At the POS", "The upsize is applied at the till. Everyone who isn't a Gold cold drinks buyer sees Frostline's default version.", 3); await wait(4200, id); hideTip(); } };
+  const TEASE = [{ cap: IS_RM ? "One brand partner slot in every rotation, personalised for a loyalty member" : "The offer follows a loyalty member from the pump to the till", async run(id) {
     S.flow = 0; screen.innerHTML = scene4(); await wait(600, id);
     for (let i = 0; i < 4; i++) { await visit(i, id, true); await wait(900, id); }
     await wait(900, id); } }];
 
-  return { STEP, TEASE };
+  return { STEP, TEASE, RMSTEP };
 })();
 
 /* Flow 3 for fuel & convenience: loyalty check-in at the pump instead of a queue. Same screens as the other industries, with the four-location shopper scene in the middle. */
@@ -1816,6 +1929,272 @@ const STEPS3C = [
      tip(q("#vdrec"),"Her offer, surfaced to staff",`The Gold members offer she was shown is the top recommendation, so ${p.staff} can open with it.`,6); await wait(3800,id); hideTip(); showEnd(); } }
 ];
 
+
+/* ================= retail media voiceover =================
+   Each step has one or more lines (vo/<step>-<line>-<hash>.mp3, built offline with Kokoro by build_voiceover.py), played
+   through a single audio element so two lines can never overlap. A line without a cue starts the step or follows the
+   line before it; a line with a cue starts when the tip with that title appears. If a cue comes while a line is still
+   playing, the tour holds (S.voHold stops wait() counting) until the line ends, so words and screens stay in step.
+   Off by default: it only turns on from the speaker button, and the choice is remembered. The current line is also the
+   caption under the tour, timed the same way, so the tour reads the same with audio off. */
+const VO = IS_RM ? (() => {
+  const CLIPS = {"f1-01": [{"file": "f1-01-1-4e6a1cf7d9.mp3", "text": "The retailer has four screen types: forecourt, shop front, cooler doors and point of sale.", "duration": 5.53, "cue": null}], "f1-02": [{"file": "f1-02-1-019cfa9967.mp3", "text": "Each one has its own playlist.", "duration": 1.71, "cue": null}, {"file": "f1-02-2-e1a1e04b87.mp3", "text": "First, the forecourt playlist is set to rotate three campaigns, one after another.", "duration": 4.8, "cue": "Three campaigns in rotation"}, {"file": "f1-02-3-88a9ceab86.mp3", "text": "New slots belong to Headquarters, for the retailer's own promotions.", "duration": 4.01, "cue": "Three slots, all Headquarters"}, {"file": "f1-02-4-41211815ee.mp3", "text": "Slot one is the one the retailer will sell to brands.", "duration": 3.03, "cue": "Slot 1 goes to advertisers"}, {"file": "f1-02-5-9f9d0e125b.mp3", "text": "Its owner changes from Headquarters to Advertiser.", "duration": 3.01, "cue": "From Headquarters to Advertiser"}, {"file": "f1-02-6-94ca378e3f.mp3", "text": "One slot in three now earns media revenue, and two keep promoting the retailer's own offers.", "duration": 5.65, "cue": "One advertiser slot in three"}], "f1-03": [{"file": "f1-03-1-d4761b039d.mp3", "text": "Shop front, cooler doors and point of sale get the same setup, in a few clicks.", "duration": 4.63, "cue": null}, {"file": "f1-03-2-e70fb76ac7.mp3", "text": "The retailer decides exactly how much screen time it sells.", "duration": 3.26, "cue": null}, {"file": "f1-03-3-b1b956b775.mp3", "text": "Four brand partner slots, one on every screen type, are now ready to sell.", "duration": 4.48, "cue": "Four advertiser slots, ready to sell"}], "f1-04": [{"file": "f1-04-1-5d3ff27ede.mp3", "text": "Frostline Cold Drinks is already set up as a direct advertiser, next to the advertisers synced from DSPs.", "duration": 7.02, "cue": null}], "f1-05": [{"file": "f1-05-1-815ef1fcf7.mp3", "text": "Slots are always sold through deals. A brand is never assigned to a slot directly.", "duration": 4.93, "cue": null}, {"file": "f1-05-2-a895affdb3.mp3", "text": "This direct deal gives Frostline all of December at a fixed CPM, and it's never sent to a DSP.", "duration": 6.04, "cue": "Create a direct deal"}], "f1-06": [{"file": "f1-06-1-bb4dc242cd.mp3", "text": "The four new brand partner slots start unassigned, so nothing plays in them yet.", "duration": 4.46, "cue": null}, {"file": "f1-06-2-b979dd0bac.mp3", "text": "Frostline's deal is saved as a draft, ready to place on the slots.", "duration": 3.97, "cue": "The new deal, not on a slot yet"}, {"file": "f1-06-3-920ae8dfd8.mp3", "text": "Each slot's list offers DSPs for open auction, and deals.", "duration": 3.99, "cue": "Choose the deal"}, {"file": "f1-06-4-70953acd20.mp3", "text": "The retailer picks the Frostline deal for all four.", "duration": 2.75, "cue": null}, {"file": "f1-06-5-9d85756903.mp3", "text": "Direct deals and programmatic demand are managed side by side, in one place.", "duration": 5.08, "cue": null}, {"file": "f1-06-6-0a6c6b9bc2.mp3", "text": "All four slots now carry the deal, and the deal shows four slots. Then, save the changes.", "duration": 5.61, "cue": "All four brand partner slots"}], "f1-07": [{"file": "f1-07-1-1007aa5f04.mp3", "text": "The forecast plays are for reference only: this is a direct buy at a fixed CPM.", "duration": 5.08, "cue": null}, {"file": "f1-07-2-810f46105a.mp3", "text": "Finalising puts the deal live, and its revenue is reported just like DSP revenue.", "duration": 5.55, "cue": "Finalise and go live"}, {"file": "f1-07-3-5dc08dbfb1.mp3", "text": "Every December window on all four screen types is now Frostline's.", "duration": 4.03, "cue": "Live · direct, not sent to a DSP"}], "f1-08": [{"file": "f1-08-1-59e0868c89.mp3", "text": "Finally, the retailer gives Frostline its own login, so the brand can manage its own campaigns.", "duration": 5.67, "cue": null}, {"file": "f1-08-2-37fde762a7.mp3", "text": "Alex gets the Advertiser role, so Alex only ever sees Frostline's campaigns.", "duration": 4.84, "cue": "An Advertiser login for Frostline"}, {"file": "f1-08-3-6623a4af25.mp3", "text": "The invitation goes out, and the retailer's first brand partner deal is done.", "duration": 4.33, "cue": "Send the invitation"}], "f2-01": [{"file": "f2-01-1-15e22e5b99.mp3", "text": "Alex from Frostline signs in with the login the retailer provided. Frostline can run its own campaigns, or leave them to the retailer.", "duration": 8.64, "cue": null}, {"file": "f2-01-2-b34e26f837.mp3", "text": "Everything Alex sees is scoped to Frostline's own campaigns.", "duration": 3.67, "cue": "Only Frostline's campaigns"}], "f2-02": [{"file": "f2-02-1-311f6763bd.mp3", "text": "To start a new campaign, Alex selects Launch a New Campaign, at the top of the list.", "duration": 4.76, "cue": null}], "f2-03": [{"file": "f2-03-1-9af0217766.mp3", "text": "There's no form to fill in. Alex just talks, and the AI campaign agent listens.", "duration": 5.12, "cue": null}, {"file": "f2-03-2-045001ee62.mp3", "text": "As Alex speaks, it captures the campaign name, products, objective, screens and audience.", "duration": 5.4, "cue": null}, {"file": "f2-03-3-31c7a5a55a.mp3", "text": "A whole campaign brief, in the time it takes to describe it.", "duration": 3.24, "cue": null}], "f2-04": [{"file": "f2-04-1-f01e28545d.mp3", "text": "The agent writes the brief from what Alex said, and from how past campaigns performed.", "duration": 4.74, "cue": null}, {"file": "f2-04-2-635ecc078c.mp3", "text": "It's ready in seconds, with nothing typed by hand.", "duration": 2.86, "cue": null}, {"file": "f2-04-3-0335984f58.mp3", "text": "Frostline's deal ID is pre-selected, so the campaign can only use the slots on that deal.", "duration": 5.65, "cue": "Deal ID, pre-selected"}, {"file": "f2-04-4-7ded1c15ea.mp3", "text": "Name, details, products, audience and objective are all filled in.", "duration": 4.22, "cue": "Campaign brief"}, {"file": "f2-04-5-15b9d9f7aa.mp3", "text": "Only the deal's four screen types are switched on.", "duration": 2.47, "cue": "Touchpoints"}], "f2-05": [{"file": "f2-05-1-72ad9f5f21.mp3", "text": "Next, the agent writes the headline and copy from the agreed brand guidelines: Frostline's, the retailer's, or an agreed mix of both.", "duration": 8.36, "cue": null}, {"file": "f2-05-2-67ab4ee24b.mp3", "text": "Every word can be edited before any creative is made.", "duration": 3.01, "cue": "Storyboard and copy"}], "f2-06": [{"file": "f2-06-1-247e067fe8.mp3", "text": "With the copy agreed, the agent generates a creative preview of the first and last frames.", "duration": 5.29, "cue": null}, {"file": "f2-06-2-a80f61db0a.mp3", "text": "The frames follow the agreed brand guidelines, and draw on what worked best in past campaigns.", "duration": 5.59, "cue": "Generating the preview"}, {"file": "f2-06-3-66c9dde6be.mp3", "text": "Not quite right? Alex asks for a change in plain English, like a brighter background for daytime forecourts.", "duration": 6.36, "cue": "Refine in plain English"}, {"file": "f2-06-4-a4c96f7f72.mp3", "text": "And the frame is regenerated with the change.", "duration": 2.5, "cue": "Updated"}], "f2-07": [{"file": "f2-07-1-b40b0f835d.mp3", "text": "Generate Creative Assets builds the final creative for every screen type: forecourt, shop front, cooler doors and point of sale.", "duration": 8.11, "cue": null}, {"file": "f2-07-2-0cb584fce6.mp3", "text": "Once the approved campaign runs, its results feed Frostline's future campaigns, closing the loop.", "duration": 5.82, "cue": "Assets for every touchpoint"}], "f2-08": [{"file": "f2-08-1-c4db39ce74.mp3", "text": "Frostline also wants a second campaign, just for Gold members.", "duration": 3.82, "cue": null}, {"file": "f2-08-2-dff38479d0.mp3", "text": "Targeting is set on the campaign's Targeting tab, exactly as the retailer would.", "duration": 4.8, "cue": "Open the Targeting tab"}, {"file": "f2-08-3-1cdbf597cd.mp3", "text": "Alex adds a rule: Audience Segments includes Loyalty Gold.", "duration": 3.73, "cue": "Target Loyalty Gold members"}, {"file": "f2-08-4-290178c496.mp3", "text": "Every option is a drop-down, so there's nothing to type and nothing to get wrong.", "duration": 4.61, "cue": null}, {"file": "f2-08-5-860c310ff2.mp3", "text": "Only the data sources, attributes and values the retailer has approved for brands appear here.", "duration": 5.55, "cue": null}, {"file": "f2-08-6-5524f565de.mp3", "text": "The retailer controls 100% of the targeting it shares.", "duration": 3.71, "cue": "Controlled by the retailer"}, {"file": "f2-08-7-f3e248ff41.mp3", "text": "The data stays in the retailer's own cloud. Frostline only ever picks a segment.", "duration": 4.78, "cue": "The retailer's loyalty tiers"}], "f2-09": [{"file": "f2-09-1-971fb8ad70.mp3", "text": "A second rule adds purchase history from the retailer's point-of-sale data.", "duration": 4.44, "cue": null}, {"file": "f2-09-2-466469aa88.mp3", "text": "Purchase History includes cold drinks, again picked from a list.", "duration": 3.54, "cue": null}, {"file": "f2-09-3-236dd2d126.mp3", "text": "Targeting on real loyalty and sales data is what makes in-store media so valuable, to brands and to the retailer.", "duration": 7.42, "cue": null}, {"file": "f2-09-4-a1ce565bd2.mp3", "text": "Gold members who buy cold drinks match both rules, and Alex saves the targeting with Save Changes.", "duration": 6.08, "cue": "Both rules in place"}, {"file": "f2-09-5-21b66dfcda.mp3", "text": "Saving doesn't submit anything. Send for approval, at the top right, sends the campaign to the retailer.", "duration": 5.97, "cue": "Send for approval"}, {"file": "f2-09-6-25ad0a8b40.mp3", "text": "It's now awaiting approval, with no activation toggle until the retailer approves it.", "duration": 5.16, "cue": "Awaiting approval"}], "f2-10": [{"file": "f2-10-1-f1dabdfa14.mp3", "text": "Every brand campaign needs the retailer's approval before it can play. Frostline's is waiting in Campaign Approval.", "duration": 7.0, "cue": null}, {"file": "f2-10-2-81cd7ddf45.mp3", "text": "One click on Approve Selected, and Frostline's Gold campaign is approved, with its own creative ID.", "duration": 6.31, "cue": "Approve Selected"}, {"file": "f2-10-3-2dbaa4ce3a.mp3", "text": "Once it's approved, the activation toggle appears in place of Send for approval.", "duration": 4.65, "cue": "Ready to activate"}], "f3-01": [{"file": "f3-01-1-efdcdb2629.mp3", "text": "Emma, a Gold loyalty member, pulls in to Highway 9 Services.", "duration": 3.88, "cue": null}, {"file": "f3-01-2-ca603efc83.mp3", "text": "The retailer's loyalty app welcomes her by name and invites her to check in.", "duration": 4.46, "cue": "Welcome to Highway 9 Services"}, {"file": "f3-01-3-e90e3201e3.mp3", "text": "One tap, and she's checked in.", "duration": 1.64, "cue": "Checked in"}, {"file": "f3-01-4-069ece1be1.mp3", "text": "Frostline's Gold offer is first in her app.", "duration": 2.67, "cue": "Frostline's offer, in the retailer's app"}], "f3-02": [{"file": "f3-02-1-4830a706b9.mp3", "text": "Her check-in links to what the retailer already knows: her loyalty tier and what she buys.", "duration": 5.03, "cue": null}, {"file": "f3-02-2-ad4c89c794.mp3", "text": "She matches both of Frostline's rules, in real time.", "duration": 3.18, "cue": "A match on both rules"}], "f3-03": [{"file": "f3-03-1-97fe869e29.mp3", "text": "Every screen rotates three campaigns: two for the retailer, and the brand partner slot.", "duration": 5.18, "cue": null}, {"file": "f3-03-2-c148af44ba.mp3", "text": "Most shoppers see Frostline's standard creative in that slot.", "duration": 3.14, "cue": "Three campaigns in every rotation"}, {"file": "f3-03-3-ece7bb359f.mp3", "text": "But not Emma.", "duration": 0.94, "cue": null}, {"file": "f3-03-4-70568d93b3.mp3", "text": "Recognised at the pump, she sees Frostline's Gold version, personalised for her.", "duration": 4.71, "cue": "Recognised at the pump"}, {"file": "f3-03-5-1592073a36.mp3", "text": "At the shop front, the same campaign points her to the cooler doors, right next to her.", "duration": 4.67, "cue": "At the shop front"}, {"file": "f3-03-6-21b34710c5.mp3", "text": "At the cooler doors, right where the drinks are: a free upsize on every Frostline.", "duration": 4.61, "cue": "At the cooler doors"}, {"file": "f3-03-7-3874b1ce8d.mp3", "text": "And at the till, her upsize is applied. One shopper, four screens, one joined-up offer.", "duration": 5.27, "cue": "At the POS"}], "f3-04": [{"file": "f3-04-1-80ffd5f1b7.mp3", "text": "Behind the scenes, Frostline holds slot one on all four screen types, every day of December.", "duration": 5.74, "cue": null}, {"file": "f3-04-2-7d6c8730ed.mp3", "text": "Each booking carries the default creative and the personalised Gold version, both approved.", "duration": 5.33, "cue": "Default plus personalised"}], "f3-05": [{"file": "f3-05-1-b9f1e531a3.mp3", "text": "Booking revenue shows what the slots earn: every window sold, at Frostline's fixed CPM.", "duration": 5.61, "cue": null}, {"file": "f3-05-2-59b67e01b8.mp3", "text": "That's over 67 thousand dollars in two weeks, from one slot in three.", "duration": 4.42, "cue": "USD 67,494 in two weeks"}]}, BASE = window.PH_TOUR_VO || RM_ASSETS + "vo/", KEY = "ph_tour_voiceover", GAP = 160;
+  const grp = document.getElementById("vogrp"), btn = document.getElementById("vo");
+  let on = false; try { on = localStorage.getItem(KEY) === "on"; } catch (e) {}
+  const a = new Audio(); a.preload = "auto";
+  let st = null, tok = 0, stall = 0;
+  const keyOf = (f = S.flow, i = S.step) => i < 0 ? null : `f${f + 1}-${String(i + 1).padStart(2, "0")}`;
+  const log = (ev, x) => { if (window.PH_TOUR_VO_DEBUG) (window.__voLog = window.__voLog || []).push({ ev, t: Math.round(performance.now()), ...x }); };
+  const warmed = new Set();
+  const warm = () => { if (!on) return; for (let i = 0; i < 30; i++) (CLIPS[keyOf(S.flow, i)] || []).forEach(c => { if (!warmed.has(c.file)) { warmed.add(c.file); fetch(BASE + c.file).catch(() => warmed.delete(c.file)); } }); };
+  const caption = t => { const el = document.getElementById("capS"); if (el && t) el.textContent = t; };
+  const setHold = () => { S.voHold = !!(st && on && st.q.length); };
+  function paint() {
+    grp.hidden = false; btn.classList.toggle("on", on); btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.setAttribute("aria-label", on ? "Turn voiceover off" : "Turn voiceover on");
+    btn.innerHTML = `<span class="ms">${on ? "volume_up" : "volume_off"}</span>`;
+  }
+  function stop() { tok++; a.pause(); if (st) log("stop", { k: st.k }); st = null; S.voHold = false; }
+  function step() {
+    stop(); const k = keyOf(), lines = CLIPS[k];
+    if (!lines) return;
+    st = { k, lines, i: -1, busy: false, gap: false, q: [], t: tok };
+    warm();
+    if (!lines[0].cue) play(0);
+  }
+  function play(j) {
+    const L = st.lines[j], t = st.t;
+    st.i = j; st.busy = true; st.gap = false; stall = 0; setHold();
+    caption(L.text); log("start", { k: st.k, j });
+    if (on) {
+      a.src = BASE + L.file;
+      if (!S.paused && !document.hidden) a.play().catch(err => { log("blocked", { k: st && st.k, j, err: err.name }); if (st && st.t === t && st.i === j) timer(t, j, L.duration); });
+    } else timer(t, j, L.duration);
+  }
+  function timer(t, j, secs) {   /* captions only: the line "plays" for its own length, pausing with the tour */
+    let left = secs * 1000;
+    const tick = () => { if (!st || st.t !== t || st.i !== j || !st.busy) return; if (!S.paused) left -= 100; if (left <= 0) finished(t, j); else setTimeout(tick, 100); };
+    setTimeout(tick, 100);
+  }
+  function finished(t, j) {
+    if (!st || st.t !== t || st.i !== j || !st.busy) return;
+    st.busy = false; log("ended", { k: st.k, j });
+    const chained = j + 1 < st.lines.length && !st.lines[j + 1].cue && !st.q.length ? j + 1 : null;
+    const nx = chained != null ? chained : st.q.length ? st.q.shift() : null;
+    if (nx == null) { setHold(); return; }
+    st.gap = true;
+    setTimeout(() => { if (st && st.t === t && st.gap) play(nx); }, on ? GAP : 0);
+  }
+  function cue(title) {
+    if (!st) return;
+    const from = Math.max(st.i, ...st.q) + 1;
+    const j = st.lines.findIndex((L, x) => x >= from && L.cue === title);
+    if (j < 0) return;
+    log("cue", { k: st.k, j, title });
+    if (on && (st.busy || st.gap)) { st.q.push(j); setHold(); log("hold", { k: st.k, j }); }   /* the screen waits for the line before it */
+    else { st.q = []; st.busy = false; play(j); }   /* captions only: go straight to the cued line */
+  }
+  function sync() {
+    if (!st || !st.busy || !on) return;
+    if (S.paused || document.hidden) a.pause(); else a.play().catch(() => {});
+  }
+  async function done(id) {   /* hold the step until its last line has finished */
+    while (on && st && (st.busy || st.gap || st.q.length)) await wait(100, id);
+  }
+  a.addEventListener("playing", () => st && log("playing", { k: st.k, j: st.i }));
+  a.addEventListener("ended", () => st && finished(st.t, st.i));
+  a.addEventListener("error", () => st && finished(st.t, st.i));
+  setInterval(() => {   /* a line that stalls never blocks the tour */
+    if (on && st && st.busy && !S.paused && !document.hidden && (a.paused || a.readyState < 3)) { if (++stall > 12) { log("stalled", { k: st.k, j: st.i }); finished(st.t, st.i); } }
+    else stall = 0;
+  }, 250);
+  document.addEventListener("visibilitychange", sync);
+  window.addEventListener("pagehide", stop);
+  btn.addEventListener("click", () => {
+    on = !on; try { localStorage.setItem(KEY, on ? "on" : "off"); } catch (e) {}
+    log("toggle", { on }); paint();
+    if (!st) return;
+    if (on) { warm(); if (st.busy) play(st.i); }
+    else { a.pause(); st.q = []; S.voHold = false; if (st.busy) finished(st.t, st.i); }
+  });
+  S.voCue = cue;
+  paint();
+  return { step, stop, sync, done, warm, get on() { return on; },
+    text: (f, i) => { const k = keyOf(f, i); return st && st.k === k && st.i >= 0 ? st.lines[st.i].text : ((CLIPS[k] || [])[0] || {}).text; } };
+})() : null;
+
+/* ================= retail media: a convenience retailer sells its screens to a brand =================
+   Retailer steps are screenshots of HQ Admin's retail media screens (img/*.jpg, 1600x950 = the stage at 0.8);
+   HOT holds each screenshot's click target and the regions the tips point at. Advertiser steps reuse the PH Core campaign screens. */
+const RM = IS_RM ? (() => {
+  const SC = 0.8, HOT = {"P1-display-types":[256,344,249,46],"P1-display-types#list":[524,212,260,342],"P2-playlists":[537,255,24,24],"P3-three-slots":[552,701,1002,32],"P4-owner":[1185,577,353,32],"P5-forecourt":[537,680,24,24],"P5-forecourt#slots":[616,513,926,108],"P6-shopfront":[537,680,24,24],"P6-shopfront#slots":[616,513,926,108],"P7-coolers":[537,680,24,24],"P7-coolers#slots":[616,513,926,108],"P8-pos":[1464,704,118,32],"P8-pos#slots":[616,513,926,108],"P9-saved":[256,390,249,46],"P9-saved#badges":[1189,250,211,202],"01-advertiser":[559,826,101,18],"01-advertiser#row":[525,814,1095,42],"03-users":[1277,184,204,32],"04-add-user":[1056,602,88,32],"05-deals":[1375,171,208,32],"06-new-deal":[924,918,113,32],"06-new-deal#terms":[662,461,532,405],"07-assign-slot":[873,659,362,49],"07b-assigned-all":[1464,908,118,32],"07b-assigned-all#cells":[855,415,400,207],"08-deal-finalise":[1045,874,149,32],"08-deal-finalise#plays":[662,766,532,96],"09-deal-live":[540,305,100,18],"09-deal-live#row":[525,296,1058,52],"14-approval-table":[290,421,16,16],"14-approval-table#row":[275,402,414,56],"15-approve":[1018,233,125,24],"16-booking-schedule":[874,579,126,13],"16b-booking-flight":[450,584,190,18],"16b-booking-flight#rows":[275,376,1307,368],"07a-blank":[870,421,370,24],"07a-blank#cells":[855,415,400,207],"07a-blank#deal":[525,186,1058,52],"07-assign-slot#menu":[869,449,370,264],"07c1":[870,473,370,24],"07d2":[873,711,362,49],"07c2":[870,525,370,24],"07d3":[873,763,362,49],"07c3":[870,577,370,24],"07d4":[873,815,362,49],"22-booking-revenue":[1436,680,146,40],"22-booking-revenue#table":[274,648,1309,284],"22-booking-revenue#rev":[275,680,1307,252],"16-booking-schedule#pop":[802,89,250,544],"22-booking-revenue#total":[275,890,1307,40],"04-add-user#form":[712,338,432,215],"P2b-expanded":[548,534,1010,32],"P4a-slots":[1181,513,361,24],"P4a-slots#table":[616,513,926,108],"16-booking-schedule#top":[802,89,250,140]};
+  const img = n => RM_IMG + n + ".jpg";
+  Object.keys(HOT).filter(k => !k.includes("#")).forEach(n => { const i = new Image(); i.src = img(n); });
+  /* The screenshots were taken with the demo retailer's logo (sidebar and header badge, same place on every screen).
+     When the visitor's company or colour differs, both are redrawn over the screenshot in its own pixel space. */
+  const brandOv = () => {
+    const b = B(), c = C(); if (b === RMI().brand && c === RMI().color) return "";
+    const w = b.trim().split(/\s+/), ini = esc(initials(b)), l2 = w.slice(1).join(" ");
+    return `<div class="rm-ov" aria-hidden="true"><div class="rm-ovb"><span class="rm-ovm" style="background:${c}">${ini}</span><span class="rm-ovn"><b>${esc(w[0])}</b>${l2 ? `<small>${esc(l2)}</small>` : ""}</span></div><div class="rm-ova"><span class="rm-ovm sm" style="background:${c}">${ini}</span></div></div>`;
+  };
+  const show = n => { screen.innerHTML = `<div class="rm-shot"><img src="${img(n)}" alt="" draggable="false">${brandOv()}</div>`; hideTip(); };
+  const hs = (key, pad = 0) => { const b = HOT[key], x = Math.max(0, b[0] - pad), y = Math.max(0, b[1] - pad), w = Math.min(1600 - x, b[2] + 2 * pad), h = Math.min(950 - y, b[3] + 2 * pad), id = "hs" + (++gid);
+    screen.insertAdjacentHTML("beforeend", `<div class="rm-hs" id="${id}" style="left:${x * SC}px;top:${y * SC}px;width:${w * SC}px;height:${h * SC}px"></div>`); return q("#" + id); };
+  const RET = () => esc(B());
+  const toast = (msg) => { screen.insertAdjacentHTML("beforeend", `<div class="toast rm-toast"><span class="ms">check_circle</span>${msg}</div>`); };
+  const login = (typed) => `<div class="rm-login"><div class="rl-bg" style="background-image:url('${RM_IMG}login-bg.jpg')"></div>
+    <div class="rl-brand"><svg width="26" height="26" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg><span>Personalisation<b>Hub</b></span></div>
+    <div class="rl-card"><div class="rl-logo">${logoSVG(38)}<span>${RET()}</span></div><h3>Login to your platform</h3>
+      <div class="rl-lab"><span><i>*</i>Email</span><span class="ms">info</span></div><div class="in" id="lem">${typed ? "alex@frostline-drinks.example" : "&nbsp;"}</div>
+      <div class="rl-lab"><span><i>*</i>Password</span><span class="ms">info</span></div><div class="in" id="lpw">${typed ? "••••••••••" : "&nbsp;"}</div>
+      <div class="rl-row"><span><span class="rl-cb"></span>Remember me</span><b>Forgot password?</b></div>
+      <span class="rl-btn" id="lsign">Login</span>
+      <div class="rl-pow">Powered by <svg width="15" height="15" viewBox="0 0 40 40" aria-hidden="true"><path d="M2 2h36v36H2z" fill="none" stroke="#9a9a9a" stroke-width="7"/></svg><span>Personalisation<b>Hub</b></span></div></div></div>`;
+  /* only what the retailer has approved for advertisers appears in the targeting drop-downs */
+  const RM_SRC = ["Store / Location Data", "Visitor / Customer Data"];
+  const RM_ATTR = ["Audience / Segments", "Purchase History", "Visitor Type (Individual)"];
+  const RM_PH = ["Cold drinks", "Hot drinks", "Snacks", "Meal deals", "Fuel"];
+  const W = st => ({ ...st, enter() { S.p3 = false; S.rmSent = false; S.rmApproved = false; st.enter.call(this); } });
+
+  const F1 = [
+   { t: "The retailer's four screen types", s: "Platform Admin → Display Types: Forecourt (fuel pumps), Shop Front, Cooler Doors and POS. Each screen type has its own playlist.",
+     enter() { show("P1-display-types"); },
+     async play(id) { await wait(600, id); tip(hs("P1-display-types#list", 8), this.t, this.s, 1); await wait(3800, id); hideTip(); await click(hs("P1-display-types"), id); show("P2-playlists"); } },
+   { t: "Three slots, slot 1 for advertisers", s: "Open the Forecourt playlist, set Maximum Campaigns Played In Rotation to 3, then change slot 1's owner from Headquarters to Advertiser.",
+     enter() { show("P2-playlists"); },
+     async play(id) { await wait(400, id); await click(hs("P2-playlists", 6), id);
+       show("P2b-expanded"); await wait(400, id); const mx = hs("P2b-expanded"); tip(mx, "Three campaigns in rotation", "Open Maximum Campaigns Played In Rotation and choose 3.", 2); await wait(2400, id); hideTip(); await click(mx, id);
+       show("P3-three-slots"); await wait(400, id); await click(hs("P3-three-slots"), id);
+       show("P4a-slots"); await wait(400, id); tip(hs("P4a-slots#table", 8), "Three slots, all Headquarters", "The playlist now has three slots. Every new slot starts owned by Headquarters, for the retailer's own campaigns.", 2); await wait(3400, id); hideTip();
+       const ow = hs("P4a-slots"); tip(ow, "Slot 1 goes to advertisers", "Open slot 1's Owner drop-down. Only slot 1 changes.", 2); await wait(2600, id); hideTip(); await click(ow, id);
+       show("P4-owner"); await wait(400, id); const a = hs("P4-owner"); tip(a, "From Headquarters to Advertiser", "Choose Advertiser for slot 1.", 2); await wait(2200, id); hideTip(); await click(a, id);
+       show("P5-forecourt"); await wait(500, id); tip(hs("P5-forecourt#slots", 8), "One advertiser slot in three", "Slot 1, Brand partner, is sold to advertisers. Slots 2 and 3 stay with Headquarters for the retailer's own campaigns.", 2); await wait(3600, id); hideTip(); } },
+   { t: "The same on every screen type", s: "Shop Front, Cooler Doors and POS get the same three slots, slot 1 Advertiser. Then Save changes.",
+     enter() { show("P5-forecourt"); },
+     async play(id) { await wait(300, id); await click(hs("P5-forecourt", 6), id); show("P6-shopfront"); await wait(400, id);
+       tip(hs("P6-shopfront#slots", 8), this.t, this.s, 3); await wait(2800, id); hideTip();
+       await click(hs("P6-shopfront", 6), id); show("P7-coolers"); await wait(500, id);
+       await click(hs("P7-coolers", 6), id); show("P8-pos"); await wait(500, id);
+       await click(hs("P8-pos"), id);
+       show("P9-saved"); await wait(500, id); tip(hs("P9-saved#badges", 8), "Four advertiser slots, ready to sell", "Every playlist reads 3 slots · 2 Headquarters · 1 Advertiser: one advertiser slot per screen type.", 3); await wait(3800, id); hideTip(); } },
+   { t: "The advertiser is already set up", s: "Advertisers / Inventory lists Frostline Cold Drinks as a direct advertiser, next to the advertisers synced from DSPs.",
+     enter() { show("P9-saved"); },
+     async play(id) { await wait(400, id); await click(hs("P9-saved"), id); show("01-advertiser"); await wait(500, id); tip(hs("01-advertiser#row", 4), this.t, this.s, 5); await wait(3800, id); hideTip(); } },
+   { t: "Create a direct deal", s: "Deal type Direct advertiser, one buyer (Frostline Cold Drinks), flight 9 Nov to 8 Dec, Fixed CPM USD 150. A direct deal is never sent to a DSP.",
+     enter() { show("05-deals"); },
+     async play(id) { await wait(500, id); const o = hs("05-deals"); tip(o, "Slots are sold through deals", "An advertiser never gets a slot by name. Open New deal and buyers list.", 6); await wait(3000, id); hideTip(); await click(o, id);
+       show("06-new-deal"); await wait(500, id); tip(hs("06-new-deal#terms", 8), this.t, this.s, 6); await wait(4200, id); hideTip(); await click(hs("06-new-deal"), id); show("07a-blank"); toast("Deal saved as draft"); } },
+   { t: "Put the deal on all four slots", s: "The four new brand partner slots start unassigned, not offered to any buyer. Open Assigned to on each one and choose Frostline direct.",
+     enter() { show("07a-blank"); },
+     async play(id) { await wait(500, id); tip(hs("07a-blank#cells", 6), this.t, this.s, 6); await wait(4000, id); hideTip();
+       tip(hs("07a-blank#deal", 4), "The new deal, not on a slot yet", "Frostline direct is saved as a draft. Its Slots column reads Not assigned.", 6); await wait(3200, id); hideTip();
+       await click(hs("07a-blank"), id); show("07-assign-slot"); await wait(400, id);
+       tip(hs("07-assign-slot#menu", 4), "Choose the deal", "Assigned to lists DSPs for open auction, then deals and buyers lists. Choose Frostline direct.", 6); await wait(3200, id); hideTip();
+       await click(hs("07-assign-slot"), id); show("07c1"); await wait(300, id);
+       for (const [c, d, nx] of [["07c1", "07d2", "07c2"], ["07c2", "07d3", "07c3"], ["07c3", "07d4", "07b-assigned-all"]]) {
+         await click(hs(c), id); show(d); await wait(250, id); await click(hs(d), id); show(nx); await wait(250, id); }
+       tip(hs("07b-assigned-all#cells", 6), "All four brand partner slots", "Each slot is assigned to Frostline direct, and the deal now shows 4 slots. Save changes.", 6); await wait(3600, id); hideTip(); await click(hs("07b-assigned-all"), id); toast("Changes saved"); await wait(1200, id); } },
+   { t: "Finalise and go live", s: "This is a direct buy, not a programmatic guaranteed deal: Frostline pays USD 150 CPM for the four slots across December. Finalise deal terms and the deal is live inside Personalisation Hub.",
+     enter() { show("08-deal-finalise"); },
+     async play(id) { await wait(500, id); tip(hs("08-deal-finalise#plays", 8), "Plays, for reference", "The forecast plays for the four slots across December, shown for reference. Committed plays matter for programmatic guaranteed deals; this direct buy is priced at a fixed CPM.", 7); await wait(4600, id); hideTip();
+       tip(hs("08-deal-finalise"), this.t, this.s, 7); await wait(3200, id); hideTip(); await click(hs("08-deal-finalise"), id);
+       show("09-deal-live"); await wait(500, id); tip(hs("09-deal-live#row", 4), "Live · direct, not sent to a DSP", "Every window from 1 to 31 December is reserved for Frostline on all four screen types.", 7); await wait(3800, id); hideTip(); } },
+   { t: "Give Frostline its own login", s: "Company Settings → Add Users / Advertisers: the retailer adds Frostline's user with the Advertiser role. Frostline gets its own login credentials and can manage its own campaigns, or leave them to the retailer.",
+     enter() { show("03-users"); },
+     async play(id) { await wait(500, id); const a = hs("03-users"); tip(a, this.t, this.s, 8); await wait(4400, id); hideTip(); await click(a, id);
+       show("04-add-user"); await wait(500, id); tip(hs("04-add-user#form", 8), "An Advertiser login for Frostline", "Alex Morgan, role Advertiser, linked to Frostline Cold Drinks (Direct). Alex sees and manages only Frostline's campaigns.", 8); await wait(4400, id); hideTip();
+       const b = hs("04-add-user"); tip(b, "Send the invitation", "Alex gets an invitation email to set up Frostline's own login credentials.", 8); await wait(2800, id); hideTip(); await click(b, id);
+       toast("Invitation sent to alex@frostline-drinks.example"); await wait(2000, id); if (VO) await VO.done(id); showEnd(); } }
+  ];
+
+  const F2 = [
+   { t: "Frostline signs in with its own login", s: "Alex signs in with the login credentials the retailer gave Frostline. Frostline can manage its own campaigns here, or leave them to the retailer. Everything Alex sees is scoped to Frostline Cold Drinks.",
+     enter() { S.p3 = false; S.rmSent = false; S.rmApproved = false; screen.innerHTML = login(false); hideTip(); },
+     async play(id) { await wait(500, id); const e = q("#lem"); await click(e, id); tip(e, this.t, this.s, 1); await typeInto(e, "alex@frostline-drinks.example", id, reduce ? 999 : 40); await wait(4200, id); hideTip();
+       const p = q("#lpw"); await click(p, id); await typeInto(p, "••••••••••", id, reduce ? 999 : 30); await click(q("#lsign"), id);
+       paint(listScreen(false)); await wait(600, id); tip(q(".grid"), "Only Frostline's campaigns", "Campaigns shows Frostline's own campaigns and nothing of the retailer's or any other brand's.", 1); await wait(3400, id); hideTip(); } },
+   ...STEPS.slice(0, 6).map(W),
+   { t: "Target Loyalty Gold members", s: "Alex opens the Gold Members campaign's Targeting tab and adds rules exactly the way the retailer does: Audience / Segments includes Loyalty Gold.",
+     enter() { S.p3 = true; S.rmSent = false; S.rmApproved = false; paint(briefScreen(6, false)); },
+     async play(id) { const p = P3(), r = p.r1; await wait(500, id);
+       tip(q("#ctitle"), "The Gold members version", `${D().name} is a second campaign on the same deal, only for Loyalty Gold members.`, 8); await wait(3600, id); hideTip();
+       const tt = q('[data-tab="Targeting"]'); tip(tt, "Open the Targeting tab", "Targeting rules are set per campaign, on its Targeting tab.", 8); await wait(2400, id); hideTip(); await click(tt, id);
+       paint(targetScreen([])); await wait(600, id);
+       const tb = q("#addand"); await moveTo(tb, id); tip(tb, this.t, this.s, 8); await wait(3200, id); hideTip(); await click(tb, id);
+       q("#rules").innerHTML = rulesHTML([[,,,[]]]); await focusRow(q("#rg0"), id);
+       await pick(q("#s0a"), RM_SRC, r[0], id); setSel("#s0a", r[0]);
+       await pick(q("#s0b"), RM_ATTR, r[1], id); setSel("#s0b", r[1]);
+       await pick(q("#s0c"), OPS.seg, r[2], id); setSel("#s0c", r[2]);
+       await pick(q("#s0d"), p.reasons, r[3][0], id); addTag("#s0d", r[3][0]);
+       tip(q("#rg0"), "Controlled by the retailer", `Every targeting criterion shared with advertisers is 100% controlled by ${RET()}. Frostline only sees the data sources, attributes and values the retailer has approved, always as drop-down menus.`, 8); await wait(4800, id); hideTip();
+       tip(q("#rg0"), "The retailer's loyalty tiers", `The values come from ${RET()}'s loyalty program. The data stays in the retailer's cloud; the advertiser only picks the segment.`, 8); await wait(3600, id); hideTip(); } },
+   { t: "Add purchase history", s: "A second rule from the retailer's POS data: Purchase History includes Cold drinks. Then Send for approval submits the campaign to the retailer.",
+     enter() { S.p3 = true; S.rmSent = false; S.rmApproved = false; paintRules(targetScreen([P3().r1])); },
+     async play(id) { const p = P3(), r = p.r2;
+       const tb = q("#addand"); await moveTo(tb, id); tip(tb, this.t, this.s, 9); await wait(3200, id); hideTip(); await click(tb, id);
+       q("#rules").innerHTML = rulesHTML([p.r1, [,,,[]]]); await focusRow(q("#rg1"), id);
+       await pick(q("#s1a"), RM_SRC, r[0], id); setSel("#s1a", r[0]);
+       await pick(q("#s1b"), RM_ATTR, r[1], id); setSel("#s1b", r[1]);
+       await pick(q("#s1c"), OPS.seg, r[2], id); setSel("#s1c", r[2]);
+       await pick(q("#s1d"), RM_PH, r[3][0], id); addTag("#s1d", r[3][0]); await wait(300, id);
+       tip(q("#rules"), "Both rules in place", `A visitor matches when both are true: ${p.match}. Save Changes stores the targeting.`, 9); await wait(3600, id); hideTip();
+       const sv = q("#save"); await click(sv, id); sv.className = "btn dis"; sv.nextElementSibling.className = "btn dis"; toast("Targeting saved"); await wait(900, id);
+       const sf = q("#sfa"); await reveal(sf, id); tip(sf, "Send for approval", "Saving doesn't submit the campaign. Until the retailer approves it, Send for approval takes the place of the activation toggle.", 9); await wait(3800, id); hideTip(); await click(sf, id);
+       S.rmSent = true; sf.parentElement.innerHTML = rmStatusHTML(); await wait(400, id);
+       tip(q("#stt").parentElement, "Awaiting approval", "The campaign is with the retailer. There's no activation toggle until it's approved.", 9); await wait(3600, id); hideTip(); } },
+   { t: "The retailer approves", s: "In the retailer's Campaign Approval, the Gold Members campaign is awaiting approval. Activation stays off until it's approved.",
+     enter() { S.p3 = true; S.rmSent = true; S.rmApproved = false; show("14-approval-table"); },
+     async play(id) { await wait(500, id); tip(hs("14-approval-table#row", 4), this.t, this.s, 10); await wait(3800, id); hideTip(); await click(hs("14-approval-table", 4), id);
+       show("15-approve"); await wait(500, id); const o = hs("15-approve"); tip(o, "Approve Selected", "Approving gives the campaign a creative ID.", 10); await wait(3200, id); hideTip(); await click(o, id);
+       toast("Campaign approved"); await wait(1500, id);
+       S.rmApproved = true; paint(targetScreen([P3().r1, P3().r2])); await wait(500, id);
+       const sw = q("#sw"); await reveal(sw, id); tip(sw, "Ready to activate", "Now that it's approved, the activation toggle replaces Send for approval.", 10); await wait(4000, id); hideTip();
+       if (VO) await VO.done(id); showEnd(); } }
+  ];
+
+  const F3 = [
+   { t: "Emma checks in at the pump", s: "Loyalty members check in at the pump with the retailer's app, their card or a QR code. Each check-in identifies them, so the screens can respond.",
+     enter() { screen.innerHTML = sceneHTML(P3().first); hideTip(); },
+     async play(id) { const p = P3(); await wait(700, id);
+       const n = q("#pnote"); n.classList.add("in"); await wait(900, id);
+       tip(q("#pmeth"), this.t, this.s, 1); await wait(3400, id); hideTip();
+       tip(n, `Welcome to ${p.store}`, `${p.person}'s phone is detected as she pulls in to ${p.store}, and ${RET()}'s loyalty app welcomes her and invites her to check in.`, 1); await wait(3200, id); hideTip();
+       await click(n, id); setPhone("pump"); await wait(900, id);
+       tip(q("#pcheck"), "Checked in", `${p.person} is checked in at ${p.store} at ${p.time} AM as a Gold member.`, 1); await wait(2800, id); hideTip();
+       tip(q("#pcard"), "Frostline's offer, in the retailer's app", `The moment she checks in, ${D().name} is first in her app.`, 1); await wait(3200, id); hideTip(); } },
+   { t: "Her profile meets Frostline's rules", s: "The check-in links to what the retailer's loyalty program and POS already hold, checked against every campaign's targeting rules the moment she arrives.",
+     enter() { screen.innerHTML = sceneHTML("pump", "attrs"); hideTip(); },
+     async play(id) { const p = P3(); await wait(1700, id); tip(q("#ptbl"), this.t, "Each row is a Visitor / Customer Data attribute, checked against the campaign's visitor rules.", 2); await wait(4200, id); hideTip();
+       tip(q("#ptbl"), "A match on both rules", `She matches both rules of Frostline's Gold Members campaign: ${p.match}.`, 2); await wait(3600, id); hideTip(); } },
+   CV.RMSTEP,
+   { t: "Booked on all four screen types", s: "The retailer's booking schedule: for all of December, Frostline Cold Drinks (Direct) holds slot 1 on Forecourt, Shop Front, Cooler Doors and POS. No bid request goes to any DSP for these windows.",
+     enter() { show("16b-booking-flight"); },
+     async play(id) { await wait(600, id); tip(hs("16b-booking-flight#rows", 4), this.t, this.s, 4); await wait(4200, id); hideTip();
+       await moveTo(hs("16-booking-schedule"), id); show("16-booking-schedule"); await wait(400, id);
+       tip(hs("16-booking-schedule#top", 4), "Default plus personalised", "Each booking holds the default and the personalised Gold version, both approved, with the booking value at the deal's CPM.", 4); await wait(4000, id); hideTip(); } },
+   { t: "What the brand partner slots earn", s: "Booking revenue for 1 to 14 December: all 56 windows booked by Frostline at USD 150 CPM across the four screen types, 100% sold.",
+     enter() { show("22-booking-revenue"); },
+     async play(id) { await wait(600, id); tip(hs("22-booking-revenue#table", 6), this.t, this.s, 5); await wait(4600, id); hideTip();
+       tip(hs("22-booking-revenue#total", 4), "USD 67,494 in two weeks", "Estimated revenue from the four brand partner slots. Direct deals are reported like DSP revenue; invoicing happens outside the platform.", 5); await wait(4200, id); hideTip(); if (VO) await VO.done(id); showEnd(); } }
+  ];
+
+  const FLOWDEF = [
+    { h1: "Sell your screens to brands", sub: "A convenience retailer opens one slot in every playlist to advertisers, then sells all four screen types to a cold drinks brand through a direct deal.",
+      steps: F1, intro: () => show("P1-display-types"),
+      start: () => [`See ${RET()} sell its screens to a brand`, "Open slot 1 of every playlist to advertisers, sell December to a cold drinks brand through a direct deal on the forecourt, shop front, cooler door and POS screens, and give the brand its own login."],
+      end: () => ["Flow 1 complete", `${RET()} has sold its brand partner slots`, "One slot in every three-campaign rotation is open to advertisers. Frostline holds all four for December through a direct deal, never sent to a DSP, and has its own login to manage its campaigns.", [["4", "screen types"], ["1 in 3", "slots for advertisers"], ["1", "direct deal"]], 1] },
+    { h1: "The advertiser creates a campaign by talking", sub: "The advertiser signs in with its own login, briefs the AI campaign agent by voice on its own deal, targets loyalty members with criteria the retailer controls, and the retailer approves.",
+      steps: F2, intro: () => { S.p3 = false; screen.innerHTML = login(false); },
+      start: () => ["See a brand create its campaign just by talking", "Frostline signs in with its own login, talks the AI campaign agent through the campaign, targets Loyalty Gold members, then the retailer approves it."],
+      end: () => ["Flow 2 complete", "A whole campaign from a spoken brief", "Frostline briefed the AI campaign agent by voice on its own deal, targeted Loyalty Gold members who buy cold drinks with the retailer's first-party data, and the retailer approved it.", [["1", "spoken brief"], ["2", "targeting rules"], ["4", "screen types"]], 2] },
+    { h1: "One shopper, four screens, every slot sold", sub: "Follow Emma from the pump to the checkout while the brand partner slot personalises for her, then see the bookings behind it.",
+      steps: F3, intro: () => { screen.innerHTML = sceneHTML(P3().first); },
+      start: () => ["Follow one shopper from the forecourt to the POS", "Emma checks in at the pump, Frostline's Gold version plays for her on every screen, and the booking schedule shows what each slot earns."],
+      end: () => ["Flow 3 complete", `${RET()} earns from every brand partner slot`, "Emma's Gold version plays in the brand partner slot of every screen she passes. Every window in Frostline's flight is booked at the deal's CPM, with no DSP involved.", [["4", "screens, one shopper"], ["31", "days booked in December"], ["USD 67,494", "booked in two weeks"]], 0] }
+  ];
+  return { FLOWDEF };
+})() : null;
+
 /* ================= ui wiring ================= */
 const FLOWDEF_STD = [
   { h1: "Launch a campaign just by talking", sub: "Talk the AI campaign agent through a campaign and watch it become a brief, copy, creative and screen-ready assets for every touchpoint, in your brand.",
@@ -1832,7 +2211,7 @@ const FLOWDEF_STD = [
     start: () => IS_CONV ? [`See ${esc(B())} personalise every screen for a loyalty member`, "Set up targeting for Loyalty Gold members who buy coffee, then follow Sam from the pump to the shop front, the coolers and the POS, with her offer on every screen."] : [`See ${esc(B())} personalise screens when a customer checks in`, "Set up visitor-level targeting on a campaign for Loyalty Gold members, using the reason for visit and your first-party and loyalty data, then follow a customer from check-in to the targeted promotion on her phone and the screen in store."],
     end: () => { const p = P3(); if (IS_CONV) return ["Walkthrough complete", `${esc(B())} personalises every screen for the member in front of it`, "A campaign for Loyalty Gold members who buy coffee. The moment Sam checks in at the pump, her offer follows her to the shop front, the coolers and the POS. Results are illustrative. The same screens can also be sold to advertisers as a retail media network.", [["3.2×","offer redemption (illustrative)"],["+$2.10","basket with the deal (illustrative)"],["4","screen locations"]], 0]; return ["Flow 3 complete", `${esc(B())} personalises the moment ${p.person} checks in`, "A campaign for Loyalty Gold members targets the reason for visit plus your own first-party and loyalty data. The moment she joins the queue, it appears in her store site carousel and plays on the screen in store, and staff see the offer and her profile when they pick her up.", [["3","visitor rules"],["1","check-in"],["3","touchpoints"]], 0]; } }
 ];
-const FLOWDEF = FLOWDEF_STD;
+const FLOWDEF = IS_RM ? RM.FLOWDEF : FLOWDEF_STD;
 const FD = () => FLOWDEF[S.flow], ST = () => FD().steps;
 const dots = document.getElementById("dots"), flows = document.getElementById("flows");
 flows.innerHTML = FLOWS.map((f,i)=>`<button type="button" class="chip" data-k="${i}" ${f[1]?"":'aria-disabled="true"'}><span class="n">${i+1}</span>${f[0]}${f[2]?`<small>${f[2]}</small>`:""}${f[1]?"":"<small>coming next</small>"}</button>`).join("");
@@ -1840,15 +2219,15 @@ flows.addEventListener("click", e => { const b = e.target.closest(".chip"); if (
 dots.addEventListener("click", e => { const b = e.target.closest(".dot"); if (b) go(+b.dataset.i); });
 function marks() {
   [...dots.children].forEach((d,i)=>{ d.setAttribute("aria-current", i===S.step ? "true" : "false"); d.classList.toggle("done", i < S.step); });
-  const st = ST()[S.step]; if (st) { document.getElementById("capT").textContent = `${S.step+1}. ${st.t}`; document.getElementById("capS").textContent = st.s; }
+  const st = ST()[S.step]; if (st) { document.getElementById("capT").textContent = `${S.step+1}. ${st.t}`; document.getElementById("capS").textContent = (VO && VO.text(S.flow, S.step)) || st.s; }
   else { document.getElementById("capT").textContent = "Ready when you are"; document.getElementById("capS").textContent = "Press Start the tour, or pick a step."; }
   const pz = S.paused || S.step < 0, p = document.getElementById("play"); p.innerHTML = `<span class="ms">${pz?"play_arrow":"pause"}</span>`; p.setAttribute("aria-label", pz ? "Play" : "Pause");
 }
 async function go(i) {
-  const steps = ST(); i = Math.max(0, Math.min(steps.length-1, i)); const id = ++RUN; S.step = i; card.hidden = true; marks(); resetScroll = true; tourEvent("step");
+  const steps = ST(); i = Math.max(0, Math.min(steps.length-1, i)); const id = ++RUN; S.step = i; card.hidden = true; marks(); if (VO) VO.step(); resetScroll = true; tourEvent("step");
   const hadMask = !!q("#layer .mask"); q("#layer") && (q("#layer").innerHTML = ""); stage.querySelectorAll(".dd").forEach(e => e.remove());
   S.bright = S.flow >= 1; steps[i].enter(); if (hadMask) q("#layer .mask")?.classList.add("still");
-  try { await steps[i].play(id); if (i < steps.length-1) { await wait(900,id); go(i+1); } }
+  try { await steps[i].play(id); if (VO) await VO.done(id); if (i < steps.length-1) { await wait(VO && VO.on ? 350 : 900,id); go(i+1); } }
   catch (e) { if (!(e instanceof Cancel)) console.error(e); }
 }
 function showEnd() {
@@ -1873,7 +2252,7 @@ function startCard() {
   card.querySelector("#fsstart").onclick = () => { fsEnter(); S.paused = false; go(0); };
 }
 function setFlow(k) {
-  S.flow = k; RUN++; S.step = -1; resetScroll = true; hideTip(); S.bright = k >= 1;
+  if (VO) VO.stop(); S.flow = k; S.p3 = false; if (VO) VO.warm(); RUN++; S.step = -1; resetScroll = true; hideTip(); S.bright = k >= 1;
   document.getElementById("h1").textContent = FD().h1; document.getElementById("sub").textContent = FD().sub;
   [...flows.children].forEach((c,i) => c.setAttribute("aria-current", i === k ? "true" : "false"));
   dots.innerHTML = ST().map((s,i)=>`<button type="button" class="dot" role="tab" aria-label="Step ${i+1}: ${esc(s.t)}" data-i="${i}"></button>`).join("");
@@ -1881,7 +2260,7 @@ function setFlow(k) {
 }
 document.getElementById("prev").onclick = () => go(S.step - 1);
 document.getElementById("next").onclick = () => go(S.step + 1);
-document.getElementById("play").onclick = () => { if (S.step < 0) { S.paused = false; go(0); return; } S.paused = !S.paused; marks(); };
+document.getElementById("play").onclick = () => { if (S.step < 0) { S.paused = false; go(0); return; } S.paused = !S.paused; marks(); if (VO) VO.sync(); };
 const co = document.getElementById("co"), col = document.getElementById("col");
 function restart() { if (S.step < 0) { RUN++; S.bright = S.flow >= 1; FD().intro(); startCard(); } else go(S.step); }
 let tmr; co.addEventListener("input", () => { S.custom = true; S.brand = co.value.trim() || null; clearTimeout(tmr); tmr = setTimeout(restart, 500); });
@@ -1892,7 +2271,7 @@ if (FOCUS) flows.hidden = true;
 /* ================= website gate: teaser, lead capture, unlock ================= */
 const AWS_URL = "https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76?trk=59c672e4-15c4-4782-aee9-4352db108809&sc_channel=el&source=personalisationhub";
 const wrap = document.getElementById("wrap"), gate = document.getElementById("gate"), LEAD_KEY = "ph_lead";
-const GFLOWS = [["auto_awesome","Campaign creation","Talk a campaign into existence, in your brand"],["storefront","Localisation & scheduling","Every store gets its own version"],["person_pin_circle","Personalisation","The right offer the moment they check in"]];
+const GFLOWS = IS_RM ? [["storefront","Retailer setup","Open slots to brands and sell them through a deal"],["record_voice_over","Advertiser creates by talking","A whole campaign from a spoken brief"],["person_pin_circle","Shopper journey & outcome","One shopper, four screens"]] : [["auto_awesome","Campaign creation","Talk a campaign into existence, in your brand"],["storefront","Localisation & scheduling","Every store gets its own version"],["person_pin_circle","Personalisation","The right offer the moment they check in"]];
 const TEASE_STD = [
   { cap: "A spoken brief becomes creative for every screen", async run(id) { S.flow = 0; S.bright = false; paint(listScreen(false)); q("#layer").innerHTML = modalHTML(null, [], false);
       q("#ta").classList.add("focus"); q("#vrow").style.visibility = "visible"; q("#mic").classList.add("rec"); dictate(q("#tabody"), D().brief, id).catch(() => {});
@@ -1903,7 +2282,7 @@ const TEASE_STD = [
   { cap: "The right offer, the moment a customer checks in", async run(id) { S.flow = 2; S.bright = true; screen.innerHTML = sceneHTML("home1", "promo");
       await wait(1300, id); setPhone("home2"); await wait(1100, id); const tv = q("#pdisp"); tv.classList.add("on"); if (P3().shelf) tv.innerHTML = shelfSVG(true); else tv.querySelector(".tv-in").innerHTML = art("land","first",S.bright); await wait(4200, id); } }
 ];
-const TEASE = IS_CONV ? CV.TEASE : TEASE_STD;
+const TEASE = (IS_CONV || IS_RM) ? CV.TEASE : TEASE_STD;
 const IN_FRAME = window.parent !== window;
 const PCFG = () => { try { return window.PH_TOUR || (IN_FRAME && window.parent.PH_TOUR) || {}; } catch (e) { return window.PH_TOUR || {}; } };
 const DL = () => { try { if (IN_FRAME && window.parent.dataLayer) return window.parent.dataLayer; } catch (e) {} return (window.dataLayer = window.dataLayer || []); };
@@ -1967,7 +2346,7 @@ const FREE_MAIL = /@(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|iclou
 function gateHTML() {
   const head = `<div class="g-eb"><span class="ms">play_circle</span>Interactive product tour</div>`;
   if (GMODE === "pick") return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
-      <h3>Watch a ${INDLABEL} campaign go from a spoken brief to the right customer</h3><p>${`Three short guided demos on real Personalisation Hub screens, run in your brand. Pick one to start.`}</p>
+      <h3>${IS_RM ? "Watch a convenience retailer sell its screens to a brand" : `Watch a ${INDLABEL} campaign go from a spoken brief to the right customer`}</h3><p>${`Three short guided demos on real Personalisation Hub screens, run in your brand. Pick one to start.`}</p>
       <div class="g-flows">${GFLOWS.map((f, i) => `<button type="button" class="g-flow" data-f="${i}"><span class="ms">${f[0]}</span><span><b>${f[1]}</b><small>${f[2]}</small></span><span class="g-go">Watch<span class="ms">chevron_right</span></span><i></i></button>`).join("")}</div></div>`;
   const f = GFLOWS[TSEL];
   return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
@@ -1980,7 +2359,7 @@ function gateHTML() {
 }
 function setLive(i) { gate.querySelectorAll(".g-flow").forEach((b, k) => { b.classList.remove("gl-on"); if (k === i) { void b.offsetWidth; b.classList.add("gl-on"); } }); const c = document.getElementById("gcapt"); if (c) c.textContent = TEASE[i].cap; }
 async function teaseLoop() {
-  const id = ++RUN; S.paused = false; S.step = -1; hideTip(); card.hidden = true; stage.classList.add("teasing"); let i = TSEL;
+  const id = ++RUN; if (VO) VO.stop(); S.paused = false; S.step = -1; hideTip(); card.hidden = true; stage.classList.add("teasing"); let i = TSEL;
   try { for (;;) { setLive(i); await TEASE[i].run(id); if (GMODE === "pick") i = (i + 1) % TEASE.length; } } catch (e) { if (!(e instanceof Cancel)) console.error(e); }
 }
 function renderGate() {
@@ -1996,8 +2375,8 @@ function renderGate() {
 }
 function lock() {
   fsExit(); LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = IND[S.ind].brand;
-  document.getElementById("h1").textContent = `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
-  document.getElementById("sub").textContent = "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
+  document.getElementById("h1").textContent = IS_RM ? "See a convenience retailer run its own retail media network, end to end" : `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
+  document.getElementById("sub").textContent = IS_RM ? "Short guided demos: a retailer selling its screens, a brand creating a campaign by talking, and one shopper followed from forecourt to checkout." : "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
   renderGate(); teaseLoop();
 }
 function unlock(lead, autostart) {
@@ -2012,7 +2391,8 @@ window.addEventListener("ph:lead", onLead); try { if (IN_FRAME) window.parent.ad
 const simc = document.getElementById("simcalc"), simr = document.getElementById("simreset");
 if (simc) simc.onclick = () => { const l = { name: "Sam Taylor", company: "Kestrel Mobile", email: "sam.taylor@kestrelmobile.com", source: "Telco business model download", ts: Date.now() }; saveLead(l); window.dispatchEvent(new CustomEvent("ph:lead", { detail: l })); };
 if (simr) simr.onclick = () => { try { localStorage.removeItem(LEAD_KEY); } catch (e) {} lock(); };
-S.flow = 0; const stored = readLead(); if (stored) unlock(stored, false); else lock();
+if (IS_RM) { const fine = document.querySelector(".fine"); if (fine) fine.textContent = "Example companies, stores and figures are illustrative. Retailer screens are Personalisation Hub HQ Admin screens; campaign screens recreate HQ Admin."; }
+S.flow = 0; const stored = readLead(); if (window.PH_TOUR_REVIEW) unlock({ name: "", company: "" }, false); else if (stored) unlock(stored, false); else lock();
 })();
 </script>
 </body>

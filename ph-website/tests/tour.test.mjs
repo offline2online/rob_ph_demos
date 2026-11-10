@@ -1,4 +1,4 @@
-// node ph-website/tests/tour.test.mjs : the telco, pharmacy and fuel & convenience product tour on the industry pages (enhance.js + site.js), in Chromium.
+// node ph-website/tests/tour.test.mjs : the telco, pharmacy, retail media and fuel & convenience product tour on the industry pages (enhance.js + site.js), in Chromium.
 // Checks: the band is mounted (Elementor mount, or built after the calculator's section), the iframe src (+ph_test forwarding), the height
 // message, window.PH_TOUR, "Arrange a Demo" -> PH_SITE_DEMO, and that a successful calculator download writes
 // localStorage ph_lead and dispatches window "ph:lead". Skips (exit 0) when Playwright or Chromium is not available.
@@ -552,6 +552,135 @@ try {
     }
   }
 
+  // Retail media: same shared tour, its own three flows (retailer setup 8 steps, advertiser creates by talking 10, shopper journey and outcome 5), screenshots and voiceover from the same-origin asset route.
+  { const sourceTour = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
+    const fast = sourceTour.replace("const k = reduce ? .35 : 1;", "const k = .02;");
+    const vscript = Object.fromEntries(JSON.parse(fs.readFileSync(path.join(here, "..", "tools", "retail-media-tour", "voiceover-script.json"), "utf8")).steps.map((s) => [s.id, s.lines.map((l) => l.text)]));
+    // Screenshots: the real files when TOUR_ASSETS_DIR holds a checkout of tag tour-assets-retail-media-v1; otherwise a small valid JPEG (the tests check that every image loads, not what it shows).
+    const assetsDir = process.env.TOUR_ASSETS_DIR || "";
+    const probe = await browser.newPage(); const tinyJpg = await probe.screenshot({ type: "jpeg", clip: { x: 0, y: 0, width: 8, height: 8 } }); await probe.close();
+    const serveAsset = (r) => { const m = r.request().url().match(/\/assets\/v1\/(img|vo)\/([\w.-]+)$/); const f = m && assetsDir && path.join(assetsDir, m[1], m[2]); if (m && m[1] === "img") return r.fulfill({ contentType: "image/jpeg", body: f && fs.existsSync(f) ? fs.readFileSync(f) : tinyJpg }); return r.fulfill({ status: 404, body: "" }); };
+    // Band on the Retail Media industry page: the Elementor mount, or built right after the calculator when it is absent.
+    const rmPage = (withBand) => `<!doctype html><html><head><style>${css}</style></head><body><main><section class="ph-ind-sec" id="calcsec"><div class="ph-ind-calc"><div class="ph-ind-cin"><p class="ph-ind-label-gap">a</p><p class="ph-ind-label-gap">b</p>${row.repeat(nOf("retail-media"))}</div><div class="ph-ind-cout"><p class="ph-ind-ctot-l">Total</p><p class="ph-ind-ctot-v">0</p><div class="ph-ind-crow">r</div></div></div></section>${withBand ? '<section class="ph-ind-sec ph-ind-tour" id="band"><h2>Server heading</h2><div class="ph-ind-tour-mount"></div></section>' : ""}<section class="ph-ind-sec" id="s2">two</section></main>
+<script>window.PH_IND_PAGE="retail-media"; window.Calendly={initPopupWidget:function(){}};</script><script>${site}</script><script>${enhance}</script></body></html>`;
+    for (const withBand of [true, false]) {
+      const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+      await p.route("**/*", (r) => /\/industries\/retail-media\/tour\//.test(r.request().url()) ? r.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><p>tour</p>" }) : r.fulfill({ contentType: "text/html", body: rmPage(withBand) }));
+      await p.goto("http://x.test/industries/retail-media/?ph_test=1");
+      assert.strictEqual(await p.locator(".ph-ind-tour-mount iframe").count(), 1, `retail-media (band ${withBand}): iframe mounted`);
+      assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/retail-media/tour/?embed=1&ph_test=1", "retail-media: iframe src with ph_test");
+      if (!withBand) {
+        assert.strictEqual(await p.locator("#calcsec + .ph-ind-tour + #s2").count(), 1, "built band is right after the calculator");
+        assert.strictEqual(await p.locator(".ph-ind-tour-eyebrow").textContent(), "Interactive product tour", "retail-media fallback eyebrow");
+        assert.strictEqual(await p.locator(".ph-ind-tour h2").textContent(), "See a convenience retailer run its own retail media network, end to end", "retail-media fallback heading");
+        assert.strictEqual(await p.locator(".ph-ind-tour-p").textContent(), "Pick a demo: a retailer selling its screens, a brand creating a campaign by talking, and one shopper from forecourt to checkout.", "retail-media fallback intro");
+      }
+      await p.close();
+    }
+    // Gate: retail media copy, branded, work email only.
+    { const g = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      let body = null;
+      await g.route("**/*", (r) => { const u = r.request().url(); if (/tour-lead$/.test(u)) { body = JSON.parse(r.request().postData()); return r.fulfill({ contentType: "application/json", body: '{"ok":true}' }); } if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: sourceTour }) : r.abort(); });
+      await g.addInitScript(() => { window.PH_TOUR = { endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "" }; });
+      await g.goto("http://x.test/industries/retail-media/tour/?embed=1&ph_test=1");
+      await g.waitForSelector(".g-flow");
+      assert.deepStrictEqual(await g.locator(".g-flow b").allTextContents(), ["Retailer setup", "Advertiser creates by talking", "Shopper journey & outcome"], "retail media gate demos");
+      assert.ok(/convenience retailer sell its screens to a brand/i.test(await g.locator(".g-panel h3").textContent()), "gate headline is retail media copy");
+      const gtext = await g.evaluate(() => document.body.innerText);
+      assert.ok(!/telco|pharmac|prescription/i.test(gtext), "no other industry's words on the gate");
+      await g.locator(".g-flow").nth(1).click();
+      await g.fill("input[name=name]", "Ada Lovelace"); await g.fill("input[name=company]", "Orbit Co"); await g.fill("input[name=email]", "ada@gmail.com"); await g.check("input[name=consent]");
+      await g.locator("input[name=email]").blur();
+      assert.strictEqual(await g.textContent("#gerr"), "Please use your work email.", "free mail refused");
+      assert.strictEqual(await g.locator("#gsub.ok").count(), 0, "free mail keeps the button off");
+      await g.fill("input[name=email]", "ada@orbit.example"); await g.click("#gsub");
+      await g.waitForFunction(() => document.getElementById("gate").hidden);
+      assert.ok(body && body.industry === "retail-media" && body.flow === "Advertiser creates by talking" && body.page === "/industries/retail-media/tour/" && body.test === true, "retail-media lead body: " + JSON.stringify(body));
+      assert.strictEqual(await g.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")).company), "Orbit Co", "the lead is stored for the next visit");
+      await g.close(); }
+    // Walk every step of the three flows with a stored lead: the visitor's company is the retailer.
+    const hooked = fast.replace('document.getElementById("prev").onclick', "window.__t = { S, D };\n$&");
+    const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+    const errs = []; t.on("pageerror", (e) => errs.push(e.message));
+    const reqs = []; t.on("request", (q) => reqs.push(q.url()));
+    await t.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort(); });
+    await t.addInitScript(() => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example", source: "Telco business model download" })); window.__plays = 0; window.__steps = [[], [], []]; setInterval(() => { const i = [...document.querySelectorAll("#dots .dot")].findIndex((d) => d.getAttribute("aria-current") === "true"), f = window.__t && window.__t.S.flow; if (i >= 0 && window.__steps[f] && !window.__steps[f].includes(i)) window.__steps[f].push(i); }, 5); const op = HTMLMediaElement.prototype.play; HTMLMediaElement.prototype.play = function () { window.__plays++; return op.call(this); }; });
+    await t.goto("http://x.test/industries/retail-media/tour/?embed=1");
+    await t.waitForSelector("#fs", { state: "visible" });
+    assert.strictEqual(await t.evaluate(() => window.__t.S.ind), "retail-media", "S.ind follows the path");
+    assert.ok(/Retail Media/.test(await t.title()), "document title: " + await t.title());
+    assert.deepStrictEqual(await t.locator(".chip").evaluateAll((c) => c.map((x) => x.childNodes[1].textContent)), ["Retailer setup", "Advertiser creates by talking", "Shopper journey & outcome"], "three flows");
+    assert.strictEqual(await t.getAttribute("#vo", "aria-pressed"), "false", "voiceover is off by default");
+    assert.strictEqual(await t.evaluate(() => localStorage.getItem("ph_tour_voiceover")), null, "nothing saved until the visitor chooses");
+    const seen = new Set(), blanks = [], broken = [], navs = [], badCaps = [], overlays = new Set(), stepsSeen = [new Set(), new Set(), new Set()];
+    const stepOf = () => t.evaluate(() => [...document.querySelectorAll("#dots .dot")].findIndex((d) => d.getAttribute("aria-current") === "true"));
+    for (let f = 0; f < 3; f++) {
+      await t.click(`.chip[data-k="${f}"]`); await t.click("#play"); const t0 = Date.now();
+      for (;;) {
+        const a = await stepOf();
+        const s = await t.evaluate(() => [document.getElementById("stage").innerText, document.getElementById("capT").textContent, document.getElementById("capS").textContent, document.getElementById("card").innerText, [...document.querySelectorAll("#stage svg text")].map((x) => x.textContent).join(" "), [...document.querySelectorAll("#stage [data-tip],#stage [aria-label],#stage .tip")].map((x) => x.getAttribute("data-tip") || x.getAttribute("aria-label") || x.textContent).join(" ")].join("\n"));
+        const capS = await t.textContent("#capS"), b = await stepOf();
+        seen.add(s); if (a >= 0) stepsSeen[f].add(a);
+        if (a >= 0 && a === b && capS.trim() && !(vscript[`f${f + 1}-${String(a + 1).padStart(2, "0")}`] || []).includes(capS)) badCaps.push(`f${f + 1}-${a + 1}: ${capS}`);
+        // screens never blank: a screenshot that loaded, or an HTML screen with content
+        const st = await t.evaluate(() => { const imgs = [...document.querySelectorAll("#stage img")]; return { imgs: imgs.length, bad: imgs.filter((i) => !i.complete || !i.naturalWidth).length, text: document.getElementById("stage").innerText.trim().length, svg: document.querySelectorAll("#stage svg").length, nav: [...document.querySelectorAll("#stage .side .nav:not(.bottom) > div")].map((x) => x.textContent.trim().replace(/^[a-z_]+(?=[A-Z])/, "")), bottom: document.querySelectorAll("#stage .side .nav.bottom > div").length, ov: [...document.querySelectorAll("#stage .rm-ov")].map((x) => x.textContent) }; });
+        if (st.bad) { await t.waitForTimeout(400); const again = await t.evaluate(() => [...document.querySelectorAll("#stage img")].filter((i) => !i.complete || !i.naturalWidth).length); if (again) broken.push(`flow ${f + 1} step ${a + 1}`); }
+        if (!st.imgs && st.text < 20 && !st.svg) blanks.push(`flow ${f + 1} step ${a + 1}`);
+        if (f === 1 && st.nav.length) navs.push({ nav: st.nav, bottom: st.bottom });
+        st.ov.forEach((x) => overlays.add(x));
+        if (await t.evaluate(() => !document.getElementById("card").hidden && /complete/i.test(document.getElementById("card").innerText))) break;
+        assert.ok(Date.now() - t0 < 120000, `retail media flow ${f + 1} finished`);
+        await t.waitForTimeout(100);
+      }
+    }
+    assert.deepStrictEqual(errs, [], "no page errors");
+    assert.deepStrictEqual(blanks, [], "no screen is ever blank");
+    assert.deepStrictEqual(broken, [], "no broken image");
+    assert.deepStrictEqual(badCaps, [], "every caption is a line of the script");
+    const stepsRec = await t.evaluate(() => window.__steps.map((x) => x.length));
+    assert.deepStrictEqual(stepsRec, [8, 10, 5], "all steps of the three flows played (8, 10 and 5): " + JSON.stringify(stepsRec));
+    assert.ok(navs.length > 0 && navs.every((n) => JSON.stringify(n.nav) === JSON.stringify(["Campaigns", "Insights / Analytics"]) && n.bottom === 0), "the advertiser's left nav shows only Campaigns and Insights / Analytics: " + JSON.stringify(navs[0]));
+    assert.strictEqual(await t.evaluate(() => window.__plays), 0, "no audio is played while the voiceover is off");
+    const thirdParty = reqs.filter((u) => !u.startsWith("http://x.test/") && !/^https:\/\/fonts\.(googleapis|gstatic)\.com\//.test(u)); // the tour's shared fonts are unchanged
+    assert.deepStrictEqual(thirdParty, [], "no third-party request for screenshots or audio");
+    assert.ok(reqs.some((u) => /\/industries\/retail-media\/tour\/assets\/v1\/img\/[\w.-]+\.jpg$/.test(u)), "screenshots load from the same-origin asset route");
+    assert.ok(!reqs.some((u) => /\/assets\/v1\/vo\//.test(u)), "no voiceover is fetched while it is off");
+    const text = [...seen].join("\n");
+    for (const need of ["Frostline Cold Drinks", "Bayside Test Stores", "Forecourt", "Shop front", "Emma"]) assert.ok(text.includes(need), "retail media content shown: " + need);
+    assert.ok(!/Larkspur/.test(text), "the visitor's company replaces Larkspur Convenience in every HTML screen");
+    assert.ok([...overlays].some((x) => /Bayside/.test(x)), "the visitor's company is redrawn over the screenshots (logo and header badge): " + JSON.stringify([...overlays].slice(0, 3)));
+    // Rules of the brief: no other industry's words, no real brands, no US spelling, no internal project names.
+    const banned = text.match(/telco|pharmac|prescription|\bSIM\b|handset|Roadside|Google|Trade Desk|Amazon|Shell\b|BP\b|Coca|Pepsi|Red Bull|Monster|Walmart|Tesco|7-Eleven|Circle K|Nimbus|Harbourside|personalization|Display Types & DSP|DSP Integration|Visitor Profile|Elementor|Angie|rob_ph|ph-mcp|backlog/gi);
+    assert.ok(!banned, "no other industry, real brand, US spelling or internal name: " + JSON.stringify(banned));
+    // Voiceover toggle: saved, restored after a reload; still nothing plays until the visitor starts the tour.
+    await t.click("#vo");
+    assert.strictEqual(await t.evaluate(() => localStorage.getItem("ph_tour_voiceover")), "on", "the choice is saved");
+    await t.reload(); await t.waitForSelector("#fs", { state: "visible" });
+    assert.strictEqual(await t.getAttribute("#vo", "aria-pressed"), "true", "the choice is restored after a reload");
+    assert.strictEqual(await t.evaluate(() => window.__plays), 0, "nothing plays before the visitor starts");
+    await t.click("#vo");
+    assert.strictEqual(await t.evaluate(() => localStorage.getItem("ph_tour_voiceover")), "off", "off is saved");
+    await t.close();
+    // 390px wide: the stage scales and the page does not scroll sideways, on a screenshot step and on the shopper scene.
+    { const m = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
+      await m.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast }) : r.abort(); });
+      await m.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example" })));
+      await m.goto("http://x.test/industries/retail-media/tour/?embed=1"); await m.waitForSelector("#fs", { state: "visible" });
+      for (const f of [0, 2]) {
+        await m.click(`.chip[data-k="${f}"]`); await m.click("#play"); await m.waitForTimeout(1500);
+        const g = await m.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+        assert.ok(g.sw <= g.cw, `flow ${f + 1}: no sideways scroll at 390px: ${g.sw} > ${g.cw}`);
+      }
+      await m.close(); }
+    // The voiceover timing tests (tools/retail-media-tour/votest.js) need the audio: they run when TOUR_ASSETS_DIR is set.
+    if (assetsDir && fs.existsSync(path.join(assetsDir, "vo", "manifest.json"))) {
+      const { spawnSync } = await import("child_process");
+      for (const mode of [["off"], ["reload"], ["nav"]].concat(process.env.TOUR_VO_FULL ? [["full", "0"], ["full", "1"], ["full", "2"]] : [])) {
+        const r = spawnSync("node", [path.join(here, "..", "tools", "retail-media-tour", "votest.js"), ...mode], { env: { ...process.env, MOTION: mode[0] === "full" ? "normal" : process.env.MOTION, PORT: String(8800 + Math.floor(Math.random() * 100)) }, encoding: "utf8", timeout: 20 * 60 * 1000 });
+        assert.strictEqual(r.status, 0, `votest.js ${mode.join(" ")}:\n${r.stdout}${r.stderr}`);
+      }
+    } else console.log("tour: voiceover timing tests skipped (set TOUR_ASSETS_DIR to a checkout of tag tour-assets-retail-media-v1)");
+  }
   // Fuel & convenience: the three standard flows on recreated HQ Admin screens (as pharmacy), convenience content, a four-location shopper scene, end card CTA to retail media.
   { const src = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
     const fast = src.replace("const k = reduce ? .35 : 1;", "const k = .03;"); assert.ok(fast !== src, "speed hook applied (convenience)");

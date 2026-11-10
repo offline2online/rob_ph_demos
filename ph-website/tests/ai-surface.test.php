@@ -8,11 +8,11 @@ $ae_dir  = dirname( __DIR__ ) . '/snippets/ph-agent-endpoint';
 
 /* the Industries snippet's data() and the tour constants (tour.php itself needs WordPress, so its constants are lifted from the source) */
 $tour_src = (string) file_get_contents( $ind_dir . '/tour.php' );
-ok( 1 === preg_match( '/^const TOUR_DEMOS_STD = .*?^\);$/ms', $tour_src, $t1 ) && 1 === preg_match( '/^const TOUR_INDUSTRIES = .*?^\);$/ms', $tour_src, $t3 ), 'found TOUR_INDUSTRIES in tour.php' );
+ok( 1 === preg_match( '/^const TOUR_DEMOS_STD = .*?^\);$/ms', $tour_src, $t1 ) && 1 === preg_match( '/^const TOUR_DEMOS_RM = .*?^\);$/ms', $tour_src, $t2 ) && 1 === preg_match( '/^const TOUR_INDUSTRIES = .*?^\);$/ms', $tour_src, $t3 ), 'found TOUR_INDUSTRIES in tour.php' );
 if ( ! function_exists( 'AngieSnippets\PhIndustryEnhancements_10063\data' ) ) {
 	eval( 'namespace AngieSnippets\PhIndustryEnhancements_10063; function data( $f ) { return require ' . var_export( $ind_dir . '/', true ) . ' . $f; }' );
 }
-eval( 'namespace AngieSnippets\PhIndustryEnhancements_10063; ' . $t1[0] . ' ' . $t3[0] );
+eval( 'namespace AngieSnippets\PhIndustryEnhancements_10063; ' . $t1[0] . ' ' . $t2[0] . ' ' . $t3[0] );
 require_once $ind_dir . '/ai-surface.php';
 use function AngieSnippets\PhIndustryEnhancements_10063\{robots_txt_text,ai_calc_section,ai_tour_section,ai_enrich_twin,ai_tours_llms_filter,ai_tours_llms_md,industry_twin,calculators,calc_llms_filter,data as ind_data};
 use function AngieSnippets\PhAgentEndpoint___ID__\{llms_full_text,agents_llms_md,server_card,tool_annotations,feature_slug_aliases,faq_for as ai_faq_for};
@@ -65,7 +65,7 @@ foreach ( array_diff( array_keys( $md ), array( 'telco', 'pharmacy' ) ) as $k ) 
 }
 
 /* ---- product tours: every TOUR_INDUSTRIES key, nowhere else ---- */
-ok( array_keys( $TOURS ) === array( 'telco', 'pharmacy', 'convenience' ), 'TOUR_INDUSTRIES holds telco, pharmacy and convenience only' );
+ok( isset( $TOURS['telco'], $TOURS['pharmacy'], $TOURS['retail-media'], $TOURS['convenience'] ), 'TOUR_INDUSTRIES holds telco, pharmacy, retail-media and convenience' );
 foreach ( $md as $k => $text ) {
 	$twin = industry_twin( $k );
 	$tn   = substr_count( $twin, '## Interactive product tour' );
