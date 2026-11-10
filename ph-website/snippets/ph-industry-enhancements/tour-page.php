@@ -616,6 +616,17 @@ html.fs #card .fsonly{display:inline-flex}
 @media (max-height:520px){#card .go,#card .acts.end .go{min-height:48px;height:auto;padding:8px 24px;font-size:19px;font-weight:700}#card .sec{margin-bottom:0}}
 #card .fslink{height:auto;padding:6px 4px;border:0;background:none;color:#0F7A9A;font-size:14px;text-decoration:underline;text-underline-offset:3px}
 html.fs #card .fslink{display:none}
+/* start card: "Watch full screen" is a full-size secondary button beside "Start the tour" (50/50); in full screen only Start shows */
+#card .acts.split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+#card .acts.split .go,#card .acts.split .fsbig{justify-content:center;height:auto;min-height:56px;padding:0 8px;gap:6px;font-size:15px;font-weight:700;box-sizing:border-box;white-space:nowrap}
+#card .fsbig{background:#fff;border:2px solid var(--ph-teal);color:var(--ph-teal-d)}
+#card .acts.split .ms{font-size:20px;line-height:1}
+@media (max-width:420px){#card .acts.split{grid-template-columns:1fr}}
+#card .fsbig:hover{background:#EAF6FA}
+#card .fsbig:focus-visible{outline:2px solid var(--ph-teal-d);outline-offset:2px}
+@media (max-height:520px){#card .acts.split .go,#card .acts.split .fsbig{min-height:48px}}
+html.fs #card .acts.split{grid-template-columns:1fr}
+html.fs #card .fsbig{display:none}
 :root.fs{--bg:#0F1424;--panel:#192033;--fg:#e7edf2;--muted:#a3acc0;--line:#2c3550;--chip:#16303a;color-scheme:dark}
 html.fs{scrollbar-gutter:auto}
 html.fs,html.fs body{background:#0F1424;overflow:hidden;height:100%}
@@ -2270,7 +2281,7 @@ function showEnd() {
 function startCard() {
   const [h, p] = FD().start();
   card.innerHTML = `<div class="in2"><div class="eyebrow">${S.welcome ? `Welcome, ${esc(S.welcome)} · ` : ""}Flow ${S.flow+1} · ${ST().length} steps · about 2 minutes</div><h2>${h}</h2><p>${esc(p)}</p>
-    <div class="acts"><button type="button" class="go" id="start"><span class="ms">play_arrow</span>Start the tour</button><button type="button" class="fslink" id="fsstart"><span class="ms">fullscreen</span>Watch full screen</button></div></div>`;
+    <div class="acts split"><button type="button" class="go" id="start"><span class="ms">play_arrow</span>Start the tour</button><button type="button" class="fsbig" id="fsstart"><span class="ms">fullscreen</span>Watch full screen</button></div></div>`;
   card.hidden = false; card.querySelector("#start").onclick = () => { S.paused = false; go(0); };
   card.querySelector("#fsstart").onclick = () => { fsEnter(); S.paused = false; go(0); };
 }

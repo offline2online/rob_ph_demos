@@ -338,7 +338,15 @@ try {
         await ct.evaluate(show);
         const m = await ct.evaluate((i) => { const b = document.getElementById(i), cs = getComputedStyle(b), ic = b.querySelector(".ms"), r = b.getBoundingClientRect(), c = document.querySelector("#card .in2").getBoundingClientRect(), st = document.querySelector("#card").getBoundingClientRect(); return { color: cs.color, icon: ic ? getComputedStyle(ic).color : "rgb(255, 255, 255)", iconSize: ic ? getComputedStyle(ic).fontSize : "24px", bg: cs.backgroundColor, fs: parseFloat(cs.fontSize), fw: +cs.fontWeight, h: b.offsetHeight, over: b.scrollWidth > b.clientWidth + 1, fit: c.top >= st.top - 1 && c.bottom <= st.bottom + 1 && c.left >= st.left - 1 && c.right <= st.right + 1, noH: document.documentElement.scrollWidth <= innerWidth }; }, id);
         const min = vp.height <= 520 ? 48 : 56;
-        assert.ok(m.color === "rgb(255, 255, 255)" && m.icon === "rgb(255, 255, 255)" && m.iconSize === "24px" && m.bg === "rgb(22, 155, 194)" && m.fs >= 18.66 && m.fw >= 700 && m.h >= min && !m.over && m.fit && m.noH, `#${id} CTA at ${vp.width}x${vp.height}${fsMode ? " fs" : ""}: ${JSON.stringify(m)}`);
+        assert.ok(m.color === "rgb(255, 255, 255)" && m.icon === "rgb(255, 255, 255)" && m.iconSize === (id === "start" ? "20px" : "24px") && m.bg === "rgb(22, 155, 194)" && m.fs >= (id === "start" ? 15 : 18.66) && m.fw >= 700 && m.h >= min && !m.over && m.fit && m.noH, `#${id} CTA at ${vp.width}x${vp.height}${fsMode ? " fs" : ""}: ${JSON.stringify(m)}`);
+      }
+      // start card: "Watch full screen" is a full-size secondary button beside Start (50/50); hidden in full screen
+      for (let f = 0; f < 3; f++) {
+        await ct.evaluate((n) => { __t.setFlow(n); __t.startCard(); }, f);
+        const g = await ct.evaluate(() => { const a = document.getElementById("start"), b = document.getElementById("fsstart"), ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), row = a.parentElement.getBoundingClientRect(), cs = getComputedStyle(b); return { sA: a.scrollWidth > a.clientWidth + 1, sB: b.scrollWidth > b.clientWidth + 1, hidden: cs.display === "none", wA: ra.width, wB: rb.width, hA: ra.height, hB: rb.height, sameRow: Math.abs(ra.top - rb.top) <= 1, full: ra.width >= row.width - 2, bg: cs.backgroundColor, border: cs.borderTopWidth, bgA: getComputedStyle(a).backgroundColor }; });
+        assert.ok(!g.sA && !g.sB && g.bgA === "rgb(22, 155, 194)", `start card labels fit, Start filled ${vp.width}x${vp.height} flow ${f}: ${JSON.stringify(g)}`);
+        if (fsMode) assert.ok(g.hidden && g.full, `fs: Start full width, full-screen button hidden ${vp.width}x${vp.height} flow ${f}: ${JSON.stringify(g)}`);
+        else if (vp.width >= 740) assert.ok(!g.hidden && Math.abs(g.wA - g.wB) <= 1 && Math.abs(g.hA - g.hB) <= 1 && g.sameRow && g.bg === "rgb(255, 255, 255)" && g.border === "2px", `split buttons ${vp.width}x${vp.height} flow ${f}: ${JSON.stringify(g)}`);
       }
       await ct.close();
     }
