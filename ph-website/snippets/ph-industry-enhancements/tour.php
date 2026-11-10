@@ -45,7 +45,7 @@ const TOUR_INDUSTRIES = array(
  */
 const TOUR_PAGE_OPTION  = 'ph_tour_page_html';
 const TOUR_PAGE_BACKOFF = 'ph_tour_page_backoff';
-const TOUR_PAGE_SHA256  = 'f495df535458f4d44f33a9bfec3536f77a5addece1ef12d7b1ed65c3c293134b';
+const TOUR_PAGE_SHA256  = 'ac7d936501de76a6cb3ea4b03815871e643cb26e88fa59961d7db6738f9e306b';
 const TOUR_PAGE_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/tour.html';
 
 /**
@@ -94,6 +94,7 @@ function tour_page() {
  */
 const TOUR_ASSET_PREFIX  = '/industries/retail-media/tour/assets/v1/';
 const TOUR_ASSET_TAG_URL = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/tour-assets-retail-media-v1/ph-website/tour-assets/retail-media/';
+const TOUR_ASSET_MIRROR_URL = 'https://cdn.jsdelivr.net/gh/offline2online/rob_ph_demos@tour-assets-retail-media-v1/ph-website/tour-assets/retail-media/';
 const TOUR_ASSET_BACKOFF = 'ph_tour_asset_backoff_';
 const TOUR_ASSETS = array(
 	'img/01-advertiser.jpg' => array( 'c9f334655842f66229649d7667029a2a3e295ab79ee7554f21baf602b3a427e1', 142697 ),
@@ -244,8 +245,9 @@ function tour_asset_mime( $key ) {
 }
 
 /**
- * The bytes of one allow-listed asset. Returns array( bytes|null, reason ). Order: the file cache when its sha256 matches; then the tag (accepted only on a 200 whose sha256
- * matches the allow-list; only then stored). A failed fetch sets a 60 s back-off transient for that file so a broken upstream is not hammered.
+ * The bytes of one allow-listed asset. Returns array( bytes|null, reason, code ). Order: the file cache when its sha256 matches; then the tag, then the jsDelivr mirror of the same tag
+ * (each accepted only on a 200 whose sha256 matches the allow-list; only then stored). The 60 s back-off is set only when both fail, so a broken upstream is not hammered.
+ * code is '' on success, else fetch-failed | sha-mismatch | backoff (the short X-PH-Tour-Reason on the 503; never a URL or error text).
  */
 function tour_asset_bytes( $key ) {
 	list( $sha, $size ) = TOUR_ASSETS[ $key ];
@@ -254,28 +256,33 @@ function tour_asset_bytes( $key ) {
 	if ( is_file( $file ) ) {
 		$have = (string) file_get_contents( $file );
 		if ( strlen( $have ) === $size && hash( 'sha256', $have ) === $sha ) {
-			return array( $have, '' );
+			return array( $have, '', '' );
 		}
 	}
 	if ( false !== get_transient( TOUR_ASSET_BACKOFF . md5( $key ) ) ) {
-		return array( null, 'asset ' . $key . ': fetch skipped, backing off after an earlier failure' );
+		return array( null, 'asset ' . $key . ': fetch skipped, backing off after an earlier failure', 'backoff' );
 	}
-	$res = wp_remote_get( TOUR_ASSET_TAG_URL . $key, array( 'timeout' => 15 ) );
-	if ( is_wp_error( $res ) ) {
-		$why = 'asset ' . $key . ': fetch failed: ' . $res->get_error_message();
-	} elseif ( 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
-		$why = 'asset ' . $key . ': fetch answered ' . (int) wp_remote_retrieve_response_code( $res );
-	} else {
-		$body = (string) wp_remote_retrieve_body( $res );
-		if ( hash( 'sha256', $body ) === $sha ) {
-			wp_mkdir_p( dirname( $file ) );
-			file_put_contents( $file, $body ); // phpcs:ignore WordPress.WP.AlternativeFunctions -- a sha256-checked cache file.
-			return array( $body, '' );
+	$whys     = array();
+	$mismatch = false;
+	foreach ( array( 'tag' => TOUR_ASSET_TAG_URL, 'mirror' => TOUR_ASSET_MIRROR_URL ) as $name => $base ) {
+		$res = wp_remote_get( $base . $key, array( 'timeout' => 15 ) );
+		if ( is_wp_error( $res ) ) {
+			$whys[] = $name . ' fetch failed: ' . $res->get_error_message();
+		} elseif ( 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+			$whys[] = $name . ' fetch answered ' . (int) wp_remote_retrieve_response_code( $res );
+		} else {
+			$body = (string) wp_remote_retrieve_body( $res );
+			if ( hash( 'sha256', $body ) === $sha ) {
+				wp_mkdir_p( dirname( $file ) );
+				file_put_contents( $file, $body ); // phpcs:ignore WordPress.WP.AlternativeFunctions -- a sha256-checked cache file.
+				return array( $body, '', '' );
+			}
+			$mismatch = true;
+			$whys[]   = $name . ' copy does not match its sha256';
 		}
-		$why = 'asset ' . $key . ': fetched copy does not match its sha256';
 	}
 	set_transient( TOUR_ASSET_BACKOFF . md5( $key ), 1, MINUTE_IN_SECONDS );
-	return array( null, $why );
+	return array( null, 'asset ' . $key . ': ' . implode( '; ', $whys ), $mismatch ? 'sha-mismatch' : 'fetch-failed' );
 }
 
 /** Parses a Range header for a body of $size bytes. Returns null (no usable single range: send everything), 'bad' (unsatisfiable: 416) or array( start, end ). */
@@ -303,7 +310,7 @@ function tour_asset_serve( $path, $method, $range ) {
 		echo 'Not found';
 		exit;
 	}
-	list( $bytes, $why ) = tour_asset_bytes( $key );
+	list( $bytes, $why, $code ) = tour_asset_bytes( $key );
 	if ( '' !== $why ) {
 		error_log( 'ph tour: ' . $why );
 	}
@@ -313,6 +320,7 @@ function tour_asset_serve( $path, $method, $range ) {
 		header( 'X-Robots-Tag: noindex' );
 		header( 'Cache-Control: no-store' );
 		header( 'Retry-After: 60' );
+		header( 'X-PH-Tour-Reason: ' . $code );
 		echo 'Temporarily unavailable';
 		exit;
 	}
@@ -328,6 +336,9 @@ function tour_asset_serve( $path, $method, $range ) {
 		header( 'Content-Range: bytes */' . $size );
 		exit;
 	}
+	// WordPress adds Pragma: no-cache and Expires: 1984 for logged-in users; Chromium then revalidates despite max-age.
+	header_remove( 'Pragma' );
+	header_remove( 'Expires' );
 	if ( is_array( $r ) ) {
 		status_header( 206 );
 		header( 'Content-Range: bytes ' . $r[0] . '-' . $r[1] . '/' . $size );

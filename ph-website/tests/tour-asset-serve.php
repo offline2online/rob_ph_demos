@@ -3,10 +3,11 @@
  * Child process for tour.test.php: runs the retail media asset route for one request (the handler exits) and prints what it sent.
  * usage: ASSET_MODE=<mode> [HTTP_RANGE=<header>] php tour-asset-serve.php <uri> [METHOD]
  * The allow-list entry img/01-advertiser.jpg is swapped for a 1000-byte fixture so the test needs no network and no binary files.
- * ASSET_MODE: miss (empty cache, tag answers with the fixture) | cached (intact file already in uploads) | stale (cached file has the wrong bytes) | bad (tag answers with other bytes) | 404 (tag answers 404) | backoff (back-off transient set, empty cache)
+ * ASSET_MODE: mirror (tag answers 404, the jsDelivr mirror has the fixture) | both404 (tag and mirror answer 404) | badboth (both answer other bytes) | miss (empty cache, tag answers with the fixture) | cached (intact file already in uploads) | stale (cached file has the wrong bytes) | bad (tag answers with other bytes) | 404 (tag answers 404) | backoff (back-off transient set, empty cache)
  */
 namespace AngieSnippets\PhIndustryEnhancements_10063 {
 	function header( $h ) { $GLOBALS['hdr'][] = $h; }
+	function header_remove( $h ) { $GLOBALS['removed'][] = $h; }
 	function status_header( $c ) { $GLOBALS['status'] = $c; }
 	function error_log( $m ) { $GLOBALS['logs'][] = $m; }
 	function data( $f ) { return ''; }
@@ -15,7 +16,7 @@ namespace {
 define( 'ABSPATH', '/' );
 define( 'HOUR_IN_SECONDS', 3600 );
 define( 'MINUTE_IN_SECONDS', 60 );
-$GLOBALS['hdr'] = array(); $GLOBALS['status'] = 0; $GLOBALS['cbs'] = array(); $GLOBALS['logs'] = array(); $GLOBALS['http'] = 0; $GLOBALS['tr'] = array(); $GLOBALS['trttl'] = array();
+$GLOBALS['removed'] = array(); $GLOBALS['hdr'] = array(); $GLOBALS['status'] = 0; $GLOBALS['cbs'] = array(); $GLOBALS['logs'] = array(); $GLOBALS['http'] = 0; $GLOBALS['tr'] = array(); $GLOBALS['trttl'] = array();
 function add_action( $n, $cb, $p = 10 ) { $GLOBALS['cbs'][ $n ][] = array( $p, $cb ); }
 function wp_unslash( $v ) { return $v; } function sanitize_text_field( $v ) { return $v; }
 function wp_parse_url( $u, $c = -1 ) { return parse_url( $u, $c ); }
@@ -29,6 +30,8 @@ function wp_upload_dir() { global $tmp; return array( 'basedir' => $tmp . '/uplo
 $fixture = ''; for ( $i = 0; $i < 1000; $i++ ) { $fixture .= chr( $i % 251 ); }
 function wp_remote_get( $u, $a = array() ) {
 	global $mode, $fixture; $GLOBALS['http']++; $GLOBALS['url'] = $u;
+	$mirror = false !== strpos( $u, 'cdn.jsdelivr.net' );
+	if ( 'both404' === $mode || ( 'mirror' === $mode && ! $mirror ) ) { return array( 'code' => 404, 'body' => '' ); }
 	return array( 'code' => '404' === $mode ? 404 : 200, 'body' => 'bad' === $mode ? 'wrong bytes' : $fixture );
 }
 function wp_remote_retrieve_response_code( $r ) { return $r['code']; }
@@ -47,7 +50,7 @@ ob_start();
 register_shutdown_function( function () use ( $tmp, $cache, $fixture ) {
 	$body = ob_get_clean();
 	$on_disk = is_file( $cache ) ? file_get_contents( $cache ) : null;
-	echo json_encode( array( 'status' => $GLOBALS['status'], 'hdr' => $GLOBALS['hdr'], 'len' => strlen( $body ), 'body_ok' => $body === $fixture, 'body_sha' => hash( 'sha256', $body ), 'http' => $GLOBALS['http'], 'url' => $GLOBALS['url'] ?? null, 'logs' => $GLOBALS['logs'], 'backoff_ttl' => $GLOBALS['trttl']['ph_tour_asset_backoff_' . md5( 'img/01-advertiser.jpg' )] ?? null, 'cached_ok' => $on_disk === $fixture, 'cached' => null !== $on_disk ) );
+	echo json_encode( array( 'status' => $GLOBALS['status'], 'hdr' => $GLOBALS['hdr'], 'removed' => $GLOBALS['removed'], 'len' => strlen( $body ), 'body_ok' => $body === $fixture, 'body_sha' => hash( 'sha256', $body ), 'http' => $GLOBALS['http'], 'url' => $GLOBALS['url'] ?? null, 'logs' => $GLOBALS['logs'], 'backoff_ttl' => $GLOBALS['trttl']['ph_tour_asset_backoff_' . md5( 'img/01-advertiser.jpg' )] ?? null, 'cached_ok' => $on_disk === $fixture, 'cached' => null !== $on_disk ) );
 	@unlink( $cache ); exec( 'rm -rf ' . escapeshellarg( $tmp ) );
 } );
 list( $prio, $cb ) = $GLOBALS['cbs']['template_redirect'][0];
