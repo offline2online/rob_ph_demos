@@ -2681,3 +2681,9 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
   .funnel-stage-rates { flex-direction: row; flex-wrap: wrap; gap: 4px 12px; }
   .funnel-filter { min-width: 100%; }
 }
+
+/* A Promote page whose code failed to load (showPageLoadError in app.js): the error, in words, with Try again. */
+.page-load-error { margin: 16px 0; padding: 16px; border-radius: 8px; border: 1px solid #f5c2c0; background: #fdecea; color: #611a15; }
+.page-load-error-title { margin: 0 0 6px; font-weight: 600; }
+.page-load-error-detail { margin: 0 0 6px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.page-load-error-where { margin: 0 0 12px; font-size: 12px; color: #8a4b47; overflow-wrap: anywhere; }
