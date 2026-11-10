@@ -31,3 +31,7 @@ The retail media walkthrough is part of the shared product tour (`snippets/ph-in
 ## Rules
 
 "personalisation" with an S; no internal project names in narration or on screen; fictional brands only (Larkspur Convenience, Frostline Cold Drinks); screens never blank. Like telco and pharmacy, the visitor's company (from the lead or the company field) and colour are used everywhere: the HTML screens, login, phone and shopper scene use `B()`/`C()`, and on the screenshots the HQ Admin logo and the header badge are redrawn over the image (`brandOv()`), since the screenshots were taken with the demo retailer's logo. An advertiser's own login sees only Campaigns and Insights / Analytics in the left-hand nav.
+
+## Turning the voiceover on
+
+The voiceover is off by default and the speaker button turns it on (saved in `localStorage.ph_tour_voiceover`). When a flow starts with it off, an "Enable sound" bubble shows above the speaker for 3 seconds while the button pulses, then the walkthrough starts; clicking the bubble or the speaker turns sound on and starts at once (`VO.hint()` in `tour.html`, used by `startFlow()`). Prev/Next or switching flow cancels it. `tests/tour.test.mjs` covers it.

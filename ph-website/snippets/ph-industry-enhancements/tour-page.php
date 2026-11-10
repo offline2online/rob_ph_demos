@@ -785,6 +785,14 @@ html.ph-rm #capS{min-height:3em;min-height:2lh}
 .cv.rm .cv-ad.cre,.cv.rm .cv-ad.per{background:linear-gradient(150deg,#06345a,#0A5C99)}
 .vogrp{display:inline-flex;align-items:center;gap:4px}.vogrp[hidden]{display:none}
 .ctl#vo.on{border-color:var(--ph-teal,#169BC2);color:var(--ph-teal,#169BC2)}
+/* "Enable sound" hint: a bubble above the speaker button for a moment when a flow starts with the voiceover off */
+.vogrp{position:relative}
+.vohint{position:absolute;bottom:calc(100% + 12px);right:-10px;z-index:60;display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:10px;background:#14202b;color:#fff;font-size:14px;font-weight:600;line-height:1.2;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.28);cursor:pointer;animation:vohint-in .25s ease both}
+.vohint::after{content:"";position:absolute;top:100%;right:22px;border:7px solid transparent;border-top-color:#14202b}
+.vohint .ms{font-size:20px;color:#7fd3ea}
+#vo.pulse{border-color:var(--ph-teal,#169BC2);color:var(--ph-teal,#169BC2);animation:vopulse 1.1s ease-in-out infinite}
+@keyframes vopulse{0%,100%{box-shadow:0 0 0 0 rgba(22,155,194,.55)}50%{box-shadow:0 0 0 9px rgba(22,155,194,0)}}
+@keyframes vohint-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .sfa{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;margin-left:12px;border-radius:6px;background:#169BC2;color:#fff;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap}.sfa .ms{font-size:17px}.sfa.sent{background:#f2f2f2;color:#8c8c8c;cursor:default}
 </style>
 </head>
@@ -1967,7 +1975,20 @@ const VO = IS_RM ? (() => {
     btn.setAttribute("aria-label", on ? "Turn voiceover off" : "Turn voiceover on");
     btn.innerHTML = `<span class="ms">${on ? "volume_up" : "volume_off"}</span>`;
   }
-  function stop() { tok++; a.pause(); if (st) log("stop", { k: st.k }); st = null; S.voHold = false; }
+  /* "Enable sound" hint: a flow that starts with the voiceover off first shows, for 3 s, a bubble above the speaker button
+     pointing to it while the button pulses. Clicking the button or the bubble turns sound on and starts at once. */
+  let hintT = 0, hintGo = null;
+  function hideHint() { clearTimeout(hintT); hintGo = null; btn.classList.remove("pulse"); const t = document.getElementById("vohint"); if (t) t.remove(); }
+  function hint(start) {
+    hideHint(); if (on || grp.hidden) return start();
+    const r = RUN, tip = document.createElement("div"); tip.id = "vohint"; tip.className = "vohint"; tip.setAttribute("role", "status");
+    tip.innerHTML = `<span class="ms">volume_up</span>Enable sound`;
+    grp.appendChild(tip); btn.classList.add("pulse");
+    const go2 = () => { const live = hintGo; hideHint(); if (live && RUN === r) start(); };
+    hintGo = go2; tip.onclick = () => { if (!on) btn.click(); else go2(); };
+    hintT = setTimeout(go2, 3000);
+  }
+  function stop() { hideHint(); tok++; a.pause(); if (st) log("stop", { k: st.k }); st = null; S.voHold = false; }
   function step() {
     stop(); const k = keyOf(), lines = CLIPS[k];
     if (!lines) return;
@@ -2024,15 +2045,17 @@ const VO = IS_RM ? (() => {
   document.addEventListener("visibilitychange", sync);
   window.addEventListener("pagehide", stop);
   btn.addEventListener("click", () => {
+    const pend = hintGo;
     on = !on; try { localStorage.setItem(KEY, on ? "on" : "off"); } catch (e) {}
     log("toggle", { on }); paint();
+    if (pend) return pend();
     if (!st) return;
     if (on) { warm(); if (st.busy) play(st.i); }
     else { a.pause(); st.q = []; S.voHold = false; if (st.busy) finished(st.t, st.i); }
   });
   S.voCue = cue;
   paint();
-  return { step, stop, sync, done, warm, get on() { return on; },
+  return { step, stop, sync, done, warm, hint, get on() { return on; },
     text: (f, i) => { const k = keyOf(f, i); return st && st.k === k && st.i >= 0 ? st.lines[st.i].text : ((CLIPS[k] || [])[0] || {}).text; } };
 })() : null;
 
@@ -2275,15 +2298,17 @@ function showEnd() {
   const cta = card.querySelector("#cta");
   if (cta) { cta.onclick = () => { tourEvent("cta", { href: FD().cta.href }); }; cta.focus({ preventScroll: true }); return; }
   const nb = card.querySelector("#nextflow");
-  if (nb) { nb.onclick = () => { if (nf[1]) { tourEvent("next", { next_flow: nf[0], next_step: 1 }); setFlow(next); S.paused = false; go(0); } else nb.textContent = "Coming in the next build"; }; nb.focus({ preventScroll: true }); }
+  if (nb) { nb.onclick = () => { if (nf[1]) { tourEvent("next", { next_flow: nf[0], next_step: 1 }); setFlow(next); startFlow(); } else nb.textContent = "Coming in the next build"; }; nb.focus({ preventScroll: true }); }
   else card.querySelector("#again").focus({ preventScroll: true });
 }
+/* Starts the chosen flow from the top; on the retail media tour a flow started with sound off shows the "Enable sound" hint first. */
+function startFlow() { S.paused = false; card.hidden = true; if (VO) VO.hint(() => go(0)); else go(0); }
 function startCard() {
   const [h, p] = FD().start();
   card.innerHTML = `<div class="in2"><div class="eyebrow">${S.welcome ? `Welcome, ${esc(S.welcome)} · ` : ""}Flow ${S.flow+1} · ${ST().length} steps · about 2 minutes</div><h2>${h}</h2><p>${esc(p)}</p>
     <div class="acts split"><button type="button" class="go" id="start"><span class="ms">play_arrow</span>Start the tour</button><button type="button" class="fsbig" id="fsstart"><span class="ms">fullscreen</span>Watch full screen</button></div></div>`;
-  card.hidden = false; card.querySelector("#start").onclick = () => { S.paused = false; go(0); };
-  card.querySelector("#fsstart").onclick = () => { fsEnter(); S.paused = false; go(0); };
+  card.hidden = false; card.querySelector("#start").onclick = () => startFlow();
+  card.querySelector("#fsstart").onclick = () => { fsEnter(); startFlow(); };
 }
 function setFlow(k) {
   if (VO) VO.stop(); S.flow = k; S.p3 = false; if (VO) VO.warm(); RUN++; S.step = -1; resetScroll = true; hideTip(); S.bright = k >= 1;
@@ -2294,7 +2319,7 @@ function setFlow(k) {
 }
 document.getElementById("prev").onclick = () => go(S.step - 1);
 document.getElementById("next").onclick = () => go(S.step + 1);
-document.getElementById("play").onclick = () => { if (S.step < 0) { S.paused = false; go(0); return; } S.paused = !S.paused; marks(); if (VO) VO.sync(); };
+document.getElementById("play").onclick = () => { if (S.step < 0) { if (document.getElementById("vohint")) { S.paused = false; go(0); } else startFlow(); return; } S.paused = !S.paused; marks(); if (VO) VO.sync(); };
 const co = document.getElementById("co"), col = document.getElementById("col");
 function restart() { if (S.step < 0) { RUN++; S.bright = S.flow >= 1; FD().intro(); startCard(); } else go(S.step); }
 let tmr; co.addEventListener("input", () => { S.custom = true; S.brand = co.value.trim() || null; clearTimeout(tmr); tmr = setTimeout(restart, 500); });
@@ -2418,7 +2443,7 @@ function unlock(lead, autostart) {
   if (lead && lead.company) { S.custom = true; S.brand = lead.company.trim().slice(0, 32); co.value = S.brand; }
   S.welcome = lead && lead.name ? lead.name.trim().split(/\s+/)[0] : "";
   flows.hidden = FOCUS; setFlow(TSEL); tourEvent("unlock", { via: autostart ? "tour form" : "existing details" });
-  if (autostart) { S.paused = false; go(0); }
+  if (autostart) startFlow();
 }
 const onLead = e => { const l = (e && e.detail && e.detail.email) ? e.detail : readLead(); if (LOCKED && l) unlock(l, false); };
 window.addEventListener("ph:lead", onLead); try { if (IN_FRAME) window.parent.addEventListener("ph:lead", onLead); } catch (e) {}
