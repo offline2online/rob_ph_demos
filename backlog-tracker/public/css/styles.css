@@ -333,7 +333,8 @@ body {
 .card-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 /* Backlog cards show the title only; the description appears on hover/focus. */
 .card-title-hover { position: relative; cursor: help; }
-.card-title-hover .card-desc-pop { display: none; position: absolute; left: 0; top: 100%; z-index: 20; width: min(360px, 90vw); max-height: 260px; overflow: auto; padding: 8px 10px; background: var(--surface, #fff); color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.15); font-size: 12.5px; font-weight: 400; white-space: pre-wrap; }
+/* position: fixed and placed by placeCardDescPop() in app.js, so the column's scroll box can't clip it. */
+.card-title-hover .card-desc-pop { display: none; position: fixed; left: 8px; top: 0; z-index: 60; width: min(360px, calc(100vw - 16px)); max-height: 320px; overflow: auto; padding: 8px 10px; background: var(--surface, #fff); color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.15); font-size: 12.5px; font-weight: 400; white-space: pre-wrap; }
 .card-title-hover:hover .card-desc-pop, .card-title-hover:focus .card-desc-pop { display: block; }
 .card-desc { margin: 0; font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }
 .card-desc-wrap .card-desc-original { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
@@ -2665,7 +2666,8 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .funnel-stage-name { display: flex; flex-wrap: nowrap; white-space: nowrap; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; }
 .funnel-stage-name .material-symbols-outlined:first-child { font-size: 20px; color: var(--primary); }
 .funnel-bar-wrap { display: flex; justify-content: center; }
-.funnel-bar { min-height: 44px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; border-radius: 6px; background: var(--primary); transition: width .25s ease; clip-path: polygon(0 0, 100% 0, 97% 100%, 3% 100%); }
+/* min-width: the count always fits; a small stage would otherwise be ~28px wide and cut "1,100" to ",100". */
+.funnel-bar { min-height: 44px; min-width: max-content; box-sizing: border-box; padding: 0 14px; white-space: nowrap; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; border-radius: 6px; background: var(--primary); transition: width .25s ease; clip-path: polygon(0 0, 100% 0, 97% 100%, 3% 100%); }
 .funnel-bar-0 { background: #169bc2; } .funnel-bar-1 { background: #1f93c0; } .funnel-bar-2 { background: #3a8bc4; }
 .funnel-bar-3 { background: #5a82c9; } .funnel-bar-4 { background: #7a79d0; } .funnel-bar-5 { background: #9747ff; }
 .funnel-bar-6 { background: #8c52e6; } .funnel-bar-7 { background: #7d5bc9; } .funnel-bar-8 { background: #3d9970; }

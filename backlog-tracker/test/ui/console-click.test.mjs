@@ -1901,6 +1901,46 @@ const scenarios = [
     },
   },
   {
+    // Release 1.5.381 drew the popover inside the column's scroll box (.col-list, overflow: auto),
+    // which cut off everything past the column's edge. It is position: fixed now (placeCardDescPop).
+    name: "Backlog cards: title only, the whole description pops up on hover/focus, unclipped; other columns unchanged",
+    seed: () => {
+      const s = seed();
+      s.docs.backlogItems.b1.desc = "## Outcome\n" + "A long ticket description that runs on. ".repeat(25) + "\nLAST LINE";
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const title = '.card[data-id="b1"] .card-title-hover', pop = '.card[data-id="b1"] .card-desc-pop';
+      c.at("the Backlog card shows no description", title);
+      assert.ok(!(await c.page.locator('.card[data-id="b1"]').innerText()).includes("A long ticket description"), "no description text on the card");
+      assert.ok(await c.page.locator(pop).isHidden(), "the popover is hidden until hover");
+      assert.ok(await c.page.locator('.card[data-id="r1"] .card-desc').first().isVisible(), "Ready for Testing still shows its description");
+      assert.strictEqual(await c.page.locator('.card[data-id="r1"] .card-desc-pop').count(), 0);
+      const unclipped = () => c.page.evaluate((sel) => {
+        const p = document.querySelector(sel), r = p.getBoundingClientRect();
+        const hit = (x, y) => { const e = document.elementFromPoint(x, y); return !!e && (e === p || p.contains(e)); };
+        return { inView: r.left >= 0 && r.right <= document.documentElement.clientWidth && r.top >= 0 && r.bottom <= innerHeight,
+          corners: hit(r.left + 6, r.top + 6) && hit(r.right - 6, r.top + 6) && hit(r.left + 6, r.bottom - 6) && hit(r.right - 6, r.bottom - 6), w: r.width };
+      }, pop);
+      if (c.width >= 1024) {
+        c.at("hover shows the whole popover, unclipped", title);
+        await c.page.hover(title);
+        await until(async () => c.page.locator(pop).isVisible(), "the popover on hover", 3000);
+        const u = await unclipped();
+        assert.ok(u.inView && u.corners && u.w > 300, `the popover is inside the viewport and nothing covers or clips it: ${JSON.stringify(u)}`);
+        assert.ok((await c.page.locator(pop).innerText()).includes("LAST LINE"), "the full description is in it");
+        await c.page.mouse.move(2, 2);
+        await until(async () => c.page.locator(pop).isHidden(), "the popover hides when the pointer leaves", 3000);
+      }
+      c.at("keyboard focus shows it too", title);
+      await c.page.focus(title);
+      await until(async () => c.page.locator(pop).isVisible(), "the popover on focus", 3000);
+      const u = await unclipped();
+      assert.ok(u.inView && u.corners, `focused popover is inside the viewport and unclipped at ${c.width}px: ${JSON.stringify(u)}`);
+    },
+  },
+  {
     name: "Promote: Conversion Funnel - sits below Prospects, nine stages, filters recalculate, empty state, compare",
     seed: () => ({ ...seed({
       prospects: { pa: { name: "Alpha Grocer", country: "United Kingdom", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom"], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) } },
@@ -1924,6 +1964,8 @@ const scenarios = [
       const counts = () => c.page.evaluate(() => [...document.querySelectorAll("#funnel-stages .funnel-stage")].map((li) => li.dataset.stage + "=" + li.querySelector(".funnel-bar b").textContent.replace(/,/g, "")).join());
       await until(async () => (await counts()) === "impressions=1500,clicks=120,visits=100,demos=12,downloads=6,aceCreated=2,aceOpen=1,aceClosed=1,deployed=1", "all nine stages with their counts", 8000);
       assert.ok((await c.text("#funnel-stages")).includes("8% of previous"), "clicks are 8% of impressions");
+      const cut = await c.page.$$eval("#funnel-stages .funnel-bar", (bars) => bars.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.querySelector("b").getBoundingClientRect().width > b.getBoundingClientRect().width).map((b) => b.textContent));
+      assert.deepStrictEqual(cut, [], "every count fits inside its bar (a small stage was drawn ~28px wide, cutting 1,100 to ,100)");
       assert.strictEqual(await c.page.locator("#funnel-page > p:not(.field-hint):not(.promote-empty):not([hidden])").count(), 0, "no explanatory copy under the chart");
       assert.ok((await c.page.getAttribute("#funnel-info", "title")).length > 20, "help is an info tooltip");
       await c.page.selectOption("#funnel-industry", "Grocery");
