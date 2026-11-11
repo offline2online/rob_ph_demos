@@ -121,21 +121,32 @@ const quiet = { info() {}, warn() {}, error() {} };
     assert.deepEqual(core.normaliseLead("x", {}).gaClientIds, []);
   });
 
-  await test("lead ingest: stores the website's GA4 ids on create and appends on a repeat; never for a test lead", async () => {
-    const docs = new Map(); let i = 0;
-    const db = { collection: () => ({
-      get: async () => ({ docs: [...docs.keys()].map((id) => ({ id, data: () => docs.get(id), ref: { update: async (p) => Object.assign(docs.get(id), p) } })) }),
-      add: async (d) => { const id = `l${++i}`; docs.set(id, d); return { id }; } }) };
+  await test("lead ingest: stores the website's GA4 ids on create and appends on a repeat, through the TAM path and by name; never for a test lead", async () => {
+    // Same shape as lead-ingest.test.js's fake: named collections, add / doc().set / doc().update.
+    const cols = new Map(); let i = 0;
+    const col = (name) => { if (!cols.has(name)) cols.set(name, new Map()); return cols.get(name); };
+    const ref = (name, id) => ({ id, set: async (d) => { col(name).set(id, { ...d }); }, update: async (p) => { Object.assign(col(name).get(id), p); } });
+    const db = { collection: (name) => ({
+      get: async () => { const ds = [...col(name).keys()].map((id) => ({ id, data: () => col(name).get(id), ref: ref(name, id) })); return { docs: ds, forEach: (f) => ds.forEach(f) }; },
+      add: async (d) => { const id = `l${++i}`; col(name).set(id, d); return { id }; },
+      doc: (id) => ref(name, id) }) };
     const api = createLeadIngest({ db, key: () => "k" });
     const res = () => { const r = { status(c) { r.code = c; return r; }, set() { return r; }, json(b) { r.body = b; return r; } }; return r; };
     const req = (body) => ({ method: "POST", path: "/leadIngest/v1/submit", body, get: (h) => (h.toLowerCase() === "x-lead-key" ? "k" : "") });
-    const FORM = { company: "Acme", email: "a@acme.example", contactName: "Jo" };
-    await api.handle(req({ ...FORM, gaClientId: "1.1731000000", gaSessionId: "1731000001", leadSource: "industry-telco" }), res());
-    assert.equal(docs.get("l1").gaClientIds[0].clientId, "1.1731000000");
-    await api.handle(req({ ...FORM, email: "b@acme.example", contactName: "Bo", gaClientId: "2.1731000000" }), res());
-    assert.deepEqual(docs.get("l1").gaClientIds.map((g) => g.clientId), ["1.1731000000", "2.1731000000"]);
-    await api.handle(req({ ...FORM, company: "Testco", test: true, gaClientId: "3.1731000000" }), res());
-    assert.deepEqual(docs.get("l2").gaClientIds, []);
+    const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.example", contactName: "Jo", countries: "UK" };
+    const leads = () => [...col("leads").values()].filter((l) => l.test !== true);
+    let r = res(); await api.handle(req({ ...FORM, gaClientId: "1.1731000000", gaSessionId: "1731000001", leadSource: "industry-telco" }), r);
+    assert.ok([200, 201].includes(r.code), JSON.stringify(r.body));
+    assert.equal(leads().length, 1);
+    assert.deepEqual(leads()[0].gaClientIds.map((g) => [g.clientId, g.sessionId, g.leadSource]), [["1.1731000000", "1731000001", "industry-telco"]]);
+    r = res(); await api.handle(req({ ...FORM, email: "bo@acme.example", contactName: "Bo", gaClientId: "2.1731000000" }), r);
+    assert.equal(leads().length, 1, "same company and country: one lead");
+    assert.deepEqual(leads()[0].gaClientIds.map((g) => g.clientId), ["1.1731000000", "2.1731000000"]);
+    r = res(); await api.handle(req({ ...FORM, email: "cy@acme.example", contactName: "Cy" }), r);
+    assert.equal(leads()[0].gaClientIds.length, 2, "a submission without a client_id leaves the list alone");
+    r = res(); await api.handle(req({ ...FORM, company: "Testco", website: "testco.example", email: "t@testco.example", test: true, gaClientId: "3.1731000000" }), r);
+    const t = [...col("leads").values()].find((l) => l.test === true);
+    assert.ok(t, "test lead stored"); assert.deepEqual(t.gaClientIds, [], "a test lead never carries a GA4 id");
   });
 
   await test("endpoint: POST with the board key runs the job and answers its summary; anything else is refused and runs nothing", async () => {

@@ -2287,24 +2287,34 @@ exports.aceToGa4 = onRequest({ cors: false, secrets: [GA4_MP_API_SECRET, BOARD_A
   return aceGa4Job.handle(req, res);
 });
 
-// Promote › Leads: the page's Enrich button (lead-enrich.js). Reads the
-// website, and the technology-lookup key from the same encrypted store as the
-// Media Studio keys, so it is bound to the same MEDIA_KEYS_ENC_KEY secret.
+// Promote › Leads and Prospects (TAM): company enrichment (lead-enrich.js). An
+// agent (Claude with web search, under the same ANTHROPIC_API_KEY as Staff
+// Kanban's agent fill; "unset" until that repo secret exists) researches the
+// company; no paid data provider is used. The page's Enrich / Refresh button
+// queues a run (leadEnrich); the two triggers below run it, and also run one
+// for every lead and prospect when it is created.
+const LEAD_ENRICH_ANTHROPIC_KEY = defineSecret("ANTHROPIC_API_KEY");
 const { createLeadEnrich } = require("./lead-enrich");
 let leadEnrichApi = null;
-exports.leadEnrich = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY], cors: false, timeoutSeconds: 60, maxInstances: 5 }, (req, res) => {
+function leadEnrichInstance() {
   if (!leadEnrichApi) {
     const { getAuth } = require("firebase-admin/auth");
     leadEnrichApi = createLeadEnrich({
       db: getFirestore(),
       verifyIdToken: (t) => getAuth().verifyIdToken(t, true),
-      resolveConsoleUser: mcp.resolveConsoleUser,
-      encKey: () => MEDIA_KEYS_ENC_KEY.value(),
+      resolveConsoleUser: (email) => mcp.resolveConsoleUser(email),
+      anthropicKey: () => { try { return LEAD_ENRICH_ANTHROPIC_KEY.value(); } catch { return ""; } },
+      serverTimestamp: () => FieldValue.serverTimestamp(),
       logger,
     });
   }
-  return leadEnrichApi.handle(req, res);
-});
+  return leadEnrichApi;
+}
+exports.leadEnrich = onRequest({ secrets: [LEAD_ENRICH_ANTHROPIC_KEY], cors: false, timeoutSeconds: 60, maxInstances: 5 }, (req, res) => leadEnrichInstance().handle(req, res));
+exports.enrichLeadOnWrite = onDocumentWritten({ document: "leads/{leadId}", secrets: [LEAD_ENRICH_ANTHROPIC_KEY], timeoutSeconds: 540, memory: "512MiB", maxInstances: 3 },
+  (event) => leadEnrichInstance().onEnrichWrite("leads", event));
+exports.enrichProspectOnWrite = onDocumentWritten({ document: "prospects/{prospectId}", secrets: [LEAD_ENRICH_ANTHROPIC_KEY], timeoutSeconds: 540, memory: "512MiB", maxInstances: 3 },
+  (event) => leadEnrichInstance().onEnrichWrite("prospects", event));
 
 // Promote › Leads: website form submissions (lead-ingest.js). Server-to-server,
 // guarded by the LEAD_INGEST_KEY secret the website holds.

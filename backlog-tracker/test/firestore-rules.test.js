@@ -362,11 +362,15 @@ async function main() {
   await check("A viewer cannot create a lead", "deny", () => setDoc(doc(as(VIEWER), "leads/l4"), LEAD));
   await check("A viewer cannot move a lead", "deny", () => updateDoc(doc(as(VIEWER), "leads/l1"), { stage: "demo" }));
   await check("A stranger cannot read a lead", "deny", () => getDoc(doc(as(STRANGER), "leads/l1")));
+  await check("A lead counts its inbound arrivals", "allow", () => updateDoc(doc(as(MEMBER), "leads/l1"), { inboundCount: 2, prospectId: "acme-uk" }));
+  await check("A lead's inbound count is a whole number, not negative", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { inboundCount: -1 }));
   await check("An editor can delete a lead", "allow", () => deleteDoc(doc(as(MEMBER), "leads/l1")));
   // Promote › Prospects (TAM)
   const PROSPECT = { name: "Acme Grocer", country: "United Kingdom", priority: "high", storePresence: "400 stores", ownership: "Private", insights: "Good fit", decisionMakers: "CMO", linkedinUrl: "https://www.linkedin.com/company/acme/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo", role: "CMO", lastContact: "May" }], website: "https://acme.example", industry: "Grocery", subIndustry: "Supermarkets", hqCountry: "United Kingdom", markets: ["United Kingdom"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", source: "Manual", notes: "" };
   await check("An editor can create a prospect", "allow", () => setDoc(doc(as(MEMBER), "prospects/p1"), PROSPECT));
   await check("An editor can link a prospect to its lead", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { leadId: "prospect-p1", status: "converted" }));
+  await check("An editor can save a prospect that carries enrichment", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { enrichment: { summary: "Grocer", news: [] }, priority: "high" }));
+  await check("A prospect's enrichment must be a map", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { enrichment: "found it" }));
   await check("A prospect with a showcase page is fine", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinUrl: "https://www.linkedin.com/showcase/acme-media/" }));
   await check("A prospect's LinkedIn page cannot be a search URL", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinUrl: "https://www.linkedin.com/search/results/companies/?keywords=acme" }));
   await check("A prospect's LinkedIn page cannot be another site", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinUrl: "https://example.com/company/acme/" }));
@@ -377,9 +381,14 @@ async function main() {
   await check("A prospect's verified flag is a boolean", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinVerified: "yes" }));
   await check("A new prospect must name its country", "deny", () => { const { country, ...rest } = PROSPECT; return setDoc(doc(as(MEMBER), "prospects/p5"), rest); });
   await check("A document without a country still updates (older records)", "allow", async () => { const { country, ...rest } = PROSPECT; await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "prospects/old1"), rest)); return updateDoc(doc(as(MEMBER), "prospects/old1"), { status: "researching" }); });
+  await check("A record made for an inbound lead with no country may be created", "allow", () => { const { country, ...rest } = PROSPECT; return setDoc(doc(as(MEMBER), "prospects/p6"), { ...rest, source: "Inbound lead" }); });
+  await check("A prospect contact may carry an email address", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { contacts: [{ name: "Pat", role: "AM", lastContact: "2026-11-10", email: "pat@amazon.com" }] }));
   await check("A prospect cannot take a status that is not on the list", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { status: "won-ish" }));
   await check("A prospect needs a name", "deny", () => setDoc(doc(as(MEMBER), "prospects/p2"), { ...PROSPECT, name: "" }));
   await check("A prospect takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "prospects/p3"), { ...PROSPECT, patchFiles: [] }));
+  await check("A member may read a funnel row", "allow", () => getDoc(doc(as(MEMBER), "funnelDaily/2026-11-01_x")));
+  await check("A stranger cannot read a funnel row", "deny", () => getDoc(doc(as(STRANGER), "funnelDaily/2026-11-01_x")));
+  await check("An editor cannot write a funnel row (ingest only)", "deny", () => setDoc(doc(as(MEMBER), "funnelDaily/2026-11-01_x"), { date: "2026-11-01", impressions: 1 }));
   await check("A member may read a prospect", "allow", () => getDoc(doc(as(MEMBER), "prospects/p1")));
   await check("A viewer may read a prospect", "allow", () => getDoc(doc(as(VIEWER), "prospects/p1")));
   await check("A viewer cannot create a prospect", "deny", () => setDoc(doc(as(VIEWER), "prospects/p4"), PROSPECT));

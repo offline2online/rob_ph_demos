@@ -36,6 +36,20 @@ function walk(dir, files = []) {
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.cpSync(src, outDir, { recursive: true });
 
+// build-info.json: which commit, content tree and APP_VERSION this copy was built from.
+// The deploy workflow fetches it from the LIVE site after `firebase deploy` and fails the
+// run unless it matches (scripts/verify-live-deploy.js), so a green deploy means the
+// console really serves this content. TREE is the same fingerprint the dedupe step uses.
+{
+  const ver = (fs.readFileSync(path.join(src, "js", "version.js"), "utf8").match(/APP_VERSION\s*=\s*"([^"]+)"/) || [])[1] || null;
+  fs.writeFileSync(path.join(outDir, "build-info.json"), JSON.stringify({
+    commit: process.env.GITHUB_SHA || null,
+    tree: process.env.DEPLOY_TREE || null,
+    version: ver,
+    builtAt: new Date().toISOString(),
+  }, null, 2) + "\n");
+}
+
 const entries = walk(src)
   .filter((f) => f.endsWith(".js") && !f.split(path.sep).includes("vendor"))
   .map((f) => path.relative(src, f));

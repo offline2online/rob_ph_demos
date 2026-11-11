@@ -12,7 +12,8 @@
 //   source         where it came from ("Website form", "Manual", ...)
 //   assignee       a member's email, or ""
 //   customerAccount { id, name } once the lead has converted, else null
-//   prospectId     the Prospects (TAM) record it was converted from, else absent
+//   prospectId     the Prospects (TAM) record it belongs to (converted from, or matched when it came in), else absent
+//   inboundCount   how many times someone from this company and country came in (website form or New lead)
 //   enrichment     { at, by, techStack[], summary, sources[{source,status,message}] }
 //   test           true for a lead submitted with the website's test flag
 //   sourceLabel / sourceDetail  which website form ("Interactive product tour – Telco") and demo ("Personalisation"), "" when not sent
@@ -231,6 +232,8 @@ function normaliseLead(id, d) {
     websiteActivity: (Array.isArray(x.websiteActivity) ? x.websiteActivity : []).filter((a) => a && typeof a === "object")
       .map((a) => ({ at: typeof a.at === "string" ? a.at : "", atMs: ms(a.at), label: String(a.label || ""), detail: String(a.detail || ""), page: String(a.page || "") })),
     prospectId: String(x.prospectId || ""),
+    // Older leads have no count: their website submissions are what came in.
+    inboundCount: typeof x.inboundCount === "number" && x.inboundCount > 0 ? Math.round(x.inboundCount) : (Array.isArray(x.websiteActivity) ? x.websiteActivity.length : 0),
     archived: !!x.archivedAt,
     history: (Array.isArray(x.history) ? x.history : []).filter((h) => h && typeof h === "object")
       .map((h) => ({ at: typeof h.at === "string" ? h.at : "", atMs: ms(h.at), by: String(h.by || ""), kind: String(h.kind || ""), text: String(h.text || "") })),
@@ -292,6 +295,31 @@ function mergeCompanyEnrichment(company, found) {
   return { company: out, changed };
 }
 
+// Someone else from a lead's company and country came in: keep what the lead
+// has, fill its blank company fields, add each new contact (one already there,
+// same email, else same name, is not added twice) and count the arrival.
+// `cur` is the normalised lead; `fields` the incoming lead's fields. Returns
+// { company, contacts, inboundCount, added } (added: how many contacts were new).
+function mergeInbound(cur, fields, newContacts) {
+  const f = fields || {};
+  const fc = f.company || {};
+  const contacts = cur.contacts.map(({ enrichment, ...c }) => (enrichment ? { ...c, enrichment } : c));
+  let added = 0;
+  for (const c of newContacts || []) {
+    if (!c || !c.name) continue;
+    const dup = contacts.some((k) => (c.email && k.email && k.email.toLowerCase() === c.email.toLowerCase()) || (!c.email && k.name.toLowerCase() === c.name.toLowerCase()));
+    if (!dup) { contacts.push(c); added++; }
+  }
+  const company = { ...cur.company };
+  for (const k of ["website", "industry", "awsAccountId"]) if (!company[k] && fc[k]) company[k] = fc[k];
+  if (company.storeCount == null && typeof fc.storeCount === "number") company.storeCount = fc.storeCount;
+  company.countries = parseCountries([...company.countries, ...(fc.countries || [])]);
+  return { company, contacts: contacts.slice(0, LIMITS.contacts), inboundCount: (cur.inboundCount || 0) + 1, added };
+}
+
+// "3 inbound" on a card and the summary; "" when nobody has come in.
+const inboundLabel = (l) => (l && l.inboundCount ? `${l.inboundCount} inbound` : "");
+
 // A short line for a card: "250 stores · UK, France".
 function companyLine(l) {
   const parts = [];
@@ -300,4 +328,4 @@ function companyLine(l) {
   return parts.join(" · ");
 }
 
-module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, gaEntryFromWebsite, mergeGaClientIds, truthy, leadFromWebsite, normaliseLead, groupByStage, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, companyLine };
+module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, gaEntryFromWebsite, mergeGaClientIds, truthy, leadFromWebsite, normaliseLead, groupByStage, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, mergeInbound, inboundLabel, companyLine };

@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;600&display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_photo_alternate,anchor,api,arrow_back,arrow_downward,arrow_drop_down,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,business,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,contacts,content_copy,content_cut,contract,crop,dashboard,deck,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,draft,drag_handle,draw,edit,email,error,event,expand_less,expand_more,fact_check,filter,filter_alt,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,grocery,group,handshake,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,insights,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,mail,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,people,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,star,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,title,toolbar,tooltip,travel_explore,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_business,add_photo_alternate,ads_click,anchor,api,arrow_back,arrow_downward,arrow_drop_down,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,business,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,contacts,content_copy,content_cut,contract,crop,dashboard,deck,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,download,draft,drag_handle,draw,edit,email,error,event,event_available,expand_less,expand_more,fact_check,filter,filter_alt,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,grocery,group,handshake,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,insights,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,language,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,mail,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,pending_actions,people,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,star,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,task_alt,title,toolbar,tooltip,touch_app,travel_explore,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/apple.css">
   <link rel="stylesheet" href="css/kanban.css">
@@ -175,6 +175,7 @@
         <button type="button" class="nav-drawer-item" id="promote-brand-btn"><span class="material-symbols-outlined" aria-hidden="true">palette</span>Brand Guidelines</button>
         <button type="button" class="nav-drawer-item" id="promote-leads-btn"><span class="material-symbols-outlined" aria-hidden="true">group</span>Leads</button>
         <button type="button" class="nav-drawer-item" id="promote-prospects-btn"><span class="material-symbols-outlined" aria-hidden="true">travel_explore</span>Prospects (TAM)</button>
+        <button type="button" class="nav-drawer-item" id="promote-funnel-btn"><span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>Conversion Funnel</button>
       </div>
       <div class="nav-group" data-nav-group="publish" role="group" aria-labelledby="nav-publish-label">
         <div class="nav-drawer-section" id="nav-publish-label">Support</div>
@@ -1171,21 +1172,23 @@
     <!-- Promote › Leads (#promote/leads): one card per company on a Kanban of
          the sales pipeline. Tiles drag between lanes; clicking one opens the lead
          summary drawer, whose Stage select moves it without dragging. Rendered by js/leads-page.js. -->
-    <section class="faq-admin-page" id="leads-page" hidden>
-      <div class="page-header">
-        <h2>Leads</h2>
-        <button type="button" class="btn-primary" id="leads-add-btn" data-editor-only>+ New lead</button>
+    <section class="faq-admin-page leads-page" id="leads-page" hidden>
+      <div class="page-header leads-header">
+        <h2>Leads<button type="button" class="info-tip" data-tip="One card per company, in its stage of the sales pipeline. Drag a card to another stage, or open it to change the stage, edit the lead or refresh its company research." aria-label="About Leads">i</button></h2>
+        <button type="button" class="btn-primary leads-add" id="leads-add-btn" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">add</span>New lead</button>
       </div>
-      <p class="promote-empty" id="leads-empty" hidden>No leads yet. Add one with the button above.</p>
+      <div class="ap-empty" id="leads-empty" hidden><p class="ap-empty-text" id="leads-empty-text">No leads yet</p><button type="button" class="btn-ghost ap-accent-btn" id="leads-empty-add" data-editor-only>New lead</button></div>
+      <!-- People from AWS: contacts on the AWS TAM record, never customer leads (js/leads-page.js). -->
+      <section class="leads-aws" id="leads-aws" aria-label="AWS" hidden></section>
       <div class="leads-board-wrap"><div class="leads-board" id="leads-board"></div></div>
 
       <!-- AWS ACE opportunities, laid out like the opportunities list in AWS Partner Central.
            Rendered by js/leads-page.js from /partnerCentral/v1/ace (the Selling API). -->
-      <section class="ace-section" id="ace-section" aria-labelledby="ace-title">
+      <section class="ace-section ap-card-section" id="ace-section" aria-labelledby="ace-title">
         <div class="ace-head">
           <h3 id="ace-title" class="ace-title">AWS ACE opportunities</h3>
           <span class="page-header-count ace-count" id="ace-count" role="status" aria-live="polite">Loading…</span>
-          <button type="button" class="btn-primary ace-new" id="ace-new" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">add</span>New opportunity</button>
+          <button type="button" class="btn-ghost ap-accent-btn ace-new" id="ace-new" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">add</span>New opportunity</button>
           <button type="button" class="btn-ghost ace-refresh" id="ace-refresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span>Refresh</button>
         </div>
         <div class="ace-alert" id="ace-alert" role="alert" hidden>
@@ -1198,6 +1201,19 @@
         <div id="ace-grid" class="ag-theme-alpine um-grid ace-grid" aria-label="AWS ACE opportunities" hidden></div>
         <div class="prospects-pop" id="ace-pop" role="menu" hidden></div>
       </section>
+    </section>
+
+    <!-- Promote › Conversion Funnel (#promote/conversion-funnel): ad impression to deployed opportunity
+         (js/funnel-page.js, rules in js/funnel-core.js). Help lives in the info tooltips. -->
+    <section class="faq-admin-page" id="funnel-page" hidden>
+      <div class="page-header">
+        <h2>Conversion Funnel <span class="material-symbols-outlined prospects-info" id="funnel-info" tabindex="0" role="img" aria-label="About the Conversion Funnel" title="Ad impression to deployed opportunity. Impressions and clicks come from Google Ads, visits, demo requests and downloads from GA4 (daily BigQuery export in ph-analytics), the ACE stages from the console's opportunities joined to Leads and Prospects (TAM) by company. Every filter combines with the others and the funnel recalculates as you change them. Times and days are your local time.">info</span></h2>
+      </div>
+      <div class="um-count" id="funnel-count" role="status" aria-live="polite"></div>
+      <div class="funnel-filters" id="funnel-filters" role="group" aria-label="Funnel filters"></div>
+      <p class="field-hint" id="funnel-status" role="status" aria-live="polite" hidden></p>
+      <p class="promote-empty" id="funnel-empty" hidden><span id="funnel-empty-text">No funnel data yet.</span></p>
+      <ol class="funnel-stages" id="funnel-stages" aria-label="Funnel stages" hidden></ol>
     </section>
 
     <!-- Promote › Prospects (TAM) (#promote/prospects): every possible target company, globally, in one AG Grid
@@ -1247,17 +1263,18 @@
     </div>
 
     <div class="modal-backdrop lead-drawer-backdrop" id="lead-summary-backdrop" hidden>
-      <aside class="modal-panel lead-drawer" id="lead-summary-panel" role="dialog" aria-modal="true" aria-labelledby="lead-sum-title">
-        <div class="modal-header">
-          <div class="lead-sum-head"><h2 id="lead-sum-title">Lead</h2><div id="lead-sum-badges" class="lead-card-chips"></div></div>
+      <aside class="modal-panel lead-drawer lead-detail" id="lead-summary-panel" role="dialog" aria-modal="true" aria-labelledby="lead-sum-title">
+        <div class="modal-header lead-detail-head">
+          <div class="lead-detail-logo" id="lead-sum-logo"></div>
+          <div class="lead-sum-head"><h2 id="lead-sum-title">Lead</h2><p class="lead-detail-sub" id="lead-sum-sub"></p><div id="lead-sum-badges" class="lead-card-chips"></div></div>
           <button type="button" class="modal-close" id="lead-sum-close" aria-label="Close">&times;</button>
         </div>
-        <div id="lead-sum-body" class="lead-sum-body"></div>
-        <p class="field-hint" id="lead-sum-status" role="status" aria-live="polite"></p>
+        <div id="lead-sum-body" class="lead-sum-body ap-grouped"></div>
+        <p class="ap-status" id="lead-sum-status" role="status" aria-live="polite"></p>
         <div class="lead-sum-actions">
+          <button type="button" class="btn-ghost ap-destructive lead-delete" id="lead-sum-delete" data-editor-only hidden>Delete lead</button>
+          <button type="button" class="btn-ghost" id="lead-sum-enrich" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Enrich</button>
           <button type="button" class="btn-primary" id="lead-sum-edit" data-editor-only>Edit</button>
-          <button type="button" class="btn-outline" id="lead-sum-enrich" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Enrich</button>
-          <button type="button" class="btn-ghost lead-delete" id="lead-sum-delete" data-editor-only hidden>Delete lead</button>
         </div>
       </aside>
     </div>
@@ -1268,53 +1285,58 @@
           <h2 id="lead-title">New lead</h2>
           <button type="button" class="modal-close" id="lead-close" aria-label="Close">&times;</button>
         </div>
-        <form id="lead-form" novalidate>
-          <h3 class="lead-section">Company</h3>
-          <label class="field-label" for="lead-name">Company name</label>
-          <input type="text" id="lead-name" maxlength="120" autocomplete="off">
-          <label class="field-label" for="lead-website">Website</label>
-          <input type="text" id="lead-website" maxlength="300" placeholder="example.com" autocomplete="off">
-          <label class="field-label" for="lead-industry">Industry</label>
-          <input type="text" id="lead-industry" maxlength="120" autocomplete="off">
-          <label class="field-label" for="lead-countries">Countries</label>
-          <input type="text" id="lead-countries" placeholder="UK, France" autocomplete="off">
-          <label class="field-label" for="lead-stores">Store count</label>
-          <input type="text" id="lead-stores" inputmode="numeric" autocomplete="off">
-          <label class="field-label" for="lead-aws-account">AWS account ID</label>
-          <input type="text" id="lead-aws-account" maxlength="14" inputmode="numeric" placeholder="12 digits, if known" autocomplete="off">
+        <form id="lead-form" class="ap-grouped" novalidate>
+          <section class="ap-section">
+            <h3 class="ap-group-title lead-section">Company</h3>
+            <div class="ap-group">
+              <div class="ap-row ap-field"><label class="ap-row-label" for="lead-name">Company name</label><input type="text" id="lead-name" maxlength="120" autocomplete="off"></div>
+              <div class="ap-row ap-field"><label class="ap-row-label" for="lead-website">Website</label><input type="text" id="lead-website" maxlength="300" placeholder="example.com" autocomplete="off"></div>
+              <div class="ap-row ap-field"><label class="ap-row-label" for="lead-industry">Industry</label><input type="text" id="lead-industry" maxlength="120" autocomplete="off"></div>
+              <div class="ap-row ap-field"><label class="ap-row-label" for="lead-countries">Countries</label><input type="text" id="lead-countries" placeholder="UK, France" autocomplete="off"></div>
+              <div class="ap-row ap-field"><label class="ap-row-label" for="lead-stores">Store count</label><input type="text" id="lead-stores" inputmode="numeric" autocomplete="off"></div>
+              <div class="ap-row ap-field"><label class="ap-row-label" for="lead-aws-account">AWS account ID</label><input type="text" id="lead-aws-account" maxlength="14" inputmode="numeric" placeholder="12 digits, if known" autocomplete="off"></div>
+            </div>
+          </section>
 
-          <h3 class="lead-section">Contacts</h3>
           <div id="lead-contacts"></div>
-          <button type="button" class="btn-ghost" id="lead-add-contact" data-editor-only>+ Add contact</button>
+          <section class="ap-section">
+            <div class="ap-group"><button type="button" class="ap-row-btn" id="lead-add-contact" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">add</span>Add contact</button></div>
+          </section>
 
-          <h3 class="lead-section">Pipeline</h3>
-          <label class="field-label" for="lead-stage">Stage</label>
-          <select id="lead-stage"></select>
-          <label class="field-label" for="lead-source">Source</label>
-          <input type="text" id="lead-source" maxlength="80" placeholder="Website form" autocomplete="off">
-          <label class="field-label" for="lead-assignee">Assigned to</label>
-          <select id="lead-assignee"></select>
+          <section class="ap-section">
+            <h3 class="ap-group-title lead-section">Pipeline</h3>
+            <div class="ap-group">
+              <div class="ap-row ap-field"><label class="ap-row-label" for="lead-stage">Stage</label><select id="lead-stage"></select></div>
+              <div class="ap-row ap-field"><label class="ap-row-label" for="lead-source">Source</label><input type="text" id="lead-source" maxlength="80" placeholder="Website form" autocomplete="off"></div>
+              <div class="ap-row ap-field"><label class="ap-row-label" for="lead-assignee">Assigned to</label><select id="lead-assignee"></select></div>
+            </div>
+          </section>
 
           <div id="lead-existing" hidden>
-            <h3 class="lead-section">Enrichment</h3>
             <div id="lead-enrichment" class="lead-enrichment"></div>
-            <p class="field-hint" id="lead-enrich-status" role="status" aria-live="polite"></p>
-            <button type="button" class="btn-outline" id="lead-enrich-btn" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Enrich</button>
+            <section class="ap-section">
+              <div class="ap-group">
+                <button type="button" class="ap-row-btn" id="lead-enrich-btn" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Enrich</button>
+              </div>
+              <p class="ap-status" id="lead-enrich-status" role="status" aria-live="polite"></p>
+            </section>
 
-            <h3 class="lead-section">Customer account</h3>
-            <p class="field-hint" id="lead-account-line"></p>
-            <div id="lead-convert" data-editor-only>
-              <label class="field-label" for="lead-account-name">Customer account name</label>
-              <input type="text" id="lead-account-name" maxlength="120" autocomplete="off">
-              <label class="field-label" for="lead-account-id">Account id <span class="field-optional">(optional)</span></label>
-              <input type="text" id="lead-account-id" maxlength="100" autocomplete="off">
-              <button type="button" class="btn-outline" id="lead-convert-btn">Convert and link account</button>
-            </div>
+            <section class="ap-section">
+              <h3 class="ap-group-title lead-section">Customer account</h3>
+              <div class="ap-group">
+                <div class="ap-row"><span class="ap-row-label">Linked account</span><span class="ap-row-value" id="lead-account-line"></span></div>
+                <div id="lead-convert" class="ap-rows" data-editor-only>
+                  <div class="ap-row ap-field"><label class="ap-row-label" for="lead-account-name">Account name</label><input type="text" id="lead-account-name" maxlength="120" autocomplete="off"></div>
+                  <div class="ap-row ap-field"><label class="ap-row-label" for="lead-account-id">Account ID</label><input type="text" id="lead-account-id" maxlength="100" placeholder="Optional" autocomplete="off"></div>
+                  <button type="button" class="ap-row-btn" id="lead-convert-btn">Convert and link account</button>
+                </div>
+              </div>
+            </section>
           </div>
 
-          <p class="field-hint lead-error" id="lead-error" role="alert" hidden></p>
-          <div class="form-row" style="justify-content:space-between;">
-            <button type="button" class="btn-ghost lead-delete" id="lead-delete" data-editor-only hidden>Delete lead</button>
+          <p class="ap-error lead-error" id="lead-error" role="alert" hidden></p>
+          <div class="form-row lead-form-actions">
+            <button type="button" class="btn-ghost ap-destructive lead-delete" id="lead-delete" data-editor-only hidden>Delete lead</button>
             <div class="form-actions">
               <button type="button" class="btn-ghost" id="lead-cancel">Cancel</button>
               <button type="submit" class="btn-primary" id="lead-save" data-editor-only>Save</button>

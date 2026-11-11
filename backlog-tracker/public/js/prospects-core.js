@@ -11,7 +11,7 @@
 //   storeCount unless set), ownership, priority (high|medium|low|""),
 //   insights, decisionMakers, linkedinUrl, linkedinOrgId, linkedinVerified,
 //   awsAccountId (12 digits or ""),
-//   contacts[{name, role, lastContact}], vendors[], campaigns[],
+//   contacts[{name, role, lastContact, awsAccountId?, email?}], vendors[], campaigns[],
 //   status (one of STATUSES), leadId ("" until converted), source, notes,
 //   createdAt / updatedAt / createdByEmail / updatedByEmail
 // "The same prospect" is the same company (companyKey of name) in the same
@@ -47,7 +47,7 @@ export function sizeBandFor(storeCount) {
   return key;
 }
 
-export const LIMITS = { name: 120, website: 300, industry: 120, subIndustry: 120, country: 60, region: 40, vendor: 80, campaign: 80, source: 80, notes: 2000, list: 60, batch: 50, storePresence: 80, ownership: 120, insights: 2000, decisionMakers: 500, linkedinUrl: 300, linkedinOrgId: 20, contacts: 30, contactName: 120, contactRole: 120, contactLast: 40 };
+export const LIMITS = { name: 120, website: 300, industry: 120, subIndustry: 120, country: 60, region: 40, vendor: 80, campaign: 80, source: 80, notes: 2000, list: 60, batch: 50, storePresence: 80, ownership: 120, insights: 2000, decisionMakers: 500, linkedinUrl: 300, linkedinOrgId: 20, contacts: 30, contactName: 120, contactRole: 120, contactLast: 40, contactEmail: 200 };
 
 export const PRIORITIES = [
   { key: "high", label: "High" },
@@ -206,6 +206,14 @@ export function normaliseAwsAccountId(v) {
 }
 export const AWS_ACCOUNT_ID_ERROR = "AWS account ID must be exactly 12 digits.";
 
+const EMAIL_RE = /^[^\s@|]+@[^\s@|]+\.[^\s@|]+$/;
+// A contact as stored: awsAccountId and email are only kept when there is one.
+function contactOf(c) {
+  const out = { name: String(c.name || ""), role: String(c.role || ""), lastContact: String(c.lastContact || "") };
+  if (c.awsAccountId) out.awsAccountId = String(c.awsAccountId);
+  if (c.email) out.email = String(c.email);
+  return out;
+}
 function contactsFrom(v, errors) {
   const list = Array.isArray(v) ? v : [];
   const out = [];
@@ -214,8 +222,10 @@ function contactsFrom(v, errors) {
     const name = str(c.name, LIMITS.contactName), role = str(c.role, LIMITS.contactRole), lastContact = str(c.lastContact, LIMITS.contactLast);
     const awsAccountId = normaliseAwsAccountId(c.awsAccountId);
     if (awsAccountId === null) { errors.push(`${name || "A contact"}: ${AWS_ACCOUNT_ID_ERROR}`); continue; }
-    if (!name && !role && !lastContact && !awsAccountId) continue;
-    out.push(awsAccountId ? { name, role, lastContact, awsAccountId } : { name, role, lastContact }); // the key is only stored when there is one
+    const email = str(c.email, LIMITS.contactEmail).toLowerCase();
+    if (email && !EMAIL_RE.test(email)) { errors.push(`${name || "A contact"}: that email address isn't valid.`); continue; }
+    if (!name && !role && !lastContact && !awsAccountId && !email) continue;
+    out.push(contactOf({ name, role, lastContact, awsAccountId, email }));
   }
   if (out.length > LIMITS.contacts) { errors.push(`At most ${LIMITS.contacts} contacts per record.`); return out.slice(0, LIMITS.contacts); }
   return out;
@@ -301,7 +311,7 @@ export function normaliseProspect(id, d) {
   const hq = String(x.hqCountry || "");
   const country = String(x.country || "").trim() || marketsList[0] || hq;
   const contacts = (Array.isArray(x.contacts) ? x.contacts : []).filter((c) => c && typeof c === "object")
-    .map((c) => (c.awsAccountId ? { name: String(c.name || ""), role: String(c.role || ""), lastContact: String(c.lastContact || ""), awsAccountId: String(c.awsAccountId) } : { name: String(c.name || ""), role: String(c.role || ""), lastContact: String(c.lastContact || "") })).slice(0, LIMITS.contacts);
+    .map(contactOf).slice(0, LIMITS.contacts);
   return {
     id,
     name: String(x.name || ""),
@@ -330,6 +340,7 @@ export function normaliseProspect(id, d) {
     leadId: String(x.leadId || ""),
     source: String(x.source || ""),
     notes: String(x.notes || ""),
+    enrichment: x.enrichment && typeof x.enrichment === "object" && !Array.isArray(x.enrichment) ? x.enrichment : null, // written by functions/lead-enrich.js
     updatedAtMs: ms(x.updatedAt), createdAtMs: ms(x.createdAt),
   };
 }
@@ -417,7 +428,7 @@ export const CSV_COLUMNS = [
   ["Priority", (p) => priorityLabel(p.priority)], ["HQ country", (p) => p.hqCountry], ["Other markets", (p) => p.markets.join("; ")], ["AWS region", (p) => p.awsRegion],
   ["Store presence", (p) => p.storePresence], ["Store count", (p) => (p.storeCount == null ? "" : p.storeCount)], ["Size band", (p) => sizeBandLabel(p.sizeBand)],
   ["Ownership", (p) => p.ownership], ["Insights", (p) => p.insights], ["Decision makers", (p) => p.decisionMakers],
-  ["Contacts", (p) => p.contacts.map((c) => [c.name, c.role, c.lastContact, c.awsAccountId ? `AWS ${c.awsAccountId}` : ""].filter(Boolean).join(" / ")).join("; ")],
+  ["Contacts", (p) => p.contacts.map((c) => [c.name, c.role, c.lastContact, c.awsAccountId ? `AWS ${c.awsAccountId}` : "", c.email || ""].filter(Boolean).join(" / ")).join("; ")],
   ["AWS account ID", (p) => p.awsAccountId || ""],
   ["LinkedIn page", (p) => p.linkedinUrl], ["LinkedIn org id", (p) => p.linkedinOrgId], ["LinkedIn verified", (p) => (p.linkedinVerified ? "yes" : "")],
   ["Current vendors", (p) => p.vendors.join("; ")], ["Campaigns", (p) => p.campaigns.join("; ")], ["Status", (p) => statusLabel(p.status)],
@@ -465,4 +476,139 @@ export function leadFieldsFromProspect(p, email) {
     contacts: [], stage: "lead", source: LEAD_SOURCE, assignee: String(email || "").toLowerCase(), customerAccount: null,
     prospectId: p.id,
   };
+}
+
+// ── Inbound leads → Prospects (TAM) (10 Nov 2026) ─────────────────────────
+// A lead that comes in (the website form, or New lead on the Leads page) is
+// matched to a TAM record using both the company name and the contact's
+// business email domain (against the record's name and website), in the
+// country the lead gives (any country when it gives none). No match: a new TAM
+// record is made for that company and country, marked for enrichment. One lead
+// per TAM record, so a second person from the same company and country joins
+// that lead as a contact. Anyone from AWS is a contact on the AWS record, never
+// a customer lead. Used by functions/lead-ingest.js and public/js/leads-page.js.
+export const FREE_EMAIL_DOMAINS = ["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "hotmail.co.uk", "live.com", "live.co.uk", "msn.com", "yahoo.com", "yahoo.co.uk", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "gmx.com", "gmx.de", "mail.com", "zoho.com", "btinternet.com", "sky.com", "virginmedia.com", "web.de", "orange.fr", "free.fr", "qq.com", "163.com"];
+export function emailDomain(email) {
+  const m = String(email == null ? "" : email).trim().toLowerCase().match(/@([a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})$/);
+  return m ? m[1].replace(/^www\./, "") : "";
+}
+// The domain of a work address; "" for a personal mailbox (gmail.com, outlook.com...).
+export function businessDomain(email) {
+  const d = emailDomain(email);
+  return d && !FREE_EMAIL_DOMAINS.includes(d) ? d : "";
+}
+export function websiteHost(website) {
+  const s = String(website == null ? "" : website).trim();
+  if (!s) return "";
+  try { return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; }
+}
+// The same organisation's domain: equal, or one inside the other (uk.acme.com and acme.com).
+export const sameDomain = (a, b) => Boolean(a && b) && (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`));
+// An AWS or Amazon address (aws.com, amazon.com, amazon.co.uk, amazon.de...).
+export const isAwsDomain = (d) => /(^|\.)(aws\.com|amazon\.(com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2}))$/.test(String(d == null ? "" : d).toLowerCase());
+export const AWS_PROSPECT_ID = "aws";
+export const AWS_COMPANY_KEYS = ["aws", "amazonwebservices"];
+export const isAwsProspect = (p) => Boolean(p) && (p.id === AWS_PROSPECT_ID || AWS_COMPANY_KEYS.includes(companyKey(p.name)));
+export const INBOUND_SOURCE = "Inbound lead";
+const sameCountry = (a, b) => canonicalCountry(a).toLowerCase() === canonicalCountry(b).toLowerCase();
+
+// The TAM record an inbound lead belongs to. rows are normalised prospects.
+// Returns { prospect, how } ("name and email domain" | "email domain" | "name"),
+// or { prospect: null, sameCompany } where sameCompany is the best match in
+// another country (a template for that company's new country record), or null.
+export function matchProspect(rows, { name, email, country } = {}) {
+  const nk = companyKey(name);
+  const dom = businessDomain(email);
+  const scored = [];
+  for (const p of rows || []) {
+    if (!p || isAwsProspect(p)) continue;
+    const byName = Boolean(nk) && companyKey(p.name) === nk;
+    const byDomain = Boolean(dom) && sameDomain(dom, websiteHost(p.website));
+    if (byName || byDomain) scored.push({ p, score: (byDomain ? 2 : 0) + (byName ? 1 : 0) });
+  }
+  const best = (list) => list.slice().sort((a, b) => (b.score - a.score)
+    || (Number(Boolean(b.p.leadId)) - Number(Boolean(a.p.leadId)))
+    || (Number(sameCountry(b.p.country, b.p.hqCountry)) - Number(sameCountry(a.p.country, a.p.hqCountry)))
+    || ((a.p.createdAtMs || 0) - (b.p.createdAtMs || 0)) || String(a.p.id).localeCompare(String(b.p.id)))[0] || null;
+  const how = (s) => (s.score === 3 ? "name and email domain" : s.score === 2 ? "email domain" : "name");
+  const want = canonicalCountry(country);
+  const pick = best(want ? scored.filter((s) => sameCountry(s.p.country, want)) : scored);
+  if (pick) return { prospect: pick.p, how: how(pick), sameCompany: null };
+  const other = best(scored);
+  return { prospect: null, how: "", sameCompany: other ? other.p : null };
+}
+
+// A new TAM record for an inbound lead's company in `country` ("" when the lead
+// gave none), copying the company's name, website and industry from its record
+// in another country when there is one. { id, fields } or null when it can't be one.
+export function prospectForInbound(company, country, template) {
+  const c = company || {};
+  const t = template || null;
+  const where = canonicalCountry(country);
+  const name = str(t ? t.name : c.name, LIMITS.name);
+  if (!slugId(name)) return null;
+  const input = { name, country: where || "-", website: (t && t.website) || c.website || "", industry: (t && t.industry) || c.industry || "", status: DEFAULT_STATUS, source: INBOUND_SOURCE };
+  if (t) { input.subIndustry = t.subIndustry; input.hqCountry = t.hqCountry; input.markets = t.markets; }
+  if (typeof c.storeCount === "number") input.storeCount = c.storeCount;
+  const r = prospectFromInput(input);
+  if (r.errors.length) return null;
+  const fields = r.fields;
+  if (!where) { fields.country = ""; fields.awsRegion = awsRegionForCountry(fields.hqCountry); }
+  return { id: where ? prospectIdFor(name, where) : slugId(name), fields };
+}
+
+// The AWS record, made the first time someone from AWS comes in.
+export function awsProspectFields() {
+  return { ...prospectFromInput({ name: "AWS", country: "-", website: "https://aws.amazon.com", status: "engaged", source: "AWS" }).fields, country: "", awsRegion: "" };
+}
+// An AWS person as a contact on the AWS record; lastContact is the day they came in (YYYY-MM-DD).
+export function awsContactFrom(contact, day) {
+  const k = contact || {};
+  return contactOf({ name: str(k.name, LIMITS.contactName), role: str(k.jobTitle || k.role, LIMITS.contactRole), lastContact: str(day, LIMITS.contactLast), email: str(k.email, LIMITS.contactEmail).toLowerCase() });
+}
+// Adds (or refreshes, matched on email, else name) one contact; keeps the newest 30.
+export function mergeContact(contacts, c) {
+  const list = (contacts || []).map(contactOf);
+  const same = (x) => (c.email ? String(x.email || "").toLowerCase() === c.email : companyKey(x.name) === companyKey(c.name));
+  const i = list.findIndex(same);
+  if (i >= 0) { const was = list.splice(i, 1)[0]; list.push(contactOf({ ...was, ...Object.fromEntries(Object.entries(c).filter(([, v]) => v)) })); }
+  else list.push(c);
+  return list.slice(-LIMITS.contacts);
+}
+
+// What to write for one inbound lead. prospects: normalised prospects; leads:
+// normalised leads (leads-core normaliseLead); company: the lead's company
+// fields; contact: the person who came in (or null). Returns one of
+//   { kind: "aws", prospectId, prospect|null, createProspect: fields|null }
+//   { kind: "lead", prospectId, prospect|null, createProspect: fields|null, how,
+//     leadId, lead|null (the existing lead to add the contact to), linkProspect }
+//   { kind: "none" }  (a name with no letters or digits: no TAM record can hold it)
+export function planInbound({ prospects, leads, company, contact } = {}) {
+  const c = company || {};
+  const email = (contact && contact.email) || "";
+  const country = (Array.isArray(c.countries) && c.countries[0]) || "";
+  if (isAwsDomain(emailDomain(email)) || AWS_COMPANY_KEYS.includes(companyKey(c.name))) {
+    const aws = (prospects || []).find(isAwsProspect) || null;
+    return { kind: "aws", prospectId: aws ? aws.id : AWS_PROSPECT_ID, prospect: aws, createProspect: aws ? null : awsProspectFields() };
+  }
+  const m = matchProspect(prospects, { name: c.name, email, country });
+  let prospect = m.prospect;
+  let createProspect = null;
+  let prospectId = prospect ? prospect.id : "";
+  if (!prospect) {
+    const n = prospectForInbound(c, country, m.sameCompany);
+    if (!n) return { kind: "none" };
+    const clash = (prospects || []).find((p) => p.id === n.id);
+    if (clash) { prospect = clash; prospectId = clash.id; } else { createProspect = n.fields; prospectId = n.id; }
+  }
+  const name = prospect ? prospect.name : createProspect.name;
+  const where = prospect ? prospect.country : createProspect.country;
+  const live = (leads || []).filter((l) => l && !l.test);
+  const lead = (prospect && prospect.leadId && live.find((l) => l.id === prospect.leadId))
+    || live.find((l) => l.prospectId === prospectId)
+    || live.find((l) => !l.prospectId && companyKey(l.company.name) === companyKey(name)
+      && (!where || !l.company.countries.length || l.company.countries.some((x) => sameCountry(x, where))))
+    || null;
+  const leadId = lead ? lead.id : leadIdForProspect(prospectId);
+  return { kind: "lead", prospectId, prospect, createProspect, how: prospect ? (m.prospect ? m.how : "id") : "new", leadId, lead, linkProspect: !prospect || prospect.leadId !== leadId || prospect.status !== "converted" };
 }

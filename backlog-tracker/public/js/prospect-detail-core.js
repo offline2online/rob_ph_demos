@@ -278,6 +278,24 @@ export function compactSummary(detail, lead) {
   };
 }
 
+// ── An AWS person attached to a customer account (10 Nov 2026) ──────────────
+// Someone from AWS comes in as a contact on the AWS record (Leads › AWS tile);
+// staff then attach them to a customer company as part of its AWS account
+// team. The same person (email, else name) is not added twice: attaching again
+// only changes their role. Returns { team, added } or { error }.
+export function withAwsPerson(team, person, role) {
+  const list = (team || []).map(cleanAwsMember);
+  const p = person || {};
+  const em = email(p.email);
+  const name = str(p.name, 120);
+  const r = AWS_ROLE_KEYS.includes(role) ? role : "account-manager";
+  if (!name) return { error: "This AWS contact has no name." };
+  const i = list.findIndex((m) => (em ? m.email === em : m.name.toLowerCase() === name.toLowerCase()));
+  if (i >= 0) { list[i] = { ...list[i], role: r }; return { team: list, added: false }; }
+  if (list.length >= LIMITS.awsTeam) return { error: `An account's AWS team holds up to ${LIMITS.awsTeam} people.` };
+  return { team: [...list, cleanAwsMember({ id: `a${Date.now().toString(36)}${list.length}`, name, email: em, role: r, dealRole: "", engages: [], source: "manual" }, list.length)], added: true };
+}
+
 // ── What an editor's save writes ────────────────────────────────────────────
 // Re-cleans everything, so nothing the form held can reach the document in a
 // shape the rules would refuse.

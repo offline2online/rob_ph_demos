@@ -714,10 +714,9 @@ ticket once automatically.
    - `testSummary` (optional but strongly encouraged, string): a clear,
      standalone description of what you actually changed, plus concrete
      steps to test it. Once the automation flips this item to
-     `ready-for-testing`, the board shows `testSummary` (when set) as the
-     card's primary text instead of the raw original `desc` — the original
-     request is still one click away via a "Show original request" toggle,
-     not discarded. Write this from scratch; don't just copy `desc` into it.
+     `ready-for-testing`, the card's hover popover shows `testSummary`
+     (when set) first, then the original `desc` under "Original request:"
+     (cards show their title only; the text is on hover). Write this from scratch; don't just copy `desc` into it.
 
    Example PATCH shape, sent after the note (add more `updateMask.fieldPaths` entries and
    fields as needed):

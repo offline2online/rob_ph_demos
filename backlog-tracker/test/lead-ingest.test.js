@@ -18,9 +18,22 @@ let n = 0;
 async function test(name, fn) { await fn(); n++; console.log(`  ok  ${name}`); }
 
 function fakeDb() {
-  const docs = new Map(); let i = 0;
-  const mk = (id) => ({ id, data: () => docs.get(id), ref: { update: async (p) => { Object.assign(docs.get(id), p); } } });
-  return { docs, collection: () => ({ get: async () => { const ds = [...docs.keys()].map(mk); return { docs: ds, forEach: (f) => ds.forEach(f) }; }, add: async (d) => { const id = `l${++i}`; docs.set(id, d); return { id }; } }) };
+  const cols = new Map(); let i = 0;
+  const col = (name) => { if (!cols.has(name)) cols.set(name, new Map()); return cols.get(name); };
+  const ref = (name, id) => ({
+    id,
+    set: async (d) => { col(name).set(id, { ...d }); },
+    update: async (p) => { if (!col(name).has(id)) throw new Error(`no ${name}/${id}`); Object.assign(col(name).get(id), p); },
+  });
+  const snap = (name, id) => ({ id, data: () => col(name).get(id), ref: ref(name, id) });
+  return {
+    cols, docs: col("leads"), prospects: col("prospects"),
+    collection: (name) => ({
+      get: async () => { const ds = [...col(name).keys()].map((id) => snap(name, id)); return { docs: ds, forEach: (f) => ds.forEach(f) }; },
+      add: async (d) => { const id = `l${++i}`; col(name).set(id, d); return { id }; },
+      doc: (id) => ref(name, id),
+    }),
+  };
 }
 const res = () => { const r = { code: 0, body: null, status(c) { r.code = c; return r; }, set() { return r; }, json(b) { r.body = b; return r; } }; return r; };
 const req = (body, key = "k", method = "POST", path = "/leadIngest/v1/submit") => ({ method, path, body, get: (h) => (h.toLowerCase() === "x-lead-key" ? key : "") });
@@ -109,6 +122,80 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     stubDb = db;
     const out = await tool.run({});
     assert.deepEqual(out.leads.map((l) => l.company), ["Acme Telco"]);
+  });
+  // ── Matching to Prospects (TAM) (10 Nov 2026) ──
+  const UK = { name: "Acme Telco", country: "United Kingdom", website: "https://www.acme.example", status: "targeted", hqCountry: "United Kingdom", industry: "Telco Retail" };
+  await test("a lead whose name and email domain match a TAM record is linked to it (one lead per record)", async () => {
+    const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
+    const r = res(); await api.handle(req({ ...FORM, country: "UK" }), r);
+    assert.equal(r.code, 201); assert.equal(r.body.prospectId, "acme-uk"); assert.equal(r.body.matchedBy, "name and email domain"); assert.equal(r.body.prospectCreated, false);
+    assert.equal(r.body.leadId, "prospect-acme-uk");
+    const lead = db.docs.get("prospect-acme-uk"); assert.equal(lead.prospectId, "acme-uk"); assert.equal(lead.inboundCount, 1);
+    assert.equal(db.prospects.get("acme-uk").leadId, "prospect-acme-uk"); assert.equal(db.prospects.get("acme-uk").status, "converted");
+    assert.equal(db.prospects.size, 1);
+  });
+  await test("the email domain alone finds the record when the company is typed differently", async () => {
+    const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
+    const r = res(); await api.handle(req({ ...FORM, company: "ACME Telecom Ltd", country: "United Kingdom", email: "jo@uk.acme.example" }), r);
+    assert.equal(r.body.prospectId, "acme-uk"); assert.equal(r.body.matchedBy, "email domain");
+  });
+  await test("a second person from the same company joins the lead as a contact and the inbound count is 2", async () => {
+    const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
+    await api.handle(req({ ...FORM, country: "UK" }), res());
+    const r = res(); await api.handle(req({ ...FORM, country: "UK", email: "sam@acme.example", contactName: "Sam" }), r);
+    assert.equal(r.code, 200); assert.equal(r.body.created, false); assert.equal(r.body.leadId, "prospect-acme-uk");
+    assert.equal(db.docs.size, 1);
+    const lead = db.docs.get("prospect-acme-uk");
+    assert.deepEqual(lead.contacts.map((c) => c.email), ["jo@acme.example", "sam@acme.example"]);
+    assert.equal(lead.inboundCount, 2); assert.equal(core.normaliseLead("x", lead).inboundCount, 2);
+  });
+  await test("a company not in the TAM gets a new record, marked for enrichment, linked to the lead", async () => {
+    const { db, api } = mkApi();
+    const r = res(); await api.handle(req({ ...FORM, company: "Brand New Co", email: "a@brandnew.example", website: "brandnew.example", country: "France" }), r);
+    assert.equal(r.code, 201); assert.equal(r.body.prospectCreated, true); assert.equal(r.body.prospectId, "brandnewco-france");
+    const p = db.prospects.get("brandnewco-france");
+    assert.equal(p.name, "Brand New Co"); assert.equal(p.country, "France"); assert.equal(p.source, "Inbound lead");
+    assert.equal(p.createdAt, "SERVER_TS", "a newly created record, which the enrichment trigger picks up"); assert.equal(p.leadId, "prospect-brandnewco-france"); assert.equal(p.website, "https://brandnew.example");
+    assert.equal(db.docs.get("prospect-brandnewco-france").prospectId, "brandnewco-france");
+  });
+  await test("the same company in another country is matched or created against that country's record, as a separate lead", async () => {
+    const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
+    await api.handle(req({ ...FORM, country: "UK" }), res());
+    const r = res(); await api.handle(req({ ...FORM, country: "France", email: "pierre@acme.example", contactName: "Pierre" }), r);
+    assert.equal(r.code, 201); assert.equal(r.body.prospectId, "acmetelco-france"); assert.equal(r.body.prospectCreated, true);
+    const fr = db.prospects.get("acmetelco-france");
+    assert.equal(fr.website, "https://www.acme.example"); assert.equal(fr.hqCountry, "United Kingdom"); assert.equal(fr.industry, "Telco Retail");
+    assert.equal(db.docs.size, 2); assert.equal(db.docs.get("prospect-acmetelco-france").contacts[0].name, "Pierre");
+    // and the next French person joins the French lead
+    db.prospects.set("acme-de", { ...UK, country: "Germany" });
+    const g = res(); await api.handle(req({ ...FORM, country: "Germany", email: "max@acme.example" }), g);
+    assert.equal(g.body.prospectId, "acme-de"); assert.equal(db.docs.size, 3);
+  });
+  await test("with no country the lead matches on name and domain in any country; none at all makes a record without one", async () => {
+    const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
+    const r = res(); await api.handle(req(FORM), r); assert.equal(r.body.prospectId, "acme-uk");
+    const n = res(); await api.handle(req({ ...FORM, company: "Nowhere Ltd", email: "x@nowhere.example" }), n);
+    assert.equal(n.body.prospectId, "nowhereltd"); assert.equal(db.prospects.get("nowhereltd").country, "");
+  });
+  await test("someone from AWS is a contact on the AWS record, never a lead; the same person again is refreshed, not repeated", async () => {
+    const { db, api } = mkApi();
+    const r = res(); await api.handle(req({ ...FORM, company: "Amazon Web Services", email: "pat@amazon.com", contactName: "Pat Lee", jobTitle: "Account Manager" }), r);
+    assert.equal(r.code, 200); assert.equal(r.body.aws, true); assert.equal(r.body.leadId, null);
+    assert.equal(db.docs.size, 0);
+    const aws = db.prospects.get("aws"); assert.equal(aws.name, "AWS");
+    assert.deepEqual(aws.contacts.map((c) => [c.name, c.role, c.email]), [["Pat Lee", "Account Manager", "pat@amazon.com"]]);
+    await api.handle(req({ ...FORM, email: "pat@amazon.com", contactName: "Pat Lee", jobTitle: "Senior AM" }), res());
+    await api.handle(req({ ...FORM, company: "Acme Telco", email: "kim@aws.com", contactName: "Kim" }), res());
+    assert.deepEqual(db.prospects.get("aws").contacts.map((c) => [c.name, c.role]), [["Pat Lee", "Senior AM"], ["Kim", "CTO"]]);
+    assert.equal(db.docs.size, 0);
+  });
+  await test("a lead from before matching (same company, no prospectId) is adopted rather than duplicated", async () => {
+    const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
+    db.docs.set("old1", { company: { name: "Acme Telco", countries: ["United Kingdom"] }, contacts: [], stage: "demo", websiteActivity: [{ at: "2026-11-01T00:00:00Z", label: "x" }] });
+    const r = res(); await api.handle(req({ ...FORM, country: "UK" }), r);
+    assert.equal(r.body.leadId, "old1"); assert.equal(db.docs.size, 1);
+    assert.equal(db.docs.get("old1").prospectId, "acme-uk"); assert.equal(db.docs.get("old1").inboundCount, 2);
+    assert.equal(db.prospects.get("acme-uk").leadId, "old1");
   });
   assert.ok(core.leadFromWebsite({ company: "X", test: "on" }).test);
   console.log(`${n} passed`);

@@ -73,6 +73,7 @@ export async function startHarness() {
     const refused = [];
     const mediaKeyWrites = [];
     const aceWrites = [];
+    const enrichCalls = [];
     const aceStore = (seed.aceOpportunities || []).map((o) => ({ ...o }));
     const addProblem = (p) => problems.push(p);
     await context.addInitScript((s) => { window.__FB_SEED = s; }, seed);
@@ -125,6 +126,12 @@ export async function startHarness() {
           const body = url.pathname.endsWith("/audit") ? { entries: [] } : { state: "not-linked", catalog: "Sandbox", roleArn: "arn:aws:iam::817173160653:role/PH-Console-PartnerCentral", lastSuccessAt: null, lastError: null, note: "Not linked yet" };
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
         }
+        // Company enrichment (functions/lead-enrich.js): the button only queues a run; the
+        // test writes what the trigger would. Every call is returned as enrichCalls.
+        if (url.pathname === "/leadEnrich/v1/enrich") {
+          enrichCalls.push(JSON.parse(route.request().postData() || "{}"));
+          return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ ok: true, queued: true }) });
+        }
         if (url.pathname.startsWith("/mediaKeys/")) {
           const req = route.request();
           if (url.pathname === "/mediaKeys/v1/status") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.mediaKeys || { encryptionReady: true, providers: [] }) });
@@ -172,7 +179,7 @@ export async function startHarness() {
     });
     page.on("dialog", (d) => { addProblem(`native ${d.type()} dialog: ${d.message()}`); d.dismiss().catch(() => {}); });
     await page.goto(`${origin}/${hash}`, { waitUntil: "domcontentloaded" });
-    return { page, context, problems, refused, mediaKeyWrites, aceWrites, origin, close: () => context.close() };
+    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, origin, close: () => context.close() };
   }
 
   return {

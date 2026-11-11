@@ -247,3 +247,66 @@ t("the country list is complete and UK/USA spellings fold in", () => {
   assert.equal(C.canonicalCountry("usa"), "United States");
   assert.equal(C.canonicalCountry("Atlantis"), "Atlantis");
 });
+
+// ── Inbound leads matched to TAM records (10 Nov 2026) ──
+const tamRows = [
+  { id: "acme-uk", name: "Acme Telco", country: "United Kingdom", website: "https://www.acme.example", hqCountry: "United Kingdom" },
+  { id: "acme-fr", name: "Acme Telco", country: "France", website: "https://acme.example", hqCountry: "United Kingdom", leadId: "prospect-acme-fr" },
+  { id: "aws", name: "AWS", country: "" },
+].map((x) => C.normaliseProspect(x.id, x));
+t("email domains: business vs personal, AWS addresses", () => {
+  assert.equal(C.emailDomain("Jo@Acme.Example"), "acme.example");
+  assert.equal(C.businessDomain("jo@gmail.com"), "");
+  assert.equal(C.businessDomain("jo@uk.acme.example"), "uk.acme.example");
+  assert.ok(C.sameDomain("uk.acme.example", "acme.example")); assert.ok(!C.sameDomain("notacme.example", "acme.example"));
+  for (const d of ["amazon.com", "aws.com", "amazon.co.uk", "amazon.de", "amazon.com.au", "corp.amazon.com"]) assert.ok(C.isAwsDomain(d), d);
+  for (const d of ["amazonaws.com", "notamazon.com", "acme.example", ""]) assert.ok(!C.isAwsDomain(d), d);
+  assert.equal(C.websiteHost("www.Acme.example/path"), "acme.example");
+});
+t("matchProspect uses the name and the business email domain, in the lead's country", () => {
+  let m = C.matchProspect(tamRows, { name: "Acme Telco", email: "jo@acme.example", country: "UK" });
+  assert.equal(m.prospect.id, "acme-uk"); assert.equal(m.how, "name and email domain");
+  m = C.matchProspect(tamRows, { name: "ACME Telecom", email: "jo@acme.example", country: "France" });
+  assert.equal(m.prospect.id, "acme-fr"); assert.equal(m.how, "email domain");
+  m = C.matchProspect(tamRows, { name: "Acme Telco", email: "jo@gmail.com", country: "United Kingdom" });
+  assert.equal(m.prospect.id, "acme-uk"); assert.equal(m.how, "name");
+  m = C.matchProspect(tamRows, { name: "Acme Telco", email: "jo@acme.example", country: "Spain" });
+  assert.equal(m.prospect, null); assert.equal(m.sameCompany.name, "Acme Telco");
+  m = C.matchProspect(tamRows, { name: "Acme Telco", email: "jo@acme.example" }); // no country: any; the one with a lead first
+  assert.equal(m.prospect.id, "acme-fr");
+  assert.equal(C.matchProspect(tamRows, { name: "AWS", email: "x@aws.com" }).prospect, null, "the AWS record is never a customer match");
+});
+t("planInbound: one lead per TAM record, new records per country, AWS people to the AWS record", () => {
+  const leads = [normaliseLead("prospect-acme-fr", { company: { name: "Acme Telco", countries: ["France"] }, prospectId: "acme-fr" })];
+  let p = C.planInbound({ prospects: tamRows, leads, company: { name: "Acme Telco", countries: ["France"] }, contact: { email: "b@acme.example" } });
+  assert.equal(p.kind, "lead"); assert.equal(p.leadId, "prospect-acme-fr"); assert.equal(p.lead.id, "prospect-acme-fr"); assert.equal(p.createProspect, null);
+  p = C.planInbound({ prospects: tamRows, leads, company: { name: "Acme Telco", countries: ["UK"] }, contact: { email: "c@acme.example" } });
+  assert.equal(p.prospectId, "acme-uk"); assert.equal(p.lead, null); assert.equal(p.leadId, "prospect-acme-uk"); assert.ok(p.linkProspect);
+  p = C.planInbound({ prospects: tamRows, leads, company: { name: "Acme Telco", countries: ["Spain"] }, contact: { email: "d@acme.example" } });
+  assert.equal(p.prospectId, "acmetelco-spain"); assert.equal(p.createProspect.country, "Spain"); assert.equal(p.createProspect.source, C.INBOUND_SOURCE);
+  assert.equal(p.createProspect.website, "https://acme.example"); assert.equal(p.createProspect.hqCountry, "United Kingdom");
+  p = C.planInbound({ prospects: tamRows, leads, company: { name: "Zed Ltd", countries: [] }, contact: { email: "z@zed.example" } });
+  assert.equal(p.prospectId, "zedltd"); assert.equal(p.createProspect.country, "");
+  p = C.planInbound({ prospects: tamRows, leads, company: { name: "Acme Telco", countries: ["UK"] }, contact: { email: "pat@amazon.com" } });
+  assert.equal(p.kind, "aws"); assert.equal(p.prospectId, "aws"); assert.equal(p.createProspect, null);
+  p = C.planInbound({ prospects: [], leads: [], company: { name: "Amazon Web Services" }, contact: { email: "x@gmail.com" } });
+  assert.equal(p.kind, "aws"); assert.equal(p.createProspect.name, "AWS");
+  assert.equal(C.planInbound({ prospects: [], leads: [], company: { name: "!!!" }, contact: null }).kind, "none");
+  // a test lead is never the company's lead
+  const testOnly = [normaliseLead("t1", { company: { name: "Acme Telco" }, prospectId: "acme-uk", test: true })];
+  assert.equal(C.planInbound({ prospects: tamRows, leads: testOnly, company: { name: "Acme Telco", countries: ["UK"] }, contact: null }).lead, null);
+});
+t("contacts keep an email; AWS contacts merge on email and keep the newest 30", () => {
+  const r = C.prospectFromInput({ name: "A", country: "UK", contacts: [{ name: "Pat", role: "AM", email: "Pat@Amazon.com" }, { name: "Bad", email: "nope" }] });
+  assert.ok(r.errors.some((e) => /email/.test(e)));
+  const ok = C.prospectFromInput({ name: "A", country: "UK", contacts: [{ name: "Pat", role: "AM", email: "Pat@Amazon.com" }] });
+  assert.deepEqual(ok.fields.contacts, [{ name: "Pat", role: "AM", lastContact: "", email: "pat@amazon.com" }]);
+  assert.equal(C.normaliseProspect("x", { contacts: [{ name: "Pat", email: "pat@amazon.com" }] }).contacts[0].email, "pat@amazon.com");
+  let list = [];
+  list = C.mergeContact(list, C.awsContactFrom({ name: "Pat", jobTitle: "AM", email: "pat@amazon.com" }, "2026-11-01"));
+  list = C.mergeContact(list, C.awsContactFrom({ name: "Pat Lee", jobTitle: "", email: "PAT@amazon.com" }, "2026-11-10"));
+  assert.deepEqual(list, [{ name: "Pat Lee", role: "AM", lastContact: "2026-11-10", email: "pat@amazon.com" }]);
+  for (let i = 0; i < 40; i++) list = C.mergeContact(list, C.awsContactFrom({ name: `P${i}`, email: `p${i}@aws.com` }, "2026-11-10"));
+  assert.equal(list.length, 30); assert.equal(list[29].name, "P39");
+});
+console.log(`${n} passed (with inbound matching)`);

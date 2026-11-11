@@ -1034,14 +1034,15 @@ function cardHTML(item) {
   // opened a PR for it, e.g. the Notify Claude Routine) is a clear,
   // standalone description of what changed plus concrete steps to test it.
   // The original request is still one click away, not deleted.
+  //
+  // Every card on the board shows its title only (10 Nov 2026: release 1.5.381
+  // did this for the Backlog column alone, and the request was for the whole
+  // board). What the card used to show is in the hover/focus popover instead:
+  // testSummary first when there is one, then the original request.
   const hasTestSummary = isTesting && (item.testSummary || "").trim();
-  const descHTML = hasTestSummary
-    ? `<div class="card-desc-wrap">
-        <p class="card-desc">${escapeHTML(item.testSummary)}</p>
-        <button type="button" class="card-desc-toggle-btn" data-id="${item.id}">Show original request</button>
-        <p class="card-desc card-desc-original" hidden>${escapeHTML(item.desc)}</p>
-      </div>`
-    : `<p class="card-desc">${escapeHTML(item.desc)}</p>`;
+  const popText = hasTestSummary
+    ? `${item.testSummary.trim()}${(item.desc || "").trim() ? `\n\nOriginal request:\n${item.desc.trim()}` : ""}`
+    : (item.desc || "").trim();
 
   // A screenshot or screen recording attached via uploadItemAttachment.
   // Always rendered now, even at zero — it used to only appear once a card
@@ -1084,8 +1085,9 @@ function cardHTML(item) {
         </div>
         <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
-      <h3 class="card-title">${escapeHTML(item.title)}</h3>
-      ${descHTML}
+      ${popText
+        ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
+        : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
       ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
@@ -1098,6 +1100,40 @@ function cardHTML(item) {
       ${approveBtn}${failBtn}${mergeBtn}${ejectBtn}${inDevelopmentHint}${revertingHint}${leavingTrainHint}
     </article>`;
 }
+
+// Backlog cards show the title only; the description pops up on hover/focus.
+// The popover is position: fixed and placed here from the title's position,
+// so the column's scrolling list (.col-list, overflow: auto) can't clip it,
+// and it is kept inside the viewport: below the title, or above it when there
+// is more room there (release 1.5.381 drew it inside the column, which cut off
+// everything past the column's edge).
+function placeCardDescPop(title) {
+  const pop = title && title.querySelector(".card-desc-pop");
+  if (!pop) return;
+  const r = title.getBoundingClientRect();
+  const gutter = 8, gap = 4;
+  const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  const width = Math.min(360, vw - gutter * 2);
+  const below = vh - r.bottom - gap - gutter, above = r.top - gap - gutter;
+  const useAbove = below < 160 && above > below;
+  const maxH = Math.max(80, Math.min(320, useAbove ? above : below));
+  pop.style.width = `${width}px`;
+  pop.style.maxHeight = `${maxH}px`;
+  pop.style.left = `${Math.max(gutter, Math.min(r.left, vw - gutter - width))}px`;
+  pop.style.top = useAbove ? "" : `${r.bottom + gap}px`;
+  pop.style.bottom = useAbove ? `${vh - r.top + gap}px` : "";
+}
+document.addEventListener("mouseover", (e) => {
+  const title = e.target.closest && e.target.closest(".card-title-hover");
+  if (title && !title.contains(e.relatedTarget)) placeCardDescPop(title);
+});
+document.addEventListener("focusin", (e) => {
+  if (e.target.classList && e.target.classList.contains("card-title-hover")) placeCardDescPop(e.target);
+});
+// A scroll moves the title out from under a fixed popover: re-place it.
+document.addEventListener("scroll", () => {
+  document.querySelectorAll(".card-title-hover:hover, .card-title-hover:focus").forEach(placeCardDescPop);
+}, { capture: true, passive: true });
 
 function archivedCountForProject(pid) {
   if (archivedLoaded) return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
@@ -4566,15 +4602,6 @@ projectsRoot.addEventListener("click", async (e) => {
   if (quickCommentBtn) { openQuickCommentModal(quickCommentBtn.dataset.id, quickCommentBtn.dataset.readonly === "1"); return; }
   const attachmentBtn = e.target.closest(".attachment-btn");
   if (attachmentBtn) { openQuickCommentModal(attachmentBtn.dataset.id, attachmentBtn.dataset.readonly === "1"); return; }
-  const descToggleBtn = e.target.closest(".card-desc-toggle-btn");
-  if (descToggleBtn) {
-    const wrap = descToggleBtn.closest(".card-desc-wrap");
-    const original = wrap.querySelector(".card-desc-original");
-    const wasHidden = original.hidden;
-    original.hidden = !wasHidden;
-    descToggleBtn.textContent = wasHidden ? "Hide original request" : "Show original request";
-    return;
-  }
   const testLinkBtn = e.target.closest(".test-link-set-btn, .test-link-edit-btn");
   if (testLinkBtn) {
     const id = testLinkBtn.dataset.id;
@@ -10623,19 +10650,97 @@ document.getElementById("role-save").addEventListener("click", async () => {
 const promotePage = document.getElementById("promote-page");
 const leadsPage = document.getElementById("leads-page");
 const prospectsPage = document.getElementById("prospects-page");
+const funnelPage = document.getElementById("funnel-page");
 let promotePageKey = "";
+// Lazily loaded Promote pages (Leads, Prospects, Conversion Funnel). A page
+// whose code failed to load or draw used to stay blank, or the menu item
+// seemed to do nothing, with no word why: Leads and Prospects on Rob's iPad
+// (7 Nov 2026), then the Conversion Funnel (10 Nov 2026). Now the page says
+// so, with the browser's own error text so it can be reported, and Try again.
+// A failed import is remembered by the browser for the life of the page, so
+// Try again asks for the module under a fresh URL.
+const pageRetries = {};
+const pageRetrySuffix = (key) => (pageRetries[key] ? `?retry=${pageRetries[key]}` : "");
+function clearPageLoadError(page) {
+  const old = page && page.querySelector(".page-load-error");
+  if (old) old.remove();
+}
+function showPageLoadError(page, label, err, retry) {
+  console.error(`backlog-tracker: ${label} couldn't open`, err);
+  if (!page) { showAlert(`${label} couldn't open on this device. ${(err && err.message) || err}`); return; }
+  page.hidden = false;
+  clearPageLoadError(page);
+  const box = document.createElement("div");
+  box.className = "page-load-error";
+  box.setAttribute("role", "alert");
+  const h = document.createElement("p");
+  h.className = "page-load-error-title";
+  h.textContent = `${label} couldn't open on this device.`;
+  const detail = document.createElement("p");
+  detail.className = "page-load-error-detail";
+  detail.textContent = `${(err && err.name) || "Error"}: ${(err && err.message) || String(err)}`;
+  const where = document.createElement("p");
+  where.className = "page-load-error-where";
+  where.textContent = navigator.userAgent;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn-primary";
+  btn.textContent = "Try again";
+  btn.addEventListener("click", () => { clearPageLoadError(page); retry(); });
+  box.append(h, detail, where, btn);
+  page.prepend(box);
+}
+const LAZY_PROMOTE = {
+  leads: { label: "Leads", page: () => leadsPage, reset: () => { leadsUiLoading = null; }, ensure: () => ensureLeadsUi() },
+  prospects: { label: "Prospects (TAM)", page: () => prospectsPage, reset: () => { prospectsUiLoading = null; }, ensure: () => ensureProspectsUi() },
+  "conversion-funnel": { label: "Conversion Funnel", page: () => funnelPage, reset: () => { funnelUiLoading = null; }, ensure: () => ensureFunnelUi() },
+};
+function openLazyPromotePage(key) {
+  const lp = LAZY_PROMOTE[key];
+  const page = lp.page();
+  page.hidden = false;
+  clearPageLoadError(page);
+  lp.ensure().then((ui) => { ui.start(); ui.render(); }).catch((err) => {
+    lp.reset();
+    pageRetries[key] = (pageRetries[key] || 0) + 1;
+    showPageLoadError(page, lp.label, err, () => openPromotePage(key));
+  });
+}
+// Errors after one of these pages has opened (its data arriving and drawing).
+for (const type of ["error", "unhandledrejection"]) {
+  window.addEventListener(type, (e) => {
+    const err = type === "error" ? (e.error || new Error(e.message)) : e.reason;
+    for (const [key, lp] of Object.entries(LAZY_PROMOTE)) {
+      const page = lp.page();
+      if (page && !page.hidden) { showPageLoadError(page, lp.label, err, () => openPromotePage(key)); break; }
+    }
+  });
+}
 // Promote › Prospects (TAM) (prospects-page.js): the AG Grid database, mounted on first open.
 let prospectsUi = null;
 let prospectsUiLoading = null;
 function ensureProspectsUi() {
   if (prospectsUi) return Promise.resolve(prospectsUi);
   if (!prospectsUiLoading) {
-    prospectsUiLoading = import("./prospects-page.js").then(({ mountProspectsPage }) => {
+    prospectsUiLoading = import(`./prospects-page.js${pageRetrySuffix("prospects")}`).then(({ mountProspectsPage }) => {
       prospectsUi = mountProspectsPage({ db, auth, canEdit: () => canEditSection("prospects"), askName: (m) => showPromptDialog(m, "", { title: "Save filter", okLabel: "Save" }) });
       return prospectsUi;
     });
   }
   return prospectsUiLoading;
+}
+// Promote › Conversion Funnel (funnel-page.js): mounted the first time the page opens.
+let funnelUi = null;
+let funnelUiLoading = null;
+function ensureFunnelUi() {
+  if (funnelUi) return Promise.resolve(funnelUi);
+  if (!funnelUiLoading) {
+    funnelUiLoading = import(`./funnel-page.js${pageRetrySuffix("conversion-funnel")}`).then(({ mountFunnelPage }) => {
+      funnelUi = mountFunnelPage({ db, apiHeaders: consoleApiHeaders });
+      return funnelUi;
+    });
+  }
+  return funnelUiLoading;
 }
 // Promote › Leads (leads-page.js): mounted the first time the page opens.
 let leadsUi = null;
@@ -10643,7 +10748,7 @@ let leadsUiLoading = null;
 function ensureLeadsUi() {
   if (leadsUi) return Promise.resolve(leadsUi);
   if (!leadsUiLoading) {
-    leadsUiLoading = import("./leads-page.js").then(({ mountLeadsPage }) => {
+    leadsUiLoading = import(`./leads-page.js${pageRetrySuffix("leads")}`).then(({ mountLeadsPage }) => {
       leadsUi = mountLeadsPage({ db, auth, canEdit: () => canEditSection("promote"), apiHeaders: consoleApiHeaders });
       return leadsUi;
     });
@@ -10669,18 +10774,14 @@ function renderPromotePage() {
   document.getElementById("promote-requirements-wrap").hidden = true;
 }
 function openPromotePage(key = PROMOTE_PAGES[0].key) {
-  if (!pageAllowed(key === "prospects" ? "prospects" : "promote")) return;
+  if (!pageAllowed(key === "prospects" || key === "conversion-funnel" ? key : "promote")) return;
   closeAllSubPages();
   ensureLazy("projectDocs");
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   promotePageKey = key;
-  if (key === "leads") {
-    leadsPage.hidden = false;
-    ensureLeadsUi().then((ui) => { ui.start(); ui.render(); });
-  } else if (key === "prospects") {
-    prospectsPage.hidden = false;
-    ensureProspectsUi().then((ui) => { ui.start(); ui.render(); });
+  if (LAZY_PROMOTE[key]) {
+    openLazyPromotePage(key);
   } else {
     promotePage.hidden = false;
   }
@@ -10689,7 +10790,8 @@ function openPromotePage(key = PROMOTE_PAGES[0].key) {
   renderPromotePage();
 }
 function closePromotePage() {
-  if (promotePage.hidden && leadsPage.hidden && prospectsPage.hidden) return;
+  if (promotePage.hidden && leadsPage.hidden && prospectsPage.hidden && funnelPage.hidden) return;
+  funnelPage.hidden = true;
   promotePage.hidden = true;
   leadsPage.hidden = true;
   prospectsPage.hidden = true;
@@ -10697,7 +10799,11 @@ function closePromotePage() {
   document.getElementById("board-page-header").hidden = false;
 }
 PROMOTE_PAGES.forEach((p) => {
-  document.getElementById(p.navId).addEventListener("click", () => { closeNavDrawer(); openPromotePage(p.key); });
+  document.getElementById(p.navId).addEventListener("click", () => {
+    closeNavDrawer();
+    try { openPromotePage(p.key); }
+    catch (err) { showPageLoadError(LAZY_PROMOTE[p.key] ? LAZY_PROMOTE[p.key].page() : null, p.label, err, () => openPromotePage(p.key)); }
+  });
 });
 
 // The notification bell (KB-NAV-2): in the topbar on every page. The module
@@ -11873,6 +11979,7 @@ const ROUTE_TITLES = {
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
   "#promote/leads": "Promote: Leads",
   "#promote/prospects": "Promote: Prospects (TAM)",
+  "#promote/conversion-funnel": "Promote: Conversion Funnel",
   "#settings/projects": "Settings: Projects",
   "#settings/releases": "Settings: Releases",
   "#settings/skills": "Settings: Skills & phase bindings",
@@ -12023,7 +12130,7 @@ function applyRouteFromHash() {
     if (faqSettingsPage.hidden) openFaqSettingsPage(k, um && um.tab);
     else if (k !== settingsPage || (um && um.tab !== umTab)) showSettingsPage(k, um && um.tab);
   }
-  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : promotePage.hidden)) openPromotePage(k); }
+  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : promotePage.hidden)) openPromotePage(k); }
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
@@ -12034,7 +12141,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

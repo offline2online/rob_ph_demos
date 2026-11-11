@@ -598,12 +598,12 @@ service cloud.firestore {
     // ── Promote › Leads (public/js/leads-page.js, functions/leads.js) ──────
     // One document per company: contacts live inside it (up to 25). Members
     // read; editors create, edit, drag between stages and delete. The
-    // enrichment map and each contact's enrichment are written by the
-    // leadEnrich function as the service account (rules bypassed); an editor's
-    // save keeps them, since request.resource is the whole document.
+    // enrichment map (findings, logo, news, financials and the run's request)
+    // is written by the enrichment function as the service account (rules
+    // bypassed); an editor's save keeps it, since request.resource is the whole document.
     function isLead(d) {
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
-          "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail",
+          "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
         && d.company is map && isNonEmptyBoundedString(d.company.get("name", null), 120)
         && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300
@@ -622,6 +622,7 @@ service cloud.firestore {
         && d.get("sourceIndustry", "") is string && d.get("sourceIndustry", "").size() <= 120
         && d.get("sourceLabel", "") is string && d.get("sourceDetail", "") is string
         && d.get("websiteActivity", []) is list && d.get("history", []) is list && d.get("history", []).size() <= 100
+        && d.get("inboundCount", 0) is int && d.get("inboundCount", 0) >= 0
         && d.get("archivedByEmail", "") is string;
     }
     match /leads/{leadId} {
@@ -636,7 +637,7 @@ service cloud.firestore {
     function isProspect(d) {
       return d.keys().hasOnly(["name", "country", "website", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand",
           "priority", "storePresence", "ownership", "insights", "decisionMakers", "linkedinUrl", "linkedinOrgId", "linkedinVerified", "contacts",
-          "vendors", "campaigns", "status", "leadId", "source", "notes", "awsAccountId",
+          "vendors", "campaigns", "status", "leadId", "source", "notes", "awsAccountId", "enrichment",
           "createdAt", "updatedAt", "createdByEmail", "updatedByEmail"])
         && isNonEmptyBoundedString(d.get("name", null), 120)
         && d.get("country", "") is string && d.get("country", "").size() <= 60
@@ -665,12 +666,23 @@ service cloud.firestore {
         && d.get("status", "new") in ["new", "researching", "targeted", "engaged", "converted", "disqualified"]
         && d.get("leadId", "") is string && d.get("leadId", "").size() <= 120
         && d.get("source", "") is string && d.get("source", "").size() <= 80
-        && d.get("notes", "") is string && d.get("notes", "").size() <= 2000;
+        && d.get("notes", "") is string && d.get("notes", "").size() <= 2000
+        // Written by the enrichment function as the service account (lead-enrich.js); an editor's save keeps it.
+        && (d.get("enrichment", null) == null || d.get("enrichment", null) is map);
+    }
+    // Conversion Funnel's Google Ads + GA4 daily rows (public/js/funnel-core.js). Written only by the
+    // server-side ingest (admin SDK bypasses rules); members read them.
+    match /funnelDaily/{rowId} {
+      allow read: if isBoardReader();
+      allow write: if false;
     }
     match /prospects/{prospectId} {
       allow read: if isBoardReader();
       // A new record names its country; older ones without one still update (they read as their first market).
-      allow create: if isEditor() && isProspect(incoming()) && isNonEmptyBoundedString(incoming().get("country", null), 60);
+      // The exceptions are a record made for an inbound lead that gave no country, and the AWS record
+      // (prospects-core.js planInbound).
+      allow create: if isEditor() && isProspect(incoming())
+        && (isNonEmptyBoundedString(incoming().get("country", null), 60) || incoming().get("source", "") in ["Inbound lead", "AWS"]);
       allow update: if isEditor() && isProspect(incoming());
       allow delete: if isEditor();
     }

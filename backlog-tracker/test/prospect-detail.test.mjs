@@ -96,3 +96,16 @@ t("every country record of a company shares one detail document", () => {
   assert.deepEqual(Object.keys(D.detailForSave(forAustralia)).sort(), ["aceOpportunity", "awsTeam", "documents", "people", "profile"], "no country-specific field is part of the shared detail");
 });
 console.log(`${n} passed`);
+t("an AWS person attaches to a company's AWS team once; attaching again changes the role", () => {
+  const pat = { name: "Pat Lee", role: "Account Manager", email: "pat@amazon.com" };
+  let r = D.withAwsPerson([], pat, "account-manager");
+  assert.ok(r.added); assert.equal(r.team.length, 1);
+  assert.equal(r.team[0].role, "account-manager"); assert.equal(r.team[0].email, "pat@amazon.com"); assert.equal(r.team[0].source, "manual");
+  r = D.withAwsPerson(r.team, { ...pat, email: "PAT@amazon.com" }, "solutions-architect");
+  assert.equal(r.added, false); assert.equal(r.team.length, 1); assert.equal(r.team[0].role, "solutions-architect");
+  assert.equal(D.withAwsPerson([], { name: "" }, "pdm").error, "This AWS contact has no name.");
+  const full = Array.from({ length: 30 }, (_, i) => ({ id: `a${i}`, name: `N${i}`, email: `n${i}@aws.com` }));
+  assert.ok(D.withAwsPerson(full, pat, "pdm").error);
+  assert.deepEqual(Object.keys(D.detailForSave({ awsTeam: r.team })).sort(), ["aceOpportunity", "awsTeam", "documents", "people", "profile"]);
+});
+console.log(`${n} passed (with AWS attach)`);

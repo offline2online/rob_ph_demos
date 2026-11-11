@@ -1,4 +1,4 @@
-// node ph-website/tests/tour.test.mjs : the telco, pharmacy and fuel & convenience product tour on the industry pages (enhance.js + site.js), in Chromium.
+// node ph-website/tests/tour.test.mjs : the telco, pharmacy, retail media and fuel & convenience product tour on the industry pages (enhance.js + site.js), in Chromium.
 // Checks: the band is mounted (Elementor mount, or built after the calculator's section), the iframe src (+ph_test forwarding), the height
 // message, window.PH_TOUR, "Arrange a Demo" -> PH_SITE_DEMO, and that a successful calculator download writes
 // localStorage ph_lead and dispatches window "ph:lead". Skips (exit 0) when Playwright or Chromium is not available.
@@ -338,7 +338,15 @@ try {
         await ct.evaluate(show);
         const m = await ct.evaluate((i) => { const b = document.getElementById(i), cs = getComputedStyle(b), ic = b.querySelector(".ms"), r = b.getBoundingClientRect(), c = document.querySelector("#card .in2").getBoundingClientRect(), st = document.querySelector("#card").getBoundingClientRect(); return { color: cs.color, icon: ic ? getComputedStyle(ic).color : "rgb(255, 255, 255)", iconSize: ic ? getComputedStyle(ic).fontSize : "24px", bg: cs.backgroundColor, fs: parseFloat(cs.fontSize), fw: +cs.fontWeight, h: b.offsetHeight, over: b.scrollWidth > b.clientWidth + 1, fit: c.top >= st.top - 1 && c.bottom <= st.bottom + 1 && c.left >= st.left - 1 && c.right <= st.right + 1, noH: document.documentElement.scrollWidth <= innerWidth }; }, id);
         const min = vp.height <= 520 ? 48 : 56;
-        assert.ok(m.color === "rgb(255, 255, 255)" && m.icon === "rgb(255, 255, 255)" && m.iconSize === "24px" && m.bg === "rgb(22, 155, 194)" && m.fs >= 18.66 && m.fw >= 700 && m.h >= min && !m.over && m.fit && m.noH, `#${id} CTA at ${vp.width}x${vp.height}${fsMode ? " fs" : ""}: ${JSON.stringify(m)}`);
+        assert.ok(m.color === "rgb(255, 255, 255)" && m.icon === "rgb(255, 255, 255)" && m.iconSize === (id === "start" ? "20px" : "24px") && m.bg === "rgb(22, 155, 194)" && m.fs >= (id === "start" ? 15 : 18.66) && m.fw >= 700 && m.h >= min && !m.over && m.fit && m.noH, `#${id} CTA at ${vp.width}x${vp.height}${fsMode ? " fs" : ""}: ${JSON.stringify(m)}`);
+      }
+      // start card: "Watch full screen" is a full-size secondary button beside Start (50/50); hidden in full screen
+      for (let f = 0; f < 3; f++) {
+        await ct.evaluate((n) => { __t.setFlow(n); __t.startCard(); }, f);
+        const g = await ct.evaluate(() => { const a = document.getElementById("start"), b = document.getElementById("fsstart"), ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), row = a.parentElement.getBoundingClientRect(), cs = getComputedStyle(b); return { sA: a.scrollWidth > a.clientWidth + 1, sB: b.scrollWidth > b.clientWidth + 1, hidden: cs.display === "none", wA: ra.width, wB: rb.width, hA: ra.height, hB: rb.height, sameRow: Math.abs(ra.top - rb.top) <= 1, full: ra.width >= row.width - 2, bg: cs.backgroundColor, border: cs.borderTopWidth, bgA: getComputedStyle(a).backgroundColor }; });
+        assert.ok(!g.sA && !g.sB && g.bgA === "rgb(22, 155, 194)", `start card labels fit, Start filled ${vp.width}x${vp.height} flow ${f}: ${JSON.stringify(g)}`);
+        if (fsMode) assert.ok(g.hidden && g.full, `fs: Start full width, full-screen button hidden ${vp.width}x${vp.height} flow ${f}: ${JSON.stringify(g)}`);
+        else if (vp.width >= 740) assert.ok(!g.hidden && Math.abs(g.wA - g.wB) <= 1 && Math.abs(g.hA - g.hB) <= 1 && g.sameRow && g.bg === "rgb(255, 255, 255)" && g.border === "2px", `split buttons ${vp.width}x${vp.height} flow ${f}: ${JSON.stringify(g)}`);
       }
       await ct.close();
     }
@@ -552,6 +560,283 @@ try {
     }
   }
 
+  // Retail media: same shared tour, its own three flows (retailer setup 8 steps, advertiser creates by talking 10, shopper journey and outcome 5), screenshots and voiceover from the same-origin asset route.
+  { const sourceTour = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
+    const fast = sourceTour.replace("const k = reduce ? .35 : 1;", "const k = .02;");
+    const vscript = Object.fromEntries(JSON.parse(fs.readFileSync(path.join(here, "..", "tools", "retail-media-tour", "voiceover-script.json"), "utf8")).steps.map((s) => [s.id, s.lines.map((l) => l.text)]));
+    // Screenshots: the real files when TOUR_ASSETS_DIR holds a checkout of tag tour-assets-retail-media-v1; otherwise a small valid JPEG (the tests check that every image loads, not what it shows).
+    const assetsDir = process.env.TOUR_ASSETS_DIR || "";
+    const probe = await browser.newPage(); const tinyJpg = await probe.screenshot({ type: "jpeg", clip: { x: 0, y: 0, width: 8, height: 8 } }); await probe.close();
+    const serveAsset = (r) => { const m = r.request().url().match(/\/assets\/v1\/(img|vo)\/([\w.-]+)$/); const f = m && assetsDir && path.join(assetsDir, m[1], m[2]); if (m && m[1] === "img") return r.fulfill({ contentType: "image/jpeg", body: f && fs.existsSync(f) ? fs.readFileSync(f) : tinyJpg }); return r.fulfill({ status: 404, body: "" }); };
+    // Band on the Retail Media industry page: the Elementor mount, or built right after the calculator when it is absent.
+    const rmPage = (withBand) => `<!doctype html><html><head><style>${css}</style></head><body><main><section class="ph-ind-sec" id="calcsec"><div class="ph-ind-calc"><div class="ph-ind-cin"><p class="ph-ind-label-gap">a</p><p class="ph-ind-label-gap">b</p>${row.repeat(nOf("retail-media"))}</div><div class="ph-ind-cout"><p class="ph-ind-ctot-l">Total</p><p class="ph-ind-ctot-v">0</p><div class="ph-ind-crow">r</div></div></div></section>${withBand ? '<section class="ph-ind-sec ph-ind-tour" id="band"><h2>Server heading</h2><div class="ph-ind-tour-mount"></div></section>' : ""}<section class="ph-ind-sec" id="s2">two</section></main>
+<script>window.PH_IND_PAGE="retail-media"; window.Calendly={initPopupWidget:function(){}};</script><script>${site}</script><script>${enhance}</script></body></html>`;
+    for (const withBand of [true, false]) {
+      const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+      await p.route("**/*", (r) => /\/industries\/retail-media\/tour\//.test(r.request().url()) ? r.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><p>tour</p>" }) : r.fulfill({ contentType: "text/html", body: rmPage(withBand) }));
+      await p.goto("http://x.test/industries/retail-media/?ph_test=1");
+      assert.strictEqual(await p.locator(".ph-ind-tour-mount iframe").count(), 1, `retail-media (band ${withBand}): iframe mounted`);
+      assert.strictEqual(await p.locator("iframe.ph-ind-tour-frame").getAttribute("src"), "/industries/retail-media/tour/?embed=1&ph_test=1", "retail-media: iframe src with ph_test");
+      if (!withBand) {
+        assert.strictEqual(await p.locator("#calcsec + .ph-ind-tour + #s2").count(), 1, "built band is right after the calculator");
+        assert.strictEqual(await p.locator(".ph-ind-tour-eyebrow").textContent(), "Interactive product tour", "retail-media fallback eyebrow");
+        assert.strictEqual(await p.locator(".ph-ind-tour h2").textContent(), "See a convenience retailer run its own retail media network, end to end", "retail-media fallback heading");
+        assert.strictEqual(await p.locator(".ph-ind-tour-p").textContent(), "Pick a demo: a retailer selling its screens, a brand creating a campaign by talking, and one shopper from forecourt to checkout.", "retail-media fallback intro");
+      }
+      await p.close();
+    }
+    // Gate: retail media copy, branded, work email only.
+    { const g = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      let body = null;
+      await g.route("**/*", (r) => { const u = r.request().url(); if (/tour-lead$/.test(u)) { body = JSON.parse(r.request().postData()); return r.fulfill({ contentType: "application/json", body: '{"ok":true}' }); } if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: sourceTour }) : r.abort(); });
+      await g.addInitScript(() => { window.PH_TOUR = { endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "" }; });
+      await g.goto("http://x.test/industries/retail-media/tour/?embed=1&ph_test=1");
+      await g.waitForSelector(".g-flow");
+      assert.deepStrictEqual(await g.locator(".g-flow b").allTextContents(), ["Retailer setup", "Advertiser creates by talking", "Shopper journey & outcome"], "retail media gate demos");
+      assert.ok(/convenience retailer sell its screens to a brand/i.test(await g.locator(".g-panel h3").textContent()), "gate headline is retail media copy");
+      const gtext = await g.evaluate(() => document.body.innerText);
+      assert.ok(!/telco|pharmac|prescription/i.test(gtext), "no other industry's words on the gate");
+      await g.locator(".g-flow").nth(1).click();
+      await g.fill("input[name=name]", "Ada Lovelace"); await g.fill("input[name=company]", "Orbit Co"); await g.fill("input[name=email]", "ada@gmail.com"); await g.check("input[name=consent]");
+      await g.locator("input[name=email]").blur();
+      assert.strictEqual(await g.textContent("#gerr"), "Please use your work email.", "free mail refused");
+      assert.strictEqual(await g.locator("#gsub.ok").count(), 0, "free mail keeps the button off");
+      await g.fill("input[name=email]", "ada@orbit.example"); await g.click("#gsub");
+      await g.waitForFunction(() => document.getElementById("gate").hidden);
+      assert.ok(await g.evaluate(() => !!document.getElementById("vohint") && document.getElementById("vo").classList.contains("pulse")), "the gate's autostart shows the \"Enable sound\" hint");
+      assert.ok(body && body.industry === "retail-media" && body.flow === "Advertiser creates by talking" && body.page === "/industries/retail-media/tour/" && body.test === true, "retail-media lead body: " + JSON.stringify(body));
+      assert.strictEqual(await g.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")).company), "Orbit Co", "the lead is stored for the next visit");
+      await g.close(); }
+    // Walk every step of the three flows with a stored lead: the visitor's company is the retailer.
+    const hooked = fast.replace('document.getElementById("prev").onclick', "window.__t = { S, D };\n$&");
+    const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+    const errs = []; t.on("pageerror", (e) => errs.push(e.message));
+    const reqs = []; t.on("request", (q) => reqs.push(q.url()));
+    await t.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort(); });
+    await t.addInitScript(() => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example", source: "Telco business model download" })); window.__plays = 0; window.__steps = [[], [], []]; setInterval(() => { const i = [...document.querySelectorAll("#dots .dot")].findIndex((d) => d.getAttribute("aria-current") === "true"), f = window.__t && window.__t.S.flow; if (i >= 0 && window.__steps[f] && !window.__steps[f].includes(i)) window.__steps[f].push(i); }, 5); const op = HTMLMediaElement.prototype.play; HTMLMediaElement.prototype.play = function () { window.__plays++; return op.call(this); }; });
+    // No white or jittery screens (10 Nov 2026): sampled on every animation frame through all three flows. On a screen change #screen is never empty,
+    // a .rm-shot img is never incomplete, and an img is never below full opacity unless a .rm-hold above it is at full opacity; and nothing held loses opacity.
+    await t.addInitScript(() => {
+      window.__frameFails = []; window.__frames = 0; window.__heldSeen = 0;
+      const last = new WeakMap(); let had = false;
+      const op = (e) => parseFloat(getComputedStyle(e).opacity);
+      const tick = () => {
+        const sc = document.getElementById("screen");
+        if (sc) {
+          window.__frames++;
+          const hold = document.querySelector(".rm-hold"), holdOp = hold ? op(hold) : 0;
+          if (hold) window.__heldSeen++;
+          const kids = sc.children.length, imgs = [...sc.querySelectorAll(".rm-shot img")];
+          if (!kids && had && !hold) window.__frameFails.push("empty #screen");
+          if (!kids && !hold) had = false;
+          if (kids) {
+            for (const im of imgs) {
+              if (!im.parentNode.classList.contains("swap")) continue; // the first screen of a flow fades in on purpose
+              if (!im.complete || !im.naturalWidth) window.__frameFails.push("incomplete img");
+              else if (had && op(im) < 1 && holdOp < 1) window.__frameFails.push("img at opacity " + op(im) + " with no opaque hold");
+            }
+            if (imgs.length) had = true;
+          }
+          if (hold) for (const e of hold.querySelectorAll("*")) { const b = last.get(e); if (b !== undefined && op(e) < b - 0.001) window.__frameFails.push("held element lost opacity " + b + " -> " + op(e)); }
+          for (const e of sc.querySelectorAll("*")) last.set(e, op(e));
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await t.goto("http://x.test/industries/retail-media/tour/?embed=1");
+    await t.waitForSelector("#fs", { state: "visible" });
+    assert.strictEqual(await t.evaluate(() => window.__t.S.ind), "retail-media", "S.ind follows the path");
+    assert.ok(/Retail Media/.test(await t.title()), "document title: " + await t.title());
+    assert.deepStrictEqual(await t.locator(".chip").evaluateAll((c) => c.map((x) => x.childNodes[1].textContent)), ["Retailer setup", "Advertiser creates by talking", "Shopper journey & outcome"], "three flows");
+    assert.strictEqual(await t.getAttribute("#vo", "aria-pressed"), "false", "voiceover is off by default");
+    assert.strictEqual(await t.evaluate(() => localStorage.getItem("ph_tour_voiceover")), null, "nothing saved until the visitor chooses");
+    const seen = new Set(), blanks = [], broken = [], navs = [], badCaps = [], overlays = new Set(), stepsSeen = [new Set(), new Set(), new Set()];
+    const stepOf = () => t.evaluate(() => [...document.querySelectorAll("#dots .dot")].findIndex((d) => d.getAttribute("aria-current") === "true"));
+    for (let f = 0; f < 3; f++) {
+      await t.click(`.chip[data-k="${f}"]`); await t.click("#play"); const t0 = Date.now();
+      for (;;) {
+        const a = await stepOf();
+        const s = await t.evaluate(() => [document.getElementById("stage").innerText, document.getElementById("capT").textContent, document.getElementById("capS").textContent, document.getElementById("card").innerText, [...document.querySelectorAll("#stage svg text")].map((x) => x.textContent).join(" "), [...document.querySelectorAll("#stage [data-tip],#stage [aria-label],#stage .tip")].map((x) => x.getAttribute("data-tip") || x.getAttribute("aria-label") || x.textContent).join(" ")].join("\n"));
+        const capS = await t.textContent("#capS"), b = await stepOf();
+        seen.add(s); if (a >= 0) stepsSeen[f].add(a);
+        if (a >= 0 && a === b && capS.trim() && !(vscript[`f${f + 1}-${String(a + 1).padStart(2, "0")}`] || []).includes(capS)) badCaps.push(`f${f + 1}-${a + 1}: ${capS}`);
+        // screens never blank: a screenshot that loaded, or an HTML screen with content
+        const st = await t.evaluate(() => { const imgs = [...document.querySelectorAll("#stage img")]; return { imgs: imgs.length, bad: imgs.filter((i) => !i.complete || !i.naturalWidth).length, text: document.getElementById("stage").innerText.trim().length, svg: document.querySelectorAll("#stage svg").length, nav: [...document.querySelectorAll("#stage .side .nav:not(.bottom) > div")].map((x) => x.textContent.trim().replace(/^[a-z_]+(?=[A-Z])/, "")), bottom: document.querySelectorAll("#stage .side .nav.bottom > div").length, ov: [...document.querySelectorAll("#stage .rm-ov")].map((x) => x.textContent) }; });
+        if (st.bad) { await t.waitForTimeout(400); const again = await t.evaluate(() => [...document.querySelectorAll("#stage img")].filter((i) => !i.complete || !i.naturalWidth).length); if (again) broken.push(`flow ${f + 1} step ${a + 1}`); }
+        if (!st.imgs && st.text < 20 && !st.svg) blanks.push(`flow ${f + 1} step ${a + 1}`);
+        if (f === 1 && st.nav.length) navs.push({ nav: st.nav, bottom: st.bottom });
+        st.ov.forEach((x) => overlays.add(x));
+        if (await t.evaluate(() => !document.getElementById("card").hidden && /complete/i.test(document.getElementById("card").innerText))) break;
+        assert.ok(Date.now() - t0 < 120000, `retail media flow ${f + 1} finished`);
+        await t.waitForTimeout(100);
+      }
+    }
+    { const ff = await t.evaluate(() => ({ fails: [...new Set(window.__frameFails)], frames: window.__frames, held: window.__heldSeen }));
+      assert.ok(ff.frames > 50, "the frame sampler ran: " + ff.frames);
+      assert.ok(ff.held > 0, "screen changes were held and crossfaded (frames with a .rm-hold: " + ff.held + ")");
+      assert.deepStrictEqual(ff.fails, [], "no white, empty or half-faded frame on any screen change: " + JSON.stringify(ff.fails.slice(0, 5))); }
+    assert.deepStrictEqual(errs, [], "no page errors");
+    assert.deepStrictEqual(blanks, [], "no screen is ever blank");
+    assert.deepStrictEqual(broken, [], "no broken image");
+    assert.deepStrictEqual(badCaps, [], "every caption is a line of the script");
+    const stepsRec = await t.evaluate(() => window.__steps.map((x) => x.length));
+    assert.deepStrictEqual(stepsRec, [8, 10, 5], "all steps of the three flows played (8, 10 and 5): " + JSON.stringify(stepsRec));
+    assert.ok(navs.length > 0 && navs.every((n) => JSON.stringify(n.nav) === JSON.stringify(["Campaigns", "Insights / Analytics"]) && n.bottom === 0), "the advertiser's left nav shows only Campaigns and Insights / Analytics: " + JSON.stringify(navs[0]));
+    assert.strictEqual(await t.evaluate(() => window.__plays), 0, "no audio is played while the voiceover is off");
+    const thirdParty = reqs.filter((u) => !u.startsWith("http://x.test/") && !/^https:\/\/fonts\.(googleapis|gstatic)\.com\//.test(u)); // the tour's shared fonts are unchanged
+    assert.deepStrictEqual(thirdParty, [], "no third-party request for screenshots or audio");
+    assert.ok(reqs.some((u) => /\/industries\/retail-media\/tour\/assets\/v1\/img\/[\w.-]+\.jpg$/.test(u)), "screenshots load from the same-origin asset route");
+    assert.ok(!reqs.some((u) => /\/assets\/v1\/vo\//.test(u)), "no voiceover is fetched while it is off");
+    const text = [...seen].join("\n");
+    for (const need of ["Frostline Cold Drinks", "Bayside Test Stores", "Forecourt", "Shop front", "Emma"]) assert.ok(text.includes(need), "retail media content shown: " + need);
+    assert.ok(!/Larkspur/.test(text), "the visitor's company replaces Larkspur Convenience in every HTML screen");
+    assert.ok([...overlays].some((x) => /Bayside/.test(x)), "the visitor's company is redrawn over the screenshots (logo and header badge): " + JSON.stringify([...overlays].slice(0, 3)));
+    // Rules of the brief: no other industry's words, no real brands, no US spelling, no internal project names.
+    const banned = text.match(/telco|pharmac|prescription|\bSIM\b|handset|Roadside|Google|Trade Desk|Amazon|Shell\b|BP\b|Coca|Pepsi|Red Bull|Monster|Walmart|Tesco|7-Eleven|Circle K|Nimbus|Harbourside|personalization|Display Types & DSP|DSP Integration|Visitor Profile|Elementor|Angie|rob_ph|ph-mcp|backlog/gi);
+    assert.ok(!banned, "no other industry, real brand, US spelling or internal name: " + JSON.stringify(banned));
+    // Voiceover toggle: saved, restored after a reload; still nothing plays until the visitor starts the tour.
+    await t.click("#vo");
+    assert.strictEqual(await t.evaluate(() => localStorage.getItem("ph_tour_voiceover")), "on", "the choice is saved");
+    await t.reload(); await t.waitForSelector("#fs", { state: "visible" });
+    assert.strictEqual(await t.getAttribute("#vo", "aria-pressed"), "true", "the choice is restored after a reload");
+    assert.strictEqual(await t.evaluate(() => window.__plays), 0, "nothing plays before the visitor starts");
+    await t.click("#vo");
+    assert.strictEqual(await t.evaluate(() => localStorage.getItem("ph_tour_voiceover")), "off", "off is saved");
+    await t.close();
+    // 390px wide: the stage scales and the page does not scroll sideways, on a screenshot step and on the shopper scene.
+    { const m = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
+      await m.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast }) : r.abort(); });
+      await m.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example" })));
+      await m.goto("http://x.test/industries/retail-media/tour/?embed=1"); await m.waitForSelector("#fs", { state: "visible" });
+      for (const f of [0, 2]) {
+        await m.click(`.chip[data-k="${f}"]`); await m.click("#play"); await m.waitForTimeout(1500);
+        const g = await m.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+        assert.ok(g.sw <= g.cw, `flow ${f + 1}: no sideways scroll at 390px: ${g.sw} > ${g.cw}`);
+      }
+      await m.close(); }
+    // Steady caption bar (10 Nov 2026): whichever of the 77 voiceover lines is showing, the controls (#dots) and the fine print never move, at any frame width.
+    { const lines = Object.values(vscript).flat(); assert.strictEqual(lines.length, 77, "77 voiceover lines");
+      const c = await browser.newPage({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
+      await c.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast }) : r.abort(); });
+      await c.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example" })));
+      await c.goto("http://x.test/industries/retail-media/tour/?embed=1"); await c.waitForSelector("#fs", { state: "visible" });
+      for (const w of [420, 768, 900, 1040, 1160, 1400]) {
+        await c.setViewportSize({ width: w, height: 900 }); await c.waitForTimeout(400); // let the stage rescale before measuring
+        const tops = await c.evaluate((lines) => { const cap = document.getElementById("capS"), seen = { dots: new Set(), fine: new Set(), play: new Set() }; for (const l of lines) { cap.textContent = l; seen.dots.add(Math.round(document.getElementById("dots").getBoundingClientRect().top * 10)); seen.fine.add(Math.round(document.querySelector(".fine").getBoundingClientRect().top * 10)); seen.play.add(Math.round(document.getElementById("play").getBoundingClientRect().top * 10)); } return { dots: seen.dots.size, fine: seen.fine.size, play: seen.play.size }; }, lines);
+        assert.deepStrictEqual(tops, { dots: 1, fine: 1, play: 1 }, `caption lines never move the controls or the fine print at ${w}px: ` + JSON.stringify(tops));
+      }
+      await c.close(); }
+    // "Enable sound" hint (11 Nov 2026): a flow started with the voiceover off shows a bubble above the speaker for 3 s while the button pulses,
+    // then starts; clicking the bubble or the speaker turns sound on and starts at once; Prev/Next or a flow switch cancels it; never a double start.
+    { const hk = fast.replace("async function go(i) {", "async function go(i) { (window.__go = window.__go || []).push(i);").replace('document.getElementById("prev").onclick', "window.__t = { S, setFlow, showEnd, startCard };\n$&");
+      assert.ok(hk.includes("window.__go") && hk.includes("window.__t = { S, setFlow"), "hint test hooks applied");
+      const open = async (sound) => {
+        const h = await browser.newPage({ viewport: { width: 1160, height: 900 }, reducedMotion: "reduce" });
+        h.__errs = []; h.on("pageerror", (e) => h.__errs.push(e.message));
+        await h.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveAsset(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hk }) : r.abort(); });
+        await h.addInitScript((on) => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example" })); if (on) localStorage.setItem("ph_tour_voiceover", "on"); }, sound);
+        await h.goto("http://x.test/industries/retail-media/tour/?embed=1"); await h.waitForSelector("#start", { state: "visible" });
+        return h;
+      };
+      const st = (h) => h.evaluate(() => { const t = document.getElementById("vohint"), v = document.getElementById("vo"); return { hint: !!t, text: t ? t.textContent.trim() : "", pulse: v.classList.contains("pulse"), step: window.__t.S.step, flow: window.__t.S.flow, go: (window.__go || []).slice(), pressed: v.getAttribute("aria-pressed"), saved: localStorage.getItem("ph_tour_voiceover"), fs: document.documentElement.classList.contains("fs") }; });
+      const zeros = (x) => x.go.filter((i) => i === 0).length;
+      // Start the tour: the hint shows with the pulse, above the speaker and inside the frame, and the flow waits; step 1 starts at 3 s.
+      { const h = await open(false); const t0 = Date.now();
+        await h.click("#start");
+        let s = await st(h);
+        assert.ok(s.hint && s.text === "volume_upEnable sound" && s.pulse && s.step === -1 && !s.go.length, "Start the tour with sound off shows the hint and waits: " + JSON.stringify(s));
+        const g = await h.evaluate(() => { const r = (e) => e.getBoundingClientRect(), t = r(document.getElementById("vohint")), v = r(document.getElementById("vo")), cs = getComputedStyle(document.getElementById("vohint")); return { t: { l: t.left, r: t.right, top: t.top, b: t.bottom }, v: { l: v.left, r: v.right, top: v.top }, w: innerWidth, h: innerHeight, bg: cs.backgroundColor, color: cs.color, role: document.getElementById("vohint").getAttribute("role"), anim: getComputedStyle(document.getElementById("vo")).animationName }; });
+        assert.ok(g.t.b <= g.v.top && g.t.l >= 0 && g.t.top >= 0 && g.t.r <= g.w && g.t.r >= (g.v.l + g.v.r) / 2 && g.bg === "rgb(20, 32, 43)" && g.color === "rgb(255, 255, 255)" && g.role === "status" && g.anim === "vopulse", "the hint sits above the speaker, inside the frame, dark with white text, and the button pulses: " + JSON.stringify(g));
+        await h.waitForTimeout(1500); s = await st(h);
+        assert.ok(s.hint && s.step === -1 && !s.go.length, "still waiting at 1.5 s: " + JSON.stringify(s));
+        await h.waitForFunction(() => (window.__go || []).length > 0, null, { timeout: 6000 });
+        const ms = Date.now() - t0; s = await st(h);
+        assert.ok(ms >= 2700 && !s.hint && !s.pulse && s.go[0] === 0 && s.pressed === "false" && s.saved === null, `step 1 starts at 3 s with sound still off (${ms} ms): ` + JSON.stringify(s));
+        await h.waitForTimeout(1500); s = await st(h);
+        assert.strictEqual(zeros(s), 1, "the flow starts once: " + JSON.stringify(s.go));
+        assert.deepStrictEqual(h.__errs, [], "no page errors (hint, timeout)");
+        await h.close(); }
+      // Clicking the hint, or the speaker, turns sound on, saves it and starts at once, with no second start.
+      for (const target of ["#vohint", "#vo"]) {
+        const h = await open(false);
+        await h.click("#start"); await h.waitForSelector("#vohint");
+        await h.click(target);
+        let s = await st(h);
+        assert.ok(!s.hint && !s.pulse && s.go[0] === 0 && s.pressed === "true" && s.saved === "on", `clicking ${target} turns sound on, saves it and starts at once: ` + JSON.stringify(s));
+        await h.waitForTimeout(3500); s = await st(h);
+        assert.strictEqual(zeros(s), 1, `clicking ${target}: no second start: ` + JSON.stringify(s.go));
+        assert.deepStrictEqual(h.__errs, [], `no page errors (${target})`);
+        await h.close();
+      }
+      // Sound already on: no hint, the flow starts at once.
+      { const h = await open(true);
+        await h.click("#start"); const s = await st(h);
+        assert.ok(!s.hint && !s.pulse && s.go[0] === 0 && s.pressed === "true", "sound on: no hint, starts at once: " + JSON.stringify(s));
+        await h.close(); }
+      // Next during the hint cancels it, with no double start; so does switching flow.
+      { const h = await open(false);
+        await h.click("#start"); await h.waitForSelector("#vohint");
+        await h.click("#next");
+        let s = await st(h);
+        assert.ok(!s.hint && !s.pulse && s.go.length === 1, "Next during the hint cancels it and moves on: " + JSON.stringify(s));
+        await h.waitForTimeout(3500); s = await st(h);
+        assert.strictEqual(zeros(s), 1, "Next during the hint: no second start when the 3 s run out: " + JSON.stringify(s.go));
+        await h.close(); }
+      { const h = await open(false);
+        await h.click("#start"); await h.waitForSelector("#vohint");
+        await h.click('.chip[data-k="1"]');
+        let s = await st(h);
+        assert.ok(!s.hint && !s.pulse && s.flow === 1 && s.step === -1, "a flow switch during the hint cancels it: " + JSON.stringify(s));
+        await h.waitForTimeout(3500); s = await st(h);
+        assert.ok(!s.go.length && s.step === -1 && await h.locator("#start").isVisible(), "after a flow switch the old hint never starts anything: " + JSON.stringify(s));
+        await h.close(); }
+      // Watch full screen shows the hint (in full screen); Play before any step shows it, and Play again during it starts at once.
+      { const h = await open(false);
+        await h.click("#fsstart"); await h.waitForSelector("#vohint"); await h.waitForFunction(() => document.documentElement.classList.contains("fs"));
+        let s = await st(h);
+        assert.ok(s.hint && s.pulse && s.fs && !s.go.length, "Watch full screen shows the hint in full screen: " + JSON.stringify(s));
+        const g = await h.evaluate(() => { const t = document.getElementById("vohint").getBoundingClientRect(); return t.top >= 0 && t.left >= 0 && t.right <= innerWidth && getComputedStyle(document.getElementById("vohint")).visibility !== "hidden"; });
+        assert.ok(g, "the hint is inside the screen in full screen");
+        await h.waitForFunction(() => (window.__go || []).length > 0, null, { timeout: 6000 });
+        await h.close(); }
+      { const h = await open(false);
+        await h.click('.chip[data-k="2"]'); await h.click("#play");
+        let s = await st(h);
+        assert.ok(s.hint && s.flow === 2 && !s.go.length, "Play before any step shows the hint: " + JSON.stringify(s));
+        await h.click("#play"); s = await st(h);
+        assert.ok(!s.hint && s.go.length === 1 && s.go[0] === 0 && s.pressed === "false", "Play again during the hint starts at once, sound still off: " + JSON.stringify(s));
+        await h.waitForTimeout(3500); s = await st(h);
+        assert.strictEqual(zeros(s), 1, "Play during the hint: no second start: " + JSON.stringify(s.go));
+        await h.close(); }
+      // The end card's Next flow shows the hint before the next flow starts.
+      { const h = await open(false);
+        await h.evaluate(() => { window.__t.setFlow(0); window.__t.showEnd(); });
+        await h.click("#nextflow");
+        const s = await st(h);
+        assert.ok(s.hint && s.pulse && s.flow === 1 && !s.go.length, "the end card's Next flow shows the hint: " + JSON.stringify(s));
+        await h.close(); }
+      // Telco, pharmacy and convenience have no voiceover: no hint, Start starts at once.
+      for (const ind of ["telco", "pharmacy", "convenience"]) {
+        const h = await browser.newPage({ viewport: { width: 1160, height: 900 }, reducedMotion: "reduce" });
+        await h.route("**/*", (r) => r.request().url().startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hk }) : r.abort());
+        await h.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Kestrel", email: "s@k.example" })));
+        await h.goto(`http://x.test/industries/${ind}/tour/?embed=1`); await h.waitForSelector("#start", { state: "visible" });
+        await h.click("#start");
+        const s = await h.evaluate(() => ({ hint: document.querySelectorAll("#vohint,.vohint").length, go: (window.__go || []).slice(), vo: !document.getElementById("vogrp").hidden }));
+        assert.ok(!s.hint && s.go[0] === 0 && !s.vo, `${ind}: no hint and no speaker; Start starts at once: ` + JSON.stringify(s));
+        await h.close();
+      }
+    }
+    // The voiceover timing tests (tools/retail-media-tour/votest.js) need the audio: they run when TOUR_ASSETS_DIR is set.
+    if (assetsDir && fs.existsSync(path.join(assetsDir, "vo", "manifest.json"))) {
+      const { spawnSync } = await import("child_process");
+      for (const mode of [["off"], ["reload"], ["nav"]].concat(process.env.TOUR_VO_FULL ? [["full", "0"], ["full", "1"], ["full", "2"]] : [])) {
+        const r = spawnSync("node", [path.join(here, "..", "tools", "retail-media-tour", "votest.js"), ...mode], { env: { ...process.env, MOTION: mode[0] === "full" ? "normal" : process.env.MOTION, PORT: String(8800 + Math.floor(Math.random() * 100)) }, encoding: "utf8", timeout: 20 * 60 * 1000 });
+        assert.strictEqual(r.status, 0, `votest.js ${mode.join(" ")}:\n${r.stdout}${r.stderr}`);
+      }
+    } else console.log("tour: voiceover timing tests skipped (set TOUR_ASSETS_DIR to a checkout of tag tour-assets-retail-media-v1)");
+  }
   // Fuel & convenience: the three standard flows on recreated HQ Admin screens (as pharmacy), convenience content, a four-location shopper scene, end card CTA to retail media.
   { const src = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
     const fast = src.replace("const k = reduce ? .35 : 1;", "const k = .03;"); assert.ok(fast !== src, "speed hook applied (convenience)");

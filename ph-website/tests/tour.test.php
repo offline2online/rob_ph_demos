@@ -17,7 +17,7 @@ $fails = 0;
 function ok( $c, $m ) { global $fails; if ( ! $c ) { $fails++; fwrite( STDERR, "FAIL: $m\n" ); } }
 $dir = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements';
 
-foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embed=1', '/industries/telco/tour/', '/industries/pharmacy/tour/?embed=1', '/industries/pharmacy/tour?embed=1', '/industries/pharmacy/tour/' ) as $u ) {
+foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embed=1', '/industries/telco/tour/', '/industries/pharmacy/tour/?embed=1', '/industries/pharmacy/tour?embed=1', '/industries/pharmacy/tour/', '/industries/retail-media/tour/?embed=1', '/industries/retail-media/tour' ) as $u ) {
 	$out = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' ' . escapeshellarg( $u ) . ' GET' );
 	$cut  = strrpos( (string) $out, "\n@@" );
 	$j    = false === $cut ? null : json_decode( substr( $out, $cut + 3 ), true );
@@ -203,13 +203,22 @@ ok( 'pharmacy' === $pp['industry'] && 'Interactive product tour – Pharmacy' ==
 $pb = \AngieSnippets\PhIndustryEnhancements_10063\lead_ingest_body( $pp );
 ok( 'Interactive product tour – Pharmacy' === $pb['sourceLabel'] && '/industries/pharmacy/' === $pb['page'] && 'pharmacy' === $pb['pageIndustry'], 'pharmacy lead: ingest body sourceLabel, page and industry' );
 $GLOBALS['posts'] = array(); $GLOBALS['fired'] = array();
-foreach ( array( 'retail-media', 'grocery', 'TELCO', '', null, array( 'pharmacy' ), 'telco ' ) as $bad ) {
+foreach ( array( 'grocery', 'TELCO', '', null, array( 'pharmacy' ), 'telco ' ) as $bad ) {
 	$r = $call( array_merge( $good, array( 'industry' => $bad ) ) );
 	ok( 400 === $r->status && 'industry' === ( $r->data['field'] ?? '' ), 'unknown industry refused with 400: ' . json_encode( $bad ) );
 }
 $nb = $good; unset( $nb['industry'] );
 $r = $call( $nb ); ok( 400 === $r->status, 'a missing industry is refused with 400' );
 ok( ! $GLOBALS['posts'] && ! $GLOBALS['fired'], 'a refused industry stores and fires nothing' );
+/* retail media: its own path, label, page and flow names */
+$GLOBALS['dedupe'] = false; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array(); $GLOBALS['tr'] = array();
+$gr = array_merge( $good, array( 'industry' => 'retail-media', 'company' => 'Corner Stores Group', 'flow' => 'Shopper journey & outcome', 'page' => '/industries/retail-media/tour/' ) );
+$r = $call( $gr, '11.1.1.9' );
+$m = $GLOBALS['meta'][1] ?? array();
+ok( 200 === $r->status && 'Interactive product tour – Retail Media' === ( $m['ph_lead_source_label'] ?? '' ) && '/industries/retail-media/' === ( $m['ph_lead_page'] ?? '' ), 'retail media lead: source label and page' );
+ok( 'Shopper journey & outcome' === ( $m['ph_lead_tour_flow'] ?? '' ), 'retail media lead: the demo name is stored as the flow' );
+ok( 'retail-media' === ( $GLOBALS['fired'][0][1]['industry'] ?? '' ), 'retail media lead: ph_lead_captured carries industry retail-media' );
+$GLOBALS['posts'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['mails'] = array();
 /* fuel & convenience: its own industry, page, label and flow name */
 $GLOBALS['dedupe'] = false; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array();
 $gc = array_merge( $good, array( 'industry' => 'convenience', 'company' => 'Roadside Fuel Group', 'page' => '/industries/convenience/tour/', 'flow' => 'Fuel & convenience walkthrough' ) );
@@ -226,6 +235,76 @@ $labels = array_column( $GLOBALS['meta'][1]['ph_lead_activity'] ?? array(), 'lab
 ok( 1 === count( $GLOBALS['posts'] ) && array( 'Interactive product tour – Telco', 'Interactive product tour – Pharmacy' ) === $labels, 'a telco lead is not asked again on pharmacy: one lead, activity for both tours' );
 ok( 'ph_lead_captured' === end( $GLOBALS['fired'] )[0] && 'pharmacy' === end( $GLOBALS['fired'] )[1]['industry'], 'the pharmacy capture still reaches the console with industry pharmacy' );
 $GLOBALS['dedupe'] = false;
+
+/* retail media assets: the same-origin route (allow-list, sha check, file cache, ranges, 404, 503). A child process per request, because the handler exits. */
+$asset = function ( $uri, $mode, $range = '', $method = 'GET' ) {
+	$env = 'ASSET_MODE=' . $mode . ( '' !== $range ? ' HTTP_RANGE=' . escapeshellarg( $range ) : '' );
+	return json_decode( (string) shell_exec( $env . ' php ' . escapeshellarg( __DIR__ . '/tour-asset-serve.php' ) . ' ' . escapeshellarg( $uri ) . ' ' . $method . ' 2>/dev/null' ), true ) ?: array( 'status' => -1, 'hdr' => array() );
+};
+$hdr = function ( $r, $name ) { foreach ( $r['hdr'] as $h ) { if ( 0 === stripos( $h, $name . ':' ) ) { return trim( substr( $h, strlen( $name ) + 1 ) ); } } return null; };
+$A = '/industries/retail-media/tour/assets/v1/img/01-advertiser.jpg';
+$r = $asset( $A, 'miss' );
+ok( 200 === $r['status'] && $r['body_ok'] && 1 === $r['http'] && $r['cached_ok'], 'asset: a cache miss fetches once, checks the sha, stores the file and serves it' );
+ok( 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/tour-assets-retail-media-v1/ph-website/tour-assets/retail-media/img/01-advertiser.jpg' === $r['url'], 'asset: fetched from the pinned tag, not main' );
+ok( 'image/jpeg' === $hdr( $r, 'Content-Type' ) && 'public, max-age=31536000, immutable' === $hdr( $r, 'Cache-Control' ) && 'noindex' === $hdr( $r, 'X-Robots-Tag' ) && 'bytes' === $hdr( $r, 'Accept-Ranges' ) && '1000' === $hdr( $r, 'Content-Length' ), 'asset: jpeg, immutable cache, noindex, Accept-Ranges, Content-Length' );
+$r = $asset( $A, 'cached' );
+ok( 200 === $r['status'] && $r['body_ok'] && 0 === $r['http'], 'asset: an intact cached file is served with no fetch' );
+$r = $asset( $A, 'stale' );
+ok( 200 === $r['status'] && $r['body_ok'] && 1 === $r['http'] && $r['cached_ok'], 'asset: a cached file with the wrong sha is replaced from the tag' );
+$r = $asset( $A, 'cached', 'bytes=100-199' );
+ok( 206 === $r['status'] && 100 === $r['len'] && 'bytes 100-199/1000' === $hdr( $r, 'Content-Range' ) && 'bytes' === $hdr( $r, 'Accept-Ranges' ) && '100' === $hdr( $r, 'Content-Length' ), 'asset: a byte range answers 206 with Content-Range' );
+$r = $asset( $A, 'cached', 'bytes=0-' );
+ok( 206 === $r['status'] && 1000 === $r['len'] && 'bytes 0-999/1000' === $hdr( $r, 'Content-Range' ), 'asset: an open-ended range (Safari audio probe) answers 206' );
+$r = $asset( $A, 'cached', 'bytes=-50' );
+ok( 206 === $r['status'] && 50 === $r['len'] && 'bytes 950-999/1000' === $hdr( $r, 'Content-Range' ), 'asset: a suffix range answers the last bytes' );
+$r = $asset( $A, 'cached', 'bytes=900-5000' );
+ok( 206 === $r['status'] && 100 === $r['len'] && 'bytes 900-999/1000' === $hdr( $r, 'Content-Range' ), 'asset: a range past the end is clamped' );
+$r = $asset( $A, 'cached', 'bytes=1000-1100' );
+ok( 416 === $r['status'] && 'bytes */1000' === $hdr( $r, 'Content-Range' ) && 0 === $r['len'], 'asset: an unsatisfiable range answers 416' );
+$r = $asset( $A, 'cached', 'bytes=0-9,20-29' );
+ok( 200 === $r['status'] && 1000 === $r['len'], 'asset: multiple ranges are ignored and the whole file is sent' );
+$r = $asset( $A, 'cached', '', 'HEAD' );
+ok( 200 === $r['status'] && 0 === $r['len'] && '1000' === $hdr( $r, 'Content-Length' ), 'asset: HEAD sends headers and no body' );
+foreach ( array( 'img/nope.jpg', 'vo/01-advertiser.jpg', 'img/../tour.php', 'img/01-advertiser.jpg.php', 'x/01-advertiser.jpg', 'img/', 'img/%2e%2e/tour.php' ) as $bad ) {
+	$r = $asset( '/industries/retail-media/tour/assets/v1/' . $bad, 'cached' );
+	ok( 404 === $r['status'] && 0 === $r['http'], "asset: $bad is not in the allow-list and answers 404" );
+}
+$r = $asset( '/industries/retail-media/tour/assets/v1/img/01-advertiser.jpg', 'cached', '', 'POST' );
+ok( 0 === $r['status'] || -1 === $r['status'] || ( 200 !== $r['status'] && 206 !== $r['status'] ), 'asset: POST is not served' );
+$r = $asset( $A, 'bad' );
+ok( 503 === $r['status'] && '60' === $hdr( $r, 'Retry-After' ) && 'no-store' === $hdr( $r, 'Cache-Control' ) && ! $r['cached'] && 60 === $r['backoff_ttl'] && 1 === count( $r['logs'] ) && false !== strpos( $r['logs'][0], 'does not match' ), 'asset: bytes that fail the sha are never stored or served: 503, Retry-After, 60 s back-off, one error_log line' );
+$r = $asset( $A, '404' );
+ok( 503 === $r['status'] && ! $r['cached'] && 60 === $r['backoff_ttl'] && false !== strpos( $r['logs'][0] ?? '', 'answered 404' ), 'asset: a failed fetch with nothing cached answers 503 and backs off' );
+$r = $asset( $A, 'backoff' );
+ok( 503 === $r['status'] && 0 === $r['http'] && false !== strpos( $r['logs'][0] ?? '', 'backing off' ), 'asset: during the back-off there is no fetch' );
+$r = $asset( $A, 'mirror' );
+ok( 200 === $r['status'] && $r['body_ok'] && 2 === $r['http'] && $r['cached_ok'] && false !== strpos( (string) $r['url'], 'https://cdn.jsdelivr.net/gh/offline2online/rob_ph_demos@tour-assets-retail-media-v1/ph-website/tour-assets/retail-media/' ) && null === $r['backoff_ttl'], 'asset: when the tag fetch fails the jsDelivr mirror is used, the file is cached and no back-off is set' );
+$r = $asset( $A, 'bad' );
+ok( false !== strpos( $r['logs'][0] ?? '', 'received 11 bytes, first 16 as hex 77726f6e67206279746573' ), 'asset: a sha mismatch logs the received length and the first 16 bytes as hex' );
+$r = $asset( $A, 'both404' );
+ok( 503 === $r['status'] && 'fetch-failed' === $hdr( $r, 'X-PH-Tour-Reason' ) && 2 === $r['http'] && ! $r['cached'] && 60 === $r['backoff_ttl'] && 1 === count( $r['logs'] ) && false !== strpos( $r['logs'][0], 'tag fetch answered 404' ) && false !== strpos( $r['logs'][0], 'mirror fetch answered 404' ), 'asset: both sources failing answers 503 with X-PH-Tour-Reason fetch-failed, backs off and logs both reasons' );
+$r = $asset( $A, 'bad' );
+ok( 'sha-mismatch' === $hdr( $r, 'X-PH-Tour-Reason' ) && 2 === $r['http'] && 503 === $r['status'], 'asset: a sha mismatch from both sources gives X-PH-Tour-Reason sha-mismatch' );
+$r = $asset( $A, 'backoff' );
+ok( 'backoff' === $hdr( $r, 'X-PH-Tour-Reason' ), 'asset: during the back-off the 503 says X-PH-Tour-Reason backoff' );
+$r = $asset( $A, 'cached' );
+$r2 = $asset( $A, 'cached', 'bytes=0-9' );
+$r3 = $asset( $A, 'cached', 'bytes=1000-1100' );
+ok( array( 'Pragma', 'Expires' ) === $r['removed'] && array( 'Pragma', 'Expires' ) === $r2['removed'] && 200 === $r['status'] && 206 === $r2['status'], 'asset: a 200 and a 206 remove Pragma and Expires so the immutable Cache-Control holds for logged-in users' );
+ok( array() === $r3['removed'] && array() === $asset( $A, 'both404' )['removed'] && array() === $asset( '/industries/retail-media/tour/assets/v1/img/nope.jpg', 'cached' )['removed'], 'asset: 416, 503 and 404 responses are left as they were' );
+ok( 'audio/mpeg' === \AngieSnippets\PhIndustryEnhancements_10063\tour_asset_mime( 'vo/a.mp3' ) && 'image/jpeg' === \AngieSnippets\PhIndustryEnhancements_10063\tour_asset_mime( 'img/a.jpg' ), 'asset: mime types' );
+/* the allow-list is exactly the shipped SHA256SUMS (kept in tools/retail-media-tour? no: on the tag), and covers the files tour.html asks for */
+$map = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS;
+ok( 111 === count( $map ) && 33 === count( preg_grep( '#^img/#', array_keys( $map ) ) ) && 77 === count( preg_grep( '#^vo/.*\.mp3$#', array_keys( $map ) ) ) && isset( $map['vo/manifest.json'] ), 'asset: 33 images, 77 voiceover clips and the manifest are allow-listed' );
+$bad_shape = array_filter( $map, function ( $v ) { return ! is_array( $v ) || 1 !== preg_match( '/^[0-9a-f]{64}$/', $v[0] ) || ! is_int( $v[1] ) || $v[1] < 1; } );
+ok( ! $bad_shape, 'asset: every allow-list entry is a sha256 and a byte size' );
+$manifest_files = array();
+preg_match( '/const CLIPS = (\{.*?\}), BASE = /s', $src, $cm );
+if ( ! empty( $cm[1] ) ) { foreach ( json_decode( $cm[1], true ) as $lines ) { foreach ( $lines as $l ) { $manifest_files[] = 'vo/' . $l['file']; } } }
+ok( 77 === count( $manifest_files ) && ! array_diff( $manifest_files, array_keys( $map ) ), 'asset: every voiceover clip tour.html plays is allow-listed (' . count( $manifest_files ) . ')' );
+preg_match_all( '/"([\w-]+)(?:#[\w-]+)?":\[\d+,\d+,\d+,\d+\]/', $src, $im ); // the screenshots named in HOT (the click and highlight boxes), plus the login backdrop
+$img_used = array_unique( array_merge( $im[1], array( 'login-bg' ) ) );
+ok( count( $img_used ) === 33 && ! array_filter( $img_used, function ( $f ) use ( $map ) { return ! isset( $map[ 'img/' . $f . '.jpg' ] ); } ), 'asset: every screenshot tour.html names (' . count( $img_used ) . ') is allow-listed: ' . implode( ' ', array_filter( $img_used, function ( $f ) use ( $map ) { return ! isset( $map[ 'img/' . $f . '.jpg' ] ); } ) ) );
 
 /* the free-mail list is the tour's own */
 preg_match( '/const FREE_MAIL = (\/.*?\/i);/', $src, $mm );

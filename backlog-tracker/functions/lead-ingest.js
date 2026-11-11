@@ -1,15 +1,23 @@
 // Promote › Leads: website lead submissions.
 //   POST /leadIngest/v1/submit   header X-Lead-Key: <LEAD_INGEST_KEY>   JSON or form body
 // Called server-to-server by personalisationhub.com (the key never reaches a
-// browser). Creates or updates one lead per company, source "website", with the
-// page and industry it came from. A submission with test=true is stored as a
-// test lead: it is never matched with a real lead, is excluded from enrichment
-// (lead-enrich.js), the MCP tools (leads.js) and the board, and is removed in
-// one click from the Leads page's Test view.
+// browser). Each submission is matched to a Prospects (TAM) record by the
+// company name and the contact's business email domain, in the country it
+// gives (prospects-core.js planInbound). One lead per TAM record: the first
+// person creates it (source "website", with the page and industry), the next
+// one from the same company and country is added to it as a contact and counted
+// in inboundCount. No matching record: a new one is made for that company and
+// country and linked to the lead; creating it starts enrichment (lead-enrich.js
+// onEnrichWrite runs on every new TAM record and lead).
+// Anyone from AWS is added as a contact on the AWS record instead of a lead.
+// A submission with test=true is stored as a test lead: it is never matched
+// with a real lead or a TAM record, and is excluded from enrichment
+// (lead-enrich.js) and the MCP tools (leads.js).
 "use strict";
 const crypto = require("crypto");
 const { FieldValue } = require("firebase-admin/firestore");
 const core = require("./leads-core");
+const tam = require("./prospects-core");
 
 const keyMatches = (given, want) => {
   const a = crypto.createHash("sha256").update(String(given || "")).digest();
@@ -19,9 +27,73 @@ const keyMatches = (given, want) => {
   return Boolean(want) && want !== "unset" && crypto.timingSafeEqual(a, b);
 };
 
-function createLeadIngest({ db, key, logger }) {
+function createLeadIngest({ db, key, logger, now = () => new Date() }) {
   const send = (res, status, body) => res.status(status).set("Cache-Control", "no-store").json(body);
   const nameKey = (n) => String(n || "").trim().toLowerCase();
+  const BY = "website";
+  const stamps = () => ({ updatedAt: FieldValue.serverTimestamp(), updatedByEmail: BY });
+
+  // The lead as the website first creates it.
+  const newLead = (r, entry, extra) => ({
+    ...r.fields, websiteActivity: [entry], customerAccount: null, gaClientIds: core.mergeGaClientIds([], r.ga), ...(extra || {}),
+    createdAt: FieldValue.serverTimestamp(), stageChangedAt: FieldValue.serverTimestamp(), createdByEmail: BY, ...stamps(),
+  });
+  // The same company and country again: keep what is there, fill blanks, add the contact, count it.
+  async function addToLead(ref, cur, r, entry, extra) {
+    const m = core.mergeInbound(cur, r.fields, r.contact ? [r.contact] : []);
+    await ref.update({
+      company: m.company, contacts: m.contacts, inboundCount: m.inboundCount,
+      ...(cur.sourcePage ? {} : { sourcePage: r.fields.sourcePage, sourceIndustry: r.fields.sourceIndustry }),
+      ...(cur.sourceLabel ? {} : { sourceLabel: r.fields.sourceLabel }),
+      ...(cur.sourceDetail ? {} : { sourceDetail: r.fields.sourceDetail }),
+      websiteActivity: [...cur.websiteActivity.map(({ atMs, ...a }) => a), entry].slice(-core.LIMITS.activity),
+      ...(r.ga ? { gaClientIds: core.mergeGaClientIds(cur.gaClientIds, r.ga) } : {}),
+      ...(extra || {}), ...stamps(),
+    });
+  }
+
+  // A test lead (and a company name no TAM record can hold) keeps the old by-name merge.
+  async function byName(r, entry) {
+    const col = db.collection("leads");
+    const existing = (await col.get()).docs
+      .find((d) => (d.data().test === true) === r.test && nameKey((d.data().company || {}).name) === nameKey(r.fields.company.name));
+    if (!existing) {
+      const ref = await col.add(newLead(r, entry, { inboundCount: 1 }));
+      return [201, { ok: true, leadId: ref.id, created: true, test: r.test }];
+    }
+    await addToLead(existing.ref, core.normaliseLead(existing.id, existing.data()), r, entry);
+    return [200, { ok: true, leadId: existing.id, created: false, test: r.test }];
+  }
+
+  async function intoTam(r, entry) {
+    const [pSnap, lSnap] = await Promise.all([db.collection("prospects").get(), db.collection("leads").get()]);
+    const prospects = pSnap.docs.map((d) => tam.normaliseProspect(d.id, d.data()));
+    const leads = lSnap.docs.map((d) => core.normaliseLead(d.id, d.data()));
+    const plan = tam.planInbound({ prospects, leads, company: r.fields.company, contact: r.contact });
+    if (plan.kind === "none") return byName(r, entry);
+    const pRef = db.collection("prospects").doc(plan.prospectId);
+
+    if (plan.kind === "aws") {
+      const contact = tam.awsContactFrom(r.contact, now().toISOString().slice(0, 10));
+      const contacts = tam.mergeContact(plan.prospect ? plan.prospect.contacts : [], contact);
+      if (plan.createProspect) await pRef.set({ ...plan.createProspect, contacts, createdAt: FieldValue.serverTimestamp(), createdByEmail: BY, ...stamps() });
+      else await pRef.update({ contacts, ...stamps() });
+      return [200, { ok: true, aws: true, leadId: null, prospectId: plan.prospectId, created: false, test: false }];
+    }
+
+    const link = { leadId: plan.leadId, status: "converted" };
+    if (plan.createProspect) {
+      await pRef.set({ ...plan.createProspect, ...link, createdAt: FieldValue.serverTimestamp(), createdByEmail: BY, ...stamps() });
+    } else if (plan.linkProspect) await pRef.update({ ...link, ...stamps() });
+    const out = { ok: true, leadId: plan.leadId, prospectId: plan.prospectId, prospectCreated: Boolean(plan.createProspect), matchedBy: plan.how, test: false };
+    if (plan.lead) {
+      const ref = lSnap.docs.find((d) => d.id === plan.lead.id).ref;
+      await addToLead(ref, plan.lead, r, entry, plan.lead.prospectId ? {} : { prospectId: plan.prospectId });
+      return [200, { ...out, created: false }];
+    }
+    await db.collection("leads").doc(plan.leadId).set(newLead(r, entry, { prospectId: plan.prospectId, inboundCount: 1 }));
+    return [201, { ...out, created: true }];
+  }
 
   async function handle(req, res) {
     if (req.method !== "POST") { res.set("Allow", "POST"); return send(res, 405, { error: "POST only" }); }
@@ -30,39 +102,12 @@ function createLeadIngest({ db, key, logger }) {
     const r = core.leadFromWebsite(req.body && typeof req.body === "object" ? req.body : {});
     if (r.errors.length) return send(res, 400, { error: r.errors.join(" ") });
 
-    const entry = { at: new Date().toISOString(), label: r.fields.sourceLabel, detail: r.fields.sourceDetail, page: r.fields.sourcePage };
-    const ga = r.test ? null : core.gaEntryFromWebsite(req.body, entry.at); // test leads never reach GA4
-    const col = db.collection("leads");
-    const existing = (await col.get()).docs
-      .find((d) => (d.data().test === true) === r.test && nameKey((d.data().company || {}).name) === nameKey(r.fields.company.name));
+    const entry = { at: now().toISOString(), label: r.fields.sourceLabel, detail: r.fields.sourceDetail, page: r.fields.sourcePage };
+    // The visitor's GA4 client_id (website PH GA4 snippet), for ace-ga4.js. Test leads never reach GA4.
+    r.ga = r.test ? null : core.gaEntryFromWebsite(req.body, entry.at);
     try {
-      if (!existing) {
-        const ref = await col.add({
-          ...r.fields, websiteActivity: [entry], customerAccount: null, gaClientIds: core.mergeGaClientIds([], ga),
-          createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), stageChangedAt: FieldValue.serverTimestamp(),
-          createdByEmail: "website", updatedByEmail: "website",
-        });
-        return send(res, 201, { ok: true, leadId: ref.id, created: true, test: r.test });
-      }
-      // Same company again: keep what is there, fill blanks, add a new contact.
-      const cur = core.normaliseLead(existing.id, existing.data());
-      const contacts = cur.contacts.map(({ enrichment, ...c }) => (enrichment ? { ...c, enrichment } : c));
-      const c = r.contact;
-      if (c && !contacts.some((k) => (c.email && k.email.toLowerCase() === c.email.toLowerCase()) || (!c.email && k.name.toLowerCase() === c.name.toLowerCase()))) contacts.push(c);
-      const company = { ...cur.company };
-      for (const f of ["website", "industry"]) if (!company[f] && r.fields.company[f]) company[f] = r.fields.company[f];
-      if (company.storeCount == null && r.fields.company.storeCount != null) company.storeCount = r.fields.company.storeCount;
-      company.countries = core.parseCountries([...company.countries, ...r.fields.company.countries]);
-      await existing.ref.update({
-        company, contacts: contacts.slice(0, core.LIMITS.contacts),
-        ...(cur.sourcePage ? {} : { sourcePage: r.fields.sourcePage, sourceIndustry: r.fields.sourceIndustry }),
-        ...(cur.sourceLabel ? {} : { sourceLabel: r.fields.sourceLabel }),
-        ...(cur.sourceDetail ? {} : { sourceDetail: r.fields.sourceDetail }),
-        websiteActivity: [...cur.websiteActivity.map(({ atMs, ...a }) => a), entry].slice(-core.LIMITS.activity),
-        ...(ga ? { gaClientIds: core.mergeGaClientIds(cur.gaClientIds, ga) } : {}),
-        updatedAt: FieldValue.serverTimestamp(), updatedByEmail: "website",
-      });
-      return send(res, 200, { ok: true, leadId: existing.id, created: false, test: r.test });
+      const [status, body] = r.test ? await byName(r, entry) : await intoTam(r, entry);
+      return send(res, status, body);
     } catch (err) {
       if (logger) logger.error("leadIngest failed", { error: String(err && err.message || err) });
       return send(res, 500, { error: "could not save the lead" });

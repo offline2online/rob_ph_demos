@@ -11,12 +11,14 @@
 //
 // Leads (leads-page.js) is the second entry: a board of its own, not a document page.
 // Prospects (TAM) (prospects-page.js) is the third, directly below Leads: an AG Grid.
+// Conversion Funnel (funnel-page.js) is the fourth, directly below Prospects.
 
 export const PROMOTE_PAGES = [
   { key: "brand-guidelines", label: "Brand Guidelines", icon: "palette", navId: "promote-brand-btn",
     docs: { guidelines: "brand-guidelines", requirements: "brand-requirements" } },
   { key: "leads", label: "Leads", icon: "group", navId: "promote-leads-btn", docs: {} },
   { key: "prospects", label: "Prospects (TAM)", icon: "travel_explore", navId: "promote-prospects-btn", docs: {} },
+  { key: "conversion-funnel", label: "Conversion Funnel", icon: "filter_alt", navId: "promote-funnel-btn", docs: {} },
 ];
 export const DEFAULT_PROMOTE_PAGE = PROMOTE_PAGES[0].key;
 
