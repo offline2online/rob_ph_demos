@@ -1,0 +1,64 @@
+name: Lead research agent probe
+
+# Is the Leads / Prospects (TAM) research agent working? Runs the real agent
+# call (backlog-tracker/functions/lead-enrich.js) for one company with the
+# repo's ANTHROPIC_API_KEY and reports timings, how each request ended and
+# which findings were filled (backlog-tracker/scripts/lead-enrich-probe.js).
+# It writes nothing to the board. Each run is one web-research call, so it
+# costs a little API usage: run it by hand when enrichment is reported broken.
+# Logs here are public, so it prints sizes, never what was found.
+on:
+  workflow_dispatch:
+    inputs:
+      company:
+        description: 'Company to research (a well-known retailer)'
+        type: string
+        default: 'Tesco'
+      website:
+        description: 'Its website (optional)'
+        type: string
+        default: ''
+  push:
+    branches: ['claude/eager-dijkstra-*']
+    paths:
+      - 'backlog-tracker/scripts/lead-enrich-probe.js'
+      - '.github/workflows/lead-enrich-probe.yml'
+
+concurrency:
+  group: lead-enrich-probe
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install functions dependencies
+        working-directory: backlog-tracker/functions
+        run: npm install --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Research one company with the real agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          COMPANY: ${{ inputs.company || 'Tesco' }}
+          WEBSITE: ${{ inputs.website }}
+        run: node backlog-tracker/scripts/lead-enrich-probe.js "$COMPANY" "$WEBSITE"
+      # Why earlier live runs failed: the functions' own warnings (the error
+      # text only, never the company). Best effort: the deploy service account
+      # may not be allowed to read logs.
+      - name: Recent agent failures on the live functions
+        if: always()
+        continue-on-error: true
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json" --quiet
+          gcloud logging read 'resource.type="cloud_run_revision" AND (resource.labels.service_name="enrichleadonwrite" OR resource.labels.service_name="enrichprospectonwrite") AND severity>=WARNING' \
+            --project backlog-tracker-e4ed2 --freshness=3d --limit 20 \
+            --format='table[no-heading](timestamp, resource.labels.service_name, severity, jsonPayload.status, jsonPayload.error, jsonPayload.message)' || echo "Couldn't read the functions' logs."
+          rm -f "$RUNNER_TEMP/firebase-sa.json"
