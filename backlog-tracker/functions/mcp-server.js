@@ -53,6 +53,8 @@ const prospects = require("./prospects");
 // ANTHROPIC_API_KEY repo secret is added (the deploy workflow writes the
 // placeholder so the deploy never fails on a missing secret).
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
+// The workspace for a key made for the whole organisation ("unset" otherwise); see lead-enrich.js workspaceHeaders.
+const ANTHROPIC_WORKSPACE_ID = defineSecret("ANTHROPIC_WORKSPACE_ID");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 // The MCP Apps views behind the two "board" tools (see that file's header).
@@ -287,6 +289,7 @@ const kanbanHelpers = {
   rateLimited: (req, bucket, max) => rateLimited(req, bucket, max),
   tooMany: (res) => tooMany(res),
   anthropicKey: () => { try { return ANTHROPIC_API_KEY.value(); } catch { return ""; } },
+  anthropicWorkspace: () => { try { return ANTHROPIC_WORKSPACE_ID.value(); } catch { return ""; } },
 };
 
 exports.syncConsoleUserClaims = onDocumentWritten("consoleUsers/{userEmail}", async (event) => {
@@ -5514,7 +5517,7 @@ function routePath(req) {
 // sign-in queued behind them. minInstances stays 0: sign-in no longer waits
 // on this function (see public/js/auth-gate.js), so a cold start only ever
 // delays an agent's first call.
-exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB", cpu: 1, concurrency: 40, maxInstances: 20, secrets: [ANTHROPIC_API_KEY] }, async (req, res) => {
+exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB", cpu: 1, concurrency: 40, maxInstances: 20, secrets: [ANTHROPIC_API_KEY, ANTHROPIC_WORKSPACE_ID] }, async (req, res) => {
   cors(req, res);
   const path = routePath(req);
   // The console-only endpoints are called from the console's own origin

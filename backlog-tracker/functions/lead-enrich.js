@@ -203,6 +203,14 @@ function cleanFindings(raw) {
   };
 }
 
+// An Anthropic key made for the whole organisation (not inside one workspace)
+// is refused unless each request names the workspace to bill and limit it
+// under. ANTHROPIC_WORKSPACE_ID holds that ID ("unset" or blank = send none).
+function workspaceHeaders(id) {
+  const v = String(id == null ? "" : id).trim();
+  return v && v !== "unset" && /^[A-Za-z0-9_-]{1,120}$/.test(v) ? { "anthropic-workspace-id": v } : undefined;
+}
+
 // One request. Streamed where the SDK offers it: a research turn runs for
 // minutes, longer than an unstreamed call is allowed to stay open.
 async function send(client, params) {
@@ -217,9 +225,10 @@ const textOf = (res) => ((res && res.content) || []).filter((b) => b.type === "t
 
 // Researches one company. Returns the agent's JSON, or throws with the reason
 // (which the record then shows): a refusal, a cut-off answer, no JSON at all.
-async function claudeResearch({ apiKey, Anthropic, company, website, country, clock = Date.now }) {
+async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website, country, clock = Date.now }) {
   const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
-  const client = new Client({ apiKey, timeout: AGENT_TIMEOUT_MS, maxRetries: 1 });
+  const headers = workspaceHeaders(workspaceId);
+  const client = new Client({ apiKey, timeout: AGENT_TIMEOUT_MS, maxRetries: 1, ...(headers ? { defaultHeaders: headers } : {}) });
   const ask = [
     `Company: ${company}`,
     website ? `Website: ${website}` : "Website: not known (find it).",
@@ -363,6 +372,7 @@ function applyToProfile(profile, f, logoUrl, filledBefore, today) {
 function agentError(err) {
   const status = err && err.status;
   const msg = String(err && err.message ? err.message : err).replace(/\s+/g, " ").slice(0, 160);
+  if (/not scoped to a workspace|anthropic-workspace-id/i.test(msg)) return "the ANTHROPIC_API_KEY isn't tied to a workspace. Add the workspace's ID as the ANTHROPIC_WORKSPACE_ID repository secret, or replace the key with one created inside a workspace, then redeploy.";
   if (status === 401 || status === 403) return "the ANTHROPIC_API_KEY was refused (check the key and its workspace).";
   if (status === 429) return "the Anthropic account is rate limited or out of credit. Try again shortly.";
   if (status === 400) return `the request was rejected (${msg}).`;
@@ -372,7 +382,7 @@ function agentError(err) {
 }
 
 function createLeadEnrich({
-  db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", Anthropic,
+  db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic,
   research, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
   logger = console, now = () => new Date(), serverTimestamp,
 }) {
@@ -442,7 +452,7 @@ function createLeadEnrich({
     const key = anthropicKey();
     if (!key || key === "unset") return { source: "agent", status: "not-configured", message: "The research agent isn't set up yet (ANTHROPIC_API_KEY), so only the website was read." };
     try {
-      const raw = await (research || claudeResearch)({ apiKey: key, Anthropic, company, website, country });
+      const raw = await (research || claudeResearch)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country });
       if (!raw) return { source: "agent", status: "error", message: "The research agent returned nothing usable." };
       if (blank(Object.values(cleanFindings(raw)).filter((v) => !blank(v)))) return { source: "agent", status: "error", message: "The research agent found nothing about this company." };
       const found = cleanFindings(raw);
@@ -622,5 +632,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, claudeResearch, agentError, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, claudeResearch, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

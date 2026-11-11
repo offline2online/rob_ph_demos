@@ -7,6 +7,7 @@ name: Lead research agent probe
 # It writes nothing to the board. Each run is one web-research call, so it
 # costs a little API usage: run it by hand when enrichment is reported broken.
 # Logs here are public, so it prints sizes, never what was found.
+# It also lists the live functions' recent agent failures (the error only).
 on:
   workflow_dispatch:
     inputs:
@@ -46,6 +47,7 @@ jobs:
       - name: Research one company with the real agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           COMPANY: ${{ inputs.company || 'Tesco' }}
           WEBSITE: ${{ inputs.website }}
         run: node backlog-tracker/scripts/lead-enrich-probe.js "$COMPANY" "$WEBSITE"

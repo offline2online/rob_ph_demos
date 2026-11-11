@@ -23,6 +23,7 @@ if (!key || key === "unset") { console.error("ANTHROPIC_API_KEY is not set: the 
 const t0 = Date.now();
 const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
 let calls = 0;
+let needsWorkspace = false;
 // The real client, with each request timed and summarised.
 class Probe {
   constructor(opts) {
@@ -42,10 +43,40 @@ class Probe {
   }
 }
 
+// A key made for the whole organisation needs a workspace named. When none is
+// configured, see whether the key itself can list the organisation's
+// workspaces, and try the research in one, so the rest of the run is still
+// checked. The ID is masked in the log; nothing is saved.
+async function findWorkspace() {
+  for (const version of ["2026-10-21", "2023-06-01"]) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/organizations/workspaces?limit=100", { headers: { "x-api-key": key, "anthropic-version": version } });
+      if (!r.ok) { console.log(`  listing workspaces (API version ${version}): HTTP ${r.status}`); continue; }
+      const list = ((await r.json()).data || []).filter((w) => w && w.id && !w.archived_at);
+      console.log(`  the key can list workspaces: ${list.length} active.`);
+      if (list.length) { console.log(`::add-mask::${list[0].id}`); return list[0].id; }
+    } catch (err) { console.log(`  listing workspaces failed: ${String(err && err.message || err).slice(0, 120)}`); }
+  }
+  return "";
+}
+
 (async () => {
+  console.log(`Workspace header: ${process.env.ANTHROPIC_WORKSPACE_ID ? "sent (ANTHROPIC_WORKSPACE_ID is set)" : "not sent (ANTHROPIC_WORKSPACE_ID is not set)"}`);
   console.log(`Researching one company with ${require(path.join(fn, "lead-enrich.js")).AGENT_MODEL}, SDK ${require(path.join(fn, "node_modules", "@anthropic-ai", "sdk", "package.json")).version}…`);
   let raw;
-  try { raw = await claudeResearch({ apiKey: key, Anthropic: Probe, company, website, country }); } catch (err) {
+  const run = (workspaceId) => claudeResearch({ apiKey: key, workspaceId, Anthropic: Probe, company, website, country });
+  try {
+    try { raw = await run(process.env.ANTHROPIC_WORKSPACE_ID || ""); } catch (err) {
+      if (!/not scoped to a workspace/i.test(String(err && err.message))) throw err;
+      console.log(`The key is not tied to a workspace and ${process.env.ANTHROPIC_WORKSPACE_ID ? "the configured workspace was not accepted" : "ANTHROPIC_WORKSPACE_ID is not set"}: this is why live runs fail.`);
+      console.log(`The record would say: The research agent failed: ${agentError(err)}`);
+      const ws = await findWorkspace();
+      if (!ws) throw err;
+      console.log("Trying the research in the first workspace the key can see, to check the rest of the run…");
+      needsWorkspace = true;
+      raw = await run(ws);
+    }
+  } catch (err) {
     console.error(`FAILED after ${secs(Date.now() - t0)} and ${calls} request(s): status=${err && err.status} ${String(err && err.message ? err.message : err).slice(0, 600)}`);
     console.error(`The record would say: The research agent failed: ${agentError(err)}`);
     process.exit(1);
@@ -56,5 +87,6 @@ class Probe {
   for (const [k, v] of Object.entries(f)) console.log(`  ${k.padEnd(16)} ${size(v)}`);
   const filled = Object.values(f).filter((v) => (Array.isArray(v) ? v.length : v != null && v !== "")).length;
   console.log(`\n${filled} of ${Object.keys(f).length} fields filled.`);
+  if (needsWorkspace) { console.error("The research works, but only with a workspace named: set the ANTHROPIC_WORKSPACE_ID repository secret (or use a key created inside a workspace) and redeploy."); process.exit(1); }
   if (filled < 8) { console.error("Too little came back for a well-known company."); process.exit(1); }
 })();

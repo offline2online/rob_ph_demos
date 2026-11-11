@@ -41,6 +41,21 @@ function view(id, data) {
   };
 }
 
+// What the research agent found (lead-enrich.js), as get_lead returns it.
+function researchView(e) {
+  if (!e || typeof e !== "object" || !e.at) return null;
+  const t = (v) => (typeof v === "string" && v ? v : null);
+  const list = (v) => (Array.isArray(v) ? v : []);
+  const r = e.request && typeof e.request === "object" ? e.request : null;
+  return {
+    hq: t(e.hq), employees: t(e.employees), revenue: t(e.revenue), linkedinCompany: t(e.linkedinCompany), logoUrl: t(e.logoUrl),
+    primaryCloud: t(e.primaryCloud), retailMedia: t(e.retailMedia), personalisation: t(e.personalisation),
+    inStoreDigital: t(e.inStoreDigital), loyalty: t(e.loyalty), fit: t(e.fit),
+    vendors: list(e.vendors), people: list(e.people), news: list(e.news), financials: e.financials || null, facts: list(e.facts),
+    lastRun: r ? { status: r.status || null, message: r.message || null } : null,
+  };
+}
+
 // get_lead: everything the drawer shows, plus the history.
 function fullView(id, data) {
   const l = core.normaliseLead(id, data);
@@ -51,6 +66,7 @@ function fullView(id, data) {
     sourceIndustry: l.sourceIndustry || null,
     contacts: l.contacts.map((c) => ({ id: c.id, name: c.name, jobTitle: c.jobTitle || null, buyingRole: c.buyingRole || null, email: c.email || null, linkedin: c.linkedin || null, awsAccountId: c.awsAccountId || null })),
     enrichmentSummary: l.enrichment && l.enrichment.summary ? l.enrichment.summary : null,
+    research: researchView(l.enrichment),
     createdAt: iso(d.createdAt),
     createdBy: d.createdByEmail || null,
     updatedBy: d.updatedByEmail || null,
