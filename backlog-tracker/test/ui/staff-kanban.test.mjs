@@ -100,6 +100,9 @@ async function open(prof, hash = "#staff-kanban", o = {}) {
   await until(() => p.locator(hash.includes("report") || hash.includes("settings") ? "#kb-view .page-header" : ".kb-card").count(), "the Staff Kanban page", 20000);
   await p.waitForTimeout(150);
   p.profile = prof; p.engine = prof.engine; p.ctx = op.context;
+  // A card opens its ticket in a new tab (KB-LINK-1). The cases written before that drive the ticket in this page, which is
+  // what the board does when the browser refuses a new tab; KB-C15 (o.newTab) covers the new tab itself.
+  if (!o.newTab) { const block = () => { window.open = () => null; }; await p.addInitScript(block); await p.evaluate(block); }
   // Every case also ends comparing each ticket with its board card: a write path that changes a ticket without its card fails here.
   p.done = async (o = {}) => { const bad = o.allow ? op.problems.filter((x) => !o.allow.test(x)) : op.problems; assert.deepEqual(bad, [], "no page errors, console errors or stray requests"); assert.deepEqual(await cardDrift(p), [], "every ticket's card matches the ticket"); await op.close(); };
   return p;
@@ -1158,6 +1161,109 @@ if (!ONLY || "KB-C6".startsWith(ONLY)) queue.push(["KB-C6 tablet: a touch tap wh
   assert.deepEqual(op.problems, [], "no page errors");
   await op.close();
 }]);
+
+// ── Ticket addresses and Share link (KB-LINK-1..3) ──
+const modalKey = (page) => page.$eval("#task-title-h", (e) => e.textContent.trim());
+const hashOf = (page) => page.evaluate(() => location.hash);
+const modalOpen = (page) => page.$eval("#task-backdrop", (e) => !e.hidden);
+
+T("KB-C15", "a card opens its ticket in a new tab, at an address holding its PH key", { on: (p) => p.engine === "chromium" }, async (prof) => {
+  const p = await open(prof, "#staff-kanban", { newTab: true });
+  const [tab] = await Promise.all([p.ctx.waitForEvent("page"), press(p, '.kb-card[data-key="PH-20"]')]);
+  await tab.waitForSelector("#task-backdrop:not([hidden])", { timeout: 20000 });
+  assert.match(tab.url(), /#staff-kanban\/ticket\/PH-20$/, "the new tab's address ends with the PH key");
+  assert.equal(await modalKey(tab), "PH-20");
+  assert.match(await tab.title(), /^PH-20 /, "the tab is named after the ticket");
+  assert.equal(await modalOpen(p), false, "the board's own tab stays on the board");
+  assert.equal(await hashOf(p), "#staff-kanban");
+  await tab.close();
+  await p.done();
+});
+
+T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {
+  const p = await open(prof, "#staff-kanban/ticket/PH-21");
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  assert.equal(await modalKey(p), "PH-21");
+  assert.equal(await hashOf(p), "#staff-kanban/ticket/PH-21");
+  // Edit the key in the address bar: lower case and a bare number are read as PH keys.
+  await p.evaluate(() => { location.hash = "#staff-kanban/ticket/ph-22"; });
+  await until(async () => (await modalOpen(p)) && (await modalKey(p)) === "PH-22", "PH-22 to open from the edited address");
+  assert.equal(await hashOf(p), "#staff-kanban/ticket/PH-22", "the address is tidied to the key");
+  await p.evaluate(() => { location.hash = "#staff-kanban/ticket/23"; });
+  await until(async () => (await modalOpen(p)) && (await modalKey(p)) === "PH-23", "PH-23 to open from a bare number");
+  // Closing the ticket leaves the board, at the board's address.
+  await press(p, "#task-close");
+  assert.equal(await modalOpen(p), false);
+  assert.equal(await hashOf(p), "#staff-kanban");
+  assert.ok(await p.$(".kb-card"), "the board is underneath");
+  // A key that doesn't exist, then something that isn't a key at all.
+  for (const [typed, named] of [["PH-9999", "PH-9999"], ["banana", "banana"]]) {
+    await p.evaluate((h) => { location.hash = h; }, `#staff-kanban/ticket/${typed}`);
+    await p.waitForSelector(".kb-notfound");
+    assert.match(await p.textContent(".kb-notfound h3"), /Ticket not found/);
+    assert.match(await p.textContent(".kb-notfound p"), new RegExp(named));
+    assert.equal(await modalOpen(p), false);
+    assert.equal(await p.$(".kb-card"), null, "no board behind the message");
+    assert.match(await p.title(), /Ticket not found/);
+  }
+  await press(p, "#kb-notfound-board");
+  await p.waitForSelector(".kb-card");
+  assert.equal(await hashOf(p), "#staff-kanban");
+  assert.equal(await p.$(".kb-notfound"), null);
+  assert.deepEqual(await writes(p, /kanban/), [], "opening tickets by address writes nothing");
+  await p.done();
+});
+
+T("KB-C17", "Share link copies the ticket's address and says Link copied; the copied link opens the ticket", async (prof) => {
+  const p = await open(prof, "#staff-kanban");
+  await p.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__copied = t; } } }); });
+  // A new ticket has no address yet: no Share link.
+  if (await p.$("#kb-new-btn")) {
+    await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title");
+    assert.equal(await p.isVisible("#task-share"), false, "no Share link on a ticket that isn't saved");
+    await press(p, "#f-cancel");
+  }
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  assert.equal(await hashOf(p), "#staff-kanban/ticket/PH-20", "the address bar holds the open ticket's address");
+  assert.ok(await p.isVisible("#task-share"));
+  assert.equal(await p.getAttribute("#task-share", "aria-label"), "Copy a link to this ticket");
+  const box = await p.$eval("#task-share", (e) => { const r = e.getBoundingClientRect(), pn = document.querySelector(".kb-task-panel").getBoundingClientRect(); return { w: r.width, h: r.height, inside: r.left >= pn.left && r.right <= pn.right }; });
+  assert.ok(box.w >= 36 && box.h >= 36 && box.inside, "a 36px target, inside the ticket's header");
+  await press(p, "#task-share");
+  await until(async () => /Link copied/.test(await toastText(p)), "the Link copied confirmation");
+  const copied = await p.evaluate(() => window.__copied);
+  assert.equal(copied, (await p.evaluate(() => location.origin + location.pathname)) + "#staff-kanban/ticket/PH-20");
+  assert.equal(await p.$eval("#task-share .material-symbols-outlined", (e) => e.textContent), "done", "the icon confirms too");
+  // The copied link, opened fresh (another tab of the same browser), opens the same ticket.
+  const other = await p.ctx.newPage();
+  await other.goto(copied);
+  await other.waitForSelector("#task-backdrop:not([hidden])", { timeout: 20000 });
+  assert.equal(await modalKey(other), "PH-20");
+  await other.close();
+  // Where the browser won't copy, the link is shown to copy by hand.
+  await p.evaluate(() => { navigator.clipboard.writeText = async () => { throw new Error("denied"); }; document.execCommand = () => false; });
+  await press(p, "#task-share");
+  await until(async () => /couldn't be copied/.test(await toastText(p)), "the copy-by-hand message");
+  assert.match(await p.textContent("#kb-toast .kb-toast-url"), /#staff-kanban\/ticket\/PH-20$/);
+  await press(p, "#task-close");
+  assert.equal(await hashOf(p), "#staff-kanban");
+  assert.deepEqual(await writes(p, /kanban/), [], "sharing writes nothing");
+  await p.done();
+});
+
+T("KB-C18", "a ticket opened from the report keeps the report's address for when it closes", { on: on.wide }, async (prof) => {
+  const p = await open(prof, "#staff-kanban/report?release=4-13");
+  const before = await hashOf(p);
+  await p.waitForSelector("#kb-view [data-open]");
+  await press(p, "#kb-view [data-open]");
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  assert.match(await hashOf(p), /^#staff-kanban\/ticket\/PH-\d+$/);
+  await press(p, "#task-close");
+  assert.equal(await hashOf(p), before);
+  assert.ok(await p.$("#kb-view .page-header"), "still on the report");
+  await p.done();
+});
 
 // ── TC-26 … TC-66 (kanban-staff-board/test/lib/cases.mjs, shared with the prototype's suite) ──
 const E = {

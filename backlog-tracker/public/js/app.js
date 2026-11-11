@@ -8290,7 +8290,8 @@ const skillsPage = document.getElementById("skills-page");
 // The human task board (kanban-staff-board/REQUIREMENTS.md). Its code lives
 // in js/kanban/ and is loaded the first time the page opens, so the Agent
 // Board's own load is unchanged. Sub-routes: #staff-kanban (the board),
-// #staff-kanban/report?<filters> and #staff-kanban/settings.
+// #staff-kanban/report?<filters>, #staff-kanban/settings and
+// #staff-kanban/ticket/<PH key> (one ticket, opened over the board).
 function loadStaffKanban() {
   if (staffKanban) return Promise.resolve(staffKanban);
   if (!staffKanbanLoading) {
@@ -8329,7 +8330,8 @@ function openStaffKanbanPage(sub, params) {
 function openStaffKanbanRouteFromHash(hash) {
   const rest = hash.slice("#staff-kanban".length).replace(/^\//, "");
   const [sub, qs] = rest.split("?");
-  openStaffKanbanPage(["report", "settings"].includes(sub) ? sub : "", new URLSearchParams(qs || ""));
+  // "ticket/PH-123" is one ticket's own address (KB-LINK-1): the page opens it.
+  openStaffKanbanPage(["report", "settings"].includes(sub) || /^ticket(\/|$)/.test(sub) ? sub : "", new URLSearchParams(qs || ""));
 }
 function closeStaffKanbanPage() {
   if (staffKanbanPage.hidden) return;
