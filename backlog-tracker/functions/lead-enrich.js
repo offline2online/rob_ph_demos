@@ -73,6 +73,17 @@ function hostOf(website) {
 
 const entity = (s) => String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
 const str = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
+// Prose kept to n characters without stopping mid-word: cut at the last
+// sentence end when one falls in the second half, else at the last word, with "…".
+function clip(v, n) {
+  const s = String(v == null ? "" : v).replace(/\s+/g, " ").trim();
+  if (s.length <= n) return s;
+  const head = s.slice(0, n - 1);
+  const stop = Math.max(head.lastIndexOf(". "), head.lastIndexOf("; "));
+  if (stop >= n / 2) return head.slice(0, stop + 1).trim().replace(/;$/, ".");
+  const sp = head.lastIndexOf(" ");
+  return `${(sp > n / 2 ? head.slice(0, sp) : head).replace(/[\s,;:–-]+$/, "")}…`;
+}
 // Addresses written to a record: http(s) only, at most 500 characters.
 function httpUrl(v) {
   const s = String(v == null ? "" : v).trim();
@@ -121,13 +132,14 @@ function readPage(html, base) {
 const AGENT_SYSTEM = [
   "You research a company for the sales team of Personalisation Hub, a platform retailers use to run a retail media network and personalised content on in-store screens, digital signage, menu boards, kiosks and their mobile store site.",
   "Use web search and web fetch. Use only public sources; never guess, and never invent a link.",
-  "Find, where available: the company's industry; the countries and markets it trades in; its head-office city and country; how many stores or sites it has;",
+  "Find, where available: the company's industry in a few words, and its sector, which is exactly one of these when one fits and empty otherwise: " + prospectsCore.INDUSTRIES.map((i) => i.label).join("; ") + ";",
+  "the countries it trades in, as plain country names with nothing in brackets; its head-office city and country; how many stores or sites it has, using the company's own latest figure;",
   "its size (employees, annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
   "its LinkedIn company page; a two or three sentence summary of what it does; a direct link to its logo or icon image;",
   "its recent news (up to eight items from the last twelve months, newest first, each with the article's link and date; include leadership changes, strategy announcements, results, technology and marketing news, from the company's newsroom and the trade press);",
   "and its most recent financials (latest reported revenue, profit or trading update, with the period and source links and dates).",
   "Then research what matters for retail media and personalisation, each as one to three plain sentences, empty when nothing public is known:",
-  "retailMedia: whether it runs or is building a retail media network or sells advertising to its suppliers and brands, what it is called, who powers it, which channels it covers (online, app, in-store screens) and anything said about its scale or plans; when it has none, say so, say what its closest competitors run, and note any media, partnerships or advertising roles it is hiring for;",
+  "retailMedia: whether it runs or is building a retail media network or sells advertising to its suppliers and brands, what it is called, who powers it, which channels it covers (online, app, in-store screens) and anything said about its scale or plans. When it has none, say so. Either way, run a separate search for the retail media or in-venue media networks of its two or three closest competitors, by the competitors' names, and name what they run; and run a separate search of its careers site and job boards for media, advertising, partnerships, loyalty and data roles it is hiring for, and name them;",
   "personalisation: how it personalises offers, content or pricing for customers today, what it has said it will do next, its customer data and the platforms behind it;",
   "inStoreDigital: its in-store screens, digital signage, digital menu boards, kiosks, electronic shelf labels or digital out-of-home estate, and the suppliers named;",
   "loyalty: its loyalty programme or app, with member or user numbers when published;",
@@ -137,11 +149,13 @@ const AGENT_SYSTEM = [
   "people: up to ten senior people who would own or influence retail media, marketing, digital, customer or loyalty, data and technology, commercial and supplier partnerships, store operations or finance, including anyone announced but not yet in post, each with name, job title, their LinkedIn profile link when you find one, and a note (when they started or start, where they came from, or what they have said on these subjects); search for appointments in the last eighteen months;",
   "fit: two or three sentences on why this company is or is not a good prospect for in-store retail media and personalisation, based only on what you found;",
   "talkingPoints: up to six specific openers for a first meeting or an email, each one sentence tied to a fact you found (a recent announcement, a new appointment, a stated plan, a gap against a competitor).",
-  "Also name its media and creative agencies and its digital signage, app, booking, loyalty and network suppliers in vendors when a public source names them.",
+  "Also name its media and creative agencies and its website platform, digital signage, app, booking, loyalty, till, network and Wi-Fi suppliers in vendors when a public source names them (suppliers' own case studies are a good source). Each techStack and vendors entry is a name with at most a few words in brackets.",
+  "Check the news for brands, sites or businesses it has sold or closed in the last twelve months and do not describe those as current. Where two sources disagree on a figure or a date, use the company's own and keep it the same in every field.",
+  "Keep each text field complete and within its length: summary 900 characters; retailMedia, personalisation, inStoreDigital, estate, fit 800; strategy 1,000; loyalty 500; each talking point 300; each person's note 300; each fact's value 250. Never end a field mid-sentence.",
   "Put any other useful fact you find (ownership, parent company, founded, CEO, stock ticker) in facts.",
   "Leave a field empty, or the list empty, when you cannot find it. Write in British English.",
   "When you are done, reply with ONE JSON object in a ```json code block, and nothing after it, with exactly these keys:",
-  '{"name":"","website":"","industry":"","countries":[],"hqCity":"","hqCountry":"","storeCount":null,"employees":"","revenue":"",',
+  '{"name":"","website":"","industry":"","sector":"","countries":[],"hqCity":"","hqCountry":"","storeCount":null,"employees":"","revenue":"",',
   '"techStack":[],"vendors":[],"linkedinCompany":"","summary":"","logoUrl":"",',
   '"retailMedia":"","personalisation":"","inStoreDigital":"","loyalty":"","primaryCloud":"","estate":"","strategy":"","fit":"",',
   '"talkingPoints":[""],',
@@ -180,35 +194,36 @@ function cleanFindings(raw) {
   const link = (x) => ({ title: str(x && x.title, 200), url: httpUrl(x && x.url), date: day(x && x.date) });
   const news = (Array.isArray(o.news) ? o.news : []).map((x) => ({ ...link(x), source: str(x && x.source, 80) })).filter((x) => x.title && x.url).slice(0, 8);
   const f = o.financials && typeof o.financials === "object" ? o.financials : {};
-  const fin = { summary: str(f.summary, 600), period: str(f.period, 60), sources: (Array.isArray(f.sources) ? f.sources : []).map(link).filter((x) => x.url).slice(0, 4) };
+  const fin = { summary: clip(f.summary, 900), period: clip(f.period, 100), sources: (Array.isArray(f.sources) ? f.sources : []).map(link).filter((x) => x.url).slice(0, 4) };
   return {
     name: str(o.name, 120),
     website: site || "",
     industry: str(o.industry, 120),
-    countries: uniq((Array.isArray(o.countries) ? o.countries : []).map(prospectsCore.canonicalCountry), 40, 60),
+    sector: prospectsCore.INDUSTRIES.some((i) => i.label === str(o.sector, 60)) ? str(o.sector, 60) : "",
+    countries: uniq((Array.isArray(o.countries) ? o.countries : []).map((c) => prospectsCore.canonicalCountry(String(c == null ? "" : c).replace(/\s*\(.*$/, ""))), 40, 60),
     hqCity: str(o.hqCity, 80),
     hqCountry: str(prospectsCore.canonicalCountry(o.hqCountry), 60),
     storeCount: typeof sc === "number" && Number.isFinite(sc) && sc > 0 ? Math.round(sc) : null,
-    employees: str(o.employees, 60),
-    revenue: str(o.revenue, 80),
-    techStack: uniq(Array.isArray(o.techStack) ? o.techStack : [], 40, 80),
-    vendors: uniq(Array.isArray(o.vendors) ? o.vendors : [], 40, 80),
+    employees: clip(o.employees, 80),
+    revenue: clip(o.revenue, 120),
+    techStack: uniq((Array.isArray(o.techStack) ? o.techStack : []).map((x) => clip(x, 120)), 40, 120),
+    vendors: uniq((Array.isArray(o.vendors) ? o.vendors : []).map((x) => clip(x, 120)), 40, 120),
     linkedinCompany: li || "",
-    summary: str(o.summary, 1000),
+    summary: clip(o.summary, 1000),
     logoUrl: httpUrl(o.logoUrl),
-    retailMedia: str(o.retailMedia, 800),
-    personalisation: str(o.personalisation, 800),
-    inStoreDigital: str(o.inStoreDigital, 800),
-    loyalty: str(o.loyalty, 500),
+    retailMedia: clip(o.retailMedia, 1000),
+    personalisation: clip(o.personalisation, 1000),
+    inStoreDigital: clip(o.inStoreDigital, 1000),
+    loyalty: clip(o.loyalty, 600),
     primaryCloud: str(o.primaryCloud, 60),
-    estate: str(o.estate, 600),
-    strategy: str(o.strategy, 1000),
-    fit: str(o.fit, 800),
-    talkingPoints: uniq(Array.isArray(o.talkingPoints) ? o.talkingPoints : [], 6, 300),
-    people: (Array.isArray(o.people) ? o.people : []).map((x) => ({ name: str(x && x.name, 100), title: str(x && x.title, 120), linkedin: personLinkedin(x && x.linkedin), note: str(x && x.note, 200) })).filter((x) => x.name && x.title).slice(0, 10),
+    estate: clip(o.estate, 1000),
+    strategy: clip(o.strategy, 1200),
+    fit: clip(o.fit, 1000),
+    talkingPoints: uniq((Array.isArray(o.talkingPoints) ? o.talkingPoints : []).map((x) => clip(x, 360)), 6, 360),
+    people: (Array.isArray(o.people) ? o.people : []).map((x) => ({ name: str(x && x.name, 100), title: str(x && x.title, 120), linkedin: personLinkedin(x && x.linkedin), note: clip(x && x.note, 360) })).filter((x) => x.name && x.title).slice(0, 10),
     news,
     financials: fin.summary || fin.sources.length ? fin : null,
-    facts: (Array.isArray(o.facts) ? o.facts : []).map((x) => ({ label: str(x && x.label, 60), value: str(x && x.value, 200) })).filter((x) => x.label && x.value).slice(0, 12),
+    facts: (Array.isArray(o.facts) ? o.facts : []).map((x) => ({ label: str(x && x.label, 60), value: clip(x && x.value, 300) })).filter((x) => x.label && x.value).slice(0, 12),
   };
 }
 
@@ -254,8 +269,8 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
       max_tokens: 32000,
       output_config: { effort: "medium" },
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 18 },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 10 },
+        { type: "web_search_20260209", name: "web_search", max_uses: 22 },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 10, max_content_tokens: 20000 },
       ],
       messages,
     });
@@ -329,7 +344,7 @@ function applyToLead(data, f, logoUrl, sources, meta) {
   const company = { ...((data && data.company) || {}) };
   const changed = [];
   const set = (k, v) => { if (blank(v) || same(company[k], v)) return; if (!ownable(company[k], filled[k])) return; company[k] = v; filled[k] = v; changed.push(k); };
-  set("industry", str(f.industry, 120));
+  set("industry", f.sector || str(f.industry, 120));
   set("storeCount", f.storeCount);
   if (!company.website && f.website && f.website.length <= 300) { company.website = f.website; changed.push("website"); }
   const countries = uniq([...(lead.company.countries || []), ...[f.hqCountry, ...f.countries].filter(Boolean)], 60, 60);
@@ -347,7 +362,7 @@ function applyToProspect(data, f, logoUrl, sources, meta) {
   const changed = [];
   const stored = (k) => (data || {})[k];
   const set = (k, v) => { if (blank(v) || same(stored(k), v)) return; if (!ownable(stored(k), filled[k])) return; fields[k] = v; filled[k] = v; changed.push(k); };
-  set("industry", prospectsCore.normaliseIndustry(f.industry));
+  set("industry", f.sector || prospectsCore.normaliseIndustry(f.industry));
   set("hqCountry", str(f.hqCountry, 60));
   set("storeCount", f.storeCount);
   set("linkedinUrl", f.linkedinCompany);
@@ -644,5 +659,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, claudeResearch, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, clip, claudeResearch, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

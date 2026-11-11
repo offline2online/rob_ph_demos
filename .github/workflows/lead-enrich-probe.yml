@@ -27,7 +27,7 @@ on:
         description: 'RSA public key (PEM, newlines as \n): the full findings are printed encrypted to it'
         type: string
         default: ''
-  # TEMPORARY (11 Nov 2026 test of one real lead from the fix branch, re-run with the workspace set): removed again once it has run.
+  # TEMPORARY (11 Nov 2026 test of one real lead from the fix branch, re-run with the workspace set, then once more after the brief was tightened): removed again once it has run.
   push:
     branches: ['claude/eager-dijkstra-*']
     paths: ['.github/workflows/lead-enrich-probe.yml']

@@ -7,7 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
-  claudeResearch, agentError, workspaceHeaders,
+  claudeResearch, agentError, workspaceHeaders, clip, applyToProspect,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -382,6 +382,22 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     const old = make({ seed: { leads: { l1: { ...LEAD, prospectId: "p1", createdAt: new Date("2026-11-01T00:00:00Z") } }, prospects: { p1: { ...PROSPECT, leadId: "l1" } }, prospectCompanies: {} } });
     await old.api.onEnrichWrite("prospects", created("prospects", "p1", old.db.state));
     assert.equal(old.asked.length, 1);
+  });
+  // ── From the first real run (Greene King, 11 Nov 2026) ──
+  await test("long findings are never cut mid-word, and the sector is the agent's own choice from the nine", () => {
+    assert.equal(clip("One two three. Four five six seven eight nine ten eleven twelve.", 40), "One two three. Four five six seven…");
+    assert.equal(clip("Alpha beta gamma delta. Epsilon zeta eta theta iota kappa lambda mu.", 40), "Alpha beta gamma delta.");
+    assert.equal(clip("short", 40), "short");
+    const f = cleanFindings({ industry: "Hospitality – pub, restaurant and hotel operator and brewer", sector: "Pubs & Hospitality", countries: ["United Kingdom (England, Wales, Scotland)"], estate: "x ".repeat(700) });
+    assert.equal(f.sector, "Pubs & Hospitality"); assert.deepEqual(f.countries, ["United Kingdom"]);
+    assert.ok(f.estate.length <= 1000 && f.estate.endsWith("…"));
+    assert.equal(cleanFindings({ sector: "Pubs" }).sector, "", "only an exact label counts");
+    // Read from the free-text industry alone, this company was filed under Quick Service Restaurants.
+    const p = applyToProspect({ name: "Greene King", country: "United Kingdom" }, f, "", [], { at: new Date(), by: "a" });
+    assert.equal(p.fields.industry, "Pubs & Hospitality");
+    const l = applyToLead({ company: { name: "Greene King" } }, f, "", [], { at: new Date(), by: "a" });
+    assert.equal(l.company.industry, "Pubs & Hospitality");
+    assert.match(AGENT_SYSTEM, /closest competitors/); assert.match(AGENT_SYSTEM, /careers site/); assert.match(AGENT_SYSTEM, /sold or closed/);
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });
