@@ -18,7 +18,8 @@
 //     financials, each news item and financial source with its link and date,
 //     and what matters for selling retail media and personalisation: its
 //     retail media network, personalisation and loyalty, in-store screens,
-//     primary cloud, the people who own those areas and why it is a fit;
+//     primary cloud, its estate and strategy, the people who own those areas,
+//     why it is a fit and openers for a first meeting or email;
 //   • the company's own home page (title, description, LinkedIn link and the
 //     icon it declares), read directly.
 // What is found is written to the record AND to the record it is linked to
@@ -123,23 +124,28 @@ const AGENT_SYSTEM = [
   "Find, where available: the company's industry; the countries and markets it trades in; its head-office city and country; how many stores or sites it has;",
   "its size (employees, annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
   "its LinkedIn company page; a two or three sentence summary of what it does; a direct link to its logo or icon image;",
-  "its recent news (up to five items from the last twelve months, newest first, each with the article's link and date);",
+  "its recent news (up to eight items from the last twelve months, newest first, each with the article's link and date; include leadership changes, strategy announcements, results, technology and marketing news, from the company's newsroom and the trade press);",
   "and its most recent financials (latest reported revenue, profit or trading update, with the period and source links and dates).",
   "Then research what matters for retail media and personalisation, each as one to three plain sentences, empty when nothing public is known:",
-  "retailMedia: whether it runs or is building a retail media network or sells advertising to its suppliers and brands, what it is called, who powers it, which channels it covers (online, app, in-store screens) and anything said about its scale or plans;",
-  "personalisation: how it personalises offers, content or pricing for customers today, its customer data and the platforms behind it;",
+  "retailMedia: whether it runs or is building a retail media network or sells advertising to its suppliers and brands, what it is called, who powers it, which channels it covers (online, app, in-store screens) and anything said about its scale or plans; when it has none, say so, say what its closest competitors run, and note any media, partnerships or advertising roles it is hiring for;",
+  "personalisation: how it personalises offers, content or pricing for customers today, what it has said it will do next, its customer data and the platforms behind it;",
   "inStoreDigital: its in-store screens, digital signage, digital menu boards, kiosks, electronic shelf labels or digital out-of-home estate, and the suppliers named;",
   "loyalty: its loyalty programme or app, with member or user numbers when published;",
   "primaryCloud: its main cloud provider (AWS, Microsoft Azure or Google Cloud) when a public source says so;",
-  "people: up to eight current senior people who would own retail media, marketing, digital, customer or loyalty, data, store operations or IT, each with name, job title and their LinkedIn profile link when you find one;",
-  "fit: two or three sentences on why this company is or is not a good prospect for in-store retail media and personalisation, based only on what you found.",
+  "estate: how its sites split by brand or format and by managed, franchised or leased, and whether the estate is growing or shrinking;",
+  "strategy: its stated priorities, investment programme, cost pressures and restructuring, and its sustainability commitments, in up to four sentences;",
+  "people: up to ten senior people who would own or influence retail media, marketing, digital, customer or loyalty, data and technology, commercial and supplier partnerships, store operations or finance, including anyone announced but not yet in post, each with name, job title, their LinkedIn profile link when you find one, and a note (when they started or start, where they came from, or what they have said on these subjects); search for appointments in the last eighteen months;",
+  "fit: two or three sentences on why this company is or is not a good prospect for in-store retail media and personalisation, based only on what you found;",
+  "talkingPoints: up to six specific openers for a first meeting or an email, each one sentence tied to a fact you found (a recent announcement, a new appointment, a stated plan, a gap against a competitor).",
+  "Also name its media and creative agencies and its digital signage, app, booking, loyalty and network suppliers in vendors when a public source names them.",
   "Put any other useful fact you find (ownership, parent company, founded, CEO, stock ticker) in facts.",
   "Leave a field empty, or the list empty, when you cannot find it. Write in British English.",
   "When you are done, reply with ONE JSON object in a ```json code block, and nothing after it, with exactly these keys:",
   '{"name":"","website":"","industry":"","countries":[],"hqCity":"","hqCountry":"","storeCount":null,"employees":"","revenue":"",',
   '"techStack":[],"vendors":[],"linkedinCompany":"","summary":"","logoUrl":"",',
-  '"retailMedia":"","personalisation":"","inStoreDigital":"","loyalty":"","primaryCloud":"","fit":"",',
-  '"people":[{"name":"","title":"","linkedin":""}],',
+  '"retailMedia":"","personalisation":"","inStoreDigital":"","loyalty":"","primaryCloud":"","estate":"","strategy":"","fit":"",',
+  '"talkingPoints":[""],',
+  '"people":[{"name":"","title":"","linkedin":"","note":""}],',
   '"news":[{"title":"","url":"","date":"YYYY-MM-DD","source":""}],',
   '"financials":{"summary":"","period":"","sources":[{"title":"","url":"","date":"YYYY-MM-DD"}]},',
   '"facts":[{"label":"","value":""}]}',
@@ -172,7 +178,7 @@ function cleanFindings(raw) {
   const sc = typeof o.storeCount === "number" ? o.storeCount : (scText ? Number(scText) : null);
   const li = prospectsCore.normaliseLinkedinUrl(o.linkedinCompany);
   const link = (x) => ({ title: str(x && x.title, 200), url: httpUrl(x && x.url), date: day(x && x.date) });
-  const news = (Array.isArray(o.news) ? o.news : []).map((x) => ({ ...link(x), source: str(x && x.source, 80) })).filter((x) => x.title && x.url).slice(0, 5);
+  const news = (Array.isArray(o.news) ? o.news : []).map((x) => ({ ...link(x), source: str(x && x.source, 80) })).filter((x) => x.title && x.url).slice(0, 8);
   const f = o.financials && typeof o.financials === "object" ? o.financials : {};
   const fin = { summary: str(f.summary, 600), period: str(f.period, 60), sources: (Array.isArray(f.sources) ? f.sources : []).map(link).filter((x) => x.url).slice(0, 4) };
   return {
@@ -195,8 +201,11 @@ function cleanFindings(raw) {
     inStoreDigital: str(o.inStoreDigital, 800),
     loyalty: str(o.loyalty, 500),
     primaryCloud: str(o.primaryCloud, 60),
+    estate: str(o.estate, 600),
+    strategy: str(o.strategy, 1000),
     fit: str(o.fit, 800),
-    people: (Array.isArray(o.people) ? o.people : []).map((x) => ({ name: str(x && x.name, 100), title: str(x && x.title, 120), linkedin: personLinkedin(x && x.linkedin) })).filter((x) => x.name && x.title).slice(0, 8),
+    talkingPoints: uniq(Array.isArray(o.talkingPoints) ? o.talkingPoints : [], 6, 300),
+    people: (Array.isArray(o.people) ? o.people : []).map((x) => ({ name: str(x && x.name, 100), title: str(x && x.title, 120), linkedin: personLinkedin(x && x.linkedin), note: str(x && x.note, 200) })).filter((x) => x.name && x.title).slice(0, 10),
     news,
     financials: fin.summary || fin.sources.length ? fin : null,
     facts: (Array.isArray(o.facts) ? o.facts : []).map((x) => ({ label: str(x && x.label, 60), value: str(x && x.value, 200) })).filter((x) => x.label && x.value).slice(0, 12),
@@ -245,8 +254,8 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
       max_tokens: 32000,
       output_config: { effort: "medium" },
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 12 },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 8 },
+        { type: "web_search_20260209", name: "web_search", max_uses: 18 },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 10 },
       ],
       messages,
     });
@@ -301,7 +310,10 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     inStoreDigital: keep(f.inStoreDigital, p.inStoreDigital),
     loyalty: keep(f.loyalty, p.loyalty),
     primaryCloud: keep(f.primaryCloud, p.primaryCloud),
+    estate: keep(f.estate, p.estate),
+    strategy: keep(f.strategy, p.strategy),
     fit: keep(f.fit, p.fit),
+    talkingPoints: f.talkingPoints.length ? f.talkingPoints : (Array.isArray(p.talkingPoints) ? p.talkingPoints : []),
     people: f.people.length ? f.people : (Array.isArray(p.people) ? p.people : []),
     news: f.news.length ? f.news : (Array.isArray(p.news) ? p.news : []),
     financials: f.financials || p.financials || null,

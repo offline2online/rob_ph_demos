@@ -349,12 +349,14 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(p.description, "Greene King is the country's leading pub company");
   });
   await test("the research covers retail media and personalisation, and is kept on the lead, the TAM record and the profile", async () => {
-    for (const k of ["retailMedia", "personalisation", "inStoreDigital", "loyalty", "primaryCloud", "people", "fit"]) assert.ok(AGENT_SYSTEM.includes(`"${k}"`), k);
+    for (const k of ["retailMedia", "personalisation", "inStoreDigital", "loyalty", "primaryCloud", "people", "fit", "estate", "strategy", "talkingPoints"]) assert.ok(AGENT_SYSTEM.includes(`"${k}"`), k);
     assert.match(AGENT_SYSTEM, /retail media network/);
     const more = { ...AGENT, retailMedia: "Runs Greene King Media with in-pub screens.", personalisation: "App offers by visit history.", inStoreDigital: "Screens in 1,600 pubs.", loyalty: "App with 2m users.", primaryCloud: "Microsoft Azure", fit: "A large estate with screens already in place.",
       people: [{ name: "Ann Lee", title: "Chief Marketing Officer", linkedin: "https://www.linkedin.com/in/ann-lee" }, { name: "Bo Ray", title: "CIO", linkedin: "https://evil.example/in/bo" }, { name: "No Title", title: "" }] };
     const f = cleanFindings(more);
-    assert.deepEqual(f.people, [{ name: "Ann Lee", title: "Chief Marketing Officer", linkedin: "https://www.linkedin.com/in/ann-lee" }, { name: "Bo Ray", title: "CIO", linkedin: "" }]);
+    assert.deepEqual(f.people, [{ name: "Ann Lee", title: "Chief Marketing Officer", linkedin: "https://www.linkedin.com/in/ann-lee", note: "" }, { name: "Bo Ray", title: "CIO", linkedin: "", note: "" }]);
+    const extra = cleanFindings({ estate: "1,500 managed, 1,000 leased.", strategy: "Selling 150 pubs.", talkingPoints: ["New CCO starts 16 Nov.", "New CCO starts 16 Nov.", ""], people: [{ name: "Cy Dee", title: "CCO", note: "Starts 16 Nov 2026; ex-PepsiCo" }] });
+    assert.deepEqual(extra.talkingPoints, ["New CCO starts 16 Nov."]); assert.equal(extra.people[0].note, "Starts 16 Nov 2026; ex-PepsiCo"); assert.equal(extra.estate, "1,500 managed, 1,000 leased.");
     const { api, db } = make({ agent: more });
     await api.onEnrichWrite("leads", created("leads", "l1", db.state));
     for (const rec of [db.state.leads.l1, db.state.prospects.p1]) {

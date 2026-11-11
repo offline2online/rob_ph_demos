@@ -3,7 +3,8 @@
 // agent's web research plus the company's own home page):
 //   { at, by, summary, logoUrl, hq, employees, revenue, techStack[], vendors[],
 //     linkedinCompany, retailMedia, personalisation, inStoreDigital, loyalty,
-//     primaryCloud, fit, people[{name, title, linkedin}],
+//     primaryCloud, estate, strategy, fit, talkingPoints[],
+//     people[{name, title, linkedin, note}],
 //     news[{title, url, date, source}],
 //     financials{summary, period, sources[{title, url, date}]}, facts[{label, value}],
 //     sources[{source, status, message}], request{id, status, at, startedAt, finishedAt, message} }
@@ -56,7 +57,10 @@ const link = (u, text) => { const h = safeUrl(u); return h ? `<a href="${esc(h)}
 const INSIGHTS = [
   ["Why they fit", "fit"], ["Retail media", "retailMedia"], ["Personalisation", "personalisation"],
   ["In-store screens and signage", "inStoreDigital"], ["Loyalty", "loyalty"],
+  ["Estate", "estate"], ["Strategy and pressures", "strategy"],
 ];
+const pointsOf = (e) => (Array.isArray(e && e.talkingPoints) ? e.talkingPoints.filter(Boolean) : []);
+const personMeta = (p) => [p.title, p.note].filter(Boolean).join(" · ");
 const insightsOf = (e) => INSIGHTS.map(([label, k]) => [label, e && e[k]]).filter(([, v]) => v);
 const peopleOf = (e) => (Array.isArray(e && e.people) ? e.people.filter((p) => p && p.name) : []);
 const linkedinOf = (u) => { const h = safeUrl(u); try { return h && /(^|\.)linkedin\.com$/i.test(new URL(h).hostname) ? h : ""; } catch { return ""; } };
@@ -116,8 +120,10 @@ export function researchGroupsHTML(e) {
     ...(fin.sources || []).map((s) => stackRow(`${link(s.url, s.title || s.url)}<span class="enrich-meta">${esc(fmtDay(s.date))}</span>`, "", "enrich-news-row")),
   ].join("") : "";
   const insightRows = insightsOf(e).map(([k, v]) => stackRow(`<span class="ap-row-label">${esc(k)}</span><p class="enrich-insight">${esc(v)}</p>`)).join("");
-  const peopleRows = peopleOf(e).map((p) => { const li2 = linkedinOf(p.linkedin); return stackRow(`${li2 ? link(li2, p.name) : esc(p.name)}<span class="enrich-meta">${esc(p.title || "")}</span>`, "", "enrich-news-row"); }).join("");
+  const peopleRows = peopleOf(e).map((p) => { const li2 = linkedinOf(p.linkedin); return stackRow(`${li2 ? link(li2, p.name) : esc(p.name)}<span class="enrich-meta">${esc(personMeta(p))}</span>`, "", "enrich-news-row"); }).join("");
+  const pointRows = pointsOf(e).map((t) => stackRow(`<p class="enrich-insight">${esc(t)}</p>`)).join("");
   return group("Company research", research || lineRow("Nothing found yet"))
+    + group("Talking points", pointRows, { tipText: "Openers for a first meeting or email, each tied to something the research found. Check the source before you quote one." })
     + group("Retail media and personalisation", insightRows)
     + group("Key people", peopleRows, { tipText: "Found in public sources by the research. Add the ones you are talking to as contacts." })
     + group("Recent news", newsRows)
@@ -142,8 +148,9 @@ export function enrichmentHTML(e) {
     ${facts.length ? `<dl class="enrich-facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>` : ""}
     ${li ? `<p class="enrich-line">${link(li, "Company LinkedIn page")}</p>` : ""}
     ${stack.length ? `<p class="enrich-label">Tech stack and vendors</p><ul class="lead-stack">${stack.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+    ${pointsOf(e).length ? `<p class="enrich-label">Talking points</p><ul class="enrich-news">${pointsOf(e).map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
     ${insightsOf(e).map(([k, v]) => `<p class="enrich-label">${esc(k)}</p><p class="enrich-insight">${esc(v)}</p>`).join("")}
-    ${peopleOf(e).length ? `<p class="enrich-label">Key people</p><ul class="enrich-news">${peopleOf(e).map((p) => `<li>${linkedinOf(p.linkedin) ? link(linkedinOf(p.linkedin), p.name) : esc(p.name)}<span class="enrich-meta">${esc(p.title || "")}</span></li>`).join("")}</ul>` : ""}
+    ${peopleOf(e).length ? `<p class="enrich-label">Key people</p><ul class="enrich-news">${peopleOf(e).map((p) => `<li>${linkedinOf(p.linkedin) ? link(linkedinOf(p.linkedin), p.name) : esc(p.name)}<span class="enrich-meta">${esc(personMeta(p))}</span></li>`).join("")}</ul>` : ""}
     ${news.length ? `<p class="enrich-label">Recent news</p><ul class="enrich-news">${news.map((n) => `<li>${link(n.url, n.title)}<span class="enrich-meta">${esc([n.source, fmtDay(n.date)].filter(Boolean).join(" · "))}</span></li>`).join("")}</ul>` : ""}
     ${fin ? `<p class="enrich-label">Recent financials${fin.period ? ` · ${esc(fin.period)}` : ""}</p>${fin.summary ? `<p class="enrich-fin">${esc(fin.summary)}</p>` : ""}${(fin.sources || []).length ? `<ul class="enrich-news">${fin.sources.map((s) => `<li>${link(s.url, s.title || s.url)}<span class="enrich-meta">${esc(fmtDay(s.date))}</span></li>`).join("")}</ul>` : ""}` : ""}
     ${at ? `<p class="field-hint enrich-updated">Updated ${esc(at.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}</p>` : ""}

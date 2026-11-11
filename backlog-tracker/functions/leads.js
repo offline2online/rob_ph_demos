@@ -50,7 +50,8 @@ function researchView(e) {
   return {
     hq: t(e.hq), employees: t(e.employees), revenue: t(e.revenue), linkedinCompany: t(e.linkedinCompany), logoUrl: t(e.logoUrl),
     primaryCloud: t(e.primaryCloud), retailMedia: t(e.retailMedia), personalisation: t(e.personalisation),
-    inStoreDigital: t(e.inStoreDigital), loyalty: t(e.loyalty), fit: t(e.fit),
+    inStoreDigital: t(e.inStoreDigital), loyalty: t(e.loyalty), estate: t(e.estate), strategy: t(e.strategy), fit: t(e.fit),
+    talkingPoints: list(e.talkingPoints),
     vendors: list(e.vendors), people: list(e.people), news: list(e.news), financials: e.financials || null, facts: list(e.facts),
     lastRun: r ? { status: r.status || null, message: r.message || null } : null,
   };

@@ -4175,9 +4175,13 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     researches what the sales team needs: `retailMedia` (whether the company
     runs or is building a retail media network, its name, who powers it, its
     channels), `personalisation`, `inStoreDigital` (screens, signage, menu
-    boards, kiosks and their suppliers), `loyalty`, `primaryCloud`, `fit` (why
-    it is or is not a prospect) and `people[] {name, title, linkedin}` (up to
-    eight senior people who own those areas, from public sources; they are
+    boards, kiosks and their suppliers), `loyalty`, `primaryCloud`, `estate` (sites by
+    brand and by managed / leased), `strategy` (priorities, investment, cost
+    pressures), `fit` (why it is or is not a prospect), `talkingPoints[]` (up
+    to six openers for a first meeting or email, each tied to a finding) and
+    `people[] {name, title, linkedin, note}` (up to ten senior people who own
+    or influence those areas, including announced appointments, from public
+    sources; they are
     shown under "Key people" and are not added as contacts). All are kept in
     the `enrichment` map on the lead and the TAM record; `primaryCloud` also
     fills the company profile when blank. `get_lead` returns them as
@@ -4198,7 +4202,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     limit or credit, timed out), and the page shows it under the button.
     What the home page gave (description, icon) is still kept.
   - **The agent call**: streamed (a research turn runs for minutes; the first
-    version's unstreamed 150 s limit was too short), up to 12 searches and 8
+    version's unstreamed 150 s limit was too short), up to 18 searches and 10
     fetches, a paused turn resumed up to four times within seven minutes. The
     answer's text blocks are joined as written (web-search citations split a
     sentence across blocks, and a newline between them broke the JSON). Notes
