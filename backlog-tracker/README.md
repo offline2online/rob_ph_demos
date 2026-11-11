@@ -2566,10 +2566,20 @@ every destination already existed.
   storeCount}`, `contacts[] {id, name, jobTitle, buyingRole, email,
   linkedin, enrichment?}`, `stage`, `source`, `assignee`, `customerAccount
   {id, name}`, `enrichment`. Cards drag between lanes or use their "Move to"
-  select (the way on a tablet). **Enrich** (`functions/lead-enrich.js`, served
-  at `/leadEnrich/v1/enrich`) reads the company's website and, when a
-  BuiltWith key is stored under Settings → Integrations & MCP, its tech stack,
-  company details and named contacts; it fills blanks only. **Convert and link
+  select (the way on a tablet). **Enrichment** (`functions/lead-enrich.js`, 10 Nov
+  2026) is agent-led and uses no paid data provider: Claude with web search and web
+  fetch (the `ANTHROPIC_API_KEY` secret Staff Kanban already uses) researches the
+  company by name (website optional, no email needed) for industry, countries, HQ,
+  store count, size, tech stack and vendors, LinkedIn page, summary, logo, recent
+  news and recent financials (with links and dates), and the company's home page is
+  read for its icon. It runs by itself when a lead or a Prospects (TAM) record is
+  created (`enrichLeadOnWrite` / `enrichProspectOnWrite`), and on the
+  **Enrich / Refresh info** button on the lead and on the TAM record, which queues a
+  run at `/leadEnrich/v1/enrich` (`enrichment.request`); the findings arrive
+  through the page's snapshot. Results go to the record and the record it is
+  linked to (and the TAM company profile); it only adds or updates, never blanks,
+  and never overwrites a field a person typed. The page side is
+  `public/js/enrichment-view.js`. **Convert and link
   account** moves the lead to Closed Won and records the customer account.
   Agents manage the whole pipeline over MCP (`functions/leads.js`): `list_leads`,
   `get_lead`, `create_lead(s)`, `update_lead`, `update_lead_stage`, contact and
@@ -2581,6 +2591,27 @@ every destination already existed.
   **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
   `LEAD_INGEST_KEY`); a `test` flag stores a test lead (badged, deletable by hand from
   its summary; the Leads/Test buttons were removed 6 Nov 2026). See REQUIREMENTS.md → Promote section: Leads.
+- **Leads, Apple-style (10 Nov 2026, ticket iAY4X9RF5K16vLEGYswi):** the board,
+  the lead form and the lead detail view follow the console's Apple-style rules
+  (`REQUIREMENTS.md` → "Leads: Apple-style board, form and detail view"). The
+  lanes wrap into rows (6 / 3 / 2 / 1 across by width, a container query) instead
+  of scrolling sideways; tiles and lanes are neutral, with the industry colour
+  only on a small dot; **New lead** is the page's one primary action (top right,
+  bottom on a phone). The detail view opens with the logo header, then Contacts
+  (with the inbound count), AWS team, Company research, Recent news and Recent
+  financials, then Lead, Company and the rest, each an inset grouped card. The
+  form is grouped rows. Both are built from the shared components in
+  `public/js/ap-components.js` (styles in `css/apple.css`, "Inset grouped cards
+  and rows"); `researchGroupsHTML` in `enrichment-view.js` draws the research.
+  Test: `test/ui/leads-apple.test.mjs` (390/820/1180/1440 px, light and dark).
+- **Inbound leads matched to Prospects (TAM) (10 Nov 2026):** a website or New lead
+  submission is matched to a TAM record by company name and business email domain in
+  its country (`planInbound` in `prospects-core.js`); no match makes a new record
+  (which the enrichment trigger then enriches). One lead per record (`prospect-<recordId>`): the next person
+  from that company and country becomes a contact on it and raises `inboundCount`
+  ("2 inbound" on the card). AWS people go to the AWS record and the **AWS tile**
+  above the lanes, where an editor attaches them to a customer company's AWS team.
+  See REQUIREMENTS.md → "Leads: inbound leads matched to Prospects (TAM)".
 - **Prospects (TAM) filters (7 Nov 2026):** every primary column filter is a searchable multi-select with the full option list (all countries; the nine website industries + Unassigned, via `normaliseIndustry` in `prospects-core.js`); the grid is sticky under the console header and defaults to 50 rows. See REQUIREMENTS.md → "Prospects (TAM): filters, industry taxonomy and pinned header".
 - **Promote › Prospects (TAM)** (`#promote/prospects`, 5 Nov 2026; `public/js/prospects-page.js`,
   rules in `prospects-core.js` copied to `functions/prospects-core.js` by

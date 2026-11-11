@@ -78,6 +78,7 @@ function makeCtx(o, width) {
   const at = (step, selector = "") => { ctx.step = step; ctx.selector = selector; };
   ctx.at = at;
   ctx.aceWrites = o.aceWrites;
+  ctx.enrichCalls = o.enrichCalls;
   // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
   ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
   ctx.click = async (selector, step) => { at(step || `click ${selector}`, selector); await page.click(selector); };
@@ -1136,6 +1137,56 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Leads - a second person from a TAM company joins its lead; an AWS person is attached to an account's AWS team",
+    seed: () => seed({
+      prospects: {
+        "acme-uk": { name: "Acme Telco", country: "United Kingdom", website: "https://acme.example", status: "converted", leadId: "prospect-acme-uk", createdAt: t(T0), updatedAt: t(T0) },
+        aws: { name: "AWS", country: "", website: "https://aws.amazon.com", status: "engaged", source: "AWS", contacts: [{ name: "Pat Lee", role: "Account Manager", lastContact: "2026-11-10", email: "pat@amazon.com" }], createdAt: t(T0), updatedAt: t(T0) },
+      },
+      leads: {
+        "prospect-acme-uk": { company: { name: "Acme Telco", website: "https://acme.example", industry: "", countries: ["United Kingdom"], storeCount: null }, contacts: [{ id: "k1", name: "Jo", jobTitle: "", buyingRole: "", email: "jo@acme.example", linkedin: "" }], stage: "lead", source: "website", assignee: "", customerAccount: null, prospectId: "acme-uk", inboundCount: 1, createdAt: t(T0), updatedAt: t(T0) },
+      },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card .lead-inbound', "the card shows its inbound count");
+      assert.strictEqual((await c.text('.lead-lane[data-stage="lead"] .lead-inbound')).trim(), "1 inbound");
+      for (let i = 0; i < 4 && !(await c.page.locator("#lead-form").isVisible()); i++) {
+        await c.page.click("#leads-add-btn");
+        await c.page.waitForTimeout(600);
+      }
+      await c.visible("#lead-form", "the lead form opens");
+      await c.page.fill("#lead-name", "Acme Telco");
+      await c.page.fill("#lead-countries", "UK");
+      await c.page.fill('.lead-contact[data-index="0"] .lc-name', "Sam");
+      await c.page.fill('.lead-contact[data-index="0"] .lc-email', "sam@acme.example");
+      await c.page.click("#lead-save");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("prospect-acme-uk").inboundCount)) === 2, "the second person to be counted on the company's lead", 5000);
+      const leads = await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].map(([id, v]) => ({ id, emails: v.contacts.map((k) => k.email) })));
+      assert.deepStrictEqual(leads, [{ id: "prospect-acme-uk", emails: ["jo@acme.example", "sam@acme.example"] }], "no second lead; Sam is a contact on the first");
+      await c.visible("#lead-summary-panel", "the company's lead opens");
+      assert.ok((await c.text("#lead-sum-status")).includes("Added to the existing lead for Acme Telco"), "the drawer says where Sam went");
+      await c.page.keyboard.press("Escape");
+      // The AWS tile: Pat is there, not in a lane, and is attached to Acme Telco as its account manager.
+      await c.visible("#leads-aws-toggle", "the AWS tile shows");
+      assert.ok(!(await c.text("#leads-board")).includes("Pat Lee"), "the AWS person is not a lead");
+      await c.page.click("#leads-aws-toggle");
+      await c.visible(".leads-aws-attach", "the AWS people list opens");
+      assert.ok((await c.text("#leads-aws-list")).includes("Pat Lee"));
+      await c.page.click(".leads-aws-attach");
+      await until(async () => (await c.page.locator('.leads-aws-company option[value="acmetelco"]').count()) === 1, "the customer accounts to load", 5000);
+      assert.strictEqual(await c.page.locator('.leads-aws-company option[value="aws"]').count(), 0, "AWS is not offered as a customer account");
+      await c.page.selectOption(".leads-aws-company", "acmetelco");
+      await c.page.selectOption(".leads-aws-role", "account-manager");
+      await c.page.click(".leads-aws-save");
+      await until(async () => (await c.page.evaluate(() => { const d = globalThis.__fbStub.col("prospectCompanies").get("acmetelco"); return d && d.awsTeam && d.awsTeam.length; })) === 1, "Pat to join Acme Telco's AWS team", 5000);
+      const team = await c.page.evaluate(() => globalThis.__fbStub.col("prospectCompanies").get("acmetelco").awsTeam[0]);
+      assert.strictEqual(team.email, "pat@amazon.com"); assert.strictEqual(team.role, "account-manager"); assert.strictEqual(team.source, "manual");
+      assert.ok((await c.text("#leads-aws-status")).includes("attached to Acme Telco"), "the tile says it was attached");
+    },
+  },
+  {
     name: "Modals: Save is off until something changes, the action row is sticky, the x is top right and closes",
     seed: () => seed({ leads: {
       lx: { company: { name: "Existing Co", website: "https://existing.example", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [{ id: "k1", name: "Pat", jobTitle: "", buyingRole: "champion", email: "", linkedin: "" }], stage: "demo", source: "Website form", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
@@ -1456,7 +1507,7 @@ const scenarios = [
         for (const el of document.querySelectorAll(".lead-card")) {
           const lane = el.closest(".lead-lane-body").getBoundingClientRect(); const r = el.getBoundingClientRect();
           out[el.dataset.leadId] = { industry: el.dataset.industry, inside: r.left >= lane.left - 1 && r.right <= lane.right + 1, scrollOk: el.scrollWidth <= el.clientWidth + 1,
-            text: el.textContent, chip: getComputedStyle(el.querySelector(".lead-chip")).backgroundColor, bar: getComputedStyle(el).borderLeftColor, badge: !!el.querySelector(".lead-test-badge") };
+            text: el.textContent, chip: getComputedStyle(el.querySelector(".lead-chip .lead-ind-dot")).backgroundColor, bar: getComputedStyle(el.querySelector(".lead-ind-dot")).backgroundColor, neutral: getComputedStyle(el.querySelector(".lead-chip")).backgroundColor, badge: !!el.querySelector(".lead-test-badge") };
         }
         return out;
       });
@@ -1465,6 +1516,7 @@ const scenarios = [
       assert.strictEqual(info.n1.industry, "other");
       assert.notStrictEqual(info.w1.chip, info.p1.chip, "industries have their own colours");
       assert.notStrictEqual(info.p1.bar, info.n1.bar);
+      assert.strictEqual(info.w1.neutral, info.p1.neutral, "the chip itself is neutral; only its dot carries the industry colour");
       for (const id of ["w1", "p1", "n1"]) { assert.ok(info[id].inside && info[id].scrollOk, `${id} stays inside its lane`); assert.ok(info[id].badge, `${id} has the Test badge`); }
       assert.ok(!info.w1.text.includes("personalisationhub.com"), "the tile shows no URL");
       // Click -> summary drawer.
@@ -2052,10 +2104,66 @@ const scenarios = [
       await c.visible(".lead-card .lead-card-detail", "the lead card shows a compact view");
       const card = await c.text(".lead-card .lead-card-detail");
       assert.ok(card.includes("Decision maker") && card.includes("Amy AWS"), "buying-role summary and AWS contact on the card");
-      assert.strictEqual(await c.page.locator('.lead-card .lead-card-detail a[href^="mailto:amy@aws.example"]').count(), 1, "an email icon for the AWS contact");
+      assert.strictEqual(await c.page.locator(".lead-card .lead-card-detail a").count(), 0, "no links nested inside the tile");
       // The lead form takes the company's and a contact's AWS account ID.
       await c.page.click(".lead-card");
       await c.visible("#lead-sum-body", "the lead summary opens");
+      assert.strictEqual(await c.page.locator('#lead-sum-aws a.ap-icon-btn[href^="mailto:amy@aws.example"]').count(), 1, "the detail view's AWS team has an email button for the AWS contact");
+    },
+  },
+  {
+    name: "Promote: company research - logo, news and financials on a lead and a TAM record, with Enrich / Refresh info",
+    seed: () => seed({
+      leads: { gk: { company: { name: "Greene King", website: "", industry: "Pubs & Hospitality", countries: ["United Kingdom"], storeCount: 2600 }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, prospectId: "gk-uk", createdAt: t(T0), updatedAt: t(T0),
+        enrichment: { at: t(T0 + 10), by: "auto", summary: "A UK pub retailer and brewer.", hq: "Bury St Edmunds, United Kingdom", employees: "38,000", techStack: ["Zonal"], vendors: ["Fourth"],
+          news: [{ title: "Greene King opens new pubs", url: "https://news.example/a", date: "2026-10-01", source: "The Caterer" }],
+          financials: { summary: "Revenue rose 5% to £2.4bn.", period: "FY2024", sources: [{ title: "Annual report", url: "https://gk.example/ar.pdf", date: "2025-06-30" }] },
+          sources: [{ source: "agent", status: "ok", message: "Web research found 9 details." }], request: { id: "r0", status: "done" } } } },
+      prospects: { "gk-uk": { name: "Greene King", country: "United Kingdom", priority: "high", leadId: "gk", createdAt: t(T0), updatedAt: t(T0) } },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.page.click('.lead-card[data-lead-id="gk"]');
+      await c.visible("#lead-sum-research", "the lead shows its company research");
+      const sum = await c.text("#lead-sum-research");
+      for (const want of ["A UK pub retailer and brewer.", "Bury St Edmunds", "Recent news", "Greene King opens new pubs", "The Caterer", "1 Oct 2026", "Recent financials", "FY2024", "Revenue rose 5% to £2.4bn.", "Zonal"]) assert.ok(sum.includes(want), `the research shows ${want}`);
+      assert.strictEqual(await c.page.locator('#lead-sum-research a[href="https://news.example/a"][target="_blank"]').count(), 1, "a news item links to its source");
+      assert.strictEqual(await c.page.locator('#lead-sum-research a[href="https://gk.example/ar.pdf"]').count(), 1, "the financials link to their source");
+      assert.strictEqual((await c.text("#lead-sum-enrich")).trim().replace(/^\S+\s/, ""), "Refresh info", "an enriched lead offers a refresh");
+      // The logo arrives with a run's findings.
+      await c.page.evaluate(() => globalThis.__fbStub.commit([{ op: "update", ref: { type: "doc", id: "gk", path: "leads/gk", parentPath: "leads" }, data: { enrichment: { ...globalThis.__fbStub.col("leads").get("gk").enrichment, logoUrl: `${location.origin}/img/ph-mark-64.png` } } }]));
+      await c.visible('#lead-summary-panel img.enrich-logo[alt="Greene King logo"]', "the company's logo shows on the lead");
+      // One click refreshes: the run is queued, the button waits, the new findings replace the old.
+      await c.click("#lead-sum-enrich", "Refresh info");
+      await until(async () => c.enrichCalls.some((x) => x.leadId === "gk"), "the refresh to be requested", 5000);
+      await c.page.evaluate(() => { const e = globalThis.__fbStub.col("leads").get("gk").enrichment; globalThis.__fbStub.commit([{ op: "update", ref: { type: "doc", id: "gk", path: "leads/gk", parentPath: "leads" }, data: { enrichment: { ...e, request: { id: "r1", status: "running", startedAt: new Date().toISOString() } } } }]); });
+      await until(async () => c.page.locator("#lead-sum-enrich").isDisabled(), "the button to wait while the run is underway", 5000);
+      assert.ok((await c.text("#lead-sum-status")).includes("Researching"), "the drawer says it is researching");
+      await c.page.evaluate(() => { const e = globalThis.__fbStub.col("leads").get("gk").enrichment; globalThis.__fbStub.commit([{ op: "update", ref: { type: "doc", id: "gk", path: "leads/gk", parentPath: "leads" }, data: { enrichment: { ...e, news: [{ title: "Greene King reports trading update", url: "https://news.example/b", date: "2026-11-09", source: "Reuters" }, ...e.news], request: { id: "r1", status: "done" } } } }]); });
+      await until(async () => (await c.text("#lead-sum-research")).includes("Greene King reports trading update"), "the latest news to show", 5000);
+      assert.ok(!(await c.page.locator("#lead-sum-enrich").isDisabled()), "the button is ready again");
+      assert.ok((await c.text("#lead-sum-research")).includes("Revenue rose 5%"), "nothing known was blanked");
+      await c.click("#lead-sum-close", "close the lead drawer"); await c.hidden("#lead-summary-panel");
+      // The TAM record: not enriched yet, so it offers Enrich; its findings show on the profile.
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      await c.visible('#prospects-grid .ag-row[row-id="gk-uk"] [col-id="name"] button.prospect-name-btn', "the TAM record is listed");
+      await c.page.click('#prospects-grid .ag-row[row-id="gk-uk"] [col-id="name"] button.prospect-name-btn');
+      await c.visible("#prospect-detail #pd-research", "the profile has a Company research card");
+      assert.ok((await c.text("#pd-research")).includes("Not enriched yet"), "an unenriched record says so");
+      assert.strictEqual((await c.text('#prospect-detail [data-act="enrich"]')).trim().replace(/^\S+/, "").trim(), "Enrich", "it offers Enrich");
+      await c.click('#prospect-detail [data-act="enrich"]', "Enrich the TAM record");
+      await until(async () => c.enrichCalls.some((x) => x.prospectId === "gk-uk"), "the TAM record's run to be requested", 5000);
+      await c.page.evaluate(() => globalThis.__fbStub.commit([{ op: "update", ref: { type: "doc", id: "gk-uk", path: "prospects/gk-uk", parentPath: "prospects" }, data: { enrichment: {
+        at: new Date().toISOString(), summary: "A UK pub retailer and brewer.", logoUrl: `${location.origin}/img/ph-mark-64.png`,
+        news: [{ title: "Greene King opens new pubs", url: "https://news.example/a", date: "2026-10-01", source: "The Caterer" }],
+        financials: { summary: "Revenue rose 5% to £2.4bn.", period: "FY2024", sources: [] }, request: { id: "r2", status: "done" } } } }]));
+      await until(async () => (await c.text("#pd-research")).includes("Greene King opens new pubs"), "the TAM record's news to show", 5000);
+      assert.ok((await c.text("#pd-research")).includes("Revenue rose 5%"), "and its financials");
+      await c.visible('#prospect-detail img.pd-logo[alt="Greene King logo"]', "the logo shows on the TAM record");
+      assert.strictEqual((await c.text('#prospect-detail [data-act="enrich"]')).trim().replace(/^\S+/, "").trim(), "Refresh info", "then it offers a refresh");
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
     },
   },
 ];

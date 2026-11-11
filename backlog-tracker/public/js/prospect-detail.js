@@ -7,6 +7,11 @@
 // every country record of it (ALDI · Australia and ALDI · Netherlands show the
 // same chart); the profile's vendors and AWS account ID stay on the country record.
 // A write is live for everyone through this view's snapshot of that document.
+// Enrich / Refresh info (editors) queues an agent's web research of the company
+// at /leadEnrich/v1/enrich (functions/lead-enrich.js); the findings land on the
+// record (enrichment: logo, facts, news, financials) and fill the profile's
+// blanks, and arrive through the prospects snapshot. A new record is enriched
+// by itself when it is created.
 //
 // Every control is a <button> or link and acts on click (the iPad rule); the
 // forms are plain <form>s that submit with a button.
@@ -18,6 +23,7 @@ import {
   companyDocId, COMPANY_COLLECTION, normaliseDetail, normaliseAwsAccountId,
 } from "./prospect-detail-core.js";
 import { sizeBandLabel, statusLabel } from "./prospects-core.js";
+import { enrichmentHTML, enrichmentRunning, enrichButtonLabel, enrichmentStatus } from "./enrichment-view.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const TABS = [["profile", "Profile"], ["org", "Org chart"], ["aws", "AWS account team"], ["docs", "Documents"]];
@@ -25,7 +31,7 @@ const fmtDate = (iso) => { const t = Date.parse(iso); return Number.isNaN(t) ? "
 const icon = (n) => `<span class="material-symbols-outlined" aria-hidden="true">${n}</span>`;
 const val = (form, name) => (form.elements[name] ? form.elements[name].value : "");
 
-export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyRows, onClose, onAllFields, say }) {
+export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyRows, onClose, onAllFields, say, apiHeaders }) {
   let id = "";          // the country record that was opened
   let ckey = "";        // its company's shared-detail document id
   let data = null;      // the company's detail, null until the first snapshot
@@ -83,7 +89,10 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
         ${field("Staff owner", txt(p.staffOwner))}
         ${field("Last researched", txt(fmtDate(p.lastResearchedAt)))}
         ${field("Status", esc(statusLabel(r.status)))}
-      </dl></div>`;
+      </dl></div>
+      <div class="pd-card" id="pd-research"><div class="pd-card-head"><h3>Company research</h3></div>
+        ${enrichmentHTML(r.enrichment) || '<p class="pd-none">Not enriched yet. Enrich researches the company on the web.</p>'}
+      </div>`;
   }
   function profileForm(r, d) {
     const p = d.profile, ace = d.aceOpportunity || {};
@@ -241,14 +250,16 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     if (r && !d) { root.hidden = false; root.innerHTML = `<button type="button" class="btn-ghost pd-back" data-act="back">${icon("arrow_back")}All prospects</button><h2 class="pd-name" tabindex="-1">${esc(r.name)}</h2><p class="${loadError ? "pd-form-error" : "pd-none"}" role="status">${esc(loadError || "Loading the company…")}</p>`; return; }
     if (!r || !d) { root.hidden = false; root.innerHTML = `<button type="button" class="btn-ghost pd-back" data-act="back">${icon("arrow_back")}All prospects</button><p class="pd-none">This company is no longer in the list.</p>`; return; }
     const p = d.profile;
+    const logo = p.logoUrl || safeHttpUrl(r.enrichment && r.enrichment.logoUrl);
     let body;
     if (editing && canEdit()) {
       body = editing.kind === "profile" ? profileForm(r, d) : editing.kind === "person" ? personForm(d, editing.id) : editing.kind === "aws" ? awsForm(d, editing.id) : docForm(d, editing.id, editing.base);
     } else body = tab === "profile" ? profileHTML(r, d) : tab === "org" ? orgHTML(d) : tab === "aws" ? awsHTML(d) : docsHTML(d);
     root.hidden = false;
-    root.innerHTML = `<div class="pd-toprow"><button type="button" class="btn-ghost pd-back" data-act="back">${icon("arrow_back")}All prospects</button>${onAllFields ? `<button type="button" class="btn-ghost pd-edit" data-act="allfields">${icon("list_alt")}All fields</button>` : ""}</div>
+    root.innerHTML = `<div class="pd-toprow"><button type="button" class="btn-ghost pd-back" data-act="back">${icon("arrow_back")}All prospects</button>${onAllFields ? `<button type="button" class="btn-ghost pd-edit" data-act="allfields">${icon("list_alt")}All fields</button>` : ""}${canEdit() && apiHeaders ? `<button type="button" class="btn-ghost pd-edit" data-act="enrich"${enrichmentRunning(r.enrichment) ? " disabled" : ""}>${icon("auto_awesome")}${esc(enrichButtonLabel(r.enrichment))}</button>` : ""}</div>
+      ${enrichNote || enrichmentStatus(r.enrichment) ? `<p class="pd-enrich-status field-hint" role="status">${esc(enrichmentStatus(r.enrichment) || enrichNote)}</p>` : ""}
       <header class="pd-head">
-        ${p.logoUrl ? `<img class="pd-logo" src="${esc(p.logoUrl)}" alt="${esc(r.name)} logo" referrerpolicy="no-referrer">` : `<span class="pd-logo pd-logo-fallback" aria-hidden="true">${esc(initials(r.name))}</span>`}
+        ${logo ? `<img class="pd-logo" src="${esc(logo)}" alt="${esc(r.name)} logo" referrerpolicy="no-referrer">` : `<span class="pd-logo pd-logo-fallback" aria-hidden="true">${esc(initials(r.name))}</span>`}
         <div><h2 class="pd-name" tabindex="-1">${esc(r.name)}</h2>
         <p class="pd-sub">${esc([r.industry, r.hqCountry].filter(Boolean).join(" · "))}${r.leadId ? ` · <a href="#promote/leads">Lead</a>` : ""}${safeHttpUrl(r.website) ? ` · <a href="${esc(safeHttpUrl(r.website))}" target="_blank" rel="noopener noreferrer">Website</a>` : ""}</p></div>
       </header>
@@ -349,6 +360,7 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     const act = b.dataset.act;
     if (act === "back") { close(); if (onClose) onClose(); return; }
     if (act === "allfields") { if (onAllFields) onAllFields(id); return; }
+    if (act === "enrich" && canEdit() && apiHeaders) { enrich(); return; }
     if (act === "tab") { tab = b.dataset.tab; editing = null; render(); return; }
     if (act === "toggle") { if (collapsed.has(b.dataset.id)) collapsed.delete(b.dataset.id); else collapsed.add(b.dataset.id); render(); const t = root.querySelector(`[data-act="toggle"][data-id="${CSS.escape(b.dataset.id)}"]`); if (t) t.focus(); return; }
     if (act === "cancel") { editing = null; render(); return; }
@@ -375,6 +387,20 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     im.replaceWith(s);
   }, true);
 
+  // Queues the agent's research of this record; the findings arrive through the prospects snapshot.
+  let enrichNote = "";
+  async function enrich() {
+    const rid = id;
+    enrichNote = "Starting the research…"; render();
+    try {
+      const resp = await fetch("/leadEnrich/v1/enrich", { method: "POST", headers: await apiHeaders(), body: JSON.stringify({ prospectId: rid }) });
+      const body = await resp.json().catch(() => ({}));
+      enrichNote = resp.ok ? "" : (body.error || `Enrichment failed (HTTP ${resp.status}).`);
+      if (resp.ok) say("Researching the company on the web… the findings appear here when it finishes.");
+    } catch (err) { enrichNote = `Enrichment failed: ${err && err.message ? err.message : err}`; }
+    if (id === rid && !editing) render();
+  }
+
   // A lead is one document per company, linked from whichever country record was converted.
   const companyLeadId = () => { const r = row(); if (!r) return ""; if (r.leadId) return r.leadId; const sib = getCompanyRows(ckey).find((x) => x.leadId); return sib ? sib.leadId : ""; };
   async function loadLead() {
@@ -395,7 +421,7 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     }, (err) => { loadError = `The company detail could not be loaded: ${err && err.message ? err.message : err}`; if (id) render(); });
   }
   function open(companyId, startTab) {
-    id = companyId; tab = startTab || "profile"; editing = null; lead = null; leadFor = "";
+    id = companyId; tab = startTab || "profile"; editing = null; lead = null; leadFor = ""; enrichNote = "";
     const r = row();
     ckey = r ? companyDocId(r.name) : "";
     listen();

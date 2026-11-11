@@ -1,27 +1,47 @@
 "use strict";
-// Promote › Leads: enrichment (the page's "Enrich" button).
+// Promote › Leads and Prospects (TAM): company enrichment, done by an agent.
 //
-//   POST /leadEnrich/v1/enrich   {leadId}     editor or admin, ID token in X-Firebase-ID-Token
+//   POST /leadEnrich/v1/enrich   {leadId} or {prospectId}   editor or admin, ID token in X-Firebase-ID-Token
+//        Queues a run: writes enrichment.request {id, status: "queued"} on the
+//        record and answers 202 at once. The page shows "Researching…" from
+//        its own snapshot and the findings appear there when the run ends.
+//   onEnrichWrite(collection, event)   the Firestore trigger (index.js) on
+//        leads/{id} and prospects/{id}: runs when a record is CREATED, and when
+//        a queued request appears. Its own writes never queue one, so it
+//        cannot loop.
 //
-// Looks the company's website up in two places and writes what it finds back
-// onto the lead and its contacts:
-//   • the website itself (title, description, the company's LinkedIn page);
-//   • a technology-lookup service (tech stack, company details and named
-//     contacts) when its key is stored under Settings → Integrations & MCP.
-//     Without the key that source reports "not configured" and the run still
-//     finishes with the first.
-// A figure a person typed is never overwritten; only blanks are filled.
+// The research is free of paid data providers and needs no email address:
+//   • an agent (Claude with web search and web fetch, under the console's
+//     existing ANTHROPIC_API_KEY) researches the company by name and website
+//     and answers with industry, countries, HQ, store count, size, tech stack
+//     and vendors, LinkedIn page, summary, logo, recent news and recent
+//     financials, each news item and financial source with its link and date;
+//   • the company's own home page (title, description, LinkedIn link and the
+//     icon it declares), read directly.
+// What is found is written to the record AND to the record it is linked to
+// (a lead's prospectId, a prospect's leadId), and on a prospect also to the
+// company's shared profile (prospectCompanies/{companyDocId}).
 //
-// Pure module: index.js injects Firestore, token checking, the key store and
-// DNS, so test/lead-enrich.test.js runs it with no network and no credentials.
+// Enrichment only adds or updates; it never blanks a known field. A field a
+// person typed is never overwritten: a field is only changed when it is blank,
+// or when it still holds the value enrichment itself wrote last time
+// (enrichment.filled). Lists (countries, markets, vendors, tech stack) only grow.
+//
+// Pure module: index.js injects Firestore, token checking, the Anthropic key
+// and DNS, so test/lead-enrich.test.js runs it with no network and no credentials.
 const dns = require("dns").promises;
 const net = require("net");
-const core = require("./leads-core");
-const mediaKeys = require("./media-keys");
+const crypto = require("crypto");
+const leadsCore = require("./leads-core");
+const prospectsCore = require("./prospects-core");
 
 const ROLE_RANK = { viewer: 1, editor: 2, admin: 3 };
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_HTML_BYTES = 400 * 1024;
+const AGENT_MODEL = "claude-opus-5-5";
+const AGENT_TIMEOUT_MS = 150000;
+const MAX_CONTINUATIONS = 3;
+const COMPANY_COLLECTION = "prospectCompanies";
 
 // ── Only ever call public addresses ──────────────────────────────────────
 function isPrivateAddress(ip) {
@@ -44,9 +64,25 @@ function hostOf(website) {
 }
 
 const entity = (s) => String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+const str = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
+// Addresses written to a record: http(s) only, at most 500 characters.
+function httpUrl(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (!s || s.length > 500) return "";
+  try { const u = new URL(s); return u.protocol === "https:" || u.protocol === "http:" ? u.href : ""; } catch { return ""; }
+}
+const day = (v) => { const s = str(v, 40); const m = /^(\d{4}-\d{2}(?:-\d{2})?)/.exec(s); return m ? m[1] : s.slice(0, 20); };
+const uniq = (list, n, len) => {
+  const seen = new Set(), out = [];
+  for (const x of list || []) {
+    const v = str(x, len);
+    if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); out.push(v); }
+  }
+  return out.slice(0, n);
+};
 
-// Title, description and the company LinkedIn page out of a home page.
-function readPage(html) {
+// Title, description, the company LinkedIn page and the declared icons out of a home page.
+function readPage(html, base) {
   const h = String(html || "");
   const title = entity((h.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]);
   const metas = [...h.matchAll(/<meta\s[^>]*>/gi)].map((m) => m[0]);
@@ -59,32 +95,210 @@ function readPage(html) {
   };
   const description = meta("description") || meta("og:description");
   const li = (h.match(/https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/company\/[A-Za-z0-9._%-]+/i) || [])[0] || "";
-  return { title: title.slice(0, 200), description: description.slice(0, 400), linkedinCompany: li };
+  // The site's own icon: an apple-touch-icon (the largest the site offers) first, then any icon.
+  const abs = (href) => { try { return httpUrl(new URL(entity(href), base || undefined).href); } catch { return ""; } };
+  const icons = { touch: "", icon: "" };
+  for (const m of h.matchAll(/<link\s[^>]*>/gi)) {
+    const tag = m[0];
+    const rel = ((tag.match(/rel\s*=\s*["']([^"']+)["']/i) || [])[1] || "").toLowerCase();
+    const href = (tag.match(/href\s*=\s*["']([^"']+)["']/i) || [])[1];
+    if (!href || !rel) continue;
+    if (!icons.touch && /apple-touch-icon/.test(rel)) icons.touch = abs(href);
+    else if (!icons.icon && /(^|\s)icon(\s|$)/.test(rel)) icons.icon = abs(href);
+  }
+  return { title: title.slice(0, 200), description: description.slice(0, 400), linkedinCompany: li, iconUrl: icons.touch || icons.icon };
 }
 
-function regionName(code) {
-  const c = String(code || "").trim();
-  if (c.length !== 2) return c.length > 2 ? c : "";
-  try { return new Intl.DisplayNames(["en"], { type: "region" }).of(c.toUpperCase()) || ""; } catch { return ""; }
+// ── The agent ────────────────────────────────────────────────────────────
+const AGENT_SYSTEM = [
+  "You research a company for a B2B sales team, using web search and web fetch. Use only public sources; never guess.",
+  "Find, where available: the company's industry; the countries and markets it trades in; its head-office city and country; how many stores or sites it has;",
+  "its size (employees, annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, cloud, digital signage);",
+  "its LinkedIn company page; a two or three sentence summary of what it does; a direct link to its logo or icon image;",
+  "its recent news (up to five items from the last twelve months, newest first, each with the article's link and date);",
+  "and its most recent financials (latest reported revenue, profit or trading update, with the period and source links and dates).",
+  "Put any other useful fact you find (ownership, parent company, founded, CEO, stock ticker) in facts.",
+  "Leave a field empty, or the list empty, when you cannot find it. Write in British English.",
+  "When you are done, reply with ONE JSON object in a ```json code block, and nothing after it, with exactly these keys:",
+  '{"name":"","website":"","industry":"","countries":[],"hqCity":"","hqCountry":"","storeCount":null,"employees":"","revenue":"",',
+  '"techStack":[],"vendors":[],"linkedinCompany":"","summary":"","logoUrl":"",',
+  '"news":[{"title":"","url":"","date":"YYYY-MM-DD","source":""}],',
+  '"financials":{"summary":"","period":"","sources":[{"title":"","url":"","date":"YYYY-MM-DD"}]},',
+  '"facts":[{"label":"","value":""}]}',
+  "storeCount is a number or null. Dates are YYYY-MM-DD (YYYY-MM when the day is unknown).",
+].join(" ");
+
+// The last JSON object in the agent's answer (a ```json block, else the last {...}).
+function parseAgentJson(text) {
+  const t = String(text || "");
+  const blocks = [...t.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((m) => m[1]);
+  const tries = blocks.reverse();
+  const first = t.indexOf("{"), last = t.lastIndexOf("}");
+  if (first >= 0 && last > first) tries.push(t.slice(first, last + 1));
+  for (const c of tries) { try { const o = JSON.parse(c.trim()); if (o && typeof o === "object" && !Array.isArray(o)) return o; } catch { /* next */ } }
+  return null;
 }
 
-// BuiltWith-shaped answer -> { techStack[], company{}, people[] }.
-function readTechLookup(json) {
-  const r = (json && Array.isArray(json.Results) && json.Results[0]) || {};
-  const names = new Set();
-  const paths = (r.Result && Array.isArray(r.Result.Paths)) ? r.Result.Paths : [];
-  for (const p of paths) for (const t of (p.Technologies || [])) if (t && t.Name) names.add(String(t.Name));
-  const meta = r.Meta || {};
-  const country = regionName(meta.Country);
+// Anything the agent said -> the clean shape the records take. Nothing unchecked
+// reaches Firestore: lengths are capped and every address is http(s).
+function cleanFindings(raw) {
+  const o = raw && typeof raw === "object" ? raw : {};
+  const site = o.website ? prospectsCore.normaliseUrl(o.website) : "";
+  const scText = typeof o.storeCount === "string" ? (o.storeCount.replace(/(\d),(?=\d{3}\b)/g, "$1").match(/\d+(?:\.\d+)?/) || [])[0] : null;
+  const sc = typeof o.storeCount === "number" ? o.storeCount : (scText ? Number(scText) : null);
+  const li = prospectsCore.normaliseLinkedinUrl(o.linkedinCompany);
+  const link = (x) => ({ title: str(x && x.title, 200), url: httpUrl(x && x.url), date: day(x && x.date) });
+  const news = (Array.isArray(o.news) ? o.news : []).map((x) => ({ ...link(x), source: str(x && x.source, 80) })).filter((x) => x.title && x.url).slice(0, 5);
+  const f = o.financials && typeof o.financials === "object" ? o.financials : {};
+  const fin = { summary: str(f.summary, 600), period: str(f.period, 60), sources: (Array.isArray(f.sources) ? f.sources : []).map(link).filter((x) => x.url).slice(0, 4) };
   return {
-    techStack: [...names].sort((a, b) => a.localeCompare(b)).slice(0, 80),
-    company: { name: String(meta.CompanyName || ""), industry: String(meta.Vertical || ""), countries: country ? [country] : [] },
-    people: (Array.isArray(meta.Names) ? meta.Names : []).map((n) => ({ name: String((n && n.Name) || ""), title: String((n && n.Type) || ""), email: String((n && n.Email) || "") })).filter((p) => p.name),
+    name: str(o.name, 120),
+    website: site || "",
+    industry: str(o.industry, 120),
+    countries: uniq((Array.isArray(o.countries) ? o.countries : []).map(prospectsCore.canonicalCountry), 40, 60),
+    hqCity: str(o.hqCity, 80),
+    hqCountry: str(prospectsCore.canonicalCountry(o.hqCountry), 60),
+    storeCount: typeof sc === "number" && Number.isFinite(sc) && sc > 0 ? Math.round(sc) : null,
+    employees: str(o.employees, 60),
+    revenue: str(o.revenue, 80),
+    techStack: uniq(Array.isArray(o.techStack) ? o.techStack : [], 40, 80),
+    vendors: uniq(Array.isArray(o.vendors) ? o.vendors : [], 40, 80),
+    linkedinCompany: li || "",
+    summary: str(o.summary, 1000),
+    logoUrl: httpUrl(o.logoUrl),
+    news,
+    financials: fin.summary || fin.sources.length ? fin : null,
+    facts: (Array.isArray(o.facts) ? o.facts : []).map((x) => ({ label: str(x && x.label, 60), value: str(x && x.value, 200) })).filter((x) => x.label && x.value).slice(0, 12),
   };
 }
 
-function createLeadEnrich({ db, verifyIdToken, resolveConsoleUser, encKey, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }), logger = console, now = () => new Date() }) {
+async function claudeResearch({ apiKey, Anthropic, company, website, country }) {
+  const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
+  const client = new Client({ apiKey, timeout: AGENT_TIMEOUT_MS, maxRetries: 1 });
+  const ask = [
+    `Company: ${company}`,
+    website ? `Website: ${website}` : "Website: not known (find it).",
+    country ? `Country of interest: ${country}` : "",
+    `Today is ${new Date().toISOString().slice(0, 10)}.`,
+  ].filter(Boolean).join("\n");
+  const messages = [{ role: "user", content: ask }];
+  let res;
+  for (let i = 0; i <= MAX_CONTINUATIONS; i++) {
+    res = await client.beta.messages.create({
+      model: AGENT_MODEL,
+      max_tokens: 16000,
+      output_config: { effort: "medium" },
+      fallbacks: "default",
+      betas: ["server-side-fallback-2026-07-01"],
+      system: AGENT_SYSTEM,
+      tools: [
+        { type: "web_search_20260209", name: "web_search", max_uses: 8 },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 6 },
+      ],
+      messages,
+    });
+    if (res.stop_reason !== "pause_turn") break;
+    // A long server-tool turn paused: send it back as it is and the server resumes it.
+    messages.push({ role: "assistant", content: res.content });
+  }
+  if (!res || res.stop_reason === "refusal") return null;
+  const text = (res.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  return parseAgentJson(text);
+}
+
+// ── Merging, kept apart from the fetching so the test can drive it ──────
+// A field may change when it is blank, or still holds what enrichment wrote last time.
+const blank = (v) => v == null || v === "" || (Array.isArray(v) && !v.length);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function ownable(current, filledBefore) { return blank(current) || (filledBefore !== undefined && same(current, filledBefore)); }
+const union = (have, add, n, len) => uniq([...(have || []), ...(add || [])], n, len);
+const keep = (next, prev) => (blank(next) ? (prev === undefined ? (Array.isArray(next) ? [] : next == null ? null : "") : prev) : next);
+
+// The enrichment map both records carry: the newest non-empty value, else the one before.
+function enrichmentMap(prev, f, logoUrl, sources, meta) {
+  const p = prev && typeof prev === "object" ? prev : {};
+  const hq = [f.hqCity, f.hqCountry].filter(Boolean).join(", ");
+  return {
+    at: meta.at, by: meta.by,
+    summary: f.summary || p.summary || f.siteDescription || "",
+    logoUrl: keep(logoUrl, p.logoUrl),
+    hq: keep(hq, p.hq),
+    employees: keep(f.employees, p.employees),
+    revenue: keep(f.revenue, p.revenue),
+    techStack: union(p.techStack, f.techStack, 60, 80),
+    vendors: union(p.vendors, f.vendors, 60, 80),
+    linkedinCompany: keep(f.linkedinCompany, p.linkedinCompany),
+    news: f.news.length ? f.news : (Array.isArray(p.news) ? p.news : []),
+    financials: f.financials || p.financials || null,
+    facts: f.facts.length ? f.facts : (Array.isArray(p.facts) ? p.facts : []),
+    sources,
+  };
+}
+
+function applyToLead(data, f, logoUrl, sources, meta) {
+  const lead = leadsCore.normaliseLead("x", data);
+  const prev = lead.enrichment || {};
+  const filled = prev.filled && typeof prev.filled === "object" ? { ...prev.filled } : {};
+  const company = { ...((data && data.company) || {}) };
+  const changed = [];
+  const set = (k, v) => { if (blank(v) || same(company[k], v)) return; if (!ownable(company[k], filled[k])) return; company[k] = v; filled[k] = v; changed.push(k); };
+  set("industry", str(f.industry, 120));
+  set("storeCount", f.storeCount);
+  if (!company.website && f.website && f.website.length <= 300) { company.website = f.website; changed.push("website"); }
+  const countries = uniq([...(lead.company.countries || []), ...[f.hqCountry, ...f.countries].filter(Boolean)], 60, 60);
+  if (countries.length > (lead.company.countries || []).length) { company.countries = countries; changed.push("countries"); }
+  const enrichment = { ...enrichmentMap(prev, f, logoUrl, sources, meta), filled, companyFieldsAdded: changed };
+  if (prev.request) enrichment.request = prev.request;
+  return { company, enrichment, changed };
+}
+
+function applyToProspect(data, f, logoUrl, sources, meta) {
+  const p = prospectsCore.normaliseProspect("x", data);
+  const prev = data && data.enrichment && typeof data.enrichment === "object" ? data.enrichment : {};
+  const filled = prev.filled && typeof prev.filled === "object" ? { ...prev.filled } : {};
+  const fields = {};
+  const changed = [];
+  const stored = (k) => (data || {})[k];
+  const set = (k, v) => { if (blank(v) || same(stored(k), v)) return; if (!ownable(stored(k), filled[k])) return; fields[k] = v; filled[k] = v; changed.push(k); };
+  set("industry", prospectsCore.normaliseIndustry(f.industry));
+  set("hqCountry", str(f.hqCountry, 60));
+  set("storeCount", f.storeCount);
+  set("linkedinUrl", f.linkedinCompany);
+  if (!stored("website") && f.website && f.website.length <= 300) { fields.website = f.website; changed.push("website"); }
+  const markets = uniq([...p.markets, ...f.countries], 60, 60);
+  if (markets.length > p.markets.length) { fields.markets = markets; changed.push("markets"); }
+  const vendors = uniq([...p.vendors, ...f.vendors, ...f.techStack], 60, 80);
+  if (vendors.length > p.vendors.length) { fields.vendors = vendors; changed.push("vendors"); }
+  const enrichment = { ...enrichmentMap(prev, f, logoUrl, sources, meta), filled, companyFieldsAdded: changed };
+  if (prev.filledProfile) enrichment.filledProfile = prev.filledProfile;
+  if (prev.request) enrichment.request = prev.request;
+  return { fields, enrichment, changed };
+}
+
+// The company's shared profile (the TAM detail view): summary, logo, tech stack,
+// latest news and the date it was last researched.
+function applyToProfile(profile, f, logoUrl, filledBefore, today) {
+  const cur = profile && typeof profile === "object" ? profile : {};
+  const filled = filledBefore && typeof filledBefore === "object" ? { ...filledBefore } : {};
+  const set = {};
+  const put = (k, v) => { if (blank(v) || same(cur[k], v) || !ownable(cur[k], filled[k])) return; set[k] = v; filled[k] = v; };
+  put("summary", str(f.summary || f.siteDescription, 2000));
+  put("logoUrl", logoUrl);
+  const newsLine = f.news.slice(0, 3).map((n) => `${n.date ? `${n.date} · ` : ""}${n.title}${n.source ? ` (${n.source})` : ""}`).join("\n").slice(0, 1000);
+  put("latestNews", newsLine);
+  const stack = uniq([...(Array.isArray(cur.techStack) ? cur.techStack : []), ...f.techStack], 40, 40);
+  if (stack.length > (Array.isArray(cur.techStack) ? cur.techStack.length : 0)) set.techStack = stack;
+  set.lastResearchedAt = today;
+  return { set, filled };
+}
+
+function createLeadEnrich({
+  db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", Anthropic,
+  research, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
+  logger = console, now = () => new Date(), serverTimestamp,
+}) {
   const send = (res, status, body) => res.status(status).set("Cache-Control", "no-store").json(body);
+  const stamp = () => (serverTimestamp ? serverTimestamp() : now());
 
   async function requireEditor(req) {
     const idToken = String(req.get("x-firebase-id-token") || "");
@@ -93,7 +307,7 @@ function createLeadEnrich({ db, verifyIdToken, resolveConsoleUser, encKey, fetch
     try { decoded = await verifyIdToken(idToken); } catch { return { ok: false, status: 401, error: "invalid sign-in" }; }
     const user = await resolveConsoleUser(decoded.email);
     if (!user) return { ok: false, status: 403, error: "not on the console user list" };
-    if ((ROLE_RANK[user.role] || 0) < ROLE_RANK.editor) return { ok: false, status: 403, error: "viewers can't enrich leads" };
+    if ((ROLE_RANK[user.role] || 0) < ROLE_RANK.editor) return { ok: false, status: 403, error: "viewers can't enrich records" };
     return { ok: true, user };
   }
 
@@ -104,7 +318,7 @@ function createLeadEnrich({ db, verifyIdToken, resolveConsoleUser, encKey, fetch
   }
 
   // GET with a timeout, a size cap and a public-address check on every hop.
-  async function safeGet(url, headers) {
+  async function safeGet(url) {
     let current = url;
     for (let hop = 0; hop < 4; hop++) {
       const u = new URL(current);
@@ -113,75 +327,162 @@ function createLeadEnrich({ db, verifyIdToken, resolveConsoleUser, encKey, fetch
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
       try {
-        const r = await fetchImpl(current, { headers: { "User-Agent": "PH-Console-LeadEnrich/1.0", ...(headers || {}) }, redirect: "manual", signal: ctl.signal });
+        const r = await fetchImpl(current, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" }, redirect: "manual", signal: ctl.signal });
         if (r.status >= 300 && r.status < 400 && r.headers.get("location")) { current = new URL(r.headers.get("location"), current).href; continue; }
-        return { status: r.status, ok: r.ok, text: async () => String(await r.text()).slice(0, MAX_HTML_BYTES), json: () => r.json() };
+        return { status: r.status, ok: r.ok, url: current, headers: r.headers, text: async () => String(await r.text()).slice(0, MAX_HTML_BYTES) };
       } finally { clearTimeout(timer); }
     }
     throw new Error("too many redirects");
   }
 
-  async function techKey() {
-    const key = mediaKeys.keyBytes(encKey());
-    if (!key) return null;
-    const snap = await db.collection(mediaKeys.COLLECTION).doc("builtwith").get();
-    const d = snap.exists ? snap.data() || {} : null;
-    if (!d || !d.box) return null;
-    try { return mediaKeys.decrypt(key, "builtwith", d.box); } catch (err) { logger.warn("builtwith key unreadable", { error: String(err.message || err) }); return null; }
-  }
-
   async function websiteSource(website) {
+    if (!website) return { source: "website", status: "skipped", message: "No website known, so the home page wasn't read." };
     try {
       const r = await safeGet(website);
       if (!r.ok) return { source: "website", status: "error", message: `The site answered HTTP ${r.status}.` };
-      const page = readPage(await r.text());
-      const bits = [page.title && "title", page.description && "description", page.linkedinCompany && "LinkedIn page"].filter(Boolean);
+      const page = readPage(await r.text(), r.url);
+      const bits = [page.title && "title", page.description && "description", page.linkedinCompany && "LinkedIn page", page.iconUrl && "icon"].filter(Boolean);
       return { source: "website", status: "ok", message: bits.length ? `Read the site's ${bits.join(", ")}.` : "Reached the site; nothing to read from it.", page };
     } catch (err) {
       return { source: "website", status: "error", message: `Couldn't read the site: ${String(err.message || err).slice(0, 120)}` };
     }
   }
 
-  async function techSource(host) {
-    let key;
-    try { key = await techKey(); } catch (err) { logger.warn("tech key read failed", { error: String(err) }); }
-    if (!key) return { source: "tech-stack", status: "not-configured", message: "No lookup key is stored (Settings → Integrations & MCP), so the tech stack wasn't looked up." };
+  // The site's /favicon.ico when the page declares no icon, if it really is an image.
+  async function faviconOf(website) {
+    if (!website) return "";
     try {
-      const r = await safeGet(`https://api.builtwith.com/v21/api.json?KEY=${encodeURIComponent(key)}&LOOKUP=${encodeURIComponent(host)}&NOMETA=no`);
-      if (!r.ok) return { source: "tech-stack", status: "error", message: `The lookup service answered HTTP ${r.status}.` };
-      const found = readTechLookup(await r.json());
-      return { source: "tech-stack", status: "ok", message: `${found.techStack.length} technologies found.`, found };
+      const url = new URL("/favicon.ico", website).href;
+      const r = await safeGet(url);
+      const type = String((r.headers && r.headers.get && r.headers.get("content-type")) || "");
+      return r.ok && /^image\//i.test(type) ? httpUrl(r.url) : "";
+    } catch { return ""; }
+  }
+
+  async function agentSource(company, website, country) {
+    const key = anthropicKey();
+    if (!key || key === "unset") return { source: "agent", status: "not-configured", message: "The research agent isn't set up yet (ANTHROPIC_API_KEY), so only the website was read." };
+    try {
+      const raw = await (research || claudeResearch)({ apiKey: key, Anthropic, company, website, country });
+      if (!raw) return { source: "agent", status: "error", message: "The research agent returned nothing usable." };
+      const found = cleanFindings(raw);
+      const n = [found.industry, found.hqCountry, found.storeCount, found.summary, found.logoUrl, found.linkedinCompany].filter((x) => !blank(x)).length + found.techStack.length + found.news.length + (found.financials ? 1 : 0);
+      return { source: "agent", status: "ok", message: `Web research found ${n} ${n === 1 ? "detail" : "details"}, ${found.news.length} news ${found.news.length === 1 ? "item" : "items"}${found.financials ? " and recent financials" : ""}.`, found };
     } catch (err) {
-      return { source: "tech-stack", status: "error", message: `Couldn't reach the lookup service: ${String(err.message || err).slice(0, 120)}` };
+      logger.warn("enrichment agent failed", { company, error: String(err && err.message ? err.message : err) });
+      return { source: "agent", status: "error", message: `The research agent failed: ${String(err && err.message ? err.message : err).slice(0, 120)}` };
     }
   }
 
-  // The merge, kept apart from the fetching so the test can drive it.
-  function applyEnrichment(lead, results, by, at) {
-    const web = results.find((r) => r.source === "website");
-    const tech = results.find((r) => r.source === "tech-stack");
-    const found = tech && tech.found ? tech.found : null;
-    const merged = core.mergeCompanyEnrichment(lead.company, found ? { industry: found.company.industry, countries: found.company.countries } : {});
-    const people = found ? found.people : [];
-    const contacts = lead.contacts.map((c) => {
-      const p = people.find((x) => (c.email && x.email && x.email.toLowerCase() === c.email.toLowerCase()) || x.name.toLowerCase() === c.name.toLowerCase());
-      if (!p) return c;
-      const out = { ...c };
-      const added = [];
-      if (!c.email && p.email) { out.email = p.email; added.push("email"); }
-      if (!c.jobTitle && p.title) { out.jobTitle = p.title.slice(0, core.LIMITS.jobTitle); added.push("jobTitle"); }
-      out.enrichment = { at, by, source: "tech-stack", added, listedAs: p.title || null };
-      return out;
-    });
-    const enrichment = {
-      at, by,
-      techStack: found ? found.techStack : (lead.enrichment && lead.enrichment.techStack) || [],
-      summary: web && web.page ? (web.page.description || web.page.title || "") : (lead.enrichment && lead.enrichment.summary) || "",
-      linkedinCompany: (web && web.page && web.page.linkedinCompany) || (lead.enrichment && lead.enrichment.linkedinCompany) || "",
-      sources: results.map((r) => ({ source: r.source, status: r.status, message: r.message })),
-      companyFieldsAdded: merged.changed,
+  // One research run for a company: the agent first (it may find the website), then the site.
+  async function research_(company, website, country) {
+    const agent = await agentSource(company, website, country);
+    const empty = cleanFindings({});
+    const f = agent.found || empty;
+    const site = website || f.website || "";
+    const web = await websiteSource(site);
+    const page = web.page || {};
+    // The site's own description only stands in when no summary was ever found.
+    f.siteDescription = str(page.description, 1000);
+    if (!f.linkedinCompany && page.linkedinCompany) f.linkedinCompany = prospectsCore.normaliseLinkedinUrl(page.linkedinCompany) || "";
+    if (!f.website && site) f.website = site;
+    const logoUrl = page.iconUrl || f.logoUrl || (web.status === "ok" ? await faviconOf(site) : "");
+    const sources = [agent, web].map((r) => ({ source: r.source, status: r.status, message: r.message }));
+    return { f, logoUrl, sources };
+  }
+
+  function requestOf(data) {
+    const e = data && data.enrichment;
+    return e && typeof e === "object" && e.request && typeof e.request === "object" ? e.request : null;
+  }
+
+  // Runs one enrichment on leads/{id} or prospects/{id}, and its linked record.
+  async function enrichRecord(collection, id, by, trigger) {
+    const ref = db.collection(collection).doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return { ok: false, error: "no such record" };
+    const data = snap.data() || {};
+    if (collection === "leads" && data.test === true) return { ok: false, error: "test leads are not enriched" };
+    const req = requestOf(data) || { id: `auto-${crypto.randomBytes(4).toString("hex")}`, by, trigger };
+    const startedAt = now();
+    await ref.update({ "enrichment.request": { ...req, status: "running", startedAt } });
+
+    const isLead = collection === "leads";
+    const name = isLead ? str(data.company && data.company.name, 120) : str(data.name, 120);
+    const website = isLead ? leadsCore.normaliseUrl(data.company && data.company.website) || "" : prospectsCore.normaliseUrl(data.website) || "";
+    const country = isLead ? "" : str(data.country, 60);
+    let result;
+    try { result = await research_(name, website, country); } catch (err) {
+      await ref.update({ "enrichment.request": { ...req, status: "error", startedAt, finishedAt: now(), message: String(err && err.message ? err.message : err).slice(0, 200) } });
+      return { ok: false, error: "enrichment failed" };
+    }
+    const at = now();
+    const meta = { at, by: by || req.by || "auto" };
+    const ok = result.sources.some((s) => s.status === "ok");
+    const done = { ...req, status: ok ? "done" : "error", startedAt, finishedAt: at, message: result.sources.map((s) => s.message).join(" ") };
+    const out = { collection, id, changed: [], linked: null };
+
+    // Re-read: a person may have edited the record while the research ran.
+    const writeLead = async (lref, own) => {
+      const fresh = await lref.get();
+      if (!fresh.exists || (fresh.data() || {}).test === true) return null;
+      const r = applyToLead(fresh.data(), result.f, result.logoUrl, result.sources, meta);
+      const cur = requestOf(fresh.data());
+      if (own) r.enrichment.request = cur && cur.id !== req.id ? cur : done; else if (cur) r.enrichment.request = cur; else delete r.enrichment.request;
+      await lref.update({ company: r.company, enrichment: r.enrichment, updatedAt: stamp() });
+      return r.changed;
     };
-    return { company: merged.company, contacts, enrichment, changed: merged.changed };
+    const writeProspect = async (pref, own) => {
+      const fresh = await pref.get();
+      if (!fresh.exists) return null;
+      const pdata = fresh.data() || {};
+      const r = applyToProspect(pdata, result.f, result.logoUrl, result.sources, meta);
+      const cur = requestOf(pdata);
+      if (own) r.enrichment.request = cur && cur.id !== req.id ? cur : done; else if (cur) r.enrichment.request = cur; else delete r.enrichment.request;
+      // The company's shared profile, merged field by field.
+      const ckey = prospectsCore.slugId(pdata.name);
+      if (ckey) {
+        const cref = db.collection(COMPANY_COLLECTION).doc(ckey);
+        const csnap = await cref.get();
+        const profile = csnap.exists ? ((csnap.data() || {}).profile || {}) : {};
+        const pr = applyToProfile(profile, result.f, result.logoUrl, r.enrichment.filledProfile, at.toISOString().slice(0, 10));
+        r.enrichment.filledProfile = pr.filled;
+        await cref.set({ name: str(pdata.name, 120), profile: pr.set, updatedAt: stamp(), updatedByEmail: meta.by.includes("@") ? meta.by : "enrichment" }, { merge: true });
+      }
+      await pref.update({ ...r.fields, enrichment: r.enrichment, updatedAt: stamp() });
+      return r.changed;
+    };
+
+    if (isLead) {
+      out.changed = (await writeLead(ref, true)) || [];
+      const pid = str((await ref.get()).data().prospectId, 120);
+      if (pid) out.linked = { collection: "prospects", id: pid, changed: await writeProspect(db.collection("prospects").doc(pid), false) };
+    } else {
+      out.changed = (await writeProspect(ref, true)) || [];
+      const lid = str(data.leadId, 120);
+      if (lid) out.linked = { collection: "leads", id: lid, changed: await writeLead(db.collection("leads").doc(lid), false) };
+    }
+    return { ok, ...out, sources: result.sources };
+  }
+
+  // The Firestore trigger: a created record, or a newly queued request.
+  async function onEnrichWrite(collection, event) {
+    const before = event && event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    const after = event && event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return null;
+    const id = event.params && (event.params.leadId || event.params.prospectId || event.params.id);
+    if (!id) return null;
+    const rb = requestOf(before), ra = requestOf(after);
+    const created = !before;
+    const queued = ra && ra.status === "queued" && (!rb || rb.id !== ra.id);
+    if (!created && !queued) return null;
+    if (collection === "leads" && after.test === true) return null;
+    try {
+      return await enrichRecord(collection, String(id), queued ? ra.by : "auto", created && !queued ? "created" : "requested");
+    } catch (err) {
+      logger.error("enrichment run failed", { collection, id, error: String(err && err.message ? err.message : err) });
+      return null;
+    }
   }
 
   async function handle(req, res) {
@@ -190,38 +491,34 @@ function createLeadEnrich({ db, verifyIdToken, resolveConsoleUser, encKey, fetch
     if (req.method !== "POST") return send(res, 405, { error: "POST only" });
     const who = await requireEditor(req);
     if (!who.ok) return send(res, who.status, { error: who.error });
-    const leadId = String((req.body && req.body.leadId) || "").trim();
-    if (!leadId) return send(res, 400, { error: "leadId is required" });
-    const ref = db.collection("leads").doc(leadId);
+    const body = req.body || {};
+    const leadId = String(body.leadId || "").trim();
+    const prospectId = String(body.prospectId || "").trim();
+    if (!leadId && !prospectId) return send(res, 400, { error: "leadId or prospectId is required" });
+    const collection = leadId ? "leads" : "prospects";
+    const id = leadId || prospectId;
+    const ref = db.collection(collection).doc(id);
     const snap = await ref.get();
-    if (!snap.exists) return send(res, 404, { error: "no such lead" });
-    if ((snap.data() || {}).test === true) return send(res, 400, { error: "test leads are not enriched" });
-    const lead = core.normaliseLead(snap.id, snap.data());
-    const website = core.normaliseUrl(lead.company.website);
-    if (!website) return send(res, 400, { error: "Add the company's website first; that's what is looked up." });
-
-    const results = await Promise.all([websiteSource(website), techSource(hostOf(website))]);
-    // Re-read: a person may have edited the card while the lookups ran.
-    const fresh = await ref.get();
-    if (!fresh.exists) return send(res, 404, { error: "the lead was deleted meanwhile" });
-    const current = core.normaliseLead(fresh.id, fresh.data());
-    const at = now();
-    const out = applyEnrichment(current, results, who.user.email, at);
-    await ref.update({ company: out.company, contacts: out.contacts.map(stripId), enrichment: out.enrichment, updatedAt: at, updatedByEmail: who.user.email });
-    return send(res, 200, {
-      ok: true, leadId,
-      sources: out.enrichment.sources, companyFieldsAdded: out.changed,
-      techStack: out.enrichment.techStack.length, contactsEnriched: out.contacts.filter((c) => c.enrichment && c.enrichment.at === at).length,
-    });
+    if (!snap.exists) return send(res, 404, { error: leadId ? "no such lead" : "no such prospect" });
+    const data = snap.data() || {};
+    if (leadId && data.test === true) return send(res, 400, { error: "test leads are not enriched" });
+    const name = leadId ? str(data.company && data.company.name, 120) : str(data.name, 120);
+    if (!name) return send(res, 400, { error: "Name the company first; that's what is researched." });
+    const cur = requestOf(data);
+    if (cur && (cur.status === "queued" || cur.status === "running")) {
+      const since = cur.startedAt && typeof cur.startedAt.toDate === "function" ? cur.startedAt.toDate() : (cur.startedAt ? new Date(cur.startedAt) : null);
+      // A run that never finished (over 10 minutes) doesn't block a new one.
+      if (!since || now() - since < 10 * 60 * 1000) return send(res, 202, { ok: true, queued: true, already: true, requestId: cur.id, collection, id });
+    }
+    const request = { id: crypto.randomBytes(8).toString("hex"), at: now(), by: who.user.email, status: "queued", trigger: "requested" };
+    await ref.update({ "enrichment.request": request });
+    return send(res, 202, { ok: true, queued: true, requestId: request.id, collection, id });
   }
 
-  return { handle, applyEnrichment, readPage, readTechLookup };
-}
-// A contact's `enrichment` null (page-normalised) is dropped so the stored map stays clean.
-function stripId(c) {
-  const o = { id: c.id, name: c.name, jobTitle: c.jobTitle, buyingRole: c.buyingRole, email: c.email, linkedin: c.linkedin };
-  if (c.enrichment) o.enrichment = c.enrichment;
-  return o;
+  return { handle, onEnrichWrite, enrichRecord };
 }
 
-module.exports = { createLeadEnrich, readPage, readTechLookup, isPrivateAddress, hostOf };
+module.exports = {
+  createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
+  applyToLead, applyToProspect, applyToProfile, AGENT_SYSTEM, AGENT_MODEL,
+};

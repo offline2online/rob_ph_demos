@@ -4156,19 +4156,58 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   `{at, by, kind, text}` to the lead's `history` (newest 100), shown on the
   lead drawer as "Notes and history"; the board's own edits are not logged
   there. The website capture that creates leads writes the same `leads` documents.
-- **Enrichment**: the lead's **Enrich** button saves the form, then
-  `leadEnrich` (`functions/lead-enrich.js`) reads the company's website (title,
-  description, its LinkedIn page) and, if a BuiltWith key is stored in the
-  encrypted key store (Settings → Integrations & MCP, provider `builtwith`),
-  the tech stack, company country and industry and any named contacts. It
-  fills blanks only (a typed store count or industry is never overwritten),
-  writes `enrichment` on the card and an `enrichment` note on each matching
-  contact, and reports each source as ok, not configured or error. Only public
-  addresses are fetched (private, loopback and metadata addresses, and
-  redirects to them, are refused). Store count is filled only when a source
-  supplies one; none of the current two does. LinkedIn: there is no public
-  lookup API, so only the company's LinkedIn page found on its own website is
-  recorded, and contacts' LinkedIn addresses are kept as entered.
+- **Enrichment (agent-led, 10 Nov 2026)**: `functions/lead-enrich.js`. It
+  replaced the website + BuiltWith lookup, which saved an enriched date but no
+  data when no BuiltWith key was stored. No paid data provider is used and no
+  email address is needed:
+  - **Research**: an agent (Claude, `claude-opus-5-5`, with the server-side web
+    search and web fetch tools, under the `ANTHROPIC_API_KEY` secret Staff
+    Kanban's agent fill already uses) researches the company by name and, when
+    known, website, and answers with industry, countries/markets, HQ city and
+    country, store count, employees, revenue, tech stack, vendors, the LinkedIn
+    company page, a short summary, a logo link, up to five recent news items
+    (title, link, date, source) and the most recent financials (summary,
+    period, source links and dates), plus any other facts (owner, founded…).
+    The company's home page (the agent's website when none is known) is read
+    directly for its description, LinkedIn link and declared icon. Without
+    the key the agent reports "not set up" and only the website is read.
+  - **Logo**: the site's apple-touch-icon, else its icon, else the agent's logo
+    link, else `/favicon.ico` when it is an image. Stored as
+    `enrichment.logoUrl`; shown on the lead drawer and form, and on the TAM
+    record's header (the profile's own logo wins when set).
+  - **When it runs**: by itself when a lead or a Prospects (TAM) record is
+    created (Firestore triggers `enrichLeadOnWrite` / `enrichProspectOnWrite`,
+    test leads skipped), and when an editor presses **Enrich** (before the
+    first run) or **Refresh info** (after it) on the lead drawer, the lead form
+    or the TAM record. The button calls `POST /leadEnrich/v1/enrich`
+    `{leadId}` or `{prospectId}`, which only queues the run
+    (`enrichment.request {id, status: "queued", by}`, 202); the trigger runs
+    it (`running` → `done` / `error`), and the page shows "Researching…" and
+    then the findings through its own snapshot. A second click while a run is
+    underway queues nothing; a run stuck over 10 minutes no longer blocks one.
+  - **Where it writes**: the record and the record it is linked to (a lead's
+    `prospectId`, a prospect's `leadId`). On a lead: `company.industry`,
+    `storeCount`, `countries` (added to), `website` (when blank) and the
+    `enrichment` map `{at, by, summary, logoUrl, hq, employees, revenue,
+    techStack[], vendors[], linkedinCompany, news[], financials, facts[],
+    sources[], filled, companyFieldsAdded, request}`. On a prospect:
+    `industry` (one of the nine), `hqCountry`, `storeCount`, `linkedinUrl`,
+    `website` (when blank), `markets` and `vendors` (added to), the same
+    `enrichment` map, and on the company's shared profile
+    (`prospectCompanies/{companyDocId}`) `summary`, `logoUrl`, `latestNews`,
+    `techStack` (added to) and `lastResearchedAt`.
+  - **Never blanks, never overwrites a person**: a field changes only when it
+    is blank or still holds the value enrichment itself wrote last time
+    (`enrichment.filled`, `filledProfile`); lists only grow; an empty answer
+    keeps the earlier summary, news, financials and logo. Contacts are not
+    changed.
+  - Only public addresses are fetched (private, loopback and metadata
+    addresses, and redirects to them, are refused); every link the agent gives
+    is kept only if it is http(s). The BuiltWith key slot under Settings →
+    Integrations & MCP is no longer used by enrichment.
+  - Each run costs one agent call with up to 8 searches and 6 fetches; the
+    triggers run at most 3 at a time, so loading the starter set enriches its
+    records gradually.
 - **Converting**: **Convert and link account** needs the customer account's
   name and/or id, moves the lead to Closed Won and stores `customerAccount`,
   shown on the card. The RevOps lifecycle's customer account record is not in
@@ -4183,7 +4222,8 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   `jobTitle`, `email`, `linkedin`) plus `page`, `pageIndustry` and `test`.
   It creates the lead in the Lead lane with `source: "website"`, `sourcePage`
   and `sourceIndustry`, or, for a company already there, fills blanks and adds
-  the contact. Optional `sourceLabel` and `sourceDetail` (≤120 chars each, e.g.
+  the contact (since 10 Nov 2026 "already there" means the same Prospects (TAM)
+  record: see "Leads: inbound leads matched to Prospects (TAM)" below). Optional `sourceLabel` and `sourceDetail` (≤120 chars each, e.g.
   "Interactive product tour – Telco" and the demo "Personalisation") are stored
   on a new lead and fill blanks on a repeat; every submission also appends
   `{at, label, detail, page}` to `websiteActivity` (20 newest). The lead summary's
@@ -4196,7 +4236,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
-- Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js`, `test/lead-ingest.test.js`, the Leads tools in
+- Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js` (the agent stubbed), the "company research" scenario in `test/ui/console-click.test.mjs`, `test/lead-ingest.test.js`, the Leads tools in
   `test/mcp-server.test.js` and `test/mcp-client.test.mjs`, a scenario in
   `test/ui/console-click.test.mjs`.
 
@@ -4289,6 +4329,14 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   own country. Converting twice, or from
   two tabs, writes the same lead: a prospect can never become two leads. The
   lead's summary drawer shows a Prospect record link back.
+- **Company research (10 Nov 2026)**: every record is researched by an agent
+  when it is created, and the company detail view has **Enrich** (before the
+  first run) / **Refresh info** (after it) for editors. The Profile tab's
+  **Company research** card shows the findings (summary, HQ, size, tech stack
+  and vendors, recent news and recent financials with links and dates, when it
+  was updated), and the header shows the logo. The record keeps them in an
+  `enrichment` map (allowed by `isProspect` in `firestore.rules`). See
+  "Promote section: Leads" → "Enrichment (agent-led)" for what is written where.
 - **Data in**: the empty page offers **Load starter set** (editors): about 60
   well-known retail and related operators worldwide (`prospects-seed.js`),
   store counts rounded public figures marked source "Starter set
@@ -4408,6 +4456,108 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
   blank, never a new industry. It runs on read (`normaliseProspect`), on every
   write (`prospectFromInput`, so `upsert_prospects`) and on the industry filter
   of `list_prospects`. Stored legacy values are rewritten when a record is next saved.
+
+### Leads: Apple-style board, form and detail view (10 Nov 2026)
+
+Ticket iAY4X9RF5K16vLEGYswi applies the console's design rules 1-11 (ticket
+5TbkrO71BsFoaKiclUvO) to Promote › Leads as markup and layout changes, not an
+overlay. Presentation only: every field, action and datum is still there.
+
+- **Board**: no sideways scroll at any width. The lanes wrap (container query on
+  `.leads-board-wrap`: 6 across from 1100px of board, 3 from 760, 2 from 560, else
+  1). Lanes are neutral (no coloured top borders; an uppercase title and a count
+  pill); tiles are white inset cards on an 8pt grid: logo (or initials) and name,
+  the industry chip (neutral, the industry's colour only on its dot), the inbound
+  pill, a one-line company line, the account summary (buying roles as plain text,
+  the first gap, the AWS team's names) and assignee and source. A tile holds no
+  links: emailing the AWS team is done from the detail view. **New lead** is the
+  one primary action (top right; on a phone, sticky at the bottom above the tab
+  bar); the ACE section's New opportunity is a secondary button and its KPI icons
+  are neutral. The page title carries an (i) with what the page does. Empty
+  state: one line, "No leads yet", and a New lead action.
+- **AWS tile**: one inset grouped disclosure row (AWS, count, chevron); each
+  person a row with an email button and Attach to account; the attach form is
+  rows. Its status line is a status, never turned into an (i).
+- **Detail view** (`#lead-summary-panel`): header with the company logo (56px,
+  initials when there is none), name, company line and industry chip; then inset
+  grouped cards in this order: **Contacts** (inbound count beside the title; each
+  contact a row with role pill, job title, email, and 44px email and LinkedIn
+  buttons; "No contacts yet" with Add contact), **AWS team** (the company's
+  `awsTeam` plus the ACE seller, each with an email button), **Company research**
+  (summary, facts, LinkedIn, tech stack, Updated with the sources in its (i);
+  a failed source stays visible), **Recent news**, **Recent financials · period**
+  (the three inside `#lead-sum-research`), then **Lead** (Stage select, assignee,
+  inbound, source, created/updated, customer account), **Company**, TAM record,
+  Prospect record, Website activity, Notes and history. Links use the accent.
+  Actions: Delete (red text, left), Refresh info, Edit (primary). A bottom sheet
+  on a phone, a right-hand drawer otherwise; both open with a short transition.
+- **Form**: a sheet of grouped rows (label left, field right, 44px rows):
+  Company, one card per contact (Remove contact in red at its foot), Add contact,
+  Pipeline, then for a saved lead the research cards with Enrich / Refresh info,
+  and Customer account (Linked account as a value row, then the convert rows).
+  Save stays off until something changes (modal-polish.js). The form's Delete
+  asks to confirm on its own button (it used to arm the drawer's).
+- **Shared components**: `public/js/ap-components.js` (`group`, `row`,
+  `stackRow`, `lineRow`, `iconLink`, `pill`, `tip`) with the styles in
+  `css/apple.css` → "Inset grouped cards and rows" (`.ap-group`, `.ap-row`,
+  `.ap-row-btn`, `.ap-icon-btn`, `.ap-pill`, `.ap-status`, `.ap-empty`,
+  `.ap-field`). Any page may build from them.
+- Light and dark (`data-theme="dark"`), reduced motion respected, 44px targets.
+  Test: `test/ui/leads-apple.test.mjs` at 390/820/1180/1440 px in both themes.
+
+### Leads: inbound leads matched to Prospects (TAM), one lead per company per country, AWS as its own record (10 Nov 2026)
+
+- **Matching.** A lead that comes in (the website form, `functions/lead-ingest.js`,
+  or **+ New lead** on the Leads page) is matched to a Prospects (TAM) record using
+  both the company name (`companyKey`, ignoring case and punctuation) and the
+  contact's **business** email domain (personal mailboxes such as gmail.com are
+  ignored), against the record's name and website host (a subdomain counts:
+  `uk.acme.com` matches `acme.com`). A name and domain match beats a domain-only
+  match, which beats a name-only match. The lead's country (its first country) picks
+  that country's record; with no country, the best match in any country is used
+  (a record that already has a lead first, then the head-office country's record).
+  Rules: `planInbound` / `matchProspect` in `public/js/prospects-core.js` (copied to
+  `functions/prospects-core.js`).
+- **No match**: a new TAM record is created for that company in that country (no
+  country when none was given), source "Inbound lead", copying the website,
+  industry, HQ country and markets from the company's record in another country when
+  there is one. Creating it starts enrichment (`enrichProspectOnWrite`, which runs
+  for every new TAM record; see "Promote section: Leads" → Enrichment). It is linked to the lead.
+- **One lead per company per country.** The lead belongs to its TAM record
+  (`prospectId`; the record's `leadId`, status Converted, as Convert to lead does). A
+  new lead gets the id `prospect-<recordId>`, the same as Convert to lead, so the two
+  can never make two leads. A lead from before this change for the same company and
+  country (no `prospectId`) is adopted rather than duplicated.
+- **The next person from the same company and country is added as a contact** on
+  that lead (not twice: same email, else same name), blank company fields are
+  filled, and the lead's **`inboundCount`** goes up by one. The card and the lead
+  summary show it ("2 inbound"). A lead saved before the count existed shows its
+  number of website submissions. From the New lead form, the person is added to the
+  existing lead and its summary opens saying so.
+- **AWS.** AWS is a TAM record of its own (`prospects/aws`, name "AWS", source
+  "AWS", no country). Anyone with an AWS or Amazon address (aws.com, amazon.com,
+  amazon.co.uk, amazon.de…), or a company named AWS / Amazon Web Services, lands as a
+  contact on that record (`{name, role, lastContact, email}`; the same email again
+  refreshes it; the newest 30 kept), never as a customer lead. The **AWS tile** above
+  the Leads lanes lists them; an editor uses **Attach to account** to pick a customer
+  company (any TAM record or lead) and an AWS role, which adds the person to that
+  company's AWS account team (`prospectCompanies/{companyKey}.awsTeam`, source
+  manual; `withAwsPerson` in `prospect-detail-core.js`), shown on the company detail's
+  AWS account team tab and the lead card. Attaching the same person again changes
+  only their role. The website form is the same for everyone.
+- **Prospect contacts carry an email** (optional; the Edit drawer's contacts line is
+  `name | role | last contact | AWS account ID | email`), so an AWS person keeps an
+  address to be attached with.
+- Test leads (`test: true`) are never matched to a TAM record or a real lead.
+- Rules: `isLead` allows `inboundCount` (a whole number ≥ 0); a new record may be created without a
+  country only when its source is "Inbound lead" or "AWS". Cases in
+  `test/firestore-rules.test.js`.
+- Not done: the MCP tools (`create_lead`, `upsert_prospects`) do not match or group;
+  they behave as before.
+- Tests: `test/lead-ingest.test.js` (the five test steps against the website
+  endpoint), `test/prospects.test.mjs` (matching and planning), `test/leads.test.mjs`
+  (`mergeInbound`), `test/prospect-detail.test.mjs` (`withAwsPerson`), a scenario in
+  `test/ui/console-click.test.mjs`.
 
 ## Promote section: Conversion Funnel (9 Nov 2026)
 

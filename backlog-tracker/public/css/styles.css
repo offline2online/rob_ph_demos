@@ -2478,49 +2478,76 @@ body { overflow-x: clip; }
 .pd-danger { color: var(--danger, #c62828); display: inline-flex; align-items: center; gap: 4px; }
 @media (max-width: 640px) { .pd-person, .pd-aws-row, .pd-doc { flex-wrap: wrap; } .pd-person-actions { width: 100%; justify-content: flex-start; } }
 
-/* The compact org chart and AWS team on a lead card (js/leads-page.js) */
-.lead-card-detail { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-size: 12px; }
-.lead-card-detail .pd-badges { gap: 4px; }
-.lead-card-gap { color: #7a1f12; display: flex; align-items: center; gap: 4px; }
-.lead-card-gap .material-symbols-outlined { font-size: 14px; }
-.lead-card-aws { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; color: var(--text); }
-.lead-card-aws a { color: var(--primary-text); display: inline-flex; vertical-align: middle; }
-.lead-card-aws .material-symbols-outlined { font-size: 14px; }
-
-/* Promote › Leads */
-.leads-board-wrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px 8px; }
-.leads-board { display: grid; grid-template-columns: repeat(6, 236px); gap: 12px; align-items: start; }
-.lead-lane { min-width: 0; background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider); border-radius: var(--ap-radius-sm, 8px); border-top: 3px solid var(--border); min-height: 120px; transition: box-shadow .15s, background-color .15s; }
-.lead-lane-hot-lead { border-top-color: var(--warning); }
-.lead-lane-demo { border-top-color: var(--primary); }
-.lead-lane-post-demo { border-top-color: #6b7bd6; }
-.lead-lane-closed-won { border-top-color: var(--success, #2e7d32); }
-.lead-lane-closed-lost { border-top-color: var(--text-muted); }
-.lead-lane.lead-drop-target { box-shadow: 0 0 0 2px var(--primary); background: var(--primary-tint); }
-.lead-lane-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; }
-.lead-lane-head h3 { margin: 0; font-size: 14px; }
-.lead-lane-count { font-size: 12px; font-weight: 600; color: var(--text-muted); }
-.lead-lane-body { display: flex; flex-direction: column; gap: 8px; padding: 0 8px 10px; min-height: 40px; min-width: 0; }
-/* A compact tile: nothing may leave the card. Colour comes from the --ind-* vars set per industry (industry-palette.js). */
-.lead-card { min-width: 0; max-width: 100%; overflow: hidden; background: var(--bg, #fff); border-radius: 8px; border-left: 4px solid var(--ind-bar, var(--border)); box-shadow: 0 0 0 .5px var(--ap-divider), 0 1px 2px rgba(0,0,0,.06); padding: 10px 12px 10px 10px; cursor: pointer; }
+/* Promote › Leads (js/leads-page.js), Apple-style (ticket iAY4X9RF5K16vLEGYswi):
+   neutral surfaces, the brand blue as the one accent, an 8pt grid, no sideways
+   scroll. The detail view and the form are built from the shared inset grouped
+   cards and rows in css/apple.css (js/ap-components.js). */
+.leads-page .page-header { justify-content: space-between; }
+.leads-header h2 { display: inline-flex; align-items: center; }
+.leads-add { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 16px 0 12px; }
+.leads-add .material-symbols-outlined { font-size: 20px; }
+.leads-page > .ap-empty { margin-bottom: 24px; }
+/* The board: lanes wrap into rows instead of scrolling sideways (6 across on a wide screen, 3 on a tablet, 1 on a phone). */
+.leads-board-wrap { container-type: inline-size; min-width: 0; }
+.leads-board { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+@container (min-width: 560px) { .leads-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (min-width: 760px) { .leads-board { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (min-width: 1100px) { .leads-board { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; } }
+.lead-lane { min-width: 0; padding: 8px; border-radius: 14px; background: rgba(120, 120, 128, .08); transition: background-color var(--ap-fast, .16s), box-shadow var(--ap-fast, .16s); }
+.lead-lane.lead-drop-target { background: var(--primary-tint); box-shadow: inset 0 0 0 2px var(--primary); }
+.lead-lane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 8px 8px; }
+.lead-lane-head h3 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--text-muted); }
+.lead-lane-count { min-width: 24px; padding: 0 8px; border-radius: 999px; background: rgba(120, 120, 128, .16); color: var(--text-muted); font-size: 12px; font-weight: 600; line-height: 20px; text-align: center; box-sizing: border-box; }
+.lead-lane-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 48px; }
+/* A tile: logo and name, the industry (a small dot carries its colour), what came in, a short line, the account summary, then who and where from. */
+.lead-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; max-width: 100%; overflow: hidden; box-sizing: border-box; padding: 12px; border-radius: 12px; background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider), 0 1px 2px rgba(0, 0, 0, .05); cursor: pointer; transition: box-shadow var(--ap-fast, .16s), transform var(--ap-fast, .16s); }
+.lead-card:hover { box-shadow: 0 0 0 .5px var(--ap-divider), 0 4px 16px rgba(0, 0, 0, .08); }
 .lead-card[draggable="true"] { cursor: grab; }
 .lead-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .lead-card.lead-dragging { opacity: .45; }
-.lead-card-name { margin: 0 0 6px; font-size: 14px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.lead-card-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; margin-bottom: 4px; }
+.lead-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lead-logo { width: 32px; height: 32px; flex: none; box-sizing: border-box; border-radius: 8px; object-fit: contain; background: #fff; box-shadow: 0 0 0 .5px var(--ap-divider); }
+.lead-logo-fallback { display: inline-flex; align-items: center; justify-content: center; background: rgba(120, 120, 128, .14); box-shadow: none; color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.lead-card-name { margin: 0; min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lead-card-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .lead-chip { display: inline-block; max-width: 100%; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; line-height: 18px; background: var(--ind-bg, #eceeef); color: var(--ind-fg, #4a4f54); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lead-test-badge { padding: 1px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border: 1px solid var(--border); color: var(--text-muted); }
-.lead-card-line { margin: 0 0 2px; font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }
-.lead-card > .lead-card-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
-.lead-card-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; min-width: 0; }
-.lead-card-who { color: var(--text-muted); flex: none; }
-.lead-avatar { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 10.5px; font-weight: 600; }
-.lead-card-source { display: flex; align-items: center; gap: 3px; min-width: 0; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lead-card-source .material-symbols-outlined { font-size: 15px; flex: none; }
-.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-:root[data-theme="dark"] .lead-card { border-left-color: var(--ind-bar-d, var(--border)); }
 :root[data-theme="dark"] .lead-chip { background: var(--ind-bg-d, #34373a); color: var(--ind-fg-d, #d0d3d6); }
-/* Lead summary drawer */
+/* On Leads the industry chip is neutral; only its dot carries the industry colour (industry-palette.js). */
+#leads-page .lead-chip, #lead-summary-panel .lead-chip, :root[data-theme="dark"] #leads-page .lead-chip, :root[data-theme="dark"] #lead-summary-panel .lead-chip { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; font-weight: 500; font-size: 12px; line-height: 20px; background: rgba(120, 120, 128, .12); color: var(--text); }
+.lead-ind-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--ind-bar, var(--text-muted)); }
+:root[data-theme="dark"] .lead-ind-dot { background: var(--ind-bar-d, var(--text-muted)); }
+.lead-inbound { padding: 0 8px; border-radius: 999px; background: var(--primary-tint); color: var(--primary-text); font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; }
+.lead-test-badge { padding: 0 6px; border-radius: 6px; background: rgba(120, 120, 128, .12); color: var(--text-muted); font-size: 11px; font-weight: 600; line-height: 20px; letter-spacing: .04em; text-transform: uppercase; }
+.lead-card-line { margin: 0; min-width: 0; font-size: 13px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lead-card-detail { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-top: 8px; border-top: .5px solid var(--ap-divider); font-size: 12px; color: var(--text-muted); }
+.lead-card-detail p { display: flex; align-items: center; gap: 4px; min-width: 0; margin: 0; }
+.lead-card-detail p > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lead-card-detail .material-symbols-outlined { flex: none; font-size: 16px; }
+.lead-card-roles { flex-wrap: wrap; }
+.lead-card-roles .pd-role { padding: 0; border-radius: 0; background: none; color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.lead-card-roles .pd-role + .pd-role::before { content: "· "; }
+.lead-card-gap .material-symbols-outlined { color: var(--warning); }
+.lead-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; font-size: 12px; color: var(--text-muted); }
+.lead-card-who { flex: none; }
+.lead-avatar { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: rgba(120, 120, 128, .16); color: var(--text); font-size: 10.5px; font-weight: 600; }
+.lead-card-source { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lead-card-source .material-symbols-outlined { flex: none; font-size: 16px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+/* The AWS tile above the lanes: one disclosure row, people from AWS below it (never customer leads). */
+.faq-admin-page > section.leads-aws { margin: 0 0 24px; background: none; box-shadow: none; border-radius: 0; }
+.leads-aws .ap-row-btn.leads-aws-head { gap: 8px; color: var(--text); font-weight: 600; }
+.leads-aws-head > .material-symbols-outlined:first-child { color: var(--text-muted); font-size: 20px; }
+.leads-aws-chevron { margin-left: auto; color: var(--text-muted); }
+.leads-aws-list { list-style: none; margin: 0; padding: 0; }
+.leads-aws-list[hidden] { display: none; }
+.leads-aws-actions { justify-content: flex-end; gap: 8px; }
+.leads-aws-actions .btn-ghost, .leads-aws-attach { min-height: 44px; padding: 0 12px; }
+/* AWS ACE opportunities (under the board): an inset card with the accent kept for the one primary action on the page. */
+.faq-admin-page > section.ace-section { margin-top: 32px; padding: 16px; }
+#leads-page .ace-title { font-size: 17px; font-weight: 600; }
+#leads-page .ace-kpi { border: 0; border-radius: 12px; background: rgba(120, 120, 128, .08); }
+#leads-page .ace-kpi .ace-kpi-icon { background: rgba(120, 120, 128, .14); color: var(--text-muted); }
+/* Lead summary drawer (also the Prospects drawer's frame) */
 .lead-drawer-backdrop { justify-content: flex-end; align-items: stretch; padding: 0; }
 .lead-drawer { width: min(460px, 100%); max-width: 100%; height: 100%; max-height: none; border-radius: 0; overflow-y: auto; border-top: 4px solid var(--ind-bar, var(--border)); }
 :root[data-theme="dark"] .lead-drawer { border-top-color: var(--ind-bar-d, var(--border)); }
@@ -2534,28 +2561,70 @@ body { overflow-x: clip; }
 .lead-sum-stage-ro { display: none; }
 html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .lead-sum-stage { min-height: 36px; font: inherit; max-width: 100%; }
-.lead-sum-contact { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
-.lead-sum-activity { margin: 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
-.lead-sum-contact-name { margin: 0 0 2px; font-weight: 600; overflow-wrap: anywhere; }
-.lead-sum-role { font-weight: 500; font-size: 12px; color: var(--text-muted); margin-left: 6px; }
 .lead-sum-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-bottom: 8px; }
-.lead-panel { max-width: 640px; max-height: 90vh; overflow-y: auto; }
-.lead-section { margin: 18px 0 4px; font-size: 14px; }
-.lead-contact { border: 1px solid var(--border); border-radius: 8px; margin: 0 0 12px; padding: 8px 12px 12px; }
-.lead-contact legend { font-size: 12.5px; font-weight: 600; padding: 0 4px; }
-.lead-error { color: #b3261e; }
-.lead-delete { color: #b3261e; }
+/* The lead detail view: logo header, then grouped sections on the grouped background. */
+.lead-detail.lead-drawer { width: min(480px, 100%); border-top: 0; }
+.modal-panel.ap-sheet.lead-detail, .modal-panel.ap-sheet.lead-panel { background: var(--ap-bg); }
+.lead-detail .lead-detail-head { align-items: center; gap: 16px; }
+.lead-detail-logo { flex: none; display: flex; }
+.lead-detail-logo .enrich-logo { width: 56px; height: 56px; border-radius: 12px; font-size: 20px; }
+.lead-detail .lead-sum-head { flex: 1; }
+.lead-detail .lead-sum-head h2 { margin: 0; font-size: 22px; font-weight: 700; line-height: 1.25; }
+.lead-detail-sub { margin: 2px 0 4px; font-size: 13px; color: var(--text-muted); }
+.lead-detail-sub:empty { display: none; }
+.lead-detail .lead-sum-actions { align-items: center; justify-content: flex-end; margin-top: 16px; padding-bottom: 0; }
+.lead-detail .lead-sum-actions .lead-delete, .lead-form-actions .lead-delete { margin-right: auto; }
+.lead-sum-contact-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.lead-sum-role { font-weight: 500; }
+/* The lead form: a sheet of grouped rows. */
+.lead-panel { max-width: 600px; max-height: 90vh; overflow-y: auto; }
+#lead-contacts, #lead-existing, #lead-enrichment { display: flex; flex-direction: column; gap: 24px; }
+#lead-existing[hidden] { display: none; }
+.lead-form-actions { gap: 8px; }
 .lead-stack { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 4px 0 8px; padding: 0; }
 .lead-stack li { background: var(--surface-2); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
-.lead-stack-label { margin: 8px 0 0; font-size: 12.5px; font-weight: 600; }
+.ap-group .lead-stack { gap: 4px; margin: 4px 0 0; }
+.ap-group .lead-stack li { padding: 0 8px; line-height: 22px; background: rgba(120, 120, 128, .12); }
 .lead-sources { margin: 4px 0 8px; padding-left: 18px; font-size: 12.5px; color: var(--text-muted); }
-.lead-sources li[data-status="error"] { color: #b3261e; }
+.lead-sources li[data-status="error"], .lead-source-error { color: var(--danger); }
+/* Company research (enrichment-view.js): the logo, facts, news and financials on a lead and a TAM record. */
+.enrich-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.enrich-head h3 { margin: 0; }
+.enrich-logo { width: 40px; height: 40px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); background: #fff; flex: none; }
+.enrich-logo-fallback { display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; color: var(--primary-text); background: var(--primary-tint); }
+.enrich-view { font-size: 13.5px; }
+.enrich-summary { margin: 4px 0 8px; line-height: 1.5; }
+.enrich-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 16px; margin: 0 0 8px; }
+.enrich-facts dt { font-size: 12px; color: var(--text-muted); }
+.enrich-facts dd { margin: 0; overflow-wrap: anywhere; }
+.enrich-label { margin: 10px 0 2px; font-size: 12.5px; font-weight: 600; }
+.enrich-line { margin: 4px 0; }
+.enrich-news { margin: 2px 0 8px; padding-left: 18px; }
+.enrich-news li { margin: 3px 0; overflow-wrap: anywhere; }
+.enrich-meta { display: block; font-size: 12px; color: var(--text-muted); }
+.enrich-fin { margin: 2px 0 4px; line-height: 1.5; }
+.enrich-updated { margin: 8px 0 2px; }
+.pd-enrich-status { margin: 4px 0 8px; }
 @media (max-width: 640px) {
-  .leads-board { grid-template-columns: 1fr; }
-  .lead-sum-stage, .lead-panel input, .lead-panel select { min-height: 44px; font-size: 16px; }
+  /* The one primary action sits at the bottom on a phone, above the tab bar. */
+  #leads-page:not([hidden]) { display: flex; flex-direction: column; }
+  .leads-header { display: contents; }
+  .leads-header h2 { margin-bottom: 24px; }
+  #leads-add-btn { order: 99; position: sticky; bottom: calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom, 0px)); z-index: 5; width: 100%; margin-top: 16px; box-shadow: 0 8px 24px rgba(0, 0, 0, .2); }
+  /* Sheets rise from the bottom, above the tab bar. */
+  #lead-backdrop, #lead-summary-backdrop { z-index: 40; align-items: flex-end; padding: 0; }
+  #lead-backdrop .lead-panel { max-width: 100%; max-height: 92vh; border-radius: 18px 18px 0 0; }
+  .lead-detail.lead-drawer { width: 100%; height: 94vh; border-radius: 18px 18px 0 0; }
   .lead-sum-row { grid-template-columns: 96px minmax(0, 1fr); }
+  .lead-sum-stage { min-height: 44px; font-size: 16px; }
+  /* The ACE grid keeps the card's full width on a phone (its pinned columns need it); the heading and KPIs keep the inset. */
+  .faq-admin-page > section.ace-section { padding: 16px 0 0; overflow: hidden; }
+  #leads-page .ace-head, #leads-page .ace-kpis, #leads-page .ace-alert, #leads-page .ace-empty { margin-left: 16px; margin-right: 16px; }
 }
-
+/* Sheets open with a short rise (form) or slide (detail); reduced motion turns both off (apple.css). */
+#lead-backdrop:not([hidden]) .lead-panel { animation: ap-sheet-up .22s cubic-bezier(.2, .8, .2, 1); }
+#lead-summary-backdrop:not([hidden]) .lead-detail { animation: ap-drawer-in .22s cubic-bezier(.2, .8, .2, 1); }
+@media (max-width: 640px) { #lead-summary-backdrop:not([hidden]) .lead-detail { animation-name: ap-sheet-up; } }
 /* Prospect detail drawer: above the phone tab bar so its Edit/Save buttons can be tapped. */
 @media (max-width: 640px) {
   #prospect-drawer-backdrop { z-index: 40; }
@@ -2687,3 +2756,9 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .page-load-error-title { margin: 0 0 6px; font-weight: 600; }
 .page-load-error-detail { margin: 0 0 6px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
 .page-load-error-where { margin: 0 0 12px; font-size: 12px; color: #8a4b47; overflow-wrap: anywhere; }
+/* The × on the Leads sheets: a 44px target drawn as the usual 32px circle. */
+.modal-panel.ap-sheet.lead-detail .modal-header .modal-close, .modal-panel.ap-sheet.lead-panel .modal-header .modal-close {
+  width: 44px; height: 44px; min-width: 44px; min-height: 44px; margin-right: -6px;
+  background: radial-gradient(circle, rgba(120, 120, 128, .16) 15.5px, transparent 16px);
+}
+.modal-panel.ap-sheet.lead-detail .modal-header .modal-close:hover, .modal-panel.ap-sheet.lead-panel .modal-header .modal-close:hover { background: radial-gradient(circle, rgba(120, 120, 128, .28) 15.5px, transparent 16px); }

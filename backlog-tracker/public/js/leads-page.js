@@ -4,21 +4,33 @@
 // A tile drags between lanes (HTML5 drag and drop); clicking it (or Enter)
 // opens the lead summary drawer, whose stage select moves it without a pointer
 // drag, which is how it moves on a tablet. Tiles are coloured by industry
-// (industry-palette.js). A write is live for everyone at once through onSnapshot. The
-// Enrich button calls /leadEnrich/v1/enrich (functions/lead-enrich.js), which
-// writes the company's findings back onto the lead and its contacts.
+// (industry-palette.js), shown as a small dot beside the industry; everything
+// else is neutral with one accent (the Apple-style rules in css/apple.css). The
+// page, the detail view and the form are built from the shared grouped cards
+// and rows in ap-components.js. A write is live for everyone at once through onSnapshot. The
+// Enrich / Refresh info button queues a run at /leadEnrich/v1/enrich
+// (functions/lead-enrich.js): an agent researches the company on the web and the
+// findings (logo, facts, news, financials) arrive through the same snapshot.
+// A new lead is enriched by itself when it is created.
+// New lead is matched to Prospects (TAM) like a website lead (prospects-core.js
+// planInbound): a second person from the same company and country joins that
+// company's lead, and anyone from AWS goes to the AWS tile, from which an editor
+// attaches them to a customer account's AWS team (prospectCompanies awsTeam).
 import {
-  collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp,
+  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   STAGES, BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
-  companyLine, conversionFields, isStage,
+  companyLine, conversionFields, isStage, mergeInbound, inboundLabel,
 } from "./leads-core.js";
+import { normaliseProspect, planInbound, awsContactFrom, mergeContact, isAwsProspect, companyKey, AWS_PROSPECT_ID } from "./prospects-core.js";
 import { kpis, formatMonthly } from "./ace-core.js";
 import { mountAceGrid } from "./ace-grid.js";
 import { mountAceDetail } from "./ace-detail.js";
-import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION } from "./prospect-detail-core.js";
+import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION, AWS_ROLES, withAwsPerson, detailForSave, awsTeamWithAce, awsRoleLabel } from "./prospect-detail-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
+import { researchGroupsHTML, enrichmentRunning, enrichButtonLabel, enrichmentStatus, logoHTML, wireLogoFallback } from "./enrichment-view.js";
+import { group, row, stackRow, lineRow, iconLink, pill, tip } from "./ap-components.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 // Addresses come from Firestore, which an agent can write: http(s) only.
@@ -30,8 +42,10 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   const board = $("leads-board");
   const backdrop = $("lead-backdrop");
   let leads = [];
+  let allLeads = []; // archived included: a company's archived lead is still its lead
   let members = [];
   let unsub = null;
+  let unsubAws = null;
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
@@ -47,18 +61,23 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (started) return;
     started = true;
     unsub = onSnapshot(collection(db, "leads"), (snap) => {
-      leads = snap.docs.map((d) => normaliseLead(d.id, d.data({ serverTimestamps: "estimate" }))).filter((l) => !l.archived);
+      allLeads = snap.docs.map((d) => normaliseLead(d.id, d.data({ serverTimestamps: "estimate" })));
+      leads = allLeads.filter((l) => !l.archived);
       render();
       loadDetails();
-    }, () => { board.innerHTML = '<p class="promote-empty">Leads could not be loaded. Reload the page to try again.</p>'; });
+    }, () => { board.innerHTML = ""; showBoardError("Leads could not be loaded. Reload the page to try again."); });
     getDocs(collection(db, "memberDirectory")).then((snap) => {
       members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).filter((m) => !m.disabled);
       fillAssignees(); render();
     }).catch(() => {});
+    unsubAws = onSnapshot(doc(db, "prospects", AWS_PROSPECT_ID), (s) => {
+      awsRecord = s.exists() ? normaliseProspect(s.id, s.data()) : null;
+      renderAws();
+    }, () => {});
     fillStages();
     loadAce();
   }
-  function stop() { if (unsub) unsub(); unsub = null; started = false; }
+  function stop() { if (unsub) unsub(); if (unsubAws) unsubAws(); unsub = null; unsubAws = null; started = false; }
 
   // The compact org chart and AWS team on a card come from the company's shared detail (prospectCompanies).
   function loadDetails() {
@@ -74,13 +93,104 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (!d) return "";
     const c = compactSummary(d, l);
     if (c.empty) return "";
-    const aws = c.aws.map((m) => { const href = mailto(m.email, `${l.company.name} opportunity`); return `<span title="${esc(m.role)}">${esc(m.name)}${href ? ` <a href="${esc(href)}" aria-label="Email ${esc(m.name)}" title="Email ${esc(m.name)}"><span class="material-symbols-outlined" aria-hidden="true">mail</span></a>` : ""}</span>`; }).join("");
+    const aws = c.aws.map((m) => m.name).join(", ") + (c.awsMore ? ` +${c.awsMore}` : "");
     return `<div class="lead-card-detail">
-      ${c.peopleCount ? `<div class="pd-badges" title="Org chart: ${c.peopleCount} ${c.peopleCount === 1 ? "person" : "people"}">${c.roles.map((r) => `<span class="pd-role pd-role-${esc(r.key)}" title="${esc(r.label)}">${esc(r.label)} ${r.count}</span>`).join("")}</div>` : ""}
-      ${c.gaps.length ? `<span class="lead-card-gap"><span class="material-symbols-outlined" aria-hidden="true">warning</span>${esc(c.gaps[0])}</span>` : ""}
-      ${c.aws.length ? `<div class="lead-card-aws"><span class="visually-hidden">AWS team:</span>${aws}${c.awsMore ? ` <span>+${c.awsMore}</span>` : ""}</div>` : ""}
+      ${c.peopleCount ? `<p class="lead-card-roles" title="Org chart: ${c.peopleCount} ${c.peopleCount === 1 ? "person" : "people"}">${c.roles.map((r) => `<span class="pd-role pd-role-${esc(r.key)}">${esc(r.label)} ${r.count}</span>`).join("")}</p>` : ""}
+      ${c.gaps.length ? `<p class="lead-card-gap" title="${esc(c.gaps.join(" "))}"><span class="material-symbols-outlined" aria-hidden="true">warning</span><span>${esc(c.gaps[0])}</span></p>` : ""}
+      ${c.aws.length ? `<p class="lead-card-aws" title="AWS team: ${esc(c.aws.map((m) => `${m.name} (${m.role})`).join(", "))}"><span class="material-symbols-outlined" aria-hidden="true">cloud</span><span class="visually-hidden">AWS team:</span><span>${esc(aws)}</span></p>` : ""}
     </div>`;
   }
+  // The account's AWS team (the company's shared detail), for the detail view.
+  function awsTeamOf(l) {
+    const d = detailCache.get(companyDocId(l.company.name));
+    return d ? awsTeamWithAce(d.awsTeam, d.aceOpportunity) : [];
+  }
+
+  // ── The AWS tile: people from AWS (contacts on the AWS TAM record) ──────
+  // They never become customer leads. An editor attaches one to a customer
+  // company (a TAM record or a lead: both share the company's detail) as part
+  // of that account's AWS team.
+  let awsRecord = null;
+  let awsOpen = false;
+  let attachAt = -1;        // the contact whose Attach form is open
+  let awsCompanies = null;  // [{ key, name }] customer companies, read when a form opens
+  async function loadAwsCompanies() {
+    const byKey = new Map();
+    const add = (name) => { const k = companyDocId(name); if (k && !AWS_KEYS.has(companyKey(name)) && !byKey.has(k)) byKey.set(k, { key: k, name }); };
+    try { (await getDocs(collection(db, "prospects"))).docs.forEach((d) => { const p = normaliseProspect(d.id, d.data()); if (!isAwsProspect(p)) add(p.name); }); } catch { /* leads alone */ }
+    for (const l of leads) if (!l.test) add(l.company.name);
+    awsCompanies = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+  const AWS_KEYS = new Set(["aws", "amazonwebservices"]);
+  function renderAws() {
+    const box = $("leads-aws");
+    if (!box) return;
+    const people = awsRecord ? awsRecord.contacts : [];
+    box.hidden = !people.length;
+    if (!people.length) { box.innerHTML = ""; return; }
+    const keepStatus = ($("leads-aws-status") || {}).textContent || "";
+    const form = (i) => `<div class="leads-aws-form" data-index="${i}">
+        <label class="ap-row ap-field"><span class="ap-row-label">Customer account</span><select class="leads-aws-company" aria-label="Customer account">${awsCompanies
+          ? `<option value="">Choose a company</option>${awsCompanies.map((c) => `<option value="${esc(c.key)}">${esc(c.name)}</option>`).join("")}`
+          : '<option value="">Loading…</option>'}</select></label>
+        <label class="ap-row ap-field"><span class="ap-row-label">AWS role</span><select class="leads-aws-role" aria-label="AWS role">${AWS_ROLES.map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`).join("")}</select></label>
+        <div class="ap-row leads-aws-actions"><button type="button" class="btn-ghost leads-aws-cancel">Cancel</button><button type="button" class="btn-ghost ap-accent-btn leads-aws-save">Attach</button></div>
+      </div>`;
+    const person = (c, i) => `<li class="leads-aws-person">${stackRow(`<p class="lead-sum-contact-name">${esc(c.name)}</p>
+          ${c.role ? `<p class="ap-row-sub">${esc(c.role)}</p>` : ""}
+          ${c.email ? `<p class="ap-row-sub">${esc(c.email)}</p>` : ""}
+          ${c.lastContact ? `<p class="ap-row-sub">Came in ${esc(c.lastContact)}</p>` : ""}`,
+        `${iconLink(c.email ? `mailto:${c.email}` : "", "mail", `Email ${c.name}`)}${attachAt === i ? "" : `<button type="button" class="btn-ghost ap-accent-btn leads-aws-attach" data-index="${i}" data-editor-only>Attach to account</button>`}`)}
+        ${attachAt === i ? form(i) : ""}</li>`;
+    box.innerHTML = `<div class="ap-group"><button type="button" class="ap-row ap-row-btn ap-disclosure leads-aws-head" id="leads-aws-toggle" aria-expanded="${awsOpen}" aria-controls="leads-aws-list">
+        <span class="material-symbols-outlined" aria-hidden="true">cloud</span><span class="leads-aws-title">AWS</span>
+        <span class="ap-pill lead-lane-count" title="People from AWS">${people.length}</span>
+        <span class="material-symbols-outlined leads-aws-chevron" aria-hidden="true">${awsOpen ? "expand_less" : "expand_more"}</span>
+      </button>
+      <ul class="leads-aws-list" id="leads-aws-list"${awsOpen ? "" : " hidden"}>${people.map(person).join("")}</ul></div>
+      <p class="ap-status leads-aws-status" id="leads-aws-status" role="status" aria-live="polite">${esc(keepStatus)}</p>`;
+    box.querySelectorAll("[data-editor-only]").forEach((el) => { el.hidden = !canEdit(); });
+  }
+  async function attachAws(i, key, role) {
+    const person = awsRecord && awsRecord.contacts[i];
+    const company = (awsCompanies || []).find((c) => c.key === key);
+    if (!person || !company || !canEdit()) return;
+    const say = (t) => { const st = $("leads-aws-status"); if (st) st.textContent = t; };
+    try {
+      const ref = doc(db, COMPANY_COLLECTION, key);
+      const snap = await getDoc(ref);
+      const d = normaliseDetail(snap.exists() ? snap.data() : {});
+      const r = withAwsPerson(d.awsTeam, person, role);
+      if (r.error) { say(r.error); return; }
+      await setDoc(ref, { name: snap.exists() && snap.data().name ? snap.data().name : company.name, ...detailForSave({ ...d, awsTeam: r.team }), updatedAt: serverTimestamp(), updatedByEmail: me() });
+      detailCache.delete(key); attachAt = -1;
+      renderAws();
+      say(`${person.name} ${r.added ? "attached to" : "updated on"} ${company.name}'s AWS team.`);
+      loadDetails();
+    } catch (err) { say(`Couldn't attach: ${err && err.message ? err.message : err}`); }
+  }
+  $("leads-aws").addEventListener("click", async (e) => {
+    const t = e.target.closest ? e.target : null;
+    if (!t) return;
+    if (t.closest("#leads-aws-toggle")) { awsOpen = !awsOpen; if (!awsOpen) attachAt = -1; renderAws(); return; }
+    const open = t.closest(".leads-aws-attach");
+    if (open && canEdit()) {
+      attachAt = Number(open.dataset.index); renderAws();
+      if (!awsCompanies) { await loadAwsCompanies(); renderAws(); }
+      const sel = $("leads-aws").querySelector(".leads-aws-company"); if (sel) sel.focus();
+      return;
+    }
+    if (t.closest(".leads-aws-cancel")) { attachAt = -1; renderAws(); return; }
+    const save = t.closest(".leads-aws-save");
+    if (save) {
+      const f = save.closest(".leads-aws-form");
+      const key = f.querySelector(".leads-aws-company").value;
+      if (!key) { const st = $("leads-aws-status"); if (st) st.textContent = "Choose the customer account first."; return; }
+      save.disabled = true;
+      await attachAws(Number(f.dataset.index), key, f.querySelector(".leads-aws-role").value);
+      save.disabled = false;
+    }
+  });
 
   // ── The board ───────────────────────────────────────────────────────────
   const initials = (nameOrEmail) => {
@@ -90,13 +200,14 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   };
   const isWebsite = (l) => /^web/i.test(l.source);
   const sourceLabel = (l) => (isWebsite(l) ? "Website" : (l.source && l.source.toLowerCase() !== "manual" ? l.source : "Manual"));
+  const chipHTML = (l) => `<span class="lead-chip" title="${esc(industryChipText(l))}"><span class="lead-ind-dot" aria-hidden="true"></span>${esc(industryChipText(l))}</span>`;
   function cardHTML(l) {
     const line = companyLine(l);
     const entry = leadIndustryEntry(l);
     const who = l.assignee ? memberName(l.assignee) : "";
     return `<article class="lead-card" draggable="${canEdit() ? "true" : "false"}" data-lead-id="${esc(l.id)}" data-industry="${esc(entry.key)}" style="${industryStyle(entry)}" tabindex="0" role="button" aria-label="${esc(l.company.name)}, open lead summary">
-      <h4 class="lead-card-name">${esc(l.company.name)}</h4>
-      <div class="lead-card-chips"><span class="lead-chip" title="${esc(industryChipText(l))}">${esc(industryChipText(l))}</span>${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
+      <div class="lead-card-top">${logoHTML(l.enrichment, l.company.name, "lead-logo")}<h4 class="lead-card-name">${esc(l.company.name)}</h4></div>
+      <div class="lead-card-chips">${chipHTML(l)}${l.inboundCount ? `<span class="lead-inbound" title="Inbound contacts and submissions from this company">${esc(inboundLabel(l))}</span>` : ""}${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
       ${line ? `<p class="lead-card-line">${esc(line)}</p>` : ""}
       ${compactHTML(l)}
       <div class="lead-card-foot">
@@ -110,13 +221,16 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (page.hidden) return;
     const shown = leads;
     const lanes = groupByStage(shown);
-    $("leads-empty").textContent = "No leads yet. Add one with the button above.";
+    $("leads-empty-text").textContent = "No leads yet";
+    $("leads-empty-add").hidden = !canEdit();
     $("leads-empty").hidden = shown.length > 0;
     board.innerHTML = STAGES.map((s) => `<section class="lead-lane lead-lane-${s.key}" data-stage="${s.key}" aria-label="${esc(s.label)}">
       <header class="lead-lane-head"><h3>${esc(s.label)}</h3><span class="lead-lane-count">${lanes[s.key].length}</span></header>
       <div class="lead-lane-body">${lanes[s.key].map(cardHTML).join("")}</div>
     </section>`).join("");
+    wireLogoFallback(board, "lead-logo");
     if (summaryId) renderSummary();
+    if (openId && !backdrop.hidden) { const open = leads.find((x) => x.id === openId); if (open) renderEnrichment(open); }
     if (aceRows) renderAce();
   }
 
@@ -130,7 +244,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       showBoardError(`Couldn't move ${l.company.name}: ${err && err.message ? err.message : err}`);
     }
   }
-  function showBoardError(msg) { const e = $("leads-empty"); e.textContent = msg; e.hidden = false; }
+  function showBoardError(msg) { $("leads-empty-text").textContent = msg; $("leads-empty-add").hidden = true; $("leads-empty").hidden = false; }
 
   board.addEventListener("dragstart", (e) => {
     const card = e.target.closest && e.target.closest(".lead-card");
@@ -159,7 +273,6 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (id) moveTo(id, lane.dataset.stage);
   });
   board.addEventListener("click", (e) => {
-    if (e.target.closest && e.target.closest(".lead-card-detail a")) return; // an email link on the card just sends the email
     const card = e.target.closest && e.target.closest(".lead-card");
     if (card) openSummary(card.dataset.leadId);
   });
@@ -173,7 +286,6 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   const sumBackdrop = $("lead-summary-backdrop");
   let summaryId = null;
   const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "");
-  const row = (label, valueHtml) => (valueHtml ? `<div class="lead-sum-row"><dt>${esc(label)}</dt><dd>${valueHtml}</dd></div>` : "");
   const linkOf = (u, text) => { const h = safeUrl(u); return h ? `<a href="${esc(h)}" target="_blank" rel="noopener noreferrer">${esc(text || u)}</a>` : esc(text || u); };
   const pageLink = (l) => {
     if (!l.sourcePage) return "";
@@ -184,63 +296,83 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const t = l.tam;
     const entries = t ? Object.entries(t).filter(([, v]) => v != null && typeof v !== "object" && String(v) !== "") : [];
     if (!entries.length) return ""; // hidden until a TAM record is linked
-    return `<section class="lead-sum-section" id="lead-sum-tam"><h3>TAM record</h3><dl class="lead-sum-dl">${entries.map(([k, v]) => row(k, esc(v))).join("")}</dl></section>`;
+    return group("TAM record", entries.map(([k, v]) => row(k, esc(v))).join(""), { id: "lead-sum-tam" });
   }
   function prospectHTML(l) {
     if (!l.prospectId) return "";
-    return `<section class="lead-sum-section" id="lead-sum-prospect"><h3>Prospect record</h3><dl class="lead-sum-dl">${row("From", '<a href="#promote/prospects">Prospects (TAM)</a>')}</dl></section>`;
+    return group("Prospect record", row("From", '<a href="#promote/prospects">Prospects (TAM)</a>'), { id: "lead-sum-prospect" });
   }
   function historyHTML(l) {
     if (!l.history.length) return "";
-    return `<section class="lead-sum-section" id="lead-sum-history"><h3>Notes and history</h3><ul class="lead-sum-activity">${[...l.history].reverse().map((h) => `<li>${esc(h.atMs ? fmtDate(h.atMs) : "")}${h.by ? ` · ${esc(memberName(h.by))}` : ""} · ${esc(h.text)}</li>`).join("")}</ul></section>`;
+    return group("Notes and history", [...l.history].reverse().map((h) => stackRow(`<p class="ap-row-text">${esc(h.text)}</p><p class="ap-row-sub">${esc([h.atMs ? fmtDate(h.atMs) : "", h.by ? memberName(h.by) : ""].filter(Boolean).join(" · "))}</p>`)).join(""), { id: "lead-sum-history" });
+  }
+  // Contacts first, with the company's inbound count beside the title.
+  function contactsHTML(l) {
+    const rows = l.contacts.map((c) => stackRow(
+      `<p class="lead-sum-contact-name">${esc(c.name)}${c.buyingRole ? ` ${pill(roleLabel(c.buyingRole), "lead-sum-role")}` : ""}</p>
+        ${c.jobTitle ? `<p class="ap-row-sub">${esc(c.jobTitle)}</p>` : ""}
+        ${c.email ? `<p class="ap-row-sub">${esc(c.email)}</p>` : ""}
+        ${c.awsAccountId ? `<p class="ap-row-sub">AWS account ${esc(c.awsAccountId)}</p>` : ""}`,
+      iconLink(c.email ? `mailto:${c.email}` : "", "mail", `Email ${c.name}`) + iconLink(safeUrl(c.linkedin), "open_in_new", `${c.name} on LinkedIn`, true),
+      "lead-sum-contact")).join("");
+    const empty = lineRow("No contacts yet") + (canEdit() ? '<button type="button" class="ap-row-btn" id="lead-sum-add-contact"><span class="material-symbols-outlined" aria-hidden="true">add</span>Add contact</button>' : "");
+    const inbound = l.inboundCount ? `<span class="lead-inbound">${esc(inboundLabel(l))}</span>${tip("Inbound contacts and submissions from this company and country", "About inbound")}` : "";
+    return group("Contacts", rows || empty, { id: "lead-sum-contacts", aside: inbound });
+  }
+  function awsHTML(l) {
+    const team = awsTeamOf(l);
+    const rows = team.map((m) => stackRow(
+      `<p class="lead-sum-contact-name">${esc(m.name)}</p><p class="ap-row-sub">${esc(awsRoleLabel(m.role))}${m.dealRole ? ` · ${esc(m.dealRole)}` : ""}</p>`,
+      iconLink(mailto(m.email, `${l.company.name} opportunity`), "mail", `Email ${m.name}`))).join("");
+    return group("AWS team", rows || lineRow("No AWS team yet"), { id: "lead-sum-aws" });
   }
   function renderSummary() {
     const l = leads.find((x) => x.id === summaryId);
     if (!l) { closeSummary(); return; }
     const entry = leadIndustryEntry(l);
     const e = l.enrichment;
-    const at = e && e.at && typeof e.at.toDate === "function" ? e.at.toDate() : (e && e.at ? new Date(e.at) : null);
-    const enrichedAt = at && !Number.isNaN(at.getTime()) ? at.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "";
     const stageOptions = STAGES.map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
     $("lead-sum-title").textContent = l.company.name;
+    $("lead-sum-sub").textContent = companyLine(l);
+    $("lead-sum-logo").innerHTML = logoHTML(e, l.company.name);
+    wireLogoFallback($("lead-sum-logo"));
     const panel = $("lead-summary-panel");
     panel.style.cssText = industryStyle(entry);
     panel.dataset.industry = entry.key;
-    $("lead-sum-badges").innerHTML = `<span class="lead-chip">${esc(industryChipText(l))}</span>${l.test ? '<span class="lead-test-badge">Test</span>' : ""}`;
+    $("lead-sum-badges").innerHTML = `${chipHTML(l)}${l.test ? '<span class="lead-test-badge">Test</span>' : ""}`;
     const keepStage = document.activeElement && document.activeElement.id === "lead-sum-stage";
     $("lead-sum-body").innerHTML = `
-      <section class="lead-sum-section"><h3>Company</h3><dl class="lead-sum-dl">
-        ${row("Name", esc(l.company.name))}
-        ${row("Website", l.company.website ? linkOf(l.company.website) : "")}
-        ${row("Industry", l.company.industry ? esc(l.company.industry) : "")}
-        ${row("Countries", l.company.countries.length ? esc(l.company.countries.join(", ")) : "")}
-        ${row("AWS account ID", esc(l.company.awsAccountId || ""))}
-        ${row("Stores", l.company.storeCount != null ? esc(l.company.storeCount.toLocaleString("en-GB")) : "")}
-        ${row("Enrichment", e && e.summary ? esc(e.summary) : (e ? "Enriched; no summary." : "Not enriched yet."))}
-        ${row("Last enriched", esc(enrichedAt))}
-      </dl></section>
+      ${contactsHTML(l)}
+      ${awsHTML(l)}
+      <div id="lead-sum-research">${researchGroupsHTML(e)}</div>
+      ${group("Lead", [
+        row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`),
+        row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned")),
+        row("Inbound", esc(inboundLabel(l))),
+        row("Source", esc(l.sourceLabel ? l.sourceLabel + (l.sourceDetail ? " · " + l.sourceDetail : "") : sourceLabel(l))),
+        row("Source page", pageLink(l)),
+        row("Source industry", esc(l.sourceIndustry)),
+        row("Created", esc(fmtDate(l.createdAtMs))),
+        row("Updated", esc(fmtDate(l.updatedAtMs))),
+        row("Customer account", l.customerAccount ? esc(l.customerAccount.name || l.customerAccount.id) + (l.customerAccount.id && l.customerAccount.name ? ` (${esc(l.customerAccount.id)})` : "") : ""),
+      ].join(""), { id: "lead-sum-lead" })}
+      ${group("Company", [
+        row("Name", esc(l.company.name)),
+        row("Website", l.company.website ? linkOf(l.company.website) : ""),
+        row("Industry", l.company.industry ? esc(l.company.industry) : ""),
+        row("Countries", l.company.countries.length ? esc(l.company.countries.join(", ")) : ""),
+        row("AWS account ID", esc(l.company.awsAccountId || "")),
+        row("Stores", l.company.storeCount != null ? esc(l.company.storeCount.toLocaleString("en-GB")) : ""),
+      ].join(""), { id: "lead-sum-company" })}
       ${tamHTML(l)}
       ${prospectHTML(l)}
-      <section class="lead-sum-section"><h3>Lead</h3><dl class="lead-sum-dl">
-        ${row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`)}
-        ${row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned"))}
-        ${row("Source", esc(l.sourceLabel ? l.sourceLabel + (l.sourceDetail ? " · " + l.sourceDetail : "") : sourceLabel(l)))}
-        ${row("Source page", pageLink(l))}
-        ${row("Source industry", esc(l.sourceIndustry))}
-        ${row("Created", esc(fmtDate(l.createdAtMs)))}
-        ${row("Updated", esc(fmtDate(l.updatedAtMs)))}
-        ${row("Customer account", l.customerAccount ? esc(l.customerAccount.name || l.customerAccount.id) + (l.customerAccount.id && l.customerAccount.name ? ` (${esc(l.customerAccount.id)})` : "") : "")}
-      </dl></section>
-      ${l.websiteActivity.length ? `<section class="lead-sum-section"><h3>Website activity</h3><ul class="lead-sum-activity">${[...l.websiteActivity].reverse().map((a) => `<li>${esc(a.atMs ? fmtDate(a.atMs) : "")} · ${esc(a.label || "Website form")}${a.detail ? ` · ${esc(a.detail)}` : ""}</li>`).join("")}</ul></section>` : ""}
-      ${historyHTML(l)}
-      <section class="lead-sum-section"><h3>Contacts</h3>${l.contacts.length ? l.contacts.map((c) => `<div class="lead-sum-contact">
-        <p class="lead-sum-contact-name">${esc(c.name)}${c.buyingRole ? ` <span class="lead-sum-role">${esc(roleLabel(c.buyingRole))}</span>` : ""}</p>
-        ${c.jobTitle ? `<p class="lead-card-line">${esc(c.jobTitle)}</p>` : ""}
-        ${c.email ? `<p class="lead-card-line"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></p>` : ""}
-        ${c.linkedin ? `<p class="lead-card-line">${linkOf(c.linkedin, "LinkedIn")}</p>` : ""}
-        ${c.awsAccountId ? `<p class="lead-card-line">AWS account ${esc(c.awsAccountId)}</p>` : ""}
-      </div>`).join("") : '<p class="field-hint">No contacts yet.</p>'}</section>`;
+      ${l.websiteActivity.length ? group("Website activity", [...l.websiteActivity].reverse().map((a) => stackRow(`<p class="ap-row-text">${esc(a.label || "Website form")}${a.detail ? ` · ${esc(a.detail)}` : ""}</p><p class="ap-row-sub">${esc(a.atMs ? fmtDate(a.atMs) : "")}</p>`)).join(""), { id: "lead-sum-activity" }) : ""}
+      ${historyHTML(l)}`;
     $("lead-sum-delete").hidden = !canEdit();
+    setEnrichButton($("lead-sum-enrich"), e);
+    const sumStatus = enrichmentStatus(e);
+    if (sumStatus || enrichStatusShown.summary) { $("lead-sum-status").textContent = sumStatus; enrichStatusShown.summary = !!sumStatus; }
+    wireLogoFallback($("lead-sum-body"));
     if (keepStage) $("lead-sum-stage").focus();
   }
   function openSummary(id) {
@@ -266,6 +398,10 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
     else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
   });
+  $("lead-sum-body").addEventListener("click", (e) => {
+    if (!e.target.closest || !e.target.closest("#lead-sum-add-contact") || !summaryId) return;
+    const id = summaryId; closeSummary(false); openLead(id);
+  });
   $("lead-sum-body").addEventListener("change", (e) => {
     const sel = e.target.closest && e.target.closest("#lead-sum-stage");
     if (sel && summaryId) moveTo(summaryId, sel.value);
@@ -286,9 +422,9 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   $("lead-sum-enrich").addEventListener("click", async () => {
     if (!canEdit() || !summaryId) return;
     const btn = $("lead-sum-enrich"); const status = $("lead-sum-status");
-    btn.disabled = true; status.textContent = "Looking the company up…";
-    try { status.textContent = (await runEnrich(summaryId)).message; } catch (err) { status.textContent = `Enrichment failed: ${err && err.message ? err.message : err}`; }
-    finally { btn.disabled = false; }
+    btn.disabled = true; status.textContent = "Starting the research…";
+    try { const r = await runEnrich(summaryId); status.textContent = r.message; enrichStatusShown.summary = true; if (!r.ok) btn.disabled = false; }
+    catch (err) { status.textContent = `Enrichment failed: ${err && err.message ? err.message : err}`; btn.disabled = false; }
   });
 
   // ── The form ────────────────────────────────────────────────────────────
@@ -304,20 +440,24 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     sel.value = keep || "";
   }
 
+  // Each contact is its own inset grouped card of label/value rows.
   function contactRowHTML(c, i) {
-    const roles = `<option value="">Buying role</option>` + BUYING_ROLES.map((r) => `<option value="${r.key}"${r.key === c.buyingRole ? " selected" : ""}>${esc(r.label)}</option>`).join("");
+    const roles = `<option value="">None</option>` + BUYING_ROLES.map((r) => `<option value="${r.key}"${r.key === c.buyingRole ? " selected" : ""}>${esc(r.label)}</option>`).join("");
     const e = c.enrichment;
-    const note = e ? `<p class="field-hint lead-contact-enriched">Enriched${e.added && e.added.length ? `: added ${esc(e.added.join(", "))}` : ""}${e.listedAs ? ` · listed as ${esc(e.listedAs)}` : ""}</p>` : "";
-    return `<fieldset class="lead-contact" data-index="${i}">
-      <legend>Contact ${i + 1}</legend>
-      <label class="field-label">Name<input type="text" class="lc-name" maxlength="120" value="${esc(c.name)}" autocomplete="off"></label>
-      <label class="field-label">Job title<input type="text" class="lc-title" maxlength="120" value="${esc(c.jobTitle)}" autocomplete="off"></label>
-      <label class="field-label">Buying role<select class="lc-role" aria-label="Buying role">${roles}</select></label>
-      <label class="field-label">Email<input type="text" class="lc-email" maxlength="200" value="${esc(c.email)}" autocomplete="off"></label>
-      <label class="field-label">LinkedIn<input type="text" class="lc-linkedin" maxlength="300" value="${esc(c.linkedin)}" placeholder="linkedin.com/in/…" autocomplete="off"></label>
-      <label class="field-label">AWS account ID<input type="text" class="lc-aws" maxlength="14" inputmode="numeric" value="${esc(c.awsAccountId)}" placeholder="12 digits, if known" autocomplete="off"></label>
-      ${note}
-      <button type="button" class="btn-ghost lc-remove" data-editor-only>Remove contact</button>
+    const note = e ? `<div class="ap-row ap-row-line lead-contact-enriched">Enriched${e.added && e.added.length ? `: added ${esc(e.added.join(", "))}` : ""}${e.listedAs ? ` · listed as ${esc(e.listedAs)}` : ""}</div>` : "";
+    const field = (label, input) => `<label class="ap-row ap-field"><span class="ap-row-label">${label}</span>${input}</label>`;
+    return `<fieldset class="lead-contact ap-section" data-index="${i}">
+      <legend class="ap-group-title">Contact ${i + 1}</legend>
+      <div class="ap-group">
+        ${field("Name", `<input type="text" class="lc-name" maxlength="120" value="${esc(c.name)}" autocomplete="off">`)}
+        ${field("Job title", `<input type="text" class="lc-title" maxlength="120" value="${esc(c.jobTitle)}" autocomplete="off">`)}
+        ${field("Buying role", `<select class="lc-role" aria-label="Buying role">${roles}</select>`)}
+        ${field("Email", `<input type="text" class="lc-email" maxlength="200" value="${esc(c.email)}" autocomplete="off">`)}
+        ${field("LinkedIn", `<input type="text" class="lc-linkedin" maxlength="300" value="${esc(c.linkedin)}" placeholder="linkedin.com/in/…" autocomplete="off">`)}
+        ${field("AWS account ID", `<input type="text" class="lc-aws" maxlength="14" inputmode="numeric" value="${esc(c.awsAccountId)}" placeholder="12 digits, if known" autocomplete="off">`)}
+        ${note}
+        <button type="button" class="ap-row-btn ap-destructive lc-remove" data-editor-only>Remove contact</button>
+      </div>
     </fieldset>`;
   }
   function renderContacts() {
@@ -343,24 +483,24 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
 
   function setError(msg) { const e = $("lead-error"); e.textContent = msg || ""; e.hidden = !msg; }
 
+  // The Enrich / Refresh info button: its label follows the record, and it waits while a run is underway.
+  const enrichStatusShown = { summary: false, form: false };
+  function setEnrichButton(btn, e) {
+    btn.lastChild.textContent = ` ${enrichButtonLabel(e)}`;
+    btn.disabled = enrichmentRunning(e);
+  }
   function renderEnrichment(l) {
     const e = l && l.enrichment;
     const box = $("lead-enrichment");
-    if (!e) { box.innerHTML = '<p class="field-hint">Not enriched yet.</p>'; return; }
-    const at = e.at && typeof e.at.toDate === "function" ? e.at.toDate() : (e.at ? new Date(e.at) : null);
-    const stack = Array.isArray(e.techStack) ? e.techStack : [];
-    const sources = Array.isArray(e.sources) ? e.sources : [];
-    const li = safeUrl(e.linkedinCompany);
-    box.innerHTML = `
-      ${at && !Number.isNaN(at.getTime()) ? `<p class="field-hint">Last enriched ${esc(at.toLocaleString("en-GB"))}</p>` : ""}
-      ${e.summary ? `<p class="lead-enrich-summary">${esc(e.summary)}</p>` : ""}
-      ${li ? `<p><a href="${esc(li)}" target="_blank" rel="noopener noreferrer">Company LinkedIn page</a></p>` : ""}
-      ${stack.length ? `<p class="lead-stack-label">Tech stack</p><ul class="lead-stack">${stack.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
-      ${sources.length ? `<ul class="lead-sources">${sources.map((s) => `<li data-status="${esc(s.status)}">${esc(s.message)}</li>`).join("")}</ul>` : ""}`;
+    box.innerHTML = researchGroupsHTML(e);
+    wireLogoFallback(box);
+    setEnrichButton($("lead-enrich-btn"), e);
+    const st = enrichmentStatus(e);
+    if (st || enrichStatusShown.form) { $("lead-enrich-status").textContent = st; enrichStatusShown.form = !!st; }
   }
   function renderAccount(l) {
     const a = l && l.customerAccount;
-    $("lead-account-line").textContent = a ? `Linked to customer account ${a.name || a.id}${a.id && a.name ? ` (${a.id})` : ""}.` : "Not linked to a customer account yet.";
+    $("lead-account-line").textContent = a ? `${a.name || a.id}${a.id && a.name ? ` (${a.id})` : ""}` : "Not linked yet";
     $("lead-account-name").value = a ? a.name : "";
     $("lead-account-id").value = a ? a.id : "";
     $("lead-convert-btn").textContent = a ? "Update linked account" : "Convert and link account";
@@ -413,6 +553,10 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (r.errors.length) { setError(r.errors.join(" ")); return null; }
     setError("");
     const f = r.fields;
+    if (!openId && !extra) {
+      const placed = await placeNew(f);
+      if (placed) { if (placed.id) openId = placed.id; return placed; }
+    }
     if (!openId) {
       const ref = await addDoc(collection(db, "leads"), {
         ...f, customerAccount: null, ...(extra || {}),
@@ -428,11 +572,53 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     return openId;
   }
 
+  // A new lead, matched to Prospects (TAM) the way a website lead is. Returns
+  // { id, message } (id null for AWS), or null to save it as a plain lead
+  // (Prospects can't be read, or the name can't hold a TAM record).
+  async function placeNew(f) {
+    let prospects;
+    try { prospects = (await getDocs(collection(db, "prospects"))).docs.map((d) => normaliseProspect(d.id, d.data())); } catch { return null; }
+    const contact = f.contacts.find((c) => c.email) || f.contacts[0] || null;
+    const plan = planInbound({ prospects, leads: allLeads, company: f.company, contact });
+    if (plan.kind === "none") return null;
+    const stamp = { updatedAt: serverTimestamp(), updatedByEmail: me() };
+    const pRef = doc(db, "prospects", plan.prospectId);
+    if (plan.kind === "aws") {
+      const day = new Date().toISOString().slice(0, 10);
+      let contacts = plan.prospect ? plan.prospect.contacts : [];
+      for (const c of f.contacts) contacts = mergeContact(contacts, awsContactFrom(c, day));
+      if (plan.createProspect) await setDoc(pRef, { ...plan.createProspect, contacts, createdAt: serverTimestamp(), createdByEmail: me(), ...stamp });
+      else await updateDoc(pRef, { contacts, ...stamp });
+      awsOpen = true; renderAws();
+      return { id: null, message: "From AWS: added to the AWS tile, not as a lead." };
+    }
+    const link = { leadId: plan.leadId, status: "converted" };
+    if (plan.createProspect) await setDoc(pRef, { ...plan.createProspect, ...link, createdAt: serverTimestamp(), createdByEmail: me(), ...stamp });
+    else if (plan.linkProspect) await updateDoc(pRef, { ...link, ...stamp });
+    if (plan.lead) {
+      const m = mergeInbound(plan.lead, f, f.contacts);
+      await updateDoc(doc(db, "leads", plan.lead.id), { company: m.company, contacts: m.contacts, inboundCount: m.inboundCount, ...(plan.lead.prospectId ? {} : { prospectId: plan.prospectId }), ...stamp });
+      return { id: plan.lead.id, message: `Added to the existing lead for ${plan.lead.company.name} (${inboundLabel({ inboundCount: m.inboundCount })}).` };
+    }
+    await setDoc(doc(db, "leads", plan.leadId), {
+      ...f, customerAccount: null, prospectId: plan.prospectId, inboundCount: 1,
+      createdAt: serverTimestamp(), stageChangedAt: serverTimestamp(), createdByEmail: me(), ...stamp,
+    });
+    return { id: plan.leadId, message: "" };
+  }
+
   $("lead-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!canEdit()) return;
     $("lead-save").disabled = true;
-    try { if (await persist()) closeLead(); } catch (err) { setError(`Couldn't save: ${err && err.message ? err.message : err}`); }
+    try {
+      const saved = await persist();
+      if (saved) {
+        closeLead();
+        if (saved.message && saved.id && leads.some((x) => x.id === saved.id)) { openSummary(saved.id); $("lead-sum-status").textContent = saved.message; }
+        else if (saved.message) { const st = $("leads-aws-status"); if (st) st.textContent = saved.message; }
+      }
+    } catch (err) { setError(`Couldn't save: ${err && err.message ? err.message : err}`); }
     finally { $("lead-save").disabled = false; }
   });
   $("lead-close").addEventListener("click", closeLead);
@@ -440,11 +626,12 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   backdrop.addEventListener("mousedown", (e) => { if (e.target === backdrop) closeLead(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !backdrop.hidden) closeLead(); });
   $("leads-add-btn").addEventListener("click", () => openLead(null));
+  $("leads-empty-add").addEventListener("click", () => openLead(null));
 
   $("lead-delete").addEventListener("click", async () => {
     const l = leads.find((x) => x.id === openId);
     if (!l || !canEdit()) return;
-    const btn = $("lead-sum-delete");
+    const btn = $("lead-delete");
     if (!btn.dataset.armed) { // a second click confirms, in the page (no native dialog)
       btn.dataset.armed = "1"; btn.textContent = "Click again to delete";
       setTimeout(() => { delete btn.dataset.armed; btn.textContent = "Delete lead"; }, 6000);
@@ -454,21 +641,13 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     try { await deleteDoc(doc(db, "leads", l.id)); closeLead(); } catch (err) { setError(`Couldn't delete: ${err && err.message ? err.message : err}`); }
   });
 
-  // Calls the enrich function for a saved lead and re-reads what it wrote.
+  // Queues an enrichment run for a saved lead. The agent's findings arrive
+  // through the leads snapshot, which re-renders the drawer and the form.
   async function runEnrich(id) {
     const resp = await fetch("/leadEnrich/v1/enrich", { method: "POST", headers: await apiHeaders(), body: JSON.stringify({ leadId: id }) });
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok) return { ok: false, message: body.error || `Enrichment failed (HTTP ${resp.status}).` };
-    const snap = await getDoc(doc(db, "leads", id));
-    let lead = null;
-    if (snap.exists()) {
-      lead = normaliseLead(snap.id, snap.data());
-      const i = leads.findIndex((x) => x.id === lead.id);
-      if (i >= 0) leads[i] = lead;
-      if (summaryId === id) renderSummary();
-    }
-    const added = (body.companyFieldsAdded || []).length + (body.contactsEnriched || 0);
-    return { ok: true, lead, message: added || body.techStack ? `Done: ${body.techStack || 0} technologies, ${added} details added.` : "Done: nothing new was found." };
+    return { ok: true, message: "Researching the company on the web… the findings appear here when it finishes (usually under two minutes)." };
   }
 
   $("lead-enrich-btn").addEventListener("click", async () => {
@@ -476,15 +655,16 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const status = $("lead-enrich-status");
     const btn = $("lead-enrich-btn");
     btn.disabled = true;
-    status.textContent = "Saving, then looking the company up…";
+    status.textContent = "Saving, then starting the research…";
     try {
-      if (!(await persist())) { status.textContent = ""; return; }
+      if (!(await persist())) { status.textContent = ""; btn.disabled = false; return; }
       const r = await runEnrich(openId);
-      if (r.lead) { fill(r.lead); renderEnrichment(r.lead); }
-      status.textContent = r.message;
+      status.textContent = r.message; enrichStatusShown.form = true;
+      if (!r.ok) btn.disabled = false;
     } catch (err) {
       status.textContent = `Enrichment failed: ${err && err.message ? err.message : err}`;
-    } finally { btn.disabled = false; }
+      btn.disabled = false;
+    }
   });
 
   $("lead-convert-btn").addEventListener("click", async () => {
